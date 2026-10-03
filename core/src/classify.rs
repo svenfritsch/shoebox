@@ -35,6 +35,11 @@ impl Kind {
             Kind::Video => "video",
         }
     }
+
+    /// Inverse of `as_str`.
+    pub fn parse(s: &str) -> Option<Kind> {
+        [Kind::Jpeg, Kind::Png, Kind::Heic, Kind::Raw, Kind::Video].into_iter().find(|k| k.as_str() == s)
+    }
 }
 
 const RAW_EXTENSIONS: &[&str] = &[

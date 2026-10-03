@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use shoebox::{probe, scan, verify};
+use shoebox::{probe, scan, serve, verify};
 
 #[derive(Parser)]
 #[command(name = "shoebox", version, about = "Local photo library on an external drive")]
@@ -39,6 +39,9 @@ enum Command {
         /// Skip computing full hashes (the next scan catches up).
         #[arg(long)]
         quick: bool,
+        /// Skip making thumbnails (`shoebox serve` makes them as they are viewed).
+        #[arg(long)]
+        no_thumbs: bool,
         /// Remove records of files that are no longer on the drive.
         #[arg(long)]
         forget_missing: bool,
@@ -58,6 +61,23 @@ enum Command {
         #[arg(long)]
         limit: Option<usize>,
     },
+    /// Browse the library in a web browser. Only reads originals; missing
+    /// thumbnails are made as they are viewed.
+    Serve {
+        /// Library root (scanned before with `shoebox scan`).
+        root: PathBuf,
+        /// Database to use instead of `<root>/.shoebox/library.db`.
+        #[arg(long)]
+        db: Option<PathBuf>,
+        #[arg(long, default_value_t = serve::DEFAULT_PORT)]
+        port: u16,
+        /// Let other devices on the network (an iPad) connect, with a PIN.
+        #[arg(long)]
+        lan: bool,
+        /// PIN for other devices instead of a random one (at least 4 characters).
+        #[arg(long)]
+        pin: Option<String>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -69,11 +89,15 @@ fn main() -> ExitCode {
             report,
             limit,
         }),
-        Command::Scan { root, db, quick, forget_missing } => {
-            scan::run(&scan::Options { root, db, full_hash: !quick, forget_missing }).map(|_| true)
+        Command::Scan { root, db, quick, no_thumbs, forget_missing } => {
+            scan::run(&scan::Options { root, db, full_hash: !quick, thumbs: !no_thumbs, forget_missing })
+                .map(|_| true)
         }
         Command::Verify { root, db, quick, limit } => {
             verify::run(&verify::Options { root, db, quick, limit }).map(|r| r.is_clean())
+        }
+        Command::Serve { root, db, port, lan, pin } => {
+            serve::run(&serve::Options { root, db, port, lan, pin }).map(|_| true)
         }
     };
     match result {

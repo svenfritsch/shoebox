@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, anyhow, bail};
-use image::{DynamicImage, RgbImage};
+use image::{DynamicImage, ImageDecoder, RgbImage};
 use libheif_rs::{ColorSpace, HeifContext, LibHeif, RgbChroma};
 use nom_exif::{EntryValue, ExifDateTime, ExifTag, MediaKind, MediaParser, MediaSource, TrackInfoTag};
 use serde::Serialize;
@@ -120,13 +120,64 @@ fn read_heic_metadata(parser: &mut MediaParser, path: &Path) -> Result<Metadata>
 
 /// Decode an image and write a JPEG preview whose longer edge is `edge` px.
 pub fn write_image_thumb(lib_heif: &LibHeif, kind: Kind, src: &Path, dst: &Path, edge: u32) -> Result<()> {
-    let img = match kind {
-        Kind::Jpeg | Kind::Png => image::open(src)?,
-        Kind::Heic => decode_heic(lib_heif, src, edge)?,
-        other => bail!("no image decoder for {}", other.label()),
-    };
-    img.thumbnail(edge, edge).to_rgb8().save(dst)?;
+    decode_image(lib_heif, kind, src, edge)?.thumbnail(edge, edge).to_rgb8().save(dst)?;
     Ok(())
+}
+
+/// Decode an image upright (EXIF orientation applied) at a size whose longer
+/// edge is at least `edge` px where the decoder can scale cheaply (JPEG,
+/// HEIC); callers shrink the result to the exact size.
+pub fn decode_image(lib_heif: &LibHeif, kind: Kind, src: &Path, edge: u32) -> Result<DynamicImage> {
+    match kind {
+        // jpeg-decoder rejects a few exotic files that `image` reads.
+        Kind::Jpeg => decode_jpeg_scaled(src, edge).or_else(|_| decode_oriented(src)),
+        Kind::Png => decode_oriented(src),
+        // libheif applies the HEIF rotation and mirroring itself.
+        Kind::Heic => decode_heic(lib_heif, src, edge),
+        other => bail!("no image decoder for {}", other.label()),
+    }
+}
+
+fn decode_oriented(src: &Path) -> Result<DynamicImage> {
+    let mut decoder = image::ImageReader::open(src)?.with_guessed_format()?.into_decoder()?;
+    let orientation = decoder.orientation()?;
+    let mut img = DynamicImage::from_decoder(decoder)?;
+    img.apply_orientation(orientation);
+    Ok(img)
+}
+
+/// JPEG with DCT scaling (1/2, 1/4 or 1/8 straight from the IDCT), which is
+/// several times faster than decoding a 12-megapixel photo in full.
+fn decode_jpeg_scaled(src: &Path, edge: u32) -> Result<DynamicImage> {
+    use jpeg_decoder::{Decoder, PixelFormat};
+    let mut decoder = Decoder::new(std::io::BufReader::new(std::fs::File::open(src)?));
+    let edge = edge.min(u16::MAX as u32) as u16;
+    decoder.scale(edge, edge)?;
+    let pixels = decoder.decode()?;
+    let info = decoder.info().ok_or_else(|| anyhow!("no JPEG header"))?;
+    let (w, h) = (info.width as u32, info.height as u32);
+    let bad = || anyhow!("JPEG pixel buffer does not match its size");
+    let mut img = match info.pixel_format {
+        PixelFormat::RGB24 => DynamicImage::ImageRgb8(RgbImage::from_raw(w, h, pixels).ok_or_else(bad)?),
+        PixelFormat::L8 => DynamicImage::ImageLuma8(image::GrayImage::from_raw(w, h, pixels).ok_or_else(bad)?),
+        PixelFormat::L16 => {
+            let px = pixels.chunks_exact(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect();
+            DynamicImage::ImageLuma16(image::ImageBuffer::from_raw(w, h, px).ok_or_else(bad)?)
+        }
+        // Rare (print workflows); `image` gets the colour conversion right.
+        PixelFormat::CMYK32 => bail!("CMYK JPEG"),
+    };
+    if let Some(o) = decoder.exif_data().and_then(image::metadata::Orientation::from_exif_chunk) {
+        img.apply_orientation(o);
+    }
+    Ok(img)
+}
+
+/// Encode a preview as JPEG.
+pub fn encode_jpeg(img: &DynamicImage, quality: u8) -> Result<Vec<u8>> {
+    let mut out = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, quality).encode_image(&img.to_rgb8())?;
+    Ok(out)
 }
 
 fn decode_heic(lib_heif: &LibHeif, src: &Path, edge: u32) -> Result<DynamicImage> {
@@ -168,26 +219,42 @@ pub fn find_ffmpeg() -> Option<PathBuf> {
 
 /// Grab one frame at ~10% into the video as a JPEG preview.
 pub fn write_video_poster(ffmpeg: &Path, src: &Path, dst: &Path, duration_ms: Option<u64>, edge: u32) -> Result<()> {
-    let at = duration_ms.map(|d| d as f64 / 10_000.0).unwrap_or(1.0);
-    let output = Command::new(ffmpeg)
-        .args(["-v", "error", "-nostdin", "-ss", &format!("{at:.3}"), "-i"])
-        .arg(src)
-        .args([
-            "-frames:v",
-            "1",
-            "-vf",
-            &format!("scale='min({edge},iw)':-2"),
-            "-f",
-            "image2",
-            "-y",
-        ])
-        .arg(dst)
-        .output()
-        .context("run ffmpeg")?;
-    if !output.status.success() || !dst.is_file() {
-        bail!("ffmpeg: {}", String::from_utf8_lossy(&output.stderr).trim());
-    }
+    std::fs::write(dst, video_poster(ffmpeg, src, duration_ms, edge, 3)?)?;
     Ok(())
+}
+
+/// One frame at ~10% into the video, as JPEG bytes (`quality` is ffmpeg's
+/// `-q:v`, 2 = best). ffmpeg only reads the video and writes to a pipe.
+pub fn video_poster(ffmpeg: &Path, src: &Path, duration_ms: Option<u64>, edge: u32, quality: u8) -> Result<Vec<u8>> {
+    let at = duration_ms.map(|d| d as f64 / 10_000.0).unwrap_or(1.0);
+    let poster = |at: f64| -> Result<Vec<u8>> {
+        let output = Command::new(ffmpeg)
+            .args(["-v", "error", "-nostdin", "-ss", &format!("{at:.3}"), "-i"])
+            .arg(src)
+            .args([
+                "-frames:v",
+                "1",
+                "-vf",
+                // Shrink the longer edge to `edge`; never enlarge.
+                &format!("scale='if(gt(iw,ih),min({edge},iw),-2)':'if(gt(iw,ih),-2,min({edge},ih))'"),
+                "-q:v",
+                &quality.to_string(),
+                "-f",
+                "image2pipe",
+                "-c:v",
+                "mjpeg",
+                "-",
+            ])
+            .stdin(std::process::Stdio::null())
+            .output()
+            .context("run ffmpeg")?;
+        if !output.status.success() || output.stdout.is_empty() {
+            bail!("ffmpeg: {}", String::from_utf8_lossy(&output.stderr).trim());
+        }
+        Ok(output.stdout)
+    };
+    // Seeking past the end of a very short clip yields no frame.
+    poster(at).or_else(|e| if at > 0.0 { poster(0.0) } else { Err(e) })
 }
 
 /// A JPEG must end with the EOI marker (FF D9). Decoders happily render a

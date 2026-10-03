@@ -127,7 +127,8 @@ dates are set from the browser's `File.lastModified`.
 Any code path that reads originals is tested by snapshotting size, mtime,
 created and full hash before and after, and failing on any difference.
 `shoebox probe` does this at runtime; `core/tests/scan.rs` does it for
-`scan` and `verify`.
+`scan` and `verify`, `core/tests/serve.rs` for thumbnails and every
+endpoint of `serve`.
 
 ### Duplicates
 
@@ -160,8 +161,8 @@ rot) and shows "last backup N days ago, M files new since".
 |---|---|---|
 | 0 | Toolchain + portability probe (`shoebox probe`) | **Done except the real-hardware run** (see below) |
 | 1 | Scanner + SQLite schema + incremental rescan + move detection + guard integration test. CLI: `shoebox scan`, `shoebox verify` | **Done except the real-hardware run** (see below) |
-| 2 | `thumbs.db` + perceptual hash, web UI (virtualised timeline grid, folder tree, tag search, video playback), LAN access with PIN. `shoebox serve` | Next |
-| 3 | Import dialog, move (with RAW pairs, case-only renames), duplicates UI, self-healing paths | |
+| 2 | `thumbs.db` + perceptual hash, web UI (virtualised timeline grid, folder tree, tag search, video playback), LAN access with PIN. `shoebox serve` | **Done except the real-hardware run** (see below) |
+| 3 | Import dialog, move (with RAW pairs, case-only renames), duplicates UI, self-healing paths | Next |
 | 4 | Worker protocol + Python recognizer (faces), worker supervision in Rust | |
 | 5 | Face clustering in Rust + correction UI | |
 | 6 | Pets | |
@@ -209,7 +210,29 @@ Open:
       drive (checklist in [phase1.md](phase1.md)).
 - [ ] Confirm the GitHub Actions run is green.
 
-## Build notes and pitfalls (learned in phases 0–1)
+### Phase 2 details
+
+Done (see [phase2.md](phase2.md)):
+- `.shoebox/thumbs.db` (BLOBs keyed by quick hash, 384 px JPEG), made by a
+  multi-threaded pass in `shoebox scan` (`--no-thumbs` skips it) and on
+  demand by the server. Scaled JPEG decoding, EXIF orientation, video
+  posters via ffmpeg piped to stdout.
+- Perceptual hash (64-bit DCT) from the same decode in `files.phash`.
+- `shoebox serve` (axum, UI embedded with rust-embed): virtualised timeline
+  grid grouped by month, folder tree, search over paths and tags, viewer
+  with video playback (range requests), HEIC rendered to JPEG, Live Photos
+  folded into their stills, info panel, download.
+- Localhost only by default; `--lan` with PIN login, session cookie,
+  DNS-rebinding protection, rate-limited PIN attempts.
+- Integration tests `core/tests/serve.rs` (guard, thumbnail lifecycle,
+  PIN, timeline rules); shared helpers moved to `core/tests/common/`.
+
+Open:
+- [ ] Thumbnail pass and iPad browsing on the real hardware (checklist in
+      [phase2.md](phase2.md)).
+- [ ] Confirm the GitHub Actions run is green.
+
+## Build notes and pitfalls (learned in phases 0–2)
 
 - **Spaces in paths.** The repo may live under a path with spaces.
   `build-deps.sh` uses bash arrays for CMake args; never unquote paths.
@@ -237,12 +260,21 @@ Open:
 - **Integration tests and fixtures.** `core/tests/scan.rs` copies
   `$SHOEBOX_FIXTURES` into each test library when set; an unset or empty
   variable just uses the synthetic files the test writes itself.
+- **Perceptual hashes of synthetic images are flaky.** Smooth gradients or
+  blocky test patterns leave most DCT coefficients near the median, so
+  noise flips bits. Tests use rings (photo-like structure). Exact copies
+  take over their twin's hash instead of re-hashing the JPEG thumbnail.
+- **`DynamicImage::thumbnail` enlarges** small images; `thumbs::shrink`
+  only ever shrinks.
+- **`db::open` marks running jobs interrupted**, which would break a
+  running scan if the server used it; `serve` uses `db::open_shared`.
 - **Git push** uses SSH via the 1Password agent with the "GitHub" key pinned
   in this repo's `core.sshCommand` (the keychain's HTTPS login belongs to a
   different account, `svenfritschpeers`).
 
 ## Next step
 
-Start phase 2: `thumbs.db` (BLOBs keyed by quick hash, perceptual hash from
-the same decode), `shoebox serve` with the virtualised timeline grid, folder
-tree, tag search and video playback via range requests.
+Run the phase 0–2 hardware checklists on the old Intel MacBook and the iPad.
+Then phase 3: import dialog (upload into `YYYY-MM Name`), move with RAW and
+Live Photo pairs and case-only renames, duplicates UI (exact by full hash,
+near by `phash` distance ≤ 8), self-healing paths.
