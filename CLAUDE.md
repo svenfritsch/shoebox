@@ -23,6 +23,8 @@ current status and next step. Update its status table when a phase moves.
 docker build -t shoebox-dev -f docker/Dockerfile.dev docker
 docker/dev.sh bash -c 'DEPS_DIR=/target/deps scripts/build.sh'
 docker/dev.sh bash -c 'DEPS_DIR=/target/deps scripts/build.sh "" test'
+# integration tests with the full fixtures (HEIC, video, EXIF dates)
+docker/dev.sh bash -c 'scripts/make-fixtures.sh /target/fixtures && SHOEBOX_FIXTURES=/target/fixtures DEPS_DIR=/target/deps scripts/build.sh "" test'
 docker/dev.sh bash -c 'scripts/make-fixtures.sh /target/fixtures && /target/*/release/shoebox probe /target/fixtures'
 
 # macOS (Homebrew rustup is keg-only)

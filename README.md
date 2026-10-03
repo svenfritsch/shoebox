@@ -15,7 +15,9 @@ shoebox/
 
 ## Status
 
-Phase 0 done except the run on real hardware. Plan and status: [docs/plan.md](docs/plan.md).
+Phases 0 (portability probe) and 1 (`shoebox scan`, `shoebox verify`) done
+except the runs on real hardware. Plan and status: [docs/plan.md](docs/plan.md),
+usage: [docs/phase1.md](docs/phase1.md).
 
 ## Building
 
@@ -24,6 +26,7 @@ Development happens in Docker (Linux build):
 ```sh
 docker build -t shoebox-dev -f docker/Dockerfile.dev docker
 docker/dev.sh sh -c 'DEPS_DIR=/target/deps scripts/build.sh'
+docker/dev.sh sh -c 'scripts/make-fixtures.sh /target/fixtures && SHOEBOX_FIXTURES=/target/fixtures DEPS_DIR=/target/deps scripts/build.sh "" test'
 docker/dev.sh sh -c 'scripts/make-fixtures.sh /target/fixtures && /target/*/release/shoebox probe /target/fixtures'
 ```
 

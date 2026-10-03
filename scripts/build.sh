@@ -3,7 +3,9 @@
 #
 #   scripts/build.sh [rust-target] [test]   (default: the host target)
 #
-# With "test", runs the unit tests for that target instead of a release build.
+# With "test", runs the unit and integration tests for that target instead of a
+# release build (set SHOEBOX_FIXTURES to a make-fixtures.sh output to include
+# the real sample files).
 #
 # Static deps are built once per target into $DEPS_DIR (default: target/deps).
 set -eu

@@ -7,15 +7,18 @@ use std::process::Command;
 use anyhow::{Context, Result, anyhow, bail};
 use image::{DynamicImage, RgbImage};
 use libheif_rs::{ColorSpace, HeifContext, LibHeif, RgbChroma};
-use nom_exif::{ExifTag, MediaKind, MediaParser, MediaSource, TrackInfoTag};
+use nom_exif::{EntryValue, ExifDateTime, ExifTag, MediaKind, MediaParser, MediaSource, TrackInfoTag};
 use serde::Serialize;
 
 use crate::classify::Kind;
 
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct Metadata {
-    /// EXIF `DateTimeOriginal` for images, container creation date for videos.
+    /// Capture time as local wall-clock time, `YYYY-MM-DDTHH:MM:SS`: EXIF
+    /// `DateTimeOriginal` for images, container creation date (UTC) for videos.
     pub taken: Option<String>,
+    /// UTC offset of `taken` (`+03:00`), when the file records one.
+    pub taken_offset: Option<String>,
     pub width: Option<u32>,
     pub height: Option<u32>,
     pub duration_ms: Option<u64>,
@@ -40,21 +43,26 @@ pub fn read_metadata(parser: &mut MediaParser, kind: Kind, path: &Path) -> Resul
         },
         MediaKind::Track => {
             let track = parser.parse_track(source)?;
-            meta.taken = track.get(TrackInfoTag::CreateDate).map(|v| v.to_string());
+            (meta.taken, meta.taken_offset) = split_date(track.get(TrackInfoTag::CreateDate));
             meta.width = track.get(TrackInfoTag::Width).and_then(|v| v.as_u32());
             meta.height = track.get(TrackInfoTag::Height).and_then(|v| v.as_u32());
             meta.duration_ms = track.get(TrackInfoTag::DurationMs).and_then(|v| v.as_u64());
             meta.camera = track.get(TrackInfoTag::Model).map(|v| v.to_string());
         }
     }
+    if meta.width.is_none() && matches!(kind, Kind::Jpeg | Kind::Png) {
+        // Not every writer records the size in EXIF; the image header has it.
+        let dims = image::ImageReader::open(path)?.with_guessed_format()?.into_dimensions();
+        if let Ok((w, h)) = dims {
+            (meta.width, meta.height) = (Some(w), Some(h));
+        }
+    }
     Ok(meta)
 }
 
 fn apply_exif(meta: &mut Metadata, exif: &nom_exif::Exif) {
-    meta.taken = exif
-        .get(ExifTag::DateTimeOriginal)
-        .or_else(|| exif.get(ExifTag::CreateDate))
-        .map(|v| v.to_string());
+    (meta.taken, meta.taken_offset) =
+        split_date(exif.get(ExifTag::DateTimeOriginal).or_else(|| exif.get(ExifTag::CreateDate)));
     meta.width = meta.width.or_else(|| {
         exif.get(ExifTag::ExifImageWidth)
             .or_else(|| exif.get(ExifTag::ImageWidth))
@@ -69,6 +77,16 @@ fn apply_exif(meta: &mut Metadata, exif: &nom_exif::Exif) {
     meta.has_embedded_thumb = exif
         .entries()
         .any(|e| e.tag().tag() == Some(ExifTag::ThumbnailLength));
+}
+
+/// Normalise a date value into sortable local time plus optional offset.
+fn split_date(value: Option<&EntryValue>) -> (Option<String>, Option<String>) {
+    const FORMAT: &str = "%Y-%m-%dT%H:%M:%S";
+    match value.and_then(EntryValue::as_datetime) {
+        Some(ExifDateTime::Aware(dt)) => (Some(dt.format(FORMAT).to_string()), Some(dt.offset().to_string())),
+        Some(ExifDateTime::Naive(dt)) => (Some(dt.format(FORMAT).to_string()), None),
+        None => (None, None),
+    }
 }
 
 /// HEIC containers vary a lot between writers, so we let libheif (the

@@ -42,15 +42,22 @@ jobs:
           otool -L dist/shoebox-macos
           vtool -show-build -arch x86_64 dist/shoebox-macos | grep -E "minos|version"
 
-      - name: Unit tests
-        run: scripts/build.sh aarch64-apple-darwin test
+      - name: Fixtures
+        run: scripts/make-fixtures.sh "$RUNNER_TEMP/fixtures"
 
-      - name: Probe fixtures (arm64 and x86_64 via Rosetta)
+      - name: Tests
+        run: SHOEBOX_FIXTURES="$RUNNER_TEMP/fixtures" scripts/build.sh aarch64-apple-darwin test
+
+      - name: Probe, scan and verify fixtures (arm64 and x86_64 via Rosetta)
         run: |
           softwareupdate --install-rosetta --agree-to-license || true
-          scripts/make-fixtures.sh "$RUNNER_TEMP/fixtures"
-          arch -arm64 dist/shoebox-macos probe "$RUNNER_TEMP/fixtures" --report dist/probe-arm64.json
-          arch -x86_64 dist/shoebox-macos probe "$RUNNER_TEMP/fixtures" --report dist/probe-x86_64.json
+          for arch in arm64 x86_64; do
+            arch -$arch dist/shoebox-macos probe "$RUNNER_TEMP/fixtures" --report dist/probe-$arch.json
+            rm -rf "$RUNNER_TEMP/lib-$arch" && cp -R "$RUNNER_TEMP/fixtures" "$RUNNER_TEMP/lib-$arch"
+            arch -$arch dist/shoebox-macos scan "$RUNNER_TEMP/lib-$arch"
+            arch -$arch dist/shoebox-macos scan "$RUNNER_TEMP/lib-$arch"
+            arch -$arch dist/shoebox-macos verify "$RUNNER_TEMP/lib-$arch"
+          done
 
       - uses: actions/upload-artifact@v4
         with:
@@ -79,15 +86,21 @@ jobs:
       - name: Build
         run: scripts/build.sh x86_64-unknown-linux-gnu
 
-      - name: Unit tests
-        run: scripts/build.sh x86_64-unknown-linux-gnu test
+      - name: Fixtures
+        run: scripts/make-fixtures.sh "$RUNNER_TEMP/fixtures"
 
-      - name: Probe fixtures
+      - name: Tests
+        run: SHOEBOX_FIXTURES="$RUNNER_TEMP/fixtures" scripts/build.sh x86_64-unknown-linux-gnu test
+
+      - name: Probe, scan and verify fixtures
         run: |
-          scripts/make-fixtures.sh "$RUNNER_TEMP/fixtures"
           mkdir -p dist
           cp core/target/x86_64-unknown-linux-gnu/release/shoebox dist/shoebox-linux
           dist/shoebox-linux probe "$RUNNER_TEMP/fixtures" --report dist/probe-linux.json
+          cp -R "$RUNNER_TEMP/fixtures" "$RUNNER_TEMP/lib"
+          dist/shoebox-linux scan "$RUNNER_TEMP/lib"
+          dist/shoebox-linux scan "$RUNNER_TEMP/lib"
+          dist/shoebox-linux verify "$RUNNER_TEMP/lib"
 
       - uses: actions/upload-artifact@v4
         with:
