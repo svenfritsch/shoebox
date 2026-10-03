@@ -1,4 +1,5 @@
-// shoebox web UI: virtualised timeline grid, folder tree, search, lightbox.
+// shoebox web UI: virtualised timeline grid, folder tree, search, lightbox,
+// and the changes: move, trash, import, folder rename, duplicates.
 // Plain ES2017 without a build step, so it runs on older iPads too.
 'use strict';
 
@@ -15,7 +16,9 @@ var OVERSCAN = 600; // px above and below the viewport that stay rendered
 var KIND_BADGE = { v: '▶', h: '', j: '', p: '' };
 
 var state = {
-  filter: { folder: null, tag: null, q: '' },
+  filter: { folder: null, tag: null, q: '', view: null },
+  selecting: false,
+  selected: {},      // id -> true
   data: null,        // timeline columns from /api/timeline
   live: {},          // still id -> video id
   folders: [],
@@ -34,8 +37,22 @@ var state = {
 function api(path, opts) {
   return fetch(path, Object.assign({ credentials: 'same-origin' }, opts)).then(function (r) {
     if (r.status === 401) { showLogin(); throw new Error('login required'); }
-    if (!r.ok) throw new Error(path + ': HTTP ' + r.status);
+    if (!r.ok) {
+      return r.json().catch(function () { return {}; }).then(function (body) {
+        throw new Error(body.error || path + ': HTTP ' + r.status);
+      });
+    }
     return r.json();
+  });
+}
+
+// Every change is a POST with the X-Shoebox header (the server refuses it
+// otherwise, so other web pages cannot make changes).
+function post(path, body) {
+  return api(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Shoebox': '1' },
+    body: JSON.stringify(body || {}),
   });
 }
 
@@ -61,7 +78,7 @@ $('login-form').addEventListener('submit', function (ev) {
   fetch('/api/login', {
     method: 'POST',
     credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Shoebox': '1' },
     body: JSON.stringify({ pin: $('pin').value }),
   }).then(function (r) {
     if (r.ok) { location.reload(); return; }
@@ -72,22 +89,26 @@ $('login-form').addEventListener('submit', function (ev) {
 // ------------------------------------------------------------------ filters (in the URL hash)
 
 function readHash() {
-  var f = { folder: null, tag: null, q: '' };
+  var f = { folder: null, tag: null, q: '', view: null };
   location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
     var i = kv.indexOf('=');
     if (i < 0) return;
     var k = kv.slice(0, i), v = decodeURIComponent(kv.slice(i + 1));
     if (k === 'folder' || k === 'tag') f[k] = parseInt(v, 10) || null;
     if (k === 'q') f.q = v;
+    if (k === 'view' && (v === 'duplicates' || v === 'trash')) f.view = v;
   });
   return f;
 }
 
+// A filter without a view shows the grid.
 function setFilter(f) {
-  var h = query({ folder: f.folder, tag: f.tag, q: f.q }).replace(/^\?/, '');
+  var h = query({ view: f.view, folder: f.folder, tag: f.tag, q: f.q }).replace(/^\?/, '');
   if (h === location.hash.replace(/^#/, '')) { applyFilter(); return; }
   location.hash = h; // triggers hashchange -> applyFilter
 }
+
+function showView(view) { setFilter({ view: view, folder: null, tag: null, q: '' }); }
 
 function applyFilter() {
   state.filter = readHash();
@@ -95,6 +116,19 @@ function applyFilter() {
   renderChips();
   markActiveFolder();
   closeSidebarOnPhone();
+  var view = state.filter.view;
+  $('page').hidden = !view;
+  $('sizer').hidden = !!view;
+  $('nav-dups').classList.toggle('active', view === 'duplicates');
+  $('nav-trash').classList.toggle('active', view === 'trash');
+  if (view) {
+    endSelection();
+    $('empty').hidden = true;
+    $('filters').hidden = true;
+    $('scroller').scrollTop = 0;
+    if (view === 'duplicates') loadDuplicates(); else loadTrash();
+    return;
+  }
   loadTimeline(true);
 }
 
@@ -113,9 +147,16 @@ function renderChips() {
     box.appendChild(c);
   };
   if (f.folder && state.folderById[f.folder]) {
-    add('📁 ' + (state.folderById[f.folder].path || state.folderById[f.folder].name), function () {
+    var folder = state.folderById[f.folder];
+    add('📁 ' + (folder.path || folder.name), function () {
       setFilter({ folder: null, tag: f.tag, q: f.q });
     });
+    if (folder.path) {
+      var edit = el('button', 'edit', '✎');
+      edit.title = 'Rename or move this folder';
+      edit.onclick = function () { renameFolder(folder); };
+      box.lastChild.insertBefore(edit, box.lastChild.lastChild);
+    }
   }
   if (f.tag) {
     add('# ' + (state.tagNames[f.tag] || f.tag), function () { setFilter({ folder: f.folder, tag: null, q: f.q }); });
@@ -167,6 +208,14 @@ function loadFolders() {
     });
     var tree = $('tree');
     tree.textContent = '';
+    var list = $('folder-list');
+    list.textContent = '';
+    folders.forEach(function (f) {
+      if (!f.path) return;
+      var o = el('option');
+      o.value = f.path;
+      list.appendChild(o);
+    });
     // The library root itself is "All photos"; show its children.
     var top = roots.length === 1 && roots[0].path === '' ? roots[0].children : roots;
     top.forEach(function (f) { tree.appendChild(folderNode(f, 0)); });
@@ -227,6 +276,8 @@ function markActiveFolder() {
 }
 
 $('all').onclick = function () { setFilter({ folder: null, tag: null, q: '' }); };
+$('nav-dups').onclick = function () { showView('duplicates'); };
+$('nav-trash').onclick = function () { showView('trash'); };
 
 $('menu').onclick = function () {
   if (window.matchMedia('(max-width: 760px)').matches) document.body.classList.toggle('side-open');
@@ -307,7 +358,7 @@ function rowAt(y) {
 }
 
 function render() {
-  if (!state.rows.length) return;
+  if (!state.rows.length || state.filter.view) return;
   var scroller = $('scroller'), sizer = $('sizer');
   var offset = sizer.offsetTop;
   var top = scroller.scrollTop - offset, bottom = top + scroller.clientHeight;
@@ -348,7 +399,7 @@ function buildRow(row) {
   e.style.top = row.top + 'px';
   e.style.height = row.h + 'px';
   for (var i = row.start; i < row.end; i++) {
-    var a = el('a', 'cell');
+    var a = el('a', 'cell' + (state.selected[d.ids[i]] ? ' sel' : ''));
     a.style.width = state.cell + 'px';
     a.style.height = state.cell + 'px';
     a.href = '#';
@@ -375,7 +426,9 @@ $('sizer').addEventListener('click', function (ev) {
   var a = ev.target.closest('.cell');
   if (!a) return;
   ev.preventDefault();
-  openLightbox(parseInt(a.dataset.index, 10));
+  var i = parseInt(a.dataset.index, 10);
+  if (state.selecting) toggleSelected(i, a);
+  else openLightbox(i);
 });
 
 var ticking = false;
@@ -586,7 +639,21 @@ function renderPanel() {
     });
     row('Tags', tags);
   }
+  if (info.linked && info.linked.length) {
+    var versions = el('div');
+    info.linked.forEach(function (l) { versions.appendChild(el('div', '', l.path + (l.missing ? ' (missing)' : ''))); });
+    row('Versions', versions);
+  }
   panel.appendChild(dl);
+
+  var actions = el('div', 'actions');
+  var move = el('button', 'btn quiet', 'Move…');
+  move.onclick = function () { moveDialog([info.id], function () { closeLightbox(); }); };
+  var trash = el('button', 'btn danger', 'Move to trash');
+  trash.onclick = function () { trashDialog([info.id], function () { closeLightbox(); }); };
+  actions.appendChild(move);
+  actions.appendChild(trash);
+  panel.appendChild(actions);
 }
 
 $('lb-close').onclick = closeLightbox;
@@ -612,7 +679,14 @@ $('lb-live').onclick = function () {
 };
 
 document.addEventListener('keydown', function (ev) {
-  if ($('lightbox').hidden) return;
+  if (!$('modal').hidden) {
+    if (ev.key === 'Escape') closeModal();
+    return;
+  }
+  if ($('lightbox').hidden) {
+    if (ev.key === 'Escape' && state.selecting) endSelection();
+    return;
+  }
   if (ev.key === 'Escape') closeLightbox();
   else if (ev.key === 'ArrowLeft') step(-1);
   else if (ev.key === 'ArrowRight') step(1);
@@ -648,6 +722,7 @@ function loadInfo() {
       info.videos.toLocaleString() + ' videos',
     ];
     if (info.missing) parts.push(info.missing.toLocaleString() + ' missing');
+    $('nav-trash').textContent = info.trash ? 'Trash (' + info.trash + ')' : 'Trash';
     if (info.thumbs_done < info.thumbs_total) {
       parts.push('thumbnails ' + Math.floor(100 * info.thumbs_done / info.thumbs_total) + '%');
     }
@@ -659,11 +734,541 @@ function loadInfo() {
 
     // Reload when a scan changed the index (but not while it is still busy).
     if (state.indexVersion !== null && info.index_version !== state.indexVersion && !info.busy) {
-      loadFolders();
-      loadTimeline(false);
+      reloadAll();
     }
     if (!info.busy) state.indexVersion = info.index_version;
   }).catch(function () {});
+}
+
+// ------------------------------------------------------------------ changes
+
+// After a change: folders, the grid (keeping the scroll position) or the
+// page that is open, and the status line.
+function reloadAll() {
+  loadFolders();
+  if (state.filter.view === 'duplicates') loadDuplicates();
+  else if (state.filter.view === 'trash') loadTrash();
+  else loadTimeline(false);
+}
+
+function changed() {
+  reloadAll();
+  loadInfo();
+}
+
+var toastTimer = null;
+function toast(text) {
+  var t = $('toast');
+  t.textContent = text;
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { t.hidden = true; }, 4000);
+}
+
+function plural(n, one, many) { return n.toLocaleString() + ' ' + (n === 1 ? one : many); }
+
+// A small dialog. actions: [{label, cls, onclick(close)}]; onclick returns
+// false to keep the dialog open.
+function openModal(title, body, actions) {
+  $('modal-title').textContent = title;
+  var b = $('modal-body');
+  b.textContent = '';
+  if (typeof body === 'string') b.appendChild(el('p', '', body)); else b.appendChild(body);
+  var a = $('modal-actions');
+  a.textContent = '';
+  var buttons = actions.map(function (act) {
+    var btn = el('button', 'btn ' + (act.cls || ''), act.label);
+    btn.onclick = function () { if (act.onclick && act.onclick(btn) === false) return; closeModal(); };
+    a.appendChild(btn);
+    return btn;
+  });
+  $('modal').hidden = false;
+  var input = b.querySelector('input:not([type=file])');
+  if (input) input.focus();
+  return buttons;
+}
+
+function closeModal() {
+  $('modal').hidden = true;
+  if (closeModal.onclose) { var f = closeModal.onclose; closeModal.onclose = null; f(); }
+}
+
+$('modal').addEventListener('click', function (ev) { if (ev.target === this && !importState.busy) closeModal(); });
+
+// Shows what did not work, if anything.
+function report(title, lines) {
+  if (!lines || !lines.length) return;
+  var ul = el('ul', 'filelist');
+  lines.forEach(function (l) { ul.appendChild(el('li', '', l)); });
+  openModal(title, ul, [{ label: 'OK' }]);
+}
+
+function failed(e) { openModal('That did not work', String(e.message || e), [{ label: 'OK' }]); }
+
+// ------------------------------------------------------------------ selection
+
+function startSelection() {
+  state.selecting = true;
+  document.body.classList.add('selecting');
+  updateSelbar();
+}
+
+function endSelection() {
+  state.selecting = false;
+  state.selected = {};
+  document.body.classList.remove('selecting');
+  Array.prototype.forEach.call(document.querySelectorAll('.cell.sel'), function (c) { c.classList.remove('sel'); });
+  updateSelbar();
+}
+
+function selectedIds() { return Object.keys(state.selected).map(Number); }
+
+function toggleSelected(i, cell) {
+  var id = state.data.ids[i];
+  if (state.selected[id]) delete state.selected[id]; else state.selected[id] = true;
+  cell.classList.toggle('sel', !!state.selected[id]);
+  updateSelbar();
+}
+
+function updateSelbar() {
+  var n = selectedIds().length;
+  $('selbar').hidden = !state.selecting;
+  $('sel-count').textContent = n ? plural(n, 'photo', 'photos') : 'Tap photos to select';
+  $('sel-move').disabled = $('sel-trash').disabled = !n;
+}
+
+$('select').onclick = function () {
+  if (state.filter.view) setFilter({ folder: null, tag: null, q: '' });
+  if (state.selecting) endSelection(); else startSelection();
+};
+$('sel-done').onclick = endSelection;
+$('sel-move').onclick = function () { moveDialog(selectedIds(), endSelection); };
+$('sel-trash').onclick = function () { trashDialog(selectedIds(), endSelection); };
+
+// ------------------------------------------------------------------ move and trash
+
+function moveDialog(ids, done) {
+  var body = el('div');
+  body.appendChild(el('p', '', 'Move ' + plural(ids.length, 'photo', 'photos') + ' into the folder:'));
+  var input = el('input');
+  input.type = 'text';
+  input.className = 'wide';
+  input.setAttribute('list', 'folder-list');
+  input.placeholder = 'e.g. 2021-03 Ausflug or Familie/Weihnachten';
+  var current = state.filter.folder && state.folderById[state.filter.folder];
+  if (current && current.path) input.value = current.path;
+  body.appendChild(input);
+  body.appendChild(el('p', 'hint', 'Folders that do not exist yet are created. RAW, Live Photo and sidecar files of the same name move along. Nothing is ever overwritten.'));
+  var error = el('p', 'error');
+  body.appendChild(error);
+  var go = function (btn) {
+    var folder = input.value.trim();
+    if (!folder) { error.textContent = 'Choose a folder.'; return false; }
+    btn.disabled = true;
+    post('/api/move', { ids: ids, folder: folder }).then(function (r) {
+      closeModal();
+      if (done) done();
+      toast(plural(r.files.length, 'file', 'files') + ' moved to ' + r.folder);
+      report('Some photos stayed where they were', r.skipped);
+      changed();
+    }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
+    return false;
+  };
+  var buttons = openModal('Move', body, [{ label: 'Cancel', cls: 'quiet' }, { label: 'Move', onclick: go }]);
+  input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go(buttons[1]); });
+}
+
+function trashDialog(ids, done) {
+  openModal(
+    'Move to trash',
+    'Move ' + plural(ids.length, 'photo', 'photos') + ' (with their RAW, Live Photo and sidecar files) to the shoebox trash? You can put them back from there until the trash is emptied.',
+    [{ label: 'Cancel', cls: 'quiet' }, {
+      label: 'Move to trash', cls: 'danger', onclick: function (btn) {
+        btn.disabled = true;
+        post('/api/trash', { ids: ids }).then(function (r) {
+          closeModal();
+          if (done) done();
+          toast(plural(r.files.length + r.sidecars, 'file', 'files') + ' moved to the trash');
+          report('Some photos were not moved to the trash', r.skipped);
+          changed();
+        }).catch(function (e) { closeModal(); failed(e); });
+        return false;
+      },
+    }]
+  );
+}
+
+function renameFolder(folder) {
+  var body = el('div');
+  var input = el('input');
+  input.type = 'text';
+  input.className = 'wide';
+  input.value = folder.path;
+  body.appendChild(input);
+  body.appendChild(el('p', 'hint', 'Change the name, or the whole path to move the folder. Event folders are named “YYYY-MM Name”.'));
+  var error = el('p', 'error');
+  body.appendChild(error);
+  var go = function (btn) {
+    btn.disabled = true;
+    post('/api/folders/' + folder.id + '/rename', { path: input.value }).then(function (r) {
+      closeModal();
+      toast('Now ' + r.path);
+      changed();
+    }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
+    return false;
+  };
+  var buttons = openModal('Rename folder', body, [{ label: 'Cancel', cls: 'quiet' }, { label: 'Rename', onclick: go }]);
+  input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go(buttons[1]); });
+}
+
+// ------------------------------------------------------------------ import
+
+var importState = { files: [], busy: false, touched: false };
+
+function importDialog(files) {
+  if (importState.busy) return;
+  importState.files = [];
+  importState.touched = false;
+  var now = new Date();
+  var body = el('div');
+  var fields = el('div', 'fields');
+  var year = el('input');
+  year.type = 'number';
+  year.min = 1800;
+  year.max = 2200;
+  year.value = now.getFullYear();
+  year.style.width = '6em';
+  var month = el('select');
+  for (var m = 1; m <= 12; m++) {
+    var o = el('option', '', new Date(2000, m - 1, 1).toLocaleDateString(undefined, { month: 'long' }));
+    o.value = m;
+    month.appendChild(o);
+  }
+  month.value = now.getMonth() + 1;
+  var name = el('input');
+  name.type = 'text';
+  name.className = 'grow';
+  name.placeholder = 'Event, e.g. Ausflug';
+  fields.appendChild(year);
+  fields.appendChild(month);
+  fields.appendChild(name);
+  body.appendChild(fields);
+  var target = el('p', 'hint', '');
+  body.appendChild(target);
+
+  var picker = el('label', 'picker', 'Choose photos and videos, or drop them here');
+  var input = el('input');
+  input.type = 'file';
+  input.multiple = true;
+  input.accept = 'image/*,video/*,.heic,.heif,.dng,.cr2,.cr3,.nef,.arw,.orf,.rw2,.raf';
+  picker.appendChild(input);
+  body.appendChild(picker);
+  var list = el('ul', 'filelist');
+  body.appendChild(list);
+  var error = el('p', 'error');
+  body.appendChild(error);
+
+  var describe = function () {
+    var y = parseInt(year.value, 10), mo = parseInt(month.value, 10);
+    var folder = (y || '????') + '-' + (mo < 10 ? '0' : '') + mo + ' ' + (name.value.trim() || '…');
+    target.textContent = 'Into the folder “' + folder + '”. Files keep their dates; files already in the library are skipped.';
+  };
+  [year, month, name].forEach(function (f) {
+    f.addEventListener('input', function () { if (f !== name) importState.touched = true; describe(); });
+  });
+  describe();
+
+  var addFiles = function (fileList) {
+    Array.prototype.forEach.call(fileList, function (f) {
+      var li = el('li');
+      li.appendChild(el('span', 'fname', f.name));
+      var st = el('span', 'fstate', formatBytes(f.size));
+      li.appendChild(st);
+      list.appendChild(li);
+      importState.files.push({ file: f, state: st, done: false });
+    });
+    // The month of the oldest file, unless chosen by hand.
+    if (!importState.touched && importState.files.length) {
+      var oldest = Math.min.apply(null, importState.files.map(function (x) { return x.file.lastModified || Date.now(); }));
+      var d = new Date(oldest);
+      year.value = d.getFullYear();
+      month.value = d.getMonth() + 1;
+      describe();
+    }
+    buttons[1].textContent = 'Import ' + plural(importState.files.length, 'file', 'files');
+  };
+  input.addEventListener('change', function () { addFiles(input.files); input.value = ''; });
+  importState.add = addFiles;
+
+  var go = function (btn) {
+    error.textContent = '';
+    var pending = importState.files.filter(function (x) { return !x.done; });
+    if (!pending.length) { error.textContent = 'Choose some files first.'; return false; }
+    post('/api/import/folder', { year: parseInt(year.value, 10), month: parseInt(month.value, 10), name: name.value })
+      .then(function (r) { runImport(r.folder, pending, btn, buttons[0]); })
+      .catch(function (e) { error.textContent = e.message; });
+    return false;
+  };
+  var buttons = openModal('Import photos', body, [
+    { label: 'Close', cls: 'quiet', onclick: function () { return !importState.busy; } },
+    { label: 'Import', onclick: go },
+  ]);
+  closeModal.onclose = function () { importState.add = null; };
+  if (files && files.length) addFiles(files);
+  name.focus();
+}
+
+// One file after the other, as the raw request body.
+function runImport(folder, pending, btn, closeBtn) {
+  importState.busy = true;
+  btn.disabled = closeBtn.disabled = true;
+  var counts = { imported: 0, duplicate: 0, failed: 0 };
+  var next = function (k) {
+    if (k >= pending.length) {
+      importState.busy = false;
+      closeBtn.disabled = false;
+      btn.textContent = 'Done';
+      btn.disabled = false;
+      btn.onclick = function () { closeModal(); };
+      toast(plural(counts.imported, 'file', 'files') + ' imported' +
+        (counts.duplicate ? ', ' + counts.duplicate + ' already there' : '') +
+        (counts.failed ? ', ' + counts.failed + ' failed' : ''));
+      loadInfo();
+      // Show the folder the files went to.
+      loadFolders().then(function () {
+        var f = state.folders.filter(function (x) { return x.path === folder; })[0];
+        if (f && counts.imported) setFilter({ folder: f.id, tag: null, q: '' }); else reloadAll();
+      });
+      return;
+    }
+    var item = pending[k];
+    var xhr = new XMLHttpRequest();
+    var url = '/api/import' + query({ folder: folder, name: item.file.name, modified: item.file.lastModified || null });
+    xhr.open('POST', url);
+    xhr.setRequestHeader('X-Shoebox', '1');
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.upload.onprogress = function (ev) {
+      if (ev.lengthComputable) item.state.textContent = Math.floor(100 * ev.loaded / ev.total) + '%';
+    };
+    var finish = function (ok, text) {
+      item.state.textContent = text;
+      item.state.className = 'fstate ' + (ok ? 'ok' : 'bad');
+      next(k + 1);
+    };
+    xhr.onload = function () {
+      var body = {};
+      try { body = JSON.parse(xhr.responseText); } catch (e) { /* not JSON */ }
+      if (xhr.status === 200 && body.status === 'imported') {
+        item.done = true;
+        counts.imported++;
+        finish(true, body.path.split('/').pop() === item.file.name ? 'imported' : 'imported as ' + body.path.split('/').pop());
+      } else if (xhr.status === 200) {
+        item.done = true;
+        counts.duplicate++;
+        item.state.title = body.duplicate_of;
+        finish(true, 'already in ' + body.duplicate_of.split('/').slice(0, -1).join('/'));
+      } else {
+        counts.failed++;
+        finish(false, body.error || 'HTTP ' + xhr.status);
+      }
+    };
+    xhr.onerror = function () { counts.failed++; finish(false, 'connection lost'); };
+    xhr.send(item.file);
+  };
+  next(0);
+}
+
+$('import').onclick = function () { importDialog(); };
+
+// Drag and drop anywhere opens the import dialog (or adds to it).
+(function () {
+  var depth = 0;
+  var hasFiles = function (ev) { return ev.dataTransfer && Array.prototype.indexOf.call(ev.dataTransfer.types || [], 'Files') >= 0; };
+  window.addEventListener('dragenter', function (ev) { if (!hasFiles(ev)) return; depth++; $('dropzone').hidden = false; });
+  window.addEventListener('dragleave', function () { if (--depth <= 0) { depth = 0; $('dropzone').hidden = true; } });
+  window.addEventListener('dragover', function (ev) { if (hasFiles(ev)) ev.preventDefault(); });
+  window.addEventListener('drop', function (ev) {
+    if (!hasFiles(ev)) return;
+    ev.preventDefault();
+    depth = 0;
+    $('dropzone').hidden = true;
+    if (importState.add && !$('modal').hidden) importState.add(ev.dataTransfer.files);
+    else importDialog(ev.dataTransfer.files);
+  });
+})();
+
+// ------------------------------------------------------------------ duplicates page
+
+var dupState = { groups: [], shown: 0 };
+var PAGE_GROUPS = 30;
+
+function loadDuplicates() {
+  var page = $('page');
+  page.textContent = '';
+  page.appendChild(el('h2', '', 'Duplicates'));
+  page.appendChild(el('p', 'sub', 'Looking…'));
+  return api('/api/duplicates').then(function (r) {
+    if (state.filter.view !== 'duplicates') return;
+    dupState.groups = r.groups;
+    dupState.shown = 0;
+    renderDuplicates();
+  }).catch(failed);
+}
+
+function renderDuplicates() {
+  var page = $('page');
+  page.textContent = '';
+  page.appendChild(el('h2', '', 'Duplicates'));
+  var exact = dupState.groups.filter(function (g) { return g.exact; }).length;
+  var near = dupState.groups.length - exact;
+  page.appendChild(el('p', 'sub', dupState.groups.length
+    ? plural(exact, 'group', 'groups') + ' of identical copies, ' + plural(near, 'group', 'groups') + ' of similar photos. Decide per group; decided groups are not shown again.'
+    : 'No duplicates. Photos added since the last scan are compared once they have thumbnails.'));
+  var box = el('div');
+  page.appendChild(box);
+  var more = el('button', 'btn quiet', 'Show more');
+  more.onclick = function () { showGroups(box, more); };
+  page.appendChild(more);
+  showGroups(box, more);
+}
+
+function showGroups(box, more) {
+  var end = Math.min(dupState.groups.length, dupState.shown + PAGE_GROUPS);
+  for (var k = dupState.shown; k < end; k++) box.appendChild(groupNode(dupState.groups[k]));
+  dupState.shown = end;
+  more.hidden = end >= dupState.groups.length;
+}
+
+function groupNode(g) {
+  var box = el('div', 'group');
+  var head = el('div', 'group-head');
+  head.appendChild(el('span', 'label', g.exact ? 'Identical copies' : 'Similar photos'));
+  var ids = g.files.map(function (f) { return f.id; });
+  var decide = function (decision, label) {
+    var b = el('button', 'btn quiet', label);
+    b.onclick = function () {
+      b.disabled = true;
+      post('/api/duplicates/decide', { ids: ids, decision: decision }).then(function () {
+        box.remove();
+        toast(decision === 'linked' ? 'Kept as versions of one photo' : 'Kept as different photos');
+      }).catch(function (e) { b.disabled = false; failed(e); });
+    };
+    head.appendChild(b);
+  };
+  if (!g.exact) decide('distinct', 'Different photos');
+  decide('linked', g.exact ? 'Keep all copies' : 'Versions of one photo');
+  box.appendChild(head);
+
+  var cards = el('div', 'cards');
+  g.files.forEach(function (f) {
+    var card = el('div', 'card');
+    var a = el('a', 'thumb');
+    a.href = '/api/files/' + f.id + (f.kind === 'video' ? '/original' : '/view') + '?v=' + f.version;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    var img = el('img');
+    img.alt = '';
+    img.loading = 'lazy';
+    img.src = '/api/files/' + f.id + '/thumb?v=' + f.version;
+    a.appendChild(img);
+    card.appendChild(a);
+    var name = el('div', 'name', f.name + ' ');
+    if (f.same) {
+      var same = el('span', 'same', String.fromCharCode(64 + f.same));
+      same.title = 'Files with the same letter are identical';
+      name.appendChild(same);
+    }
+    card.appendChild(name);
+    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : '(top level)';
+    var fb = el('button', 'folder', folder);
+    fb.onclick = function () { setFilter({ folder: f.folder_id, tag: null, q: '' }); };
+    card.appendChild(fb);
+    var meta = [];
+    if (f.taken) meta.push(formatDate({ taken: f.taken, date_source: 'file' }));
+    if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
+    meta.push(formatBytes(f.size));
+    card.appendChild(el('div', 'meta', meta.join(' · ')));
+    var del = el('button', 'btn danger', 'Move to trash');
+    del.onclick = function () {
+      trashDialog([f.id], function () {
+        card.remove();
+        if (cards.children.length < 2) box.remove();
+      });
+    };
+    card.appendChild(del);
+    cards.appendChild(card);
+  });
+  box.appendChild(cards);
+  return box;
+}
+
+// ------------------------------------------------------------------ trash page
+
+function loadTrash() {
+  return api('/api/trash').then(function (items) {
+    if (state.filter.view !== 'trash') return;
+    var page = $('page');
+    page.textContent = '';
+    page.appendChild(el('h2', '', 'Trash'));
+    var batches = [], byBatch = {};
+    items.forEach(function (it) {
+      if (!byBatch[it.batch]) { byBatch[it.batch] = []; batches.push(it.batch); }
+      byBatch[it.batch].push(it);
+    });
+    page.appendChild(el('p', 'sub', batches.length
+      ? plural(batches.length, 'photo', 'photos') + ' in .shoebox/trash on the drive. Put them back, or delete them for good.'
+      : 'The trash is empty.'));
+    if (batches.length) {
+      var bar = el('div', 'toolbar');
+      var empty = el('button', 'btn danger', 'Empty trash');
+      empty.onclick = function () { emptyTrash(null, batches.length); };
+      bar.appendChild(empty);
+      page.appendChild(bar);
+    }
+    var cards = el('div', 'cards');
+    cards.style.flexWrap = 'wrap';
+    batches.forEach(function (b) {
+      var files = byBatch[b];
+      var first = files.filter(function (f) { return f.kind; })[0] || files[0];
+      var card = el('div', 'card');
+      var thumb = el('div', 'thumb');
+      var img = el('img');
+      img.alt = '';
+      img.src = '/api/trash/' + first.id + '/thumb';
+      img.onerror = function () { this.remove(); };
+      thumb.appendChild(img);
+      card.appendChild(thumb);
+      card.appendChild(el('div', 'name', first.path.split('/').pop()));
+      var folder = first.path.indexOf('/') >= 0 ? first.path.slice(0, first.path.lastIndexOf('/')) : '(top level)';
+      card.appendChild(el('div', 'meta', folder));
+      var extra = files.length > 1 ? ' · with ' + files.slice(1).map(function (f) { return f.path.split('/').pop(); }).join(', ') : '';
+      card.appendChild(el('div', 'meta', 'deleted ' + new Date(first.deleted_at * 1000).toLocaleDateString() + extra));
+      var restore = el('button', 'btn quiet', 'Put back');
+      restore.onclick = function () {
+        restore.disabled = true;
+        post('/api/trash/' + b + '/restore').then(function () { toast('Put back ' + first.path); changed(); })
+          .catch(function (e) { restore.disabled = false; failed(e); });
+      };
+      card.appendChild(restore);
+      var del = el('button', 'btn danger', 'Delete for good');
+      del.onclick = function () { emptyTrash(b, 1); };
+      card.appendChild(del);
+      cards.appendChild(card);
+    });
+    page.appendChild(cards);
+  }).catch(failed);
+}
+
+function emptyTrash(batch, n) {
+  openModal('Delete for good', 'Delete ' + plural(n, 'photo', 'photos') + ' (with their companion files) from the drive? This cannot be undone.', [
+    { label: 'Cancel', cls: 'quiet' },
+    { label: 'Delete', cls: 'danger', onclick: function () {
+      post('/api/trash/empty', { batch: batch }).then(function (r) {
+        toast(plural(r.deleted, 'file', 'files') + ' deleted');
+        changed();
+      }).catch(failed);
+    } },
+  ]);
 }
 
 // ------------------------------------------------------------------ start

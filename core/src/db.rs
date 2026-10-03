@@ -15,7 +15,7 @@ pub const FILE: &str = "library.db";
 const BACKUP_SUFFIX: &str = ".bak";
 
 /// Bump when the schema changes and add a step to `migrate`.
-const SCHEMA_VERSION: i32 = 1;
+const SCHEMA_VERSION: i32 = 2;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -85,6 +85,33 @@ CREATE TABLE jobs (
 );
 ";
 
+/// Phase 3: decisions about duplicate pairs, and the trash.
+const SCHEMA_V2: &str = "
+CREATE TABLE dup_decisions (
+    a          INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,  -- a < b
+    b          INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    decision   TEXT NOT NULL,       -- distinct (different photos), linked (versions of one photo)
+    decided_at INTEGER NOT NULL,
+    PRIMARY KEY (a, b)
+) WITHOUT ROWID;
+CREATE INDEX dup_decisions_b ON dup_decisions(b);
+
+CREATE TABLE trash (
+    id         INTEGER PRIMARY KEY,
+    batch      INTEGER NOT NULL,     -- one delete: a photo with its RAW, Live Photo and sidecar files
+    path       TEXT NOT NULL,        -- where it was, relative to the root, as found on disk
+    path_nfc   TEXT NOT NULL,
+    stored     TEXT NOT NULL,        -- where it is now, relative to .shoebox/trash
+    kind       TEXT,                 -- NULL for sidecar files (XMP, AAE), which are not indexed
+    size       INTEGER NOT NULL,
+    mtime_ns   INTEGER NOT NULL,
+    quick_hash TEXT,
+    full_hash  TEXT,
+    deleted_at INTEGER NOT NULL      -- Unix seconds
+);
+CREATE INDEX trash_batch ON trash(batch);
+";
+
 /// Default database location for a library root.
 pub fn default_path(root: &Path) -> PathBuf {
     root.join(DIR).join(FILE)
@@ -126,6 +153,12 @@ fn migrate(conn: &Connection) -> Result<()> {
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V1)?;
         tx.pragma_update(None, "user_version", 1)?;
+        tx.commit()?;
+    }
+    if version < 2 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V2)?;
+        tx.pragma_update(None, "user_version", 2)?;
         tx.commit()?;
     }
     Ok(())

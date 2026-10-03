@@ -1229,6 +1229,7 @@ dependencies = [
  "chrono",
  "clap",
  "getrandom",
+ "http-body-util",
  "image",
  "jpeg-decoder",
  "libc",

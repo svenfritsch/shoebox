@@ -73,6 +73,35 @@ pub struct Stats {
     pub thumbs: thumbs::Stats,
     /// Files that could not be indexed this time, with the reason.
     pub skipped: Vec<String>,
+    /// The `scan` job that brought the index in line.
+    #[serde(skip)]
+    pub job_id: i64,
+}
+
+/// Steps 1–4: walk the library and bring the index in line with it, as one
+/// `scan` job. Also used by `shoebox serve` to follow files that were moved
+/// outside shoebox (self-healing paths); `conn` may then be a shared one.
+pub fn index_library(conn: &Connection, root: &Path) -> Result<Stats> {
+    let mut stats = Stats::default();
+    let walked = walk(root, &mut stats);
+    stats.files = walked.files.len() as u64;
+    stats.folders = walked.folders.len() as u64;
+    println!("Found {} media files in {} folders ({} system entries skipped).", stats.files, stats.folders, stats.ignored);
+
+    let job = Job::start(conn, "scan")?;
+    stats.job_id = job.id;
+    match index(conn, root, &walked, job.id, &mut stats) {
+        Ok(()) => {
+            job.progress(conn, stats.files, Some(stats.files))?;
+            job.finish(conn, "done", &stats)?;
+            Ok(stats)
+        }
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            let _ = job.finish(conn, "failed", &format!("{e:#}"));
+            Err(e)
+        }
+    }
 }
 
 pub fn run(opts: &Options) -> Result<Stats> {
@@ -85,26 +114,9 @@ pub fn run(opts: &Options) -> Result<Stats> {
         bail!("the database must be outside the library or inside its {} folder", db::DIR);
     }
     let conn = db::open(&db_path)?;
-    let mut stats = Stats::default();
 
     println!("Scanning {}", root.display());
-    let walked = walk(&root, &mut stats);
-    stats.files = walked.files.len() as u64;
-    stats.folders = walked.folders.len() as u64;
-    println!("Found {} media files in {} folders ({} system entries skipped).", stats.files, stats.folders, stats.ignored);
-
-    let job = Job::start(&conn, "scan")?;
-    match index(&conn, &root, &walked, job.id, &mut stats) {
-        Ok(()) => {
-            job.progress(&conn, stats.files, Some(stats.files))?;
-            job.finish(&conn, "done", &stats)?
-        }
-        Err(e) => {
-            let _ = conn.execute_batch("ROLLBACK");
-            let _ = job.finish(&conn, "failed", &format!("{e:#}"));
-            return Err(e);
-        }
-    }
+    let mut stats = index_library(&conn, &root)?;
     println!(
         "Index: {} added, {} changed, {} moved, {} unchanged ({} with time-zone shift), {} missing.",
         stats.added,
@@ -115,7 +127,7 @@ pub fn run(opts: &Options) -> Result<Stats> {
         stats.missing
     );
     if opts.forget_missing {
-        stats.forgotten = forget_missing(&conn, job.id)?;
+        stats.forgotten = forget_missing(&conn, stats.job_id)?;
         println!("Forgot {} missing files.", stats.forgotten);
     }
     db::backup(&conn, &db_path)?;
@@ -154,10 +166,10 @@ fn absolute(p: &Path) -> Result<PathBuf> {
     }
 }
 
-struct Found {
-    rel: RelPath,
-    kind: Kind,
-    stamp: Stamp,
+pub(crate) struct Found {
+    pub(crate) rel: RelPath,
+    pub(crate) kind: Kind,
+    pub(crate) stamp: Stamp,
 }
 
 struct Walked {
@@ -377,7 +389,10 @@ fn index(conn: &Connection, root: &Path, walked: &Walked, job_id: i64, stats: &m
                 Err(e) => stats.skipped.push(format!("{}: {e}", f.rel.raw)),
             }
         }
-        batch.tick()?;
+        if batch.tick()? {
+            // Shows that the scan is alive (`shoebox serve` waits for it).
+            conn.execute("UPDATE jobs SET done = ?2, updated_at = ?3 WHERE id = ?1", params![job_id, i as i64, db::now()])?;
+        }
     }
 
     // Records whose file is gone: keep them (a later scan may find the file
@@ -425,13 +440,13 @@ fn ns(v: i128) -> i64 {
     v.clamp(i64::MIN as i128, i64::MAX as i128) as i64
 }
 
-struct FileInfo {
+pub(crate) struct FileInfo {
     quick_hash: String,
     meta: media::Metadata,
     meta_error: Option<String>,
 }
 
-fn read_file(parser: &mut MediaParser, path: &Path, f: &Found, quick: Option<String>) -> Result<FileInfo, String> {
+pub(crate) fn read_file(parser: &mut MediaParser, path: &Path, f: &Found, quick: Option<String>) -> Result<FileInfo, String> {
     let quick_hash = match quick {
         Some(q) => q,
         None => fingerprint::quick_hash(path).map_err(|e| e.to_string())?,
@@ -447,7 +462,7 @@ fn read_file(parser: &mut MediaParser, path: &Path, f: &Found, quick: Option<Str
     Ok(FileInfo { quick_hash, meta, meta_error })
 }
 
-fn insert_file(conn: &Connection, f: &Found, folder_id: i64, info: &FileInfo) -> Result<i64> {
+pub(crate) fn insert_file(conn: &Connection, f: &Found, folder_id: i64, info: &FileInfo) -> Result<i64> {
     let m = &info.meta;
     conn.execute(
         "INSERT INTO files (folder_id, path, path_nfc, name, kind, size, mtime_ns, created_ns, quick_hash,
@@ -511,7 +526,7 @@ fn update_stamp(conn: &Connection, id: i64, mtime: i64, created: Option<i64>) ->
 
 /// Insert or refresh every folder (parents come first in walk order) and
 /// return their ids by NFC path.
-fn upsert_folders(conn: &Connection, folders: &[RelPath], job_id: i64) -> Result<HashMap<String, i64>> {
+pub(crate) fn upsert_folders(conn: &Connection, folders: &[RelPath], job_id: i64) -> Result<HashMap<String, i64>> {
     let mut ids: HashMap<String, i64> = HashMap::new();
     let mut stmt = conn.prepare(
         "INSERT INTO folders (parent_id, path, path_nfc, name, event_year, event_month, event_name, last_seen)
@@ -541,7 +556,7 @@ fn upsert_folders(conn: &Connection, folders: &[RelPath], job_id: i64) -> Result
     Ok(ids)
 }
 
-fn set_folder_tags(conn: &Connection, file_id: i64, rel: &RelPath) -> Result<()> {
+pub(crate) fn set_folder_tags(conn: &Connection, file_id: i64, rel: &RelPath) -> Result<()> {
     conn.execute("DELETE FROM file_tags WHERE file_id = ?1 AND source = 'folder'", [file_id])?;
     for tag in library::tags_for(rel) {
         let tag_id = db::tag_id(conn, tag)?;
@@ -563,7 +578,7 @@ fn forget_missing(conn: &Connection, job_id: i64) -> Result<u64> {
 
 /// Drop folders that are gone and hold no records (deepest first), and
 /// tags nothing refers to.
-fn prune(conn: &Connection, job_id: i64) -> Result<()> {
+pub(crate) fn prune(conn: &Connection, job_id: i64) -> Result<()> {
     loop {
         let n = conn.execute(
             "DELETE FROM folders WHERE last_seen != ?1
