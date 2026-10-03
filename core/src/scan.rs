@@ -7,7 +7,8 @@
 //!    an exFAT time-zone shift is told apart from a real change by quick
 //!    hash; new and changed files get quick hash and metadata
 //! 4. records whose file is gone are marked missing (kept for later moves)
-//! 5. full hashes for every file that lacks one (resumable: progress is
+//! 5. thumbnails and perceptual hashes for files that lack them (`thumbs.rs`)
+//! 6. full hashes for every file that lacks one (resumable: progress is
 //!    committed as it goes, so an interrupted run continues where it stopped)
 //!
 //! Originals are only opened for reading. Each file's stamp is taken before
@@ -28,6 +29,7 @@ use crate::db::{self, Job};
 use crate::fingerprint::{self, Stamp};
 use crate::library::{self, RelPath};
 use crate::media;
+use crate::thumbs;
 
 /// A stored mtime may differ from the file's by a whole number of quarter
 /// hours (up to 14 h) when an exFAT drive was written in another time zone.
@@ -45,6 +47,8 @@ pub struct Options {
     pub db: Option<PathBuf>,
     /// Compute missing full hashes after indexing.
     pub full_hash: bool,
+    /// Make missing thumbnails (and perceptual hashes) after indexing.
+    pub thumbs: bool,
     /// Delete the records of files that are missing after this scan
     /// (deliberately deleted photos) instead of keeping them for move detection.
     pub forget_missing: bool,
@@ -66,6 +70,7 @@ pub struct Stats {
     pub full_hashed: u64,
     pub bytes_full_hashed: u64,
     pub hash_pending: u64,
+    pub thumbs: thumbs::Stats,
     /// Files that could not be indexed this time, with the reason.
     pub skipped: Vec<String>,
 }
@@ -115,6 +120,11 @@ pub fn run(opts: &Options) -> Result<Stats> {
     }
     db::backup(&conn, &db_path)?;
 
+    if opts.thumbs {
+        thumbs::attach(&conn, &db_path)?;
+        stats.thumbs = thumbs::generate(&conn, &root)?;
+        db::backup(&conn, &db_path)?;
+    }
     if opts.full_hash {
         hash_pending(&conn, &root, &mut stats)?;
         db::backup(&conn, &db_path)?;
@@ -620,17 +630,7 @@ fn hash_pending(conn: &Connection, root: &Path, stats: &mut Stats) -> Result<()>
 /// Hash a file the index says has `size` and `mtime`, failing if it differs
 /// from that before or after reading.
 pub(crate) fn hash_unchanged(path: &Path, size: u64, mtime: i64) -> Result<String, String> {
-    let matches = |s: &Stamp| s.size == size && ns(s.mtime_ns) == mtime;
-    let before = fingerprint::stamp(path).map_err(|e| e.to_string())?;
-    if !matches(&before) {
-        return Err("changed since the last scan".into());
-    }
-    let hash = fingerprint::full_hash(path).map_err(|e| e.to_string())?;
-    let after = fingerprint::stamp(path).map_err(|e| e.to_string())?;
-    if after != before {
-        return Err("changed while being read".into());
-    }
-    Ok(hash)
+    fingerprint::read_unchanged(path, size, mtime, || fingerprint::full_hash(path).map_err(|e| e.to_string()))
 }
 
 /// An open transaction that commits every few hundred writes or seconds.

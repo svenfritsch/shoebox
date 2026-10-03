@@ -78,6 +78,28 @@ pub fn full_hash(path: &Path) -> io::Result<String> {
     Ok(hasher.finalize().to_hex().to_string())
 }
 
+/// Run `read` on a file the index says has `size` and `mtime_ns`, failing
+/// if the file differs from that before, or changes while it is read. This
+/// is the per-file half of the guard: nothing derived from a file that moved
+/// under us is stored.
+pub fn read_unchanged<T>(
+    path: &Path,
+    size: u64,
+    mtime_ns: i64,
+    read: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let before = stamp(path).map_err(|e| e.to_string())?;
+    if before.size != size || before.mtime_ns != mtime_ns as i128 {
+        return Err("changed since the last scan".into());
+    }
+    let value = read()?;
+    let after = stamp(path).map_err(|e| e.to_string())?;
+    if after != before {
+        return Err("changed while being read".into());
+    }
+    Ok(value)
+}
+
 fn read_up_to(file: &mut File, buf: &mut [u8]) -> io::Result<usize> {
     let mut total = 0;
     while total < buf.len() {

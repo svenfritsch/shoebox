@@ -74,7 +74,7 @@ CREATE INDEX file_tags_tag ON file_tags(tag_id);
 
 CREATE TABLE jobs (
     id          INTEGER PRIMARY KEY,
-    kind        TEXT NOT NULL,          -- scan, hash, verify
+    kind        TEXT NOT NULL,          -- scan, thumbs, hash, verify
     state       TEXT NOT NULL,          -- running, done, failed, interrupted
     started_at  INTEGER NOT NULL,
     updated_at  INTEGER NOT NULL,
@@ -90,7 +90,21 @@ pub fn default_path(root: &Path) -> PathBuf {
     root.join(DIR).join(FILE)
 }
 
+/// Open for a command that owns the index (scan, verify): also marks jobs
+/// left `running` by a killed process as interrupted.
 pub fn open(path: &Path) -> Result<Connection> {
+    let conn = open_shared(path)?;
+    // Jobs still marked running belong to a process that did not finish.
+    conn.execute(
+        "UPDATE jobs SET state = 'interrupted', finished_at = updated_at WHERE state = 'running'",
+        [],
+    )?;
+    Ok(conn)
+}
+
+/// Open alongside other processes (the web server runs while a scan may be
+/// writing), leaving their `running` jobs alone.
+pub fn open_shared(path: &Path) -> Result<Connection> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
     }
@@ -100,11 +114,6 @@ pub fn open(path: &Path) -> Result<Connection> {
     conn.pragma_update(None, "synchronous", "FULL")?;
     conn.pragma_update(None, "foreign_keys", true)?;
     migrate(&conn)?;
-    // Jobs still marked running belong to a process that did not finish.
-    conn.execute(
-        "UPDATE jobs SET state = 'interrupted', finished_at = updated_at WHERE state = 'running'",
-        [],
-    )?;
     Ok(conn)
 }
 
@@ -145,7 +154,7 @@ pub fn now() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
 
-/// A row in `jobs`, so the UI (phase 2) can show progress and history.
+/// A row in `jobs`, so the UI can show progress and history.
 pub struct Job {
     pub id: i64,
 }
