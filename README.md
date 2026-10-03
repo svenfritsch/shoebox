@@ -7,7 +7,7 @@ photos. Originals are never modified or copied; shoebox only keeps an index
 ```
 shoebox/
   core/         Rust: scanner, database, web UI (single binary per platform)
-  recognizer/   Python: face/pet recognition worker (optional, later phases)
+  recognizer/   Python: face recognition worker (optional)
   scripts/      build and fixture scripts
   docker/       development container
   docs/         design notes and phase guides
@@ -15,9 +15,10 @@ shoebox/
 
 ## Status
 
-Phases 0 (portability probe) and 1 (`shoebox scan`, `shoebox verify`) done
-except the runs on real hardware. Plan and status: [docs/plan.md](docs/plan.md),
-usage: [docs/phase1.md](docs/phase1.md).
+Phases 0–4 (probe, scan and verify, web UI, import and organising, face
+detection with `shoebox recognize`) done except the runs on real hardware.
+Plan and status: [docs/plan.md](docs/plan.md); usage per phase in `docs/`
+([recognizer](docs/phase4.md)).
 
 ## Building
 

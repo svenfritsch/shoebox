@@ -48,8 +48,9 @@ progress. Update the status section when a phase moves.
     bin/ffmpeg                   ← optional, static, for video posters
     library.db                   ← SQLite index (+ rotating backup copy)
     thumbs.db                    ← preview BLOBs keyed by quick hash
-    recognizer/                  ← optional
-      runtime/<platform>/        ← standalone Python (copies, no symlinks: exFAT)
+    recognition.db               ← faces (boxes + embeddings) keyed by quick hash
+    recognizer/                  ← optional (recognizer/install.sh)
+      runtime/<os>-<arch>/       ← standalone Python (copies, no symlinks: exFAT)
       recognizer.py
       models/                    ← ONNX: YuNet, SFace, animal detector, CLIP
   Start shoebox.command          ← launcher scripts per OS
@@ -65,14 +66,17 @@ progress. Update the status section when a phase moves.
   embeddings out. No DB access, no knowledge of names. If it's missing, the
   app works without recognition features.
 
-Worker protocol (to be specified in `docs/protocol.md` before phase 4):
+Worker protocol ([protocol.md](protocol.md)): a hello line, then one request
+and one reply at a time. The core decodes the photo itself and sends pixels,
+so the worker never opens an original:
 
 ```
-→ {"id": 42, "path": "/Volumes/.../IMG_1.jpg", "tasks": ["faces","animals"]}
-← {"id": 42, "faces": [{"bbox": [x,y,w,h], "score": 0.97, "emb": "<base64 f32×128>"}], "animals": [...]}
+→ {"id": 42, "tasks": ["faces"], "image": "<base64 JPEG, ≤ 1600 px>"}
+← {"id": 42, "width": 1600, "height": 1200, "faces": [{"bbox": [x,y,w,h], "score": 0.97, "landmarks": [...], "emb": "<base64 f32×128>"}]}
 ```
 
-The core gets a fake worker for tests so it can be developed without Python.
+The core has a fake worker (`shoebox-fake-recognizer`) for tests, so it can be
+developed without Python.
 Later option: run the ONNX models in Rust (`tract` or `ort`) and drop Python.
 
 ### Planned crates
@@ -166,8 +170,8 @@ rot) and shows "last backup N days ago, M files new since".
 | 1 | Scanner + SQLite schema + incremental rescan + move detection + guard integration test. CLI: `shoebox scan`, `shoebox verify` | **Done except the real-hardware run** (see below) |
 | 2 | `thumbs.db` + perceptual hash, web UI (virtualised timeline grid, folder tree, tag search, video playback), LAN access with PIN. `shoebox serve` | **Done except the real-hardware run** (see below) |
 | 3 | Import dialog, move (with RAW pairs, case-only renames), duplicates UI, self-healing paths | **Done except the real-hardware run** (see below) |
-| 4 | Worker protocol + Python recognizer (faces), worker supervision in Rust | Next |
-| 5 | Face clustering in Rust + correction UI | |
+| 4 | Worker protocol + Python recognizer (faces), worker supervision in Rust | **Done except the real-hardware run** (see below) |
+| 5 | Face clustering in Rust + correction UI | Next |
 | 6 | Pets | |
 | 7 | Backup verification, launchers, packaging | |
 
@@ -262,7 +266,33 @@ Open:
       MacBook and the iPad (checklist in [phase3.md](phase3.md)).
 - [ ] Confirm the GitHub Actions run is green.
 
-## Build notes and pitfalls (learned in phases 0–3)
+### Phase 4 details
+
+Done (see [phase4.md](phase4.md)):
+- Worker protocol v1 in [protocol.md](protocol.md): hello with protocol,
+  tasks, model ids and embedding size; the core sends an upright JPEG copy
+  (≤ 1600 px, decoded under the guard), never a path.
+- `recognizer/recognizer.py`: YuNet + SFace via OpenCV, L2-normalised 128-d
+  embeddings, errors per picture without dying, stdout reserved for the
+  protocol. `fetch-models.sh` (checksummed), `install.sh` (standalone Python,
+  OpenCV and models into `.shoebox/recognizer/`), `test_recognizer.py`.
+- `core/src/recognize.rs`: finding the worker, supervision (start and reply
+  timeouts, restart after crash or hang, one retry per photo, give up after
+  5 crashes in a row), `shoebox recognize` (resumable, newest first, copies
+  once, model changes redone, `--limit`, `--retry-failed`), pruning.
+- `.shoebox/recognition.db` (attached as `recog`): `jobs`, `looked`, `faces`.
+- `serve`: face progress in `/api/info` and the status line, faces per
+  photo in `/api/files/{id}`, boxes in the viewer.
+- `shoebox-fake-recognizer` and `core/tests/recognize.rs` (guard,
+  supervision, limits, model change, pruning, API, the real worker when
+  `SHOEBOX_RECOGNIZER` is set; CI runs it on Linux).
+
+Open:
+- [ ] `install.sh` and a run on the old Intel MacBook against the exFAT
+      drive (checklist in [phase4.md](phase4.md)).
+- [ ] Confirm the GitHub Actions run is green.
+
+## Build notes and pitfalls (learned in phases 0–4)
 
 - **Spaces in paths.** The repo may live under a path with spaces.
   `build-deps.sh` uses bash arrays for CMake args; never unquote paths.
@@ -303,13 +333,26 @@ Open:
 - **Phases 3+ write originals' paths.** Use `organize.rs` helpers
   (`rename_noreplace`, `Names` for case/NFC collisions, `ensure_folder`);
   never `fs::rename` directly, never copy.
+- **Two decoder threads deliver out of order.** `recognize` (like the
+  thumbnail pass) handles pictures in the order decoding finishes, so tests
+  must not depend on the order (successes can come between crashes).
+- **The worker restarts lazily**, on the next picture after a crash; the
+  `restarts` count depends on what comes after the last crash.
+- **python-build-standalone on exFAT:** its archives contain symlinks, so
+  `install.sh` builds the runtime in a temporary folder and copies it with
+  `cp -RL`, keeping only `bin/python3`. Use the `install_only_stripped`
+  archives: the plain ones carry ~250 MB of debug info, and GNU `strip`
+  breaks their binaries.
+- **Python prints to stdout.** `recognizer.py` keeps the real stdout for the
+  protocol and points `sys.stdout` at stderr; the core skips stray lines.
 - **Git push** uses SSH via the 1Password agent with the "GitHub" key pinned
   in this repo's `core.sshCommand` (the keychain's HTTPS login belongs to a
   different account, `svenfritschpeers`).
 
 ## Next step
 
-Run the phase 0–3 hardware checklists on the old Intel MacBook and the iPad.
-Then phase 4: specify the worker protocol in `docs/protocol.md`, write the
-Python recognizer (faces: YuNet + SFace) and the worker supervision in Rust,
-with a fake worker for tests.
+Run the phase 0–4 hardware checklists on the old Intel MacBook and the iPad
+(phase 4: `recognizer/install.sh` and a `shoebox recognize` run on the
+drive). Then phase 5: cluster the stored face embeddings in Rust
+(approximate nearest neighbours, incremental), and the correction UI (name a
+cluster, merge, split, "not this person").

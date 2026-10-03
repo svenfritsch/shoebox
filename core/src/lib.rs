@@ -13,6 +13,7 @@ pub mod media;
 pub mod organize;
 pub mod phash;
 pub mod probe;
+pub mod recognize;
 pub mod scan;
 pub mod serve;
 pub mod thumbs;

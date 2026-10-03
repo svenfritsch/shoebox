@@ -1,10 +1,12 @@
 # Development image: Rust toolchain plus the C/C++ tooling needed to build
-# libheif from source, and ffmpeg + heif-enc for generating test fixtures.
+# libheif from source, ffmpeg + heif-enc for generating test fixtures, and
+# OpenCV for Python to run the recognizer.
 FROM rust:1-trixie
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         cmake ninja-build clang pkg-config \
         ffmpeg libheif-examples libheif-plugin-x265 libimage-exiftool-perl \
+        python3-opencv python3-numpy curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /work

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use shoebox::{probe, scan, serve, verify};
+use shoebox::{probe, recognize, scan, serve, verify};
 
 #[derive(Parser)]
 #[command(name = "shoebox", version, about = "Local photo library on an external drive")]
@@ -61,6 +61,25 @@ enum Command {
         #[arg(long)]
         limit: Option<usize>,
     },
+    /// Find the faces in every photo (with the optional recognizer, see
+    /// docs/protocol.md). Only reads originals; resumes where it stopped.
+    Recognize {
+        /// Library root (scanned before with `shoebox scan`).
+        root: PathBuf,
+        /// Database to use instead of `<root>/.shoebox/library.db`.
+        #[arg(long)]
+        db: Option<PathBuf>,
+        /// Recognizer program or `recognizer.py` (default: $SHOEBOX_RECOGNIZER,
+        /// else the one in `<root>/.shoebox/recognizer/`).
+        #[arg(long)]
+        recognizer: Option<PathBuf>,
+        /// Look at most at this many photos.
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Try photos again that could not be looked at before.
+        #[arg(long)]
+        retry_failed: bool,
+    },
     /// Browse the library in a web browser. Only reads originals; missing
     /// thumbnails are made as they are viewed.
     Serve {
@@ -96,6 +115,15 @@ fn main() -> ExitCode {
         Command::Verify { root, db, quick, limit } => {
             verify::run(&verify::Options { root, db, quick, limit }).map(|r| r.is_clean())
         }
+        Command::Recognize { root, db, recognizer, limit, retry_failed } => recognize::run(&recognize::Options {
+            root,
+            db,
+            recognizer,
+            limit,
+            retry_failed,
+            timeouts: recognize::Timeouts::default(),
+        })
+        .map(|_| true),
         Command::Serve { root, db, port, lan, pin } => {
             serve::run(&serve::Options { root, db, port, lan, pin }).map(|_| true)
         }
