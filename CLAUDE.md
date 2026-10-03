@@ -29,6 +29,9 @@ docker/dev.sh bash -c 'DEPS_DIR=/target/deps scripts/build.sh "" test'
 # integration tests with the full fixtures (HEIC, video, EXIF dates)
 docker/dev.sh bash -c 'scripts/make-fixtures.sh /target/fixtures && SHOEBOX_FIXTURES=/target/fixtures DEPS_DIR=/target/deps scripts/build.sh "" test'
 docker/dev.sh bash -c 'scripts/make-fixtures.sh /target/fixtures && /target/*/release/shoebox probe /target/fixtures'
+# the real recognizer too (after recognizer/fetch-models.sh; the image has OpenCV)
+docker/dev.sh bash -c 'python3 -m unittest -v recognizer/test_recognizer.py'
+docker/dev.sh bash -c 'SHOEBOX_RECOGNIZER=$PWD/recognizer/recognizer.py DEPS_DIR=/target/deps scripts/build.sh "" test'
 
 # macOS (Homebrew rustup is keg-only)
 export PATH=/opt/homebrew/opt/rustup/bin:$PATH
@@ -38,4 +41,5 @@ scripts/build.sh aarch64-apple-darwin test
 ```
 
 Fixture generation needs ffmpeg, heif-enc and exiftool (all in the Docker
-image). Pitfalls from earlier phases are listed at the end of docs/plan.md.
+image). Recognizer tests use the fake worker unless `SHOEBOX_RECOGNIZER`
+points at `recognizer/recognizer.py`. Pitfalls from earlier phases are listed at the end of docs/plan.md.

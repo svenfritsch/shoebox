@@ -51,6 +51,7 @@ use crate::duplicates;
 use crate::import;
 use crate::media;
 use crate::organize;
+use crate::recognize;
 use crate::scan;
 use crate::thumbs::{self, Source};
 
@@ -134,6 +135,7 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
     }
     let conn = db::open_shared(&db_path)?;
     thumbs::attach(&conn, &db_path)?;
+    recognize::attach(&conn, &db_path)?;
 
     let pin = match (&opts.pin, opts.lan) {
         (Some(p), _) if p.trim().len() < 4 => bail!("the PIN needs at least 4 characters"),
@@ -593,6 +595,8 @@ struct Info {
     index_version: String,
     /// Photos (with their companions) in the trash.
     trash: u64,
+    /// Face recognition (`shoebox recognize`).
+    faces: recognize::Overview,
 }
 
 async fn info(State(app): State<Arc<App>>) -> ApiResult<Json<Info>> {
@@ -648,6 +652,7 @@ async fn info(State(app): State<Arc<App>>) -> ApiResult<Json<Info>> {
             busy,
             index_version: format!("{data_version}.{generation}"),
             trash: trash as u64,
+            faces: recognize::overview(&conn)?,
         }))
     })
     .await
@@ -747,6 +752,8 @@ struct FileInfo {
     live: Option<i64>,
     /// Other versions of this photo (linked duplicates).
     linked: Vec<duplicates::Linked>,
+    /// Faces found by `shoebox recognize`; `null` if it has not looked yet.
+    faces: Option<Vec<recognize::Face>>,
 }
 
 async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Json<FileInfo>> {
@@ -761,6 +768,13 @@ async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiRe
             sort_date: item.map(|it| it.sort.clone()),
             live: item.and_then(|it| it.live),
             linked: duplicates::linked(&conn, id)?,
+            faces: match conn
+                .query_row("SELECT quick_hash FROM files WHERE id = ?1", [id], |r| r.get::<_, String>(0))
+                .optional()?
+            {
+                Some(key) => recognize::faces_of(&conn, &key)?,
+                None => None,
+            },
         }))
     })
     .await

@@ -167,6 +167,11 @@ fn migrate(conn: &Connection) -> Result<()> {
 /// Copy the database next to itself (`library.db.bak`), atomically replacing
 /// the previous copy.
 pub fn backup(conn: &Connection, db_path: &Path) -> Result<PathBuf> {
+    backup_schema(conn, "main", db_path)
+}
+
+/// `backup` for a database attached as `schema` (whose file is `db_path`).
+pub fn backup_schema(conn: &Connection, schema: &str, db_path: &Path) -> Result<PathBuf> {
     let mut name = db_path.file_name().unwrap_or_default().to_os_string();
     name.push(BACKUP_SUFFIX);
     let dst = db_path.with_file_name(&name);
@@ -175,7 +180,7 @@ pub fn backup(conn: &Connection, db_path: &Path) -> Result<PathBuf> {
     let _ = std::fs::remove_file(&tmp);
     {
         let mut out = Connection::open(&tmp)?;
-        rusqlite::backup::Backup::new(conn, &mut out)?.run_to_completion(256, std::time::Duration::ZERO, None)?;
+        rusqlite::backup::Backup::new_with_names(conn, schema, &mut out, "main")?.run_to_completion(256, std::time::Duration::ZERO, None)?;
         out.pragma_update(None, "journal_mode", "DELETE")?;
     }
     std::fs::File::open(&tmp)?.sync_all()?;
@@ -190,21 +195,29 @@ pub fn now() -> i64 {
 /// A row in `jobs`, so the UI can show progress and history.
 pub struct Job {
     pub id: i64,
+    /// `jobs`, or `<schema>.jobs` of an attached database with the same table.
+    table: &'static str,
 }
 
 impl Job {
     pub fn start(conn: &Connection, kind: &str) -> Result<Job> {
+        Job::start_in(conn, "jobs", kind)
+    }
+
+    /// A job recorded in another database's `jobs` table (`recog.jobs`), so
+    /// its progress does not count as a change to the index.
+    pub fn start_in(conn: &Connection, table: &'static str, kind: &str) -> Result<Job> {
         let t = now();
         conn.execute(
-            "INSERT INTO jobs (kind, state, started_at, updated_at) VALUES (?1, 'running', ?2, ?2)",
+            &format!("INSERT INTO {table} (kind, state, started_at, updated_at) VALUES (?1, 'running', ?2, ?2)"),
             params![kind, t],
         )?;
-        Ok(Job { id: conn.last_insert_rowid() })
+        Ok(Job { id: conn.last_insert_rowid(), table })
     }
 
     pub fn progress(&self, conn: &Connection, done: u64, total: Option<u64>) -> Result<()> {
         conn.execute(
-            "UPDATE jobs SET done = ?2, total = ?3, updated_at = ?4 WHERE id = ?1",
+            &format!("UPDATE {} SET done = ?2, total = ?3, updated_at = ?4 WHERE id = ?1", self.table),
             params![self.id, done as i64, total.map(|t| t as i64), now()],
         )?;
         Ok(())
@@ -213,7 +226,10 @@ impl Job {
     pub fn finish(&self, conn: &Connection, state: &str, detail: &impl serde::Serialize) -> Result<()> {
         let t = now();
         conn.execute(
-            "UPDATE jobs SET state = ?2, detail = ?3, updated_at = ?4, finished_at = ?4 WHERE id = ?1",
+            &format!(
+                "UPDATE {} SET state = ?2, detail = ?3, updated_at = ?4, finished_at = ?4 WHERE id = ?1",
+                self.table
+            ),
             params![self.id, state, serde_json::to_string(detail)?, t],
         )?;
         Ok(())

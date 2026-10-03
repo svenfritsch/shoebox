@@ -492,7 +492,7 @@ $('years').addEventListener('change', function () {
 
 // ------------------------------------------------------------------ lightbox
 
-var lb = { video: null, details: null };
+var lb = { video: null, details: null, showFaces: false };
 
 function openLightbox(i) {
   state.open = i;
@@ -564,6 +564,7 @@ function showItem() {
     img.alt = '';
     img.src = thumbUrl(i); // instant, sharpened when the full image arrives
     stage.appendChild(img);
+    img.onload = drawFaces;
     var full = new Image();
     full.onload = function () { if (state.open === i) img.src = full.src; };
     full.src = viewUrl(i);
@@ -578,8 +579,30 @@ function showItem() {
     lb.details = info;
     $('lb-title').textContent = formatDate(info) + ' · ' + info.name;
     if (!$('lb-panel').hidden) renderPanel();
+    drawFaces();
   }).catch(function () {});
 }
+
+// Boxes around the faces `shoebox recognize` found, while the info panel is
+// open and "Show" is on.
+function drawFaces() {
+  var stage = $('stage');
+  stage.querySelectorAll('.face-box').forEach(function (b) { b.remove(); });
+  var info = lb.details, img = stage.querySelector('img');
+  if (!lb.showFaces || $('lb-panel').hidden || !info || !info.faces || !img || img.hidden) return;
+  if (info.id !== state.data.ids[state.open]) return;
+  var r = img.getBoundingClientRect(), s = stage.getBoundingClientRect();
+  info.faces.forEach(function (f) {
+    var b = el('div', 'face-box');
+    b.style.left = (r.left - s.left + f.x * r.width) + 'px';
+    b.style.top = (r.top - s.top + f.y * r.height) + 'px';
+    b.style.width = (f.w * r.width) + 'px';
+    b.style.height = (f.h * r.height) + 'px';
+    b.title = 'score ' + f.score.toFixed(2);
+    stage.appendChild(b);
+  });
+}
+window.addEventListener('resize', drawFaces);
 
 function viewUrl(i) {
   var d = state.data;
@@ -644,7 +667,17 @@ function renderPanel() {
     info.linked.forEach(function (l) { versions.appendChild(el('div', '', l.path + (l.missing ? ' (missing)' : ''))); });
     row('Versions', versions);
   }
+  if (info.faces) {
+    var faces = el('div', '', info.faces.length ? info.faces.length + (info.faces.length === 1 ? ' face ' : ' faces ') : 'none found');
+    if (info.faces.length) {
+      var show = el('button', '', lb.showFaces ? 'Hide' : 'Show');
+      show.onclick = function () { lb.showFaces = !lb.showFaces; renderPanel(); };
+      faces.appendChild(show);
+    }
+    row('Faces', faces);
+  }
   panel.appendChild(dl);
+  drawFaces();
 
   var actions = el('div', 'actions');
   var move = el('button', 'btn quiet', 'Move…');
@@ -663,6 +696,7 @@ $('lb-info').onclick = function () {
   var p = $('lb-panel');
   p.hidden = !p.hidden;
   if (!p.hidden) renderPanel();
+  else drawFaces();
 };
 $('lb-live').onclick = function () {
   var d = state.data, id = d.ids[state.open], video = state.live[id];
@@ -730,6 +764,9 @@ function loadInfo() {
     if (info.busy) parts.push('scan running…');
     else if (scan) parts.push('last scan ' + new Date(scan.started_at * 1000).toLocaleDateString());
     if (!info.ffmpeg && info.videos) parts.push('no ffmpeg: videos without preview');
+    var f = info.faces;
+    if (f.running) parts.push('finding faces ' + Math.floor(100 * f.done / Math.max(f.total, 1)) + '%');
+    else if (f.done && f.done < f.total) parts.push('faces: ' + (f.total - f.done).toLocaleString() + ' photos to look at');
     $('status').textContent = parts.join(' · ');
 
     // Reload when a scan changed the index (but not while it is still busy).

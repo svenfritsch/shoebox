@@ -97,6 +97,7 @@ button { cursor: pointer; }
 .lightbox { position: fixed; inset: 0; background: #000; z-index: 20; color: #eee; touch-action: pan-y pinch-zoom; }
 .stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
 .stage img, .stage video { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+.face-box { position: absolute; border: 2px solid #ffd60a; border-radius: 4px; box-shadow: 0 0 0 1px rgba(0,0,0,.5); pointer-events: none; }
 .lb-bar {
   position: absolute; inset: 0 0 auto 0; display: flex; align-items: center; gap: 8px;
   padding: 8px 12px; padding-top: max(8px, env(safe-area-inset-top));

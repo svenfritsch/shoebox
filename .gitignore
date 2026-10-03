@@ -1,3 +1,5 @@
 /core/target/
 shoebox-probe-report.json
 /dist/
+__pycache__/
+/recognizer/models/

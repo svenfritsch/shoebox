@@ -89,8 +89,22 @@ jobs:
       - name: Fixtures
         run: scripts/make-fixtures.sh "$RUNNER_TEMP/fixtures"
 
+      # The real recognizer (OpenCV, models) for its own tests and for the
+      # Rust test that runs it under the guard; a photo of a face from the
+      # OpenCV samples checks detection and embeddings.
+      - name: Recognizer
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet opencv-python-headless numpy
+          recognizer/fetch-models.sh
+          curl -fsSL -o "$RUNNER_TEMP/face.jpg" https://raw.githubusercontent.com/opencv/opencv/4.x/samples/data/messi5.jpg
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+          SHOEBOX_TEST_FACE="$RUNNER_TEMP/face.jpg" "$RUNNER_TEMP/venv/bin/python" -m unittest -v recognizer/test_recognizer.py
+
       - name: Tests
-        run: SHOEBOX_FIXTURES="$RUNNER_TEMP/fixtures" scripts/build.sh x86_64-unknown-linux-gnu test
+        run: |
+          SHOEBOX_FIXTURES="$RUNNER_TEMP/fixtures" SHOEBOX_RECOGNIZER="$PWD/recognizer/recognizer.py" \
+            SHOEBOX_TEST_FACE="$RUNNER_TEMP/face.jpg" scripts/build.sh x86_64-unknown-linux-gnu test
 
       - name: Probe, scan and verify fixtures
         run: |
@@ -100,6 +114,8 @@ jobs:
           cp -R "$RUNNER_TEMP/fixtures" "$RUNNER_TEMP/lib"
           dist/shoebox-linux scan "$RUNNER_TEMP/lib"
           dist/shoebox-linux scan "$RUNNER_TEMP/lib"
+          dist/shoebox-linux verify "$RUNNER_TEMP/lib"
+          dist/shoebox-linux recognize "$RUNNER_TEMP/lib" --recognizer recognizer/recognizer.py
           dist/shoebox-linux verify "$RUNNER_TEMP/lib"
 
       - uses: actions/upload-artifact@v4

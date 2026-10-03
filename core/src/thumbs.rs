@@ -129,7 +129,7 @@ pub fn render_view(lib_heif: &LibHeif, src: &Source) -> Result<Vec<u8>, String> 
 }
 
 /// Fit into `edge`×`edge`; smaller images stay as they are.
-fn shrink(img: DynamicImage, edge: u32) -> DynamicImage {
+pub(crate) fn shrink(img: DynamicImage, edge: u32) -> DynamicImage {
     if img.width().max(img.height()) <= edge { img } else { img.thumbnail(edge, edge) }
 }
 
