@@ -223,7 +223,10 @@ Done (see [phase2.md](phase2.md)):
 - `.shoebox/thumbs.db` (BLOBs keyed by quick hash, 384 px JPEG), made by a
   multi-threaded pass in `shoebox scan` (`--no-thumbs` skips it) and on
   demand by the server. Scaled JPEG decoding, EXIF orientation, video
-  posters via ffmpeg piped to stdout.
+  posters via ffmpeg piped to stdout. Without ffmpeg (or when it fails) the
+  web UI grabs a video frame itself (canvas, session only, never stored).
+- Keyboard: arrow keys move the focus in the grid; closing the viewer
+  focuses the cell of the last item seen.
 - Perceptual hash (64-bit DCT) from the same decode in `files.phash`.
 - `shoebox serve` (axum, UI embedded with rust-embed): virtualised timeline
   grid grouped by month, folder tree, search over paths and tags, viewer
