@@ -320,7 +320,12 @@ pub fn generate(conn: &Connection, root: &Path) -> Result<Stats> {
     }
 
     stats.phash_from_existing = fill_phash(conn)?;
-    stats.pruned = conn.execute("DELETE FROM thumbs.thumbs WHERE key NOT IN (SELECT quick_hash FROM files)", [])? as u64;
+    // Files in the trash keep theirs until the trash is emptied.
+    stats.pruned = conn.execute(
+        "DELETE FROM thumbs.thumbs WHERE key NOT IN (SELECT quick_hash FROM files)
+            AND key NOT IN (SELECT quick_hash FROM trash WHERE quick_hash IS NOT NULL)",
+        [],
+    )? as u64;
     Ok(stats)
 }
 

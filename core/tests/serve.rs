@@ -4,99 +4,8 @@
 mod common;
 
 use std::fs;
-use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpStream};
 
 use common::*;
-use serde_json::Value;
-use shoebox::serve;
-
-struct Response {
-    status: u16,
-    headers: Vec<(String, String)>,
-    body: Vec<u8>,
-}
-
-impl Response {
-    fn header(&self, name: &str) -> Option<&str> {
-        self.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v.as_str())
-    }
-
-    fn json(&self) -> Value {
-        serde_json::from_slice(&self.body).unwrap_or_else(|e| panic!("{e}: {}", String::from_utf8_lossy(&self.body)))
-    }
-}
-
-/// A bare HTTP/1.1 client, enough for these tests.
-fn request(addr: SocketAddr, method: &str, path: &str, headers: &[(&str, &str)], body: &[u8]) -> Response {
-    let mut s = TcpStream::connect(addr).unwrap();
-    let mut head = format!("{method} {path} HTTP/1.1\r\nConnection: close\r\nContent-Length: {}\r\n", body.len());
-    if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("host")) {
-        head.push_str("Host: localhost\r\n");
-    }
-    for (k, v) in headers {
-        head.push_str(&format!("{k}: {v}\r\n"));
-    }
-    head.push_str("\r\n");
-    s.write_all(head.as_bytes()).unwrap();
-    s.write_all(body).unwrap();
-    let mut raw = Vec::new();
-    s.read_to_end(&mut raw).unwrap();
-
-    let split = raw.windows(4).position(|w| w == b"\r\n\r\n").expect("no header end");
-    let head = String::from_utf8_lossy(&raw[..split]).into_owned();
-    let mut lines = head.split("\r\n");
-    let status = lines.next().unwrap().split(' ').nth(1).unwrap().parse().unwrap();
-    let headers: Vec<(String, String)> = lines
-        .filter_map(|l| l.split_once(':'))
-        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
-        .collect();
-    let mut body = raw[split + 4..].to_vec();
-    if headers.iter().any(|(k, v)| k.eq_ignore_ascii_case("transfer-encoding") && v.contains("chunked")) {
-        body = dechunk(&body);
-    }
-    Response { status, headers, body }
-}
-
-fn dechunk(mut data: &[u8]) -> Vec<u8> {
-    let mut out = Vec::new();
-    loop {
-        let line_end = data.windows(2).position(|w| w == b"\r\n").unwrap();
-        let size = usize::from_str_radix(std::str::from_utf8(&data[..line_end]).unwrap().split(';').next().unwrap(), 16)
-            .unwrap();
-        if size == 0 {
-            return out;
-        }
-        out.extend_from_slice(&data[line_end + 2..line_end + 2 + size]);
-        data = &data[line_end + 2 + size + 2..];
-    }
-}
-
-fn get(addr: SocketAddr, path: &str) -> Response {
-    request(addr, "GET", path, &[], b"")
-}
-
-fn encode(s: &str) -> String {
-    s.bytes()
-        .map(|b| if b.is_ascii_alphanumeric() { (b as char).to_string() } else { format!("%{b:02X}") })
-        .collect()
-}
-
-fn start(lib: &Library, pin: Option<&str>) -> serve::Server {
-    serve::start(
-        &serve::Options { root: lib.root.clone(), db: None, port: 0, lan: false, pin: pin.map(str::to_string) },
-        false,
-    )
-    .unwrap()
-}
-
-fn ids(timeline: &Value) -> Vec<i64> {
-    timeline["ids"].as_array().unwrap().iter().map(|v| v.as_i64().unwrap()).collect()
-}
-
-fn id_of(lib: &Library, path_nfc: &str) -> i64 {
-    lib.record(path_nfc).unwrap().0
-}
 
 #[test]
 fn guard_thumbnails_and_serving_leave_originals_untouched() {
@@ -255,6 +164,8 @@ fn pin_login() {
     assert_eq!((session["authenticated"].as_bool(), session["pin_enabled"].as_bool()), (Some(false), Some(true)));
 
     assert_eq!(request(addr, "POST", "/api/login", &[evil, json], br#"{"pin":"0000"}"#).status, 401);
+    // Changes need the X-Shoebox header, which other web pages cannot send.
+    assert_eq!(bare_request(addr, "POST", "/api/login", &[evil, json], br#"{"pin":"4711"}"#).status, 403);
     let ok = request(addr, "POST", "/api/login", &[evil, json], br#"{"pin":"4711"}"#);
     assert_eq!(ok.status, 200);
     let set_cookie = ok.header("set-cookie").unwrap().to_string();

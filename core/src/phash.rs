@@ -1,4 +1,4 @@
-//! Perceptual hash for near-duplicate detection (phase 3 compares them).
+//! Perceptual hash for near-duplicate detection.
 //!
 //! The classic DCT hash: shrink to 32×32 greyscale, take the 2-D DCT, keep
 //! the 8×8 lowest frequencies and set one bit per coefficient that lies above
@@ -54,6 +54,55 @@ pub fn distance(a: u64, b: u64) -> u32 {
     (a ^ b).count_ones()
 }
 
+/// Index pairs `(i, j)`, `i < j`, of hashes at most `max` bits apart. Every
+/// pair is compared, on all cores: about a second for 100,000 distinct
+/// hashes on an older laptop.
+pub fn near_pairs(hashes: &[u64], max: u32) -> Vec<(usize, usize)> {
+    let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2).clamp(1, 16);
+    std::thread::scope(|s| {
+        let workers: Vec<_> = (0..threads)
+            .map(|t| {
+                s.spawn(move || {
+                    // Interleaved rows, so every thread gets long and short ones.
+                    let mut out = Vec::new();
+                    for i in (t..hashes.len()).step_by(threads) {
+                        near_in_row(hashes, i, max, &mut out);
+                    }
+                    out
+                })
+            })
+            .collect();
+        workers.into_iter().flat_map(|w| w.join().expect("phash worker")).collect()
+    })
+}
+
+fn near_in_row(hashes: &[u64], i: usize, max: u32, out: &mut Vec<(usize, usize)>) {
+    #[cfg(target_arch = "x86_64")]
+    if std::is_x86_feature_detected!("popcnt") {
+        // SAFETY: the CPU has POPCNT.
+        unsafe { near_in_row_popcnt(hashes, i, max, out) };
+        return;
+    }
+    near_in_row_generic(hashes, i, max, out);
+}
+
+/// The baseline x86_64 target has no POPCNT instruction; every Intel Mac does.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "popcnt")]
+unsafe fn near_in_row_popcnt(hashes: &[u64], i: usize, max: u32, out: &mut Vec<(usize, usize)>) {
+    near_in_row_generic(hashes, i, max, out);
+}
+
+#[inline(always)]
+fn near_in_row_generic(hashes: &[u64], i: usize, max: u32, out: &mut Vec<(usize, usize)>) {
+    let h = hashes[i];
+    for (k, &other) in hashes[i + 1..].iter().enumerate() {
+        if (h ^ other).count_ones() <= max {
+            out.push((i, i + 1 + k));
+        }
+    }
+}
+
 fn cos_table() -> &'static [[f32; N]; K] {
     static TABLE: OnceLock<[[f32; N]; K]> = OnceLock::new();
     TABLE.get_or_init(|| {
@@ -99,5 +148,32 @@ mod tests {
         assert!(distance(a, a_dark) <= 8, "darker: {}", distance(a, a_dark));
         assert!(distance(a, rings) > 16, "different: {}", distance(a, rings));
         assert_eq!(from_hex(&to_hex(a)), Some(a));
+    }
+
+    #[test]
+    fn near_pairs_finds_exactly_the_close_ones() {
+        let mut x = 0x9e37_79b9_7f4a_7c15u64;
+        let mut hashes: Vec<u64> = (0..3000)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                x
+            })
+            .collect();
+        hashes.push(hashes[10] ^ 0b1011); // 3 bits from #10
+        hashes.push(hashes[20] ^ 0x1ff); // 9 bits from #20
+        let mut pairs = near_pairs(&hashes, 8);
+        pairs.sort();
+        let mut expected: Vec<(usize, usize)> = Vec::new();
+        for i in 0..hashes.len() {
+            for j in i + 1..hashes.len() {
+                if distance(hashes[i], hashes[j]) <= 8 {
+                    expected.push((i, j));
+                }
+            }
+        }
+        assert_eq!(pairs, expected);
+        assert!(pairs.contains(&(10, 3000)) && !pairs.contains(&(20, 3001)));
     }
 }

@@ -18,12 +18,16 @@
     <datalist id="tag-list"></datalist>
   </div>
   <select id="years" title="Jump to year" aria-label="Jump to year"></select>
+  <button id="select" class="icon" title="Select photos" aria-label="Select photos">☑︎</button>
+  <button id="import" class="icon" title="Import photos" aria-label="Import photos">⤒</button>
 </header>
 
 <div class="layout">
   <nav id="sidebar" class="sidebar" aria-label="Folders">
     <div class="sidebar-head">
       <button id="all" class="link">All photos</button>
+      <button id="nav-dups" class="link">Duplicates</button>
+      <button id="nav-trash" class="link">Trash</button>
     </div>
     <ul id="tree" class="tree"></ul>
     <footer id="status" class="status"></footer>
@@ -33,8 +37,28 @@
     <div id="filters" class="filters" hidden></div>
     <div id="sizer" class="sizer"></div>
     <p id="empty" class="empty" hidden>Nothing here.</p>
+    <section id="page" class="page" hidden></section>
   </main>
 </div>
+
+<div id="selbar" class="selbar" hidden>
+  <span id="sel-count"></span>
+  <button id="sel-move" class="btn">Move…</button>
+  <button id="sel-trash" class="btn">Move to trash</button>
+  <button id="sel-done" class="btn quiet">Done</button>
+</div>
+
+<div id="modal" class="modal" hidden>
+  <div class="dialog" role="dialog" aria-modal="true">
+    <h2 id="modal-title"></h2>
+    <div id="modal-body"></div>
+    <div id="modal-actions" class="actions"></div>
+  </div>
+</div>
+
+<div id="dropzone" class="dropzone" hidden><p>Drop photos to import them</p></div>
+<div id="toast" class="toast" hidden></div>
+<datalist id="folder-list"></datalist>
 
 <div id="lightbox" class="lightbox" hidden>
   <div id="stage" class="stage"></div>

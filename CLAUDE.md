@@ -13,6 +13,9 @@ current status and next step. Update its status table when a phase moves.
   files; never change capture dates or created dates.
 - Any code that reads originals must be covered by the guard (snapshot size,
   mtime, created, full hash before and after; fail on any difference).
+- Originals change only through explicit user actions (move, rename, trash,
+  import) in `organize.rs`/`import.rs`: rename only, never copy, never
+  replace, and only files that still match the index.
 - Paths may contain spaces and decomposed Unicode: quote everything, compare
   NFC-normalised.
 

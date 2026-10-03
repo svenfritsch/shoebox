@@ -128,7 +128,10 @@ Any code path that reads originals is tested by snapshotting size, mtime,
 created and full hash before and after, and failing on any difference.
 `shoebox probe` does this at runtime; `core/tests/scan.rs` does it for
 `scan` and `verify`, `core/tests/serve.rs` for thumbnails and every
-endpoint of `serve`.
+endpoint of `serve`. Explicit changes (move, rename, trash, import) are
+covered by `core/tests/organize.rs`: every file keeps content, size and
+timestamps, only its path changes, nothing is replaced, and a scan and
+`verify` afterwards find the index in line with the drive.
 
 ### Duplicates
 
@@ -162,8 +165,8 @@ rot) and shows "last backup N days ago, M files new since".
 | 0 | Toolchain + portability probe (`shoebox probe`) | **Done except the real-hardware run** (see below) |
 | 1 | Scanner + SQLite schema + incremental rescan + move detection + guard integration test. CLI: `shoebox scan`, `shoebox verify` | **Done except the real-hardware run** (see below) |
 | 2 | `thumbs.db` + perceptual hash, web UI (virtualised timeline grid, folder tree, tag search, video playback), LAN access with PIN. `shoebox serve` | **Done except the real-hardware run** (see below) |
-| 3 | Import dialog, move (with RAW pairs, case-only renames), duplicates UI, self-healing paths | Next |
-| 4 | Worker protocol + Python recognizer (faces), worker supervision in Rust | |
+| 3 | Import dialog, move (with RAW pairs, case-only renames), duplicates UI, self-healing paths | **Done except the real-hardware run** (see below) |
+| 4 | Worker protocol + Python recognizer (faces), worker supervision in Rust | Next |
 | 5 | Face clustering in Rust + correction UI | |
 | 6 | Pets | |
 | 7 | Backup verification, launchers, packaging | |
@@ -232,7 +235,34 @@ Open:
       [phase2.md](phase2.md)).
 - [ ] Confirm the GitHub Actions run is green.
 
-## Build notes and pitfalls (learned in phases 0–2)
+### Phase 3 details
+
+Done (see [phase3.md](phase3.md)):
+- `core/src/organize.rs`: move photos with their companions (same name stem
+  in the folder: RAW, Live Photo video, XMP/AAE sidecars), all or nothing;
+  rename/move folders including case-only renames (via a temporary name);
+  trash in `.shoebox/trash/` with restore and empty. Only `rename`, never
+  replacing (`RENAME_NOREPLACE` / `RENAME_EXCL`), names compared NFC and
+  case-insensitively, files must match the index.
+- `core/src/import.rs`: browser upload streamed into `.shoebox/incoming/`,
+  hashed on the way, mtime from `File.lastModified`, renamed into
+  `YYYY-MM Name`, indexed with its full hash; known content is skipped,
+  taken names get ` (2)`.
+- `core/src/duplicates.rs`: exact (full hash) and near (`phash` ≤ 8 bits,
+  all pairs on all cores) groups; decisions per pair (`distinct`,
+  `linked`) in schema v2.
+- Self-healing paths: `serve` runs the scan's index step in the background
+  when a file is not where the index says.
+- UI: selection with move/trash, import dialog with drag and drop, folder
+  rename, duplicates and trash pages. Every non-GET request needs an
+  `X-Shoebox` header (CSRF protection for localhost without PIN).
+
+Open:
+- [ ] Moves, renames and imports on the exFAT drive from the old Intel
+      MacBook and the iPad (checklist in [phase3.md](phase3.md)).
+- [ ] Confirm the GitHub Actions run is green.
+
+## Build notes and pitfalls (learned in phases 0–3)
 
 - **Spaces in paths.** The repo may live under a path with spaces.
   `build-deps.sh` uses bash arrays for CMake args; never unquote paths.
@@ -268,13 +298,18 @@ Open:
   only ever shrinks.
 - **`db::open` marks running jobs interrupted**, which would break a
   running scan if the server used it; `serve` uses `db::open_shared`.
+- **`PRAGMA data_version` ignores the connection's own commits.** Caches in
+  `serve` are keyed by it plus a counter of the server's own changes.
+- **Phases 3+ write originals' paths.** Use `organize.rs` helpers
+  (`rename_noreplace`, `Names` for case/NFC collisions, `ensure_folder`);
+  never `fs::rename` directly, never copy.
 - **Git push** uses SSH via the 1Password agent with the "GitHub" key pinned
   in this repo's `core.sshCommand` (the keychain's HTTPS login belongs to a
   different account, `svenfritschpeers`).
 
 ## Next step
 
-Run the phase 0–2 hardware checklists on the old Intel MacBook and the iPad.
-Then phase 3: import dialog (upload into `YYYY-MM Name`), move with RAW and
-Live Photo pairs and case-only renames, duplicates UI (exact by full hash,
-near by `phash` distance ≤ 8), self-healing paths.
+Run the phase 0–3 hardware checklists on the old Intel MacBook and the iPad.
+Then phase 4: specify the worker protocol in `docs/protocol.md`, write the
+Python recognizer (faces: YuNet + SFace) and the worker supervision in Rust,
+with a fake worker for tests.

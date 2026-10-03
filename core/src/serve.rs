@@ -6,26 +6,37 @@
 //! they name it as `localhost` or an IP address: a web page that points its
 //! own domain at 127.0.0.1 (DNS rebinding) still has to log in.
 //!
-//! The server only reads originals: previews come from `thumbs.db` (missing
+//! Browsing only reads originals: previews come from `thumbs.db` (missing
 //! ones are rendered on first request, under the guard), and originals are
-//! streamed as they are, with range requests for video seeking. The only
-//! writes go to `.shoebox/` (thumbnails and perceptual hashes).
+//! streamed as they are, with range requests for video seeking.
+//!
+//! Originals change only through explicit actions (`organize.rs`,
+//! `import.rs`): move, rename a folder, trash/restore, import. They run one
+//! at a time, never while a scan is running, and need an `X-Shoebox` header
+//! (like every non-GET request), which a web page on another origin cannot
+//! send without a CORS preflight that this server never grants.
+//!
+//! Self-healing paths: when a file is not where the index says (moved in the
+//! Finder while shoebox runs), the server runs the scan's index step in the
+//! background, which finds it again by its hashes.
 
 use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Component, Path as FsPath, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, Weak, mpsc};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use axum::Json;
 use axum::Router;
-use axum::body::Body;
+use axum::body::{Body, Bytes};
 use axum::extract::{ConnectInfo, Path, Query, Request, State};
-use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri, header};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, Uri, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use http_body_util::BodyExt;
 use libheif_rs::LibHeif;
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -36,7 +47,11 @@ use tower_http::services::ServeFile;
 use crate::browse::{self, Snapshot};
 use crate::classify::Kind;
 use crate::db;
+use crate::duplicates;
+use crate::import;
 use crate::media;
+use crate::organize;
+use crate::scan;
 use crate::thumbs::{self, Source};
 
 pub const DEFAULT_PORT: u16 = 7878;
@@ -45,6 +60,13 @@ const SESSION_DAYS: u64 = 30;
 /// Wrong PINs allowed per minute (from all clients together).
 const LOGIN_ATTEMPTS_PER_MINUTE: usize = 5;
 const IMMUTABLE: &str = "private, max-age=31536000, immutable";
+/// Required on every request that is not a GET (see the module docs).
+const WRITE_HEADER: &str = "x-shoebox";
+/// At most one background search for moved files in this time.
+const HEAL_INTERVAL: Duration = Duration::from_secs(30);
+/// A job that has not reported progress for this long belongs to a process
+/// that died.
+const JOB_ALIVE_SECS: i64 = 120;
 
 pub struct Options {
     pub root: PathBuf,
@@ -131,16 +153,25 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
 
     let name = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| root.display().to_string());
     let workers = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2);
+    import::clean_incoming(&root);
+    let (heal_tx, heal_rx) = mpsc::channel();
     let app = Arc::new(App {
         root,
+        db_path,
         name,
         conn: Mutex::new(conn),
         snapshot: Mutex::new(None),
+        duplicates: Mutex::new(None),
+        generation: AtomicU64::new(0),
+        writing: Mutex::new(()),
+        dirty: AtomicBool::new(false),
+        heal: Mutex::new(heal_tx),
         ffmpeg: media::find_ffmpeg(),
         renders: Semaphore::new(workers),
         auth: Auth { pin: pin.clone(), sessions: Mutex::new(HashSet::new()), failures: Mutex::new(Vec::new()) },
     });
-    let router = router(app);
+    spawn_healer(Arc::downgrade(&app), heal_rx);
+    let router = router(app.clone());
 
     let (tx, rx) = oneshot::channel::<()>();
     let thread = std::thread::Builder::new().name("shoebox-serve".into()).spawn(move || -> Result<()> {
@@ -160,30 +191,56 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
             axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>())
                 .with_graceful_shutdown(stop)
                 .await?;
-            Ok(())
-        })
+            Ok::<(), anyhow::Error>(())
+        })?;
+        // Like a scan, leave a copy of the index after changing it.
+        if app.dirty.load(Ordering::SeqCst) {
+            let _writing = app.writing.lock().unwrap();
+            db::backup(&app.conn.lock().unwrap(), &app.db_path)?;
+        }
+        Ok(())
     })?;
     Ok(Server { addr, pin, urls, shutdown: Some(tx), thread: Some(thread) })
 }
 
 struct App {
     root: PathBuf,
+    db_path: PathBuf,
     name: String,
     /// One connection (library.db with thumbs.db attached); requests are
     /// short, and rendering happens outside the lock.
     conn: Mutex<Connection>,
-    /// Timeline and folders, rebuilt when another process changed the index.
-    snapshot: Mutex<Option<(i64, Arc<Snapshot>)>>,
+    /// Timeline and folders, rebuilt when the index changed.
+    snapshot: Mutex<Option<(IndexVersion, Arc<Snapshot>)>>,
+    duplicates: Mutex<Option<(IndexVersion, Arc<Vec<duplicates::Group>>)>>,
+    /// Counts this server's own changes; `PRAGMA data_version` only sees
+    /// other connections' commits.
+    generation: AtomicU64,
+    /// Held by every change to the library and by the search for moved
+    /// files, so they never overlap.
+    writing: Mutex<()>,
+    /// The index changed; back it up when the server stops.
+    dirty: AtomicBool,
+    /// Asks the background thread to look for moved files.
+    heal: Mutex<mpsc::Sender<()>>,
     ffmpeg: Option<PathBuf>,
     /// Limits concurrent decodes to the number of cores.
     renders: Semaphore,
     auth: Auth,
 }
 
+/// Changes whenever another connection (a scan) commits, or this server
+/// changes the library itself.
+type IndexVersion = (i64, u64);
+
 impl App {
+    fn version(&self, conn: &Connection) -> Result<IndexVersion> {
+        let data_version: i64 = conn.query_row("PRAGMA data_version", [], |r| r.get(0))?;
+        Ok((data_version, self.generation.load(Ordering::SeqCst)))
+    }
+
     fn snapshot(&self, conn: &Connection) -> Result<Arc<Snapshot>> {
-        // Changes whenever another connection (a running scan) commits.
-        let version: i64 = conn.query_row("PRAGMA data_version", [], |r| r.get(0))?;
+        let version = self.version(conn)?;
         let mut cache = self.snapshot.lock().unwrap();
         if let Some((v, s)) = cache.as_ref()
             && *v == version
@@ -193,6 +250,29 @@ impl App {
         let s = Arc::new(Snapshot::load(conn)?);
         *cache = Some((version, s.clone()));
         Ok(s)
+    }
+
+    /// Ask for a search for moved files (at most one runs at a time).
+    fn request_heal(&self) {
+        let _ = self.heal.lock().unwrap().send(());
+    }
+
+    /// The search itself: the scan's index step on a connection of its own.
+    /// Skipped while another process scans (it will find the moves itself).
+    fn heal(&self) -> Result<()> {
+        let _writing = self.writing.lock().unwrap();
+        if jobs_running(&self.conn.lock().unwrap())? {
+            return Ok(());
+        }
+        println!("Some files are not where the index says; looking for them…");
+        let conn = db::open_shared(&self.db_path)?;
+        let stats = scan::index_library(&conn, &self.root)?;
+        println!(
+            "  {} moved, {} added, {} changed, {} missing.",
+            stats.moved, stats.added, stats.changed, stats.missing
+        );
+        db::backup(&conn, &self.db_path)?;
+        Ok(())
     }
 
     /// The file behind an id, if it is present on the drive.
@@ -211,8 +291,13 @@ impl App {
             return Ok(None);
         }
         let Some(kind) = Kind::parse(&kind) else { return Ok(None) };
+        let path = self.root.join(rel);
+        if path.symlink_metadata().is_err() {
+            self.request_heal();
+            return Ok(None);
+        }
         Ok(Some(Source {
-            path: self.root.join(rel),
+            path,
             kind,
             size: size as u64,
             mtime_ns,
@@ -220,6 +305,38 @@ impl App {
             quick_hash,
         }))
     }
+}
+
+/// Whether a scan (or its thumbnail or hash pass) is running right now.
+fn jobs_running(conn: &Connection) -> Result<bool> {
+    let n: i64 = conn.query_row(
+        "SELECT count(*) FROM jobs WHERE state = 'running' AND updated_at > ?1",
+        [db::now() - JOB_ALIVE_SECS],
+        |r| r.get(0),
+    )?;
+    Ok(n > 0)
+}
+
+/// Runs searches for moved files as they are asked for: requests that come
+/// in while one runs are covered by it, and searches are at least
+/// `HEAL_INTERVAL` apart. Ends with the server.
+fn spawn_healer(app: Weak<App>, requests: mpsc::Receiver<()>) {
+    std::thread::spawn(move || {
+        let mut last: Option<Instant> = None;
+        while requests.recv().is_ok() {
+            if let Some(wait) = last.and_then(|t| HEAL_INTERVAL.checked_sub(t.elapsed())) {
+                std::thread::sleep(wait);
+            }
+            while requests.try_recv().is_ok() {}
+            let Some(app) = app.upgrade() else { break };
+            if let Err(e) = app.heal() {
+                eprintln!("error while looking for moved files: {e:#}");
+            }
+            drop(app);
+            last = Some(Instant::now());
+            while requests.try_recv().is_ok() {}
+        }
+    });
 }
 
 fn router(app: Arc<App>) -> Router {
@@ -234,6 +351,17 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/files/{id}/thumb", get(thumb))
         .route("/api/files/{id}/view", get(view))
         .route("/api/files/{id}/original", get(original))
+        .route("/api/move", post(move_files))
+        .route("/api/folders/{id}/rename", post(rename_folder))
+        .route("/api/import/folder", post(import_folder))
+        .route("/api/import", post(import_file))
+        .route("/api/duplicates", get(duplicates_list))
+        .route("/api/duplicates/decide", post(duplicates_decide))
+        .route("/api/trash", get(trash_list).post(trash_files))
+        .route("/api/trash/{id}/thumb", get(trash_thumb))
+        .route("/api/trash/{batch}/restore", post(trash_restore))
+        .route("/api/trash/empty", post(trash_empty))
+        .route("/api/rescan", post(rescan))
         .fallback(asset)
         .layer(middleware::from_fn_with_state(app.clone(), guard))
         .with_state(app)
@@ -243,6 +371,10 @@ fn router(app: Arc<App>) -> Router {
 
 enum ApiError {
     NotFound,
+    /// The request cannot be done as asked (bad name, name taken, …).
+    BadRequest(String),
+    /// Not now: a scan is running.
+    Conflict(String),
     Unauthorized,
     Forbidden(&'static str),
     TooManyRequests,
@@ -265,6 +397,8 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
             ApiError::NotFound => (StatusCode::NOT_FOUND, "not found".to_string()),
+            ApiError::BadRequest(m) => (StatusCode::BAD_REQUEST, m),
+            ApiError::Conflict(m) => (StatusCode::CONFLICT, m),
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "PIN required".to_string()),
             ApiError::Forbidden(m) => (StatusCode::FORBIDDEN, m.to_string()),
             ApiError::TooManyRequests => (StatusCode::TOO_MANY_REQUESTS, "too many wrong PINs; wait a minute".into()),
@@ -381,11 +515,15 @@ fn lan_address() -> Option<IpAddr> {
     (!ip.is_unspecified() && !ip.is_loopback()).then_some(ip)
 }
 
-/// Login check for the API, and security headers on every response.
+/// Login check for the API, the write header, and security headers on
+/// every response.
 async fn guard(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, req: Request, next: Next) -> Response {
     let path = req.uri().path();
     let open = !path.starts_with("/api/") || path == "/api/session" || path == "/api/login";
-    let mut res = if open || app.auth.allows(peer.ip(), req.headers()) {
+    let safe = matches!(*req.method(), Method::GET | Method::HEAD);
+    let mut res = if !safe && !req.headers().contains_key(WRITE_HEADER) {
+        ApiError::Forbidden("missing X-Shoebox header").into_response()
+    } else if open || app.auth.allows(peer.ip(), req.headers()) {
         next.run(req).await
     } else {
         ApiError::Unauthorized.into_response()
@@ -452,7 +590,9 @@ struct Info {
     /// A scan (or another job) is running right now.
     busy: bool,
     /// Changes when the index changes; the UI reloads the timeline then.
-    index_version: i64,
+    index_version: String,
+    /// Photos (with their companions) in the trash.
+    trash: u64,
 }
 
 async fn info(State(app): State<Arc<App>>) -> ApiResult<Json<Info>> {
@@ -492,8 +632,9 @@ async fn info(State(app): State<Arc<App>>) -> ApiResult<Json<Info>> {
             .collect::<rusqlite::Result<_>>()?;
         // A job whose process died stays 'running' until the next scan; only
         // count it as busy while it is still reporting progress.
-        let busy = jobs.iter().any(|j| j.state == "running" && db::now() - j.updated_at < 120);
-        let index_version = conn.query_row("PRAGMA data_version", [], |r| r.get(0))?;
+        let busy = jobs_running(&conn)?;
+        let (data_version, generation) = app.version(&conn)?;
+        let trash: i64 = conn.query_row("SELECT count(DISTINCT batch) FROM trash", [], |r| r.get(0))?;
         Ok(Json(Info {
             name: app.name.clone(),
             version: env!("CARGO_PKG_VERSION"),
@@ -505,7 +646,8 @@ async fn info(State(app): State<Arc<App>>) -> ApiResult<Json<Info>> {
             ffmpeg: app.ffmpeg.is_some(),
             jobs,
             busy,
-            index_version,
+            index_version: format!("{data_version}.{generation}"),
+            trash: trash as u64,
         }))
     })
     .await
@@ -603,6 +745,8 @@ struct FileInfo {
     date_source: Option<browse::DateSource>,
     sort_date: Option<String>,
     live: Option<i64>,
+    /// Other versions of this photo (linked duplicates).
+    linked: Vec<duplicates::Linked>,
 }
 
 async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Json<FileInfo>> {
@@ -616,6 +760,7 @@ async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiRe
             date_source: item.map(|it| it.date_source),
             sort_date: item.map(|it| it.sort.clone()),
             live: item.and_then(|it| it.live),
+            linked: duplicates::linked(&conn, id)?,
         }))
     })
     .await
@@ -630,19 +775,25 @@ fn jpeg(bytes: Vec<u8>, cache: &'static str) -> Response {
 }
 
 async fn thumb(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Response> {
-    let (src, stored) = blocking(&app, move |app| {
+    // A stored thumbnail is served even while its file is being looked for
+    // (moved behind shoebox's back); only making one needs the file.
+    let src = blocking(&app, move |app| {
         let conn = app.conn.lock().unwrap();
-        let src = app.source(&conn, id)?.ok_or(ApiError::NotFound)?;
-        let stored = thumbs::load(&conn, &src.quick_hash)?;
-        Ok((src, stored))
+        let key: String = conn
+            .query_row("SELECT quick_hash FROM files WHERE id = ?1 AND missing_since IS NULL", [id], |r| r.get(0))
+            .optional()?
+            .ok_or(ApiError::NotFound)?;
+        match thumbs::load(&conn, &key)? {
+            Some(Ok(bytes)) => Ok(Err(jpeg(bytes, IMMUTABLE))),
+            Some(Err(_)) => Err(ApiError::NotFound),
+            None => app.source(&conn, id)?.filter(|s| s.kind != Kind::Raw).map(Ok).ok_or(ApiError::NotFound),
+        }
     })
     .await?;
-    match stored {
-        Some(Ok(bytes)) => return Ok(jpeg(bytes, IMMUTABLE)),
-        Some(Err(_)) => return Err(ApiError::NotFound),
-        None if src.kind == Kind::Raw => return Err(ApiError::NotFound),
-        None => {}
-    }
+    let src = match src {
+        Ok(src) => src,
+        Err(stored) => return Ok(stored),
+    };
 
     // Not made yet (scan ran with --no-thumbs, or is still busy): make it now.
     let _permit = app.renders.acquire().await.map_err(|e| ApiError::Internal(e.into()))?;
@@ -720,6 +871,226 @@ fn content_disposition(name: &str) -> String {
         .map(|b| if b.is_ascii_alphanumeric() || b"._-".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
         .collect();
     format!("attachment; filename=\"{ascii}\"; filename*=UTF-8''{encoded}")
+}
+
+// ---------------------------------------------------------------- changes
+
+/// Run a change to the library: one at a time, never while a scan runs.
+/// Errors are the user's to read (a name that is taken, a file that changed).
+async fn change<T: Send + 'static>(
+    app: &Arc<App>,
+    f: impl FnOnce(&App, &Connection) -> Result<T> + Send + 'static,
+) -> ApiResult<T> {
+    blocking(app, move |app| {
+        let _writing = app.writing.lock().unwrap();
+        let conn = app.conn.lock().unwrap();
+        if jobs_running(&conn)? {
+            return Err(ApiError::Conflict("a scan is running; try again when it is done".into()));
+        }
+        let result = f(app, &conn);
+        app.generation.fetch_add(1, Ordering::SeqCst);
+        app.dirty.store(true, Ordering::SeqCst);
+        result.map_err(|e| ApiError::BadRequest(format!("{e:#}")))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct MoveRequest {
+    ids: Vec<i64>,
+    /// Folder path relative to the library (NFC); created if needed.
+    folder: String,
+}
+
+async fn move_files(State(app): State<Arc<App>>, Json(req): Json<MoveRequest>) -> ApiResult<Json<organize::Moved>> {
+    change(&app, move |app, conn| organize::move_files(conn, &app.root, &req.ids, &req.folder)).await.map(Json)
+}
+
+#[derive(Deserialize)]
+struct RenameRequest {
+    /// The folder's new path relative to the library (NFC).
+    path: String,
+}
+
+async fn rename_folder(
+    State(app): State<Arc<App>>,
+    Path(id): Path<i64>,
+    Json(req): Json<RenameRequest>,
+) -> ApiResult<Json<organize::RenamedFolder>> {
+    change(&app, move |app, conn| organize::rename_folder(conn, &app.root, id, &req.path)).await.map(Json)
+}
+
+#[derive(Deserialize)]
+struct EventFolderRequest {
+    year: i32,
+    month: u32,
+    name: String,
+}
+
+/// The `YYYY-MM Name` folder an import goes to, and whether it exists.
+async fn import_folder(State(app): State<Arc<App>>, Json(req): Json<EventFolderRequest>) -> ApiResult<Json<serde_json::Value>> {
+    let folder = import::event_folder(req.year, req.month, &req.name).map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    blocking(&app, move |app| {
+        let conn = app.conn.lock().unwrap();
+        let folder_fold = organize::fold(&folder);
+        let existing = app
+            .snapshot(&conn)?
+            .folders
+            .iter()
+            .find(|f| organize::fold(&f.path) == folder_fold)
+            .map(|f| (f.id, f.path.clone()));
+        Ok(Json(serde_json::json!({
+            "folder": existing.as_ref().map(|e| e.1.clone()).unwrap_or(folder),
+            "exists": existing.is_some(),
+            "id": existing.map(|e| e.0),
+        })))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct ImportQuery {
+    folder: String,
+    name: String,
+    /// `File.lastModified` in the browser (ms since 1970).
+    modified: Option<i64>,
+    /// Import even if the library has this content already.
+    keep: Option<u8>,
+}
+
+/// One file as the raw request body, streamed to the drive.
+async fn import_file(State(app): State<Arc<App>>, Query(q): Query<ImportQuery>, body: Body) -> ApiResult<Json<import::Imported>> {
+    let (folder, name, modified) = (q.folder.clone(), q.name.clone(), q.modified);
+    let mut upload = blocking(&app, move |app| {
+        if jobs_running(&app.conn.lock().unwrap())? {
+            return Err(ApiError::Conflict("a scan is running; try again when it is done".into()));
+        }
+        import::Upload::begin(&app.root, &folder, &name, modified).map_err(|e| ApiError::BadRequest(format!("{e:#}")))
+    })
+    .await?;
+
+    // Writing happens on a blocking thread; the body arrives here.
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Bytes>(16);
+    let writer = tokio::task::spawn_blocking(move || -> Result<import::Upload> {
+        while let Some(chunk) = rx.blocking_recv() {
+            if let Err(e) = upload.write(&chunk) {
+                upload.abort();
+                return Err(e);
+            }
+        }
+        Ok(upload)
+    });
+    let mut body = body;
+    let mut cut_off = false;
+    while let Some(frame) = body.frame().await {
+        match frame {
+            Ok(frame) => {
+                if let Ok(data) = frame.into_data()
+                    && tx.send(data).await.is_err()
+                {
+                    break; // the writer failed; it says why
+                }
+            }
+            Err(_) => {
+                cut_off = true;
+                break;
+            }
+        }
+    }
+    drop(tx);
+    let upload = writer.await.map_err(|e| ApiError::Internal(anyhow::anyhow!("writer failed: {e}")))?.map_err(ApiError::Internal)?;
+    if cut_off {
+        upload.abort();
+        return Err(ApiError::BadRequest("the upload was cut off".into()));
+    }
+    let keep = q.keep.is_some_and(|k| k != 0);
+    change(&app, move |app, conn| upload.finish(conn, &app.root, keep)).await.map(Json)
+}
+
+#[derive(Serialize)]
+struct DuplicateList<'a> {
+    groups: &'a [duplicates::Group],
+}
+
+async fn duplicates_list(State(app): State<Arc<App>>) -> ApiResult<Response> {
+    blocking(&app, |app| {
+        let conn = app.conn.lock().unwrap();
+        let version = app.version(&conn)?;
+        if let Some((v, groups)) = app.duplicates.lock().unwrap().as_ref()
+            && *v == version
+        {
+            return Ok(Json(DuplicateList { groups: groups.as_slice() }).into_response());
+        }
+        let shown: HashSet<i64> = app.snapshot(&conn)?.items.iter().map(|it| it.id).collect();
+        let candidates = duplicates::load(&conn, &shown)?;
+        drop(conn);
+        let groups = Arc::new(duplicates::find(&candidates));
+        *app.duplicates.lock().unwrap() = Some((version, groups.clone()));
+        Ok(Json(DuplicateList { groups: groups.as_slice() }).into_response())
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct DecideRequest {
+    ids: Vec<i64>,
+    /// `distinct`, `linked`, or null to forget earlier decisions.
+    decision: Option<String>,
+}
+
+async fn duplicates_decide(State(app): State<Arc<App>>, Json(req): Json<DecideRequest>) -> ApiResult<Json<serde_json::Value>> {
+    change(&app, move |_, conn| duplicates::decide(conn, &req.ids, req.decision.as_deref()))
+        .await
+        .map(|n| Json(serde_json::json!({ "pairs": n })))
+}
+
+#[derive(Deserialize)]
+struct IdsRequest {
+    ids: Vec<i64>,
+}
+
+async fn trash_files(State(app): State<Arc<App>>, Json(req): Json<IdsRequest>) -> ApiResult<Json<organize::Trashed>> {
+    change(&app, move |app, conn| organize::trash_files(conn, &app.root, &req.ids)).await.map(Json)
+}
+
+async fn trash_list(State(app): State<Arc<App>>) -> ApiResult<Json<Vec<organize::TrashItem>>> {
+    blocking(&app, |app| Ok(Json(organize::trash_list(&app.conn.lock().unwrap())?))).await
+}
+
+/// The stored thumbnail of something in the trash (none is made for it).
+async fn trash_thumb(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Response> {
+    blocking(&app, move |app| {
+        let conn = app.conn.lock().unwrap();
+        let key: Option<String> =
+            conn.query_row("SELECT quick_hash FROM trash WHERE id = ?1", [id], |r| r.get(0)).optional()?.flatten();
+        match key.map(|k| thumbs::load(&conn, &k)).transpose()?.flatten() {
+            Some(Ok(bytes)) => Ok(jpeg(bytes, "private, no-cache")),
+            _ => Err(ApiError::NotFound),
+        }
+    })
+    .await
+}
+
+async fn trash_restore(State(app): State<Arc<App>>, Path(batch): Path<i64>) -> ApiResult<Json<organize::Restored>> {
+    change(&app, move |app, conn| organize::restore(conn, &app.root, batch)).await.map(Json)
+}
+
+#[derive(Deserialize)]
+struct EmptyRequest {
+    /// One batch, or everything when missing.
+    batch: Option<i64>,
+}
+
+async fn trash_empty(State(app): State<Arc<App>>, Json(req): Json<EmptyRequest>) -> ApiResult<Json<serde_json::Value>> {
+    change(&app, move |app, conn| organize::empty_trash(conn, &app.root, req.batch))
+        .await
+        .map(|n| Json(serde_json::json!({ "deleted": n })))
+}
+
+/// Look for files moved outside shoebox now (the UI's "Look for changes").
+async fn rescan(State(app): State<Arc<App>>) -> Json<serde_json::Value> {
+    app.request_heal();
+    Json(serde_json::json!({ "ok": true }))
 }
 
 // ---------------------------------------------------------------- assets

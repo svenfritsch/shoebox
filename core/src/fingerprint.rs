@@ -88,7 +88,10 @@ pub fn read_unchanged<T>(
     mtime_ns: i64,
     read: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, String> {
-    let before = stamp(path).map_err(|e| e.to_string())?;
+    let before = stamp(path).map_err(|e| match e.kind() {
+        io::ErrorKind::NotFound => "changed since the last scan: not found".to_string(),
+        _ => e.to_string(),
+    })?;
     if before.size != size || before.mtime_ns != mtime_ns as i128 {
         return Err("changed since the last scan".into());
     }

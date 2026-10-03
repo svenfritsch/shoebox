@@ -5,12 +5,15 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use rusqlite::{Connection, OptionalExtension};
+use serde_json::Value;
 use shoebox::fingerprint::{self, Stamp};
-use shoebox::{scan, verify};
+use shoebox::{scan, serve, verify};
 
 pub const NFD_DIR: &str = "2019-08 Urlaub O\u{308}sterreich";
 pub const NFC_DIR: &str = "2019-08 Urlaub \u{d6}sterreich";
@@ -142,4 +145,115 @@ pub fn copy_dir(src: &Path, dst: &Path) {
 pub fn set_mtime(path: &Path, mtime_ns: i128) {
     let t = std::time::UNIX_EPOCH + Duration::from_nanos(mtime_ns as u64);
     fs::File::options().write(true).open(path).unwrap().set_modified(t).unwrap();
+}
+
+// ---------------------------------------------------------------- HTTP
+
+pub struct Response {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+}
+
+impl Response {
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v.as_str())
+    }
+
+    pub fn json(&self) -> Value {
+        serde_json::from_slice(&self.body).unwrap_or_else(|e| panic!("{e}: {}", String::from_utf8_lossy(&self.body)))
+    }
+}
+
+/// A bare HTTP/1.1 client, enough for these tests.
+pub fn request(addr: SocketAddr, method: &str, path: &str, headers: &[(&str, &str)], body: &[u8]) -> Response {
+    let mut head = format!("{method} {path} HTTP/1.1\r\nConnection: close\r\nContent-Length: {}\r\n", body.len());
+    if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("host")) {
+        head.push_str("Host: localhost\r\n");
+    }
+    // What the UI sends with every change; `bare_request` leaves it out.
+    if method != "GET" {
+        head.push_str("X-Shoebox: 1\r\n");
+    }
+    for (k, v) in headers {
+        head.push_str(&format!("{k}: {v}\r\n"));
+    }
+    send(addr, head, body)
+}
+
+/// Like `request`, without the `X-Shoebox` header.
+pub fn bare_request(addr: SocketAddr, method: &str, path: &str, headers: &[(&str, &str)], body: &[u8]) -> Response {
+    let mut head = format!("{method} {path} HTTP/1.1\r\nConnection: close\r\nContent-Length: {}\r\nHost: localhost\r\n", body.len());
+    for (k, v) in headers {
+        head.push_str(&format!("{k}: {v}\r\n"));
+    }
+    send(addr, head, body)
+}
+
+fn send(addr: SocketAddr, mut head: String, body: &[u8]) -> Response {
+    let mut s = TcpStream::connect(addr).unwrap();
+    head.push_str("\r\n");
+    s.write_all(head.as_bytes()).unwrap();
+    s.write_all(body).unwrap();
+    let mut raw = Vec::new();
+    s.read_to_end(&mut raw).unwrap();
+
+    let split = raw.windows(4).position(|w| w == b"\r\n\r\n").expect("no header end");
+    let head = String::from_utf8_lossy(&raw[..split]).into_owned();
+    let mut lines = head.split("\r\n");
+    let status = lines.next().unwrap().split(' ').nth(1).unwrap().parse().unwrap();
+    let headers: Vec<(String, String)> = lines
+        .filter_map(|l| l.split_once(':'))
+        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+        .collect();
+    let mut body = raw[split + 4..].to_vec();
+    if headers.iter().any(|(k, v)| k.eq_ignore_ascii_case("transfer-encoding") && v.contains("chunked")) {
+        body = dechunk(&body);
+    }
+    Response { status, headers, body }
+}
+
+fn dechunk(mut data: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    loop {
+        let line_end = data.windows(2).position(|w| w == b"\r\n").unwrap();
+        let size = usize::from_str_radix(std::str::from_utf8(&data[..line_end]).unwrap().split(';').next().unwrap(), 16)
+            .unwrap();
+        if size == 0 {
+            return out;
+        }
+        out.extend_from_slice(&data[line_end + 2..line_end + 2 + size]);
+        data = &data[line_end + 2 + size + 2..];
+    }
+}
+
+pub fn get(addr: SocketAddr, path: &str) -> Response {
+    request(addr, "GET", path, &[], b"")
+}
+
+/// POST a JSON body, as the UI does.
+pub fn post(addr: SocketAddr, path: &str, body: &serde_json::Value) -> Response {
+    request(addr, "POST", path, &[("Content-Type", "application/json")], body.to_string().as_bytes())
+}
+
+pub fn encode(s: &str) -> String {
+    s.bytes()
+        .map(|b| if b.is_ascii_alphanumeric() { (b as char).to_string() } else { format!("%{b:02X}") })
+        .collect()
+}
+
+pub fn start(lib: &Library, pin: Option<&str>) -> serve::Server {
+    serve::start(
+        &serve::Options { root: lib.root.clone(), db: None, port: 0, lan: false, pin: pin.map(str::to_string) },
+        false,
+    )
+    .unwrap()
+}
+
+pub fn ids(timeline: &Value) -> Vec<i64> {
+    timeline["ids"].as_array().unwrap().iter().map(|v| v.as_i64().unwrap()).collect()
+}
+
+pub fn id_of(lib: &Library, path_nfc: &str) -> i64 {
+    lib.record(path_nfc).unwrap().0
 }
