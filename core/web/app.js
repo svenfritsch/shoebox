@@ -823,13 +823,23 @@ document.addEventListener('keydown', function (ev) {
   if ($('lightbox').hidden) {
     if (ev.key === 'Escape' && state.selecting) endSelection();
     var cell = document.activeElement;
-    if (/^Arrow(Left|Right|Up|Down)$/.test(ev.key) && cell && cell.classList.contains('cell') && !ev.altKey && !ev.metaKey && !ev.ctrlKey) {
+    if (!cell || !cell.classList.contains('cell') || ev.altKey || ev.metaKey || ev.ctrlKey) return;
+    if (/^Arrow(Left|Right|Up|Down)$/.test(ev.key)) {
       ev.preventDefault();
       moveFocus(cell, ev.key);
+    } else if (ev.key === ' ') {
+      // Like a click: opens the photo (or selects it while selecting).
+      ev.preventDefault();
+      cell.click();
     }
     return;
   }
-  if (ev.key === 'Escape') closeLightbox();
+  // Space closes the viewer, except on a focused video (play/pause).
+  var onVideo = document.activeElement && document.activeElement.tagName === 'VIDEO';
+  if (ev.key === 'Escape' || (ev.key === ' ' && !onVideo)) {
+    ev.preventDefault();
+    closeLightbox();
+  }
   else if (ev.key === 'ArrowLeft') step(-1);
   else if (ev.key === 'ArrowRight') step(1);
   else if (ev.key === 'i') $('lb-info').onclick();

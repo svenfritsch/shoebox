@@ -226,7 +226,8 @@ Done (see [phase2.md](phase2.md)):
   posters via ffmpeg piped to stdout. Without ffmpeg (or when it fails) the
   web UI grabs a video frame itself (canvas, session only, never stored).
 - Keyboard: arrow keys move the focus in the grid; closing the viewer
-  focuses the cell of the last item seen.
+  focuses the cell of the last item seen. Space opens the focused item and
+  closes the viewer again.
 - Perceptual hash (64-bit DCT) from the same decode in `files.phash`.
 - `shoebox serve` (axum, UI embedded with rust-embed): virtualised timeline
   grid grouped by month, folder tree, search over paths and tags, viewer
