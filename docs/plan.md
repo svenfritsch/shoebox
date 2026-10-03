@@ -228,9 +228,12 @@ Open:
 - **Toolchain on the dev Mac:** Homebrew `rustup` is keg-only; use
   `export PATH=/opt/homebrew/opt/rustup/bin:$PATH`. Homebrew's own `rust`
   (1.82) is too old for the crates.
-- **CMake 3.28** (Ubuntu 24.04's) finds neither `make` nor the compilers
-  with `CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH=OFF`; run `build-deps.sh` with
-  `CMAKE_PROGRAM_PATH=/usr/bin` there. The Docker image's newer CMake is fine.
+- **CMake can't find make/cc.** `build-deps.sh` turns off
+  `CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH` (so nothing leaks in from
+  Homebrew), which also stops CMake searching PATH for the build tool and
+  compilers. The script passes `CMAKE_MAKE_PROGRAM` and the compilers (from
+  `$CC`/`$CXX`, default `cc`/`c++`) explicitly. A cached deps dir hides this
+  bug; it only shows on a cache miss.
 - **Integration tests and fixtures.** `core/tests/scan.rs` copies
   `$SHOEBOX_FIXTURES` into each test library when set; an unset or empty
   variable just uses the synthetic files the test writes itself.
