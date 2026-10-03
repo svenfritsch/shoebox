@@ -15,7 +15,7 @@ shoebox/
 
 ## Status
 
-Phase 0 (toolchain and portability probe). See [docs/phase0.md](docs/phase0.md).
+Phase 0 done except the run on real hardware. Plan and status: [docs/plan.md](docs/plan.md).
 
 ## Building
 
