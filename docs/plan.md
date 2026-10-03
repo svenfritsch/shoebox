@@ -108,12 +108,14 @@ dates are set from the browser's `File.lastModified`.
   `Thumbs.db` (already in `core/src/classify.rs`).
 - Per file: size, mtime, created, quick hash (size + first/last 64 KiB),
   full BLAKE3 hash (background, resumable), capture date, dimensions,
-  camera, duration, perceptual hash.
+  camera, duration. Perceptual hash moved to phase 2 (computed from the
+  thumbnail decode).
 - Incremental: unchanged size + mtime → skip without opening.
 - exFAT time-zone shift: same size and mtime differs by a whole multiple of
   15 min (≤ 14 h) → compare quick hash instead of treating as changed.
 - Moves: unknown path + missing record with the same size → confirm by quick
-  hash, then full hash; update the path instead of creating a new record.
+  hash, then full hash (skipped when name and mtime also match); update the
+  path instead of creating a new record.
 - Unicode: store the path as found (for disk access) plus NFC form (for
   comparison/search). macOS often writes decomposed umlauts.
 - Case-only renames go through a temporary name (case-insensitive FS).
@@ -124,7 +126,8 @@ dates are set from the browser's `File.lastModified`.
 
 Any code path that reads originals is tested by snapshotting size, mtime,
 created and full hash before and after, and failing on any difference.
-`shoebox probe` does this today; phase 1 adds it as an integration test.
+`shoebox probe` does this at runtime; `core/tests/scan.rs` does it for
+`scan` and `verify`.
 
 ### Duplicates
 
@@ -156,8 +159,8 @@ rot) and shows "last backup N days ago, M files new since".
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | Toolchain + portability probe (`shoebox probe`) | **Done except the real-hardware run** (see below) |
-| 1 | Scanner + SQLite schema + incremental rescan + move detection + guard integration test. CLI: `shoebox scan`, `shoebox verify` | Next |
-| 2 | `thumbs.db`, web UI (virtualised timeline grid, folder tree, tag search, video playback), LAN access with PIN. `shoebox serve` | |
+| 1 | Scanner + SQLite schema + incremental rescan + move detection + guard integration test. CLI: `shoebox scan`, `shoebox verify` | **Done except the real-hardware run** (see below) |
+| 2 | `thumbs.db` + perceptual hash, web UI (virtualised timeline grid, folder tree, tag search, video playback), LAN access with PIN. `shoebox serve` | Next |
 | 3 | Import dialog, move (with RAW pairs, case-only renames), duplicates UI, self-healing paths | |
 | 4 | Worker protocol + Python recognizer (faces), worker supervision in Rust | |
 | 5 | Face clustering in Rust + correction UI | |
@@ -185,7 +188,28 @@ Known gaps: ORF/RW2 metadata may be unsupported by `nom-exif`; Motion
 Photos (data after JPEG end marker) trigger a false "truncated" warning;
 no Windows build yet.
 
-## Build notes and pitfalls (learned in phase 0)
+### Phase 1 details
+
+Done (see [phase1.md](phase1.md)):
+- Crate split into a library (`core/src/lib.rs`) and a thin CLI.
+- SQLite schema v1 (`folders`, `files`, `tags`, `file_tags`, `jobs`) in
+  `core/src/db.rs`; rollback journal, `synchronous=FULL`, `library.db.bak`
+  after each scan.
+- `shoebox scan`: incremental (size + mtime), exFAT time-zone shifts, move
+  detection, Unicode-form renames, missing records kept (`--forget-missing`),
+  resumable full-hash pass (`--quick` skips it), per-file stamp check around
+  every read.
+- `shoebox verify`: missing / changed / damaged, database `quick_check`,
+  least recently verified first (`--limit`, `--quick`).
+- Integration tests (`core/tests/scan.rs`) including the guard; they use the
+  `make-fixtures.sh` output when `SHOEBOX_FIXTURES` is set (CI does).
+
+Open:
+- [ ] Scan, rescan and verify on the old Intel MacBook against the exFAT
+      drive (checklist in [phase1.md](phase1.md)).
+- [ ] Confirm the GitHub Actions run is green.
+
+## Build notes and pitfalls (learned in phases 0–1)
 
 - **Spaces in paths.** The repo may live under a path with spaces.
   `build-deps.sh` uses bash arrays for CMake args; never unquote paths.
@@ -204,12 +228,21 @@ no Windows build yet.
 - **Toolchain on the dev Mac:** Homebrew `rustup` is keg-only; use
   `export PATH=/opt/homebrew/opt/rustup/bin:$PATH`. Homebrew's own `rust`
   (1.82) is too old for the crates.
+- **CMake can't find make/cc.** `build-deps.sh` turns off
+  `CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH` (so nothing leaks in from
+  Homebrew), which also stops CMake searching PATH for the build tool and
+  compilers. The script passes `CMAKE_MAKE_PROGRAM` and the compilers (from
+  `$CC`/`$CXX`, default `cc`/`c++`) explicitly. A cached deps dir hides this
+  bug; it only shows on a cache miss.
+- **Integration tests and fixtures.** `core/tests/scan.rs` copies
+  `$SHOEBOX_FIXTURES` into each test library when set; an unset or empty
+  variable just uses the synthetic files the test writes itself.
 - **Git push** uses SSH via the 1Password agent with the "GitHub" key pinned
   in this repo's `core.sshCommand` (the keychain's HTTPS login belongs to a
   different account, `svenfritschpeers`).
 
 ## Next step
 
-Start phase 1: SQLite schema (`folders`, `files`, `tags`, `file_tags`,
-`jobs`), `shoebox scan` with incremental rescan and move detection, and the
-guard as an integration test using `scripts/make-fixtures.sh`.
+Start phase 2: `thumbs.db` (BLOBs keyed by quick hash, perceptual hash from
+the same decode), `shoebox serve` with the virtualised timeline grid, folder
+tree, tag search and video playback via range requests.

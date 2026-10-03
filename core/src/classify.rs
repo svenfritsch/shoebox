@@ -24,6 +24,17 @@ impl Kind {
             Kind::Video => "Video",
         }
     }
+
+    /// Name stored in the database (same as the serde name).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Kind::Jpeg => "jpeg",
+            Kind::Png => "png",
+            Kind::Heic => "heic",
+            Kind::Raw => "raw",
+            Kind::Video => "video",
+        }
+    }
 }
 
 const RAW_EXTENSIONS: &[&str] = &[

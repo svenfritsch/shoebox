@@ -59,6 +59,14 @@ COMMON=(-DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_POSITION_INDE
         -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH=OFF
         -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF)
 
+# With the system environment path off, CMake no longer searches PATH for the
+# build tool and compilers either, so hand them over explicitly.
+tool() { # name-or-path
+    command -v "$1" || { echo "$1 not found" >&2; exit 1; }
+}
+COMMON+=("-DCMAKE_MAKE_PROGRAM=$(tool make)" "-DCMAKE_C_COMPILER=$(tool "${CC:-cc}")"
+         "-DCMAKE_CXX_COMPILER=$(tool "${CXX:-c++}")")
+
 case "$TARGET" in
     x86_64-apple-darwin)
         COMMON+=(-DCMAKE_OSX_ARCHITECTURES=x86_64 "-DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-10.13}") ;;

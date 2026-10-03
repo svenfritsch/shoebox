@@ -1,13 +1,8 @@
-mod classify;
-mod fingerprint;
-mod fsinfo;
-mod media;
-mod probe;
-
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
+use shoebox::{probe, scan, verify};
 
 #[derive(Parser)]
 #[command(name = "shoebox", version, about = "Local photo library on an external drive")]
@@ -33,6 +28,36 @@ enum Command {
         #[arg(long)]
         limit: Option<usize>,
     },
+    /// Index a library: new, changed, moved and missing files. Only
+    /// `.shoebox/` in the library root is written to.
+    Scan {
+        /// Library root (the drive or the folder that holds the photos).
+        root: PathBuf,
+        /// Database to use instead of `<root>/.shoebox/library.db`.
+        #[arg(long)]
+        db: Option<PathBuf>,
+        /// Skip computing full hashes (the next scan catches up).
+        #[arg(long)]
+        quick: bool,
+        /// Remove records of files that are no longer on the drive.
+        #[arg(long)]
+        forget_missing: bool,
+    },
+    /// Re-read files and compare them with the index (missing, changed,
+    /// damaged). Exits with status 2 if anything is wrong.
+    Verify {
+        /// Library root.
+        root: PathBuf,
+        /// Database to use instead of `<root>/.shoebox/library.db`.
+        #[arg(long)]
+        db: Option<PathBuf>,
+        /// Only compare size and modification date, without reading contents.
+        #[arg(long)]
+        quick: bool,
+        /// Check at most this many files (least recently verified first).
+        #[arg(long)]
+        limit: Option<usize>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -44,6 +69,12 @@ fn main() -> ExitCode {
             report,
             limit,
         }),
+        Command::Scan { root, db, quick, forget_missing } => {
+            scan::run(&scan::Options { root, db, full_hash: !quick, forget_missing }).map(|_| true)
+        }
+        Command::Verify { root, db, quick, limit } => {
+            verify::run(&verify::Options { root, db, quick, limit }).map(|r| r.is_clean())
+        }
     };
     match result {
         Ok(true) => ExitCode::SUCCESS,
