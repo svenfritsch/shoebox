@@ -1,0 +1,10 @@
+# Development image: Rust toolchain plus the C/C++ tooling needed to build
+# libheif from source, and ffmpeg + heif-enc for generating test fixtures.
+FROM rust:1-trixie
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        cmake ninja-build clang pkg-config \
+        ffmpeg libheif-examples libheif-plugin-x265 libimage-exiftool-perl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work
