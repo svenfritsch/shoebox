@@ -19,9 +19,10 @@ Previews go to the system temp folder, never into the photo folder.
 
 ## Running it on the Intel Mac
 
-1. Get `shoebox-macos`: `dist/shoebox-macos` from a local build (see README)
-   or the artifact of the `build` workflow on GitHub. Copy it to the drive,
-   e.g. into `.shoebox/bin/`.
+1. Get `shoebox-macos`: download `shoebox-macos.tar.gz` from the latest
+   GitHub release (published by the `build` workflow when a `v*` tag is
+   pushed) and unpack it, or use `dist/shoebox-macos` from a local build
+   (see README). Copy it to the drive, e.g. into `.shoebox/bin/`.
 2. Optional, for video previews: put a static `ffmpeg` for Intel macOS next
    to the binary (or have one on PATH).
 3. In Terminal:

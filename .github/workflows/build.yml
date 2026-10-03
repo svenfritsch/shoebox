@@ -106,3 +106,34 @@ jobs:
         with:
           name: shoebox-linux
           path: dist/
+
+  # Push a tag like `v0.1.0-phase1` to publish the binaries as a GitHub
+  # release. Workflow artifacts need a GitHub login, expire, and lose the
+  # executable bit; release assets don't.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos, linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Package
+        run: |
+          mkdir -p release
+          for os in macos linux; do
+            chmod +x artifacts/shoebox-$os/shoebox-$os
+            tar -C artifacts/shoebox-$os -czf release/shoebox-$os.tar.gz shoebox-$os
+          done
+          (cd release && sha256sum *.tar.gz > SHA256SUMS)
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
+            --prerelease --generate-notes
