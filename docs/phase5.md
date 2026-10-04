@@ -378,6 +378,15 @@ Folders
   - [x] Is 40 px right? On the face check page all 532 faces of 30–40 px
     were real, recognisable people: the threshold is now 30 px (keeps 97%
     of faces instead of 91%).
+  - [ ] "Same person" threshold from "≈" (lowest similarity still the same
+    person, highest that is not, faces under 30 px ignored). So far, one
+    person (a boy, 386 px reference): right matches from 0.87 down to at
+    least 0.37 (133 px), wrong ones from about 0.38 down (an old black and
+    white photo, a boy with glasses, a baby, a girl); a 27 px stranger also
+    at 0.37. No single cut-off separates them, so for 5c-2: compare with
+    all confirmed faces of a person (best match), suggest above a safe
+    level (~0.45, to be confirmed) and offer only "maybe" between ~0.35 and
+    that, settled by ✓/✗. More people needed before fixing the numbers.
   - [ ] 34 faces added in the first 258 photos turned (13%) is a lot: check
     "Found turned" for false faces before trusting the pass.
   - `shoebox serve`, "Face check": go through the smallest faces and the
