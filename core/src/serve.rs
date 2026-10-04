@@ -67,6 +67,8 @@ use crate::scan;
 use crate::tags as own_tags;
 use crate::thumbs::{self, Source};
 
+mod faces_api;
+
 pub const DEFAULT_PORT: u16 = 7878;
 const SESSION_COOKIE: &str = "shoebox_session";
 const SESSION_DAYS: u64 = 30;
@@ -424,6 +426,10 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/tags/add", post(tags_add))
         .route("/api/tags/remove", post(tags_remove))
         .route("/api/tags/selection", post(tags_selection))
+        .route("/api/faces", get(faces_api::list))
+        .route("/api/faces/stats", get(faces_api::stats))
+        .route("/api/faces/{id}/crop", get(faces_api::crop))
+        .route("/api/faces/{id}/similar", get(faces_api::similar))
         .fallback(asset)
         .layer(middleware::from_fn_with_state(app.clone(), guard))
         .with_state(app)

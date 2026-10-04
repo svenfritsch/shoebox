@@ -38,7 +38,7 @@ const QUALITY: u8 = 80;
 pub const VIEW_EDGE: u32 = 2048;
 const VIEW_QUALITY: u8 = 85;
 
-const SCHEMA_VERSION: i32 = 2;
+const SCHEMA_VERSION: i32 = 3;
 const SCHEMA_V1: &str = "
 CREATE TABLE thumbs.thumbs (
     key     TEXT PRIMARY KEY,   -- files.quick_hash
@@ -48,6 +48,21 @@ CREATE TABLE thumbs.thumbs (
     error   TEXT,
     made_at INTEGER NOT NULL    -- Unix seconds
 );
+";
+/// v3: face crops (`faces.rs`), keyed by content and box like the faces in
+/// `recognition.db`.
+const SCHEMA_V3: &str = "
+CREATE TABLE IF NOT EXISTS thumbs.faces (
+    key     TEXT NOT NULL,      -- files.quick_hash
+    x       REAL NOT NULL,      -- the face's box, as in recog.faces
+    y       REAL NOT NULL,
+    w       REAL NOT NULL,
+    h       REAL NOT NULL,
+    jpeg    BLOB,               -- NULL when the photo could not be read
+    error   TEXT,
+    made_at INTEGER NOT NULL,
+    PRIMARY KEY (key, x, y, w, h)
+) WITHOUT ROWID;
 ";
 
 /// Location of `thumbs.db` for a library database.
@@ -80,6 +95,12 @@ pub fn attach(conn: &Connection, db_path: &Path) -> Result<()> {
         let tx = conn.unchecked_transaction()?;
         tx.execute("DELETE FROM thumbs.thumbs WHERE jpeg IS NULL", [])?;
         tx.pragma_update(Some("thumbs"), "user_version", 2)?;
+        tx.commit()?;
+    }
+    if version < 3 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V3)?;
+        tx.pragma_update(Some("thumbs"), "user_version", 3)?;
         tx.commit()?;
     }
     Ok(())
@@ -329,11 +350,10 @@ pub fn generate(conn: &Connection, root: &Path) -> Result<Stats> {
 
     stats.phash_from_existing = fill_phash(conn)?;
     // Files in the trash keep theirs until the trash is emptied.
-    stats.pruned = conn.execute(
-        "DELETE FROM thumbs.thumbs WHERE key NOT IN (SELECT quick_hash FROM files)
-            AND key NOT IN (SELECT quick_hash FROM trash WHERE quick_hash IS NOT NULL)",
-        [],
-    )? as u64;
+    let gone = "key NOT IN (SELECT quick_hash FROM files)
+                AND key NOT IN (SELECT quick_hash FROM trash WHERE quick_hash IS NOT NULL)";
+    stats.pruned = conn.execute(&format!("DELETE FROM thumbs.thumbs WHERE {gone}"), [])? as u64;
+    conn.execute(&format!("DELETE FROM thumbs.faces WHERE {gone}"), [])?;
     Ok(stats)
 }
 

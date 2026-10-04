@@ -5,6 +5,7 @@ pub mod browse;
 pub mod classify;
 pub mod db;
 pub mod duplicates;
+pub mod faces;
 pub mod fingerprint;
 pub mod fsinfo;
 pub mod import;
