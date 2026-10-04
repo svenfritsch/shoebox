@@ -17,5 +17,6 @@ pub mod recognize;
 pub mod reveal;
 pub mod scan;
 pub mod serve;
+pub mod tags;
 pub mod thumbs;
 pub mod verify;

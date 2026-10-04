@@ -272,25 +272,53 @@ impl Snapshot {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TagKind {
+    /// Only from folder names.
+    Folder,
+    /// Only added by the user.
+    Own,
+    /// Both: a folder name that the user also added to other photos.
+    Both,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Tag {
     pub id: i64,
     pub name: String,
     pub count: u64,
+    pub kind: TagKind,
 }
 
 /// Every tag with the number of present files carrying it, most used first.
 pub fn all_tags(conn: &Connection) -> Result<Vec<Tag>> {
     let mut stmt = conn.prepare(
-        "SELECT t.id, t.name, count(DISTINCT f.id) AS n FROM tags t
+        "SELECT t.id, t.name, count(DISTINCT f.id) AS n, max(ft.source = 'folder'), max(ft.source = 'user') FROM tags t
          JOIN file_tags ft ON ft.tag_id = t.id
          JOIN files f ON f.id = ft.file_id AND f.missing_since IS NULL AND f.kind != 'raw'
          GROUP BY t.id ORDER BY n DESC, t.name",
     )?;
     let tags = stmt
-        .query_map([], |r| Ok(Tag { id: r.get(0)?, name: r.get(1)?, count: r.get::<_, i64>(2)? as u64 }))?
+        .query_map([], |r| {
+            let kind = match (r.get::<_, bool>(3)?, r.get::<_, bool>(4)?) {
+                (true, true) => TagKind::Both,
+                (false, true) => TagKind::Own,
+                _ => TagKind::Folder,
+            };
+            Ok(Tag { id: r.get(0)?, name: r.get(1)?, count: r.get::<_, i64>(2)? as u64, kind })
+        })?
         .collect::<rusqlite::Result<_>>()?;
     Ok(tags)
+}
+
+/// A tag of one file and where it comes from: `folder` (its path) or `user`
+/// (an own tag). A tag can be both; then it is listed twice.
+#[derive(Debug, Clone, Serialize)]
+pub struct FileTag {
+    pub id: i64,
+    pub name: String,
+    pub source: String,
 }
 
 fn file_ids_with_tags(conn: &Connection, tags: &[i64]) -> Result<HashSet<i64>> {
@@ -327,7 +355,8 @@ pub struct Details {
     pub height: Option<u32>,
     pub duration_ms: Option<u64>,
     pub camera: Option<String>,
-    pub tags: Vec<Tag>,
+    /// Folder tags first, then own tags.
+    pub tags: Vec<FileTag>,
     pub missing: bool,
 }
 
@@ -362,8 +391,11 @@ pub fn details(conn: &Connection, id: i64) -> Result<Option<Details>> {
         .optional()?;
     let Some(mut d) = d else { return Ok(None) };
     d.tags = conn
-        .prepare("SELECT t.id, t.name FROM file_tags ft JOIN tags t ON t.id = ft.tag_id WHERE ft.file_id = ?1 ORDER BY t.name")?
-        .query_map([id], |r| Ok(Tag { id: r.get(0)?, name: r.get(1)?, count: 0 }))?
+        .prepare(
+            "SELECT t.id, t.name, ft.source FROM file_tags ft JOIN tags t ON t.id = ft.tag_id WHERE ft.file_id = ?1
+             ORDER BY ft.source != 'folder', t.name",
+        )?
+        .query_map([id], |r| Ok(FileTag { id: r.get(0)?, name: r.get(1)?, source: r.get(2)? }))?
         .collect::<rusqlite::Result<_>>()?;
     Ok(Some(d))
 }

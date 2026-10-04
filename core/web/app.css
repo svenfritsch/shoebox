@@ -216,3 +216,17 @@ body.selecting #select { color: var(--accent); }
 @media (min-width: 761px) {
   body.side-closed .sidebar { display: none; }
 }
+
+/* Own tags (5b): sidebar section, info panel chips, selection bar. */
+.side-tags h3 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 10px 14px 0; }
+.side-tags .tree { flex: none; padding-bottom: 4px; }
+.lb-panel .tags .own { display: inline-flex; align-items: center; background: rgba(255,255,255,.12); border-radius: 99px; }
+.lb-panel .tags .own button { background: none; padding-right: 4px; }
+.lb-panel .tags .own button.x { padding: 2px 8px 2px 2px; color: #aaa; }
+.lb-panel .tags button.add { background: none; border: 1px dashed rgba(255,255,255,.3); color: #ccc; }
+.lb-panel .tags input { font-size: 13px; padding: 2px 8px; border-radius: 99px; border: 1px solid rgba(255,255,255,.3); background: rgba(0,0,0,.3); color: #eee; width: 12em; }
+.dialog .taglist { display: flex; flex-wrap: wrap; gap: 6px; }
+.dialog .taglist button { padding: 4px 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
+@media (max-width: 640px) {
+  .selbar { flex-wrap: wrap; justify-content: center; white-space: normal; width: calc(100% - 24px); }
+}
