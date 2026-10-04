@@ -42,7 +42,10 @@ shoebox recognize /Volumes/Fotos --retry-failed  # try failed photos again
 - JPEG, PNG and HEIC, one per content (copies share their faces), newest
   first. RAW files (covered by their JPEG/HEIC twin) and videos are skipped.
 - **Resumable.** Results are committed every few seconds; an interrupted run
-  continues where it stopped. Photos looked at with the same model are not
+  continues where it stopped. Ctrl-C ends a run at once and marks it
+  interrupted, so the next one can start right away (the worker runs in its
+  own process group and is stopped by shoebox). A run killed otherwise
+  counts as running for 2 minutes. Photos looked at with the same model are not
   looked at again; results of another model are redone (embeddings of
   different models cannot be compared).
 - **Originals are only read.** shoebox decodes each photo itself (HEIC

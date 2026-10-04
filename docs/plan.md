@@ -370,6 +370,11 @@ Open:
   `cp -RL`, keeping only `bin/python3`. Use the `install_only_stripped`
   archives: the plain ones carry ~250 MB of debug info, and GNU `strip`
   breaks their binaries.
+- **File names lie.** Some exports keep `.HEIC` on a JPEG (43 such files on
+  the real drive). Images are decoded and their metadata read by their
+  first bytes (`media::content_kind`), not their extension; the stored
+  `kind` stays the extension's. thumbs.db v2 retries failed thumbnails, and
+  a scan re-reads metadata that failed before.
 - **OpenCV wheels and old macOS.** OpenCV 4.11+ has Intel macOS wheels for
   macOS 13+ only; without a wheel pip compiles OpenCV from source (hours,
   usually fails). `install.sh` passes `--only-binary :all:`, so macOS 12

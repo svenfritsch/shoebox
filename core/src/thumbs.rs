@@ -38,7 +38,7 @@ const QUALITY: u8 = 80;
 pub const VIEW_EDGE: u32 = 2048;
 const VIEW_QUALITY: u8 = 85;
 
-const SCHEMA_VERSION: i32 = 1;
+const SCHEMA_VERSION: i32 = 2;
 const SCHEMA_V1: &str = "
 CREATE TABLE thumbs.thumbs (
     key     TEXT PRIMARY KEY,   -- files.quick_hash
@@ -72,6 +72,14 @@ pub fn attach(conn: &Connection, db_path: &Path) -> Result<()> {
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V1)?;
         tx.pragma_update(Some("thumbs"), "user_version", 1)?;
+        tx.commit()?;
+    }
+    if version < 2 {
+        // v2 decodes images by content, not name (a JPEG called `.HEIC`):
+        // try the ones that failed before once more.
+        let tx = conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM thumbs.thumbs WHERE jpeg IS NULL", [])?;
+        tx.pragma_update(Some("thumbs"), "user_version", 2)?;
         tx.commit()?;
     }
     Ok(())

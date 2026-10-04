@@ -25,6 +25,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
@@ -55,6 +56,8 @@ pub const FACES: &str = "faces";
 const KINDS: &str = "'jpeg', 'png', 'heic'";
 /// After this many crashes without a reply in between, the worker is broken.
 const MAX_CRASHES_IN_ROW: u32 = 5;
+/// While waiting for the worker, look this often whether Ctrl-C was pressed.
+const POLL: Duration = Duration::from_millis(200);
 /// A `running` job that has not reported progress for this long is dead.
 const JOB_ALIVE_SECS: i64 = 120;
 
@@ -279,17 +282,63 @@ struct Process {
 enum ReadError {
     Timeout,
     Closed,
+    Interrupted,
 }
+
+// ---------------------------------------------------------------- Ctrl-C
+
+static INTERRUPTED: AtomicBool = AtomicBool::new(false);
+
+/// The run was stopped with Ctrl-C. What was found so far is kept.
+#[derive(Debug)]
+pub struct Interrupted;
+
+impl std::fmt::Display for Interrupted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("interrupted; what was found so far is kept, run it again to continue")
+    }
+}
+
+impl std::error::Error for Interrupted {}
+
+fn interrupted() -> bool {
+    INTERRUPTED.load(Ordering::Relaxed)
+}
+
+/// Let Ctrl-C (and `kill`) end a run in an orderly way: the current batch is
+/// committed and the job marked `interrupted`, so the next run can start at
+/// once. A second Ctrl-C ends the process the usual way.
+#[cfg(unix)]
+fn catch_interrupts() {
+    extern "C" fn handler(signal: libc::c_int) {
+        INTERRUPTED.store(true, Ordering::Relaxed);
+        // SAFETY: signal() is async-signal-safe; this restores the default.
+        unsafe { libc::signal(signal, libc::SIG_DFL) };
+    }
+    for signal in [libc::SIGINT, libc::SIGTERM] {
+        // SAFETY: the handler only stores to an atomic and calls signal().
+        unsafe { libc::signal(signal, handler as extern "C" fn(libc::c_int) as libc::sighandler_t) };
+    }
+}
+
+#[cfg(not(unix))]
+fn catch_interrupts() {}
 
 impl Process {
     fn spawn(cmd: &WorkerCommand) -> Result<Process> {
-        let mut child = Command::new(&cmd.program)
+        let mut command = Command::new(&cmd.program);
+        command
             .args(&cmd.args)
             // No __pycache__ on the drive.
             .env("PYTHONDONTWRITEBYTECODE", "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::inherit());
+        // Its own process group, so Ctrl-C in the terminal reaches only
+        // shoebox, which then stops the worker itself.
+        #[cfg(unix)]
+        std::os::unix::process::CommandExt::process_group(&mut command, 0);
+        let mut child = command
             .spawn()
             .with_context(|| format!("cannot start the recognizer {}", cmd.program.display()))?;
         let stdin = child.stdin.take();
@@ -312,11 +361,17 @@ impl Process {
     }
 
     fn read_line(&self, deadline: Instant) -> Result<String, ReadError> {
-        let wait = deadline.saturating_duration_since(Instant::now());
-        match self.lines.recv_timeout(wait) {
-            Ok(Some(line)) => Ok(line),
-            Ok(None) | Err(RecvTimeoutError::Disconnected) => Err(ReadError::Closed),
-            Err(RecvTimeoutError::Timeout) => Err(ReadError::Timeout),
+        loop {
+            if interrupted() {
+                return Err(ReadError::Interrupted);
+            }
+            let wait = deadline.saturating_duration_since(Instant::now()).min(POLL);
+            match self.lines.recv_timeout(wait) {
+                Ok(Some(line)) => return Ok(line),
+                Ok(None) | Err(RecvTimeoutError::Disconnected) => return Err(ReadError::Closed),
+                Err(RecvTimeoutError::Timeout) if Instant::now() >= deadline => return Err(ReadError::Timeout),
+                Err(RecvTimeoutError::Timeout) => {}
+            }
         }
     }
 
@@ -437,6 +492,7 @@ impl Worker {
                     Err(ReadError::Timeout) => {
                         break Err(format!("the recognizer did not answer within {} s", self.timeouts.reply.as_secs()));
                     }
+                    Err(ReadError::Interrupted) => return Err(Interrupted.into()),
                 }
             }
         };
@@ -540,6 +596,10 @@ fn launch(cmd: &WorkerCommand, timeouts: &Timeouts) -> Result<(Process, Hello)> 
                 process.stop(Duration::ZERO);
                 bail!("the recognizer did not start within {} s", timeouts.start.as_secs());
             }
+            Err(ReadError::Interrupted) => {
+                process.stop(Duration::ZERO);
+                return Err(Interrupted.into());
+            }
         }
     };
     if hello.protocol != PROTOCOL {
@@ -630,10 +690,14 @@ pub fn run(opts: &Options) -> Result<Stats> {
     let conn = db::open_shared(&db_path)?;
     attach(&conn, &db_path)?;
     if running(&conn)? {
-        bail!("another `shoebox recognize` is running");
+        bail!(
+            "another `shoebox recognize` is running (one stopped without Ctrl-C counts as running for {} minutes)",
+            JOB_ALIVE_SECS / 60
+        );
     }
     conn.execute("UPDATE recog.jobs SET state = 'interrupted', finished_at = updated_at WHERE state = 'running'", [])?;
 
+    catch_interrupts();
     println!("Starting the recognizer ({})…", cmd.program.display());
     let mut worker = Worker::start(cmd, opts.timeouts)?;
     println!(
@@ -643,9 +707,11 @@ pub fn run(opts: &Options) -> Result<Stats> {
     );
     let result = recognize(&conn, &root, &mut worker, opts.limit, opts.retry_failed);
     worker.stop();
-    let stats = result?;
-    db::backup_schema(&conn, "recog", &path_for(&db_path))?;
-    Ok(stats)
+    // An interrupted run keeps what it found, so that is backed up too.
+    if result.as_ref().map_or_else(|e| e.is::<Interrupted>(), |_| true) {
+        db::backup_schema(&conn, "recog", &path_for(&db_path))?;
+    }
+    result
 }
 
 /// Look for faces in every photo that has not been looked at with the
@@ -694,7 +760,8 @@ pub fn recognize(
             Ok(()) => job.finish(conn, "done", &stats)?,
             Err(e) => {
                 let _ = conn.execute_batch("ROLLBACK");
-                let _ = job.finish(conn, "failed", &format!("{e:#}"));
+                let state = if e.is::<Interrupted>() { "interrupted" } else { "failed" };
+                let _ = job.finish(conn, state, &format!("{e:#}"));
                 return Err(e);
             }
         }
@@ -744,6 +811,9 @@ fn look_at(
         let mut done = 0;
         let result = (|| -> Result<()> {
             for (p, image) in rx.iter() {
+                if interrupted() {
+                    return Err(Interrupted.into());
+                }
                 done += 1;
                 let outcome = match image {
                     Ok(jpeg) => match worker.faces(&jpeg)? {
