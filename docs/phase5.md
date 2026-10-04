@@ -17,7 +17,7 @@ latest `main`, so conflicts stay small.
 |---|---|---|---|
 | **5a** | Show in Finder / Explorer, copy path | 1 (worked on in a separate chat) | none |
 | **5b** | Own tags: add/remove, many photos at once, search; user data backup | 1 (done) | `library.db` v3 |
-| **5b-2** | Search by several tags at once (AND); people join in with 5c-3 | 1 | none |
+| **5b-2** | Search by several tags at once (AND); people join in with 5c-3 | 1 (done) | none |
 | **5c** | Faces | 3: **5c-1** check recognition, **5c-2** people/groups/clustering backend, **5c-3** UI | `library.db` v4 (5c-2) |
 
 Conflict hot spots and how to avoid them:
@@ -154,6 +154,24 @@ by asking for both. What happens today:
   *somewhere* in the path or in any tag name: "Fall" also finds
   "Fallschirm" and a folder "Wasserfall", and a tag of two words
   ("Oma Inge") is split into two unrelated words.
+
+Done. As built (on top of the plan below):
+
+- `browse::Query.tags` (all must match); a tag id also matches the other
+  spellings of its name (`tags.fold`), so a folder "Winter" and one
+  "winter" count as one tag.
+- `GET /api/timeline?tag=…&tag=…&folder=…&q=…` (the handlers read the query
+  string as pairs, so keys can repeat); the reply has `tags: [{id, name}]`
+  for the chips, so a bookmarked link shows names on a fresh page.
+- `GET /api/tags?q=…&tag=…&folder=…` counts within that filter
+  (`browse::tags_within`) and leaves out the tags of the filter itself;
+  without a filter it is the old list.
+- UI (`app.js`, "search box"): `state.filter.tags`, `withFilter()`, chips
+  with ✕ and "+", a suggestion list of its own (`#suggest`; ↑/↓, Enter,
+  Escape, Backspace removes the last chip), folders suggested by name.
+  Clicking a folder in the sidebar keeps the search text but clears tags,
+  as before. The `<datalist>` stays only for the tag fields of 5b.
+- Tests: `search_by_several_tags_at_once` in `core/tests/tags.rs`.
 
 What changes:
 

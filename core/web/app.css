@@ -243,3 +243,16 @@ body.selecting #select { color: var(--accent); }
 .face .near { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border: 0; border-radius: 12px; background: rgba(0,0,0,.55); color: #fff; font-size: 14px; line-height: 24px; padding: 0; cursor: pointer; }
 .dialog .faces { margin-top: 8px; }
 .page .toolbar select { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
+
+/* Search by several terms (5b-2): suggestion list under the search box, "+" chip. */
+.search { position: relative; }
+.suggest {
+  position: absolute; top: calc(100% + 4px); right: 0; width: min(360px, 100%); z-index: 20; max-height: 60vh; overflow-y: auto;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,.2); padding: 4px 0;
+}
+.suggest .head { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 6px 12px 2px; }
+.suggest .item { display: flex; width: 100%; gap: 8px; align-items: baseline; padding: 7px 12px; border: 0; background: none; color: var(--fg); text-align: left; font-size: 14px; }
+.suggest .item .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggest .item .count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.suggest .item:hover, .suggest .item.at { background: var(--panel); }
+.chip.more { padding: 3px 10px; color: var(--accent); cursor: pointer; }
