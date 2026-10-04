@@ -177,11 +177,19 @@ function renderChips() {
     });
   });
   if (f.q) add('“' + f.q + '”', function () { setFilter(withFilter({ q: '' })); });
-  if (box.firstChild) {
+  var terms = box.children.length;
+  if (terms) {
     var more = el('button', 'chip more', '+');
     more.title = 'Add a tag or folder to the search';
     more.onclick = function () { $('search').value = ''; $('search').focus(); suggest(''); };
     box.appendChild(more);
+  }
+  // One click for the whole search; the ✕ on a chip drops just that term.
+  if (terms >= 2) {
+    var clear = el('button', 'chip clear', 'Clear all');
+    clear.title = 'Show all photos again';
+    clear.onclick = function () { setFilter({ folder: null, tags: [], q: '' }); };
+    box.appendChild(clear);
   }
   box.hidden = !box.firstChild;
 }

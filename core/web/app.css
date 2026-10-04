@@ -255,4 +255,5 @@ body.selecting #select { color: var(--accent); }
 .suggest .item .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .suggest .item .count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .suggest .item:hover, .suggest .item.at { background: var(--panel); }
-.chip.more { padding: 3px 10px; color: var(--accent); cursor: pointer; }
+.chip.more, .chip.clear { padding: 3px 10px; color: var(--accent); cursor: pointer; }
+.chip.clear { border-style: dashed; }

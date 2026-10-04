@@ -167,7 +167,9 @@ Done. As built (on top of the plan below):
   (`browse::tags_within`) and leaves out the tags of the filter itself;
   without a filter it is the old list.
 - UI (`app.js`, "search box"): `state.filter.tags`, `withFilter()`, chips
-  with ✕ and "+", a suggestion list of its own (`#suggest`; ↑/↓, Enter,
+  with ✕ and "+", "Clear all" at the end of the row once the search has two
+  or more terms (the ✕ inside the search box only clears the typed text;
+  "All photos" in the sidebar resets too), a suggestion list of its own (`#suggest`; ↑/↓, Enter,
   Escape, Backspace removes the last chip), folders suggested by name.
   Clicking a folder in the sidebar keeps the search text but clears tags,
   as before. The `<datalist>` stays only for the tag fields of 5b.
