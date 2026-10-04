@@ -200,52 +200,33 @@ person, references for suggestions, the info panel) reads one table.
 In `recognition.db` (a cache: losing it loses no decision): the cluster
 and the suggested person per face.
 
-**Unnamed clusters keep their ids across runs** (decided). They are added
-to, not rebuilt, so "Unnamed #12" is the same card tomorrow:
+**Clusters are a pure cache** (decided): after every recognize run they
+are recomputed from all faces without a decision, and nothing about them is
+kept.
 
-```sql
-CREATE TABLE recog.clusters (
-    id         INTEGER PRIMARY KEY,   -- stable: shown as "Unnamed #id"
-    created_at INTEGER NOT NULL
-);
-CREATE TABLE recog.face_cluster (
-    face_id    INTEGER PRIMARY KEY,   -- recog.faces.id (or a hand-drawn face's cached embedding)
-    cluster_id INTEGER NOT NULL REFERENCES clusters(id)
-);
--- "These two faces are not the same person", from splitting an unnamed
--- cluster: keeps them apart when new faces arrive.
-CREATE TABLE recog.cannot_link (
-    a INTEGER NOT NULL,               -- recog.faces.id, a < b
-    b INTEGER NOT NULL,
-    PRIMARY KEY (a, b)
-) WITHOUT ROWID;
-```
-
-- A new face joins the nearest cluster when close enough (and no
-  cannot-link says otherwise), else starts one. Existing clusters are not
-  regrouped behind the user's back; a mistake stays until it is split.
-- Naming a cluster turns its faces into `confirmed` rows in
-  `face_decisions` (the person now exists) and empties the cluster;
-  "Ignore" writes `ignored` rows. Both are decisions, so they live in
-  `library.db`.
-- Only splitting an *unnamed* cluster stays in the cache (`cannot_link`),
-  because there is no person to record it against yet. Usually the next
-  step names one part anyway, which makes it a decision.
-- If `recognition.db` is thrown away (e.g. after a model change, whose
-  embeddings are not comparable anyway), clusters are formed anew: the
-  numbering and unnamed splits are lost, nothing named, confirmed, rejected
-  or ignored is.
+- Simple and always consistent: new photos are mixed in properly and a bad
+  grouping can fix itself on the next run.
+- The price: clusters have no stable number. Cards under "Unnamed" are
+  sorted by size (most faces first) and labelled by a sample face, not
+  "Unnamed #12", and a card may look different after new photos.
+- Everything the user does with unnamed faces is therefore a decision in
+  `face_decisions`, never cluster state:
+  - naming a cluster (or some of its faces) → `confirmed` rows;
+  - "Ignore" (strangers) → `ignored` rows;
+  - "split" means selecting faces in a card and naming or ignoring them;
+    there is no "split but leave unnamed".
+- Throwing `recognition.db` away loses nothing the user did.
 
 Matching and clustering:
 - Only faces above the 5c-1 size and score thresholds take part; smaller
   ones are listed but never suggested.
 - A new face is suggested for a person when it is close enough to that
   person's confirmed faces, and never for a person it was rejected for.
-- Unassigned faces go into clusters, incrementally: each new face looks up
-  its nearest neighbours (approximate index, `instant-distance` or
+- Unassigned faces are grouped into clusters after each run, from scratch
+  (see above) but without an all-pairs pass: every face looks up its
+  nearest neighbours in an approximate index (`instant-distance` or
   `hnsw_rs`, or plain SIMD dot products if that is fast enough for ~150k
-  faces) and joins a cluster or starts one (stable ids, see above). No
-  all-pairs pass.
+  faces), and neighbours close enough end up in one cluster.
 - Runs after `shoebox recognize` and in the background in `serve`;
   resumable, progress in `/api/info`.
 
