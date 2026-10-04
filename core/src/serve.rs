@@ -21,6 +21,11 @@
 //! machine, takes the path from the index (never from the request), and runs
 //! the command without a shell (see `reveal.rs`).
 //!
+//! Own tags (`/api/tags/add`, `/api/tags/remove`, see `tags.rs`) change only
+//! the index. After every change the server copies `library.db` to
+//! `library.db.bak` and writes `userdata.json` (at most once a minute, and
+//! when it stops).
+//!
 //! Self-healing paths: when a file is not where the index says (moved in the
 //! Finder while shoebox runs), the server runs the scan's index step in the
 //! background, which finds it again by its hashes.
@@ -59,6 +64,7 @@ use crate::organize;
 use crate::recognize;
 use crate::reveal;
 use crate::scan;
+use crate::tags as own_tags;
 use crate::thumbs::{self, Source};
 
 mod faces_api;
@@ -73,6 +79,8 @@ const IMMUTABLE: &str = "private, max-age=31536000, immutable";
 const WRITE_HEADER: &str = "x-shoebox";
 /// At most one background search for moved files in this time.
 const HEAL_INTERVAL: Duration = Duration::from_secs(30);
+/// At most one backup of the index and the user data in this time.
+const BACKUP_INTERVAL: Duration = Duration::from_secs(60);
 /// A job that has not reported progress for this long belongs to a process
 /// that died.
 const JOB_ALIVE_SECS: i64 = 120;
@@ -170,6 +178,7 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
     let workers = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2);
     import::clean_incoming(&root);
     let (heal_tx, heal_rx) = mpsc::channel();
+    let (backup_tx, backup_rx) = mpsc::channel();
     let app = Arc::new(App {
         root,
         db_path,
@@ -181,12 +190,14 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
         writing: Mutex::new(()),
         dirty: AtomicBool::new(false),
         heal: Mutex::new(heal_tx),
+        backup: Mutex::new(backup_tx),
         ffmpeg: media::find_ffmpeg(),
         reveal: opts.reveal.clone().unwrap_or_else(|| -> RevealFn { Arc::new(|p: &FsPath| reveal::reveal(p)) }),
         renders: Semaphore::new(workers),
         auth: Auth { pin: pin.clone(), sessions: Mutex::new(HashSet::new()), failures: Mutex::new(Vec::new()) },
     });
     spawn_healer(Arc::downgrade(&app), heal_rx);
+    spawn_backups(Arc::downgrade(&app), backup_rx);
     let router = router(app.clone());
 
     let (tx, rx) = oneshot::channel::<()>();
@@ -211,8 +222,7 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
         })?;
         // Like a scan, leave a copy of the index after changing it.
         if app.dirty.load(Ordering::SeqCst) {
-            let _writing = app.writing.lock().unwrap();
-            db::backup(&app.conn.lock().unwrap(), &app.db_path)?;
+            app.backup()?;
         }
         Ok(())
     })?;
@@ -239,6 +249,8 @@ struct App {
     dirty: AtomicBool,
     /// Asks the background thread to look for moved files.
     heal: Mutex<mpsc::Sender<()>>,
+    /// Asks the background thread for a backup of the index and user data.
+    backup: Mutex<mpsc::Sender<()>>,
     ffmpeg: Option<PathBuf>,
     reveal: RevealFn,
     /// Limits concurrent decodes to the number of cores.
@@ -289,6 +301,15 @@ impl App {
             stats.moved, stats.added, stats.changed, stats.missing
         );
         db::backup(&conn, &self.db_path)?;
+        Ok(())
+    }
+
+    /// Copy the index to `library.db.bak` and write `userdata.json`.
+    fn backup(&self) -> Result<()> {
+        let _writing = self.writing.lock().unwrap();
+        let conn = self.conn.lock().unwrap();
+        db::backup(&conn, &self.db_path)?;
+        own_tags::write_user_data(&conn, &self.db_path)?;
         Ok(())
     }
 
@@ -356,6 +377,28 @@ fn spawn_healer(app: Weak<App>, requests: mpsc::Receiver<()>) {
     });
 }
 
+/// Backs up the index and the user data after changes: right away after the
+/// first change, then at most every `BACKUP_INTERVAL` (changes in between are
+/// covered by the next one). Ends with the server, which backs up once more
+/// when it stops.
+fn spawn_backups(app: Weak<App>, requests: mpsc::Receiver<()>) {
+    std::thread::spawn(move || {
+        let mut last: Option<Instant> = None;
+        while requests.recv().is_ok() {
+            if let Some(wait) = last.and_then(|t| BACKUP_INTERVAL.checked_sub(t.elapsed())) {
+                std::thread::sleep(wait);
+            }
+            while requests.try_recv().is_ok() {}
+            let Some(app) = app.upgrade() else { break };
+            if let Err(e) = app.backup() {
+                eprintln!("could not back up the index: {e:#}");
+            }
+            drop(app);
+            last = Some(Instant::now());
+        }
+    });
+}
+
 fn router(app: Arc<App>) -> Router {
     Router::new()
         .route("/api/session", get(session))
@@ -380,6 +423,9 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/trash/{batch}/restore", post(trash_restore))
         .route("/api/trash/empty", post(trash_empty))
         .route("/api/rescan", post(rescan))
+        .route("/api/tags/add", post(tags_add))
+        .route("/api/tags/remove", post(tags_remove))
+        .route("/api/tags/selection", post(tags_selection))
         .route("/api/faces", get(faces_api::list))
         .route("/api/faces/stats", get(faces_api::stats))
         .route("/api/faces/{id}/crop", get(faces_api::crop))
@@ -695,15 +741,19 @@ async fn folders(State(app): State<Arc<App>>) -> ApiResult<Json<Vec<browse::Fold
 struct TagQuery {
     q: Option<String>,
     limit: Option<usize>,
+    /// Only tags the user added somewhere (own or both).
+    own: Option<u8>,
 }
 
 async fn tags(State(app): State<Arc<App>>, Query(q): Query<TagQuery>) -> ApiResult<Json<Vec<browse::Tag>>> {
     blocking(&app, move |app| {
         let conn = app.conn.lock().unwrap();
-        let needle = q.q.as_deref().map(|s| crate::library::nfc(s.trim()).to_lowercase()).unwrap_or_default();
+        let needle = q.q.as_deref().map(db::tag_fold).unwrap_or_default();
+        let own = q.own.is_some_and(|o| o != 0);
         let tags = browse::all_tags(&conn)?
             .into_iter()
-            .filter(|t| t.name.to_lowercase().contains(&needle))
+            .filter(|t| !own || t.kind != browse::TagKind::Folder)
+            .filter(|t| db::tag_fold(&t.name).contains(&needle))
             .take(q.limit.unwrap_or(50))
             .collect();
         Ok(Json(tags))
@@ -956,6 +1006,7 @@ async fn change<T: Send + 'static>(
         let result = f(app, &conn);
         app.generation.fetch_add(1, Ordering::SeqCst);
         app.dirty.store(true, Ordering::SeqCst);
+        let _ = app.backup.lock().unwrap().send(());
         result.map_err(|e| ApiError::BadRequest(format!("{e:#}")))
     })
     .await
@@ -1157,6 +1208,28 @@ async fn trash_empty(State(app): State<Arc<App>>, Json(req): Json<EmptyRequest>)
 async fn rescan(State(app): State<Arc<App>>) -> Json<serde_json::Value> {
     app.request_heal();
     Json(serde_json::json!({ "ok": true }))
+}
+
+// ---------------------------------------------------------------- own tags
+
+#[derive(Deserialize)]
+struct TagRequest {
+    ids: Vec<i64>,
+    name: String,
+}
+
+async fn tags_add(State(app): State<Arc<App>>, Json(req): Json<TagRequest>) -> ApiResult<Json<own_tags::Changed>> {
+    change(&app, move |_, conn| own_tags::add(conn, &req.ids, &req.name)).await.map(Json)
+}
+
+/// Only own tags go; folder tags stay (see `tags.rs`).
+async fn tags_remove(State(app): State<Arc<App>>, Json(req): Json<TagRequest>) -> ApiResult<Json<own_tags::Changed>> {
+    change(&app, move |_, conn| own_tags::remove(conn, &req.ids, &req.name)).await.map(Json)
+}
+
+/// The own tags on a selection, for "Remove tag…".
+async fn tags_selection(State(app): State<Arc<App>>, Json(req): Json<IdsRequest>) -> ApiResult<Json<Vec<own_tags::Counted>>> {
+    blocking(&app, move |app| Ok(Json(own_tags::own_tags_of(&app.conn.lock().unwrap(), &req.ids)?))).await
 }
 
 // ---------------------------------------------------------------- assets

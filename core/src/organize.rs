@@ -30,6 +30,7 @@ use crate::db;
 use crate::fingerprint::{self, Stamp};
 use crate::library::{self, RelPath};
 use crate::scan::{self, Found};
+use crate::tags;
 
 /// Below `.shoebox/`.
 pub const TRASH_DIR: &str = "trash";
@@ -595,7 +596,7 @@ pub struct Trashed {
 
 /// Move photos and their companions into `.shoebox/trash/<batch>/`. Their
 /// records go (with tags and duplicate decisions); the trash table keeps
-/// what is needed to put them back.
+/// what is needed to put them back, own tags included.
 pub fn trash_files(conn: &Connection, root: &Path, ids: &[i64]) -> Result<Trashed> {
     let mut out = Trashed::default();
     for group in Group::all(conn, root, ids, &mut out.skipped)? {
@@ -624,8 +625,8 @@ fn trash_group(conn: &Connection, root: &Path, group: &Group, out: &mut Trashed)
             let before = fingerprint::stamp(&from)?;
             let to = rename_into(&from, &dir, name, &mut names)?;
             tx.execute(
-                "INSERT INTO trash (batch, path, path_nfc, stored, kind, size, mtime_ns, quick_hash, full_hash, deleted_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                "INSERT INTO trash (batch, path, path_nfc, stored, kind, size, mtime_ns, quick_hash, full_hash, deleted_at, user_tags)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 params![
                     batch,
                     f.path,
@@ -636,7 +637,8 @@ fn trash_group(conn: &Connection, root: &Path, group: &Group, out: &mut Trashed)
                     f.mtime_ns,
                     f.quick_hash,
                     f.full_hash,
-                    db::now()
+                    db::now(),
+                    tags::own_names_json(&tx, f.id)?
                 ],
             )?;
             tx.execute("DELETE FROM file_tags WHERE file_id = ?1", [f.id])?;
@@ -710,12 +712,13 @@ struct TrashRow {
     size: u64,
     mtime_ns: i64,
     full_hash: Option<String>,
+    user_tags: Option<String>,
 }
 
 fn trash_rows(conn: &Connection, batch: Option<i64>) -> Result<Vec<TrashRow>> {
     let rows = conn
         .prepare(
-            "SELECT id, path, path_nfc, stored, kind, size, mtime_ns, full_hash FROM trash
+            "SELECT id, path, path_nfc, stored, kind, size, mtime_ns, full_hash, user_tags FROM trash
              WHERE ?1 IS NULL OR batch = ?1 ORDER BY kind IS NULL, path_nfc",
         )?
         .query_map([batch], |r| {
@@ -728,6 +731,7 @@ fn trash_rows(conn: &Connection, batch: Option<i64>) -> Result<Vec<TrashRow>> {
                 size: r.get::<_, i64>(5)? as u64,
                 mtime_ns: r.get(6)?,
                 full_hash: r.get(7)?,
+                user_tags: r.get(8)?,
             })
         })?
         .collect::<rusqlite::Result<_>>()?;
@@ -751,8 +755,8 @@ pub struct Restored {
     pub ids: Vec<i64>,
 }
 
-/// Put one batch back where it was. Fails without moving anything if one of
-/// the places is taken by now.
+/// Put one batch back where it was, with the files' own tags. Fails without
+/// moving anything if one of the places is taken by now.
 pub fn restore(conn: &Connection, root: &Path, batch: i64) -> Result<Restored> {
     let rows = trash_rows(conn, Some(batch))?;
     if rows.is_empty() {
@@ -779,7 +783,11 @@ pub fn restore(conn: &Connection, root: &Path, batch: i64) -> Result<Restored> {
             tx.execute("DELETE FROM trash WHERE id = ?1", [r.id])?;
             if r.kind.is_some() {
                 let hash = r.full_hash.as_deref().filter(|_| *unchanged);
-                out.ids.push(index_file(&tx, root, &raw, hash)?);
+                let id = index_file(&tx, root, &raw, hash)?;
+                if let Some(names) = &r.user_tags {
+                    tags::restore_names_json(&tx, id, names)?;
+                }
+                out.ids.push(id);
             }
             out.files.push(library::nfc(&raw));
         }

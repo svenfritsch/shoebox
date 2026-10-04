@@ -178,8 +178,8 @@ rot) and shows "last backup N days ago, M files new since".
 | 3 | Import dialog, move (with RAW pairs, case-only renames), duplicates UI, self-healing paths | **Done except the real-hardware run** (see below) |
 | 4 | Worker protocol + Python recognizer (faces), worker supervision in Rust | **Done except the real-hardware run** (see below) |
 | 5a | Show in Finder / Explorer, copy path | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 5b | Own tags (add/remove, many photos at once, search), user data backup | Next |
-| 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **5c-1 done except the real-hardware run** (see [phase5.md](phase5.md)); 5c-2 after 5b |
+| 5b | Own tags (add/remove, many photos at once, search), user data backup | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
+| 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **5c-1 done except the real-hardware run** (see [phase5.md](phase5.md)); 5c-2 next |
 | 6 | Pets | |
 | 7 | Backup verification, launchers, packaging | |
 
@@ -314,7 +314,8 @@ schema versions v3 for 5b and v4 for 5c-2) listed there.
 Open:
 - [x] 5a: show in Finder / Explorer, copy path ([phase5.md](phase5.md)); the
       real-hardware check is in its list.
-- [ ] 5b: own tags, trash keeps them, user data backup.
+- [x] 5b: own tags, trash keeps them, user data backup
+      ([phase5.md](phase5.md)); the real-hardware check is in its list.
 - [x] 5c-1: `shoebox faces stats`, face check page (crops in `thumbs.db`
       v3, nearest neighbours), `shoebox recognize --rotated`
       (`recognition.db` v2); the real-hardware check is in its list.
@@ -397,7 +398,7 @@ Open:
 
 Run the phase 0–4 hardware checklists on the old Intel MacBook and the iPad
 (phase 4: `recognizer/install.sh` and a `shoebox recognize` run on the
-drive). 5a (reveal) and 5c-1 (face check, `--rotated`) are built; on the
-drive run `shoebox faces stats`, look through the face check page and time
-`shoebox recognize --rotated` (list in [phase5.md](phase5.md)). Next is 5b
-(own tags), then 5c-2.
+drive). 5a (reveal), 5b (own tags) and 5c-1 (face check, `--rotated`) are
+built; on the drive run `shoebox faces stats`, look through the face check
+page and time `shoebox recognize --rotated` (list in [phase5.md](phase5.md)).
+Next is 5c-2.

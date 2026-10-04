@@ -15,7 +15,7 @@ pub const FILE: &str = "library.db";
 const BACKUP_SUFFIX: &str = ".bak";
 
 /// Bump when the schema changes and add a step to `migrate`.
-const SCHEMA_VERSION: i32 = 2;
+const SCHEMA_VERSION: i32 = 3;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -67,7 +67,7 @@ CREATE TABLE tags (
 CREATE TABLE file_tags (
     file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
     tag_id  INTEGER NOT NULL REFERENCES tags(id),
-    source  TEXT NOT NULL,              -- 'folder' for now
+    source  TEXT NOT NULL,              -- 'folder' (from the path) or 'user' (own tags, v3)
     PRIMARY KEY (file_id, tag_id, source)
 ) WITHOUT ROWID;
 CREATE INDEX file_tags_tag ON file_tags(tag_id);
@@ -110,6 +110,15 @@ CREATE TABLE trash (
     deleted_at INTEGER NOT NULL      -- Unix seconds
 );
 CREATE INDEX trash_batch ON trash(batch);
+";
+
+/// Phase 5b: own tags. The trash keeps a file's own tags, and own tags are
+/// looked up by their folded name (`tag_fold`), so "Europa-Park" and
+/// "europa-park" are one tag. `fold` is filled in by `migrate`.
+const SCHEMA_V3: &str = "
+ALTER TABLE trash ADD COLUMN user_tags TEXT;  -- JSON array of the file's own tag names; NULL if none
+ALTER TABLE tags ADD COLUMN fold TEXT;        -- tag_fold(name)
+CREATE INDEX tags_fold ON tags(fold);
 ";
 
 /// Default database location for a library root.
@@ -159,6 +168,17 @@ fn migrate(conn: &Connection) -> Result<()> {
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V2)?;
         tx.pragma_update(None, "user_version", 2)?;
+        tx.commit()?;
+    }
+    if version < 3 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V3)?;
+        let names: Vec<(i64, String)> =
+            tx.prepare("SELECT id, name FROM tags")?.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
+        for (id, name) in names {
+            tx.execute("UPDATE tags SET fold = ?2 WHERE id = ?1", params![id, tag_fold(&name)])?;
+        }
+        tx.pragma_update(None, "user_version", 3)?;
         tx.commit()?;
     }
     Ok(())
@@ -236,16 +256,35 @@ impl Job {
     }
 }
 
-/// Id of a tag, creating it if needed.
+/// How tag names are compared: trimmed, NFC, ignoring case.
+pub fn tag_fold(name: &str) -> String {
+    crate::library::nfc(name.trim()).to_lowercase()
+}
+
+/// Id of the tag with this name in any spelling (the first one wins).
+pub fn find_tag(conn: &Connection, name: &str) -> Result<Option<i64>> {
+    Ok(conn
+        .query_row("SELECT id FROM tags WHERE fold = ?1 ORDER BY id LIMIT 1", [tag_fold(name)], |r| r.get(0))
+        .optional()?)
+}
+
+/// Id of a folder tag, creating it if needed. Spelled exactly as the
+/// folder, so a case-only rename of a folder changes its tag too.
 pub fn tag_id(conn: &Connection, name: &str) -> Result<i64> {
-    if let Some(id) = conn
-        .query_row("SELECT id FROM tags WHERE name = ?1", [name], |r| r.get(0))
-        .optional()?
-    {
+    if let Some(id) = conn.query_row("SELECT id FROM tags WHERE name = ?1", [name], |r| r.get(0)).optional()? {
         return Ok(id);
     }
-    conn.execute("INSERT INTO tags (name) VALUES (?1)", [name])?;
+    conn.execute("INSERT INTO tags (name, fold) VALUES (?1, ?2)", params![name, tag_fold(name)])?;
     Ok(conn.last_insert_rowid())
+}
+
+/// Id of an own tag: an existing tag in any spelling (a folder tag too), or
+/// a new one spelled as given.
+pub fn own_tag_id(conn: &Connection, name: &str) -> Result<i64> {
+    match find_tag(conn, name)? {
+        Some(id) => Ok(id),
+        None => tag_id(conn, name),
+    }
 }
 
 #[cfg(test)]
@@ -270,6 +309,33 @@ mod tests {
         let copy = Connection::open(&bak).unwrap();
         let n: i64 = copy.query_row("SELECT count(*) FROM jobs", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn v3_folds_existing_tags() {
+        let dir = std::env::temp_dir().join(format!("shoebox-db-v3-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(FILE);
+        {
+            let old = Connection::open(&path).unwrap();
+            old.execute_batch(SCHEMA_V1).unwrap();
+            old.execute_batch(SCHEMA_V2).unwrap();
+            old.pragma_update(None, "user_version", 2).unwrap();
+            old.execute("INSERT INTO tags (name) VALUES ('Europa-Park'), ('O\u{308}sterreich')", []).unwrap();
+        }
+        let conn = open(&path).unwrap();
+        let version: i32 = conn.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+        // Own tags in other spellings find the existing tags; folder tags
+        // keep their exact spelling.
+        assert_eq!(own_tag_id(&conn, "europa-park").unwrap(), 1);
+        assert_eq!(own_tag_id(&conn, "\u{d6}STERREICH").unwrap(), 2);
+        assert_eq!(own_tag_id(&conn, "Neu").unwrap(), 3);
+        assert_eq!(find_tag(&conn, "NEU ").unwrap(), Some(3));
+        assert_eq!(tag_id(&conn, "neu").unwrap(), 4);
+        conn.execute("UPDATE trash SET user_tags = '[]' WHERE 0", []).unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

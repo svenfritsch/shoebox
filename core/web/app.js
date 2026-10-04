@@ -275,6 +275,9 @@ function markActiveFolder() {
   Array.prototype.forEach.call(document.querySelectorAll('.tree .name'), function (b) {
     b.classList.toggle('active', String(active) === b.dataset.id);
   });
+  Array.prototype.forEach.call(document.querySelectorAll('#own-tags .name'), function (b) {
+    b.classList.toggle('active', String(state.filter.tag) === b.dataset.tag);
+  });
 }
 
 $('all').onclick = function () { setFilter({ folder: null, tag: null, q: '' }); };
@@ -759,16 +762,7 @@ function renderPanel() {
   else row('Size', formatBytes(info.size));
   if (info.duration_ms) row('Length', Math.round(info.duration_ms / 1000) + ' s');
   row('Camera', info.camera);
-  if (info.tags.length) {
-    var tags = el('div', 'tags');
-    info.tags.forEach(function (t) {
-      state.tagNames[t.id] = t.name;
-      var b = el('button', '', t.name);
-      b.onclick = function () { closeLightbox(); setFilter({ folder: null, tag: t.id, q: '' }); };
-      tags.appendChild(b);
-    });
-    row('Tags', tags);
-  }
+  infoTags(row, info);
   if (info.linked && info.linked.length) {
     var versions = el('div');
     info.linked.forEach(function (l) { versions.appendChild(el('div', '', l.path + (l.missing ? ' (missing)' : ''))); });
@@ -908,6 +902,7 @@ function loadInfo() {
 // page that is open, and the status line.
 function reloadAll() {
   loadFolders();
+  loadOwnTags();
   if (state.filter.view === 'duplicates') loadDuplicates();
   else if (state.filter.view === 'trash') loadTrash();
   else if (state.filter.view === 'faces') loadFaces();
@@ -997,7 +992,7 @@ function updateSelbar() {
   var n = selectedIds().length;
   $('selbar').hidden = !state.selecting;
   $('sel-count').textContent = n ? plural(n, 'photo', 'photos') : 'Tap photos to select';
-  $('sel-move').disabled = $('sel-trash').disabled = !n;
+  $('sel-move').disabled = $('sel-trash').disabled = $('sel-tag').disabled = $('sel-untag').disabled = !n;
 }
 
 $('select').onclick = function () {
@@ -1007,6 +1002,8 @@ $('select').onclick = function () {
 $('sel-done').onclick = endSelection;
 $('sel-move').onclick = function () { moveDialog(selectedIds(), endSelection); };
 $('sel-trash').onclick = function () { trashDialog(selectedIds(), endSelection); };
+$('sel-tag').onclick = function () { addTagDialog(selectedIds()); };
+$('sel-untag').onclick = function () { removeTagDialog(selectedIds()); };
 
 // ------------------------------------------------------------------ move and trash
 
@@ -1562,6 +1559,153 @@ $('sizer').addEventListener('contextmenu', function (ev) {
   showMenu(ev.clientX, ev.clientY, items);
 });
 
+// ------------------------------------------------------------------ own tags
+
+// Info panel, 5b: folder tags (from where the file is; not removable, move
+// the photo to get rid of one), own tags (✗ removes them) and "+ Tag".
+function infoTags(row, info) {
+  var tags = el('div', 'tags');
+  info.tags.forEach(function (t) {
+    state.tagNames[t.id] = t.name;
+    var show = function () { closeLightbox(); setFilter({ folder: null, tag: t.id, q: '' }); };
+    if (t.source === 'folder') {
+      var b = el('button', '', '📁 ' + t.name);
+      b.title = 'Folder tag: comes from where the photo is';
+      b.onclick = show;
+      tags.appendChild(b);
+      return;
+    }
+    var chip = el('span', 'own');
+    var name = el('button', '', t.name);
+    name.onclick = show;
+    var x = el('button', 'x', '✕');
+    x.title = 'Remove this tag';
+    x.setAttribute('aria-label', 'Remove tag ' + t.name);
+    x.onclick = function () {
+      post('/api/tags/remove', { ids: [info.id], name: t.name }).then(function () { tagsChanged(info.id); }).catch(failed);
+    };
+    chip.appendChild(name);
+    chip.appendChild(x);
+    tags.appendChild(chip);
+  });
+  var add = el('button', 'add', '+ Tag');
+  add.onclick = function () {
+    var input = tagInput();
+    input.onkeydown = function (ev) {
+      ev.stopPropagation(); // arrows and Escape belong to the field, not the viewer
+      if (ev.key === 'Escape') { input.replaceWith(add); return; }
+      if (ev.key !== 'Enter' || !input.value.trim()) return;
+      input.disabled = true;
+      post('/api/tags/add', { ids: [info.id], name: input.value }).then(function () { tagsChanged(info.id); })
+        .catch(function (e) { input.disabled = false; failed(e); });
+    };
+    add.replaceWith(input);
+    input.focus();
+  };
+  tags.appendChild(add);
+  row('Tags', tags);
+}
+
+// A text field that suggests existing tags while typing.
+function tagInput() {
+  var input = el('input');
+  input.type = 'text';
+  input.placeholder = 'Tag name';
+  input.setAttribute('list', 'tag-list');
+  input.setAttribute('enterkeyhint', 'done');
+  input.addEventListener('input', function () { suggestTags(input.value); });
+  return input;
+}
+
+// After a change: refresh the open info panel and the sidebar.
+function tagsChanged(id) {
+  loadOwnTags();
+  // A bulk change can change what a tag filter or search shows (the open
+  // viewer keeps its photos until it closes).
+  if (id == null && !state.filter.view && (state.filter.tag || state.filter.q)) loadTimeline(false);
+  if (id == null || !lb.details || lb.details.id !== id) return;
+  api('/api/files/' + id).then(function (info) {
+    if (!lb.details || lb.details.id !== id) return;
+    lb.details = info;
+    renderPanel();
+  }).catch(function () {});
+}
+
+function addTagDialog(ids) {
+  var body = el('div');
+  body.appendChild(el('p', '', 'Add a tag to ' + plural(ids.length, 'photo', 'photos') + ':'));
+  var input = tagInput();
+  input.className = 'wide';
+  body.appendChild(input);
+  body.appendChild(el('p', 'hint', 'Tags are kept in shoebox’s index, never written into the photos. Names are matched ignoring case.'));
+  var error = el('p', 'error');
+  body.appendChild(error);
+  var go = function (btn) {
+    if (!input.value.trim()) { error.textContent = 'Type a tag name.'; return false; }
+    btn.disabled = true;
+    post('/api/tags/add', { ids: ids, name: input.value }).then(function (r) {
+      closeModal();
+      toast(r.files ? plural(r.files, 'photo', 'photos') + ' tagged “' + r.tag.name + '”' : 'All of them have “' + r.tag.name + '” already');
+      tagsChanged(null);
+    }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
+    return false;
+  };
+  var buttons = openModal('Add tag', body, [{ label: 'Cancel', cls: 'quiet' }, { label: 'Add', onclick: go }]);
+  input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go(buttons[1]); });
+  input.focus();
+}
+
+// Lists the own tags on the selection; folder tags cannot be removed.
+function removeTagDialog(ids) {
+  post('/api/tags/selection', { ids: ids }).then(function (tags) {
+    if (!tags.length) {
+      openModal('Remove tag', 'None of these photos has an own tag. Folder tags come from where a photo is; move it to change them.', [{ label: 'OK' }]);
+      return;
+    }
+    var body = el('div');
+    body.appendChild(el('p', '', 'Remove which tag from ' + plural(ids.length, 'photo', 'photos') + '?'));
+    var list = el('div', 'taglist');
+    tags.forEach(function (t) {
+      var b = el('button', '', t.name + ' (' + t.count.toLocaleString() + ')');
+      b.onclick = function () {
+        b.disabled = true;
+        post('/api/tags/remove', { ids: ids, name: t.name }).then(function (r) {
+          closeModal();
+          toast('“' + t.name + '” removed from ' + plural(r.files, 'photo', 'photos'));
+          tagsChanged(null);
+        }).catch(function (e) { closeModal(); failed(e); });
+      };
+      list.appendChild(b);
+    });
+    body.appendChild(list);
+    openModal('Remove tag', body, [{ label: 'Cancel', cls: 'quiet' }]);
+  }).catch(failed);
+}
+
+// Sidebar: the tags the user added, most used first.
+function loadOwnTags() {
+  return api('/api/tags' + query({ own: 1, limit: 500 })).then(function (tags) {
+    var list = $('own-tags');
+    list.textContent = '';
+    tags.forEach(function (t) {
+      state.tagNames[t.id] = t.name;
+      var li = el('li');
+      var r = el('div', 'row');
+      r.appendChild(el('span', 'toggle', '#'));
+      var name = el('button', 'name', t.name);
+      name.dataset.tag = t.id;
+      name.onclick = function () { setFilter({ folder: null, tag: t.id, q: state.filter.q }); };
+      r.appendChild(name);
+      r.appendChild(el('span', 'count', t.count.toLocaleString()));
+      li.appendChild(r);
+      list.appendChild(li);
+    });
+    $('tags-section').hidden = !tags.length;
+    markActiveFolder();
+    renderChips();
+  }).catch(function () {});
+}
+
 // ------------------------------------------------------------------ face check page
 // Did recognition work? All faces as crops, sortable and filterable, so
 // false detections (posters, statues, background) are easy to spot.
@@ -1719,7 +1863,7 @@ api('/api/session').then(function (s) {
   }
   state.filter = readHash();
   $('search').value = state.filter.q;
-  return Promise.all([loadFolders(), loadInfo()]).then(function () {
+  return Promise.all([loadFolders(), loadInfo(), loadOwnTags()]).then(function () {
     applyFilter();
     setInterval(loadInfo, 20000);
   });

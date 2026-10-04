@@ -16,7 +16,7 @@ latest `main`, so conflicts stay small.
 | Part | Scope | PRs | Schema |
 |---|---|---|---|
 | **5a** | Show in Finder / Explorer, copy path | 1 (worked on in a separate chat) | none |
-| **5b** | Own tags: add/remove, many photos at once, search; user data backup | 1 | `library.db` v3 |
+| **5b** | Own tags: add/remove, many photos at once, search; user data backup | 1 (done) | `library.db` v3 |
 | **5c** | Faces | 3: **5c-1** check recognition, **5c-2** people/groups/clustering backend, **5c-3** UI | `library.db` v4 (5c-2) |
 
 Conflict hot spots and how to avoid them:
@@ -84,6 +84,30 @@ Done (PR "Phase 5-A"). Scope as agreed:
   lines per OS are unit tests in `reveal.rs`.
 
 ## 5b: own tags
+
+Done. As built (on top of the scope below):
+
+- `core/src/tags.rs` holds the logic; `serve.rs` only adds three routes:
+  `POST /api/tags/add` and `/api/tags/remove` (`{ids, name}` →
+  `{tag, files, folder}`; `folder` counts files that keep a folder tag of
+  that name) and `POST /api/tags/selection` (`{ids}` → the own tags on a
+  selection with counts, for "Remove tag…"). Changes go through the same
+  path as moves (one at a time, not while a scan runs).
+- Schema v3 adds `trash.user_tags` and `tags.fold` (NFC + lowercase, filled
+  in by the migration). Own tags are looked up by `fold`, so an own tag
+  "familie" on a photo is the folder tag "Familie" (`kind: both` in
+  `GET /api/tags`, which also takes `own=1`). Folder tags keep the folder's
+  exact spelling, so a case-only folder rename still renames its tag.
+- Removing the last use of an own tag deletes the tag row; the trash keeps
+  names, not ids, so a restore recreates it.
+- `userdata.json` (next to `library.db`): `{shoebox, version: 1,
+  written_at, own_tags: [{name, files: [{path, quick_hash, full_hash,
+  in_trash?}]}]}`. Written with the `library.db.bak` copy right after the
+  first change, then at most once a minute, and when the server stops.
+- UI: `infoTags` in `app.js` (folder tags with 📁, own tags with ✕, "+ Tag"
+  with autocomplete over all tags), "Add tag…" / "Remove tag…" in the
+  selection bar, and a "Tags" section in the sidebar listing own tags.
+- Tests: `core/tests/tags.rs`, plus a migration test in `db.rs`.
 
 Backend:
 - `POST /api/tags/add {ids, name}` and `POST /api/tags/remove {ids, name}`.
@@ -335,7 +359,8 @@ Folders
 - [ ] 5a: "Show in Finder" on the old Intel MacBook opens the right folder
       with the file selected; the iPad only offers "copy path".
 - [ ] 5b: tag a few hundred photos at once on the exFAT drive; tags survive
-      a move, a rescan, trash and restore.
+      a move, a rescan, trash and restore; `userdata.json` and
+      `library.db.bak` appear in `.shoebox/`.
 - [ ] 5c-1: on the old Intel MacBook against the exFAT drive:
   - `shoebox faces stats /Volumes/Fotos`: do the numbers match the phase 4
     run (9564 faces, 48 failures before `--retry-failed`, ~5% under
