@@ -530,7 +530,7 @@ fn faces_stats_tell_how_recognition_went() {
         assert_eq!(s.faces, 4);
         // under 30 | 30–40 | 40–60 | 60–120 | 120+
         assert_eq!(s.widths.iter().map(|b| b.count).collect::<Vec<_>>(), [1, 1, 1, 1, 0]);
-        assert_eq!(s.small, 2);
+        assert_eq!(s.small, 1);
         assert_eq!(s.scores.last().unwrap().count, 4);
         assert_eq!(s.runs[0].kind, "faces");
         assert_eq!(s.runs[0].state, "done");
@@ -542,7 +542,7 @@ fn faces_stats_tell_how_recognition_went() {
     let text = shoebox();
     assert!(text.contains("Photos:  7 looked at of 7"), "{text}");
     assert!(text.contains("     2  fake: cannot handle green"), "{text}");
-    assert!(text.contains("Under 40 px (listed, too small for clustering): 2 (50.0%)"), "{text}");
+    assert!(text.contains("Under 30 px (listed, too small for clustering): 1 (25.0%)"), "{text}");
     assert!(text.contains("Last runs:"), "{text}");
     assert_eq!(shoebox::fingerprint::stamp(&recog_db).unwrap(), stamp, "stats wrote to recognition.db");
     assert_eq!(shoebox::fingerprint::full_hash(&recog_db).unwrap(), hash);
@@ -570,7 +570,7 @@ fn serve_face_check_page_under_the_guard() {
         }
     }
     lying.save(lib.path("Tests/lying.jpg")).unwrap();
-    image::RgbImage::from_pixel(60, 60, image::Rgb([30, 90, 120])).save(lib.path("Tests/tiny.png")).unwrap();
+    image::RgbImage::from_pixel(50, 50, image::Rgb([30, 90, 120])).save(lib.path("Tests/tiny.png")).unwrap();
     solid(&lib, "Tests/same1.jpg", [200, 150, 120]);
     solid(&lib, "Tests/same2.jpg", [200, 150, 120]);
     std::fs::write(lib.path("Tests/same2.jpg"), [std::fs::read(lib.path("Tests/same2.jpg")).unwrap(), vec![0]].concat())
@@ -584,14 +584,14 @@ fn serve_face_check_page_under_the_guard() {
 
     let list = get(addr, "/api/faces?limit=1000").json();
     assert_eq!(list["total"], total);
-    assert_eq!(list["min_cluster_px"], 40.0);
+    assert_eq!(list["min_cluster_px"], 30.0);
     let faces = list["faces"].as_array().unwrap().clone();
     assert_eq!(faces.len() as u64, total);
-    // Smallest first by default; the 60 px picture's face is 30 px, too
-    // small (like the 64 px screenshot's).
-    assert_eq!(faces[0]["px"], 30.0);
+    // Smallest first by default; the 50 px picture's face is 25 px, too
+    // small (the 64 px screenshot's, 32 px, is not).
+    assert_eq!(faces[0]["px"], 25.0);
     assert_eq!(faces[0]["small"], true);
-    assert_eq!(faces.iter().filter(|f| f["small"] == true).count(), 2);
+    assert_eq!(faces.iter().filter(|f| f["small"] == true).count(), 1);
     let px: Vec<f64> = faces.iter().map(|f| f["px"].as_f64().unwrap()).collect();
     assert!(px.windows(2).all(|w| w[0] <= w[1]));
     // The lying face is measured across the face: its box is 0.2 of 300 px
@@ -600,10 +600,10 @@ fn serve_face_check_page_under_the_guard() {
     assert!((lying["px"].as_f64().unwrap() - 60.0).abs() < 0.5, "{lying}");
     assert_eq!(lying["file"], id_of(&lib, "Tests/lying.jpg"));
 
-    let small = get(addr, "/api/faces?max_px=40").json();
-    assert_eq!(small["total"], 2);
-    let big = get(addr, "/api/faces?min_px=40&sort=score&desc=true&limit=2&offset=1").json();
-    assert_eq!(big["total"], total - 2);
+    let small = get(addr, "/api/faces?max_px=30").json();
+    assert_eq!(small["total"], 1);
+    let big = get(addr, "/api/faces?min_px=30&sort=score&desc=true&limit=2&offset=1").json();
+    assert_eq!(big["total"], total - 1);
     assert_eq!(big["faces"].as_array().unwrap().len(), 2);
     assert_eq!(get(addr, "/api/faces?rotated=true").json()["total"], 1);
     assert_eq!(get(addr, "/api/faces?offset=100000").json()["total"], total);

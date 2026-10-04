@@ -146,13 +146,13 @@ in "Still to check on real hardware" below.
   faces found (and how many by the rotated pass), face width in the ≤1600 px
   copy (under 30, 30–40, 40–60, 60–120, 120+ px) and score (under 0.90,
   0.88–0.90, 0.90–0.92, 0.92–0.94, 0.94+ ; YuNet's scores lie between 0.85
-  and ~0.96), the share under 40 px, and the
+  and ~0.96), the share under 30 px, and the
   last five runs with their time. Only reads: `library.db` and
   `recognition.db` are opened read-only (a phase 4 `recognition.db` at v1
   works as it is), nothing is created.
 - **Face check** page in the UI (sidebar, shown once there are faces;
   `#view=faces`): all faces as crops, smallest/largest or lowest/highest
-  score first, filter "too small for clustering" (< 40 px), "large enough",
+  score first, filter "too small for clustering" (< 30 px), "large enough",
   "found turned"; small faces have a dashed frame. Clicking a crop opens its
   photo in the viewer, closing it goes back to the page. "≈" on a crop
   lists its 24 nearest neighbours by embedding (cosine similarity), to see
@@ -165,14 +165,15 @@ in "Still to check on real hardware" below.
   `GET /api/faces/{id}/similar?limit=`.
 - The width of a face is measured across the face: for one the rotated
   pass found (lying sideways in the picture) that is its box's height.
-  `faces::MIN_CLUSTER_PX` (40) and the `small` flag are what 5c-2 uses.
+  `faces::MIN_CLUSTER_PX` (30) and the `small` flag are what 5c-2 uses.
 - From that: the minimum face size for clustering, and the similarity
   threshold for "same person" (SFace's usual cosine threshold is about
   0.36; calibrated on our photos).
-- **Decided from the phase 4 run** (9564 faces, see
-  [phase4.md](phase4.md)): faces **under 40 px** wide (in the ≤1600 px
-  copy; 8.6% of all on the real drive, not the ~5% first estimated) are
-  listed but neither clustered nor suggested.
+- **Decided on the real drive**: faces **under 30 px** wide (in the
+  ≤1600 px copy; 296 of 9598, 3.1%) are listed but neither clustered nor
+  suggested. First set at 40 px from the phase 4 run, but that left out
+  8.6% (828), and on the face check page all 532 faces of 30–40 px were
+  real, recognisable people.
   No score threshold beyond the detector's own 0.9: every stored face
   scores ≥ 0.85, so the score separates nothing.
 - **Sideways faces: a second, optional pass.** YuNet misses faces rolled
@@ -374,14 +375,14 @@ Folders
     failures (43 "No 'ftyp' box", 5 "Illegal start bytes"): the JPEGs
     misnamed `.HEIC` etc. from phase 4, waiting for `--retry-failed`.
   - [ ] `shoebox recognize --retry-failed`: the 48 should now be looked at.
-  - [ ] Is 40 px right? Look through "Too small for clustering" sorted
-    largest first: are the 30–40 px faces (532) recognisable? If so, 30 px
-    would keep 97% instead of 91%.
+  - [x] Is 40 px right? On the face check page all 532 faces of 30–40 px
+    were real, recognisable people: the threshold is now 30 px (keeps 97%
+    of faces instead of 91%).
   - [ ] 34 faces added in the first 258 photos turned (13%) is a lot: check
     "Found turned" for false faces before trusting the pass.
   - `shoebox serve`, "Face check": go through the smallest faces and the
     lowest scores; how many false faces (posters, statues, background),
-    and are there any above 40 px? Open a few in the viewer. Try "≈" on
+    and are there any above 30 px? Open a few in the viewer. Try "≈" on
     faces of people you know: up to which similarity are the neighbours
     the same person (for 5c-2's threshold)? Crops of HEIC and EXIF-rotated
     photos upright?

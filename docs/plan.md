@@ -388,7 +388,7 @@ Open:
   by lowering `user_version` on a current one, so a step that creates a
   table uses `CREATE TABLE IF NOT EXISTS` (thumbs.db v3).
 - **Turned copies and face sizes.** The rotated pass stores boxes upright;
-  a face it found lies sideways, so its width (for the 40 px threshold) is
+  a face it found lies sideways, so its width (for the 30 px threshold) is
   the box's height (`faces.rs`, `size_px`).
 - **Git push** uses SSH via the 1Password agent with the "GitHub" key pinned
   in this repo's `core.sshCommand` (the keychain's HTTPS login belongs to a

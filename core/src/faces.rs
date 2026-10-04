@@ -23,9 +23,9 @@ use crate::recognize::{self, FACES, FACES_ROT, KINDS};
 use crate::thumbs::{self, Source};
 
 /// Faces narrower than this (px in the ≤1600 px copy the worker saw) are
-/// listed but too small to cluster or suggest (decided from the phase 4 run
-/// on the real drive, see docs/phase5.md).
-pub const MIN_CLUSTER_PX: f64 = 40.0;
+/// listed but too small to cluster or suggest. Decided on the real drive
+/// (docs/phase5.md): the faces of 30–40 px all were real, recognisable people.
+pub const MIN_CLUSTER_PX: f64 = 30.0;
 /// Longer edge of a face crop.
 pub const CROP_EDGE: u32 = 160;
 const CROP_QUALITY: u8 = 85;
@@ -600,7 +600,7 @@ mod tests {
         assert_eq!(bucket_label(&b[0], " px", 0), "under 30 px");
         assert_eq!(bucket_label(&b[2], " px", 0), "40–60 px");
         assert_eq!(bucket_label(&b[4], " px", 0), "120 px and more");
-        assert!(too_small(39.9) && !too_small(40.0));
+        assert!(too_small(29.9) && !too_small(30.0));
     }
 
     #[test]
