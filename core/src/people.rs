@@ -327,7 +327,10 @@ impl View {
         let m = Matched::load(conn, key)?;
         let mut present = HashMap::new();
         {
-            let mut stmt = conn.prepare(&format!("SELECT quick_hash, id, kind FROM ({}) WHERE ?1 IS NULL OR quick_hash = ?1", faces::PRESENT))?;
+            let mut stmt = conn.prepare(&format!(
+                "SELECT quick_hash, id, kind FROM ({}) WHERE ?1 IS NULL OR quick_hash = ?1",
+                faces::PRESENT
+            ))?;
             let mut rows = stmt.query([key])?;
             while let Some(r) = rows.next()? {
                 present.insert(r.get::<_, String>(0)?, (r.get(1)?, r.get(2)?));
@@ -357,7 +360,8 @@ impl View {
         let mut sizes = HashMap::new();
         {
             let mut stmt = conn.prepare(&format!(
-                "SELECT key, width, height FROM recog.looked WHERE task = '{FACES}' AND width IS NOT NULL AND (?1 IS NULL OR key = ?1)"
+                "SELECT key, width, height FROM recog.looked
+                 WHERE task = '{FACES}' AND width IS NOT NULL AND (?1 IS NULL OR key = ?1)"
             ))?;
             let mut rows = stmt.query([key])?;
             while let Some(r) = rows.next()? {
@@ -688,7 +692,8 @@ pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
     let mut rows = person_rows(conn)?;
     rows.retain(|p| hidden || !p.hidden);
     rows.sort_by(|a, b| {
-        (a.position.is_none(), a.position, a.name.to_lowercase(), a.id).cmp(&(b.position.is_none(), b.position, b.name.to_lowercase(), b.id))
+        let order = |p: &PersonRow| (p.position.is_none(), p.position, p.name.to_lowercase(), p.id);
+        order(a).cmp(&order(b))
     });
     #[derive(Default)]
     struct Counts {
@@ -941,7 +946,8 @@ pub fn decide(conn: &Connection, faces: &[i64], action: &Action) -> Result<Decid
     let now = db::now();
     let insert = |tx: &Connection, f: &Detected, person: Option<i64>, d: Decision| -> Result<()> {
         tx.execute(
-            "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8)",
+            "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8)",
             params![f.key, f.b[0], f.b[1], f.b[2], f.b[3], person, d.as_str(), now],
         )?;
         Ok(())
@@ -1055,7 +1061,8 @@ pub fn add_manual(conn: &Connection, file: i64, b: [f64; 4], who: &Who) -> Resul
         .ok_or_else(|| anyhow::anyhow!("there is no file {file}"))?;
     let person = resolve(&tx, who)?;
     tx.execute(
-        "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'confirmed', 1, ?7)",
+        "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'confirmed', 1, ?7)",
         params![key, b[0], b[1], b[2], b[3], person, db::now()],
     )?;
     let id = tx.last_insert_rowid();

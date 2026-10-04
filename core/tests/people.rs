@@ -190,7 +190,8 @@ fn suggest_maybe_confirm_and_reject_under_the_guard() {
     assert!(clusters[0]["suggestion"].is_null());
 
     // Name it: three confirmed faces.
-    let named = ok(addr, &format!("/api/clusters/{}/name", clusters[0]["id"]), &json!({ "name": "Anna", "generation": list["generation"] }));
+    let body = json!({ "name": "Anna", "generation": list["generation"] });
+    let named = ok(addr, &format!("/api/clusters/{}/name", clusters[0]["id"]), &body);
     assert_eq!(named["faces"], 3);
     let anna = named["person"]["id"].as_i64().unwrap();
     assert_eq!(named["person"]["name"], "Anna");
@@ -387,10 +388,8 @@ fn groups_merge_and_split() {
     let faces: Vec<i64> = dora_cluster["faces"].as_array().unwrap().iter().map(|f| f["id"].as_i64().unwrap()).collect();
     let cid = dora_cluster["id"].as_i64().unwrap();
     let generation = list["generation"].clone();
-    let dora = ok(addr, &format!("/api/clusters/{cid}/name"), &json!({ "name": "Dora", "faces": &faces[..2], "generation": generation }))
-        ["person"]["id"]
-        .as_i64()
-        .unwrap();
+    let body = json!({ "name": "Dora", "faces": &faces[..2], "generation": generation });
+    let dora = ok(addr, &format!("/api/clusters/{cid}/name"), &body)["person"]["id"].as_i64().unwrap();
     ok(addr, &format!("/api/clusters/{cid}/ignore"), &json!({ "faces": [faces[2]], "generation": generation }));
     // A face of another cluster is refused.
     let anna_cluster = list["clusters"][1]["id"].as_i64().unwrap();
@@ -421,7 +420,10 @@ fn groups_merge_and_split() {
     // Anna takes nothing from Anni.)
     assert_eq!(faces_of(addr, &lib, "Anna/a1.png")[0]["person"]["id"], anni);
     let merged = ok(addr, &format!("/api/people/{anni}/merge"), &json!({ "into": anna }));
-    assert_eq!((merged["name"].as_str(), merged["faces"].as_u64(), merged["group_id"].as_i64()), (Some("Anna"), Some(2), Some(familie)));
+    assert_eq!(
+        (merged["name"].as_str(), merged["faces"].as_u64(), merged["group_id"].as_i64()),
+        (Some("Anna"), Some(2), Some(familie))
+    );
     assert_eq!(get(addr, &format!("/api/people/{anni}")).status, 404);
     let face = &faces_of(addr, &lib, "Anna/a1.png")[0];
     assert_eq!((face["state"].as_str(), face["person"]["id"].as_i64()), (Some("confirmed"), Some(anna)));
@@ -550,11 +552,15 @@ fn hand_drawn_faces() {
     let dark = id_of(&lib, "a/dark.png");
     assert_eq!(faces_of(addr, &lib, "a/dark.png").len(), 0);
 
-    let m = ok(addr, "/api/faces/manual", &json!({ "file": dark, "box": [0.1, 0.2, 0.3, 0.4], "name": "Anna" }))["manual"].as_i64().unwrap();
+    let body = json!({ "file": dark, "box": [0.1, 0.2, 0.3, 0.4], "name": "Anna" });
+    let m = ok(addr, "/api/faces/manual", &body)["manual"].as_i64().unwrap();
     let anna = get(addr, "/api/people").json()[0]["id"].as_i64().unwrap();
     let faces = faces_of(addr, &lib, "a/dark.png");
     assert_eq!(faces.len(), 1);
-    assert_eq!((faces[0]["manual"].as_i64(), faces[0]["id"].as_i64(), faces[0]["state"].as_str()), (Some(m), None, Some("confirmed")));
+    assert_eq!(
+        (faces[0]["manual"].as_i64(), faces[0]["id"].as_i64(), faces[0]["state"].as_str()),
+        (Some(m), None, Some("confirmed"))
+    );
     assert_eq!(faces[0]["x"], 0.1);
     assert!(person_faces(addr, anna, "confirmed").iter().any(|f| f["manual"] == m));
     assert!(ids(&get(addr, &format!("/api/timeline?person={anna}")).json()).contains(&dark));
@@ -563,12 +569,14 @@ fn hand_drawn_faces() {
     // Over the detected face of the other photo: one face, the drawn box.
     let detected = face_id(addr, &lib, "a/anna.png");
     let anna_file = id_of(&lib, "a/anna.png");
-    let m2 = ok(addr, "/api/faces/manual", &json!({ "file": anna_file, "box": [0.27, 0.25, 0.5, 0.5], "person_id": anna }))["manual"]
-        .as_i64()
-        .unwrap();
+    let body = json!({ "file": anna_file, "box": [0.27, 0.25, 0.5, 0.5], "person_id": anna });
+    let m2 = ok(addr, "/api/faces/manual", &body)["manual"].as_i64().unwrap();
     let faces = faces_of(addr, &lib, "a/anna.png");
     assert_eq!(faces.len(), 1, "{faces:?}");
-    assert_eq!((faces[0]["id"].as_i64(), faces[0]["manual"].as_i64(), faces[0]["x"].as_f64()), (Some(detected), Some(m2), Some(0.27)));
+    assert_eq!(
+        (faces[0]["id"].as_i64(), faces[0]["manual"].as_i64(), faces[0]["x"].as_f64()),
+        (Some(detected), Some(m2), Some(0.27))
+    );
     assert_eq!(get(addr, &format!("/api/people/{anna}")).json()["faces"], 2);
     wait_for_clusters(addr);
     assert_eq!(get(addr, "/api/clusters").json()["unnamed"], 0);
@@ -638,7 +646,8 @@ fn clustering_resumes_after_a_stop() {
     c.execute("DELETE FROM recog.clusters", []).unwrap();
     let err = clusters::run(&c, &|| true, &mut |_, _| {}).unwrap_err();
     assert!(err.is::<recognize::Interrupted>());
-    let state: String = c.query_row("SELECT state FROM recog.jobs WHERE kind = 'clusters' ORDER BY id DESC", [], |r| r.get(0)).unwrap();
+    let state: String =
+        c.query_row("SELECT state FROM recog.jobs WHERE kind = 'clusters' ORDER BY id DESC", [], |r| r.get(0)).unwrap();
     assert_eq!(state, "interrupted");
     assert!(!clusters::running(&c).unwrap());
 
@@ -709,7 +718,8 @@ fn clustering_time_over_10000_faces() {
         tx.execute("INSERT INTO people (name) VALUES (?1)", [format!("P{p}")]).unwrap();
         let key = format!("key{p:05}");
         tx.execute(
-            "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, at) VALUES (?1, 0.4, 0.4, 0.1, 0.1, ?2, 'confirmed', 0)",
+            "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, at)
+             VALUES (?1, 0.4, 0.4, 0.1, 0.1, ?2, 'confirmed', 0)",
             rusqlite::params![key, p as i64 + 1],
         )
         .unwrap();

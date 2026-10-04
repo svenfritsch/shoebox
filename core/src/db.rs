@@ -382,8 +382,11 @@ mod tests {
         let conn = open(&path).unwrap();
         let n: i64 = conn.query_row("SELECT count(*) FROM people", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 1);
-        conn.execute("INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, at) VALUES ('k', 0, 0, 1, 1, 1, 'confirmed', 0)", [])
-            .unwrap();
+        conn.execute(
+            "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, at) VALUES ('k', 0, 0, 1, 1, 1, 'confirmed', 0)",
+            [],
+        )
+        .unwrap();
         // Deleting a group leaves its people without one; deleting a person
         // takes their decisions along.
         conn.execute("INSERT INTO groups (name, position) VALUES ('Familie', 1)", []).unwrap();
