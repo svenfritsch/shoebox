@@ -145,7 +145,8 @@ in "Still to check on real hardware" below.
 - `shoebox faces stats <root>`: photos looked at, errors grouped by message,
   faces found (and how many by the rotated pass), face width in the ≤1600 px
   copy (under 30, 30–40, 40–60, 60–120, 120+ px) and score (under 0.90,
-  0.90–0.93, 0.93–0.96, 0.96–0.99, 0.99+), the share under 40 px, and the
+  0.88–0.90, 0.90–0.92, 0.92–0.94, 0.94+ ; YuNet's scores lie between 0.85
+  and ~0.96), the share under 40 px, and the
   last five runs with their time. Only reads: `library.db` and
   `recognition.db` are opened read-only (a phase 4 `recognition.db` at v1
   works as it is), nothing is created.
@@ -170,7 +171,8 @@ in "Still to check on real hardware" below.
   0.36; calibrated on our photos).
 - **Decided from the phase 4 run** (9564 faces, see
   [phase4.md](phase4.md)): faces **under 40 px** wide (in the ≤1600 px
-  copy, about 5% of all) are listed but neither clustered nor suggested.
+  copy; 8.6% of all on the real drive, not the ~5% first estimated) are
+  listed but neither clustered nor suggested.
   No score threshold beyond the detector's own 0.9: every stored face
   scores ≥ 0.85, so the score separates nothing.
 - **Sideways faces: a second, optional pass.** YuNet misses faces rolled
@@ -362,9 +364,21 @@ Folders
       a move, a rescan, trash and restore; `userdata.json` and
       `library.db.bak` appear in `.shoebox/`.
 - [ ] 5c-1: on the old Intel MacBook against the exFAT drive:
-  - `shoebox faces stats /Volumes/Fotos`: do the numbers match the phase 4
-    run (9564 faces, 48 failures before `--retry-failed`, ~5% under
-    40 px)? Note the width and score buckets here.
+  - [x] `shoebox faces stats` on the family folder (7196 photos, all
+    looked at; `verify` before it: 7994 files OK): 9598 faces = the phase 4
+    9564 plus 34 from a partial `--rotated` run (258 photos). Widths: 296
+    under 30 px, 532 of 30–40, 1297 of 40–60, 2971 of 60–120, 4502 larger;
+    **828 (8.6%) under 40 px**. Scores 0.85–0.96 (2422 under 0.90, 4318 of
+    0.90–0.93, 2855 of 0.93–0.96, 3 higher), so the first score buckets
+    were too wide at the top; changed to 0.88/0.90/0.92/0.94. Still 48
+    failures (43 "No 'ftyp' box", 5 "Illegal start bytes"): the JPEGs
+    misnamed `.HEIC` etc. from phase 4, waiting for `--retry-failed`.
+  - [ ] `shoebox recognize --retry-failed`: the 48 should now be looked at.
+  - [ ] Is 40 px right? Look through "Too small for clustering" sorted
+    largest first: are the 30–40 px faces (532) recognisable? If so, 30 px
+    would keep 97% instead of 91%.
+  - [ ] 34 faces added in the first 258 photos turned (13%) is a lot: check
+    "Found turned" for false faces before trusting the pass.
   - `shoebox serve`, "Face check": go through the smallest faces and the
     lowest scores; how many false faces (posters, statues, background),
     and are there any above 40 px? Open a few in the viewer. Try "≈" on

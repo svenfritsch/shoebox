@@ -33,7 +33,9 @@ const CROP_QUALITY: u8 = 85;
 const CROP_MARGIN: f64 = 0.25;
 
 const WIDTH_BUCKETS: [f64; 4] = [30.0, 40.0, 60.0, 120.0];
-const SCORE_BUCKETS: [f64; 4] = [0.90, 0.93, 0.96, 0.99];
+/// YuNet's scores of stored faces lie between 0.85 (the recognizer's cut-off)
+/// and ~0.96 (the real drive: none higher), so the buckets split that range.
+const SCORE_BUCKETS: [f64; 4] = [0.88, 0.90, 0.92, 0.94];
 
 /// Too small to take part in clustering (`MIN_CLUSTER_PX`).
 pub fn too_small(px: f64) -> bool {
