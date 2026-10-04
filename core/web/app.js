@@ -16,7 +16,7 @@ var OVERSCAN = 600; // px above and below the viewport that stay rendered
 var KIND_BADGE = { v: '▶', h: '', j: '', p: '' };
 
 var state = {
-  filter: { folder: null, tag: null, q: '', view: null },
+  filter: { folder: null, tags: [], q: '', view: null },
   selecting: false,
   selected: {},      // id -> true
   data: null,        // timeline columns from /api/timeline
@@ -57,11 +57,13 @@ function post(path, body) {
   });
 }
 
+// Arrays repeat their key (`tag=1&tag=2`).
 function query(params) {
   var parts = [];
   Object.keys(params).forEach(function (k) {
-    var v = params[k];
-    if (v !== null && v !== undefined && v !== '') parts.push(k + '=' + encodeURIComponent(v));
+    [].concat(params[k]).forEach(function (v) {
+      if (v !== null && v !== undefined && v !== '') parts.push(k + '=' + encodeURIComponent(v));
+    });
   });
   return parts.length ? '?' + parts.join('&') : '';
 }
@@ -90,31 +92,41 @@ $('login-form').addEventListener('submit', function (ev) {
 // ------------------------------------------------------------------ filters (in the URL hash)
 
 function readHash() {
-  var f = { folder: null, tag: null, q: '', view: null };
+  var f = { folder: null, tags: [], q: '', view: null };
   location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
     var i = kv.indexOf('=');
     if (i < 0) return;
     var k = kv.slice(0, i), v = decodeURIComponent(kv.slice(i + 1));
-    if (k === 'folder' || k === 'tag') f[k] = parseInt(v, 10) || null;
+    if (k === 'folder') f.folder = parseInt(v, 10) || null;
+    if (k === 'tag' && parseInt(v, 10) && f.tags.indexOf(parseInt(v, 10)) < 0) f.tags.push(parseInt(v, 10));
     if (k === 'q') f.q = v;
     if (k === 'view' && (v === 'duplicates' || v === 'trash' || v === 'faces')) f.view = v;
   });
   return f;
 }
 
-// A filter without a view shows the grid.
+// A filter without a view shows the grid. Its terms all have to match: a
+// folder, any number of tags (`tag` repeated in the URL) and free text.
 function setFilter(f) {
-  var h = query({ view: f.view, folder: f.folder, tag: f.tag, q: f.q }).replace(/^\?/, '');
+  var h = query({ view: f.view, folder: f.folder, tag: f.tags || [], q: f.q }).replace(/^\?/, '');
   if (h === location.hash.replace(/^#/, '')) { applyFilter(); return; }
   location.hash = h; // triggers hashchange -> applyFilter
 }
 
-function showView(view) { setFilter({ view: view, folder: null, tag: null, q: '' }); }
+// The current filter with some terms changed.
+function withFilter(changes) {
+  var f = state.filter;
+  return Object.assign({ folder: f.folder, tags: f.tags.slice(), q: f.q }, changes);
+}
+
+function showView(view) { setFilter({ view: view, folder: null, tags: [], q: '' }); }
 
 function applyFilter() {
   state.filter = readHash();
   $('search').value = state.filter.q;
   renderChips();
+  // Still typing: offer what narrows the new search down.
+  if (document.activeElement === $('search')) suggest($('search').value);
   markActiveFolder();
   closeSidebarOnPhone();
   var view = state.filter.view;
@@ -136,6 +148,7 @@ function applyFilter() {
 
 window.addEventListener('hashchange', applyFilter);
 
+// The filter as chips (all must match), with ✕ on each and "+" to add a term.
 function renderChips() {
   var box = $('filters');
   box.textContent = '';
@@ -143,16 +156,14 @@ function renderChips() {
   var add = function (label, clear) {
     var c = el('span', 'chip', label);
     var x = el('button', '', '✕');
-    x.title = 'Remove filter';
+    x.title = 'Remove from the search';
     x.onclick = clear;
     c.appendChild(x);
     box.appendChild(c);
   };
   if (f.folder && state.folderById[f.folder]) {
     var folder = state.folderById[f.folder];
-    add('📁 ' + (folder.path || folder.name), function () {
-      setFilter({ folder: null, tag: f.tag, q: f.q });
-    });
+    add('📁 ' + (folder.path || folder.name), function () { setFilter(withFilter({ folder: null })); });
     if (folder.path) {
       var edit = el('button', 'edit', '✎');
       edit.title = 'Rename or move this folder';
@@ -160,24 +171,131 @@ function renderChips() {
       box.lastChild.insertBefore(edit, box.lastChild.lastChild);
     }
   }
-  if (f.tag) {
-    add('# ' + (state.tagNames[f.tag] || f.tag), function () { setFilter({ folder: f.folder, tag: null, q: f.q }); });
+  f.tags.forEach(function (id) {
+    add('# ' + (state.tagNames[id] || id), function () {
+      setFilter(withFilter({ tags: f.tags.filter(function (t) { return t !== id; }) }));
+    });
+  });
+  if (f.q) add('“' + f.q + '”', function () { setFilter(withFilter({ q: '' })); });
+  var terms = box.children.length;
+  if (terms) {
+    var more = el('button', 'chip more', '+');
+    more.title = 'Add a tag or folder to the search';
+    more.onclick = function () { $('search').value = ''; $('search').focus(); suggest(''); };
+    box.appendChild(more);
   }
-  if (f.q) add('“' + f.q + '”', function () { setFilter({ folder: f.folder, tag: f.tag, q: '' }); });
+  // One click for the whole search; the ✕ on a chip drops just that term.
+  if (terms >= 2) {
+    var clear = el('button', 'chip clear', 'Clear all');
+    clear.title = 'Show all photos again';
+    clear.onclick = function () { setFilter({ folder: null, tags: [], q: '' }); };
+    box.appendChild(clear);
+  }
   box.hidden = !box.firstChild;
 }
 state.tagNames = {};
 
+// ------------------------------------------------------------------ search box
+
+// Typing searches the text right away (words in paths and tag names); the
+// list below the box offers tags (counted within the current search) and
+// folders, and picking one adds it to the search as a chip.
 var searchTimer = null;
+var sugg = { items: [], at: -1, seq: 0 };
+
 $('search').addEventListener('input', function () {
   clearTimeout(searchTimer);
   var v = this.value;
-  searchTimer = setTimeout(function () {
-    setFilter({ folder: state.filter.folder, tag: state.filter.tag, q: v.trim() });
-  }, 300);
-  suggestTags(v);
+  searchTimer = setTimeout(function () { setFilter(withFilter({ q: v.trim() })); }, 300);
+  suggest(v);
+});
+$('search').addEventListener('focus', function () { suggest(this.value); });
+$('search').addEventListener('blur', function () { setTimeout(closeSuggest, 150); });
+$('search').addEventListener('keydown', function (ev) {
+  var open = !$('suggest').hidden && sugg.items.length;
+  if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+    if (!open) return;
+    ev.preventDefault();
+    var n = sugg.items.length;
+    sugg.at = ev.key === 'ArrowDown' ? (sugg.at + 1) % n : (sugg.at + n - 1) % n;
+    markSuggest();
+  } else if (ev.key === 'Enter') {
+    ev.preventDefault();
+    if (open && sugg.at >= 0) { pickSuggest(sugg.items[sugg.at]); return; }
+    clearTimeout(searchTimer);
+    closeSuggest();
+    setFilter(withFilter({ q: this.value.trim() }));
+  } else if (ev.key === 'Escape') {
+    closeSuggest();
+  } else if (ev.key === 'Backspace' && this.value === '') {
+    // Like a token field: the last chip goes.
+    var f = state.filter;
+    if (f.tags.length) setFilter(withFilter({ tags: f.tags.slice(0, -1) }));
+    else if (f.folder) setFilter(withFilter({ folder: null }));
+  }
 });
 
+function suggest(text) {
+  var seq = ++sugg.seq, f = state.filter;
+  if (f.view) { closeSuggest(); return; }
+  var needle = text.trim();
+  api('/api/tags' + query({ q: needle, limit: 8, tag: f.tags, folder: f.folder })).then(function (tags) {
+    if (seq !== sugg.seq) return;
+    var items = tags.map(function (t) {
+      state.tagNames[t.id] = t.name;
+      return { kind: 'tag', id: t.id, label: t.name, count: t.count, folderTag: t.kind === 'folder' };
+    });
+    if (needle && !f.folder) {
+      var low = needle.toLowerCase();
+      state.folders.filter(function (fo) { return fo.path && fo.count && fo.name.toLowerCase().indexOf(low) >= 0; })
+        .slice(0, 4)
+        .forEach(function (fo) { items.push({ kind: 'folder', id: fo.id, label: fo.path, count: fo.count }); });
+    }
+    showSuggest(items);
+  }).catch(function () {});
+}
+
+function showSuggest(items) {
+  var box = $('suggest');
+  box.textContent = '';
+  sugg.items = items;
+  sugg.at = -1;
+  var last = null;
+  items.forEach(function (it, i) {
+    if (it.kind !== last) {
+      box.appendChild(el('div', 'head', it.kind === 'tag' ? (state.filter.tags.length || state.filter.folder ? 'Tags in these photos' : 'Tags') : 'Folders'));
+      last = it.kind;
+    }
+    var b = el('button', 'item');
+    b.type = 'button';
+    b.setAttribute('role', 'option');
+    b.appendChild(el('span', 'label', (it.kind === 'folder' ? '📁 ' : '# ') + it.label));
+    b.appendChild(el('span', 'count', it.count.toLocaleString()));
+    b.onmousedown = function (ev) { ev.preventDefault(); }; // keep the focus in the box
+    b.onclick = function () { pickSuggest(it); };
+    b.dataset.i = i;
+    box.appendChild(b);
+  });
+  box.hidden = !items.length || document.activeElement !== $('search');
+}
+
+function markSuggest() {
+  Array.prototype.forEach.call($('suggest').querySelectorAll('.item'), function (b) {
+    b.classList.toggle('at', String(sugg.at) === b.dataset.i);
+  });
+}
+
+function closeSuggest() { $('suggest').hidden = true; sugg.at = -1; }
+
+function pickSuggest(it) {
+  clearTimeout(searchTimer);
+  $('search').value = '';
+  var f = state.filter;
+  if (it.kind === 'tag') setFilter(withFilter({ tags: f.tags.indexOf(it.id) < 0 ? f.tags.concat([it.id]) : f.tags, q: '' }));
+  else setFilter(withFilter({ folder: it.id, q: '' }));
+}
+
+// Suggestions for the tag fields (info panel, "Add tag…"): every tag.
 var suggestSeq = 0;
 function suggestTags(text) {
   var seq = ++suggestSeq;
@@ -256,7 +374,7 @@ function folderNode(f, depth) {
   toggle.onclick = function () { expand(!ul || ul.hidden); };
   name.onclick = function () {
     expand(true);
-    setFilter({ folder: f.id, tag: null, q: state.filter.q });
+    setFilter({ folder: f.id, tags: [], q: state.filter.q });
   };
   return li;
 }
@@ -276,11 +394,11 @@ function markActiveFolder() {
     b.classList.toggle('active', String(active) === b.dataset.id);
   });
   Array.prototype.forEach.call(document.querySelectorAll('#own-tags .name'), function (b) {
-    b.classList.toggle('active', String(state.filter.tag) === b.dataset.tag);
+    b.classList.toggle('active', state.filter.tags.indexOf(parseInt(b.dataset.tag, 10)) >= 0);
   });
 }
 
-$('all').onclick = function () { setFilter({ folder: null, tag: null, q: '' }); };
+$('all').onclick = function () { setFilter({ folder: null, tags: [], q: '' }); };
 $('nav-dups').onclick = function () { showView('duplicates'); };
 $('nav-trash').onclick = function () { showView('trash'); };
 
@@ -296,8 +414,11 @@ function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
 function loadTimeline(resetScroll) {
   var seq = ++state.loadSeq;
   var f = state.filter;
-  return api('/api/timeline' + query({ folder: f.folder, tag: f.tag, q: f.q })).then(function (data) {
+  return api('/api/timeline' + query({ folder: f.folder, tag: f.tags, q: f.q })).then(function (data) {
     if (seq !== state.loadSeq) return;
+    var unnamed = f.tags.some(function (id) { return !state.tagNames[id]; });
+    data.tags.forEach(function (t) { state.tagNames[t.id] = t.name; });
+    if (unnamed) renderChips(); // a link with tags this page has not seen yet
     state.data = data;
     state.live = {};
     data.live.forEach(function (p) { state.live[p[0]] = p[1]; });
@@ -755,7 +876,7 @@ function renderPanel() {
   var folder = info.path.indexOf('/') >= 0 ? info.path.slice(0, info.path.lastIndexOf('/')) : '';
   if (folder) {
     var fb = el('button', '', folder);
-    fb.onclick = function () { closeLightbox(); setFilter({ folder: info.folder_id, tag: null, q: '' }); };
+    fb.onclick = function () { closeLightbox(); setFilter({ folder: info.folder_id, tags: [], q: '' }); };
     row('Folder', fb);
   }
   if (info.width && info.height) row('Size', info.width + ' × ' + info.height + ' · ' + formatBytes(info.size));
@@ -996,7 +1117,7 @@ function updateSelbar() {
 }
 
 $('select').onclick = function () {
-  if (state.filter.view) setFilter({ folder: null, tag: null, q: '' });
+  if (state.filter.view) setFilter({ folder: null, tags: [], q: '' });
   if (state.selecting) endSelection(); else startSelection();
 };
 $('sel-done').onclick = endSelection;
@@ -1197,7 +1318,7 @@ function runImport(folder, pending, btn, closeBtn) {
       // Show the folder the files went to.
       loadFolders().then(function () {
         var f = state.folders.filter(function (x) { return x.path === folder; })[0];
-        if (f && counts.imported) setFilter({ folder: f.id, tag: null, q: '' }); else reloadAll();
+        if (f && counts.imported) setFilter({ folder: f.id, tags: [], q: '' }); else reloadAll();
       });
       return;
     }
@@ -1341,7 +1462,7 @@ function groupNode(g) {
     card.appendChild(name);
     var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : '(top level)';
     var fb = el('button', 'folder', folder);
-    fb.onclick = function () { setFilter({ folder: f.folder_id, tag: null, q: '' }); };
+    fb.onclick = function () { setFilter({ folder: f.folder_id, tags: [], q: '' }); };
     card.appendChild(fb);
     var meta = [];
     if (f.taken) meta.push(formatDate({ taken: f.taken, date_source: 'file' }));
@@ -1567,7 +1688,7 @@ function infoTags(row, info) {
   var tags = el('div', 'tags');
   info.tags.forEach(function (t) {
     state.tagNames[t.id] = t.name;
-    var show = function () { closeLightbox(); setFilter({ folder: null, tag: t.id, q: '' }); };
+    var show = function () { closeLightbox(); setFilter({ folder: null, tags: [t.id], q: '' }); };
     if (t.source === 'folder') {
       var b = el('button', '', '📁 ' + t.name);
       b.title = 'Folder tag: comes from where the photo is';
@@ -1622,7 +1743,7 @@ function tagsChanged(id) {
   loadOwnTags();
   // A bulk change can change what a tag filter or search shows (the open
   // viewer keeps its photos until it closes).
-  if (id == null && !state.filter.view && (state.filter.tag || state.filter.q)) loadTimeline(false);
+  if (id == null && !state.filter.view && (state.filter.tags.length || state.filter.q)) loadTimeline(false);
   if (id == null || !lb.details || lb.details.id !== id) return;
   api('/api/files/' + id).then(function (info) {
     if (!lb.details || lb.details.id !== id) return;
@@ -1694,7 +1815,7 @@ function loadOwnTags() {
       r.appendChild(el('span', 'toggle', '#'));
       var name = el('button', 'name', t.name);
       name.dataset.tag = t.id;
-      name.onclick = function () { setFilter({ folder: null, tag: t.id, q: state.filter.q }); };
+      name.onclick = function () { setFilter({ folder: null, tags: [t.id], q: '' }); };
       r.appendChild(name);
       r.appendChild(el('span', 'count', t.count.toLocaleString()));
       li.appendChild(r);

@@ -17,6 +17,7 @@ latest `main`, so conflicts stay small.
 |---|---|---|---|
 | **5a** | Show in Finder / Explorer, copy path | 1 (worked on in a separate chat) | none |
 | **5b** | Own tags: add/remove, many photos at once, search; user data backup | 1 (done) | `library.db` v3 |
+| **5b-2** | Search by several tags at once (AND); people join in with 5c-3 | 1 (done) | none |
 | **5c** | Faces | 3: **5c-1** check recognition, **5c-2** people/groups/clustering backend, **5c-3** UI | `library.db` v4 (5c-2) |
 
 Conflict hot spots and how to avoid them:
@@ -32,6 +33,9 @@ Conflict hot spots and how to avoid them:
 - **`core/src/db.rs`, schema version.** 5b takes v3, 5c-2 takes v4. If 5c-2
   were ready first, it takes v3 and 5b renumbers; never two PRs with the
   same version on `main`.
+- **`core/web/app.js`, filter and search box.** 5b-2 turns the filter into
+  a list of terms (chips); 5c-3 only adds the term kind `person` to it, no
+  second filter.
 - **`docs/plan.md`.** Each PR only ticks its own row in the status table
   and its own "Phase 5 details" bullets.
 
@@ -45,6 +49,7 @@ Conflict hot spots and how to avoid them:
 | Where user data lives | Own tags, people, groups and face decisions (confirmed / rejected) go into `library.db`. They are the first data that can't be rebuilt from the drive. `recognition.db` stays a cache that can be thrown away: faces, embeddings, clusters and automatic suggestions. |
 | Face decisions survive model changes | A decision is stored by content and box (`quick_hash` + box), not by face row id. After a model change the new face with the same key and an overlapping box (IoU ≥ 0.5) takes it over. |
 | Backups of user data | After user changes the server copies `library.db` to `library.db.bak` (debounced, at most once a minute, and on shutdown), and writes `.shoebox/userdata.json` (own tags, people, groups, decisions; readable, easy to back up). |
+| Search by several terms | **All terms must match (AND)**: "Spielplatz" and "Winter" finds photos that carry both tags; Aurelia and Grandpa finds photos where both appear. Terms are chips (tag, person, folder, free text), picked from suggestions; picking adds a chip instead of replacing the search. "Any of" (OR) is not planned. |
 | Reveal | The server opens Finder / Explorer **on the computer it runs on**, so only for requests from that computer (localhost). Other devices (iPad) get "copy path" only. |
 
 ## 5a: show in Finder / Explorer
@@ -141,6 +146,75 @@ UI:
 Tests (`core/tests/tags.rs`): add/remove, folder tags can't be removed, bulk,
 names folded, tags survive move/rescan/trash-restore, guard around every
 endpoint.
+
+## 5b-2: search by several tags
+
+Feedback after 5b: a photo tagged "Spielplatz" and "Winter" cannot be found
+by asking for both. What happens today:
+
+- Clicking a tag (sidebar, info panel) sets *the* tag filter and replaces
+  the previous one; the URL holds one `tag=`.
+- Picking a suggestion in the search box (a `<datalist>`) replaces the whole
+  text with that tag's name.
+- Typing several words does AND them, but each word only has to appear
+  *somewhere* in the path or in any tag name: "Fall" also finds
+  "Fallschirm" and a folder "Wasserfall", and a tag of two words
+  ("Oma Inge") is split into two unrelated words.
+
+Done. As built (on top of the plan below):
+
+- `browse::Query.tags` (all must match); a tag id also matches the other
+  spellings of its name (`tags.fold`), so a folder "Winter" and one
+  "winter" count as one tag.
+- `GET /api/timeline?tag=…&tag=…&folder=…&q=…` (the handlers read the query
+  string as pairs, so keys can repeat); the reply has `tags: [{id, name}]`
+  for the chips, so a bookmarked link shows names on a fresh page.
+- `GET /api/tags?q=…&tag=…&folder=…` counts within that filter
+  (`browse::tags_within`) and leaves out the tags of the filter itself;
+  without a filter it is the old list.
+- UI (`app.js`, "search box"): `state.filter.tags`, `withFilter()`, chips
+  with ✕ and "+", "Clear all" at the end of the row once the search has two
+  or more terms (the ✕ inside the search box only clears the typed text;
+  "All photos" in the sidebar resets too), a suggestion list of its own (`#suggest`; ↑/↓, Enter,
+  Escape, Backspace removes the last chip), folders suggested by name.
+  Clicking a folder in the sidebar keeps the search text but clears tags,
+  as before. The `<datalist>` stays only for the tag fields of 5b.
+- Tests: `search_by_several_tags_at_once` in `core/tests/tags.rs`.
+
+What changes:
+
+- **The filter is a list of terms**, shown as chips above the grid, all of
+  which must match (AND):
+  - `tag`: an exact tag (folder or own; folded names, as in 5b);
+  - `folder`: a folder and everything below it (as now, at most one);
+  - `text`: free text, matched as today (path and tag names, each word);
+  - `person` (added by 5c-3): photos where that person is confirmed.
+- **Search box:** typing shows a suggestion list of its own (not a
+  `<datalist>`), grouped Tags / Folders (/ People with 5c-3), each with its
+  count. Picking one adds a chip and clears the text; Enter without a pick
+  adds the text as a `text` chip. Backspace in the empty box removes the
+  last chip; ✕ on a chip removes it. Works with touch on the iPad.
+- **Clicking a tag** in the sidebar or the info panel still shows just that
+  tag (a fresh filter); the chip bar has "+" to add another term with the
+  same suggestion list. The sidebar marks every tag in the filter.
+- **Counts that help narrowing:** suggestions shown while a filter is active
+  count only photos that also match the current filter, and tags that would
+  leave nothing are left out.
+- **URL:** `#tag=12&tag=40&q=…` (repeated keys), so a combined search can be
+  bookmarked; old single-tag links keep working.
+- **API:** `GET /api/timeline` takes `tag` several times (AND) and later
+  `person` the same way; `GET /api/tags?q=…` takes the current filter to
+  count within it.
+- **Selection still works on the result:** "Add tag…" on a combined search
+  is how to tag "all Spielplatz photos from winter" at once.
+
+Not in 5b-2: OR ("Spielplatz or Wald"), excluding a term ("not Winter"),
+date ranges.
+
+Tests (`core/tests/tags.rs`): two and three tags together, a folder tag and
+an own tag together, tag + folder + text, a tag name that is a substring of
+another ("Fall" / "Fallschirm") only finds the exact tag, counts within a
+filter, old `?tag=` links, guard.
 
 ## 5c: faces
 
@@ -382,12 +456,14 @@ Folders
     reliable, so such faces are not used as references for suggestions).
   - Core and worker are updated together (the hello's protocol must
     match, as now).
-- Search finds people by name, like tags.
+- Search finds people by name, like tags: a person is a term of the 5b-2
+  filter, so "Aurelia" + "Grandpa" lists the photos where both are
+  confirmed, and people combine with tags ("Aurelia" + "Spielplatz").
+  `GET /api/timeline` takes `person` several times (AND).
 - Recognition and clustering progress in the status line.
 
 ## Later (not in phase 5)
 
-- Filter the timeline by several people ("Aurelia and Grandpa").
 - Undo for assignments.
 
 ## Still to check on real hardware
@@ -397,6 +473,8 @@ Folders
 - [ ] 5b: tag a few hundred photos at once on the exFAT drive; tags survive
       a move, a rescan, trash and restore; `userdata.json` and
       `library.db.bak` appear in `.shoebox/`.
+- [ ] 5b-2: on the iPad, combine two own tags and a folder from the search
+      box; the chips, the counts and a bookmarked link.
 - [ ] 5c-1: on the old Intel MacBook against the exFAT drive:
   - [x] `shoebox faces stats` on the family folder (7196 photos, all
     looked at; `verify` before it: 7994 files OK): 9598 faces = the phase 4

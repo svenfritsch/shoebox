@@ -737,35 +737,52 @@ async fn folders(State(app): State<Arc<App>>) -> ApiResult<Json<Vec<browse::Fold
     .await
 }
 
-#[derive(Deserialize)]
-struct TagQuery {
-    q: Option<String>,
-    limit: Option<usize>,
-    /// Only tags the user added somewhere (own or both).
-    own: Option<u8>,
+/// The query string as pairs, so a key can come several times
+/// (`?tag=12&tag=40`).
+type Pairs = Vec<(String, String)>;
+
+fn param<'a>(pairs: &'a Pairs, key: &str) -> Option<&'a str> {
+    pairs.iter().rev().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
 }
 
-async fn tags(State(app): State<Arc<App>>, Query(q): Query<TagQuery>) -> ApiResult<Json<Vec<browse::Tag>>> {
+/// The timeline filter of a request: `folder`, `tag` (several, all must
+/// match) and `q` (free text).
+fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
+    let number = |v: &str| v.parse::<i64>().map_err(|_| ApiError::BadRequest(format!("not a number: {v}")));
+    Ok(browse::Query {
+        folder: param(pairs, "folder").filter(|v| !v.is_empty()).map(number).transpose()?,
+        tags: pairs.iter().filter(|(k, v)| k == "tag" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
+        text: param(pairs, "q").map(str::to_string).filter(|s| !s.trim().is_empty()),
+    })
+}
+
+/// Tags whose name contains `q`, most used first. With a filter (`tag`,
+/// `folder`), counts only the photos it shows and leaves out tags that would
+/// show nothing, so suggestions narrow a search; `own=1` keeps only tags the
+/// user added somewhere.
+async fn tags(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<browse::Tag>>> {
     blocking(&app, move |app| {
         let conn = app.conn.lock().unwrap();
-        let needle = q.q.as_deref().map(db::tag_fold).unwrap_or_default();
-        let own = q.own.is_some_and(|o| o != 0);
-        let tags = browse::all_tags(&conn)?
+        let needle = param(&pairs, "q").map(db::tag_fold).unwrap_or_default();
+        let own = param(&pairs, "own").is_some_and(|o| o != "0");
+        let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(50);
+        let filter = browse::Query { text: None, ..filter_of(&pairs)? };
+        let all = if filter.folder.is_none() && filter.tags.is_empty() {
+            browse::all_tags(&conn)?
+        } else {
+            let snapshot = app.snapshot(&conn)?;
+            let shown: HashSet<i64> = snapshot.query(&conn, &filter)?.iter().map(|it| it.id).collect();
+            browse::tags_within(&conn, &shown, &filter.tags)?
+        };
+        let tags = all
             .into_iter()
             .filter(|t| !own || t.kind != browse::TagKind::Folder)
             .filter(|t| db::tag_fold(&t.name).contains(&needle))
-            .take(q.limit.unwrap_or(50))
+            .take(limit)
             .collect();
         Ok(Json(tags))
     })
     .await
-}
-
-#[derive(Deserialize)]
-struct TimelineQuery {
-    folder: Option<i64>,
-    tag: Option<i64>,
-    q: Option<String>,
 }
 
 /// The timeline in columns, which keeps 100,000 entries at about 2 MB.
@@ -781,14 +798,17 @@ struct Timeline {
     versions: String,
     /// [still id, video id] of Live Photos.
     live: Vec<[i64; 2]>,
+    /// Names of the tags in the filter, for its chips.
+    tags: Vec<browse::TagName>,
 }
 
-async fn timeline(State(app): State<Arc<App>>, Query(q): Query<TimelineQuery>) -> ApiResult<Json<Timeline>> {
+async fn timeline(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Timeline>> {
+    let query = filter_of(&pairs)?;
     blocking(&app, move |app| {
         let conn = app.conn.lock().unwrap();
         let snapshot = app.snapshot(&conn)?;
-        let query = browse::Query { folder: q.folder, tag: q.tag, text: q.q.filter(|s| !s.trim().is_empty()) };
         let items = snapshot.query(&conn, &query)?;
+        let tags = browse::tag_names(&conn, &query.tags)?;
         drop(conn);
         let mut t = Timeline {
             count: items.len(),
@@ -797,6 +817,7 @@ async fn timeline(State(app): State<Arc<App>>, Query(q): Query<TimelineQuery>) -
             days: Vec::with_capacity(items.len()),
             versions: String::with_capacity(items.len() * 8),
             live: Vec::new(),
+            tags,
         };
         for it in items {
             t.ids.push(it.id);
