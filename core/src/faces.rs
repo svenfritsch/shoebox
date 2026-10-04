@@ -2,9 +2,9 @@
 //! looked at as a whole: `shoebox faces stats`, and for the web UI's face
 //! check page a sorted list, face crops and nearest neighbours.
 //!
-//! Everything here only reads `recognition.db`; clusters and people come
-//! later (5c-2) and nothing about them is stored here. The one thing written
-//! is the crop cache in `thumbs.db` (`thumbs.faces`, keyed by content and
+//! Everything here only reads `recognition.db` (and the face decisions in
+//! `library.db`: faces marked "not a face" are counted, and listed only when
+//! asked for, see `people.rs`). The one thing written is the crop cache in `thumbs.db` (`thumbs.faces`, keyed by content and
 //! box like the faces), and crops are made from the original under the
 //! guard (`fingerprint::read_unchanged`), like thumbnails.
 
@@ -46,12 +46,12 @@ pub fn too_small(px: f64) -> bool {
 /// `recog.faces`, `l` its `faces` row in `recog.looked`), measured across
 /// the face: one found turned 90° lies sideways in the picture, so its width
 /// is the box's height. `roll` is the column (or `0` in a v1 database).
-fn size_px(roll: &str) -> String {
+pub(crate) fn size_px(roll: &str) -> String {
     format!("(CASE WHEN {roll} % 180 = 90 THEN f.h * l.height ELSE f.w * l.width END)")
 }
 
 /// Contents of present photos, one file each (the lowest id).
-const PRESENT: &str = "SELECT quick_hash, min(id) AS id, kind FROM files
+pub(crate) const PRESENT: &str = "SELECT quick_hash, min(id) AS id, kind FROM files
                        WHERE missing_since IS NULL AND kind IN ('jpeg', 'png', 'heic') GROUP BY quick_hash";
 
 // ---------------------------------------------------------------- stats
@@ -62,6 +62,8 @@ pub struct Bucket {
     pub from: Option<f64>,
     pub to: Option<f64>,
     pub count: u64,
+    /// Of `count`, marked "not a face" (false finds).
+    pub not_face: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -100,6 +102,8 @@ pub struct Stats {
     pub scores: Vec<Bucket>,
     /// Faces under `min_cluster_px`.
     pub small: u64,
+    /// Of `faces`, marked "not a face" by the user (false finds).
+    pub not_faces: u64,
     pub min_cluster_px: f64,
     /// The last runs of `shoebox recognize`, newest first.
     pub runs: Vec<Run>,
@@ -132,9 +136,10 @@ pub fn stats(conn: &Connection) -> Result<Stats> {
 
     let mut widths = buckets(&WIDTH_BUCKETS);
     let mut scores = buckets(&SCORE_BUCKETS);
-    let (mut faces, mut rotated_faces, mut small) = (0, 0, 0);
+    let (mut faces, mut rotated_faces, mut small, mut not_faces) = (0, 0, 0, 0);
+    let marked = crate::people::not_face_ids(conn)?;
     let mut rows = conn.prepare(&format!(
-        "SELECT {}, f.score, {roll} FROM recog.faces f
+        "SELECT {}, f.score, {roll}, f.id FROM recog.faces f
          JOIN recog.looked l ON l.key = f.key AND l.task = '{FACES}'
          WHERE f.key IN {present}",
         size_px(roll)
@@ -143,16 +148,19 @@ pub fn stats(conn: &Connection) -> Result<Stats> {
     while let Some(r) = rows.next()? {
         let (px, score, roll): (Option<f64>, f64, i64) = (r.get(0)?, r.get(1)?, r.get(2)?);
         let px = px.unwrap_or(0.0);
+        let not_face = marked.contains(&r.get(3)?);
         faces += 1;
         rotated_faces += (roll != 0) as u64;
         small += too_small(px) as u64;
-        count_into(&mut widths, px);
-        count_into(&mut scores, score);
+        not_faces += not_face as u64;
+        count_into(&mut widths, px, not_face);
+        count_into(&mut scores, score, not_face);
     }
 
     let runs = conn
         .prepare(
-            "SELECT kind, state, started_at, finished_at, done, total FROM recog.jobs ORDER BY id DESC LIMIT 5",
+            "SELECT kind, state, started_at, finished_at, done, total FROM recog.jobs
+             WHERE kind IN ('faces', 'faces-rot') ORDER BY id DESC LIMIT 5",
         )?
         .query_map([], |r| {
             Ok(Run {
@@ -178,6 +186,7 @@ pub fn stats(conn: &Connection) -> Result<Stats> {
         widths,
         scores,
         small,
+        not_faces,
         min_cluster_px: MIN_CLUSTER_PX,
         runs,
     })
@@ -187,16 +196,17 @@ fn buckets(edges: &[f64]) -> Vec<Bucket> {
     let mut out = Vec::with_capacity(edges.len() + 1);
     let mut from = None;
     for &e in edges {
-        out.push(Bucket { from, to: Some(e), count: 0 });
+        out.push(Bucket { from, to: Some(e), count: 0, not_face: 0 });
         from = Some(e);
     }
-    out.push(Bucket { from, to: None, count: 0 });
+    out.push(Bucket { from, to: None, count: 0, not_face: 0 });
     out
 }
 
-fn count_into(buckets: &mut [Bucket], value: f64) {
+fn count_into(buckets: &mut [Bucket], value: f64, not_face: bool) {
     if let Some(b) = buckets.iter_mut().find(|b| b.to.is_none_or(|to| value < to)) {
         b.count += 1;
+        b.not_face += not_face as u64;
     }
 }
 
@@ -249,10 +259,12 @@ fn bucket_label(b: &Bucket, unit: &str, decimals: usize) -> String {
 
 fn format_buckets(out: &mut String, buckets: &[Bucket], total: u64, unit: &str, decimals: usize) {
     let max = buckets.iter().map(|b| b.count).max().unwrap_or(0).max(1);
+    let marked = buckets.iter().any(|b| b.not_face > 0);
     for b in buckets {
         let bar = "█".repeat(((b.count * 30).div_ceil(max)) as usize);
+        let not_face = if marked { format!(" {:>6} not a face", b.not_face) } else { String::new() };
         out.push_str(&format!(
-            "  {:<16} {:>7} {:>5.1}%  {bar}\n",
+            "  {:<16} {:>7} {:>5.1}%{not_face}  {bar}\n",
             bucket_label(b, unit, decimals),
             b.count,
             percent(b.count, total)
@@ -315,6 +327,13 @@ pub fn format_stats(s: &Stats) -> String {
             s.small,
             percent(s.small, s.faces)
         ));
+        if s.not_faces > 0 {
+            out.push_str(&format!(
+                "  Marked \"not a face\" (false finds): {} ({:.1}%)\n",
+                s.not_faces,
+                percent(s.not_faces, s.faces)
+            ));
+        }
         out.push_str("\nScore:\n");
         format_buckets(&mut out, &s.scores, s.faces, "", 2);
     }
@@ -352,6 +371,10 @@ pub struct ListQuery {
     /// Only faces found by the rotated pass.
     #[serde(default)]
     pub rotated: bool,
+    /// Only faces marked "not a face" (to undo); they are left out
+    /// otherwise.
+    #[serde(default)]
+    pub not_face: bool,
     #[serde(default)]
     pub offset: usize,
     pub limit: Option<usize>,
@@ -422,7 +445,14 @@ pub fn list(conn: &Connection, q: &ListQuery) -> Result<List> {
         _ => "px",
     };
     let dir = if q.desc { "DESC" } else { "ASC" };
-    let filter = format!("px >= ?1 AND px < ?2{}", if q.rotated { " AND f.roll != 0" } else { "" });
+    // Ids are numbers from the database, so they can go into the SQL.
+    let marked: Vec<String> = crate::people::not_face_ids(conn)?.iter().map(i64::to_string).collect();
+    let filter = format!(
+        "px >= ?1 AND px < ?2{} AND f.id {} ({})",
+        if q.rotated { " AND f.roll != 0" } else { "" },
+        if q.not_face { "IN" } else { "NOT IN" },
+        marked.join(",")
+    );
     let sql = format!(
         "{} ORDER BY {order} {dir}, f.id LIMIT ?3 OFFSET ?4",
         item_sql(", count(*) OVER ()", &filter)
@@ -454,22 +484,23 @@ pub struct Neighbour {
     pub similarity: f32,
 }
 
-/// The faces (of present photos, same model) whose embeddings are closest to
-/// face `id`'s, best first; `None` if there is no such face. Only reads: a
-/// look at which threshold separates people, for 5c-2.
+/// The faces (of present photos, same model, not marked "not a face") whose
+/// embeddings are closest to face `id`'s, best first; `None` if there is no
+/// such face. Only reads: a look at which threshold separates people.
 pub fn similar(conn: &Connection, id: i64, limit: usize) -> Result<Option<Vec<Neighbour>>> {
     let target: Option<(String, Vec<u8>)> = conn
         .query_row("SELECT model, emb FROM recog.faces WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?)))
         .optional()?;
     let Some((model, emb)) = target else { return Ok(None) };
     let target = floats(&emb);
+    let marked = crate::people::not_face_ids(conn)?;
     let mut stmt = conn.prepare(&item_sql(", f.emb", "f.model = ?1 AND f.id != ?2"))?;
     let mut rows = stmt.query(params![model, id])?;
     let mut all = Vec::new();
     while let Some(r) = rows.next()? {
         let emb: Vec<u8> = r.get(7)?;
         let other = floats(&emb);
-        if other.len() != target.len() {
+        if other.len() != target.len() || marked.contains(&r.get(0)?) {
             continue;
         }
         let similarity = target.iter().zip(&other).map(|(a, b)| a * b).sum::<f32>();
@@ -594,9 +625,10 @@ mod tests {
     fn values_land_in_their_bucket() {
         let mut b = buckets(&WIDTH_BUCKETS);
         for v in [10.0, 29.9, 30.0, 39.0, 40.0, 59.0, 60.0, 119.0, 120.0, 900.0] {
-            count_into(&mut b, v);
+            count_into(&mut b, v, v < 20.0);
         }
         assert_eq!(b.iter().map(|b| b.count).collect::<Vec<_>>(), [2, 2, 2, 2, 2]);
+        assert_eq!(b.iter().map(|b| b.not_face).collect::<Vec<_>>(), [1, 0, 0, 0, 0]);
         assert_eq!(bucket_label(&b[0], " px", 0), "under 30 px");
         assert_eq!(bucket_label(&b[2], " px", 0), "40–60 px");
         assert_eq!(bucket_label(&b[4], " px", 0), "120 px and more");

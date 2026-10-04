@@ -82,7 +82,7 @@ Done (PR "Phase 5-A"). Scope as agreed:
   refuses non-local clients (a LAN device logged in with the PIN) and unknown
   or vanished files, needs the header, and the guard still holds. The command
   lines per OS are unit tests in `reveal.rs`.
-- **Refinement, to be done in the 5c-2 PR:** the "Copy path" button in the
+- **Refinement, done in the 5c-2 PR:** the "Copy path" button in the
   info panel gets a `title` with the path it copies (the path within the
   library, as `copyPath` copies it), so hovering shows what will land on
   the clipboard. Where: `infoReveal` in `app.js` (`copy.title = info.path`).
@@ -222,8 +222,115 @@ in "Still to check on real hardware" below.
 
 ### 5c-2: people, groups, clustering (backend)
 
-Also in this PR: the 5a refinement (a `title` with the path on "Copy
-path", see 5a above).
+Built (PR "Phase 5c-2"); the run on the real drive is in "Still to check on
+real hardware" below. Also in this PR: the 5a refinement (a `title` with
+the path on "Copy path", see 5a above) and "Not a face" on the face check
+page (from 5c-3, see below). As built, on top of the plan that follows:
+
+- Code: `core/src/people.rs` (decisions and how they are matched to faces,
+  people, groups, lists, the user data), `core/src/clusters.rs` (the
+  clustering job), `core/src/ann.rs` (nearest neighbours),
+  `core/src/serve/people_api.rs` (handlers). `library.db` v4 is the schema
+  below plus an index on `face_decisions(person_id)`; `recognition.db` v3
+  adds the cache (`neighbours`, `clusters`, see below).
+- **Matching**: every decision belongs to the face of its content whose
+  box overlaps it best with IoU ≥ 0.5 (`people::MATCH_IOU`). Of several
+  decisions on one face the latest `confirmed`/`ignored`/`not_face` counts;
+  `rejected` rows add up (one per person). Everything shown is matched
+  live, so a decision shows at once, before the cache is recomputed.
+- **Thresholds** (named constants, from the calibration below):
+  `people::SUGGEST_SIM` 0.55, `people::MAYBE_SIM` 0.35,
+  `clusters::CLUSTER_SIM` 0.60, `faces::MIN_CLUSTER_PX` 30 px. A face is
+  compared with *all* confirmed faces of every person (the 32 most similar
+  through the index) and gets the best person it was not rejected for.
+  Confirmed faces under 30 px are no references either.
+- **Clustering** (`clusters::run`): faces of present photos, of the current
+  model (the latest upright result's), ≥ 30 px, rotated ones included.
+  Each looks up its 24 nearest neighbours with similarity ≥ 0.60 once; the
+  lists are kept in `recog.neighbours`, so a stopped run resumes and after
+  a `recognize` run only new faces need lists (a deleted face's list goes
+  with it: SQLite can give a new face the old id). Then, from scratch every
+  time: faces without a decision that are neighbours are joined into
+  clusters (similarities checked again), and the suggestions are computed.
+  `recog.clusters` gets one row per face without a decision (cluster
+  number, largest first; suggested person and similarity).
+- **Nearest neighbours without all pairs** (`ann.rs`): an inverted-file
+  index; k-means centres (√n of them, trained on at most 40,000 faces)
+  split the embeddings into cells, and a search compares with the centres
+  and the faces in the closest eighth of the cells (at least 12). Up to
+  2,000 faces it compares with all. Dot products in eight lanes (SIMD
+  without `-ffast-math`), on all cores. On made-up faces of 128 numbers
+  like SFace's it finds 99% of the neighbours ≥ 0.55.
+- **When**: at the end of every `shoebox recognize` (which prints
+  "Clusters: … (N s)"; Ctrl-C stops it like the passes), and in `serve` on
+  its own connection and thread: at start, after every change to people or
+  decisions (300 ms later, changes in between together), and when
+  `/api/info` sees that `recognition.db` has other faces than were last
+  clustered (a run that stopped before clustering). Not while `recognize`
+  runs (it clusters itself). Progress in `/api/info` → `clusters: {running,
+  stale, done, total, state, finished_at, clusters, unnamed, suggested,
+  people}` (`done`/`total`: neighbour lists of the latest job, in
+  `recog.jobs` with kind `clusters`).
+- **Time**: 10,000 made-up faces (1,000 people) in 0.34 s on 4 cores of a
+  2.1 GHz Xeon, 0.67 s on one; again after naming 100 people (neighbour
+  lists kept): 0.07 s (`cargo test --release --test people --
+  --ignored`). Real drive: see below.
+- **API** (every change needs `X-Shoebox` and goes through the same path as
+  moves and tags: one at a time, not while a scan runs, backed up):
+  - People: `GET /api/people[?hidden=1]` → `[{id, name, group_id, hidden,
+    faces, photos, suggested, maybe, cover}]` (`cover`: a face id for
+    `/api/faces/{id}/crop`, the chosen one or the largest), sorted by group
+    position then name, no group last; `POST /api/people {name,
+    group_id?}`; `GET /api/people/{id}`; `GET /api/people/{id}/faces?
+    state=confirmed|suggested|maybe|rejected&offset&limit` → `{total,
+    faces}`; `POST /api/people/{id}/rename {name}`, `/merge {into}`,
+    `/hide {hidden}`, `/group {group_id|null}`, `/cover {face}`. Names are
+    compared like tags (NFC, ignoring case).
+  - Groups: `GET /api/groups` → `[{id, name, position, people}]`; `POST
+    /api/groups {name}` (at the end); `POST /api/groups/reorder {ids}`;
+    `POST /api/groups/{id}/rename {name}`; `POST /api/groups/{id}/delete`
+    (its people get no group).
+  - Clusters: `GET /api/clusters?offset&limit&samples` → `{generation,
+    total, unnamed, clusters: [{id, size, faces, suggestion: {person,
+    faces}}]}`; `GET /api/clusters/{id}/faces`; `POST
+    /api/clusters/{id}/name {name|person_id, faces?, generation?}`,
+    `/ignore`, `/not-face`. `faces` (some of the cluster's) is the split;
+    with `generation` a cluster that changed since is refused (409).
+  - Faces: `POST /api/faces/confirm {faces}` (the suggestion, also a
+    "maybe"; decided faces are passed over), `/reject {faces, person_id?}`
+    (the suggested person if none), `/assign {faces, person_id|name}` (a
+    new name makes a person), `/ignore`, `/not-face`, `/undo {faces,
+    manual?}` (forgets every decision about the faces; deletes hand-drawn
+    ones). `POST /api/faces/manual {file, box, person_id|name}` → `{manual}`
+    adds a hand-drawn face (the drawing UI is 5c-3). All return `{faces,
+    person}`.
+  - `GET /api/files/{id}`: `faces` now carry `id`, `state` (`confirmed`,
+    `ignored`, `suggested`, `maybe` or `null`), `person {id, name}`,
+    `similarity`, `small`, `rejected`, and `manual` for hand-drawn ones
+    (their box wins over a detected face they overlap); "not a face" is left
+    out. `faces_lost` lists confirmed faces that are no longer found.
+  - `GET /api/timeline?person=<id>`: photos with a confirmed face of the
+    person (also ones no longer found).
+  - Face check page: `GET /api/faces` leaves out "not a face", `?not_face=true`
+    lists only those; `/api/faces/stats` and `shoebox faces stats` count
+    them (`not_faces`, and `not_face` per width and score bucket);
+    neighbours (`similar`) leave them out.
+- **User data**: `userdata.json` version 2 adds `groups [{name,
+  position}]`, `people [{name, group, hidden?, cover}]` and
+  `face_decisions [{person, decision, manual?, key, box, at, files: [{path,
+  full_hash, in_trash?}]}]`; `library.db.bak` as for tags.
+- **Face check page**: "✕" (Not a face) on every crop, "Select" to mark
+  several at once, and a filter "Marked “not a face”" whose crops have "↺"
+  to undo (and "It is a face" for several).
+- **Fake worker**: a white top quarter and grey bottom quarter make a face
+  of the person of the middle's colour with a similarity of
+  round(40·grey/255)/40 to their plain face (see its header).
+- Tests: `core/tests/people.rs` (suggest, maybe, confirm, reject, assign,
+  undo, ignore, not a face everywhere and across a model change and in the
+  stats, groups, merge, split and stale clusters, a move, a model change, a
+  lost `recognition.db`, a shifted box, "no longer found", hand-drawn faces,
+  the user data backup, resuming, the guard; the timing over 10,000 faces
+  on request), unit tests in `people.rs`, `ann.rs`, `db.rs`.
 
 Schema v4 in `library.db`:
 
@@ -361,7 +468,7 @@ Folders
 - **Face check page (5c-1):** "Not a face" on each crop and on several
   selected crops, so false finds can be cleared while going through the
   smallest faces and lowest scores; a filter shows the ones marked, to
-  undo a mistake.
+  undo a mistake. (Done in the 5c-2 PR.)
 - **Groups:** create, rename, reorder, delete; change a person's group by
   drag and drop or "Move to group…". No groups are made up front: the
   user creates them in the UI (the first ones on the real drive will be
@@ -458,5 +565,30 @@ Folders
     6866 in 2072 s (35 min, 3.3 photos/s; the estimate was ~40 min);
     0 failed, 414 faces added in all.
   - `shoebox verify` afterwards.
-- [ ] 5c-2: clustering time over all faces on the old Intel MacBook.
+- [ ] 5c-2: on the old Intel MacBook against the exFAT drive (no naming UI
+      until 5c-3: the API with `curl`, from the same computer, e.g.
+      `curl -s localhost:7878/api/clusters?samples=3`, crops at
+      `localhost:7878/api/faces/<id>/crop`, and changes with
+      `curl -X POST -H 'X-Shoebox: 1' -H 'Content-Type: application/json'
+      -d '{"name": "…"}' localhost:7878/api/clusters/<id>/name`):
+  - [ ] Clustering time: the first `shoebox recognize` after the update
+    (nothing new to look at) looks up the neighbours of all ~10,000 faces;
+    note the time on its last line ("Clusters: … (N s)"; 0.7 s on one core
+    of a 2.1 GHz Xeon for 10,000 made-up faces, so expect a few seconds).
+    Run it again: neighbour lists are kept, it should take a fraction.
+  - [ ] Look at the largest clusters (`/api/clusters`): one person each?
+    Are there big mixed ones (small children, 0.60 may be too loose for
+    them)? How many faces are alone?
+  - [ ] Name a few people (a cluster each, or `/api/faces/assign`), with
+    faces from several ages for one child; then the suggestions
+    (`/api/people/<id>/faces?state=suggested`) and the "maybe" list
+    (`state=maybe`): how many are right? Does a child's older face come
+    up as suggested or maybe once faces of several ages are confirmed?
+  - [ ] "Not a face" on the face check page for the leg in 4a5a1198-….JPG
+    and the hands in IMG_9959.JPG (filter "Found turned"): gone from the
+    viewer's boxes and from the list, shown under "Marked “not a face”",
+    counted by `shoebox faces stats`; still hidden after restarting
+    `serve` and after the next `shoebox recognize --rotated`.
+  - [ ] `userdata.json` and `library.db.bak` in `.shoebox/` have the
+    people, groups and decisions; `shoebox verify` afterwards.
 - [ ] 5c-3: naming and correcting from the iPad.

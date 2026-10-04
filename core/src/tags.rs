@@ -13,7 +13,8 @@
 //! - The trash keeps a file's own tags (`trash.user_tags`) and a restore
 //!   puts them back.
 //! - `userdata.json` next to `library.db` holds everything the user made
-//!   (for now: own tags), readable and easy to back up.
+//!   (own tags; people, groups and face decisions since 5c-2, see
+//!   `people.rs`), readable and easy to back up.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -187,6 +188,9 @@ pub struct UserData {
     /// Unix seconds.
     pub written_at: i64,
     pub own_tags: Vec<OwnTag>,
+    /// Groups, people and face decisions (version 2).
+    #[serde(flatten)]
+    pub people: crate::people::UserPeople,
 }
 
 #[derive(Debug, Serialize)]
@@ -245,7 +249,13 @@ pub fn user_data(conn: &Connection) -> Result<UserData> {
     }
     let mut own_tags: Vec<OwnTag> = tags.into_values().collect();
     own_tags.sort_by_key(|t| t.name.to_lowercase());
-    Ok(UserData { shoebox: env!("CARGO_PKG_VERSION"), version: 1, written_at: db::now(), own_tags })
+    Ok(UserData {
+        shoebox: env!("CARGO_PKG_VERSION"),
+        version: 2,
+        written_at: db::now(),
+        own_tags,
+        people: crate::people::user_data(conn)?,
+    })
 }
 
 /// Write `userdata.json` next to the database, replacing the previous copy

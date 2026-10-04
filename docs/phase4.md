@@ -80,7 +80,9 @@ Failed photos are not tried again unless `--retry-failed` is given.
 Python: one face in the middle of every picture, an embedding from its mean
 colour, and misbehaviour on cue (solid red: crash, green: error, blue: hang,
 magenta: garbage, black: no faces), plus a cyan or yellow edge for the
-rotated pass of 5c-1 (a face only when turned, a hang only when turned).
+rotated pass of 5c-1 (a face only when turned, a hang only when turned),
+and a white top for 5c-2 (a face of the person of the middle's colour, with
+a similarity to their plain face set by the grey bottom).
 The integration tests
 (`core/tests/recognize.rs`) use it for the guard, the supervision table
 above, limits, model changes, pruning and the web API. With
@@ -106,6 +108,10 @@ SHOEBOX_TEST_FACE=face.jpg python3 -m unittest -v recognizer/test_recognizer.py
 - v2 (phase 5c-1) adds `faces.roll`: 0, or 90/270 for faces found by
   `shoebox recognize --rotated` (task `faces-rot` in `looked` and `jobs`),
   stored upright like the others.
+- v3 (phase 5c-2) adds the clustering cache: `neighbours(face, list)` and
+  `clusters(face, cluster, person, similarity)`, plus `clusters` jobs (see
+  [phase5.md](phase5.md)). Still a cache: deleting the file loses no
+  decision.
 
 ## API additions
 

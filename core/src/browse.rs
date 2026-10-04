@@ -79,6 +79,8 @@ pub struct Query {
     pub folder: Option<i64>,
     pub tag: Option<i64>,
     pub text: Option<String>,
+    /// Only photos with a confirmed face of this person (5c-2).
+    pub person: Option<i64>,
 }
 
 impl Snapshot {
@@ -262,9 +264,25 @@ impl Snapshot {
             let ids = file_ids_with_tags(conn, &tags)?;
             words.push((word, ids));
         }
+        let person: Option<HashSet<i64>> = match q.person {
+            Some(p) => {
+                let keys = crate::people::keys_of_person(conn, p)?;
+                let mut ids = HashSet::new();
+                let mut stmt = conn.prepare("SELECT id, quick_hash FROM files WHERE missing_since IS NULL")?;
+                let mut rows = stmt.query([])?;
+                while let Some(r) = rows.next()? {
+                    if keys.contains(&r.get::<_, String>(1)?) {
+                        ids.insert(r.get(0)?);
+                    }
+                }
+                Some(ids)
+            }
+            None => None,
+        };
         Ok(self
             .items
             .iter()
+            .filter(|it| person.as_ref().is_none_or(|p| p.contains(&it.id)))
             .filter(|it| folders.as_ref().is_none_or(|f| f.contains(&it.folder_id)))
             .filter(|it| tagged.as_ref().is_none_or(|t| t.contains(&it.id)))
             .filter(|it| words.iter().all(|(w, ids)| ids.contains(&it.id) || it.path_lower.contains(w.as_str())))

@@ -1451,6 +1451,7 @@ function infoReveal(actions, info) {
     actions.appendChild(reveal);
   }
   var copy = el('button', 'btn quiet', 'Copy path');
+  copy.title = info.path;
   copy.onclick = function () { copyPath(info.path); };
   actions.appendChild(copy);
 }
@@ -1708,15 +1709,20 @@ function loadOwnTags() {
 
 // ------------------------------------------------------------------ face check page
 // Did recognition work? All faces as crops, sortable and filterable, so
-// false detections (posters, statues, background) are easy to spot.
+// false detections (posters, statues, background) are easy to spot and can
+// be marked "not a face" (one at a time, or several selected); a filter
+// shows the marked ones, to undo a mistake.
 
-var faceState = { sort: 'size', desc: false, filter: 'all', faces: [], total: 0, minPx: 30 };
+var faceState = { sort: 'size', desc: false, filter: 'all', faces: [], total: 0, minPx: 30, picking: false, picked: {} };
 var PAGE_FACES = 300;
 var FACE_SORTS = [
   ['size', false, 'Smallest first'], ['size', true, 'Largest first'],
   ['score', false, 'Lowest score first'], ['score', true, 'Highest score first'],
 ];
-var FACE_FILTERS = [['all', 'All faces'], ['small', 'Too small for clustering'], ['large', 'Large enough'], ['rotated', 'Found turned']];
+var FACE_FILTERS = [
+  ['all', 'All faces'], ['small', 'Too small for clustering'], ['large', 'Large enough'], ['rotated', 'Found turned'],
+  ['not_face', 'Marked “not a face”'],
+];
 
 $('nav-faces').onclick = function () { showView('faces'); };
 
@@ -1733,7 +1739,10 @@ function loadFaces() {
   more.hidden = true;
   more.onclick = function () { moreFaces(grid, more); };
   page.appendChild(more);
+  page.appendChild(facePickBar());
   faceState.faces = [];
+  faceState.picked = {};
+  updateFacePick();
   api('/api/faces/stats').then(function (s) {
     if (state.filter.view === 'faces') sub.textContent = faceSummary(s);
   }).catch(function () {});
@@ -1746,6 +1755,7 @@ function faceSummary(s) {
   if (s.looked < s.photos) parts.push((s.photos - s.looked).toLocaleString() + ' still to look at');
   parts.push(s.small.toLocaleString() + ' under ' + s.min_cluster_px + ' px (too small for clustering)');
   parts.push(s.rotated_looked ? plural(s.rotated_faces, 'face', 'faces') + ' found turned' : 'not looked at turned yet');
+  if (s.not_faces) parts.push(plural(s.not_faces, 'face', 'faces') + ' marked “not a face”');
   var widths = s.widths.map(function (b) {
     var label = b.from == null ? '< ' + b.to : b.to == null ? b.from + '+' : b.from + '–' + b.to;
     return label + ' px: ' + b.count.toLocaleString();
@@ -1776,9 +1786,72 @@ function faceToolbar() {
     filter.appendChild(opt);
   });
   filter.onchange = function () { faceState.filter = filter.value; loadFaces(); };
+  var pick = el('button', 'btn quiet', 'Select');
+  pick.id = 'face-pick';
+  pick.onclick = function () {
+    faceState.picking = !faceState.picking;
+    if (!faceState.picking) clearFacePicks();
+    updateFacePick();
+  };
   bar.appendChild(sort);
   bar.appendChild(filter);
+  bar.appendChild(pick);
   return bar;
+}
+
+// The bar for selected crops: mark them "not a face" (or undo that, in the
+// filter that shows the marked ones).
+function facePickBar() {
+  var bar = el('div', 'selbar');
+  bar.id = 'face-bar';
+  bar.hidden = true;
+  var count = el('span');
+  count.id = 'face-pick-count';
+  var mark = el('button', 'btn');
+  mark.id = 'face-pick-mark';
+  mark.onclick = function () { markFaces(Object.keys(faceState.picked).map(Number)); };
+  var done = el('button', 'btn quiet', 'Done');
+  done.onclick = function () { faceState.picking = false; clearFacePicks(); updateFacePick(); };
+  bar.appendChild(count);
+  bar.appendChild(mark);
+  bar.appendChild(done);
+  return bar;
+}
+
+function clearFacePicks() {
+  faceState.picked = {};
+  Array.prototype.forEach.call(document.querySelectorAll('.face.sel'), function (c) { c.classList.remove('sel'); });
+}
+
+function updateFacePick() {
+  var bar = $('face-bar');
+  if (!bar) return;
+  var n = Object.keys(faceState.picked).length;
+  bar.hidden = !faceState.picking;
+  $('face-pick').classList.toggle('active', faceState.picking);
+  $('face-pick-count').textContent = n ? plural(n, 'face', 'faces') : 'Tap faces to select';
+  var mark = $('face-pick-mark');
+  mark.textContent = faceState.filter === 'not_face' ? 'It is a face' : 'Not a face';
+  mark.disabled = !n;
+}
+
+// Mark faces "not a face", or, in the filter of marked faces, undo that.
+// They leave the list they were in.
+function markFaces(ids) {
+  if (!ids.length) return;
+  var undo = faceState.filter === 'not_face';
+  post(undo ? '/api/faces/undo' : '/api/faces/not-face', { faces: ids }).then(function (r) {
+    ids.forEach(function (id) {
+      var card = document.querySelector('.face[data-id="' + id + '"]');
+      if (card) card.remove();
+      delete faceState.picked[id];
+    });
+    var before = faceState.faces.length;
+    faceState.faces = faceState.faces.filter(function (f) { return ids.indexOf(f.id) < 0; });
+    faceState.total -= before - faceState.faces.length;
+    updateFacePick();
+    toast(undo ? plural(r.faces, 'face', 'faces') + ' back' : plural(r.faces, 'face', 'faces') + ' marked “not a face”');
+  }).catch(failed);
 }
 
 function moreFaces(grid, more) {
@@ -1786,7 +1859,7 @@ function moreFaces(grid, more) {
   var q = query({
     sort: faceState.sort, desc: faceState.desc ? 'true' : null, offset: faceState.faces.length, limit: PAGE_FACES,
     max_px: f === 'small' ? faceState.minPx : null, min_px: f === 'large' ? faceState.minPx : null,
-    rotated: f === 'rotated' ? 'true' : null,
+    rotated: f === 'rotated' ? 'true' : null, not_face: f === 'not_face' ? 'true' : null,
   });
   more.disabled = true;
   return api('/api/faces' + q).then(function (r) {
@@ -1800,10 +1873,11 @@ function moreFaces(grid, more) {
   }).catch(failed);
 }
 
-// One crop; clicking it opens its photo. `similarity` is set in the list of
-// nearest neighbours.
+// One crop; clicking it opens its photo (or selects it, while selecting).
+// `similarity` is set in the list of nearest neighbours.
 function faceCard(face, similarity) {
   var card = el('div', 'face' + (face.small ? ' small' : ''));
+  card.dataset.id = face.id;
   var a = el('a', 'crop');
   a.href = '#';
   a.title = 'Open the photo';
@@ -1813,7 +1887,17 @@ function faceCard(face, similarity) {
   img.src = '/api/faces/' + face.id + '/crop';
   img.onerror = function () { card.classList.add('broken'); };
   a.appendChild(img);
-  a.onclick = function (ev) { ev.preventDefault(); closeModal(); openFacePhoto(face); };
+  a.onclick = function (ev) {
+    ev.preventDefault();
+    if (faceState.picking && similarity == null) {
+      if (faceState.picked[face.id]) delete faceState.picked[face.id]; else faceState.picked[face.id] = true;
+      card.classList.toggle('sel', !!faceState.picked[face.id]);
+      updateFacePick();
+      return;
+    }
+    closeModal();
+    openFacePhoto(face);
+  };
   card.appendChild(a);
   var caption = Math.round(face.px) + ' px · ' + face.score.toFixed(2);
   if (similarity != null) caption = similarity.toFixed(2) + ' · ' + caption;
@@ -1825,6 +1909,11 @@ function faceCard(face, similarity) {
     near.title = 'Most similar faces';
     near.onclick = function () { similarFaces(face); };
     card.appendChild(near);
+    var undo = faceState.filter === 'not_face';
+    var mark = el('button', 'mark', undo ? '↺' : '✕');
+    mark.title = undo ? 'It is a face (undo “not a face”)' : 'Not a face';
+    mark.onclick = function () { markFaces([face.id]); };
+    card.appendChild(mark);
   }
   return card;
 }
