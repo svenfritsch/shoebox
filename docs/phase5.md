@@ -239,8 +239,8 @@ CREATE TABLE face_decisions (
     id        INTEGER PRIMARY KEY,
     key       TEXT NOT NULL,       -- files.quick_hash
     x REAL NOT NULL, y REAL NOT NULL, w REAL NOT NULL, h REAL NOT NULL,
-    person_id INTEGER REFERENCES people(id) ON DELETE CASCADE,  -- NULL with 'ignored'
-    decision  TEXT NOT NULL,       -- confirmed, rejected (not this person), ignored (stranger)
+    person_id INTEGER REFERENCES people(id) ON DELETE CASCADE,  -- NULL with 'ignored' and 'not_face'
+    decision  TEXT NOT NULL,       -- confirmed, rejected (not this person), ignored (stranger), not_face (false find)
     manual    INTEGER NOT NULL DEFAULT 0,  -- 1: the box was drawn by hand, not detected
     at        INTEGER NOT NULL
 );
@@ -265,6 +265,19 @@ person, references for suggestions, the info panel) reads one table.
   face, the hand-drawn box winning.
 - A rejection can only be made for a detected face (one never draws a box
   to say who it is not).
+- **Not a face** (`not_face`, asked for after looking at the 5c-1 face
+  check page): a detection that is no face at all (poster, statue,
+  pattern in the background). Unlike `ignored` (a real person nobody
+  needs to name) it means the box itself is wrong. Such a face:
+  - is hidden everywhere (viewer boxes, info panel, people, clusters,
+    "Unnamed") and never takes part in clustering or suggestions;
+  - is matched like other decisions (key + box, IoU ≥ 0.5), so it stays
+    hidden after a new `recognize` run or a model change;
+  - is counted in `shoebox faces stats` and on the face check page (false
+    finds per size and score), which tells whether a stricter detector
+    threshold would pay off;
+  - can be undone (the row is deleted). Only for detected faces: a
+    hand-drawn box is deleted instead.
 
 In `recognition.db` (a cache: losing it loses no decision): the cluster
 and the suggested person per face.
@@ -282,13 +295,15 @@ kept.
   `face_decisions`, never cluster state:
   - naming a cluster (or some of its faces) → `confirmed` rows;
   - "Ignore" (strangers) → `ignored` rows;
+  - "Not a face" (false finds) → `not_face` rows;
   - "split" means selecting faces in a card and naming or ignoring them;
     there is no "split but leave unnamed".
 - Throwing `recognition.db` away loses nothing the user did.
 
 Matching and clustering:
 - Only faces above the 5c-1 size and score thresholds take part; smaller
-  ones are listed but never suggested.
+  ones are listed but never suggested. Faces marked `not_face` never take
+  part.
 - A new face is suggested for a person when it is close enough to that
   person's confirmed faces, and never for a person it was rejected for.
 - Unassigned faces are grouped into clusters after each run, from scratch
@@ -301,11 +316,12 @@ Matching and clustering:
 
 API: people (list, create, rename, merge, hide, change group, set cover),
 groups (list, create, rename, reorder, delete), clusters (list, name,
-ignore, split), faces (confirm, reject, assign, ignore), photos of a person
+ignore, split), faces (confirm, reject, assign, ignore, not a face, undo), photos of a person
 for the timeline.
 
 Tests (`core/tests/people.rs`): with the fake worker's embeddings: suggest,
-confirm, reject, merge, split, groups (one per person, delete → no group),
+confirm, reject, not a face (hidden everywhere, survives a model change,
+counted in the stats), merge, split, groups (one per person, delete → no group),
 decisions survive a model change and a move, hand-drawn faces (`manual`)
 appear for their person and never as a duplicate of a detected face, guard.
 
@@ -329,13 +345,19 @@ Folders
   timeline with their photos.
 - **Unnamed:** one card per cluster with a few sample faces and a name
   field. The autocomplete lists people **by group**, which is what makes
-  assigning quick. "Ignore" for strangers.
+  assigning quick. "Ignore" for strangers, "Not a face" for false finds
+  (also for single faces selected in a card).
 - **Corrections:** merge two people, take faces out of a person ("not this
   person"), split a cluster, name several selected faces at once.
+- **Face check page (5c-1):** "Not a face" on each crop and on several
+  selected crops, so false finds can be cleared while going through the
+  smallest faces and lowest scores; a filter shows the ones marked, to
+  undo a mistake.
 - **Groups:** create, rename, reorder, delete; change a person's group by
   drag and drop or "Move to group…".
 - **Info panel (viewer):** a "People" section with face crops and names.
   Unnamed faces show "+ Name"; suggested ones ✓ (confirm) and ✗ (reject).
+  Every detected face has "Not a face" in its menu.
   Hovering a face highlights its box in the photo (boxes exist since
   phase 4).
 - **Add a missed face by hand** (moved up from "later": it is what makes
