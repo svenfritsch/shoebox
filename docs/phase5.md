@@ -191,7 +191,9 @@ person, references for suggestions, the info panel) reads one table.
   `recog.faces` row behind it. Its embedding is cached in `recognition.db`
   (computed with the `embed` task, see 5c-3) and recomputed after a model
   change. It is always `confirmed` with a person: the UI asks for the name
-  while drawing. Deleting it deletes the row.
+  while drawing. Deleting it deletes the row. If a later pass (e.g.
+  `--rotated`) detects a face overlapping it, the two are shown as one
+  face, the hand-drawn box winning.
 - A rejection can only be made for a detected face (one never draws a box
   to say who it is not).
 
