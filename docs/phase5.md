@@ -363,7 +363,9 @@ Folders
   smallest faces and lowest scores; a filter shows the ones marked, to
   undo a mistake.
 - **Groups:** create, rename, reorder, delete; change a person's group by
-  drag and drop or "Move to group…".
+  drag and drop or "Move to group…". No groups are made up front: the
+  user creates them in the UI (the first ones on the real drive will be
+  "Familie" and "Freunde").
 - **Info panel (viewer):** a "People" section with face crops and names.
   Unnamed faces show "+ Name"; suggested ones ✓ (confirm) and ✗ (reject).
   Every detected face has "Not a face" in its menu.
@@ -409,17 +411,29 @@ Folders
   - [x] Is 40 px right? On the face check page all 532 faces of 30–40 px
     were real, recognisable people: the threshold is now 30 px (keeps 97%
     of faces instead of 91%).
-  - [ ] "Same person" threshold from "≈" (lowest similarity still the same
-    person, highest that is not, faces under 30 px ignored). So far, one
-    person (a boy, 386 px reference): right matches from 0.87 down to at
-    least 0.37 (133 px), wrong ones from about 0.38 down (an old black and
-    white photo, a boy with glasses, a baby, a girl); a 27 px stranger also
-    at 0.37. No single cut-off separates them, so for 5c-2: compare with
-    all confirmed faces of a person (best match), suggest above a safe
-    level (~0.45, to be confirmed) and offer only "maybe" between ~0.35 and
-    that, settled by ✓/✗. More people needed before fixing the numbers.
+  - [x] "Same person" threshold from "≈" (24 neighbours each, faces under
+    30 px ignored), five people:
+
+    | Reference | Right matches | Wrong ones |
+    |---|---|---|
+    | boy, teens (386 px) | 0.87 down to 0.37 | from 0.38 down |
+    | older woman (447 px) | all 24, down to 0.65 | none in the list |
+    | girl, teens (456 px) | all 24, down to 0.60 | none in the list |
+    | girl, teens (481 px, found turned) | all 24, down to 0.65 | none in the list |
+    | toddler (441 px) | down to 0.58, and one at 0.47 (69 px, blurry) | 0.54 (other child), then from 0.49 down |
+
+    Adults and teenagers are clear-cut: everything at 0.60 and above was
+    right. Small children look alike and change fast: a wrong child at
+    0.54. Highest wrong match seen: 0.54; lowest right one: 0.37. So for
+    5c-2: compare a face with all confirmed faces of a person (best
+    match), **suggest from ~0.55**, offer only as **"maybe" between ~0.35
+    and 0.55** (settled by ✓/✗), nothing below. A face found by the rotated
+    pass matched its person's upright faces as well as any (0.65–0.75), so
+    rotated faces can take part like the others.
   - [ ] 34 faces added in the first 258 photos turned (13%) is a lot: check
-    "Found turned" for false faces before trusting the pass.
+    "Found turned" for false faces before trusting the pass. One example
+    checked (IMG_6482.HEIC, three people lying down): one face found
+    upright and two by the rotated pass, all three correct, none twice.
   - `shoebox serve`, "Face check": go through the smallest faces and the
     lowest scores; how many false faces (posters, statues, background),
     and are there any above 30 px? Open a few in the viewer. Try "≈" on
