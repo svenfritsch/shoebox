@@ -407,7 +407,10 @@ Folders
     were too wide at the top; changed to 0.88/0.90/0.92/0.94. Still 48
     failures (43 "No 'ftyp' box", 5 "Illegal start bytes"): the JPEGs
     misnamed `.HEIC` etc. from phase 4, waiting for `--retry-failed`.
-  - [ ] `shoebox recognize --retry-failed`: the 48 should now be looked at.
+  - [x] `shoebox recognize --retry-failed`: all 48 looked at in 9 s, 65
+    faces, 0 failed. Afterwards `faces stats`: 10043 faces, 0 failed;
+    300 (3.0%) under 30 px. (These 48 have not been looked at turned yet:
+    the next `--rotated` run takes them.)
   - [x] Is 40 px right? On the face check page all 532 faces of 30–40 px
     were real, recognisable people: the threshold is now 30 px (keeps 97%
     of faces instead of 91%).
@@ -420,18 +423,22 @@ Folders
     | older woman (447 px) | all 24, down to 0.65 | none in the list |
     | girl, teens (456 px) | all 24, down to 0.60 | none in the list |
     | girl, teens (481 px, found turned) | all 24, down to 0.65 | none in the list |
-    | toddler (441 px) | down to 0.58, and one at 0.47 (69 px, blurry) | 0.54 (other child), then from 0.49 down |
+    | toddler (441 px) | down to 0.58, and one at 0.47 (69 px, the same girl a few years older) | 0.54 (other child), then from 0.49 down |
 
     Adults and teenagers are clear-cut: everything at 0.60 and above was
     right. Small children look alike and change fast: a wrong child at
-    0.54. Highest wrong match seen: 0.54; lowest right one: 0.37. So for
+    0.54, while the same girl a few years older scored only 0.47 against
+    her toddler face. Highest wrong match seen: 0.54; lowest right one:
+    0.37. So for
     5c-2: compare a face with all confirmed faces of a person (best
-    match), **suggest from ~0.55**, offer only as **"maybe" between ~0.35
+    match: confirmed faces from several ages bridge the gap a single
+    reference cannot), **suggest from ~0.55**, offer only as **"maybe" between ~0.35
     and 0.55** (settled by ✓/✗), nothing below. A face found by the rotated
     pass matched its person's upright faces as well as any (0.65–0.75), so
     rotated faces can take part like the others.
-  - [ ] 34 faces added in the first 258 photos turned (13%) is a lot: check
-    "Found turned" for false faces before trusting the pass. One example
+  - [ ] The whole rotated pass added 414 faces (4% of all; the first 258
+    photos, 34 faces, were not typical): check "Found turned" for false
+    faces before trusting the pass. One example
     checked (IMG_6482.HEIC, three people lying down): one face found
     upright and two by the rotated pass, all three correct, none twice.
   - `shoebox serve`, "Face check": go through the smallest faces and the
@@ -440,10 +447,10 @@ Folders
     faces of people you know: up to which similarity are the neighbours
     the same person (for 5c-2's threshold)? Crops of HEIC and EXIF-rotated
     photos upright?
-  - Time `shoebox recognize /Volumes/Fotos --rotated` (family folder;
-    expected ~40 min, about two upright passes); interrupt once with
-    Ctrl-C and continue. How many faces were added, and are they people
-    lying down (filter "found turned")?
+  - [x] Time `shoebox recognize --rotated` (family folder, 7148 photos):
+    interrupted after 281 photos (3 min), then continued with the other
+    6866 in 2072 s (35 min, 3.3 photos/s; the estimate was ~40 min);
+    0 failed, 414 faces added in all.
   - `shoebox verify` afterwards.
 - [ ] 5c-2: clustering time over all faces on the old Intel MacBook.
 - [ ] 5c-3: naming and correcting from the iPad.
