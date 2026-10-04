@@ -436,11 +436,17 @@ Folders
     and 0.55** (settled by ✓/✗), nothing below. A face found by the rotated
     pass matched its person's upright faces as well as any (0.65–0.75), so
     rotated faces can take part like the others.
-  - [ ] The whole rotated pass added 414 faces (4% of all; the first 258
-    photos, 34 faces, were not typical): check "Found turned" for false
-    faces before trusting the pass. One example
-    checked (IMG_6482.HEIC, three people lying down): one face found
-    upright and two by the rotated pass, all three correct, none twice.
+  - [x] The whole rotated pass added 414 faces (4% of all; the first 258
+    photos, 34 faces, were not typical), and 5 more for the 48 photos
+    retried later (14 s). Looked through "Found turned": almost all are
+    real faces, and "≈" on them finds the same people's upright faces.
+    One photo checked in the viewer (IMG_6482.HEIC, three people lying
+    down): one face found upright, two by the rotated pass, all correct,
+    none twice. False finds seen: a leg (4a5a1198-….JPG) and a man's hands
+    (IMG_9959.JPG), both in the lower corner of the photo. "Not a face"
+    (5c-2/5c-3) is what clears them; if the face check page shows that
+    false finds pile up among rotated faces with low scores, the rotated
+    pass can get a stricter score cut-off than the upright one.
   - `shoebox serve`, "Face check": go through the smallest faces and the
     lowest scores; how many false faces (posters, statues, background),
     and are there any above 30 px? Open a few in the viewer. Try "≈" on
