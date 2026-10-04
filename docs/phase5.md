@@ -163,29 +163,70 @@ CREATE TABLE people (
     cover_box  TEXT,
     hidden     INTEGER NOT NULL DEFAULT 0
 );
--- What the user decided about a face. Keyed by content and box, so it
--- survives moves, rescans and model changes.
+-- What the user decided about a face, for detected and hand-drawn faces
+-- alike. Keyed by content and box, so it survives moves, rescans and model
+-- changes.
 CREATE TABLE face_decisions (
+    id        INTEGER PRIMARY KEY,
     key       TEXT NOT NULL,       -- files.quick_hash
     x REAL NOT NULL, y REAL NOT NULL, w REAL NOT NULL, h REAL NOT NULL,
     person_id INTEGER REFERENCES people(id) ON DELETE CASCADE,  -- NULL with 'ignored'
     decision  TEXT NOT NULL,       -- confirmed, rejected (not this person), ignored (stranger)
+    manual    INTEGER NOT NULL DEFAULT 0,  -- 1: the box was drawn by hand, not detected
     at        INTEGER NOT NULL
 );
+CREATE INDEX face_decisions_key ON face_decisions(key);
 ```
 
-In `recognition.db` (cache, rebuilt when needed): the cluster and the
-suggested person per face.
+Detected and hand-drawn faces share the table on purpose: both are "this
+box on this picture is (not) that person", and every query (photos of a
+person, references for suggestions, the info panel) reads one table.
+
+- **Detected face** (`manual = 0`): the decision belongs to the face in
+  `recog.faces` with the same key whose box overlaps it best (IoU ≥ 0.5).
+  After a model change the new face takes it over the same way; a decision
+  that no face matches any more is kept and shown as "face no longer
+  found" rather than dropped.
+- **Hand-drawn face** (`manual = 1`): the row *is* the face; there is no
+  `recog.faces` row behind it. Its embedding is cached in `recognition.db`
+  (computed with the `embed` task, see 5c-3) and recomputed after a model
+  change. It is always `confirmed` with a person: the UI asks for the name
+  while drawing. Deleting it deletes the row. If a later pass (e.g.
+  `--rotated`) detects a face overlapping it, the two are shown as one
+  face, the hand-drawn box winning.
+- A rejection can only be made for a detected face (one never draws a box
+  to say who it is not).
+
+In `recognition.db` (a cache: losing it loses no decision): the cluster
+and the suggested person per face.
+
+**Clusters are a pure cache** (decided): after every recognize run they
+are recomputed from all faces without a decision, and nothing about them is
+kept.
+
+- Simple and always consistent: new photos are mixed in properly and a bad
+  grouping can fix itself on the next run.
+- The price: clusters have no stable number. Cards under "Unnamed" are
+  sorted by size (most faces first) and labelled by a sample face, not
+  "Unnamed #12", and a card may look different after new photos.
+- Everything the user does with unnamed faces is therefore a decision in
+  `face_decisions`, never cluster state:
+  - naming a cluster (or some of its faces) → `confirmed` rows;
+  - "Ignore" (strangers) → `ignored` rows;
+  - "split" means selecting faces in a card and naming or ignoring them;
+    there is no "split but leave unnamed".
+- Throwing `recognition.db` away loses nothing the user did.
 
 Matching and clustering:
 - Only faces above the 5c-1 size and score thresholds take part; smaller
   ones are listed but never suggested.
 - A new face is suggested for a person when it is close enough to that
   person's confirmed faces, and never for a person it was rejected for.
-- Unassigned faces go into clusters, incrementally: each new face looks up
-  its nearest neighbours (approximate index, `instant-distance` or
+- Unassigned faces are grouped into clusters after each run, from scratch
+  (see above) but without an all-pairs pass: every face looks up its
+  nearest neighbours in an approximate index (`instant-distance` or
   `hnsw_rs`, or plain SIMD dot products if that is fast enough for ~150k
-  faces) and joins a cluster or starts one. No all-pairs pass.
+  faces), and neighbours close enough end up in one cluster.
 - Runs after `shoebox recognize` and in the background in `serve`;
   resumable, progress in `/api/info`.
 
@@ -196,7 +237,8 @@ for the timeline.
 
 Tests (`core/tests/people.rs`): with the fake worker's embeddings: suggest,
 confirm, reject, merge, split, groups (one per person, delete → no group),
-decisions survive a model change and a move, guard.
+decisions survive a model change and a move, hand-drawn faces (`manual`)
+appear for their person and never as a duplicate of a detected face, guard.
 
 ### 5c-3: UI
 
@@ -229,8 +271,8 @@ Folders
   phase 4).
 - **Add a missed face by hand** (moved up from "later": it is what makes
   missed faces acceptable): "Add face" in the viewer, draw a box, name it.
-  - The box is user data: stored in `library.db` with the face decisions
-    (key + box, `decision = 'manual'`), so it survives model changes.
+  - The box is user data: a `face_decisions` row with `manual = 1` (key +
+    box + person), so it survives model changes.
   - Its embedding comes from the worker: protocol v2 adds a task `embed`
     (`{"tasks": ["embed"], "image": …, "boxes": [[x, y, w, h]]}`). The
     worker looks for landmarks inside the box with a low threshold and
