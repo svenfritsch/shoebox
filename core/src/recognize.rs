@@ -329,9 +329,15 @@ impl Process {
 
     /// How it ended, if it has.
     fn exit_status(&mut self) -> String {
-        match self.child.try_wait() {
-            Ok(Some(status)) => format!("exited ({status})"),
-            _ => "closed its output".into(),
+        // The end of its output can come a moment before the exit is
+        // visible; wait briefly so a crash is reported as one.
+        let until = Instant::now() + Duration::from_millis(500);
+        loop {
+            match self.child.try_wait() {
+                Ok(Some(status)) => return format!("exited ({status})"),
+                Ok(None) if Instant::now() < until => std::thread::sleep(Duration::from_millis(10)),
+                _ => return "closed its output".into(),
+            }
         }
     }
 
