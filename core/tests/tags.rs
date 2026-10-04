@@ -340,3 +340,79 @@ fn guard_every_tag_endpoint_leaves_originals_untouched() {
     let report = lib.verify(false);
     assert!(report.missing.is_empty() && report.changed.is_empty() && report.damaged.is_empty());
 }
+
+fn timeline_ids(addr: std::net::SocketAddr, query: &str) -> Vec<i64> {
+    let r = get(addr, &format!("/api/timeline{query}"));
+    assert_eq!(r.status, 200, "{query}: {}", String::from_utf8_lossy(&r.body));
+    let mut v = ids(&r.json());
+    v.sort();
+    v
+}
+
+fn sorted(mut v: Vec<i64>) -> Vec<i64> {
+    v.sort();
+    v
+}
+
+#[test]
+fn search_by_several_tags_at_once() {
+    let lib = Library::new("tags-search");
+    lib.scan();
+    let before = lib.snapshot();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let img1 = id_of(&lib, "2020-07 Urlaub Griechenland/IMG_0001.JPG");
+    let img2 = id_of(&lib, "2020-07 Urlaub Griechenland/IMG_0002.JPG");
+    let dsc = id_of(&lib, "Familie/Weihnachten/DSC_2001.jpg");
+    let png = id_of(&lib, "Familie/Screenshot.png");
+    let id = |r: Value| r["tag"]["id"].as_i64().unwrap();
+
+    let spielplatz = id(add(addr, &[img1, img2, dsc], "Spielplatz"));
+    let winter = id(add(addr, &[img2, dsc, png], "Winter"));
+    let schnee = id(add(addr, &[dsc], "Schnee"));
+
+    // All tags must match.
+    assert_eq!(timeline_ids(addr, &format!("?tag={spielplatz}")), sorted(vec![img1, img2, dsc]));
+    assert_eq!(timeline_ids(addr, &format!("?tag={spielplatz}&tag={winter}")), sorted(vec![img2, dsc]));
+    assert_eq!(timeline_ids(addr, &format!("?tag={spielplatz}&tag={winter}&tag={schnee}")), [dsc]);
+    assert_eq!(timeline_ids(addr, &format!("?tag={winter}&tag={spielplatz}&tag={winter}")), sorted(vec![img2, dsc]));
+    // The response names the tags of the filter, for the chips.
+    let t = get(addr, &format!("/api/timeline?tag={spielplatz}&tag={winter}")).json();
+    let names: Vec<&str> = t["tags"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["Spielplatz", "Winter"]);
+
+    // A folder tag and an own tag together; then with a folder and text.
+    let familie = find(&tag_list(addr, ""), "Familie").unwrap()["id"].as_i64().unwrap();
+    assert_eq!(timeline_ids(addr, &format!("?tag={familie}&tag={winter}")), sorted(vec![dsc, png]));
+    let folder: i64 = lib.db().query_row("SELECT id FROM folders WHERE path_nfc = 'Familie'", [], |r| r.get(0)).unwrap();
+    assert_eq!(timeline_ids(addr, &format!("?folder={folder}&tag={winter}")), sorted(vec![dsc, png]));
+    assert_eq!(timeline_ids(addr, &format!("?folder={folder}&tag={winter}&q=dsc")), [dsc]);
+
+    // A tag is the exact tag, not every tag containing its name (free text
+    // still matches parts of words).
+    let fall = id(add(addr, &[img1], "Fall"));
+    add(addr, &[img2], "Fallschirm");
+    assert_eq!(timeline_ids(addr, &format!("?tag={fall}")), [img1]);
+    assert_eq!(timeline_ids(addr, "?q=fall"), sorted(vec![img1, img2]));
+
+    // Suggestions within a search: counted over the photos it shows, without
+    // the tags already in it, and nothing that would leave no photo.
+    let within = tag_list(addr, &format!("?tag={schnee}"));
+    let counts: BTreeMap<&str, i64> =
+        within.iter().map(|t| (t["name"].as_str().unwrap(), t["count"].as_i64().unwrap())).collect();
+    assert_eq!(counts.get("Spielplatz"), Some(&1));
+    assert_eq!(counts.get("Winter"), Some(&1));
+    assert_eq!(counts.get("Weihnachten"), Some(&1));
+    assert!(!counts.contains_key("Schnee") && !counts.contains_key("Fall"), "{counts:?}");
+    let within = tag_list(addr, &format!("?tag={spielplatz}&q=WIN"));
+    assert_eq!(within.len(), 1);
+    assert_eq!((within[0]["name"].as_str(), within[0]["count"].as_i64()), (Some("Winter"), Some(2)));
+    assert_eq!(find(&tag_list(addr, "?q=winter"), "Winter").unwrap()["count"], 3);
+
+    // An unknown tag finds nothing; a malformed one is refused.
+    assert!(timeline_ids(addr, &format!("?tag={spielplatz}&tag=999999")).is_empty());
+    assert_eq!(get(addr, "/api/timeline?tag=abc").status, 400);
+
+    server.stop().unwrap();
+    assert_untouched(&before, &lib.snapshot());
+}

@@ -14,7 +14,8 @@
   <h1 id="title">shoebox</h1>
   <span id="current-month" class="month"></span>
   <div class="search">
-    <input id="search" type="search" placeholder="Search folders, tags, names" autocomplete="off" list="tag-list" enterkeyhint="search">
+    <input id="search" type="search" placeholder="Search folders, tags, names" autocomplete="off" enterkeyhint="search" role="combobox" aria-controls="suggest" aria-autocomplete="list">
+    <div id="suggest" class="suggest" role="listbox" hidden></div>
     <datalist id="tag-list"></datalist>
   </div>
   <select id="years" title="Jump to year" aria-label="Jump to year"></select>

@@ -179,6 +179,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 4 | Worker protocol + Python recognizer (faces), worker supervision in Rust | **Done except the real-hardware run** (see below) |
 | 5a | Show in Finder / Explorer, copy path | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5b | Own tags (add/remove, many photos at once, search), user data backup | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
+| 5b-2 | Search by several tags at once (AND, chips); people join in with 5c-3 | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **5c-1 done**, checked on the real drive (see [phase5.md](phase5.md)); 5c-2 next |
 | 6 | Pets | |
 | 7 | Backup verification, launchers, packaging | |
@@ -270,7 +271,9 @@ Done (see [phase3.md](phase3.md)):
 - Self-healing paths: `serve` runs the scan's index step in the background
   when a file is not where the index says.
 - UI: selection with move/trash, import dialog with drag and drop, folder
-  rename, duplicates and trash pages. Every non-GET request needs an
+  rename, duplicates and trash pages. Added later: Shift-click selects a
+  range, "Select all" on a month heading selects the month (the iPad has no
+  Shift). Every non-GET request needs an
   `X-Shoebox` header (CSRF protection for localhost without PIN).
 
 Open:
@@ -319,8 +322,12 @@ Open:
 - [x] 5c-1: `shoebox faces stats`, face check page (crops in `thumbs.db`
       v3, nearest neighbours), `shoebox recognize --rotated`
       (`recognition.db` v2); the real-hardware check is in its list.
+- [x] 5b-2: search by several tags at once (feedback after 5b: "Spielplatz"
+      and "Winter" together); terms as chips, all must match
+      ([phase5.md](phase5.md)); the real-hardware check is in its list.
 - [ ] 5c-2: people, groups (one per person), face decisions, clustering.
-- [ ] 5c-3: Faces in the sidebar, people in the info panel, corrections.
+- [ ] 5c-3: Faces in the sidebar, people in the info panel, corrections;
+      people as search terms (several people together, e.g. two friends).
 
 ## Build notes and pitfalls (learned in phases 0–4)
 
@@ -397,8 +404,9 @@ Open:
 ## Next step
 
 Run the phase 0–4 hardware checklists on the old Intel MacBook and the iPad
+(all iPad checks are collected in [ipad-checklist.md](ipad-checklist.md))
 (phase 4: `recognizer/install.sh` and a `shoebox recognize` run on the
 drive). 5a (reveal), 5b (own tags) and 5c-1 (face check, `--rotated`) are
 built; on the drive run `shoebox faces stats`, look through the face check
 page and time `shoebox recognize --rotated` (list in [phase5.md](phase5.md)).
-Next is 5c-2.
+5b-2 (search by several tags) is built too. Next is 5c-2.
