@@ -1710,7 +1710,7 @@ function loadOwnTags() {
 // Did recognition work? All faces as crops, sortable and filterable, so
 // false detections (posters, statues, background) are easy to spot.
 
-var faceState = { sort: 'size', desc: false, filter: 'all', faces: [], total: 0, minPx: 40 };
+var faceState = { sort: 'size', desc: false, filter: 'all', faces: [], total: 0, minPx: 30 };
 var PAGE_FACES = 300;
 var FACE_SORTS = [
   ['size', false, 'Smallest first'], ['size', true, 'Largest first'],

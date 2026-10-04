@@ -23,9 +23,9 @@ use crate::recognize::{self, FACES, FACES_ROT, KINDS};
 use crate::thumbs::{self, Source};
 
 /// Faces narrower than this (px in the ≤1600 px copy the worker saw) are
-/// listed but too small to cluster or suggest (decided from the phase 4 run
-/// on the real drive, see docs/phase5.md).
-pub const MIN_CLUSTER_PX: f64 = 40.0;
+/// listed but too small to cluster or suggest. Decided on the real drive
+/// (docs/phase5.md): the faces of 30–40 px all were real, recognisable people.
+pub const MIN_CLUSTER_PX: f64 = 30.0;
 /// Longer edge of a face crop.
 pub const CROP_EDGE: u32 = 160;
 const CROP_QUALITY: u8 = 85;
@@ -33,7 +33,9 @@ const CROP_QUALITY: u8 = 85;
 const CROP_MARGIN: f64 = 0.25;
 
 const WIDTH_BUCKETS: [f64; 4] = [30.0, 40.0, 60.0, 120.0];
-const SCORE_BUCKETS: [f64; 4] = [0.90, 0.93, 0.96, 0.99];
+/// YuNet's scores of stored faces lie between 0.85 (the recognizer's cut-off)
+/// and ~0.96 (the real drive: none higher), so the buckets split that range.
+const SCORE_BUCKETS: [f64; 4] = [0.88, 0.90, 0.92, 0.94];
 
 /// Too small to take part in clustering (`MIN_CLUSTER_PX`).
 pub fn too_small(px: f64) -> bool {
@@ -598,7 +600,7 @@ mod tests {
         assert_eq!(bucket_label(&b[0], " px", 0), "under 30 px");
         assert_eq!(bucket_label(&b[2], " px", 0), "40–60 px");
         assert_eq!(bucket_label(&b[4], " px", 0), "120 px and more");
-        assert!(too_small(39.9) && !too_small(40.0));
+        assert!(too_small(29.9) && !too_small(30.0));
     }
 
     #[test]

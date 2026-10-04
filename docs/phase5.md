@@ -82,6 +82,12 @@ Done (PR "Phase 5-A"). Scope as agreed:
   refuses non-local clients (a LAN device logged in with the PIN) and unknown
   or vanished files, needs the header, and the guard still holds. The command
   lines per OS are unit tests in `reveal.rs`.
+- **Refinement, to be done in the 5c-2 PR:** the "Copy path" button in the
+  info panel gets a `title` with the path it copies (the path within the
+  library, as `copyPath` copies it), so hovering shows what will land on
+  the clipboard. Where: `infoReveal` in `app.js` (`copy.title = info.path`).
+  The right-click menu's "Copy path" has no element of its own to hover
+  (`showMenu` items), so it stays as it is unless the menu gets titles too.
 
 ## 5b: own tags
 
@@ -145,13 +151,14 @@ in "Still to check on real hardware" below.
 - `shoebox faces stats <root>`: photos looked at, errors grouped by message,
   faces found (and how many by the rotated pass), face width in the ≤1600 px
   copy (under 30, 30–40, 40–60, 60–120, 120+ px) and score (under 0.90,
-  0.90–0.93, 0.93–0.96, 0.96–0.99, 0.99+), the share under 40 px, and the
+  0.88–0.90, 0.90–0.92, 0.92–0.94, 0.94+ ; YuNet's scores lie between 0.85
+  and ~0.96), the share under 30 px, and the
   last five runs with their time. Only reads: `library.db` and
   `recognition.db` are opened read-only (a phase 4 `recognition.db` at v1
   works as it is), nothing is created.
 - **Face check** page in the UI (sidebar, shown once there are faces;
   `#view=faces`): all faces as crops, smallest/largest or lowest/highest
-  score first, filter "too small for clustering" (< 40 px), "large enough",
+  score first, filter "too small for clustering" (< 30 px), "large enough",
   "found turned"; small faces have a dashed frame. Clicking a crop opens its
   photo in the viewer, closing it goes back to the page. "≈" on a crop
   lists its 24 nearest neighbours by embedding (cosine similarity), to see
@@ -164,13 +171,15 @@ in "Still to check on real hardware" below.
   `GET /api/faces/{id}/similar?limit=`.
 - The width of a face is measured across the face: for one the rotated
   pass found (lying sideways in the picture) that is its box's height.
-  `faces::MIN_CLUSTER_PX` (40) and the `small` flag are what 5c-2 uses.
+  `faces::MIN_CLUSTER_PX` (30) and the `small` flag are what 5c-2 uses.
 - From that: the minimum face size for clustering, and the similarity
   threshold for "same person" (SFace's usual cosine threshold is about
   0.36; calibrated on our photos).
-- **Decided from the phase 4 run** (9564 faces, see
-  [phase4.md](phase4.md)): faces **under 40 px** wide (in the ≤1600 px
-  copy, about 5% of all) are listed but neither clustered nor suggested.
+- **Decided on the real drive**: faces **under 30 px** wide (in the
+  ≤1600 px copy; 296 of 9598, 3.1%) are listed but neither clustered nor
+  suggested. First set at 40 px from the phase 4 run, but that left out
+  8.6% (828), and on the face check page all 532 faces of 30–40 px were
+  real, recognisable people.
   No score threshold beyond the detector's own 0.9: every stored face
   scores ≥ 0.85, so the score separates nothing.
 - **Sideways faces: a second, optional pass.** YuNet misses faces rolled
@@ -213,6 +222,9 @@ in "Still to check on real hardware" below.
 
 ### 5c-2: people, groups, clustering (backend)
 
+Also in this PR: the 5a refinement (a `title` with the path on "Copy
+path", see 5a above).
+
 Schema v4 in `library.db`:
 
 ```sql
@@ -236,8 +248,8 @@ CREATE TABLE face_decisions (
     id        INTEGER PRIMARY KEY,
     key       TEXT NOT NULL,       -- files.quick_hash
     x REAL NOT NULL, y REAL NOT NULL, w REAL NOT NULL, h REAL NOT NULL,
-    person_id INTEGER REFERENCES people(id) ON DELETE CASCADE,  -- NULL with 'ignored'
-    decision  TEXT NOT NULL,       -- confirmed, rejected (not this person), ignored (stranger)
+    person_id INTEGER REFERENCES people(id) ON DELETE CASCADE,  -- NULL with 'ignored' and 'not_face'
+    decision  TEXT NOT NULL,       -- confirmed, rejected (not this person), ignored (stranger), not_face (false find)
     manual    INTEGER NOT NULL DEFAULT 0,  -- 1: the box was drawn by hand, not detected
     at        INTEGER NOT NULL
 );
@@ -262,6 +274,19 @@ person, references for suggestions, the info panel) reads one table.
   face, the hand-drawn box winning.
 - A rejection can only be made for a detected face (one never draws a box
   to say who it is not).
+- **Not a face** (`not_face`, asked for after looking at the 5c-1 face
+  check page): a detection that is no face at all (poster, statue,
+  pattern in the background). Unlike `ignored` (a real person nobody
+  needs to name) it means the box itself is wrong. Such a face:
+  - is hidden everywhere (viewer boxes, info panel, people, clusters,
+    "Unnamed") and never takes part in clustering or suggestions;
+  - is matched like other decisions (key + box, IoU ≥ 0.5), so it stays
+    hidden after a new `recognize` run or a model change;
+  - is counted in `shoebox faces stats` and on the face check page (false
+    finds per size and score), which tells whether a stricter detector
+    threshold would pay off;
+  - can be undone (the row is deleted). Only for detected faces: a
+    hand-drawn box is deleted instead.
 
 In `recognition.db` (a cache: losing it loses no decision): the cluster
 and the suggested person per face.
@@ -279,13 +304,15 @@ kept.
   `face_decisions`, never cluster state:
   - naming a cluster (or some of its faces) → `confirmed` rows;
   - "Ignore" (strangers) → `ignored` rows;
+  - "Not a face" (false finds) → `not_face` rows;
   - "split" means selecting faces in a card and naming or ignoring them;
     there is no "split but leave unnamed".
 - Throwing `recognition.db` away loses nothing the user did.
 
 Matching and clustering:
 - Only faces above the 5c-1 size and score thresholds take part; smaller
-  ones are listed but never suggested.
+  ones are listed but never suggested. Faces marked `not_face` never take
+  part.
 - A new face is suggested for a person when it is close enough to that
   person's confirmed faces, and never for a person it was rejected for.
 - Unassigned faces are grouped into clusters after each run, from scratch
@@ -298,11 +325,12 @@ Matching and clustering:
 
 API: people (list, create, rename, merge, hide, change group, set cover),
 groups (list, create, rename, reorder, delete), clusters (list, name,
-ignore, split), faces (confirm, reject, assign, ignore), photos of a person
+ignore, split), faces (confirm, reject, assign, ignore, not a face, undo), photos of a person
 for the timeline.
 
 Tests (`core/tests/people.rs`): with the fake worker's embeddings: suggest,
-confirm, reject, merge, split, groups (one per person, delete → no group),
+confirm, reject, not a face (hidden everywhere, survives a model change,
+counted in the stats), merge, split, groups (one per person, delete → no group),
 decisions survive a model change and a move, hand-drawn faces (`manual`)
 appear for their person and never as a duplicate of a detected face, guard.
 
@@ -326,13 +354,21 @@ Folders
   timeline with their photos.
 - **Unnamed:** one card per cluster with a few sample faces and a name
   field. The autocomplete lists people **by group**, which is what makes
-  assigning quick. "Ignore" for strangers.
+  assigning quick. "Ignore" for strangers, "Not a face" for false finds
+  (also for single faces selected in a card).
 - **Corrections:** merge two people, take faces out of a person ("not this
   person"), split a cluster, name several selected faces at once.
+- **Face check page (5c-1):** "Not a face" on each crop and on several
+  selected crops, so false finds can be cleared while going through the
+  smallest faces and lowest scores; a filter shows the ones marked, to
+  undo a mistake.
 - **Groups:** create, rename, reorder, delete; change a person's group by
-  drag and drop or "Move to group…".
+  drag and drop or "Move to group…". No groups are made up front: the
+  user creates them in the UI (the first ones on the real drive will be
+  "Familie" and "Freunde").
 - **Info panel (viewer):** a "People" section with face crops and names.
   Unnamed faces show "+ Name"; suggested ones ✓ (confirm) and ✗ (reject).
+  Every detected face has "Not a face" in its menu.
   Hovering a face highlights its box in the photo (boxes exist since
   phase 4).
 - **Add a missed face by hand** (moved up from "later": it is what makes
@@ -362,19 +398,65 @@ Folders
       a move, a rescan, trash and restore; `userdata.json` and
       `library.db.bak` appear in `.shoebox/`.
 - [ ] 5c-1: on the old Intel MacBook against the exFAT drive:
-  - `shoebox faces stats /Volumes/Fotos`: do the numbers match the phase 4
-    run (9564 faces, 48 failures before `--retry-failed`, ~5% under
-    40 px)? Note the width and score buckets here.
+  - [x] `shoebox faces stats` on the family folder (7196 photos, all
+    looked at; `verify` before it: 7994 files OK): 9598 faces = the phase 4
+    9564 plus 34 from a partial `--rotated` run (258 photos). Widths: 296
+    under 30 px, 532 of 30–40, 1297 of 40–60, 2971 of 60–120, 4502 larger;
+    **828 (8.6%) under 40 px**. Scores 0.85–0.96 (2422 under 0.90, 4318 of
+    0.90–0.93, 2855 of 0.93–0.96, 3 higher), so the first score buckets
+    were too wide at the top; changed to 0.88/0.90/0.92/0.94. Still 48
+    failures (43 "No 'ftyp' box", 5 "Illegal start bytes"): the JPEGs
+    misnamed `.HEIC` etc. from phase 4, waiting for `--retry-failed`.
+  - [x] `shoebox recognize --retry-failed`: all 48 looked at in 9 s, 65
+    faces, 0 failed. Afterwards `faces stats`: 10043 faces, 0 failed;
+    300 (3.0%) under 30 px. (These 48 have not been looked at turned yet:
+    the next `--rotated` run takes them.)
+  - [x] Is 40 px right? On the face check page all 532 faces of 30–40 px
+    were real, recognisable people: the threshold is now 30 px (keeps 97%
+    of faces instead of 91%).
+  - [x] "Same person" threshold from "≈" (24 neighbours each, faces under
+    30 px ignored), five people:
+
+    | Reference | Right matches | Wrong ones |
+    |---|---|---|
+    | boy, teens (386 px) | 0.87 down to 0.37 | from 0.38 down |
+    | older woman (447 px) | all 24, down to 0.65 | none in the list |
+    | girl, teens (456 px) | all 24, down to 0.60 | none in the list |
+    | girl, teens (481 px, found turned) | all 24, down to 0.65 | none in the list |
+    | toddler (441 px) | down to 0.58, and one at 0.47 (69 px, the same girl a few years older) | 0.54 (other child), then from 0.49 down |
+
+    Adults and teenagers are clear-cut: everything at 0.60 and above was
+    right. Small children look alike and change fast: a wrong child at
+    0.54, while the same girl a few years older scored only 0.47 against
+    her toddler face. Highest wrong match seen: 0.54; lowest right one:
+    0.37. So for
+    5c-2: compare a face with all confirmed faces of a person (best
+    match: confirmed faces from several ages bridge the gap a single
+    reference cannot), **suggest from ~0.55**, offer only as **"maybe" between ~0.35
+    and 0.55** (settled by ✓/✗), nothing below. A face found by the rotated
+    pass matched its person's upright faces as well as any (0.65–0.75), so
+    rotated faces can take part like the others.
+  - [x] The whole rotated pass added 414 faces (4% of all; the first 258
+    photos, 34 faces, were not typical), and 5 more for the 48 photos
+    retried later (14 s). Looked through "Found turned": almost all are
+    real faces, and "≈" on them finds the same people's upright faces.
+    One photo checked in the viewer (IMG_6482.HEIC, three people lying
+    down): one face found upright, two by the rotated pass, all correct,
+    none twice. False finds seen: a leg (4a5a1198-….JPG) and a man's hands
+    (IMG_9959.JPG), both in the lower corner of the photo. "Not a face"
+    (5c-2/5c-3) is what clears them; if the face check page shows that
+    false finds pile up among rotated faces with low scores, the rotated
+    pass can get a stricter score cut-off than the upright one.
   - `shoebox serve`, "Face check": go through the smallest faces and the
     lowest scores; how many false faces (posters, statues, background),
-    and are there any above 40 px? Open a few in the viewer. Try "≈" on
+    and are there any above 30 px? Open a few in the viewer. Try "≈" on
     faces of people you know: up to which similarity are the neighbours
     the same person (for 5c-2's threshold)? Crops of HEIC and EXIF-rotated
     photos upright?
-  - Time `shoebox recognize /Volumes/Fotos --rotated` (family folder;
-    expected ~40 min, about two upright passes); interrupt once with
-    Ctrl-C and continue. How many faces were added, and are they people
-    lying down (filter "found turned")?
+  - [x] Time `shoebox recognize --rotated` (family folder, 7148 photos):
+    interrupted after 281 photos (3 min), then continued with the other
+    6866 in 2072 s (35 min, 3.3 photos/s; the estimate was ~40 min);
+    0 failed, 414 faces added in all.
   - `shoebox verify` afterwards.
 - [ ] 5c-2: clustering time over all faces on the old Intel MacBook.
 - [ ] 5c-3: naming and correcting from the iPad.
