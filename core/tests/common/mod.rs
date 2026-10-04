@@ -243,8 +243,13 @@ pub fn encode(s: &str) -> String {
 }
 
 pub fn start(lib: &Library, pin: Option<&str>) -> serve::Server {
+    start_with(lib, pin, None)
+}
+
+/// Like `start`, with what "Show in Finder" runs (`None`: the real command).
+pub fn start_with(lib: &Library, pin: Option<&str>, reveal: Option<serve::RevealFn>) -> serve::Server {
     serve::start(
-        &serve::Options { root: lib.root.clone(), db: None, port: 0, lan: false, pin: pin.map(str::to_string) },
+        &serve::Options { root: lib.root.clone(), db: None, port: 0, lan: false, pin: pin.map(str::to_string), reveal },
         false,
     )
     .unwrap()

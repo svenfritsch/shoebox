@@ -171,7 +171,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 2 | `thumbs.db` + perceptual hash, web UI (virtualised timeline grid, folder tree, tag search, video playback), LAN access with PIN. `shoebox serve` | **Done except the real-hardware run** (see below) |
 | 3 | Import dialog, move (with RAW pairs, case-only renames), duplicates UI, self-healing paths | **Done except the real-hardware run** (see below) |
 | 4 | Worker protocol + Python recognizer (faces), worker supervision in Rust | **Done except the real-hardware run** (see below) |
-| 5 | Face clustering in Rust + correction UI | Next |
+| 5 | Face clustering in Rust + correction UI | Next. 5-A (Show in Finder / Explorer, copy path) done, see [phase5.md](phase5.md) |
 | 6 | Pets | |
 | 7 | Backup verification, launchers, packaging | |
 

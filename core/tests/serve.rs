@@ -178,6 +178,64 @@ fn pin_login() {
 }
 
 #[test]
+fn show_in_finder_uses_the_indexed_path_and_only_for_this_computer() {
+    use std::path::{Path, PathBuf};
+    use std::sync::{Arc, Mutex};
+
+    let lib = Library::new("reveal");
+    lib.scan_opts(false, false, false);
+    let before = lib.snapshot();
+    let id = id_of(&lib, "2020-07 Urlaub Griechenland/IMG_0001.JPG");
+    let other = id_of(&lib, "2020-07 Urlaub Griechenland/IMG_0002.JPG");
+    let opened: Arc<Mutex<Vec<PathBuf>>> = Arc::default();
+    let log = opened.clone();
+    let opener: shoebox::serve::RevealFn = Arc::new(move |p: &Path| -> anyhow::Result<()> {
+        log.lock().unwrap().push(p.to_path_buf());
+        Ok(())
+    });
+    let server = start_with(&lib, Some("4711"), Some(opener));
+    let addr = server.addr;
+    let json = ("Content-Type", "application/json");
+    let evil = ("Host", "photos.evil.example");
+
+    // From this computer: the server says what to call the button, and opens
+    // the path from the index, whatever the request says.
+    let label = get(addr, "/api/session").json()["reveal"].as_str().map(str::to_string);
+    assert_eq!(label.as_deref(), Some(shoebox::reveal::label()));
+    let body = br#"{"path": "/etc/passwd"}"#;
+    let ok = request(addr, "POST", &format!("/api/files/{id}/reveal?path=/etc/passwd"), &[json], body);
+    assert_eq!(ok.status, 200, "{}", String::from_utf8_lossy(&ok.body));
+    let expected = lib.root.canonicalize().unwrap().join("2020-07 Urlaub Griechenland/IMG_0001.JPG");
+    assert_eq!(*opened.lock().unwrap(), [expected]);
+
+    // Like every change, it needs the X-Shoebox header.
+    assert_eq!(bare_request(addr, "POST", &format!("/api/files/{id}/reveal"), &[json], b"{}").status, 403);
+    // Unknown ids, and files that are gone, open nothing.
+    assert_eq!(post(addr, "/api/files/999999/reveal", &serde_json::json!({})).status, 404);
+    fs::remove_file(lib.root.join("2020-07 Urlaub Griechenland/IMG_0001.JPG")).unwrap();
+    assert_eq!(post(addr, &format!("/api/files/{id}/reveal"), &serde_json::json!({})).status, 404);
+    assert_eq!(opened.lock().unwrap().len(), 1);
+
+    // A device on the network, logged in with the PIN, gets no button and no
+    // window on this computer.
+    let login = request(addr, "POST", "/api/login", &[evil, json], br#"{"pin":"4711"}"#);
+    let cookie = login.header("set-cookie").unwrap().split(';').next().unwrap().to_string();
+    let lan = [evil, ("Cookie", cookie.as_str()), json];
+    let session = request(addr, "GET", "/api/session", &lan[..2], b"").json();
+    assert_eq!(session["authenticated"], true);
+    assert!(session["reveal"].is_null());
+    assert_eq!(request(addr, "POST", &format!("/api/files/{other}/reveal"), &lan, b"{}").status, 403);
+    assert_eq!(opened.lock().unwrap().len(), 1);
+    server.stop().unwrap();
+
+    // Nothing was touched (the file removed above aside).
+    let after = lib.snapshot();
+    for (path, (stamp, hash)) in &after {
+        assert_eq!(before[path], (stamp.clone(), hash.clone()), "{}", path.display());
+    }
+}
+
+#[test]
 fn timeline_order_filters_and_search() {
     let lib = Library::new("timeline");
     lib.write("Familie/IMG_0009.CR2", b"raw stand-in");

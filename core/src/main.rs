@@ -125,7 +125,7 @@ fn main() -> ExitCode {
         })
         .map(|_| true),
         Command::Serve { root, db, port, lan, pin } => {
-            serve::run(&serve::Options { root, db, port, lan, pin }).map(|_| true)
+            serve::run(&serve::Options { root, db, port, lan, pin, reveal: None }).map(|_| true)
         }
     };
     match result {
