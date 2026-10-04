@@ -123,11 +123,29 @@ SHOEBOX_TEST_FACE=face.jpg python3 -m unittest -v recognizer/test_recognizer.py
 
 ## Still to check on real hardware
 
-- [ ] `recognizer/install.sh` on the old Intel MacBook: does the standalone
-      Python start on its macOS version, which OpenCV/numpy builds pip picks
-      (or whether older versions must be pinned), and the size on the drive.
-- [ ] Time per photo on the old Intel MacBook (here 70 ms on 4 cores);
-      extrapolate the full library.
-- [ ] Spot-check boxes in the viewer (*Show* in the info panel), including
-      rotated (EXIF orientation) and HEIC photos.
-- [ ] Interrupt a run (Ctrl-C) and start it again: it continues.
+- [x] `recognizer/install.sh` on the old Intel MacBook (macOS 12.7.6,
+      x86_64), installed next to the app with `--recognizer`: 292.6 MB.
+      pip found no wheel of the newest OpenCV for macOS 12 (4.11+ needs
+      macOS 13 on Intel) and started compiling it; with `--only-binary`
+      it takes OpenCV 4.10.0.84 and numpy 2.5.3, which work. Two bugs
+      found and fixed on the way: `$PLATFORM…` broke bash 3.2's parser,
+      and the compile took hours.
+- [x] Time per photo on the old Intel MacBook: 2.1–2.5 photos/s at first,
+      5.7/s on the second run (warm cache): 7196 photos in about 20 min.
+- [x] Results over the family folder (8002 files, 7196 photos looked at):
+      9564 faces (1.3 per photo), 48 failed. Face widths in the ≤1600 px
+      copy: 296 under 30 px, 1828 of 30–60 px, 2969 of 60–120 px, 4471
+      larger. Scores all ≥ 0.85 (the detector's own cut-off is 0.9), so
+      the score does not separate good from bad detections.
+- [x] Spot-check boxes in the viewer: boxes that are found sit correctly,
+      HEIC and EXIF-rotated photos included. **Faces lying sideways (people
+      lying down, ~60–90° roll) are missed**: YuNet finds faces up to about
+      30–45° of roll. Handled in phase 5 (`--rotated`, manual faces).
+- [x] The 48 failures: 43 JPEGs named `.HEIC` in `2010er/` ("No 'ftyp'
+      box") and 5 `.jpg` files that are not JPEG. Images are decoded by
+      content since the fix that followed; `shoebox recognize --retry-failed`
+      redoes them.
+- [x] Interrupt a run (Ctrl-C) and start it again: it continues, but only
+      after 2 minutes ("another `shoebox recognize` is running") and with a
+      Python traceback. Fixed right after: Ctrl-C now ends the run cleanly.
+- [ ] `shoebox verify` after the run (was running at the time of writing).

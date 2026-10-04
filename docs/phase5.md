@@ -122,9 +122,26 @@ clustering:
   distribution of face size and score, share of tiny faces, time taken.
 - A debug page in the UI: all faces as crops, sortable by size and score,
   so false detections (posters, statues, background) are easy to see.
-- From that: the minimum face size and score for clustering, and the
-  similarity threshold for "same person" (SFace's usual cosine threshold is
-  about 0.36; calibrated on our photos).
+- From that: the minimum face size for clustering, and the similarity
+  threshold for "same person" (SFace's usual cosine threshold is about
+  0.36; calibrated on our photos).
+- **Decided from the phase 4 run** (9564 faces, see
+  [phase4.md](phase4.md)): faces **under 40 px** wide (in the ≤1600 px
+  copy, about 5% of all) are listed but neither clustered nor suggested.
+  No score threshold beyond the detector's own 0.9: every stored face
+  scores ≥ 0.85, so the score separates nothing.
+- **Sideways faces: a second, optional pass.** YuNet misses faces rolled
+  more than ~30–45° (people lying down). `shoebox recognize --rotated`
+  looks at the photos again, turned 90° and 270°, after the normal pass
+  and whenever there is time:
+  - its own task in `recog.looked` (`faces-rot`), so it has its own
+    progress, is resumable and can be run any time later;
+  - shoebox turns the copy it sends, so the protocol stays as it is; boxes
+    and landmarks are turned back before they are stored;
+  - a face is only added where the upright pass found none (box overlap,
+    IoU < 0.3), so nothing is counted twice;
+  - costs about two upright passes (~40 min for the family folder on the
+    old Intel MacBook).
 - Face crops: made from the original under the guard, cached in
   `thumbs.db` keyed by face.
 
@@ -210,13 +227,23 @@ Folders
   Unnamed faces show "+ Name"; suggested ones ✓ (confirm) and ✗ (reject).
   Hovering a face highlights its box in the photo (boxes exist since
   phase 4).
+- **Add a missed face by hand** (moved up from "later": it is what makes
+  missed faces acceptable): "Add face" in the viewer, draw a box, name it.
+  - The box is user data: stored in `library.db` with the face decisions
+    (key + box, `decision = 'manual'`), so it survives model changes.
+  - Its embedding comes from the worker: protocol v2 adds a task `embed`
+    (`{"tasks": ["embed"], "image": …, "boxes": [[x, y, w, h]]}`). The
+    worker looks for landmarks inside the box with a low threshold and
+    aligns as usual; without landmarks it embeds the plain crop (less
+    reliable, so such faces are not used as references for suggestions).
+  - Core and worker are updated together (the hello's protocol must
+    match, as now).
 - Search finds people by name, like tags.
 - Recognition and clustering progress in the status line.
 
 ## Later (not in phase 5)
 
 - Filter the timeline by several people ("Aurelia and Grandpa").
-- Mark a missed face by hand.
 - Undo for assignments.
 
 ## Still to check on real hardware
