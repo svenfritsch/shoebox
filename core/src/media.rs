@@ -30,6 +30,7 @@ pub struct Metadata {
 /// Read capture date, dimensions and camera. A file without EXIF (e.g. a PNG
 /// screenshot) is not an error; it simply has no capture date.
 pub fn read_metadata(parser: &mut MediaParser, kind: Kind, path: &Path) -> Result<Metadata> {
+    let kind = content_kind(kind, path);
     if kind == Kind::Heic {
         return read_heic_metadata(parser, path);
     }
@@ -118,6 +119,42 @@ fn read_heic_metadata(parser: &mut MediaParser, path: &Path) -> Result<Metadata>
     Ok(meta)
 }
 
+/// What an image file really is, going by its first bytes rather than its
+/// name: some exports keep a `.HEIC` name on a JPEG, or the other way round.
+/// Videos and RAW files, and images that start like none of the formats
+/// below, keep the kind their extension gave them.
+pub fn content_kind(kind: Kind, path: &Path) -> Kind {
+    use std::io::Read;
+    if !matches!(kind, Kind::Jpeg | Kind::Png | Kind::Heic) {
+        return kind;
+    }
+    let mut head = Vec::with_capacity(12);
+    let read = std::fs::File::open(path).and_then(|f| f.take(12).read_to_end(&mut head));
+    if read.is_err() {
+        return kind;
+    }
+    sniff(&head).unwrap_or(kind)
+}
+
+fn sniff(head: &[u8]) -> Option<Kind> {
+    if head.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        return Some(Kind::Jpeg);
+    }
+    if head.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Some(Kind::Png);
+    }
+    // ISO base media: size, `ftyp`, major brand. Only the HEIF brands; an
+    // MP4 or MOV is left to its extension.
+    match head.get(4..12) {
+        Some([b'f', b't', b'y', b'p', brand @ ..])
+            if matches!(brand, b"heic" | b"heix" | b"heim" | b"heis" | b"hevc" | b"hevx" | b"mif1" | b"msf1") =>
+        {
+            Some(Kind::Heic)
+        }
+        _ => None,
+    }
+}
+
 /// Decode an image and write a JPEG preview whose longer edge is `edge` px.
 pub fn write_image_thumb(lib_heif: &LibHeif, kind: Kind, src: &Path, dst: &Path, edge: u32) -> Result<()> {
     decode_image(lib_heif, kind, src, edge)?.thumbnail(edge, edge).to_rgb8().save(dst)?;
@@ -128,7 +165,7 @@ pub fn write_image_thumb(lib_heif: &LibHeif, kind: Kind, src: &Path, dst: &Path,
 /// edge is at least `edge` px where the decoder can scale cheaply (JPEG,
 /// HEIC); callers shrink the result to the exact size.
 pub fn decode_image(lib_heif: &LibHeif, kind: Kind, src: &Path, edge: u32) -> Result<DynamicImage> {
-    match kind {
+    match content_kind(kind, src) {
         // jpeg-decoder rejects a few exotic files that `image` reads.
         Kind::Jpeg => decode_jpeg_scaled(src, edge).or_else(|_| decode_oriented(src)),
         Kind::Png => decode_oriented(src),

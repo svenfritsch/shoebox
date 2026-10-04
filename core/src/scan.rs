@@ -239,12 +239,14 @@ struct Rec {
     quick_hash: String,
     full_hash: Option<String>,
     missing: bool,
+    /// Reading its metadata failed last time.
+    meta_failed: bool,
 }
 
 fn load_records(conn: &Connection) -> Result<HashMap<String, Rec>> {
     let mut stmt = conn.prepare(
         "SELECT id, path, path_nfc, name, size, mtime_ns, created_ns, quick_hash, full_hash,
-                missing_since IS NOT NULL FROM files",
+                missing_since IS NOT NULL, meta_error IS NOT NULL FROM files",
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
@@ -260,6 +262,7 @@ fn load_records(conn: &Connection) -> Result<HashMap<String, Rec>> {
                 quick_hash: r.get(7)?,
                 full_hash: r.get(8)?,
                 missing: r.get(9)?,
+                meta_failed: r.get(10)?,
             },
         ))
     })?;
@@ -376,6 +379,10 @@ fn index(conn: &Connection, root: &Path, walked: &Walked, job_id: i64, stats: &m
             }
             if !moved[i] {
                 stats.unchanged += 1;
+            }
+            if rec.meta_failed {
+                // Maybe this shoebox can read it (e.g. a JPEG called `.HEIC`).
+                reread_metadata(conn, &mut parser, &path, f, rec.id)?;
             }
         } else if same_size && tz_shifted() {
             update_stamp(conn, rec.id, mtime, created)?;
@@ -515,6 +522,22 @@ fn update_file(conn: &Connection, id: i64, f: &Found, info: &FileInfo) -> Result
             m.camera,
             info.meta_error,
         ],
+    )?;
+    Ok(())
+}
+
+/// Read the metadata of an unchanged file again and store it if that works
+/// now; a file that still fails or changed meanwhile is left as it is.
+fn reread_metadata(conn: &Connection, parser: &mut MediaParser, path: &Path, f: &Found, id: i64) -> Result<()> {
+    let Ok(m) = media::read_metadata(parser, f.kind, path) else { return Ok(()) };
+    if fingerprint::stamp(path).ok().as_ref() != Some(&f.stamp) {
+        return Ok(());
+    }
+    conn.execute(
+        "UPDATE files SET taken = ?2, taken_offset = ?3, width = ?4, height = ?5, duration_ms = ?6, camera = ?7,
+                meta_error = NULL
+         WHERE id = ?1",
+        params![id, m.taken, m.taken_offset, m.width, m.height, m.duration_ms.map(|d| d as i64), m.camera],
     )?;
     Ok(())
 }

@@ -111,6 +111,80 @@ fn guard_recognize_leaves_originals_untouched() {
     assert!(lib.verify(false).is_clean());
 }
 
+/// A JPEG called `.HEIC` (some exports keep that name) is read by its
+/// content: size, thumbnail and faces, under the guard. Metadata and
+/// thumbnails that failed before are tried again.
+#[test]
+fn files_named_after_another_format_are_read_by_content() {
+    let lib = empty("recog-misnamed");
+    lib.jpeg("2010er/IMG_0029.jpg", 7);
+    std::fs::rename(lib.path("2010er/IMG_0029.jpg"), lib.path("2010er/IMG_0029.HEIC")).unwrap();
+    lib.scan();
+    let before = lib.snapshot();
+    let thumbs = || Connection::open(lib.path(".shoebox/thumbs.db")).unwrap();
+    let made = || -> i64 { thumbs().query_row("SELECT count(*) FROM thumbs WHERE jpeg IS NOT NULL", [], |r| r.get(0)).unwrap() };
+    let meta = || -> (Option<i64>, Option<String>) {
+        lib.db().query_row("SELECT width, meta_error FROM files", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap()
+    };
+    assert_eq!(meta(), (Some(320), None));
+    assert_eq!(made(), 1);
+
+    let stats = recognize::run(&options(&lib)).unwrap();
+    assert_eq!((stats.looked, stats.failed), (1, 0), "{:?}", stats.errors);
+
+    // As an older shoebox left it: no metadata, a failed thumbnail.
+    lib.db().execute("UPDATE files SET width = NULL, height = NULL, meta_error = 'No ftyp box'", []).unwrap();
+    thumbs().execute_batch("UPDATE thumbs SET jpeg = NULL, error = 'No ftyp box'; PRAGMA user_version = 1;").unwrap();
+    lib.scan();
+    assert_eq!(meta(), (Some(320), None));
+    assert_eq!(made(), 1);
+    assert_eq!(lib.snapshot(), before);
+}
+
+/// Ctrl-C while the worker is busy ends the run at once, marks it
+/// interrupted (so the next run can start right away) and stops the worker.
+#[cfg(unix)]
+#[test]
+fn ctrl_c_ends_the_run_and_frees_the_next_one() {
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+    use std::time::Instant;
+
+    let lib = empty("recog-ctrl-c");
+    solid(&lib, "a/hangs.png", [0, 0, 255]); // the fake worker never answers
+    lib.scan();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_shoebox"))
+        .arg("recognize")
+        .arg(&lib.root)
+        .arg("--recognizer")
+        .arg(FAKE)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut out = BufReader::new(child.stdout.take().unwrap()).lines();
+    assert!(out.any(|l| l.unwrap().starts_with("Faces:")), "the run did not start");
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(recognize::running(&conn(&lib)).unwrap());
+
+    // SAFETY: plain kill(2) on our own child.
+    unsafe { libc::kill(child.id() as libc::pid_t, libc::SIGINT) };
+    let stopped = Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        assert!(stopped.elapsed() < Duration::from_secs(10), "Ctrl-C did not end the run");
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    let mut err = String::new();
+    std::io::Read::read_to_string(&mut child.stderr.take().unwrap(), &mut err).unwrap();
+    assert!(!status.success());
+    assert!(err.contains("interrupted"), "{err}");
+    assert!(!recognize::running(&conn(&lib)).unwrap());
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.jobs WHERE state = 'interrupted'"), 1);
+}
+
 #[test]
 fn bad_pictures_and_misbehaving_workers_do_not_stop_a_run() {
     let lib = Library::new("recog-misbehave");

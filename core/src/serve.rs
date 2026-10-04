@@ -834,11 +834,18 @@ async fn thumb(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Re
 /// The full-screen image: the original where browsers can show it, a large
 /// JPEG rendering for HEIC.
 async fn view(State(app): State<Arc<App>>, Path(id): Path<i64>, req: Request) -> ApiResult<Response> {
-    let src = blocking(&app, move |app| app.source(&app.conn.lock().unwrap(), id)?.ok_or(ApiError::NotFound)).await?;
+    let (src, content) = blocking(&app, move |app| {
+        let src = app.source(&app.conn.lock().unwrap(), id)?.ok_or(ApiError::NotFound)?;
+        let content = media::content_kind(src.kind, &src.path);
+        Ok((src, content))
+    })
+    .await?;
     match src.kind {
-        Kind::Jpeg | Kind::Png | Kind::Video => serve_file(&src.path, req, None).await,
+        // A file whose name does not match its content (a JPEG called
+        // `.HEIC`) is rendered, so the browser gets what the type says.
+        Kind::Jpeg | Kind::Png | Kind::Video if content == src.kind => serve_file(&src.path, req, None).await,
         Kind::Raw => Err(ApiError::NotFound),
-        Kind::Heic => {
+        Kind::Jpeg | Kind::Png | Kind::Video | Kind::Heic => {
             let _permit = app.renders.acquire().await.map_err(|e| ApiError::Internal(e.into()))?;
             let bytes = blocking(&app, move |_| {
                 thumbs::render_view(&LibHeif::new(), &src).map_err(|e| ApiError::Internal(anyhow::anyhow!(e)))
