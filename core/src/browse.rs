@@ -11,7 +11,7 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::Result;
 use chrono::{Local, TimeZone};
-use rusqlite::{Connection, params_from_iter};
+use rusqlite::{Connection, OptionalExtension, params_from_iter};
 use serde::Serialize;
 
 use crate::classify::Kind;
@@ -77,7 +77,9 @@ pub struct Snapshot {
 #[derive(Debug, Default, Clone)]
 pub struct Query {
     pub folder: Option<i64>,
-    pub tag: Option<i64>,
+    /// Every one of these tags (AND); a tag also matches the other spellings
+    /// of its name (folder tags keep their folder's exact spelling).
+    pub tags: Vec<i64>,
     pub text: Option<String>,
     /// Only photos with a confirmed face of this person (5c-2).
     pub person: Option<i64>,
@@ -243,10 +245,14 @@ impl Snapshot {
     /// Items matching every part of the query, newest first.
     pub fn query(&self, conn: &Connection, q: &Query) -> Result<Vec<&Item>> {
         let folders = q.folder.map(|f| self.subtree(f));
-        let tagged: Option<HashSet<i64>> = match q.tag {
-            Some(tag) => Some(file_ids_with_tags(conn, &[tag])?),
-            None => None,
-        };
+        let mut tagged: Option<HashSet<i64>> = None;
+        for &tag in &q.tags {
+            let ids = file_ids_with_tag_name(conn, tag)?;
+            tagged = Some(match tagged {
+                Some(t) => t.intersection(&ids).copied().collect(),
+                None => ids,
+            });
+        }
         // Each word must appear in the path or in one of the file's tags.
         let mut words: Vec<(String, HashSet<i64>)> = Vec::new();
         let text = q.text.as_deref().unwrap_or("");
@@ -339,6 +345,75 @@ pub struct FileTag {
     pub source: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct TagName {
+    pub id: i64,
+    pub name: String,
+}
+
+/// Names of tags by id (unknown ids are left out).
+pub fn tag_names(conn: &Connection, ids: &[i64]) -> Result<Vec<TagName>> {
+    let mut stmt = conn.prepare("SELECT name FROM tags WHERE id = ?1")?;
+    let mut out = Vec::new();
+    for &id in ids {
+        if let Some(name) = stmt.query_row([id], |r| r.get(0)).optional()? {
+            out.push(TagName { id, name });
+        }
+    }
+    Ok(out)
+}
+
+/// Files with this tag or another spelling of its name.
+fn file_ids_with_tag_name(conn: &Connection, tag: i64) -> Result<HashSet<i64>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT ft.file_id FROM file_tags ft JOIN tags t ON t.id = ft.tag_id
+         WHERE t.fold = (SELECT fold FROM tags WHERE id = ?1)",
+    )?;
+    let ids = stmt.query_map([tag], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+    Ok(ids)
+}
+
+/// Tags of the given files with how many of them carry each, most used
+/// first (suggestions that narrow a search). Tags in `skip` are left out.
+pub fn tags_within(conn: &Connection, files: &HashSet<i64>, skip: &[i64]) -> Result<Vec<Tag>> {
+    let mut counts: HashMap<i64, (String, HashSet<i64>, bool, bool)> = HashMap::new();
+    {
+        let mut stmt = conn.prepare("SELECT ft.file_id, t.id, t.name, ft.source FROM file_tags ft JOIN tags t ON t.id = ft.tag_id")?;
+        let mut rows = stmt.query([])?;
+        while let Some(r) = rows.next()? {
+            let file: i64 = r.get(0)?;
+            let tag: i64 = r.get(1)?;
+            if !files.contains(&file) || skip.contains(&tag) {
+                continue;
+            }
+            let e = counts.entry(tag).or_insert_with(|| (String::new(), HashSet::new(), false, false));
+            if e.0.is_empty() {
+                e.0 = r.get(2)?;
+            }
+            e.1.insert(file);
+            match r.get_ref(3)?.as_str()? {
+                "folder" => e.2 = true,
+                _ => e.3 = true,
+            }
+        }
+    }
+    let mut tags: Vec<Tag> = counts
+        .into_iter()
+        .map(|(id, (name, files, folder, own))| Tag {
+            id,
+            name,
+            count: files.len() as u64,
+            kind: match (folder, own) {
+                (true, true) => TagKind::Both,
+                (false, true) => TagKind::Own,
+                _ => TagKind::Folder,
+            },
+        })
+        .collect();
+    tags.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.name.cmp(&b.name)));
+    Ok(tags)
+}
+
 fn file_ids_with_tags(conn: &Connection, tags: &[i64]) -> Result<HashSet<i64>> {
     if tags.is_empty() {
         return Ok(HashSet::new());
@@ -379,7 +454,6 @@ pub struct Details {
 }
 
 pub fn details(conn: &Connection, id: i64) -> Result<Option<Details>> {
-    use rusqlite::OptionalExtension;
     let d = conn
         .query_row(
             "SELECT id, name, path_nfc, folder_id, kind, size, taken, taken_offset, mtime_ns, width, height,
