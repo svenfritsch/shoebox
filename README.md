@@ -20,6 +20,42 @@ detection with `shoebox recognize`) done except the runs on real hardware.
 Plan and status: [docs/plan.md](docs/plan.md); usage per phase in `docs/`
 ([recognizer](docs/phase4.md)).
 
+## Video previews (optional)
+
+shoebox makes the grid previews of videos with `ffmpeg`. It is not bundled;
+put a static build next to the shoebox binary on the drive (or have one on
+PATH):
+
+1. Download a static `ffmpeg` for the computer that runs shoebox:
+   - macOS on Intel: [evermeet.cx/ffmpeg](https://evermeet.cx/ffmpeg/)
+     (the zip with the `ffmpeg` binary). It also runs on Apple Silicon
+     through Rosetta, so one copy serves both Macs.
+   - macOS on Apple Silicon only: [osxexperts.net](https://www.osxexperts.net/)
+     has native arm64 builds.
+   - Linux: [johnvansickle.com/ffmpeg](https://johnvansickle.com/ffmpeg/)
+     (`ffmpeg-release-amd64-static.tar.xz`).
+2. Copy the `ffmpeg` binary to `.shoebox/bin/ffmpeg` on the drive, next to
+   `shoebox-macos` / `shoebox-linux`. The name must be exactly `ffmpeg`.
+3. On macOS, in Terminal:
+
+   ```sh
+   cd "/Volumes/<drive>/.shoebox/bin"
+   xattr -d com.apple.quarantine ffmpeg   # only if downloaded via a browser
+   chmod +x ffmpeg
+   ./ffmpeg -version                      # must print a version, not an error
+   ```
+
+4. Restart `shoebox serve` (it looks for ffmpeg when it starts) or run
+   `shoebox scan` again: videos that had no preview get one, and the "no
+   ffmpeg" note disappears from the status line in the web UI.
+
+shoebox only ever runs ffmpeg to read a video and pipe one frame to itself;
+it never writes next to the original. Without ffmpeg, or for a video ffmpeg
+cannot read, the web UI grabs a frame in the browser instead (not stored, so
+it costs a little time on each visit, and iPad Safari often refuses).
+Static ffmpeg builds are GPL; fine for your own drive, check the terms
+before passing the drive's binaries on.
+
 ## Building
 
 Development happens in Docker (Linux build):
