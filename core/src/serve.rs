@@ -556,17 +556,10 @@ struct SessionInfo {
     authenticated: bool,
     /// Whether a PIN can be entered at all (`--lan`).
     pin_enabled: bool,
-    /// What this computer's file manager is called ("Finder", "Explorer"),
-    /// when this request may use "Show in Finder": only from this computer.
-    reveal: Option<&'static str>,
 }
 
 async fn session(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: HeaderMap) -> Json<SessionInfo> {
-    Json(SessionInfo {
-        authenticated: app.auth.allows(peer.ip(), &headers),
-        pin_enabled: app.auth.pin.is_some(),
-        reveal: is_local(peer.ip(), host(&headers)).then(reveal::label),
-    })
+    Json(SessionInfo { authenticated: app.auth.allows(peer.ip(), &headers), pin_enabled: app.auth.pin.is_some() })
 }
 
 #[derive(Deserialize)]
@@ -618,10 +611,14 @@ struct Info {
     trash: u64,
     /// Face recognition (`shoebox recognize`).
     faces: recognize::Overview,
+    /// Text of the "show in the file manager" button ("Show in Finder", …),
+    /// only for requests from this computer; `null` for other devices.
+    reveal: Option<&'static str>,
 }
 
-async fn info(State(app): State<Arc<App>>) -> ApiResult<Json<Info>> {
-    blocking(&app, |app| {
+async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: HeaderMap) -> ApiResult<Json<Info>> {
+    let reveal = is_local(peer.ip(), host(&headers)).then(reveal::label);
+    blocking(&app, move |app| {
         let conn = app.conn.lock().unwrap();
         let (photos, videos, missing): (i64, i64, i64) = conn.query_row(
             "SELECT count(*) FILTER (WHERE missing_since IS NULL AND kind NOT IN ('video', 'raw')),
@@ -674,6 +671,7 @@ async fn info(State(app): State<Arc<App>>) -> ApiResult<Json<Info>> {
             index_version: format!("{data_version}.{generation}"),
             trash: trash as u64,
             faces: recognize::overview(&conn)?,
+            reveal,
         }))
     })
     .await
@@ -903,7 +901,7 @@ async fn reveal_file(
     blocking(&app, move |app| {
         let src = app.source(&app.conn.lock().unwrap(), id)?.ok_or(ApiError::NotFound)?;
         (app.reveal)(&src.path).map_err(ApiError::Internal)?;
-        Ok(Json(serde_json::json!({ "ok": true, "app": reveal::label() })))
+        Ok(Json(serde_json::json!({ "ok": true, "app": reveal::app_name() })))
     })
     .await
 }

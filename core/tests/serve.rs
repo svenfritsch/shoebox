@@ -200,7 +200,7 @@ fn show_in_finder_uses_the_indexed_path_and_only_for_this_computer() {
 
     // From this computer: the server says what to call the button, and opens
     // the path from the index, whatever the request says.
-    let label = get(addr, "/api/session").json()["reveal"].as_str().map(str::to_string);
+    let label = get(addr, "/api/info").json()["reveal"].as_str().map(str::to_string);
     assert_eq!(label.as_deref(), Some(shoebox::reveal::label()));
     let body = br#"{"path": "/etc/passwd"}"#;
     let ok = request(addr, "POST", &format!("/api/files/{id}/reveal?path=/etc/passwd"), &[json], body);
@@ -221,9 +221,8 @@ fn show_in_finder_uses_the_indexed_path_and_only_for_this_computer() {
     let login = request(addr, "POST", "/api/login", &[evil, json], br#"{"pin":"4711"}"#);
     let cookie = login.header("set-cookie").unwrap().split(';').next().unwrap().to_string();
     let lan = [evil, ("Cookie", cookie.as_str()), json];
-    let session = request(addr, "GET", "/api/session", &lan[..2], b"").json();
-    assert_eq!(session["authenticated"], true);
-    assert!(session["reveal"].is_null());
+    let info = request(addr, "GET", "/api/info", &lan[..2], b"").json();
+    assert!(info["reveal"].is_null(), "no button for other devices");
     assert_eq!(request(addr, "POST", &format!("/api/files/{other}/reveal"), &lan, b"{}").status, 403);
     assert_eq!(opened.lock().unwrap().len(), 1);
     server.stop().unwrap();

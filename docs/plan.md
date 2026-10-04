@@ -33,6 +33,7 @@ progress. Update the status section when a phase moves.
 | Scale | ~100,000 files, 150 GB today, up to 1 TB |
 | Repo | `core/` (Rust), `recognizer/` (Python), `scripts/`, `docker/`, `docs/` |
 | Dev environment | Docker for Linux builds/tests; native macOS builds with rustup; GitHub Actions for both |
+| CI until v1.0 | macOS only (PRs: arm64; main/tags: universal + Rosetta). Linux, incl. the real recognizer, runs only when started by hand; releases ship `shoebox-macos` plus `recognizer/` |
 
 ## Architecture
 
@@ -150,6 +151,10 @@ shows them side by side; the user keeps both, links them, or deletes one
   incremental clustering, no all-pairs DBSCAN.
 - Correction UI: name cluster, merge, split, "not this person". Confirmed
   faces become references; new faces auto-assign when close enough.
+- People belong to at most one group (Family, Friends, …); groups are
+  editable. Names, groups and decisions live in `library.db`, keyed by
+  content and box so they survive moves and model changes; `recognition.db`
+  stays a cache. Details in [phase5.md](phase5.md).
 - Pets: COCO detector for cat/dog; individual pets ("Spooky") via CLIP or
   DINOv2 embeddings of the crop matched against labelled examples. CLIP also
   enables text search later.
@@ -171,7 +176,9 @@ rot) and shows "last backup N days ago, M files new since".
 | 2 | `thumbs.db` + perceptual hash, web UI (virtualised timeline grid, folder tree, tag search, video playback), LAN access with PIN. `shoebox serve` | **Done except the real-hardware run** (see below) |
 | 3 | Import dialog, move (with RAW pairs, case-only renames), duplicates UI, self-healing paths | **Done except the real-hardware run** (see below) |
 | 4 | Worker protocol + Python recognizer (faces), worker supervision in Rust | **Done except the real-hardware run** (see below) |
-| 5 | Face clustering in Rust + correction UI | Next. 5-A (Show in Finder / Explorer, copy path) done, see [phase5.md](phase5.md) |
+| 5a | Show in Finder / Explorer, copy path | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
+| 5b | Own tags (add/remove, many photos at once, search), user data backup | Next |
+| 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | After 5b |
 | 6 | Pets | |
 | 7 | Backup verification, launchers, packaging | |
 
@@ -296,6 +303,22 @@ Open:
       drive (checklist in [phase4.md](phase4.md)).
 - [ ] Confirm the GitHub Actions run is green.
 
+### Phase 5 details
+
+Planned in [phase5.md](phase5.md): split into 5a (reveal in Finder /
+Explorer), 5b (own tags) and 5c (faces, three PRs), separate PRs merged in
+that order, with the conflict hot spots (info panel in `app.js`, route list,
+schema versions v3 for 5b and v4 for 5c-2) listed there.
+
+Open:
+- [x] 5a: show in Finder / Explorer, copy path ([phase5.md](phase5.md)); the
+      real-hardware check is in its list.
+- [ ] 5b: own tags, trash keeps them, user data backup.
+- [ ] 5c-1: `shoebox faces stats` and face debug page; thresholds from the
+      real drive.
+- [ ] 5c-2: people, groups (one per person), face decisions, clustering.
+- [ ] 5c-3: Faces in the sidebar, people in the info panel, corrections.
+
 ## Build notes and pitfalls (learned in phases 0–4)
 
 - **Spaces in paths.** The repo may live under a path with spaces.
@@ -357,6 +380,5 @@ Open:
 
 Run the phase 0–4 hardware checklists on the old Intel MacBook and the iPad
 (phase 4: `recognizer/install.sh` and a `shoebox recognize` run on the
-drive). Then phase 5: cluster the stored face embeddings in Rust
-(approximate nearest neighbours, incremental), and the correction UI (name a
-cluster, merge, split, "not this person").
+drive). 5a (reveal) is done; next is 5b
+(own tags), then 5c-1 with the results of the phase 4 run.

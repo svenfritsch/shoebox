@@ -30,7 +30,7 @@ var state = {
   open: -1,          // index of the item in the lightbox
   indexVersion: null,
   loadSeq: 0,
-  reveal: null,      // "Finder" / "Explorer" when this browser runs on the shoebox computer
+  reveal: null,      // label of "show in the file manager"; set only on the shoebox computer
 };
 
 // ------------------------------------------------------------------ api
@@ -112,7 +112,6 @@ function setFilter(f) {
 function showView(view) { setFilter({ view: view, folder: null, tag: null, q: '' }); }
 
 function applyFilter() {
-  state.reveal = s.reveal || null;
   state.filter = readHash();
   $('search').value = state.filter.q;
   renderChips();
@@ -785,14 +784,7 @@ function renderPanel() {
   drawFaces();
 
   var actions = el('div', 'actions');
-  if (state.reveal) {
-    var reveal = el('button', 'btn quiet', 'Show in ' + state.reveal);
-    reveal.onclick = function () { revealFile(info.id); };
-    actions.appendChild(reveal);
-  }
-  var copy = el('button', 'btn quiet', 'Copy path');
-  copy.onclick = function () { copyPath(info.path); };
-  actions.appendChild(copy);
+  infoReveal(actions, info);
   var move = el('button', 'btn quiet', 'Move…');
   move.onclick = function () { moveDialog([info.id], function () { closeLightbox(); }); };
   var trash = el('button', 'btn danger', 'Move to trash');
@@ -878,6 +870,7 @@ document.addEventListener('keydown', function (ev) {
 function loadInfo() {
   return api('/api/info').then(function (info) {
     $('title').textContent = info.name;
+    state.reveal = info.reveal || null;
     document.title = info.name + ' · shoebox';
     var parts = [
       info.photos.toLocaleString() + ' photos',
@@ -1447,6 +1440,19 @@ function revealFile(id) {
   }).catch(failed);
 }
 
+// Info panel, 5a: the buttons that show the file on the shoebox computer
+// and copy its path.
+function infoReveal(actions, info) {
+  if (state.reveal) {
+    var reveal = el('button', 'btn quiet', state.reveal);
+    reveal.onclick = function () { revealFile(info.id); };
+    actions.appendChild(reveal);
+  }
+  var copy = el('button', 'btn quiet', 'Copy path');
+  copy.onclick = function () { copyPath(info.path); };
+  actions.appendChild(copy);
+}
+
 // The path within the library, as in the info panel. Works on every device.
 function copyPath(path) {
   copyText(path).then(function (ok) {
@@ -1544,7 +1550,7 @@ $('sizer').addEventListener('contextmenu', function (ev) {
   ev.preventDefault();
   var id = state.data.ids[parseInt(a.dataset.index, 10)];
   var items = [];
-  if (state.reveal) items.push({ label: 'Show in ' + state.reveal, run: function () { revealFile(id); } });
+  if (state.reveal) items.push({ label: state.reveal, run: function () { revealFile(id); } });
   items.push({ label: 'Copy path', run: function () {
     api('/api/files/' + id).then(function (info) { copyPath(info.path); }).catch(failed);
   } });

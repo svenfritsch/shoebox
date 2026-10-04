@@ -193,8 +193,13 @@ pub fn bare_request(addr: SocketAddr, method: &str, path: &str, headers: &[(&str
 fn send(addr: SocketAddr, mut head: String, body: &[u8]) -> Response {
     let mut s = TcpStream::connect(addr).unwrap();
     head.push_str("\r\n");
-    s.write_all(head.as_bytes()).unwrap();
-    s.write_all(body).unwrap();
+    // One write, so the server has the whole request when it answers. A
+    // request refused before its body is read (no `X-Shoebox`) otherwise
+    // races: the body arrives after the server closed, and the reset that
+    // follows can make the read below fail (seen on macOS runners).
+    let mut req = head.into_bytes();
+    req.extend_from_slice(body);
+    s.write_all(&req).unwrap();
     let mut raw = Vec::new();
     s.read_to_end(&mut raw).unwrap();
 

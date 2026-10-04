@@ -12,14 +12,22 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result};
 
-/// What the UI calls the button: "Finder", "Explorer", or "file manager".
+/// The text of the button: "Show in Finder", "Show in Explorer", or
+/// "Open folder" where the file cannot be selected.
 pub fn label() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "Finder"
-    } else if cfg!(target_os = "windows") {
-        "Explorer"
-    } else {
-        "file manager"
+    match Platform::current() {
+        Platform::Mac => "Show in Finder",
+        Platform::Windows => "Show in Explorer",
+        Platform::Other => "Open folder",
+    }
+}
+
+/// What the file manager is called, for "Shown in …".
+pub fn app_name() -> &'static str {
+    match Platform::current() {
+        Platform::Mac => "Finder",
+        Platform::Windows => "Explorer",
+        Platform::Other => "file manager",
     }
 }
 

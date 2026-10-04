@@ -1,14 +1,28 @@
 name: build
 
+# Until v1.0 only macOS is built, to keep CI fast. Pull requests build and
+# test arm64 only; main, tags and manual runs also build x86_64 (the old
+# Intel MacBook), the universal binary and run it under Rosetta 2. Linux runs
+# only when started by hand (Actions → build → Run workflow); it is the one
+# job that tests the real recognizer.
 on:
   push:
+    branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
+
+# A newer push to the same branch or PR cancels the run still going.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   macos:
     # Apple Silicon runner; the x86_64 binary is tested under Rosetta 2.
     runs-on: macos-latest
+    env:
+      FULL: ${{ github.event_name != 'pull_request' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -27,12 +41,14 @@ jobs:
           key: deps-macos-${{ hashFiles('scripts/build-deps.sh') }}
 
       - name: Build x86_64 (macOS 10.13+)
+        if: env.FULL == 'true'
         run: scripts/build.sh x86_64-apple-darwin
 
       - name: Build arm64 (macOS 11+)
         run: scripts/build.sh aarch64-apple-darwin
 
       - name: Universal binary
+        if: env.FULL == 'true'
         run: |
           mkdir -p dist
           lipo -create -output dist/shoebox-macos \
@@ -42,16 +58,26 @@ jobs:
           otool -L dist/shoebox-macos
           vtool -show-build -arch x86_64 dist/shoebox-macos | grep -E "minos|version"
 
+      - name: arm64 binary only (pull requests)
+        if: env.FULL != 'true'
+        run: |
+          mkdir -p dist
+          cp core/target/aarch64-apple-darwin/release/shoebox dist/shoebox-macos
+
       - name: Fixtures
         run: scripts/make-fixtures.sh "$RUNNER_TEMP/fixtures"
 
       - name: Tests
         run: SHOEBOX_FIXTURES="$RUNNER_TEMP/fixtures" scripts/build.sh aarch64-apple-darwin test
 
-      - name: Probe, scan and verify fixtures (arm64 and x86_64 via Rosetta)
+      - name: Probe, scan and verify fixtures (arm64, and x86_64 via Rosetta)
         run: |
-          softwareupdate --install-rosetta --agree-to-license || true
-          for arch in arm64 x86_64; do
+          archs=arm64
+          if [ "$FULL" = true ]; then
+            softwareupdate --install-rosetta --agree-to-license || true
+            archs="arm64 x86_64"
+          fi
+          for arch in $archs; do
             arch -$arch dist/shoebox-macos probe "$RUNNER_TEMP/fixtures" --report dist/probe-$arch.json
             rm -rf "$RUNNER_TEMP/lib-$arch" && cp -R "$RUNNER_TEMP/fixtures" "$RUNNER_TEMP/lib-$arch"
             arch -$arch dist/shoebox-macos scan "$RUNNER_TEMP/lib-$arch"
@@ -64,7 +90,10 @@ jobs:
           name: shoebox-macos
           path: dist/
 
+  # Off until v1.0 unless started by hand; then also add it back to the
+  # release job below.
   linux:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -125,14 +154,17 @@ jobs:
 
   # Push a tag like `v0.1.0-phase1` to publish the binaries as a GitHub
   # release. Workflow artifacts need a GitHub login, expire, and lose the
-  # executable bit; release assets don't.
+  # executable bit; release assets don't. The recognizer installer goes
+  # along, so the drive can be set up without a clone of the repo.
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [macos, linux]
+    needs: [macos]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -140,9 +172,14 @@ jobs:
       - name: Package
         run: |
           mkdir -p release
-          for os in macos linux; do
-            chmod +x artifacts/shoebox-$os/shoebox-$os
-            tar -C artifacts/shoebox-$os -czf release/shoebox-$os.tar.gz shoebox-$os
+          for os in macos; do
+            pkg="$RUNNER_TEMP/shoebox-$os"
+            mkdir -p "$pkg/recognizer"
+            cp artifacts/shoebox-$os/shoebox-$os "$pkg/"
+            chmod +x "$pkg/shoebox-$os"
+            cp recognizer/README.md recognizer/install.sh recognizer/fetch-models.sh recognizer/recognizer.py "$pkg/recognizer/"
+            chmod +x "$pkg/recognizer/install.sh" "$pkg/recognizer/fetch-models.sh"
+            tar -C "$RUNNER_TEMP" -czf release/shoebox-$os.tar.gz shoebox-$os
           done
           (cd release && sha256sum *.tar.gz > SHA256SUMS)
 
