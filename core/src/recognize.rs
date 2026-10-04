@@ -18,6 +18,11 @@
 //! keeps them. A separate file keeps the many embedding BLOBs out of the
 //! index, and its writes (and the `recog.jobs` progress) do not count as
 //! changes to the index, so the web UI does not reload while a run is going.
+//!
+//! The detector misses faces rolled more than ~30–45° (people lying down).
+//! `--rotated` adds a second pass (task `faces-rot`) that sends the same copy
+//! turned 90° and 270° and turns the boxes back; a face found that way is
+//! only kept where the upright pass found none.
 
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -52,8 +57,14 @@ pub const EDGE: u32 = 1600;
 const QUALITY: u8 = 90;
 /// The task this module asks for.
 pub const FACES: &str = "faces";
+/// The second pass over turned copies (`--rotated`), with its own rows in
+/// `recog.looked` and `recog.jobs`.
+pub const FACES_ROT: &str = "faces-rot";
+/// A face from the turned copies is kept only if it overlaps every face of
+/// the upright pass (and every one kept before it) less than this.
+pub const ROTATED_MAX_IOU: f64 = 0.3;
 /// Kinds that are looked at; RAW files are covered by their JPEG/HEIC twin.
-const KINDS: &str = "'jpeg', 'png', 'heic'";
+pub(crate) const KINDS: &str = "'jpeg', 'png', 'heic'";
 /// After this many crashes without a reply in between, the worker is broken.
 const MAX_CRASHES_IN_ROW: u32 = 5;
 /// While waiting for the worker, look this often whether Ctrl-C was pressed.
@@ -61,7 +72,7 @@ const POLL: Duration = Duration::from_millis(200);
 /// A `running` job that has not reported progress for this long is dead.
 const JOB_ALIVE_SECS: i64 = 120;
 
-const SCHEMA_VERSION: i32 = 1;
+const SCHEMA_VERSION: i32 = 2;
 const SCHEMA_V1: &str = "
 CREATE TABLE recog.jobs (
     id          INTEGER PRIMARY KEY,
@@ -102,6 +113,12 @@ CREATE TABLE recog.faces (
 );
 CREATE INDEX recog.faces_key ON faces(key);
 ";
+/// v2: faces found by the rotated pass (`--rotated`).
+const SCHEMA_V2: &str = "
+-- 0: upright pass; 90 or 270: found in the copy turned that far clockwise
+-- (box and landmarks are stored upright all the same).
+ALTER TABLE recog.faces ADD COLUMN roll INTEGER NOT NULL DEFAULT 0;
+";
 
 /// Location of `recognition.db` for a library database.
 pub fn path_for(db_path: &Path) -> PathBuf {
@@ -125,6 +142,12 @@ pub fn attach(conn: &Connection, db_path: &Path) -> Result<()> {
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V1)?;
         tx.pragma_update(Some("recog"), "user_version", 1)?;
+        tx.commit()?;
+    }
+    if version < 2 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V2)?;
+        tx.pragma_update(Some("recog"), "user_version", 2)?;
         tx.commit()?;
     }
     Ok(())
@@ -248,6 +271,8 @@ pub struct Face {
     pub h: f64,
     pub score: f64,
     pub landmarks: Vec<[f64; 2]>,
+    /// 0, or 90/270 for a face the rotated pass found in a turned copy.
+    pub roll: u16,
     #[serde(skip)]
     pub emb: Vec<f32>,
 }
@@ -554,6 +579,7 @@ impl Worker {
                     .filter(|p| p.iter().all(|v| v.is_finite()))
                     .map(|[px, py]| [(px / fw).clamp(0.0, 1.0), (py / fh).clamp(0.0, 1.0)])
                     .collect(),
+                roll: 0,
                 emb,
             });
         }
@@ -636,10 +662,13 @@ pub struct Options {
     pub db: Option<PathBuf>,
     /// The worker program (else `$SHOEBOX_RECOGNIZER` or the installed one).
     pub recognizer: Option<PathBuf>,
-    /// Look at most at this many pictures.
+    /// Look at most at this many pictures (per pass).
     pub limit: Option<usize>,
     /// Try pictures again that failed before.
     pub retry_failed: bool,
+    /// After the upright pass, look at the photos turned 90° and 270° too
+    /// (faces of people lying down).
+    pub rotated: bool,
     pub timeouts: Timeouts,
 }
 
@@ -660,6 +689,9 @@ pub struct Stats {
     pub model: String,
     /// What went wrong, per file.
     pub errors: Vec<String>,
+    /// The rotated pass (`--rotated`), if it ran; its `faces` are the ones
+    /// it added.
+    pub rotated: Option<Box<Stats>>,
 }
 
 /// A picture to look at: one file per content.
@@ -669,6 +701,31 @@ struct Pending {
     kind: Kind,
     size: u64,
     mtime_ns: i64,
+}
+
+/// One of the two passes over the photos.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Pass {
+    Upright,
+    /// The copy turned 90° and 270°, for faces the upright pass missed.
+    Rotated,
+}
+
+impl Pass {
+    fn task(self) -> &'static str {
+        match self {
+            Pass::Upright => FACES,
+            Pass::Rotated => FACES_ROT,
+        }
+    }
+
+    /// How far (clockwise) the copies sent to the worker are turned.
+    fn rolls(self) -> &'static [u16] {
+        match self {
+            Pass::Upright => &[0],
+            Pass::Rotated => &[90, 270],
+        }
+    }
 }
 
 pub fn run(opts: &Options) -> Result<Stats> {
@@ -705,7 +762,13 @@ pub fn run(opts: &Options) -> Result<Stats> {
         worker.version().unwrap_or("(unknown version)"),
         worker.faces_model().model
     );
-    let result = recognize(&conn, &root, &mut worker, opts.limit, opts.retry_failed);
+    let result = recognize(&conn, &root, &mut worker, opts.limit, opts.retry_failed).and_then(|mut stats| {
+        if opts.rotated {
+            let rotated = recognize_rotated(&conn, &root, &mut worker, opts.limit, opts.retry_failed)?;
+            stats.rotated = Some(Box::new(rotated));
+        }
+        Ok(stats)
+    });
     worker.stop();
     // An interrupted run keeps what it found, so that is backed up too.
     if result.as_ref().map_or_else(|e| e.is::<Interrupted>(), |_| true) {
@@ -726,16 +789,64 @@ pub fn recognize(
     retry_failed: bool,
 ) -> Result<Stats> {
     let model = worker.faces_model().model.clone();
-    let mut stats = Stats { model: model.clone(), ..Stats::default() };
-    let mut pending: Vec<Pending> = conn
-        .prepare(&format!(
+    let pending = pending(
+        conn,
+        &format!(
             "SELECT f.quick_hash, f.path, f.kind, f.size, f.mtime_ns
              FROM files f LEFT JOIN recog.looked l ON l.key = f.quick_hash AND l.task = '{FACES}'
              WHERE f.missing_since IS NULL AND f.kind IN ({KINDS})
                AND (l.key IS NULL OR l.model != ?1 OR (?2 AND l.error IS NOT NULL))
              GROUP BY f.quick_hash
              ORDER BY max(coalesce(f.taken, '')) DESC, min(f.path_nfc)"
-        ))?
+        ),
+        &model,
+        retry_failed,
+    )?;
+    let stats = run_pass(conn, root, worker, Pass::Upright, pending, limit)?;
+
+    // Trashed files keep theirs until the trash is emptied.
+    let gone = "NOT IN (SELECT quick_hash FROM files)
+                AND key NOT IN (SELECT quick_hash FROM trash WHERE quick_hash IS NOT NULL)";
+    let pruned = conn.execute(&format!("DELETE FROM recog.looked WHERE key {gone} AND task = '{FACES}'"), [])? as u64;
+    conn.execute(&format!("DELETE FROM recog.looked WHERE key {gone}"), [])?;
+    conn.execute(&format!("DELETE FROM recog.faces WHERE key {gone}"), [])?;
+    Ok(Stats { pruned, ..stats })
+}
+
+/// The rotated pass: every photo the upright pass looked at (with the same
+/// model) is looked at again, turned 90° and 270°, unless that was done
+/// already. Faces found where the upright pass found none are added.
+/// Resumable like `recognize`; `conn` must have `recog` attached.
+pub fn recognize_rotated(
+    conn: &Connection,
+    root: &Path,
+    worker: &mut Worker,
+    limit: Option<usize>,
+    retry_failed: bool,
+) -> Result<Stats> {
+    let model = worker.faces_model().model.clone();
+    let pending = pending(
+        conn,
+        &format!(
+            "SELECT f.quick_hash, f.path, f.kind, f.size, f.mtime_ns
+             FROM files f
+             JOIN recog.looked u ON u.key = f.quick_hash AND u.task = '{FACES}' AND u.model = ?1 AND u.error IS NULL
+             LEFT JOIN recog.looked l ON l.key = f.quick_hash AND l.task = '{FACES_ROT}'
+             WHERE f.missing_since IS NULL AND f.kind IN ({KINDS})
+               AND (l.key IS NULL OR l.model != ?1 OR (?2 AND l.error IS NOT NULL))
+             GROUP BY f.quick_hash
+             ORDER BY max(coalesce(f.taken, '')) DESC, min(f.path_nfc)"
+        ),
+        &model,
+        retry_failed,
+    )?;
+    run_pass(conn, root, worker, Pass::Rotated, pending, limit)
+}
+
+/// The pictures a pending-query (`?1` model, `?2` retry failed) returns.
+fn pending(conn: &Connection, sql: &str, model: &str, retry_failed: bool) -> Result<Vec<Pending>> {
+    Ok(conn
+        .prepare(sql)?
         .query_map(params![model, retry_failed], |r| {
             Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, i64>(3)?, r.get(4)?))
         })?
@@ -745,34 +856,49 @@ pub fn recognize(
             }
             Err(e) => Some(Err(e)),
         })
-        .collect::<rusqlite::Result<_>>()?;
+        .collect::<rusqlite::Result<_>>()?)
+}
+
+/// Look at `pending` (at most `limit`) in a job of the pass's own kind.
+fn run_pass(
+    conn: &Connection,
+    root: &Path,
+    worker: &mut Worker,
+    pass: Pass,
+    mut pending: Vec<Pending>,
+    limit: Option<usize>,
+) -> Result<Stats> {
+    let mut stats = Stats { model: worker.faces_model().model.clone(), ..Stats::default() };
     if let Some(limit) = limit.filter(|&l| l < pending.len()) {
         stats.pending = (pending.len() - limit) as u64;
         pending.truncate(limit);
     }
-
-    if !pending.is_empty() {
-        println!("Faces: {} pictures to look at…", pending.len());
-        let job = Job::start_in(conn, "recog.jobs", FACES)?;
-        let result = look_at(conn, root, worker, pending, &job, &mut stats);
-        stats.restarts = worker.restarts;
-        match result {
-            Ok(()) => job.finish(conn, "done", &stats)?,
-            Err(e) => {
-                let _ = conn.execute_batch("ROLLBACK");
-                let state = if e.is::<Interrupted>() { "interrupted" } else { "failed" };
-                let _ = job.finish(conn, state, &format!("{e:#}"));
-                return Err(e);
-            }
+    if pending.is_empty() {
+        return Ok(stats);
+    }
+    match pass {
+        Pass::Upright => println!("Faces: {} pictures to look at…", pending.len()),
+        Pass::Rotated => println!("Faces, turned 90° and 270°: {} pictures to look at…", pending.len()),
+    }
+    let job = Job::start_in(conn, "recog.jobs", pass.task())?;
+    let result = look_at(conn, root, worker, pass, pending, &job, &mut stats);
+    stats.restarts = worker.restarts;
+    match result {
+        Ok(()) => job.finish(conn, "done", &stats)?,
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            let state = if e.is::<Interrupted>() { "interrupted" } else { "failed" };
+            let _ = job.finish(conn, state, &format!("{e:#}"));
+            return Err(e);
         }
     }
-
-    // Trashed files keep theirs until the trash is emptied.
-    let gone = "NOT IN (SELECT quick_hash FROM files)
-                AND key NOT IN (SELECT quick_hash FROM trash WHERE quick_hash IS NOT NULL)";
-    stats.pruned = conn.execute(&format!("DELETE FROM recog.looked WHERE key {gone}"), [])? as u64;
-    conn.execute(&format!("DELETE FROM recog.faces WHERE key {gone}"), [])?;
     Ok(stats)
+}
+
+/// The copies of one picture the worker gets, turned by `Pass::rolls`.
+struct Prepared {
+    /// (roll, JPEG)
+    copies: Vec<(u16, Vec<u8>)>,
 }
 
 /// Decode on two threads while the worker is busy; store from this one
@@ -781,6 +907,7 @@ fn look_at(
     conn: &Connection,
     root: &Path,
     worker: &mut Worker,
+    pass: Pass,
     pending: Vec<Pending>,
     job: &Job,
     stats: &mut Stats,
@@ -788,7 +915,7 @@ fn look_at(
     let started = Instant::now();
     let total = pending.len() as u64;
     let queue = Mutex::new(pending.into_iter());
-    let (tx, rx) = mpsc::sync_channel::<(Pending, Result<Vec<u8>, String>)>(4);
+    let (tx, rx) = mpsc::sync_channel::<(Pending, Result<Prepared, String>)>(4);
     std::thread::scope(|scope| -> Result<()> {
         for _ in 0..2 {
             let tx = tx.clone();
@@ -797,7 +924,7 @@ fn look_at(
                 let lib_heif = LibHeif::new();
                 loop {
                     let Some(p) = queue.lock().unwrap().next() else { break };
-                    let image = prepare(&lib_heif, &root.join(&p.rel), &p);
+                    let image = prepare(&lib_heif, &root.join(&p.rel), &p, pass.rolls());
                     if tx.send((p, image)).is_err() {
                         break;
                     }
@@ -816,11 +943,7 @@ fn look_at(
                 }
                 done += 1;
                 let outcome = match image {
-                    Ok(jpeg) => match worker.faces(&jpeg)? {
-                        // Once more with a fresh worker: maybe it was not this picture.
-                        Err(Failure::Crashed(_)) => worker.faces(&jpeg)?,
-                        other => other,
-                    },
+                    Ok(prepared) => ask_all(worker, prepared)?,
                     Err(e) if thumbs::is_transient(&e) => {
                         stats.skipped += 1;
                         stats.errors.push(format!("{}: {e}", p.rel));
@@ -828,23 +951,24 @@ fn look_at(
                     }
                     Err(e) => Err(Failure::Refused(e)),
                 };
-                match &outcome {
-                    Ok(found) => {
-                        stats.looked += 1;
-                        stats.faces += found.faces.len() as u64;
-                    }
-                    Err(f) => {
-                        stats.failed += 1;
-                        stats.errors.push(format!("{}: {}", p.rel, failure_text(f)));
-                    }
+                if let Err(f) = &outcome {
+                    stats.failed += 1;
+                    stats.errors.push(format!("{}: {}", p.rel, failure_text(f)));
                 }
-                store(conn, &p.key, &stats.model, &outcome)?;
+                let kept = match pass {
+                    Pass::Upright => store(conn, &p.key, &stats.model, &outcome)?,
+                    Pass::Rotated => store_rotated(conn, &p.key, &stats.model, &outcome)?,
+                };
+                if outcome.is_ok() {
+                    stats.looked += 1;
+                    stats.faces += kept as u64;
+                }
                 if batch.tick()? {
                     job.progress(conn, done, Some(total))?;
                 }
                 progress.tick(|done, total| {
                     let per_s = done as f64 / started.elapsed().as_secs_f64().max(1e-9);
-                    format!("faces {done}/{total} ({per_s:.1}/s)")
+                    format!("{} {done}/{total} ({per_s:.1}/s)", pass.task())
                 });
             }
             Ok(())
@@ -860,8 +984,12 @@ fn look_at(
         committed?;
         job.progress(conn, done, Some(total))
     })?;
+    let what = match pass {
+        Pass::Upright => "faces",
+        Pass::Rotated => "faces added",
+    };
     println!(
-        "Looked at {} pictures in {:.0}s: {} faces, {} failed, {} skipped.",
+        "Looked at {} pictures in {:.0}s: {} {what}, {} failed, {} skipped.",
         stats.looked + stats.failed,
         started.elapsed().as_secs_f64(),
         stats.faces,
@@ -877,6 +1005,30 @@ fn look_at(
     Ok(())
 }
 
+/// Send every copy of a picture to the worker (a crash is tried once more
+/// with a fresh worker: maybe it was not this picture) and put the faces of
+/// the turned copies back upright. The first failure fails the picture.
+fn ask_all(worker: &mut Worker, prepared: Prepared) -> Result<Result<Found, Failure>> {
+    let mut all: Option<Found> = None;
+    for (roll, jpeg) in prepared.copies {
+        let found = match worker.faces(&jpeg)? {
+            Err(Failure::Crashed(_)) => worker.faces(&jpeg)?,
+            other => other,
+        };
+        let found = match found {
+            Ok(found) => found,
+            Err(f) => return Ok(Err(f)),
+        };
+        let (width, height) = if roll % 180 == 0 { (found.width, found.height) } else { (found.height, found.width) };
+        let faces = found.faces.into_iter().map(|f| unrotate(f, roll));
+        match &mut all {
+            Some(a) => a.faces.extend(faces),
+            None => all = Some(Found { width, height, faces: faces.collect() }),
+        }
+    }
+    Ok(all.ok_or_else(|| Failure::Refused("nothing to look at".into())))
+}
+
 fn failure_text(f: &Failure) -> String {
     match f {
         Failure::Refused(e) => e.clone(),
@@ -884,42 +1036,131 @@ fn failure_text(f: &Failure) -> String {
     }
 }
 
-/// The upright copy the worker gets, read under the guard.
-fn prepare(lib_heif: &LibHeif, path: &Path, p: &Pending) -> Result<Vec<u8>, String> {
+/// The upright copy the worker gets, turned clockwise by each of `rolls`,
+/// read under the guard.
+fn prepare(lib_heif: &LibHeif, path: &Path, p: &Pending, rolls: &[u16]) -> Result<Prepared, String> {
     fingerprint::read_unchanged(path, p.size, p.mtime_ns, || {
         let img = media::decode_image(lib_heif, p.kind, path, EDGE).map_err(|e| format!("{e:#}"))?;
-        media::encode_jpeg(&thumbs::shrink(img, EDGE), QUALITY).map_err(|e| format!("{e:#}"))
+        let img = thumbs::shrink(img, EDGE);
+        let copies = rolls
+            .iter()
+            .map(|&roll| {
+                let turned = match roll {
+                    90 => img.rotate90(),
+                    180 => img.rotate180(),
+                    270 => img.rotate270(),
+                    _ => img.clone(),
+                };
+                media::encode_jpeg(&turned, QUALITY).map(|jpeg| (roll, jpeg)).map_err(|e| format!("{e:#}"))
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(Prepared { copies })
     })
 }
 
-/// Replace what is stored for a content with a new result.
-fn store(conn: &Connection, key: &str, model: &str, outcome: &Result<Found, Failure>) -> Result<()> {
+/// A point given as fractions of a copy turned `roll`° clockwise, as
+/// fractions of the upright picture.
+fn unrotate_point([u, v]: [f64; 2], roll: u16) -> [f64; 2] {
+    match roll {
+        90 => [v, 1.0 - u],
+        180 => [1.0 - u, 1.0 - v],
+        270 => [1.0 - v, u],
+        _ => [u, v],
+    }
+}
+
+/// A face found in a copy turned `roll`° clockwise, with its box and
+/// landmarks turned back onto the upright picture.
+pub fn unrotate(face: Face, roll: u16) -> Face {
+    let [ax, ay] = unrotate_point([face.x, face.y], roll);
+    let [bx, by] = unrotate_point([face.x + face.w, face.y + face.h], roll);
+    Face {
+        x: ax.min(bx),
+        y: ay.min(by),
+        w: (ax - bx).abs(),
+        h: (ay - by).abs(),
+        landmarks: face.landmarks.iter().map(|&p| unrotate_point(p, roll)).collect(),
+        roll,
+        ..face
+    }
+}
+
+/// Overlap of two boxes (x, y, w, h): intersection over union.
+pub fn iou(a: [f64; 4], b: [f64; 4]) -> f64 {
+    let ix = ((a[0] + a[2]).min(b[0] + b[2]) - a[0].max(b[0])).max(0.0);
+    let iy = ((a[1] + a[3]).min(b[1] + b[3]) - a[1].max(b[1])).max(0.0);
+    let inter = ix * iy;
+    let union = a[2] * a[3] + b[2] * b[3] - inter;
+    if union > 0.0 { inter / union } else { 0.0 }
+}
+
+/// Replace what is stored for a content with a new result of the upright
+/// pass; returns the number of faces stored. The rotated pass depends on
+/// what is found upright, so its result is dropped too and redone later.
+fn store(conn: &Connection, key: &str, model: &str, outcome: &Result<Found, Failure>) -> Result<usize> {
     conn.execute("DELETE FROM recog.faces WHERE key = ?1", [key])?;
+    conn.execute("DELETE FROM recog.looked WHERE key = ?1 AND task = ?2", params![key, FACES_ROT])?;
+    store_looked(conn, key, FACES, model, outcome)?;
     match outcome {
-        Ok(found) => {
-            conn.execute(
-                "INSERT OR REPLACE INTO recog.looked (key, task, model, width, height, found, error, done_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7)",
-                params![key, FACES, model, found.width, found.height, found.faces.len() as i64, db::now()],
-            )?;
-            let mut insert = conn.prepare_cached(
-                "INSERT INTO recog.faces (key, model, x, y, w, h, score, landmarks, emb)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            )?;
-            for f in &found.faces {
-                let emb: Vec<u8> = f.emb.iter().flat_map(|v| v.to_le_bytes()).collect();
-                let landmarks = (!f.landmarks.is_empty()).then(|| serde_json::to_string(&f.landmarks)).transpose()?;
-                insert.execute(params![key, model, f.x, f.y, f.w, f.h, f.score, landmarks, emb])?;
-            }
-        }
-        Err(f) => {
-            conn.execute(
-                "INSERT OR REPLACE INTO recog.looked (key, task, model, error, done_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![key, FACES, model, failure_text(f), db::now()],
-            )?;
+        Ok(found) => insert_faces(conn, key, model, &found.faces),
+        Err(_) => Ok(0),
+    }
+}
+
+/// Store a result of the rotated pass: of its faces, those that overlap no
+/// face of the upright pass (nor a better one of its own) are added. Returns
+/// the number added.
+fn store_rotated(conn: &Connection, key: &str, model: &str, outcome: &Result<Found, Failure>) -> Result<usize> {
+    conn.execute("DELETE FROM recog.faces WHERE key = ?1 AND roll != 0", [key])?;
+    let found = match outcome {
+        Ok(found) => found,
+        Err(_) => return store_looked(conn, key, FACES_ROT, model, outcome).map(|_| 0),
+    };
+    let mut kept: Vec<[f64; 4]> = conn
+        .prepare_cached("SELECT x, y, w, h FROM recog.faces WHERE key = ?1")?
+        .query_map([key], |r| Ok([r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?]))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut candidates: Vec<&Face> = found.faces.iter().collect();
+    candidates.sort_by(|a, b| b.score.total_cmp(&a.score));
+    let mut added = Vec::new();
+    for f in candidates {
+        let b = [f.x, f.y, f.w, f.h];
+        if kept.iter().all(|&k| iou(k, b) < ROTATED_MAX_IOU) {
+            kept.push(b);
+            added.push(f.clone());
         }
     }
+    let added_found = Found { width: found.width, height: found.height, faces: added };
+    store_looked(conn, key, FACES_ROT, model, &Ok(added_found.clone()))?;
+    insert_faces(conn, key, model, &added_found.faces)
+}
+
+fn store_looked(conn: &Connection, key: &str, task: &str, model: &str, outcome: &Result<Found, Failure>) -> Result<()> {
+    match outcome {
+        Ok(found) => conn.execute(
+            "INSERT OR REPLACE INTO recog.looked (key, task, model, width, height, found, error, done_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7)",
+            params![key, task, model, found.width, found.height, found.faces.len() as i64, db::now()],
+        )?,
+        Err(f) => conn.execute(
+            "INSERT OR REPLACE INTO recog.looked (key, task, model, error, done_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![key, task, model, failure_text(f), db::now()],
+        )?,
+    };
     Ok(())
+}
+
+fn insert_faces(conn: &Connection, key: &str, model: &str, faces: &[Face]) -> Result<usize> {
+    let mut insert = conn.prepare_cached(
+        "INSERT INTO recog.faces (key, model, x, y, w, h, score, landmarks, emb, roll)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+    )?;
+    for f in faces {
+        let emb: Vec<u8> = f.emb.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let landmarks = (!f.landmarks.is_empty()).then(|| serde_json::to_string(&f.landmarks)).transpose()?;
+        insert.execute(params![key, model, f.x, f.y, f.w, f.h, f.score, landmarks, emb, f.roll])?;
+    }
+    Ok(faces.len())
 }
 
 /// The faces stored for a content: `None` if it has not been looked at (or
@@ -937,7 +1178,7 @@ pub fn faces_of(conn: &Connection, key: &str) -> Result<Option<Vec<Face>>> {
         return Ok(None);
     }
     let faces = conn
-        .prepare("SELECT x, y, w, h, score, landmarks FROM recog.faces WHERE key = ?1 ORDER BY x")?
+        .prepare("SELECT x, y, w, h, score, landmarks, roll FROM recog.faces WHERE key = ?1 ORDER BY x")?
         .query_map([key], |r| {
             let landmarks: Option<String> = r.get(5)?;
             Ok(Face {
@@ -947,6 +1188,7 @@ pub fn faces_of(conn: &Connection, key: &str) -> Result<Option<Vec<Face>>> {
                 h: r.get(3)?,
                 score: r.get(4)?,
                 landmarks: landmarks.and_then(|l| serde_json::from_str(&l).ok()).unwrap_or_default(),
+                roll: r.get(6)?,
                 emb: Vec::new(),
             })
         })?
@@ -994,6 +1236,42 @@ mod tests {
         assert_eq!(r.error.as_deref(), Some("cannot decode image"));
         let r = parse_reply(r#"{"id": 1, "faces": "nonsense"}"#, 1).unwrap();
         assert!(r.error.unwrap().starts_with("bad reply"));
+    }
+
+    fn face(x: f64, y: f64, w: f64, h: f64) -> Face {
+        Face { x, y, w, h, score: 0.9, landmarks: vec![[x, y]], roll: 0, emb: Vec::new() }
+    }
+
+    fn close(a: [f64; 4], b: [f64; 4]) -> bool {
+        a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-9)
+    }
+
+    #[test]
+    fn turned_faces_are_put_back_upright() {
+        // A 400×300 picture turned 90° clockwise is 300×400; the pixel at
+        // (u, v) in it came from (v, 300 - u) upright.
+        let f = unrotate(face(0.1, 0.5, 0.2, 0.3), 90);
+        assert!(close([f.x, f.y, f.w, f.h], [0.5, 0.7, 0.3, 0.2]), "{f:?}");
+        assert!(close([f.landmarks[0][0], f.landmarks[0][1], 0.0, 0.0], [0.5, 0.9, 0.0, 0.0]));
+        assert_eq!(f.roll, 90);
+        // Turned 270°: (u, v) came from (400 - v, u).
+        let f = unrotate(face(0.1, 0.5, 0.2, 0.3), 270);
+        assert!(close([f.x, f.y, f.w, f.h], [0.2, 0.1, 0.3, 0.2]), "{f:?}");
+        assert!(close([f.landmarks[0][0], f.landmarks[0][1], 0.0, 0.0], [0.5, 0.1, 0.0, 0.0]));
+        // Turning there and back is the identity.
+        let f = unrotate(unrotate(face(0.1, 0.5, 0.2, 0.3), 90), 270);
+        assert!(close([f.x, f.y, f.w, f.h], [0.1, 0.5, 0.2, 0.3]), "{f:?}");
+        let g = unrotate(unrotate(face(0.1, 0.5, 0.2, 0.3), 90), 180);
+        let h = unrotate(face(0.1, 0.5, 0.2, 0.3), 270);
+        assert!(close([g.x, g.y, g.w, g.h], [h.x, h.y, h.w, h.h]));
+    }
+
+    #[test]
+    fn overlap_of_boxes() {
+        assert_eq!(iou([0.0, 0.0, 1.0, 1.0], [0.0, 0.0, 1.0, 1.0]), 1.0);
+        assert_eq!(iou([0.0, 0.0, 1.0, 1.0], [2.0, 2.0, 1.0, 1.0]), 0.0);
+        assert!((iou([0.0, 0.0, 2.0, 1.0], [1.0, 0.0, 2.0, 1.0]) - 1.0 / 3.0).abs() < 1e-9);
+        assert_eq!(iou([0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]), 0.0);
     }
 
     #[test]

@@ -116,12 +116,31 @@ endpoint.
 
 ### 5c-1: did recognition work?
 
-Done on the real drive after the phase 4 hardware run, before any
-clustering:
-- `shoebox faces stats <root>`: photos looked at, errors, faces found,
-  distribution of face size and score, share of tiny faces, time taken.
-- A debug page in the UI: all faces as crops, sortable by size and score,
-  so false detections (posters, statues, background) are easy to see.
+Built (PR "Phase 5c-1"), before any clustering; the run on the real drive is
+in "Still to check on real hardware" below.
+- `shoebox faces stats <root>`: photos looked at, errors grouped by message,
+  faces found (and how many by the rotated pass), face width in the ≤1600 px
+  copy (under 30, 30–40, 40–60, 60–120, 120+ px) and score (under 0.90,
+  0.90–0.93, 0.93–0.96, 0.96–0.99, 0.99+), the share under 40 px, and the
+  last five runs with their time. Only reads: `library.db` and
+  `recognition.db` are opened read-only (a phase 4 `recognition.db` at v1
+  works as it is), nothing is created.
+- **Face check** page in the UI (sidebar, shown once there are faces;
+  `#view=faces`): all faces as crops, smallest/largest or lowest/highest
+  score first, filter "too small for clustering" (< 40 px), "large enough",
+  "found turned"; small faces have a dashed frame. Clicking a crop opens its
+  photo in the viewer, closing it goes back to the page. "≈" on a crop
+  lists its 24 nearest neighbours by embedding (cosine similarity), to see
+  where "same person" ends; read-only, nothing about clusters is stored.
+- API (handlers in `serve/faces_api.rs`, logic in `faces.rs`):
+  `GET /api/faces?sort=size|score&desc=true&min_px=&max_px=&rotated=true&offset=&limit=`
+  → `{total, faces: [{id, file, kind, version, px, score, roll, small}], min_cluster_px}`;
+  `GET /api/faces/stats` (what `faces stats` prints, as JSON);
+  `GET /api/faces/{id}/crop` (JPEG, ≤ 160 px);
+  `GET /api/faces/{id}/similar?limit=`.
+- The width of a face is measured across the face: for one the rotated
+  pass found (lying sideways in the picture) that is its box's height.
+  `faces::MIN_CLUSTER_PX` (40) and the `small` flag are what 5c-2 uses.
 - From that: the minimum face size for clustering, and the similarity
   threshold for "same person" (SFace's usual cosine threshold is about
   0.36; calibrated on our photos).
@@ -142,8 +161,31 @@ clustering:
     IoU < 0.3), so nothing is counted twice;
   - costs about two upright passes (~40 min for the family folder on the
     old Intel MacBook).
+  As built: `recognition.db` v2 adds `faces.roll` (0, 90, 270); shoebox
+  turns the ≤1600 px copy with `image`'s `rotate90`/`rotate270` and turns
+  boxes and landmarks back before storing them upright. Rotated faces are
+  checked in score order against the upright ones and against each other.
+  A new upright result for a photo (another model, `--retry-failed`) drops
+  its rotated result, which the next `--rotated` run redoes. `--rotated`
+  runs the upright pass first if anything is left; `--limit` counts per
+  pass. Ctrl-C ends it like the upright pass (job `faces-rot` marked
+  interrupted). Checked with the real worker on a photo turned 90° and
+  270°: nothing upright, one face each in the rotated pass, at the box of
+  the upright photo turned; nothing added to the upright photo.
 - Face crops: made from the original under the guard, cached in
-  `thumbs.db` keyed by face.
+  `thumbs.db` keyed by face. As built: `thumbs.db` v3 adds `thumbs.faces`
+  (key + box → JPEG or error); a square around the face with 25% room,
+  turned upright for rotated faces, ≤ 160 px. All crops of a photo come
+  from one decode at 1600 px; a photo that changed since the last scan
+  gets none and nothing is stored. The scan's thumbnail pass prunes crops
+  of content that is gone.
+- Tests (`core/tests/recognize.rs`): `--rotated` under the guard (a face
+  found only turned, put back at the right box, nothing counted twice,
+  resumable, redone after a new upright result), Ctrl-C during the rotated
+  pass, `faces stats` (counts, buckets, read-only, v1 database), the face
+  check API under the guard (list, sort, filter, crops cached and turned
+  upright, neighbours, changed files). The fake worker has two new cues
+  for this (a cyan or yellow edge, see its header).
 
 ### 5c-2: people, groups, clustering (backend)
 
@@ -294,6 +336,20 @@ Folders
       with the file selected; the iPad only offers "copy path".
 - [ ] 5b: tag a few hundred photos at once on the exFAT drive; tags survive
       a move, a rescan, trash and restore.
-- [ ] 5c-1: `shoebox faces stats` on the drive; pick the thresholds.
+- [ ] 5c-1: on the old Intel MacBook against the exFAT drive:
+  - `shoebox faces stats /Volumes/Fotos`: do the numbers match the phase 4
+    run (9564 faces, 48 failures before `--retry-failed`, ~5% under
+    40 px)? Note the width and score buckets here.
+  - `shoebox serve`, "Face check": go through the smallest faces and the
+    lowest scores; how many false faces (posters, statues, background),
+    and are there any above 40 px? Open a few in the viewer. Try "≈" on
+    faces of people you know: up to which similarity are the neighbours
+    the same person (for 5c-2's threshold)? Crops of HEIC and EXIF-rotated
+    photos upright?
+  - Time `shoebox recognize /Volumes/Fotos --rotated` (family folder;
+    expected ~40 min, about two upright passes); interrupt once with
+    Ctrl-C and continue. How many faces were added, and are they people
+    lying down (filter "found turned")?
+  - `shoebox verify` afterwards.
 - [ ] 5c-2: clustering time over all faces on the old Intel MacBook.
 - [ ] 5c-3: naming and correcting from the iPad.

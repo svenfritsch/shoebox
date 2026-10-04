@@ -133,7 +133,8 @@ Any code path that reads originals is tested by snapshotting size, mtime,
 created and full hash before and after, and failing on any difference.
 `shoebox probe` does this at runtime; `core/tests/scan.rs` does it for
 `scan` and `verify`, `core/tests/serve.rs` for thumbnails and every
-endpoint of `serve`. Explicit changes (move, rename, trash, import) are
+endpoint of `serve`, `core/tests/recognize.rs` for `recognize` (both
+passes) and the face crops. Explicit changes (move, rename, trash, import) are
 covered by `core/tests/organize.rs`: every file keeps content, size and
 timestamps, only its path changes, nothing is replaced, and a scan and
 `verify` afterwards find the index in line with the drive.
@@ -178,7 +179,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 4 | Worker protocol + Python recognizer (faces), worker supervision in Rust | **Done except the real-hardware run** (see below) |
 | 5a | Show in Finder / Explorer, copy path | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5b | Own tags (add/remove, many photos at once, search), user data backup | Next |
-| 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | After 5b |
+| 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **5c-1 done except the real-hardware run** (see [phase5.md](phase5.md)); 5c-2 after 5b |
 | 6 | Pets | |
 | 7 | Backup verification, launchers, packaging | |
 
@@ -314,8 +315,9 @@ Open:
 - [x] 5a: show in Finder / Explorer, copy path ([phase5.md](phase5.md)); the
       real-hardware check is in its list.
 - [ ] 5b: own tags, trash keeps them, user data backup.
-- [ ] 5c-1: `shoebox faces stats` and face debug page; thresholds from the
-      real drive.
+- [x] 5c-1: `shoebox faces stats`, face check page (crops in `thumbs.db`
+      v3, nearest neighbours), `shoebox recognize --rotated`
+      (`recognition.db` v2); the real-hardware check is in its list.
 - [ ] 5c-2: people, groups (one per person), face decisions, clustering.
 - [ ] 5c-3: Faces in the sidebar, people in the info panel, corrections.
 
@@ -381,6 +383,12 @@ Open:
   gets 4.10.0.84, the newest release with a `macosx_12_0_x86_64` wheel.
 - **Python prints to stdout.** `recognizer.py` keeps the real stdout for the
   protocol and points `sys.stdout` at stderr; the core skips stray lines.
+- **Migrations must tolerate a re-run.** Tests simulate an older database
+  by lowering `user_version` on a current one, so a step that creates a
+  table uses `CREATE TABLE IF NOT EXISTS` (thumbs.db v3).
+- **Turned copies and face sizes.** The rotated pass stores boxes upright;
+  a face it found lies sideways, so its width (for the 40 px threshold) is
+  the box's height (`faces.rs`, `size_px`).
 - **Git push** uses SSH via the 1Password agent with the "GitHub" key pinned
   in this repo's `core.sshCommand` (the keychain's HTTPS login belongs to a
   different account, `svenfritschpeers`).
@@ -389,5 +397,7 @@ Open:
 
 Run the phase 0–4 hardware checklists on the old Intel MacBook and the iPad
 (phase 4: `recognizer/install.sh` and a `shoebox recognize` run on the
-drive). 5a (reveal) is done; next is 5b
-(own tags), then 5c-1 with the results of the phase 4 run.
+drive). 5a (reveal) and 5c-1 (face check, `--rotated`) are built; on the
+drive run `shoebox faces stats`, look through the face check page and time
+`shoebox recognize --rotated` (list in [phase5.md](phase5.md)). Next is 5b
+(own tags), then 5c-2.

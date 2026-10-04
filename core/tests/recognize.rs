@@ -30,6 +30,7 @@ fn options(lib: &Library) -> recognize::Options {
         recognizer: Some(PathBuf::from(FAKE)),
         limit: None,
         retry_failed: false,
+        rotated: false,
         timeouts: quick(),
     }
 }
@@ -56,6 +57,14 @@ fn solid(lib: &Library, rel: &str, rgb: [u8; 3]) {
     let p = lib.path(rel);
     std::fs::create_dir_all(p.parent().unwrap()).unwrap();
     image::RgbImage::from_pixel(200, 100, image::Rgb(rgb)).save(p).unwrap();
+}
+
+/// A grey picture whose left part is `rgb`: a cue for the fake worker that
+/// only shows when the picture is turned (see its header).
+fn edged(lib: &Library, rel: &str, rgb: [u8; 3]) {
+    let p = lib.path(rel);
+    std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+    image::RgbImage::from_fn(300, 300, |x, _| image::Rgb(if x < 90 { rgb } else { [128, 128, 128] })).save(p).unwrap();
 }
 
 /// (found, error) stored for the file at an NFC path.
@@ -146,26 +155,48 @@ fn files_named_after_another_format_are_read_by_content() {
 #[cfg(unix)]
 #[test]
 fn ctrl_c_ends_the_run_and_frees_the_next_one() {
+    let lib = empty("recog-ctrl-c");
+    solid(&lib, "a/hangs.png", [0, 0, 255]); // the fake worker never answers
+    lib.scan();
+    interrupt_run(&lib, &[], "Faces:", "faces");
+}
+
+/// The same for the rotated pass: the upright result is kept, the rotated
+/// job is marked interrupted.
+#[cfg(unix)]
+#[test]
+fn ctrl_c_ends_the_rotated_pass_too() {
+    let lib = empty("recog-ctrl-c-rot");
+    edged(&lib, "a/hangs-turned.jpg", [255, 255, 0]); // answered upright, hangs once turned
+    lib.scan();
+    interrupt_run(&lib, &["--rotated"], "Faces, turned", "faces-rot");
+    assert_eq!(looked(&lib, "a/hangs-turned.jpg"), Some((1, None)));
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.looked WHERE task = 'faces-rot'"), 0);
+}
+
+/// Start `shoebox recognize` with `args`, wait for the line starting with
+/// `started`, press Ctrl-C and check the run ended cleanly with its `job`
+/// marked interrupted.
+#[cfg(unix)]
+fn interrupt_run(lib: &Library, args: &[&str], started: &str, job: &str) {
     use std::io::{BufRead, BufReader};
     use std::process::{Command, Stdio};
     use std::time::Instant;
 
-    let lib = empty("recog-ctrl-c");
-    solid(&lib, "a/hangs.png", [0, 0, 255]); // the fake worker never answers
-    lib.scan();
     let mut child = Command::new(env!("CARGO_BIN_EXE_shoebox"))
         .arg("recognize")
         .arg(&lib.root)
         .arg("--recognizer")
         .arg(FAKE)
+        .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
     let mut out = BufReader::new(child.stdout.take().unwrap()).lines();
-    assert!(out.any(|l| l.unwrap().starts_with("Faces:")), "the run did not start");
+    assert!(out.any(|l| l.unwrap().starts_with(started)), "the run did not start");
     std::thread::sleep(Duration::from_millis(500));
-    assert!(recognize::running(&conn(&lib)).unwrap());
+    assert!(recognize::running(&conn(lib)).unwrap());
 
     // SAFETY: plain kill(2) on our own child.
     unsafe { libc::kill(child.id() as libc::pid_t, libc::SIGINT) };
@@ -181,8 +212,13 @@ fn ctrl_c_ends_the_run_and_frees_the_next_one() {
     std::io::Read::read_to_string(&mut child.stderr.take().unwrap(), &mut err).unwrap();
     assert!(!status.success());
     assert!(err.contains("interrupted"), "{err}");
-    assert!(!recognize::running(&conn(&lib)).unwrap());
-    assert_eq!(count(&lib, "SELECT count(*) FROM recog.jobs WHERE state = 'interrupted'"), 1);
+    assert!(!recognize::running(&conn(lib)).unwrap());
+    let interrupted = conn(lib)
+        .query_row("SELECT count(*) FROM recog.jobs WHERE state = 'interrupted' AND kind = ?1", [job], |r| {
+            r.get::<_, i64>(0)
+        })
+        .unwrap();
+    assert_eq!(interrupted, 1);
 }
 
 #[test]
@@ -366,11 +402,14 @@ fn real_recognizer_runs_under_the_guard() {
     let lib = Library::new("recog-real");
     if let Some(face) = std::env::var_os("SHOEBOX_TEST_FACE") {
         std::fs::copy(Path::new(&face), lib.path("Familie/face.jpg")).unwrap();
+        // The same face lying down, for the rotated pass.
+        image::open(Path::new(&face)).unwrap().rotate90().save(lib.path("Familie/face-lying.jpg")).unwrap();
     }
     lib.scan();
     let before = lib.snapshot();
     let opts = recognize::Options {
         recognizer: Some(PathBuf::from(real)),
+        rotated: true,
         timeouts: Timeouts::default(),
         ..options(&lib)
     };
@@ -378,7 +417,236 @@ fn real_recognizer_runs_under_the_guard() {
     assert_eq!(lib.snapshot(), before);
     assert_eq!(stats.failed, 0, "{:?}", stats.errors);
     assert!(stats.looked >= 6);
+    let rotated = stats.rotated.unwrap();
+    assert_eq!((rotated.looked, rotated.failed), (stats.looked, 0), "{:?}", rotated.errors);
     if std::env::var_os("SHOEBOX_TEST_FACE").is_some() {
         assert!(looked(&lib, "Familie/face.jpg").unwrap().0 >= 1);
+        let faces = |path: &str, rolled: bool| -> i64 {
+            conn(&lib)
+                .query_row(
+                    "SELECT count(*) FROM recog.faces r JOIN files f ON f.quick_hash = r.key
+                     WHERE f.path_nfc = ?1 AND (r.roll != 0) = ?2",
+                    rusqlite::params![path, rolled],
+                    |r| r.get(0),
+                )
+                .unwrap()
+        };
+        // The upright face is not added again from the turned copies; the
+        // lying one is found (by the rotated pass: YuNet misses it upright).
+        assert_eq!(faces("Familie/face.jpg", true), 0);
+        assert!(faces("Familie/face-lying.jpg", false) + faces("Familie/face-lying.jpg", true) >= 1);
     }
+}
+
+/// `--rotated` looks at every photo again, turned 90° and 270°, under the
+/// guard: a face only visible turned is added (put back upright), faces the
+/// upright pass found are not counted twice, and the pass resumes and is
+/// redone when the upright result changes.
+#[test]
+fn rotated_pass_adds_lying_faces_under_the_guard() {
+    let lib = Library::new("recog-rotated");
+    edged(&lib, "Tests/lying.jpg", [0, 255, 255]); // a face only when turned 90° clockwise
+    lib.scan();
+    let before = lib.snapshot();
+    let photos = lib.count("SELECT count(DISTINCT quick_hash) FROM files WHERE kind IN ('jpeg', 'png', 'heic')");
+
+    // Without --rotated, only the upright pass.
+    let upright = recognize::run(&options(&lib)).unwrap();
+    assert!(upright.rotated.is_none());
+    assert_eq!(looked(&lib, "Tests/lying.jpg"), Some((0, None)));
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.looked WHERE task = 'faces-rot'"), 0);
+
+    let stats = recognize::run(&recognize::Options { rotated: true, ..options(&lib) }).unwrap();
+    assert_eq!(lib.snapshot(), before, "the rotated pass changed an original");
+    assert_eq!(stats.looked, 0, "the upright pass had nothing left to do");
+    let rotated = stats.rotated.unwrap();
+    assert_eq!((rotated.looked as i64, rotated.failed, rotated.faces), (photos, 0, 1), "{:?}", rotated.errors);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.looked WHERE task = 'faces-rot'"), photos);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.jobs WHERE kind = 'faces-rot' AND state = 'done'"), 1);
+
+    // The face, turned back: (0.1, 0.5, 0.2, 0.3) in the copy turned 90°
+    // clockwise is (0.5, 0.7, 0.3, 0.2) upright.
+    let (x, y, w, h, roll, landmarks): (f64, f64, f64, f64, i64, String) = conn(&lib)
+        .query_row("SELECT x, y, w, h, roll, landmarks FROM recog.faces WHERE roll != 0", [], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
+        })
+        .unwrap();
+    let near = |a: f64, b: f64| (a - b).abs() < 0.01;
+    assert!(near(x, 0.5) && near(y, 0.7) && near(w, 0.3) && near(h, 0.2), "{x} {y} {w} {h}");
+    assert_eq!(roll, 90);
+    let first: Vec<[f64; 2]> = serde_json::from_str(&landmarks).unwrap();
+    assert!(near(first[0][0], 0.5) && near(first[0][1], 0.9), "{first:?}");
+    // Every other photo's face was found upright, so nothing is added there.
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces"), upright.faces as i64 + 1);
+    assert_eq!(count(&lib, "SELECT sum(found) FROM recog.looked WHERE task = 'faces-rot'"), 1);
+
+    // Resumable: nothing left to do.
+    let again = recognize::run(&recognize::Options { rotated: true, ..options(&lib) }).unwrap();
+    assert_eq!((again.looked, again.rotated.unwrap().looked), (0, 0));
+
+    // A new upright result (another model) drops the rotated one, which is
+    // then redone: still one added face, none twice.
+    conn(&lib).execute("UPDATE recog.looked SET model = 'old' WHERE task = 'faces'", []).unwrap();
+    let redo = recognize::run(&recognize::Options { rotated: true, ..options(&lib) }).unwrap();
+    assert_eq!(redo.looked as i64, photos);
+    assert_eq!((redo.rotated.as_ref().unwrap().looked as i64, redo.rotated.unwrap().faces), (photos, 1));
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE roll != 0"), 1);
+    assert_eq!(lib.snapshot(), before);
+    assert!(lib.verify(false).is_clean());
+}
+
+/// `shoebox faces stats`: counts, failures by message, widths in the copy,
+/// tiny faces; read-only, and fine with a `recognition.db` of phase 4 (v1).
+#[test]
+fn faces_stats_tell_how_recognition_went() {
+    let lib = empty("recog-stats");
+    // The fake's face is half as wide as the picture.
+    solid(&lib, "a/big.jpg", [90, 120, 30]); // 200 px wide: 100 px
+    for (name, w, rgb) in [("tiny", 40u32, [30u8, 90u8, 120u8]), ("small", 70, [120, 30, 90]), ("mid", 100, [60, 60, 140])] {
+        image::RgbImage::from_pixel(w, w, image::Rgb(rgb)).save(lib.path(&format!("a/{name}.png"))).unwrap();
+    }
+    solid(&lib, "a/dark.jpg", [0, 0, 0]);
+    solid(&lib, "a/error.jpg", [0, 255, 0]);
+    solid(&lib, "a/error2.jpg", [0, 250, 0]);
+    lib.scan_opts(true, false, false);
+
+    let shoebox = || {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_shoebox")).args(["faces", "stats"]).arg(&lib.root).output().unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8(out.stdout).unwrap()
+    };
+    assert!(shoebox().contains("No faces yet"));
+    assert!(!lib.path(".shoebox/recognition.db").exists(), "stats created recognition.db");
+
+    recognize::run(&options(&lib)).unwrap();
+    let recog_db = lib.path(".shoebox/recognition.db");
+    let stamp = shoebox::fingerprint::stamp(&recog_db).unwrap();
+    let hash = shoebox::fingerprint::full_hash(&recog_db).unwrap();
+
+    let check = |s: &shoebox::faces::Stats| {
+        assert_eq!((s.photos, s.looked, s.failed), (7, 7, 2));
+        assert_eq!(s.errors.len(), 1);
+        assert_eq!((s.errors[0].message.as_str(), s.errors[0].count), ("fake: cannot handle green", 2));
+        assert_eq!(s.faces, 4);
+        // under 30 | 30–40 | 40–60 | 60–120 | 120+
+        assert_eq!(s.widths.iter().map(|b| b.count).collect::<Vec<_>>(), [1, 1, 1, 1, 0]);
+        assert_eq!(s.small, 2);
+        assert_eq!(s.scores.last().unwrap().count, 4);
+        assert_eq!(s.runs[0].kind, "faces");
+        assert_eq!(s.runs[0].state, "done");
+    };
+    let conn = shoebox::faces::open_readonly(&lib.root, None).unwrap().unwrap();
+    check(&shoebox::faces::stats(&conn).unwrap());
+    assert!(conn.execute("DELETE FROM recog.faces", []).is_err(), "the connection is not read-only");
+    drop(conn);
+    let text = shoebox();
+    assert!(text.contains("Photos:  7 looked at of 7"), "{text}");
+    assert!(text.contains("     2  fake: cannot handle green"), "{text}");
+    assert!(text.contains("Under 40 px (listed, too small for clustering): 2 (50.0%)"), "{text}");
+    assert!(text.contains("Last runs:"), "{text}");
+    assert_eq!(shoebox::fingerprint::stamp(&recog_db).unwrap(), stamp, "stats wrote to recognition.db");
+    assert_eq!(shoebox::fingerprint::full_hash(&recog_db).unwrap(), hash);
+
+    // As phase 4 left it: schema v1, no `roll`.
+    let old = Connection::open(&recog_db).unwrap();
+    old.execute_batch("ALTER TABLE faces DROP COLUMN roll; PRAGMA user_version = 1;").unwrap();
+    drop(old);
+    let conn = shoebox::faces::open_readonly(&lib.root, None).unwrap().unwrap();
+    check(&shoebox::faces::stats(&conn).unwrap());
+}
+
+/// The face check page's API: list, sort, filter, crops (made under the
+/// guard, cached in thumbs.db, rotated faces turned upright), neighbours.
+#[test]
+fn serve_face_check_page_under_the_guard() {
+    let lib = Library::new("recog-face-page");
+    edged(&lib, "Tests/lying.jpg", [0, 255, 255]);
+    // A red band left of the lying face (upright x 0.5–0.8, y 0.7–0.9): the
+    // top of the face when it is turned upright.
+    let mut lying = image::open(lib.path("Tests/lying.jpg")).unwrap().to_rgb8();
+    for (x, y, p) in lying.enumerate_pixels_mut() {
+        if (100..160).contains(&x) && y >= 150 {
+            *p = image::Rgb([220, 0, 0]);
+        }
+    }
+    lying.save(lib.path("Tests/lying.jpg")).unwrap();
+    image::RgbImage::from_pixel(60, 60, image::Rgb([30, 90, 120])).save(lib.path("Tests/tiny.png")).unwrap();
+    solid(&lib, "Tests/same1.jpg", [200, 150, 120]);
+    solid(&lib, "Tests/same2.jpg", [200, 150, 120]);
+    std::fs::write(lib.path("Tests/same2.jpg"), [std::fs::read(lib.path("Tests/same2.jpg")).unwrap(), vec![0]].concat())
+        .unwrap(); // other bytes, same picture
+    lib.scan();
+    let stats = recognize::run(&recognize::Options { rotated: true, ..options(&lib) }).unwrap();
+    let total = stats.faces + stats.rotated.unwrap().faces;
+    let before = lib.snapshot();
+    let server = start(&lib, None);
+    let addr = server.addr;
+
+    let list = get(addr, "/api/faces?limit=1000").json();
+    assert_eq!(list["total"], total);
+    assert_eq!(list["min_cluster_px"], 40.0);
+    let faces = list["faces"].as_array().unwrap().clone();
+    assert_eq!(faces.len() as u64, total);
+    // Smallest first by default; the 60 px picture's face is 30 px, too
+    // small (like the 64 px screenshot's).
+    assert_eq!(faces[0]["px"], 30.0);
+    assert_eq!(faces[0]["small"], true);
+    assert_eq!(faces.iter().filter(|f| f["small"] == true).count(), 2);
+    let px: Vec<f64> = faces.iter().map(|f| f["px"].as_f64().unwrap()).collect();
+    assert!(px.windows(2).all(|w| w[0] <= w[1]));
+    // The lying face is measured across the face: its box is 0.2 of 300 px
+    // high (and 0.3 wide).
+    let lying = faces.iter().find(|f| f["roll"] == 90).unwrap();
+    assert!((lying["px"].as_f64().unwrap() - 60.0).abs() < 0.5, "{lying}");
+    assert_eq!(lying["file"], id_of(&lib, "Tests/lying.jpg"));
+
+    let small = get(addr, "/api/faces?max_px=40").json();
+    assert_eq!(small["total"], 2);
+    let big = get(addr, "/api/faces?min_px=40&sort=score&desc=true&limit=2&offset=1").json();
+    assert_eq!(big["total"], total - 2);
+    assert_eq!(big["faces"].as_array().unwrap().len(), 2);
+    assert_eq!(get(addr, "/api/faces?rotated=true").json()["total"], 1);
+    assert_eq!(get(addr, "/api/faces?offset=100000").json()["total"], total);
+    let summary = get(addr, "/api/faces/stats").json();
+    assert_eq!(summary["faces"], total);
+    assert_eq!(summary["rotated_faces"], 1);
+
+    // Crops: made from the original, stored, then served from thumbs.db.
+    for f in &faces {
+        let crop = get(addr, &format!("/api/faces/{}/crop", f["id"]));
+        assert_eq!(crop.status, 200, "{f}");
+        assert_eq!(crop.header("content-type"), Some("image/jpeg"));
+        let img = image::load_from_memory(&crop.body).unwrap();
+        assert!(img.width() <= shoebox::faces::CROP_EDGE && img.height() <= shoebox::faces::CROP_EDGE);
+    }
+    let thumbs = Connection::open(lib.path(".shoebox/thumbs.db")).unwrap();
+    let stored: i64 = thumbs.query_row("SELECT count(*) FROM faces WHERE jpeg IS NOT NULL", [], |r| r.get(0)).unwrap();
+    assert_eq!(stored as u64, total);
+    assert_eq!(get(addr, "/api/faces/999999/crop").status, 404);
+    // The lying face is turned upright: the band is on top of its crop.
+    let crop = image::load_from_memory(&get(addr, &format!("/api/faces/{}/crop", lying["id"])).body).unwrap().to_rgb8();
+    let (top, bottom) = (crop.get_pixel(crop.width() / 2, 1), crop.get_pixel(crop.width() / 2, crop.height() - 2));
+    assert!(top[0] > 180 && top[1] < 60 && top[2] < 60, "{top:?}");
+    assert!(bottom[0] < 160 && bottom[1] > 100, "{bottom:?}");
+
+    // Neighbours: the same picture in another file is the closest.
+    let same1 = faces.iter().find(|f| f["file"] == id_of(&lib, "Tests/same1.jpg")).unwrap();
+    let near = get(addr, &format!("/api/faces/{}/similar?limit=3", same1["id"])).json();
+    let near = near.as_array().unwrap();
+    assert_eq!(near.len(), 3);
+    assert_eq!(near[0]["file"], id_of(&lib, "Tests/same2.jpg"));
+    assert!((near[0]["similarity"].as_f64().unwrap() - 1.0).abs() < 1e-3);
+    assert!(near.iter().all(|n| n["id"] != same1["id"]));
+    assert!(near.windows(2).all(|w| w[0]["similarity"].as_f64() >= w[1]["similarity"].as_f64()));
+    assert_eq!(get(addr, "/api/faces/999999/similar").status, 404);
+    assert_eq!(lib.snapshot(), before, "the face page changed an original");
+
+    // A photo that changed since the last scan gets no crop, and nothing is stored.
+    thumbs.execute("DELETE FROM faces", []).unwrap();
+    let path = lib.path("Tests/same1.jpg");
+    set_mtime(&path, shoebox::fingerprint::stamp(&path).unwrap().mtime_ns + 1_000_000_000);
+    assert_eq!(get(addr, &format!("/api/faces/{}/crop", same1["id"])).status, 404);
+    let stored: i64 = thumbs.query_row("SELECT count(*) FROM faces", [], |r| r.get(0)).unwrap();
+    assert_eq!(stored, 0);
+    server.stop().unwrap();
 }

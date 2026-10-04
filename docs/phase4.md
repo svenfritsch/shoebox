@@ -79,7 +79,9 @@ Failed photos are not tried again unless `--retry-failed` is given.
 `shoebox-fake-recognizer` (`core/src/bin/`) speaks the protocol without
 Python: one face in the middle of every picture, an embedding from its mean
 colour, and misbehaviour on cue (solid red: crash, green: error, blue: hang,
-magenta: garbage, black: no faces). The integration tests
+magenta: garbage, black: no faces), plus a cyan or yellow edge for the
+rotated pass of 5c-1 (a face only when turned, a hang only when turned).
+The integration tests
 (`core/tests/recognize.rs`) use it for the guard, the supervision table
 above, limits, model changes, pruning and the web API. With
 `SHOEBOX_RECOGNIZER` pointing at `recognizer/recognizer.py`,
@@ -101,6 +103,9 @@ SHOEBOX_TEST_FACE=face.jpg python3 -m unittest -v recognizer/test_recognizer.py
   five landmarks as fractions of the upright photo, YuNet's score, and the
   SFace embedding (128 little-endian f32, L2-normalised: cosine similarity
   is the dot product).
+- v2 (phase 5c-1) adds `faces.roll`: 0, or 90/270 for faces found by
+  `shoebox recognize --rotated` (task `faces-rot` in `looked` and `jobs`),
+  stored upright like the others.
 
 ## API additions
 
