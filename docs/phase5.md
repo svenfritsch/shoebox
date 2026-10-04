@@ -82,6 +82,12 @@ Done (PR "Phase 5-A"). Scope as agreed:
   refuses non-local clients (a LAN device logged in with the PIN) and unknown
   or vanished files, needs the header, and the guard still holds. The command
   lines per OS are unit tests in `reveal.rs`.
+- **Refinement, to be done in the 5c-2 PR:** the "Copy path" button in the
+  info panel gets a `title` with the path it copies (the path within the
+  library, as `copyPath` copies it), so hovering shows what will land on
+  the clipboard. Where: `infoReveal` in `app.js` (`copy.title = info.path`).
+  The right-click menu's "Copy path" has no element of its own to hover
+  (`showMenu` items), so it stays as it is unless the menu gets titles too.
 
 ## 5b: own tags
 
@@ -215,6 +221,9 @@ in "Still to check on real hardware" below.
   for this (a cyan or yellow edge, see its header).
 
 ### 5c-2: people, groups, clustering (backend)
+
+Also in this PR: the 5a refinement (a `title` with the path on "Copy
+path", see 5a above).
 
 Schema v4 in `library.db`:
 
