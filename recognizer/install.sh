@@ -38,7 +38,7 @@ URL="https://github.com/astral-sh/python-build-standalone/releases/download/$PBS
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-echo "Python $PY for $PLATFORM…"
+echo "Python $PY for ${PLATFORM}…"
 curl -fsSL -o "$TMP/python.tar.gz" "$URL"
 tar -xzf "$TMP/python.tar.gz" -C "$TMP"
 PYTHON="$TMP/python/bin/python3"
@@ -50,7 +50,7 @@ echo "OpenCV and numpy…"
 echo "Models…"
 "$HERE/fetch-models.sh" "$TMP/models"
 
-echo "Copying to $DEST…"
+echo "Copying to ${DEST}…"
 mkdir -p "$DEST/runtime"
 rm -rf "$DEST/runtime/$PLATFORM"
 # Only what running recognizer.py needs: copies of symlinks would double the
