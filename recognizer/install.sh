@@ -44,7 +44,11 @@ tar -xzf "$TMP/python.tar.gz" -C "$TMP"
 PYTHON="$TMP/python/bin/python3"
 
 echo "OpenCV and numpy…"
-"$PYTHON" -m pip install --quiet --no-cache-dir --disable-pip-version-check opencv-python-headless numpy
+# Ready-made wheels only: pip then takes the newest release built for this
+# macOS (OpenCV 4.11+ needs macOS 13 on Intel, so macOS 12 gets 4.10) instead
+# of compiling OpenCV from source, which takes hours and usually fails.
+"$PYTHON" -m pip install --no-cache-dir --disable-pip-version-check --progress-bar on \
+    --only-binary :all: opencv-python-headless numpy
 "$PYTHON" -c 'import cv2, numpy; print("  OpenCV", cv2.__version__, "numpy", numpy.__version__)'
 
 echo "Models…"

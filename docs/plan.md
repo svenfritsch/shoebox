@@ -369,6 +369,10 @@ Open:
   `cp -RL`, keeping only `bin/python3`. Use the `install_only_stripped`
   archives: the plain ones carry ~250 MB of debug info, and GNU `strip`
   breaks their binaries.
+- **OpenCV wheels and old macOS.** OpenCV 4.11+ has Intel macOS wheels for
+  macOS 13+ only; without a wheel pip compiles OpenCV from source (hours,
+  usually fails). `install.sh` passes `--only-binary :all:`, so macOS 12
+  gets 4.10.0.84, the newest release with a `macosx_12_0_x86_64` wheel.
 - **Python prints to stdout.** `recognizer.py` keeps the real stdout for the
   protocol and points `sys.stdout` at stderr; the core skips stray lines.
 - **Git push** uses SSH via the 1Password agent with the "GitHub" key pinned
