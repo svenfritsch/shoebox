@@ -179,7 +179,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 4 | Worker protocol + Python recognizer (faces), worker supervision in Rust | **Done except the real-hardware run** (see below) |
 | 5a | Show in Finder / Explorer, copy path | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5b | Own tags (add/remove, many photos at once, search), user data backup | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **5c-1 done except the real-hardware run** (see [phase5.md](phase5.md)); 5c-2 next |
+| 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **5c-1 done**, checked on the real drive (see [phase5.md](phase5.md)); 5c-2 next |
 | 6 | Pets | |
 | 7 | Backup verification, launchers, packaging | |
 
