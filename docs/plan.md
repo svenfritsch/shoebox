@@ -271,7 +271,9 @@ Done (see [phase3.md](phase3.md)):
 - Self-healing paths: `serve` runs the scan's index step in the background
   when a file is not where the index says.
 - UI: selection with move/trash, import dialog with drag and drop, folder
-  rename, duplicates and trash pages. Every non-GET request needs an
+  rename, duplicates and trash pages. Added later: Shift-click selects a
+  range, "Select all" on a month heading selects the month (the iPad has no
+  Shift). Every non-GET request needs an
   `X-Shoebox` header (CSRF protection for localhost without PIN).
 
 Open:
@@ -402,6 +404,7 @@ Open:
 ## Next step
 
 Run the phase 0–4 hardware checklists on the old Intel MacBook and the iPad
+(all iPad checks are collected in [ipad-checklist.md](ipad-checklist.md))
 (phase 4: `recognizer/install.sh` and a `shoebox recognize` run on the
 drive). 5a (reveal), 5b (own tags) and 5c-1 (face check, `--rotated`) are
 built; on the drive run `shoebox faces stats`, look through the face check
