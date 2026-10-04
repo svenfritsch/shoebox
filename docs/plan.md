@@ -176,7 +176,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 2 | `thumbs.db` + perceptual hash, web UI (virtualised timeline grid, folder tree, tag search, video playback), LAN access with PIN. `shoebox serve` | **Done except the real-hardware run** (see below) |
 | 3 | Import dialog, move (with RAW pairs, case-only renames), duplicates UI, self-healing paths | **Done except the real-hardware run** (see below) |
 | 4 | Worker protocol + Python recognizer (faces), worker supervision in Rust | **Done except the real-hardware run** (see below) |
-| 5a | Show in Finder / Explorer, copy path | **In progress** (separate chat) |
+| 5a | Show in Finder / Explorer, copy path | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5b | Own tags (add/remove, many photos at once, search), user data backup | Next |
 | 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | After 5b |
 | 6 | Pets | |
@@ -311,7 +311,8 @@ that order, with the conflict hot spots (info panel in `app.js`, route list,
 schema versions v3 for 5b and v4 for 5c-2) listed there.
 
 Open:
-- [ ] 5a: show in Finder / Explorer, copy path.
+- [x] 5a: show in Finder / Explorer, copy path ([phase5.md](phase5.md)); the
+      real-hardware check is in its list.
 - [ ] 5b: own tags, trash keeps them, user data backup.
 - [ ] 5c-1: `shoebox faces stats` and face debug page; thresholds from the
       real drive.
@@ -383,5 +384,5 @@ Open:
 
 Run the phase 0–4 hardware checklists on the old Intel MacBook and the iPad
 (phase 4: `recognizer/install.sh` and a `shoebox recognize` run on the
-drive). Meanwhile 5a (reveal) is under way in a separate chat; next is 5b
+drive). 5a (reveal) is done; next is 5b
 (own tags), then 5c-1 with the results of the phase 4 run.

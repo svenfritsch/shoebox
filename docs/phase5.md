@@ -49,22 +49,39 @@ Conflict hot spots and how to avoid them:
 
 ## 5a: show in Finder / Explorer
 
-Being worked on in a separate chat. Agreed scope:
+Done (PR "Phase 5-A"). Scope as agreed:
 
-- `POST /api/files/{id}/reveal`: path from the index only (never from the
-  request), command started without a shell:
-  - macOS: `open -R <path>` (Finder, file selected)
+- `POST /api/files/{id}/reveal` → `{ok, app}`: path from the index only (never
+  from the request; query and body are ignored), command started without a
+  shell, output discarded:
+  - macOS: `open -R -- <path>` (Finder, file selected)
   - Windows: `explorer.exe /select,<path>` (once there is a Windows build)
   - Linux: `xdg-open <folder>`
-- The OS is known at compile time (`cfg!(target_os)`); `/api/info` tells the
-  UI the label ("Show in Finder" / "Show in Explorer" / "Open folder") and
-  whether reveal is possible for this client (localhost only).
-- "Copy path" works everywhere, including the iPad.
-- Where: right-click menu on a grid cell and a button in the info panel.
-- Touches no original. Finder may write a `.DS_Store` into the folder,
-  which the scanner already skips.
-- Test: the endpoint refuses non-local clients and unknown ids; the guard
-  still holds; the command itself is replaced by a stub in tests.
+  `403` unless the request comes from this computer (loopback peer and a
+  `localhost` or IP `Host`, the same test that skips the PIN), `404` for
+  unknown ids and files that are not on the drive, `500` with the reason if
+  the command cannot start. Needs the `X-Shoebox` header like every
+  non-GET request.
+- The OS is known at compile time (`cfg!(target_os)`; `core/src/reveal.rs`).
+  `/api/info` has `reveal`: the label ("Show in Finder" / "Show in Explorer" /
+  "Open folder") for requests from this computer, `null` for everyone else, so
+  the button is hidden over the LAN.
+- "Copy path" works everywhere, including the iPad: it copies the path within
+  the library (as shown in the info panel), not the absolute path on the
+  shoebox computer. Without https `navigator.clipboard` does not exist (an
+  iPad opening `http://<ip>:7878/`), so the UI falls back to a selected text
+  field and `execCommand('copy')`, and shows the path in a dialog if that
+  fails too.
+- Where: right-click menu on a grid cell and the info panel. The panel part is
+  its own function, `infoReveal` in `app.js`, called with one line where the
+  panel is built (see conflict hot spots).
+- Touches no original. Finder may write a `.DS_Store` into the folder, which
+  the scanner already skips.
+- Test (`core/tests/serve.rs`): the command is replaced by a recorder
+  (`serve::Options::reveal`); the endpoint passes exactly the indexed path,
+  refuses non-local clients (a LAN device logged in with the PIN) and unknown
+  or vanished files, needs the header, and the guard still holds. The command
+  lines per OS are unit tests in `reveal.rs`.
 
 ## 5b: own tags
 

@@ -179,6 +179,14 @@ body.selecting #select { color: var(--accent); }
   background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 10px; font-size: 14px;
 }
 
+.menu {
+  position: fixed; z-index: 50; min-width: 180px; padding: 4px;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.25);
+}
+.menu button { display: block; width: 100%; text-align: left; padding: 7px 12px; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; }
+.menu button:hover, .menu button:focus { background: var(--accent); color: #fff; outline: none; }
+
 .page { padding: 14px 16px 80px; }
 .page h2 { font-size: 20px; margin: 0 0 4px; }
 .page .sub { color: var(--muted); margin: 0 0 16px; font-size: 14px; }

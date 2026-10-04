@@ -16,6 +16,11 @@
 //! (like every non-GET request), which a web page on another origin cannot
 //! send without a CORS preflight that this server never grants.
 //!
+//! "Show in Finder / Explorer" (`POST /api/files/{id}/reveal`) asks this
+//! computer to open its file manager. It only works for requests from this
+//! machine, takes the path from the index (never from the request), and runs
+//! the command without a shell (see `reveal.rs`).
+//!
 //! Self-healing paths: when a file is not where the index says (moved in the
 //! Finder while shoebox runs), the server runs the scan's index step in the
 //! background, which finds it again by its hashes.
@@ -52,6 +57,7 @@ use crate::import;
 use crate::media;
 use crate::organize;
 use crate::recognize;
+use crate::reveal;
 use crate::scan;
 use crate::thumbs::{self, Source};
 
@@ -69,6 +75,9 @@ const HEAL_INTERVAL: Duration = Duration::from_secs(30);
 /// that died.
 const JOB_ALIVE_SECS: i64 = 120;
 
+/// Opens a photo in the computer's file manager; tests swap in a recorder.
+pub type RevealFn = Arc<dyn Fn(&FsPath) -> Result<()> + Send + Sync>;
+
 pub struct Options {
     pub root: PathBuf,
     pub db: Option<PathBuf>,
@@ -77,6 +86,8 @@ pub struct Options {
     pub lan: bool,
     /// PIN to use instead of a random one.
     pub pin: Option<String>,
+    /// What "Show in Finder" runs; `None` uses the platform's own command.
+    pub reveal: Option<RevealFn>,
 }
 
 /// A running server; dropping it does not stop it, `stop` does.
@@ -169,6 +180,7 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
         dirty: AtomicBool::new(false),
         heal: Mutex::new(heal_tx),
         ffmpeg: media::find_ffmpeg(),
+        reveal: opts.reveal.clone().unwrap_or_else(|| -> RevealFn { Arc::new(|p: &FsPath| reveal::reveal(p)) }),
         renders: Semaphore::new(workers),
         auth: Auth { pin: pin.clone(), sessions: Mutex::new(HashSet::new()), failures: Mutex::new(Vec::new()) },
     });
@@ -226,6 +238,7 @@ struct App {
     /// Asks the background thread to look for moved files.
     heal: Mutex<mpsc::Sender<()>>,
     ffmpeg: Option<PathBuf>,
+    reveal: RevealFn,
     /// Limits concurrent decodes to the number of cores.
     renders: Semaphore,
     auth: Auth,
@@ -353,6 +366,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/files/{id}/thumb", get(thumb))
         .route("/api/files/{id}/view", get(view))
         .route("/api/files/{id}/original", get(original))
+        .route("/api/files/{id}/reveal", post(reveal_file))
         .route("/api/move", post(move_files))
         .route("/api/folders/{id}/rename", post(rename_folder))
         .route("/api/import/folder", post(import_folder))
@@ -597,10 +611,14 @@ struct Info {
     trash: u64,
     /// Face recognition (`shoebox recognize`).
     faces: recognize::Overview,
+    /// Text of the "show in the file manager" button ("Show in Finder", …),
+    /// only for requests from this computer; `null` for other devices.
+    reveal: Option<&'static str>,
 }
 
-async fn info(State(app): State<Arc<App>>) -> ApiResult<Json<Info>> {
-    blocking(&app, |app| {
+async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: HeaderMap) -> ApiResult<Json<Info>> {
+    let reveal = is_local(peer.ip(), host(&headers)).then(reveal::label);
+    blocking(&app, move |app| {
         let conn = app.conn.lock().unwrap();
         let (photos, videos, missing): (i64, i64, i64) = conn.query_row(
             "SELECT count(*) FILTER (WHERE missing_since IS NULL AND kind NOT IN ('video', 'raw')),
@@ -653,6 +671,7 @@ async fn info(State(app): State<Arc<App>>) -> ApiResult<Json<Info>> {
             index_version: format!("{data_version}.{generation}"),
             trash: trash as u64,
             faces: recognize::overview(&conn)?,
+            reveal,
         }))
     })
     .await
@@ -865,6 +884,26 @@ async fn original(
     let name = src.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let disposition = q.download.is_some_and(|d| d != 0).then(|| content_disposition(&name));
     serve_file(&src.path, req, disposition).await
+}
+
+/// Show the original in this computer's Finder / Explorer. Only the id comes
+/// from the request; the path is the indexed one, and the file is not opened.
+async fn reveal_file(
+    State(app): State<Arc<App>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<serde_json::Value>> {
+    // Another device (a session over the LAN) must not open windows here.
+    if !is_local(peer.ip(), host(&headers)) {
+        return Err(ApiError::Forbidden("only this computer can open its file manager"));
+    }
+    blocking(&app, move |app| {
+        let src = app.source(&app.conn.lock().unwrap(), id)?.ok_or(ApiError::NotFound)?;
+        (app.reveal)(&src.path).map_err(ApiError::Internal)?;
+        Ok(Json(serde_json::json!({ "ok": true, "app": reveal::app_name() })))
+    })
+    .await
 }
 
 async fn serve_file(path: &FsPath, req: Request, disposition: Option<String>) -> ApiResult<Response> {

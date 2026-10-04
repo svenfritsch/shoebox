@@ -30,6 +30,7 @@ var state = {
   open: -1,          // index of the item in the lightbox
   indexVersion: null,
   loadSeq: 0,
+  reveal: null,      // label of "show in the file manager"; set only on the shoebox computer
 };
 
 // ------------------------------------------------------------------ api
@@ -783,6 +784,7 @@ function renderPanel() {
   drawFaces();
 
   var actions = el('div', 'actions');
+  infoReveal(actions, info);
   var move = el('button', 'btn quiet', 'Move…');
   move.onclick = function () { moveDialog([info.id], function () { closeLightbox(); }); };
   var trash = el('button', 'btn danger', 'Move to trash');
@@ -868,6 +870,7 @@ document.addEventListener('keydown', function (ev) {
 function loadInfo() {
   return api('/api/info').then(function (info) {
     $('title').textContent = info.name;
+    state.reveal = info.reveal || null;
     document.title = info.name + ' · shoebox';
     var parts = [
       info.photos.toLocaleString() + ' photos',
@@ -1425,6 +1428,134 @@ function emptyTrash(batch, n) {
     } },
   ]);
 }
+
+// ------------------------------------------------------------------ show in Finder, copy path, context menu
+
+// Ask the computer that runs shoebox to show the file in its file manager.
+// Only offered (state.reveal) to a browser on that computer; an iPad cannot
+// open a Finder window over there.
+function revealFile(id) {
+  post('/api/files/' + id + '/reveal').then(function (r) {
+    toast('Shown in ' + r.app);
+  }).catch(failed);
+}
+
+// Info panel, 5a: the buttons that show the file on the shoebox computer
+// and copy its path.
+function infoReveal(actions, info) {
+  if (state.reveal) {
+    var reveal = el('button', 'btn quiet', state.reveal);
+    reveal.onclick = function () { revealFile(info.id); };
+    actions.appendChild(reveal);
+  }
+  var copy = el('button', 'btn quiet', 'Copy path');
+  copy.onclick = function () { copyPath(info.path); };
+  actions.appendChild(copy);
+}
+
+// The path within the library, as in the info panel. Works on every device.
+function copyPath(path) {
+  copyText(path).then(function (ok) {
+    if (ok) { toast('Path copied'); return; }
+    // No clipboard access: show the path, selected, for copying by hand.
+    var box = el('input');
+    box.readOnly = true;
+    box.value = path;
+    box.onfocus = function () { box.select(); };
+    openModal('Path', box, [{ label: 'OK' }]);
+  });
+}
+
+// navigator.clipboard only exists on https and localhost; an iPad that opens
+// shoebox by IP address has neither, so fall back to selecting a text field
+// and `execCommand`, which iOS allows during a tap.
+function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text).then(function () { return true; }, function () { return legacyCopy(text); });
+  }
+  return Promise.resolve(legacyCopy(text));
+}
+
+function legacyCopy(text) {
+  var previous = document.activeElement;
+  var t = el('textarea');
+  t.value = text;
+  t.readOnly = true; // no keyboard on iOS
+  t.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px';
+  document.body.appendChild(t);
+  t.focus();
+  t.select();
+  t.setSelectionRange(0, text.length);
+  var ok = false;
+  try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+  t.remove();
+  if (previous && previous.focus) previous.focus();
+  return ok;
+}
+
+// A small menu at the pointer: [{label, run}].
+var menu = null, menuFrom = null;
+
+function showMenu(x, y, items) {
+  closeMenu();
+  menuFrom = document.activeElement;
+  menu = el('div', 'menu');
+  menu.setAttribute('role', 'menu');
+  items.forEach(function (it) {
+    var b = el('button', '', it.label);
+    b.setAttribute('role', 'menuitem');
+    b.onclick = function () { closeMenu(); it.run(); };
+    menu.appendChild(b);
+  });
+  document.body.appendChild(menu);
+  menu.style.left = Math.max(4, Math.min(x, window.innerWidth - menu.offsetWidth - 4)) + 'px';
+  menu.style.top = Math.max(4, Math.min(y, window.innerHeight - menu.offsetHeight - 4)) + 'px';
+  menu.firstChild.focus();
+}
+
+function closeMenu() {
+  if (!menu) return;
+  menu.remove();
+  menu = null;
+  if (menuFrom && document.body.contains(menuFrom)) menuFrom.focus();
+  menuFrom = null;
+}
+
+document.addEventListener('mousedown', function (ev) { if (menu && !menu.contains(ev.target)) closeMenu(); });
+window.addEventListener('blur', closeMenu);
+window.addEventListener('resize', closeMenu);
+$('scroller').addEventListener('scroll', closeMenu, { passive: true });
+// Capturing, so that Escape and the arrows only act on the menu while it is open.
+document.addEventListener('keydown', function (ev) {
+  if (!menu) return;
+  var items = Array.prototype.slice.call(menu.children), at = items.indexOf(document.activeElement);
+  if (ev.key === 'Escape') {
+    closeMenu();
+  } else if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+    items[(at + (ev.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
+  } else if (ev.key === 'Tab') {
+    closeMenu();
+    return;
+  } else {
+    return; // Enter and Space press the focused button
+  }
+  ev.preventDefault();
+  ev.stopPropagation();
+}, true);
+
+// Right-click on a photo in the grid.
+$('sizer').addEventListener('contextmenu', function (ev) {
+  var a = ev.target.closest('.cell');
+  if (!a || !state.data) return;
+  ev.preventDefault();
+  var id = state.data.ids[parseInt(a.dataset.index, 10)];
+  var items = [];
+  if (state.reveal) items.push({ label: state.reveal, run: function () { revealFile(id); } });
+  items.push({ label: 'Copy path', run: function () {
+    api('/api/files/' + id).then(function (info) { copyPath(info.path); }).catch(failed);
+  } });
+  showMenu(ev.clientX, ev.clientY, items);
+});
 
 // ------------------------------------------------------------------ start
 
