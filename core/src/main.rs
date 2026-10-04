@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use shoebox::{probe, recognize, scan, serve, verify};
+use shoebox::{faces, probe, recognize, scan, serve, verify};
 
 #[derive(Parser)]
 #[command(name = "shoebox", version, about = "Local photo library on an external drive")]
@@ -79,6 +79,16 @@ enum Command {
         /// Try photos again that could not be looked at before.
         #[arg(long)]
         retry_failed: bool,
+        /// Then look at the photos turned 90° and 270° too, for faces of
+        /// people lying down (about twice the time of the upright pass;
+        /// resumes like it).
+        #[arg(long)]
+        rotated: bool,
+    },
+    /// Faces found by `shoebox recognize`.
+    Faces {
+        #[command(subcommand)]
+        command: FacesCommand,
     },
     /// Browse the library in a web browser. Only reads originals; missing
     /// thumbnails are made as they are viewed.
@@ -99,6 +109,19 @@ enum Command {
     },
 }
 
+#[derive(Subcommand)]
+enum FacesCommand {
+    /// How recognition went: photos looked at, errors, faces found, their
+    /// sizes and scores, the last runs. Only reads.
+    Stats {
+        /// Library root.
+        root: PathBuf,
+        /// Database to use instead of `<root>/.shoebox/library.db`.
+        #[arg(long)]
+        db: Option<PathBuf>,
+    },
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
@@ -115,15 +138,19 @@ fn main() -> ExitCode {
         Command::Verify { root, db, quick, limit } => {
             verify::run(&verify::Options { root, db, quick, limit }).map(|r| r.is_clean())
         }
-        Command::Recognize { root, db, recognizer, limit, retry_failed } => recognize::run(&recognize::Options {
-            root,
-            db,
-            recognizer,
-            limit,
-            retry_failed,
-            timeouts: recognize::Timeouts::default(),
-        })
-        .map(|_| true),
+        Command::Recognize { root, db, recognizer, limit, retry_failed, rotated } => {
+            recognize::run(&recognize::Options {
+                root,
+                db,
+                recognizer,
+                limit,
+                retry_failed,
+                rotated,
+                timeouts: recognize::Timeouts::default(),
+            })
+            .map(|_| true)
+        }
+        Command::Faces { command: FacesCommand::Stats { root, db } } => faces::print_stats(&root, db.as_deref()).map(|_| true),
         Command::Serve { root, db, port, lan, pin } => {
             serve::run(&serve::Options { root, db, port, lan, pin, reveal: None }).map(|_| true)
         }

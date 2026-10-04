@@ -97,7 +97,7 @@ function readHash() {
     var k = kv.slice(0, i), v = decodeURIComponent(kv.slice(i + 1));
     if (k === 'folder' || k === 'tag') f[k] = parseInt(v, 10) || null;
     if (k === 'q') f.q = v;
-    if (k === 'view' && (v === 'duplicates' || v === 'trash')) f.view = v;
+    if (k === 'view' && (v === 'duplicates' || v === 'trash' || v === 'faces')) f.view = v;
   });
   return f;
 }
@@ -122,12 +122,13 @@ function applyFilter() {
   $('sizer').hidden = !!view;
   $('nav-dups').classList.toggle('active', view === 'duplicates');
   $('nav-trash').classList.toggle('active', view === 'trash');
+  $('nav-faces').classList.toggle('active', view === 'faces');
   if (view) {
     endSelection();
     $('empty').hidden = true;
     $('filters').hidden = true;
     $('scroller').scrollTop = 0;
-    if (view === 'duplicates') loadDuplicates(); else loadTrash();
+    if (view === 'duplicates') loadDuplicates(); else if (view === 'faces') loadFaces(); else loadTrash();
     return;
   }
   loadTimeline(true);
@@ -617,6 +618,8 @@ function closeLightbox() {
   stopMedia();
   $('stage').textContent = '';
   $('lightbox').hidden = true;
+  // Opened from a page (face check), not from the grid: back to the page.
+  if (lb.restore) { state.open = -1; lb.restore(); lb.restore = null; return; }
   // Keep the grid where the viewer left off, with the last item seen
   // focused (Tab and the arrow keys continue from there).
   var d = state.data, i = state.open;
@@ -886,6 +889,7 @@ function loadInfo() {
     else if (scan) parts.push('last scan ' + new Date(scan.started_at * 1000).toLocaleDateString());
     if (!info.ffmpeg && info.videos) parts.push('no ffmpeg: video previews made by the browser');
     var f = info.faces;
+    $('nav-faces').hidden = !f.faces;
     if (f.running) parts.push('finding faces ' + Math.floor(100 * f.done / Math.max(f.total, 1)) + '%');
     else if (f.done && f.done < f.total) parts.push('faces: ' + (f.total - f.done).toLocaleString() + ' photos to look at');
     $('status').textContent = parts.join(' · ');
@@ -906,6 +910,7 @@ function reloadAll() {
   loadFolders();
   if (state.filter.view === 'duplicates') loadDuplicates();
   else if (state.filter.view === 'trash') loadTrash();
+  else if (state.filter.view === 'faces') loadFaces();
   else loadTimeline(false);
 }
 
@@ -1556,6 +1561,153 @@ $('sizer').addEventListener('contextmenu', function (ev) {
   } });
   showMenu(ev.clientX, ev.clientY, items);
 });
+
+// ------------------------------------------------------------------ face check page
+// Did recognition work? All faces as crops, sortable and filterable, so
+// false detections (posters, statues, background) are easy to spot.
+
+var faceState = { sort: 'size', desc: false, filter: 'all', faces: [], total: 0, minPx: 40 };
+var PAGE_FACES = 300;
+var FACE_SORTS = [
+  ['size', false, 'Smallest first'], ['size', true, 'Largest first'],
+  ['score', false, 'Lowest score first'], ['score', true, 'Highest score first'],
+];
+var FACE_FILTERS = [['all', 'All faces'], ['small', 'Too small for clustering'], ['large', 'Large enough'], ['rotated', 'Found turned']];
+
+$('nav-faces').onclick = function () { showView('faces'); };
+
+function loadFaces() {
+  var page = $('page');
+  page.textContent = '';
+  page.appendChild(el('h2', '', 'Face check'));
+  var sub = el('p', 'sub', 'Looking…');
+  page.appendChild(sub);
+  page.appendChild(faceToolbar());
+  var grid = el('div', 'faces');
+  page.appendChild(grid);
+  var more = el('button', 'btn quiet', 'Show more');
+  more.hidden = true;
+  more.onclick = function () { moreFaces(grid, more); };
+  page.appendChild(more);
+  faceState.faces = [];
+  api('/api/faces/stats').then(function (s) {
+    if (state.filter.view === 'faces') sub.textContent = faceSummary(s);
+  }).catch(function () {});
+  return moreFaces(grid, more);
+}
+
+function faceSummary(s) {
+  var parts = [plural(s.faces, 'face', 'faces') + ' in ' + plural(s.looked - s.failed, 'photo', 'photos')];
+  if (s.failed) parts.push(plural(s.failed, 'photo', 'photos') + ' failed');
+  if (s.looked < s.photos) parts.push((s.photos - s.looked).toLocaleString() + ' still to look at');
+  parts.push(s.small.toLocaleString() + ' under ' + s.min_cluster_px + ' px (too small for clustering)');
+  parts.push(s.rotated_looked ? plural(s.rotated_faces, 'face', 'faces') + ' found turned' : 'not looked at turned yet');
+  var widths = s.widths.map(function (b) {
+    var label = b.from == null ? '< ' + b.to : b.to == null ? b.from + '+' : b.from + '–' + b.to;
+    return label + ' px: ' + b.count.toLocaleString();
+  });
+  return parts.join(' · ') + '. Widths in the copy the recognizer saw: ' + widths.join(', ') + '.';
+}
+
+function faceToolbar() {
+  var bar = el('div', 'toolbar');
+  var sort = el('select');
+  FACE_SORTS.forEach(function (o, k) {
+    var opt = el('option', '', o[2]);
+    opt.value = k;
+    opt.selected = o[0] === faceState.sort && o[1] === faceState.desc;
+    sort.appendChild(opt);
+  });
+  sort.onchange = function () {
+    var o = FACE_SORTS[sort.value];
+    faceState.sort = o[0];
+    faceState.desc = o[1];
+    loadFaces();
+  };
+  var filter = el('select');
+  FACE_FILTERS.forEach(function (o) {
+    var opt = el('option', '', o[1]);
+    opt.value = o[0];
+    opt.selected = o[0] === faceState.filter;
+    filter.appendChild(opt);
+  });
+  filter.onchange = function () { faceState.filter = filter.value; loadFaces(); };
+  bar.appendChild(sort);
+  bar.appendChild(filter);
+  return bar;
+}
+
+function moreFaces(grid, more) {
+  var f = faceState.filter;
+  var q = query({
+    sort: faceState.sort, desc: faceState.desc ? 'true' : null, offset: faceState.faces.length, limit: PAGE_FACES,
+    max_px: f === 'small' ? faceState.minPx : null, min_px: f === 'large' ? faceState.minPx : null,
+    rotated: f === 'rotated' ? 'true' : null,
+  });
+  more.disabled = true;
+  return api('/api/faces' + q).then(function (r) {
+    if (state.filter.view !== 'faces') return;
+    faceState.total = r.total;
+    faceState.minPx = r.min_cluster_px;
+    r.faces.forEach(function (face) { faceState.faces.push(face); grid.appendChild(faceCard(face, null)); });
+    if (!faceState.total) grid.appendChild(el('p', 'sub', 'No faces here. `shoebox recognize` finds them.'));
+    more.disabled = false;
+    more.hidden = faceState.faces.length >= faceState.total;
+  }).catch(failed);
+}
+
+// One crop; clicking it opens its photo. `similarity` is set in the list of
+// nearest neighbours.
+function faceCard(face, similarity) {
+  var card = el('div', 'face' + (face.small ? ' small' : ''));
+  var a = el('a', 'crop');
+  a.href = '#';
+  a.title = 'Open the photo';
+  var img = el('img');
+  img.alt = '';
+  img.loading = 'lazy';
+  img.src = '/api/faces/' + face.id + '/crop';
+  img.onerror = function () { card.classList.add('broken'); };
+  a.appendChild(img);
+  a.onclick = function (ev) { ev.preventDefault(); closeModal(); openFacePhoto(face); };
+  card.appendChild(a);
+  var caption = Math.round(face.px) + ' px · ' + face.score.toFixed(2);
+  if (similarity != null) caption = similarity.toFixed(2) + ' · ' + caption;
+  card.appendChild(el('div', 'meta', caption));
+  if (face.small) card.appendChild(el('span', 'tag', 'small'));
+  if (face.roll) card.appendChild(el('span', 'tag', 'turned'));
+  if (similarity == null) {
+    var near = el('button', 'near', '≈');
+    near.title = 'Most similar faces';
+    near.onclick = function () { similarFaces(face); };
+    card.appendChild(near);
+  }
+  return card;
+}
+
+// The nearest neighbours by embedding (read only): which similarity still
+// means "same person" is what 5c-2 needs to know.
+function similarFaces(face) {
+  api('/api/faces/' + face.id + '/similar?limit=24').then(function (list) {
+    var box = el('div');
+    box.appendChild(el('p', 'hint', 'Cosine similarity of the embeddings (1 = identical), most similar first. Click a face to open its photo.'));
+    var grid = el('div', 'faces');
+    grid.appendChild(faceCard(face, 1));
+    list.forEach(function (n) { grid.appendChild(faceCard(n, n.similarity)); });
+    box.appendChild(grid);
+    openModal('Most similar faces', box, [{ label: 'Close' }]);
+  }).catch(failed);
+}
+
+// Open one photo in the viewer from the page, and come back to it when the
+// viewer closes.
+function openFacePhoto(face) {
+  var saved = state.data;
+  var letter = { jpeg: 'j', png: 'p', heic: 'h' }[face.kind] || 'j';
+  state.data = { count: 1, ids: [face.file], kinds: letter, days: [0], versions: (face.version + '00000000').slice(0, 8), live: [] };
+  lb.restore = function () { state.data = saved; };
+  openLightbox(0);
+}
 
 // ------------------------------------------------------------------ start
 
