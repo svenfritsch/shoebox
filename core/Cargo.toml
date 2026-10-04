@@ -33,6 +33,12 @@ unicode-normalization = "0.1.25"
 walkdir = "2.5.0"
 rusqlite = { version = "0.40.2", features = ["bundled", "backup"] }
 
+# Optimise dependencies in debug and test builds too: decoding a picture with
+# an unoptimised `image` takes ~4x longer, which pushed the fake recognizer
+# past the 2 s reply timeout of the recognize tests on CI runners.
+[profile.dev.package."*"]
+opt-level = 2
+
 [profile.release]
 lto = "thin"
 codegen-units = 4

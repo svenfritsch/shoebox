@@ -24,7 +24,8 @@ Previews go to the system temp folder, never into the photo folder.
    pushed) and unpack it, or use `dist/shoebox-macos` from a local build
    (see README). Copy it to the drive, e.g. into `.shoebox/bin/`.
 2. Optional, for video previews: put a static `ffmpeg` for Intel macOS next
-   to the binary (or have one on PATH).
+   to the binary (or have one on PATH); see
+   [Video previews](../README.md#video-previews-optional).
 3. In Terminal:
 
    ```sh

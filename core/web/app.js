@@ -409,8 +409,8 @@ function buildRow(row) {
     img.alt = '';
     img.decoding = 'async';
     img.onload = function () { this.classList.add('ok'); };
-    img.onerror = function () { this.parentNode.parentNode.classList.add('broken'); };
-    img.src = thumbUrl(i);
+    img.onerror = thumbFailed(d.ids[i], d.kinds[i]);
+    img.src = frames.cache[d.ids[i]] || thumbUrl(i);
     ph.appendChild(img);
     a.appendChild(ph);
     var kind = d.kinds[i];
@@ -420,6 +420,118 @@ function buildRow(row) {
     e.appendChild(a);
   }
   return e;
+}
+
+function thumbFailed(id, kind) {
+  return function () {
+    var img = this, cell = img.parentNode.parentNode;
+    if (kind !== 'v' || img.dataset.frame) { cell.classList.add('broken'); return; }
+    img.dataset.frame = '1';
+    videoFrame(id, img, function (url) {
+      if (url) img.src = url; else cell.classList.add('broken');
+    });
+  };
+}
+
+// Videos the server has no poster for (no ffmpeg, or ffmpeg could not read
+// them): grab a frame in the browser, two videos at a time. The frames are
+// kept for the session only; nothing is stored on the drive.
+var frames = { cache: {}, queue: [], busy: 0 };
+
+function videoFrame(id, img, done) {
+  frames.queue.push({ id: id, img: img, done: done });
+  pumpFrames();
+}
+
+function pumpFrames() {
+  while (frames.busy < 2 && frames.queue.length) {
+    var job = frames.queue.shift();
+    if (frames.cache[job.id]) job.done(frames.cache[job.id]);
+    else if (job.img.isConnected) grabFrame(job); // skip cells scrolled away
+  }
+}
+
+function grabFrame(job) {
+  frames.busy++;
+  var v = document.createElement('video');
+  var finished = false;
+  var timer = setTimeout(function () { finish(null); }, 20000);
+  function finish(url) {
+    if (finished) return;
+    finished = true;
+    clearTimeout(timer);
+    v.removeAttribute('src');
+    v.load();
+    frames.busy--;
+    if (url) frames.cache[job.id] = url;
+    job.done(url);
+    pumpFrames();
+  }
+  function draw() {
+    try {
+      // Same size as the server's posters: longer edge 384 px, never larger.
+      var w = v.videoWidth, h = v.videoHeight, s = Math.min(1, 384 / Math.max(w, h, 1));
+      var c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(w * s));
+      c.height = Math.max(1, Math.round(h * s));
+      c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+      c.toBlob(function (b) { finish(b ? URL.createObjectURL(b) : null); }, 'image/jpeg', 0.8);
+    } catch (e) { finish(null); }
+  }
+  v.muted = true;
+  v.playsInline = true;
+  v.preload = 'auto';
+  v.onerror = function () { finish(null); };
+  v.onloadedmetadata = function () {
+    // ~10% in, like the server's posters (the first frame is often black).
+    var at = isFinite(v.duration) ? v.duration / 10 : 0;
+    if (at > 0) { v.onseeked = draw; v.currentTime = at; } else if (v.readyState >= 2) draw(); else v.onloadeddata = draw;
+  };
+  v.src = '/api/files/' + job.id + '/original';
+}
+
+// Where item i sits in the layout.
+function rowOf(i) {
+  for (var r = 0; r < state.rows.length; r++) {
+    var row = state.rows[r];
+    if (row.type === 'r' && row.start <= i && i < row.end) return r;
+  }
+  return -1;
+}
+
+// Give item i's cell the keyboard focus, scrolling it into view first (to a
+// third of the way down with `center`, else just far enough) and rendering
+// its row if it was not.
+function focusCell(i, center) {
+  var r = rowOf(i);
+  if (r < 0) return;
+  var row = state.rows[r], scroller = $('scroller');
+  var y = row.top + $('sizer').offsetTop;
+  if (y < scroller.scrollTop || y + row.h > scroller.scrollTop + scroller.clientHeight) {
+    if (center) scroller.scrollTop = y - scroller.clientHeight / 3;
+    else scroller.scrollTop = y < scroller.scrollTop ? y : y + row.h - scroller.clientHeight;
+  }
+  render();
+  var a = $('sizer').querySelector('.cell[data-index="' + i + '"]');
+  if (a) a.focus({ preventScroll: true });
+}
+
+// Arrow keys in the grid: left/right to the previous/next item, up/down to
+// the same column in the row above/below (or its last item).
+function moveFocus(cell, key) {
+  var i = parseInt(cell.dataset.index, 10), d = state.data;
+  if (key === 'ArrowLeft' || key === 'ArrowRight') {
+    var j = i + (key === 'ArrowLeft' ? -1 : 1);
+    if (j >= 0 && j < d.count) focusCell(j);
+    return;
+  }
+  var r = rowOf(i), dir = key === 'ArrowUp' ? -1 : 1;
+  if (r < 0) return;
+  var col = i - state.rows[r].start;
+  for (var t = r + dir; t >= 0 && t < state.rows.length; t += dir) {
+    var row = state.rows[t];
+    if (row.type === 'r') { focusCell(Math.min(row.start + col, row.end - 1)); return; }
+  }
 }
 
 $('sizer').addEventListener('click', function (ev) {
@@ -504,21 +616,12 @@ function closeLightbox() {
   stopMedia();
   $('stage').textContent = '';
   $('lightbox').hidden = true;
-  // Keep the grid where the viewer left off.
+  // Keep the grid where the viewer left off, with the last item seen
+  // focused (Tab and the arrow keys continue from there).
   var d = state.data, i = state.open;
   state.open = -1;
   if (!d || i < 0) return;
-  for (var r = 0; r < state.rows.length; r++) {
-    var row = state.rows[r];
-    if (row.type === 'r' && row.start <= i && i < row.end) {
-      var scroller = $('scroller');
-      var y = row.top + $('sizer').offsetTop;
-      if (y < scroller.scrollTop || y + row.h > scroller.scrollTop + scroller.clientHeight) {
-        scroller.scrollTop = y - scroller.clientHeight / 3;
-      }
-      break;
-    }
-  }
+  focusCell(i, true);
 }
 
 function stopMedia() {
@@ -556,7 +659,7 @@ function showItem() {
     v.autoplay = true;
     v.playsInline = true;
     v.preload = 'metadata';
-    v.poster = thumbUrl(i);
+    v.poster = frames.cache[id] || thumbUrl(i);
     v.src = '/api/files/' + id + '/original';
     stage.appendChild(v);
   } else {
@@ -719,9 +822,24 @@ document.addEventListener('keydown', function (ev) {
   }
   if ($('lightbox').hidden) {
     if (ev.key === 'Escape' && state.selecting) endSelection();
+    var cell = document.activeElement;
+    if (!cell || !cell.classList.contains('cell') || ev.altKey || ev.metaKey || ev.ctrlKey) return;
+    if (/^Arrow(Left|Right|Up|Down)$/.test(ev.key)) {
+      ev.preventDefault();
+      moveFocus(cell, ev.key);
+    } else if (ev.key === ' ') {
+      // Like a click: opens the photo (or selects it while selecting).
+      ev.preventDefault();
+      cell.click();
+    }
     return;
   }
-  if (ev.key === 'Escape') closeLightbox();
+  // Space closes the viewer, except on a focused video (play/pause).
+  var onVideo = document.activeElement && document.activeElement.tagName === 'VIDEO';
+  if (ev.key === 'Escape' || (ev.key === ' ' && !onVideo)) {
+    ev.preventDefault();
+    closeLightbox();
+  }
   else if (ev.key === 'ArrowLeft') step(-1);
   else if (ev.key === 'ArrowRight') step(1);
   else if (ev.key === 'i') $('lb-info').onclick();
@@ -763,7 +881,7 @@ function loadInfo() {
     var scan = info.jobs.filter(function (j) { return j.kind === 'scan'; })[0];
     if (info.busy) parts.push('scan running…');
     else if (scan) parts.push('last scan ' + new Date(scan.started_at * 1000).toLocaleDateString());
-    if (!info.ffmpeg && info.videos) parts.push('no ffmpeg: videos without preview');
+    if (!info.ffmpeg && info.videos) parts.push('no ffmpeg: video previews made by the browser');
     var f = info.faces;
     if (f.running) parts.push('finding faces ' + Math.floor(100 * f.done / Math.max(f.total, 1)) + '%');
     else if (f.done && f.done < f.total) parts.push('faces: ' + (f.total - f.done).toLocaleString() + ' photos to look at');

@@ -37,7 +37,8 @@ whether to accept incoming connections the first time `--lan` is used.
   orientation is applied. HEIC is scaled by libheif. PNG uses `image`.
 - Videos: one frame at 10% of the length via `ffmpeg` (next to the binary or
   on PATH), piped to stdout; no temp files. Without ffmpeg, videos are left
-  for later and the UI shows a placeholder.
+  for later and the web UI grabs a frame in the browser (session only).
+  Getting ffmpeg: [README](../README.md#video-previews-optional).
 - A file whose thumbnail fails (damaged) gets a row with `jpeg = NULL` and
   the error, so it is not retried until its content changes. "ffmpeg not
   found" and "changed while being read" are not stored.
