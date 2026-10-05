@@ -177,6 +177,8 @@ jobs:
             mkdir -p "$pkg/recognizer"
             cp artifacts/shoebox-$os/shoebox-$os "$pkg/"
             chmod +x "$pkg/shoebox-$os"
+            cp "scripts/launchers/Start shoebox.command" "$pkg/"
+            chmod +x "$pkg/Start shoebox.command"
             cp recognizer/README.md recognizer/install.sh recognizer/fetch-models.sh recognizer/recognizer.py "$pkg/recognizer/"
             chmod +x "$pkg/recognizer/install.sh" "$pkg/recognizer/fetch-models.sh"
             tar -C "$RUNNER_TEMP" -czf release/shoebox-$os.tar.gz shoebox-$os

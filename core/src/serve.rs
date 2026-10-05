@@ -67,6 +67,7 @@ use crate::db;
 use crate::duplicates;
 use crate::import;
 use crate::media;
+use crate::multi;
 use crate::organize;
 use crate::people;
 use crate::recognize;
@@ -85,7 +86,7 @@ const SESSION_DAYS: u64 = 30;
 const LOGIN_ATTEMPTS_PER_MINUTE: usize = 5;
 const IMMUTABLE: &str = "private, max-age=31536000, immutable";
 /// Required on every request that is not a GET (see the module docs).
-const WRITE_HEADER: &str = "x-shoebox";
+pub(crate) const WRITE_HEADER: &str = "x-shoebox";
 /// At most one background search for moved files in this time.
 const HEAL_INTERVAL: Duration = Duration::from_secs(30);
 /// At most one backup of the index and the user data in this time.
@@ -101,6 +102,9 @@ pub type RevealFn = Arc<dyn Fn(&FsPath) -> Result<()> + Send + Sync>;
 
 pub struct Options {
     pub root: PathBuf,
+    /// More libraries (other drives) opened alongside `root`. A drive that is
+    /// not plugged in at start, or later, is shown as offline; the rest works.
+    pub more_roots: Vec<PathBuf>,
     pub db: Option<PathBuf>,
     pub port: u16,
     /// Listen on all interfaces and require a PIN from other devices.
@@ -146,6 +150,9 @@ impl Server {
 pub fn run(opts: &Options) -> Result<()> {
     let server = start(opts, true)?;
     println!("shoebox {} is serving {}", env!("CARGO_PKG_VERSION"), opts.root.display());
+    for r in &opts.more_roots {
+        println!("  and {}", r.display());
+    }
     for url in &server.urls {
         println!("  {url}");
     }
@@ -160,24 +167,36 @@ pub fn run(opts: &Options) -> Result<()> {
 /// Bind and serve in a background thread. With `ctrl_c`, the server also
 /// stops on Ctrl-C.
 pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
-    let root = opts.root.canonicalize().with_context(|| format!("cannot open {}", opts.root.display()))?;
-    let db_path = match &opts.db {
-        Some(p) => std::path::absolute(p)?,
-        None => db::default_path(&root),
-    };
-    if !db_path.is_file() {
-        bail!("no index at {} (run `shoebox scan` first)", db_path.display());
-    }
-    let conn = db::open_shared(&db_path)?;
-    thumbs::attach(&conn, &db_path)?;
-    recognize::attach(&conn, &db_path)?;
-
     let pin = match (&opts.pin, opts.lan) {
         (Some(p), _) if p.trim().len() < 4 => bail!("the PIN needs at least 4 characters"),
         (Some(p), _) => Some(p.trim().to_string()),
         (None, true) => Some(random_pin()?),
         (None, false) => None,
     };
+    let shared = Arc::new(Shared {
+        auth: Arc::new(Auth { pin: pin.clone(), sessions: Mutex::new(HashSet::new()), failures: Mutex::new(Vec::new()) }),
+        reveal: opts.reveal.clone().unwrap_or_else(|| -> RevealFn { Arc::new(|p: &FsPath| reveal::reveal(p)) }),
+        recognizer: opts.recognizer.clone(),
+        ffmpeg: media::find_ffmpeg(),
+        workers: std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2),
+    });
+
+    // The first library must be there; the others may be unplugged.
+    let first = Slot::new(&opts.root, opts.db.clone())?;
+    first.open_now(&shared)?;
+    let mut slots = vec![first];
+    for root in &opts.more_roots {
+        let slot = Slot::new(root, None)?;
+        if slots.iter().any(|s| s.id == slot.id) {
+            bail!("two libraries are called {:?}; the library name (the drive's name) must differ", slot.name);
+        }
+        if let Err(e) = slot.open_now(&shared) {
+            eprintln!("{} is offline: {e:#}", slot.name);
+        }
+        slots.push(slot);
+    }
+    let hub = Arc::new(Hub { slots, shared, roles: Mutex::new(None) });
+
     let ip = if opts.lan { IpAddr::V4(Ipv4Addr::UNSPECIFIED) } else { IpAddr::V4(Ipv4Addr::LOCALHOST) };
     let listener = std::net::TcpListener::bind((ip, opts.port))
         .with_context(|| format!("cannot listen on port {} (in use? try --port)", opts.port))?;
@@ -187,46 +206,7 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
     if opts.lan {
         urls.extend(lan_address().map(|ip| format!("http://{ip}:{}/", addr.port())));
     }
-
-    let name = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| root.display().to_string());
-    let workers = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2);
-    import::clean_incoming(&root);
-    let (heal_tx, heal_rx) = mpsc::channel();
-    let (backup_tx, backup_rx) = mpsc::channel();
-    let (clusters_tx, clusters_rx) = mpsc::channel();
-    let (embed_tx, embed_rx) = mpsc::channel();
-    let app = Arc::new(App {
-        root,
-        db_path,
-        name,
-        conn: Mutex::new(conn),
-        snapshot: Mutex::new(None),
-        duplicates: Mutex::new(None),
-        generation: AtomicU64::new(0),
-        writing: Mutex::new(()),
-        dirty: AtomicBool::new(false),
-        heal: Mutex::new(heal_tx),
-        backup: Mutex::new(backup_tx),
-        clusters: Mutex::new(clusters_tx),
-        clusters_wanted: AtomicU64::new(0),
-        clusters_done: AtomicU64::new(0),
-        faces_seen: AtomicI64::new(-1),
-        embed: Mutex::new(embed_tx),
-        embedding: AtomicBool::new(false),
-        recognizer: opts.recognizer.clone(),
-        stopping: AtomicBool::new(false),
-        ffmpeg: media::find_ffmpeg(),
-        reveal: opts.reveal.clone().unwrap_or_else(|| -> RevealFn { Arc::new(|p: &FsPath| reveal::reveal(p)) }),
-        renders: Semaphore::new(workers),
-        auth: Auth { pin: pin.clone(), sessions: Mutex::new(HashSet::new()), failures: Mutex::new(Vec::new()) },
-    });
-    spawn_healer(Arc::downgrade(&app), heal_rx);
-    spawn_backups(Arc::downgrade(&app), backup_rx);
-    spawn_clusterer(Arc::downgrade(&app), clusters_rx);
-    spawn_embedder(Arc::downgrade(&app), embed_rx);
-    app.request_clusters();
-    app.request_embed();
-    let router = router(app.clone());
+    let router = hub_router(hub.clone());
 
     let (tx, rx) = oneshot::channel::<()>();
     let thread = std::thread::Builder::new().name("shoebox-serve".into()).spawn(move || -> Result<()> {
@@ -248,14 +228,181 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
                 .await?;
             Ok::<(), anyhow::Error>(())
         })?;
-        app.stopping.store(true, Ordering::SeqCst);
         // Like a scan, leave a copy of the index after changing it.
-        if app.dirty.load(Ordering::SeqCst) {
-            app.backup()?;
+        let mut result = Ok(());
+        for slot in &hub.slots {
+            if let Some((app, _)) = slot.live.lock().unwrap().app.take() {
+                app.stopping.store(true, Ordering::SeqCst);
+                if app.dirty.load(Ordering::SeqCst)
+                    && let Err(e) = app.backup()
+                {
+                    result = Err(e);
+                }
+            }
         }
-        Ok(())
+        result
     })?;
     Ok(Server { addr, pin, urls, shutdown: Some(tx), thread: Some(thread) })
+}
+
+/// What all libraries of one server share.
+struct Shared {
+    auth: Arc<Auth>,
+    reveal: RevealFn,
+    recognizer: Option<PathBuf>,
+    ffmpeg: Option<PathBuf>,
+    workers: usize,
+}
+
+/// One library: open when its drive is there, offline when it is not.
+struct Slot {
+    id: String,
+    name: String,
+    root: PathBuf,
+    db: Option<PathBuf>,
+    live: Mutex<Live>,
+}
+
+#[derive(Default)]
+struct Live {
+    app: Option<(Arc<App>, Router)>,
+    /// When the open library was last seen on its drive, or an open was last tried.
+    checked: Option<Instant>,
+    /// Why it is offline.
+    error: Option<String>,
+}
+
+/// How long a look at the drive is trusted (one `stat` per request would do,
+/// but thumbnails come by the hundreds).
+const DRIVE_CHECK_INTERVAL: Duration = Duration::from_secs(2);
+
+impl Slot {
+    fn new(root: &FsPath, db: Option<PathBuf>) -> Result<Slot> {
+        // The drive may be missing: the name comes from the path as given.
+        let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+        let name = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| root.display().to_string());
+        let db = db.map(std::path::absolute).transpose()?;
+        Ok(Slot { id: library_id(&name), name, root, db, live: Mutex::new(Live::default()) })
+    }
+
+    fn db_path(&self) -> PathBuf {
+        self.db.clone().unwrap_or_else(|| db::default_path(&self.root))
+    }
+
+    /// Open the library now, failing with the reason.
+    fn open_now(&self, shared: &Arc<Shared>) -> Result<()> {
+        let mut live = self.live.lock().unwrap();
+        live.checked = Some(Instant::now());
+        match App::open(&self.root, self.db_path(), shared) {
+            Ok(app) => {
+                let router = router(app.clone());
+                live.app = Some((app, router));
+                live.error = None;
+                Ok(())
+            }
+            Err(e) => {
+                live.error = Some(format!("{e:#}"));
+                Err(e)
+            }
+        }
+    }
+
+    /// The open library, if its drive is there: a vanished drive closes it
+    /// (nothing else happens), a returning one opens it again.
+    fn online(&self, shared: &Arc<Shared>) -> Option<(Arc<App>, Router)> {
+        {
+            let mut live = self.live.lock().unwrap();
+            let fresh = live.checked.is_some_and(|t| t.elapsed() < DRIVE_CHECK_INTERVAL);
+            if let Some((app, router)) = live.app.clone() {
+                if fresh {
+                    return Some((app, router));
+                }
+                if app.root.is_dir() && app.db_path.is_file() {
+                    live.checked = Some(Instant::now());
+                    return Some((app, router));
+                }
+                eprintln!("{} went offline", self.name);
+                if let Some((app, _)) = live.app.take() {
+                    app.stopping.store(true, Ordering::SeqCst);
+                }
+                live.error = Some("the drive is not connected".into());
+                live.checked = Some(Instant::now());
+                return None;
+            }
+            if fresh || !self.db_path().is_file() {
+                return None;
+            }
+        }
+        if self.open_now(shared).is_ok() {
+            eprintln!("{} is back online", self.name);
+        }
+        self.live.lock().unwrap().app.clone()
+    }
+
+}
+
+/// All libraries of a server, found by id in the routes.
+struct Hub {
+    slots: Vec<Slot>,
+    shared: Arc<Shared>,
+    /// What the drives hold in common, worked out at most every
+    /// `ROLES_TTL` (it compares all hashes) and again after a role changed.
+    roles: Mutex<Option<(Instant, Vec<multi::DriveRole>)>>,
+}
+
+const ROLES_TTL: Duration = Duration::from_secs(20);
+
+impl App {
+    /// Open one library (its index, thumbnails and faces) and start its
+    /// background work.
+    fn open(root: &FsPath, db_path: PathBuf, shared: &Arc<Shared>) -> Result<Arc<App>> {
+        let root = root.canonicalize().with_context(|| format!("cannot open {}", root.display()))?;
+        if !db_path.is_file() {
+            bail!("no index at {} (run `shoebox scan` first)", db_path.display());
+        }
+        let conn = db::open_shared(&db_path)?;
+        thumbs::attach(&conn, &db_path)?;
+        recognize::attach(&conn, &db_path)?;
+
+        let name = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| root.display().to_string());
+        import::clean_incoming(&root);
+        let (heal_tx, heal_rx) = mpsc::channel();
+        let (backup_tx, backup_rx) = mpsc::channel();
+        let (clusters_tx, clusters_rx) = mpsc::channel();
+        let (embed_tx, embed_rx) = mpsc::channel();
+        let app = Arc::new(App {
+            root,
+            db_path,
+            name,
+            conn: Mutex::new(conn),
+            snapshot: Mutex::new(None),
+            duplicates: Mutex::new(None),
+            generation: AtomicU64::new(0),
+            writing: Mutex::new(()),
+            dirty: AtomicBool::new(false),
+            heal: Mutex::new(heal_tx),
+            backup: Mutex::new(backup_tx),
+            clusters: Mutex::new(clusters_tx),
+            clusters_wanted: AtomicU64::new(0),
+            clusters_done: AtomicU64::new(0),
+            faces_seen: AtomicI64::new(-1),
+            embed: Mutex::new(embed_tx),
+            embedding: AtomicBool::new(false),
+            recognizer: shared.recognizer.clone(),
+            stopping: AtomicBool::new(false),
+            ffmpeg: shared.ffmpeg.clone(),
+            reveal: shared.reveal.clone(),
+            renders: Semaphore::new(shared.workers),
+            auth: shared.auth.clone(),
+        });
+        spawn_healer(Arc::downgrade(&app), heal_rx);
+        spawn_backups(Arc::downgrade(&app), backup_rx);
+        spawn_clusterer(Arc::downgrade(&app), clusters_rx);
+        spawn_embedder(Arc::downgrade(&app), embed_rx);
+        app.request_clusters();
+        app.request_embed();
+        Ok(app)
+    }
 }
 
 struct App {
@@ -299,7 +446,7 @@ struct App {
     reveal: RevealFn,
     /// Limits concurrent decodes to the number of cores.
     renders: Semaphore,
-    auth: Auth,
+    auth: Arc<Auth>,
 }
 
 /// Changes whenever another connection (a scan) commits, or this server
@@ -338,7 +485,7 @@ impl App {
             return Ok(());
         }
         println!("Some files are not where the index says; looking for them…");
-        let conn = db::open_shared(&self.db_path)?;
+        let conn = db::open_existing(&self.db_path)?;
         let stats = scan::index_library(&conn, &self.root)?;
         println!(
             "  {} moved, {} added, {} changed, {} missing.",
@@ -357,7 +504,7 @@ impl App {
     /// The clustering itself, on a connection of its own. Skipped while
     /// `shoebox recognize` runs: it clusters when it is done.
     fn cluster(&self) -> Result<()> {
-        let conn = db::open_shared(&self.db_path)?;
+        let conn = db::open_existing(&self.db_path)?;
         recognize::attach(&conn, &self.db_path)?;
         if recognize::running(&conn)? || clusters::running(&conn)? {
             return Ok(());
@@ -390,7 +537,7 @@ impl App {
     /// Skipped while `shoebox recognize` runs (it embeds them at its end)
     /// and when no recognizer is installed.
     fn embed_drawn(&self) -> Result<()> {
-        let conn = db::open_shared(&self.db_path)?;
+        let conn = db::open_existing(&self.db_path)?;
         recognize::attach(&conn, &self.db_path)?;
         if recognize::running(&conn)? {
             return Ok(());
@@ -565,10 +712,86 @@ fn spawn_backups(app: Weak<App>, requests: mpsc::Receiver<()>) {
     });
 }
 
-fn router(app: Arc<App>) -> Router {
+/// A library's id in the routes: eight hex digits of the NFC-normalised name
+/// of its folder (the drive's name), so it is the same in every session and
+/// on every machine. File ids are per database, so a file is only known by
+/// (library id, file id).
+pub fn library_id(name: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    let nfc: String = name.nfc().collect();
+    blake3::hash(nfc.as_bytes()).to_hex()[..8].to_string()
+}
+
+/// Marks a request that came in through `/api/lib/{id}/…`.
+#[derive(Clone)]
+#[allow(dead_code)] // the id picks the library once several are open
+struct LibraryScope(String);
+
+/// The routes that belong to no library.
+fn is_global(path: &str) -> bool {
+    matches!(path, "/api/session" | "/api/login" | "/api/libraries")
+}
+
+/// The server's own routes: the global ones, and `/api/lib/{id}/…`, which
+/// goes to the library with that id (rewritten to `/api/…` for the handlers
+/// and marked with its `LibraryScope`). An unknown id is a 404, a drive that
+/// is not there a 503 "offline"; the other libraries keep working.
+fn hub_router(hub: Arc<Hub>) -> Router {
+    let auth = hub.shared.auth.clone();
     Router::new()
         .route("/api/session", get(session))
         .route("/api/login", post(login))
+        .route("/api/libraries", get(libraries))
+        // Over all drives (see `multi.rs`).
+        .route("/api/all/people", get(all_people))
+        .route("/api/all/timeline", get(all_timeline))
+        .route("/api/all/tags", get(all_tags))
+        .route("/api/all/duplicates", get(all_duplicates))
+        .route("/api/all/drives", get(all_drives))
+        .route("/api/all/role", post(all_set_role))
+        .route("/api/all/backups", get(all_backups))
+        // Not a route with parameters: those would leak into the `Path`
+        // extractors of the library's own routes.
+        .fallback(fallback)
+        .layer(middleware::from_fn_with_state(auth, guard))
+        .with_state(hub)
+}
+
+async fn fallback(State(hub): State<Arc<Hub>>, req: Request) -> Response {
+    if req.uri().path().starts_with("/api/lib/") {
+        return forward(hub, req).await;
+    }
+    asset(req.uri().clone()).await
+}
+
+async fn forward(hub: Arc<Hub>, mut req: Request) -> Response {
+    let id = req.uri().path().strip_prefix("/api/lib/").and_then(|r| r.split_once('/')).map(|(id, _)| id.to_string());
+    let Some(id) = id else { return ApiError::NotFound.into_response() };
+    let Some(index) = hub.slots.iter().position(|s| s.id == id) else {
+        return ApiError::NotFound.into_response();
+    };
+    let shared = hub.shared.clone();
+    let hub2 = hub.clone();
+    let online = tokio::task::spawn_blocking(move || hub2.slots[index].online(&shared)).await.ok().flatten();
+    let Some((_, router)) = online else {
+        let slot = &hub.slots[index];
+        let reason = slot.live.lock().unwrap().error.clone().unwrap_or_default();
+        return ApiError::Offline { library: slot.name.clone(), reason }.into_response();
+    };
+    // Rewritten from the raw path, so percent-encoding stays as sent.
+    let tail = req.uri().path().strip_prefix("/api/lib/").and_then(|r| r.split_once('/')).map(|(_, t)| t.to_string()).unwrap_or_default();
+    let new = match req.uri().query() {
+        Some(q) => format!("/api/{tail}?{q}"),
+        None => format!("/api/{tail}"),
+    };
+    let Ok(uri) = new.parse::<Uri>() else { return ApiError::NotFound.into_response() };
+    *req.uri_mut() = uri;
+    req.extensions_mut().insert(LibraryScope(id));
+    router.oneshot(req).await.into_response()
+}
+
+fn router(app: Arc<App>) -> Router {
+    Router::new()
         .route("/api/info", get(info))
         .route("/api/folders", get(folders))
         .route("/api/tags", get(tags))
@@ -627,7 +850,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/clusters/{id}/ignore", post(people_api::ignore_cluster))
         .route("/api/clusters/{id}/not-face", post(people_api::not_face_cluster))
         .fallback(asset)
-        .layer(middleware::from_fn_with_state(app.clone(), guard))
+        .layer(middleware::from_fn_with_state(app.auth.clone(), guard))
         .with_state(app)
 }
 
@@ -642,6 +865,8 @@ enum ApiError {
     Unauthorized,
     Forbidden(&'static str),
     TooManyRequests,
+    /// The library's drive is not connected.
+    Offline { library: String, reason: String },
     Internal(anyhow::Error),
 }
 
@@ -666,6 +891,14 @@ impl IntoResponse for ApiError {
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "PIN required".to_string()),
             ApiError::Forbidden(m) => (StatusCode::FORBIDDEN, m.to_string()),
             ApiError::TooManyRequests => (StatusCode::TOO_MANY_REQUESTS, "too many wrong PINs; wait a minute".into()),
+            ApiError::Offline { library, reason } => {
+                let note = if reason.is_empty() { String::new() } else { format!(" ({reason})") };
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(serde_json::json!({ "error": format!("{library} is offline{note}"), "offline": true, "library": library })),
+                )
+                    .into_response();
+            }
             ApiError::Internal(e) => {
                 eprintln!("error: {e:#}");
                 (StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}"))
@@ -726,7 +959,7 @@ impl Auth {
 }
 
 /// A request from this machine that addresses it by IP or as localhost.
-fn is_local(peer: IpAddr, host: Option<&str>) -> bool {
+pub(crate) fn is_local(peer: IpAddr, host: Option<&str>) -> bool {
     let peer_local = peer.is_loopback() || matches!(peer, IpAddr::V6(v6) if v6.to_ipv4_mapped().is_some_and(|v4| v4.is_loopback()));
     peer_local && host.is_some_and(host_is_literal)
 }
@@ -741,7 +974,7 @@ fn host_is_literal(host: &str) -> bool {
     name.eq_ignore_ascii_case("localhost") || name.parse::<IpAddr>().is_ok()
 }
 
-fn host(headers: &HeaderMap) -> Option<&str> {
+pub(crate) fn host(headers: &HeaderMap) -> Option<&str> {
     headers.get(header::HOST).and_then(|h| h.to_str().ok())
 }
 
@@ -781,13 +1014,22 @@ fn lan_address() -> Option<IpAddr> {
 
 /// Login check for the API, the write header, and security headers on
 /// every response.
-async fn guard(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, req: Request, next: Next) -> Response {
+async fn guard(State(auth): State<Arc<Auth>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, req: Request, next: Next) -> Response {
     let path = req.uri().path();
-    let open = !path.starts_with("/api/") || path == "/api/session" || path == "/api/login";
+    let open = !path.starts_with("/api/") || is_global(path);
+    // Library routes only exist as /api/lib/{id}/…; `forward` rewrites them
+    // and marks the request.
+    let unscoped = path.starts_with("/api/")
+        && !is_global(path)
+        && !path.starts_with("/api/lib/")
+        && !path.starts_with("/api/all/")
+        && req.extensions().get::<LibraryScope>().is_none();
     let safe = matches!(*req.method(), Method::GET | Method::HEAD);
-    let mut res = if !safe && !req.headers().contains_key(WRITE_HEADER) {
+    let mut res = if unscoped {
+        ApiError::NotFound.into_response()
+    } else if !safe && !req.headers().contains_key(WRITE_HEADER) {
         ApiError::Forbidden("missing X-Shoebox header").into_response()
-    } else if open || app.auth.allows(peer.ip(), req.headers()) {
+    } else if open || auth.allows(peer.ip(), req.headers()) {
         next.run(req).await
     } else {
         ApiError::Unauthorized.into_response()
@@ -806,8 +1048,390 @@ struct SessionInfo {
     pin_enabled: bool,
 }
 
-async fn session(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: HeaderMap) -> Json<SessionInfo> {
-    Json(SessionInfo { authenticated: app.auth.allows(peer.ip(), &headers), pin_enabled: app.auth.pin.is_some() })
+async fn session(State(hub): State<Arc<Hub>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: HeaderMap) -> Json<SessionInfo> {
+    let auth = &hub.shared.auth;
+    Json(SessionInfo { authenticated: auth.allows(peer.ip(), &headers), pin_enabled: auth.pin.is_some() })
+}
+
+#[derive(Serialize)]
+struct LibraryInfo {
+    id: String,
+    name: String,
+    /// False for a drive that is unplugged (with several libraries).
+    online: bool,
+    /// Why a library is offline.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+}
+
+/// The libraries this server has, for the UI to build its routes from; a
+/// drive that is gone is listed as offline (this also notices a drive that
+/// came back).
+async fn libraries(State(hub): State<Arc<Hub>>) -> Json<Vec<LibraryInfo>> {
+    let list = tokio::task::spawn_blocking(move || {
+        hub.slots
+            .iter()
+            .map(|s| {
+                let online = s.online(&hub.shared).is_some();
+                let reason = s.live.lock().unwrap().error.clone().filter(|_| !online);
+                LibraryInfo { id: s.id.clone(), name: s.name.clone(), online, reason }
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_default();
+    Json(list)
+}
+
+// ---------------------------------------------------------------- all drives
+
+/// The libraries that are there right now.
+async fn online_apps(hub: &Arc<Hub>) -> Vec<Arc<App>> {
+    let hub = hub.clone();
+    tokio::task::spawn_blocking(move || hub.slots.iter().filter_map(|s| s.online(&hub.shared)).map(|(app, _)| app).collect())
+        .await
+        .unwrap_or_default()
+}
+
+fn drives_of(apps: &[Arc<App>]) -> ApiResult<Vec<multi::Drive>> {
+    apps.iter()
+        .map(|app| {
+            let conn = app.conn.lock().unwrap();
+            let (role, backup_of) = (multi::role(&conn)?, multi::backup_of(&conn)?);
+            Ok(multi::Drive { id: library_id(&app.name), name: app.name.clone(), db: app.db_path.clone(), role, backup_of })
+        })
+        .collect()
+}
+
+#[derive(Serialize)]
+struct AllPeople {
+    people: Vec<multi::MergedPerson>,
+    /// Drives that are not connected: their people are missing from the list.
+    offline: Vec<String>,
+}
+
+/// People over all drives: the same name is the same person.
+async fn all_people(State(hub): State<Arc<Hub>>) -> ApiResult<Json<AllPeople>> {
+    let apps = online_apps(&hub).await;
+    let offline = hub.slots.iter().filter(|s| !apps.iter().any(|a| a.name == s.name)).map(|s| s.name.clone()).collect();
+    let people = tokio::task::spawn_blocking(move || -> ApiResult<Vec<multi::MergedPerson>> {
+        let mut per_drive = Vec::new();
+        for app in &apps {
+            let conn = app.conn.lock().unwrap();
+            per_drive.push((library_id(&app.name), app.name.clone(), people::people(&conn, true)?, people::groups(&conn)?));
+        }
+        Ok(multi::merge_people(&per_drive))
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+    Ok(Json(AllPeople { people, offline }))
+}
+
+#[derive(Deserialize)]
+struct LimitQuery {
+    limit: Option<usize>,
+}
+
+/// The drives that are there, with their roles (cached for a few seconds).
+struct Overview {
+    apps: Vec<Arc<App>>,
+    drives: Vec<multi::Drive>,
+    roles: Vec<multi::DriveRole>,
+}
+
+async fn overview(hub: &Arc<Hub>) -> ApiResult<Overview> {
+    let apps = online_apps(hub).await;
+    let hub = hub.clone();
+    tokio::task::spawn_blocking(move || -> ApiResult<Overview> {
+        let drives = drives_of(&apps)?;
+        let mut cache = hub.roles.lock().unwrap();
+        let fresh = cache.as_ref().filter(|(t, r)| t.elapsed() < ROLES_TTL && r.len() == drives.len());
+        let roles = match fresh {
+            // The same drives, by id, as when it was worked out.
+            Some((_, r)) if r.iter().zip(&drives).all(|(r, d)| r.library == d.id && r.role == d.role) => r.clone(),
+            _ => {
+                let r = multi::roles(&drives)?;
+                *cache = Some((Instant::now(), r.clone()));
+                r
+            }
+        };
+        Ok(Overview { apps, drives, roles })
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))?
+}
+
+/// Contents on more than one drive, leaving out backups (and drives that
+/// look like one until the user decides).
+async fn all_duplicates(State(hub): State<Arc<Hub>>, Query(q): Query<LimitQuery>) -> ApiResult<Json<multi::CrossDuplicates>> {
+    let o = overview(&hub).await?;
+    let limit = q.limit.unwrap_or(500).min(5000);
+    let result = tokio::task::spawn_blocking(move || multi::cross_duplicates(&o.drives, &o.roles, limit))
+        .await
+        .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+    Ok(Json(result))
+}
+
+#[derive(Serialize)]
+struct DriveState {
+    library: String,
+    name: String,
+    online: bool,
+    role: multi::Role,
+    suggested_backup_of: Option<String>,
+    /// Takes part in the common timeline and the duplicates across drives.
+    shown_in_all: bool,
+}
+
+/// Every drive with its role and, where undecided, what its contents suggest.
+async fn all_drives(State(hub): State<Arc<Hub>>) -> ApiResult<Json<Vec<DriveState>>> {
+    let o = overview(&hub).await?;
+    let (eligible, _) = multi::eligibility(&o.drives, &o.roles);
+    let list = hub
+        .slots
+        .iter()
+        .map(|s| match o.roles.iter().position(|r| r.library == s.id) {
+            Some(i) => DriveState {
+                library: s.id.clone(),
+                name: s.name.clone(),
+                online: true,
+                role: o.roles[i].role,
+                suggested_backup_of: o.roles[i].suggested_backup_of.clone(),
+                shown_in_all: eligible.contains(&i),
+            },
+            None => DriveState {
+                library: s.id.clone(),
+                name: s.name.clone(),
+                online: false,
+                role: multi::Role::Unknown,
+                suggested_backup_of: None,
+                shown_in_all: false,
+            },
+        })
+        .collect();
+    Ok(Json(list))
+}
+
+/// File ids are per database; in the common timeline an item's id is
+/// `drive * ID_SPAN + id`, the drive being its position in `libs`.
+const ID_SPAN: i64 = 1 << 40;
+
+#[derive(Serialize)]
+struct AllTimeline {
+    #[serde(flatten)]
+    timeline: Timeline,
+    /// The drives in the list, in the order the ids refer to.
+    libs: Vec<LibraryRef>,
+    /// Drives that are left out (backups) or offline.
+    left_out: Vec<multi::Excluded>,
+}
+
+#[derive(Serialize)]
+struct LibraryRef {
+    id: String,
+    name: String,
+}
+
+/// One timeline over the drives that are there and not backups. Filters name
+/// things instead of numbering them (`tag=Winter`, `person=Anna`, `q=…`):
+/// ids differ from drive to drive, names are what the drives share. A drive
+/// without one of the tags or people has nothing that matches all of them.
+async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<AllTimeline>> {
+    let o = overview(&hub).await?;
+    let (eligible, mut left_out) = multi::eligibility(&o.drives, &o.roles);
+    for s in &hub.slots {
+        if !o.drives.iter().any(|d| d.id == s.id) {
+            left_out.push(multi::Excluded { library: s.id.clone(), name: s.name.clone(), reason: "offline".into() });
+        }
+    }
+    let apps: Vec<Arc<App>> = eligible.iter().map(|&i| o.apps[i].clone()).collect();
+    let tag_names: Vec<String> = pairs.iter().filter(|(k, v)| k == "tag" && !v.is_empty()).map(|(_, v)| v.clone()).collect();
+    let person_names: Vec<String> = pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| v.clone()).collect();
+    let text = param(&pairs, "q").map(str::to_string).filter(|s| !s.trim().is_empty());
+    let libs: Vec<LibraryRef> = apps.iter().map(|a| LibraryRef { id: library_id(&a.name), name: a.name.clone() }).collect();
+
+    let timeline = tokio::task::spawn_blocking(move || -> ApiResult<Timeline> {
+        struct Row {
+            sort: String,
+            path: String,
+            gid: i64,
+            kind: char,
+            day: u32,
+            version: String,
+            live: Option<i64>,
+        }
+        let mut rows: Vec<Row> = Vec::new();
+        for (d, app) in apps.iter().enumerate() {
+            let conn = app.conn.lock().unwrap();
+            let mut tags = Vec::new();
+            for name in &tag_names {
+                match db::find_tag(&conn, name)? {
+                    Some(id) => tags.push(id),
+                    None => break,
+                }
+            }
+            let known_people = if person_names.is_empty() { Vec::new() } else { people::people(&conn, true)? };
+            let people_ids: Vec<i64> = person_names
+                .iter()
+                .filter_map(|n| {
+                    let key = db::tag_fold(n);
+                    known_people.iter().find(|p| db::tag_fold(&p.name) == key).map(|p| p.id)
+                })
+                .collect();
+            if tags.len() != tag_names.len() || people_ids.len() != person_names.len() {
+                continue;
+            }
+            let snapshot = app.snapshot(&conn)?;
+            let query = browse::Query { folder: None, tags, text: text.clone(), people: people_ids };
+            for it in snapshot.query(&conn, &query)? {
+                rows.push(Row {
+                    sort: it.sort.clone(),
+                    path: it.path_lower.clone(),
+                    gid: d as i64 * ID_SPAN + it.id,
+                    kind: match it.kind {
+                        Kind::Jpeg => 'j',
+                        Kind::Png => 'p',
+                        Kind::Heic => 'h',
+                        Kind::Video => 'v',
+                        Kind::Raw => 'r',
+                    },
+                    day: it.day(),
+                    version: it.version.clone(),
+                    live: it.live.map(|v| d as i64 * ID_SPAN + v),
+                });
+            }
+        }
+        rows.sort_by(|a, b| b.sort.cmp(&a.sort).then_with(|| a.path.cmp(&b.path)).then_with(|| a.gid.cmp(&b.gid)));
+        let mut t = Timeline {
+            count: rows.len(),
+            ids: Vec::with_capacity(rows.len()),
+            kinds: String::with_capacity(rows.len()),
+            days: Vec::with_capacity(rows.len()),
+            versions: String::with_capacity(rows.len() * 8),
+            live: Vec::new(),
+            tags: Vec::new(),
+            people: Vec::new(),
+        };
+        for r in rows {
+            t.ids.push(r.gid);
+            t.kinds.push(r.kind);
+            t.days.push(r.day);
+            t.versions.push_str(&format!("{:0<8}", r.version));
+            if let Some(v) = r.live {
+                t.live.push([r.gid, v]);
+            }
+        }
+        Ok(t)
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+    Ok(Json(AllTimeline { timeline, libs, left_out }))
+}
+
+/// Tags over the drives that take part, by name (spellings fold together),
+/// most used first. For the search suggestions of the common timeline.
+async fn all_tags(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<browse::Tag>>> {
+    let o = overview(&hub).await?;
+    let (eligible, _) = multi::eligibility(&o.drives, &o.roles);
+    let apps: Vec<Arc<App>> = eligible.iter().map(|&i| o.apps[i].clone()).collect();
+    let needle = param(&pairs, "q").map(db::tag_fold).unwrap_or_default();
+    let own = param(&pairs, "own").is_some_and(|v| v != "0");
+    let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(50);
+    let tags = tokio::task::spawn_blocking(move || -> ApiResult<Vec<browse::Tag>> {
+        let mut merged: std::collections::BTreeMap<String, browse::Tag> = std::collections::BTreeMap::new();
+        for app in &apps {
+            for t in browse::all_tags(&app.conn.lock().unwrap())? {
+                let key = db::tag_fold(&t.name);
+                if !key.contains(&needle) || (own && t.kind == browse::TagKind::Folder) {
+                    continue;
+                }
+                merged.entry(key).and_modify(|m| m.count += t.count).or_insert(browse::Tag { id: 0, ..t });
+            }
+        }
+        let mut list: Vec<browse::Tag> = merged.into_values().collect();
+        list.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.name.cmp(&b.name)));
+        list.truncate(limit);
+        Ok(list)
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+    Ok(Json(tags))
+}
+
+#[derive(Serialize)]
+struct BackupState {
+    library: String,
+    #[serde(flatten)]
+    report: Option<multi::BackupReport>,
+    /// Why there is no report: the drive it copies is not there, or none matches.
+    note: Option<String>,
+}
+
+/// For every drive marked as a backup (and online): what it lacks compared
+/// with the drive it copies, from the indexes. `limit` lists files per kind.
+async fn all_backups(State(hub): State<Arc<Hub>>, Query(q): Query<LimitQuery>) -> ApiResult<Json<Vec<BackupState>>> {
+    let o = overview(&hub).await?;
+    let limit = q.limit.unwrap_or(50).min(1000);
+    let list = tokio::task::spawn_blocking(move || -> ApiResult<Vec<BackupState>> {
+        let mut out = Vec::new();
+        for (i, d) in o.drives.iter().enumerate() {
+            if d.role != multi::Role::Backup {
+                continue;
+            }
+            match multi::primary_of(&o.drives, i)? {
+                Some(p) => out.push(BackupState {
+                    library: d.id.clone(),
+                    report: Some(multi::backup_report(&o.drives[p].db, &o.drives[p].name, &d.db, &d.name, limit)?),
+                    note: None,
+                }),
+                None => out.push(BackupState {
+                    library: d.id.clone(),
+                    report: None,
+                    note: Some("No drive that is there holds what this backup holds (is the original drive plugged in?)".into()),
+                }),
+            }
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+    Ok(Json(list))
+}
+
+#[derive(Deserialize)]
+struct RoleRequest {
+    library: String,
+    /// `backup`, `separate` or `unknown`.
+    role: String,
+    /// For a backup: the id of the drive it copies (else the likeliest one is used).
+    #[serde(default)]
+    of: Option<String>,
+}
+
+/// "This drive is a backup" / "this drive has its own photos". Stored in
+/// that drive's own `library.db`; never in a photo folder.
+async fn all_set_role(State(hub): State<Arc<Hub>>, Json(req): Json<RoleRequest>) -> ApiResult<Json<serde_json::Value>> {
+    let role = multi::Role::parse(&req.role).ok_or_else(|| ApiError::BadRequest("role must be backup, separate or unknown".into()))?;
+    let index = hub.slots.iter().position(|s| s.id == req.library).ok_or(ApiError::NotFound)?;
+    let shared = hub.shared.clone();
+    let hub2 = hub.clone();
+    let online = tokio::task::spawn_blocking(move || hub2.slots[index].online(&shared)).await.ok().flatten();
+    let Some((app, _)) = online else {
+        return Err(ApiError::Offline { library: hub.slots[index].name.clone(), reason: "plug it in to change this".into() });
+    };
+    let of = req.of.clone().filter(|_| role == multi::Role::Backup);
+    if let Some(of) = &of {
+        if of == &req.library || !hub.slots.iter().any(|s| &s.id == of) {
+            return Err(ApiError::BadRequest("a backup copies another drive of this server".into()));
+        }
+    }
+    change(&app, move |_, conn| {
+        multi::set_role(conn, role)?;
+        multi::set_backup_of(conn, of.as_deref())
+    })
+    .await?;
+    *hub.roles.lock().unwrap() = None;
+    Ok(Json(serde_json::json!({ "library": req.library, "role": req.role })))
 }
 
 #[derive(Deserialize)]
@@ -815,8 +1439,8 @@ struct LoginRequest {
     pin: String,
 }
 
-async fn login(State(app): State<Arc<App>>, Json(body): Json<LoginRequest>) -> ApiResult<Response> {
-    let token = app.auth.login(&body.pin)?;
+async fn login(State(hub): State<Arc<Hub>>, Json(body): Json<LoginRequest>) -> ApiResult<Response> {
+    let token = hub.shared.auth.login(&body.pin)?;
     let cookie = format!(
         "{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={}",
         SESSION_DAYS * 24 * 3600
