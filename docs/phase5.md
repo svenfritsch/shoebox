@@ -19,6 +19,7 @@ latest `main`, so conflicts stay small.
 | **5b** | Own tags: add/remove, many photos at once, search; user data backup | 1 (done) | `library.db` v3 |
 | **5b-2** | Search by several tags at once (AND); people join in with 5c-3 | 1 (done) | none |
 | **5c** | Faces | 3: **5c-1** check recognition, **5c-2** people/groups/clustering backend, **5c-3** UI | `library.db` v4 (5c-2) |
+| **5d** | Duplicates UI and tag carry-over (see [plan.md](plan.md)) | 1, separate commits per step | `library.db` v5 (capture-date override) |
 
 Conflict hot spots and how to avoid them:
 
@@ -653,6 +654,137 @@ Folders
   `GET /api/timeline` takes `person` several times (AND).
 - Recognition and clustering progress in the status line.
 
+### 5c feedback: clusters too big
+
+First look at the real drive: one cluster of 2,566 faces (a mother, her
+fair-haired children and babies chained together), too long to scroll, "Select"
+in a column of the grid was cramped, and an expanded card could not be closed
+again. Built:
+
+- **Cluster size capped at `clusters::MAX_CLUSTER` = 100.** A cluster grows
+  from neighbour to neighbour at 0.60, which chains similar-looking people
+  together. A cluster of more than 100 faces is split with a stricter
+  similarity (0.62, 0.64, … up to 1.0, `SPLIT_STEP`) using the neighbour
+  lists: the weak links break first, and every piece still too large is
+  split again. Faces that are still joined at 1.0 are cut into pieces of
+  100. So the smallest threshold that fits is used, rather than a fixed 0.90
+  for all. Unit tests in `clusters.rs`.
+- **"Looks like X (721 of 2566)"** has a second button "✓ Only the 721" next
+  to "✓ X": it names only the faces suggested for X (≥ `SUGGEST_SIM`); the
+  rest of the card stays. (Whole card: "✓ X", as before.)
+- **Cards**: opening all faces ("+N") or "Select" makes the card as wide as
+  the page, with bigger faces, and a "Close ✕" button in a sticky head that
+  stays at the top while scrolling.
+- **Shift-click** selects a range wherever faces are selected, as in the
+  photo grid: the face check page, a person's faces and the cards under
+  Unnamed (`pickSpan` in `app.js`; the range runs from the last face
+  clicked to this one, in the order shown). The duplicates page has no
+  range: its boxes keep at least one copy per group.
+
+## 5d: duplicates UI and tag carry-over
+
+Built, one commit per step. Scope and rules are in "Phase 5d details" in
+[plan.md](plan.md). As built:
+
+- **Trash dialog**: `openModal` takes `focus: true` on an action; the "Move to
+  trash" button has focus, Enter confirms.
+- **Move dialog**: "Keep tags" (default checked). `POST /api/move` takes
+  `keep_tags` (default true); unchecked drops the moved photos' own tags
+  (`organize::move_files_with`, `tags::drop_own`), folder tags follow the path.
+- **Deleting copies**: `POST /api/duplicates/remove {keep, remove, dates?}`
+  (`duplicates::remove_copies`). At least one copy must stay; every removed
+  file must be a duplicate of a kept one (same full hash, or phash within 8
+  bits), so the endpoint cannot delete anything else. Reply: `{trashed,
+  tags_added, dates_set, conflicts}`.
+- **Who inherits**: each removed copy hands over to the kept copy with the same
+  content, else a similar one; the highest resolution, then the earliest
+  record, then the first path. Its folder tags and own tags become **own tags**
+  of the heir (not where the heir has that tag as a folder tag), read before the
+  record goes, applied only for copies that really reached the trash.
+- **Capture date** (`library.db` v5, `taken_overrides`, keyed by `quick_hash`,
+  so it follows the content like thumbnails; `db::TAKEN` is the date as shown
+  in the timeline and info panel; the scan keeps rewriting `files.taken`
+  untouched, the file is never modified). Rule (`merge_dates`): the heir keeps
+  its date when no copy differs; if it has none, or dates differ by less than a
+  day, the **oldest** wins; further apart is a real conflict: nothing happens,
+  the reply has `conflicts: [{keep, path, dates}]`, the UI asks and repeats the
+  request with `dates: {<keep id>: "<chosen>"}`. Exact copies share content and
+  therefore one date, so conflicts only arise among similar photos.
+  `userdata.json` is version 3 and lists `taken_overrides`.
+- **Same-folder button**: `GET /api/duplicates/same-folder` → `{groups, copies}`,
+  `POST` does it (`duplicates::same_folder_plan`). Per (full hash, folder) one
+  file stays: highest resolution (identical for exact copies, so in practice
+  the tie rule decides), then the earliest record (`added_at`), then the first
+  path. "Oldest path" in the plan is read as oldest record. Pairs already
+  decided `distinct` or `linked` with the keeper are skipped; near duplicates
+  and other folders are never part of it.
+- **Three kinds of groups** (feedback on the first screens): `Group.kind` is
+  `identical` (same content), `resolution` ("Same photo, different resolution":
+  everything is one row, i.e. surely the same photo, differing in size,
+  quality or name) or `similar` (several rows: different shots that look alike,
+  a series, repeated clicks). A drop-down with check boxes at the top
+  (`localStorage`) chooses which kinds are shown; deleting and the bar count
+  only what is shown. The two bulk buttons sit on the right as "Clear Same
+  Folder Copies" and "Clear Lower Quality Copies"; the number of files is in
+  the tooltip and the confirmation, not in the label (a bracketed count was
+  unclear); they are disabled when there is nothing to clear.
+- **Similar photos as cards with thumbnails**: in a "similar" group the shots
+  are not rows with one thumbnail each; all files lie side by side in one
+  wrapping row, every card with its own thumbnail (a shot's other versions
+  follow it). Identical and same-photo groups keep one thumbnail at the start
+  of the row, since repeating it would add nothing.
+- **Pre-selection and the original name**: of every photo with several files
+  all but the `pick` are ticked (the page, once; an untick stays). The pick is
+  the best quality, then a capture date, then **the file without a copy's
+  name**, then size, the earliest record, the first path. The same preference
+  decides which file "Clear Same Folder Copies" keeps. A name counts as a copy's
+  only if the name without the marker belongs to another file of the group
+  (`copy_named`), so a legitimate "Bild 1.jpg" is safe. Markers handled:
+  Windows "x - Copy", "x - Copy (2)"; macOS "x copy", "x copy 2", "x 2";
+  Chrome/Edge/Firefox/Explorer imports "x (1)", "x(1)"; GNOME "x (copy)",
+  "x (another copy)", "x (3rd copy)"; Dropbox "x (Name's conflicted copy …)";
+  "x-1", "x_2" (Image Capture and others); the word for copy in German, French,
+  Spanish, Italian, Dutch, Polish, Portuguese, Danish/Norwegian and Russian/
+  Ukrainian ("Kopie", "copia", "copie", …). Windows, macOS and Explorer patterns
+  were checked against web sources, the rest is from experience.
+  Identical copies in different folders are ticked too (all but the pick):
+  the page only suggests, the folder tags go to the file that stays.
+- **Duplicates page** (`app.js`, `groupNode`): a row per photo, i.e. per
+  `row` of `/api/duplicates` (below); left one thumbnail (the best version) and
+  its file name, right a card per file (resolution, MB, folder, capture date,
+  tags: 📁 folder tags, own tags filled). "delete this copy" on each card; the
+  last unticked box of a group is disabled. Ticks work across groups; the bar
+  at the bottom (“N copies marked”, Clear, Move to trash) sends one request per
+  group, then asks about conflicting dates once. `GET /api/duplicates` files
+  carry `tags: [{name, own}]`, `row`, and `keeper` (see below).
+- **Lower-quality versions** (feedback: an original and a messenger copy with
+  another name and resolution are one photo, not two rows). `same_photo` says
+  when two files are surely the same photo: identical content, or `phash` at
+  most `SURE_BITS` (4) apart, or `SURE_BITS_STRIPPED` (6) when exactly one has
+  lost its capture date (what a messenger strips; two undated pictures get no
+  leeway), the same shape (long side / short side within 2%, a turned copy
+  counts), videos never, and no capture times that differ by more than 2 s.
+  Rows are the files that are `same_photo` as the **best** file of their
+  component (most pixels, then a capture date, then size, earliest record, first
+  path); sameness is not transitive, so anything else gets a row of its own
+  (a messenger copy without a date fits two shots a day apart: it joins the one
+  it is the same photo as). A file is `worse` (`keeper` = the best file's id)
+  when it has fewer pixels, or as many and not the capture date the best has.
+  The page ticks every file with a `keeper` once (an untick stays after a
+  reload). `GET/POST /api/duplicates/lower-quality` is the button: preview
+  `{groups, copies}`, then each best file with its worse versions through
+  `remove_copies`, so folders, tags and dates are carried over. Pairs decided
+  `distinct`/`linked` never count. Near-but-not-sure photos (bursts, other
+  shots) are only ever deleted by hand.
+- Tests: `core/tests/dupes.rs` (at-least-one rule and non-duplicates refused,
+  tag carry-over without duplicating folder tags, date merge incl. conflict
+  and rescan, bulk action only on exact duplicates in one folder and skipping
+  decided pairs, lower-quality versions: rows, `keeper`, a burst shot with another
+  capture time and a stretched picture stay out, 6 bits count only with a lost
+  date, guard: originals unchanged, `verify` clean), plus
+  `move_without_keep_tags_drops_own_tags` in `tags.rs`. The page was driven with
+  Playwright (Chromium, 1280 × 800) on a small library.
+
 ## Later (not in phase 5)
 
 - Undo for assignments.
@@ -737,6 +869,10 @@ Folders
     one core of a 2.1 GHz Xeon for 10,000 made-up faces, so expect a few
     seconds). Run it again: neighbour lists are kept, it should take a
     fraction.
+  - [ ] After 5c feedback (clusters of at most 100): run `shoebox recognize`
+    once, open Unnamed: no card over 100 faces, how many cards now, is the
+    largest one a single person? "✓ Only the N" on a card with a
+    suggestion; "+N" and "Select" widen the card, "Close ✕" stays visible.
   - [ ] `shoebox serve`: "Faces" appears in the sidebar with "Unnamed (N
     clusters)". Open it: are the largest cards one person each? Big mixed
     ones (small children: 0.60 may be too loose for them)? Scroll to the
@@ -780,3 +916,39 @@ Folders
     groups and decisions (drawn faces with `manual`); delete
     `recognition.db` and run `shoebox recognize`: every name and decision
     is still there. `shoebox verify` afterwards.
+- [ ] 5d, on the old Intel MacBook against the exFAT drive, then the iPad
+      (feedback needed from you; note what looks wrong):
+  - [ ] Trash dialog: select a photo, "Move to trash": the button has focus,
+    Enter confirms, Escape cancels.
+  - [ ] Move dialog: "Keep tags" checked keeps the photo's own tags after
+    the move; unchecked drops them (folder tags follow the new folder).
+  - [ ] Duplicates page: one thumbnail per group, one card per copy with
+    resolution, MB, folder, tags and capture date. Do the numbers match the
+    info panel? Is the layout readable on the iPad?
+  - [ ] Tick "delete this copy" on all but one card: the last unchecked
+    box is disabled, so the original cannot be deleted.
+  - [ ] The three kinds: do “Identical photos”, “Same photo, different
+    resolution” and “Similar photos” hold what the names say? The “Show” menu
+    hides and shows them. Does a file with a copy-style name
+    (“IMG (2)”, “IMG - Copy”, “IMG copy 2”, “IMG (1)”) ever stay while the
+    original name is ticked? Note any pattern that is not recognised.
+  - [ ] A photo and its WhatsApp (or other messenger) copy: they are one row,
+    the messenger copy is ticked and says “lower quality”. Do other shots
+    of a series stay in rows of their own? Any wrongly ticked copy, or a
+    messenger copy that is not recognised (note its name and size)?
+  - [ ] “Remove lower-quality versions”: note the count, run it; the better
+    file stays with the folder name (“WhatsApp”) as an own tag. Restore one
+    from the trash.
+  - [ ] Delete a copy in another folder: the survivor shows the copy's
+    folder as a removable own tag (and the copy's own tags). Remove it
+    again with ✕. Folder tags stay without ✕.
+  - [ ] Capture date: a pair where the dates differ or one is missing; the
+    survivor shows the existing/oldest date. Check the file itself in the
+    Finder: modified and created dates unchanged (`shoebox verify`).
+  - [ ] Multi-select across groups, trash in one action; restore one from
+    the trash page (tags come back).
+  - [ ] Bulk action "same folder": note the count in the confirm dialog,
+    run it; the highest resolution stays, near duplicates and copies in
+    other folders are untouched. How long on the full library?
+  - [ ] `shoebox verify` afterwards; restart `serve`: the override and the
+    carried tags are still there; `userdata.json` lists them.

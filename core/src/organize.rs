@@ -494,6 +494,12 @@ pub struct Moved {
 /// Move photos into a folder (NFC path, created if needed), each with its
 /// companions. A photo whose group cannot move completely stays put.
 pub fn move_files(conn: &Connection, root: &Path, ids: &[i64], folder: &str) -> Result<Moved> {
+    move_files_with(conn, root, ids, folder, true)
+}
+
+/// As `move_files`; without `keep_tags` the photos' own tags are dropped
+/// (folder tags always follow the new folder).
+pub fn move_files_with(conn: &Connection, root: &Path, ids: &[i64], folder: &str, keep_tags: bool) -> Result<Moved> {
     let folder = check_folder_path(folder)?;
     let (folder_id, folder_raw) = ensure_folder(conn, root, &folder)?;
     let dir = root.join(&folder_raw);
@@ -509,7 +515,7 @@ pub fn move_files(conn: &Connection, root: &Path, ids: &[i64], folder: &str) -> 
                 None => Ok(()),
             }
         });
-        if let Err(e) = result.and_then(|()| move_group(conn, root, &group, folder_id, &folder_raw, &mut names, &mut out)) {
+        if let Err(e) = result.and_then(|()| move_group(conn, root, &group, folder_id, &folder_raw, keep_tags, &mut names, &mut out)) {
             out.skipped.push(format!("{}: {e:#}", group.files[0].path_nfc));
         }
     }
@@ -522,6 +528,7 @@ fn move_group(
     group: &Group,
     folder_id: i64,
     folder_raw: &str,
+    keep_tags: bool,
     names: &mut Names,
     out: &mut Moved,
 ) -> Result<()> {
@@ -537,6 +544,9 @@ fn move_group(
             let raw = join(folder_raw, name);
             let rel = RelPath { nfc: library::nfc(&raw), raw };
             set_path(&tx, f.id, &rel, folder_id)?;
+            if !keep_tags {
+                crate::tags::drop_own(&tx, f.id)?;
+            }
             out.files.push(rel.nfc);
             check_kept(&before, &to)?;
         }

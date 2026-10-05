@@ -168,6 +168,7 @@ function applyFilter() {
   $('nav-faces').classList.toggle('active', view === 'faces');
   $('nav-drives').classList.toggle('active', view === 'drives');
   markFacesSection();
+  updateSections();
   if (view) {
     endSelection();
     $('empty').hidden = true;
@@ -479,6 +480,38 @@ $('menu').onclick = function () {
   else { document.body.classList.toggle('side-closed'); relayout(); render(); }
 };
 
+// Collapsible sidebar sections (Faces, Tags, Folders). A section holding
+// the current selection stays open and its caret is disabled.
+var sectionClosed = {};
+try { sectionClosed = JSON.parse(localStorage.getItem('sectionClosed') || '{}') || {}; } catch (e) { sectionClosed = {}; }
+
+function sectionHasActive(id) {
+  var f = state.filter;
+  if (id === 'folders-section') return !f.view && f.folder != null;
+  if (id === 'tags-section') return !f.view && f.tags.length > 0;
+  return f.view === 'people' || f.view === 'unnamed' || f.view === 'person' || (!f.view && f.people.length > 0);
+}
+
+function updateSections() {
+  Array.prototype.forEach.call(document.querySelectorAll('.caret'), function (c) {
+    var id = c.dataset.section;
+    var locked = sectionHasActive(id);
+    var open = locked || !sectionClosed[id];
+    c.disabled = locked;
+    c.textContent = open ? '▾' : '▸';
+    c.setAttribute('aria-expanded', String(open));
+    $(c.dataset.body).hidden = !open;
+  });
+}
+
+Array.prototype.forEach.call(document.querySelectorAll('.caret'), function (c) {
+  c.onclick = function () {
+    sectionClosed[c.dataset.section] = !sectionClosed[c.dataset.section];
+    try { localStorage.setItem('sectionClosed', JSON.stringify(sectionClosed)); } catch (e) { /* ignore */ }
+    updateSections();
+  };
+});
+
 function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
 
 // ------------------------------------------------------------------ timeline
@@ -760,6 +793,24 @@ $('sizer').addEventListener('click', function (ev) {
 // Keep Shift-click from selecting the page's text.
 $('sizer').addEventListener('mousedown', function (ev) {
   if (ev.shiftKey && ev.target.closest('.cell')) ev.preventDefault();
+});
+
+// Shift-click in a list of faces being selected: the items from the last one
+// clicked (`anchor`, an id as `idOf` gives it) to this one, both included, in
+// either order; null if there is no anchor in the list. The anchor stays.
+function pickSpan(list, idOf, anchor, id) {
+  var a = -1, b = -1;
+  list.forEach(function (x, i) {
+    if (idOf(x) === anchor) a = i;
+    if (idOf(x) === id) b = i;
+  });
+  if (a < 0 || b < 0) return null;
+  return list.slice(Math.min(a, b), Math.max(a, b) + 1);
+}
+
+// Keep Shift-click on faces from selecting the page's text.
+document.addEventListener('mousedown', function (ev) {
+  if (ev.shiftKey && ev.target.closest && ev.target.closest('.face, .cface')) ev.preventDefault();
 });
 
 var ticking = false;
@@ -1203,7 +1254,8 @@ function openModal(title, body, actions) {
   });
   $('modal').hidden = false;
   var input = b.querySelector('input:not([type=file])');
-  if (input) input.focus();
+  var preferred = actions.findIndex(function (act) { return act.focus; });
+  if (input) input.focus(); else if (preferred >= 0) buttons[preferred].focus();
   return buttons;
 }
 
@@ -1306,6 +1358,14 @@ function moveDialog(ids, done) {
   var current = state.filter.folder && state.folderById[state.filter.folder];
   if (current && current.path) input.value = current.path;
   body.appendChild(input);
+  var keepLabel = el('label', 'check');
+  var keep = el('input');
+  keep.type = 'checkbox';
+  keep.checked = true;
+  keepLabel.appendChild(keep);
+  keepLabel.appendChild(document.createTextNode(' Keep tags'));
+  keepLabel.title = 'Checked: the photos’ own tags move along. Unchecked: they are dropped. Folder tags always follow the new folder.';
+  body.appendChild(keepLabel);
   body.appendChild(el('p', 'hint', 'Folders that do not exist yet are created. RAW, Live Photo and sidecar files of the same name move along. Nothing is ever overwritten.'));
   var error = el('p', 'error');
   body.appendChild(error);
@@ -1313,7 +1373,7 @@ function moveDialog(ids, done) {
     var folder = input.value.trim();
     if (!folder) { error.textContent = 'Choose a folder.'; return false; }
     btn.disabled = true;
-    post(LIBAPI + '/move', { ids: ids, folder: folder }).then(function (r) {
+    post(LIBAPI + '/move', { ids: ids, folder: folder, keep_tags: keep.checked }).then(function (r) {
       closeModal();
       if (done) done();
       toast(plural(r.files.length, 'file', 'files') + ' moved to ' + r.folder);
@@ -1331,7 +1391,7 @@ function trashDialog(ids, done) {
     'Move to trash',
     'Move ' + plural(ids.length, 'photo', 'photos') + ' (with their RAW, Live Photo and sidecar files) to the shoebox trash? You can put them back from there until the trash is emptied.',
     [{ label: 'Cancel', cls: 'quiet' }, {
-      label: 'Move to trash', cls: 'danger', onclick: function (btn) {
+      label: 'Move to trash', cls: 'danger', focus: true, onclick: function (btn) {
         btn.disabled = true;
         post(LIBAPI + '/trash', { ids: ids }).then(function (r) {
           closeModal();
@@ -1548,7 +1608,29 @@ $('import').onclick = function () { importDialog(); };
 
 // ------------------------------------------------------------------ duplicates page
 
-var dupState = { groups: [], shown: 0 };
+var DUP_KINDS_IDS = ['identical', 'resolution', 'edited', 'similar'];
+var dupState = { groups: [], shown: 0, marked: {}, seen: {}, sameFolder: null, lowerQuality: null, types: dupTypes() };
+var DUP_KINDS = [
+  { id: 'identical', label: 'Identical photos', hint: 'The same file, copied.' },
+  { id: 'resolution', label: 'Same photo, different resolution', hint: 'The same picture in another size, quality or name (a messenger copy, say).' },
+  { id: 'edited', label: 'Original and edited', hint: 'An iPhone edit (the “E” in IMG_E1234, a portrait blur, say) next to its original. Keep the one you like, or both.' },
+  { id: 'similar', label: 'Similar photos', hint: 'Different shots that look alike: a series, repeated clicks, a burst.' },
+];
+
+// Which kinds of duplicates are shown (remembered in this browser).
+function dupTypes() {
+  var t = { identical: true, resolution: true, edited: true, similar: true };
+  try {
+    var saved = JSON.parse(localStorage.getItem('dupTypes') || 'null');
+    if (saved) DUP_KINDS_IDS.forEach(function (k) { if (saved[k] === false) t[k] = false; });
+  } catch (e) { /* storage may be blocked */ }
+  return t;
+}
+
+function visibleGroups() {
+  return dupState.groups.filter(function (g) { return dupState.types[g.kind]; });
+}
+
 var PAGE_GROUPS = 30;
 
 // With several drives the page has two lists: copies on this drive (decided
@@ -1653,11 +1735,27 @@ function loadDuplicatesHere() {
   page.appendChild(el('h2', '', 'Duplicates'));
   addDupTabs(page);
   page.appendChild(el('p', 'sub', 'Looking…'));
-  return api(LIBAPI + '/duplicates').then(function (r) {
+  return Promise.all([api(LIBAPI + '/duplicates'), api(LIBAPI + '/duplicates/same-folder'), api(LIBAPI + '/duplicates/lower-quality')]).then(function (res) {
     if (state.filter.view !== 'duplicates') return;
-    dupState.groups = r.groups;
+    dupState.groups = res[0].groups;
+    dupState.sameFolder = res[1];
+    dupState.lowerQuality = res[2];
     dupState.shown = 0;
+    // Ticks survive a reload (a scan finishing meanwhile) for copies still listed.
+    var still = {};
+    dupState.groups.forEach(function (g) {
+      g.files.forEach(function (f) {
+        if (dupState.marked[f.id]) still[f.id] = true;
+        // Of every photo with several files all but the best start ticked
+        // (the best quality, then the one without a copy's name), once
+        // (unticking one stays unticked after a reload).
+        else if (!f.pick && !dupState.seen[f.id]) still[f.id] = true;
+        if (!f.pick) dupState.seen[f.id] = true;
+      });
+    });
+    dupState.marked = still;
     renderDuplicates();
+    updateDupBar();
   }).catch(failed);
 }
 
@@ -1666,87 +1764,463 @@ function renderDuplicates() {
   page.textContent = '';
   page.appendChild(el('h2', '', 'Duplicates'));
   addDupTabs(page);
-  var exact = dupState.groups.filter(function (g) { return g.exact; }).length;
-  var near = dupState.groups.length - exact;
   page.appendChild(el('p', 'sub', dupState.groups.length
-    ? plural(exact, 'group', 'groups') + ' of identical copies, ' + plural(near, 'group', 'groups') + ' of similar photos. Decide per group; decided groups are not shown again.'
+    ? 'Tick “delete this copy” on the files to remove; of every photo the best file is left unticked and one file per group always stays. Decided groups are not shown again.'
     : 'No duplicates. Photos added since the last scan are compared once they have thumbnails.'));
+  if (dupState.groups.length) page.appendChild(dupToolbar());
   var box = el('div');
   page.appendChild(box);
   var more = el('button', 'btn quiet', 'Show more');
   more.onclick = function () { showGroups(box, more); };
   page.appendChild(more);
+  var action = el('div', 'dup-bar');
+  action.id = 'dup-bar';
+  action.hidden = true;
+  page.appendChild(action);
   showGroups(box, more);
 }
 
 function showGroups(box, more) {
-  var end = Math.min(dupState.groups.length, dupState.shown + PAGE_GROUPS);
-  for (var k = dupState.shown; k < end; k++) box.appendChild(groupNode(dupState.groups[k]));
+  var groups = visibleGroups();
+  var end = Math.min(groups.length, dupState.shown + PAGE_GROUPS);
+  for (var k = dupState.shown; k < end; k++) box.appendChild(groupNode(groups[k]));
   dupState.shown = end;
-  more.hidden = end >= dupState.groups.length;
+  more.hidden = end >= groups.length;
+  if (!groups.length && dupState.groups.length) box.appendChild(el('p', 'sub', 'No duplicates of the chosen kinds.'));
+}
+
+// Ticked files in the groups that are shown.
+function markedCount() {
+  var n = 0;
+  visibleGroups().forEach(function (g) { g.files.forEach(function (f) { if (dupState.marked[f.id]) n++; }); });
+  return n;
+}
+
+// Left: which kinds to show (a drop-down with check boxes). Right: the two
+// buttons that clear without review.
+function dupToolbar() {
+  var bar = el('div', 'dup-top');
+  var filter = el('details', 'dup-filter');
+  var sum = el('summary', 'btn quiet');
+  var menu = el('div', 'dup-filter-menu');
+  var count = {};
+  dupState.groups.forEach(function (g) { count[g.kind] = (count[g.kind] || 0) + 1; });
+  var refreshLabel = function () {
+    var on = DUP_KINDS.filter(function (k) { return dupState.types[k.id]; });
+    sum.textContent = 'Show: ' + (on.length === DUP_KINDS.length ? 'all kinds' : on.length ? on.map(function (k) { return k.label; }).join(', ') : 'nothing') + ' ▾';
+  };
+  DUP_KINDS.forEach(function (k) {
+    var label = el('label', 'check');
+    label.title = k.hint;
+    var cb = el('input');
+    cb.type = 'checkbox';
+    cb.checked = dupState.types[k.id];
+    cb.onchange = function () {
+      dupState.types[k.id] = cb.checked;
+      try { localStorage.setItem('dupTypes', JSON.stringify(dupState.types)); } catch (e) { /* ignore */ }
+      refreshLabel();
+      var open = filter.open;
+      dupState.shown = 0;
+      renderDuplicates();
+      updateDupBar();
+      var again = document.querySelector('.dup-filter');
+      if (again && open) again.open = true;
+    };
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(' ' + k.label + ' (' + (count[k.id] || 0) + ')'));
+    menu.appendChild(label);
+  });
+  refreshLabel();
+  filter.appendChild(sum);
+  filter.appendChild(menu);
+  bar.appendChild(filter);
+  var sf = dupState.sameFolder, lq = dupState.lowerQuality;
+  var buttons = el('div', 'dup-buttons');
+  var same = el('button', 'btn', 'Clear Same Folder Copies');
+  same.title = sf && sf.copies
+    ? 'Deletes ' + plural(sf.copies, 'file', 'files') + ': identical copies in the same folder as another copy. The best one stays, no review.'
+    : 'No identical copies in the same folder.';
+  same.disabled = !(sf && sf.copies);
+  same.onclick = removeSameFolder;
+  var low = el('button', 'btn', 'Clear Lower Quality Copies');
+  low.title = lq && lq.copies
+    ? 'Deletes ' + plural(lq.copies, 'file', 'files') + ': the same photo in a lower resolution or without its metadata (a messenger copy, say). The better file stays, no review.'
+    : 'No lower-quality versions of a photo.';
+  low.disabled = !(lq && lq.copies);
+  low.onclick = removeLowerQuality;
+  buttons.appendChild(same);
+  buttons.appendChild(low);
+  bar.appendChild(buttons);
+  return bar;
+}
+
+// The bar with the delete button, shown while copies are ticked.
+function updateDupBar() {
+  var bar = $('dup-bar');
+  if (!bar) return;
+  var n = markedCount();
+  bar.hidden = n === 0;
+  bar.textContent = '';
+  if (!n) return;
+  bar.appendChild(el('span', '', plural(n, 'copy', 'copies') + ' marked'));
+  var clear = el('button', 'btn quiet', 'Clear');
+  clear.onclick = function () {
+    Array.prototype.forEach.call(document.querySelectorAll('.copy input[type=checkbox]:checked'), function (cb) {
+      cb.checked = false;
+      cb.dispatchEvent(new Event('change'));
+    });
+  };
+  bar.appendChild(clear);
+  var del = el('button', 'btn danger', 'Move to trash');
+  del.onclick = deleteMarked;
+  bar.appendChild(del);
+}
+
+// One row per photo (content); the copies as cards on its right.
+function dupRows(g) {
+  var rows = [], byKey = {};
+  g.files.forEach(function (f) {
+    var key = 'r' + f.row;
+    if (!byKey[key]) { byKey[key] = []; rows.push(byKey[key]); }
+    byKey[key].push(f);
+  });
+  return rows;
+}
+
+function dupThumb(f, compare) {
+  var a = el('a', 'thumb');
+  a.href = LIBAPI + '/files/' + f.id + (f.kind === 'video' ? '/original' : '/view') + '?v=' + f.version;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  var img = el('img');
+  img.alt = '';
+  img.loading = 'lazy';
+  img.src = LIBAPI + '/files/' + f.id + '/thumb?v=' + f.version;
+  a.appendChild(img);
+  if (compare) {
+    // Opens the group's pictures side by side instead of one in a new tab.
+    a.removeAttribute('target');
+    a.title = 'Compare the photos';
+    a.onclick = function (e) { e.preventDefault(); compare(f); };
+  }
+  return a;
+}
+
+// "IMG_E1234" is the edited version of "IMG_1234" (iPhone).
+function isEdit(f) { return /^img_e\d+/i.test(f.name); }
+
+// The group's photos large and side by side; "Keep this one" ticks all the
+// others for deletion (the dialog closes), so the choice is one click.
+function compareDialog(g, start, onKeep) {
+  var back = el('div', 'modal');
+  var dlg = el('div', 'dialog compare');
+  dlg.appendChild(el('h2', '', 'Which one do you like most?'));
+  var strip = el('div', 'compare-strip');
+  var close = function () { back.remove(); document.removeEventListener('keydown', onKey); };
+  var onKey = function (e) { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  g.files.forEach(function (f) {
+    var col = el('div', 'compare-col' + (f.id === start.id ? ' start' : ''));
+    var img = el('img');
+    img.alt = f.name;
+    img.src = LIBAPI + '/files/' + f.id + (f.kind === 'video' ? '/thumb' : '/view') + '?v=' + f.version;
+    col.appendChild(img);
+    col.appendChild(el('div', 'name', f.name + (g.kind === 'edited' ? (isEdit(f) ? ' · edited' : ' · original') : '')));
+    var meta = [];
+    if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
+    meta.push((f.size / 1e6).toFixed(1) + ' MB');
+    col.appendChild(el('div', 'meta', meta.join(' · ')));
+    var keep = el('button', 'btn', 'Keep this one');
+    keep.onclick = function () { close(); onKeep(f); };
+    col.appendChild(keep);
+    strip.appendChild(col);
+  });
+  dlg.appendChild(strip);
+  var row = el('div', 'actions');
+  var done = el('button', 'btn quiet', 'Close');
+  done.onclick = close;
+  row.appendChild(done);
+  dlg.appendChild(row);
+  back.onclick = function (e) { if (e.target === back) close(); };
+  back.appendChild(dlg);
+  document.body.appendChild(back);
 }
 
 function groupNode(g) {
   var box = el('div', 'group');
   var head = el('div', 'group-head');
-  head.appendChild(el('span', 'label', g.exact ? 'Identical copies' : 'Similar photos'));
+  var kind = DUP_KINDS.filter(function (k) { return k.id === g.kind; })[0];
+  var title = el('span', 'label', kind.label);
+  title.title = kind.hint;
+  head.appendChild(title);
   var ids = g.files.map(function (f) { return f.id; });
   var decide = function (decision, label) {
     var b = el('button', 'btn quiet', label);
     b.onclick = function () {
       b.disabled = true;
       post(LIBAPI + '/duplicates/decide', { ids: ids, decision: decision }).then(function () {
+        ids.forEach(function (id) { delete dupState.marked[id]; });
         box.remove();
+        updateDupBar();
         toast(decision === 'linked' ? 'Kept as versions of one photo' : 'Kept as different photos');
       }).catch(function (e) { b.disabled = false; failed(e); });
     };
     head.appendChild(b);
   };
-  if (!g.exact) decide('distinct', 'Different photos');
-  decide('linked', g.exact ? 'Keep all copies' : 'Versions of one photo');
+  if (g.kind === 'similar') decide('distinct', 'Different photos');
+  decide('linked', g.kind === 'identical' ? 'Keep all copies' : g.kind === 'resolution' ? 'Keep all versions'
+    : g.kind === 'edited' ? 'Keep both' : 'Versions of one photo');
   box.appendChild(head);
+  box.appendChild(el('p', 'group-hint', g.kind === 'similar' || g.kind === 'edited'
+    ? kind.hint + ' Every card is one file; click a picture to compare them large.'
+    : kind.hint));
 
-  var cards = el('div', 'cards');
-  g.files.forEach(function (f) {
-    var card = el('div', 'card');
-    var a = el('a', 'thumb');
-    a.href = LIBAPI + '/files/' + f.id + (f.kind === 'video' ? '/original' : '/view') + '?v=' + f.version;
-    a.target = '_blank';
-    a.rel = 'noopener';
-    var img = el('img');
-    img.alt = '';
-    img.loading = 'lazy';
-    img.src = LIBAPI + '/files/' + f.id + '/thumb?v=' + f.version;
-    a.appendChild(img);
-    card.appendChild(a);
-    var name = el('div', 'name', f.name + ' ');
-    if (f.same) {
-      var same = el('span', 'same', String.fromCharCode(64 + f.same));
+  var boxes = [];
+  // At least one copy of the group stays: the last unticked box is disabled.
+  var refresh = function () {
+    var open = boxes.filter(function (b) { return !b.checked; });
+    boxes.forEach(function (b) { b.disabled = !b.checked && open.length === 1; });
+  };
+  // One card per file: the check box, where it is, what it is, its tags.
+  // `thumb`: the card carries its own thumbnail (similar photos).
+  var cards = [];
+  // "Keep this one" in the compare dialog: tick every other file, untick it.
+  var keepOnly = function (keep) {
+    cards.forEach(function (c) {
+      c.cb.checked = c.f.id !== keep.id;
+      c.cb.dispatchEvent(new Event('change'));
+    });
+  };
+  var compare = function (f) { compareDialog(g, f, keepOnly); };
+  var copyCard = function (f, showName, thumb) {
+    var card = el('div', 'copy' + (thumb ? ' with-thumb' : ''));
+    if (thumb) card.appendChild(dupThumb(f, compare));
+    var label = el('label', 'check');
+    var cb = el('input');
+    cb.type = 'checkbox';
+    cb.checked = !!dupState.marked[f.id];
+    cb.onchange = function () {
+      if (cb.checked) dupState.marked[f.id] = true; else delete dupState.marked[f.id];
+      card.classList.toggle('marked', cb.checked);
+      refresh();
+      updateDupBar();
+    };
+    boxes.push(cb);
+    cards.push({ f: f, cb: cb });
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(' delete this copy'));
+    card.appendChild(label);
+    card.classList.toggle('marked', cb.checked);
+    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : '(top level)';
+    var fb = el('button', 'folder', folder);
+    fb.title = f.path;
+    fb.onclick = function () { setFilter({ folder: f.folder_id, tags: [], q: '' }); };
+    card.appendChild(fb);
+    if (showName) card.appendChild(el('div', 'name', f.name));
+    if (g.kind === 'edited') card.appendChild(el('div', 'badge', isEdit(f) ? 'Edited' : 'Original'));
+    var meta = [];
+    if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
+    meta.push((f.size / 1e6).toFixed(1) + ' MB');
+    card.appendChild(el('div', 'meta', meta.join(' · ')));
+    if (f.keeper) card.appendChild(el('div', 'meta worse', 'lower quality than the best version'));
+    card.appendChild(el('div', 'meta', f.taken ? formatDate({ taken: f.taken, date_source: 'file' }) : 'no capture date'));
+    if (f.tags && f.tags.length) {
+      var tags = el('div', 'tagline');
+      f.tags.forEach(function (t) {
+        var chip = el('span', 'chip' + (t.own ? ' own' : ''), (t.own ? '' : '📁 ') + t.name);
+        chip.title = t.own ? 'Own tag' : 'Folder tag';
+        tags.appendChild(chip);
+      });
+      card.appendChild(tags);
+    }
+    return card;
+  };
+  var bestFirst = function (copies) {
+    return copies.slice().sort(function (a, b) {
+      return (!!b.pick - !!a.pick) || ((b.width || 0) * (b.height || 0) - (a.width || 0) * (a.height || 0));
+    });
+  };
+
+  if (g.kind === 'similar' || g.kind === 'edited') {
+    // Different shots side by side, each card with its own thumbnail; a
+    // shot's other versions (a messenger copy) follow it.
+    var series = el('div', 'copies series');
+    dupRows(g).forEach(function (copies) {
+      bestFirst(copies).forEach(function (f) { series.appendChild(copyCard(f, true, true)); });
+    });
+    box.appendChild(series);
+    refresh();
+    return box;
+  }
+
+  dupRows(g).forEach(function (copies) {
+    var row = el('div', 'dup-row');
+    // The photo shown is the best version of the row; its cards come first.
+    copies = bestFirst(copies);
+    var first = copies[0];
+    var left = el('div', 'dup-photo');
+    left.appendChild(dupThumb(first));
+    var name = el('div', 'name', first.name + ' ');
+    if (first.same) {
+      var same = el('span', 'same', String.fromCharCode(64 + first.same));
       same.title = 'Files with the same letter are identical';
       name.appendChild(same);
     }
-    card.appendChild(name);
-    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : '(top level)';
-    var fb = el('button', 'folder', folder);
-    fb.onclick = function () { setFilter({ folder: f.folder_id, tags: [], q: '' }); };
-    card.appendChild(fb);
-    var meta = [];
-    if (f.taken) meta.push(formatDate({ taken: f.taken, date_source: 'file' }));
-    if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
-    meta.push(formatBytes(f.size));
-    card.appendChild(el('div', 'meta', meta.join(' · ')));
-    var del = el('button', 'btn danger', 'Move to trash');
-    del.onclick = function () {
-      trashDialog([f.id], function () {
-        card.remove();
-        if (cards.children.length < 2) box.remove();
+    left.appendChild(name);
+    row.appendChild(left);
+    var cards = el('div', 'copies');
+    copies.forEach(function (f) { cards.appendChild(copyCard(f, copies.length > 1 || first.name !== f.name, false)); });
+    row.appendChild(cards);
+    box.appendChild(row);
+  });
+  refresh();
+  return box;
+}
+
+// Sends the marked copies, one request per group. Capture dates that really
+// conflict are asked for afterwards, then those groups are sent again.
+function deleteMarked() {
+  var jobs = [], total = 0;
+  visibleGroups().forEach(function (g) {
+    var remove = g.files.filter(function (f) { return dupState.marked[f.id]; }).map(function (f) { return f.id; });
+    if (!remove.length) return;
+    var keep = g.files.filter(function (f) { return !dupState.marked[f.id]; }).map(function (f) { return f.id; });
+    if (!keep.length) return;
+    jobs.push({ keep: keep, remove: remove });
+    total += remove.length;
+  });
+  if (!jobs.length) return;
+  var run = function (btn) {
+    btn.disabled = true;
+    var done = { files: 0, tags: 0, dates: 0, skipped: [] }, conflicts = [];
+    var send = function (job, i) {
+      if (i >= jobs.length) return Promise.resolve();
+      return post(LIBAPI + '/duplicates/remove', job).then(function (r) {
+        if (r.conflicts && r.conflicts.length) conflicts.push({ job: job, list: r.conflicts });
+        else collectRemoved(done, r);
+        return send(jobs[i + 1], i + 1);
       });
     };
-    card.appendChild(del);
-    cards.appendChild(card);
+    send(jobs[0], 0).then(function () {
+      closeModal();
+      if (conflicts.length) return askDates(conflicts, done);
+    }).then(function () {
+      finishRemoved(done);
+    }).catch(function (e) { closeModal(); failed(e); changed(); });
+    return false;
+  };
+  openModal(
+    'Move to trash',
+    'Move ' + plural(total, 'copy', 'copies') + ' to the shoebox trash? In every group at least one copy stays. The tags and the capture date of a deleted copy are added to the copy that stays (as tags you can remove again). You can put the copies back from the trash.',
+    [{ label: 'Cancel', cls: 'quiet' }, { label: 'Move to trash', cls: 'danger', focus: true, onclick: run }]
+  );
+}
+
+function collectRemoved(done, r) {
+  done.files += r.trashed.files.length;
+  done.tags += r.tags_added;
+  done.dates += r.dates_set;
+  (r.trashed.skipped || []).forEach(function (s) { done.skipped.push(s); });
+}
+
+function finishRemoved(done) {
+  var text = plural(done.files, 'copy', 'copies') + ' moved to the trash';
+  if (done.tags) text += ', ' + plural(done.tags, 'tag', 'tags') + ' carried over';
+  if (done.dates) text += ', ' + plural(done.dates, 'capture date', 'capture dates') + ' taken over';
+  toast(text);
+  report('Some copies were not moved to the trash', done.skipped);
+  dupState.marked = {};
+  changed();
+}
+
+// Copies with capture dates that cannot be merged: the user picks one date
+// per photo that stays.
+function askDates(conflicts, done) {
+  return new Promise(function (resolve, reject) {
+    var body = el('div');
+    body.appendChild(el('p', '', 'These photos have copies with different capture dates. Which date should the photo that stays have? (Stored in the library only; the file is not changed.)'));
+    var picks = [];
+    conflicts.forEach(function (c) {
+      c.list.forEach(function (x, n) {
+        body.appendChild(el('div', 'name', x.path));
+        x.dates.forEach(function (d, k) {
+          var label = el('label', 'check');
+          var radio = el('input');
+          radio.type = 'radio';
+          radio.name = 'date-' + c.job.keep[0] + '-' + n;
+          radio.value = d;
+          radio.checked = k === 0;
+          label.appendChild(radio);
+          label.appendChild(document.createTextNode(' ' + formatDate({ taken: d, date_source: 'file' })));
+          body.appendChild(label);
+          if (k === 0) picks.push({ job: c.job, keep: x.keep, radio: radio, name: radio.name });
+        });
+      });
+    });
+    openModal('Capture dates differ', body, [{
+      label: 'Cancel', cls: 'quiet', onclick: function () { resolve(); },
+    }, {
+      label: 'Move to trash', cls: 'danger', onclick: function (btn) {
+        btn.disabled = true;
+        var chosen = {};
+        picks.forEach(function (p) {
+          var sel = document.querySelector('input[name="' + p.name + '"]:checked');
+          (chosen[p.job.keep[0]] = chosen[p.job.keep[0]] || {})[p.keep] = sel ? sel.value : p.radio.value;
+        });
+        var jobs = conflicts.map(function (c) { return c.job; });
+        var send = function (i) {
+          if (i >= jobs.length) return Promise.resolve();
+          var job = jobs[i];
+          return post(LIBAPI + '/duplicates/remove', { keep: job.keep, remove: job.remove, dates: chosen[job.keep[0]] }).then(function (r) {
+            collectRemoved(done, r);
+            return send(i + 1);
+          });
+        };
+        send(0).then(function () { closeModal(); resolve(); }).catch(function (e) { closeModal(); reject(e); });
+        return false;
+      },
+    }]);
   });
-  box.appendChild(cards);
-  return box;
+}
+
+function removeLowerQuality() {
+  var lq = dupState.lowerQuality;
+  openModal(
+    'Remove lower-quality versions',
+    plural(lq.copies, 'copy', 'copies') + ' (of ' + plural(lq.groups, 'photo', 'photos') + ') are surely the same photo as a better file: the same picture with fewer pixels or without the capture date, as after sending it by messenger. They go to the shoebox trash without review; the better file stays. Folders, tags and capture dates of the removed copies are carried over to it. Photos that merely look alike (other shots of a series) are never touched.',
+    [{ label: 'Cancel', cls: 'quiet' }, {
+      label: 'Move to trash', cls: 'danger', focus: true, onclick: function (btn) {
+        btn.disabled = true;
+        post(LIBAPI + '/duplicates/lower-quality', {}).then(function (r) {
+          closeModal();
+          toast(plural(r.removed, 'copy', 'copies') + ' moved to the trash, ' + plural(r.tags_added, 'tag', 'tags') + ' carried over');
+          report('Some copies were not moved to the trash', r.skipped);
+          changed();
+        }).catch(function (e) { closeModal(); failed(e); });
+        return false;
+      },
+    }]
+  );
+}
+
+function removeSameFolder() {
+  var sf = dupState.sameFolder;
+  openModal(
+    'Remove exact duplicates',
+    plural(sf.copies, 'copy', 'copies') + ' (' + plural(sf.groups, 'photo', 'photos') + ') have identical content to another file in the same folder. They go to the shoebox trash without review; in each folder one stays: the highest resolution, and the one with the original name rather than “IMG_1 (2)” or “IMG_1 - Copy”. Similar photos and copies in other folders are not touched. Tags and capture dates are carried over to the copy that stays.',
+    [{ label: 'Cancel', cls: 'quiet' }, {
+      label: 'Move to trash', cls: 'danger', focus: true, onclick: function (btn) {
+        btn.disabled = true;
+        post(LIBAPI + '/duplicates/same-folder', {}).then(function (r) {
+          closeModal();
+          toast(plural(r.removed, 'copy', 'copies') + ' moved to the trash');
+          report('Some copies were not moved to the trash', r.skipped);
+          changed();
+        }).catch(function (e) { closeModal(); failed(e); });
+        return false;
+      },
+    }]
+  );
 }
 
 // ------------------------------------------------------------------ trash page
@@ -2207,6 +2681,7 @@ function facePickBar() {
 
 function clearFacePicks() {
   faceState.picked = {};
+  faceState.anchor = null;
   Array.prototype.forEach.call(document.querySelectorAll('.face.sel'), function (c) { c.classList.remove('sel'); });
 }
 
@@ -2277,8 +2752,18 @@ function faceCard(face, similarity) {
   a.onclick = function (ev) {
     ev.preventDefault();
     if (faceState.picking && similarity == null) {
-      if (faceState.picked[face.id]) delete faceState.picked[face.id]; else faceState.picked[face.id] = true;
-      card.classList.toggle('sel', !!faceState.picked[face.id]);
+      var span = ev.shiftKey && pickSpan(faceState.faces, function (x) { return x.id; }, faceState.anchor, face.id);
+      if (span) {
+        span.forEach(function (x) {
+          faceState.picked[x.id] = true;
+          var c = document.querySelector('.face[data-id="' + x.id + '"]');
+          if (c) c.classList.add('sel');
+        });
+      } else {
+        if (faceState.picked[face.id]) delete faceState.picked[face.id]; else faceState.picked[face.id] = true;
+        card.classList.toggle('sel', !!faceState.picked[face.id]);
+        faceState.anchor = face.id;
+      }
       updateFacePick();
       return;
     }
@@ -3019,8 +3504,20 @@ function personFaceCard(face, tab) {
     ev.preventDefault();
     if (pp.picking) {
       if (!key) return;
-      if (pp.picked[key]) delete pp.picked[key]; else pp.picked[key] = face;
-      card.classList.toggle('sel', !!pp.picked[key]);
+      var span = ev.shiftKey && pickSpan(pp.faces, faceKey, pp.anchor, key);
+      if (span) {
+        span.forEach(function (x) {
+          var k = faceKey(x);
+          if (!k) return;
+          pp.picked[k] = x;
+          var c = document.querySelector('#pp-grid .face[data-key="' + k + '"]');
+          if (c) c.classList.add('sel');
+        });
+      } else {
+        if (pp.picked[key]) delete pp.picked[key]; else pp.picked[key] = face;
+        card.classList.toggle('sel', !!pp.picked[key]);
+        pp.anchor = key;
+      }
       updatePersonPick();
       return;
     }
@@ -3150,6 +3647,7 @@ function personPickBar(tab) {
 }
 
 function clearPersonPicks() {
+  pp.anchor = null;
   pp.picked = {};
   Array.prototype.forEach.call(document.querySelectorAll('#pp-grid .face.sel'), function (c) { c.classList.remove('sel'); });
 }
@@ -3252,10 +3750,17 @@ function clusterCard(c) {
   var head = el('div', 'chead');
   var count = el('span', 'csize');
   head.appendChild(count);
+  // Open a card (all faces, or Select) and it takes the whole width; this
+  // button stays at the top of the screen while the faces scroll by.
+  var close = el('button', 'btn small cclose', 'Close ✕');
+  close.title = 'Back to the short card';
+  close.hidden = true;
+  head.appendChild(close);
   card.appendChild(head);
   var grid = el('div', 'cfaces');
   card.appendChild(grid);
   var faces = c.faces.slice();
+  var expanded = false;
   var renderFaces = function () {
     grid.textContent = '';
     faces.forEach(function (face) {
@@ -3266,8 +3771,15 @@ function clusterCard(c) {
       f.onclick = function (ev) {
         ev.preventDefault();
         if (card.picking) {
-          if (card.picked[face.id]) delete card.picked[face.id]; else card.picked[face.id] = true;
-          f.classList.toggle('sel', !!card.picked[face.id]);
+          var span = ev.shiftKey && pickSpan(faces, function (x) { return x.id; }, card.anchor, face.id);
+          if (span) {
+            span.forEach(function (x) { card.picked[x.id] = true; });
+            renderFaces();
+          } else {
+            if (card.picked[face.id]) delete card.picked[face.id]; else card.picked[face.id] = true;
+            f.classList.toggle('sel', !!card.picked[face.id]);
+            card.anchor = face.id;
+          }
           update();
           return;
         }
@@ -3281,7 +3793,9 @@ function clusterCard(c) {
       all.onclick = function () {
         api(LIBAPI + '/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
           faces = list;
+          expanded = true;
           renderFaces();
+          update();
         }).catch(function (e) { stale(e); });
       };
       grid.appendChild(all);
@@ -3309,11 +3823,30 @@ function clusterCard(c) {
   notFace.onclick = function () { act('not-face', {}); };
   var pick = el('button', 'btn quiet', 'Select');
   pick.title = 'Name, ignore or mark only some faces of this card';
+  // Select needs all the faces to choose from.
+  var loadAll = function () {
+    if (faces.length >= c.size) return Promise.resolve();
+    return api(LIBAPI + '/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
+      faces = list;
+    });
+  };
   pick.onclick = function () {
     card.picking = !card.picking;
-    if (!card.picking) card.picked = {};
+    if (!card.picking) { card.picked = {}; card.anchor = null; }
+    else expanded = true;
+    loadAll().then(function () {
+      renderFaces();
+      update();
+    }).catch(function (e) { stale(e); });
+  };
+  close.onclick = function () {
+    card.picking = false;
+    card.picked = {};
+    expanded = false;
+    faces = faces.slice(0, 8);
     renderFaces();
     update();
+    card.scrollIntoView({ block: 'nearest' });
   };
   tools.appendChild(ignore);
   tools.appendChild(notFace);
@@ -3326,6 +3859,8 @@ function clusterCard(c) {
     count.textContent = plural(c.size, 'face', 'faces') + (card.picking ? ' · ' + (n ? n + ' selected' : 'tap faces to select') : '');
     pick.classList.toggle('active', card.picking);
     card.classList.toggle('picking', card.picking);
+    card.classList.toggle('open', expanded || card.picking);
+    close.hidden = !(expanded || card.picking);
     var some = card.picking && n;
     nameBtn.textContent = some ? 'Name ' + n : 'Name';
     ignore.textContent = some ? 'Ignore ' + n : 'Ignore';
@@ -3338,8 +3873,23 @@ function clusterCard(c) {
       suggestion.appendChild(el('b', '', s.person.name));
       suggestion.appendChild(el('span', '', ' (' + s.faces + ' of ' + c.size + ') '));
       var yes = el('button', 'btn small', '✓ ' + s.person.name);
+      yes.title = 'Name all ' + c.size + ' faces of this card ' + s.person.name;
       yes.onclick = function () { act('name', { person_id: s.person.id }); };
       suggestion.appendChild(yes);
+      if (s.faces < c.size) {
+        // Only the faces that really look like them; the rest stays.
+        var only = el('button', 'btn small', '✓ Only the ' + s.faces.toLocaleString());
+        only.title = 'Name only the ' + s.faces + ' faces recognised as ' + s.person.name + '; the other ' + (c.size - s.faces) + ' stay unnamed';
+        only.onclick = function () {
+          loadAll().then(function () {
+            var ids = faces.filter(function (x) { return x.state === 'suggested' && x.person && x.person.id === s.person.id; })
+              .map(function (x) { return x.id; });
+            if (!ids.length) return;
+            act('name', { person_id: s.person.id }, ids);
+          }).catch(function (e) { stale(e); });
+        };
+        suggestion.appendChild(only);
+      }
     }
     suggestion.hidden = !suggestion.firstChild;
   };
@@ -3351,9 +3901,9 @@ function clusterCard(c) {
   };
   // Name, ignore or "not a face": the whole card, or the faces selected in
   // it. The card's generation makes sure only the faces shown are meant.
-  var act = function (action, who) {
+  var act = function (action, who, only) {
     var body = Object.assign({ generation: c.generation }, who);
-    var some = card.picking ? picked() : null;
+    var some = only || (card.picking ? picked() : null);
     if (some) {
       if (!some.length) return;
       body.faces = some;
