@@ -183,7 +183,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **5c-1 done**, checked on the real drive; **5c-2 and 5c-3 done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5d | Duplicates UI: one row per photo, multi-select, bulk delete within a folder, tag and capture-date carry-over; Move dialog "keep tags"; trash dialog focus | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5e | Lean `thumbs.db`: face crops only for faces without a decision and for each person's picture; right-click "Use as … picture" on a person's photos | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 5f | Filter by file type without typing an extension (options in "Phase 5f details"); choice open | **Proposed** |
+| 5f | "Type" check box drop-down (Photos, Videos, Live Photos) next to the search box | **Done except the real-hardware run** (see "Phase 5f details") |
 | 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | **In progress**: library id, launcher (cancel, saved folders, start scripts) and the multi-drive core (hub, offline, backup roles, common timeline, cross-drive duplicates and people) built; backup verification (`shoebox backup`, launcher button, All drives page) built; real-hardware checks and Linux/Windows packaging open |
 | 7 | Pets | |
 
@@ -429,53 +429,33 @@ Open
 
 ### Phase 5f details (filter by file type)
 
-Feedback: today a type is found by typing an extension (".mp4") into the
-search box, which matches it as a word in the path. That needs the user to
-know the extension, finds only that one extension, and also hits folders or
-tags that merely contain the text. The stored `kind` (`jpeg`, `png`, `heic`,
-`raw`, `video`; `core/src/classify.rs`) is not searchable yet.
+Feedback: a type used to be found by typing an extension (".mp4") into the
+search box, which matches it as a word in the path: you had to know the
+extension, it found only that one, and it also hit folders or tags that
+merely contain the text.
 
-Options (can be combined; A + B is the recommendation):
+Decided: a **check box drop-down "Type"** next to the search box (option A),
+nothing else. No suggestions in the search box, no sidebar entries, no
+separate extensions (MP4 vs MOV); typing ".mp4" keeps working as before.
 
-- **A. "Type" filter row next to the search box.** Toggle buttons
-  `Photos · Videos · RAW`, or a drop-down with check boxes like the
-  duplicates page uses for group kinds. Several can be on (OR within the
-  group), and it combines with search chips and folders (AND). Works the same
-  on the iPad, shows counts per type, nothing to remember.
-- **B. Types as suggestions in the search box.** Focusing the box or typing
-  "vid" suggests a "Types" group (`🎞 Videos (1,234)`, `🖼 Photos`, `HEIC`,
-  `JPEG`, `PNG`, `RAW`) next to Tags / People / Folders; picking one becomes a
-  chip like the others. Extends the existing `suggest()` in `app.js` and the
-  chip filter; no new screen element. A user who types ".mp4" still gets
-  `MP4` offered.
-- **C. Sidebar entries.** "All / Photos / Videos / RAW" next to Faces and
-  Duplicates. Quick to reach, but a mode of its own that combines poorly with
-  search and folders; best as a shortcut on top of A.
-- **D. Finer than `kind`: store the extension.** To offer "MP4" vs "MOV" or
-  "HEIC" vs "JPG" separately, the extension is needed, because `kind` groups
-  them (and a `.HEIC` that is really a JPEG keeps its extension's kind, see
-  the pitfall "File names lie"). Needs a column or a derived value in the
-  query (no rescan: it comes from `path`). Only worth it if "Videos" alone is
-  too coarse.
-- **E. Keep the ".mp4" text search as is** for power users; it keeps
-  working regardless of the above.
-
-Design notes for whichever is built:
-
-- Server: a `types` parameter (list of kinds) on the file list/timeline
-  queries and on the tag/folder counts, in all `/api/lib/{lib}/…` routes and
-  in the common timeline across drives. Read-only, so no guard change; a test
-  next to the timeline rules in `core/tests/serve.rs`.
-- RAW stays hidden in the UI by default (see Decisions); a "RAW" type would be
-  the one way to list them, so decide whether to expose it.
-- Live Photo videos are folded into their stills; "Videos" must not list
-  those companion clips, only stand-alone videos.
-- Filter state goes into the URL like the chips, so a type filter survives
-  reload and back.
+- Entries: **Photos** (all stills, a Live Photo's still included),
+  **Videos** (stand-alone videos only: the clip of a Live Photo is folded into
+  its still and is never listed), **Live Photos** (the stills that have a
+  clip). Ticked types are OR; the filter is AND with folder, tags, people and
+  text. Nothing ticked means everything.
+- **RAW gets no entry** (RAW stays hidden in the UI, see Decisions).
+- API: `type=photo|video|live` (repeatable) on the timeline, the tag and
+  people suggestions and the common timeline `/api/all/timeline`; an unknown
+  value is a 400. The filter lives in the URL hash (`type=video`), so it
+  survives reload and back; picking a folder keeps it, "All photos" and
+  "Clear all" drop it. Read-only over the index, so no guard change.
+- Tests: `timeline_order_filters_and_search` in `core/tests/serve.rs` (types,
+  OR, AND with a folder, Live and Videos with the fixtures, 400).
 
 Open:
-- [ ] Choose the option(s) (recommended: A + B, with the types shown as chips).
-- [ ] Build, test and check on the drive and the iPad.
+- [ ] Check the drop-down on the real drive and the iPad (it opens on tap,
+      closes on a tap outside, the button shows what is ticked).
+- [ ] Confirm the GitHub Actions run is green.
 
 ## Build notes and pitfalls (learned in phases 0–4)
 

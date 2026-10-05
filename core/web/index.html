@@ -18,6 +18,14 @@
     <div id="suggest" class="suggest" role="listbox" hidden></div>
     <datalist id="tag-list"></datalist>
   </div>
+  <div id="types" class="types">
+    <button id="types-btn" type="button" class="types-btn" aria-haspopup="true" aria-expanded="false" title="Show only some types">Type ▾</button>
+    <div id="types-menu" class="types-menu" hidden>
+      <label><input type="checkbox" value="photo"> 🖼 Photos</label>
+      <label><input type="checkbox" value="video"> 🎞 Videos</label>
+      <label><input type="checkbox" value="live"> ◉ Live Photos</label>
+    </div>
+  </div>
   <select id="years" title="Jump to year" aria-label="Jump to year"></select>
   <button id="select" class="icon" title="Select photos" aria-label="Select photos">☑︎</button>
   <button id="import" class="icon" title="Import photos" aria-label="Import photos">⤒</button>

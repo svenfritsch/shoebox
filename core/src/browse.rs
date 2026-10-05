@@ -75,6 +75,35 @@ pub struct Snapshot {
     children: HashMap<i64, Vec<i64>>,
 }
 
+/// What the type filter offers. Photos are all stills (a Live Photo's still
+/// included), Videos only stand-alone videos (the motion part of a Live Photo
+/// is folded into its still, never listed), Live the stills that have one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaType {
+    Photo,
+    Video,
+    Live,
+}
+
+impl MediaType {
+    pub fn parse(s: &str) -> Option<MediaType> {
+        match s {
+            "photo" => Some(MediaType::Photo),
+            "video" => Some(MediaType::Video),
+            "live" => Some(MediaType::Live),
+            _ => None,
+        }
+    }
+
+    pub fn matches(self, it: &Item) -> bool {
+        match self {
+            MediaType::Photo => it.kind != Kind::Video,
+            MediaType::Video => it.kind == Kind::Video,
+            MediaType::Live => it.live.is_some(),
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct Query {
     pub folder: Option<i64>,
@@ -85,6 +114,8 @@ pub struct Query {
     /// Only photos with a confirmed face of every one of these people
     /// (AND, 5c-3).
     pub people: Vec<i64>,
+    /// Any of these types (OR); empty means every type.
+    pub types: Vec<MediaType>,
 }
 
 impl Snapshot {
@@ -318,6 +349,7 @@ impl Snapshot {
         Ok(self
             .items
             .iter()
+            .filter(|it| q.types.is_empty() || q.types.iter().any(|t| t.matches(it)))
             .filter(|it| person.as_ref().is_none_or(|p| p.contains(&it.id)))
             .filter(|it| folders.as_ref().is_none_or(|f| f.contains(&it.folder_id)))
             .filter(|it| tagged.as_ref().is_none_or(|t| t.contains(&it.id)))
