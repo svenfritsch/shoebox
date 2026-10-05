@@ -63,8 +63,24 @@ Built (first slice, `core/src/launcher.rs`, page in `core/launcher-web/`):
   one job at a time (409 otherwise). `core/tests/launcher.rs` runs scan,
   verify, face stats and recognize through the API under the guard
   (snapshot of size, mtime, created and hash before and after).
-- Not yet done: cancel button, remembering several paths, serving more than
-  one folder, the platform checks below.
+- Several folders: the path field holds chips (Enter adds, × removes); a
+  command runs over all of them, one after the other, with a result list and a
+  summary per folder. The chosen folders are remembered in a JSON file in the
+  user's config folder (`~/Library/Application Support/shoebox/launcher.json`,
+  `~/.config/shoebox/launcher.json`, `%APPDATA%\shoebox\launcher.json`, or
+  `$SHOEBOX_CONFIG`): `{ "paths": [ … ] }`.
+- Cancel: the same as Ctrl-C on the command line. The command stops between
+  files, keeps what it committed and the job is marked interrupted, so the next
+  run continues (`report::request_cancel`, checked by scan, hashing,
+  thumbnails, verify and recognize).
+- While a command runs, and while the photo app runs, all inputs and buttons
+  that start or change something are disabled (a disabled `fieldset`); the
+  server refuses them too (409). Only Cancel and "Stop photo app" stay usable.
+- "Start photo app" opens every chosen folder as one library (see section 3).
+- Start scripts for the double-click fallback are in `scripts/launchers/`
+  (`Start shoebox.command`, `Start shoebox.sh`, `Start shoebox.bat`); the
+  release tarball ships the `.command` file.
+- Not yet done: the platform checks below.
 
 Platform behaviour to check on real machines (not tried yet):
 - macOS: a double-clicked binary is blocked by Gatekeeper; `Start
@@ -76,6 +92,33 @@ Platform behaviour to check on real machines (not tried yet):
   fallback.
 
 ## 3. Multiple drives
+
+Built:
+- `shoebox serve <root> [more roots…]` and the launcher open one `App` per
+  drive behind a hub (`serve.rs`: `Hub`, `Slot`). `/api/lib/{id}/…` goes to
+  that drive; `/api/libraries` lists `{id, name, online, reason}`. A drive that
+  is not there answers 503 `{"offline": true}` for its own routes only; a
+  drive that disappears while the server runs closes (checked at most every
+  2 s), one that returns opens again by itself. Background work uses
+  `db::open_existing`, so an unplugged drive's `.shoebox` folder is never
+  created again on the computer's own disk.
+- `multi.rs` (read-only, `ATTACH`): `/api/all/people` (same NFC, case-folded
+  name = same person; names, groups and decisions stay per drive),
+  `/api/all/duplicates` (full hashes over all drives that are not backups),
+  `/api/all/drives` (roles and suggestions), `POST /api/all/role`.
+- Backup or separate: the role is stored per drive in `library.db`
+  (`settings`, schema v5). Undecided drives are *suggested* as backups when
+  at least 90 % of their contents are on another drive and they are not the
+  bigger one; two drives that hold the same are both suspected until one is
+  marked. Backups and suspects are left out of the duplicate list, with the
+  reason shown.
+- UI: drive list in the sidebar (online/offline/backup), an "All drives"
+  page (roles with confirm buttons, duplicates across drives, people across
+  drives), an offline page for the selected drive that opens it again when it
+  comes back. Tests: `core/tests/multi.rs`, `core/tests/serve.rs`.
+- Not yet done: one timeline over all drives, moving files between drives,
+  the people filter across drives (the people list is merged, the search is
+  per drive), the 90 % threshold on real data.
 
 - Every drive keeps its own `.shoebox` folder with `library.db`, `thumbs.db`
   and `recognition.db`. The app opens several libraries at once with one
@@ -107,5 +150,5 @@ Done:
 
 Open:
 - [ ] Launcher UI (section 2): first slice built, platform checks and polish open
-- [ ] Multiple drives (section 3)
+- [~] Multiple drives (section 3): hub, offline, roles, cross-drive duplicates and people built; combined timeline open
 - [ ] Backups and packaging (section 4)

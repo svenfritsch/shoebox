@@ -41,12 +41,13 @@ button.quiet { margin-left: 8px; }
 .list-head { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; }
 .list-head label { margin: 0; display: flex; gap: 6px; align-items: center; }
 .results { list-style: none; margin: 8px 0 0; padding: 0; max-height: 340px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
-.results li { display: flex; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 14px; }
+.results li { display: flex; flex-wrap: wrap; gap: 2px 10px; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 14px; }
 .results li:last-child { border-bottom: 0; }
 .results .mark { width: 1.2em; font-weight: 700; }
 .results .ok .mark { color: var(--ok); } .results .bad .mark { color: var(--bad); }
-.results .path { flex: 1; word-break: break-all; }
-.results .note { color: var(--muted); font-size: 13px; }
+.results .path { flex: 1 1 55%; min-width: 0; word-break: break-all; }
+.results .note { color: var(--muted); font-size: 13px; flex: 0 1 auto; max-width: 100%; }
+.results .bad .note { flex-basis: 100%; padding-left: calc(1.2em + 10px); }
 details { margin-top: 12px; }
 pre { max-height: 220px; overflow: auto; font-size: 12px; background: var(--bg); padding: 10px; border-radius: 8px; white-space: pre-wrap; }
 [hidden] { display: none !important; }

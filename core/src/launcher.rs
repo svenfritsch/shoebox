@@ -268,6 +268,9 @@ struct JobState {
     lines: VecDeque<String>,
     ok_count: u64,
     fail_count: u64,
+    /// Every file seen so far and whether all its steps worked.
+    #[serde(skip)]
+    seen: std::collections::HashMap<String, bool>,
     /// Files that failed, in order (up to `MAX_FAILURES`).
     failures: Vec<FileResult>,
     /// The latest files that went through.
@@ -312,18 +315,34 @@ impl JobState {
             Event::Progress { label, done, total } => self.progress = Some(ProgressInfo { label, done, total }),
             Event::File { path, ok, note } => {
                 let path = if self.prefix.is_empty() { path } else { format!("{}{path}", self.prefix) };
+                // A file counts once, however many steps look at it (hash,
+                // thumbnail, …); one failed step makes it failed.
+                let before = self.seen.get(&path).copied();
+                match (before, ok) {
+                    (None, true) => {
+                        self.ok_count += 1;
+                        self.seen.insert(path.clone(), true);
+                    }
+                    (None, false) => {
+                        self.fail_count += 1;
+                        self.seen.insert(path.clone(), false);
+                    }
+                    (Some(true), false) => {
+                        self.ok_count -= 1;
+                        self.fail_count += 1;
+                        self.seen.insert(path.clone(), false);
+                        self.recent_ok.retain(|f| f.path != path);
+                    }
+                    _ => return,
+                }
                 let item = FileResult { path, ok, note };
                 if ok {
-                    self.ok_count += 1;
                     if self.recent_ok.len() >= MAX_RECENT_OK {
                         self.recent_ok.pop_front();
                     }
                     self.recent_ok.push_back(item);
-                } else {
-                    self.fail_count += 1;
-                    if self.failures.len() < MAX_FAILURES {
-                        self.failures.push(item);
-                    }
+                } else if self.failures.len() < MAX_FAILURES {
+                    self.failures.push(item);
                 }
             }
         }
@@ -717,10 +736,14 @@ pub fn detect_drives() -> Vec<Drive> {
         let user = std::env::var("USER").unwrap_or_default();
         dirs.extend(["/media".into(), format!("/media/{user}").into(), format!("/run/media/{user}").into(), "/mnt".into()]);
     }
-    for dir in dirs {
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+    for dir in &dirs {
+        let Ok(entries) = std::fs::read_dir(dir) else { continue };
         for e in entries.flatten() {
             let p = e.path();
+            // /media/<user> holds the drives; it is not one itself.
+            if dirs.contains(&p) {
+                continue;
+            }
             // The boot volume shows up as a link to "/".
             if p.is_dir() && !std::fs::symlink_metadata(&p).map(|m| m.file_type().is_symlink()).unwrap_or(false) {
                 found.push(p);

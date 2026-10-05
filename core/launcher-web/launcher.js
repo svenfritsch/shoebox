@@ -167,10 +167,11 @@ function render(job) {
   summary.appendChild(pill(job.ok_count.toLocaleString() + ' worked', 'ok'));
   summary.appendChild(pill(job.fail_count.toLocaleString() + ' failed', job.fail_count ? 'bad' : ''));
   if (!job.running) {
+    // One pill per folder, so several drives stay readable.
     job.results.forEach(function (r) {
       if (!r.result) return;
       var label = job.results.length > 1 ? r.root.split(/[\\/]/).filter(Boolean).pop() + ': ' : '';
-      summaryOf(job.kind, r.result).forEach(function (t) { summary.appendChild(pill(label + t)); });
+      summary.appendChild(pill(label + summaryOf(job.kind, r.result).join(' · ')));
     });
   }
   $('job-error').hidden = !job.error;
