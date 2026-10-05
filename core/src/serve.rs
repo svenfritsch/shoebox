@@ -586,6 +586,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/duplicates/decide", post(duplicates_decide))
         .route("/api/duplicates/remove", post(duplicates_remove))
         .route("/api/duplicates/same-folder", get(duplicates_same_folder).post(duplicates_remove_same_folder))
+        .route("/api/duplicates/lower-quality", get(duplicates_lower_quality).post(duplicates_remove_lower_quality))
         .route("/api/trash", get(trash_list).post(trash_files))
         .route("/api/trash/{id}/thumb", get(trash_thumb))
         .route("/api/trash/{batch}/restore", post(trash_restore))
@@ -1463,7 +1464,28 @@ async fn duplicates_same_folder(State(app): State<Arc<App>>) -> ApiResult<Json<s
 
 /// Delete exact duplicates in the same folder without review.
 async fn duplicates_remove_same_folder(State(app): State<Arc<App>>) -> ApiResult<Json<duplicates::BulkRemoved>> {
-    change(&app, |app, conn| duplicates::remove_same_folder(conn, &app.root, &same_folder_plan(app, conn)?)).await.map(Json)
+    change(&app, |app, conn| duplicates::remove_planned(conn, &app.root, &same_folder_plan(app, conn)?)).await.map(Json)
+}
+
+fn lower_quality_plan(app: &App, conn: &Connection) -> anyhow::Result<Vec<(i64, Vec<i64>)>> {
+    let shown: HashSet<i64> = app.snapshot(conn)?.items.iter().map(|it| it.id).collect();
+    Ok(duplicates::lower_quality_plan(&duplicates::load(conn, &shown)?))
+}
+
+/// What the "lower quality" button would do: photos and files.
+async fn duplicates_lower_quality(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
+    blocking(&app, |app| {
+        let conn = app.conn.lock().unwrap();
+        let plan = lower_quality_plan(app, &conn)?;
+        let copies: usize = plan.iter().map(|(_, gone)| gone.len()).sum();
+        Ok(Json(serde_json::json!({ "groups": plan.len(), "copies": copies })))
+    })
+    .await
+}
+
+/// Delete versions that are surely the same photo in lower quality.
+async fn duplicates_remove_lower_quality(State(app): State<Arc<App>>) -> ApiResult<Json<duplicates::BulkRemoved>> {
+    change(&app, |app, conn| duplicates::remove_planned(conn, &app.root, &lower_quality_plan(app, conn)?)).await.map(Json)
 }
 
 #[derive(Deserialize)]

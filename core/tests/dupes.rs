@@ -33,6 +33,13 @@ fn rings(path: &std::path::Path, w: u32, h: u32) {
     .unwrap();
 }
 
+/// The hash of file `id` with its first `n` bits turned.
+fn flip_bits(lib: &Library, id: i64, n: u32) -> String {
+    let h: String = lib.db().query_row("SELECT phash FROM files WHERE id = ?1", [id], |r| r.get(0)).unwrap();
+    let v = u64::from_str_radix(&h, 16).unwrap() ^ ((1u64 << n) - 1);
+    format!("{v:016x}")
+}
+
 fn remove(addr: std::net::SocketAddr, keep: &[i64], remove: &[i64]) -> common::Response {
     post(addr, "/api/duplicates/remove", &json!({ "keep": keep, "remove": remove }))
 }
@@ -218,6 +225,65 @@ fn same_folder_bulk_only_touches_exact_duplicates_in_one_folder() {
     server.stop().unwrap();
     let after = lib.snapshot();
     assert_eq!(after.len(), before.len() - 2);
+    for (p, v) in &after {
+        assert_eq!(&before[p], v, "{}", p.display());
+    }
+    assert!(lib.verify(false).is_clean());
+}
+
+#[test]
+fn lower_quality_versions_of_the_same_photo_go_without_review() {
+    let lib = Library::new("dupes-quality");
+    rings(&lib.path("Fotos/IMG_1.jpg"), 1600, 1200);
+    rings(&lib.path("WhatsApp/IMG-WA0001.jpg"), 800, 600); // sent via a messenger: smaller, no metadata
+    rings(&lib.path("Fotos/IMG_2.jpg"), 800, 600); // another shot: its capture time differs
+    rings(&lib.path("Fotos/IMG_3.jpg"), 1280, 720); // another shape
+    lib.scan();
+    let before = lib.snapshot();
+    let id = |p: &str| id_of(&lib, p);
+    let (orig, wa, other, wide) = (id("Fotos/IMG_1.jpg"), id("WhatsApp/IMG-WA0001.jpg"), id("Fotos/IMG_2.jpg"), id("Fotos/IMG_3.jpg"));
+    // The same picture, recompressed so hard that its hash drifts (6 bits).
+    lib.db().execute("UPDATE files SET phash = ?2 WHERE id = ?1", rusqlite::params![wa, flip_bits(&lib, orig, 6)]).unwrap();
+    set_taken(&lib, orig, Some("2021-05-01T12:00:00"));
+    set_taken(&lib, other, Some("2021-05-03T12:00:00"));
+    set_taken(&lib, wide, Some("2021-05-01T12:00:00"));
+    let server = start(&lib, None);
+    let addr = server.addr;
+
+    // The page: the messenger copy shares a row with the original and is
+    // marked as the worse one; the others are rows of their own.
+    let groups = get(addr, "/api/duplicates").json();
+    let files: Vec<Value> = groups["groups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|g| g["files"].as_array().unwrap().clone())
+        .filter(|f| [orig, wa, other, wide].contains(&f["id"].as_i64().unwrap()))
+        .collect();
+    let by = |i: i64| files.iter().find(|f| f["id"] == i).unwrap().clone();
+    assert_eq!(by(wa)["keeper"], orig);
+    assert_eq!(by(wa)["row"], by(orig)["row"]);
+    for i in [orig, other, wide] {
+        assert_eq!(by(i)["keeper"], Value::Null, "{i}");
+    }
+    assert_ne!(by(other)["row"], by(orig)["row"]);
+    assert_ne!(by(wide)["row"], by(orig)["row"]);
+
+    let preview = get(addr, "/api/duplicates/lower-quality").json();
+    assert_eq!((preview["groups"].as_i64(), preview["copies"].as_i64()), (Some(1), Some(1)));
+    let r = post(addr, "/api/duplicates/lower-quality", &json!({}));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    assert_eq!(r.json()["removed"], 1);
+    assert!(!lib.path("WhatsApp/IMG-WA0001.jpg").exists());
+    for p in ["Fotos/IMG_1.jpg", "Fotos/IMG_2.jpg", "Fotos/IMG_3.jpg"] {
+        assert!(lib.path(p).exists(), "{p}");
+    }
+    // Nothing is lost: the folder of the removed copy is a tag of the original.
+    assert_eq!(tags(&lib, orig, "user"), ["WhatsApp"]);
+    assert_eq!(get(addr, "/api/duplicates/lower-quality").json()["copies"], 0);
+    server.stop().unwrap();
+    let after = lib.snapshot();
+    assert_eq!(after.len(), before.len() - 1);
     for (p, v) in &after {
         assert_eq!(&before[p], v, "{}", p.display());
     }

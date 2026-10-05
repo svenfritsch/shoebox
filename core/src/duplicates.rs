@@ -23,6 +23,16 @@ use crate::phash;
 /// around 32 bits apart.
 pub const NEAR_BITS: u32 = 8;
 
+/// "Surely the same photo": at most this many bits apart (the similar
+/// groups allow `NEAR_BITS`, which also catches bursts), and the same shape
+/// and capture time (see `same_photo`).
+pub const SURE_BITS: u32 = 4;
+
+/// Allowed when one of the two lost its capture date (what a messenger
+/// strips): heavy recompression moves the hash further. Two undated
+/// pictures (screenshots, say) get no such leeway.
+pub const SURE_BITS_STRIPPED: u32 = 6;
+
 pub const DECISIONS: &[&str] = &["distinct", "linked"];
 
 #[derive(Debug, Clone, Serialize)]
@@ -42,6 +52,14 @@ pub struct DupFile {
     pub same: Option<u32>,
     /// Folder tags and own tags (filled in by `add_tags`, after `find`).
     pub tags: Vec<DupTag>,
+    /// Files with the same row are the same photo in different quality
+    /// (a resized or re-sent copy) or identical copies; the page shows them
+    /// side by side with one thumbnail.
+    pub row: u32,
+    /// Surely the same photo as the best file of its row, only worse (fewer
+    /// pixels, or without the metadata the best one has): the id of that
+    /// best file, which is the one to keep. The page ticks these.
+    pub keeper: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -98,6 +116,8 @@ pub fn load(conn: &Connection, shown: &HashSet<i64>) -> Result<Candidates> {
                     version: r.get::<_, String>(9)?.chars().take(8).collect(),
                     same: None,
                     tags: Vec::new(),
+                    row: 0,
+                    keeper: None,
                 },
                 full_hash: r.get(10)?,
                 phash: r.get::<_, Option<String>>(11)?.as_deref().and_then(phash::from_hex),
@@ -111,6 +131,102 @@ pub fn load(conn: &Connection, shown: &HashSet<i64>) -> Result<Candidates> {
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<rusqlite::Result<_>>()?;
     Ok(Candidates { rows, decided })
+}
+
+fn pixels(r: &Row) -> u64 {
+    r.file.width.unwrap_or(0) as u64 * r.file.height.unwrap_or(0) as u64
+}
+
+fn secs(taken: &str) -> Option<i64> {
+    chrono::NaiveDateTime::parse_from_str(taken, "%Y-%m-%dT%H:%M:%S").ok().map(|d| d.and_utc().timestamp())
+}
+
+/// Two pictures that are the same photo for certain, differing in size,
+/// quality or metadata only: identical content, or the same picture (hash at
+/// most `SURE_BITS` apart) in the same shape (a turned copy counts) and with
+/// no capture time that disagrees. Shots of a burst or a re-taken photo fail
+/// this: their capture times differ.
+fn same_photo(a: &Row, b: &Row) -> bool {
+    if a.file.kind == "video" || b.file.kind == "video" {
+        return false;
+    }
+    if a.full_hash.is_some() && a.full_hash == b.full_hash {
+        return true;
+    }
+    let (Some(pa), Some(pb)) = (a.phash, b.phash) else { return false };
+    let stripped = a.file.taken.is_some() != b.file.taken.is_some();
+    if phash::distance(pa, pb) > if stripped { SURE_BITS_STRIPPED } else { SURE_BITS } {
+        return false;
+    }
+    let shape = |r: &Row| match (r.file.width, r.file.height) {
+        (Some(w), Some(h)) if w > 0 && h > 0 => Some(w.max(h) as f64 / w.min(h) as f64),
+        _ => None,
+    };
+    let (Some(sa), Some(sb)) = (shape(a), shape(b)) else { return false };
+    if (sa - sb).abs() / sa.max(sb) > 0.02 {
+        return false;
+    }
+    match (&a.file.taken, &b.file.taken) {
+        (Some(x), Some(y)) => matches!((secs(x), secs(y)), (Some(x), Some(y)) if (x - y).abs() <= 2),
+        _ => true,
+    }
+}
+
+/// `a` is better than `b`: more pixels, or as many and the metadata (a
+/// capture date) that `b` lost.
+fn better(a: &Row, b: &Row) -> bool {
+    pixels(a) > pixels(b) || (pixels(a) == pixels(b) && a.file.taken.is_some() && b.file.taken.is_none())
+}
+
+/// For the files of one group, in `order`: the row each belongs to, and the
+/// best file to keep where it is surely the same photo and worse.
+fn photo_rows(rows: &[Row], order: &[usize], open: &dyn Fn(usize, usize) -> bool) -> Vec<(u32, Option<i64>)> {
+    let mut sets = UnionFind::new(order.len());
+    for (x, &i) in order.iter().enumerate() {
+        for (y, &j) in order.iter().enumerate().skip(x + 1) {
+            if open(i, j) && same_photo(&rows[i], &rows[j]) {
+                sets.union(x, y);
+            }
+        }
+    }
+    let mut numbers: HashMap<usize, u32> = HashMap::new();
+    let ids: Vec<u32> = (0..order.len())
+        .map(|x| {
+            let root = sets.find(x);
+            let next = numbers.len() as u32;
+            *numbers.entry(root).or_insert(next)
+        })
+        .collect();
+    // The best of each component: most pixels, then a capture date, then
+    // size, then the earliest record and first path. Sameness is not
+    // transitive (a messenger copy without a date fits two shots a day
+    // apart), so a file joins the best one's row only if it is the same
+    // photo as the best itself; any other gets a row of its own.
+    let key = |r: &Row| (pixels(r), r.file.taken.is_some(), r.file.size, std::cmp::Reverse(r.added_at), std::cmp::Reverse(r.file.path.clone()));
+    let mut best: HashMap<u32, usize> = HashMap::new();
+    for (x, &i) in order.iter().enumerate() {
+        let e = best.entry(ids[x]).or_insert(i);
+        if key(&rows[i]) > key(&rows[*e]) {
+            *e = i;
+        }
+    }
+    let mut next = numbers.len() as u32;
+    order
+        .iter()
+        .enumerate()
+        .map(|(x, &i)| {
+            let b = best[&ids[x]];
+            if b == i {
+                return (ids[x], None);
+            }
+            if open(b, i) && same_photo(&rows[b], &rows[i]) {
+                let worse = better(&rows[b], &rows[i]);
+                return (ids[x], worse.then(|| rows[b].file.id));
+            }
+            next += 1;
+            (next - 1, None)
+        })
+        .collect()
 }
 
 /// Every group of undecided duplicates: identical copies first, then
@@ -183,8 +299,11 @@ pub fn find(candidates: &Candidates) -> Vec<Group> {
             let mut files: Vec<DupFile> = Vec::new();
             let mut order: Vec<usize> = m.clone();
             order.sort_by(|&i, &j| rows[j].file.taken.cmp(&rows[i].file.taken).then(rows[i].file.path.cmp(&rows[j].file.path)));
-            for i in order {
+            let info = photo_rows(rows, &order, &open);
+            for (&i, &(row, keeper)) in order.iter().zip(&info) {
                 let mut f = rows[i].file.clone();
+                f.row = row;
+                f.keeper = keeper;
                 if let Some(h) = rows[i].full_hash.as_deref().filter(|h| copies[h] > 1) {
                     let next = numbers.len() as u32 + 1;
                     f.same = Some(*numbers.entry(h).or_insert(next));
@@ -243,7 +362,28 @@ pub fn same_folder_plan(candidates: &Candidates) -> Vec<(i64, Vec<i64>)> {
     plan
 }
 
-/// What `remove_same_folder` did.
+/// Copies that are surely the same photo as a better one (see `same_photo`
+/// and `better`: a smaller or re-sent version, say from WhatsApp), without
+/// review: the better file stays. Returns `(keep, remove)`; pairs the user
+/// decided about never count.
+pub fn lower_quality_plan(candidates: &Candidates) -> Vec<(i64, Vec<i64>)> {
+    let mut by_keeper: HashMap<i64, Vec<i64>> = HashMap::new();
+    for g in find(candidates) {
+        for f in &g.files {
+            if let Some(k) = f.keeper {
+                by_keeper.entry(k).or_default().push(f.id);
+            }
+        }
+    }
+    let mut plan: Vec<(i64, Vec<i64>)> = by_keeper.into_iter().collect();
+    for (_, gone) in &mut plan {
+        gone.sort_unstable();
+    }
+    plan.sort();
+    plan
+}
+
+/// What `remove_planned` did.
 #[derive(Debug, Default, Serialize)]
 pub struct BulkRemoved {
     /// Contents that lost copies.
@@ -255,8 +395,9 @@ pub struct BulkRemoved {
     pub skipped: Vec<String>,
 }
 
-/// Carry out `same_folder_plan`; each group like `remove_copies`.
-pub fn remove_same_folder(conn: &Connection, root: &Path, plan: &[(i64, Vec<i64>)]) -> Result<BulkRemoved> {
+/// Carry out `same_folder_plan` or `lower_quality_plan`; each group like
+/// `remove_copies`.
+pub fn remove_planned(conn: &Connection, root: &Path, plan: &[(i64, Vec<i64>)]) -> Result<BulkRemoved> {
     let mut out = BulkRemoved::default();
     for (keep, gone) in plan {
         match remove_copies(conn, root, &[*keep], gone, &HashMap::new()) {

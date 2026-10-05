@@ -691,17 +691,39 @@ Built, one commit per step. Scope and rules are in "Phase 5d details" in
   path. "Oldest path" in the plan is read as oldest record. Pairs already
   decided `distinct` or `linked` with the keeper are skipped; near duplicates
   and other folders are never part of it.
-- **Duplicates page** (`app.js`, `groupNode`): rows per content; left one
-  thumbnail and the file name, right a card per copy (resolution, MB, folder,
-  capture date, tags: 📁 folder tags, own tags filled). "delete this copy" on
-  each card; the last unticked box of a group is disabled. Ticks work across
-  groups; the bar at the bottom (“N copies marked”, Clear, Move to trash)
-  sends one request per group, then asks about conflicting dates once.
-  `GET /api/duplicates` files carry `tags: [{name, own}]`.
+- **Duplicates page** (`app.js`, `groupNode`): a row per photo, i.e. per
+  `row` of `/api/duplicates` (below); left one thumbnail (the best version) and
+  its file name, right a card per file (resolution, MB, folder, capture date,
+  tags: 📁 folder tags, own tags filled). "delete this copy" on each card; the
+  last unticked box of a group is disabled. Ticks work across groups; the bar
+  at the bottom (“N copies marked”, Clear, Move to trash) sends one request per
+  group, then asks about conflicting dates once. `GET /api/duplicates` files
+  carry `tags: [{name, own}]`, `row`, and `keeper` (see below).
+- **Lower-quality versions** (feedback: an original and a messenger copy with
+  another name and resolution are one photo, not two rows). `same_photo` says
+  when two files are surely the same photo: identical content, or `phash` at
+  most `SURE_BITS` (4) apart, or `SURE_BITS_STRIPPED` (6) when exactly one has
+  lost its capture date (what a messenger strips; two undated pictures get no
+  leeway), the same shape (long side / short side within 2%, a turned copy
+  counts), videos never, and no capture times that differ by more than 2 s.
+  Rows are the files that are `same_photo` as the **best** file of their
+  component (most pixels, then a capture date, then size, earliest record, first
+  path); sameness is not transitive, so anything else gets a row of its own
+  (a messenger copy without a date fits two shots a day apart: it joins the one
+  it is the same photo as). A file is `worse` (`keeper` = the best file's id)
+  when it has fewer pixels, or as many and not the capture date the best has.
+  The page ticks every file with a `keeper` once (an untick stays after a
+  reload). `GET/POST /api/duplicates/lower-quality` is the button: preview
+  `{groups, copies}`, then each best file with its worse versions through
+  `remove_copies`, so folders, tags and dates are carried over. Pairs decided
+  `distinct`/`linked` never count. Near-but-not-sure photos (bursts, other
+  shots) are only ever deleted by hand.
 - Tests: `core/tests/dupes.rs` (at-least-one rule and non-duplicates refused,
   tag carry-over without duplicating folder tags, date merge incl. conflict
   and rescan, bulk action only on exact duplicates in one folder and skipping
-  decided pairs, guard: originals unchanged, `verify` clean), plus
+  decided pairs, lower-quality versions: rows, `keeper`, a burst shot with another
+  capture time and a stretched picture stay out, 6 bits count only with a lost
+  date, guard: originals unchanged, `verify` clean), plus
   `move_without_keep_tags_drops_own_tags` in `tags.rs`. The page was driven with
   Playwright (Chromium, 1280 × 800) on a small library.
 
@@ -843,6 +865,13 @@ Built, one commit per step. Scope and rules are in "Phase 5d details" in
     info panel? Is the layout readable on the iPad?
   - [ ] Tick "delete this copy" on all but one card: the last unchecked
     box is disabled, so the original cannot be deleted.
+  - [ ] A photo and its WhatsApp (or other messenger) copy: they are one row,
+    the messenger copy is ticked and says “lower quality”. Do other shots
+    of a series stay in rows of their own? Any wrongly ticked copy, or a
+    messenger copy that is not recognised (note its name and size)?
+  - [ ] “Remove lower-quality versions”: note the count, run it; the better
+    file stays with the folder name (“WhatsApp”) as an own tag. Restore one
+    from the trash.
   - [ ] Delete a copy in another folder: the survivor shows the copy's
     folder as a removable own tag (and the copy's own tags). Remove it
     again with ✕. Folder tags stay without ✕.
