@@ -651,6 +651,9 @@ pub struct Person {
     /// The face shown for the person (`/api/faces/{id}/crop`): the chosen
     /// cover, else the largest confirmed face.
     pub cover: Option<i64>,
+    /// Without a detected face to show: the largest face drawn by hand
+    /// (`/api/faces/manual/{id}/crop`).
+    pub cover_manual: Option<i64>,
 }
 
 struct PersonRow {
@@ -694,6 +697,7 @@ pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
         suggested: u64,
         maybe: u64,
         largest: Option<(f64, i64)>,
+        drawn: Option<(f64, i64)>,
     }
     let mut counts: HashMap<i64, Counts> = HashMap::new();
     for d in &v.m.decisions {
@@ -702,6 +706,9 @@ pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
             c.faces += 1;
             if v.is_present(&d.key) {
                 c.photos.insert(d.key.clone());
+                if d.manual && c.drawn.is_none_or(|(w, _)| d.b[2] > w) {
+                    c.drawn = Some((d.b[2], d.id));
+                }
             }
         }
     }
@@ -747,6 +754,7 @@ pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
                 suggested: c.suggested,
                 maybe: c.maybe,
                 cover: chosen.or(c.largest.map(|(_, id)| id)),
+                cover_manual: if chosen.or(c.largest.map(|(_, id)| id)).is_none() { c.drawn.map(|(_, id)| id) } else { None },
             }
         })
         .collect())

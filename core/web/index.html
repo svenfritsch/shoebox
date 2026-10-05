@@ -14,7 +14,7 @@
   <h1 id="title">shoebox</h1>
   <span id="current-month" class="month"></span>
   <div class="search">
-    <input id="search" type="search" placeholder="Search folders, tags, names" autocomplete="off" enterkeyhint="search" role="combobox" aria-controls="suggest" aria-autocomplete="list">
+    <input id="search" type="search" placeholder="Search people, tags, folders" autocomplete="off" enterkeyhint="search" role="combobox" aria-controls="suggest" aria-autocomplete="list">
     <div id="suggest" class="suggest" role="listbox" hidden></div>
     <datalist id="tag-list"></datalist>
   </div>
@@ -31,10 +31,15 @@
       <button id="nav-trash" class="link">Trash</button>
       <button id="nav-faces" class="link" hidden>Face check</button>
     </div>
+    <div id="faces-section" class="side-tags side-faces" hidden>
+      <h3><button id="nav-people" class="link">Faces</button></h3>
+      <ul id="people-tree" class="tree"></ul>
+    </div>
     <div id="tags-section" class="side-tags" hidden>
       <h3>Tags</h3>
       <ul id="own-tags" class="tree"></ul>
     </div>
+    <h3 class="side-head">Folders</h3>
     <ul id="tree" class="tree"></ul>
     <footer id="status" class="status"></footer>
   </nav>

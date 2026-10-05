@@ -573,6 +573,9 @@ fn hand_drawn_faces() {
     assert_eq!(faces[0]["x"], 0.1);
     assert!(person_faces(addr, anna, "confirmed").iter().any(|f| f["manual"] == m));
     assert!(ids(&get(addr, &format!("/api/timeline?person={anna}")).json()).contains(&dark));
+    // Nothing detected to show for her: the drawn face.
+    let p = get(addr, &format!("/api/people/{anna}")).json();
+    assert_eq!((p["cover"].as_i64(), p["cover_manual"].as_i64()), (None, Some(m)));
     assert_eq!(post(addr, "/api/faces/manual", &json!({ "file": dark, "box": [0.8, 0.0, 0.3, 0.4], "name": "Anna" })).status, 400);
 
     // Over the detected face of the other photo: one face, the drawn box.
