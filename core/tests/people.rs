@@ -932,3 +932,144 @@ fn people_as_search_terms_and_undoing_a_rejection() {
     assert_eq!(lib.snapshot(), before);
     server.stop().unwrap();
 }
+
+// ---------------------------------------------------------------- pets (phase 7)
+
+/// Red at least as strong as blue: the fake worker's cat; the reverse: a dog.
+const SPOOKY: [u8; 3] = [200, 60, 40];
+const REX: [u8; 3] = [40, 60, 200];
+
+/// Greys of the fake's variants for animals (64 numbers, model
+/// `fake-animals-1`): similarity 0.875 (suggested: ≥ 0.85, but not joined at
+/// 0.90), 0.775 ("maybe": ≥ 0.75), 0.575 (below every animal threshold).
+const PET_SUGGESTED: u8 = 221;
+const PET_MAYBE: u8 = 195;
+const PET_FAR: u8 = 147;
+
+/// The animal among a file's faces (every fake picture also holds a face).
+fn animal_of(addr: std::net::SocketAddr, lib: &Library, rel: &str) -> Value {
+    let faces = faces_of(addr, lib, rel);
+    let mut animals = faces.iter().filter(|f| f["species"].is_string());
+    let animal = animals.next().unwrap_or_else(|| panic!("{rel}: no animal in {faces:?}")).clone();
+    assert!(animals.next().is_none(), "{rel}: one animal");
+    animal
+}
+
+fn face_of_person(addr: std::net::SocketAddr, lib: &Library, rel: &str) -> Value {
+    let faces = faces_of(addr, lib, rel);
+    let mut people = faces.iter().filter(|f| f["species"].is_null());
+    let face = people.next().unwrap_or_else(|| panic!("{rel}: no face in {faces:?}")).clone();
+    assert!(people.next().is_none());
+    face
+}
+
+/// Cats and dogs are people like the others (named, grouped, found in the
+/// timeline), but live in a space of their own: clusters and suggestions of
+/// animals only mix with animals, and ask for much stronger matches than
+/// faces do.
+#[test]
+fn pets_are_people_in_a_space_of_their_own() {
+    let lib = empty("people-pets");
+    for n in 1..=3 {
+        plain(&lib, &format!("Pets/spooky{n}.png"), SPOOKY, n);
+    }
+    for n in 1..=2 {
+        plain(&lib, &format!("Pets/rex{n}.png"), REX, n);
+    }
+    variant(&lib, "Mix/pet_suggested.png", SPOOKY, PET_SUGGESTED);
+    variant(&lib, "Mix/pet_maybe.png", SPOOKY, PET_MAYBE);
+    variant(&lib, "Mix/pet_far.png", SPOOKY, PET_FAR);
+    plain(&lib, "Anna/a1.png", ANNA, 1);
+    lib.scan_opts(true, false, false);
+    let before = lib.snapshot();
+    let stats = recognize::run(&recognize::Options { animals: true, ..options(&lib) }).unwrap();
+    assert_eq!(stats.failed, 0, "{:?}", stats.errors);
+    let animals = stats.animals.as_ref().expect("the animals pass ran");
+    assert_eq!((animals.looked, animals.faces), (9, 9), "one animal in each of the nine pictures");
+    let summary = stats.clusters.as_ref().unwrap();
+    assert_eq!(summary.animals.as_ref().map(|a| a.faces), Some(9), "{summary:?}");
+
+    let server = start(&lib, None);
+    let addr = server.addr;
+    wait_for_clusters(addr);
+
+    // Faces and animals are clustered apart; `kind` picks one.
+    let all = get(addr, "/api/clusters").json();
+    let pets = get(addr, "/api/clusters?kind=animals").json();
+    let humans = get(addr, "/api/clusters?kind=faces").json();
+    assert_eq!(all["total"].as_u64().unwrap(), pets["total"].as_u64().unwrap() + humans["total"].as_u64().unwrap());
+    assert_eq!(get(addr, "/api/clusters?kind=cats").status, 400);
+    let sizes = |list: &Value| -> Vec<u64> { list["clusters"].as_array().unwrap().iter().map(|c| c["size"].as_u64().unwrap()).collect() };
+    // Spooky's three plain pictures, Rex's two, and the three variants and
+    // Anna's photo (the fake finds an animal in every picture) alone: 0.875
+    // is below the 0.90 that joins animals.
+    assert_eq!(sizes(&pets), [3, 2, 1, 1, 1, 1]);
+    for c in pets["clusters"].as_array().unwrap() {
+        assert!(c["faces"].as_array().unwrap().iter().all(|f| f["species"].is_string()), "{c}");
+    }
+    assert!(humans["clusters"].as_array().unwrap().iter().all(|c| c["faces"].as_array().unwrap().iter().all(|f| f["species"].is_null())));
+    let species_of = |c: &Value| c["faces"][0]["species"].as_str().unwrap().to_string();
+    assert_eq!((species_of(&pets["clusters"][0]), species_of(&pets["clusters"][1])), ("cat".into(), "dog".into()));
+
+    // Name the cat's cluster like any person; the person is a pet.
+    let body = json!({ "name": "Spooky", "generation": pets["clusters"][0]["generation"] });
+    let named = ok(addr, &format!("/api/clusters/{}/name", pets["clusters"][0]["id"]), &body);
+    assert_eq!(named["faces"], 3);
+    let spooky = named["person"]["id"].as_i64().unwrap();
+    let rex_body = json!({ "name": "Rex", "generation": pets["clusters"][1]["generation"] });
+    let rex = ok(addr, &format!("/api/clusters/{}/name", pets["clusters"][1]["id"]), &rex_body)["person"]["id"].as_i64().unwrap();
+    wait_for_clusters(addr);
+    let people = get(addr, "/api/people").json();
+    let by_name = |name: &str| people.as_array().unwrap().iter().find(|p| p["name"] == name).unwrap().clone();
+    assert_eq!(by_name("Spooky")["species"], "cat");
+    assert_eq!(by_name("Rex")["species"], "dog");
+    assert!(by_name("Spooky")["cover"].is_i64());
+
+    // Suggestions among animals, at the animals' thresholds.
+    let suggested = animal_of(addr, &lib, "Mix/pet_suggested.png");
+    assert_eq!((suggested["state"].as_str(), suggested["person"]["name"].as_str()), (Some("suggested"), Some("Spooky")));
+    assert!((suggested["similarity"].as_f64().unwrap() - 0.875).abs() < 0.01);
+    let maybe = animal_of(addr, &lib, "Mix/pet_maybe.png");
+    assert_eq!((maybe["state"].as_str(), maybe["person"]["name"].as_str()), (Some("maybe"), Some("Spooky")));
+    // 0.575 would be a suggestion for a face; for an animal it is nothing.
+    let far = animal_of(addr, &lib, "Mix/pet_far.png");
+    assert!(far["state"].is_null() && far["person"].is_null(), "{far}");
+    assert_eq!(files_of(&person_faces(addr, spooky, "suggested")), [id_of(&lib, "Mix/pet_suggested.png")]);
+    assert_eq!(files_of(&person_faces(addr, spooky, "maybe")), [id_of(&lib, "Mix/pet_maybe.png")]);
+    let spooky_row = by_name("Spooky");
+    assert_eq!((spooky_row["suggested"].as_u64(), spooky_row["maybe"].as_u64()), (Some(1), Some(1)));
+
+    // The faces of the same photos are not suggested for a pet: another space.
+    for rel in ["Mix/pet_suggested.png", "Mix/pet_maybe.png", "Pets/rex1.png"] {
+        let face = face_of_person(addr, &lib, rel);
+        assert!(face["person"].is_null() || face["state"] == "confirmed", "{rel}: {face}");
+    }
+    assert!(face_of_person(addr, &lib, "Mix/pet_suggested.png")["person"].is_null());
+
+    // Confirm the suggestion like any other; the pet's timeline has the photo.
+    let id = animal_of(addr, &lib, "Mix/pet_suggested.png")["id"].as_i64().unwrap();
+    assert_eq!(ok(addr, "/api/faces/confirm", &json!({ "faces": [id] }))["person"]["id"], spooky);
+    let mut timeline = ids(&get(addr, &format!("/api/timeline?person={spooky}")).json());
+    timeline.sort();
+    let mut want: Vec<i64> = (1..=3).map(|n| id_of(&lib, &format!("Pets/spooky{n}.png"))).collect();
+    want.push(id_of(&lib, "Mix/pet_suggested.png"));
+    want.sort();
+    assert_eq!(timeline, want);
+
+    // Pets and people share groups: put the cat, the dog and a person in one.
+    let family = ok(addr, "/api/groups", &json!({ "name": "Family" }))["id"].as_i64().unwrap();
+    let anna_face = face_of_person(addr, &lib, "Anna/a1.png")["id"].as_i64().unwrap();
+    let anna = ok(addr, "/api/faces/assign", &json!({ "faces": [anna_face], "name": "Anna" }))["person"]["id"].as_i64().unwrap();
+    for p in [spooky, rex, anna] {
+        ok(addr, &format!("/api/people/{p}/group"), &json!({ "group_id": family }));
+    }
+    let people = get(addr, "/api/people").json();
+    assert!(people.as_array().unwrap().iter().all(|p| p["group_id"] == family), "{people}");
+    assert!(people.as_array().unwrap().iter().filter(|p| p["name"] == "Anna").all(|p| p["species"].is_null()));
+
+    // A cat can also be merged into another pet (the same animal under two names).
+    let merged = ok(addr, &format!("/api/people/{rex}/merge"), &json!({ "into": spooky }));
+    assert_eq!(merged["id"], spooky);
+
+    assert_eq!(lib.snapshot(), before, "nothing here may change an original");
+}

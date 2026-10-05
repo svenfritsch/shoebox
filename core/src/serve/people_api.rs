@@ -236,11 +236,19 @@ pub(super) struct ClustersQuery {
     limit: Option<usize>,
     /// Faces shown per cluster.
     samples: Option<usize>,
+    /// `faces` or `animals`: only that kind of cluster (default: both).
+    kind: Option<String>,
 }
 
 pub(super) async fn clusters(State(app): State<Arc<App>>, Query(q): Query<ClustersQuery>) -> ApiResult<Json<people::Clusters>> {
     let (limit, samples) = (q.limit.unwrap_or(50).min(500), q.samples.unwrap_or(8).min(100));
-    blocking(&app, move |app| Ok(Json(people::clusters(&app.conn.lock().unwrap(), q.offset, limit, samples)?))).await
+    let kind = match q.kind.as_deref() {
+        None | Some("") | Some("all") => None,
+        Some("faces") => Some(crate::animals::Space::Faces),
+        Some("animals") => Some(crate::animals::Space::Animals),
+        Some(other) => return Err(ApiError::BadRequest(format!("kind is faces or animals, not {other:?}"))),
+    };
+    blocking(&app, move |app| Ok(Json(people::clusters(&app.conn.lock().unwrap(), q.offset, limit, samples, kind)?))).await
 }
 
 #[derive(Deserialize)]

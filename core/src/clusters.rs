@@ -43,7 +43,7 @@ use crate::animals::{Space, Thresholds};
 use crate::ann::{self, Index};
 use crate::db::{self, Job};
 use crate::faces::{self, MIN_CLUSTER_PX};
-use crate::people::{self, Decision, Matched};
+use crate::people::{Decision, Matched};
 use crate::recognize::{FACES, Interrupted, KINDS};
 
 /// Faces at least this similar (cosine) are neighbours, and neighbours
@@ -528,11 +528,21 @@ pub fn overview(conn: &Connection) -> Result<Overview> {
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .optional()?;
-    let (clusters, unnamed, suggested): (i64, i64, i64) = conn.query_row(
-        "SELECT count(DISTINCT cluster), count(*), count(*) FILTER (WHERE similarity >= ?1) FROM recog.clusters",
-        [people::SUGGEST_SIM as f64],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-    )?;
+    let (clusters, unnamed): (i64, i64) =
+        conn.query_row("SELECT count(DISTINCT cluster), count(*) FROM recog.clusters", [], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    // Suggested: at least as similar as the face's own space asks for.
+    let mut suggested = 0i64;
+    {
+        let mut stmt = conn.prepare(
+            "SELECT f.species, f.model, c.similarity FROM recog.clusters c JOIN recog.faces f ON f.id = c.face
+             WHERE c.similarity IS NOT NULL",
+        )?;
+        let mut rows = stmt.query([])?;
+        while let Some(r) = rows.next()? {
+            let (species, model, sim): (Option<String>, String, f64) = (r.get(0)?, r.get(1)?, r.get(2)?);
+            suggested += (sim as f32 >= Space::of(species.as_deref()).thresholds(&model).suggest) as i64;
+        }
+    }
     let people: i64 = conn.query_row("SELECT count(*) FROM people", [], |r| r.get(0))?;
     let (done, total, state, finished_at) = match latest {
         Some((d, t, s, f)) => (d, t, Some(s), f),
