@@ -120,6 +120,20 @@ fn only_this_computer_and_only_with_the_header() {
 }
 
 #[test]
+fn the_launcher_serves_its_translations() {
+    let launcher = start_launcher();
+    let addr = launcher.addr;
+    assert_eq!(lget(addr, "/i18n/i18n.js").status, 200);
+    for lang in ["en", "de"] {
+        let messages = lget(addr, &format!("/i18n/{lang}.json"));
+        assert_eq!(messages.status, 200, "{lang}");
+        assert_eq!(messages.header("content-type"), Some("application/json"));
+        assert!(messages.json()["launcher.step1"].is_string(), "{lang}");
+    }
+    launcher.stop().unwrap();
+}
+
+#[test]
 fn the_photo_app_starts_only_when_asked() {
     let _turn = serial();
     let lib = Library::new("launcher-app");

@@ -49,10 +49,15 @@ with the same placeholders, plural messages have an `.other` form, every
 | Step | Status |
 |---|---|
 | Loader, embedding, key test, launcher | Done |
-| Photo app: static page, login, sidebar, toolbar | Open |
-| Photo app: grid, viewer, info panel | Open |
-| Photo app: selection, move, trash, import, tags | Open |
-| Photo app: duplicates, trash page | Open |
-| Photo app: faces and people | Open |
-| Photo app: drives | Open |
-| Real-hardware check (iPad: language switch, dates) | Open |
+| Photo app: static page, login, sidebar, toolbar, language selector | Done |
+| Photo app: grid, viewer, info panel, status line | Done |
+| Photo app: selection, move, trash, import, tags | Done |
+| Photo app: duplicates, trash page | Done |
+| Photo app: faces and people | Done |
+| Photo app: drives | Done |
+| Check on real hardware (iPad: language switch, dates, long German texts in the dialogs) | Open |
+| Confirm the GitHub Actions run is green (`core/tests/i18n.rs` could only be run on its own here) | Open |
+| Server-side texts (error messages, job labels in the launcher) | Open, optional (see above) |
+
+The German texts were written without a native review: read through them once
+in the UI.

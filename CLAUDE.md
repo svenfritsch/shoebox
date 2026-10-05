@@ -16,6 +16,9 @@ current status and next step. Update its status table when a phase moves.
 - Originals change only through explicit user actions (move, rename, trash,
   import) in `organize.rs`/`import.rs`: rename only, never copy, never
   replace, and only files that still match the index.
+- UI text is never hard-coded: `tr()`/`trn()`/`data-i18n` with a key in both
+  `core/i18n/en.json` and `de.json` (see docs/phase8.md; `core/tests/i18n.rs`
+  checks it).
 - Paths may contain spaces and decomposed Unicode: quote everything, compare
   NFC-normalised.
 
