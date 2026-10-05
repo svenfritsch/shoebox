@@ -17,6 +17,7 @@ pub mod library;
 pub mod media;
 pub mod multi;
 pub mod organize;
+pub mod orientation;
 pub mod people;
 pub mod phash;
 pub mod probe;

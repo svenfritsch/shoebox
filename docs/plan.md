@@ -8,7 +8,8 @@ progress. Update the status section when a phase moves.
 
 - **No copies, no changes to originals.** shoebox only indexes files by path
   and hash. Originals are opened read-only; the only operations that touch
-  them are explicit user actions (move, import, delete duplicate).
+  them are explicit user actions (move, import, delete duplicate, and turning
+  a JPEG, which changes the two bytes of its EXIF Orientation tag in place).
 - **Timestamps are sacred.** EXIF `DateTimeOriginal` and the file's created
   date must never change. Moving within the drive uses `rename`, which keeps
   all timestamps. Every scan path is covered by the *guard* (see below).
@@ -513,6 +514,22 @@ Open
 - **Git push** uses SSH via the 1Password agent with the "GitHub" key pinned
   in this repo's `core.sshCommand` (the keychain's HTTPS login belongs to a
   different account, `svenfritschpeers`).
+
+## Rotate (lightbox)
+
+Rotate button (`r` left, Shift+R or Option-click right) in the detail view,
+like the Finder's Quick Look. `organize::rotate` patches the EXIF Orientation
+tag of a JPEG in place (`orientation.rs`): lossless, same size, creation date
+kept, the modification date is the file system's. Before: file matches the
+index (size, mtime, full hash if known). After: full hash must equal the old
+bytes with those two changed, else the old bytes are put back. The quick hash
+changes, so the index record is updated and the capture-date override, face
+decisions (boxes turned with the picture) and a person's picture follow to the
+new key; thumbnails and detected faces are made again (next view, next
+`shoebox recognize`). Open: HEIC (needs an `irot` box, often missing on
+landscape photos, so a container rewrite), PNG, JPEGs without an Orientation
+tag; the EXIF thumbnail inside the file is not turned. Real-hardware check:
+rotate a copy in the app, look at it in Finder and Explorer.
 
 ## Next step
 

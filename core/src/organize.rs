@@ -14,10 +14,15 @@
 //!   the next scan recognises the move.
 //! - "Deleting" moves files into `.shoebox/trash/` on the same drive; only
 //!   emptying the trash removes them.
+//! - Turning a JPEG is the one change that writes into an original, and only
+//!   the two bytes of its EXIF Orientation tag, in place: nothing is copied
+//!   or replaced, the picture data and the capture and creation dates stay.
+//!   It must match the index first, and what is on disk afterwards must be
+//!   exactly the old file with those two bytes changed (full hash).
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io;
+use std::io::{self, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -29,6 +34,8 @@ use crate::classify;
 use crate::db;
 use crate::fingerprint::{self, Stamp};
 use crate::library::{self, RelPath};
+use crate::media;
+use crate::orientation;
 use crate::scan::{self, Found};
 use crate::tags;
 
@@ -586,6 +593,193 @@ pub(crate) fn index_file(conn: &Connection, root: &Path, raw: &str, full_hash: O
     }
     scan::set_folder_tags(conn, id, &found.rel)?;
     Ok(id)
+}
+
+// ---------------------------------------------------------------- rotate
+
+/// What turning a photo changed.
+#[derive(Debug, Serialize)]
+pub struct Rotated {
+    pub id: i64,
+    /// The first 8 characters of the new quick hash: what the web page puts
+    /// on the picture addresses.
+    pub version: String,
+    /// The EXIF orientation stored now (1 to 8).
+    pub orientation: u8,
+}
+
+/// Larger files are not read into memory to be checked.
+const ROTATE_MAX_BYTES: u64 = 256 << 20;
+
+/// Turn a JPEG by `quarters` quarter turns clockwise (negative:
+/// counter-clockwise) by changing its EXIF Orientation tag in place.
+///
+/// Like the Finder's Quick Look this is lossless and quick, and it is the
+/// only time shoebox writes into an original: two bytes, no copy, no
+/// replacement. The file must still match the index, carry an Orientation
+/// tag already (adding one would move every byte after it), and afterwards
+/// hash to exactly the old content with those two bytes changed; if not, the
+/// old bytes are put back. The modification time is the file system's own
+/// doing, as in the Finder; the creation time must not change.
+pub fn rotate(conn: &Connection, root: &Path, id: i64, quarters: i32) -> Result<Rotated> {
+    let quarters = quarters.rem_euclid(4);
+    if quarters == 0 {
+        bail!("nothing to turn");
+    }
+    let rec = load(conn, id)?.ok_or_else(|| anyhow!("not in the index"))?;
+    let name = rec.path_nfc.as_str();
+    if rec.missing {
+        bail!("{name} is missing from the drive");
+    }
+    let kind = classify::Kind::parse(&rec.kind).ok_or_else(|| anyhow!("{name}: unknown kind"))?;
+    let path = root.join(&rec.path);
+    // A JPEG called `.HEIC` is a JPEG; a HEIC, PNG, RAW file or video has no
+    // Orientation tag that is safe to change in place.
+    if media::content_kind(kind, &path) != classify::Kind::Jpeg {
+        bail!("{name}: only JPEG photos can be turned for now");
+    }
+    if rec.size > ROTATE_MAX_BYTES {
+        bail!("{name} is too large to turn");
+    }
+
+    let before = fingerprint::stamp(&path).with_context(|| name.to_string())?;
+    let bytes = fingerprint::read_unchanged(&path, rec.size, rec.mtime_ns, || fs::read(&path).map_err(|e| e.to_string()))
+        .map_err(|e| anyhow!("{name}: {e}; scan the library first"))?;
+    if let Some(stored) = &rec.full_hash
+        && blake3::hash(&bytes).to_hex().as_str() != stored
+    {
+        bail!("{name} differs from the index (hash); check it before changing it");
+    }
+
+    let slot = orientation::find(&bytes).map_err(|e| anyhow!("{name}: {e:#}"))?;
+    let value = orientation::turned(slot.value, quarters);
+    let old_bytes = [bytes[slot.offset], bytes[slot.offset + 1]];
+    let new_bytes = slot.bytes(value);
+    let mut expected = bytes;
+    expected[slot.offset..slot.offset + 2].copy_from_slice(&new_bytes);
+    let expected_hash = blake3::hash(&expected).to_hex().to_string();
+    drop(expected);
+
+    patch(&path, slot.offset as u64, &new_bytes).with_context(|| format!("{name}: could not write"))?;
+    let verified = (|| -> Result<fingerprint::Stamp> {
+        let after = fingerprint::stamp(&path)?;
+        if after.size != before.size || after.created_ns != before.created_ns {
+            bail!("the drive changed the size or the creation date");
+        }
+        if fingerprint::full_hash(&path)? != expected_hash {
+            bail!("the file reads differently from what was written");
+        }
+        Ok(after)
+    })();
+    let stamp = match verified {
+        Ok(s) => s,
+        Err(e) => {
+            let restored = patch(&path, slot.offset as u64, &old_bytes);
+            bail!("{name}: {e:#}; {}", if restored.is_ok() { "the old bytes were put back" } else { "putting the old bytes back failed too" });
+        }
+    };
+
+    let rel = RelPath::new(root, &path).context("not inside the library")?;
+    let found = Found { rel, kind, stamp };
+    let info = scan::read_file(&mut MediaParser::new(), &path, &found, None).map_err(|e| anyhow!("{name}: {e}"))?;
+    let tx = conn.unchecked_transaction()?;
+    scan::update_file(&tx, id, &found, &info)?;
+    tx.execute("UPDATE files SET full_hash = ?2 WHERE id = ?1", params![id, expected_hash])?;
+    let key: String = tx.query_row("SELECT quick_hash FROM files WHERE id = ?1", [id], |r| r.get(0))?;
+    follow_content(&tx, &rec.quick_hash, &key, quarters)?;
+    tx.commit()?;
+    Ok(Rotated { id, version: key.chars().take(8).collect(), orientation: value })
+}
+
+/// Overwrite `bytes.len()` bytes at `offset`, in place.
+fn patch(path: &Path, offset: u64, bytes: &[u8]) -> Result<()> {
+    let mut file = fs::OpenOptions::new().write(true).open(path)?;
+    file.seek(SeekFrom::Start(offset))?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    Ok(())
+}
+
+/// A box (x, y, w, h as fractions of the upright picture) after the picture
+/// was turned by `quarters` quarter turns clockwise.
+fn turn_box(b: [f64; 4], quarters: i32) -> [f64; 4] {
+    let [x, y, w, h] = b;
+    match quarters.rem_euclid(4) {
+        1 => [1.0 - y - h, x, h, w],
+        2 => [1.0 - x - w, 1.0 - y - h, w, h],
+        3 => [y, 1.0 - x - w, h, w],
+        _ => b,
+    }
+}
+
+/// Things the user decided are keyed by the content's quick hash, which
+/// changed with the tag: the capture date they set and who is where on the
+/// photo (turned with the picture) follow the photo to its new key. What the
+/// other copies of the old content still use stays with them. What is only
+/// cached (thumbnails, detected faces) is made again: the next view and the
+/// next `shoebox recognize` do that, and prune the old.
+fn follow_content(conn: &Connection, old: &str, new: &str, quarters: i32) -> Result<()> {
+    let has_table = |name: &str| -> Result<bool> {
+        Ok(conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)", [name], |r| r.get(0))?)
+    };
+    let still_used: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM files WHERE quick_hash = ?1) OR EXISTS(SELECT 1 FROM trash WHERE quick_hash = ?1)",
+        [old],
+        |r| r.get(0),
+    )?;
+    let same = old == new;
+
+    if has_table("face_decisions")? {
+        let rows: Vec<(i64, [f64; 4])> = conn
+            .prepare("SELECT id, x, y, w, h FROM face_decisions WHERE key = ?1")?
+            .query_map([old], |r| Ok((r.get(0)?, [r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?])))?
+            .collect::<rusqlite::Result<_>>()?;
+        for (row, b) in rows {
+            let [x, y, w, h] = turn_box(b, quarters);
+            if same {
+                conn.execute("UPDATE face_decisions SET x = ?2, y = ?3, w = ?4, h = ?5 WHERE id = ?1", params![row, x, y, w, h])?;
+            } else {
+                conn.execute(
+                    "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at)
+                     SELECT ?2, ?3, ?4, ?5, ?6, person_id, decision, manual, at FROM face_decisions WHERE id = ?1",
+                    params![row, new, x, y, w, h],
+                )?;
+            }
+        }
+        if !same && !still_used {
+            conn.execute("DELETE FROM face_decisions WHERE key = ?1 AND id NOT IN (SELECT id FROM face_decisions WHERE key = ?2)", params![old, new])?;
+        }
+    }
+    if !same && has_table("taken_overrides")? {
+        conn.execute(
+            "INSERT OR REPLACE INTO taken_overrides (key, taken, taken_offset, at)
+             SELECT ?2, taken, taken_offset, at FROM taken_overrides WHERE key = ?1",
+            params![old, new],
+        )?;
+        if !still_used {
+            conn.execute("DELETE FROM taken_overrides WHERE key = ?1", [old])?;
+        }
+    }
+    if !same && !still_used && has_table("people")? {
+        let covers: Vec<(i64, String)> = conn
+            .prepare("SELECT id, cover_box FROM people WHERE cover_key = ?1 AND cover_box IS NOT NULL")?
+            .query_map([old], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        for (person, json) in covers {
+            let Ok(b) = serde_json::from_str::<[f64; 4]>(&json) else { continue };
+            conn.execute(
+                "UPDATE people SET cover_key = ?2, cover_box = ?3 WHERE id = ?1",
+                params![person, new, serde_json::to_string(&turn_box(b, quarters))?],
+            )?;
+        }
+    }
+    // The cached picture of the old content, if nothing uses it any more, or
+    // of the new one when the key did not change although the picture did.
+    // (Not every connection has the thumbnail database attached.)
+    if same || !still_used {
+        let _ = conn.execute("DELETE FROM thumbs.thumbs WHERE key = ?1", [old]);
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------- trash

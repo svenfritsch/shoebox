@@ -930,6 +930,11 @@ function showItem() {
   $('lb-next').hidden = i >= d.count - 1;
   $('lb-download').href = fileBase(id) + '/original?download=1';
   $('lb-live').hidden = !state.live[id];
+  var rot = $('lb-rotate');
+  rot.hidden = isAll() || kind === 'v';
+  rot.disabled = kind !== 'j';
+  rot.title = kind === 'j' ? 'Rotate left (r) · Option-click or Shift+R: right'
+    : 'Only JPEG photos can be rotated for now (HEIC, PNG and RAW cannot)';
   $('lb-title').textContent = '';
   lb.hover = null;
   stopDrawing();
@@ -1087,6 +1092,29 @@ function renderPanel() {
   panel.appendChild(actions);
 }
 
+// Turns the original on the drive (its EXIF orientation, two bytes, no loss),
+// like the rotate button of the Finder's Quick Look. `turns` is in quarter
+// turns clockwise.
+function rotateOpen(turns) {
+  var d = state.data, i = state.open;
+  if (!d || i < 0 || isAll() || d.kinds[i] !== 'j' || lb.rotating) return;
+  lb.rotating = true;
+  var id = d.ids[i];
+  post(fileBase(id) + '/rotate', { turns: turns }).then(function (r) {
+    lb.rotating = false;
+    // The address of the picture carries the version, so the new one is
+    // fetched; the grid follows when the status poll sees the change.
+    if (state.data === d && d.ids[i] === id) {
+      d.versions = d.versions.slice(0, i * 8) + r.version + d.versions.slice(i * 8 + 8);
+      if (state.open === i) showItem();
+    }
+  }).catch(function (e) {
+    lb.rotating = false;
+    toast(e.message);
+  });
+}
+
+$('lb-rotate').onclick = function (ev) { rotateOpen(ev && ev.altKey ? 1 : -1); };
 $('lb-close').onclick = closeLightbox;
 $('lb-prev').onclick = function () { step(-1); };
 $('lb-next').onclick = function () { step(1); };
@@ -1142,6 +1170,7 @@ document.addEventListener('keydown', function (ev) {
   else if (ev.key === 'ArrowLeft') step(-1);
   else if (ev.key === 'ArrowRight') step(1);
   else if (ev.key === 'i') $('lb-info').onclick();
+  else if ((ev.key === 'r' || ev.key === 'R') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) rotateOpen(ev.shiftKey ? 1 : -1);
 });
 
 // Swipe left/right on touch screens.

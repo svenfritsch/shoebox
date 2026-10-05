@@ -807,6 +807,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/files/{id}/view", get(view))
         .route("/api/files/{id}/original", get(original))
         .route("/api/files/{id}/reveal", post(reveal_file))
+        .route("/api/files/{id}/rotate", post(rotate_file))
         .route("/api/move", post(move_files))
         .route("/api/folders/{id}/rename", post(rename_folder))
         .route("/api/import/folder", post(import_folder))
@@ -1920,6 +1921,21 @@ fn keep_tags_default() -> bool {
 
 async fn move_files(State(app): State<Arc<App>>, Json(req): Json<MoveRequest>) -> ApiResult<Json<organize::Moved>> {
     change(&app, move |app, conn| organize::move_files_with(conn, &app.root, &req.ids, &req.folder, req.keep_tags)).await.map(Json)
+}
+
+#[derive(Deserialize)]
+struct RotateRequest {
+    /// Quarter turns clockwise; negative turns counter-clockwise.
+    turns: i32,
+}
+
+/// Turn a JPEG (its EXIF Orientation tag, in place; see `organize::rotate`).
+async fn rotate_file(
+    State(app): State<Arc<App>>,
+    Path(id): Path<i64>,
+    Json(req): Json<RotateRequest>,
+) -> ApiResult<Json<organize::Rotated>> {
+    change(&app, move |app, conn| organize::rotate(conn, &app.root, id, req.turns)).await.map(Json)
 }
 
 #[derive(Deserialize)]
