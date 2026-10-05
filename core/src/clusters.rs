@@ -44,7 +44,7 @@ use crate::ann::{self, Index};
 use crate::db::{self, Job};
 use crate::faces::{self, MIN_CLUSTER_PX};
 use crate::people::{self, Decision, Matched};
-use crate::recognize::{Interrupted, KINDS};
+use crate::recognize::{FACES, Interrupted, KINDS};
 
 /// Faces at least this similar (cosine) are neighbours, and neighbours
 /// end up in one cluster. Stricter than `people::SUGGEST_SIM`: a cluster
@@ -171,16 +171,18 @@ impl Eligible {
     }
 }
 
-fn eligible(conn: &Connection, model: &str) -> Result<Eligible> {
+fn eligible(conn: &Connection, space: Space, model: &str) -> Result<Eligible> {
     let mut stmt = conn.prepare(&format!(
         "SELECT f.id, f.emb FROM recog.faces f
-         JOIN recog.looked l ON l.key = f.key AND l.task = '{FACES}'
-         WHERE f.model = ?1 AND {px} >= ?2
+         JOIN recog.looked l ON l.key = f.key AND l.task = '{task}'
+         WHERE f.model = ?1 AND {filter} AND {px} >= ?2
            AND f.key IN (SELECT quick_hash FROM files WHERE missing_since IS NULL AND kind IN ({KINDS}))
          ORDER BY f.id",
+        task = space.task(),
+        filter = space.filter(),
         px = faces::size_px("f.roll")
     ))?;
-    let mut rows = stmt.query(params![model, MIN_CLUSTER_PX])?;
+    let mut rows = stmt.query(params![model, space.min_px()])?;
     let mut out = Eligible { ids: Vec::new(), data: Vec::new(), dim: 0 };
     while let Some(r) = rows.next()? {
         let bytes: Vec<u8> = r.get(1)?;
@@ -205,31 +207,54 @@ fn decode(bytes: &[u8]) -> impl Iterator<Item = i64> + '_ {
     bytes.chunks_exact(12).map(|c| i64::from_le_bytes(c[..8].try_into().unwrap()))
 }
 
+/// One space's faces taking part, with what it is compared by.
+struct Part {
+    space: Space,
+    model: String,
+    th: Thresholds,
+    all: Eligible,
+    /// Positions in `all` that still need a neighbour list.
+    todo: Vec<usize>,
+}
+
+/// What the analysis of one space found: clusters of positions in `all`,
+/// and the person suggested for a position.
+struct Analysis {
+    groups: Vec<Vec<usize>>,
+    suggestion: HashMap<usize, (i64, f32)>,
+}
+
 fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut dyn FnMut(u64, u64)) -> Result<Summary> {
     let started = Instant::now();
-    let model = current_model(conn)?;
-    let all = match &model {
-        Some(m) => eligible(conn, m)?,
-        None => Eligible { ids: Vec::new(), data: Vec::new(), dim: 0 },
-    };
-    let n = all.ids.len();
-    let pos: HashMap<i64, usize> = all.ids.iter().enumerate().map(|(i, id)| (*id, i)).collect();
+    let mut parts: Vec<Part> = Vec::new();
+    for space in [Space::Faces, Space::Animals] {
+        let Some(model) = current_model_of(conn, space)? else { continue };
+        let all = eligible(conn, space, &model)?;
+        let th = space.thresholds(&model);
+        parts.push(Part { space, model, th, all, todo: Vec::new() });
+    }
 
     // Neighbour lists: kept from earlier runs, computed for the others.
     conn.execute("DELETE FROM recog.neighbours WHERE face NOT IN (SELECT id FROM recog.faces)", [])?;
     let have: HashSet<i64> =
         conn.prepare("SELECT face FROM recog.neighbours")?.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
-    let todo: Vec<usize> = (0..n).filter(|&i| !have.contains(&all.ids[i])).collect();
-    let total = todo.len() as u64;
+    for part in &mut parts {
+        part.todo = (0..part.all.ids.len()).filter(|&i| !have.contains(&part.all.ids[i])).collect();
+    }
+    let total: u64 = parts.iter().map(|p| p.todo.len() as u64).sum();
     job.progress(conn, 0, Some(total))?;
-    if !todo.is_empty() {
+    let mut done = 0;
+    for part in &parts {
+        if part.todo.is_empty() {
+            continue;
+        }
+        let all = &part.all;
         let index = Index::build(&all.data, all.dim);
-        let mut done = 0;
-        for chunk in todo.chunks(CHUNK) {
+        for chunk in part.todo.chunks(CHUNK) {
             if stop() {
                 return Err(Interrupted.into());
             }
-            let lists = ann::parallel(chunk.len(), |c| index.search(all.row(chunk[c]), NEIGHBOURS, CLUSTER_SIM, Some(chunk[c])));
+            let lists = ann::parallel(chunk.len(), |c| index.search(all.row(chunk[c]), NEIGHBOURS, part.th.cluster, Some(chunk[c])));
             let tx = conn.unchecked_transaction()?;
             {
                 let mut insert = tx.prepare("INSERT OR REPLACE INTO recog.neighbours (face, list) VALUES (?1, ?2)")?;
@@ -248,6 +273,62 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
     // What the user decided, as it is now.
     let m = Matched::load(conn, None)?;
     let state_of: HashMap<i64, usize> = m.faces.iter().enumerate().map(|(i, f)| (f.id, i)).collect();
+
+    let mut summaries: Vec<Summary> = Vec::new();
+    // (face, cluster, person, similarity) of every face without a decision.
+    let mut rows: Vec<(i64, i64, Option<i64>, Option<f64>)> = Vec::new();
+    let mut numbered = 0i64;
+    for part in &parts {
+        let analysis = analyse(conn, &m, &state_of, part)?;
+        let mut summary = Summary {
+            faces: part.all.ids.len() as u64,
+            listed: part.todo.len() as u64,
+            clusters: analysis.groups.len() as u64,
+            ..Summary::default()
+        };
+        for (c, group) in analysis.groups.iter().enumerate() {
+            for &i in group {
+                let s = analysis.suggestion.get(&i);
+                rows.push((part.all.ids[i], numbered + c as i64 + 1, s.map(|s| s.0), s.map(|s| s.1 as f64)));
+                summary.unnamed += 1;
+                match s {
+                    Some(&(_, sim)) if sim >= part.th.suggest => summary.suggested += 1,
+                    Some(_) => summary.maybe += 1,
+                    None => {}
+                }
+            }
+        }
+        numbered += analysis.groups.len() as i64;
+        summaries.push(summary);
+    }
+
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("DELETE FROM recog.clusters", [])?;
+    {
+        let mut insert = tx.prepare("INSERT INTO recog.clusters (face, cluster, person, similarity) VALUES (?1, ?2, ?3, ?4)")?;
+        for (face, cluster, person, similarity) in &rows {
+            insert.execute(params![face, cluster, person, similarity])?;
+        }
+    }
+    tx.commit()?;
+    let mut summaries = summaries.into_iter();
+    let mut out = Summary::default();
+    for part in &parts {
+        let s = summaries.next().expect("one summary per part");
+        match part.space {
+            Space::Faces => out = s,
+            Space::Animals => out.animals = Some(Box::new(s)),
+        }
+    }
+    out.seconds = started.elapsed().as_secs_f64();
+    Ok(out)
+}
+
+/// Clusters and suggestions of one space.
+fn analyse(conn: &Connection, m: &Matched, state_of: &HashMap<i64, usize>, part: &Part) -> Result<Analysis> {
+    let all = &part.all;
+    let n = all.ids.len();
+    let pos: HashMap<i64, usize> = all.ids.iter().enumerate().map(|(i, id)| (*id, i)).collect();
     let decided = |i: usize| state_of.get(&all.ids[i]).and_then(|&s| m.decided(s));
     let open: Vec<bool> = (0..n).map(|i| decided(i).is_none()).collect();
 
@@ -268,7 +349,7 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
             for other in decode(&bytes) {
                 let Some(&j) = pos.get(&other) else { continue };
                 let sim = if open[j] { ann::dot(all.row(i), all.row(j)) } else { 0.0 };
-                if sim >= CLUSTER_SIM {
+                if sim >= part.th.cluster {
                     edges.push((i, j, sim));
                     let (a, b) = (root(&mut parent, i), root(&mut parent, j));
                     if a != b {
@@ -294,7 +375,7 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
     }
     for (r, m) in members {
         if m.len() > MAX_CLUSTER {
-            split(m, big_edges.remove(&r).unwrap_or_default(), CLUSTER_SIM, &mut groups);
+            split(m, big_edges.remove(&r).unwrap_or_default(), part.th.cluster, &mut groups);
         } else {
             groups.push(m);
         }
@@ -302,8 +383,9 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
     drop(edges);
     groups.sort_by(|a, b| b.len().cmp(&a.len()).then(a[0].cmp(&b[0])));
 
-    // Suggestions: the most similar confirmed faces of every person, and
-    // the faces drawn by hand that were aligned.
+    // Suggestions: the most similar confirmed faces of every person (of
+    // this space), and the faces drawn by hand that were aligned (faces only:
+    // the worker embeds nothing else by hand).
     let mut ref_person: Vec<i64> = Vec::new();
     let mut ref_data: Vec<f32> = Vec::new();
     for i in 0..n {
@@ -312,8 +394,8 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
             ref_data.extend_from_slice(all.row(i));
         }
     }
-    if let Some(model) = &model {
-        for (p, emb) in drawn_references(conn, &m, model, all.dim)? {
+    if part.space == Space::Faces {
+        for (p, emb) in drawn_references(conn, m, &part.model, all.dim)? {
             ref_person.push(p);
             ref_data.extend(emb);
         }
@@ -327,7 +409,7 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
             let i = open_list[k];
             let rejected = state_of.get(&all.ids[i]).map(|&s| m.states[s].rejected.as_slice()).unwrap_or(&[]);
             ref_index
-                .search(all.row(i), REFERENCES, people::MAYBE_SIM, None)
+                .search(all.row(i), REFERENCES, part.th.maybe, None)
                 .into_iter()
                 .map(|(r, sim)| (ref_person[r], sim))
                 .find(|(p, _)| !rejected.contains(p))
@@ -335,28 +417,7 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
     };
     let suggestion: HashMap<usize, (i64, f32)> =
         open_list.iter().zip(suggestions).filter_map(|(&i, s)| s.map(|s| (i, s))).collect();
-
-    let tx = conn.unchecked_transaction()?;
-    tx.execute("DELETE FROM recog.clusters", [])?;
-    let mut summary = Summary { faces: n as u64, listed: total, clusters: groups.len() as u64, ..Summary::default() };
-    {
-        let mut insert = tx.prepare("INSERT INTO recog.clusters (face, cluster, person, similarity) VALUES (?1, ?2, ?3, ?4)")?;
-        for (c, faces) in groups.iter().enumerate() {
-            for &i in faces {
-                let s = suggestion.get(&i);
-                insert.execute(params![all.ids[i], c as i64 + 1, s.map(|s| s.0), s.map(|s| s.1 as f64)])?;
-                summary.unnamed += 1;
-                match s {
-                    Some(&(_, sim)) if sim >= people::SUGGEST_SIM => summary.suggested += 1,
-                    Some(_) => summary.maybe += 1,
-                    None => {}
-                }
-            }
-        }
-    }
-    tx.commit()?;
-    summary.seconds = started.elapsed().as_secs_f64();
-    Ok(summary)
+    Ok(Analysis { groups, suggestion })
 }
 
 /// Union-find: the root of `i`, flattening the path.

@@ -37,6 +37,23 @@ var state = {
 
 // ------------------------------------------------------------------ api
 
+// Every library has an id and all its routes live under /api/lib/<id>
+// (file ids are per database). Set in the start code below, from
+// /api/libraries, before the first library request.
+var LIBAPI = null;
+
+// The common timeline of all drives ("scope all"): an item's id is
+// `drive * SPAN + id in that drive`, the drive being its position in the
+// list the server sent with the timeline. fileBase() turns it back into the
+// route of that drive's file.
+var SPAN = 1099511627776; // 2^40, as on the server
+function isAll() { return !!(typeof drives !== 'undefined' && drives.scope === 'all'); }
+function fileBase(id) {
+  if (!isAll()) return LIBAPI + '/files/' + id;
+  var lib = drives.allLibs[Math.floor(id / SPAN)];
+  return '/api/lib/' + lib.id + '/files/' + (id % SPAN);
+}
+
 function api(path, opts) {
   return fetch(path, Object.assign({ credentials: 'same-origin' }, opts)).then(function (r) {
     if (r.status === 401) { showLogin(); throw new Error('login required'); }
@@ -95,7 +112,7 @@ $('login-form').addEventListener('submit', function (ev) {
 
 // ------------------------------------------------------------------ filters (in the URL hash)
 
-var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person'];
+var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person', 'drives'];
 
 function readHash() {
   var f = { folder: null, tags: [], people: [], q: '', view: null, id: null, tab: null };
@@ -104,13 +121,17 @@ function readHash() {
     if (i < 0) return;
     var k = kv.slice(0, i), v = decodeURIComponent(kv.slice(i + 1));
     if (k === 'folder') f.folder = parseInt(v, 10) || null;
-    if (k === 'tag' && parseInt(v, 10) && f.tags.indexOf(parseInt(v, 10)) < 0) f.tags.push(parseInt(v, 10));
-    if (k === 'person' && parseInt(v, 10) && f.people.indexOf(parseInt(v, 10)) < 0) f.people.push(parseInt(v, 10));
+    // Over all drives tags and people are named: ids differ from drive to drive.
+    var all = isAll();
+    if (k === 'tag') { var t = all ? v : parseInt(v, 10); if (t && f.tags.indexOf(t) < 0) f.tags.push(t); }
+    if (k === 'person') { var pp = all ? v : parseInt(v, 10); if (pp && f.people.indexOf(pp) < 0) f.people.push(pp); }
     if (k === 'q') f.q = v;
     if (k === 'view' && VIEWS.indexOf(v) >= 0) f.view = v;
     if (k === 'id') f.id = parseInt(v, 10) || null;
     if (k === 'tab') f.tab = v;
   });
+  // Over all drives only these pages exist (the others belong to one drive).
+  if (isAll() && f.view && f.view !== 'duplicates' && f.view !== 'drives') f.view = null;
   return f;
 }
 
@@ -145,6 +166,7 @@ function applyFilter() {
   $('nav-dups').classList.toggle('active', view === 'duplicates');
   $('nav-trash').classList.toggle('active', view === 'trash');
   $('nav-faces').classList.toggle('active', view === 'faces');
+  $('nav-drives').classList.toggle('active', view === 'drives');
   markFacesSection();
   updateSections();
   if (view) {
@@ -258,11 +280,12 @@ $('search').addEventListener('keydown', function (ev) {
 function suggest(text) {
   var seq = ++sugg.seq, f = state.filter;
   if (f.view) { closeSuggest(); return; }
+  if (isAll()) { suggestAll(text, seq); return; }
   var needle = text.trim();
   var within = { q: needle, tag: f.tags, person: f.people, folder: f.folder };
   Promise.all([
-    api('/api/tags' + query(Object.assign({ limit: 8 }, within))),
-    api('/api/people/search' + query(Object.assign({ limit: 6 }, within))).catch(function () { return []; }),
+    api(LIBAPI + '/tags' + query(Object.assign({ limit: 8 }, within))),
+    api(LIBAPI + '/people/search' + query(Object.assign({ limit: 6 }, within))).catch(function () { return []; }),
   ]).then(function (r) {
     if (seq !== sugg.seq) return;
     var items = r[1].map(function (p) {
@@ -283,6 +306,23 @@ function suggest(text) {
   }).catch(function () {});
 }
 
+// Over all drives: tags and people by name (the drives share names, not ids).
+var allPeople = { at: 0, list: [] };
+function suggestAll(text, seq) {
+  var needle = text.trim(), low = needle.toLowerCase(), f = state.filter;
+  var people = Date.now() - allPeople.at < 30000 ? Promise.resolve(allPeople.list)
+    : api('/api/all/people').then(function (r) { allPeople = { at: Date.now(), list: r.people }; return r.people; });
+  Promise.all([api('/api/all/tags' + query({ q: needle, limit: 8 })), people.catch(function () { return []; })]).then(function (r) {
+    if (seq !== sugg.seq) return;
+    var items = r[1].filter(function (p) { return f.people.indexOf(p.name) < 0 && (!low || p.name.toLowerCase().indexOf(low) >= 0); })
+      .slice(0, 6).map(function (p) { return { kind: 'person', id: p.name, label: p.name, count: p.photos }; });
+    r[0].filter(function (t) { return f.tags.indexOf(t.name) < 0; }).forEach(function (t) {
+      items.push({ kind: 'tag', id: t.name, label: t.name, count: t.count, folderTag: t.kind === 'folder' });
+    });
+    showSuggest(items);
+  }).catch(function () {});
+}
+
 function showSuggest(items) {
   var box = $('suggest');
   box.textContent = '';
@@ -291,7 +331,7 @@ function showSuggest(items) {
   var last = null;
   items.forEach(function (it, i) {
     if (it.kind !== last) {
-      var f = state.filter, narrowed = f.tags.length || f.people.length || f.folder;
+      var f = state.filter, narrowed = !isAll() && (f.tags.length || f.people.length || f.folder);
       var head = it.kind === 'tag' ? (narrowed ? 'Tags in these photos' : 'Tags')
         : it.kind === 'person' ? (narrowed ? 'People in these photos' : 'People') : 'Folders';
       box.appendChild(el('div', 'head', head));
@@ -332,7 +372,7 @@ var suggestSeq = 0;
 function suggestTags(text) {
   var seq = ++suggestSeq;
   if (!text.trim()) return;
-  api('/api/tags' + query({ q: text.trim(), limit: 12 })).then(function (tags) {
+  api(LIBAPI + '/tags' + query({ q: text.trim(), limit: 12 })).then(function (tags) {
     if (seq !== suggestSeq) return;
     var list = $('tag-list');
     list.textContent = '';
@@ -349,7 +389,7 @@ function suggestTags(text) {
 // ------------------------------------------------------------------ folders
 
 function loadFolders() {
-  return api('/api/folders').then(function (folders) {
+  return api(LIBAPI + '/folders').then(function (folders) {
     state.folders = folders;
     state.folderById = {};
     folders.forEach(function (f) { state.folderById[f.id] = f; f.children = []; });
@@ -433,6 +473,7 @@ function markActiveFolder() {
 $('all').onclick = function () { setFilter({ folder: null, tags: [], people: [], q: '' }); };
 $('nav-dups').onclick = function () { showView('duplicates'); };
 $('nav-trash').onclick = function () { showView('trash'); };
+$('nav-drives').onclick = function () { showView('drives'); };
 
 $('menu').onclick = function () {
   if (window.matchMedia('(max-width: 760px)').matches) document.body.classList.toggle('side-open');
@@ -478,10 +519,13 @@ function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
 function loadTimeline(resetScroll) {
   var seq = ++state.loadSeq;
   var f = state.filter;
-  return api('/api/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, q: f.q })).then(function (data) {
+  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, q: f.q })
+    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, q: f.q });
+  return api(url).then(function (data) {
     if (seq !== state.loadSeq) return;
+    if (isAll()) allTimelineLoaded(data);
     state.anchor = null; // indices change with the new list
-    var unnamed = f.tags.some(function (id) { return !state.tagNames[id]; }) || f.people.some(function (id) { return !state.personNames[id]; });
+    var unnamed = !isAll() && (f.tags.some(function (id) { return !state.tagNames[id]; }) || f.people.some(function (id) { return !state.personNames[id]; }));
     data.tags.forEach(function (t) { state.tagNames[t.id] = t.name; });
     data.people.forEach(function (p) { state.personNames[p.id] = p.name; });
     if (unnamed) renderChips(); // a link with tags this page has not seen yet
@@ -575,7 +619,7 @@ function render() {
 
 function thumbUrl(i) {
   var d = state.data;
-  return '/api/files/' + d.ids[i] + '/thumb?v=' + d.versions.substr(i * 8, 8);
+  return fileBase(d.ids[i]) + '/thumb?v=' + d.versions.substr(i * 8, 8);
 }
 
 function buildRow(row) {
@@ -687,7 +731,7 @@ function grabFrame(job) {
     var at = isFinite(v.duration) ? v.duration / 10 : 0;
     if (at > 0) { v.onseeked = draw; v.currentTime = at; } else if (v.readyState >= 2) draw(); else v.onloadeddata = draw;
   };
-  v.src = '/api/files/' + job.id + '/original';
+  v.src = fileBase(job.id) + '/original';
 }
 
 // Where item i sits in the layout.
@@ -878,7 +922,7 @@ function showItem() {
   stage.textContent = '';
   $('lb-prev').hidden = i <= 0;
   $('lb-next').hidden = i >= d.count - 1;
-  $('lb-download').href = '/api/files/' + id + '/original?download=1';
+  $('lb-download').href = fileBase(id) + '/original?download=1';
   $('lb-live').hidden = !state.live[id];
   $('lb-title').textContent = '';
   lb.hover = null;
@@ -891,7 +935,7 @@ function showItem() {
     v.playsInline = true;
     v.preload = 'metadata';
     v.poster = frames.cache[id] || thumbUrl(i);
-    v.src = '/api/files/' + id + '/original';
+    v.src = fileBase(id) + '/original';
     stage.appendChild(v);
   } else {
     var img = el('img');
@@ -908,7 +952,7 @@ function showItem() {
     });
   }
 
-  api('/api/files/' + id).then(function (info) {
+  api(fileBase(id)).then(function (info) {
     if (state.open !== i) return;
     lb.details = info;
     $('lb-title').textContent = formatDate(info) + ' · ' + info.name;
@@ -925,6 +969,7 @@ function drawFaces() {
   var stage = $('stage');
   stage.querySelectorAll('.face-box').forEach(function (b) { b.remove(); });
   var info = lb.details, img = stage.querySelector('img');
+  if (isAll()) return;
   if ($('lb-panel').hidden || !info || !info.faces || !img || img.hidden) return;
   if (info.id !== state.data.ids[state.open]) return;
   var r = img.getBoundingClientRect(), s = stage.getBoundingClientRect();
@@ -947,7 +992,7 @@ window.addEventListener('resize', drawFaces);
 
 function viewUrl(i) {
   var d = state.data;
-  return '/api/files/' + d.ids[i] + '/view?v=' + d.versions.substr(i * 8, 8);
+  return fileBase(d.ids[i]) + '/view?v=' + d.versions.substr(i * 8, 8);
 }
 
 function formatDate(info) {
@@ -965,10 +1010,32 @@ function formatBytes(n) {
   return (u ? n.toFixed(1) : n) + ' ' + units[u];
 }
 
+// In the common timeline a photo is only looked at: what it is, where it is,
+// and a way into its own drive for everything else (tags, faces, moving).
+function renderPanelAll(info) {
+  var panel = $('lb-panel');
+  var lib = drives.allLibs[Math.floor(state.data.ids[state.open] / SPAN)];
+  var dl = el('dl');
+  var row = function (label, value) { if (value) { dl.appendChild(el('dt', '', label)); dl.appendChild(el('dd', '', value)); } };
+  row('Date', formatDate(info));
+  row('Drive', lib.name);
+  row('Path', info.path);
+  row('Size', (info.width && info.height ? info.width + ' × ' + info.height + ' · ' : '') + formatBytes(info.size));
+  row('Camera', info.camera);
+  panel.appendChild(dl);
+  var actions = el('div', 'actions');
+  var open = el('button', 'btn quiet', 'Open in ' + lib.name);
+  open.title = 'Tags, faces, moving and the rest are done in the photo\'s own drive';
+  open.onclick = function () { switchLibrary(lib.id, 'folder=' + info.folder_id); };
+  actions.appendChild(open);
+  panel.appendChild(actions);
+}
+
 function renderPanel() {
   var info = lb.details, panel = $('lb-panel');
   panel.textContent = '';
   if (!info) return;
+  if (isAll()) { renderPanelAll(info); return; }
   var dl = el('dl');
   var row = function (label, value) {
     if (value == null || value === '') return null;
@@ -1031,7 +1098,7 @@ $('lb-live').onclick = function () {
   var v = el('video');
   v.autoplay = true;
   v.playsInline = true;
-  v.src = '/api/files/' + video + '/original';
+  v.src = fileBase(video) + '/original';
   v.onended = function () { v.remove(); if (still) still.hidden = false; };
   if (still) still.hidden = true;
   stage.appendChild(v);
@@ -1092,7 +1159,7 @@ document.addEventListener('keydown', function (ev) {
 // ------------------------------------------------------------------ status
 
 function loadInfo() {
-  return api('/api/info').then(function (info) {
+  return api(LIBAPI + '/info').then(function (info) {
     $('title').textContent = info.name;
     state.reveal = info.reveal || null;
     document.title = info.name + ' · shoebox';
@@ -1132,6 +1199,7 @@ function loadInfo() {
 // After a change: folders, the grid (keeping the scroll position) or the
 // page that is open, and the status line.
 function reloadAll() {
+  if (isAll()) { if (state.filter.view) loadView(state.filter.view); else loadTimeline(false); return; }
   loadFolders();
   loadOwnTags();
   loadPeople();
@@ -1149,6 +1217,7 @@ function loadView(view) {
   else if (view === 'people') loadPeoplePage();
   else if (view === 'unnamed') loadUnnamed();
   else if (view === 'person') loadPersonPage();
+  else if (view === 'drives') loadDrivesPage();
   else loadTrash();
 }
 
@@ -1210,6 +1279,7 @@ function failed(e) { openModal('That did not work', String(e.message || e), [{ l
 // ------------------------------------------------------------------ selection
 
 function startSelection() {
+  if (isAll()) return;
   state.selecting = true;
   state.anchor = null;
   document.body.classList.add('selecting');
@@ -1303,7 +1373,7 @@ function moveDialog(ids, done) {
     var folder = input.value.trim();
     if (!folder) { error.textContent = 'Choose a folder.'; return false; }
     btn.disabled = true;
-    post('/api/move', { ids: ids, folder: folder, keep_tags: keep.checked }).then(function (r) {
+    post(LIBAPI + '/move', { ids: ids, folder: folder, keep_tags: keep.checked }).then(function (r) {
       closeModal();
       if (done) done();
       toast(plural(r.files.length, 'file', 'files') + ' moved to ' + r.folder);
@@ -1323,7 +1393,7 @@ function trashDialog(ids, done) {
     [{ label: 'Cancel', cls: 'quiet' }, {
       label: 'Move to trash', cls: 'danger', focus: true, onclick: function (btn) {
         btn.disabled = true;
-        post('/api/trash', { ids: ids }).then(function (r) {
+        post(LIBAPI + '/trash', { ids: ids }).then(function (r) {
           closeModal();
           if (done) done();
           toast(plural(r.files.length + r.sidecars, 'file', 'files') + ' moved to the trash');
@@ -1348,7 +1418,7 @@ function renameFolder(folder) {
   body.appendChild(error);
   var go = function (btn) {
     btn.disabled = true;
-    post('/api/folders/' + folder.id + '/rename', { path: input.value }).then(function (r) {
+    post(LIBAPI + '/folders/' + folder.id + '/rename', { path: input.value }).then(function (r) {
       closeModal();
       toast('Now ' + r.path);
       changed();
@@ -1442,7 +1512,7 @@ function importDialog(files) {
     error.textContent = '';
     var pending = importState.files.filter(function (x) { return !x.done; });
     if (!pending.length) { error.textContent = 'Choose some files first.'; return false; }
-    post('/api/import/folder', { year: parseInt(year.value, 10), month: parseInt(month.value, 10), name: name.value })
+    post(LIBAPI + '/import/folder', { year: parseInt(year.value, 10), month: parseInt(month.value, 10), name: name.value })
       .then(function (r) { runImport(r.folder, pending, btn, buttons[0]); })
       .catch(function (e) { error.textContent = e.message; });
     return false;
@@ -1481,7 +1551,7 @@ function runImport(folder, pending, btn, closeBtn) {
     }
     var item = pending[k];
     var xhr = new XMLHttpRequest();
-    var url = '/api/import' + query({ folder: folder, name: item.file.name, modified: item.file.lastModified || null });
+    var url = LIBAPI + '/import' + query({ folder: folder, name: item.file.name, modified: item.file.lastModified || null });
     xhr.open('POST', url);
     xhr.setRequestHeader('X-Shoebox', '1');
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
@@ -1522,12 +1592,13 @@ $('import').onclick = function () { importDialog(); };
 (function () {
   var depth = 0;
   var hasFiles = function (ev) { return ev.dataTransfer && Array.prototype.indexOf.call(ev.dataTransfer.types || [], 'Files') >= 0; };
-  window.addEventListener('dragenter', function (ev) { if (!hasFiles(ev)) return; depth++; $('dropzone').hidden = false; });
+  window.addEventListener('dragenter', function (ev) { if (!hasFiles(ev) || isAll()) return; depth++; $('dropzone').hidden = false; });
   window.addEventListener('dragleave', function () { if (--depth <= 0) { depth = 0; $('dropzone').hidden = true; } });
   window.addEventListener('dragover', function (ev) { if (hasFiles(ev)) ev.preventDefault(); });
   window.addEventListener('drop', function (ev) {
     if (!hasFiles(ev)) return;
     ev.preventDefault();
+    if (isAll()) { $('dropzone').hidden = true; depth = 0; toast('Pick one drive to import into'); return; }
     depth = 0;
     $('dropzone').hidden = true;
     if (importState.add && !$('modal').hidden) importState.add(ev.dataTransfer.files);
@@ -1562,12 +1633,109 @@ function visibleGroups() {
 
 var PAGE_GROUPS = 30;
 
+// With several drives the page has two lists: copies on this drive (decided
+// per group) and copies on different drives. A backup drive holds copies on
+// purpose, so drives marked as backups (or looking like one) are not in the
+// second list; "All drives" says which is which.
+var dupTab = 'here';
+
+function addDupTabs(page) {
+  if (drives.list.length < 2 || isAll()) return;
+  var tabs = el('div', 'tabs');
+  [['here', 'On this drive'], ['across', 'Across drives']].forEach(function (t) {
+    var b = el('button', dupTab === t[0] ? 'on' : '', t[1]);
+    b.onclick = function () { dupTab = t[0]; loadDuplicates(); };
+    tabs.appendChild(b);
+  });
+  page.insertBefore(tabs, page.children[1] || null);
+}
+
 function loadDuplicates() {
+  if (isAll()) dupTab = 'across';
+  if (drives.list.length > 1 && dupTab === 'across') return loadDuplicatesAcross();
+  return loadDuplicatesHere();
+}
+
+function loadDuplicatesAcross() {
   var page = $('page');
   page.textContent = '';
   page.appendChild(el('h2', '', 'Duplicates'));
+  addDupTabs(page);
+  var sub = el('p', 'sub', 'Looking…');
+  page.appendChild(sub);
+  return api('/api/all/duplicates?limit=200').then(function (r) {
+    if (state.filter.view !== 'duplicates') return;
+    sub.textContent = r.total_groups
+      ? plural(r.total_groups, 'photo exists', 'photos exist') + ' on more than one drive (' + r.compared.join(', ') + '). Move the copy you do not need to the trash of its drive.'
+      : 'No photo exists on more than one drive' + (r.compared.length > 1 ? ' (' + r.compared.join(', ') + ').' : '.');
+    r.excluded.forEach(function (x) {
+      var b = el('div', 'banner');
+      b.appendChild(document.createTextNode(x.name + ' is not compared: ' + x.reason + '. '));
+      var go = el('button', 'link', 'Decide in All drives →');
+      go.onclick = function () { showView('drives'); };
+      b.appendChild(go);
+      page.appendChild(b);
+    });
+    r.groups.forEach(function (g) { page.appendChild(crossGroupNode(g)); });
+    if (r.total_groups > r.groups.length) page.appendChild(el('p', 'sub', 'Showing the first ' + r.groups.length + ' of ' + r.total_groups + '.'));
+  }).catch(failed);
+}
+
+function crossGroupNode(g) {
+  var box = el('div', 'group');
+  var head = el('div', 'group-head');
+  head.appendChild(el('span', 'label', 'Same content on ' + plural(new Set(g.files.map(function (f) { return f.library; })).size, 'drive', 'drives')));
+  box.appendChild(head);
+  var cards = el('div', 'cards');
+  g.files.forEach(function (f) {
+    var base = '/api/lib/' + f.library + '/files/' + f.id;
+    var card = el('div', 'card');
+    var a = el('a', 'thumb');
+    a.href = base + (f.kind === 'video' ? '/original' : '/view') + '?v=' + f.version;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    var img = el('img');
+    img.alt = '';
+    img.loading = 'lazy';
+    img.src = base + '/thumb?v=' + f.version;
+    a.appendChild(img);
+    card.appendChild(a);
+    card.appendChild(el('div', 'name', f.name));
+    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : '(top level)';
+    var fb = el('button', 'folder', folder);
+    fb.title = 'Show this photo in ' + f.name;
+    fb.onclick = function () { switchLibrary(f.library, 'q=' + encodeURIComponent(f.path.split('/').pop())); };
+    card.appendChild(fb);
+    card.appendChild(el('div', 'meta', f.path.split('/').pop() + ' · ' + formatBytes(g.size)));
+    var trash = el('button', 'btn danger', 'Move to trash');
+    trash.onclick = function () {
+      openModal('Move to trash', 'Move this copy on ' + f.name + ' (' + f.path + ') to the trash of that drive? The same photo stays on the other drive' + (g.files.length > 2 ? 's' : '') + '. You can put it back from the trash until it is emptied.', [
+        { label: 'Cancel', cls: 'quiet' },
+        { label: 'Move to trash', cls: 'danger', onclick: function (btn) {
+          btn.disabled = true;
+          post('/api/lib/' + f.library + '/trash', { ids: [f.id] }).then(function (r) {
+            closeModal();
+            toast(plural(r.files.length + r.sidecars, 'file', 'files') + ' moved to the trash of ' + f.name);
+            loadDuplicatesAcross();
+          }).catch(function (e) { closeModal(); failed(e); });
+          return false;
+        } },
+      ]);
+    };
+    card.appendChild(trash);
+    cards.appendChild(card);
+  });
+  box.appendChild(cards);
+  return box;
+}
+
+function loadDuplicatesHere() {
+  var page = $('page');
+  page.textContent = '';
+  page.appendChild(el('h2', '', 'Duplicates'));
+  addDupTabs(page);
   page.appendChild(el('p', 'sub', 'Looking…'));
-  return Promise.all([api('/api/duplicates'), api('/api/duplicates/same-folder'), api('/api/duplicates/lower-quality')]).then(function (res) {
+  return Promise.all([api(LIBAPI + '/duplicates'), api(LIBAPI + '/duplicates/same-folder'), api(LIBAPI + '/duplicates/lower-quality')]).then(function (res) {
     if (state.filter.view !== 'duplicates') return;
     dupState.groups = res[0].groups;
     dupState.sameFolder = res[1];
@@ -1595,6 +1763,7 @@ function renderDuplicates() {
   var page = $('page');
   page.textContent = '';
   page.appendChild(el('h2', '', 'Duplicates'));
+  addDupTabs(page);
   page.appendChild(el('p', 'sub', dupState.groups.length
     ? 'Tick “delete this copy” on the files to remove; of every photo the best file is left unticked and one file per group always stays. Decided groups are not shown again.'
     : 'No duplicates. Photos added since the last scan are compared once they have thumbnails.'));
@@ -1720,13 +1889,13 @@ function dupRows(g) {
 
 function dupThumb(f, compare) {
   var a = el('a', 'thumb');
-  a.href = '/api/files/' + f.id + (f.kind === 'video' ? '/original' : '/view') + '?v=' + f.version;
+  a.href = LIBAPI + '/files/' + f.id + (f.kind === 'video' ? '/original' : '/view') + '?v=' + f.version;
   a.target = '_blank';
   a.rel = 'noopener';
   var img = el('img');
   img.alt = '';
   img.loading = 'lazy';
-  img.src = '/api/files/' + f.id + '/thumb?v=' + f.version;
+  img.src = LIBAPI + '/files/' + f.id + '/thumb?v=' + f.version;
   a.appendChild(img);
   if (compare) {
     // Opens the group's pictures side by side instead of one in a new tab.
@@ -1754,7 +1923,7 @@ function compareDialog(g, start, onKeep) {
     var col = el('div', 'compare-col' + (f.id === start.id ? ' start' : ''));
     var img = el('img');
     img.alt = f.name;
-    img.src = '/api/files/' + f.id + (f.kind === 'video' ? '/thumb' : '/view') + '?v=' + f.version;
+    img.src = LIBAPI + '/files/' + f.id + (f.kind === 'video' ? '/thumb' : '/view') + '?v=' + f.version;
     col.appendChild(img);
     col.appendChild(el('div', 'name', f.name + (g.kind === 'edited' ? (isEdit(f) ? ' · edited' : ' · original') : '')));
     var meta = [];
@@ -1789,7 +1958,7 @@ function groupNode(g) {
     var b = el('button', 'btn quiet', label);
     b.onclick = function () {
       b.disabled = true;
-      post('/api/duplicates/decide', { ids: ids, decision: decision }).then(function () {
+      post(LIBAPI + '/duplicates/decide', { ids: ids, decision: decision }).then(function () {
         ids.forEach(function (id) { delete dupState.marked[id]; });
         box.remove();
         updateDupBar();
@@ -1926,7 +2095,7 @@ function deleteMarked() {
     var done = { files: 0, tags: 0, dates: 0, skipped: [] }, conflicts = [];
     var send = function (job, i) {
       if (i >= jobs.length) return Promise.resolve();
-      return post('/api/duplicates/remove', job).then(function (r) {
+      return post(LIBAPI + '/duplicates/remove', job).then(function (r) {
         if (r.conflicts && r.conflicts.length) conflicts.push({ job: job, list: r.conflicts });
         else collectRemoved(done, r);
         return send(jobs[i + 1], i + 1);
@@ -2002,7 +2171,7 @@ function askDates(conflicts, done) {
         var send = function (i) {
           if (i >= jobs.length) return Promise.resolve();
           var job = jobs[i];
-          return post('/api/duplicates/remove', { keep: job.keep, remove: job.remove, dates: chosen[job.keep[0]] }).then(function (r) {
+          return post(LIBAPI + '/duplicates/remove', { keep: job.keep, remove: job.remove, dates: chosen[job.keep[0]] }).then(function (r) {
             collectRemoved(done, r);
             return send(i + 1);
           });
@@ -2022,7 +2191,7 @@ function removeLowerQuality() {
     [{ label: 'Cancel', cls: 'quiet' }, {
       label: 'Move to trash', cls: 'danger', focus: true, onclick: function (btn) {
         btn.disabled = true;
-        post('/api/duplicates/lower-quality', {}).then(function (r) {
+        post(LIBAPI + '/duplicates/lower-quality', {}).then(function (r) {
           closeModal();
           toast(plural(r.removed, 'copy', 'copies') + ' moved to the trash, ' + plural(r.tags_added, 'tag', 'tags') + ' carried over');
           report('Some copies were not moved to the trash', r.skipped);
@@ -2042,7 +2211,7 @@ function removeSameFolder() {
     [{ label: 'Cancel', cls: 'quiet' }, {
       label: 'Move to trash', cls: 'danger', focus: true, onclick: function (btn) {
         btn.disabled = true;
-        post('/api/duplicates/same-folder', {}).then(function (r) {
+        post(LIBAPI + '/duplicates/same-folder', {}).then(function (r) {
           closeModal();
           toast(plural(r.removed, 'copy', 'copies') + ' moved to the trash');
           report('Some copies were not moved to the trash', r.skipped);
@@ -2057,7 +2226,7 @@ function removeSameFolder() {
 // ------------------------------------------------------------------ trash page
 
 function loadTrash() {
-  return api('/api/trash').then(function (items) {
+  return api(LIBAPI + '/trash').then(function (items) {
     if (state.filter.view !== 'trash') return;
     var page = $('page');
     page.textContent = '';
@@ -2086,7 +2255,7 @@ function loadTrash() {
       var thumb = el('div', 'thumb');
       var img = el('img');
       img.alt = '';
-      img.src = '/api/trash/' + first.id + '/thumb';
+      img.src = LIBAPI + '/trash/' + first.id + '/thumb';
       img.onerror = function () { this.remove(); };
       thumb.appendChild(img);
       card.appendChild(thumb);
@@ -2098,7 +2267,7 @@ function loadTrash() {
       var restore = el('button', 'btn quiet', 'Put back');
       restore.onclick = function () {
         restore.disabled = true;
-        post('/api/trash/' + b + '/restore').then(function () { toast('Put back ' + first.path); changed(); })
+        post(LIBAPI + '/trash/' + b + '/restore').then(function () { toast('Put back ' + first.path); changed(); })
           .catch(function (e) { restore.disabled = false; failed(e); });
       };
       card.appendChild(restore);
@@ -2115,7 +2284,7 @@ function emptyTrash(batch, n) {
   openModal('Delete for good', 'Delete ' + plural(n, 'photo', 'photos') + ' (with their companion files) from the drive? This cannot be undone.', [
     { label: 'Cancel', cls: 'quiet' },
     { label: 'Delete', cls: 'danger', onclick: function () {
-      post('/api/trash/empty', { batch: batch }).then(function (r) {
+      post(LIBAPI + '/trash/empty', { batch: batch }).then(function (r) {
         toast(plural(r.deleted, 'file', 'files') + ' deleted');
         changed();
       }).catch(failed);
@@ -2129,7 +2298,7 @@ function emptyTrash(batch, n) {
 // Only offered (state.reveal) to a browser on that computer; an iPad cannot
 // open a Finder window over there.
 function revealFile(id) {
-  post('/api/files/' + id + '/reveal').then(function (r) {
+  post(LIBAPI + '/files/' + id + '/reveal').then(function (r) {
     toast('Shown in ' + r.app);
   }).catch(failed);
 }
@@ -2247,7 +2416,7 @@ $('sizer').addEventListener('contextmenu', function (ev) {
   var items = [];
   if (state.reveal) items.push({ label: state.reveal, run: function () { revealFile(id); } });
   items.push({ label: 'Copy path', run: function () {
-    api('/api/files/' + id).then(function (info) { copyPath(info.path); }).catch(failed);
+    api(LIBAPI + '/files/' + id).then(function (info) { copyPath(info.path); }).catch(failed);
   } });
   showMenu(ev.clientX, ev.clientY, items);
 });
@@ -2275,7 +2444,7 @@ function infoTags(row, info) {
     x.title = 'Remove this tag';
     x.setAttribute('aria-label', 'Remove tag ' + t.name);
     x.onclick = function () {
-      post('/api/tags/remove', { ids: [info.id], name: t.name }).then(function () { tagsChanged(info.id); }).catch(failed);
+      post(LIBAPI + '/tags/remove', { ids: [info.id], name: t.name }).then(function () { tagsChanged(info.id); }).catch(failed);
     };
     chip.appendChild(name);
     chip.appendChild(x);
@@ -2289,7 +2458,7 @@ function infoTags(row, info) {
       if (ev.key === 'Escape') { input.replaceWith(add); return; }
       if (ev.key !== 'Enter' || !input.value.trim()) return;
       input.disabled = true;
-      post('/api/tags/add', { ids: [info.id], name: input.value }).then(function () { tagsChanged(info.id); })
+      post(LIBAPI + '/tags/add', { ids: [info.id], name: input.value }).then(function () { tagsChanged(info.id); })
         .catch(function (e) { input.disabled = false; failed(e); });
     };
     add.replaceWith(input);
@@ -2317,7 +2486,7 @@ function tagsChanged(id) {
   // viewer keeps its photos until it closes).
   if (id == null && !state.filter.view && (state.filter.tags.length || state.filter.q)) loadTimeline(false);
   if (id == null || !lb.details || lb.details.id !== id) return;
-  api('/api/files/' + id).then(function (info) {
+  api(LIBAPI + '/files/' + id).then(function (info) {
     if (!lb.details || lb.details.id !== id) return;
     lb.details = info;
     renderPanel();
@@ -2336,7 +2505,7 @@ function addTagDialog(ids) {
   var go = function (btn) {
     if (!input.value.trim()) { error.textContent = 'Type a tag name.'; return false; }
     btn.disabled = true;
-    post('/api/tags/add', { ids: ids, name: input.value }).then(function (r) {
+    post(LIBAPI + '/tags/add', { ids: ids, name: input.value }).then(function (r) {
       closeModal();
       toast(r.files ? plural(r.files, 'photo', 'photos') + ' tagged “' + r.tag.name + '”' : 'All of them have “' + r.tag.name + '” already');
       tagsChanged(null);
@@ -2350,7 +2519,7 @@ function addTagDialog(ids) {
 
 // Lists the own tags on the selection; folder tags cannot be removed.
 function removeTagDialog(ids) {
-  post('/api/tags/selection', { ids: ids }).then(function (tags) {
+  post(LIBAPI + '/tags/selection', { ids: ids }).then(function (tags) {
     if (!tags.length) {
       openModal('Remove tag', 'None of these photos has an own tag. Folder tags come from where a photo is; move it to change them.', [{ label: 'OK' }]);
       return;
@@ -2362,7 +2531,7 @@ function removeTagDialog(ids) {
       var b = el('button', '', t.name + ' (' + t.count.toLocaleString() + ')');
       b.onclick = function () {
         b.disabled = true;
-        post('/api/tags/remove', { ids: ids, name: t.name }).then(function (r) {
+        post(LIBAPI + '/tags/remove', { ids: ids, name: t.name }).then(function (r) {
           closeModal();
           toast('“' + t.name + '” removed from ' + plural(r.files, 'photo', 'photos'));
           tagsChanged(null);
@@ -2377,7 +2546,7 @@ function removeTagDialog(ids) {
 
 // Sidebar: the tags the user added, most used first.
 function loadOwnTags() {
-  return api('/api/tags' + query({ own: 1, limit: 500 })).then(function (tags) {
+  return api(LIBAPI + '/tags' + query({ own: 1, limit: 500 })).then(function (tags) {
     var list = $('own-tags');
     list.textContent = '';
     tags.forEach(function (t) {
@@ -2435,7 +2604,7 @@ function loadFaces() {
   faceState.faces = [];
   faceState.picked = {};
   updateFacePick();
-  api('/api/faces/stats').then(function (s) {
+  api(LIBAPI + '/faces/stats').then(function (s) {
     if (state.filter.view === 'faces') sub.textContent = faceSummary(s);
   }).catch(function () {});
   return moreFaces(grid, more);
@@ -2533,7 +2702,7 @@ function updateFacePick() {
 function markFaces(ids) {
   if (!ids.length) return;
   var undo = faceState.filter === 'not_face';
-  post(undo ? '/api/faces/undo' : '/api/faces/not-face', { faces: ids }).then(function (r) {
+  post(undo ? LIBAPI + '/faces/undo' : LIBAPI + '/faces/not-face', { faces: ids }).then(function (r) {
     ids.forEach(function (id) {
       var card = document.querySelector('.face[data-id="' + id + '"]');
       if (card) card.remove();
@@ -2555,7 +2724,7 @@ function moreFaces(grid, more) {
     rotated: f === 'rotated' ? 'true' : null, not_face: f === 'not_face' ? 'true' : null,
   });
   more.disabled = true;
-  return api('/api/faces' + q).then(function (r) {
+  return api(LIBAPI + '/faces' + q).then(function (r) {
     if (state.filter.view !== 'faces') return;
     faceState.total = r.total;
     faceState.minPx = r.min_cluster_px;
@@ -2577,7 +2746,7 @@ function faceCard(face, similarity) {
   var img = el('img');
   img.alt = '';
   img.loading = 'lazy';
-  img.src = '/api/faces/' + face.id + '/crop';
+  img.src = LIBAPI + '/faces/' + face.id + '/crop';
   img.onerror = function () { card.classList.add('broken'); };
   a.appendChild(img);
   a.onclick = function (ev) {
@@ -2624,7 +2793,7 @@ function faceCard(face, similarity) {
 // The nearest neighbours by embedding (read only): which similarity still
 // means "same person" is what 5c-2 needs to know.
 function similarFaces(face) {
-  api('/api/faces/' + face.id + '/similar?limit=24').then(function (list) {
+  api(LIBAPI + '/faces/' + face.id + '/similar?limit=24').then(function (list) {
     var box = el('div');
     box.appendChild(el('p', 'hint', 'Cosine similarity of the embeddings (1 = identical), most similar first. Click a face to open its photo.'));
     var grid = el('div', 'faces');
@@ -2657,7 +2826,7 @@ var people = { list: [], byId: {}, groups: [], open: {}, info: null, watch: null
 function fold(s) { return String(s).normalize('NFC').toLowerCase(); }
 
 function loadPeople() {
-  return Promise.all([api('/api/people'), api('/api/groups')]).then(function (r) {
+  return Promise.all([api(LIBAPI + '/people'), api(LIBAPI + '/groups')]).then(function (r) {
     people.list = r[0];
     people.groups = r[1];
     people.byId = {};
@@ -2707,8 +2876,8 @@ function peopleChanged() {
 }
 
 function cropUrl(face) {
-  if (face.manual != null) return '/api/faces/manual/' + face.manual + '/crop';
-  if (face.id != null) return '/api/faces/' + face.id + '/crop';
+  if (face.manual != null) return LIBAPI + '/faces/manual/' + face.manual + '/crop';
+  if (face.id != null) return LIBAPI + '/faces/' + face.id + '/crop';
   return null;
 }
 
@@ -2719,7 +2888,7 @@ function avatar(p, cls) {
     var img = el('img');
     img.alt = '';
     img.loading = 'lazy';
-    img.src = p.cover != null ? '/api/faces/' + p.cover + '/crop' : '/api/faces/manual/' + p.cover_manual + '/crop';
+    img.src = p.cover != null ? LIBAPI + '/faces/' + p.cover + '/crop' : LIBAPI + '/faces/manual/' + p.cover_manual + '/crop';
     a.appendChild(img);
   } else {
     a.textContent = p ? p.name.split(/\s+/).map(function (w) { return w.charAt(0); }).join('').slice(0, 2).toUpperCase() : '?';
@@ -2773,7 +2942,7 @@ function dropOnGroup(node, groupId) {
 }
 
 function setGroup(p, groupId) {
-  return post('/api/people/' + p.id + '/group', { group_id: groupId }).then(function () {
+  return post(LIBAPI + '/people/' + p.id + '/group', { group_id: groupId }).then(function () {
     var g = people.groups.filter(function (x) { return x.id === groupId; })[0];
     toast(p.name + (g ? ' is in “' + g.name + '” now' : ' is in no group now'));
     peopleChanged();
@@ -2973,7 +3142,7 @@ function nameDialog(title, value, label, save) {
 
 function renamePerson(p) {
   nameDialog('Rename', p.name, 'Rename', function (name) {
-    return post('/api/people/' + p.id + '/rename', { name: name }).then(function (r) {
+    return post(LIBAPI + '/people/' + p.id + '/rename', { name: name }).then(function (r) {
       toast('Now “' + r.name + '”');
       state.personNames[p.id] = r.name;
       peopleChanged();
@@ -2984,7 +3153,7 @@ function renamePerson(p) {
 
 function newGroup(then) {
   nameDialog('New group', '', 'Create', function (name) {
-    return post('/api/groups', { name: name }).then(function (g) {
+    return post(LIBAPI + '/groups', { name: name }).then(function (g) {
       toast('Group “' + g.name + '” created');
       return loadPeople().then(function () {
         if (then) then(g);
@@ -3028,7 +3197,7 @@ function mergeDialog(p) {
       into = into || (who && who.person_id);
       if (!into) { error.textContent = 'Choose someone from the list.'; return false; }
       btn.disabled = true;
-      post('/api/people/' + p.id + '/merge', { into: into }).then(function (r) {
+      post(LIBAPI + '/people/' + p.id + '/merge', { into: into }).then(function (r) {
         closeModal();
         toast(p.name + ' merged into ' + r.name);
         peopleChanged();
@@ -3064,13 +3233,13 @@ function groupsDialog() {
         var ids = people.groups.map(function (x) { return x.id; });
         ids.splice(k, 1);
         ids.splice(k + d, 0, g.id);
-        post('/api/groups/reorder', { ids: ids }).then(function (gs) { people.groups = gs; render(); peopleChanged(); }).catch(failed);
+        post(LIBAPI + '/groups/reorder', { ids: ids }).then(function (gs) { people.groups = gs; render(); peopleChanged(); }).catch(failed);
       };
       btn('↑', 'Move up', function () { move(-1); }, k === 0);
       btn('↓', 'Move down', function () { move(1); }, k === people.groups.length - 1);
       btn('Rename', 'Rename', function () {
         nameDialog('Rename group', g.name, 'Rename', function (name) {
-          return post('/api/groups/' + g.id + '/rename', { name: name }).then(function () {
+          return post(LIBAPI + '/groups/' + g.id + '/rename', { name: name }).then(function () {
             return loadPeople().then(function () { groupsDialog(); if (state.filter.view === 'people') loadPeoplePage(); });
           });
         });
@@ -3079,7 +3248,7 @@ function groupsDialog() {
         openModal('Delete group', 'Delete “' + g.name + '”? ' + (g.people ? plural(g.people, 'person', 'people') + ' in it will be in no group; nobody is deleted.' : 'Nobody is in it.'), [
           { label: 'Cancel', cls: 'quiet', onclick: function () { setTimeout(groupsDialog, 0); } },
           { label: 'Delete', cls: 'danger', onclick: function () {
-            post('/api/groups/' + g.id + '/delete').then(function () {
+            post(LIBAPI + '/groups/' + g.id + '/delete').then(function () {
               toast('Group “' + g.name + '” deleted');
               return loadPeople().then(function () { groupsDialog(); if (state.filter.view === 'people') loadPeoplePage(); });
             }).catch(failed);
@@ -3224,7 +3393,7 @@ function loadPersonPage() {
   pp.faces = [];
   pp.picked = {};
   pp.picking = false;
-  return api('/api/people/' + f.id).then(function (p) {
+  return api(LIBAPI + '/people/' + f.id).then(function (p) {
     if (state.filter.view !== 'person' || state.filter.id !== p.id) return;
     pp.person = p;
     state.personNames[p.id] = p.name;
@@ -3293,14 +3462,14 @@ function personTabCounts(p) {
 // The counts in the tabs after the suggestions were recomputed.
 function loadPersonCounts() {
   var id = state.filter.id;
-  api('/api/people/' + id).then(function (p) {
+  api(LIBAPI + '/people/' + id).then(function (p) {
     if (state.filter.view === 'person' && state.filter.id === id) { pp.person = p; personTabCounts(p); }
   }).catch(function () {});
 }
 
 function morePersonFaces(grid, more, tab) {
   more.disabled = true;
-  return api('/api/people/' + pp.person.id + '/faces' + query({ state: tab, offset: pp.faces.length, limit: 200 })).then(function (r) {
+  return api(LIBAPI + '/people/' + pp.person.id + '/faces' + query({ state: tab, offset: pp.faces.length, limit: 200 })).then(function (r) {
     if (state.filter.view !== 'person') return;
     pp.total = r.total;
     r.faces.forEach(function (face) { pp.faces.push(face); grid.appendChild(personFaceCard(face, tab)); });
@@ -3390,7 +3559,7 @@ function confirmedFaceMenu(face) {
   items.push({ label: 'Not ' + p.name, run: function () { personAction('reject', [face.id]); } });
   items.push({ label: 'Name someone else…', run: function () { nameFacesDialog([face], personRefresh); } });
   items.push({ label: 'Use as ' + p.name + '’s picture', run: function () {
-    post('/api/people/' + p.id + '/cover', { face: face.id }).then(function () { toast('Picture changed'); peopleChanged(); }).catch(failed);
+    post(LIBAPI + '/people/' + p.id + '/cover', { face: face.id }).then(function () { toast('Picture changed'); peopleChanged(); }).catch(failed);
   } });
   items.push({ label: 'Not a face', run: function () { personAction('not-face', [face.id]); } });
   return items;
@@ -3407,7 +3576,7 @@ function personAction(action, ids, manual) {
   if (!ids.length && !manual.length) return;
   var body = { faces: ids, manual: manual };
   if (action === 'reject' || action === 'unreject') body.person_id = p.id;
-  post('/api/faces/' + action, body).then(function (r) {
+  post(LIBAPI + '/faces/' + action, body).then(function (r) {
     var gone = {};
     ids.forEach(function (x) { gone['f' + x] = true; });
     manual.forEach(function (x) { gone['m' + x] = true; });
@@ -3501,12 +3670,12 @@ function nameFacesDialog(faces, done) {
   var save = function (who) {
     var ids = faces.map(function (x) { return x.id; }).filter(function (x) { return x != null; });
     var drawn = faces.filter(function (x) { return x.id == null && x.manual != null; });
-    var req = ids.length ? post('/api/faces/assign', Object.assign({ faces: ids }, who)) : Promise.resolve({ faces: 0 });
+    var req = ids.length ? post(LIBAPI + '/faces/assign', Object.assign({ faces: ids }, who)) : Promise.resolve({ faces: 0 });
     req.then(function (r) {
       // A drawn face nothing was detected at: drawn again with the new name.
       return Promise.all(drawn.map(function (d) {
-        return post('/api/faces/undo', { manual: [d.manual] }).then(function () {
-          return post('/api/faces/manual', Object.assign({ file: d.file, box: [d.x, d.y, d.w, d.h] }, who));
+        return post(LIBAPI + '/faces/undo', { manual: [d.manual] }).then(function () {
+          return post(LIBAPI + '/faces/manual', Object.assign({ file: d.file, box: [d.x, d.y, d.w, d.h] }, who));
         });
       })).then(function () { return r; });
     }).then(function (r) {
@@ -3562,7 +3731,7 @@ function unnamedSummary() {
 
 function moreClusters(box, more) {
   more.disabled = true;
-  return api('/api/clusters' + query({ offset: un.shown, limit: PAGE_CLUSTERS, samples: 8 })).then(function (r) {
+  return api(LIBAPI + '/clusters' + query({ offset: un.shown, limit: PAGE_CLUSTERS, samples: 8 })).then(function (r) {
     if (state.filter.view !== 'unnamed') return;
     un.total = r.total;
     un.unnamed = r.unnamed;
@@ -3622,7 +3791,7 @@ function clusterCard(c) {
       var all = el('button', 'cmore', '+' + (c.size - faces.length).toLocaleString());
       all.title = 'Show all ' + c.size + ' faces';
       all.onclick = function () {
-        api('/api/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
+        api(LIBAPI + '/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
           faces = list;
           expanded = true;
           renderFaces();
@@ -3657,7 +3826,7 @@ function clusterCard(c) {
   // Select needs all the faces to choose from.
   var loadAll = function () {
     if (faces.length >= c.size) return Promise.resolve();
-    return api('/api/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
+    return api(LIBAPI + '/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
       faces = list;
     });
   };
@@ -3740,7 +3909,7 @@ function clusterCard(c) {
       body.faces = some;
     }
     card.classList.add('busy');
-    post('/api/clusters/' + c.id + '/' + action, body).then(function (r) {
+    post(LIBAPI + '/clusters/' + c.id + '/' + action, body).then(function (r) {
       card.classList.remove('busy');
       toast(action === 'name' ? plural(r.faces, 'face', 'faces') + ' named ' + r.person.name
         : action === 'ignore' ? plural(r.faces, 'face', 'faces') + ' ignored' : plural(r.faces, 'face', 'faces') + ' marked “not a face”');
@@ -3813,7 +3982,7 @@ function infoFace(info, f, k) {
   var who = el('span', 'who');
   line.appendChild(who);
   var changed = function () { infoFacesChanged(info.id); };
-  var send = function (action, body) { return post('/api/faces/' + action, body).then(changed).catch(failed); };
+  var send = function (action, body) { return post(LIBAPI + '/faces/' + action, body).then(changed).catch(failed); };
   var ids = f.id != null ? [f.id] : [];
   if (f.state === 'confirmed') {
     var name = el('button', 'pname', f.person.name);
@@ -3858,7 +4027,7 @@ function infoFace(info, f, k) {
       items.push({ label: 'Not ' + f.person.name, run: function () { send('reject', { faces: ids, person_id: f.person.id }); } });
       items.push({ label: 'Name someone else…', run: function () { nameFacesDialog([f], changed); } });
       items.push({ label: 'Use as ' + f.person.name + '’s picture', run: function () {
-        post('/api/people/' + f.person.id + '/cover', { face: f.id }).then(function () { toast('Picture changed'); peopleChanged(); }).catch(failed);
+        post(LIBAPI + '/people/' + f.person.id + '/cover', { face: f.id }).then(function () { toast('Picture changed'); peopleChanged(); }).catch(failed);
       } });
     }
     if (f.state !== 'ignored') items.push({ label: 'Ignore (a stranger)', run: function () { send('ignore', { faces: ids }); } });
@@ -3879,7 +4048,7 @@ function infoFace(info, f, k) {
 function infoFacesChanged(id) {
   peopleChanged();
   if (!lb.details || lb.details.id !== id) return;
-  api('/api/files/' + id).then(function (info) {
+  api(LIBAPI + '/files/' + id).then(function (info) {
     if (!lb.details || lb.details.id !== id) return;
     lb.details = info;
     lb.hover = null;
@@ -3966,7 +4135,7 @@ function nameDrawnFace(info, frac) {
   var body = el('div');
   body.appendChild(el('p', '', 'Who is it?'));
   var save = function (who) {
-    post('/api/faces/manual', Object.assign({ file: info.id, box: frac }, who)).then(function () {
+    post(LIBAPI + '/faces/manual', Object.assign({ file: info.id, box: frac }, who)).then(function () {
       closeModal();
       stopDrawing();
       toast('Face added');
@@ -3986,16 +4155,256 @@ function nameDrawnFace(info, frac) {
 
 // ------------------------------------------------------------------ start
 
-api('/api/session').then(function (s) {
+// ------------------------------------------------------------------ several drives
+
+// Each drive has its own library; the routes carry its id. The drive that is
+// shown is remembered; switching reloads the page. A drive that is not
+// plugged in is listed as offline and the rest keeps working.
+var drives = { list: [], current: null, offlineTimer: null, scope: 'one', allLibs: [] };
+
+function chosenLibrary(libs) {
+  var saved = null;
+  try { saved = localStorage.getItem('shoebox-library'); } catch (e) { /* private window */ }
+  drives.scope = saved === 'all' && libs.length > 1 ? 'all' : 'one';
+  document.body.classList.toggle('scope-all', drives.scope === 'all');
+  return libs.filter(function (l) { return l.id === saved; })[0]
+    || libs.filter(function (l) { return l.online; })[0] || libs[0];
+}
+
+// `id` is a drive's id or 'all' (the common timeline); `hash` opens it with a filter.
+function switchLibrary(id, hash) {
+  try { localStorage.setItem('shoebox-library', id); } catch (e) { /* ignore */ }
+  location.hash = hash || '';
+  location.reload();
+}
+
+function renderDriveList() {
+  var multi = drives.list.length > 1;
+  $('drives-box').hidden = !multi;
+  $('nav-drives').hidden = !multi;
+  var ul = $('drive-list');
+  ul.textContent = '';
+  if (multi) {
+    var all = el('li', 'all-entry' + (isAll() ? ' current' : ''));
+    var ab = el('button');
+    ab.appendChild(el('span', 'dot'));
+    ab.appendChild(el('span', 'name', 'All drives'));
+    ab.title = 'One timeline over every drive that is not a backup';
+    ab.onclick = function () { if (!isAll()) switchLibrary('all', ''); };
+    all.appendChild(ab);
+    ul.appendChild(all);
+  }
+  drives.list.forEach(function (l) {
+    var li = el('li', (!isAll() && l.id === drives.current.id ? 'current ' : '') + (l.online ? '' : 'offline'));
+    var b = el('button');
+    b.appendChild(el('span', 'dot'));
+    b.appendChild(el('span', 'name', l.name));
+    if (!l.online) b.appendChild(el('span', 'tag', 'offline'));
+    else if (l.role === 'backup') b.appendChild(el('span', 'tag', 'backup'));
+    b.title = l.online ? l.name : l.name + ' is not connected' + (l.reason ? ' (' + l.reason + ')' : '');
+    b.onclick = function () { if (isAll() || l.id !== drives.current.id) switchLibrary(l.id); };
+    li.appendChild(b);
+    ul.appendChild(li);
+  });
+}
+
+// The chosen drive is offline: say so, and come back by itself when it is plugged in.
+function showOffline() {
+  var page = $('page');
+  $('page').hidden = false;
+  $('sizer').hidden = true;
+  $('empty').hidden = true;
+  page.textContent = '';
+  page.appendChild(el('h2', '', drives.current.name + ' is offline'));
+  page.appendChild(el('p', 'sub', 'This drive is not connected. Plug it in and it opens by itself; nothing was changed. '
+    + 'The other drives in the list on the left keep working.'));
+  var overview = el('button', 'btn quiet', 'Show all drives');
+  overview.onclick = function () { location.hash = '#view=drives'; location.reload(); };
+  page.appendChild(overview);
+  $('title').textContent = drives.current.name;
+  clearInterval(drives.offlineTimer);
+  drives.offlineTimer = setInterval(function () {
+    api('/api/libraries').then(function (libs) {
+      var now = libs.filter(function (l) { return l.id === drives.current.id; })[0];
+      if (now && now.online) location.reload();
+    }).catch(function () {});
+  }, 4000);
+}
+
+function loadDrivesPage() {
+  var page = $('page');
+  page.textContent = '';
+  page.appendChild(el('h2', '', 'All drives'));
+  page.appendChild(el('p', 'sub', 'Each drive keeps its own library. Here they are compared, without copying anything.'));
+  var drivesBox = el('div'), peopleBox = el('div');
+  page.appendChild(drivesBox);
+  page.appendChild(el('h2', '', 'People across drives'));
+  page.appendChild(peopleBox);
+  var role = function (d, value, of) {
+    post('/api/all/role', { library: d.library, role: value, of: of || null }).then(function () { toast(d.name + ': ' + value); loadDrivesPage(); refreshDrives(); }).catch(failed);
+  };
+  api('/api/all/drives').then(function (list) {
+    var shown = list.filter(function (d) { return d.shown_in_all; }).length;
+    var tools = el('div', 'toolbar');
+    var allBtn = el('button', 'btn', 'Photos of all drives');
+    allBtn.title = 'One timeline over ' + plural(shown, 'drive', 'drives');
+    allBtn.onclick = function () { switchLibrary('all', ''); };
+    var dups = el('button', 'btn quiet', 'Duplicates across drives');
+    dups.onclick = function () { dupTab = 'across'; showView('duplicates'); };
+    tools.appendChild(allBtn);
+    tools.appendChild(dups);
+    drivesBox.appendChild(tools);
+    list.forEach(function (d) {
+      var card = el('div', 'drive-card' + (d.online ? '' : ' offline'));
+      card.appendChild(el('span', 'title', d.name));
+      card.appendChild(el('span', 'pill' + (d.online ? ' on' : ''), d.online ? 'online' : 'offline'));
+      if (d.online && !d.shown_in_all) card.appendChild(el('span', 'pill', 'not in the common views'));
+      if (d.online) {
+        var wrap = el('span', 'role');
+        wrap.appendChild(el('span', 'sub', 'This drive is'));
+        var sel = el('select');
+        [['unknown', 'not decided'], ['separate', 'separate: has its own photos'], ['backup', 'a backup of another drive']].forEach(function (o) {
+          var opt = el('option', '', o[1]); opt.value = o[0]; if (d.role === o[0]) opt.selected = true; sel.appendChild(opt);
+        });
+        sel.onchange = function () { role(d, sel.value); };
+        wrap.appendChild(sel);
+        card.appendChild(wrap);
+      }
+      drivesBox.appendChild(card);
+      if (d.online && d.role === 'backup') {
+        var slot = el('div', 'backup-status');
+        slot.dataset.library = d.library;
+        slot.appendChild(el('p', 'sub', 'Comparing with the original drive…'));
+        drivesBox.appendChild(slot);
+      }
+      if (d.online && d.role === 'unknown' && d.suggested_backup_of) {
+        var b = el('div', 'banner warn');
+        b.appendChild(el('div', '', d.name + ' looks like a backup of ' + d.suggested_backup_of + ': almost everything on it is on the other drive too. '
+          + 'Until you decide, it is left out of the common timeline and the duplicates across drives.'));
+        var row = el('div', 'row');
+        var yes = el('button', 'btn', 'Yes, it is a backup'); yes.onclick = function () { role(d, 'backup'); };
+        var no = el('button', 'btn quiet', 'No, it has its own photos'); no.onclick = function () { role(d, 'separate'); };
+        row.appendChild(yes); row.appendChild(no);
+        b.appendChild(row);
+        drivesBox.appendChild(b);
+      }
+    });
+  }).catch(failed);
+  api('/api/all/backups').then(function (list) {
+    Array.prototype.forEach.call(drivesBox.querySelectorAll('.backup-status'), function (slot) { renderBackup(slot, list.filter(function (b) { return b.library === slot.dataset.library; })[0]); });
+  }).catch(failed);
+  api('/api/all/people').then(function (r) {
+    if (r.offline.length) peopleBox.appendChild(el('p', 'sub', 'Not included, offline: ' + r.offline.join(', ')));
+    if (!r.people.length) peopleBox.appendChild(el('p', 'sub', 'Nobody is named yet.'));
+    var grid = el('div', 'people-grid');
+    r.people.forEach(function (p) {
+      var c = el('div', 'person-merged');
+      c.appendChild(el('div', 'n', p.name));
+      c.appendChild(el('div', 'sub', plural(p.photos, 'photo', 'photos') + (p.group ? ' · ' + p.group : '')));
+      p.libraries.forEach(function (l) { c.appendChild(el('span', 'pill', l.name + ' · ' + l.faces)); });
+      var show = el('button', 'btn quiet', 'Photos on all drives');
+      show.onclick = function () { switchLibrary('all', 'person=' + encodeURIComponent(p.name)); };
+      c.appendChild(show);
+      grid.appendChild(c);
+    });
+    peopleBox.appendChild(grid);
+  }).catch(failed);
+}
+
+// The common timeline came in: which drives its ids refer to, and what is left out.
+function allTimelineLoaded(data) {
+  drives.allLibs = data.libs;
+  var note = $('all-note');
+  if (!note) {
+    note = el('div', 'note-bar');
+    note.id = 'all-note';
+    $('scroller').insertBefore(note, $('filters'));
+  }
+  var out = data.left_out.map(function (x) { return x.name + ' (' + x.reason.split(';')[0] + ')'; });
+  note.textContent = 'Photos of ' + data.libs.map(function (l) { return l.name; }).join(', ') + (out.length ? ' · not shown: ' + out.join(', ') : '');
+  $('status').textContent = plural(data.count, 'photo', 'photos') + ' on ' + plural(data.libs.length, 'drive', 'drives') + ' · for looking; open a photo\'s drive to change things';
+}
+
+// How long ago a Unix time was, for "last backup".
+function daysAgo(t) {
+  if (!t) return 'never';
+  var d = Math.floor((Date.now() / 1000 - t) / 86400);
+  return d <= 0 ? 'today' : d === 1 ? '1 day ago' : d + ' days ago';
+}
+
+// A backup drive against the drive it copies, from the two indexes (nothing is
+// read from the photos): what is new since the last backup, what differs, what
+// only the backup has. Bit rot on the backup itself is found by "Backup check"
+// with re-reading in the launcher (`shoebox backup … --deep`).
+function renderBackup(slot, b) {
+  slot.textContent = '';
+  if (!b || !b.primary) {
+    slot.appendChild(el('p', 'sub', (b && b.note) || 'No comparison possible.'));
+    return;
+  }
+  var box = el('div', 'banner' + (b.up_to_date ? '' : ' warn'));
+  box.appendChild(el('div', '', (b.up_to_date ? '✓ ' : '! ') + b.backup + ' is a backup of ' + b.primary + ': '
+    + (b.up_to_date ? 'it holds all ' + plural(b.compared, 'file', 'files') + '.'
+      : plural(b.missing, 'file', 'files') + ' not on it yet' + (b.different ? ', ' + b.different + ' different' : '') + '.')));
+  box.appendChild(el('div', 'sub', 'Last backup: ' + daysAgo(b.backup_last_new_files) + ' (new files last arrived); the backup drive was scanned ' + daysAgo(b.backup_last_scan)
+    + '. Scan it after every backup to bring this up to date.'
+    + (b.unhashed ? ' ' + plural(b.unhashed, 'file', 'files') + ' of ' + b.primary + ' have no full hash yet and are not compared.' : '')
+    + (b.extra ? ' ' + plural(b.extra, 'file', 'files') + ' only on the backup (gone or changed on ' + b.primary + ').' : '')));
+  var lists = [['Not on the backup yet', b.missing, b.missing_files], ['Different on the backup', b.different, b.different_files], ['Only on the backup', b.extra, b.extra_files]];
+  lists.forEach(function (l) {
+    if (!l[1]) return;
+    var det = el('details');
+    det.appendChild(el('summary', '', l[0] + ' (' + l[1].toLocaleString() + ')'));
+    var ul = el('ul', 'pathlist');
+    l[2].forEach(function (f) { ul.appendChild(el('li', '', f.path)); });
+    if (l[1] > l[2].length) ul.appendChild(el('li', 'sub', '… ' + (l[1] - l[2].length).toLocaleString() + ' more'));
+    det.appendChild(ul);
+    box.appendChild(det);
+  });
+  slot.appendChild(box);
+}
+
+function refreshDrives() {
+  return api('/api/libraries').then(function (libs) {
+    return api('/api/all/drives').catch(function () { return []; }).then(function (roles) {
+      libs.forEach(function (l) { var r = roles.filter(function (x) { return x.library === l.id; })[0]; l.role = r ? r.role : 'unknown'; });
+      drives.list = libs;
+      drives.current = libs.filter(function (l) { return drives.current && l.id === drives.current.id; })[0] || chosenLibrary(libs);
+      renderDriveList();
+    });
+  });
+}
+
+api('/api/libraries').then(function (libs) {
+  drives.list = libs;
+  drives.current = chosenLibrary(libs);
+  LIBAPI = '/api/lib/' + drives.current.id;
+  return api('/api/session');
+}).then(function (s) {
   if (!s.authenticated) {
     if (!s.pin_enabled) $('login-text').textContent = 'This shoebox only accepts connections from its own computer. Restart it with --lan to allow other devices.';
     showLogin();
     return;
   }
-  state.filter = readHash();
-  $('search').value = state.filter.q;
-  return Promise.all([loadFolders(), loadInfo(), loadOwnTags(), loadPeople()]).then(function () {
-    applyFilter();
-    setInterval(loadInfo, 20000);
+  return refreshDrives().then(function () {
+    setInterval(refreshDrives, 10000);
+    if (!drives.current.online) {
+      // Nothing of this library can be loaded: only the overview of the drives can be shown.
+      if (readHash().view === 'drives') { state.filter = readHash(); applyFilter(); } else showOffline();
+      return;
+    }
+    state.filter = readHash();
+    $('search').value = state.filter.q;
+    if (isAll()) {
+      // The common timeline: no folders, tags or faces of its own; the drives answer by name.
+      $('title').textContent = 'All drives';
+      document.title = 'All drives · shoebox';
+      applyFilter();
+      return;
+    }
+    return Promise.all([loadFolders(), loadInfo(), loadOwnTags(), loadPeople()]).then(function () {
+      applyFilter();
+      setInterval(loadInfo, 20000);
+    });
   });
 }).catch(function (e) { console.error(e); });

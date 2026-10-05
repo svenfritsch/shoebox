@@ -15,7 +15,7 @@ pub const FILE: &str = "library.db";
 const BACKUP_SUFFIX: &str = ".bak";
 
 /// Bump when the schema changes and add a step to `migrate`.
-const SCHEMA_VERSION: i32 = 5;
+const SCHEMA_VERSION: i32 = 6;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -190,6 +190,17 @@ pub fn open(path: &Path) -> Result<Connection> {
     Ok(conn)
 }
 
+/// Open a library that has to be there already, like `open_shared` but
+/// never creating anything: background work of a server must not make a new
+/// `.shoebox` folder (and an empty database in it) where a drive was
+/// unplugged.
+pub fn open_existing(path: &Path) -> Result<Connection> {
+    if !path.is_file() {
+        anyhow::bail!("{} is not there (is the drive connected?)", path.display());
+    }
+    open_shared(path)
+}
+
 /// Open alongside other processes (the web server runs while a scan may be
 /// writing), leaving their `running` jobs alone.
 pub fn open_shared(path: &Path) -> Result<Connection> {
@@ -204,6 +215,14 @@ pub fn open_shared(path: &Path) -> Result<Connection> {
     migrate(&conn)?;
     Ok(conn)
 }
+
+/// Phase 6: settings of the drive itself (`multi.rs`: backup or separate).
+const SCHEMA_V6: &str = "
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+";
 
 fn migrate(conn: &Connection) -> Result<()> {
     let version: i32 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
@@ -245,6 +264,24 @@ fn migrate(conn: &Connection) -> Result<()> {
         tx.pragma_update(None, "user_version", 5)?;
         tx.commit()?;
     }
+    if version < 6 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V6)?;
+        tx.pragma_update(None, "user_version", 6)?;
+        tx.commit()?;
+    }
+    Ok(())
+}
+
+pub fn setting(conn: &Connection, key: &str) -> Result<Option<String>> {
+    Ok(conn.query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| r.get(0)).optional()?)
+}
+
+pub fn set_setting(conn: &Connection, key: &str, value: Option<&str>) -> Result<()> {
+    match value {
+        Some(v) => conn.execute("INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2", params![key, v])?,
+        None => conn.execute("DELETE FROM settings WHERE key = ?1", [key])?,
+    };
     Ok(())
 }
 

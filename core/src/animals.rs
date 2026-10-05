@@ -18,7 +18,7 @@
 //!   high baseline (PP-ResNet50: different animals score 0.50–0.68, the same
 //!   animal after brightness, blur and crop changes 0.95 and more), DINOv2's
 //!   a lower one. The numbers are a first guess to be set from the animals
-//!   check page on real photos (`docs/phase6.md`).
+//!   check page on real photos (`docs/phase7.md`).
 
 use crate::faces;
 use crate::people;
