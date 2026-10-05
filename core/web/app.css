@@ -428,3 +428,19 @@ body.selecting .sec .pick { display: inline; }
 .people-grid { display: flex; flex-wrap: wrap; gap: 10px; }
 .person-merged { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; min-width: 170px; }
 .person-merged .n { font-weight: 600; }
+
+/* ---- the common timeline of all drives is for looking: no folders, selecting or importing */
+.scope-all #faces-section, .scope-all #tags-section, .scope-all #folders-head, .scope-all #tree,
+.scope-all #nav-trash, .scope-all #nav-faces, .scope-all #select, .scope-all #import { display: none !important; }
+.note-bar { margin: 8px 16px 0; font-size: 13px; color: var(--muted); }
+.tabs { display: flex; gap: 6px; margin: 0 0 14px; }
+.tabs button { padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--fg); font: inherit; cursor: pointer; }
+.tabs button.on { background: var(--panel); font-weight: 600; border-color: var(--accent); }
+.xcopies { display: flex; flex-wrap: wrap; gap: 12px; }
+.xcopy { width: 190px; }
+.xcopy img { width: 190px; height: 190px; object-fit: cover; border-radius: 8px; background: var(--cell-bg); display: block; }
+.xcopy .drive { font-weight: 600; font-size: 13px; margin-top: 4px; }
+.xcopy .path { font-size: 12px; color: var(--muted); word-break: break-all; }
+.xcopy .btns { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.xcopy .btns .btn { padding: 3px 10px; font-size: 12px; }
+.drive-list li.all-entry button { font-weight: 600; }

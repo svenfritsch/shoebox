@@ -197,6 +197,10 @@ pub struct DuplicateFile {
     pub name: String,
     pub id: i64,
     pub path: String,
+    /// `jpeg`, `png`, `heic`, `raw` or `video`, and the first characters of
+    /// the quick hash: what the UI needs to show the file.
+    pub kind: String,
+    pub version: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -217,49 +221,67 @@ pub struct CrossDuplicates {
     pub excluded: Vec<Excluded>,
 }
 
-/// Contents that exist on two or more drives that are not backups of each
-/// other. Offline drives are not passed in.
-pub fn cross_duplicates(drives: &[Drive], limit: usize) -> Result<CrossDuplicates> {
-    let suggestions = roles(drives)?;
-    let mut result = CrossDuplicates::default();
-    let mut eligible: Vec<&Drive> = Vec::new();
-    for (d, s) in drives.iter().zip(&suggestions) {
+/// Which drives take part in views over all drives (duplicates, the common
+/// timeline): not the backups, and not the drives that look like one until
+/// the user has decided. Returns their positions in `drives` and the ones
+/// left out with the reason.
+pub fn eligibility(drives: &[Drive], roles: &[DriveRole]) -> (Vec<usize>, Vec<Excluded>) {
+    let mut eligible = Vec::new();
+    let mut excluded = Vec::new();
+    for (i, (d, s)) in drives.iter().zip(roles).enumerate() {
         match (d.role, &s.suggested_backup_of) {
-            (Role::Backup, _) => result.excluded.push(Excluded {
+            (Role::Backup, _) => excluded.push(Excluded {
                 library: d.id.clone(),
                 name: d.name.clone(),
                 reason: "marked as a backup".into(),
             }),
-            (Role::Unknown, Some(of)) => result.excluded.push(Excluded {
+            (Role::Unknown, Some(of)) => excluded.push(Excluded {
                 library: d.id.clone(),
                 name: d.name.clone(),
                 reason: format!("looks like a backup of {of}; confirm it or mark it as separate"),
             }),
-            _ => {
-                result.compared.push(d.name.clone());
-                eligible.push(d);
-            }
+            _ => eligible.push(i),
         }
     }
+    (eligible, excluded)
+}
+
+/// Contents that exist on two or more drives that are not backups of each
+/// other. Offline drives are not passed in.
+pub fn cross_duplicates(drives: &[Drive], roles: &[DriveRole], limit: usize) -> Result<CrossDuplicates> {
+    let (eligible_at, excluded) = eligibility(drives, roles);
+    let eligible: Vec<&Drive> = eligible_at.iter().map(|&i| &drives[i]).collect();
+    let mut result = CrossDuplicates {
+        compared: eligible.iter().map(|d| d.name.clone()).collect(),
+        excluded,
+        ..CrossDuplicates::default()
+    };
 
     // hash → (size, files), files unique by (drive, id)
-    let mut groups: BTreeMap<String, (u64, BTreeSet<(usize, i64, String)>)> = BTreeMap::new();
+    type Copy = (usize, i64, String, String, String);
+    let mut groups: BTreeMap<String, (u64, BTreeSet<Copy>)> = BTreeMap::new();
     for i in 0..eligible.len() {
         for j in i + 1..eligible.len() {
             let conn = open_pair(&eligible[i].db, &eligible[j].db)?;
             let mut stmt = conn.prepare(
-                "SELECT a.full_hash, a.size, a.id, a.path, b.id, b.path
+                "SELECT a.full_hash, a.size, a.id, a.path, a.kind, substr(a.quick_hash, 1, 8),
+                        b.id, b.path, b.kind, substr(b.quick_hash, 1, 8)
                  FROM main.files a JOIN other.files b ON b.full_hash = a.full_hash
                  WHERE a.full_hash IS NOT NULL AND a.missing_since IS NULL AND b.missing_since IS NULL",
             )?;
             let rows = stmt.query_map([], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as u64, r.get::<_, i64>(2)?, r.get::<_, String>(3)?, r.get::<_, i64>(4)?, r.get::<_, String>(5)?))
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)? as u64,
+                    (r.get::<_, i64>(2)?, r.get::<_, String>(3)?, r.get::<_, String>(4)?, r.get::<_, String>(5)?),
+                    (r.get::<_, i64>(6)?, r.get::<_, String>(7)?, r.get::<_, String>(8)?, r.get::<_, String>(9)?),
+                ))
             })?;
             for row in rows {
-                let (hash, size, a_id, a_path, b_id, b_path) = row?;
+                let (hash, size, a, b) = row?;
                 let entry = groups.entry(hash).or_insert_with(|| (size, BTreeSet::new()));
-                entry.1.insert((i, a_id, a_path));
-                entry.1.insert((j, b_id, b_path));
+                entry.1.insert((i, a.0, a.1, a.2, a.3));
+                entry.1.insert((j, b.0, b.1, b.2, b.3));
             }
         }
     }
@@ -272,7 +294,14 @@ pub fn cross_duplicates(drives: &[Drive], limit: usize) -> Result<CrossDuplicate
             size,
             files: files
                 .into_iter()
-                .map(|(d, id, path)| DuplicateFile { library: eligible[d].id.clone(), name: eligible[d].name.clone(), id, path })
+                .map(|(d, id, path, kind, version)| DuplicateFile {
+                    library: eligible[d].id.clone(),
+                    name: eligible[d].name.clone(),
+                    id,
+                    path,
+                    kind,
+                    version,
+                })
                 .collect(),
         })
         .collect();

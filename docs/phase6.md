@@ -116,9 +116,26 @@ Built:
   page (roles with confirm buttons, duplicates across drives, people across
   drives), an offline page for the selected drive that opens it again when it
   comes back. Tests: `core/tests/multi.rs`, `core/tests/serve.rs`.
-- Not yet done: one timeline over all drives, moving files between drives,
-  the people filter across drives (the people list is merged, the search is
-  per drive), the 90 % threshold on real data.
+- Common timeline ("All drives" in the drive list, `GET /api/all/timeline`):
+  one list, newest first, over the drives that are online and not backups
+  (nor suspected ones). Filters name things instead of numbering them
+  (`tag=Winter`, `person=Anna`, `q=…`), because ids differ per drive; a drive
+  that lacks one of the names has no match. An item's id is
+  `drive * 2^40 + id` and the drive is its position in the `libs` the server
+  sends along; `/api/all/tags` and `/api/all/people` feed the search
+  suggestions. It is for looking: no selecting, importing or trash; the info
+  panel shows the drive and a button that opens the photo's own drive for
+  tags, faces and moving. Searching for a person who exists on two drives
+  gives the photos of both in one timeline (`core/tests/multi.rs`).
+- Duplicates screen: with several drives it has two tabs, "On this drive"
+  (the existing groups and decisions) and "Across drives" (same content on
+  different drives, side by side, with "Move to trash" per copy and a note
+  for drives left out as backups). In "All drives" only the second exists.
+- Not yet done: moving files between drives, a decision "keep both" for
+  copies on different drives, the 90 % threshold on real data, counts in the
+  search suggestions that narrow with the filter (they are per name, over all
+  drives). Identical photos on two separate drives show twice in the common
+  timeline.
 
 - Every drive keeps its own `.shoebox` folder with `library.db`, `thumbs.db`
   and `recognition.db`. The app opens several libraries at once with one
@@ -150,5 +167,5 @@ Done:
 
 Open:
 - [ ] Launcher UI (section 2): first slice built, platform checks and polish open
-- [~] Multiple drives (section 3): hub, offline, roles, cross-drive duplicates and people built; combined timeline open
+- [~] Multiple drives (section 3): hub, offline, roles, cross-drive duplicates and people built; common timeline built; moving between drives open
 - [ ] Backups and packaging (section 4)

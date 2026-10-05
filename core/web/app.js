@@ -42,6 +42,18 @@ var state = {
 // /api/libraries, before the first library request.
 var LIBAPI = null;
 
+// The common timeline of all drives ("scope all"): an item's id is
+// `drive * SPAN + id in that drive`, the drive being its position in the
+// list the server sent with the timeline. fileBase() turns it back into the
+// route of that drive's file.
+var SPAN = 1099511627776; // 2^40, as on the server
+function isAll() { return !!(typeof drives !== 'undefined' && drives.scope === 'all'); }
+function fileBase(id) {
+  if (!isAll()) return LIBAPI + '/files/' + id;
+  var lib = drives.allLibs[Math.floor(id / SPAN)];
+  return '/api/lib/' + lib.id + '/files/' + (id % SPAN);
+}
+
 function api(path, opts) {
   return fetch(path, Object.assign({ credentials: 'same-origin' }, opts)).then(function (r) {
     if (r.status === 401) { showLogin(); throw new Error('login required'); }
@@ -109,13 +121,17 @@ function readHash() {
     if (i < 0) return;
     var k = kv.slice(0, i), v = decodeURIComponent(kv.slice(i + 1));
     if (k === 'folder') f.folder = parseInt(v, 10) || null;
-    if (k === 'tag' && parseInt(v, 10) && f.tags.indexOf(parseInt(v, 10)) < 0) f.tags.push(parseInt(v, 10));
-    if (k === 'person' && parseInt(v, 10) && f.people.indexOf(parseInt(v, 10)) < 0) f.people.push(parseInt(v, 10));
+    // Over all drives tags and people are named: ids differ from drive to drive.
+    var all = isAll();
+    if (k === 'tag') { var t = all ? v : parseInt(v, 10); if (t && f.tags.indexOf(t) < 0) f.tags.push(t); }
+    if (k === 'person') { var pp = all ? v : parseInt(v, 10); if (pp && f.people.indexOf(pp) < 0) f.people.push(pp); }
     if (k === 'q') f.q = v;
     if (k === 'view' && VIEWS.indexOf(v) >= 0) f.view = v;
     if (k === 'id') f.id = parseInt(v, 10) || null;
     if (k === 'tab') f.tab = v;
   });
+  // Over all drives only these pages exist (the others belong to one drive).
+  if (isAll() && f.view && f.view !== 'duplicates' && f.view !== 'drives') f.view = null;
   return f;
 }
 
@@ -263,6 +279,7 @@ $('search').addEventListener('keydown', function (ev) {
 function suggest(text) {
   var seq = ++sugg.seq, f = state.filter;
   if (f.view) { closeSuggest(); return; }
+  if (isAll()) { suggestAll(text, seq); return; }
   var needle = text.trim();
   var within = { q: needle, tag: f.tags, person: f.people, folder: f.folder };
   Promise.all([
@@ -288,6 +305,23 @@ function suggest(text) {
   }).catch(function () {});
 }
 
+// Over all drives: tags and people by name (the drives share names, not ids).
+var allPeople = { at: 0, list: [] };
+function suggestAll(text, seq) {
+  var needle = text.trim(), low = needle.toLowerCase(), f = state.filter;
+  var people = Date.now() - allPeople.at < 30000 ? Promise.resolve(allPeople.list)
+    : api('/api/all/people').then(function (r) { allPeople = { at: Date.now(), list: r.people }; return r.people; });
+  Promise.all([api('/api/all/tags' + query({ q: needle, limit: 8 })), people.catch(function () { return []; })]).then(function (r) {
+    if (seq !== sugg.seq) return;
+    var items = r[1].filter(function (p) { return f.people.indexOf(p.name) < 0 && (!low || p.name.toLowerCase().indexOf(low) >= 0); })
+      .slice(0, 6).map(function (p) { return { kind: 'person', id: p.name, label: p.name, count: p.photos }; });
+    r[0].filter(function (t) { return f.tags.indexOf(t.name) < 0; }).forEach(function (t) {
+      items.push({ kind: 'tag', id: t.name, label: t.name, count: t.count, folderTag: t.kind === 'folder' });
+    });
+    showSuggest(items);
+  }).catch(function () {});
+}
+
 function showSuggest(items) {
   var box = $('suggest');
   box.textContent = '';
@@ -296,7 +330,7 @@ function showSuggest(items) {
   var last = null;
   items.forEach(function (it, i) {
     if (it.kind !== last) {
-      var f = state.filter, narrowed = f.tags.length || f.people.length || f.folder;
+      var f = state.filter, narrowed = !isAll() && (f.tags.length || f.people.length || f.folder);
       var head = it.kind === 'tag' ? (narrowed ? 'Tags in these photos' : 'Tags')
         : it.kind === 'person' ? (narrowed ? 'People in these photos' : 'People') : 'Folders';
       box.appendChild(el('div', 'head', head));
@@ -452,10 +486,13 @@ function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
 function loadTimeline(resetScroll) {
   var seq = ++state.loadSeq;
   var f = state.filter;
-  return api(LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, q: f.q })).then(function (data) {
+  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, q: f.q })
+    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, q: f.q });
+  return api(url).then(function (data) {
     if (seq !== state.loadSeq) return;
+    if (isAll()) allTimelineLoaded(data);
     state.anchor = null; // indices change with the new list
-    var unnamed = f.tags.some(function (id) { return !state.tagNames[id]; }) || f.people.some(function (id) { return !state.personNames[id]; });
+    var unnamed = !isAll() && (f.tags.some(function (id) { return !state.tagNames[id]; }) || f.people.some(function (id) { return !state.personNames[id]; }));
     data.tags.forEach(function (t) { state.tagNames[t.id] = t.name; });
     data.people.forEach(function (p) { state.personNames[p.id] = p.name; });
     if (unnamed) renderChips(); // a link with tags this page has not seen yet
@@ -549,7 +586,7 @@ function render() {
 
 function thumbUrl(i) {
   var d = state.data;
-  return LIBAPI + '/files/' + d.ids[i] + '/thumb?v=' + d.versions.substr(i * 8, 8);
+  return fileBase(d.ids[i]) + '/thumb?v=' + d.versions.substr(i * 8, 8);
 }
 
 function buildRow(row) {
@@ -661,7 +698,7 @@ function grabFrame(job) {
     var at = isFinite(v.duration) ? v.duration / 10 : 0;
     if (at > 0) { v.onseeked = draw; v.currentTime = at; } else if (v.readyState >= 2) draw(); else v.onloadeddata = draw;
   };
-  v.src = LIBAPI + '/files/' + job.id + '/original';
+  v.src = fileBase(job.id) + '/original';
 }
 
 // Where item i sits in the layout.
@@ -834,7 +871,7 @@ function showItem() {
   stage.textContent = '';
   $('lb-prev').hidden = i <= 0;
   $('lb-next').hidden = i >= d.count - 1;
-  $('lb-download').href = LIBAPI + '/files/' + id + '/original?download=1';
+  $('lb-download').href = fileBase(id) + '/original?download=1';
   $('lb-live').hidden = !state.live[id];
   $('lb-title').textContent = '';
   lb.hover = null;
@@ -847,7 +884,7 @@ function showItem() {
     v.playsInline = true;
     v.preload = 'metadata';
     v.poster = frames.cache[id] || thumbUrl(i);
-    v.src = LIBAPI + '/files/' + id + '/original';
+    v.src = fileBase(id) + '/original';
     stage.appendChild(v);
   } else {
     var img = el('img');
@@ -864,7 +901,7 @@ function showItem() {
     });
   }
 
-  api(LIBAPI + '/files/' + id).then(function (info) {
+  api(fileBase(id)).then(function (info) {
     if (state.open !== i) return;
     lb.details = info;
     $('lb-title').textContent = formatDate(info) + ' · ' + info.name;
@@ -881,6 +918,7 @@ function drawFaces() {
   var stage = $('stage');
   stage.querySelectorAll('.face-box').forEach(function (b) { b.remove(); });
   var info = lb.details, img = stage.querySelector('img');
+  if (isAll()) return;
   if ($('lb-panel').hidden || !info || !info.faces || !img || img.hidden) return;
   if (info.id !== state.data.ids[state.open]) return;
   var r = img.getBoundingClientRect(), s = stage.getBoundingClientRect();
@@ -903,7 +941,7 @@ window.addEventListener('resize', drawFaces);
 
 function viewUrl(i) {
   var d = state.data;
-  return LIBAPI + '/files/' + d.ids[i] + '/view?v=' + d.versions.substr(i * 8, 8);
+  return fileBase(d.ids[i]) + '/view?v=' + d.versions.substr(i * 8, 8);
 }
 
 function formatDate(info) {
@@ -921,10 +959,32 @@ function formatBytes(n) {
   return (u ? n.toFixed(1) : n) + ' ' + units[u];
 }
 
+// In the common timeline a photo is only looked at: what it is, where it is,
+// and a way into its own drive for everything else (tags, faces, moving).
+function renderPanelAll(info) {
+  var panel = $('lb-panel');
+  var lib = drives.allLibs[Math.floor(state.data.ids[state.open] / SPAN)];
+  var dl = el('dl');
+  var row = function (label, value) { if (value) { dl.appendChild(el('dt', '', label)); dl.appendChild(el('dd', '', value)); } };
+  row('Date', formatDate(info));
+  row('Drive', lib.name);
+  row('Path', info.path);
+  row('Size', (info.width && info.height ? info.width + ' × ' + info.height + ' · ' : '') + formatBytes(info.size));
+  row('Camera', info.camera);
+  panel.appendChild(dl);
+  var actions = el('div', 'actions');
+  var open = el('button', 'btn quiet', 'Open in ' + lib.name);
+  open.title = 'Tags, faces, moving and the rest are done in the photo\'s own drive';
+  open.onclick = function () { switchLibrary(lib.id, 'folder=' + info.folder_id); };
+  actions.appendChild(open);
+  panel.appendChild(actions);
+}
+
 function renderPanel() {
   var info = lb.details, panel = $('lb-panel');
   panel.textContent = '';
   if (!info) return;
+  if (isAll()) { renderPanelAll(info); return; }
   var dl = el('dl');
   var row = function (label, value) {
     if (value == null || value === '') return null;
@@ -987,7 +1047,7 @@ $('lb-live').onclick = function () {
   var v = el('video');
   v.autoplay = true;
   v.playsInline = true;
-  v.src = LIBAPI + '/files/' + video + '/original';
+  v.src = fileBase(video) + '/original';
   v.onended = function () { v.remove(); if (still) still.hidden = false; };
   if (still) still.hidden = true;
   stage.appendChild(v);
@@ -1088,6 +1148,7 @@ function loadInfo() {
 // After a change: folders, the grid (keeping the scroll position) or the
 // page that is open, and the status line.
 function reloadAll() {
+  if (isAll()) { if (state.filter.view) loadView(state.filter.view); else loadTimeline(false); return; }
   loadFolders();
   loadOwnTags();
   loadPeople();
@@ -1166,6 +1227,7 @@ function failed(e) { openModal('That did not work', String(e.message || e), [{ l
 // ------------------------------------------------------------------ selection
 
 function startSelection() {
+  if (isAll()) return;
   state.selecting = true;
   state.anchor = null;
   document.body.classList.add('selecting');
@@ -1470,12 +1532,13 @@ $('import').onclick = function () { importDialog(); };
 (function () {
   var depth = 0;
   var hasFiles = function (ev) { return ev.dataTransfer && Array.prototype.indexOf.call(ev.dataTransfer.types || [], 'Files') >= 0; };
-  window.addEventListener('dragenter', function (ev) { if (!hasFiles(ev)) return; depth++; $('dropzone').hidden = false; });
+  window.addEventListener('dragenter', function (ev) { if (!hasFiles(ev) || isAll()) return; depth++; $('dropzone').hidden = false; });
   window.addEventListener('dragleave', function () { if (--depth <= 0) { depth = 0; $('dropzone').hidden = true; } });
   window.addEventListener('dragover', function (ev) { if (hasFiles(ev)) ev.preventDefault(); });
   window.addEventListener('drop', function (ev) {
     if (!hasFiles(ev)) return;
     ev.preventDefault();
+    if (isAll()) { $('dropzone').hidden = true; depth = 0; toast('Pick one drive to import into'); return; }
     depth = 0;
     $('dropzone').hidden = true;
     if (importState.add && !$('modal').hidden) importState.add(ev.dataTransfer.files);
@@ -1488,10 +1551,107 @@ $('import').onclick = function () { importDialog(); };
 var dupState = { groups: [], shown: 0 };
 var PAGE_GROUPS = 30;
 
+// With several drives the page has two lists: copies on this drive (decided
+// per group) and copies on different drives. A backup drive holds copies on
+// purpose, so drives marked as backups (or looking like one) are not in the
+// second list; "All drives" says which is which.
+var dupTab = 'here';
+
+function addDupTabs(page) {
+  if (drives.list.length < 2 || isAll()) return;
+  var tabs = el('div', 'tabs');
+  [['here', 'On this drive'], ['across', 'Across drives']].forEach(function (t) {
+    var b = el('button', dupTab === t[0] ? 'on' : '', t[1]);
+    b.onclick = function () { dupTab = t[0]; loadDuplicates(); };
+    tabs.appendChild(b);
+  });
+  page.insertBefore(tabs, page.children[1] || null);
+}
+
 function loadDuplicates() {
+  if (isAll()) dupTab = 'across';
+  if (drives.list.length > 1 && dupTab === 'across') return loadDuplicatesAcross();
+  return loadDuplicatesHere();
+}
+
+function loadDuplicatesAcross() {
   var page = $('page');
   page.textContent = '';
   page.appendChild(el('h2', '', 'Duplicates'));
+  addDupTabs(page);
+  var sub = el('p', 'sub', 'Looking…');
+  page.appendChild(sub);
+  return api('/api/all/duplicates?limit=200').then(function (r) {
+    if (state.filter.view !== 'duplicates') return;
+    sub.textContent = r.total_groups
+      ? plural(r.total_groups, 'photo exists', 'photos exist') + ' on more than one drive (' + r.compared.join(', ') + '). Move the copy you do not need to the trash of its drive.'
+      : 'No photo exists on more than one drive' + (r.compared.length > 1 ? ' (' + r.compared.join(', ') + ').' : '.');
+    r.excluded.forEach(function (x) {
+      var b = el('div', 'banner');
+      b.appendChild(document.createTextNode(x.name + ' is not compared: ' + x.reason + '. '));
+      var go = el('button', 'link', 'Decide in All drives →');
+      go.onclick = function () { showView('drives'); };
+      b.appendChild(go);
+      page.appendChild(b);
+    });
+    r.groups.forEach(function (g) { page.appendChild(crossGroupNode(g)); });
+    if (r.total_groups > r.groups.length) page.appendChild(el('p', 'sub', 'Showing the first ' + r.groups.length + ' of ' + r.total_groups + '.'));
+  }).catch(failed);
+}
+
+function crossGroupNode(g) {
+  var box = el('div', 'group');
+  var head = el('div', 'group-head');
+  head.appendChild(el('span', 'label', 'Same content on ' + plural(new Set(g.files.map(function (f) { return f.library; })).size, 'drive', 'drives')));
+  box.appendChild(head);
+  var cards = el('div', 'cards');
+  g.files.forEach(function (f) {
+    var base = '/api/lib/' + f.library + '/files/' + f.id;
+    var card = el('div', 'card');
+    var a = el('a', 'thumb');
+    a.href = base + (f.kind === 'video' ? '/original' : '/view') + '?v=' + f.version;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    var img = el('img');
+    img.alt = '';
+    img.loading = 'lazy';
+    img.src = base + '/thumb?v=' + f.version;
+    a.appendChild(img);
+    card.appendChild(a);
+    card.appendChild(el('div', 'name', f.name));
+    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : '(top level)';
+    var fb = el('button', 'folder', folder);
+    fb.title = 'Show this photo in ' + f.name;
+    fb.onclick = function () { switchLibrary(f.library, 'q=' + encodeURIComponent(f.path.split('/').pop())); };
+    card.appendChild(fb);
+    card.appendChild(el('div', 'meta', f.path.split('/').pop() + ' · ' + formatBytes(g.size)));
+    var trash = el('button', 'btn danger', 'Move to trash');
+    trash.onclick = function () {
+      openModal('Move to trash', 'Move this copy on ' + f.name + ' (' + f.path + ') to the trash of that drive? The same photo stays on the other drive' + (g.files.length > 2 ? 's' : '') + '. You can put it back from the trash until it is emptied.', [
+        { label: 'Cancel', cls: 'quiet' },
+        { label: 'Move to trash', cls: 'danger', onclick: function (btn) {
+          btn.disabled = true;
+          post('/api/lib/' + f.library + '/trash', { ids: [f.id] }).then(function (r) {
+            closeModal();
+            toast(plural(r.files.length + r.sidecars, 'file', 'files') + ' moved to the trash of ' + f.name);
+            loadDuplicatesAcross();
+          }).catch(function (e) { closeModal(); failed(e); });
+          return false;
+        } },
+      ]);
+    };
+    card.appendChild(trash);
+    cards.appendChild(card);
+  });
+  box.appendChild(cards);
+  return box;
+}
+
+function loadDuplicatesHere() {
+  var page = $('page');
+  page.textContent = '';
+  page.appendChild(el('h2', '', 'Duplicates'));
+  addDupTabs(page);
   page.appendChild(el('p', 'sub', 'Looking…'));
   return api(LIBAPI + '/duplicates').then(function (r) {
     if (state.filter.view !== 'duplicates') return;
@@ -1505,6 +1665,7 @@ function renderDuplicates() {
   var page = $('page');
   page.textContent = '';
   page.appendChild(el('h2', '', 'Duplicates'));
+  addDupTabs(page);
   var exact = dupState.groups.filter(function (g) { return g.exact; }).length;
   var near = dupState.groups.length - exact;
   page.appendChild(el('p', 'sub', dupState.groups.length
@@ -3449,18 +3610,21 @@ function nameDrawnFace(info, frac) {
 // Each drive has its own library; the routes carry its id. The drive that is
 // shown is remembered; switching reloads the page. A drive that is not
 // plugged in is listed as offline and the rest keeps working.
-var drives = { list: [], current: null, offlineTimer: null };
+var drives = { list: [], current: null, offlineTimer: null, scope: 'one', allLibs: [] };
 
 function chosenLibrary(libs) {
   var saved = null;
   try { saved = localStorage.getItem('shoebox-library'); } catch (e) { /* private window */ }
+  drives.scope = saved === 'all' && libs.length > 1 ? 'all' : 'one';
+  document.body.classList.toggle('scope-all', drives.scope === 'all');
   return libs.filter(function (l) { return l.id === saved; })[0]
     || libs.filter(function (l) { return l.online; })[0] || libs[0];
 }
 
-function switchLibrary(id) {
+// `id` is a drive's id or 'all' (the common timeline); `hash` opens it with a filter.
+function switchLibrary(id, hash) {
   try { localStorage.setItem('shoebox-library', id); } catch (e) { /* ignore */ }
-  location.hash = '';
+  location.hash = hash || '';
   location.reload();
 }
 
@@ -3470,15 +3634,25 @@ function renderDriveList() {
   $('nav-drives').hidden = !multi;
   var ul = $('drive-list');
   ul.textContent = '';
+  if (multi) {
+    var all = el('li', 'all-entry' + (isAll() ? ' current' : ''));
+    var ab = el('button');
+    ab.appendChild(el('span', 'dot'));
+    ab.appendChild(el('span', 'name', 'All drives'));
+    ab.title = 'One timeline over every drive that is not a backup';
+    ab.onclick = function () { if (!isAll()) switchLibrary('all', ''); };
+    all.appendChild(ab);
+    ul.appendChild(all);
+  }
   drives.list.forEach(function (l) {
-    var li = el('li', (l.id === drives.current.id ? 'current ' : '') + (l.online ? '' : 'offline'));
+    var li = el('li', (!isAll() && l.id === drives.current.id ? 'current ' : '') + (l.online ? '' : 'offline'));
     var b = el('button');
     b.appendChild(el('span', 'dot'));
     b.appendChild(el('span', 'name', l.name));
     if (!l.online) b.appendChild(el('span', 'tag', 'offline'));
     else if (l.role === 'backup') b.appendChild(el('span', 'tag', 'backup'));
     b.title = l.online ? l.name : l.name + ' is not connected' + (l.reason ? ' (' + l.reason + ')' : '');
-    b.onclick = function () { if (l.id !== drives.current.id) switchLibrary(l.id); };
+    b.onclick = function () { if (isAll() || l.id !== drives.current.id) switchLibrary(l.id); };
     li.appendChild(b);
     ul.appendChild(li);
   });
@@ -3512,20 +3686,29 @@ function loadDrivesPage() {
   page.textContent = '';
   page.appendChild(el('h2', '', 'All drives'));
   page.appendChild(el('p', 'sub', 'Each drive keeps its own library. Here they are compared, without copying anything.'));
-  var drivesBox = el('div'), dupBox = el('div'), peopleBox = el('div');
+  var drivesBox = el('div'), peopleBox = el('div');
   page.appendChild(drivesBox);
-  page.appendChild(el('h2', '', 'Duplicates across drives'));
-  page.appendChild(dupBox);
   page.appendChild(el('h2', '', 'People across drives'));
   page.appendChild(peopleBox);
   var role = function (d, value) {
     post('/api/all/role', { library: d.library, role: value }).then(function () { toast(d.name + ': ' + value); loadDrivesPage(); refreshDrives(); }).catch(failed);
   };
   api('/api/all/drives').then(function (list) {
+    var shown = list.filter(function (d) { return d.shown_in_all; }).length;
+    var tools = el('div', 'toolbar');
+    var allBtn = el('button', 'btn', 'Photos of all drives');
+    allBtn.title = 'One timeline over ' + plural(shown, 'drive', 'drives');
+    allBtn.onclick = function () { switchLibrary('all', ''); };
+    var dups = el('button', 'btn quiet', 'Duplicates across drives');
+    dups.onclick = function () { dupTab = 'across'; showView('duplicates'); };
+    tools.appendChild(allBtn);
+    tools.appendChild(dups);
+    drivesBox.appendChild(tools);
     list.forEach(function (d) {
       var card = el('div', 'drive-card' + (d.online ? '' : ' offline'));
       card.appendChild(el('span', 'title', d.name));
       card.appendChild(el('span', 'pill' + (d.online ? ' on' : ''), d.online ? 'online' : 'offline'));
+      if (d.online && !d.shown_in_all) card.appendChild(el('span', 'pill', 'not in the common views'));
       if (d.online) {
         var wrap = el('span', 'role');
         wrap.appendChild(el('span', 'sub', 'This drive is'));
@@ -3541,7 +3724,7 @@ function loadDrivesPage() {
       if (d.online && d.role === 'unknown' && d.suggested_backup_of) {
         var b = el('div', 'banner warn');
         b.appendChild(el('div', '', d.name + ' looks like a backup of ' + d.suggested_backup_of + ': almost everything on it is on the other drive too. '
-          + 'Until you decide, it is left out of the duplicate list.'));
+          + 'Until you decide, it is left out of the common timeline and the duplicates across drives.'));
         var row = el('div', 'row');
         var yes = el('button', 'btn', 'Yes, it is a backup'); yes.onclick = function () { role(d, 'backup'); };
         var no = el('button', 'btn quiet', 'No, it has its own photos'); no.onclick = function () { role(d, 'separate'); };
@@ -3549,24 +3732,6 @@ function loadDrivesPage() {
         b.appendChild(row);
         drivesBox.appendChild(b);
       }
-    });
-  }).catch(failed);
-  api('/api/all/duplicates?limit=200').then(function (r) {
-    if (r.excluded.length) {
-      r.excluded.forEach(function (x) { dupBox.appendChild(el('p', 'sub', 'Left out: ' + x.name + ' (' + x.reason + ')')); });
-    }
-    dupBox.appendChild(el('p', 'sub', r.total_groups
-      ? plural(r.total_groups, 'photo exists', 'photos exist') + ' on more than one drive' + (r.compared.length ? ' (compared: ' + r.compared.join(', ') + ')' : '') + '.'
-      : 'No photo exists on more than one drive' + (r.compared.length > 1 ? ' (compared: ' + r.compared.join(', ') + ').' : '.')));
-    r.groups.slice(0, 50).forEach(function (g) {
-      var box = el('div', 'xgroup');
-      g.files.forEach(function (f) {
-        var line = el('div', 'path');
-        line.appendChild(el('b', '', f.name + ': '));
-        line.appendChild(document.createTextNode(f.path));
-        box.appendChild(line);
-      });
-      dupBox.appendChild(box);
     });
   }).catch(failed);
   api('/api/all/people').then(function (r) {
@@ -3578,10 +3743,27 @@ function loadDrivesPage() {
       c.appendChild(el('div', 'n', p.name));
       c.appendChild(el('div', 'sub', plural(p.photos, 'photo', 'photos') + (p.group ? ' · ' + p.group : '')));
       p.libraries.forEach(function (l) { c.appendChild(el('span', 'pill', l.name + ' · ' + l.faces)); });
+      var show = el('button', 'btn quiet', 'Photos on all drives');
+      show.onclick = function () { switchLibrary('all', 'person=' + encodeURIComponent(p.name)); };
+      c.appendChild(show);
       grid.appendChild(c);
     });
     peopleBox.appendChild(grid);
   }).catch(failed);
+}
+
+// The common timeline came in: which drives its ids refer to, and what is left out.
+function allTimelineLoaded(data) {
+  drives.allLibs = data.libs;
+  var note = $('all-note');
+  if (!note) {
+    note = el('div', 'note-bar');
+    note.id = 'all-note';
+    $('scroller').insertBefore(note, $('filters'));
+  }
+  var out = data.left_out.map(function (x) { return x.name + ' (' + x.reason.split(';')[0] + ')'; });
+  note.textContent = 'Photos of ' + data.libs.map(function (l) { return l.name; }).join(', ') + (out.length ? ' · not shown: ' + out.join(', ') : '');
+  $('status').textContent = plural(data.count, 'photo', 'photos') + ' on ' + plural(data.libs.length, 'drive', 'drives') + ' · for looking; open a photo\'s drive to change things';
 }
 
 function refreshDrives() {
@@ -3615,6 +3797,13 @@ api('/api/libraries').then(function (libs) {
     }
     state.filter = readHash();
     $('search').value = state.filter.q;
+    if (isAll()) {
+      // The common timeline: no folders, tags or faces of its own; the drives answer by name.
+      $('title').textContent = 'All drives';
+      document.title = 'All drives · shoebox';
+      applyFilter();
+      return;
+    }
     return Promise.all([loadFolders(), loadInfo(), loadOwnTags(), loadPeople()]).then(function () {
       applyFilter();
       setInterval(loadInfo, 20000);

@@ -195,7 +195,7 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
         }
         slots.push(slot);
     }
-    let hub = Arc::new(Hub { slots, shared });
+    let hub = Arc::new(Hub { slots, shared, roles: Mutex::new(None) });
 
     let ip = if opts.lan { IpAddr::V4(Ipv4Addr::UNSPECIFIED) } else { IpAddr::V4(Ipv4Addr::LOCALHOST) };
     let listener = std::net::TcpListener::bind((ip, opts.port))
@@ -345,7 +345,12 @@ impl Slot {
 struct Hub {
     slots: Vec<Slot>,
     shared: Arc<Shared>,
+    /// What the drives hold in common, worked out at most every
+    /// `ROLES_TTL` (it compares all hashes) and again after a role changed.
+    roles: Mutex<Option<(Instant, Vec<multi::DriveRole>)>>,
 }
+
+const ROLES_TTL: Duration = Duration::from_secs(20);
 
 impl App {
     /// Open one library (its index, thumbnails and faces) and start its
@@ -739,6 +744,8 @@ fn hub_router(hub: Arc<Hub>) -> Router {
         .route("/api/libraries", get(libraries))
         // Over all drives (see `multi.rs`).
         .route("/api/all/people", get(all_people))
+        .route("/api/all/timeline", get(all_timeline))
+        .route("/api/all/tags", get(all_tags))
         .route("/api/all/duplicates", get(all_duplicates))
         .route("/api/all/drives", get(all_drives))
         .route("/api/all/role", post(all_set_role))
@@ -1120,16 +1127,43 @@ struct LimitQuery {
     limit: Option<usize>,
 }
 
+/// The drives that are there, with their roles (cached for a few seconds).
+struct Overview {
+    apps: Vec<Arc<App>>,
+    drives: Vec<multi::Drive>,
+    roles: Vec<multi::DriveRole>,
+}
+
+async fn overview(hub: &Arc<Hub>) -> ApiResult<Overview> {
+    let apps = online_apps(hub).await;
+    let hub = hub.clone();
+    tokio::task::spawn_blocking(move || -> ApiResult<Overview> {
+        let drives = drives_of(&apps)?;
+        let mut cache = hub.roles.lock().unwrap();
+        let fresh = cache.as_ref().filter(|(t, r)| t.elapsed() < ROLES_TTL && r.len() == drives.len());
+        let roles = match fresh {
+            // The same drives, by id, as when it was worked out.
+            Some((_, r)) if r.iter().zip(&drives).all(|(r, d)| r.library == d.id && r.role == d.role) => r.clone(),
+            _ => {
+                let r = multi::roles(&drives)?;
+                *cache = Some((Instant::now(), r.clone()));
+                r
+            }
+        };
+        Ok(Overview { apps, drives, roles })
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))?
+}
+
 /// Contents on more than one drive, leaving out backups (and drives that
 /// look like one until the user decides).
 async fn all_duplicates(State(hub): State<Arc<Hub>>, Query(q): Query<LimitQuery>) -> ApiResult<Json<multi::CrossDuplicates>> {
-    let apps = online_apps(&hub).await;
+    let o = overview(&hub).await?;
     let limit = q.limit.unwrap_or(500).min(5000);
-    let result = tokio::task::spawn_blocking(move || -> ApiResult<multi::CrossDuplicates> {
-        Ok(multi::cross_duplicates(&drives_of(&apps)?, limit)?)
-    })
-    .await
-    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+    let result = tokio::task::spawn_blocking(move || multi::cross_duplicates(&o.drives, &o.roles, limit))
+        .await
+        .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
     Ok(Json(result))
 }
 
@@ -1140,25 +1174,183 @@ struct DriveState {
     online: bool,
     role: multi::Role,
     suggested_backup_of: Option<String>,
+    /// Takes part in the common timeline and the duplicates across drives.
+    shown_in_all: bool,
 }
 
 /// Every drive with its role and, where undecided, what its contents suggest.
 async fn all_drives(State(hub): State<Arc<Hub>>) -> ApiResult<Json<Vec<DriveState>>> {
-    let apps = online_apps(&hub).await;
-    let slots: Vec<(String, String)> = hub.slots.iter().map(|s| (s.id.clone(), s.name.clone())).collect();
-    let list = tokio::task::spawn_blocking(move || -> ApiResult<Vec<DriveState>> {
-        let roles = multi::roles(&drives_of(&apps)?)?;
-        Ok(slots
-            .into_iter()
-            .map(|(id, name)| match roles.iter().find(|r| r.library == id) {
-                Some(r) => DriveState { library: id, name, online: true, role: r.role, suggested_backup_of: r.suggested_backup_of.clone() },
-                None => DriveState { library: id, name, online: false, role: multi::Role::Unknown, suggested_backup_of: None },
-            })
-            .collect())
+    let o = overview(&hub).await?;
+    let (eligible, _) = multi::eligibility(&o.drives, &o.roles);
+    let list = hub
+        .slots
+        .iter()
+        .map(|s| match o.roles.iter().position(|r| r.library == s.id) {
+            Some(i) => DriveState {
+                library: s.id.clone(),
+                name: s.name.clone(),
+                online: true,
+                role: o.roles[i].role,
+                suggested_backup_of: o.roles[i].suggested_backup_of.clone(),
+                shown_in_all: eligible.contains(&i),
+            },
+            None => DriveState {
+                library: s.id.clone(),
+                name: s.name.clone(),
+                online: false,
+                role: multi::Role::Unknown,
+                suggested_backup_of: None,
+                shown_in_all: false,
+            },
+        })
+        .collect();
+    Ok(Json(list))
+}
+
+/// File ids are per database; in the common timeline an item's id is
+/// `drive * ID_SPAN + id`, the drive being its position in `libs`.
+const ID_SPAN: i64 = 1 << 40;
+
+#[derive(Serialize)]
+struct AllTimeline {
+    #[serde(flatten)]
+    timeline: Timeline,
+    /// The drives in the list, in the order the ids refer to.
+    libs: Vec<LibraryRef>,
+    /// Drives that are left out (backups) or offline.
+    left_out: Vec<multi::Excluded>,
+}
+
+#[derive(Serialize)]
+struct LibraryRef {
+    id: String,
+    name: String,
+}
+
+/// One timeline over the drives that are there and not backups. Filters name
+/// things instead of numbering them (`tag=Winter`, `person=Anna`, `q=…`):
+/// ids differ from drive to drive, names are what the drives share. A drive
+/// without one of the tags or people has nothing that matches all of them.
+async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<AllTimeline>> {
+    let o = overview(&hub).await?;
+    let (eligible, mut left_out) = multi::eligibility(&o.drives, &o.roles);
+    for s in &hub.slots {
+        if !o.drives.iter().any(|d| d.id == s.id) {
+            left_out.push(multi::Excluded { library: s.id.clone(), name: s.name.clone(), reason: "offline".into() });
+        }
+    }
+    let apps: Vec<Arc<App>> = eligible.iter().map(|&i| o.apps[i].clone()).collect();
+    let tag_names: Vec<String> = pairs.iter().filter(|(k, v)| k == "tag" && !v.is_empty()).map(|(_, v)| v.clone()).collect();
+    let person_names: Vec<String> = pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| v.clone()).collect();
+    let text = param(&pairs, "q").map(str::to_string).filter(|s| !s.trim().is_empty());
+    let libs: Vec<LibraryRef> = apps.iter().map(|a| LibraryRef { id: library_id(&a.name), name: a.name.clone() }).collect();
+
+    let timeline = tokio::task::spawn_blocking(move || -> ApiResult<Timeline> {
+        struct Row {
+            sort: String,
+            path: String,
+            gid: i64,
+            kind: char,
+            day: u32,
+            version: String,
+            live: Option<i64>,
+        }
+        let mut rows: Vec<Row> = Vec::new();
+        for (d, app) in apps.iter().enumerate() {
+            let conn = app.conn.lock().unwrap();
+            let mut tags = Vec::new();
+            for name in &tag_names {
+                match db::find_tag(&conn, name)? {
+                    Some(id) => tags.push(id),
+                    None => break,
+                }
+            }
+            let known_people = if person_names.is_empty() { Vec::new() } else { people::people(&conn, true)? };
+            let people_ids: Vec<i64> = person_names
+                .iter()
+                .filter_map(|n| {
+                    let key = db::tag_fold(n);
+                    known_people.iter().find(|p| db::tag_fold(&p.name) == key).map(|p| p.id)
+                })
+                .collect();
+            if tags.len() != tag_names.len() || people_ids.len() != person_names.len() {
+                continue;
+            }
+            let snapshot = app.snapshot(&conn)?;
+            let query = browse::Query { folder: None, tags, text: text.clone(), people: people_ids };
+            for it in snapshot.query(&conn, &query)? {
+                rows.push(Row {
+                    sort: it.sort.clone(),
+                    path: it.path_lower.clone(),
+                    gid: d as i64 * ID_SPAN + it.id,
+                    kind: match it.kind {
+                        Kind::Jpeg => 'j',
+                        Kind::Png => 'p',
+                        Kind::Heic => 'h',
+                        Kind::Video => 'v',
+                        Kind::Raw => 'r',
+                    },
+                    day: it.day(),
+                    version: it.version.clone(),
+                    live: it.live.map(|v| d as i64 * ID_SPAN + v),
+                });
+            }
+        }
+        rows.sort_by(|a, b| b.sort.cmp(&a.sort).then_with(|| a.path.cmp(&b.path)).then_with(|| a.gid.cmp(&b.gid)));
+        let mut t = Timeline {
+            count: rows.len(),
+            ids: Vec::with_capacity(rows.len()),
+            kinds: String::with_capacity(rows.len()),
+            days: Vec::with_capacity(rows.len()),
+            versions: String::with_capacity(rows.len() * 8),
+            live: Vec::new(),
+            tags: Vec::new(),
+            people: Vec::new(),
+        };
+        for r in rows {
+            t.ids.push(r.gid);
+            t.kinds.push(r.kind);
+            t.days.push(r.day);
+            t.versions.push_str(&format!("{:0<8}", r.version));
+            if let Some(v) = r.live {
+                t.live.push([r.gid, v]);
+            }
+        }
+        Ok(t)
     })
     .await
     .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
-    Ok(Json(list))
+    Ok(Json(AllTimeline { timeline, libs, left_out }))
+}
+
+/// Tags over the drives that take part, by name (spellings fold together),
+/// most used first. For the search suggestions of the common timeline.
+async fn all_tags(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<browse::Tag>>> {
+    let o = overview(&hub).await?;
+    let (eligible, _) = multi::eligibility(&o.drives, &o.roles);
+    let apps: Vec<Arc<App>> = eligible.iter().map(|&i| o.apps[i].clone()).collect();
+    let needle = param(&pairs, "q").map(db::tag_fold).unwrap_or_default();
+    let own = param(&pairs, "own").is_some_and(|v| v != "0");
+    let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(50);
+    let tags = tokio::task::spawn_blocking(move || -> ApiResult<Vec<browse::Tag>> {
+        let mut merged: std::collections::BTreeMap<String, browse::Tag> = std::collections::BTreeMap::new();
+        for app in &apps {
+            for t in browse::all_tags(&app.conn.lock().unwrap())? {
+                let key = db::tag_fold(&t.name);
+                if !key.contains(&needle) || (own && t.kind == browse::TagKind::Folder) {
+                    continue;
+                }
+                merged.entry(key).and_modify(|m| m.count += t.count).or_insert(browse::Tag { id: 0, ..t });
+            }
+        }
+        let mut list: Vec<browse::Tag> = merged.into_values().collect();
+        list.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.name.cmp(&b.name)));
+        list.truncate(limit);
+        Ok(list)
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+    Ok(Json(tags))
 }
 
 #[derive(Deserialize)]
@@ -1180,6 +1372,7 @@ async fn all_set_role(State(hub): State<Arc<Hub>>, Json(req): Json<RoleRequest>)
         return Err(ApiError::Offline { library: hub.slots[index].name.clone(), reason: "plug it in to change this".into() });
     };
     change(&app, move |_, conn| multi::set_role(conn, role)).await?;
+    *hub.roles.lock().unwrap() = None;
     Ok(Json(serde_json::json!({ "library": req.library, "role": req.role })))
 }
 

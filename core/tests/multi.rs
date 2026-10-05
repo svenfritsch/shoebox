@@ -195,3 +195,93 @@ fn offline_drives_are_listed_and_the_cross_drive_routes_need_the_same_safety() {
     assert!(!gone.exists());
     server.stop().unwrap();
 }
+
+const SPAN: i64 = 1 << 40;
+
+fn recognize_all(lib: &Library) {
+    let stats = shoebox::recognize::run(&shoebox::recognize::Options {
+        root: lib.root.clone(),
+        db: None,
+        recognizer: Some(env!("CARGO_BIN_EXE_shoebox-fake-recognizer").into()),
+        limit: None,
+        retry_failed: false,
+        rotated: false,
+        timeouts: Default::default(),
+    })
+    .unwrap();
+    assert_eq!(stats.failed, 0, "{:?}", stats.errors);
+}
+
+#[test]
+fn one_timeline_over_the_drives_by_tag_person_and_text_but_without_backups() {
+    let a = own_library("multi-tl-a", 10);
+    let b = own_library("multi-tl-b", 100);
+    let backup = copy_library("multi-tl-backup");
+    let main = copy_library("multi-tl-main");
+    // Anna is on both drives (a plain picture of one colour is one person to the fake).
+    for (lib, n) in [(&a, 1u8), (&b, 2u8)] {
+        let mut img = image::RgbImage::from_pixel(200, 120, image::Rgb([200, 150, 120]));
+        img.put_pixel(0, 0, image::Rgb([n, n, n]));
+        std::fs::create_dir_all(lib.path("Anna")).unwrap();
+        img.save(lib.path(format!("Anna/anna{n}.png").as_str())).unwrap();
+        lib.scan_opts(true, false, false);
+        recognize_all(lib);
+    }
+    let before = (a.snapshot(), b.snapshot(), backup.snapshot(), main.snapshot());
+    let server = start_many(&[&a, &b, &backup, &main], &[]);
+    let addr = server.addr;
+    let (ia, ib, i_backup) = (lib_id(addr, &a), lib_id(addr, &b), lib_id(addr, &backup));
+    for (id, lib, n) in [(&ia, &a, 1u8), (&ib, &b, 2u8)] {
+        let file = id_of(lib, &format!("Anna/anna{n}.png"));
+        let info = get(addr, &format!("/raw/api/lib/{id}/files/{file}")).json();
+        let face = info["faces"][0]["id"].as_i64().expect("the fake found a face");
+        let r = post(addr, &format!("/raw/api/lib/{id}/faces/assign"), &json!({ "faces": [face], "name": "Anna" }));
+        assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    }
+    // The copy of `main` is a backup; `a` and `b` are separate drives.
+    assert_eq!(post(addr, "/raw/api/all/role", &json!({ "library": i_backup, "role": "backup" })).status, 200);
+
+    // No filter: everything on the drives that take part, newest first.
+    let all = get(addr, "/raw/api/all/timeline").json();
+    let libs: Vec<String> = all["libs"].as_array().unwrap().iter().map(|l| l["name"].as_str().unwrap().to_string()).collect();
+    assert_eq!(libs.len(), 3, "{libs:?}: the backup is left out");
+    assert!(!libs.contains(&backup.root.file_name().unwrap().to_str().unwrap().to_string()));
+    assert_eq!(all["left_out"][0]["library"], i_backup.as_str());
+    let days: Vec<i64> = all["days"].as_array().unwrap().iter().map(|d| d.as_i64().unwrap()).collect();
+    assert!(days.windows(2).all(|w| w[0] >= w[1]), "one list, newest first: {days:?}");
+    let ids = ids(&all);
+    assert_eq!(ids.len(), all["count"].as_u64().unwrap() as usize);
+    let drives_seen: std::collections::BTreeSet<i64> = ids.iter().map(|g| g / SPAN).collect();
+    assert_eq!(drives_seen.len(), 3, "photos of every drive in one list");
+
+    // A person by name: photos of Anna from both drives, in one list.
+    let anna = get(addr, "/raw/api/all/timeline?person=anna").json();
+    let from: Vec<i64> = ids_of(&anna).iter().map(|g| g / SPAN).collect();
+    assert_eq!(from.len(), 2, "{anna}");
+    assert_ne!(from[0], from[1], "one from each drive");
+    // A name only one drive knows: only that drive's photos (all the filters must match).
+    assert_eq!(get(addr, "/raw/api/all/timeline?person=Anna&person=Nobody").json()["count"], 0);
+    // A tag by name (the folder `Familie/Weihnachten` exists on every drive).
+    let xmas = get(addr, "/raw/api/all/timeline?tag=weihnachten").json();
+    assert_eq!(xmas["count"], 3);
+    assert_eq!(get(addr, "/raw/api/all/timeline?tag=weihnachten&person=Anna").json()["count"], 0);
+    // Free text.
+    assert_eq!(get(addr, "/raw/api/all/timeline?q=anna").json()["count"].as_u64().unwrap(), 2);
+
+    // The id says where a file is: thumbnails and originals come from its own drive.
+    let g = ids_of(&anna)[0];
+    let (drive, local) = ((g / SPAN) as usize, g % SPAN);
+    let lib_of = anna["libs"][drive]["id"].as_str().unwrap();
+    assert_eq!(get(addr, &format!("/raw/api/lib/{lib_of}/files/{local}/thumb")).status, 200);
+
+    // Suggestions: tags by name over the drives that take part.
+    let tags = get(addr, "/raw/api/all/tags?q=weih").json();
+    assert_eq!(tags[0]["name"], "Weihnachten");
+    assert_eq!(tags[0]["count"], 3);
+    server.stop().unwrap();
+    assert_eq!((a.snapshot(), b.snapshot(), backup.snapshot(), main.snapshot()), before, "only reading");
+}
+
+fn ids_of(timeline: &serde_json::Value) -> Vec<i64> {
+    ids(timeline)
+}
