@@ -242,14 +242,23 @@ pub fn open_readonly(root: &Path, db: Option<&Path>) -> Result<Option<Connection
     Ok(Some(conn))
 }
 
+/// The stats of `shoebox faces stats`, `None` before the first
+/// `shoebox recognize`. Only reads.
+pub fn stats_for(root: &Path, db: Option<&Path>) -> Result<Option<Stats>> {
+    match open_readonly(root, db)? {
+        Some(conn) => Ok(Some(stats(&conn)?)),
+        None => Ok(None),
+    }
+}
+
 /// `shoebox faces stats`: print the stats. Only reads.
-pub fn print_stats(root: &Path, db: Option<&Path>) -> Result<()> {
-    let Some(conn) = open_readonly(root, db)? else {
-        println!("No faces yet: run `shoebox recognize` first.");
-        return Ok(());
-    };
-    print!("{}", format_stats(&stats(&conn)?));
-    Ok(())
+pub fn print_stats(root: &Path, db: Option<&Path>) -> Result<Option<Stats>> {
+    let stats = stats_for(root, db)?;
+    match &stats {
+        Some(s) => crate::say!("{}", format_stats(s).trim_end_matches('\n')),
+        None => crate::say!("No faces yet: run `shoebox recognize` first."),
+    }
+    Ok(stats)
 }
 
 fn percent(n: u64, of: u64) -> f64 {

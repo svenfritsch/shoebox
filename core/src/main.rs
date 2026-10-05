@@ -2,13 +2,14 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use shoebox::{faces, probe, recognize, scan, serve, verify};
+use shoebox::{backup, faces, launcher, probe, recognize, report, scan, serve, verify};
 
 #[derive(Parser)]
 #[command(name = "shoebox", version, about = "Local photo library on an external drive")]
 struct Cli {
+    /// Without a command, shoebox opens the launcher page in the browser.
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -45,6 +46,10 @@ enum Command {
         /// Remove records of files that are no longer on the drive.
         #[arg(long)]
         forget_missing: bool,
+        /// Print the result as JSON on standard output (the usual text goes to
+        /// standard error).
+        #[arg(long)]
+        json: bool,
     },
     /// Re-read files and compare them with the index (missing, changed,
     /// damaged). Exits with status 2 if anything is wrong.
@@ -60,6 +65,10 @@ enum Command {
         /// Check at most this many files (least recently verified first).
         #[arg(long)]
         limit: Option<usize>,
+        /// Print the result as JSON on standard output (the usual text goes to
+        /// standard error).
+        #[arg(long)]
+        json: bool,
     },
     /// Find the faces in every photo (with the optional recognizer, see
     /// docs/protocol.md). Only reads originals; resumes where it stopped.
@@ -84,6 +93,30 @@ enum Command {
         /// resumes like it).
         #[arg(long)]
         rotated: bool,
+        /// Print the result as JSON on standard output (the usual text goes to
+        /// standard error).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Is the backup complete? Compares a backup drive with the drive it
+    /// copies by content (both scanned), without reading photos. Exits with
+    /// status 2 if files are missing or different.
+    Backup {
+        /// The drive that is copied.
+        primary: PathBuf,
+        /// The backup drive.
+        backup: PathBuf,
+        /// Also re-read the backup's files and check them against its index
+        /// (finds bit rot; reads the whole backup).
+        #[arg(long)]
+        deep: bool,
+        /// List at most this many files of each kind.
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        /// Print the result as JSON on standard output (the usual text goes to
+        /// standard error).
+        #[arg(long)]
+        json: bool,
     },
     /// Faces found by `shoebox recognize`.
     Faces {
@@ -95,6 +128,9 @@ enum Command {
     Serve {
         /// Library root (scanned before with `shoebox scan`).
         root: PathBuf,
+        /// More libraries (other drives) to open alongside. One that is not
+        /// plugged in is shown as offline.
+        more: Vec<PathBuf>,
         /// Database to use instead of `<root>/.shoebox/library.db`.
         #[arg(long)]
         db: Option<PathBuf>,
@@ -123,26 +159,56 @@ enum FacesCommand {
         /// Database to use instead of `<root>/.shoebox/library.db`.
         #[arg(long)]
         db: Option<PathBuf>,
+        /// Print the result as JSON on standard output (the usual text goes to
+        /// standard error).
+        #[arg(long)]
+        json: bool,
     },
+}
+
+fn json_out<T: serde::Serialize>(json: bool, value: &T) {
+    if json {
+        println!("{}", serde_json::to_string_pretty(value).unwrap_or_default());
+    }
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    let result = match cli.command {
+    let Some(command) = cli.command else {
+        return finish(launcher::run().map(|_| true));
+    };
+    // With --json the usual text moves to standard error.
+    if matches!(
+        &command,
+        Command::Scan { json: true, .. }
+            | Command::Verify { json: true, .. }
+            | Command::Recognize { json: true, .. }
+            | Command::Backup { json: true, .. }
+            | Command::Faces { command: FacesCommand::Stats { json: true, .. } }
+    ) {
+        report::text_to_stderr(true);
+    }
+    let result = match command {
         Command::Probe { folder, previews, report, limit } => probe::run(probe::Options {
             root: folder,
             thumbs: previews,
             report,
             limit,
         }),
-        Command::Scan { root, db, quick, no_thumbs, forget_missing } => {
+        Command::Scan { root, db, quick, no_thumbs, forget_missing, json } => {
             scan::run(&scan::Options { root, db, full_hash: !quick, thumbs: !no_thumbs, forget_missing })
-                .map(|_| true)
+                .map(|stats| {
+                    json_out(json, &stats);
+                    true
+                })
         }
-        Command::Verify { root, db, quick, limit } => {
-            verify::run(&verify::Options { root, db, quick, limit }).map(|r| r.is_clean())
+        Command::Verify { root, db, quick, limit, json } => {
+            verify::run(&verify::Options { root, db, quick, limit }).map(|r| {
+                json_out(json, &r);
+                r.is_clean()
+            })
         }
-        Command::Recognize { root, db, recognizer, limit, retry_failed, rotated } => {
+        Command::Recognize { root, db, recognizer, limit, retry_failed, rotated, json } => {
             recognize::run(&recognize::Options {
                 root,
                 db,
@@ -152,13 +218,31 @@ fn main() -> ExitCode {
                 rotated,
                 timeouts: recognize::Timeouts::default(),
             })
-            .map(|_| true)
+            .map(|stats| {
+                json_out(json, &stats);
+                true
+            })
         }
-        Command::Faces { command: FacesCommand::Stats { root, db } } => faces::print_stats(&root, db.as_deref()).map(|_| true),
-        Command::Serve { root, db, port, lan, pin, recognizer } => {
-            serve::run(&serve::Options { root, db, port, lan, pin, reveal: None, recognizer }).map(|_| true)
+        Command::Backup { primary, backup, deep, limit, json } => {
+            backup::run(&backup::Options { primary, backup, deep, limit }).map(|c| {
+                json_out(json, &c);
+                c.ok
+            })
+        }
+        Command::Faces { command: FacesCommand::Stats { root, db, json } } => {
+            faces::print_stats(&root, db.as_deref()).map(|stats| {
+                json_out(json, &stats);
+                true
+            })
+        }
+        Command::Serve { root, more, db, port, lan, pin, recognizer } => {
+            serve::run(&serve::Options { root, more_roots: more, db, port, lan, pin, reveal: None, recognizer }).map(|_| true)
         }
     };
+    finish(result)
+}
+
+fn finish(result: anyhow::Result<bool>) -> ExitCode {
     match result {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::from(2),
