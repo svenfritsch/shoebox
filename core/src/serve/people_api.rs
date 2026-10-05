@@ -227,6 +227,43 @@ pub(super) async fn search(State(app): State<Arc<App>>, Query(pairs): Query<Pair
     .await
 }
 
+/// A pet search term offered while typing.
+#[derive(Serialize)]
+pub(super) struct PetHit {
+    /// `cat`, `dog` or `pet` (any); the value of `pet=` in a search.
+    species: &'static str,
+    /// Photos it shows within the filter of the request.
+    photos: u64,
+}
+
+/// The pet terms ("all cats", "all dogs", "any pet") that fit what is typed
+/// (`q`, in English or German) and would show photos within the filter
+/// (`tag`, `folder`, `person`, `pet`), with how many, most first. Terms the
+/// filter already has are left out.
+pub(super) async fn pets_search(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<PetHit>>> {
+    blocking(&app, move |app| {
+        let conn = app.conn.lock().unwrap();
+        let needle = param(&pairs, "q").unwrap_or("");
+        let filter = browse::Query { text: None, ..filter_of(&pairs)? };
+        let snapshot = app.snapshot(&conn)?;
+        let mut hits = Vec::new();
+        for species in crate::pets::species_matching(needle) {
+            if filter.pets.iter().any(|p| p == species) {
+                continue;
+            }
+            let mut with = filter.clone();
+            with.pets.push(species.to_string());
+            let photos = snapshot.query(&conn, &with)?.len() as u64;
+            if photos > 0 {
+                hits.push(PetHit { species, photos });
+            }
+        }
+        hits.sort_by(|a, b| b.photos.cmp(&a.photos));
+        Ok(Json(hits))
+    })
+    .await
+}
+
 // ---------------------------------------------------------------- groups
 
 pub(super) async fn groups(State(app): State<Arc<App>>) -> ApiResult<Json<Vec<people::Group>>> {
@@ -273,11 +310,19 @@ pub(super) struct ClustersQuery {
     limit: Option<usize>,
     /// Faces shown per cluster.
     samples: Option<usize>,
+    /// `faces` or `pets`: only that kind of cluster (default: both).
+    kind: Option<String>,
 }
 
 pub(super) async fn clusters(State(app): State<Arc<App>>, Query(q): Query<ClustersQuery>) -> ApiResult<Json<people::Clusters>> {
     let (limit, samples) = (q.limit.unwrap_or(50).min(500), q.samples.unwrap_or(8).min(100));
-    blocking(&app, move |app| Ok(Json(people::clusters(&app.conn.lock().unwrap(), q.offset, limit, samples)?))).await
+    let kind = match q.kind.as_deref() {
+        None | Some("") | Some("all") => None,
+        Some("faces") => Some(crate::pets::Space::Faces),
+        Some("pets") => Some(crate::pets::Space::Pets),
+        Some(other) => return Err(ApiError::BadRequest(format!("kind is faces or pets, not {other:?}"))),
+    };
+    blocking(&app, move |app| Ok(Json(people::clusters(&app.conn.lock().unwrap(), q.offset, limit, samples, kind)?))).await
 }
 
 #[derive(Deserialize)]
@@ -421,13 +466,16 @@ pub(super) struct ManualRequest {
     /// x, y, w, h as fractions of the upright picture.
     #[serde(rename = "box")]
     b: [f64; 4],
+    /// A pet (a cat or a dog) rather than a person's face.
+    #[serde(default)]
+    pet: bool,
     #[serde(flatten)]
     who: Who,
 }
 
-/// A face drawn by hand (missed by the detector), with who it is.
+/// A face or pet drawn by hand (missed by the detector), with who it is.
 pub(super) async fn manual(State(app): State<Arc<App>>, Json(req): Json<ManualRequest>) -> ApiResult<Json<serde_json::Value>> {
-    let added = people_change(&app, move |conn| people::add_manual(conn, req.file, req.b, &req.who)).await;
+    let added = people_change(&app, move |conn| people::add_manual(conn, req.file, req.b, &req.who, req.pet)).await;
     app.request_embed();
     added.map(|id| Json(serde_json::json!({ "manual": id })))
 }

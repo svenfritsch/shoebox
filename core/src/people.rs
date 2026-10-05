@@ -25,14 +25,16 @@ use anyhow::{Result, bail};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
+use crate::pets::{Space, Thresholds};
 use crate::db;
 use crate::faces;
 use crate::library;
-use crate::recognize::{self, FACES};
+use crate::recognize::{self, PETS, FACES};
 
 /// A decision belongs to the detected face whose box overlaps its box at
 /// least this much (intersection over union), the best one if several do.
 pub const MATCH_IOU: f64 = 0.5;
+/// (For pets the numbers differ: `pets::Space::thresholds`.)
 /// A face is suggested for a person when it is at least this similar
 /// (cosine) to one of the person's confirmed faces. Calibrated on the real
 /// drive (docs/phase5.md): the highest wrong match seen was 0.54.
@@ -98,6 +100,9 @@ pub struct DecisionRow {
     pub decision: Decision,
     pub manual: bool,
     pub at: i64,
+    /// The kind of face it is about: `None` for a person's, `cat` or `dog`
+    /// for a pet. It only ever belongs to a detected face of that kind.
+    pub species: Option<String>,
 }
 
 /// A detected face (a row of `recog.faces`).
@@ -111,6 +116,19 @@ pub struct Detected {
     pub px: f64,
     pub score: f64,
     pub model: String,
+    /// `cat` or `dog` for a pet, `None` for a person's face.
+    pub species: Option<String>,
+}
+
+impl Detected {
+    pub fn space(&self) -> Space {
+        Space::of(self.species.as_deref())
+    }
+
+    /// The similarities that matter for this face (its space and model).
+    pub fn thresholds(&self) -> Thresholds {
+        self.space().thresholds(&self.model)
+    }
 }
 
 /// What the decisions say about one detected face.
@@ -147,11 +165,13 @@ impl Matched {
     pub fn load(conn: &Connection, key: Option<&str>) -> Result<Matched> {
         let version: i32 = conn.pragma_query_value(Some("recog"), "user_version", |r| r.get(0))?;
         let roll = if version >= 2 { "f.roll" } else { "0" };
+        // Before v5 there are no pets.
+        let species = if version >= 5 { "f.species" } else { "NULL" };
         let mut faces = Vec::new();
         {
             let mut stmt = conn.prepare(&format!(
-                "SELECT f.id, f.key, f.x, f.y, f.w, f.h, {roll}, {px}, f.score, f.model FROM recog.faces f
-                 LEFT JOIN recog.looked l ON l.key = f.key AND l.task = '{FACES}'
+                "SELECT f.id, f.key, f.x, f.y, f.w, f.h, {roll}, {px}, f.score, f.model, {species} FROM recog.faces f
+                 LEFT JOIN recog.looked l ON l.key = f.key AND l.task = CASE WHEN {species} IS NULL THEN '{FACES}' ELSE '{PETS}' END
                  WHERE ?1 IS NULL OR f.key = ?1 ORDER BY f.id",
                 px = faces::size_px(roll)
             ))?;
@@ -165,6 +185,7 @@ impl Matched {
                     px: r.get::<_, Option<f64>>(7)?.unwrap_or(0.0),
                     score: r.get(8)?,
                     model: r.get(9)?,
+                    species: r.get(10)?,
                 });
             }
         }
@@ -183,6 +204,7 @@ impl Matched {
                 let candidates = by_key.get(d.key.as_str())?;
                 candidates
                     .iter()
+                    .filter(|&&i| crate::pets::kind_matches(d.species.as_deref(), faces[i].species.as_deref()))
                     .map(|&i| (i, recognize::iou(faces[i].b, d.b)))
                     .filter(|&(_, iou)| iou >= MATCH_IOU)
                     .max_by(|a, b| a.1.total_cmp(&b.1))
@@ -221,10 +243,12 @@ impl Matched {
 }
 
 fn load_decisions(conn: &Connection, key: Option<&str>) -> Result<Vec<DecisionRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, key, x, y, w, h, person_id, decision, manual, at FROM face_decisions
-         WHERE ?1 IS NULL OR key = ?1 ORDER BY id",
-    )?;
+    // A library.db before v7 (read-only use) has no species: all persons'.
+    let species = if db::has_column(conn, "main", "face_decisions", "species")? { "species" } else { "NULL" };
+    let mut stmt = conn.prepare(&format!(
+        "SELECT id, key, x, y, w, h, person_id, decision, manual, at, {species} FROM face_decisions
+         WHERE ?1 IS NULL OR key = ?1 ORDER BY id"
+    ))?;
     let mut rows = stmt.query([key])?;
     let mut out = Vec::new();
     while let Some(r) = rows.next()? {
@@ -238,6 +262,7 @@ fn load_decisions(conn: &Connection, key: Option<&str>) -> Result<Vec<DecisionRo
             decision,
             manual: r.get(8)?,
             at: r.get(9)?,
+            species: r.get(10)?,
         });
     }
     Ok(out)
@@ -286,8 +311,13 @@ pub struct FaceItem {
     /// Width across the face in px of the copy the worker saw.
     pub px: f64,
     pub score: Option<f64>,
-    /// Too small to cluster or suggest (`faces::MIN_CLUSTER_PX`).
+    /// Too small to cluster or suggest (`faces::MIN_CLUSTER_PX`, for
+    /// pets `pets::MIN_CLUSTER_PX`).
     pub small: bool,
+    /// `cat` or `dog` for a pet (its box holds the whole pet);
+    /// absent for a person's face.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub species: Option<String>,
     /// `confirmed`, `ignored` (decided), `suggested` or `maybe` (from the
     /// cache), or `null`.
     pub state: Option<&'static str>,
@@ -376,8 +406,10 @@ impl View {
         }
         let c = self.cache.get(&self.m.faces[i].id)?;
         let (person, sim) = (c.person?, c.similarity?);
-        (sim >= MAYBE_SIM && self.names.contains_key(&person) && !self.m.states[i].rejected.contains(&person))
-            .then_some((person, sim))
+        (sim >= self.m.faces[i].thresholds().maybe
+            && self.names.contains_key(&person)
+            && !self.m.states[i].rejected.contains(&person))
+        .then_some((person, sim))
     }
 
     /// The cluster of face `i` if it has no decision.
@@ -408,7 +440,9 @@ impl View {
         let (state, person, similarity) = match decided {
             Some(d) => (Some(d.decision.as_str()), self.person(d.person), None),
             None => match self.suggestion(i) {
-                Some((p, sim)) => (Some(if sim >= SUGGEST_SIM { "suggested" } else { "maybe" }), self.person(Some(p)), Some(sim)),
+                Some((p, sim)) => {
+                    (Some(if sim >= f.thresholds().suggest { "suggested" } else { "maybe" }), self.person(Some(p)), Some(sim))
+                }
                 None => (None, None, None),
             },
         };
@@ -428,7 +462,8 @@ impl View {
             roll: f.roll,
             px: f.px,
             score: Some(f.score),
-            small: faces::too_small(f.px),
+            small: f.space().too_small(f.px),
+            species: f.species.clone(),
             state,
             person,
             similarity,
@@ -457,6 +492,7 @@ impl View {
             px,
             score: None,
             small: false,
+            species: row.species.clone(),
             state: Some(row.decision.as_str()),
             person: self.person(row.person),
             similarity: None,
@@ -648,6 +684,10 @@ pub struct Person {
     /// Faces suggested for this person, and offered as "maybe".
     pub suggested: u64,
     pub maybe: u64,
+    /// `cat`, `dog` or `pet` when most of the person's confirmed faces are
+    /// pets (a pet); absent for everyone else.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub species: Option<String>,
     /// The face shown for the person (`/api/faces/{id}/crop`): the chosen
     /// cover, else the largest confirmed face.
     pub cover: Option<i64>,
@@ -698,12 +738,27 @@ pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
         maybe: u64,
         largest: Option<(f64, i64)>,
         drawn: Option<(f64, i64)>,
+        /// Confirmed faces: people's, cats', dogs', and pets drawn by hand
+        /// without saying which.
+        people: u64,
+        cats: u64,
+        dogs: u64,
+        pets: u64,
     }
     let mut counts: HashMap<i64, Counts> = HashMap::new();
-    for d in &v.m.decisions {
+    for (di, d) in v.m.decisions.iter().enumerate() {
         if let (Decision::Confirmed, Some(p)) = (d.decision, d.person) {
             let c = counts.entry(p).or_default();
             c.faces += 1;
+            // A drawn box over no detected face is the only sign of its kind.
+            if d.manual && v.m.face_of[di].is_none() {
+                match d.species.as_deref() {
+                    None => c.people += 1,
+                    Some("cat") => c.cats += 1,
+                    Some("dog") => c.dogs += 1,
+                    Some(_) => c.pets += 1,
+                }
+            }
             if v.is_present(&d.key) {
                 c.photos.insert(d.key.clone());
                 if d.manual && c.drawn.is_none_or(|(w, _)| d.b[2] > w) {
@@ -722,10 +777,15 @@ pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
             if c.largest.is_none_or(|(px, _)| f.px > px) {
                 c.largest = Some((f.px, f.id));
             }
+            match f.species.as_deref() {
+                Some("cat") => c.cats += 1,
+                Some("dog") => c.dogs += 1,
+                _ => c.people += 1,
+            }
         }
         if let Some((p, sim)) = v.suggestion(i) {
             let c = counts.entry(p).or_default();
-            if sim >= SUGGEST_SIM {
+            if sim >= f.thresholds().suggest {
                 c.suggested += 1;
             } else {
                 c.maybe += 1;
@@ -768,6 +828,16 @@ pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
                 photos: c.photos.len() as u64,
                 suggested: c.suggested,
                 maybe: c.maybe,
+                species: (c.cats + c.dogs + c.pets > c.people).then(|| {
+                    if c.cats >= c.dogs && c.cats >= c.pets {
+                        "cat"
+                    } else if c.dogs >= c.pets {
+                        "dog"
+                    } else {
+                        crate::pets::PET
+                    }
+                    .to_string()
+                }),
                 cover: if chosen.is_none() && chosen_manual.is_some() { None } else { cover },
                 cover_manual: if chosen.is_none() && chosen_manual.is_some() {
                     chosen_manual
@@ -1084,9 +1154,9 @@ pub fn decide(conn: &Connection, faces: &[i64], action: &Action) -> Result<Decid
     let now = db::now();
     let insert = |tx: &Connection, f: &Detected, person: Option<i64>, d: Decision| -> Result<()> {
         tx.execute(
-            "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8)",
-            params![f.key, f.b[0], f.b[1], f.b[2], f.b[3], person, d.as_str(), now],
+            "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at, species)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9)",
+            params![f.key, f.b[0], f.b[1], f.b[2], f.b[3], person, d.as_str(), now, f.species],
         )?;
         Ok(())
     };
@@ -1192,9 +1262,9 @@ pub fn decide(conn: &Connection, faces: &[i64], action: &Action) -> Result<Decid
     Ok(Decided { faces: changed, person, cluster: None })
 }
 
-/// Add a face drawn by hand on a photo: always confirmed, with a person.
-/// Returns its id (`manual` in the API).
-pub fn add_manual(conn: &Connection, file: i64, b: [f64; 4], who: &Who) -> Result<i64> {
+/// Add a face drawn by hand on a photo (a `pet` if the user says it is one):
+/// always confirmed, with a person. Returns its id (`manual` in the API).
+pub fn add_manual(conn: &Connection, file: i64, b: [f64; 4], who: &Who, pet: bool) -> Result<i64> {
     let ok = b.iter().all(|v| v.is_finite()) && b[0] >= 0.0 && b[1] >= 0.0 && b[2] > 0.0 && b[3] > 0.0;
     if !ok || b[0] + b[2] > 1.0 + 1e-9 || b[1] + b[3] > 1.0 + 1e-9 {
         bail!("the box must lie inside the picture (fractions of its width and height)");
@@ -1206,9 +1276,9 @@ pub fn add_manual(conn: &Connection, file: i64, b: [f64; 4], who: &Who) -> Resul
         .ok_or_else(|| anyhow::anyhow!("there is no file {file}"))?;
     let person = resolve(&tx, who)?;
     tx.execute(
-        "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'confirmed', 1, ?7)",
-        params![key, b[0], b[1], b[2], b[3], person, db::now()],
+        "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at, species)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'confirmed', 1, ?7, ?8)",
+        params![key, b[0], b[1], b[2], b[3], person, db::now(), pet.then_some(crate::pets::PET)],
     )?;
     let id = tx.last_insert_rowid();
     tx.commit()?;
@@ -1267,8 +1337,8 @@ pub fn person_faces(conn: &Connection, id: i64, which: Which, offset: usize, lim
         }
         let take = match which {
             Which::Confirmed => v.m.decided(i).is_some_and(|d| d.decision == Decision::Confirmed && d.person == Some(id)),
-            Which::Suggested => v.suggestion(i).is_some_and(|(p, s)| p == id && s >= SUGGEST_SIM),
-            Which::Maybe => v.suggestion(i).is_some_and(|(p, s)| p == id && s < SUGGEST_SIM),
+            Which::Suggested => v.suggestion(i).is_some_and(|(p, s)| p == id && s >= v.m.faces[i].thresholds().suggest),
+            Which::Maybe => v.suggestion(i).is_some_and(|(p, s)| p == id && s < v.m.faces[i].thresholds().suggest),
             Which::Rejected => v.m.states[i].rejected.contains(&id),
         };
         if take {
@@ -1329,9 +1399,12 @@ pub struct Clusters {
 
 /// Faces without a decision, by cluster: (cluster, face indexes largest
 /// first), largest cluster first.
-fn grouped(v: &View) -> Vec<(i64, Vec<usize>)> {
+fn grouped(v: &View, kind: Option<Space>) -> Vec<(i64, Vec<usize>)> {
     let mut by: BTreeMap<i64, Vec<usize>> = BTreeMap::new();
     for i in 0..v.m.faces.len() {
+        if kind.is_some_and(|k| k != v.m.faces[i].space()) {
+            continue;
+        }
         if let Some(c) = v.cluster(i)
             && v.is_present(&v.m.faces[i].key)
         {
@@ -1363,10 +1436,11 @@ fn generation_of(v: &View, faces: &[usize]) -> i64 {
 }
 
 /// The clusters of faces without a decision, largest first, with up to
-/// `samples` faces each.
-pub fn clusters(conn: &Connection, offset: usize, limit: usize, samples: usize) -> Result<Clusters> {
+/// `samples` faces each; only those of one space (people's faces or
+/// pets) if `kind` is given. Faces and pets never share a cluster.
+pub fn clusters(conn: &Connection, offset: usize, limit: usize, samples: usize, kind: Option<Space>) -> Result<Clusters> {
     let v = View::load(conn)?;
-    let all = grouped(&v);
+    let all = grouped(&v, kind);
     let unnamed = all.iter().map(|c| c.1.len() as u64).sum();
     let total = all.len() as u64;
     let clusters = all
@@ -1376,7 +1450,7 @@ pub fn clusters(conn: &Connection, offset: usize, limit: usize, samples: usize) 
         .map(|(id, faces)| {
             let mut votes: HashMap<i64, u64> = HashMap::new();
             for &i in &faces {
-                if let Some((p, _)) = v.suggestion(i).filter(|s| s.1 >= SUGGEST_SIM) {
+                if let Some((p, _)) = v.suggestion(i).filter(|s| s.1 >= v.m.faces[i].thresholds().suggest) {
                     *votes.entry(p).or_default() += 1;
                 }
             }
@@ -1401,7 +1475,7 @@ pub fn clusters(conn: &Connection, offset: usize, limit: usize, samples: usize) 
 /// any more), else of cluster number `id` (`None` if there is none).
 pub fn cluster_faces(conn: &Connection, id: i64, generation: Option<i64>) -> Result<Option<Vec<FaceItem>>> {
     let v = View::load(conn)?;
-    let all = grouped(&v);
+    let all = grouped(&v, None);
     let found = match generation {
         Some(g) => {
             let mut matching = all.iter().filter(|c| generation_of(&v, &c.1) == g);
@@ -1418,7 +1492,7 @@ pub fn cluster_faces(conn: &Connection, id: i64, generation: Option<i64>) -> Res
 /// action left undecided), as it is shown now.
 pub fn cluster_of(conn: &Connection, faces: &[i64]) -> Result<Option<ClusterRef>> {
     let v = View::load(conn)?;
-    Ok(grouped(&v)
+    Ok(grouped(&v, None)
         .into_iter()
         .find(|(_, members)| members.iter().any(|&i| faces.contains(&v.m.faces[i].id)))
         .map(|(id, members)| ClusterRef { id, generation: generation_of(&v, &members), size: members.len() as u64 }))
@@ -1451,6 +1525,43 @@ pub fn keys_of_people(conn: &Connection, ids: &[i64]) -> Result<HashSet<String>>
     let mut keys = HashSet::new();
     for id in ids {
         keys.extend(stmt.query_map([id], |r| r.get(0))?.collect::<rusqlite::Result<Vec<String>>>()?);
+    }
+    Ok(keys)
+}
+
+/// Contents with a pet of this species in them (`pet`: of any species), named
+/// or not: detected cats and dogs (unless marked "not a face"), and pets drawn
+/// by hand. For searching; only reads, and `recog` need not be attached.
+pub fn keys_of_pets(conn: &Connection, species: &str) -> Result<HashSet<String>> {
+    let mut keys = HashSet::new();
+    let any = species == crate::pets::PET;
+    if table_exists(conn, "recog", "faces")? && db::has_column(conn, "recog", "faces", "species")? {
+        // Decisions that say a detection is no pet: matched to boxes below.
+        let mut not_pet: HashMap<String, Vec<[f64; 4]>> = HashMap::new();
+        if table_exists(conn, "main", "face_decisions")? && db::has_column(conn, "main", "face_decisions", "species")? {
+            let mut stmt = conn.prepare("SELECT key, x, y, w, h FROM face_decisions WHERE decision = 'not_face' AND species IS NOT NULL")?;
+            let mut rows = stmt.query([])?;
+            while let Some(r) = rows.next()? {
+                not_pet.entry(r.get(0)?).or_default().push([r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?]);
+            }
+        }
+        let mut stmt = conn.prepare("SELECT key, x, y, w, h FROM recog.faces WHERE species IS NOT NULL AND (?1 OR species = ?2)")?;
+        let mut rows = stmt.query(params![any, species])?;
+        while let Some(r) = rows.next()? {
+            let key: String = r.get(0)?;
+            let b: [f64; 4] = [r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?];
+            let marked = not_pet.get(&key).is_some_and(|boxes| boxes.iter().any(|d| recognize::iou(*d, b) >= MATCH_IOU));
+            if !marked {
+                keys.insert(key);
+            }
+        }
+    }
+    if table_exists(conn, "main", "face_decisions")? && db::has_column(conn, "main", "face_decisions", "species")? {
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT key FROM face_decisions
+             WHERE decision = 'confirmed' AND species IS NOT NULL AND (?1 OR species = ?2)",
+        )?;
+        keys.extend(stmt.query_map(params![any, species], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?);
     }
     Ok(keys)
 }
@@ -1528,6 +1639,9 @@ pub struct UserDecision {
     #[serde(rename = "box")]
     pub b: [f64; 4],
     pub at: i64,
+    /// `cat` or `dog` for a decision about a pet; absent for people's faces.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub species: Option<String>,
     pub files: Vec<UserFile>,
 }
 
@@ -1587,6 +1701,7 @@ pub fn user_data(conn: &Connection) -> Result<UserPeople> {
             key: d.key,
             b: d.b,
             at: d.at,
+            species: d.species,
         })
         .collect();
     Ok(UserPeople { groups, people, face_decisions })
@@ -1597,11 +1712,32 @@ mod tests {
     use super::*;
 
     fn face(id: i64, key: &str, b: [f64; 4]) -> Detected {
-        Detected { id, key: key.into(), b, roll: 0, px: 100.0, score: 0.9, model: "m".into() }
+        Detected { id, key: key.into(), b, roll: 0, px: 100.0, score: 0.9, model: "m".into(), species: None }
     }
 
     fn decision(id: i64, key: &str, b: [f64; 4], d: Decision, person: Option<i64>, at: i64) -> DecisionRow {
-        DecisionRow { id, key: key.into(), b, person, decision: d, manual: false, at }
+        DecisionRow { id, key: key.into(), b, person, decision: d, manual: false, at, species: None }
+    }
+
+    /// A person's face and a pet with the very same box in one photo:
+    /// each decision belongs to the face of its own kind.
+    #[test]
+    fn decisions_only_match_faces_of_their_own_kind() {
+        let mut cat = face(2, "a", [0.1, 0.1, 0.2, 0.2]);
+        cat.species = Some("cat".into());
+        let faces = vec![face(1, "a", [0.1, 0.1, 0.2, 0.2]), cat];
+        let mut about_cat = decision(10, "a", [0.1, 0.1, 0.2, 0.2], Decision::Confirmed, Some(7), 5);
+        about_cat.species = Some("cat".into());
+        let about_person = decision(11, "a", [0.1, 0.1, 0.2, 0.2], Decision::Confirmed, Some(8), 5);
+        let m = Matched::new(faces, vec![about_cat, about_person]);
+        assert_eq!(m.face_of, [Some(1), Some(0)]);
+        assert_eq!(m.decided(0).unwrap().person, Some(8));
+        assert_eq!(m.decided(1).unwrap().person, Some(7));
+        // A pet decision never lands on a person's face when no pet is left.
+        let mut lone = decision(12, "b", [0.1, 0.1, 0.2, 0.2], Decision::Confirmed, Some(7), 5);
+        lone.species = Some("dog".into());
+        let m = Matched::new(vec![face(3, "b", [0.1, 0.1, 0.2, 0.2])], vec![lone]);
+        assert_eq!(m.face_of, [None]);
     }
 
     #[test]

@@ -85,6 +85,9 @@ pub struct Query {
     /// Only photos with a confirmed face of every one of these people
     /// (AND, 5c-3).
     pub people: Vec<i64>,
+    /// Only photos with a pet of every one of these species (AND): `cat`,
+    /// `dog` or `pet` (any); named or not (phase 7).
+    pub pets: Vec<String>,
 }
 
 impl Snapshot {
@@ -297,6 +300,26 @@ impl Snapshot {
             }
             Ok(ids)
         };
+        // The photos with a pet of a species (looked up once per species).
+        let mut pet_files: HashMap<String, HashSet<i64>> = HashMap::new();
+        let mut files_of_pets = |species: &str| -> Result<HashSet<i64>> {
+            if let Some(ids) = pet_files.get(species) {
+                return Ok(ids.clone());
+            }
+            let keys = crate::people::keys_of_pets(conn, species)?;
+            let mut ids = HashSet::new();
+            if !keys.is_empty() {
+                let mut stmt = conn.prepare("SELECT id, quick_hash FROM files WHERE missing_since IS NULL")?;
+                let mut rows = stmt.query([])?;
+                while let Some(r) = rows.next()? {
+                    if keys.contains(&r.get::<_, String>(1)?) {
+                        ids.insert(r.get::<_, i64>(0)?);
+                    }
+                }
+            }
+            pet_files.insert(species.to_string(), ids.clone());
+            Ok(ids)
+        };
         for word in text.split_whitespace() {
             let word = library::nfc(word).to_lowercase();
             let tags: Vec<i64> =
@@ -305,7 +328,19 @@ impl Snapshot {
             let people: Vec<i64> =
                 people_names.iter().filter(|(_, name)| name.contains(&word)).map(|(id, _)| *id).collect();
             ids.extend(files_of_people(&people)?);
+            // "cat", "katze", "hund", "pets": the photos with such a pet.
+            for species in crate::pets::species_for_word(&word) {
+                ids.extend(files_of_pets(species)?);
+            }
             words.push((word, ids));
+        }
+        let mut pet: Option<HashSet<i64>> = None;
+        for species in &q.pets {
+            let ids = files_of_pets(species)?;
+            pet = Some(match pet {
+                Some(have) => have.intersection(&ids).copied().collect(),
+                None => ids,
+            });
         }
         let mut person: Option<HashSet<i64>> = None;
         for &p in &q.people {
@@ -319,6 +354,7 @@ impl Snapshot {
             .items
             .iter()
             .filter(|it| person.as_ref().is_none_or(|p| p.contains(&it.id)))
+            .filter(|it| pet.as_ref().is_none_or(|p| p.contains(&it.id)))
             .filter(|it| folders.as_ref().is_none_or(|f| f.contains(&it.folder_id)))
             .filter(|it| tagged.as_ref().is_none_or(|t| t.contains(&it.id)))
             .filter(|it| words.iter().all(|(w, ids)| ids.contains(&it.id) || it.path_lower.contains(w.as_str())))

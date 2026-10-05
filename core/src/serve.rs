@@ -549,14 +549,17 @@ impl App {
             return Ok(());
         }
         let model = clusters::current_model(&conn)?;
-        let pending = recognize::drawn_pending(&conn, model.as_deref())?;
-        if pending == 0 {
+        let pets_model = clusters::current_model_of(&conn, crate::pets::Space::Pets)?;
+        let pending = recognize::drawn_pending(&conn, model.as_deref(), pets_model.as_deref())?;
+        if pending.total() == 0 {
             return Ok(());
         }
         let Some(cmd) = recognize::find_worker(&self.root, self.recognizer.as_deref()) else {
-            println!("{pending} faces drawn by hand wait for the recognizer (not installed).");
+            println!("{} faces and pets drawn by hand wait for the recognizer (not installed).", pending.total());
             return Ok(());
         };
+        // The pet models are only loaded when a pet is waiting.
+        let cmd = if pending.pets > 0 { cmd.with_pets() } else { cmd };
         self.embedding.store(true, Ordering::SeqCst);
         let result = (|| -> Result<recognize::DrawnStats> {
             let mut worker = recognize::Worker::start(cmd, recognize::Timeouts::default())?;
@@ -568,7 +571,7 @@ impl App {
         self.embedding.store(false, Ordering::SeqCst);
         match result {
             Ok(s) => {
-                println!("Faces drawn by hand: {} embedded ({} without landmarks), {} failed.", s.embedded, s.plain, s.failed);
+                println!("Faces and pets drawn by hand: {} embedded ({} faces without landmarks), {} failed.", s.embedded, s.plain, s.failed);
                 if s.embedded > 0 {
                     self.request_clusters();
                 }
@@ -847,6 +850,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/people/{id}/group", post(people_api::set_group))
         .route("/api/people/{id}/cover", post(people_api::set_cover))
         .route("/api/people/search", get(people_api::search))
+        .route("/api/pets/search", get(people_api::pets_search))
         .route("/api/groups", get(people_api::groups).post(people_api::create_group))
         .route("/api/groups/reorder", post(people_api::reorder_groups))
         .route("/api/groups/{id}/rename", post(people_api::rename_group))
@@ -1255,6 +1259,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
     let tag_names: Vec<String> = pairs.iter().filter(|(k, v)| k == "tag" && !v.is_empty()).map(|(_, v)| v.clone()).collect();
     let person_names: Vec<String> = pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| v.clone()).collect();
     let text = param(&pairs, "q").map(str::to_string).filter(|s| !s.trim().is_empty());
+    let pet_terms = pets_of(&pairs)?;
     let libs: Vec<LibraryRef> = apps.iter().map(|a| LibraryRef { id: library_id(&a.name), name: a.name.clone() }).collect();
 
     let timeline = tokio::task::spawn_blocking(move || -> ApiResult<Timeline> {
@@ -1289,7 +1294,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
                 continue;
             }
             let snapshot = app.snapshot(&conn)?;
-            let query = browse::Query { folder: None, tags, text: text.clone(), people: people_ids };
+            let query = browse::Query { folder: None, tags, text: text.clone(), people: people_ids, pets: pet_terms.clone() };
             for it in snapshot.query(&conn, &query)? {
                 rows.push(Row {
                     sort: it.sort.clone(),
@@ -1609,7 +1614,23 @@ fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
         tags: pairs.iter().filter(|(k, v)| k == "tag" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
         text: param(pairs, "q").map(str::to_string).filter(|s| !s.trim().is_empty()),
         people: pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
+        pets: pets_of(pairs)?,
     })
+}
+
+/// The pet terms of a request (`pet=cat`, `pet=dog`, `pet=pet` for any pet,
+/// repeated: all must match), each once.
+fn pets_of(pairs: &Pairs) -> ApiResult<Vec<String>> {
+    let mut out: Vec<String> = Vec::new();
+    for (_, v) in pairs.iter().filter(|(k, v)| k == "pet" && !v.is_empty()) {
+        if !crate::pets::is_search_species(v) {
+            return Err(ApiError::BadRequest(format!("pet is cat, dog or pet, not {v:?}")));
+        }
+        if !out.contains(v) {
+            out.push(v.clone());
+        }
+    }
+    Ok(out)
 }
 
 /// Tags whose name contains `q`, most used first. With a filter (`tag`,
@@ -1623,7 +1644,7 @@ async fn tags(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiRes
         let own = param(&pairs, "own").is_some_and(|o| o != "0");
         let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(50);
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
-        let all = if filter.folder.is_none() && filter.tags.is_empty() && filter.people.is_empty() {
+        let all = if filter.folder.is_none() && filter.tags.is_empty() && filter.people.is_empty() && filter.pets.is_empty() {
             browse::all_tags(&conn)?
         } else {
             let snapshot = app.snapshot(&conn)?;
