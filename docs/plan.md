@@ -187,6 +187,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 5e | Lean `thumbs.db`: face crops only for faces without a decision and for each person's picture; right-click "Use as … picture" on a person's photos | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | **In progress**: library id, launcher (cancel, saved folders, start scripts) and the multi-drive core (hub, offline, backup roles, common timeline, cross-drive duplicates and people) built; backup verification (`shoebox backup`, launcher button, All drives page) built; real-hardware checks and Linux/Windows packaging open |
 | 7 | Pets: cats and dogs found (`shoebox recognize --pets`, launcher button "Recognize pets"), named, grouped and searched like people, also by kind ("all cats", "Katze", "Hund"); pets the detector missed can be drawn by hand; Settings → Calibration with the Face check and the new Pet check | **Built except the real-hardware run and DINOv2** (see [phase7.md](phase7.md)) |
+| 9 | Text in photos (OCR): documents, screenshots, street signs, shop fronts found by the words in them. A new task of the recognizer worker, results in `recognition.db` with an FTS5 index, a search term in the UI | **Planned** (design below, no code yet) |
 
 ### Phase 0 details
 
@@ -389,6 +390,111 @@ Open:
 - [ ] Backup verification, launchers, packaging (the former phase 7, see
       "Backups" above).
 
+### Phase 9 details (text in photos)
+
+Planned, nothing built. Goal: type "Rechnung", "Hauptstraße" or a licence
+plate and get the photos that contain those words: a photographed document,
+a screenshot, a street sign, a menu, a shop front. Only the words that are
+really in the picture count; what the picture shows (a "dog", a "beach") is a
+different feature (CLIP, a later phase, see Recognition above) and stays out
+of this one.
+
+#### Approach in one paragraph
+
+OCR is one more task of the existing recognizer worker. The core sends the
+same upright ≤ 1600 px copy it already sends for faces and pets (decoded
+under the guard, the worker never sees an original); the worker returns text
+lines with their boxes and confidences. The core stores them in
+`recognition.db` (a cache, like faces) with an FTS5 index, and a search term
+queries that index. No tags are written, no new service, no new dependency in
+the core. This is the same shape as phases 4 and 7, so almost everything
+(supervision, resumable passes, launcher button, calibration page, fake
+worker, guard tests) is reused.
+
+#### Decisions
+
+| Topic | Decision | Why / alternatives rejected |
+|---|---|---|
+| Where | A task `text` of `recognizer.py` (protocol 3, additive), loaded only with `--text`, like `--pets` | Reuses the supervised worker and the "optional, app works without it" rule. A second binary or an OCR crate in the core would add a dependency and break the split "ML in the optional worker, state in the core" |
+| Engine | **PP-OCR (PaddleOCR) detection + recognition ONNX models**, run by onnxruntime if installed, else OpenCV's own runner (`cv2.dnn`, which also has `TextDetectionModel_DB` / `TextRecognitionModel`), exactly the runtime rule of the pets | Runs on the old Intel Mac (macOS 12, OpenCV 4.10) and on Linux with the same code, good on scene text *and* documents, small (about 15–25 MB of models), no extra Python packages. Rejected: **Tesseract** (extra native lib and language data per OS, weak on street signs and photos), **Apple Vision** (macOS only, no Linux/Windows, two code paths), **EasyOCR / PaddlePaddle** (PyTorch or Paddle runtime, hundreds of MB, will not run on the old Mac), **a cloud API** (violates "local only") |
+| Languages | Latin script with German and English first: a recognizer model whose dictionary has ä ö ü ß and accents (PaddleOCR's `latin` model), not the English-only OpenCV-zoo CRNN (36 characters, no umlauts). Model id stored with each result; adding a script later means a second model id and a redo, never a mix | **To verify in step 1:** the exact model file, its licence (Apache-2.0 expected), the ONNX export, and that OpenCV 4.10 loads it. If it does not, fall back to onnxruntime only for this task and say so in `install.sh` |
+| Which photos | Images only (not RAW, no video in v1; a video's poster frame could be added later). Skip a photo cheaply: the detector runs first at 960 px, and the recogniser only runs on the boxes it found. A photo with no box stores "looked, no text" and is never redone | Most family photos have no text; detection alone is far cheaper than recognition, so the first pass over 100k photos is dominated by detection |
+| Orientation | v1: upright text only, plus the sideways/upside-down case through the existing `--rotated` idea as an option later (`text --rotated`, reusing the same rotation plumbing as faces). EXIF orientation is already applied by the core | Keeps the first pass fast; a document photographed 90° off is a known gap, listed under Open |
+| Storage | `recognition.db` v6: `text_looked(hash, model, ts, n_lines, error)` mirrors `looked`; `text_lines(id, hash, x, y, w, h, score, text, text_norm)`; external-content FTS5 table `text_fts(text_norm)` over `text_lines`. Keyed by quick hash like faces, so it survives moves and renames. It is a cache: losing it costs a re-run, never user data | No user decisions exist for text (nothing to correct, unlike faces), so nothing goes into `library.db` and no schema bump there |
+| Normalisation | `text_norm` = NFC, case-folded, diacritics folded (`straße` → `strasse`, `Müller` → `muller`), punctuation to spaces. The query is normalised the same way. The raw text is kept for display and copying | Search must find "strasse" for "Straße" and "muller" for "Müller", and must not care about NFC/NFD (a standing rule for paths, applied here too) |
+| Matching | FTS5 with the **`trigram`** tokenizer (SQLite ≥ 3.34, check the bundled version) so any substring of three or more characters matches ("rechn" finds "Rechnung", a half-read licence plate still matches) and OCR typos hurt less. Queries shorter than 3 characters fall back to `LIKE` on `text_norm`. Ranking: more matched words, higher OCR confidence, bigger box first | Word tokenizers need stemming and per-language rules; trigram is language-free and tolerant. No fuzzy matching beyond that in v1 |
+| Quality filter | Lines below a confidence threshold (set from the calibration page, like the pet thresholds) and single-character lines are not indexed. Stored but hidden is not an option: noise in the index is what makes text search useless | OCR on textured scenes (foliage, brick) produces garbage lines; precision matters more than recall here |
+| Search term | A **text chip**, not a silent extension of plain words. Typing "winter" keeps meaning path / tag / person / pet; the suggestion list gains a last row "Search for “winter” in the text of photos", and `text:winter` (and quoted `"text:hello world"`) works typed. Several chips are ANDed as everywhere else; the text chip combines with tags, people and folders ("Rechnung" + folder "2023") | A plain word matching OCR would drown tag results in photos that merely contain the word. Same mechanism as the pet term (`pet=cat`), so the term parsing, chips and AND logic are reused; API gets `text=` |
+| Results | Normal timeline grid. Each cell hit by text shows the matching line as a small caption under the thumbnail; in the viewer the matching boxes are outlined (same overlay as face boxes, own colour) and the info panel has a "Text in this photo" block listing the lines with a copy button. Selecting text itself on the image is not built | Reuses the viewer overlay and the info panel hot spots listed in phase 5 |
+| Multi-drive | Each drive keeps its own `recognition.db`; a text search fans out over all online libraries and merges by the common timeline, like tags | Consistent with phase 6. An offline drive's photos are simply missing from the results |
+| Launcher / CLI | `shoebox recognize --text` (resumable, newest first, `--limit`, `--retry-failed`, model change redoes), launcher button "Recognize text", progress in `/api/info` and the status line. `shoebox text stats` (photos looked at, with text, lines, model) | Same shape as `--pets` |
+| Privacy | Photos of documents contain names, addresses and numbers. The index is a plain SQLite file on the user's own drive, never leaves the machine, and is covered by the "local only" principle; the settings page gets a "Delete all recognised text" button | Stated explicitly because text search makes sensitive content easy to find for anyone who can open the web UI (LAN PIN applies) |
+| Not in scope | Handwriting, translation, tables/layout analysis, PDF files, searching text in video, "find similar documents", semantic search ("photos of receipts" without a word in them). Document *classification* is a CLIP job and belongs to that later phase | Keep the first slice small and shippable |
+
+#### Build order (each step is its own commit, mergeable alone)
+
+1. **Spike on real data, no core changes.** Add `text` to `recognizer.py`
+   behind `--text`, with `fetch-models.sh` entries (checksummed) for the
+   detector and the Latin recogniser. Try it by hand on 30 photos from the
+   drive (documents, screenshots, signs, and 30 that have no text) and on the
+   old Intel Mac. Decide model, thresholds and speed from numbers, and write
+   them into this section. If the old Mac needs more than about 1.5 s per
+   photo, say so here and decide: accept a long first run (as for faces), or
+   skip photos the cheap detector scores low.
+2. **Protocol 3** ([protocol.md](protocol.md)): hello lists `text` with its
+   model id; request task `text`; reply key `text: [{bbox, score, text}]`.
+   Additive: a protocol 2 worker is refused with the usual "update the
+   recognizer" message, as in earlier bumps. The fake worker returns
+   deterministic lines (derived from the file hash), so the core is testable
+   without Python.
+3. **Core storage and pass** (`core/src/text.rs`): `recognition.db` v6,
+   normalisation (one function, used for both index and query, with unit
+   tests for ß, umlauts, NFD input), `shoebox recognize --text`, pruning of
+   deleted photos like faces, `text stats`.
+4. **Search**: the `text` term in `browse.rs` (query, ranking, AND with other
+   terms, multi-library merge), `text=` in the API, snippet in the result.
+5. **UI**: suggestion row and `text:` chip, caption in grid cells, boxes in
+   the viewer, "Text in this photo" in the info panel, launcher button,
+   status line. Settings → Calibration gets a **Text check**: the lines with
+   the lowest confidence next to their crop, a threshold slider, so the
+   quality filter is set by looking, not guessing (same idea as the Face and
+   Pet checks).
+6. **Docs and checklist**: `docs/phase9.md` (as built, how it was checked,
+   real-hardware list), this table row set to done-except-hardware.
+
+#### Tests
+
+- Guard: `core/tests/recognize.rs` gets a text pass with the fake worker;
+  sizes, mtimes, created and full hashes of every original unchanged
+  (nothing new reads originals: the same decode as faces).
+- Normalisation and trigram query behaviour (ß/ss, umlauts, NFC vs NFD, short
+  queries, punctuation), including that a query is normalised the same way as
+  the index.
+- Resumability, `--retry-failed`, a model change redoes only text, faces and
+  pets are untouched (and vice versa: the faces and pets passes must not
+  delete text rows; every new query over `recog` says which kind it means,
+  see the pitfall about `recog.faces`).
+- Search: `text:` AND tag AND person, multi-library merge, offline drive.
+- The real worker, when `SHOEBOX_RECOGNIZER` is set: a generated image with
+  known words (rendered by the fixture script) is found by its words.
+  Fixtures: `make-fixtures.sh` gains a rendered "document" and "street sign"
+  image (ImageMagick or ffmpeg drawtext, whichever is already in the image).
+
+#### Open questions (answer in step 1, not before)
+
+- [ ] Exact OCR models: PP-OCR version (v4 or v5), size, licence, and whether
+      OpenCV 4.10 on macOS 12 can run them without onnxruntime.
+- [ ] Throughput on the old Intel Mac and on a modern machine; whether the
+      detector-first pass makes the first run over ~100k photos acceptable
+      (target: a night, like faces).
+- [ ] Is a rotated pass needed in v1? Look at how many real documents are
+      photographed sideways.
+- [ ] Which languages besides German and English matter on this drive.
+- [ ] Real-hardware check: search terms people actually use ("Rechnung",
+      "Fahrkarte", a street name, a licence plate), precision of the default
+      threshold, and whether the trigram index size on the drive is
+      reasonable (estimate: well under 100 MB for 100k photos).
+
 ### Phase 5d details (duplicates UI and tag carry-over)
 
 Built, one PR, one commit per step (as built: [phase5.md](phase5.md)). Feedback after 5c.
@@ -552,3 +658,7 @@ YOLOX and PP-ResNet50), run `shoebox recognize --pets` (or "Recognize pets"
 in the launcher), then look at Settings → Calibration → Pet check and name
 a few pets under Unnamed → Pets. DINOv2 is still to be dropped in and
 calibrated (list in [phase7.md](phase7.md)).
+
+Text in photos (phase 9) is planned, not built: start with the spike in step 1
+of "Phase 9 details" (OCR task in the worker, tried by hand on real photos),
+before any core change.
