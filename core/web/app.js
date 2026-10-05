@@ -946,12 +946,11 @@ function showItem() {
   } else {
     var img = el('img');
     img.alt = '';
-    img.src = thumbUrl(i); // instant, sharpened when the full image arrives
-    stage.appendChild(img);
+    // No thumbnail placeholder: swapping it for the full image looked like a
+    // zoom animation when stepping through photos with the arrow keys.
     img.onload = drawFaces;
-    var full = new Image();
-    full.onload = function () { if (state.open === i) img.src = full.src; };
-    full.src = viewUrl(i);
+    img.src = viewUrl(i);
+    stage.appendChild(img);
     // Warm up the neighbours.
     [i + 1, i - 1].forEach(function (j) {
       if (j >= 0 && j < d.count && d.kinds[j] !== 'v') new Image().src = viewUrl(j);
