@@ -64,7 +64,17 @@ own lists for the MacBook and the drive.
 - [ ] The Face check page scrolls; tapping a crop opens the photo and
       closing the viewer returns to the page; "≈" shows similar faces.
 
-## Later (5c-3)
+## Faces and people (5c-3, [phase5.md](phase5.md))
 
-- [ ] Naming and correcting faces from the iPad (to be filled in when 5c-3
-      is built).
+- [ ] Sidebar "Faces": tap a group to open it, a person for their photos,
+      "Unnamed" for the cards.
+- [ ] Unnamed: type a name (the list shows people by group, the keyboard
+      does not hide it), "Select" faces in a card and name or ignore them.
+- [ ] A person's faces: ✓ and ✗ are easy to hit; "Select", then "Not …".
+- [ ] Viewer, info panel: tap a face's crop to see its box; ✓/✗; "+ Name";
+      the ⋯ menu ("Not a face", "Ignore").
+- [ ] "+ Add face": drag a box with a finger (the photo does not swipe to
+      the next one), name it.
+- [ ] "Move to group…" and "Merge into…" from a person's ⋯ menu (drag and
+      drop is for a mouse).
+- [ ] Search: two people from the suggestions, as chips.

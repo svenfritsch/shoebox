@@ -190,7 +190,7 @@ fn suggest_maybe_confirm_and_reject_under_the_guard() {
     assert!(clusters[0]["suggestion"].is_null());
 
     // Name it: three confirmed faces.
-    let body = json!({ "name": "Anna", "generation": list["generation"] });
+    let body = json!({ "name": "Anna", "generation": clusters[0]["generation"] });
     let named = ok(addr, &format!("/api/clusters/{}/name", clusters[0]["id"]), &body);
     assert_eq!(named["faces"], 3);
     let anna = named["person"]["id"].as_i64().unwrap();
@@ -387,10 +387,19 @@ fn groups_merge_and_split() {
     assert_eq!(dora_cluster["size"], 4);
     let faces: Vec<i64> = dora_cluster["faces"].as_array().unwrap().iter().map(|f| f["id"].as_i64().unwrap()).collect();
     let cid = dora_cluster["id"].as_i64().unwrap();
-    let generation = list["generation"].clone();
+    let generation = dora_cluster["generation"].clone();
     let body = json!({ "name": "Dora", "faces": &faces[..2], "generation": generation });
-    let dora = ok(addr, &format!("/api/clusters/{cid}/name"), &body)["person"]["id"].as_i64().unwrap();
-    ok(addr, &format!("/api/clusters/{cid}/ignore"), &json!({ "faces": [faces[2]], "generation": generation }));
+    let named = ok(addr, &format!("/api/clusters/{cid}/name"), &body);
+    let dora = named["person"]["id"].as_i64().unwrap();
+    // The reply says what is left of the card: its faces changed, so it has
+    // a new generation; the old one is refused.
+    let left = &named["cluster"];
+    assert_eq!((left["id"].as_i64(), left["size"].as_u64()), (Some(cid), Some(2)), "{named}");
+    assert_ne!(left["generation"], generation);
+    let stale = post(addr, &format!("/api/clusters/{cid}/ignore"), &json!({ "faces": [faces[2]], "generation": generation }));
+    assert_eq!(stale.status, 409);
+    let ignored = ok(addr, &format!("/api/clusters/{cid}/ignore"), &json!({ "faces": [faces[2]], "generation": left["generation"] }));
+    assert_eq!(ignored["cluster"]["size"], 1);
     // A face of another cluster is refused.
     let anna_cluster = list["clusters"][1]["id"].as_i64().unwrap();
     assert_eq!(post(addr, &format!("/api/clusters/{anna_cluster}/name"), &json!({ "name": "X", "faces": [faces[3]] })).status, 400);
@@ -564,6 +573,9 @@ fn hand_drawn_faces() {
     assert_eq!(faces[0]["x"], 0.1);
     assert!(person_faces(addr, anna, "confirmed").iter().any(|f| f["manual"] == m));
     assert!(ids(&get(addr, &format!("/api/timeline?person={anna}")).json()).contains(&dark));
+    // Nothing detected to show for her: the drawn face.
+    let p = get(addr, &format!("/api/people/{anna}")).json();
+    assert_eq!((p["cover"].as_i64(), p["cover_manual"].as_i64()), (None, Some(m)));
     assert_eq!(post(addr, "/api/faces/manual", &json!({ "file": dark, "box": [0.8, 0.0, 0.3, 0.4], "name": "Anna" })).status, 400);
 
     // Over the detected face of the other photo: one face, the drawn box.
@@ -743,4 +755,179 @@ fn clustering_time_over_10000_faces() {
     assert!(s.clusters as usize >= people * 9 / 10 && (s.clusters as usize) < people * per / 2, "{} clusters", s.clusters);
     assert!(again.suggested as usize >= (people / 10) * (per - 1) * 9 / 10, "{} suggested", again.suggested);
     assert!(first < Duration::from_secs(60));
+}
+
+/// A picture whose left quarter is pure cyan (the fake finds no face in it
+/// upright) and the rest `rgb`: a box drawn there is embedded as the person
+/// of `rgb`, with landmarks unless `rgb` is grey.
+fn faceless(lib: &Library, rel: &str, rgb: [u8; 3]) {
+    let img = image::RgbImage::from_fn(200, 120, |x, _| image::Rgb(if x < 50 { [0, 255, 255] } else { rgb }));
+    save(lib, rel, img);
+}
+
+fn folder_id(lib: &Library, path: &str) -> i64 {
+    lib.db().query_row("SELECT id FROM folders WHERE path_nfc = ?1", [path], |r| r.get(0)).unwrap()
+}
+
+fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
+    let started = Instant::now();
+    while !done() {
+        assert!(started.elapsed() < Duration::from_secs(20), "{what} did not happen");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// Faces drawn by hand get their embedding from the worker (task `embed`,
+/// protocol 2): in the background in `serve` right after drawing, under
+/// the guard, and again in `shoebox recognize` after a model change. One
+/// aligned by landmarks counts as a reference for suggestions; a plain
+/// crop's does not.
+#[test]
+fn drawn_faces_are_embedded_and_aligned_ones_suggest() {
+    let lib = empty("people-drawn");
+    faceless(&lib, "a/anna-missed.png", ANNA);
+    faceless(&lib, "a/grey-missed.png", [128, 128, 128]);
+    plain(&lib, "a/grey.png", [128, 128, 128], 1);
+    variant(&lib, "a/anna-older.png", ANNA, SUGGESTED);
+    lib.scan();
+    recognize(&lib);
+    let before = lib.snapshot();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    wait_for_clusters(addr);
+    assert_eq!(faces_of(addr, &lib, "a/anna-missed.png").len(), 0, "missed by the detector");
+    assert!(faces_of(addr, &lib, "a/anna-older.png")[0]["state"].is_null());
+
+    let draw = |rel: &str, name: &str| {
+        let body = json!({ "file": id_of(&lib, rel), "box": [0.4, 0.25, 0.4, 0.5], "name": name });
+        ok(addr, "/api/faces/manual", &body)["manual"].as_i64().unwrap()
+    };
+    let anna_drawn = draw("a/anna-missed.png", "Anna");
+    let grey_drawn = draw("a/grey-missed.png", "Grau");
+    let drawn = |lib: &Library| -> Vec<(i64, bool, String)> {
+        conn(lib)
+            .prepare("SELECT aligned, emb IS NOT NULL, model FROM recog.drawn ORDER BY x, key")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    };
+    wait_until("embedding", || {
+        drawn(&lib).len() == 2 && get(addr, "/api/info").json()["clusters"]["embedding"] == false
+    });
+    let mut aligned: Vec<i64> = drawn(&lib).iter().map(|d| d.0).collect();
+    aligned.sort();
+    assert_eq!(aligned, [0, 1], "grey: the plain crop, without landmarks");
+    assert!(drawn(&lib).iter().all(|d| d.1 && d.2 == "fake-1"));
+    wait_for_clusters(addr);
+
+    // Anna's drawn face (aligned) suggests her older face; the grey one's
+    // embedding is identical to the grey photo's face but not aligned, so
+    // nothing is suggested from it.
+    let older = &faces_of(addr, &lib, "a/anna-older.png")[0];
+    assert_eq!((older["state"].as_str(), older["person"]["name"].as_str()), (Some("suggested"), Some("Anna")), "{older}");
+    assert!(faces_of(addr, &lib, "a/grey.png")[0]["state"].is_null());
+
+    // Crops of drawn faces, made under the guard like the others.
+    for m in [anna_drawn, grey_drawn] {
+        let crop = get(addr, &format!("/api/faces/manual/{m}/crop"));
+        assert_eq!((crop.status, crop.header("content-type")), (200, Some("image/jpeg")));
+    }
+    assert_eq!(get(addr, "/api/faces/manual/999999/crop").status, 404);
+    assert_eq!(lib.snapshot(), before, "embedding changed an original");
+    server.stop().unwrap();
+
+    // Another model: `shoebox recognize` embeds them again.
+    conn(&lib).execute("UPDATE recog.drawn SET model = 'old'", []).unwrap();
+    let stats = recognize(&lib);
+    let d = stats.drawn.unwrap();
+    assert_eq!((d.embedded, d.plain, d.failed), (2, 1, 0));
+    assert!(drawn(&lib).iter().all(|d| d.2 == "fake-1"));
+    // Nothing left to do: not again.
+    assert_eq!(recognize(&lib).drawn.unwrap().embedded, 0);
+
+    // A deleted drawn face's embedding goes on the next run.
+    let server = start(&lib, None);
+    ok(server.addr, "/api/faces/undo", &json!({ "manual": [grey_drawn] }));
+    server.stop().unwrap();
+    recognize(&lib);
+    assert_eq!(drawn(&lib).len(), 1);
+    assert_eq!(lib.snapshot(), before);
+    assert!(lib.verify(false).is_clean());
+}
+
+/// People are terms of the search: several together (AND), with tags and
+/// folders; free text finds them by name; the search box's suggestions
+/// count within the current search. Undoing a rejection keeps every other
+/// decision about the face.
+#[test]
+fn people_as_search_terms_and_undoing_a_rejection() {
+    let lib = empty("people-search");
+    plain(&lib, "Fotos/x1.png", ANNA, 1);
+    plain(&lib, "Fotos/x2.png", ANNA, 2);
+    plain(&lib, "Fotos/y1.png", BEN, 1);
+    plain(&lib, "Other/z1.png", CARL, 1);
+    lib.scan();
+    recognize(&lib);
+    let before = lib.snapshot();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    wait_for_clusters(addr);
+    let assign = |rel: &str, name: &str| {
+        let body = json!({ "faces": [face_id(addr, &lib, rel)], "name": name });
+        ok(addr, "/api/faces/assign", &body)["person"]["id"].as_i64().unwrap()
+    };
+    let anna = assign("Fotos/x1.png", "Anna");
+    assign("Fotos/x2.png", "Anna");
+    let ben = assign("Fotos/y1.png", "Ben");
+    // Ben next to Anna on x1, drawn by hand (the fake finds one face).
+    let body = json!({ "file": id_of(&lib, "Fotos/x1.png"), "box": [0.0, 0.0, 0.2, 0.2], "person_id": ben });
+    ok(addr, "/api/faces/manual", &body);
+    let x1 = id_of(&lib, "Fotos/x1.png");
+    let (x2, y1) = (id_of(&lib, "Fotos/x2.png"), id_of(&lib, "Fotos/y1.png"));
+
+    let timeline = |q: &str| sorted(ids(&get(addr, &format!("/api/timeline?{q}")).json()));
+    assert_eq!(timeline(&format!("person={anna}")), sorted(vec![x1, x2]));
+    assert_eq!(timeline(&format!("person={ben}")), sorted(vec![x1, y1]));
+    assert_eq!(timeline(&format!("person={anna}&person={ben}")), [x1]);
+    let both = get(addr, &format!("/api/timeline?person={anna}&person={ben}")).json();
+    let names: Vec<&str> = both["people"].as_array().unwrap().iter().map(|p| p["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["Anna", "Ben"]);
+    // With a folder and free text; free text matches names like tag names.
+    assert_eq!(timeline(&format!("person={ben}&folder={}", folder_id(&lib, "Fotos"))), sorted(vec![x1, y1]));
+    assert_eq!(timeline("q=anna"), sorted(vec![x1, x2]));
+    assert_eq!(timeline("q=anna+ben"), [x1]);
+    assert_eq!(timeline(&format!("q=fotos&person={ben}")), sorted(vec![x1, y1]));
+    assert!(timeline("q=carl").is_empty(), "nobody is named Carl");
+
+    // Suggestions for the search box: by name, counted within the search;
+    // people of the search and people who would show nothing left out.
+    let search = |q: &str| get(addr, &format!("/api/people/search?{q}")).json();
+    let all = search("q=");
+    assert_eq!(all, json!([
+        { "id": anna, "name": "Anna", "group_id": null, "photos": 2 },
+        { "id": ben, "name": "Ben", "group_id": null, "photos": 2 },
+    ]));
+    assert_eq!(search("q=AN"), json!([{ "id": anna, "name": "Anna", "group_id": null, "photos": 2 }]));
+    assert_eq!(search(&format!("q=&person={ben}")), json!([{ "id": anna, "name": "Anna", "group_id": null, "photos": 1 }]));
+    assert_eq!(search(&format!("q=&person={anna}&person={ben}")), json!([]));
+    // Tags within a search of people.
+    let tags = get(addr, &format!("/api/tags?person={ben}")).json();
+    assert_eq!(tags.as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect::<Vec<_>>(), ["Fotos"]);
+
+    // Undo a rejection: only the rejection goes, Ben stays confirmed.
+    let y1_face = face_id(addr, &lib, "Fotos/y1.png");
+    ok(addr, "/api/faces/reject", &json!({ "faces": [y1_face], "person_id": anna }));
+    assert_eq!(files_of(&person_faces(addr, anna, "rejected")), [y1]);
+    assert_eq!(post(addr, "/api/faces/unreject", &json!({ "faces": [y1_face] })).status, 400, "person_id is needed");
+    let undone = ok(addr, "/api/faces/unreject", &json!({ "faces": [y1_face], "person_id": anna }));
+    assert_eq!((undone["faces"].as_u64(), undone["person"]["id"].as_i64()), (Some(1), Some(anna)));
+    assert!(person_faces(addr, anna, "rejected").is_empty());
+    let face = &faces_of(addr, &lib, "Fotos/y1.png")[0];
+    assert_eq!((face["state"].as_str(), face["person"]["id"].as_i64()), (Some("confirmed"), Some(ben)));
+    assert_eq!(ok(addr, "/api/faces/unreject", &json!({ "faces": [y1_face], "person_id": anna }))["faces"], 0);
+
+    assert_eq!(lib.snapshot(), before);
+    server.stop().unwrap();
 }

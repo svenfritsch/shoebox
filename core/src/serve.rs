@@ -109,6 +109,9 @@ pub struct Options {
     pub pin: Option<String>,
     /// What "Show in Finder" runs; `None` uses the platform's own command.
     pub reveal: Option<RevealFn>,
+    /// The recognizer for faces drawn by hand (else `$SHOEBOX_RECOGNIZER` or
+    /// the installed one).
+    pub recognizer: Option<PathBuf>,
 }
 
 /// A running server; dropping it does not stop it, `stop` does.
@@ -191,6 +194,7 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
     let (heal_tx, heal_rx) = mpsc::channel();
     let (backup_tx, backup_rx) = mpsc::channel();
     let (clusters_tx, clusters_rx) = mpsc::channel();
+    let (embed_tx, embed_rx) = mpsc::channel();
     let app = Arc::new(App {
         root,
         db_path,
@@ -207,6 +211,9 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
         clusters_wanted: AtomicU64::new(0),
         clusters_done: AtomicU64::new(0),
         faces_seen: AtomicI64::new(-1),
+        embed: Mutex::new(embed_tx),
+        embedding: AtomicBool::new(false),
+        recognizer: opts.recognizer.clone(),
         stopping: AtomicBool::new(false),
         ffmpeg: media::find_ffmpeg(),
         reveal: opts.reveal.clone().unwrap_or_else(|| -> RevealFn { Arc::new(|p: &FsPath| reveal::reveal(p)) }),
@@ -216,7 +223,9 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
     spawn_healer(Arc::downgrade(&app), heal_rx);
     spawn_backups(Arc::downgrade(&app), backup_rx);
     spawn_clusterer(Arc::downgrade(&app), clusters_rx);
+    spawn_embedder(Arc::downgrade(&app), embed_rx);
     app.request_clusters();
+    app.request_embed();
     let router = router(app.clone());
 
     let (tx, rx) = oneshot::channel::<()>();
@@ -279,6 +288,11 @@ struct App {
     /// `recognition.db`'s faces when they were last clustered (a number
     /// that changes when `recognize` adds or replaces faces).
     faces_seen: AtomicI64,
+    /// Asks the background thread to embed faces drawn by hand.
+    embed: Mutex<mpsc::Sender<()>>,
+    /// It is embedding right now (the recognizer is running).
+    embedding: AtomicBool,
+    recognizer: Option<PathBuf>,
     /// The server is stopping: background work ends early.
     stopping: AtomicBool,
     ffmpeg: Option<PathBuf>,
@@ -358,6 +372,52 @@ impl App {
                         "Clusters: {} faces, {} without a decision in {} clusters ({:.1} s).",
                         s.faces, s.unnamed, s.clusters, s.seconds
                     );
+                }
+                Ok(())
+            }
+            Err(e) if e.is::<recognize::Interrupted>() => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Ask for the faces drawn by hand to be embedded.
+    fn request_embed(&self) {
+        let _ = self.embed.lock().unwrap().send(());
+    }
+
+    /// Embed the faces drawn by hand that wait for it, with the recognizer
+    /// started for that and stopped again; then recompute the suggestions.
+    /// Skipped while `shoebox recognize` runs (it embeds them at its end)
+    /// and when no recognizer is installed.
+    fn embed_drawn(&self) -> Result<()> {
+        let conn = db::open_shared(&self.db_path)?;
+        recognize::attach(&conn, &self.db_path)?;
+        if recognize::running(&conn)? {
+            return Ok(());
+        }
+        let model = clusters::current_model(&conn)?;
+        let pending = recognize::drawn_pending(&conn, model.as_deref())?;
+        if pending == 0 {
+            return Ok(());
+        }
+        let Some(cmd) = recognize::find_worker(&self.root, self.recognizer.as_deref()) else {
+            println!("{pending} faces drawn by hand wait for the recognizer (not installed).");
+            return Ok(());
+        };
+        self.embedding.store(true, Ordering::SeqCst);
+        let result = (|| -> Result<recognize::DrawnStats> {
+            let mut worker = recognize::Worker::start(cmd, recognize::Timeouts::default())?;
+            let stopping = || self.stopping.load(Ordering::SeqCst);
+            let result = recognize::embed_drawn(&conn, &self.root, &mut worker, false, &stopping);
+            worker.stop();
+            result
+        })();
+        self.embedding.store(false, Ordering::SeqCst);
+        match result {
+            Ok(s) => {
+                println!("Faces drawn by hand: {} embedded ({} without landmarks), {} failed.", s.embedded, s.plain, s.failed);
+                if s.embedded > 0 {
+                    self.request_clusters();
                 }
                 Ok(())
             }
@@ -466,6 +526,23 @@ fn spawn_clusterer(app: Weak<App>, requests: mpsc::Receiver<u64>) {
     });
 }
 
+/// Embeds faces drawn by hand as they are asked for (requests that come in
+/// while it runs are covered by the next run). Ends with the server.
+fn spawn_embedder(app: Weak<App>, requests: mpsc::Receiver<()>) {
+    std::thread::spawn(move || {
+        while requests.recv().is_ok() {
+            while requests.try_recv().is_ok() {}
+            let Some(app) = app.upgrade() else { break };
+            if app.stopping.load(Ordering::SeqCst) {
+                break;
+            }
+            if let Err(e) = app.embed_drawn() {
+                eprintln!("could not embed the faces drawn by hand: {e:#}");
+            }
+        }
+    });
+}
+
 /// Backs up the index and the user data after changes: right away after the
 /// first change, then at most every `BACKUP_INTERVAL` (changes in between are
 /// covered by the next one). Ends with the server, which backs up once more
@@ -526,6 +603,8 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/faces/not-face", post(people_api::not_face))
         .route("/api/faces/undo", post(people_api::undo))
         .route("/api/faces/manual", post(people_api::manual))
+        .route("/api/faces/unreject", post(people_api::unreject))
+        .route("/api/faces/manual/{id}/crop", get(faces_api::manual_crop))
         .route("/api/people", get(people_api::list).post(people_api::create))
         .route("/api/people/{id}", get(people_api::get_person))
         .route("/api/people/{id}/faces", get(people_api::person_faces))
@@ -534,6 +613,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/people/{id}/hide", post(people_api::hide))
         .route("/api/people/{id}/group", post(people_api::set_group))
         .route("/api/people/{id}/cover", post(people_api::set_cover))
+        .route("/api/people/search", get(people_api::search))
         .route("/api/groups", get(people_api::groups).post(people_api::create_group))
         .route("/api/groups/reorder", post(people_api::reorder_groups))
         .route("/api/groups/{id}/rename", post(people_api::rename_group))
@@ -763,6 +843,8 @@ struct ClustersInfo {
     /// A recomputation is asked for or running in this server: what the
     /// cache says may be behind the latest decisions.
     stale: bool,
+    /// Faces drawn by hand are being embedded (the recognizer runs).
+    embedding: bool,
 }
 
 #[derive(Serialize)]
@@ -844,6 +926,7 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
         let clusters = ClustersInfo {
             overview: clusters::overview(&conn)?,
             stale: app.clusters_done.load(Ordering::SeqCst) < app.clusters_wanted.load(Ordering::SeqCst),
+            embedding: app.embedding.load(Ordering::SeqCst),
         };
         Ok(Json(Info {
             name: app.name.clone(),
@@ -883,15 +966,15 @@ fn param<'a>(pairs: &'a Pairs, key: &str) -> Option<&'a str> {
 }
 
 /// The timeline filter of a request: `folder`, `tag` (several, all must
-/// match), `q` (free text) and `person` (photos with a confirmed face of
-/// them).
+/// match), `q` (free text) and `person` (several, all must match: photos
+/// with a confirmed face of each).
 fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
     let number = |v: &str| v.parse::<i64>().map_err(|_| ApiError::BadRequest(format!("not a number: {v}")));
     Ok(browse::Query {
         folder: param(pairs, "folder").filter(|v| !v.is_empty()).map(number).transpose()?,
         tags: pairs.iter().filter(|(k, v)| k == "tag" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
         text: param(pairs, "q").map(str::to_string).filter(|s| !s.trim().is_empty()),
-        person: param(pairs, "person").filter(|v| !v.is_empty()).map(number).transpose()?,
+        people: pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
     })
 }
 
@@ -906,7 +989,7 @@ async fn tags(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiRes
         let own = param(&pairs, "own").is_some_and(|o| o != "0");
         let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(50);
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
-        let all = if filter.folder.is_none() && filter.tags.is_empty() && filter.person.is_none() {
+        let all = if filter.folder.is_none() && filter.tags.is_empty() && filter.people.is_empty() {
             browse::all_tags(&conn)?
         } else {
             let snapshot = app.snapshot(&conn)?;
@@ -939,6 +1022,8 @@ struct Timeline {
     live: Vec<[i64; 2]>,
     /// Names of the tags in the filter, for its chips.
     tags: Vec<browse::TagName>,
+    /// Names of the people in the filter, for their chips.
+    people: Vec<people::PersonRef>,
 }
 
 async fn timeline(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Timeline>> {
@@ -948,6 +1033,7 @@ async fn timeline(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> Ap
         let snapshot = app.snapshot(&conn)?;
         let items = snapshot.query(&conn, &query)?;
         let tags = browse::tag_names(&conn, &query.tags)?;
+        let people = people::person_names(&conn, &query.people)?;
         drop(conn);
         let mut t = Timeline {
             count: items.len(),
@@ -957,6 +1043,7 @@ async fn timeline(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> Ap
             versions: String::with_capacity(items.len() * 8),
             live: Vec::new(),
             tags,
+            people,
         };
         for it in items {
             t.ids.push(it.id);

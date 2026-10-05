@@ -24,6 +24,10 @@
 //! turned 90° and 270° and turns the boxes back; a face found that way is
 //! only kept where the upright pass found none.
 //!
+//! Faces the user drew by hand (5c-3) get their embedding from the worker
+//! too (task `embed`, protocol 2): at the end of every run, and in the
+//! background in `shoebox serve` right after one is drawn (`embed_drawn`).
+//!
 //! After the passes, the faces are grouped and matched to the people the
 //! user named (`clusters.rs`, a cache in the same file).
 
@@ -53,7 +57,7 @@ use crate::thumbs;
 
 pub const FILE: &str = "recognition.db";
 /// The worker protocol this core speaks (`docs/protocol.md`).
-pub const PROTOCOL: u32 = 1;
+pub const PROTOCOL: u32 = 2;
 /// Longer edge of the copy the worker gets. Faces down to ~25 px in it are
 /// found; more pixels mostly cost time on an old machine.
 pub const EDGE: u32 = 1600;
@@ -63,6 +67,8 @@ pub const FACES: &str = "faces";
 /// The second pass over turned copies (`--rotated`), with its own rows in
 /// `recog.looked` and `recog.jobs`.
 pub const FACES_ROT: &str = "faces-rot";
+/// The embedding of a box drawn by hand (protocol 2).
+pub const EMBED: &str = "embed";
 /// A face from the turned copies is kept only if it overlaps every face of
 /// the upright pass (and every one kept before it) less than this.
 pub const ROTATED_MAX_IOU: f64 = 0.3;
@@ -75,7 +81,7 @@ const POLL: Duration = Duration::from_millis(200);
 /// A `running` job that has not reported progress for this long is dead.
 const JOB_ALIVE_SECS: i64 = 120;
 
-const SCHEMA_VERSION: i32 = 3;
+const SCHEMA_VERSION: i32 = 4;
 const SCHEMA_V1: &str = "
 CREATE TABLE recog.jobs (
     id          INTEGER PRIMARY KEY,
@@ -140,6 +146,22 @@ CREATE TABLE IF NOT EXISTS recog.clusters (
 );
 ";
 
+/// v4 (5c-3): embeddings of faces drawn by hand. The box is the user's
+/// (`face_decisions` in `library.db`, `manual = 1`); only its embedding is
+/// cached here.
+const SCHEMA_V4: &str = "
+CREATE TABLE IF NOT EXISTS recog.drawn (
+    key     TEXT NOT NULL,              -- files.quick_hash
+    x REAL NOT NULL, y REAL NOT NULL, w REAL NOT NULL, h REAL NOT NULL,  -- the drawn box
+    model   TEXT NOT NULL,              -- the faces model; redone after a model change
+    aligned INTEGER NOT NULL DEFAULT 0, -- landmarks found in the box: aligned like a detected face
+    emb     BLOB,                       -- little-endian f32, L2-normalised; NULL with error
+    error   TEXT,
+    done_at INTEGER NOT NULL,
+    PRIMARY KEY (key, x, y, w, h)
+);
+";
+
 /// Location of `recognition.db` for a library database.
 pub fn path_for(db_path: &Path) -> PathBuf {
     db_path.with_file_name(FILE)
@@ -174,6 +196,12 @@ pub fn attach(conn: &Connection, db_path: &Path) -> Result<()> {
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V3)?;
         tx.pragma_update(Some("recog"), "user_version", 3)?;
+        tx.commit()?;
+    }
+    if version < 4 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V4)?;
+        tx.pragma_update(Some("recog"), "user_version", 4)?;
         tx.commit()?;
     }
     Ok(())
@@ -277,7 +305,25 @@ struct Reply {
     width: Option<u32>,
     height: Option<u32>,
     faces: Option<Vec<RawFace>>,
+    embed: Option<Vec<RawEmbedded>>,
     error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawEmbedded {
+    /// Empty when no landmarks were found in the box.
+    #[serde(default)]
+    landmarks: Vec<[f64; 2]>,
+    emb: String,
+}
+
+/// The embedding of a box drawn by hand.
+#[derive(Debug, Clone)]
+pub struct Embedded {
+    /// Landmarks found in the box (fractions of the picture), so the face
+    /// was aligned like a detected one; empty if the plain crop was embedded.
+    pub landmarks: Vec<[f64; 2]>,
+    pub emb: Vec<f32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -469,6 +515,8 @@ pub struct Worker {
     timeouts: Timeouts,
     process: Option<Process>,
     faces: TaskInfo,
+    /// The worker can embed boxes drawn by hand, comparably to its faces.
+    embed: bool,
     version: Option<String>,
     next_id: u64,
     crashes_in_row: u32,
@@ -485,11 +533,13 @@ impl Worker {
         if faces.dim == 0 || faces.model.is_empty() {
             bail!("the recognizer reports no face model");
         }
+        let embed = hello.tasks.get(EMBED).is_some_and(|e| e.model == faces.model && e.dim == faces.dim);
         Ok(Worker {
             cmd,
             timeouts,
             process: Some(process),
             faces,
+            embed,
             version: hello.version,
             next_id: 1,
             crashes_in_row: 0,
@@ -512,6 +562,52 @@ impl Worker {
     pub fn faces(&mut self, image: &[u8]) -> Result<Result<Found, Failure>> {
         let request = serde_json::json!({ "tasks": [FACES], "image": BASE64.encode(image) });
         Ok(self.ask(request)?.and_then(|reply| self.parse_faces(reply).map_err(Failure::Refused)))
+    }
+
+    /// Embeddings of boxes in a picture (`[x, y, w, h]` in its pixels), in
+    /// the same order. The outer error as for `faces`.
+    pub fn embed(&mut self, image: &[u8], boxes: &[[f64; 4]]) -> Result<Result<Vec<Embedded>, Failure>> {
+        if !self.embed {
+            return Ok(Err(Failure::Refused("the recognizer cannot embed faces drawn by hand".into())));
+        }
+        let request = serde_json::json!({ "tasks": [EMBED], "image": BASE64.encode(image), "boxes": boxes });
+        Ok(self.ask(request)?.and_then(|reply| self.parse_embedded(reply, boxes.len()).map_err(Failure::Refused)))
+    }
+
+    fn parse_embedded(&self, reply: Reply, boxes: usize) -> Result<Vec<Embedded>, String> {
+        let (fw, fh) = match (reply.width, reply.height) {
+            (Some(w), Some(h)) if w > 0 && h > 0 => (w as f64, h as f64),
+            _ => return Err("reply without the picture's size".into()),
+        };
+        let raw = reply.embed.ok_or("reply without embeddings")?;
+        if raw.len() != boxes {
+            return Err(format!("{} embeddings for {boxes} boxes", raw.len()));
+        }
+        raw.into_iter()
+            .map(|e| {
+                Ok(Embedded {
+                    landmarks: e
+                        .landmarks
+                        .iter()
+                        .filter(|p| p.iter().all(|v| v.is_finite()))
+                        .map(|[px, py]| [(px / fw).clamp(0.0, 1.0), (py / fh).clamp(0.0, 1.0)])
+                        .collect(),
+                    emb: self.decode_emb(&e.emb)?,
+                })
+            })
+            .collect()
+    }
+
+    fn decode_emb(&self, b64: &str) -> Result<Vec<f32>, String> {
+        let bytes = BASE64.decode(b64).map_err(|e| format!("embedding is not base64: {e}"))?;
+        if bytes.len() != self.faces.dim * 4 {
+            return Err(format!("embedding has {} bytes, expected {}", bytes.len(), self.faces.dim * 4));
+        }
+        let emb: Vec<f32> = bytes.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
+        if !emb.iter().all(|v| v.is_finite()) {
+            return Err("embedding with invalid numbers".into());
+        }
+        Ok(emb)
     }
 
     fn ask(&mut self, mut request: serde_json::Value) -> Result<Result<Reply, Failure>> {
@@ -583,14 +679,7 @@ impl Worker {
             if !(f.bbox.iter().all(|v| v.is_finite()) && f.score.is_finite() && w > 0.0 && h > 0.0) {
                 return Err("reply with an invalid face box".into());
             }
-            let bytes = BASE64.decode(&f.emb).map_err(|e| format!("embedding is not base64: {e}"))?;
-            if bytes.len() != self.faces.dim * 4 {
-                return Err(format!("embedding has {} bytes, expected {}", bytes.len(), self.faces.dim * 4));
-            }
-            let emb: Vec<f32> = bytes.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
-            if !emb.iter().all(|v| v.is_finite()) {
-                return Err("embedding with invalid numbers".into());
-            }
+            let emb = self.decode_emb(&f.emb)?;
             // Boxes may reach past the edge of the picture; keep the part inside.
             let (x0, y0) = ((x / fw).clamp(0.0, 1.0), (y / fh).clamp(0.0, 1.0));
             let (x1, y1) = (((x + w) / fw).clamp(0.0, 1.0), ((y + h) / fh).clamp(0.0, 1.0));
@@ -670,7 +759,7 @@ fn parse_reply(line: &str, id: u64) -> Option<Reply> {
     }
     match serde_json::from_value(value) {
         Ok(r) => Some(r),
-        Err(e) => Some(Reply { width: None, height: None, faces: None, error: Some(format!("bad reply: {e}")) }),
+        Err(e) => Some(Reply { width: None, height: None, faces: None, embed: None, error: Some(format!("bad reply: {e}")) }),
     }
 }
 
@@ -719,6 +808,8 @@ pub struct Stats {
     /// The rotated pass (`--rotated`), if it ran; its `faces` are the ones
     /// it added.
     pub rotated: Option<Box<Stats>>,
+    /// Faces drawn by hand that got their embedding in this run.
+    pub drawn: Option<DrawnStats>,
     /// The clustering after the run.
     pub clusters: Option<crate::clusters::Summary>,
 }
@@ -800,6 +891,14 @@ pub fn run(opts: &Options) -> Result<Stats> {
             let rotated = recognize_rotated(&conn, &root, &mut worker, opts.limit, opts.retry_failed)?;
             stats.rotated = Some(Box::new(rotated));
         }
+        let drawn = embed_drawn(&conn, &root, &mut worker, opts.retry_failed, &interrupted)?;
+        if drawn.embedded + drawn.failed > 0 {
+            println!(
+                "Faces drawn by hand: {} embedded ({} without landmarks: not used for suggestions), {} failed.",
+                drawn.embedded, drawn.plain, drawn.failed
+            );
+        }
+        stats.drawn = Some(drawn);
         Ok(stats)
     });
     worker.stop();
@@ -1070,6 +1169,133 @@ fn ask_all(worker: &mut Worker, prepared: Prepared) -> Result<Result<Found, Fail
         }
     }
     Ok(all.ok_or_else(|| Failure::Refused("nothing to look at".into())))
+}
+
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct DrawnStats {
+    /// Drawn faces embedded, of them without landmarks (the plain crop).
+    pub embedded: u64,
+    pub plain: u64,
+    /// Faces whose photo could not be read or that the worker refused.
+    pub failed: u64,
+    /// Skipped this time (the photo changed since the last scan).
+    pub skipped: u64,
+}
+
+/// Embed the faces drawn by hand that have no embedding of the worker's
+/// model yet (`retry_failed`: also those that failed before), photo by
+/// photo, each read under the guard. Embeddings of boxes no longer drawn
+/// are dropped. `stop` is asked between photos. `conn` has `recog`
+/// attached.
+pub fn embed_drawn(
+    conn: &Connection,
+    root: &Path,
+    worker: &mut Worker,
+    retry_failed: bool,
+    stop: &dyn Fn() -> bool,
+) -> Result<DrawnStats> {
+    let model = worker.faces_model().model.clone();
+    conn.execute(
+        "DELETE FROM recog.drawn WHERE NOT EXISTS (SELECT 1 FROM face_decisions d WHERE d.manual = 1
+           AND d.key = recog.drawn.key AND d.x = recog.drawn.x AND d.y = recog.drawn.y AND d.w = recog.drawn.w AND d.h = recog.drawn.h)",
+        [],
+    )?;
+    // Per content: a present file and the boxes still to embed.
+    let mut todo: Vec<(Pending, Vec<[f64; 4]>)> = Vec::new();
+    {
+        let mut stmt = conn.prepare(&format!(
+            "SELECT d.key, d.x, d.y, d.w, d.h, f.path, f.kind, f.size, f.mtime_ns FROM face_decisions d
+             JOIN files f ON f.quick_hash = d.key AND f.missing_since IS NULL AND f.kind IN ({KINDS})
+             LEFT JOIN recog.drawn e ON e.key = d.key AND e.x = d.x AND e.y = d.y AND e.w = d.w AND e.h = d.h
+             WHERE d.manual = 1 AND (e.key IS NULL OR e.model != ?1 OR (?2 AND e.error IS NOT NULL))
+             ORDER BY d.key, f.path_nfc"
+        ))?;
+        let mut rows = stmt.query(params![model, retry_failed])?;
+        while let Some(r) = rows.next()? {
+            let key: String = r.get(0)?;
+            let b: [f64; 4] = [r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?];
+            let Some(kind) = Kind::parse(&r.get::<_, String>(6)?) else { continue };
+            if todo.last().is_none_or(|(p, _)| p.key != key) {
+                let p = Pending { key, rel: r.get(5)?, kind, size: r.get::<_, i64>(7)? as u64, mtime_ns: r.get(8)? };
+                todo.push((p, Vec::new()));
+            }
+            let boxes = &mut todo.last_mut().expect("pushed above").1;
+            if !boxes.contains(&b) {
+                boxes.push(b);
+            }
+        }
+    }
+    let mut stats = DrawnStats::default();
+    let lib_heif = LibHeif::new();
+    for (p, boxes) in todo {
+        if stop() {
+            return Err(Interrupted.into());
+        }
+        let copy = fingerprint::read_unchanged(&root.join(&p.rel), p.size, p.mtime_ns, || {
+            let img = media::decode_image(&lib_heif, p.kind, &root.join(&p.rel), EDGE).map_err(|e| format!("{e:#}"))?;
+            let img = thumbs::shrink(img, EDGE);
+            let (w, h) = (img.width() as f64, img.height() as f64);
+            media::encode_jpeg(&img, QUALITY).map(|jpeg| (jpeg, w, h)).map_err(|e| format!("{e:#}"))
+        });
+        let outcome = match copy {
+            Ok((jpeg, w, h)) => {
+                let px: Vec<[f64; 4]> = boxes.iter().map(|b| [b[0] * w, b[1] * h, b[2] * w, b[3] * h]).collect();
+                match worker.embed(&jpeg, &px)? {
+                    Err(Failure::Crashed(_)) => worker.embed(&jpeg, &px)?,
+                    other => other,
+                }
+            }
+            Err(e) if thumbs::is_transient(&e) => {
+                stats.skipped += 1;
+                continue;
+            }
+            Err(e) => Err(Failure::Refused(e)),
+        };
+        let tx = conn.unchecked_transaction()?;
+        {
+            let mut insert = tx.prepare(
+                "INSERT OR REPLACE INTO recog.drawn (key, x, y, w, h, model, aligned, emb, error, done_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            )?;
+            for (i, b) in boxes.iter().enumerate() {
+                let (aligned, emb, error) = match &outcome {
+                    Ok(list) => {
+                        let e = &list[i];
+                        let bytes: Vec<u8> = e.emb.iter().flat_map(|v| v.to_le_bytes()).collect();
+                        (!e.landmarks.is_empty(), Some(bytes), None)
+                    }
+                    Err(f) => (false, None, Some(failure_text(f))),
+                };
+                match (&error, aligned) {
+                    (Some(_), _) => stats.failed += 1,
+                    (None, true) => stats.embedded += 1,
+                    (None, false) => {
+                        stats.embedded += 1;
+                        stats.plain += 1;
+                    }
+                }
+                insert.execute(params![p.key, b[0], b[1], b[2], b[3], model, aligned, emb, error, db::now()])?;
+            }
+        }
+        tx.commit()?;
+    }
+    Ok(stats)
+}
+
+/// Faces drawn by hand (on present photos) not yet tried with `model` (with
+/// any model if `None`); ones that failed wait for `--retry-failed`.
+pub fn drawn_pending(conn: &Connection, model: Option<&str>) -> Result<u64> {
+    let n: i64 = conn.query_row(
+        &format!(
+            "SELECT count(*) FROM face_decisions d
+             WHERE d.manual = 1 AND d.key IN (SELECT quick_hash FROM files WHERE missing_since IS NULL AND kind IN ({KINDS}))
+               AND NOT EXISTS (SELECT 1 FROM recog.drawn e WHERE e.key = d.key AND e.x = d.x AND e.y = d.y
+                                 AND e.w = d.w AND e.h = d.h AND (?1 IS NULL OR e.model = ?1))"
+        ),
+        [model],
+        |r| r.get(0),
+    )?;
+    Ok(n as u64)
 }
 
 fn failure_text(f: &Failure) -> String {

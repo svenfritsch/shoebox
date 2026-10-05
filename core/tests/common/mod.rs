@@ -254,7 +254,15 @@ pub fn start(lib: &Library, pin: Option<&str>) -> serve::Server {
 /// Like `start`, with what "Show in Finder" runs (`None`: the real command).
 pub fn start_with(lib: &Library, pin: Option<&str>, reveal: Option<serve::RevealFn>) -> serve::Server {
     serve::start(
-        &serve::Options { root: lib.root.clone(), db: None, port: 0, lan: false, pin: pin.map(str::to_string), reveal },
+        &serve::Options {
+            root: lib.root.clone(),
+            db: None,
+            port: 0,
+            lan: false,
+            pin: pin.map(str::to_string),
+            reveal,
+            recognizer: Some(env!("CARGO_BIN_EXE_shoebox-fake-recognizer").into()),
+        },
         false,
     )
     .unwrap()

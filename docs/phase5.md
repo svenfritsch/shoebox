@@ -370,6 +370,7 @@ page (from 5c-3, see below). As built, on top of the plan that follows:
     /api/clusters/{id}/name {name|person_id, faces?, generation?}`,
     `/ignore`, `/not-face`. `faces` (some of the cluster's) is the split;
     with `generation` a cluster that changed since is refused (409).
+    (5c-3 made `generation` per cluster, see there.)
   - Faces: `POST /api/faces/confirm {faces}` (the suggestion, also a
     "maybe"; decided faces are passed over), `/reject {faces, person_id?}`
     (the suggested person if none), `/assign {faces, person_id|name}` (a
@@ -517,6 +518,89 @@ appear for their person and never as a duplicate of a detected face, guard.
 
 ### 5c-3: UI
 
+Built (PR "Phase 5c-3"); the run on the real drive is in "Still to check on
+real hardware" below. Decided before building: a generation per cluster,
+`serve` embeds drawn faces itself, free text finds names, "Use as …’s
+picture" (cover) but no hiding of people. As built, on top of the plan that
+follows:
+
+- **Sidebar** "Faces" (between the top links and "Tags"; a "Folders"
+  heading now marks the folder tree): groups with their people (▸ opens a
+  group; dropping a person on a group moves them), "No group", "Unnamed (N
+  clusters)". "Faces" itself opens the overview. Shown once there are faces
+  or people.
+- **Overview** (`#view=people`): round pictures by group, photos and "N to
+  check" per person, ⋯ with show photos, review faces, rename, move to
+  group, merge; "New group…", "Groups…" (rename, ↑/↓, delete), drag and
+  drop onto a group. A person's photos are the timeline with a person
+  chip (`#person=12`) and a head above it ("Check N faces", ⋯).
+- **A person's faces** (`#view=person&id=12&tab=…`): tabs Confirmed,
+  Suggested, Maybe, Not them. ✓/✗ on suggested and maybe faces, ↺ on "Not
+  them" (undoes only that rejection, `POST /api/faces/unreject {faces,
+  person_id}`), ⋯ on confirmed ones (not this person, name someone else,
+  use as picture, not a face; for drawn faces: name again, delete).
+  "Select" for several at once; "Confirm all shown" only on Suggested.
+- **Unnamed** (`#view=unnamed`): a card per cluster (8 sample faces, "+N"
+  shows all), "Looks like X (n of m) ✓ X" when a person is suggested, a name
+  field whose list shows people by group (and "+ New person"), Ignore,
+  Not a face, and "Select" to act on some faces only (the split). Cards
+  change in place; the page is not reloaded after each action.
+- **Generation per cluster** (changed backend): naming one card makes the
+  server recompute and renumber all clusters, so a single generation for
+  the list made every other card stale a second later. Each cluster now has
+  its own `generation` (a hash of its faces, below 2^53 for JavaScript);
+  an action finds the cluster with those faces whatever its number now and
+  is refused (409) only if its faces changed. Cluster actions reply with
+  what is left of the cluster (`cluster: {id, generation, size}` or
+  `null`), so a split card carries on. The list's top-level `generation` is
+  gone.
+- **Info panel**: `infoFaces` (one call where the panel is built; it took
+  the place of phase 4's "Faces: N, Show" row): crop and name per face, "Maybe
+  X? ✓ ✗" for suggestions, "+ Name" (or "Other…") with the same name list,
+  ⋯ with not this person, name someone else, use as picture, ignore,
+  forget what was said, "may be X after all" (undo a rejection), not a
+  face. Pointing at a face (or tapping its crop, for touch) highlights its
+  box; "Show boxes" draws all with names; faces no longer found are listed.
+- **Add face**: "+ Add face" in the panel; the panel steps aside, a box is
+  dragged over the photo (pointer events: mouse, pen, finger; the viewer's
+  swipe is off meanwhile), then named. Stored with `POST /api/faces/manual`.
+  Crops of drawn faces: `GET /api/faces/manual/{id}/crop` (made with the
+  photo's other crops, under the guard). A person whose faces are all drawn
+  shows a drawn one (`cover_manual` in `/api/people`).
+- **Protocol 2, `embed`** ([protocol.md](protocol.md)): the worker looks for
+  landmarks around the drawn box (YuNet, threshold 0.3) and aligns; else it
+  embeds the plain crop. `recognition.db` v4 caches them in `recog.drawn`
+  (key + box, model, aligned). `shoebox recognize` embeds drawn faces at the
+  end of every run (again after a model change); `shoebox serve` starts the
+  worker in the background right after a face is drawn
+  (`serve --recognizer`, else `$SHOEBOX_RECOGNIZER` or the installed one)
+  and stops it when done. Aligned ones are references for suggestions (like
+  confirmed detected faces, ≥ 30 px); plain crops are not. On test photos a
+  drawn box around a detected face embedded at 0.92–0.96 to it; even an
+  upside-down face that YuNet missed got its landmarks.
+- **Search**: the suggestions list "People" first (counted within the
+  search, `GET /api/people/search?q&tag&folder&person`), chips "👤 Name";
+  `person` repeats in the URL and in `/api/timeline` (all must be on the
+  photo; the reply has `people: [{id, name}]` for the chips). A typed word
+  also matches the names of people confirmed on a photo, as it matches tag
+  names.
+- **Status line**: "grouping faces N%" / "grouping faces…" while clusters
+  are recomputed, "learning drawn faces…" while drawn faces are embedded
+  (`/api/info` → `clusters.embedding`); the page asks more often meanwhile.
+- Tests: `core/tests/people.rs` (drawn faces embedded by `serve` under the
+  guard and again by `recognize` after a model change, aligned ones
+  suggest and plain ones do not, crops; people as search terms, AND, free
+  text, suggestions within a search, undoing a rejection; per-cluster
+  generation and splits), `core/tests/recognize.rs` (the `embed` task, a
+  worker without it, protocol 1 refused, drawn faces with the real worker
+  under `SHOEBOX_RECOGNIZER`), `core/tests/serve.rs` (new endpoints under
+  the guard), `recognizer/test_recognizer.py` (embed with and without
+  landmarks). The UI was driven with Playwright (Chromium) at 1280 × 800 and
+  as an iPad (gen 7, touch: taps and a finger drag for drawing) on a library
+  of real faces with the real worker and one of the fake worker's cues.
+
+The plan:
+
 Left sidebar, a new section between "All photos" and "Folders":
 
 ```
@@ -641,30 +725,58 @@ Folders
     0 failed, 414 faces added in all.
   - [x] `shoebox verify` afterwards (after both passes, the retry and the
     face check page's crops): 7994 files OK.
-- [ ] 5c-2: on the old Intel MacBook against the exFAT drive (no naming UI
-      until 5c-3: the API with `curl`, from the same computer, e.g.
-      `curl -s localhost:7878/api/clusters?samples=3`, crops at
-      `localhost:7878/api/faces/<id>/crop`, and changes with
-      `curl -X POST -H 'X-Shoebox: 1' -H 'Content-Type: application/json'
-      -d '{"name": "…"}' localhost:7878/api/clusters/<id>/name`):
-  - [ ] Clustering time: the first `shoebox recognize` after the update
-    (nothing new to look at) looks up the neighbours of all ~10,000 faces;
-    note the time on its last line ("Clusters: … (N s)"; 0.7 s on one core
-    of a 2.1 GHz Xeon for 10,000 made-up faces, so expect a few seconds).
-    Run it again: neighbour lists are kept, it should take a fraction.
-  - [ ] Look at the largest clusters (`/api/clusters`): one person each?
-    Are there big mixed ones (small children, 0.60 may be too loose for
-    them)? How many faces are alone?
-  - [ ] Name a few people (a cluster each, or `/api/faces/assign`), with
-    faces from several ages for one child; then the suggestions
-    (`/api/people/<id>/faces?state=suggested`) and the "maybe" list
-    (`state=maybe`): how many are right? Does a child's older face come
-    up as suggested or maybe once faces of several ages are confirmed?
-  - [ ] "Not a face" on the face check page for the leg in 4a5a1198-….JPG
-    and the hands in IMG_9959.JPG (filter "Found turned"): gone from the
-    viewer's boxes and from the list, shown under "Marked “not a face”",
-    counted by `shoebox faces stats`; still hidden after restarting
-    `serve` and after the next `shoebox recognize --rotated`.
-  - [ ] `userdata.json` and `library.db.bak` in `.shoebox/` have the
-    people, groups and decisions; `shoebox verify` afterwards.
-- [ ] 5c-3: naming and correcting from the iPad.
+- [ ] 5c-2 and 5c-3 together, everything in the UI (the 5c-2 checks moved
+      here, so no `curl` is needed), on the old Intel MacBook against the
+      exFAT drive; then from the iPad:
+  - [ ] Install the new recognizer (protocol 2) before anything else:
+    `recognizer/install.sh /Volumes/<drive>` (an old `recognizer.py` is
+    refused: "speaks protocol 1, this shoebox 2").
+  - [ ] Clustering time: run `shoebox recognize` once after the update
+    (nothing new to look at); it looks up the neighbours of all ~10,000
+    faces. Note the time on its last line ("Clusters: … (N s)"; 0.7 s on
+    one core of a 2.1 GHz Xeon for 10,000 made-up faces, so expect a few
+    seconds). Run it again: neighbour lists are kept, it should take a
+    fraction.
+  - [ ] `shoebox serve`: "Faces" appears in the sidebar with "Unnamed (N
+    clusters)". Open it: are the largest cards one person each? Big mixed
+    ones (small children: 0.60 may be too loose for them)? Scroll to the
+    end: how many cards of a single face?
+  - [ ] Name a few people from their cards (type a new name, Enter), one
+    child with cards from several ages. Name a second card of the same
+    person by picking them from the list. Try "Select" on a mixed card:
+    name some faces, "Ignore" the stranger; the card keeps the rest.
+  - [ ] Groups: "New group…" twice ("Familie", "Freunde"); put people in
+    with "Move to group…" and by dragging onto a group in the sidebar; the
+    name list in a card shows people by group; reorder and rename in
+    "Groups…".
+  - [ ] Suggestions: wait for "grouping faces…" to go from the status line;
+    the overview shows "N to check". On a person's page, Suggested and
+    Maybe: how many are right (✓) and wrong (✗)? Does the child's older
+    face come up as suggested or maybe once faces of several ages are
+    confirmed? A face marked ✗ shows under "Not them" and ↺ brings it back.
+  - [ ] Corrections: take a wrong face out of a person (Confirmed, ⋯, "Not
+    …"), name several faces at once (Select, "Name…"), merge two people
+    (⋯, "Merge into…"), "Use as …’s picture".
+  - [ ] "Not a face" on the leg in 4a5a1198-….JPG and the hands in
+    IMG_9959.JPG, from the viewer's info panel (⋯ on the face): gone from
+    the boxes and the panel, listed on the face check page under "Marked
+    “not a face”", counted by `shoebox faces stats`; still hidden after
+    restarting `serve` and after the next `shoebox recognize --rotated`.
+  - [ ] Info panel on a group photo: hover a face (or tap its crop) to see
+    its box; "Show boxes" shows names; ✓/✗ on a suggested face; "+ Name" on
+    an unnamed one.
+  - [ ] Add a missed face: a face lying down or half hidden, "+ Add face",
+    drag a box, name it. The status line shows "learning drawn faces…"
+    (the recognizer starts in the background; how long on the old Mac?),
+    then the face counts for suggestions (or not, if no landmarks were
+    found: the terminal says "… without landmarks").
+  - [ ] Search: type part of a name; "People" in the suggestions; pick two
+    people: only photos with both. Add a tag. A typed name without picking
+    it finds the person's photos too. Bookmark the URL and open it again.
+  - [ ] From the iPad (`serve --lan`): name a card, ✓/✗ in the info panel,
+    draw a face with a finger, "Move to group…", the person's ⋯ menus; no
+    action needs hover.
+  - [ ] `userdata.json` and `library.db.bak` in `.shoebox/` have the people,
+    groups and decisions (drawn faces with `manual`); delete
+    `recognition.db` and run `shoebox recognize`: every name and decision
+    is still there. `shoebox verify` afterwards.

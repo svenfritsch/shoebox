@@ -1,5 +1,6 @@
 // shoebox web UI: virtualised timeline grid, folder tree, search, lightbox,
-// and the changes: move, trash, import, folder rename, duplicates.
+// and the changes: move, trash, import, folder rename, duplicates, tags,
+// faces and people.
 // Plain ES2017 without a build step, so it runs on older iPads too.
 'use strict';
 
@@ -16,7 +17,7 @@ var OVERSCAN = 600; // px above and below the viewport that stay rendered
 var KIND_BADGE = { v: '▶', h: '', j: '', p: '' };
 
 var state = {
-  filter: { folder: null, tags: [], q: '', view: null },
+  filter: { folder: null, tags: [], people: [], q: '', view: null, id: null, tab: null },
   selecting: false,
   selected: {},      // id -> true
   anchor: null,      // index of the last photo clicked while selecting (Shift-click ranges)
@@ -41,7 +42,9 @@ function api(path, opts) {
     if (r.status === 401) { showLogin(); throw new Error('login required'); }
     if (!r.ok) {
       return r.json().catch(function () { return {}; }).then(function (body) {
-        throw new Error(body.error || path + ': HTTP ' + r.status);
+        var e = new Error(body.error || path + ': HTTP ' + r.status);
+        e.status = r.status;
+        throw e;
       });
     }
     return r.json();
@@ -92,24 +95,30 @@ $('login-form').addEventListener('submit', function (ev) {
 
 // ------------------------------------------------------------------ filters (in the URL hash)
 
+var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person'];
+
 function readHash() {
-  var f = { folder: null, tags: [], q: '', view: null };
+  var f = { folder: null, tags: [], people: [], q: '', view: null, id: null, tab: null };
   location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
     var i = kv.indexOf('=');
     if (i < 0) return;
     var k = kv.slice(0, i), v = decodeURIComponent(kv.slice(i + 1));
     if (k === 'folder') f.folder = parseInt(v, 10) || null;
     if (k === 'tag' && parseInt(v, 10) && f.tags.indexOf(parseInt(v, 10)) < 0) f.tags.push(parseInt(v, 10));
+    if (k === 'person' && parseInt(v, 10) && f.people.indexOf(parseInt(v, 10)) < 0) f.people.push(parseInt(v, 10));
     if (k === 'q') f.q = v;
-    if (k === 'view' && (v === 'duplicates' || v === 'trash' || v === 'faces')) f.view = v;
+    if (k === 'view' && VIEWS.indexOf(v) >= 0) f.view = v;
+    if (k === 'id') f.id = parseInt(v, 10) || null;
+    if (k === 'tab') f.tab = v;
   });
   return f;
 }
 
 // A filter without a view shows the grid. Its terms all have to match: a
-// folder, any number of tags (`tag` repeated in the URL) and free text.
+// folder, any number of tags and people (`tag`, `person` repeated in the
+// URL) and free text.
 function setFilter(f) {
-  var h = query({ view: f.view, folder: f.folder, tag: f.tags || [], q: f.q }).replace(/^\?/, '');
+  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], q: f.q }).replace(/^\?/, '');
   if (h === location.hash.replace(/^#/, '')) { applyFilter(); return; }
   location.hash = h; // triggers hashchange -> applyFilter
 }
@@ -117,10 +126,10 @@ function setFilter(f) {
 // The current filter with some terms changed.
 function withFilter(changes) {
   var f = state.filter;
-  return Object.assign({ folder: f.folder, tags: f.tags.slice(), q: f.q }, changes);
+  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), q: f.q }, changes);
 }
 
-function showView(view) { setFilter({ view: view, folder: null, tags: [], q: '' }); }
+function showView(view, id, tab) { setFilter({ view: view, id: id, tab: tab, folder: null, tags: [], people: [], q: '' }); }
 
 function applyFilter() {
   state.filter = readHash();
@@ -136,12 +145,13 @@ function applyFilter() {
   $('nav-dups').classList.toggle('active', view === 'duplicates');
   $('nav-trash').classList.toggle('active', view === 'trash');
   $('nav-faces').classList.toggle('active', view === 'faces');
+  markFacesSection();
   if (view) {
     endSelection();
     $('empty').hidden = true;
     $('filters').hidden = true;
     $('scroller').scrollTop = 0;
-    if (view === 'duplicates') loadDuplicates(); else if (view === 'faces') loadFaces(); else loadTrash();
+    loadView(view);
     return;
   }
   loadTimeline(true);
@@ -177,11 +187,16 @@ function renderChips() {
       setFilter(withFilter({ tags: f.tags.filter(function (t) { return t !== id; }) }));
     });
   });
+  f.people.forEach(function (id) {
+    add('👤 ' + (state.personNames[id] || id), function () {
+      setFilter(withFilter({ people: f.people.filter(function (p) { return p !== id; }) }));
+    });
+  });
   if (f.q) add('“' + f.q + '”', function () { setFilter(withFilter({ q: '' })); });
   var terms = box.children.length;
   if (terms) {
     var more = el('button', 'chip more', '+');
-    more.title = 'Add a tag or folder to the search';
+    more.title = 'Add a tag, person or folder to the search';
     more.onclick = function () { $('search').value = ''; $('search').focus(); suggest(''); };
     box.appendChild(more);
   }
@@ -189,12 +204,14 @@ function renderChips() {
   if (terms >= 2) {
     var clear = el('button', 'chip clear', 'Clear all');
     clear.title = 'Show all photos again';
-    clear.onclick = function () { setFilter({ folder: null, tags: [], q: '' }); };
+    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], q: '' }); };
     box.appendChild(clear);
   }
+  personHead(box, f);
   box.hidden = !box.firstChild;
 }
 state.tagNames = {};
+state.personNames = {};
 
 // ------------------------------------------------------------------ search box
 
@@ -231,7 +248,8 @@ $('search').addEventListener('keydown', function (ev) {
   } else if (ev.key === 'Backspace' && this.value === '') {
     // Like a token field: the last chip goes.
     var f = state.filter;
-    if (f.tags.length) setFilter(withFilter({ tags: f.tags.slice(0, -1) }));
+    if (f.people.length) setFilter(withFilter({ people: f.people.slice(0, -1) }));
+    else if (f.tags.length) setFilter(withFilter({ tags: f.tags.slice(0, -1) }));
     else if (f.folder) setFilter(withFilter({ folder: null }));
   }
 });
@@ -240,11 +258,19 @@ function suggest(text) {
   var seq = ++sugg.seq, f = state.filter;
   if (f.view) { closeSuggest(); return; }
   var needle = text.trim();
-  api('/api/tags' + query({ q: needle, limit: 8, tag: f.tags, folder: f.folder })).then(function (tags) {
+  var within = { q: needle, tag: f.tags, person: f.people, folder: f.folder };
+  Promise.all([
+    api('/api/tags' + query(Object.assign({ limit: 8 }, within))),
+    api('/api/people/search' + query(Object.assign({ limit: 6 }, within))).catch(function () { return []; }),
+  ]).then(function (r) {
     if (seq !== sugg.seq) return;
-    var items = tags.map(function (t) {
+    var items = r[1].map(function (p) {
+      state.personNames[p.id] = p.name;
+      return { kind: 'person', id: p.id, label: p.name, count: p.photos };
+    });
+    r[0].forEach(function (t) {
       state.tagNames[t.id] = t.name;
-      return { kind: 'tag', id: t.id, label: t.name, count: t.count, folderTag: t.kind === 'folder' };
+      items.push({ kind: 'tag', id: t.id, label: t.name, count: t.count, folderTag: t.kind === 'folder' });
     });
     if (needle && !f.folder) {
       var low = needle.toLowerCase();
@@ -264,13 +290,16 @@ function showSuggest(items) {
   var last = null;
   items.forEach(function (it, i) {
     if (it.kind !== last) {
-      box.appendChild(el('div', 'head', it.kind === 'tag' ? (state.filter.tags.length || state.filter.folder ? 'Tags in these photos' : 'Tags') : 'Folders'));
+      var f = state.filter, narrowed = f.tags.length || f.people.length || f.folder;
+      var head = it.kind === 'tag' ? (narrowed ? 'Tags in these photos' : 'Tags')
+        : it.kind === 'person' ? (narrowed ? 'People in these photos' : 'People') : 'Folders';
+      box.appendChild(el('div', 'head', head));
       last = it.kind;
     }
     var b = el('button', 'item');
     b.type = 'button';
     b.setAttribute('role', 'option');
-    b.appendChild(el('span', 'label', (it.kind === 'folder' ? '📁 ' : '# ') + it.label));
+    b.appendChild(el('span', 'label', ({ folder: '📁 ', person: '👤 ' }[it.kind] || '# ') + it.label));
     b.appendChild(el('span', 'count', it.count.toLocaleString()));
     b.onmousedown = function (ev) { ev.preventDefault(); }; // keep the focus in the box
     b.onclick = function () { pickSuggest(it); };
@@ -293,6 +322,7 @@ function pickSuggest(it) {
   $('search').value = '';
   var f = state.filter;
   if (it.kind === 'tag') setFilter(withFilter({ tags: f.tags.indexOf(it.id) < 0 ? f.tags.concat([it.id]) : f.tags, q: '' }));
+  else if (it.kind === 'person') setFilter(withFilter({ people: f.people.indexOf(it.id) < 0 ? f.people.concat([it.id]) : f.people, q: '' }));
   else setFilter(withFilter({ folder: it.id, q: '' }));
 }
 
@@ -375,7 +405,7 @@ function folderNode(f, depth) {
   toggle.onclick = function () { expand(!ul || ul.hidden); };
   name.onclick = function () {
     expand(true);
-    setFilter({ folder: f.id, tags: [], q: state.filter.q });
+    setFilter({ folder: f.id, tags: [], people: [], q: state.filter.q });
   };
   return li;
 }
@@ -399,13 +429,13 @@ function markActiveFolder() {
   });
 }
 
-$('all').onclick = function () { setFilter({ folder: null, tags: [], q: '' }); };
+$('all').onclick = function () { setFilter({ folder: null, tags: [], people: [], q: '' }); };
 $('nav-dups').onclick = function () { showView('duplicates'); };
 $('nav-trash').onclick = function () { showView('trash'); };
 
 $('menu').onclick = function () {
   if (window.matchMedia('(max-width: 760px)').matches) document.body.classList.toggle('side-open');
-  else { document.body.classList.toggle('side-closed'); relayout(); }
+  else { document.body.classList.toggle('side-closed'); relayout(); render(); }
 };
 
 function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
@@ -415,11 +445,12 @@ function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
 function loadTimeline(resetScroll) {
   var seq = ++state.loadSeq;
   var f = state.filter;
-  return api('/api/timeline' + query({ folder: f.folder, tag: f.tags, q: f.q })).then(function (data) {
+  return api('/api/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, q: f.q })).then(function (data) {
     if (seq !== state.loadSeq) return;
     state.anchor = null; // indices change with the new list
-    var unnamed = f.tags.some(function (id) { return !state.tagNames[id]; });
+    var unnamed = f.tags.some(function (id) { return !state.tagNames[id]; }) || f.people.some(function (id) { return !state.personNames[id]; });
     data.tags.forEach(function (t) { state.tagNames[t.id] = t.name; });
+    data.people.forEach(function (p) { state.personNames[p.id] = p.name; });
     if (unnamed) renderChips(); // a link with tags this page has not seen yet
     state.data = data;
     state.live = {};
@@ -748,7 +779,7 @@ $('years').addEventListener('change', function () {
 
 // ------------------------------------------------------------------ lightbox
 
-var lb = { video: null, details: null, showFaces: false };
+var lb = { video: null, details: null, showFaces: false, hover: null, drawing: null };
 
 function openLightbox(i) {
   state.open = i;
@@ -757,6 +788,7 @@ function openLightbox(i) {
 }
 
 function closeLightbox() {
+  stopDrawing();
   stopMedia();
   $('stage').textContent = '';
   $('lightbox').hidden = true;
@@ -798,6 +830,8 @@ function showItem() {
   $('lb-download').href = '/api/files/' + id + '/original?download=1';
   $('lb-live').hidden = !state.live[id];
   $('lb-title').textContent = '';
+  lb.hover = null;
+  stopDrawing();
 
   if (kind === 'v') {
     var v = el('video');
@@ -832,22 +866,29 @@ function showItem() {
   }).catch(function () {});
 }
 
-// Boxes around the faces `shoebox recognize` found, while the info panel is
-// open and "Show" is on.
+// Boxes around the faces (found by `shoebox recognize` or drawn by hand),
+// with names, while the info panel is open and "Show boxes" is on; the face
+// the pointer is on in the panel (or that was tapped there) is highlighted
+// either way.
 function drawFaces() {
   var stage = $('stage');
   stage.querySelectorAll('.face-box').forEach(function (b) { b.remove(); });
   var info = lb.details, img = stage.querySelector('img');
-  if (!lb.showFaces || $('lb-panel').hidden || !info || !info.faces || !img || img.hidden) return;
+  if ($('lb-panel').hidden || !info || !info.faces || !img || img.hidden) return;
   if (info.id !== state.data.ids[state.open]) return;
   var r = img.getBoundingClientRect(), s = stage.getBoundingClientRect();
-  info.faces.forEach(function (f) {
-    var b = el('div', 'face-box');
+  info.faces.forEach(function (f, k) {
+    var hot = lb.hover === k;
+    if (!lb.showFaces && !hot) return;
+    var b = el('div', 'face-box' + (hot ? ' hot' : '') + (f.manual != null ? ' drawn' : ''));
     b.style.left = (r.left - s.left + f.x * r.width) + 'px';
     b.style.top = (r.top - s.top + f.y * r.height) + 'px';
     b.style.width = (f.w * r.width) + 'px';
     b.style.height = (f.h * r.height) + 'px';
-    b.title = 'score ' + f.score.toFixed(2);
+    if (f.person && f.state !== 'ignored') {
+      b.appendChild(el('span', 'face-name', f.person.name + (f.state === 'confirmed' ? '' : '?')));
+    }
+    b.title = f.score != null ? 'score ' + f.score.toFixed(2) : 'drawn by hand';
     stage.appendChild(b);
   });
 }
@@ -907,15 +948,7 @@ function renderPanel() {
     info.linked.forEach(function (l) { versions.appendChild(el('div', '', l.path + (l.missing ? ' (missing)' : ''))); });
     row('Versions', versions);
   }
-  if (info.faces) {
-    var faces = el('div', '', info.faces.length ? info.faces.length + (info.faces.length === 1 ? ' face ' : ' faces ') : 'none found');
-    if (info.faces.length) {
-      var show = el('button', '', lb.showFaces ? 'Hide' : 'Show');
-      show.onclick = function () { lb.showFaces = !lb.showFaces; renderPanel(); };
-      faces.appendChild(show);
-    }
-    row('Faces', faces);
-  }
+  infoFaces(row, info);
   panel.appendChild(dl);
   drawFaces();
 
@@ -972,6 +1005,10 @@ document.addEventListener('keydown', function (ev) {
     }
     return;
   }
+  if (lb.drawing) {
+    if (ev.key === 'Escape') { ev.preventDefault(); stopDrawing(); }
+    return;
+  }
   // Space closes the viewer, except on a focused video (play/pause).
   var onVideo = document.activeElement && document.activeElement.tagName === 'VIDEO';
   if (ev.key === 'Escape' || (ev.key === ' ' && !onVideo)) {
@@ -993,7 +1030,7 @@ document.addEventListener('keydown', function (ev) {
     y0 = ev.touches[0].clientY;
   }, { passive: true });
   box.addEventListener('touchend', function (ev) {
-    if (x0 === null || ev.target.closest('.lb-panel, video')) return;
+    if (x0 === null || lb.drawing || ev.target.closest('.lb-panel, video, .draw-layer')) return;
     var dx = ev.changedTouches[0].clientX - x0, dy = ev.changedTouches[0].clientY - y0;
     x0 = null;
     if (Math.abs(dx) > 50 && Math.abs(dx) > 1.5 * Math.abs(dy)) step(dx < 0 ? 1 : -1);
@@ -1021,10 +1058,14 @@ function loadInfo() {
     if (info.busy) parts.push('scan running…');
     else if (scan) parts.push('last scan ' + new Date(scan.started_at * 1000).toLocaleDateString());
     if (!info.ffmpeg && info.videos) parts.push('no ffmpeg: video previews made by the browser');
-    var f = info.faces;
+    var f = info.faces, c = info.clusters;
     $('nav-faces').hidden = !f.faces;
     if (f.running) parts.push('finding faces ' + Math.floor(100 * f.done / Math.max(f.total, 1)) + '%');
     else if (f.done && f.done < f.total) parts.push('faces: ' + (f.total - f.done).toLocaleString() + ' photos to look at');
+    if (c.embedding) parts.push('learning drawn faces…');
+    if (c.running && c.total) parts.push('grouping faces ' + Math.floor(100 * c.done / Math.max(c.total, 1)) + '%');
+    else if (c.running || c.stale) parts.push('grouping faces…');
+    facesInfo(info);
     $('status').textContent = parts.join(' · ');
 
     // Reload when a scan changed the index (but not while it is still busy).
@@ -1042,10 +1083,22 @@ function loadInfo() {
 function reloadAll() {
   loadFolders();
   loadOwnTags();
-  if (state.filter.view === 'duplicates') loadDuplicates();
-  else if (state.filter.view === 'trash') loadTrash();
-  else if (state.filter.view === 'faces') loadFaces();
+  loadPeople();
+  // The unnamed clusters and a person's faces change their cards in place
+  // after each action; loading them again would lose the place and what is
+  // typed in other cards.
+  if (state.filter.view === 'unnamed' || state.filter.view === 'person') return;
+  if (state.filter.view) loadView(state.filter.view);
   else loadTimeline(false);
+}
+
+function loadView(view) {
+  if (view === 'duplicates') loadDuplicates();
+  else if (view === 'faces') loadFaces();
+  else if (view === 'people') loadPeoplePage();
+  else if (view === 'unnamed') loadUnnamed();
+  else if (view === 'person') loadPersonPage();
+  else loadTrash();
 }
 
 function changed() {
@@ -1161,7 +1214,7 @@ function updateSelbar() {
 }
 
 $('select').onclick = function () {
-  if (state.filter.view) setFilter({ folder: null, tags: [], q: '' });
+  if (state.filter.view) setFilter({ folder: null, tags: [], people: [], q: '' });
   if (state.selecting) endSelection(); else startSelection();
 };
 $('sel-done').onclick = endSelection;
@@ -2107,6 +2160,1280 @@ function openFacePhoto(face) {
   openLightbox(0);
 }
 
+// ------------------------------------------------------------------ faces: people, groups, unnamed (5c-3)
+// The sidebar's "Faces" section, the people overview, a person's faces
+// (confirmed, suggested, maybe, rejected), the unnamed clusters, groups,
+// and the people in the info panel. Everything said about a face is a
+// decision on the server; the browser keeps nothing. Every action has a
+// visible button (no hover-only actions), so it all works by touch.
+
+var people = { list: [], byId: {}, groups: [], open: {}, info: null, watch: null };
+
+function fold(s) { return String(s).normalize('NFC').toLowerCase(); }
+
+function loadPeople() {
+  return Promise.all([api('/api/people'), api('/api/groups')]).then(function (r) {
+    people.list = r[0];
+    people.groups = r[1];
+    people.byId = {};
+    r[0].forEach(function (p) { people.byId[p.id] = p; state.personNames[p.id] = p.name; });
+    renderFacesSection();
+    renderChips();
+  }).catch(function () {});
+}
+
+// Groups in their order with their people, then "No group" (only when
+// someone is in it).
+function groupedPeople() {
+  var out = people.groups.map(function (g) { return { id: g.id, name: g.name, people: [] }; });
+  var byGroup = {};
+  out.forEach(function (s) { byGroup[s.id] = s; });
+  var none = { id: null, name: 'No group', people: [] };
+  people.list.forEach(function (p) { (byGroup[p.group_id] || none).people.push(p); });
+  if (none.people.length) out.push(none);
+  return out;
+}
+
+// /api/info: whether there are faces at all, how many clusters wait for a
+// name; keep watching while the clusters are being recomputed.
+function facesInfo(info) {
+  var before = people.info;
+  people.info = info;
+  var busy = info.clusters.stale || info.clusters.running || info.clusters.embedding;
+  if (before && (before.clusters.stale || before.clusters.running || before.clusters.embedding) && !busy) {
+    // Recomputed: the suggestions and counts changed.
+    loadPeople().then(function () { if (state.filter.view === 'people') loadPeoplePage(); });
+    if (state.filter.view === 'person') loadPersonCounts();
+  }
+  if (busy) watchClusters();
+  renderFacesSection();
+}
+
+// Look at the status more often while the clusters are being recomputed.
+function watchClusters() {
+  if (people.watch) return;
+  people.watch = setTimeout(function () { people.watch = null; loadInfo(); }, 1500);
+}
+
+// After a change to people or decisions.
+function peopleChanged() {
+  loadPeople();
+  loadInfo();
+}
+
+function cropUrl(face) {
+  if (face.manual != null) return '/api/faces/manual/' + face.manual + '/crop';
+  if (face.id != null) return '/api/faces/' + face.id + '/crop';
+  return null;
+}
+
+// A round face: the person's cover, or their initials.
+function avatar(p, cls) {
+  var a = el('span', 'avatar' + (cls ? ' ' + cls : ''));
+  if (p && (p.cover != null || p.cover_manual != null)) {
+    var img = el('img');
+    img.alt = '';
+    img.loading = 'lazy';
+    img.src = p.cover != null ? '/api/faces/' + p.cover + '/crop' : '/api/faces/manual/' + p.cover_manual + '/crop';
+    a.appendChild(img);
+  } else {
+    a.textContent = p ? p.name.split(/\s+/).map(function (w) { return w.charAt(0); }).join('').slice(0, 2).toUpperCase() : '?';
+  }
+  return a;
+}
+
+function faceImg(face, cls) {
+  var a = el('span', 'avatar' + (cls ? ' ' + cls : ''));
+  var url = cropUrl(face);
+  if (url) {
+    var img = el('img');
+    img.alt = '';
+    img.loading = 'lazy';
+    img.src = url;
+    a.appendChild(img);
+  }
+  return a;
+}
+
+function showPerson(id) { closeLightboxQuietly(); setFilter({ folder: null, tags: [], people: [id], q: '' }); }
+
+function closeLightboxQuietly() { if (!$('lightbox').hidden) closeLightbox(); }
+
+// ---- drag and drop of people onto groups (a mouse; "Move to group…" works everywhere)
+
+var PERSON_TYPE = 'application/x-shoebox-person';
+
+function dragPerson(node, p) {
+  node.draggable = true;
+  node.addEventListener('dragstart', function (ev) {
+    ev.dataTransfer.setData(PERSON_TYPE, String(p.id));
+    ev.dataTransfer.setData('text/plain', p.name);
+    ev.dataTransfer.effectAllowed = 'move';
+  });
+}
+
+function dropOnGroup(node, groupId) {
+  var ok = function (ev) { return Array.prototype.indexOf.call(ev.dataTransfer.types || [], PERSON_TYPE) >= 0; };
+  node.addEventListener('dragover', function (ev) { if (ok(ev)) { ev.preventDefault(); node.classList.add('drop'); } });
+  node.addEventListener('dragleave', function () { node.classList.remove('drop'); });
+  node.addEventListener('drop', function (ev) {
+    node.classList.remove('drop');
+    if (!ok(ev)) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    var id = parseInt(ev.dataTransfer.getData(PERSON_TYPE), 10);
+    var p = people.byId[id];
+    if (p && p.group_id !== groupId) setGroup(p, groupId);
+  });
+}
+
+function setGroup(p, groupId) {
+  return post('/api/people/' + p.id + '/group', { group_id: groupId }).then(function () {
+    var g = people.groups.filter(function (x) { return x.id === groupId; })[0];
+    toast(p.name + (g ? ' is in “' + g.name + '” now' : ' is in no group now'));
+    peopleChanged();
+    if (state.filter.view === 'people') loadPeople().then(loadPeoplePage);
+  }).catch(failed);
+}
+
+// ---- sidebar
+
+$('nav-people').onclick = function () { showView('people'); };
+
+function renderFacesSection() {
+  var info = people.info;
+  $('faces-section').hidden = !(info && (info.faces.faces || info.clusters.people));
+  var tree = $('people-tree');
+  tree.textContent = '';
+  groupedPeople().forEach(function (s) {
+    var key = s.id == null ? 'none' : s.id;
+    var li = el('li');
+    var row = el('div', 'row');
+    var toggle = el('button', 'toggle', s.people.length ? (people.open[key] ? '▾' : '▸') : '');
+    var name = el('button', 'name', s.name);
+    name.title = s.people.length ? 'Show or hide its people' : 'Nobody in it yet';
+    var flip = function () { people.open[key] = !people.open[key]; renderFacesSection(); };
+    toggle.onclick = flip;
+    name.onclick = flip;
+    row.appendChild(toggle);
+    row.appendChild(name);
+    row.appendChild(el('span', 'count', String(s.people.length)));
+    li.appendChild(row);
+    dropOnGroup(row, s.id);
+    if (people.open[key] && s.people.length) {
+      var ul = el('ul');
+      s.people.forEach(function (p) {
+        var pli = el('li');
+        var prow = el('div', 'row');
+        prow.appendChild(avatar(p, 'tiny'));
+        var b = el('button', 'name', p.name);
+        b.dataset.person = p.id;
+        b.onclick = function () { showPerson(p.id); };
+        prow.appendChild(b);
+        prow.appendChild(el('span', 'count', p.photos.toLocaleString()));
+        dragPerson(prow, p);
+        pli.appendChild(prow);
+        ul.appendChild(pli);
+      });
+      li.appendChild(ul);
+    }
+    tree.appendChild(li);
+  });
+  var c = info && info.clusters;
+  var uli = el('li');
+  var urow = el('div', 'row');
+  urow.appendChild(el('span', 'toggle', ''));
+  var ub = el('button', 'name', 'Unnamed' + (c ? ' (' + plural(c.clusters, 'cluster', 'clusters') + ')' : ''));
+  ub.dataset.view = 'unnamed';
+  ub.onclick = function () { showView('unnamed'); };
+  urow.appendChild(ub);
+  uli.appendChild(urow);
+  tree.appendChild(uli);
+  markFacesSection();
+}
+
+function markFacesSection() {
+  var f = state.filter;
+  $('nav-people').classList.toggle('active', f.view === 'people');
+  Array.prototype.forEach.call(document.querySelectorAll('#people-tree .name'), function (b) {
+    var on = b.dataset.view ? f.view === b.dataset.view
+      : b.dataset.person ? (!f.view && f.people.indexOf(parseInt(b.dataset.person, 10)) >= 0) || (f.view === 'person' && f.id === parseInt(b.dataset.person, 10))
+      : false;
+    b.classList.toggle('active', on);
+  });
+}
+
+// ---- a field that names someone
+
+// A text field offering people by group while typing (the autocomplete
+// that makes naming quick); picking one calls done({person_id} or {name},
+// label). opts: allowNew (offer a new person of the typed name), except
+// (ids to leave out), placeholder.
+function personField(done, opts) {
+  opts = opts || {};
+  var wrap = el('div', 'pfield');
+  var input = el('input');
+  input.type = 'text';
+  input.placeholder = opts.placeholder || 'Name';
+  input.autocomplete = 'off';
+  input.setAttribute('autocapitalize', 'words');
+  input.setAttribute('enterkeyhint', 'done');
+  var list = el('div', 'plist');
+  list.setAttribute('role', 'listbox');
+  list.hidden = true;
+  wrap.appendChild(input);
+  wrap.appendChild(list);
+  var items = [], at = -1;
+  var pick = function (it) {
+    list.hidden = true;
+    input.value = it.label;
+    done(it.who, it.label);
+  };
+  var mark = function () {
+    Array.prototype.forEach.call(list.querySelectorAll('.item'), function (b, k) { b.classList.toggle('at', k === at); });
+  };
+  var render = function () {
+    var text = input.value.trim(), low = fold(text), exact = null;
+    list.textContent = '';
+    items = [];
+    at = -1;
+    groupedPeople().forEach(function (s) {
+      var ps = s.people.filter(function (p) {
+        return (!low || fold(p.name).indexOf(low) >= 0) && !(opts.except && opts.except.indexOf(p.id) >= 0);
+      });
+      if (!ps.length) return;
+      list.appendChild(el('div', 'head', s.name));
+      ps.forEach(function (p) {
+        var it = { who: { person_id: p.id }, label: p.name };
+        if (fold(p.name) === low) exact = it;
+        var b = el('button', 'item');
+        b.type = 'button';
+        b.appendChild(avatar(p, 'tiny'));
+        b.appendChild(el('span', '', p.name));
+        b.onmousedown = function (ev) { ev.preventDefault(); };
+        b.onclick = function () { pick(it); };
+        items.push(it);
+        list.appendChild(b);
+      });
+    });
+    if (opts.allowNew && text && !exact) {
+      var it = { who: { name: text }, label: text };
+      var b = el('button', 'item new', '+ New person “' + text + '”');
+      b.type = 'button';
+      b.onmousedown = function (ev) { ev.preventDefault(); };
+      b.onclick = function () { pick(it); };
+      items.push(it);
+      list.appendChild(b);
+    }
+    wrap.exact = exact;
+    list.hidden = !items.length || document.activeElement !== input;
+  };
+  input.addEventListener('focus', render);
+  input.addEventListener('input', render);
+  input.addEventListener('blur', function () { setTimeout(function () { list.hidden = true; }, 150); });
+  input.addEventListener('keydown', function (ev) {
+    ev.stopPropagation(); // arrows, Space and Escape belong to the field, not the viewer
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      if (!items.length) return;
+      ev.preventDefault();
+      list.hidden = false;
+      at = ev.key === 'ArrowDown' ? (at + 1) % items.length : (at + items.length - 1) % items.length;
+      mark();
+    } else if (ev.key === 'Enter') {
+      ev.preventDefault();
+      var text = input.value.trim();
+      if (at >= 0) pick(items[at]);
+      else if (wrap.exact) pick(wrap.exact);
+      else if (text && opts.allowNew) pick({ who: { name: text }, label: text });
+    } else if (ev.key === 'Escape') {
+      if (!list.hidden) { list.hidden = true; return; }
+      if (opts.onEscape) opts.onEscape();
+    }
+  });
+  wrap.input = input;
+  // What is typed, as {person_id} for someone listed or {name} for a new
+  // person (null if empty or not allowed).
+  wrap.value = function () {
+    var text = input.value.trim();
+    if (!text) return null;
+    if (wrap.exact) return wrap.exact.who;
+    var hit = people.list.filter(function (p) { return fold(p.name) === fold(text); })[0];
+    if (hit) return { person_id: hit.id };
+    return opts.allowNew ? { name: text } : null;
+  };
+  return wrap;
+}
+
+// ---- dialogs for people and groups
+
+function nameDialog(title, value, label, save) {
+  var body = el('div');
+  var input = el('input');
+  input.type = 'text';
+  input.className = 'wide';
+  input.value = value || '';
+  body.appendChild(input);
+  var error = el('p', 'error');
+  body.appendChild(error);
+  var go = function (btn) {
+    if (!input.value.trim()) { error.textContent = 'Type a name.'; return false; }
+    btn.disabled = true;
+    save(input.value.trim()).then(function () { closeModal(); }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
+    return false;
+  };
+  var buttons = openModal(title, body, [{ label: 'Cancel', cls: 'quiet' }, { label: label, onclick: go }]);
+  input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go(buttons[1]); });
+  input.select();
+}
+
+function renamePerson(p) {
+  nameDialog('Rename', p.name, 'Rename', function (name) {
+    return post('/api/people/' + p.id + '/rename', { name: name }).then(function (r) {
+      toast('Now “' + r.name + '”');
+      state.personNames[p.id] = r.name;
+      peopleChanged();
+      if (state.filter.view) loadView(state.filter.view); else renderChips();
+    });
+  });
+}
+
+function newGroup(then) {
+  nameDialog('New group', '', 'Create', function (name) {
+    return post('/api/groups', { name: name }).then(function (g) {
+      toast('Group “' + g.name + '” created');
+      return loadPeople().then(function () {
+        if (then) then(g);
+        else if (state.filter.view === 'people') loadPeoplePage();
+      });
+    });
+  });
+}
+
+function moveToGroupDialog(p) {
+  var body = el('div');
+  body.appendChild(el('p', '', 'Put ' + p.name + ' into:'));
+  var list = el('div', 'taglist');
+  var choice = function (label, id, current) {
+    var b = el('button', current ? 'current' : '', label + (current ? ' ✓' : ''));
+    b.onclick = function () { closeModal(); if (!current) setGroup(p, id); };
+    list.appendChild(b);
+  };
+  people.groups.forEach(function (g) { choice(g.name, g.id, p.group_id === g.id); });
+  choice('No group', null, p.group_id == null);
+  body.appendChild(list);
+  body.appendChild(el('p', 'hint', 'A person is in one group at most. On a computer you can also drag people onto a group.'));
+  openModal('Move to group', body, [
+    { label: 'New group…', cls: 'quiet', onclick: function () { setTimeout(function () { newGroup(function (g) { setGroup(p, g.id); }); }, 0); } },
+    { label: 'Cancel', cls: 'quiet' },
+  ]);
+}
+
+function mergeDialog(p) {
+  var body = el('div');
+  body.appendChild(el('p', '', 'Merge ' + p.name + ' into:'));
+  var into = null;
+  var field = personField(function (who) { into = who.person_id; }, { except: [p.id], placeholder: 'Who is it really?' });
+  body.appendChild(field);
+  body.appendChild(el('p', 'hint', 'All faces of ' + p.name + ' (and the photos they are on) become that person’s; ' + p.name + ' is removed. The other person keeps their name and group.'));
+  var error = el('p', 'error');
+  body.appendChild(error);
+  openModal('Merge', body, [{ label: 'Cancel', cls: 'quiet' }, {
+    label: 'Merge', onclick: function (btn) {
+      var who = field.value();
+      into = into || (who && who.person_id);
+      if (!into) { error.textContent = 'Choose someone from the list.'; return false; }
+      btn.disabled = true;
+      post('/api/people/' + p.id + '/merge', { into: into }).then(function (r) {
+        closeModal();
+        toast(p.name + ' merged into ' + r.name);
+        peopleChanged();
+        if (state.filter.people.indexOf(p.id) >= 0 || (state.filter.view === 'person' && state.filter.id === p.id)) showPerson(r.id);
+        else if (state.filter.view) loadView(state.filter.view);
+      }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
+      return false;
+    },
+  }]);
+}
+
+// Rename, reorder and delete groups.
+function groupsDialog() {
+  var body = el('div');
+  var list = el('div', 'grouplist');
+  body.appendChild(list);
+  var render = function () {
+    list.textContent = '';
+    if (!people.groups.length) list.appendChild(el('p', 'hint', 'No groups yet.'));
+    people.groups.forEach(function (g, k) {
+      var row = el('div', 'grow-row');
+      row.appendChild(el('span', 'gname', g.name));
+      row.appendChild(el('span', 'gcount', plural(g.people, 'person', 'people')));
+      var btn = function (label, title, run, disabled) {
+        var b = el('button', 'btn quiet small', label);
+        b.title = title;
+        b.setAttribute('aria-label', title);
+        b.disabled = !!disabled;
+        b.onclick = run;
+        row.appendChild(b);
+      };
+      var move = function (d) {
+        var ids = people.groups.map(function (x) { return x.id; });
+        ids.splice(k, 1);
+        ids.splice(k + d, 0, g.id);
+        post('/api/groups/reorder', { ids: ids }).then(function (gs) { people.groups = gs; render(); peopleChanged(); }).catch(failed);
+      };
+      btn('↑', 'Move up', function () { move(-1); }, k === 0);
+      btn('↓', 'Move down', function () { move(1); }, k === people.groups.length - 1);
+      btn('Rename', 'Rename', function () {
+        nameDialog('Rename group', g.name, 'Rename', function (name) {
+          return post('/api/groups/' + g.id + '/rename', { name: name }).then(function () {
+            return loadPeople().then(function () { groupsDialog(); if (state.filter.view === 'people') loadPeoplePage(); });
+          });
+        });
+      });
+      btn('Delete', 'Delete', function () {
+        openModal('Delete group', 'Delete “' + g.name + '”? ' + (g.people ? plural(g.people, 'person', 'people') + ' in it will be in no group; nobody is deleted.' : 'Nobody is in it.'), [
+          { label: 'Cancel', cls: 'quiet', onclick: function () { setTimeout(groupsDialog, 0); } },
+          { label: 'Delete', cls: 'danger', onclick: function () {
+            post('/api/groups/' + g.id + '/delete').then(function () {
+              toast('Group “' + g.name + '” deleted');
+              return loadPeople().then(function () { groupsDialog(); if (state.filter.view === 'people') loadPeoplePage(); });
+            }).catch(failed);
+          } },
+        ]);
+      });
+      list.appendChild(row);
+    });
+  };
+  render();
+  openModal('Groups', body, [
+    { label: 'New group…', cls: 'quiet', onclick: function () { setTimeout(function () { newGroup(function () { groupsDialog(); }); }, 0); } },
+    { label: 'Done', onclick: function () { if (state.filter.view === 'people') loadPeoplePage(); } },
+  ]);
+}
+
+function personMenuItems(p) {
+  return [
+    { label: 'Show photos', run: function () { showPerson(p.id); } },
+    { label: 'Review faces', run: function () { showView('person', p.id, p.suggested ? 'suggested' : p.maybe ? 'maybe' : 'confirmed'); } },
+    { label: 'Rename…', run: function () { renamePerson(p); } },
+    { label: 'Move to group…', run: function () { moveToGroupDialog(p); } },
+    { label: 'Merge into…', run: function () { mergeDialog(p); } },
+  ];
+}
+
+// A ⋯ button that opens a menu below itself (works by touch).
+function menuButton(items, title) {
+  var b = el('button', 'more-btn', '⋯');
+  b.type = 'button';
+  b.title = title || 'More';
+  b.setAttribute('aria-label', title || 'More');
+  b.onclick = function (ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    var r = b.getBoundingClientRect();
+    showMenu(r.left, r.bottom + 2, typeof items === 'function' ? items() : items);
+  };
+  return b;
+}
+
+// Above the grid when it shows one person's photos.
+function personHead(box, f) {
+  if (f.view || f.people.length !== 1) return;
+  var p = people.byId[f.people[0]];
+  if (!p) return;
+  var head = el('div', 'person-head');
+  head.appendChild(avatar(p, 'big'));
+  var text = el('div', 'ptext');
+  text.appendChild(el('div', 'pname', p.name));
+  var g = people.groups.filter(function (x) { return x.id === p.group_id; })[0];
+  text.appendChild(el('div', 'pmeta', plural(p.photos, 'photo', 'photos') + ' · ' + (g ? g.name : 'no group')));
+  head.appendChild(text);
+  var review = p.suggested + p.maybe;
+  var faces = el('button', 'btn quiet', review ? 'Check ' + plural(review, 'face', 'faces') : 'Faces');
+  faces.onclick = function () { showView('person', p.id, p.suggested ? 'suggested' : p.maybe ? 'maybe' : 'confirmed'); };
+  head.appendChild(faces);
+  head.appendChild(menuButton(personMenuItems(p).slice(1), 'More for ' + p.name));
+  box.insertBefore(head, box.firstChild);
+}
+
+// ---- people overview
+
+function loadPeoplePage() {
+  var page = $('page');
+  if (state.filter.view !== 'people') return;
+  page.textContent = '';
+  page.appendChild(el('h2', '', 'Faces'));
+  var c = people.info && people.info.clusters;
+  var sub = el('p', 'sub');
+  sub.appendChild(document.createTextNode(plural(people.list.length, 'person', 'people') + (c ? ' · ' + plural(c.unnamed, 'face', 'faces') + ' without a name in ' + plural(c.clusters, 'cluster', 'clusters') + ' ' : ' ')));
+  if (c && c.clusters) {
+    var name = el('button', 'link', 'Name them →');
+    name.onclick = function () { showView('unnamed'); };
+    sub.appendChild(name);
+  }
+  page.appendChild(sub);
+  var bar = el('div', 'toolbar');
+  var ng = el('button', 'btn quiet', 'New group…');
+  ng.onclick = function () { newGroup(); };
+  var gs = el('button', 'btn quiet', 'Groups…');
+  gs.onclick = groupsDialog;
+  var check = el('button', 'btn quiet', 'Face check');
+  check.onclick = function () { showView('faces'); };
+  bar.appendChild(ng);
+  bar.appendChild(gs);
+  bar.appendChild(check);
+  page.appendChild(bar);
+  var sections = groupedPeople();
+  if (!people.list.length) page.appendChild(el('p', 'sub', 'Nobody is named yet. Name faces under “Unnamed”, or in the info panel of a photo.'));
+  sections.forEach(function (s) {
+    var sec = el('section', 'pgroup');
+    var h = el('h3', '', s.name);
+    h.appendChild(el('span', 'n', String(s.people.length)));
+    sec.appendChild(h);
+    var grid = el('div', 'people');
+    s.people.forEach(function (p) { grid.appendChild(personTile(p)); });
+    if (!s.people.length) grid.appendChild(el('p', 'hint', 'Nobody in it yet: “Move to group…” on a person, or drag one here.'));
+    sec.appendChild(grid);
+    dropOnGroup(sec, s.id);
+    page.appendChild(sec);
+  });
+  // "No group" as a drop target even when nobody is in it.
+  if (people.groups.length && !sections.some(function (s) { return s.id == null; })) {
+    var none = el('section', 'pgroup empty-drop');
+    none.appendChild(el('h3', '', 'No group'));
+    dropOnGroup(none, null);
+    page.appendChild(none);
+  }
+}
+
+function personTile(p) {
+  var t = el('div', 'person');
+  t.dataset.id = p.id;
+  var a = el('a', 'ptile');
+  a.href = '#';
+  a.onclick = function (ev) { ev.preventDefault(); showPerson(p.id); };
+  a.appendChild(avatar(p, 'big'));
+  a.appendChild(el('span', 'pname', p.name));
+  a.appendChild(el('span', 'pmeta', plural(p.photos, 'photo', 'photos')));
+  t.appendChild(a);
+  if (p.suggested + p.maybe) {
+    var badge = el('button', 'pbadge', (p.suggested + p.maybe).toLocaleString() + ' to check');
+    badge.title = 'Faces suggested for ' + p.name;
+    badge.onclick = function () { showView('person', p.id, p.suggested ? 'suggested' : 'maybe'); };
+    t.appendChild(badge);
+  }
+  t.appendChild(menuButton(personMenuItems(p), 'More for ' + p.name));
+  dragPerson(t, p);
+  return t;
+}
+
+// ---- a person's faces
+
+var PERSON_TABS = [['confirmed', 'Confirmed'], ['suggested', 'Suggested'], ['maybe', 'Maybe'], ['rejected', 'Not them']];
+var pp = { person: null, faces: [], total: 0, picking: false, picked: {} };
+
+function loadPersonPage() {
+  var f = state.filter, page = $('page');
+  var tab = PERSON_TABS.some(function (t) { return t[0] === f.tab; }) ? f.tab : 'confirmed';
+  page.textContent = '';
+  pp.faces = [];
+  pp.picked = {};
+  pp.picking = false;
+  return api('/api/people/' + f.id).then(function (p) {
+    if (state.filter.view !== 'person' || state.filter.id !== p.id) return;
+    pp.person = p;
+    state.personNames[p.id] = p.name;
+    var head = el('div', 'person-head');
+    head.appendChild(avatar(p, 'big'));
+    var text = el('div', 'ptext');
+    text.appendChild(el('h2', 'pname', p.name));
+    text.appendChild(el('div', 'pmeta', plural(p.photos, 'photo', 'photos') + ' · ' + plural(p.faces, 'face', 'faces') + ' confirmed'));
+    head.appendChild(text);
+    var photos = el('button', 'btn quiet', 'Photos');
+    photos.onclick = function () { showPerson(p.id); };
+    head.appendChild(photos);
+    head.appendChild(menuButton(personMenuItems(p).slice(2), 'More for ' + p.name));
+    page.appendChild(head);
+    var tabs = el('div', 'tabs');
+    tabs.id = 'person-tabs';
+    PERSON_TABS.forEach(function (t) {
+      var b = el('button', 'tab' + (t[0] === tab ? ' active' : ''));
+      b.dataset.tab = t[0];
+      b.onclick = function () { setFilter({ view: 'person', id: p.id, tab: t[0] }); };
+      tabs.appendChild(b);
+    });
+    page.appendChild(tabs);
+    personTabCounts(p);
+    page.appendChild(el('p', 'sub', {
+      confirmed: 'Faces named ' + p.name + ', largest first. Select some to take them out (“Not ' + p.name + '”) or give them another name.',
+      suggested: 'Faces that look like ' + p.name + ' (from all confirmed faces), most similar first. ✓ confirms, ✗ says it is someone else.',
+      maybe: 'Faces that might be ' + p.name + ', less sure than the suggestions. ✓ confirms, ✗ says it is someone else.',
+      rejected: 'Faces marked “not ' + p.name + '”. They are never suggested for ' + p.name + ' again; ↺ undoes that.',
+    }[tab]));
+    var bar = el('div', 'toolbar');
+    var pick = el('button', 'btn quiet', 'Select');
+    pick.id = 'pp-pick';
+    pick.onclick = function () { pp.picking = !pp.picking; if (!pp.picking) clearPersonPicks(); updatePersonPick(); };
+    bar.appendChild(pick);
+    if (tab === 'suggested') {
+      var all = el('button', 'btn quiet', 'Confirm all shown');
+      all.onclick = function () { personAction('confirm', pp.faces.map(function (x) { return x.id; }).filter(function (x) { return x != null; })); };
+      bar.appendChild(all);
+    }
+    page.appendChild(bar);
+    var grid = el('div', 'faces');
+    grid.id = 'pp-grid';
+    page.appendChild(grid);
+    var more = el('button', 'btn quiet', 'Show more');
+    more.hidden = true;
+    more.onclick = function () { morePersonFaces(grid, more, tab); };
+    page.appendChild(more);
+    page.appendChild(personPickBar(tab));
+    updatePersonPick();
+    return morePersonFaces(grid, more, tab);
+  }).catch(function (e) {
+    if (e.status === 404) { page.appendChild(el('p', 'sub', 'This person does not exist (any more).')); return; }
+    failed(e);
+  });
+}
+
+function personTabCounts(p) {
+  var counts = { confirmed: p.faces, suggested: p.suggested, maybe: p.maybe };
+  Array.prototype.forEach.call(document.querySelectorAll('#person-tabs .tab'), function (b) {
+    var t = PERSON_TABS.filter(function (x) { return x[0] === b.dataset.tab; })[0];
+    b.textContent = t[1] + (counts[t[0]] != null ? ' (' + counts[t[0]].toLocaleString() + ')' : '');
+  });
+}
+
+// The counts in the tabs after the suggestions were recomputed.
+function loadPersonCounts() {
+  var id = state.filter.id;
+  api('/api/people/' + id).then(function (p) {
+    if (state.filter.view === 'person' && state.filter.id === id) { pp.person = p; personTabCounts(p); }
+  }).catch(function () {});
+}
+
+function morePersonFaces(grid, more, tab) {
+  more.disabled = true;
+  return api('/api/people/' + pp.person.id + '/faces' + query({ state: tab, offset: pp.faces.length, limit: 200 })).then(function (r) {
+    if (state.filter.view !== 'person') return;
+    pp.total = r.total;
+    r.faces.forEach(function (face) { pp.faces.push(face); grid.appendChild(personFaceCard(face, tab)); });
+    if (!pp.total) grid.appendChild(el('p', 'sub', 'None.'));
+    more.disabled = false;
+    more.hidden = pp.faces.length >= pp.total;
+  }).catch(failed);
+}
+
+function faceKey(face) { return face.id != null ? 'f' + face.id : face.manual != null ? 'm' + face.manual : null; }
+
+function personFaceCard(face, tab) {
+  var p = pp.person;
+  var card = el('div', 'face' + (face.small ? ' small' : ''));
+  var key = faceKey(face);
+  card.dataset.key = key;
+  var a = el('a', 'crop');
+  a.href = '#';
+  a.title = 'Open the photo';
+  var url = cropUrl(face);
+  if (url) {
+    var img = el('img');
+    img.alt = '';
+    img.loading = 'lazy';
+    img.src = url;
+    img.onerror = function () { card.classList.add('broken'); };
+    a.appendChild(img);
+  } else {
+    card.classList.add('broken');
+  }
+  a.onclick = function (ev) {
+    ev.preventDefault();
+    if (pp.picking) {
+      if (!key) return;
+      if (pp.picked[key]) delete pp.picked[key]; else pp.picked[key] = face;
+      card.classList.toggle('sel', !!pp.picked[key]);
+      updatePersonPick();
+      return;
+    }
+    if (face.file != null) openFacePhoto(face);
+  };
+  card.appendChild(a);
+  var caption = face.similarity != null ? Math.round(face.similarity * 100) + '% alike' : Math.round(face.px) + ' px';
+  if (face.lost) caption = 'no longer found';
+  else if (face.manual != null) caption = 'drawn by hand';
+  card.appendChild(el('div', 'meta', caption));
+  if (face.small) card.appendChild(el('span', 'tag', 'small'));
+  var acts = el('div', 'acts');
+  var act = function (label, title, cls, run) {
+    var b = el('button', cls, label);
+    b.title = title;
+    b.setAttribute('aria-label', title);
+    b.onclick = function (ev) { ev.stopPropagation(); run(); };
+    acts.appendChild(b);
+  };
+  if (tab === 'suggested' || tab === 'maybe') {
+    act('✓', 'It is ' + p.name, 'yes', function () { personAction('confirm', [face.id]); });
+    act('✗', 'Not ' + p.name, 'no', function () { personAction('reject', [face.id]); });
+  } else if (tab === 'rejected') {
+    act('↺', 'Undo “not ' + p.name + '”', 'undo', function () { personAction('unreject', [face.id]); });
+  } else if (!face.lost) {
+    card.appendChild(menuButton(function () { return confirmedFaceMenu(face); }, 'More for this face'));
+  }
+  card.appendChild(acts);
+  return card;
+}
+
+function confirmedFaceMenu(face) {
+  var p = pp.person, items = [];
+  if (face.manual != null) {
+    items.push({ label: 'Name someone else…', run: function () { nameFacesDialog([face], personRefresh); } });
+    items.push({ label: 'Delete this drawn face', run: function () { personAction('undo', [], [face.manual]); } });
+    return items;
+  }
+  items.push({ label: 'Not ' + p.name, run: function () { personAction('reject', [face.id]); } });
+  items.push({ label: 'Name someone else…', run: function () { nameFacesDialog([face], personRefresh); } });
+  items.push({ label: 'Use as ' + p.name + '’s picture', run: function () {
+    post('/api/people/' + p.id + '/cover', { face: face.id }).then(function () { toast('Picture changed'); peopleChanged(); }).catch(failed);
+  } });
+  items.push({ label: 'Not a face', run: function () { personAction('not-face', [face.id]); } });
+  return items;
+}
+
+function personRefresh() { if (state.filter.view === 'person') loadPersonPage(); }
+
+// Confirm, reject, undo a rejection, not a face, forget, for this person's
+// page; the faces leave the list they were in.
+function personAction(action, ids, manual) {
+  var p = pp.person;
+  ids = (ids || []).filter(function (x) { return x != null; });
+  manual = manual || [];
+  if (!ids.length && !manual.length) return;
+  var body = { faces: ids, manual: manual };
+  if (action === 'reject' || action === 'unreject') body.person_id = p.id;
+  post('/api/faces/' + action, body).then(function (r) {
+    var gone = {};
+    ids.forEach(function (x) { gone['f' + x] = true; });
+    manual.forEach(function (x) { gone['m' + x] = true; });
+    pp.faces = pp.faces.filter(function (x) {
+      var k = faceKey(x);
+      if (!gone[k]) return true;
+      var card = document.querySelector('#pp-grid .face[data-key="' + k + '"]');
+      if (card) card.remove();
+      delete pp.picked[k];
+      return false;
+    });
+    updatePersonPick();
+    toast({
+      confirm: plural(r.faces, 'face', 'faces') + ' confirmed as ' + p.name,
+      reject: plural(r.faces, 'face', 'faces') + ': not ' + p.name,
+      unreject: plural(r.faces, 'face', 'faces') + ' may be ' + p.name + ' again',
+      'not-face': plural(r.faces, 'face', 'faces') + ' marked “not a face”',
+      undo: 'Drawn face deleted',
+    }[action]);
+    peopleChanged();
+    loadPersonCounts();
+  }).catch(failed);
+}
+
+function personPickBar(tab) {
+  var bar = el('div', 'selbar');
+  bar.id = 'pp-bar';
+  bar.hidden = true;
+  var count = el('span');
+  count.id = 'pp-count';
+  bar.appendChild(count);
+  var p = pp.person;
+  var button = function (label, cls, run) {
+    var b = el('button', 'btn ' + (cls || ''), label);
+    b.className += ' pp-act';
+    b.onclick = function () {
+      var faces = Object.keys(pp.picked).map(function (k) { return pp.picked[k]; });
+      run(faces, faces.map(function (x) { return x.id; }).filter(function (x) { return x != null; }));
+    };
+    bar.appendChild(b);
+  };
+  var all = el('button', 'btn quiet', 'All');
+  all.onclick = function () {
+    pp.faces.forEach(function (face) {
+      var k = faceKey(face);
+      if (!k) return;
+      pp.picked[k] = face;
+      var card = document.querySelector('#pp-grid .face[data-key="' + k + '"]');
+      if (card) card.classList.add('sel');
+    });
+    updatePersonPick();
+  };
+  bar.appendChild(all);
+  if (tab === 'suggested' || tab === 'maybe') {
+    button('Confirm', '', function (faces, ids) { personAction('confirm', ids); });
+    button('Not ' + p.name, 'quiet', function (faces, ids) { personAction('reject', ids); });
+  } else if (tab === 'rejected') {
+    button('Undo', '', function (faces, ids) { personAction('unreject', ids); });
+  } else {
+    button('Not ' + p.name, 'quiet', function (faces, ids) { personAction('reject', ids); });
+    button('Name…', '', function (faces) { nameFacesDialog(faces, personRefresh); });
+    button('Not a face', 'quiet', function (faces, ids) { personAction('not-face', ids); });
+  }
+  var done = el('button', 'btn quiet', 'Done');
+  done.onclick = function () { pp.picking = false; clearPersonPicks(); updatePersonPick(); };
+  bar.appendChild(done);
+  return bar;
+}
+
+function clearPersonPicks() {
+  pp.picked = {};
+  Array.prototype.forEach.call(document.querySelectorAll('#pp-grid .face.sel'), function (c) { c.classList.remove('sel'); });
+}
+
+function updatePersonPick() {
+  var bar = $('pp-bar');
+  if (!bar) return;
+  var n = Object.keys(pp.picked).length;
+  bar.hidden = !pp.picking;
+  $('pp-pick').classList.toggle('active', pp.picking);
+  $('pp-count').textContent = n ? plural(n, 'face', 'faces') : 'Tap faces to select';
+  Array.prototype.forEach.call(bar.querySelectorAll('.pp-act'), function (b) { b.disabled = !n; });
+}
+
+// Name several faces at once (detected or drawn ones): everyone listed, or
+// a new person.
+function nameFacesDialog(faces, done) {
+  var body = el('div');
+  body.appendChild(el('p', '', 'Who is on ' + (faces.length === 1 ? 'this face' : 'these ' + faces.length + ' faces') + '?'));
+  var save = function (who) {
+    var ids = faces.map(function (x) { return x.id; }).filter(function (x) { return x != null; });
+    var drawn = faces.filter(function (x) { return x.id == null && x.manual != null; });
+    var req = ids.length ? post('/api/faces/assign', Object.assign({ faces: ids }, who)) : Promise.resolve({ faces: 0 });
+    req.then(function (r) {
+      // A drawn face nothing was detected at: drawn again with the new name.
+      return Promise.all(drawn.map(function (d) {
+        return post('/api/faces/undo', { manual: [d.manual] }).then(function () {
+          return post('/api/faces/manual', Object.assign({ file: d.file, box: [d.x, d.y, d.w, d.h] }, who));
+        });
+      })).then(function () { return r; });
+    }).then(function (r) {
+      closeModal();
+      toast(plural(faces.length, 'face', 'faces') + ' named ' + (r.person ? r.person.name : who.name || state.personNames[who.person_id] || ''));
+      peopleChanged();
+      if (done) done();
+    }).catch(failed);
+  };
+  var field = personField(function (who) { save(who); }, { allowNew: true, placeholder: 'Name' });
+  body.appendChild(field);
+  openModal('Name', body, [{ label: 'Cancel', cls: 'quiet' }, {
+    label: 'Name', onclick: function () {
+      var who = field.value();
+      if (!who) return false;
+      save(who);
+      return false;
+    },
+  }]);
+  field.input.focus();
+}
+
+// ---- unnamed clusters
+
+var un = { shown: 0, total: 0, unnamed: 0 };
+var PAGE_CLUSTERS = 30;
+
+function loadUnnamed() {
+  var page = $('page');
+  page.textContent = '';
+  page.appendChild(el('h2', '', 'Unnamed'));
+  var sub = el('p', 'sub', 'Looking…');
+  sub.id = 'un-sub';
+  page.appendChild(sub);
+  var box = el('div', 'clusters');
+  box.id = 'un-box';
+  page.appendChild(box);
+  var more = el('button', 'btn quiet', 'Show more');
+  more.hidden = true;
+  more.onclick = function () { moreClusters(box, more); };
+  page.appendChild(more);
+  un.shown = 0;
+  return moreClusters(box, more);
+}
+
+function unnamedSummary() {
+  var sub = $('un-sub');
+  if (!sub) return;
+  sub.textContent = un.total
+    ? plural(un.unnamed, 'face', 'faces') + ' without a name, in ' + plural(un.total, 'cluster', 'clusters') + ' of similar faces, largest first. Name a card, or say they are strangers (Ignore) or no faces at all. “Select” names only some faces of a card.'
+    : 'Every face large enough has a name (or is ignored). New photos bring new ones after `shoebox recognize`.';
+}
+
+function moreClusters(box, more) {
+  more.disabled = true;
+  return api('/api/clusters' + query({ offset: un.shown, limit: PAGE_CLUSTERS, samples: 8 })).then(function (r) {
+    if (state.filter.view !== 'unnamed') return;
+    un.total = r.total;
+    un.unnamed = r.unnamed;
+    unnamedSummary();
+    r.clusters.forEach(function (c) { box.appendChild(clusterCard(c)); });
+    un.shown += r.clusters.length;
+    more.disabled = false;
+    more.hidden = un.shown >= un.total;
+  }).catch(failed);
+}
+
+function clusterCard(c) {
+  var card = el('div', 'cluster');
+  card.picked = {};
+  card.picking = false;
+  var head = el('div', 'chead');
+  var count = el('span', 'csize');
+  head.appendChild(count);
+  card.appendChild(head);
+  var grid = el('div', 'cfaces');
+  card.appendChild(grid);
+  var faces = c.faces.slice();
+  var renderFaces = function () {
+    grid.textContent = '';
+    faces.forEach(function (face) {
+      var f = el('a', 'cface' + (card.picked[face.id] ? ' sel' : '') + (face.small ? ' small' : ''));
+      f.href = '#';
+      f.title = card.picking ? 'Select' : 'Open the photo';
+      f.appendChild(faceImg(face, 'big'));
+      f.onclick = function (ev) {
+        ev.preventDefault();
+        if (card.picking) {
+          if (card.picked[face.id]) delete card.picked[face.id]; else card.picked[face.id] = true;
+          f.classList.toggle('sel', !!card.picked[face.id]);
+          update();
+          return;
+        }
+        openFacePhoto(face);
+      };
+      grid.appendChild(f);
+    });
+    if (c.size > faces.length) {
+      var all = el('button', 'cmore', '+' + (c.size - faces.length).toLocaleString());
+      all.title = 'Show all ' + c.size + ' faces';
+      all.onclick = function () {
+        api('/api/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
+          faces = list;
+          renderFaces();
+        }).catch(function (e) { stale(e); });
+      };
+      grid.appendChild(all);
+    }
+  };
+  var suggestion = el('div', 'csugg');
+  card.appendChild(suggestion);
+  var row = el('div', 'crow');
+  var field = personField(function (who) { act('name', who); }, { allowNew: true, placeholder: 'Who is it?' });
+  row.appendChild(field);
+  var nameBtn = el('button', 'btn', 'Name');
+  nameBtn.onclick = function () {
+    var who = field.value();
+    if (!who) { field.input.focus(); return; }
+    act('name', who);
+  };
+  row.appendChild(nameBtn);
+  card.appendChild(row);
+  var tools = el('div', 'crow tools');
+  var ignore = el('button', 'btn quiet', 'Ignore');
+  ignore.title = 'Strangers: nobody needs to name them';
+  ignore.onclick = function () { act('ignore', {}); };
+  var notFace = el('button', 'btn quiet', 'Not a face');
+  notFace.title = 'False finds: no face at all';
+  notFace.onclick = function () { act('not-face', {}); };
+  var pick = el('button', 'btn quiet', 'Select');
+  pick.title = 'Name, ignore or mark only some faces of this card';
+  pick.onclick = function () {
+    card.picking = !card.picking;
+    if (!card.picking) card.picked = {};
+    renderFaces();
+    update();
+  };
+  tools.appendChild(ignore);
+  tools.appendChild(notFace);
+  tools.appendChild(pick);
+  card.appendChild(tools);
+
+  var picked = function () { return Object.keys(card.picked).map(Number); };
+  var update = function () {
+    var n = picked().length;
+    count.textContent = plural(c.size, 'face', 'faces') + (card.picking ? ' · ' + (n ? n + ' selected' : 'tap faces to select') : '');
+    pick.classList.toggle('active', card.picking);
+    card.classList.toggle('picking', card.picking);
+    var some = card.picking && n;
+    nameBtn.textContent = some ? 'Name ' + n : 'Name';
+    ignore.textContent = some ? 'Ignore ' + n : 'Ignore';
+    notFace.textContent = some ? n + ' not a face' : 'Not a face';
+    nameBtn.disabled = ignore.disabled = notFace.disabled = card.picking && !n;
+    suggestion.textContent = '';
+    if (c.suggestion && !card.picking) {
+      var s = c.suggestion;
+      suggestion.appendChild(el('span', '', 'Looks like '));
+      suggestion.appendChild(el('b', '', s.person.name));
+      suggestion.appendChild(el('span', '', ' (' + s.faces + ' of ' + c.size + ') '));
+      var yes = el('button', 'btn small', '✓ ' + s.person.name);
+      yes.onclick = function () { act('name', { person_id: s.person.id }); };
+      suggestion.appendChild(yes);
+    }
+    suggestion.hidden = !suggestion.firstChild;
+  };
+  var stale = function (e) {
+    if (e.status === 409) {
+      toast('These faces were regrouped in the meantime; here are the cards as they are now.');
+      loadUnnamed();
+    } else failed(e);
+  };
+  // Name, ignore or "not a face": the whole card, or the faces selected in
+  // it. The card's generation makes sure only the faces shown are meant.
+  var act = function (action, who) {
+    var body = Object.assign({ generation: c.generation }, who);
+    var some = card.picking ? picked() : null;
+    if (some) {
+      if (!some.length) return;
+      body.faces = some;
+    }
+    card.classList.add('busy');
+    post('/api/clusters/' + c.id + '/' + action, body).then(function (r) {
+      card.classList.remove('busy');
+      toast(action === 'name' ? plural(r.faces, 'face', 'faces') + ' named ' + r.person.name
+        : action === 'ignore' ? plural(r.faces, 'face', 'faces') + ' ignored' : plural(r.faces, 'face', 'faces') + ' marked “not a face”');
+      un.unnamed -= r.faces;
+      if (!r.cluster) {
+        card.remove();
+        un.total -= 1;
+        un.shown -= 1;
+      } else {
+        c.id = r.cluster.id;
+        c.generation = r.cluster.generation;
+        c.size = r.cluster.size;
+        faces = faces.filter(function (x) { return !some || some.indexOf(x.id) < 0; });
+        card.picked = {};
+        card.picking = false;
+        field.input.value = '';
+        renderFaces();
+        update();
+      }
+      unnamedSummary();
+      peopleChanged();
+    }).catch(function (e) { card.classList.remove('busy'); stale(e); });
+  };
+  renderFaces();
+  update();
+  return card;
+}
+
+// ---- info panel: the people on a photo (5c-3)
+
+// The faces of the photo with who they are: a name (confirmed), a
+// suggestion with ✓/✗, "+ Name" for unnamed ones, and a ⋯ menu (not a face,
+// ignore, …). Pointing at one (or tapping its crop) highlights its box.
+function infoFaces(row, info) {
+  var box = el('div', 'pfaces');
+  var faces = info.faces || [];
+  if (!info.faces) box.appendChild(el('div', 'note', 'Not looked at for faces yet (shoebox recognize).'));
+  else if (!faces.length) box.appendChild(el('div', 'note', 'No faces found.'));
+  faces.forEach(function (f, k) { box.appendChild(infoFace(info, f, k)); });
+  (info.faces_lost || []).forEach(function (f) {
+    var line = el('div', 'pface lost');
+    line.appendChild(el('span', 'avatar small'));
+    line.appendChild(el('span', 'who', (f.person ? f.person.name : '?') + ' (face no longer found)'));
+    box.appendChild(line);
+  });
+  var tools = el('div', 'ptools');
+  if (faces.length) {
+    var show = el('button', '', lb.showFaces ? 'Hide boxes' : 'Show boxes');
+    show.onclick = function () { lb.showFaces = !lb.showFaces; renderPanel(); };
+    tools.appendChild(show);
+  }
+  if (lb.details && state.data && state.data.kinds[state.open] !== 'v') {
+    var add = el('button', '', '+ Add face');
+    add.title = 'Draw a box around a face that was missed';
+    add.onclick = startDrawing;
+    tools.appendChild(add);
+  }
+  box.appendChild(tools);
+  row('People', box);
+}
+
+function infoFace(info, f, k) {
+  var line = el('div', 'pface');
+  var pic = faceImg(f, 'small');
+  pic.title = 'Show where it is';
+  pic.onclick = function () { lb.hover = lb.hover === k ? null : k; drawFaces(); };
+  line.appendChild(pic);
+  line.addEventListener('mouseenter', function () { lb.hover = k; drawFaces(); });
+  line.addEventListener('mouseleave', function () { if (lb.hover === k) { lb.hover = null; drawFaces(); } });
+  var who = el('span', 'who');
+  line.appendChild(who);
+  var changed = function () { infoFacesChanged(info.id); };
+  var send = function (action, body) { return post('/api/faces/' + action, body).then(changed).catch(failed); };
+  var ids = f.id != null ? [f.id] : [];
+  if (f.state === 'confirmed') {
+    var name = el('button', 'pname', f.person.name);
+    name.title = 'Photos of ' + f.person.name;
+    name.onclick = function () { showPerson(f.person.id); };
+    who.appendChild(name);
+  } else if (f.state === 'suggested' || f.state === 'maybe') {
+    who.appendChild(el('span', 'guess', (f.state === 'maybe' ? 'Maybe ' : '') + f.person.name + '?'));
+    var yes = el('button', 'yes', '✓');
+    yes.title = 'It is ' + f.person.name;
+    yes.setAttribute('aria-label', yes.title);
+    yes.onclick = function () { send('confirm', { faces: ids }); };
+    var no = el('button', 'no', '✗');
+    no.title = 'Not ' + f.person.name;
+    no.setAttribute('aria-label', no.title);
+    no.onclick = function () { send('reject', { faces: ids, person_id: f.person.id }); };
+    who.appendChild(yes);
+    who.appendChild(no);
+  } else if (f.state === 'ignored') {
+    who.appendChild(el('span', 'note', 'Stranger'));
+  }
+  if (f.state !== 'confirmed') {
+    var add = el('button', 'add', f.state === 'suggested' || f.state === 'maybe' ? 'Other…' : '+ Name');
+    add.onclick = function () {
+      var field = personField(function (person) {
+        send('assign', Object.assign({ faces: ids }, person));
+      }, { allowNew: true, placeholder: 'Who is it?', onEscape: function () { field.replaceWith(add); } });
+      add.replaceWith(field);
+      field.input.focus();
+    };
+    who.appendChild(add);
+  }
+  if (f.small) who.appendChild(el('span', 'note', ' small'));
+  line.appendChild(menuButton(function () {
+    var items = [];
+    if (f.manual != null) {
+      items.push({ label: 'Name someone else…', run: function () { nameFacesDialog([Object.assign({ file: info.id }, f)], changed); } });
+      items.push({ label: 'Delete this drawn face', run: function () { send('undo', { manual: [f.manual] }); } });
+      return items;
+    }
+    if (f.state === 'confirmed') {
+      items.push({ label: 'Not ' + f.person.name, run: function () { send('reject', { faces: ids, person_id: f.person.id }); } });
+      items.push({ label: 'Name someone else…', run: function () { nameFacesDialog([f], changed); } });
+      items.push({ label: 'Use as ' + f.person.name + '’s picture', run: function () {
+        post('/api/people/' + f.person.id + '/cover', { face: f.id }).then(function () { toast('Picture changed'); peopleChanged(); }).catch(failed);
+      } });
+    }
+    if (f.state !== 'ignored') items.push({ label: 'Ignore (a stranger)', run: function () { send('ignore', { faces: ids }); } });
+    if (f.state) items.push({ label: 'Forget what was said', run: function () { send('undo', { faces: ids }); } });
+    if (f.rejected && f.rejected.length) {
+      f.rejected.forEach(function (pid) {
+        var n = state.personNames[pid] || 'someone';
+        items.push({ label: 'May be ' + n + ' after all', run: function () { send('unreject', { faces: ids, person_id: pid }); } });
+      });
+    }
+    items.push({ label: 'Not a face', run: function () { send('not-face', { faces: ids }); } });
+    return items;
+  }, 'More for this face'));
+  return line;
+}
+
+// After a change in the info panel: its faces again, and the people.
+function infoFacesChanged(id) {
+  peopleChanged();
+  if (!lb.details || lb.details.id !== id) return;
+  api('/api/files/' + id).then(function (info) {
+    if (!lb.details || lb.details.id !== id) return;
+    lb.details = info;
+    lb.hover = null;
+    renderPanel();
+  }).catch(function () {});
+}
+
+// ---- drawing a missed face
+
+// "+ Add face": the panel steps aside, a box is dragged over the photo
+// (mouse, pen or finger), then named.
+function startDrawing() {
+  var stage = $('stage'), img = stage.querySelector('img');
+  if (!img || !lb.details) return;
+  stopDrawing();
+  var info = lb.details;
+  var panel = $('lb-panel');
+  lb.drawing = { panelWasOpen: !panel.hidden };
+  panel.hidden = true;
+  drawFaces();
+  var r = img.getBoundingClientRect(), s = stage.getBoundingClientRect();
+  var layer = el('div', 'draw-layer');
+  layer.style.left = (r.left - s.left) + 'px';
+  layer.style.top = (r.top - s.top) + 'px';
+  layer.style.width = r.width + 'px';
+  layer.style.height = r.height + 'px';
+  var rect = el('div', 'draw-box');
+  rect.hidden = true;
+  layer.appendChild(rect);
+  stage.appendChild(layer);
+  var hint = el('div', 'draw-hint');
+  hint.appendChild(el('span', '', 'Drag a box around the face'));
+  var cancel = el('button', 'btn quiet small', 'Cancel');
+  cancel.onclick = function () { stopDrawing(); };
+  hint.appendChild(cancel);
+  $('lightbox').appendChild(hint);
+  lb.drawing.layer = layer;
+  lb.drawing.hint = hint;
+  var start = null, box = null;
+  var at = function (ev) {
+    var lr = layer.getBoundingClientRect();
+    return [Math.min(Math.max(ev.clientX - lr.left, 0), lr.width), Math.min(Math.max(ev.clientY - lr.top, 0), lr.height)];
+  };
+  layer.addEventListener('pointerdown', function (ev) {
+    ev.preventDefault();
+    layer.setPointerCapture(ev.pointerId);
+    start = at(ev);
+    box = null;
+  });
+  layer.addEventListener('pointermove', function (ev) {
+    if (!start) return;
+    var p = at(ev);
+    box = [Math.min(start[0], p[0]), Math.min(start[1], p[1]), Math.abs(p[0] - start[0]), Math.abs(p[1] - start[1])];
+    rect.hidden = false;
+    rect.style.left = box[0] + 'px';
+    rect.style.top = box[1] + 'px';
+    rect.style.width = box[2] + 'px';
+    rect.style.height = box[3] + 'px';
+  });
+  var end = function () {
+    if (!start) return;
+    start = null;
+    if (!box || box[2] < 8 || box[3] < 8) { rect.hidden = true; return; }
+    var w = layer.clientWidth, h = layer.clientHeight;
+    var frac = [box[0] / w, box[1] / h, box[2] / w, box[3] / h].map(function (v) { return Math.round(v * 10000) / 10000; });
+    frac[2] = Math.min(frac[2], 1 - frac[0]);
+    frac[3] = Math.min(frac[3], 1 - frac[1]);
+    nameDrawnFace(info, frac);
+  };
+  layer.addEventListener('pointerup', end);
+  layer.addEventListener('pointercancel', function () { start = null; rect.hidden = true; });
+}
+
+function stopDrawing() {
+  var d = lb.drawing;
+  if (!d) return;
+  lb.drawing = null;
+  if (d.layer) d.layer.remove();
+  if (d.hint) d.hint.remove();
+  if (d.panelWasOpen && !$('lightbox').hidden) { $('lb-panel').hidden = false; renderPanel(); }
+}
+
+function nameDrawnFace(info, frac) {
+  var body = el('div');
+  body.appendChild(el('p', '', 'Who is it?'));
+  var save = function (who) {
+    post('/api/faces/manual', Object.assign({ file: info.id, box: frac }, who)).then(function () {
+      closeModal();
+      stopDrawing();
+      toast('Face added');
+      infoFacesChanged(info.id);
+    }).catch(failed);
+  };
+  var field = personField(function (who) { save(who); }, { allowNew: true, placeholder: 'Name' });
+  body.appendChild(field);
+  body.appendChild(el('p', 'hint', 'The box is kept in shoebox’s index, never written into the photo. Its face is learned for suggestions when the recognizer finds its eyes, nose and mouth in it.'));
+  openModal('Add face', body, [
+    { label: 'Draw again', cls: 'quiet', onclick: function () { var r = lb.drawing && lb.drawing.layer.querySelector('.draw-box'); if (r) r.hidden = true; } },
+    { label: 'Cancel', cls: 'quiet', onclick: function () { stopDrawing(); } },
+    { label: 'Save', onclick: function () { var who = field.value(); if (!who) return false; save(who); return false; } },
+  ]);
+  field.input.focus();
+}
+
 // ------------------------------------------------------------------ start
 
 api('/api/session').then(function (s) {
@@ -2117,7 +3444,7 @@ api('/api/session').then(function (s) {
   }
   state.filter = readHash();
   $('search').value = state.filter.q;
-  return Promise.all([loadFolders(), loadInfo(), loadOwnTags()]).then(function () {
+  return Promise.all([loadFolders(), loadInfo(), loadOwnTags(), loadPeople()]).then(function () {
     applyFilter();
     setInterval(loadInfo, 20000);
   });

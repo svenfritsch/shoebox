@@ -545,12 +545,42 @@ pub fn face(conn: &Connection, id: i64) -> Result<Option<(String, FaceBox, Optio
         .optional()?)
 }
 
-/// All faces of a content.
-pub fn boxes_of(conn: &Connection, key: &str) -> Result<Vec<FaceBox>> {
+/// Content key and box of the face drawn by hand with this `manual` id
+/// (the decision row), and a present file with that content.
+pub fn drawn_face(conn: &Connection, id: i64) -> Result<Option<(String, FaceBox, Option<i64>)>> {
     Ok(conn
+        .query_row(
+            &format!(
+                "SELECT d.key, d.x, d.y, d.w, d.h, p.id FROM face_decisions d
+                 LEFT JOIN ({PRESENT}) p ON p.quick_hash = d.key WHERE d.id = ?1 AND d.manual = 1"
+            ),
+            [id],
+            |r| {
+                let b = FaceBox { x: r.get(1)?, y: r.get(2)?, w: r.get(3)?, h: r.get(4)?, roll: 0 };
+                Ok((r.get(0)?, b, r.get(5)?))
+            },
+        )
+        .optional()?)
+}
+
+/// All faces of a content: detected ones, then ones drawn by hand.
+pub fn boxes_of(conn: &Connection, key: &str) -> Result<Vec<FaceBox>> {
+    let mut boxes: Vec<FaceBox> = conn
         .prepare("SELECT x, y, w, h, roll FROM recog.faces WHERE key = ?1 ORDER BY id")?
         .query_map([key], |r| Ok(FaceBox { x: r.get(0)?, y: r.get(1)?, w: r.get(2)?, h: r.get(3)?, roll: r.get(4)? }))?
-        .collect::<rusqlite::Result<_>>()?)
+        .collect::<rusqlite::Result<_>>()?;
+    if crate::people::table_exists(conn, "main", "face_decisions")? {
+        let drawn = conn
+            .prepare("SELECT x, y, w, h FROM face_decisions WHERE key = ?1 AND manual = 1 ORDER BY id")?
+            .query_map([key], |r| Ok(FaceBox { x: r.get(0)?, y: r.get(1)?, w: r.get(2)?, h: r.get(3)?, roll: 0 }))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for d in drawn {
+            if !boxes.contains(&d) {
+                boxes.push(d);
+            }
+        }
+    }
+    Ok(boxes)
 }
 
 /// A stored crop: `Ok(jpeg)`, `Err(reason)` if the photo could not be read,

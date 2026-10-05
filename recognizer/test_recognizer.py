@@ -60,8 +60,9 @@ class Protocol(unittest.TestCase):
 
     def test_hello(self):
         self.assertEqual(self.hello["hello"], "shoebox-recognizer")
-        self.assertEqual(self.hello["protocol"], 1)
+        self.assertEqual(self.hello["protocol"], 2)
         self.assertEqual(self.hello["tasks"]["faces"]["dim"], 128)
+        self.assertEqual(self.hello["tasks"]["embed"], self.hello["tasks"]["faces"])
 
     def test_blank_picture_has_no_faces(self):
         img = np.full((480, 640, 3), 200, np.uint8)
@@ -74,6 +75,19 @@ class Protocol(unittest.TestCase):
         self.assertIn("error", self.ask({"id": 2, "tasks": ["faces"], "path": "/does/not/exist.jpg"}))
         self.assertIn("unknown task", self.ask({"id": 3, "tasks": ["cats"], "image": self.jpeg(np.zeros((8, 8, 3), np.uint8))})["error"])
         self.assertEqual(self.ask({"id": 4, "tasks": [], "image": self.jpeg(np.zeros((8, 8, 3), np.uint8))})["id"], 4)
+
+    def test_embed_without_landmarks_embeds_the_plain_crop(self):
+        img = np.full((480, 640, 3), 200, np.uint8)
+        reply = self.ask({"id": 8, "tasks": ["embed"], "image": self.jpeg(img), "boxes": [[100, 100, 80, 90], [0, 0, 640, 480]]})
+        self.assertEqual((reply["width"], reply["height"]), (640, 480))
+        self.assertEqual(len(reply["embed"]), 2)
+        for e in reply["embed"]:
+            self.assertEqual(e["landmarks"], [])
+            emb = np.frombuffer(base64.b64decode(e["emb"]), "<f4")
+            self.assertEqual(emb.shape, (128,))
+            self.assertAlmostEqual(float(np.linalg.norm(emb)), 1.0, places=4)
+        self.assertIn("error", self.ask({"id": 9, "tasks": ["embed"], "image": self.jpeg(img)}))
+        self.assertIn("error", self.ask({"id": 10, "tasks": ["embed"], "image": self.jpeg(img), "boxes": [[700, 10, 20, 20]]}))
 
     def test_large_pictures_are_shrunk(self):
         reply = self.ask({"id": 5, "tasks": [], "image": self.jpeg(np.zeros((1000, 3200, 3), np.uint8))})
@@ -95,6 +109,15 @@ class Protocol(unittest.TestCase):
         b = self.ask({"id": 2, "tasks": ["faces"], "image": self.jpeg(small)})["faces"]
         best = max(float(np.dot(emb, np.frombuffer(base64.b64decode(f["emb"]), "<f4"))) for f in b)
         self.assertGreater(best, 0.5)
+
+        # Drawn by hand around the detected face (a little off): landmarks
+        # are found and the embedding is the detected face's.
+        x, y, w, h = face["bbox"]
+        drawn = [x - 0.1 * w, y + 0.05 * h, 1.1 * w, 1.05 * h]
+        e = self.ask({"id": 3, "tasks": ["embed"], "image": self.jpeg(img), "boxes": [drawn]})["embed"][0]
+        self.assertEqual(len(e["landmarks"]), 5)
+        same = float(np.dot(emb, np.frombuffer(base64.b64decode(e["emb"]), "<f4")))
+        self.assertGreater(same, 0.8)
 
 
 if __name__ == "__main__":
