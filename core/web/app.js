@@ -932,9 +932,9 @@ function showItem() {
   $('lb-live').hidden = !state.live[id];
   var rot = $('lb-rotate');
   rot.hidden = isAll() || kind === 'v';
-  rot.disabled = kind !== 'j';
-  rot.title = kind === 'j' ? 'Rotate left (r) · Option-click or Shift+R: right'
-    : 'Only JPEG photos can be rotated for now (HEIC, PNG and RAW cannot)';
+  rot.disabled = kind !== 'j' && kind !== 'h' && kind !== 'p';
+  rot.title = rot.disabled ? 'RAW photos cannot be rotated'
+    : 'Rotate left (r) · Option-click or Shift+R: right' + (kind === 'j' ? '' : ' · in shoebox only, the file stays as it is');
   $('lb-title').textContent = '';
   lb.hover = null;
   stopDrawing();
@@ -987,6 +987,7 @@ function drawFaces() {
   info.faces.forEach(function (f, k) {
     var hot = lb.hover === k;
     if (!lb.showFaces && !hot) return;
+    f = turnedBox(f, info.view_turn || 0);
     var b = el('div', 'face-box' + (hot ? ' hot' : '') + (f.manual != null ? ' drawn' : ''));
     b.style.left = (r.left - s.left + f.x * r.width) + 'px';
     b.style.top = (r.top - s.top + f.y * r.height) + 'px';
@@ -1000,6 +1001,18 @@ function drawFaces() {
   });
 }
 window.addEventListener('resize', drawFaces);
+
+// A face's box (fractions of the picture as the file has it) for a picture
+// that shoebox shows turned by `q` quarter turns clockwise.
+function turnedBox(f, q) {
+  q = ((q % 4) + 4) % 4;
+  if (!q) return f;
+  var b = [f.x, f.y, f.w, f.h];
+  var t = q === 1 ? [1 - b[1] - b[3], b[0], b[3], b[2]]
+    : q === 2 ? [1 - b[0] - b[2], 1 - b[1] - b[3], b[2], b[3]]
+    : [b[1], 1 - b[0] - b[2], b[3], b[2]];
+  return Object.assign({}, f, { x: t[0], y: t[1], w: t[2], h: t[3] });
+}
 
 function viewUrl(i) {
   var d = state.data;
@@ -1092,12 +1105,13 @@ function renderPanel() {
   panel.appendChild(actions);
 }
 
-// Turns the original on the drive (its EXIF orientation, two bytes, no loss),
-// like the rotate button of the Finder's Quick Look. `turns` is in quarter
-// turns clockwise.
+// Turns a JPEG on the drive (its EXIF orientation, two bytes, no loss), like
+// the rotate button of the Finder's Quick Look; a HEIC or PNG is only shown
+// turned by shoebox (its file stays as it is). `turns` is in quarter turns
+// clockwise.
 function rotateOpen(turns) {
   var d = state.data, i = state.open;
-  if (!d || i < 0 || isAll() || d.kinds[i] !== 'j' || lb.rotating) return;
+  if (!d || i < 0 || isAll() || d.kinds[i] === 'v' || d.kinds[i] === 'r' || lb.rotating) return;
   lb.rotating = true;
   var id = d.ids[i];
   post(fileBase(id) + '/rotate', { turns: turns }).then(function (r) {
@@ -1107,6 +1121,10 @@ function rotateOpen(turns) {
     if (state.data === d && d.ids[i] === id) {
       d.versions = d.versions.slice(0, i * 8) + r.version + d.versions.slice(i * 8 + 8);
       if (state.open === i) showItem();
+    }
+    if (r.view_only && !lb.toldViewOnly) {
+      lb.toldViewOnly = true;
+      toast('Turned in shoebox only. The file itself is not changed, so Finder and other apps show it as before.');
     }
   }).catch(function (e) {
     lb.rotating = false;
@@ -4063,6 +4081,10 @@ function infoFaces(row, info) {
     var add = el('button', '', '+ Add face');
     add.title = 'Draw a box around a face that was missed';
     add.onclick = startDrawing;
+    if (lb.details.view_turn) {
+      add.disabled = true;
+      add.title = 'Turn the photo back first: boxes are drawn on the photo as the file has it';
+    }
     tools.appendChild(add);
   }
   box.appendChild(tools);

@@ -604,8 +604,11 @@ pub struct Rotated {
     /// The first 8 characters of the new quick hash: what the web page puts
     /// on the picture addresses.
     pub version: String,
-    /// The EXIF orientation stored now (1 to 8).
+    /// The EXIF orientation stored now (1 to 8); 0 when only the view was
+    /// turned.
     pub orientation: u8,
+    /// The file was not changed: shoebox shows it turned (HEIC, PNG).
+    pub view_only: bool,
 }
 
 /// Larger files are not read into memory to be checked.
@@ -688,7 +691,40 @@ pub fn rotate(conn: &Connection, root: &Path, id: i64, quarters: i32) -> Result<
     let key: String = tx.query_row("SELECT quick_hash FROM files WHERE id = ?1", [id], |r| r.get(0))?;
     follow_content(&tx, &rec.quick_hash, &key, quarters)?;
     tx.commit()?;
-    Ok(Rotated { id, version: key.chars().take(8).collect(), orientation: value })
+    Ok(Rotated { id, version: db::version_of(&key, 0), orientation: value, view_only: false })
+}
+
+/// Turn a photo by `turns` quarter turns clockwise: a JPEG in the file
+/// (`rotate`), anything else that shoebox can show (HEIC, PNG) in shoebox only.
+///
+/// HEIC keeps its rotation in a box that is often missing, and adding it, or
+/// anything to a PNG, means writing a new file; Apple's Preview does that and
+/// re-encodes the picture. shoebox does not touch such originals.
+pub fn turn(conn: &Connection, root: &Path, id: i64, turns: i32) -> Result<Rotated> {
+    let rec = load(conn, id)?.ok_or_else(|| anyhow!("not in the index"))?;
+    let kind = classify::Kind::parse(&rec.kind).ok_or_else(|| anyhow!("{}: unknown kind", rec.path_nfc))?;
+    match media::content_kind(kind, &root.join(&rec.path)) {
+        classify::Kind::Jpeg => rotate(conn, root, id, turns),
+        classify::Kind::Heic | classify::Kind::Png => turn_view(conn, &rec, turns),
+        _ => bail!("{}: only photos can be turned", rec.path_nfc),
+    }
+}
+
+/// Remember the turn by content (`view_turns`); the file is not opened.
+fn turn_view(conn: &Connection, rec: &Rec, turns: i32) -> Result<Rotated> {
+    if rec.missing {
+        bail!("{} is missing from the drive", rec.path_nfc);
+    }
+    let quarters = (db::view_turn(conn, &rec.quick_hash)? + turns).rem_euclid(4);
+    if quarters == 0 {
+        conn.execute("DELETE FROM view_turns WHERE key = ?1", [&rec.quick_hash])?;
+    } else {
+        conn.execute(
+            "INSERT OR REPLACE INTO view_turns (key, quarters, at) VALUES (?1, ?2, ?3)",
+            params![rec.quick_hash, quarters, db::now()],
+        )?;
+    }
+    Ok(Rotated { id: rec.id, version: db::version_of(&rec.quick_hash, quarters), orientation: 0, view_only: true })
 }
 
 /// Overwrite `bytes.len()` bytes at `offset`, in place.

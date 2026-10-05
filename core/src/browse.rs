@@ -140,11 +140,13 @@ impl Snapshot {
             mtime_ns: i64,
             duration_ms: Option<i64>,
             quick_hash: String,
+            turn: i32,
         }
         let mut rows = Vec::new();
         {
             let mut stmt = conn.prepare(&format!(
-                "SELECT id, kind, folder_id, name, path_nfc, {}, mtime_ns, duration_ms, quick_hash
+                "SELECT id, kind, folder_id, name, path_nfc, {}, mtime_ns, duration_ms, quick_hash,
+                        coalesce((SELECT quarters FROM view_turns v WHERE v.key = files.quick_hash), 0)
                  FROM files WHERE missing_since IS NULL AND kind != 'raw'",
                 db::TAKEN
             ))?;
@@ -163,6 +165,7 @@ impl Snapshot {
                     mtime_ns: r.get(6)?,
                     duration_ms: r.get(7)?,
                     quick_hash: r.get(8)?,
+                    turn: r.get(9)?,
                 });
             }
         }
@@ -201,7 +204,7 @@ impl Snapshot {
                     folder_id: r.folder_id,
                     sort,
                     date_source,
-                    version: r.quick_hash.chars().take(8).collect(),
+                    version: db::version_of(&r.quick_hash, r.turn),
                     path_lower: r.path_lower.clone(),
                     live: live.get(&r.id).copied(),
                 }

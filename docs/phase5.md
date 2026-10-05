@@ -711,7 +711,8 @@ Built, one commit per step. Scope and rules are in "Phase 5d details" in
   the reply has `conflicts: [{keep, path, dates}]`, the UI asks and repeats the
   request with `dates: {<keep id>: "<chosen>"}`. Exact copies share content and
   therefore one date, so conflicts only arise among similar photos.
-  `userdata.json` is version 3 and lists `taken_overrides`.
+  `userdata.json` is version 3 and lists `taken_overrides`. Version 4 adds
+  `view_turns` (photos shown turned in shoebox only, see plan.md, Rotate).
 - **Same-folder button**: `GET /api/duplicates/same-folder` → `{groups, copies}`,
   `POST` does it (`duplicates::same_folder_plan`). Per (full hash, folder) one
   file stays: highest resolution (identical for exact copies, so in practice

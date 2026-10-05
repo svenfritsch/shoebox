@@ -211,6 +211,18 @@ fn decode_jpeg_scaled(src: &Path, edge: u32) -> Result<DynamicImage> {
 }
 
 /// Encode a preview as JPEG.
+/// A JPEG turned by `quarters` quarter turns clockwise and encoded again.
+pub fn turn_jpeg(bytes: &[u8], quarters: i32, quality: u8) -> Result<Vec<u8>> {
+    let img = image::load_from_memory_with_format(bytes, image::ImageFormat::Jpeg)?;
+    let img = match quarters.rem_euclid(4) {
+        1 => img.rotate90(),
+        2 => img.rotate180(),
+        3 => img.rotate270(),
+        _ => img,
+    };
+    encode_jpeg(&img, quality)
+}
+
 pub fn encode_jpeg(img: &DynamicImage, quality: u8) -> Result<Vec<u8>> {
     let mut out = Vec::new();
     image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, quality).encode_image(&img.to_rgb8())?;

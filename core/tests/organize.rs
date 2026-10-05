@@ -403,7 +403,6 @@ fn rotate_changes_only_the_orientation_bytes_and_keeps_the_users_data() {
     let server = start(&lib, None);
     let addr = server.addr;
     let (up, side, plain) = (id_of(&lib, "Turn/up.jpg"), id_of(&lib, "Turn/side.jpg"), id_of(&lib, "Turn/plain.jpg"));
-    let png = id_of(&lib, "Familie/Screenshot.png");
 
     let key: String = lib.db().query_row("SELECT quick_hash FROM files WHERE id = ?1", [up], |r| r.get(0)).unwrap();
     lib.db()
@@ -449,7 +448,7 @@ fn rotate_changes_only_the_orientation_bytes_and_keeps_the_users_data() {
     // The user's data moved to the new content, turned with the picture.
     let new_key: String = lib.db().query_row("SELECT quick_hash FROM files WHERE id = ?1", [up], |r| r.get(0)).unwrap();
     assert_ne!(new_key, key);
-    assert_eq!(r.json()["version"], new_key[..8]);
+    assert_eq!(r.json()["version"], format!("{}0", &new_key[..7]));
     let taken: String = lib.db().query_row("SELECT taken FROM taken_overrides WHERE key = ?1", [&new_key], |r| r.get(0)).unwrap();
     assert_eq!(taken, "2001-02-03T04:05:06");
     let (x, y, w, h): (f64, f64, f64, f64) = lib
@@ -475,12 +474,55 @@ fn rotate_changes_only_the_orientation_bytes_and_keeps_the_users_data() {
 
     // What cannot be turned in place is refused and left alone.
     let snap = lib.snapshot();
-    for id in [plain, png] {
-        let r = post(addr, &format!("/api/files/{id}/rotate"), &json!({ "turns": 1 }));
-        assert_eq!(r.status, 400, "{}", String::from_utf8_lossy(&r.body));
-    }
+    let r = post(addr, &format!("/api/files/{plain}/rotate"), &json!({ "turns": 1 }));
+    assert_eq!(r.status, 400, "{}", String::from_utf8_lossy(&r.body));
     assert_eq!(post(addr, &format!("/api/files/{up}/rotate"), &json!({ "turns": 4 })).status, 400);
     assert_eq!(lib.snapshot(), snap);
     assert_index_in_line(&lib);
+    server.stop().unwrap();
+}
+
+/// A PNG (and a HEIC) is only shown turned: the file is not opened for
+/// writing, the picture comes out turned, and turning four times is no turn.
+#[test]
+fn png_is_turned_in_shoebox_only() {
+    let lib = Library::new("rotate-view");
+    lib.scan();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let png = id_of(&lib, "Familie/Screenshot.png"); // 64 x 48
+    let before = lib.snapshot();
+    let dims = |path: String| {
+        let r = get(addr, &path);
+        assert_eq!(r.status, 200, "{path}");
+        let img = image::load_from_memory(&r.body).unwrap();
+        (img.width(), img.height())
+    };
+    assert_eq!(dims(format!("/api/files/{png}/view")), (64, 48));
+
+    let r = post(addr, &format!("/api/files/{png}/rotate"), &json!({ "turns": 1 }));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    let r = r.json();
+    assert_eq!((r["view_only"].as_bool(), r["orientation"].as_i64()), (Some(true), Some(0)));
+    assert_eq!(lib.snapshot(), before, "the file changed");
+    assert_eq!(dims(format!("/api/files/{png}/view")), (48, 64));
+    assert_eq!(dims(format!("/api/files/{png}/thumb")), (48, 64));
+    assert_eq!(get(addr, &format!("/api/files/{png}")).json()["view_turn"], 1);
+    // The picture addresses change, so browsers fetch the turned one.
+    let timeline = get(addr, "/api/timeline").json();
+    let at = ids(&timeline).iter().position(|&i| i == png).unwrap();
+    assert_eq!(timeline["versions"].as_str().unwrap()[at * 8 + 7..at * 8 + 8], *"1");
+    assert_eq!(r["version"].as_str().unwrap(), &timeline["versions"].as_str().unwrap()[at * 8..at * 8 + 8]);
+
+    // It is remembered by content, written to userdata.json, and adds up.
+    let turns: i64 = lib.db().query_row("SELECT quarters FROM view_turns", [], |r| r.get(0)).unwrap();
+    assert_eq!(turns, 1);
+    post(addr, &format!("/api/files/{png}/rotate"), &json!({ "turns": -3 }));
+    assert_eq!(dims(format!("/api/files/{png}/view")), (64, 48)); // 1 - 3 = 2: half a turn
+    post(addr, &format!("/api/files/{png}/rotate"), &json!({ "turns": 2 }));
+    let rows: i64 = lib.db().query_row("SELECT count(*) FROM view_turns", [], |r| r.get(0)).unwrap();
+    assert_eq!(rows, 0);
+    assert_eq!(get(addr, &format!("/api/files/{png}/view")).header("content-type"), Some("image/png"));
+    assert_eq!(lib.snapshot(), before);
     server.stop().unwrap();
 }
