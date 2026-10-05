@@ -543,14 +543,17 @@ impl App {
             return Ok(());
         }
         let model = clusters::current_model(&conn)?;
-        let pending = recognize::drawn_pending(&conn, model.as_deref())?;
-        if pending == 0 {
+        let pets_model = clusters::current_model_of(&conn, crate::pets::Space::Pets)?;
+        let pending = recognize::drawn_pending(&conn, model.as_deref(), pets_model.as_deref())?;
+        if pending.total() == 0 {
             return Ok(());
         }
         let Some(cmd) = recognize::find_worker(&self.root, self.recognizer.as_deref()) else {
-            println!("{pending} faces drawn by hand wait for the recognizer (not installed).");
+            println!("{} faces and pets drawn by hand wait for the recognizer (not installed).", pending.total());
             return Ok(());
         };
+        // The pet models are only loaded when a pet is waiting.
+        let cmd = if pending.pets > 0 { cmd.with_pets() } else { cmd };
         self.embedding.store(true, Ordering::SeqCst);
         let result = (|| -> Result<recognize::DrawnStats> {
             let mut worker = recognize::Worker::start(cmd, recognize::Timeouts::default())?;
@@ -562,7 +565,7 @@ impl App {
         self.embedding.store(false, Ordering::SeqCst);
         match result {
             Ok(s) => {
-                println!("Faces drawn by hand: {} embedded ({} without landmarks), {} failed.", s.embedded, s.plain, s.failed);
+                println!("Faces and pets drawn by hand: {} embedded ({} faces without landmarks), {} failed.", s.embedded, s.plain, s.failed);
                 if s.embedded > 0 {
                     self.request_clusters();
                 }

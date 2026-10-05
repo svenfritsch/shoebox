@@ -357,7 +357,7 @@ fn now_secs() -> u64 {
 
 #[derive(Deserialize, Clone)]
 struct JobRequest {
-    /// `scan`, `verify`, `recognize`, `recognize_animals` (the same, then cats
+    /// `scan`, `verify`, `recognize`, `recognize_pets` (the same, then cats
     /// and dogs too), `faces_stats` or `backup`.
     kind: String,
     /// One folder, or several in `roots`: they are processed one after the other.
@@ -410,7 +410,7 @@ fn run_command(req: &JobRequest, roots: Vec<PathBuf>) -> Result<(serde_json::Val
             let clean = r.is_clean();
             (serde_json::to_value(&r)?, clean)
         }
-        "recognize" | "recognize_animals" => {
+        "recognize" | "recognize_pets" => {
             let stats = recognize::run(&recognize::Options {
                 root,
                 db: None,
@@ -418,10 +418,10 @@ fn run_command(req: &JobRequest, roots: Vec<PathBuf>) -> Result<(serde_json::Val
                 limit: req.limit,
                 retry_failed: req.retry_failed,
                 rotated: req.rotated,
-                animals: req.kind == "recognize_animals",
+                pets: req.kind == "recognize_pets",
                 timeouts: recognize::Timeouts::default(),
             })?;
-            let clean = stats.errors.is_empty() && stats.animals.as_ref().is_none_or(|a| a.errors.is_empty());
+            let clean = stats.errors.is_empty() && stats.pets.as_ref().is_none_or(|a| a.errors.is_empty());
             (serde_json::to_value(&stats)?, clean)
         }
         "faces_stats" => {
@@ -460,7 +460,7 @@ fn short_name(root: &Path) -> String {
 }
 
 fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
-    if !matches!(req.kind.as_str(), "scan" | "verify" | "recognize" | "recognize_animals" | "faces_stats" | "backup") {
+    if !matches!(req.kind.as_str(), "scan" | "verify" | "recognize" | "recognize_pets" | "faces_stats" | "backup") {
         return Err(ApiError::BadRequest(format!("unknown command {:?}", req.kind)));
     }
     if shared.app.lock().unwrap().is_some() {

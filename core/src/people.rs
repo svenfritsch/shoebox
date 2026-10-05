@@ -25,16 +25,16 @@ use anyhow::{Result, bail};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
-use crate::animals::{Space, Thresholds};
+use crate::pets::{Space, Thresholds};
 use crate::db;
 use crate::faces;
 use crate::library;
-use crate::recognize::{self, ANIMALS, FACES};
+use crate::recognize::{self, PETS, FACES};
 
 /// A decision belongs to the detected face whose box overlaps its box at
 /// least this much (intersection over union), the best one if several do.
 pub const MATCH_IOU: f64 = 0.5;
-/// (For animals the numbers differ: `animals::Space::thresholds`.)
+/// (For pets the numbers differ: `pets::Space::thresholds`.)
 /// A face is suggested for a person when it is at least this similar
 /// (cosine) to one of the person's confirmed faces. Calibrated on the real
 /// drive (docs/phase5.md): the highest wrong match seen was 0.54.
@@ -101,7 +101,7 @@ pub struct DecisionRow {
     pub manual: bool,
     pub at: i64,
     /// The kind of face it is about: `None` for a person's, `cat` or `dog`
-    /// for an animal. It only ever belongs to a detected face of that kind.
+    /// for a pet. It only ever belongs to a detected face of that kind.
     pub species: Option<String>,
 }
 
@@ -116,7 +116,7 @@ pub struct Detected {
     pub px: f64,
     pub score: f64,
     pub model: String,
-    /// `cat` or `dog` for an animal, `None` for a person's face.
+    /// `cat` or `dog` for a pet, `None` for a person's face.
     pub species: Option<String>,
 }
 
@@ -165,13 +165,13 @@ impl Matched {
     pub fn load(conn: &Connection, key: Option<&str>) -> Result<Matched> {
         let version: i32 = conn.pragma_query_value(Some("recog"), "user_version", |r| r.get(0))?;
         let roll = if version >= 2 { "f.roll" } else { "0" };
-        // Before v5 there are no animals.
+        // Before v5 there are no pets.
         let species = if version >= 5 { "f.species" } else { "NULL" };
         let mut faces = Vec::new();
         {
             let mut stmt = conn.prepare(&format!(
                 "SELECT f.id, f.key, f.x, f.y, f.w, f.h, {roll}, {px}, f.score, f.model, {species} FROM recog.faces f
-                 LEFT JOIN recog.looked l ON l.key = f.key AND l.task = CASE WHEN {species} IS NULL THEN '{FACES}' ELSE '{ANIMALS}' END
+                 LEFT JOIN recog.looked l ON l.key = f.key AND l.task = CASE WHEN {species} IS NULL THEN '{FACES}' ELSE '{PETS}' END
                  WHERE ?1 IS NULL OR f.key = ?1 ORDER BY f.id",
                 px = faces::size_px(roll)
             ))?;
@@ -204,7 +204,7 @@ impl Matched {
                 let candidates = by_key.get(d.key.as_str())?;
                 candidates
                     .iter()
-                    .filter(|&&i| faces[i].species == d.species)
+                    .filter(|&&i| crate::pets::kind_matches(d.species.as_deref(), faces[i].species.as_deref()))
                     .map(|&i| (i, recognize::iou(faces[i].b, d.b)))
                     .filter(|&(_, iou)| iou >= MATCH_IOU)
                     .max_by(|a, b| a.1.total_cmp(&b.1))
@@ -312,9 +312,9 @@ pub struct FaceItem {
     pub px: f64,
     pub score: Option<f64>,
     /// Too small to cluster or suggest (`faces::MIN_CLUSTER_PX`, for
-    /// animals `animals::MIN_CLUSTER_PX`).
+    /// pets `pets::MIN_CLUSTER_PX`).
     pub small: bool,
-    /// `cat` or `dog` for an animal (its box holds the whole animal);
+    /// `cat` or `dog` for a pet (its box holds the whole pet);
     /// absent for a person's face.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub species: Option<String>,
@@ -492,7 +492,7 @@ impl View {
             px,
             score: None,
             small: false,
-            species: None,
+            species: row.species.clone(),
             state: Some(row.decision.as_str()),
             person: self.person(row.person),
             similarity: None,
@@ -684,8 +684,8 @@ pub struct Person {
     /// Faces suggested for this person, and offered as "maybe".
     pub suggested: u64,
     pub maybe: u64,
-    /// `cat` or `dog` when most of the person's confirmed faces are
-    /// animals (a pet); absent for everyone else.
+    /// `cat`, `dog` or `pet` when most of the person's confirmed faces are
+    /// pets (a pet); absent for everyone else.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub species: Option<String>,
     /// The face shown for the person (`/api/faces/{id}/crop`): the chosen
@@ -738,16 +738,27 @@ pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
         maybe: u64,
         largest: Option<(f64, i64)>,
         drawn: Option<(f64, i64)>,
-        /// Confirmed detected faces: people's, cats', dogs'.
+        /// Confirmed faces: people's, cats', dogs', and pets drawn by hand
+        /// without saying which.
         people: u64,
         cats: u64,
         dogs: u64,
+        pets: u64,
     }
     let mut counts: HashMap<i64, Counts> = HashMap::new();
-    for d in &v.m.decisions {
+    for (di, d) in v.m.decisions.iter().enumerate() {
         if let (Decision::Confirmed, Some(p)) = (d.decision, d.person) {
             let c = counts.entry(p).or_default();
             c.faces += 1;
+            // A drawn box over no detected face is the only sign of its kind.
+            if d.manual && v.m.face_of[di].is_none() {
+                match d.species.as_deref() {
+                    None => c.people += 1,
+                    Some("cat") => c.cats += 1,
+                    Some("dog") => c.dogs += 1,
+                    Some(_) => c.pets += 1,
+                }
+            }
             if v.is_present(&d.key) {
                 c.photos.insert(d.key.clone());
                 if d.manual && c.drawn.is_none_or(|(w, _)| d.b[2] > w) {
@@ -802,7 +813,16 @@ pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
                 photos: c.photos.len() as u64,
                 suggested: c.suggested,
                 maybe: c.maybe,
-                species: (c.cats + c.dogs > c.people).then(|| if c.cats >= c.dogs { "cat" } else { "dog" }.to_string()),
+                species: (c.cats + c.dogs + c.pets > c.people).then(|| {
+                    if c.cats >= c.dogs && c.cats >= c.pets {
+                        "cat"
+                    } else if c.dogs >= c.pets {
+                        "dog"
+                    } else {
+                        crate::pets::PET
+                    }
+                    .to_string()
+                }),
                 cover: chosen.or(c.largest.map(|(_, id)| id)),
                 cover_manual: if chosen.or(c.largest.map(|(_, id)| id)).is_none() { c.drawn.map(|(_, id)| id) } else { None },
             }
@@ -1118,9 +1138,9 @@ pub fn decide(conn: &Connection, faces: &[i64], action: &Action) -> Result<Decid
     Ok(Decided { faces: changed, person, cluster: None })
 }
 
-/// Add a face drawn by hand on a photo: always confirmed, with a person.
-/// Returns its id (`manual` in the API).
-pub fn add_manual(conn: &Connection, file: i64, b: [f64; 4], who: &Who) -> Result<i64> {
+/// Add a face drawn by hand on a photo (a `pet` if the user says it is one):
+/// always confirmed, with a person. Returns its id (`manual` in the API).
+pub fn add_manual(conn: &Connection, file: i64, b: [f64; 4], who: &Who, pet: bool) -> Result<i64> {
     let ok = b.iter().all(|v| v.is_finite()) && b[0] >= 0.0 && b[1] >= 0.0 && b[2] > 0.0 && b[3] > 0.0;
     if !ok || b[0] + b[2] > 1.0 + 1e-9 || b[1] + b[3] > 1.0 + 1e-9 {
         bail!("the box must lie inside the picture (fractions of its width and height)");
@@ -1132,9 +1152,9 @@ pub fn add_manual(conn: &Connection, file: i64, b: [f64; 4], who: &Who) -> Resul
         .ok_or_else(|| anyhow::anyhow!("there is no file {file}"))?;
     let person = resolve(&tx, who)?;
     tx.execute(
-        "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'confirmed', 1, ?7)",
-        params![key, b[0], b[1], b[2], b[3], person, db::now()],
+        "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at, species)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'confirmed', 1, ?7, ?8)",
+        params![key, b[0], b[1], b[2], b[3], person, db::now(), pet.then_some(crate::pets::PET)],
     )?;
     let id = tx.last_insert_rowid();
     tx.commit()?;
@@ -1293,7 +1313,7 @@ fn generation_of(v: &View, faces: &[usize]) -> i64 {
 
 /// The clusters of faces without a decision, largest first, with up to
 /// `samples` faces each; only those of one space (people's faces or
-/// animals) if `kind` is given. Faces and animals never share a cluster.
+/// pets) if `kind` is given. Faces and pets never share a cluster.
 pub fn clusters(conn: &Connection, offset: usize, limit: usize, samples: usize, kind: Option<Space>) -> Result<Clusters> {
     let v = View::load(conn)?;
     let all = grouped(&v, kind);
@@ -1458,7 +1478,7 @@ pub struct UserDecision {
     #[serde(rename = "box")]
     pub b: [f64; 4],
     pub at: i64,
-    /// `cat` or `dog` for a decision about an animal; absent for people's faces.
+    /// `cat` or `dog` for a decision about a pet; absent for people's faces.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub species: Option<String>,
     pub files: Vec<UserFile>,
@@ -1538,7 +1558,7 @@ mod tests {
         DecisionRow { id, key: key.into(), b, person, decision: d, manual: false, at, species: None }
     }
 
-    /// A person's face and an animal with the very same box in one photo:
+    /// A person's face and a pet with the very same box in one photo:
     /// each decision belongs to the face of its own kind.
     #[test]
     fn decisions_only_match_faces_of_their_own_kind() {
@@ -1552,7 +1572,7 @@ mod tests {
         assert_eq!(m.face_of, [Some(1), Some(0)]);
         assert_eq!(m.decided(0).unwrap().person, Some(8));
         assert_eq!(m.decided(1).unwrap().person, Some(7));
-        // An animal decision never lands on a person's face when no animal is left.
+        // A pet decision never lands on a person's face when no pet is left.
         let mut lone = decision(12, "b", [0.1, 0.1, 0.2, 0.2], Decision::Confirmed, Some(7), 5);
         lone.species = Some("dog".into());
         let m = Matched::new(vec![face(3, "b", [0.1, 0.1, 0.2, 0.2])], vec![lone]);

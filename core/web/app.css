@@ -503,14 +503,15 @@ body.selecting .sec .pick { display: inline; }
 .backup-status summary { cursor: pointer; }
 .pathlist { margin: 6px 0 0; padding-left: 18px; font-size: 13px; word-break: break-all; max-height: 220px; overflow: auto; }
 
-/* Pets (phase 7): cats and dogs are people with a small animal in the corner */
+/* Pets (phase 7): cats and dogs are people with a small pet in the corner */
 .avatar { position: relative; }
 .avatar.pet { box-shadow: 0 0 0 2px #5ac8fa; }
-.avatar.pet-cat::after, .avatar.pet-dog::after { position: absolute; right: 6%; bottom: 2%; font-size: 40%; line-height: 1; content: ''; }
+.avatar.pet-cat::after, .avatar.pet-dog::after, .avatar.pet-pet::after { position: absolute; right: 6%; bottom: 2%; font-size: 40%; line-height: 1; content: ''; }
 .avatar.pet-cat::after { content: '🐱'; }
 .avatar.pet-dog::after { content: '🐶'; }
-.avatar.tiny.pet-cat::after, .avatar.tiny.pet-dog::after { content: none; }
-.avatar.big.pet-cat::after, .avatar.big.pet-dog::after { font-size: 28px; }
+.avatar.pet-pet::after { content: '🐾'; }
+.avatar.tiny.pet-cat::after, .avatar.tiny.pet-dog::after, .avatar.tiny.pet-pet::after { content: none; }
+.avatar.big.pet-cat::after, .avatar.big.pet-dog::after, .avatar.big.pet-pet::after { font-size: 28px; }
 
 /* Settings and the calibration pages */
 .settings-section { margin: 0 0 24px; }
@@ -522,3 +523,5 @@ body.selecting .sec .pick { display: inline; }
 .settings-card:hover, .settings-card:focus-visible { border-color: var(--accent); }
 .settings-card .title { font-weight: 600; font-size: 16px; }
 .page .back { margin: 0 0 4px; padding: 0; }
+.dialog .check { display: flex; align-items: center; gap: 6px; margin: 10px 0 4px; }
+.dialog .check input { width: 18px; height: 18px; }

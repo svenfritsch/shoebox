@@ -4,8 +4,8 @@
 
 Needs OpenCV, numpy and the models (recognizer/fetch-models.sh); skipped
 otherwise. Set SHOEBOX_TEST_FACE to a photo with one clearly visible face to
-also check detection and embeddings, and SHOEBOX_TEST_ANIMAL to a photo of a
-cat or dog to check the animals task. The embedder tests need the `onnx`
+also check detection and embeddings, and SHOEBOX_TEST_PET to a photo of a
+cat or dog to check the pets task. The embedder tests need the `onnx`
 package (pip install onnx) and run with either runtime.
 """
 
@@ -34,7 +34,7 @@ MODELS = recognizer.models_dir()
 HAVE_MODELS = all(os.path.isfile(os.path.join(MODELS, m)) for m in (recognizer.DETECTOR, recognizer.EMBEDDER))
 
 
-HAVE_ANIMAL_MODELS = HAVE_MODELS and os.path.isfile(os.path.join(MODELS, recognizer.ANIMAL_DETECTOR)) and any(
+HAVE_PET_MODELS = HAVE_MODELS and os.path.isfile(os.path.join(MODELS, recognizer.PET_DETECTOR)) and any(
     os.path.isfile(os.path.join(MODELS, s["file"])) for s in recognizer.EMBEDDERS
 )
 
@@ -134,9 +134,9 @@ class Protocol(unittest.TestCase):
         self.assertGreater(same, 0.8)
 
 
-@unittest.skipUnless(cv2 is not None and HAVE_ANIMAL_MODELS, "needs opencv, numpy and the animal models")
-class Animals(unittest.TestCase):
-    """The task `animals`, only there when the worker is started with --animals."""
+@unittest.skipUnless(cv2 is not None and HAVE_PET_MODELS, "needs opencv, numpy and the pet models")
+class Pets(unittest.TestCase):
+    """The task `pets`, only there when the worker is started with --pets."""
 
     def start(self, *args, env=None):
         proc = subprocess.Popen(
@@ -160,42 +160,74 @@ class Animals(unittest.TestCase):
         self.assertTrue(ok)
         return base64.b64encode(data.tobytes()).decode()
 
-    def test_animals_are_loaded_only_when_asked_for(self):
+    def test_pets_are_loaded_only_when_asked_for(self):
         _, hello = self.start()
-        self.assertNotIn("animals", hello["tasks"])
-        proc, hello = self.start("--animals")
-        info = hello["tasks"]["animals"]
+        self.assertNotIn("pets", hello["tasks"])
+        proc, hello = self.start("--pets")
+        info = hello["tasks"]["pets"]
         self.assertTrue(info["model"].startswith("yolox-s-2022nov+"), info)
         self.assertGreater(info["dim"], 0)
         # Faces keep their own model: the two never mix.
         self.assertEqual(hello["tasks"]["faces"]["dim"], 128)
         self.assertNotEqual(info["model"], hello["tasks"]["faces"]["model"])
-        reply = self.ask(proc, {"id": 1, "tasks": ["animals", "faces"], "image": self.jpeg(np.full((480, 640, 3), 200, np.uint8))})
-        self.assertEqual(reply, {"id": 1, "width": 640, "height": 480, "animals": [], "faces": []})
+        reply = self.ask(proc, {"id": 1, "tasks": ["pets", "faces"], "image": self.jpeg(np.full((480, 640, 3), 200, np.uint8))})
+        self.assertEqual(reply, {"id": 1, "width": 640, "height": 480, "pets": [], "faces": []})
 
-    def test_animals_without_the_flag_is_an_unknown_task(self):
+    def test_pets_without_the_flag_is_an_unknown_task(self):
         proc, _ = self.start()
-        reply = self.ask(proc, {"id": 1, "tasks": ["animals"], "image": self.jpeg(np.zeros((8, 8, 3), np.uint8))})
+        reply = self.ask(proc, {"id": 1, "tasks": ["pets"], "image": self.jpeg(np.zeros((8, 8, 3), np.uint8))})
         self.assertIn("unknown task", reply["error"])
+
+    def test_pets_drawn_by_hand_are_embedded_like_detected_ones(self):
+        proc, hello = self.start("--pets")
+        info = hello["tasks"]["pets"]
+        self.assertEqual(hello["tasks"]["embed-pets"], info)
+        img = np.full((480, 640, 3), 200, np.uint8)
+        reply = self.ask(proc, {"id": 1, "tasks": ["embed-pets"], "image": self.jpeg(img), "boxes": [[100, 100, 200, 150], [0, 0, 640, 480]]})
+        self.assertEqual((reply["width"], reply["height"]), (640, 480))
+        self.assertEqual(len(reply["embed-pets"]), 2)
+        for e in reply["embed-pets"]:
+            emb = np.frombuffer(base64.b64decode(e["emb"]), "<f4")
+            self.assertEqual(emb.shape, (info["dim"],))
+            self.assertAlmostEqual(float(np.linalg.norm(emb)), 1.0, places=4)
+        self.assertIn("error", self.ask(proc, {"id": 2, "tasks": ["embed-pets"], "image": self.jpeg(img)}))
+        self.assertIn("error", self.ask(proc, {"id": 3, "tasks": ["embed-pets"], "image": self.jpeg(img), "boxes": [[700, 10, 20, 20]]}))
+        self.assertIn("error", self.ask(proc, {"id": 4, "tasks": ["embed-pets"], "image": self.jpeg(img), "boxes": [[1, 2, 3]]}))
+        # Without the flag the task does not exist.
+        plain_proc, plain_hello = self.start()
+        self.assertNotIn("embed-pets", plain_hello["tasks"])
+
+    @unittest.skipUnless(os.environ.get("SHOEBOX_TEST_PET"), "set SHOEBOX_TEST_PET to a photo of a cat or dog")
+    def test_a_drawn_box_around_a_detected_pet_matches_its_embedding(self):
+        img = cv2.imread(os.environ["SHOEBOX_TEST_PET"])
+        proc, _ = self.start("--pets")
+        found = self.ask(proc, {"id": 1, "tasks": ["pets"], "image": self.jpeg(img)})["pets"][0]
+        emb = np.frombuffer(base64.b64decode(found["emb"]), "<f4")
+        x, y, w, h = found["bbox"]
+        # Drawn a little off, as a finger would.
+        drawn = [x + 0.03 * w, y + 0.02 * h, 0.95 * w, 0.96 * h]
+        e = self.ask(proc, {"id": 2, "tasks": ["embed-pets"], "image": self.jpeg(img), "boxes": [drawn]})["embed-pets"][0]
+        same = float(np.dot(emb, np.frombuffer(base64.b64decode(e["emb"]), "<f4")))
+        self.assertGreater(same, 0.95)
 
     def test_the_embedder_can_be_chosen(self):
         for spec in recognizer.EMBEDDERS:
             if os.path.isfile(os.path.join(MODELS, spec["file"])):
-                _, hello = self.start("--animals", env={"SHOEBOX_ANIMAL_EMBEDDER": spec["id"]})
-                self.assertTrue(hello["tasks"]["animals"]["model"].endswith("+" + spec["id"]))
+                _, hello = self.start("--pets", env={"SHOEBOX_PET_EMBEDDER": spec["id"]})
+                self.assertTrue(hello["tasks"]["pets"]["model"].endswith("+" + spec["id"]))
 
-    @unittest.skipUnless(os.environ.get("SHOEBOX_TEST_ANIMAL"), "set SHOEBOX_TEST_ANIMAL to a photo of a cat or dog")
-    def test_animal(self):
-        img = cv2.imread(os.environ["SHOEBOX_TEST_ANIMAL"])
+    @unittest.skipUnless(os.environ.get("SHOEBOX_TEST_PET"), "set SHOEBOX_TEST_PET to a photo of a cat or dog")
+    def test_pet(self):
+        img = cv2.imread(os.environ["SHOEBOX_TEST_PET"])
         for backend in ("onnxruntime", "opencv"):
             if backend == "onnxruntime":
                 try:
                     import onnxruntime  # noqa: F401
                 except ImportError:
                     continue
-            proc, hello = self.start("--animals", env={"SHOEBOX_ANIMAL_BACKEND": backend})
-            dim = hello["tasks"]["animals"]["dim"]
-            found = self.ask(proc, {"id": 1, "tasks": ["animals"], "image": self.jpeg(img)})["animals"]
+            proc, hello = self.start("--pets", env={"SHOEBOX_PET_BACKEND": backend})
+            dim = hello["tasks"]["pets"]["dim"]
+            found = self.ask(proc, {"id": 1, "tasks": ["pets"], "image": self.jpeg(img)})["pets"]
             self.assertGreaterEqual(len(found), 1, backend)
             a = found[0]
             self.assertIn(a["species"], ("cat", "dog"))
@@ -205,10 +237,10 @@ class Animals(unittest.TestCase):
             self.assertEqual(emb.shape, (dim,))
             self.assertAlmostEqual(float(np.linalg.norm(emb)), 1.0, places=4)
 
-            # The same animal mirrored and smaller is still found, and its
+            # The same pet mirrored and smaller is still found, and its
             # embedding is close.
             small = cv2.resize(cv2.flip(img, 1), None, fx=0.7, fy=0.7, interpolation=cv2.INTER_AREA)
-            again = self.ask(proc, {"id": 2, "tasks": ["animals"], "image": self.jpeg(small)})["animals"]
+            again = self.ask(proc, {"id": 2, "tasks": ["pets"], "image": self.jpeg(small)})["pets"]
             best = max(float(np.dot(emb, np.frombuffer(base64.b64decode(f["emb"]), "<f4"))) for f in again)
             self.assertGreater(best, 0.9, backend)
 
@@ -260,7 +292,7 @@ class EmbedderPlumbing(unittest.TestCase):
                 pass
             seen = []
             for backend in backends:
-                os.environ["SHOEBOX_ANIMAL_BACKEND"] = backend
+                os.environ["SHOEBOX_PET_BACKEND"] = backend
                 try:
                     for output in ("pooler_output", "last_hidden_state", None):
                         spec = {"id": "fake", "file": "fake.onnx", "size": 224, "mean": (0, 0, 0), "std": (1, 1, 1), "output": output}
@@ -272,7 +304,7 @@ class EmbedderPlumbing(unittest.TestCase):
                         self.assertAlmostEqual(float(np.linalg.norm(v)), 1.0, places=4)
                         seen.append((backend, output, v))
                 finally:
-                    os.environ.pop("SHOEBOX_ANIMAL_BACKEND")
+                    os.environ.pop("SHOEBOX_PET_BACKEND")
             # The class token (first token) of the 3-D output is the pooler
             # output; both runtimes agree.
             first = seen[0][2]

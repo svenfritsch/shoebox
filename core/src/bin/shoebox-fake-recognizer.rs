@@ -46,18 +46,23 @@
 //! 4 of each other): then the plain crop is embedded and no landmarks come
 //! back. The misbehaviour cues above are only for `faces`.
 //!
-//! With `--animals` the hello also lists the task `animals` (model
-//! `fake-animals-1`, embeddings of 64 numbers, so they can never be mixed up
+//! With `--pets` the hello also lists the task `pets` (model
+//! `fake-pets-1`, embeddings of 64 numbers, so they can never be mixed up
 //! with faces), which finds one cat or dog in the middle of every picture
-//! (the animal of the picture's mean colour: a cat when red is at least blue,
-//! else a dog; 64-d embedding, same colour same animal):
+//! (the pet of the picture's mean colour: a cat when red is at least blue,
+//! else a dog; 64-d embedding, same colour same pet):
 //!
-//! | Picture | Reply to `animals` |
+//! | Picture | Reply to `pets` |
 //! |---|---|
-//! | dark (all channels < 16) | no animals |
+//! | dark (all channels < 16) | no pets |
 //! | pure green | an error reply |
-//! | white top quarter, grey bottom quarter | as for faces: the animal of the middle half's colour, `round(40 g / 255) / 40` similar to the plain one |
-//! | anything else | one animal, box (0.25, 0.25, 0.5, 0.5) |
+//! | white top quarter, grey bottom quarter | as for faces: the pet of the middle half's colour, `round(40 g / 255) / 40` similar to the plain one |
+//! | anything else | one pet, box (0.25, 0.25, 0.5, 0.5) |
+//!
+//! With `--pets` the task `embed-pets` (a pet's box drawn by hand) embeds each
+//! box from the mean colour inside it, as the pet of that colour (64 numbers):
+//! a box drawn on a plain picture of a pet is that pet. No landmarks, no
+//! misbehaviour cues.
 //!
 //! `--protocol <n>` overrides the protocol in the hello; `--no-embed` leaves
 //! `embed` out of the hello; `--silent` never says hello.
@@ -69,8 +74,8 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::{Value, json};
 
 const DIM: usize = 128;
-/// Animal embeddings are shorter than face embeddings.
-const ANIMAL_DIM: usize = 64;
+/// Pet embeddings are shorter than face embeddings.
+const PET_DIM: usize = 64;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -86,9 +91,10 @@ fn main() {
     if !args.iter().any(|a| a == "--no-embed") {
         tasks["embed"] = json!({ "model": "fake-1", "dim": DIM });
     }
-    let animals = args.iter().any(|a| a == "--animals");
-    if animals {
-        tasks["animals"] = json!({ "model": "fake-animals-1", "dim": ANIMAL_DIM });
+    let pets = args.iter().any(|a| a == "--pets");
+    if pets {
+        tasks["pets"] = json!({ "model": "fake-pets-1", "dim": PET_DIM });
+        tasks["embed-pets"] = json!({ "model": "fake-pets-1", "dim": PET_DIM });
     }
     let hello = json!({
         "hello": "shoebox-recognizer",
@@ -112,8 +118,14 @@ fn main() {
             out.flush().unwrap();
             continue;
         }
-        if req["tasks"].as_array().is_some_and(|t| t.iter().any(|t| t == "animals")) {
-            let reply = if animals { animals_reply(&req) } else { json!({ "id": id, "error": "unknown task: animals" }) };
+        if req["tasks"].as_array().is_some_and(|t| t.iter().any(|t| t == "embed-pets")) {
+            let reply = if pets { embed_pets(&req) } else { json!({ "id": id, "error": "unknown task: embed-pets" }) };
+            writeln!(out, "{reply}").unwrap();
+            out.flush().unwrap();
+            continue;
+        }
+        if req["tasks"].as_array().is_some_and(|t| t.iter().any(|t| t == "pets")) {
+            let reply = if pets { pets_reply(&req) } else { json!({ "id": id, "error": "unknown task: pets" }) };
             writeln!(out, "{reply}").unwrap();
             out.flush().unwrap();
             continue;
@@ -288,8 +300,41 @@ fn lying_face_reply(id: &Value, w: u32, h: u32) -> Value {
     })
 }
 
-/// The `animals` task: one animal in the middle, described by colour.
-fn animals_reply(req: &Value) -> Value {
+/// The `embed-pets` task: per box, the pet of the mean colour inside it.
+fn embed_pets(req: &Value) -> Value {
+    let id = &req["id"];
+    let result = (|| -> Result<Value, String> {
+        let data = BASE64.decode(req["image"].as_str().ok_or("no image")?).map_err(|e| e.to_string())?;
+        let img = image::load_from_memory(&data).map_err(|_| "cannot decode image")?.to_rgb8();
+        let (w, h) = (img.width(), img.height());
+        let mut out = Vec::new();
+        for b in req["boxes"].as_array().ok_or("no boxes")? {
+            let v: Vec<f64> = b.as_array().ok_or("a box is not a list")?.iter().filter_map(Value::as_f64).collect();
+            let [x, y, bw, bh] = v[..] else { return Err("a box needs x, y, w, h".into()) };
+            let x0 = (x.max(0.0) as u32).min(w - 1);
+            let y0 = (y.max(0.0) as u32).min(h - 1);
+            let x1 = ((x + bw).ceil() as u32).clamp(x0 + 1, w);
+            let y1 = ((y + bh).ceil() as u32).clamp(y0 + 1, h);
+            let mut sum = [0f64; 3];
+            for yy in y0..y1 {
+                for xx in x0..x1 {
+                    let p = img.get_pixel(xx, yy);
+                    for c in 0..3 {
+                        sum[c] += p[c] as f64;
+                    }
+                }
+            }
+            let n = ((x1 - x0) * (y1 - y0)) as f64;
+            let bytes: Vec<u8> = person_dim(sum.map(|s| s / n), PET_DIM).iter().flat_map(|v| v.to_le_bytes()).collect();
+            out.push(json!({ "emb": BASE64.encode(bytes) }));
+        }
+        Ok(json!({ "id": id, "width": w, "height": h, "embed-pets": out }))
+    })();
+    result.unwrap_or_else(|e| json!({ "id": id, "error": e }))
+}
+
+/// The `pets` task: one pet in the middle, described by colour.
+fn pets_reply(req: &Value) -> Value {
     let id = &req["id"];
     let (w, h, mean, cue) = match picture(req) {
         Ok(p) => p,
@@ -297,16 +342,16 @@ fn animals_reply(req: &Value) -> Value {
     };
     let [r, g, b] = mean;
     let (colour, emb) = match cue {
-        Some((Edge::Top, Cue::Variant { colour, grey })) => (colour, variant(colour, grey, ANIMAL_DIM)),
-        _ if r < 16.0 && g < 16.0 && b < 16.0 => return json!({ "id": id, "width": w, "height": h, "animals": [] }),
+        Some((Edge::Top, Cue::Variant { colour, grey })) => (colour, variant(colour, grey, PET_DIM)),
+        _ if r < 16.0 && g < 16.0 && b < 16.0 => return json!({ "id": id, "width": w, "height": h, "pets": [] }),
         _ if pure(g, r, b) => return json!({ "id": id, "error": "fake: cannot handle green" }),
-        _ => (mean, person_dim(mean, ANIMAL_DIM)),
+        _ => (mean, person_dim(mean, PET_DIM)),
     };
     let bytes: Vec<u8> = emb.iter().flat_map(|v| v.to_le_bytes()).collect();
     let (fw, fh) = (w as f64, h as f64);
     json!({
         "id": id, "width": w, "height": h,
-        "animals": [{
+        "pets": [{
             "species": if colour[0] >= colour[2] { "cat" } else { "dog" },
             "bbox": [fw / 4.0, fh / 4.0, fw / 2.0, fh / 2.0],
             "score": 0.9,

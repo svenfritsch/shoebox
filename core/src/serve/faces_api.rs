@@ -21,15 +21,15 @@ pub(super) async fn list(State(app): State<Arc<App>>, Query(q): Query<faces::Lis
 
 #[derive(Deserialize)]
 pub(super) struct StatsQuery {
-    /// `faces` (default) or `animals`.
+    /// `faces` (default) or `pets`.
     kind: Option<String>,
 }
 
 pub(super) async fn stats(State(app): State<Arc<App>>, Query(q): Query<StatsQuery>) -> ApiResult<Json<faces::Stats>> {
     let space = match q.kind.as_deref() {
-        None | Some("") | Some("faces") => crate::animals::Space::Faces,
-        Some("animals") => crate::animals::Space::Animals,
-        Some(other) => return Err(ApiError::BadRequest(format!("kind is faces or animals, not {other:?}"))),
+        None | Some("") | Some("faces") => crate::pets::Space::Faces,
+        Some("pets") => crate::pets::Space::Pets,
+        Some(other) => return Err(ApiError::BadRequest(format!("kind is faces or pets, not {other:?}"))),
     };
     blocking(&app, move |app| Ok(Json(faces::stats_of(&app.conn.lock().unwrap(), space)?))).await
 }

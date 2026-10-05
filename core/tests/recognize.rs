@@ -31,7 +31,7 @@ fn options(lib: &Library) -> recognize::Options {
         limit: None,
         retry_failed: false,
         rotated: false,
-        animals: false,
+        pets: false,
         timeouts: quick(),
     }
 }
@@ -371,13 +371,13 @@ fn single_faces_through_the_worker() {
 }
 
 /// A photo of a cat (red at least as strong as blue) or a dog, for the fake
-/// worker's `animals` task.
+/// worker's `pets` task.
 const CAT: [u8; 3] = [200, 60, 40];
 const DOG: [u8; 3] = [40, 60, 200];
 
 #[test]
-fn animals_are_their_own_pass_next_to_the_faces() {
-    let lib = empty("recog-animals");
+fn pets_are_their_own_pass_next_to_the_faces() {
+    let lib = empty("recog-pets");
     solid(&lib, "Pets/cat.jpg", CAT);
     solid(&lib, "Pets/dog.jpg", DOG);
     solid(&lib, "Pets/night.jpg", [5, 5, 5]);
@@ -385,43 +385,43 @@ fn animals_are_their_own_pass_next_to_the_faces() {
     lib.scan_opts(true, false, false);
     let before = lib.snapshot();
 
-    // Without the flag nothing is looked for: no animal models are loaded.
+    // Without the flag nothing is looked for: no pet models are loaded.
     let faces_only = recognize::run(&options(&lib)).unwrap();
-    assert!(faces_only.animals.is_none());
+    assert!(faces_only.pets.is_none());
     assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NOT NULL"), 0);
-    assert_eq!(count(&lib, "SELECT count(*) FROM recog.looked WHERE task = 'animals'"), 0);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.looked WHERE task = 'pets'"), 0);
     let faces = count(&lib, "SELECT count(*) FROM recog.faces");
     assert_eq!(faces, 2, "the cat's and the dog's picture each have a (fake) face");
 
-    let animals_on = recognize::Options { animals: true, ..options(&lib) };
-    let stats = recognize::run(&animals_on).unwrap();
-    assert_eq!(lib.snapshot(), before, "the animals pass changed an original");
+    let pets_on = recognize::Options { pets: true, ..options(&lib) };
+    let stats = recognize::run(&pets_on).unwrap();
+    assert_eq!(lib.snapshot(), before, "the pets pass changed an original");
     assert_eq!((faces_only.looked, stats.looked), (3, 0), "the faces are not looked at again");
-    let a = stats.animals.expect("the animals pass ran");
+    let a = stats.pets.expect("the pets pass ran");
     assert_eq!((a.looked, a.faces, a.failed), (3, 2, 1), "{:?}", a.errors);
-    assert_eq!(a.model, "fake-animals-1");
+    assert_eq!(a.model, "fake-pets-1");
 
-    // Stored with the animal model and its own embedding length; the faces stay.
+    // Stored with the pet model and its own embedding length; the faces stay.
     assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NULL"), faces);
     assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species = 'cat'"), 1);
     assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species = 'dog'"), 1);
-    assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NOT NULL AND model != 'fake-animals-1'"), 0);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NOT NULL AND model != 'fake-pets-1'"), 0);
     assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NOT NULL AND length(emb) != 64 * 4"), 0);
     assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NULL AND length(emb) != 128 * 4"), 0);
-    assert_eq!(count(&lib, "SELECT count(*) FROM recog.looked WHERE task = 'animals'"), 4);
-    assert_eq!(count(&lib, "SELECT count(*) FROM recog.looked WHERE task = 'animals' AND error IS NOT NULL"), 1);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.looked WHERE task = 'pets'"), 4);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.looked WHERE task = 'pets' AND error IS NOT NULL"), 1);
     let (x, w, score): (f64, f64, f64) = conn(&lib)
         .query_row("SELECT x, w, score FROM recog.faces WHERE species = 'cat'", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .unwrap();
     assert!((x - 0.25).abs() < 0.01 && (w - 0.5).abs() < 0.01 && score > 0.0);
 
     // Resumable: nothing to do the second time (the failed one waits for --retry-failed).
-    let again = recognize::run(&animals_on).unwrap();
-    let a = again.animals.expect("ran");
+    let again = recognize::run(&pets_on).unwrap();
+    let a = again.pets.expect("ran");
     assert_eq!((a.looked, a.failed), (0, 0));
     assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NOT NULL"), 2);
 
-    // The viewer's faces of a photo include the animal (boxes in the viewer).
+    // The viewer's faces of a photo include the pet (boxes in the viewer).
     let cat = recognize::faces_of(&conn(&lib), &lib.record_key("Pets/cat.jpg")).unwrap().unwrap();
     assert_eq!(cat.iter().filter_map(|f| f.species.as_deref()).collect::<Vec<_>>(), ["cat"]);
     assert_eq!(cat.len(), 2, "its face and the cat");
@@ -430,52 +430,52 @@ fn animals_are_their_own_pass_next_to_the_faces() {
 
 #[test]
 fn a_model_change_redoes_only_its_own_pass() {
-    let lib = empty("recog-animals-models");
+    let lib = empty("recog-pets-models");
     solid(&lib, "Pets/cat.jpg", CAT);
     solid(&lib, "Pets/dog.jpg", DOG);
     lib.scan_opts(true, false, false);
-    let opts = recognize::Options { animals: true, ..options(&lib) };
+    let opts = recognize::Options { pets: true, ..options(&lib) };
     recognize::run(&opts).unwrap();
-    let (faces, animals) = (
+    let (faces, pets) = (
         count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NULL"),
         count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NOT NULL"),
     );
-    assert_eq!((faces, animals), (2, 2));
+    assert_eq!((faces, pets), (2, 2));
 
-    // Another animal model: the animals are looked for again, the faces are not.
-    conn(&lib).execute("UPDATE recog.looked SET model = 'old' WHERE task = 'animals'", []).unwrap();
+    // Another pet model: the pets are looked for again, the faces are not.
+    conn(&lib).execute("UPDATE recog.looked SET model = 'old' WHERE task = 'pets'", []).unwrap();
     conn(&lib).execute("UPDATE recog.faces SET model = 'old' WHERE species IS NOT NULL", []).unwrap();
     let redo = recognize::run(&opts).unwrap();
     assert_eq!(redo.looked, 0);
-    assert_eq!(redo.animals.unwrap().looked, 2);
+    assert_eq!(redo.pets.unwrap().looked, 2);
     assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE model = 'old'"), 0);
     assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NOT NULL"), 2);
 
-    // Another face model: the faces are redone and the animals stay.
+    // Another face model: the faces are redone and the pets stay.
     conn(&lib).execute("UPDATE recog.looked SET model = 'old' WHERE task = 'faces'", []).unwrap();
     conn(&lib).execute("UPDATE recog.faces SET model = 'old' WHERE species IS NULL", []).unwrap();
     let redo = recognize::run(&opts).unwrap();
-    assert_eq!((redo.looked, redo.animals.unwrap().looked), (2, 0));
+    assert_eq!((redo.looked, redo.pets.unwrap().looked), (2, 0));
     assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NULL"), 2);
     assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NOT NULL"), 2);
 
     // `--limit` counts per pass.
-    let lib = empty("recog-animals-limit");
+    let lib = empty("recog-pets-limit");
     for i in 0..4u8 {
         solid(&lib, &format!("Pets/{i}.jpg"), [200, 60 + i * 40, 40]);
     }
     lib.scan_opts(true, false, false);
-    let first = recognize::run(&recognize::Options { animals: true, limit: Some(3), ..options(&lib) }).unwrap();
+    let first = recognize::run(&recognize::Options { pets: true, limit: Some(3), ..options(&lib) }).unwrap();
     assert_eq!((first.looked, first.pending), (3, 1));
-    let a = first.animals.unwrap();
+    let a = first.pets.unwrap();
     assert_eq!((a.looked, a.pending), (3, 1));
 }
 
 #[test]
-fn the_animals_task_needs_a_worker_started_for_it() {
-    // Without --animals the hello has no animals and the core refuses to ask.
+fn the_pets_task_needs_a_worker_started_for_it() {
+    // Without --pets the hello has no pets and the core refuses to ask.
     let mut plain = recognize::Worker::start(fake(&[]), quick()).unwrap();
-    assert!(plain.animals_model().is_none());
+    assert!(plain.pets_model().is_none());
     let jpeg = |rgb: [u8; 3]| {
         let mut out = Vec::new();
         image::RgbImage::from_pixel(80, 40, image::Rgb(rgb))
@@ -483,27 +483,27 @@ fn the_animals_task_needs_a_worker_started_for_it() {
             .unwrap();
         out
     };
-    assert!(matches!(plain.animals(&jpeg(CAT)).unwrap(), Err(Failure::Refused(e)) if e.contains("not started for animals")));
+    assert!(matches!(plain.pets(&jpeg(CAT)).unwrap(), Err(Failure::Refused(e)) if e.contains("not started for pets")));
     plain.stop();
 
-    let mut worker = recognize::Worker::start(fake(&["--animals"]), quick()).unwrap();
-    let info = worker.animals_model().unwrap().clone();
-    assert_eq!((info.model.as_str(), info.dim), ("fake-animals-1", 64));
+    let mut worker = recognize::Worker::start(fake(&["--pets"]), quick()).unwrap();
+    let info = worker.pets_model().unwrap().clone();
+    assert_eq!((info.model.as_str(), info.dim), ("fake-pets-1", 64));
     assert_eq!(worker.faces_model().dim, 128, "faces keep their own model");
-    let cat = worker.animals(&jpeg(CAT)).unwrap().unwrap();
-    let dog = worker.animals(&jpeg(DOG)).unwrap().unwrap();
+    let cat = worker.pets(&jpeg(CAT)).unwrap().unwrap();
+    let dog = worker.pets(&jpeg(DOG)).unwrap().unwrap();
     assert_eq!((cat.width, cat.height, cat.faces.len()), (80, 40, 1));
     assert_eq!(cat.faces[0].species.as_deref(), Some("cat"));
     assert_eq!(dog.faces[0].species.as_deref(), Some("dog"));
     assert_eq!(cat.faces[0].emb.len(), 64);
     assert!(cat.faces[0].landmarks.is_empty());
-    let same = worker.animals(&jpeg(CAT)).unwrap().unwrap();
+    let same = worker.pets(&jpeg(CAT)).unwrap().unwrap();
     let dot = |a: &[f32], b: &[f32]| a.iter().zip(b).map(|(x, y)| x * y).sum::<f32>();
-    assert!((dot(&cat.faces[0].emb, &same.faces[0].emb) - 1.0).abs() < 1e-4, "same colour, same animal");
+    assert!((dot(&cat.faces[0].emb, &same.faces[0].emb) - 1.0).abs() < 1e-4, "same colour, same pet");
     assert!(dot(&cat.faces[0].emb, &dog.faces[0].emb) < 0.9);
-    assert!(worker.animals(&jpeg([5, 5, 5])).unwrap().unwrap().faces.is_empty());
+    assert!(worker.pets(&jpeg([5, 5, 5])).unwrap().unwrap().faces.is_empty());
     assert_eq!(
-        worker.animals(&jpeg([10, 250, 10])).unwrap().unwrap_err(),
+        worker.pets(&jpeg([10, 250, 10])).unwrap().unwrap_err(),
         Failure::Refused("fake: cannot handle green".into())
     );
     // Faces still work on the same worker.
@@ -629,8 +629,8 @@ fn real_recognizer_runs_under_the_guard() {
             .unwrap();
         let file = id_of(&lib, "Familie/face.jpg");
         let who = shoebox::people::Who { person_id: None, name: Some("Face".into()) };
-        shoebox::people::add_manual(&c, file, [x - 0.05 * w, y + 0.03 * h, w * 1.1, h], &who).unwrap();
-        shoebox::people::add_manual(&c, file, [0.0, 0.0, 0.08, 0.08], &who).unwrap();
+        shoebox::people::add_manual(&c, file, [x - 0.05 * w, y + 0.03 * h, w * 1.1, h], &who, false).unwrap();
+        shoebox::people::add_manual(&c, file, [0.0, 0.0, 0.08, 0.08], &who, false).unwrap();
         drop(c);
         let stats = recognize::run(&opts).unwrap();
         assert_eq!(lib.snapshot(), before);
@@ -859,12 +859,12 @@ fn serve_face_check_page_under_the_guard() {
     server.stop().unwrap();
 }
 
-/// The animals check: stats, list, crops and neighbours of cats and dogs,
+/// The pets check: stats, list, crops and neighbours of cats and dogs,
 /// separate from the faces (own size rule and buckets), under the guard.
 #[test]
-fn animals_check_page_and_stats_under_the_guard() {
-    let lib = empty("recog-animals-page");
-    // The fake's animal is half as wide as the picture.
+fn pets_check_page_and_stats_under_the_guard() {
+    let lib = empty("recog-pets-page");
+    // The fake's pet is half as wide as the picture.
     for (name, w, rgb) in [("tiny", 100u32, [200u8, 60u8, 40u8]), ("small", 130, [200, 60, 90]), ("big", 300, [40, 60, 200]), ("same", 300, [40, 60, 200])] {
         std::fs::create_dir_all(lib.path("Pets")).unwrap();
         image::RgbImage::from_pixel(w, w, image::Rgb(rgb)).save(lib.path(&format!("Pets/{name}.png"))).unwrap();
@@ -879,59 +879,59 @@ fn animals_check_page_and_stats_under_the_guard() {
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
         String::from_utf8(out.stdout).unwrap() + &String::from_utf8(out.stderr).unwrap()
     };
-    let stats = recognize::run(&recognize::Options { animals: true, ..options(&lib) }).unwrap();
-    let a = stats.animals.as_ref().unwrap();
+    let stats = recognize::run(&recognize::Options { pets: true, ..options(&lib) }).unwrap();
+    let a = stats.pets.as_ref().unwrap();
     // `big.png` and `same.png` hold the same picture in two files.
     assert_eq!((a.looked, a.faces, a.failed), (5 - 1, 4, 1), "{:?}", a.errors);
     let before = lib.snapshot();
 
     let conn = shoebox::faces::open_readonly(&lib.root, None).unwrap().unwrap();
-    let s = shoebox::faces::stats_of(&conn, shoebox::animals::Space::Animals).unwrap();
-    assert_eq!(s.kind, "animals");
+    let s = shoebox::faces::stats_of(&conn, shoebox::pets::Space::Pets).unwrap();
+    assert_eq!(s.kind, "pets");
     assert_eq!((s.photos, s.looked, s.failed, s.faces), (5, 5, 1, 4));
     assert_eq!(s.min_cluster_px, 64.0);
     // Box widths 50 | 65 | 150 | 150: under 64 | 64–100 | 100–200 | 200–400 | 400+
     assert_eq!(s.widths.iter().map(|b| b.count).collect::<Vec<_>>(), [1, 1, 2, 0, 0]);
     assert_eq!(s.small, 1);
-    assert_eq!(s.runs[0].kind, "animals");
+    assert_eq!(s.runs[0].kind, "pets");
     // The faces' numbers are about faces: every picture also has a (fake) face.
     let f = shoebox::faces::stats(&conn).unwrap();
     assert_eq!((f.kind, f.faces), ("faces", 4));
     drop(conn);
-    let text = shoebox(&["--animals"]);
-    assert!(text.contains("Animals: 4"), "{text}");
-    assert!(text.contains("Animal width"), "{text}");
+    let text = shoebox(&["--pets"]);
+    assert!(text.contains("Pets: 4"), "{text}");
+    assert!(text.contains("Pet width"), "{text}");
     assert!(text.contains("Under 64 px (listed, too small for clustering): 1"), "{text}");
 
     let server = start(&lib, None);
     let addr = server.addr;
-    let list = get(addr, "/api/faces?kind=animals&limit=100").json();
+    let list = get(addr, "/api/faces?kind=pets&limit=100").json();
     assert_eq!(list["total"], 4);
     assert_eq!(list["min_cluster_px"], 64.0);
-    let animals = list["faces"].as_array().unwrap().clone();
-    assert!(animals.iter().all(|f| f["species"].is_string()));
-    assert_eq!(animals[0]["small"], true, "smallest first");
-    assert_eq!(animals.iter().filter(|f| f["small"] == true).count(), 1);
+    let pets = list["faces"].as_array().unwrap().clone();
+    assert!(pets.iter().all(|f| f["species"].is_string()));
+    assert_eq!(pets[0]["small"], true, "smallest first");
+    assert_eq!(pets.iter().filter(|f| f["small"] == true).count(), 1);
     assert_eq!(get(addr, "/api/faces?limit=100").json()["total"], 4, "faces are listed apart");
     assert!(get(addr, "/api/faces?limit=100").json()["faces"].as_array().unwrap().iter().all(|f| f["species"].is_null()));
-    let summary = get(addr, "/api/faces/stats?kind=animals").json();
-    assert_eq!((summary["kind"].as_str(), summary["faces"].as_u64()), (Some("animals"), Some(4)));
+    let summary = get(addr, "/api/faces/stats?kind=pets").json();
+    assert_eq!((summary["kind"].as_str(), summary["faces"].as_u64()), (Some("pets"), Some(4)));
     assert_eq!(get(addr, "/api/faces/stats?kind=cats").status, 400);
 
-    // Crops of the whole animal come from the original under the guard.
-    for f in &animals {
+    // Crops of the whole pet come from the original under the guard.
+    for f in &pets {
         let crop = get(addr, &format!("/api/faces/{}/crop", f["id"]));
         assert_eq!(crop.status, 200, "{f}");
         assert_eq!(crop.header("content-type"), Some("image/jpeg"));
     }
 
-    // Neighbours are animals too: the same picture in the other file first.
-    let big = animals.iter().find(|f| f["file"] == id_of(&lib, "Pets/big.png")).unwrap();
+    // Neighbours are pets too: the same picture in the other file first.
+    let big = pets.iter().find(|f| f["file"] == id_of(&lib, "Pets/big.png")).unwrap();
     let near = get(addr, &format!("/api/faces/{}/similar?limit=10", big["id"])).json();
     let near = near.as_array().unwrap();
-    assert_eq!(near.len(), 3, "the other animals only, not the faces");
+    assert_eq!(near.len(), 3, "the other pets only, not the faces");
     assert!(near.iter().all(|n| n["species"].is_string()));
     assert_eq!(near[0]["file"], id_of(&lib, "Pets/same.png"));
     assert!((near[0]["similarity"].as_f64().unwrap() - 1.0).abs() < 1e-3);
-    assert_eq!(lib.snapshot(), before, "the animals check changed an original");
+    assert_eq!(lib.snapshot(), before, "the pets check changed an original");
 }

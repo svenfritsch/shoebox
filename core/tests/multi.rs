@@ -206,7 +206,7 @@ fn recognize_all(lib: &Library) {
         limit: None,
         retry_failed: false,
         rotated: false,
-        animals: false,
+        pets: false,
         timeouts: Default::default(),
     })
     .unwrap();

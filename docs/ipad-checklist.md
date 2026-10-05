@@ -82,11 +82,15 @@ own lists for the MacBook and the drive.
 
 ## Pets (phase 7, [phase7.md](phase7.md))
 
-- [ ] Settings → Animal check: the crops show whole animals with 🐱/🐶 tags;
-      "≈" lists the same animal at the top (0.9 and more) and other animals
+- [ ] Settings → Pet check: the crops show whole pets with 🐱/🐶 tags;
+      "≈" lists the same pet at the top (0.9 and more) and other pets
       far below it; "← Settings" goes back.
-- [ ] Unnamed: the filter "Pets (cats and dogs)" lists only animal cards;
-      name one, it appears in the sidebar with its animal and can be put in
+- [ ] Unnamed: the filter "Pets (cats and dogs)" lists only pet cards;
+      name one, it appears in the sidebar with its pet and can be put in
       a group with people ("Move to group…").
+- [ ] "+ Add face or pet" with a finger on a pet the detector missed (a
+      small one, or from behind): tick "This is a pet", name it; it shows
+      as "🐾 pet" in the panel, with a blue box, and the pet's other photos
+      get suggested after a moment.
 - [ ] A pet's page and the viewer: its photos, the blue box and "dog" /
       "cat" in the info panel, ✓/✗ for a suggested pet.

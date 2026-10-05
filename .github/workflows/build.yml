@@ -127,10 +127,10 @@ jobs:
           "$RUNNER_TEMP/venv/bin/pip" install --quiet opencv-python-headless numpy
           recognizer/fetch-models.sh
           curl -fsSL -o "$RUNNER_TEMP/face.jpg" https://raw.githubusercontent.com/opencv/opencv/4.x/samples/data/messi5.jpg
-          # A dog (Darknet's sample) checks the animals task.
+          # A dog (Darknet's sample) checks the pets task.
           curl -fsSL -o "$RUNNER_TEMP/dog.jpg" https://raw.githubusercontent.com/pjreddie/darknet/master/data/dog.jpg
           echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
-          SHOEBOX_TEST_FACE="$RUNNER_TEMP/face.jpg" SHOEBOX_TEST_ANIMAL="$RUNNER_TEMP/dog.jpg" \
+          SHOEBOX_TEST_FACE="$RUNNER_TEMP/face.jpg" SHOEBOX_TEST_PET="$RUNNER_TEMP/dog.jpg" \
             "$RUNNER_TEMP/venv/bin/python" -m unittest -v recognizer/test_recognizer.py
 
       - name: Tests
@@ -147,7 +147,7 @@ jobs:
           dist/shoebox-linux scan "$RUNNER_TEMP/lib"
           dist/shoebox-linux scan "$RUNNER_TEMP/lib"
           dist/shoebox-linux verify "$RUNNER_TEMP/lib"
-          dist/shoebox-linux recognize "$RUNNER_TEMP/lib" --recognizer recognizer/recognizer.py --animals
+          dist/shoebox-linux recognize "$RUNNER_TEMP/lib" --recognizer recognizer/recognizer.py --pets
           dist/shoebox-linux verify "$RUNNER_TEMP/lib"
 
       - uses: actions/upload-artifact@v4

@@ -6,13 +6,13 @@
 //!   (the one of the latest upright result), at least
 //!   `faces::MIN_CLUSTER_PX` wide. Faces found by the rotated pass take
 //!   part like the others.
-//! - Cats and dogs (`animals.rs`) are another **space**: their embeddings
+//! - Cats and dogs (`pets.rs`) are another **space**: their embeddings
 //!   come from another model, so they are neighbours, clusters and
 //!   suggestions among themselves only, with thresholds of their own
-//!   (`Space::thresholds`) and at least `animals::MIN_CLUSTER_PX` wide.
+//!   (`Space::thresholds`) and at least `pets::MIN_CLUSTER_PX` wide.
 //!   Everything below is done once per space; a person is suggested for
 //!   faces of a space only through their confirmed faces in that space. The
-//!   clusters of the animals are numbered after those of the faces.
+//!   clusters of the pets are numbered after those of the faces.
 //! - Neighbours, not all pairs: every such face looks up its nearest
 //!   neighbours (`ann::Index`, similarity ≥ `CLUSTER_SIM`) once; the lists
 //!   are kept in `recog.neighbours`, so a run that is stopped resumes, and
@@ -39,12 +39,12 @@ use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 
-use crate::animals::{Space, Thresholds};
+use crate::pets::{Space, Thresholds};
 use crate::ann::{self, Index};
 use crate::db::{self, Job};
-use crate::faces::{self, MIN_CLUSTER_PX};
+use crate::faces;
 use crate::people::{Decision, Matched};
-use crate::recognize::{FACES, Interrupted, KINDS};
+use crate::recognize::{Interrupted, KINDS};
 
 /// Faces at least this similar (cosine) are neighbours, and neighbours
 /// end up in one cluster. Stricter than `people::SUGGEST_SIM`: a cluster
@@ -76,7 +76,7 @@ pub struct Summary {
     /// The same for the cats and dogs, if any were looked at: its own space,
     /// with its own thresholds. The numbers above are the faces' only.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub animals: Option<Box<Summary>>,
+    pub pets: Option<Box<Summary>>,
     /// Neighbour lists computed this time (the others were kept).
     pub listed: u64,
     /// Of `faces`, without a decision; and the clusters they form.
@@ -131,7 +131,7 @@ pub fn run_printing(conn: &Connection, stop: &dyn Fn() -> bool) -> Result<Summar
         "Clusters: {} faces large enough, {} without a decision in {} clusters; {} suggested, {} maybe ({:.1} s).",
         s.faces, s.unnamed, s.clusters, s.suggested, s.maybe, s.seconds
     );
-    if let Some(a) = &s.animals {
+    if let Some(a) = &s.pets {
         println!(
             "Clusters: {} cats and dogs large enough, {} without a decision in {} clusters; {} suggested, {} maybe.",
             a.faces, a.unnamed, a.clusters, a.suggested, a.maybe
@@ -227,7 +227,7 @@ struct Analysis {
 fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut dyn FnMut(u64, u64)) -> Result<Summary> {
     let started = Instant::now();
     let mut parts: Vec<Part> = Vec::new();
-    for space in [Space::Faces, Space::Animals] {
+    for space in [Space::Faces, Space::Pets] {
         let Some(model) = current_model_of(conn, space)? else { continue };
         let all = eligible(conn, space, &model)?;
         let th = space.thresholds(&model);
@@ -317,7 +317,7 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
         let s = summaries.next().expect("one summary per part");
         match part.space {
             Space::Faces => out = s,
-            Space::Animals => out.animals = Some(Box::new(s)),
+            Space::Pets => out.pets = Some(Box::new(s)),
         }
     }
     out.seconds = started.elapsed().as_secs_f64();
@@ -384,8 +384,7 @@ fn analyse(conn: &Connection, m: &Matched, state_of: &HashMap<i64, usize>, part:
     groups.sort_by(|a, b| b.len().cmp(&a.len()).then(a[0].cmp(&b[0])));
 
     // Suggestions: the most similar confirmed faces of every person (of
-    // this space), and the faces drawn by hand that were aligned (faces only:
-    // the worker embeds nothing else by hand).
+    // this space), and the faces or pets drawn by hand that were aligned.
     let mut ref_person: Vec<i64> = Vec::new();
     let mut ref_data: Vec<f32> = Vec::new();
     for i in 0..n {
@@ -394,11 +393,9 @@ fn analyse(conn: &Connection, m: &Matched, state_of: &HashMap<i64, usize>, part:
             ref_data.extend_from_slice(all.row(i));
         }
     }
-    if part.space == Space::Faces {
-        for (p, emb) in drawn_references(conn, m, &part.model, all.dim)? {
-            ref_person.push(p);
-            ref_data.extend(emb);
-        }
+    for (p, emb) in drawn_references(conn, m, part.space, &part.model, all.dim)? {
+        ref_person.push(p);
+        ref_data.extend(emb);
     }
     let ref_index = Index::build(&ref_data, all.dim.max(1));
     let open_list: Vec<usize> = (0..n).filter(|&i| open[i]).collect();
@@ -467,14 +464,16 @@ fn split(members: Vec<usize>, edges: Vec<(usize, usize, f32)>, sim: f32, out: &m
     }
 }
 
-/// Faces drawn by hand that serve as references: confirmed for a person,
-/// over no detected face (that one's own embedding counts then), of a
-/// present photo, aligned (landmarks found), embedded with `model`, at
-/// least `MIN_CLUSTER_PX` wide.
-fn drawn_references(conn: &Connection, m: &Matched, model: &str, dim: usize) -> Result<Vec<(i64, Vec<f32>)>> {
+/// Faces (or, in the pets' space, pets) drawn by hand that serve as
+/// references: confirmed for a person, over no detected one of their kind
+/// (that one's own embedding counts then), of a present photo, aligned
+/// (landmarks found; a pet's box always is), embedded with `model`, at
+/// least the space's minimum wide.
+fn drawn_references(conn: &Connection, m: &Matched, space: Space, model: &str, dim: usize) -> Result<Vec<(i64, Vec<f32>)>> {
+    // The width of the copy the worker saw is the same in every pass.
     let mut stmt = conn.prepare(&format!(
-        "SELECT e.emb, l.width FROM recog.drawn e
-         JOIN recog.looked l ON l.key = e.key AND l.task = '{FACES}'
+        "SELECT e.emb, (SELECT l.width FROM recog.looked l WHERE l.key = e.key AND l.width IS NOT NULL LIMIT 1)
+         FROM recog.drawn e
          WHERE e.key = ?1 AND e.x = ?2 AND e.y = ?3 AND e.w = ?4 AND e.h = ?5 AND e.model = ?6 AND e.aligned = 1
            AND e.emb IS NOT NULL
            AND e.key IN (SELECT quick_hash FROM files WHERE missing_since IS NULL AND kind IN ({KINDS}))"
@@ -485,11 +484,14 @@ fn drawn_references(conn: &Connection, m: &Matched, model: &str, dim: usize) -> 
         if !row.manual || row.decision != Decision::Confirmed || m.face_of[d].is_some() {
             continue;
         }
+        if Space::of(row.species.as_deref()) != space {
+            continue;
+        }
         let found: Option<(Vec<u8>, Option<f64>)> = stmt
             .query_row(params![row.key, row.b[0], row.b[1], row.b[2], row.b[3], model], |r| Ok((r.get(0)?, r.get(1)?)))
             .optional()?;
         let Some((bytes, width)) = found else { continue };
-        if row.b[2] * width.unwrap_or(0.0) < MIN_CLUSTER_PX {
+        if space.too_small(row.b[2] * width.unwrap_or(0.0)) {
             continue;
         }
         let emb: Vec<f32> = bytes.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();

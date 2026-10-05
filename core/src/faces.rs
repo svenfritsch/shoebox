@@ -16,7 +16,7 @@ use libheif_rs::LibHeif;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
-use crate::animals::Space;
+use crate::pets::Space;
 use crate::db;
 use crate::fingerprint;
 use crate::media;
@@ -34,10 +34,10 @@ const CROP_QUALITY: u8 = 85;
 const CROP_MARGIN: f64 = 0.25;
 
 const WIDTH_BUCKETS: [f64; 4] = [30.0, 40.0, 60.0, 120.0];
-/// The same for animals: their box holds the whole animal, so it is wider.
-const ANIMAL_WIDTH_BUCKETS: [f64; 4] = [64.0, 100.0, 200.0, 400.0];
-/// YOLOX's scores of stored animals start at the recognizer's cut-off (0.35).
-const ANIMAL_SCORE_BUCKETS: [f64; 4] = [0.45, 0.55, 0.70, 0.85];
+/// The same for pets: their box holds the whole pet, so it is wider.
+const PET_WIDTH_BUCKETS: [f64; 4] = [64.0, 100.0, 200.0, 400.0];
+/// YOLOX's scores of stored pets start at the recognizer's cut-off (0.35).
+const PET_SCORE_BUCKETS: [f64; 4] = [0.45, 0.55, 0.70, 0.85];
 /// YuNet's scores of stored faces lie between 0.85 (the recognizer's cut-off)
 /// and ~0.96 (the real drive: none higher), so the buckets split that range.
 const SCORE_BUCKETS: [f64; 4] = [0.88, 0.90, 0.92, 0.94];
@@ -48,11 +48,11 @@ pub fn too_small(px: f64) -> bool {
 }
 
 /// SQL for "a row of `recog.faces` (alias `f`) in this space" in a database
-/// of this `version` (before v5 there are no animals and no `species`).
+/// of this `version` (before v5 there are no pets and no `species`).
 fn space_filter(space: Space, version: i32) -> &'static str {
     match (space, version >= 5) {
         (Space::Faces, false) => "1 = 1",
-        (Space::Animals, false) => "0 = 1",
+        (Space::Pets, false) => "0 = 1",
         (space, true) => space.filter(),
     }
 }
@@ -99,7 +99,7 @@ pub struct Run {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Stats {
-    /// `faces` or `animals` (cats and dogs): which rows these numbers are about.
+    /// `faces` or `pets` (cats and dogs): which rows these numbers are about.
     pub kind: &'static str,
     /// Photos on the drive (one per content).
     pub photos: u64,
@@ -160,7 +160,7 @@ pub fn stats_of(conn: &Connection, space: Space) -> Result<Stats> {
 
     let (mut widths, mut scores) = match space {
         Space::Faces => (buckets(&WIDTH_BUCKETS), buckets(&SCORE_BUCKETS)),
-        Space::Animals => (buckets(&ANIMAL_WIDTH_BUCKETS), buckets(&ANIMAL_SCORE_BUCKETS)),
+        Space::Pets => (buckets(&PET_WIDTH_BUCKETS), buckets(&PET_SCORE_BUCKETS)),
     };
     let (mut faces, mut rotated_faces, mut small, mut not_faces) = (0, 0, 0, 0);
     let marked = crate::people::not_face_ids(conn)?;
@@ -189,7 +189,7 @@ pub fn stats_of(conn: &Connection, space: Space) -> Result<Stats> {
             "SELECT kind, state, started_at, finished_at, done, total FROM recog.jobs
              WHERE kind IN (SELECT value FROM json_each(?1)) ORDER BY id DESC LIMIT 5",
         )?
-        .query_map([if space == Space::Faces { r#"["faces", "faces-rot"]"# } else { r#"["animals"]"# }], |r| {
+        .query_map([if space == Space::Faces { r#"["faces", "faces-rot"]"# } else { r#"["pets"]"# }], |r| {
             Ok(Run {
                 kind: r.get(0)?,
                 state: r.get(1)?,
@@ -202,7 +202,7 @@ pub fn stats_of(conn: &Connection, space: Space) -> Result<Stats> {
         .collect::<rusqlite::Result<_>>()?;
 
     Ok(Stats {
-        kind: if space == Space::Faces { "faces" } else { "animals" },
+        kind: if space == Space::Faces { "faces" } else { "pets" },
         photos: photos as u64,
         looked: looked_n as u64,
         failed: failed as u64,
@@ -276,13 +276,13 @@ pub fn print_stats(root: &Path, db: Option<&Path>) -> Result<Option<Stats>> {
     print_stats_of(root, db, Space::Faces)
 }
 
-/// `shoebox faces stats --animals` prints the stats of cats and dogs.
+/// `shoebox faces stats --pets` prints the stats of cats and dogs.
 pub fn print_stats_of(root: &Path, db: Option<&Path>, space: Space) -> Result<Option<Stats>> {
     let stats = stats_for(root, db, space)?;
     match (&stats, space) {
         (Some(s), _) => crate::say!("{}", format_stats(s).trim_end_matches('\n')),
         (None, Space::Faces) => crate::say!("No faces yet: run `shoebox recognize` first."),
-        (None, Space::Animals) => crate::say!("No animals yet: run `shoebox recognize --animals` first."),
+        (None, Space::Pets) => crate::say!("No pets yet: run `shoebox recognize --pets` first."),
     }
     Ok(stats)
 }
@@ -333,8 +333,8 @@ fn format_duration(secs: i64) -> String {
 }
 
 pub fn format_stats(s: &Stats) -> String {
-    let animals = s.kind == "animals";
-    let whats = if animals { "Animals" } else { "Faces" };
+    let pets = s.kind == "pets";
+    let whats = if pets { "Pets" } else { "Faces" };
     let mut out = String::new();
     let waiting = s.photos.saturating_sub(s.looked);
     out.push_str(&format!("Photos:  {} looked at of {}", s.looked, s.photos));
@@ -352,13 +352,13 @@ pub fn format_stats(s: &Stats) -> String {
     let ok = s.looked - s.failed;
     out.push_str(&format!(
         "{whats}:{}{} ({:.2} per photo looked at)\n",
-        if animals { " " } else { "   " },
+        if pets { " " } else { "   " },
         s.faces,
         if ok == 0 { 0.0 } else { s.faces as f64 / ok as f64 }
     ));
-    if animals {
+    if pets {
         if s.looked == 0 {
-            out.push_str("Cats and dogs are not looked for yet (`shoebox recognize --animals`)\n");
+            out.push_str("Cats and dogs are not looked for yet (`shoebox recognize --pets`)\n");
         }
     } else if s.rotated_looked > 0 {
         out.push_str(&format!(
@@ -369,7 +369,7 @@ pub fn format_stats(s: &Stats) -> String {
         out.push_str("Turned:  not looked at yet (`shoebox recognize --rotated` finds faces of people lying down)\n");
     }
     if s.faces > 0 {
-        out.push_str(&format!("\n{} width in the ≤1600 px copy:\n", if animals { "Animal" } else { "Face" }));
+        out.push_str(&format!("\n{} width in the ≤1600 px copy:\n", if pets { "Pet" } else { "Face" }));
         format_buckets(&mut out, &s.widths, s.faces, " px", 0);
         out.push_str(&format!(
             "  Under {:.0} px (listed, too small for clustering): {} ({:.1}%)\n",
@@ -380,7 +380,7 @@ pub fn format_stats(s: &Stats) -> String {
         if s.not_faces > 0 {
             out.push_str(&format!(
                 "  Marked \"not a {}\" (false finds): {} ({:.1}%)\n",
-                if animals { "pet" } else { "face" },
+                if pets { "pet" } else { "face" },
                 s.not_faces,
                 percent(s.not_faces, s.faces)
             ));
@@ -410,7 +410,7 @@ pub fn format_stats(s: &Stats) -> String {
 /// How the face check page asks for faces.
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct ListQuery {
-    /// `faces` (default) or `animals`: which kind of box to list.
+    /// `faces` (default) or `pets`: which kind of box to list.
     pub kind: Option<String>,
     /// `size` (default) or `score`.
     pub sort: Option<String>,
@@ -449,7 +449,7 @@ pub struct Item {
     pub roll: u16,
     /// Under `MIN_CLUSTER_PX`: listed, but not for clustering.
     pub small: bool,
-    /// `cat` or `dog` for an animal; absent for a face.
+    /// `cat` or `dog` for a pet; absent for a face.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub species: Option<String>,
 }
@@ -514,7 +514,7 @@ pub fn list(conn: &Connection, q: &ListQuery) -> Result<List> {
         marked.join(",")
     );
     let space = match q.kind.as_deref() {
-        Some("animals") => Space::Animals,
+        Some("pets") => Space::Pets,
         _ => Space::Faces,
     };
     let sql = format!(

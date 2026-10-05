@@ -112,7 +112,7 @@ $('login-form').addEventListener('submit', function (ev) {
 
 // ------------------------------------------------------------------ filters (in the URL hash)
 
-var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person', 'drives', 'settings', 'animals'];
+var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person', 'drives', 'settings', 'pets'];
 
 function readHash() {
   var f = { folder: null, tags: [], people: [], q: '', view: null, id: null, tab: null };
@@ -165,7 +165,7 @@ function applyFilter() {
   $('sizer').hidden = !!view;
   $('nav-dups').classList.toggle('active', view === 'duplicates');
   $('nav-trash').classList.toggle('active', view === 'trash');
-  $('nav-settings').classList.toggle('active', view === 'settings' || view === 'faces' || view === 'animals');
+  $('nav-settings').classList.toggle('active', view === 'settings' || view === 'faces' || view === 'pets');
   $('nav-drives').classList.toggle('active', view === 'drives');
   markFacesSection();
   updateSections();
@@ -1179,7 +1179,7 @@ function loadInfo() {
     var f = info.faces, c = info.clusters;
     if (f.running) parts.push('finding faces ' + Math.floor(100 * f.done / Math.max(f.total, 1)) + '%');
     else if (f.done && f.done < f.total) parts.push('faces: ' + (f.total - f.done).toLocaleString() + ' photos to look at');
-    if (!f.running && f.animals_done && f.animals_done < f.total) parts.push('pets: ' + (f.total - f.animals_done).toLocaleString() + ' photos to look at');
+    if (!f.running && f.pets_done && f.pets_done < f.total) parts.push('pets: ' + (f.total - f.pets_done).toLocaleString() + ' photos to look at');
     if (c.embedding) parts.push('learning drawn faces…');
     if (c.running && c.total) parts.push('grouping faces ' + Math.floor(100 * c.done / Math.max(c.total, 1)) + '%');
     else if (c.running || c.stale) parts.push('grouping faces…');
@@ -1214,7 +1214,7 @@ function reloadAll() {
 function loadView(view) {
   if (view === 'duplicates') loadDuplicates();
   else if (view === 'settings') loadSettings();
-  else if (view === 'faces' || view === 'animals') loadFaces();
+  else if (view === 'faces' || view === 'pets') loadFaces();
   else if (view === 'people') loadPeoplePage();
   else if (view === 'unnamed') loadUnnamed();
   else if (view === 'person') loadPersonPage();
@@ -2576,12 +2576,13 @@ function loadOwnTags() {
 // shows the marked ones, to undo a mistake.
 
 var faceState = { sort: 'size', desc: false, filter: 'all', faces: [], total: 0, minPx: 30, picking: false, picked: {} };
-var PET_ICON = { cat: '🐱', dog: '🐶' };
+// `pet`: a pet drawn by hand, whose species nobody said.
+var PET_ICON = { cat: '🐱', dog: '🐶', pet: '🐾' };
 function petIcon(species) { return PET_ICON[species] || ''; }
 
-// The check page of people's faces (view `faces`) or of cats and dogs (view `animals`).
-function checkKind() { return state.filter.view === 'animals' ? 'animals' : 'faces'; }
-function onCheckPage() { return state.filter.view === 'faces' || state.filter.view === 'animals'; }
+// The check page of people's faces (view `faces`) or of cats and dogs (view `pets`).
+function checkKind() { return state.filter.view === 'pets' ? 'pets' : 'faces'; }
+function onCheckPage() { return state.filter.view === 'faces' || state.filter.view === 'pets'; }
 var PAGE_FACES = 300;
 var FACE_SORTS = [
   ['size', false, 'Smallest first'], ['size', true, 'Largest first'],
@@ -2591,11 +2592,11 @@ var FACE_FILTERS = [
   ['all', 'All faces'], ['small', 'Too small for clustering'], ['large', 'Large enough'], ['rotated', 'Found turned'],
   ['not_face', 'Marked “not a face”'],
 ];
-// Cats and dogs are not looked for in turned copies, and the false finds are no animals.
-var ANIMAL_FILTERS = [
-  ['all', 'All animals'], ['small', 'Too small for clustering'], ['large', 'Large enough'], ['not_face', 'Marked “not an animal”'],
+// Cats and dogs are not looked for in turned copies, and the false finds are no pets.
+var PET_FILTERS = [
+  ['all', 'All pets'], ['small', 'Too small for clustering'], ['large', 'Large enough'], ['not_face', 'Marked “not a pet”'],
 ];
-function checkFilters() { return checkKind() === 'animals' ? ANIMAL_FILTERS : FACE_FILTERS; }
+function checkFilters() { return checkKind() === 'pets' ? PET_FILTERS : FACE_FILTERS; }
 
 $('nav-settings').onclick = function () { showView('settings'); };
 
@@ -2606,7 +2607,7 @@ function loadFaces() {
   var back = el('button', 'link back', '← Settings');
   back.onclick = function () { showView('settings'); };
   page.appendChild(back);
-  page.appendChild(el('h2', '', kind === 'animals' ? 'Animal check' : 'Face check'));
+  page.appendChild(el('h2', '', kind === 'pets' ? 'Pet check' : 'Face check'));
   var sub = el('p', 'sub', 'Looking…');
   page.appendChild(sub);
   if (!checkFilters().some(function (o) { return o[0] === faceState.filter; })) faceState.filter = 'all';
@@ -2621,21 +2622,21 @@ function loadFaces() {
   faceState.faces = [];
   faceState.picked = {};
   updateFacePick();
-  api(LIBAPI + '/faces/stats' + query({ kind: kind === 'animals' ? 'animals' : null })).then(function (s) {
+  api(LIBAPI + '/faces/stats' + query({ kind: kind === 'pets' ? 'pets' : null })).then(function (s) {
     if (checkKind() === kind && onCheckPage()) sub.textContent = faceSummary(s);
   }).catch(function () {});
   return moreFaces(grid, more);
 }
 
 function faceSummary(s) {
-  var animals = s.kind === 'animals';
-  var noun = animals ? ['animal', 'animals'] : ['face', 'faces'];
+  var pets = s.kind === 'pets';
+  var noun = pets ? ['pet', 'pets'] : ['face', 'faces'];
   var parts = [plural(s.faces, noun[0], noun[1]) + ' in ' + plural(s.looked - s.failed, 'photo', 'photos')];
   if (s.failed) parts.push(plural(s.failed, 'photo', 'photos') + ' failed');
   if (s.looked < s.photos) parts.push((s.photos - s.looked).toLocaleString() + ' still to look at');
   parts.push(s.small.toLocaleString() + ' under ' + s.min_cluster_px + ' px (too small for clustering)');
-  if (!animals) parts.push(s.rotated_looked ? plural(s.rotated_faces, 'face', 'faces') + ' found turned' : 'not looked at turned yet');
-  if (s.not_faces) parts.push(plural(s.not_faces, noun[0], noun[1]) + ' marked “not ' + (animals ? 'an animal' : 'a face') + '”');
+  if (!pets) parts.push(s.rotated_looked ? plural(s.rotated_faces, 'face', 'faces') + ' found turned' : 'not looked at turned yet');
+  if (s.not_faces) parts.push(plural(s.not_faces, noun[0], noun[1]) + ' marked “not ' + (pets ? 'a pet' : 'a face') + '”');
   var widths = s.widths.map(function (b) {
     var label = b.from == null ? '< ' + b.to : b.to == null ? b.from + '+' : b.from + '–' + b.to;
     return label + ' px: ' + b.count.toLocaleString();
@@ -2712,7 +2713,7 @@ function updateFacePick() {
   $('face-pick').classList.toggle('active', faceState.picking);
   $('face-pick-count').textContent = n ? plural(n, 'face', 'faces') : 'Tap faces to select';
   var mark = $('face-pick-mark');
-  var what = checkKind() === 'animals' ? 'an animal' : 'a face';
+  var what = checkKind() === 'pets' ? 'a pet' : 'a face';
   mark.textContent = faceState.filter === 'not_face' ? 'It is ' + what : 'Not ' + what;
   mark.disabled = !n;
 }
@@ -2739,7 +2740,7 @@ function markFaces(ids) {
 function moreFaces(grid, more) {
   var f = faceState.filter;
   var q = query({
-    kind: checkKind() === 'animals' ? 'animals' : null,
+    kind: checkKind() === 'pets' ? 'pets' : null,
     sort: faceState.sort, desc: faceState.desc ? 'true' : null, offset: faceState.faces.length, limit: PAGE_FACES,
     max_px: f === 'small' ? faceState.minPx : null, min_px: f === 'large' ? faceState.minPx : null,
     rotated: f === 'rotated' ? 'true' : null, not_face: f === 'not_face' ? 'true' : null,
@@ -2750,8 +2751,8 @@ function moreFaces(grid, more) {
     faceState.total = r.total;
     faceState.minPx = r.min_cluster_px;
     r.faces.forEach(function (face) { faceState.faces.push(face); grid.appendChild(faceCard(face, null)); });
-    if (!faceState.total) grid.appendChild(el('p', 'sub', checkKind() === 'animals'
-      ? 'No animals here. `shoebox recognize --animals` (or “Recognize pets” in the launcher) finds them.'
+    if (!faceState.total) grid.appendChild(el('p', 'sub', checkKind() === 'pets'
+      ? 'No pets here. `shoebox recognize --pets` (or “Recognize pets” in the launcher) finds them.'
       : 'No faces here. `shoebox recognize` finds them.'));
     more.disabled = false;
     more.hidden = faceState.faces.length >= faceState.total;
@@ -2802,12 +2803,12 @@ function faceCard(face, similarity) {
   if (face.roll) card.appendChild(el('span', 'tag', 'turned'));
   if (similarity == null) {
     var near = el('button', 'near', '≈');
-    near.title = face.species ? 'Most similar animals' : 'Most similar faces';
+    near.title = face.species ? 'Most similar pets' : 'Most similar faces';
     near.onclick = function () { similarFaces(face); };
     card.appendChild(near);
     var undo = faceState.filter === 'not_face';
     var mark = el('button', 'mark', undo ? '↺' : '✕');
-    var what = face.species ? 'an animal' : 'a face';
+    var what = face.species ? 'a pet' : 'a face';
     mark.title = undo ? 'It is ' + what + ' (undo “not ' + what + '”)' : 'Not ' + what;
     mark.onclick = function () { markFaces([face.id]); };
     card.appendChild(mark);
@@ -2820,12 +2821,12 @@ function faceCard(face, similarity) {
 function similarFaces(face) {
   api(LIBAPI + '/faces/' + face.id + '/similar?limit=24').then(function (list) {
     var box = el('div');
-    box.appendChild(el('p', 'hint', 'Cosine similarity of the embeddings (1 = identical), most similar first. Click ' + (face.species ? 'an animal' : 'a face') + ' to open its photo.'));
+    box.appendChild(el('p', 'hint', 'Cosine similarity of the embeddings (1 = identical), most similar first. Click ' + (face.species ? 'a pet' : 'a face') + ' to open its photo.'));
     var grid = el('div', 'faces');
     grid.appendChild(faceCard(face, 1));
     list.forEach(function (n) { grid.appendChild(faceCard(n, n.similarity)); });
     box.appendChild(grid);
-    openModal(face.species ? 'Most similar animals' : 'Most similar faces', box, [{ label: 'Close' }]);
+    openModal(face.species ? 'Most similar pets' : 'Most similar faces', box, [{ label: 'Close' }]);
   }).catch(failed);
 }
 
@@ -2853,7 +2854,7 @@ function loadSettings() {
   var cards = el('div', 'settings-cards');
   [
     ['faces', 'Face check', 'People’s faces: how many were found, how small they are, which look alike.'],
-    ['animals', 'Animal check', 'Cats and dogs: how many were found, how small they are, which look alike.'],
+    ['pets', 'Pet check', 'Cats and dogs: how many were found, how small they are, which look alike.'],
   ].forEach(function (c) {
     var card = el('button', 'settings-card');
     card.type = 'button';
@@ -2863,11 +2864,11 @@ function loadSettings() {
     card.appendChild(line);
     card.onclick = function () { showView(c[0]); };
     cards.appendChild(card);
-    api(LIBAPI + '/faces/stats' + query({ kind: c[0] === 'animals' ? 'animals' : null })).then(function (s) {
+    api(LIBAPI + '/faces/stats' + query({ kind: c[0] === 'pets' ? 'pets' : null })).then(function (s) {
       line.textContent = s.faces
-        ? plural(s.faces, c[0] === 'animals' ? 'animal' : 'face', c[0] === 'animals' ? 'animals' : 'faces') + ' in ' + plural(s.looked - s.failed, 'photo', 'photos')
+        ? plural(s.faces, c[0] === 'pets' ? 'pet' : 'face', c[0] === 'pets' ? 'pets' : 'faces') + ' in ' + plural(s.looked - s.failed, 'photo', 'photos')
         : s.looked ? 'Looked at ' + plural(s.looked, 'photo', 'photos') + ', nothing found.'
-          : c[0] === 'animals' ? 'Not looked for yet: `shoebox recognize --animals`, or “Recognize pets” in the launcher.' : 'Not looked for yet: `shoebox recognize`.';
+          : c[0] === 'pets' ? 'Not looked for yet: `shoebox recognize --pets`, or “Recognize pets” in the launcher.' : 'Not looked for yet: `shoebox recognize`.';
     }).catch(function () { line.textContent = ''; });
   });
   sec.appendChild(cards);
@@ -3394,7 +3395,7 @@ function loadPeoplePage() {
   var gs = el('button', 'btn quiet', 'Groups…');
   gs.onclick = groupsDialog;
   var check = el('button', 'btn quiet', 'Calibration');
-  check.title = 'Face check and animal check, in Settings';
+  check.title = 'Face check and pet check, in Settings';
   check.onclick = function () { showView('settings'); };
   bar.appendChild(ng);
   bar.appendChild(gs);
@@ -3738,7 +3739,7 @@ function nameFacesDialog(faces, done) {
       // A drawn face nothing was detected at: drawn again with the new name.
       return Promise.all(drawn.map(function (d) {
         return post(LIBAPI + '/faces/undo', { manual: [d.manual] }).then(function () {
-          return post(LIBAPI + '/faces/manual', Object.assign({ file: d.file, box: [d.x, d.y, d.w, d.h] }, who));
+          return post(LIBAPI + '/faces/manual', Object.assign({ file: d.file, box: [d.x, d.y, d.w, d.h], pet: d.species ? true : undefined }, who));
         });
       })).then(function () { return r; });
     }).then(function (r) {
@@ -3764,7 +3765,7 @@ function nameFacesDialog(faces, done) {
 // ---- unnamed clusters
 
 var un = { shown: 0, total: 0, unnamed: 0, kind: 'all' };
-var UN_KINDS = [['all', 'People and pets'], ['faces', 'People'], ['animals', 'Pets (cats and dogs)']];
+var UN_KINDS = [['all', 'People and pets'], ['faces', 'People'], ['pets', 'Pets (cats and dogs)']];
 var PAGE_CLUSTERS = 30;
 
 function loadUnnamed() {
@@ -3802,10 +3803,10 @@ function loadUnnamed() {
 function unnamedSummary() {
   var sub = $('un-sub');
   if (!sub) return;
-  var pets = un.kind === 'animals';
+  var pets = un.kind === 'pets';
   sub.textContent = un.total
-    ? plural(un.unnamed, pets ? 'animal' : 'face', pets ? 'animals' : 'faces') + ' without a name, in ' + plural(un.total, 'cluster', 'clusters') + ' of similar ' + (pets ? 'animals' : 'faces') + ', largest first. Name a card, or say they are strangers (Ignore) or no ' + (pets ? 'animals' : 'faces') + ' at all. “Select” names only some faces of a card.'
-    : pets ? 'Every cat and dog large enough has a name (or is ignored). New photos bring new ones after `shoebox recognize --animals`.'
+    ? plural(un.unnamed, pets ? 'pet' : 'face', pets ? 'pets' : 'faces') + ' without a name, in ' + plural(un.total, 'cluster', 'clusters') + ' of similar ' + (pets ? 'pets' : 'faces') + ', largest first. Name a card, or say they are strangers (Ignore) or no ' + (pets ? 'pets' : 'faces') + ' at all. “Select” names only some faces of a card.'
+    : pets ? 'Every cat and dog large enough has a name (or is ignored). New photos bring new ones after `shoebox recognize --pets`.'
       : 'Every face large enough has a name (or is ignored). New photos bring new ones after `shoebox recognize`.';
 }
 
@@ -3936,8 +3937,8 @@ function clusterCard(c) {
   var picked = function () { return Object.keys(card.picked).map(Number); };
   var update = function () {
     var n = picked().length;
-    var animals = c.faces.length > 0 && c.faces.every(function (f) { return f.species; });
-    count.textContent = (animals ? plural(c.size, 'animal', 'animals') : plural(c.size, 'face', 'faces')) + (card.picking ? ' · ' + (n ? n + ' selected' : 'tap faces to select') : '');
+    var pets = c.faces.length > 0 && c.faces.every(function (f) { return f.species; });
+    count.textContent = (pets ? plural(c.size, 'pet', 'pets') : plural(c.size, 'face', 'faces')) + (card.picking ? ' · ' + (n ? n + ' selected' : 'tap faces to select') : '');
     pick.classList.toggle('active', card.picking);
     card.classList.toggle('picking', card.picking);
     card.classList.toggle('open', expanded || card.picking);
@@ -4043,8 +4044,8 @@ function infoFaces(row, info) {
     tools.appendChild(show);
   }
   if (lb.details && state.data && state.data.kinds[state.open] !== 'v') {
-    var add = el('button', '', '+ Add face');
-    add.title = 'Draw a box around a face that was missed';
+    var add = el('button', '', '+ Add face or pet');
+    add.title = 'Draw a box around a face or a pet that was missed';
     add.onclick = startDrawing;
     tools.appendChild(add);
   }
@@ -4162,7 +4163,7 @@ function startDrawing() {
   layer.appendChild(rect);
   stage.appendChild(layer);
   var hint = el('div', 'draw-hint');
-  hint.appendChild(el('span', '', 'Drag a box around the face'));
+  hint.appendChild(el('span', '', 'Drag a box around the face or pet'));
   var cancel = el('button', 'btn quiet small', 'Cancel');
   cancel.onclick = function () { stopDrawing(); };
   hint.appendChild(cancel);
@@ -4216,18 +4217,35 @@ function stopDrawing() {
 function nameDrawnFace(info, frac) {
   var body = el('div');
   body.appendChild(el('p', '', 'Who is it?'));
+  // A cat or a dog the detector missed: a pet is embedded as a whole, a face by its eyes, nose and mouth.
+  var petBox = el('input');
+  petBox.type = 'checkbox';
+  petBox.id = 'draw-pet';
   var save = function (who) {
-    post(LIBAPI + '/faces/manual', Object.assign({ file: info.id, box: frac }, who)).then(function () {
+    var pet = petBox.checked;
+    post(LIBAPI + '/faces/manual', Object.assign({ file: info.id, box: frac, pet: pet || undefined }, who)).then(function () {
       closeModal();
       stopDrawing();
-      toast('Face added');
+      toast(pet ? 'Pet added' : 'Face added');
       infoFacesChanged(info.id);
     }).catch(failed);
   };
   var field = personField(function (who) { save(who); }, { allowNew: true, placeholder: 'Name' });
   body.appendChild(field);
-  body.appendChild(el('p', 'hint', 'The box is kept in shoebox’s index, never written into the photo. Its face is learned for suggestions when the recognizer finds its eyes, nose and mouth in it.'));
-  openModal('Add face', body, [
+  var petRow = el('label', 'check');
+  petRow.appendChild(petBox);
+  petRow.appendChild(document.createTextNode(' This is a pet (a cat or a dog)'));
+  body.appendChild(petRow);
+  var hint = el('p', 'hint');
+  var hintText = function () {
+    hint.textContent = petBox.checked
+      ? 'The box is kept in shoebox’s index, never written into the photo. The whole pet in the box is learned for suggestions.'
+      : 'The box is kept in shoebox’s index, never written into the photo. Its face is learned for suggestions when the recognizer finds its eyes, nose and mouth in it.';
+  };
+  petBox.onchange = hintText;
+  hintText();
+  body.appendChild(hint);
+  openModal('Add face or pet', body, [
     { label: 'Draw again', cls: 'quiet', onclick: function () { var r = lb.drawing && lb.drawing.layer.querySelector('.draw-box'); if (r) r.hidden = true; } },
     { label: 'Cancel', cls: 'quiet', onclick: function () { stopDrawing(); } },
     { label: 'Save', onclick: function () { var who = field.value(); if (!who) return false; save(who); return false; } },

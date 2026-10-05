@@ -4,7 +4,7 @@
 #
 #   recognizer/fetch-models.sh [dir]   (default: recognizer/models)
 #
-# The two animal models (~140 MB) are fetched too; SHOEBOX_NO_ANIMALS=1 skips
+# The two pet models (~140 MB) are fetched too; SHOEBOX_NO_PETS=1 skips
 # them.
 set -eu
 DIR=${1:-$(dirname "$0")/models}
@@ -32,9 +32,9 @@ fetch face_detection_yunet_2023mar.onnx face_detection_yunet \
 fetch face_recognition_sface_2021dec.onnx face_recognition_sface \
     0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79
 
-if [ -z "${SHOEBOX_NO_ANIMALS:-}" ]; then
+if [ -z "${SHOEBOX_NO_PETS:-}" ]; then
     # YOLOX-S (COCO: finds cats and dogs) and PP-ResNet50 (its pooled feature
-    # describes an animal's box). DINOv2-small describes individuals better
+    # describes a pet's box). DINOv2-small describes individuals better
     # but is not on a host this script can checksum; see recognizer/README.md.
     fetch object_detection_yolox_2022nov.onnx object_detection_yolox \
         c5c2d13e59ae883e6af3b45daea64af4833a4951c92d116ec270d9ddbe998063

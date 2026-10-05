@@ -1,7 +1,7 @@
 //! shoebox: portable photo library manager. The binary in `main.rs` is a
 //! thin CLI over these modules; integration tests use them directly.
 
-pub mod animals;
+pub mod pets;
 pub mod ann;
 pub mod backup;
 pub mod browse;

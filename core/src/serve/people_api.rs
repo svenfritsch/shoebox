@@ -236,7 +236,7 @@ pub(super) struct ClustersQuery {
     limit: Option<usize>,
     /// Faces shown per cluster.
     samples: Option<usize>,
-    /// `faces` or `animals`: only that kind of cluster (default: both).
+    /// `faces` or `pets`: only that kind of cluster (default: both).
     kind: Option<String>,
 }
 
@@ -244,9 +244,9 @@ pub(super) async fn clusters(State(app): State<Arc<App>>, Query(q): Query<Cluste
     let (limit, samples) = (q.limit.unwrap_or(50).min(500), q.samples.unwrap_or(8).min(100));
     let kind = match q.kind.as_deref() {
         None | Some("") | Some("all") => None,
-        Some("faces") => Some(crate::animals::Space::Faces),
-        Some("animals") => Some(crate::animals::Space::Animals),
-        Some(other) => return Err(ApiError::BadRequest(format!("kind is faces or animals, not {other:?}"))),
+        Some("faces") => Some(crate::pets::Space::Faces),
+        Some("pets") => Some(crate::pets::Space::Pets),
+        Some(other) => return Err(ApiError::BadRequest(format!("kind is faces or pets, not {other:?}"))),
     };
     blocking(&app, move |app| Ok(Json(people::clusters(&app.conn.lock().unwrap(), q.offset, limit, samples, kind)?))).await
 }
@@ -392,13 +392,16 @@ pub(super) struct ManualRequest {
     /// x, y, w, h as fractions of the upright picture.
     #[serde(rename = "box")]
     b: [f64; 4],
+    /// A pet (a cat or a dog) rather than a person's face.
+    #[serde(default)]
+    pet: bool,
     #[serde(flatten)]
     who: Who,
 }
 
-/// A face drawn by hand (missed by the detector), with who it is.
+/// A face or pet drawn by hand (missed by the detector), with who it is.
 pub(super) async fn manual(State(app): State<Arc<App>>, Json(req): Json<ManualRequest>) -> ApiResult<Json<serde_json::Value>> {
-    let added = people_change(&app, move |conn| people::add_manual(conn, req.file, req.b, &req.who)).await;
+    let added = people_change(&app, move |conn| people::add_manual(conn, req.file, req.b, &req.who, req.pet)).await;
     app.request_embed();
     added.map(|id| Json(serde_json::json!({ "manual": id })))
 }

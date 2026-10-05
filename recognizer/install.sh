@@ -51,14 +51,14 @@ echo "OpenCV and numpy…"
     --only-binary :all: opencv-python-headless numpy
 "$PYTHON" -c 'import cv2, numpy; print("  OpenCV", cv2.__version__, "numpy", numpy.__version__)'
 
-# Optional: onnxruntime runs the animal embedder faster and handles every
+# Optional: onnxruntime runs the pet embedder faster and handles every
 # ONNX model. Where there is no wheel (the oldest Intel Macs), OpenCV runs
 # the models itself and nothing is lost but speed.
 echo "onnxruntime (optional)…"
 if "$PYTHON" -m pip install --no-cache-dir --disable-pip-version-check --only-binary :all: onnxruntime >/dev/null 2>&1; then
     "$PYTHON" -c 'import onnxruntime; print("  onnxruntime", onnxruntime.__version__)'
 else
-    echo "  none for this system; OpenCV runs the animal models instead"
+    echo "  none for this system; OpenCV runs the pet models instead"
 fi
 
 echo "Models…"

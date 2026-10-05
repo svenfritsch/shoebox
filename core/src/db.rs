@@ -227,7 +227,7 @@ CREATE TABLE IF NOT EXISTS settings (
 /// Phase 7 (pets): a decision says which kind of face it is about, so a
 /// cat and a person whose boxes coincide in a photo are never mixed up.
 /// NULL: a person's face (all decisions made before cats and dogs existed);
-/// otherwise `cat` or `dog`, the species of the animal it was made on.
+/// otherwise `cat` or `dog`, the species of the pet it was made on.
 const SCHEMA_V7: &str = "
 ALTER TABLE face_decisions ADD COLUMN species TEXT;
 ";

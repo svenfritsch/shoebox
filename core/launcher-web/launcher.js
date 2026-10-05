@@ -4,7 +4,7 @@
 // the X-Shoebox header, like the photo app.
 
 var $ = function (id) { return document.getElementById(id); };
-var KINDS = { scan: 'Scan', verify: 'Verify', recognize: 'Recognize', recognize_animals: 'Recognize pets', faces_stats: 'Face stats', backup: 'Backup check' };
+var KINDS = { scan: 'Scan', verify: 'Verify', recognize: 'Recognize', recognize_pets: 'Recognize pets', faces_stats: 'Face stats', backup: 'Backup check' };
 var polling = null;
 
 function api(path, body) {
@@ -207,7 +207,7 @@ function summaryOf(kind, r) {
   else if (job.kind === 'backup') out.push(r.report.covered + ' of ' + r.report.compared + ' on the backup', r.report.missing + ' not yet', r.report.different + ' different', r.report.extra + ' only on the backup');
   else if (job.kind === 'verify') out.push(r.checked + ' checked', r.missing.length + ' missing', r.damaged.length + ' damaged');
   else if (job.kind === 'recognize' && r.faces !== undefined) out.push(r.faces + ' faces');
-  else if (job.kind === 'recognize_animals' && r.animals) out.push(r.animals.faces + ' cats and dogs', r.animals.failed + ' failed');
+  else if (job.kind === 'recognize_pets' && r.pets) out.push(r.pets.faces + ' cats and dogs', r.pets.failed + ' failed');
   else if (job.kind === 'faces_stats') out.push(r === null ? 'no faces yet' : (r.faces + ' faces'));
   return out;
 }

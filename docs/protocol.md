@@ -67,7 +67,7 @@ next.
   eyes, nose tip and mouth corners (right eye, left eye, nose, right and left
   mouth corner, as YuNet orders them). `emb` is L2-normalised, so the cosine
   similarity of two faces is their dot product.
-- A key per requested task; tasks added later (`animals`, …) get their own
+- A key per requested task; tasks added later (`pets`, …) get their own
   keys.
 
 ### `embed`: faces drawn by hand
@@ -95,41 +95,60 @@ next.
   every run; `shoebox serve` starts the worker for that right after a face
   is drawn and stops it again.
 
-### `animals`: cats and dogs
+### `pets`: cats and dogs
 
 An optional task (still protocol 2: a core that does not ask never sees it).
-The worker only loads the animal models when it is started with
-`--animals`; without the flag the hello has no `animals` and a request for
-it is an unknown task. `shoebox recognize --animals` starts it that way.
+The worker only loads the pet models when it is started with
+`--pets`; without the flag the hello has no `pets` and a request for
+it is an unknown task. `shoebox recognize --pets` starts it that way.
 
 ```json
-→ {"id": 44, "tasks": ["animals"], "image": "<base64 JPEG>"}
+→ {"id": 44, "tasks": ["pets"], "image": "<base64 JPEG>"}
 ← {"id": 44, "width": 1600, "height": 1200,
-   "animals": [{"species": "cat", "bbox": [x, y, w, h], "score": 0.91,
+   "pets": [{"species": "cat", "bbox": [x, y, w, h], "score": 0.91,
                 "emb": "<base64 little-endian f32 × dim>"}]}
 ```
 
-- The hello lists `"animals": {"model": "yolox-s-2022nov+ppresnet50-2022jan", "dim": 2048}`.
+- The hello lists `"pets": {"model": "yolox-s-2022nov+ppresnet50-2022jan", "dim": 2048}`.
   `model` names the detector and the embedder (stored with every result, so
   results of another embedder are redone, never mixed); `dim` is the
-  embedding length and is **not** the face model's. Animal embeddings are
+  embedding length and is **not** the face model's. Pet embeddings are
   never compared with face embeddings.
 - `species` is `cat` or `dog` (COCO classes; a box counts only where that is
   the best of all 80 classes, so a teddy bear stays one).
-- `bbox` holds the **whole animal**, in pixels of the image sent, like a
+- `bbox` holds the **whole pet**, in pixels of the image sent, like a
   face's. The embedding is of that box, slightly enlarged, padded to a
   square and scaled to the embedder's input; it is the mean of the box and
-  its mirror image, so an animal looking left matches itself looking right.
+  its mirror image, so a pet looking left matches itself looking right.
   `emb` is L2-normalised.
 - Boxes with a shorter side under 48 px are left out.
 - The embedder is the first of `dinov2-small`, `ppresnet50-2022jan` whose
-  file is in the models folder (`SHOEBOX_ANIMAL_EMBEDDER` forces one). It
+  file is in the models folder (`SHOEBOX_PET_EMBEDDER` forces one). It
   runs on onnxruntime if that is installed, else on OpenCV's own runner
-  (`SHOEBOX_ANIMAL_BACKEND=onnxruntime|opencv` forces one).
-- Scale: with PP-ResNet50 two photos of one animal score ≥ 0.95 after
-  brightness, blur, crop and size changes, and different animals 0.50–0.68,
+  (`SHOEBOX_PET_BACKEND=onnxruntime|opencv` forces one).
+- Scale: with PP-ResNet50 two photos of one pet score ≥ 0.95 after
+  brightness, blur, crop and size changes, and different pets 0.50–0.68,
   so the core uses far stricter thresholds than for faces
-  (`core/src/animals.rs`).
+  (`core/src/pets.rs`).
+
+### `embed-pets`: pets drawn by hand
+
+With `--pets` the worker also does `embed-pets`, the counterpart of `embed` for a
+box the user drew around a pet the detector missed:
+
+```json
+→ {"id": 45, "tasks": ["embed-pets"], "image": "<base64 JPEG>", "boxes": [[x, y, w, h], …]}
+← {"id": 45, "width": 1600, "height": 1200, "embed-pets": [{"emb": "<base64 little-endian f32 × dim>"}, …]}
+```
+
+The hello lists it with the same model and `dim` as `pets`. Each box is embedded
+exactly like a detected pet's (enlarged, padded to a square, mirrored and
+averaged); the detector is not asked, the user says there is a pet. A box
+outside the picture, or one that is not `[x, y, w, h]`, is an error for the
+whole request. The core stores the embedding in `recog.drawn` with the pets
+model (`shoebox recognize --pets` does it at the end of every run, and
+`shoebox serve` in the background when a pet is drawn, starting the worker
+with `--pets` only because one is waiting).
 
 If the worker cannot handle one picture, it answers with an error and keeps
 running:

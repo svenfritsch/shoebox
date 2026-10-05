@@ -222,7 +222,7 @@ fn the_remembered_folders_are_a_json_file() {
 }
 
 #[test]
-fn recognize_pets_runs_the_animals_pass_under_the_guard() {
+fn recognize_pets_runs_the_pets_pass_under_the_guard() {
     let _turn = serial();
     let lib = Library::new("launcher-pets");
     // A red picture is a cat, a blue one a dog, for the fake recognizer.
@@ -237,15 +237,15 @@ fn recognize_pets_runs_the_animals_pass_under_the_guard() {
     // The plain button looks for faces only; the pets button also for cats and dogs.
     let faces = run_job(launcher.addr, json!({ "kind": "recognize", "root": root }));
     assert_eq!(faces["ok"], true, "{faces}");
-    assert!(faces["result"]["animals"].is_null(), "no animal models were asked for");
-    let pets = run_job(launcher.addr, json!({ "kind": "recognize_animals", "root": root }));
+    assert!(faces["result"]["pets"].is_null(), "no pet models were asked for");
+    let pets = run_job(launcher.addr, json!({ "kind": "recognize_pets", "root": root }));
     assert_eq!(pets["ok"], true, "{pets}");
-    // The fake finds one animal in every picture (the library's own six too).
-    assert_eq!(pets["result"]["animals"]["faces"], 8, "{pets}");
-    assert_eq!(pets["result"]["animals"]["looked"], 8);
+    // The fake finds one pet in every picture (the library's own six too).
+    assert_eq!(pets["result"]["pets"]["faces"], 8, "{pets}");
+    assert_eq!(pets["result"]["pets"]["looked"], 8);
     assert_eq!(pets["result"]["faces"], 0, "the faces were done by the first run");
-    assert_eq!(pets["result"]["clusters"]["animals"]["faces"], 5, "clustered in a space of their own: {pets}");
-    assert_eq!(pets["result"]["animals"]["model"], "fake-animals-1");
+    assert_eq!(pets["result"]["clusters"]["pets"]["faces"], 5, "clustered in a space of their own: {pets}");
+    assert_eq!(pets["result"]["pets"]["model"], "fake-pets-1");
     assert_eq!(lib.snapshot(), before, "looking for pets changed an original");
     launcher.stop().unwrap();
 }
