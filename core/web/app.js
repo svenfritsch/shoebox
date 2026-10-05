@@ -1486,7 +1486,28 @@ $('import').onclick = function () { importDialog(); };
 
 // ------------------------------------------------------------------ duplicates page
 
-var dupState = { groups: [], shown: 0, marked: {}, seen: {}, sameFolder: null, lowerQuality: null };
+var DUP_KINDS_IDS = ['identical', 'resolution', 'similar'];
+var dupState = { groups: [], shown: 0, marked: {}, seen: {}, sameFolder: null, lowerQuality: null, types: dupTypes() };
+var DUP_KINDS = [
+  { id: 'identical', label: 'Identical photos', hint: 'The same file, copied.' },
+  { id: 'resolution', label: 'Same photo, different resolution', hint: 'The same picture in another size, quality or name (a messenger copy, say).' },
+  { id: 'similar', label: 'Similar photos', hint: 'Different shots that look alike: a series, repeated clicks, a burst.' },
+];
+
+// Which kinds of duplicates are shown (remembered in this browser).
+function dupTypes() {
+  var t = { identical: true, resolution: true, similar: true };
+  try {
+    var saved = JSON.parse(localStorage.getItem('dupTypes') || 'null');
+    if (saved) DUP_KINDS_IDS.forEach(function (k) { if (saved[k] === false) t[k] = false; });
+  } catch (e) { /* storage may be blocked */ }
+  return t;
+}
+
+function visibleGroups() {
+  return dupState.groups.filter(function (g) { return dupState.types[g.kind]; });
+}
+
 var PAGE_GROUPS = 30;
 
 function loadDuplicates() {
@@ -1505,10 +1526,11 @@ function loadDuplicates() {
     dupState.groups.forEach(function (g) {
       g.files.forEach(function (f) {
         if (dupState.marked[f.id]) still[f.id] = true;
-        // Versions that are surely the same photo in lower quality start
-        // ticked, once (unticking one stays unticked after a reload).
-        else if (f.keeper && !dupState.seen[f.id]) still[f.id] = true;
-        if (f.keeper) dupState.seen[f.id] = true;
+        // Of every photo with several files all but the best start ticked
+        // (the best quality, then the one without a copy's name), once
+        // (unticking one stays unticked after a reload).
+        else if (!f.pick && !dupState.seen[f.id]) still[f.id] = true;
+        if (!f.pick) dupState.seen[f.id] = true;
       });
     });
     dupState.marked = still;
@@ -1521,28 +1543,10 @@ function renderDuplicates() {
   var page = $('page');
   page.textContent = '';
   page.appendChild(el('h2', '', 'Duplicates'));
-  var exact = dupState.groups.filter(function (g) { return g.exact; }).length;
-  var near = dupState.groups.length - exact;
   page.appendChild(el('p', 'sub', dupState.groups.length
-    ? plural(exact, 'group', 'groups') + ' of identical copies, ' + plural(near, 'group', 'groups') + ' of similar photos. Tick “delete this copy” on the copies to remove (one copy per group always stays); copies that are surely the same photo in lower quality are ticked already. Or decide per group; decided groups are not shown again.'
+    ? 'Tick “delete this copy” on the files to remove; of every photo the best file is left unticked and one file per group always stays. Decided groups are not shown again.'
     : 'No duplicates. Photos added since the last scan are compared once they have thumbnails.'));
-  var sf = dupState.sameFolder, lq = dupState.lowerQuality;
-  if ((sf && sf.copies > 0) || (lq && lq.copies > 0)) {
-    var bar = el('div', 'dup-top');
-    if (sf && sf.copies > 0) {
-      var bulk = el('button', 'btn', 'Remove exact duplicates in the same folder (' + plural(sf.copies, 'copy', 'copies') + ')');
-      bulk.title = 'Same content in the same folder: the best copy stays, no review.';
-      bulk.onclick = removeSameFolder;
-      bar.appendChild(bulk);
-    }
-    if (lq && lq.copies > 0) {
-      var worse = el('button', 'btn', 'Remove lower-quality versions (' + plural(lq.copies, 'copy', 'copies') + ')');
-      worse.title = 'The same photo in a lower resolution or without its metadata (a messenger copy, say): the better file stays, no review.';
-      worse.onclick = removeLowerQuality;
-      bar.appendChild(worse);
-    }
-    page.appendChild(bar);
-  }
+  if (dupState.groups.length) page.appendChild(dupToolbar());
   var box = el('div');
   page.appendChild(box);
   var more = el('button', 'btn quiet', 'Show more');
@@ -1556,13 +1560,78 @@ function renderDuplicates() {
 }
 
 function showGroups(box, more) {
-  var end = Math.min(dupState.groups.length, dupState.shown + PAGE_GROUPS);
-  for (var k = dupState.shown; k < end; k++) box.appendChild(groupNode(dupState.groups[k]));
+  var groups = visibleGroups();
+  var end = Math.min(groups.length, dupState.shown + PAGE_GROUPS);
+  for (var k = dupState.shown; k < end; k++) box.appendChild(groupNode(groups[k]));
   dupState.shown = end;
-  more.hidden = end >= dupState.groups.length;
+  more.hidden = end >= groups.length;
+  if (!groups.length && dupState.groups.length) box.appendChild(el('p', 'sub', 'No duplicates of the chosen kinds.'));
 }
 
-function markedCount() { return Object.keys(dupState.marked).length; }
+// Ticked files in the groups that are shown.
+function markedCount() {
+  var n = 0;
+  visibleGroups().forEach(function (g) { g.files.forEach(function (f) { if (dupState.marked[f.id]) n++; }); });
+  return n;
+}
+
+// Left: which kinds to show (a drop-down with check boxes). Right: the two
+// buttons that clear without review.
+function dupToolbar() {
+  var bar = el('div', 'dup-top');
+  var filter = el('details', 'dup-filter');
+  var sum = el('summary', 'btn quiet');
+  var menu = el('div', 'dup-filter-menu');
+  var count = {};
+  dupState.groups.forEach(function (g) { count[g.kind] = (count[g.kind] || 0) + 1; });
+  var refreshLabel = function () {
+    var on = DUP_KINDS.filter(function (k) { return dupState.types[k.id]; });
+    sum.textContent = 'Show: ' + (on.length === DUP_KINDS.length ? 'all kinds' : on.length ? on.map(function (k) { return k.label; }).join(', ') : 'nothing') + ' ▾';
+  };
+  DUP_KINDS.forEach(function (k) {
+    var label = el('label', 'check');
+    label.title = k.hint;
+    var cb = el('input');
+    cb.type = 'checkbox';
+    cb.checked = dupState.types[k.id];
+    cb.onchange = function () {
+      dupState.types[k.id] = cb.checked;
+      try { localStorage.setItem('dupTypes', JSON.stringify(dupState.types)); } catch (e) { /* ignore */ }
+      refreshLabel();
+      var open = filter.open;
+      dupState.shown = 0;
+      renderDuplicates();
+      updateDupBar();
+      var again = document.querySelector('.dup-filter');
+      if (again && open) again.open = true;
+    };
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(' ' + k.label + ' (' + (count[k.id] || 0) + ')'));
+    menu.appendChild(label);
+  });
+  refreshLabel();
+  filter.appendChild(sum);
+  filter.appendChild(menu);
+  bar.appendChild(filter);
+  var sf = dupState.sameFolder, lq = dupState.lowerQuality;
+  var buttons = el('div', 'dup-buttons');
+  var same = el('button', 'btn', 'Clear Same Folder Copies');
+  same.title = sf && sf.copies
+    ? 'Deletes ' + plural(sf.copies, 'file', 'files') + ': identical copies in the same folder as another copy. The best one stays, no review.'
+    : 'No identical copies in the same folder.';
+  same.disabled = !(sf && sf.copies);
+  same.onclick = removeSameFolder;
+  var low = el('button', 'btn', 'Clear Lower Quality Copies');
+  low.title = lq && lq.copies
+    ? 'Deletes ' + plural(lq.copies, 'file', 'files') + ': the same photo in a lower resolution or without its metadata (a messenger copy, say). The better file stays, no review.'
+    : 'No lower-quality versions of a photo.';
+  low.disabled = !(lq && lq.copies);
+  low.onclick = removeLowerQuality;
+  buttons.appendChild(same);
+  buttons.appendChild(low);
+  bar.appendChild(buttons);
+  return bar;
+}
 
 // The bar with the delete button, shown while copies are ticked.
 function updateDupBar() {
@@ -1600,7 +1669,10 @@ function dupRows(g) {
 function groupNode(g) {
   var box = el('div', 'group');
   var head = el('div', 'group-head');
-  head.appendChild(el('span', 'label', g.exact ? 'Identical copies' : 'Similar photos'));
+  var kind = DUP_KINDS.filter(function (k) { return k.id === g.kind; })[0];
+  var title = el('span', 'label', kind.label);
+  title.title = kind.hint;
+  head.appendChild(title);
   var ids = g.files.map(function (f) { return f.id; });
   var decide = function (decision, label) {
     var b = el('button', 'btn quiet', label);
@@ -1615,9 +1687,12 @@ function groupNode(g) {
     };
     head.appendChild(b);
   };
-  if (!g.exact) decide('distinct', 'Different photos');
-  decide('linked', g.exact ? 'Keep all copies' : 'Versions of one photo');
+  if (g.kind === 'similar') decide('distinct', 'Different photos');
+  decide('linked', g.kind === 'identical' ? 'Keep all copies' : g.kind === 'resolution' ? 'Keep all versions' : 'Versions of one photo');
   box.appendChild(head);
+  box.appendChild(el('p', 'group-hint', g.kind === 'similar'
+    ? kind.hint + ' Every photo below is its own shot; its copies are on the right.'
+    : kind.hint));
 
   var boxes = [];
   // At least one copy of the group stays: the last unticked box is disabled.
@@ -1629,7 +1704,7 @@ function groupNode(g) {
     var row = el('div', 'dup-row');
     // The photo shown is the best version of the row; its cards come first.
     copies = copies.slice().sort(function (a, b) {
-      return (!!a.keeper - !!b.keeper) || ((b.width || 0) * (b.height || 0) - (a.width || 0) * (a.height || 0));
+      return (!!b.pick - !!a.pick) || ((b.width || 0) * (b.height || 0) - (a.width || 0) * (a.height || 0));
     });
     var first = copies[0];
     var left = el('div', 'dup-photo');
@@ -1703,7 +1778,7 @@ function groupNode(g) {
 // conflict are asked for afterwards, then those groups are sent again.
 function deleteMarked() {
   var jobs = [], total = 0;
-  dupState.groups.forEach(function (g) {
+  visibleGroups().forEach(function (g) {
     var remove = g.files.filter(function (f) { return dupState.marked[f.id]; }).map(function (f) { return f.id; });
     if (!remove.length) return;
     var keep = g.files.filter(function (f) { return !dupState.marked[f.id]; }).map(function (f) { return f.id; });
@@ -1829,7 +1904,7 @@ function removeSameFolder() {
   var sf = dupState.sameFolder;
   openModal(
     'Remove exact duplicates',
-    plural(sf.copies, 'copy', 'copies') + ' (' + plural(sf.groups, 'photo', 'photos') + ') have identical content to another file in the same folder. They go to the shoebox trash without review; in each folder the copy with the highest resolution stays (then the oldest record). Similar photos and copies in other folders are not touched. Tags and capture dates are carried over to the copy that stays.',
+    plural(sf.copies, 'copy', 'copies') + ' (' + plural(sf.groups, 'photo', 'photos') + ') have identical content to another file in the same folder. They go to the shoebox trash without review; in each folder one stays: the highest resolution, and the one with the original name rather than “IMG_1 (2)” or “IMG_1 - Copy”. Similar photos and copies in other folders are not touched. Tags and capture dates are carried over to the copy that stays.',
     [{ label: 'Cancel', cls: 'quiet' }, {
       label: 'Move to trash', cls: 'danger', focus: true, onclick: function (btn) {
         btn.disabled = true;

@@ -356,6 +356,7 @@ Bulk action (same folder)
 - Copies in different folders always need the user's decision, because the folder carries meaning.
 
 Lower-quality versions (feedback after the first build)
+- Three kinds of groups, with a drop-down (check boxes) to choose which are shown: Identical photos; Same photo, different resolution; Similar photos (different shots that look alike: a series, repeated clicks, a burst). Buttons "Clear Same Folder Copies" and "Clear Lower Quality Copies" on the right. Of every photo all files but the best are ticked, and the best is the one with the original name, not "IMG (2)" or "IMG - Copy".
 - One row per photo: the same photo at different quality (an original and the smaller copy that came back from a messenger, with another name and resolution) is one row with one thumbnail, one card per file. Photos that merely look alike (other shots of a series) are rows of their own.
 - Copies that are surely the same photo as a better file are ticked already. Sure means: identical content, or a picture hash at most 4 bits apart (6 when one of the two lost its capture date), the same shape (a turned copy counts), and no capture time that disagrees; the better file has more pixels, or as many and the capture date the other lost.
 - Button at the top: remove all lower-quality versions without review. The better file stays, with the folders, tags and capture dates of the removed ones.

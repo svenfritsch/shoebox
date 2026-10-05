@@ -691,6 +691,32 @@ Built, one commit per step. Scope and rules are in "Phase 5d details" in
   path. "Oldest path" in the plan is read as oldest record. Pairs already
   decided `distinct` or `linked` with the keeper are skipped; near duplicates
   and other folders are never part of it.
+- **Three kinds of groups** (feedback on the first screens): `Group.kind` is
+  `identical` (same content), `resolution` ("Same photo, different resolution":
+  everything is one row, i.e. surely the same photo, differing in size,
+  quality or name) or `similar` (several rows: different shots that look alike,
+  a series, repeated clicks). A drop-down with check boxes at the top
+  (`localStorage`) chooses which kinds are shown; deleting and the bar count
+  only what is shown. The two bulk buttons sit on the right as "Clear Same
+  Folder Copies" and "Clear Lower Quality Copies"; the number of files is in
+  the tooltip and the confirmation, not in the label (a bracketed count was
+  unclear); they are disabled when there is nothing to clear.
+- **Pre-selection and the original name**: of every photo with several files
+  all but the `pick` are ticked (the page, once; an untick stays). The pick is
+  the best quality, then a capture date, then **the file without a copy's
+  name**, then size, the earliest record, the first path. The same preference
+  decides which file "Clear Same Folder Copies" keeps. A name counts as a copy's
+  only if the name without the marker belongs to another file of the group
+  (`copy_named`), so a legitimate "Bild 1.jpg" is safe. Markers handled:
+  Windows "x - Copy", "x - Copy (2)"; macOS "x copy", "x copy 2", "x 2";
+  Chrome/Edge/Firefox/Explorer imports "x (1)", "x(1)"; GNOME "x (copy)",
+  "x (another copy)", "x (3rd copy)"; Dropbox "x (Name's conflicted copy …)";
+  "x-1", "x_2" (Image Capture and others); the word for copy in German, French,
+  Spanish, Italian, Dutch, Polish, Portuguese, Danish/Norwegian and Russian/
+  Ukrainian ("Kopie", "copia", "copie", …). Windows, macOS and Explorer patterns
+  were checked against web sources, the rest is from experience.
+  Identical copies in different folders are ticked too (all but the pick):
+  the page only suggests, the folder tags go to the file that stays.
 - **Duplicates page** (`app.js`, `groupNode`): a row per photo, i.e. per
   `row` of `/api/duplicates` (below); left one thumbnail (the best version) and
   its file name, right a card per file (resolution, MB, folder, capture date,
@@ -865,6 +891,11 @@ Built, one commit per step. Scope and rules are in "Phase 5d details" in
     info panel? Is the layout readable on the iPad?
   - [ ] Tick "delete this copy" on all but one card: the last unchecked
     box is disabled, so the original cannot be deleted.
+  - [ ] The three kinds: do “Identical photos”, “Same photo, different
+    resolution” and “Similar photos” hold what the names say? The “Show” menu
+    hides and shows them. Does a file with a copy-style name
+    (“IMG (2)”, “IMG - Copy”, “IMG copy 2”, “IMG (1)”) ever stay while the
+    original name is ticked? Note any pattern that is not recognised.
   - [ ] A photo and its WhatsApp (or other messenger) copy: they are one row,
     the messenger copy is ticked and says “lower quality”. Do other shots
     of a series stay in rows of their own? Any wrongly ticked copy, or a

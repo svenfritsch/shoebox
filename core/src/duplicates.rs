@@ -16,6 +16,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 
 use crate::db;
+use crate::library;
 use crate::organize;
 use crate::phash;
 
@@ -60,6 +61,10 @@ pub struct DupFile {
     /// pixels, or without the metadata the best one has): the id of that
     /// best file, which is the one to keep. The page ticks these.
     pub keeper: Option<i64>,
+    /// The file of its row to keep: the best quality, then the one without
+    /// a copy's name ("IMG_1 (2)", "IMG_1 - Copy"), then the earliest. The
+    /// page ticks the other files of a row.
+    pub pick: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -73,6 +78,10 @@ pub struct DupTag {
 pub struct Group {
     /// All files have identical content.
     pub exact: bool,
+    /// `identical` (same content), `resolution` (surely the same photo,
+    /// differing in size, quality or name) or `similar` (different shots
+    /// that look alike: a series, repeated clicks).
+    pub kind: &'static str,
     pub files: Vec<DupFile>,
 }
 
@@ -118,6 +127,7 @@ pub fn load(conn: &Connection, shown: &HashSet<i64>) -> Result<Candidates> {
                     tags: Vec::new(),
                     row: 0,
                     keeper: None,
+                    pick: false,
                 },
                 full_hash: r.get(10)?,
                 phash: r.get::<_, Option<String>>(11)?.as_deref().and_then(phash::from_hex),
@@ -131,6 +141,90 @@ pub fn load(conn: &Connection, shown: &HashSet<i64>) -> Result<Candidates> {
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<rusqlite::Result<_>>()?;
     Ok(Candidates { rows, decided })
+}
+
+/// Words for "copy" in the languages a Finder, Explorer or file manager
+/// may speak.
+const COPY_WORDS: &[&str] = &["copy", "kopie", "copia", "copie", "kopia", "cópia", "kopi", "копия", "копія"];
+
+/// "copy", "another copy", "3rd copy", "Max's conflicted copy 2024-01-01".
+fn is_copy_phrase(inner: &str) -> bool {
+    if inner.contains("conflicted copy") {
+        return true;
+    }
+    let inner = inner.strip_prefix("another ").unwrap_or(inner);
+    let inner = match inner.split_once(' ') {
+        Some((first, rest)) if first.starts_with(|c: char| c.is_ascii_digit()) => rest,
+        _ => inner,
+    };
+    COPY_WORDS.contains(&inner)
+}
+
+/// Take one copy marker off the end of a (lowercase) name, if there is one:
+/// Windows "x - Copy", "x - Copy (2)" ("x - Kopie"), macOS "x copy",
+/// "x copy 2", "x 2", browsers and Explorer imports "x (1)", "x(1)", GNOME
+/// "x (copy)", "x (another copy)", "x (3rd copy)", Dropbox "x (Name's
+/// conflicted copy 2024-01-01)", and "x-1", "x_2" (Image Capture and
+/// friends).
+fn strip_copy_marker(l: &str) -> Option<String> {
+    let l = l.trim_end();
+    if let Some(open) = l.strip_suffix(')').and_then(|r| r.rfind('(').map(|i| (r, i))) {
+        let (r, i) = open;
+        let inner = r[i + 1..].trim();
+        let numbered = !inner.is_empty() && inner.chars().all(|c| c.is_ascii_digit());
+        let word = is_copy_phrase(inner);
+        if numbered || word {
+            let base = r[..i].trim_end();
+            return (!base.is_empty()).then(|| base.to_string());
+        }
+    }
+    for w in COPY_WORDS {
+        if let Some(rest) = l.strip_suffix(w) {
+            let base = rest.trim_end_matches([' ', '-', '_']);
+            if !base.is_empty() && base.len() < rest.len() {
+                return Some(base.to_string());
+            }
+        }
+    }
+    let digits = l.len() - l.trim_end_matches(|c: char| c.is_ascii_digit()).len();
+    if digits > 0 && digits < l.len() {
+        let rest = &l[..l.len() - digits];
+        if let Some(base) = rest.strip_suffix([' ', '-', '_']) {
+            let base = base.trim_end();
+            return (!base.is_empty()).then(|| base.to_string());
+        }
+    }
+    None
+}
+
+/// Which of these file names are a copy's name of another one in the list
+/// ("IMG_1 (2)", "IMG_1 - Copy", "IMG_1 copy 2" next to "IMG_1"). The
+/// extension does not matter. The one to keep is the one without it.
+pub fn copy_named(names: &[&str]) -> Vec<bool> {
+    let stem = |n: &str| {
+        let stem = n.rsplit_once('.').map_or(n, |(s, _)| s);
+        library::nfc(stem).to_lowercase()
+    };
+    let stems: Vec<String> = names.iter().map(|n| stem(n)).collect();
+    let all: HashSet<&str> = stems.iter().map(String::as_str).collect();
+    stems
+        .iter()
+        .map(|s| {
+            let mut cur = s.clone();
+            for _ in 0..4 {
+                match strip_copy_marker(&cur) {
+                    Some(base) => {
+                        if base != *s && all.contains(base.as_str()) {
+                            return true;
+                        }
+                        cur = base;
+                    }
+                    None => return false,
+                }
+            }
+            false
+        })
+        .collect()
 }
 
 fn pixels(r: &Row) -> u64 {
@@ -180,7 +274,7 @@ fn better(a: &Row, b: &Row) -> bool {
 
 /// For the files of one group, in `order`: the row each belongs to, and the
 /// best file to keep where it is surely the same photo and worse.
-fn photo_rows(rows: &[Row], order: &[usize], open: &dyn Fn(usize, usize) -> bool) -> Vec<(u32, Option<i64>)> {
+fn photo_rows(rows: &[Row], order: &[usize], open: &dyn Fn(usize, usize) -> bool) -> Vec<(u32, Option<i64>, bool)> {
     let mut sets = UnionFind::new(order.len());
     for (x, &i) in order.iter().enumerate() {
         for (y, &j) in order.iter().enumerate().skip(x + 1) {
@@ -202,11 +296,18 @@ fn photo_rows(rows: &[Row], order: &[usize], open: &dyn Fn(usize, usize) -> bool
     // transitive (a messenger copy without a date fits two shots a day
     // apart), so a file joins the best one's row only if it is the same
     // photo as the best itself; any other gets a row of its own.
-    let key = |r: &Row| (pixels(r), r.file.taken.is_some(), r.file.size, std::cmp::Reverse(r.added_at), std::cmp::Reverse(r.file.path.clone()));
+    let copy_name: HashMap<usize, bool> = {
+        let names: Vec<&str> = order.iter().map(|&i| rows[i].file.name.as_str()).collect();
+        order.iter().copied().zip(copy_named(&names)).collect()
+    };
+    let key = |i: usize| {
+        let r = &rows[i];
+        (pixels(r), r.file.taken.is_some(), !copy_name[&i], r.file.size, std::cmp::Reverse(r.added_at), std::cmp::Reverse(r.file.path.clone()))
+    };
     let mut best: HashMap<u32, usize> = HashMap::new();
     for (x, &i) in order.iter().enumerate() {
         let e = best.entry(ids[x]).or_insert(i);
-        if key(&rows[i]) > key(&rows[*e]) {
+        if key(i) > key(*e) {
             *e = i;
         }
     }
@@ -217,14 +318,14 @@ fn photo_rows(rows: &[Row], order: &[usize], open: &dyn Fn(usize, usize) -> bool
         .map(|(x, &i)| {
             let b = best[&ids[x]];
             if b == i {
-                return (ids[x], None);
+                return (ids[x], None, true);
             }
             if open(b, i) && same_photo(&rows[b], &rows[i]) {
                 let worse = better(&rows[b], &rows[i]);
-                return (ids[x], worse.then(|| rows[b].file.id));
+                return (ids[x], worse.then(|| rows[b].file.id), false);
             }
             next += 1;
-            (next - 1, None)
+            (next - 1, None, true)
         })
         .collect()
 }
@@ -300,10 +401,11 @@ pub fn find(candidates: &Candidates) -> Vec<Group> {
             let mut order: Vec<usize> = m.clone();
             order.sort_by(|&i, &j| rows[j].file.taken.cmp(&rows[i].file.taken).then(rows[i].file.path.cmp(&rows[j].file.path)));
             let info = photo_rows(rows, &order, &open);
-            for (&i, &(row, keeper)) in order.iter().zip(&info) {
+            for (&i, &(row, keeper, pick)) in order.iter().zip(&info) {
                 let mut f = rows[i].file.clone();
                 f.row = row;
                 f.keeper = keeper;
+                f.pick = pick;
                 if let Some(h) = rows[i].full_hash.as_deref().filter(|h| copies[h] > 1) {
                     let next = numbers.len() as u32 + 1;
                     f.same = Some(*numbers.entry(h).or_insert(next));
@@ -311,7 +413,14 @@ pub fn find(candidates: &Candidates) -> Vec<Group> {
                 files.push(f);
             }
             let newest = files.iter().filter_map(|f| f.taken.clone()).max().unwrap_or_default();
-            (Group { exact: !near_roots.contains(&root), files }, newest)
+            let rows_in_group: HashSet<u32> = files.iter().map(|f| f.row).collect();
+            let exact = !near_roots.contains(&root);
+            let kind = match (rows_in_group.len(), exact) {
+                (1, true) => "identical",
+                (1, false) => "resolution",
+                _ => "similar",
+            };
+            (Group { exact, kind, files }, newest)
         })
         .collect();
     groups.sort_by(|(a, ta), (b, tb)| b.exact.cmp(&a.exact).then(tb.cmp(ta)).then(a.files[0].path.cmp(&b.files[0].path)));
@@ -348,7 +457,15 @@ pub fn same_folder_plan(candidates: &Candidates) -> Vec<(i64, Vec<i64>)> {
         .filter(|p| p.len() > 1)
         .filter_map(|mut p| {
             let pixels = |r: &Row| r.file.width.unwrap_or(0) as u64 * r.file.height.unwrap_or(0) as u64;
-            p.sort_by(|a, b| pixels(b).cmp(&pixels(a)).then(a.added_at.cmp(&b.added_at)).then(a.file.path.cmp(&b.file.path)));
+            let copies = copy_named(&p.iter().map(|r| r.file.name.as_str()).collect::<Vec<_>>());
+            let flag: HashMap<i64, bool> = p.iter().map(|r| r.file.id).zip(copies).collect();
+            p.sort_by(|a, b| {
+                pixels(b)
+                    .cmp(&pixels(a))
+                    .then(flag[&a.file.id].cmp(&flag[&b.file.id]))
+                    .then(a.added_at.cmp(&b.added_at))
+                    .then(a.file.path.cmp(&b.file.path))
+            });
             let keep = p[0].file.id;
             let gone: Vec<i64> = p[1..]
                 .iter()
@@ -736,5 +853,49 @@ impl UnionFind {
         if ra != rb {
             self.parent[ra.max(rb)] = ra.min(rb);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn flags(names: &[&str]) -> Vec<bool> {
+        copy_named(names)
+    }
+
+    #[test]
+    fn copy_names_next_to_their_original() {
+        for copy in [
+            "IMG_1 (2).jpg",
+            "IMG_1(1).jpg",
+            "IMG_1 - Copy.jpg",
+            "IMG_1 - Copy (2).jpg",
+            "IMG_1 - Kopie (3).JPG",
+            "IMG_1 copy.jpg",
+            "IMG_1 copy 2.jpg",
+            "IMG_1 Kopie.jpg",
+            "IMG_1 2.jpg",
+            "IMG_1-1.jpg",
+            "IMG_1_2.jpg",
+            "IMG_1 (copy).jpg",
+            "IMG_1 (another copy).jpg",
+            "IMG_1 (3rd copy).jpg",
+            "IMG_1 (Max's conflicted copy 2024-01-01).jpg",
+            "img_1 (2).jpeg",
+        ] {
+            assert_eq!(flags(&["IMG_1.jpg", copy]), [false, true], "{copy}");
+        }
+    }
+
+    #[test]
+    fn names_that_are_not_copies_stay() {
+        // No file with the base name: nothing is a copy.
+        assert_eq!(flags(&["IMG_1 (2).jpg", "IMG_3.jpg"]), [false, false]);
+        assert_eq!(flags(&["Bild 1.jpeg"]), [false]);
+        // Different names in a group.
+        assert_eq!(flags(&["IMG_0412.jpg", "IMG-20240812-WA0007.jpg"]), [false, false]);
+        // A copy of a copy points at the original.
+        assert_eq!(flags(&["a.jpg", "a (2).jpg", "a (2) (2).jpg"]), [false, true, true]);
     }
 }

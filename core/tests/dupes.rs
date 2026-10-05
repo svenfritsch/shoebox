@@ -201,13 +201,14 @@ fn same_folder_bulk_only_touches_exact_duplicates_in_one_folder() {
     assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
     let body = r.json();
     assert_eq!((body["groups"].as_i64(), body["removed"].as_i64()), (Some(1), Some(2)));
-    // One file of the folder stays (the earliest record: scan order), the
-    // other folder, the decided pair and the near pair are as they were.
+    // The one with the original name stays (not "(2)" or "(3)"), the other
+    // folder, the decided pair and the near pair are as they were.
+    assert!(lib.path("Familie/Weihnachten/DSC_2001.jpg").exists());
     let left: Vec<bool> = ["DSC_2001.jpg", "DSC_2001 (2).jpg", "DSC_2001 (3).jpg"]
         .iter()
         .map(|n| lib.path(&format!("Familie/Weihnachten/{n}")).exists())
         .collect();
-    assert_eq!(left.iter().filter(|e| **e).count(), 1, "{left:?}");
+    assert_eq!(left, [true, false, false]);
     for p in ["Kochen/braten.jpg", "Ordner mit Leerzeichen/Bild 1.jpeg", "Ordner mit Leerzeichen/Bild 1b.jpeg", "Ringe/gross.jpg", "Ringe/klein.jpg"] {
         assert!(lib.path(p).exists(), "{p}");
     }
@@ -217,9 +218,7 @@ fn same_folder_bulk_only_touches_exact_duplicates_in_one_folder() {
         .find(|n| lib.path(&format!("Familie/Weihnachten/{n}")).exists())
         .unwrap();
     let stays = id_of(&lib, &format!("Familie/Weihnachten/{stays}"));
-    if stays != c {
-        assert_eq!(tags(&lib, stays, "user"), ["Lecker"]);
-    }
+    assert_eq!(tags(&lib, stays, "user"), ["Lecker"]);
     // Nothing left to do; a second run changes nothing.
     assert_eq!(get(addr, "/api/duplicates/same-folder").json()["copies"], 0);
     server.stop().unwrap();
@@ -288,4 +287,73 @@ fn lower_quality_versions_of_the_same_photo_go_without_review() {
         assert_eq!(&before[p], v, "{}", p.display());
     }
     assert!(lib.verify(false).is_clean());
+}
+
+fn groups(addr: std::net::SocketAddr) -> Vec<Value> {
+    get(addr, "/api/duplicates").json()["groups"].as_array().unwrap().clone()
+}
+
+fn file_of<'a>(groups: &'a [Value], path: &str) -> &'a Value {
+    groups.iter().flat_map(|g| g["files"].as_array().unwrap()).find(|f| f["path"] == path).unwrap()
+}
+
+fn group_of<'a>(groups: &'a [Value], path: &str) -> &'a Value {
+    groups.iter().find(|g| g["files"].as_array().unwrap().iter().any(|f| f["path"] == path)).unwrap()
+}
+
+#[test]
+fn identical_copies_keep_the_file_with_the_original_name() {
+    let lib = Library::new("dupes-names");
+    let original = "Familie/Weihnachten/DSC_2001.jpg";
+    fs::create_dir_all(lib.path("Kochen")).unwrap();
+    fs::copy(lib.path(original), lib.path("Kochen/DSC_2001 - Copy.jpg")).unwrap();
+    fs::copy(lib.path(original), lib.path("Kochen/DSC_2001 (2).jpg")).unwrap();
+    lib.scan();
+    let server = start(&lib, None);
+    let all = groups(server.addr);
+    let g = group_of(&all, original);
+    assert_eq!(g["kind"], "identical");
+    assert_eq!(g["files"].as_array().unwrap().len(), 3);
+    // One row; only the original name is the pick, whatever the scan order.
+    let rows: std::collections::HashSet<i64> = g["files"].as_array().unwrap().iter().map(|f| f["row"].as_i64().unwrap()).collect();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(file_of(&all, original)["pick"], true);
+    assert_eq!(file_of(&all, "Kochen/DSC_2001 - Copy.jpg")["pick"], false);
+    assert_eq!(file_of(&all, "Kochen/DSC_2001 (2).jpg")["pick"], false);
+    server.stop().unwrap();
+}
+
+#[test]
+fn groups_are_identical_same_photo_in_another_size_or_similar_shots() {
+    let lib = Library::new("dupes-kinds");
+    // A series: two shots a few seconds apart (the second is one pixel wider,
+    // so the bytes differ), and a smaller copy that came back from a messenger.
+    rings(&lib.path("Serie/A.jpg"), 1600, 1200);
+    rings(&lib.path("Serie/B.jpg"), 1601, 1200);
+    rings(&lib.path("Messenger/IMG-WA0001.jpg"), 800, 600);
+    lib.scan();
+    let id = |p: &str| id_of(&lib, p);
+    let (a, b, wa) = (id("Serie/A.jpg"), id("Serie/B.jpg"), id("Messenger/IMG-WA0001.jpg"));
+    set_taken(&lib, a, Some("2024-06-02T11:20:04"));
+    set_taken(&lib, b, Some("2024-06-02T11:20:09"));
+    let server = start(&lib, None);
+    let all = groups(server.addr);
+    // Different shots: "similar", a row each; the messenger copy goes with
+    // the better shot it is the same photo as, and is the one to drop.
+    assert_eq!(group_of(&all, "Serie/A.jpg")["kind"], "similar");
+    let (fa, fb, fw) = (file_of(&all, "Serie/A.jpg"), file_of(&all, "Serie/B.jpg"), file_of(&all, "Messenger/IMG-WA0001.jpg"));
+    assert_ne!(fa["row"], fb["row"]);
+    assert_eq!(fw["row"], fb["row"]);
+    assert_eq!((fa["pick"].as_bool(), fb["pick"].as_bool(), fw["pick"].as_bool()), (Some(true), Some(true), Some(false)));
+    assert_eq!(fw["keeper"], b);
+    server.stop().unwrap();
+
+    // Without the second shot the same two files are one photo in two sizes.
+    fs::remove_file(lib.path("Serie/B.jpg")).unwrap();
+    lib.scan_with(true, true);
+    let server = start(&lib, None);
+    let all = groups(server.addr);
+    assert_eq!(group_of(&all, "Serie/A.jpg")["kind"], "resolution");
+    assert_eq!(file_of(&all, "Messenger/IMG-WA0001.jpg")["keeper"], a);
+    server.stop().unwrap();
 }

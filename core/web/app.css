@@ -202,6 +202,7 @@ body.selecting #select { color: var(--accent); }
 .card .meta { color: var(--muted); }
 .card .folder { background: none; border: 0; padding: 0; color: var(--accent); text-align: left; font-size: 12px; word-break: break-all; }
 .card .same { display: inline-block; background: var(--accent); color: #fff; border-radius: 4px; padding: 0 5px; font-weight: 600; }
+.group-hint { margin: -4px 0 8px; font-size: 12px; color: var(--muted); }
 .dup-top { margin-bottom: 12px; }
 .dup-row { display: flex; gap: 14px; padding: 10px 0; border-top: 1px solid var(--line); align-items: flex-start; }
 .dup-row:first-of-type { border-top: 0; }
@@ -217,7 +218,14 @@ body.selecting #select { color: var(--accent); }
 .copy .check input { width: 18px; height: 18px; }
 .copy .meta { color: var(--muted); }
 .copy .meta.worse { color: #c63b2f; }
-.dup-top { display: flex; flex-wrap: wrap; gap: 8px; }
+.dup-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; justify-content: space-between; }
+.dup-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; justify-content: flex-end; }
+.dup-filter { position: relative; }
+.dup-filter summary { list-style: none; cursor: pointer; display: inline-block; }
+.dup-filter summary::-webkit-details-marker { display: none; }
+.dup-filter-menu { position: absolute; z-index: 5; top: 100%; left: 0; margin-top: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2); white-space: nowrap; }
+.dup-filter-menu label { display: flex; align-items: center; gap: 6px; }
+.btn:disabled { opacity: 0.45; cursor: default; }
 .copy .folder { background: none; border: 0; padding: 0; color: var(--accent); text-align: left; font-size: 12px; word-break: break-all; }
 .copy .tagline { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
 .copy .chip { background: var(--cell-bg); border-radius: 10px; padding: 1px 8px; }
