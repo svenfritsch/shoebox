@@ -146,6 +146,7 @@ function applyFilter() {
   $('nav-trash').classList.toggle('active', view === 'trash');
   $('nav-faces').classList.toggle('active', view === 'faces');
   markFacesSection();
+  updateSections();
   if (view) {
     endSelection();
     $('empty').hidden = true;
@@ -437,6 +438,38 @@ $('menu').onclick = function () {
   if (window.matchMedia('(max-width: 760px)').matches) document.body.classList.toggle('side-open');
   else { document.body.classList.toggle('side-closed'); relayout(); render(); }
 };
+
+// Collapsible sidebar sections (Faces, Tags, Folders). A section holding
+// the current selection stays open and its caret is disabled.
+var sectionClosed = {};
+try { sectionClosed = JSON.parse(localStorage.getItem('sectionClosed') || '{}') || {}; } catch (e) { sectionClosed = {}; }
+
+function sectionHasActive(id) {
+  var f = state.filter;
+  if (id === 'folders-section') return !f.view && f.folder != null;
+  if (id === 'tags-section') return !f.view && f.tags.length > 0;
+  return f.view === 'people' || f.view === 'unnamed' || f.view === 'person' || (!f.view && f.people.length > 0);
+}
+
+function updateSections() {
+  Array.prototype.forEach.call(document.querySelectorAll('.caret'), function (c) {
+    var id = c.dataset.section;
+    var locked = sectionHasActive(id);
+    var open = locked || !sectionClosed[id];
+    c.disabled = locked;
+    c.textContent = open ? '▾' : '▸';
+    c.setAttribute('aria-expanded', String(open));
+    $(c.dataset.body).hidden = !open;
+  });
+}
+
+Array.prototype.forEach.call(document.querySelectorAll('.caret'), function (c) {
+  c.onclick = function () {
+    sectionClosed[c.dataset.section] = !sectionClosed[c.dataset.section];
+    try { localStorage.setItem('sectionClosed', JSON.stringify(sectionClosed)); } catch (e) { /* ignore */ }
+    updateSections();
+  };
+});
 
 function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
 

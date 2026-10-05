@@ -430,3 +430,9 @@ body.selecting .sec .pick { display: inline; }
   .person .avatar.big { width: 76px; height: 76px; }
 }
 .side-head { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 10px 14px 0; }
+
+/* Collapsible sidebar sections */
+.side-tags h3, .side-head { display: flex; align-items: center; }
+.side-tags h3 .link { padding: 0; font: inherit; text-transform: inherit; letter-spacing: inherit; }
+.caret { width: 18px; flex: none; background: none; border: 0; color: var(--muted); padding: 2px 0; font-size: 11px; cursor: pointer; }
+.caret:disabled { opacity: .3; cursor: default; }
