@@ -449,6 +449,15 @@ fn groups_merge_and_split() {
     let groups = get(addr, "/api/groups").json();
     assert_eq!((groups.as_array().unwrap().len(), groups[0]["people"].as_u64()), (1, Some(1)));
 
+    // A misspelled name without faces can be deleted; someone with faces
+    // cannot (merge them instead).
+    let fran = ok(addr, "/api/people", &json!({ "name": "fran" }))["id"].as_i64().unwrap();
+    assert_eq!(post(addr, &format!("/api/people/{anna}/delete"), &json!({})).status, 400);
+    assert_eq!(get(addr, &format!("/api/people/{anna}")).status, 200);
+    ok(addr, &format!("/api/people/{fran}/delete"), &json!({}));
+    assert_eq!(get(addr, &format!("/api/people/{fran}")).status, 404);
+    assert_eq!(post(addr, &format!("/api/people/{fran}/delete"), &json!({})).status, 400);
+
     // People list: by group order, then name; no group last.
     let names: Vec<String> =
         get(addr, "/api/people").json().as_array().unwrap().iter().map(|p| p["name"].as_str().unwrap().to_string()).collect();

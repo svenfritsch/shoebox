@@ -416,11 +416,17 @@ function loadFolders() {
   });
 }
 
+// Material "keyboard arrow" icons for the expand/collapse buttons.
+var ARROW_DOWN = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>';
+var ARROW_RIGHT = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M8.59 16.59 13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>';
+function setArrow(btn, open) { btn.innerHTML = open ? ARROW_DOWN : ARROW_RIGHT; }
+
 function folderNode(f, depth) {
   var li = el('li');
   var row = el('div', 'row');
   var kids = f.children.filter(function (c) { return c.count > 0; });
-  var toggle = el('button', 'toggle', kids.length ? '▸' : '');
+  var toggle = el('button', 'toggle');
+  if (kids.length) setArrow(toggle, false);
   var name = el('button', 'name', f.name);
   name.dataset.id = f.id;
   name.title = f.path;
@@ -440,7 +446,7 @@ function folderNode(f, depth) {
       markActiveFolder();
     }
     if (ul) ul.hidden = !open;
-    toggle.textContent = open ? '▾' : '▸';
+    setArrow(toggle, open);
   };
   li._expand = expand;
   toggle.onclick = function () { expand(!ul || ul.hidden); };
@@ -498,7 +504,7 @@ function updateSections() {
     var locked = sectionHasActive(id);
     var open = locked || !sectionClosed[id];
     c.disabled = locked;
-    c.textContent = open ? '▾' : '▸';
+    setArrow(c, open);
     c.setAttribute('aria-expanded', String(open));
     $(c.dataset.body).hidden = !open;
   });
@@ -2963,7 +2969,8 @@ function renderFacesSection() {
     var key = s.id == null ? 'none' : s.id;
     var li = el('li');
     var row = el('div', 'row');
-    var toggle = el('button', 'toggle', s.people.length ? (people.open[key] ? '▾' : '▸') : '');
+    var toggle = el('button', 'toggle');
+    if (s.people.length) setArrow(toggle, !!people.open[key]);
     var name = el('button', 'name', s.name);
     name.title = s.people.length ? 'Show or hide its people' : 'Nobody in it yet';
     var flip = function () { people.open[key] = !people.open[key]; renderFacesSection(); };
@@ -3151,6 +3158,22 @@ function renamePerson(p) {
   });
 }
 
+// Only for someone without faces (a misspelled name); others are merged.
+function deletePersonDialog(p) {
+  openModal('Delete person', 'Delete “' + p.name + '”? Nobody is confirmed as them, so no photo changes.', [
+    { label: 'Cancel', cls: 'quiet' },
+    { label: 'Delete', cls: 'danger', onclick: function () {
+      post(LIBAPI + '/people/' + p.id + '/delete').then(function () {
+        toast('“' + p.name + '” deleted');
+        peopleChanged();
+        if (state.filter.people.indexOf(p.id) >= 0) setFilter({ people: state.filter.people.filter(function (x) { return x !== p.id; }) });
+        else if (state.filter.view === 'person' && state.filter.id === p.id) showView('people');
+        else if (state.filter.view) loadView(state.filter.view);
+      }).catch(failed);
+    } },
+  ]);
+}
+
 function newGroup(then) {
   nameDialog('New group', '', 'Create', function (name) {
     return post(LIBAPI + '/groups', { name: name }).then(function (g) {
@@ -3272,7 +3295,7 @@ function personMenuItems(p) {
     { label: 'Rename…', run: function () { renamePerson(p); } },
     { label: 'Move to group…', run: function () { moveToGroupDialog(p); } },
     { label: 'Merge into…', run: function () { mergeDialog(p); } },
-  ];
+  ].concat(p.faces === 0 ? [{ label: 'Delete…', run: function () { deletePersonDialog(p); } }] : []);
 }
 
 // A ⋯ button that opens a menu below itself (works by touch).
