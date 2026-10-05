@@ -157,8 +157,30 @@ Built:
 
 ## 4. Backups and packaging
 
-Backup verification as described in plan.md ("Backups"), launcher scripts per
-OS and packaging.
+Backup verification, built (`core/src/backup.rs`, `multi::backup_report`):
+- A backup drive is an ordinary drive with its own `.shoebox` (scanned after
+  every backup run by rsync / Carbon Copy Cloner), marked "backup" (see
+  section 3). The drive it copies is the one the user named
+  (`POST /api/all/role` with `of`), else the one that holds most of its
+  contents.
+- `shoebox backup <original> <backup> [--deep] [--json] [--limit N]`, the
+  launcher button "Backup check" (first folder = original, second = backup)
+  and `GET /api/all/backups` give the same report from the two indexes, by
+  full hash, without reading any photo: files new since the last backup (not
+  on the backup), files at the same path with other content, content only the
+  backup has (gone or changed on the original since; informational), files of
+  the original without a full hash yet, and "last backup N days ago" (the
+  backup index's last scan and the day files last arrived on it). Exit
+  status 2 if something is missing or different.
+- `--deep` (launcher: "also re-read the backup drive") then runs `verify` on
+  the backup drive: bit rot shows as DAMAGED although size and date match.
+- UI: the "All drives" page shows a status box per backup drive with the
+  lists; the photo app never writes to a backup.
+- Tests: `core/tests/backup.rs`, `core/tests/launcher.rs`.
+
+Packaging: the release archive contains the macOS binary, `recognizer/` and
+`Start shoebox.command`. Linux and Windows archives wait for the CI that
+builds them (plan.md: CI until v1.0).
 
 ## Checklist
 
@@ -168,4 +190,4 @@ Done:
 Open:
 - [ ] Launcher UI (section 2): first slice built, platform checks and polish open
 - [~] Multiple drives (section 3): hub, offline, roles, cross-drive duplicates and people built; common timeline built; moving between drives open
-- [ ] Backups and packaging (section 4)
+- [x] Backup verification (section 4); packaging of Linux and Windows builds waits for their CI

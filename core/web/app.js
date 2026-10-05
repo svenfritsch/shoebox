@@ -4240,8 +4240,8 @@ function loadDrivesPage() {
   page.appendChild(drivesBox);
   page.appendChild(el('h2', '', 'People across drives'));
   page.appendChild(peopleBox);
-  var role = function (d, value) {
-    post('/api/all/role', { library: d.library, role: value }).then(function () { toast(d.name + ': ' + value); loadDrivesPage(); refreshDrives(); }).catch(failed);
+  var role = function (d, value, of) {
+    post('/api/all/role', { library: d.library, role: value, of: of || null }).then(function () { toast(d.name + ': ' + value); loadDrivesPage(); refreshDrives(); }).catch(failed);
   };
   api('/api/all/drives').then(function (list) {
     var shown = list.filter(function (d) { return d.shown_in_all; }).length;
@@ -4271,6 +4271,12 @@ function loadDrivesPage() {
         card.appendChild(wrap);
       }
       drivesBox.appendChild(card);
+      if (d.online && d.role === 'backup') {
+        var slot = el('div', 'backup-status');
+        slot.dataset.library = d.library;
+        slot.appendChild(el('p', 'sub', 'Comparing with the original drive…'));
+        drivesBox.appendChild(slot);
+      }
       if (d.online && d.role === 'unknown' && d.suggested_backup_of) {
         var b = el('div', 'banner warn');
         b.appendChild(el('div', '', d.name + ' looks like a backup of ' + d.suggested_backup_of + ': almost everything on it is on the other drive too. '
@@ -4283,6 +4289,9 @@ function loadDrivesPage() {
         drivesBox.appendChild(b);
       }
     });
+  }).catch(failed);
+  api('/api/all/backups').then(function (list) {
+    Array.prototype.forEach.call(drivesBox.querySelectorAll('.backup-status'), function (slot) { renderBackup(slot, list.filter(function (b) { return b.library === slot.dataset.library; })[0]); });
   }).catch(failed);
   api('/api/all/people').then(function (r) {
     if (r.offline.length) peopleBox.appendChild(el('p', 'sub', 'Not included, offline: ' + r.offline.join(', ')));
@@ -4314,6 +4323,45 @@ function allTimelineLoaded(data) {
   var out = data.left_out.map(function (x) { return x.name + ' (' + x.reason.split(';')[0] + ')'; });
   note.textContent = 'Photos of ' + data.libs.map(function (l) { return l.name; }).join(', ') + (out.length ? ' · not shown: ' + out.join(', ') : '');
   $('status').textContent = plural(data.count, 'photo', 'photos') + ' on ' + plural(data.libs.length, 'drive', 'drives') + ' · for looking; open a photo\'s drive to change things';
+}
+
+// How long ago a Unix time was, for "last backup".
+function daysAgo(t) {
+  if (!t) return 'never';
+  var d = Math.floor((Date.now() / 1000 - t) / 86400);
+  return d <= 0 ? 'today' : d === 1 ? '1 day ago' : d + ' days ago';
+}
+
+// A backup drive against the drive it copies, from the two indexes (nothing is
+// read from the photos): what is new since the last backup, what differs, what
+// only the backup has. Bit rot on the backup itself is found by "Backup check"
+// with re-reading in the launcher (`shoebox backup … --deep`).
+function renderBackup(slot, b) {
+  slot.textContent = '';
+  if (!b || !b.primary) {
+    slot.appendChild(el('p', 'sub', (b && b.note) || 'No comparison possible.'));
+    return;
+  }
+  var box = el('div', 'banner' + (b.up_to_date ? '' : ' warn'));
+  box.appendChild(el('div', '', (b.up_to_date ? '✓ ' : '! ') + b.backup + ' is a backup of ' + b.primary + ': '
+    + (b.up_to_date ? 'it holds all ' + plural(b.compared, 'file', 'files') + '.'
+      : plural(b.missing, 'file', 'files') + ' not on it yet' + (b.different ? ', ' + b.different + ' different' : '') + '.')));
+  box.appendChild(el('div', 'sub', 'Last backup: ' + daysAgo(b.backup_last_new_files) + ' (new files last arrived); the backup drive was scanned ' + daysAgo(b.backup_last_scan)
+    + '. Scan it after every backup to bring this up to date.'
+    + (b.unhashed ? ' ' + plural(b.unhashed, 'file', 'files') + ' of ' + b.primary + ' have no full hash yet and are not compared.' : '')
+    + (b.extra ? ' ' + plural(b.extra, 'file', 'files') + ' only on the backup (gone or changed on ' + b.primary + ').' : '')));
+  var lists = [['Not on the backup yet', b.missing, b.missing_files], ['Different on the backup', b.different, b.different_files], ['Only on the backup', b.extra, b.extra_files]];
+  lists.forEach(function (l) {
+    if (!l[1]) return;
+    var det = el('details');
+    det.appendChild(el('summary', '', l[0] + ' (' + l[1].toLocaleString() + ')'));
+    var ul = el('ul', 'pathlist');
+    l[2].forEach(function (f) { ul.appendChild(el('li', '', f.path)); });
+    if (l[1] > l[2].length) ul.appendChild(el('li', 'sub', '… ' + (l[1] - l[2].length).toLocaleString() + ' more'));
+    det.appendChild(ul);
+    box.appendChild(det);
+  });
+  slot.appendChild(box);
 }
 
 function refreshDrives() {

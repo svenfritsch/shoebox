@@ -374,12 +374,25 @@ struct JobRequest {
     retry_failed: bool,
     #[serde(default)]
     rotated: bool,
+    /// Backup check: also re-read the backup drive's files.
+    #[serde(default)]
+    deep: bool,
 }
 
 /// Run one command and return its result as JSON plus whether it was clean.
 /// The same functions as the CLI.
-fn run_command(req: &JobRequest, root: PathBuf) -> Result<(serde_json::Value, bool)> {
+fn run_command(req: &JobRequest, roots: Vec<PathBuf>) -> Result<(serde_json::Value, bool)> {
+    let root = roots[0].clone();
     Ok(match req.kind.as_str() {
+        "backup" => {
+            let check = crate::backup::run(&crate::backup::Options {
+                primary: roots[0].clone(),
+                backup: roots.get(1).cloned().ok_or_else(|| anyhow::anyhow!("a backup check needs the original drive and the backup"))?,
+                deep: req.deep,
+                limit: 200,
+            })?;
+            (serde_json::to_value(&check)?, check.ok)
+        }
         "scan" => {
             let stats = scan::run(&scan::Options {
                 root,
@@ -445,13 +458,16 @@ fn short_name(root: &Path) -> String {
 }
 
 fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
-    if !matches!(req.kind.as_str(), "scan" | "verify" | "recognize" | "faces_stats") {
+    if !matches!(req.kind.as_str(), "scan" | "verify" | "recognize" | "faces_stats" | "backup") {
         return Err(ApiError::BadRequest(format!("unknown command {:?}", req.kind)));
     }
     if shared.app.lock().unwrap().is_some() {
         return Err(ApiError::Conflict("stop the photo app first".into()));
     }
     let roots = request_roots(&req)?;
+    if req.kind == "backup" && roots.len() != 2 {
+        return Err(ApiError::BadRequest("a backup check compares two folders: the original drive first, then the backup".into()));
+    }
     let id = {
         let mut next = shared.next_id.lock().unwrap();
         *next += 1;
@@ -481,8 +497,12 @@ fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
             let guard = report::install(Arc::new(move |event| {
                 sink_state.job.lock().unwrap().apply(event);
             }));
-            let many = roots.len() > 1;
-            for root in roots {
+            // A backup check is one run over the two folders; the others run once per folder.
+            let groups: Vec<Vec<PathBuf>> =
+                if req.kind == "backup" { vec![roots.clone()] } else { roots.iter().map(|r| vec![r.clone()]).collect() };
+            let many = groups.len() > 1;
+            for group in groups {
+                let root = group[0].clone();
                 if report::cancelled() {
                     break;
                 }
@@ -495,7 +515,7 @@ fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
                 if many {
                     crate::say!("== {} ==", root.display());
                 }
-                let outcome = run_command(&req, root.clone());
+                let outcome = run_command(&req, group);
                 let mut job = shared.job.lock().unwrap();
                 let entry = match outcome {
                     Ok((result, clean)) => RootResult { root: root.display().to_string(), ok: clean, result: Some(result), error: None },
@@ -637,6 +657,7 @@ async fn app_start(State(shared): State<Arc<Shared>>, Json(req): Json<AppRequest
             limit: None,
             retry_failed: false,
             rotated: false,
+            deep: false,
         };
         let roots = request_roots(&jobless)?;
         let mut app = shared.app.lock().unwrap();

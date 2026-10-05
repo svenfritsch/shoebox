@@ -274,3 +274,27 @@ fn cancel_stops_a_running_command_like_ctrl_c_and_keeps_what_was_done() {
     assert_eq!(again["ok"], true, "{again}");
     launcher.stop().unwrap();
 }
+
+#[test]
+fn a_backup_check_runs_over_two_folders_and_lists_what_is_missing() {
+    let _turn = serial();
+    let original = Library::new("launcher-backup-original");
+    let backup = Library::new("launcher-backup-copy");
+    original.scan();
+    backup.scan();
+    original.jpeg("Neu/neu.jpg", 77);
+    original.scan();
+    let launcher = start_launcher();
+    let addr = launcher.addr;
+    let (o, b) = (original.root.display().to_string(), backup.root.display().to_string());
+
+    // Exactly two folders: the original first, then the backup.
+    assert_eq!(lpost(addr, "/api/job", &json!({ "kind": "backup", "roots": [o] })).status, 400);
+    let job = run_job(addr, json!({ "kind": "backup", "roots": [o, b] }));
+    assert_eq!(job["ok"], false, "{job}");
+    assert_eq!(job["results"].as_array().unwrap().len(), 1, "one run over both folders");
+    assert_eq!(job["result"]["report"]["missing"], 1);
+    assert_eq!(job["failures"][0]["path"], "Neu/neu.jpg");
+    assert_eq!(job["failures"][0]["note"], "not on the backup yet");
+    launcher.stop().unwrap();
+}

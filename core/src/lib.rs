@@ -2,6 +2,7 @@
 //! thin CLI over these modules; integration tests use them directly.
 
 pub mod ann;
+pub mod backup;
 pub mod browse;
 pub mod classify;
 pub mod clusters;

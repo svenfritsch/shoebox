@@ -749,6 +749,7 @@ fn hub_router(hub: Arc<Hub>) -> Router {
         .route("/api/all/duplicates", get(all_duplicates))
         .route("/api/all/drives", get(all_drives))
         .route("/api/all/role", post(all_set_role))
+        .route("/api/all/backups", get(all_backups))
         // Not a route with parameters: those would leak into the `Path`
         // extractors of the library's own routes.
         .fallback(fallback)
@@ -1095,8 +1096,9 @@ async fn online_apps(hub: &Arc<Hub>) -> Vec<Arc<App>> {
 fn drives_of(apps: &[Arc<App>]) -> ApiResult<Vec<multi::Drive>> {
     apps.iter()
         .map(|app| {
-            let role = multi::role(&app.conn.lock().unwrap())?;
-            Ok(multi::Drive { id: library_id(&app.name), name: app.name.clone(), db: app.db_path.clone(), role })
+            let conn = app.conn.lock().unwrap();
+            let (role, backup_of) = (multi::role(&conn)?, multi::backup_of(&conn)?);
+            Ok(multi::Drive { id: library_id(&app.name), name: app.name.clone(), db: app.db_path.clone(), role, backup_of })
         })
         .collect()
 }
@@ -1356,11 +1358,54 @@ async fn all_tags(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> Ap
     Ok(Json(tags))
 }
 
+#[derive(Serialize)]
+struct BackupState {
+    library: String,
+    #[serde(flatten)]
+    report: Option<multi::BackupReport>,
+    /// Why there is no report: the drive it copies is not there, or none matches.
+    note: Option<String>,
+}
+
+/// For every drive marked as a backup (and online): what it lacks compared
+/// with the drive it copies, from the indexes. `limit` lists files per kind.
+async fn all_backups(State(hub): State<Arc<Hub>>, Query(q): Query<LimitQuery>) -> ApiResult<Json<Vec<BackupState>>> {
+    let o = overview(&hub).await?;
+    let limit = q.limit.unwrap_or(50).min(1000);
+    let list = tokio::task::spawn_blocking(move || -> ApiResult<Vec<BackupState>> {
+        let mut out = Vec::new();
+        for (i, d) in o.drives.iter().enumerate() {
+            if d.role != multi::Role::Backup {
+                continue;
+            }
+            match multi::primary_of(&o.drives, i)? {
+                Some(p) => out.push(BackupState {
+                    library: d.id.clone(),
+                    report: Some(multi::backup_report(&o.drives[p].db, &o.drives[p].name, &d.db, &d.name, limit)?),
+                    note: None,
+                }),
+                None => out.push(BackupState {
+                    library: d.id.clone(),
+                    report: None,
+                    note: Some("No drive that is there holds what this backup holds (is the original drive plugged in?)".into()),
+                }),
+            }
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+    Ok(Json(list))
+}
+
 #[derive(Deserialize)]
 struct RoleRequest {
     library: String,
     /// `backup`, `separate` or `unknown`.
     role: String,
+    /// For a backup: the id of the drive it copies (else the likeliest one is used).
+    #[serde(default)]
+    of: Option<String>,
 }
 
 /// "This drive is a backup" / "this drive has its own photos". Stored in
@@ -1374,7 +1419,17 @@ async fn all_set_role(State(hub): State<Arc<Hub>>, Json(req): Json<RoleRequest>)
     let Some((app, _)) = online else {
         return Err(ApiError::Offline { library: hub.slots[index].name.clone(), reason: "plug it in to change this".into() });
     };
-    change(&app, move |_, conn| multi::set_role(conn, role)).await?;
+    let of = req.of.clone().filter(|_| role == multi::Role::Backup);
+    if let Some(of) = &of {
+        if of == &req.library || !hub.slots.iter().any(|s| &s.id == of) {
+            return Err(ApiError::BadRequest("a backup copies another drive of this server".into()));
+        }
+    }
+    change(&app, move |_, conn| {
+        multi::set_role(conn, role)?;
+        multi::set_backup_of(conn, of.as_deref())
+    })
+    .await?;
     *hub.roles.lock().unwrap() = None;
     Ok(Json(serde_json::json!({ "library": req.library, "role": req.role })))
 }

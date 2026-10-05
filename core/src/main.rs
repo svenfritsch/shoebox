@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use shoebox::{faces, launcher, probe, recognize, report, scan, serve, verify};
+use shoebox::{backup, faces, launcher, probe, recognize, report, scan, serve, verify};
 
 #[derive(Parser)]
 #[command(name = "shoebox", version, about = "Local photo library on an external drive")]
@@ -98,6 +98,26 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Is the backup complete? Compares a backup drive with the drive it
+    /// copies by content (both scanned), without reading photos. Exits with
+    /// status 2 if files are missing or different.
+    Backup {
+        /// The drive that is copied.
+        primary: PathBuf,
+        /// The backup drive.
+        backup: PathBuf,
+        /// Also re-read the backup's files and check them against its index
+        /// (finds bit rot; reads the whole backup).
+        #[arg(long)]
+        deep: bool,
+        /// List at most this many files of each kind.
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        /// Print the result as JSON on standard output (the usual text goes to
+        /// standard error).
+        #[arg(long)]
+        json: bool,
+    },
     /// Faces found by `shoebox recognize`.
     Faces {
         #[command(subcommand)]
@@ -163,6 +183,7 @@ fn main() -> ExitCode {
         Command::Scan { json: true, .. }
             | Command::Verify { json: true, .. }
             | Command::Recognize { json: true, .. }
+            | Command::Backup { json: true, .. }
             | Command::Faces { command: FacesCommand::Stats { json: true, .. } }
     ) {
         report::text_to_stderr(true);
@@ -200,6 +221,12 @@ fn main() -> ExitCode {
             .map(|stats| {
                 json_out(json, &stats);
                 true
+            })
+        }
+        Command::Backup { primary, backup, deep, limit, json } => {
+            backup::run(&backup::Options { primary, backup, deep, limit }).map(|c| {
+                json_out(json, &c);
+                c.ok
             })
         }
         Command::Faces { command: FacesCommand::Stats { root, db, json } } => {

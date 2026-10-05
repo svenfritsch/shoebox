@@ -182,7 +182,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 5b-2 | Search by several tags at once (AND, chips); people join in with 5c-3 | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **5c-1 done**, checked on the real drive; **5c-2 and 5c-3 done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5d | Duplicates UI: one row per photo, multi-select, bulk delete within a folder, tag and capture-date carry-over; Move dialog "keep tags"; trash dialog focus | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | **In progress**: library id, launcher (cancel, saved folders, start scripts) and the multi-drive core (hub, offline, backup roles, common timeline, cross-drive duplicates and people) built; real-hardware checks and backup verification open |
+| 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | **In progress**: library id, launcher (cancel, saved folders, start scripts) and the multi-drive core (hub, offline, backup roles, common timeline, cross-drive duplicates and people) built; backup verification (`shoebox backup`, launcher button, All drives page) built; real-hardware checks and Linux/Windows packaging open |
 | 7 | Pets | |
 
 ### Phase 0 details
@@ -350,7 +350,7 @@ Done:
 - Library id in all API routes (`/api/lib/{lib}/…`, `/api/libraries`).
 - Multiple drives: `serve` with several libraries (offline-tolerant), backup
   vs. separate drives, a common timeline, the duplicates screen across
-  drives, people by name
+  drives, people by name, backup verification
   ([phase6.md](phase6.md)).
 - Launcher first slice: `shoebox` without arguments opens an embedded page
   with Scan / Verify / Recognize / Face stats, progress and per-file results,

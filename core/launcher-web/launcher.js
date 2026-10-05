@@ -4,7 +4,7 @@
 // the X-Shoebox header, like the photo app.
 
 var $ = function (id) { return document.getElementById(id); };
-var KINDS = { scan: 'Scan', verify: 'Verify', recognize: 'Recognize', faces_stats: 'Face stats' };
+var KINDS = { scan: 'Scan', verify: 'Verify', recognize: 'Recognize', faces_stats: 'Face stats', backup: 'Backup check' };
 var polling = null;
 
 function api(path, body) {
@@ -108,9 +108,13 @@ function loadConfig() {
 
 function startJob(kind) {
   if (!paths.length) { $('root').focus(); $('root-hint').textContent = 'Add at least one folder first.'; return; }
+  if (kind === 'backup' && paths.length !== 2) {
+    $('root-hint').textContent = 'Backup check compares exactly two folders: the original drive first, then the backup.';
+    return;
+  }
   api('/api/job', {
     kind: kind, roots: paths,
-    quick: $('opt-quick').checked, rotated: $('opt-rotated').checked,
+    quick: $('opt-quick').checked, rotated: $('opt-rotated').checked, deep: $('opt-deep').checked,
   }).then(function () {
     $('progress-card').hidden = false;
     $('progress-card').scrollIntoView({ behavior: 'smooth' });
@@ -200,6 +204,7 @@ function summaryOf(kind, r) {
   var out = [];
   var job = { kind: kind };
   if (job.kind === 'scan') out.push(r.added + ' added', r.moved + ' moved', r.changed + ' changed', r.missing + ' missing');
+  else if (job.kind === 'backup') out.push(r.report.covered + ' of ' + r.report.compared + ' on the backup', r.report.missing + ' not yet', r.report.different + ' different', r.report.extra + ' only on the backup');
   else if (job.kind === 'verify') out.push(r.checked + ' checked', r.missing.length + ' missing', r.damaged.length + ' damaged');
   else if (job.kind === 'recognize' && r.faces !== undefined) out.push(r.faces + ' faces');
   else if (job.kind === 'faces_stats') out.push(r === null ? 'no faces yet' : (r.faces + ' faces'));

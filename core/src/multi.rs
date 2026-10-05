@@ -25,6 +25,7 @@ use crate::db;
 pub const BACKUP_OVERLAP: f64 = 0.9;
 
 const ROLE_KEY: &str = "role";
+const BACKUP_OF_KEY: &str = "backup_of";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -61,6 +62,15 @@ pub fn set_role(conn: &Connection, role: Role) -> Result<()> {
     db::set_setting(conn, ROLE_KEY, value)
 }
 
+/// Which drive a backup is the backup of (a library id), if the user said.
+pub fn backup_of(conn: &Connection) -> Result<Option<String>> {
+    db::setting(conn, BACKUP_OF_KEY)
+}
+
+pub fn set_backup_of(conn: &Connection, of: Option<&str>) -> Result<()> {
+    db::set_setting(conn, BACKUP_OF_KEY, of)
+}
+
 /// One drive as the comparisons see it.
 #[derive(Debug, Clone)]
 pub struct Drive {
@@ -68,6 +78,8 @@ pub struct Drive {
     pub name: String,
     pub db: PathBuf,
     pub role: Role,
+    /// For a backup: the id of the drive it copies, if the user said.
+    pub backup_of: Option<String>,
 }
 
 /// `a` as main database and `b` attached as `other`, both read-only.
@@ -368,4 +380,142 @@ pub fn merge_people(per_drive: &[(String, String, Vec<crate::people::Person>, Ve
     let mut list: Vec<MergedPerson> = merged.into_values().collect();
     list.sort_by(|a, b| b.faces.cmp(&a.faces).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
     list
+}
+
+// ---------------------------------------------------------------- backups
+
+/// A file that is not (correctly) on the backup, or only on the backup.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct BackupFile {
+    pub path: String,
+    pub size: u64,
+}
+
+/// What a backup drive holds compared with the drive it copies: by content
+/// (full hash), from the two indexes, without reading a photo. The bytes on
+/// the backup itself are checked by `shoebox verify` on that drive (bit rot).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct BackupReport {
+    pub primary: String,
+    pub backup: String,
+    /// Present files of the original drive that have a full hash.
+    pub compared: u64,
+    /// Present files without a full hash yet (run `shoebox scan` on that drive).
+    pub unhashed: u64,
+    /// Their content is on the backup.
+    pub covered: u64,
+    /// New since the last backup: not on the backup at all.
+    pub missing: u64,
+    /// The backup has a file at the same path with other content.
+    pub different: u64,
+    /// Content only the backup has (deleted or changed on the original drive since).
+    pub extra: u64,
+    /// The first of each (up to the limit asked for).
+    pub missing_files: Vec<BackupFile>,
+    pub different_files: Vec<BackupFile>,
+    pub extra_files: Vec<BackupFile>,
+    /// Unix seconds: the backup drive's last scan, and the last time its
+    /// index learned of new files (the day files last arrived there).
+    pub backup_last_scan: Option<i64>,
+    pub backup_last_new_files: Option<i64>,
+    /// Nothing missing, different or unhashed.
+    pub up_to_date: bool,
+}
+
+/// Compare a backup drive (its `library.db`) with the drive it copies.
+pub fn backup_report(primary: &Path, primary_name: &str, backup: &Path, backup_name: &str, limit: usize) -> Result<BackupReport> {
+    let conn = open_pair(primary, backup)?;
+    let count = |sql: &str| -> Result<u64> { Ok(conn.query_row(sql, [], |r| r.get::<_, i64>(0))? as u64) };
+    let compared = count("SELECT count(*) FROM main.files WHERE missing_since IS NULL AND full_hash IS NOT NULL")?;
+    let unhashed = count("SELECT count(*) FROM main.files WHERE missing_since IS NULL AND full_hash IS NULL")?;
+    let covered = count(
+        "SELECT count(*) FROM main.files a
+         WHERE a.missing_since IS NULL AND a.full_hash IS NOT NULL
+           AND EXISTS (SELECT 1 FROM other.files b WHERE b.full_hash = a.full_hash AND b.missing_since IS NULL)",
+    )?;
+    let (mut missing, mut different) = (Vec::new(), Vec::new());
+    let (mut missing_n, mut different_n) = (0u64, 0u64);
+    {
+        let mut stmt = conn.prepare(
+            "SELECT a.path, a.size,
+                    EXISTS (SELECT 1 FROM other.files b WHERE b.path_nfc = a.path_nfc AND b.missing_since IS NULL)
+             FROM main.files a
+             WHERE a.missing_since IS NULL AND a.full_hash IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM other.files b WHERE b.full_hash = a.full_hash AND b.missing_since IS NULL)
+             ORDER BY a.path_nfc",
+        )?;
+        let mut rows = stmt.query([])?;
+        while let Some(r) = rows.next()? {
+            let file = BackupFile { path: r.get(0)?, size: r.get::<_, i64>(1)? as u64 };
+            if r.get::<_, bool>(2)? {
+                different_n += 1;
+                if different.len() < limit {
+                    different.push(file);
+                }
+            } else {
+                missing_n += 1;
+                if missing.len() < limit {
+                    missing.push(file);
+                }
+            }
+        }
+    }
+    let mut extra = Vec::new();
+    let extra_n = count(
+        "SELECT count(*) FROM other.files b
+         WHERE b.missing_since IS NULL AND b.full_hash IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM main.files a WHERE a.full_hash = b.full_hash AND a.missing_since IS NULL)",
+    )?;
+    {
+        let mut stmt = conn.prepare(
+            "SELECT b.path, b.size FROM other.files b
+             WHERE b.missing_since IS NULL AND b.full_hash IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM main.files a WHERE a.full_hash = b.full_hash AND a.missing_since IS NULL)
+             ORDER BY b.path_nfc LIMIT ?1",
+        )?;
+        for row in stmt.query_map([limit as i64], |r| Ok(BackupFile { path: r.get(0)?, size: r.get::<_, i64>(1)? as u64 }))? {
+            extra.push(row?);
+        }
+    }
+    let backup_last_scan: Option<i64> =
+        conn.query_row("SELECT max(finished_at) FROM other.jobs WHERE kind = 'scan' AND state = 'done'", [], |r| r.get(0))?;
+    let backup_last_new_files: Option<i64> = conn.query_row("SELECT max(added_at) FROM other.files", [], |r| r.get(0))?;
+    Ok(BackupReport {
+        primary: primary_name.to_string(),
+        backup: backup_name.to_string(),
+        compared,
+        unhashed,
+        covered,
+        missing: missing_n,
+        different: different_n,
+        extra: extra_n,
+        missing_files: missing,
+        different_files: different,
+        extra_files: extra,
+        backup_last_scan,
+        backup_last_new_files,
+        up_to_date: missing_n == 0 && different_n == 0 && unhashed == 0,
+    })
+}
+
+/// The drive a backup copies: the one the user named, else the drive that
+/// holds most of the backup's contents (among drives that are not backups).
+pub fn primary_of(drives: &[Drive], backup: usize) -> Result<Option<usize>> {
+    if let Some(named) = &drives[backup].backup_of
+        && let Some(i) = drives.iter().position(|d| &d.id == named && d.role != Role::Backup)
+    {
+        return Ok(Some(i));
+    }
+    let mut best: Option<(usize, f64)> = None;
+    for (i, d) in drives.iter().enumerate() {
+        if i == backup || d.role == Role::Backup {
+            continue;
+        }
+        // `share_of_b`: how much of the backup is on that drive.
+        let share = overlap(&d.db, &drives[backup].db)?.share_of_b();
+        if share > 0.0 && best.is_none_or(|(_, s)| share > s) {
+            best = Some((i, share));
+        }
+    }
+    Ok(best.map(|(i, _)| i))
 }
