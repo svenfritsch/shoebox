@@ -106,7 +106,7 @@ $('login-form').addEventListener('submit', function (ev) {
     body: JSON.stringify({ pin: $('pin').value }),
   }).then(function (r) {
     if (r.ok) { location.reload(); return; }
-    return r.json().then(function (body) { $('login-error').textContent = body.error || 'Wrong PIN'; });
+    return r.json().then(function (body) { $('login-error').textContent = body.error || tr('login.wrong'); });
   }).catch(function (e) { $('login-error').textContent = String(e); });
 });
 
@@ -190,7 +190,7 @@ function renderChips() {
   var add = function (label, clear) {
     var c = el('span', 'chip', label);
     var x = el('button', '', '✕');
-    x.title = 'Remove from the search';
+    x.title = tr('chip.remove');
     x.onclick = clear;
     c.appendChild(x);
     box.appendChild(c);
@@ -200,7 +200,7 @@ function renderChips() {
     add('📁 ' + (folder.path || folder.name), function () { setFilter(withFilter({ folder: null })); });
     if (folder.path) {
       var edit = el('button', 'edit', '✎');
-      edit.title = 'Rename or move this folder';
+      edit.title = tr('chip.rename_folder');
       edit.onclick = function () { renameFolder(folder); };
       box.lastChild.insertBefore(edit, box.lastChild.lastChild);
     }
@@ -219,14 +219,14 @@ function renderChips() {
   var terms = box.children.length;
   if (terms) {
     var more = el('button', 'chip more', '+');
-    more.title = 'Add a tag, person or folder to the search';
+    more.title = tr('chip.add');
     more.onclick = function () { $('search').value = ''; $('search').focus(); suggest(''); };
     box.appendChild(more);
   }
   // One click for the whole search; the ✕ on a chip drops just that term.
   if (terms >= 2) {
-    var clear = el('button', 'chip clear', 'Clear all');
-    clear.title = 'Show all photos again';
+    var clear = el('button', 'chip clear', tr('chip.clear_all'));
+    clear.title = tr('chip.clear_all_hint');
     clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], q: '' }); };
     box.appendChild(clear);
   }
@@ -332,8 +332,8 @@ function showSuggest(items) {
   items.forEach(function (it, i) {
     if (it.kind !== last) {
       var f = state.filter, narrowed = !isAll() && (f.tags.length || f.people.length || f.folder);
-      var head = it.kind === 'tag' ? (narrowed ? 'Tags in these photos' : 'Tags')
-        : it.kind === 'person' ? (narrowed ? 'People in these photos' : 'People') : 'Folders';
+      var head = it.kind === 'tag' ? tr(narrowed ? 'search.tags_here' : 'search.tags')
+        : it.kind === 'person' ? tr(narrowed ? 'search.people_here' : 'search.people') : tr('search.folders');
       box.appendChild(el('div', 'head', head));
       last = it.kind;
     }
@@ -562,9 +562,9 @@ function groups() {
 
 function monthLabel(month) {
   var y = Math.floor(month / 100), m = month % 100;
-  if (!y) return 'No date';
+  if (!y) return tr('grid.no_date');
   if (!m) return String(y);
-  return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  return I18n.date(new Date(y, m - 1, 1), { month: 'long', year: 'numeric' });
 }
 
 function relayout() {
@@ -637,7 +637,7 @@ function buildRow(row) {
     pick.type = 'button';
     pick.dataset.start = row.start;
     pick.dataset.end = row.end;
-    pick.textContent = allSelected(row.start, row.end) ? 'Deselect' : 'Select all';
+    pick.textContent = tr(allSelected(row.start, row.end) ? 'grid.deselect' : 'grid.select_all');
     pick.onclick = function () { selectRange(row.start, row.end - 1, !allSelected(row.start, row.end)); };
     h.appendChild(pick);
     h.style.top = row.top + 'px';
@@ -850,7 +850,7 @@ window.addEventListener('resize', function () {
 function fillYears() {
   var sel = $('years');
   sel.textContent = '';
-  var placeholder = el('option', '', 'Year');
+  var placeholder = el('option', '', tr('grid.year'));
   placeholder.value = '';
   sel.appendChild(placeholder);
   var seen = {};
@@ -989,7 +989,7 @@ function drawFaces() {
     if (f.person && f.state !== 'ignored') {
       b.appendChild(el('span', 'face-name', f.person.name + (f.state === 'confirmed' ? '' : '?')));
     }
-    b.title = f.score != null ? 'score ' + f.score.toFixed(2) : 'drawn by hand';
+    b.title = f.score != null ? tr('face.score', { score: f.score.toFixed(2) }) : tr('face.drawn');
     stage.appendChild(b);
   });
 }
@@ -1005,8 +1005,8 @@ function formatDate(info) {
   if (!s) return '';
   var p = s.split(/[-T:]/).map(Number);
   var date = new Date(p[0], p[1] - 1, p[2], p[3] || 0, p[4] || 0);
-  if (info.date_source === 'folder') return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  if (info.date_source === 'folder') return I18n.date(date, { month: 'long', year: 'numeric' });
+  return I18n.dateTime(date, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
 function formatBytes(n) {
@@ -1022,15 +1022,15 @@ function renderPanelAll(info) {
   var lib = drives.allLibs[Math.floor(state.data.ids[state.open] / SPAN)];
   var dl = el('dl');
   var row = function (label, value) { if (value) { dl.appendChild(el('dt', '', label)); dl.appendChild(el('dd', '', value)); } };
-  row('Date', formatDate(info));
-  row('Drive', lib.name);
-  row('Path', info.path);
-  row('Size', (info.width && info.height ? info.width + ' × ' + info.height + ' · ' : '') + formatBytes(info.size));
-  row('Camera', info.camera);
+  row(tr('info.date'), formatDate(info));
+  row(tr('info.drive'), lib.name);
+  row(tr('info.path'), info.path);
+  row(tr('info.size'), (info.width && info.height ? info.width + ' × ' + info.height + ' · ' : '') + formatBytes(info.size));
+  row(tr('info.camera'), info.camera);
   panel.appendChild(dl);
   var actions = el('div', 'actions');
-  var open = el('button', 'btn quiet', 'Open in ' + lib.name);
-  open.title = 'Tags, faces, moving and the rest are done in the photo\'s own drive';
+  var open = el('button', 'btn quiet', tr('info.open_in', { name: lib.name }));
+  open.title = tr('info.open_in_hint');
   open.onclick = function () { switchLibrary(lib.id, 'folder=' + info.folder_id); };
   actions.appendChild(open);
   panel.appendChild(actions);
@@ -1050,26 +1050,26 @@ function renderPanel() {
     dl.appendChild(dd);
     return dd;
   };
-  var date = row('Date', formatDate(info) + (info.taken_offset ? ' (UTC' + info.taken_offset + ')' : ''));
+  var date = row(tr('info.date'), formatDate(info) + (info.taken_offset ? ' (UTC' + info.taken_offset + ')' : ''));
   if (date && info.date_source !== 'file') {
-    date.appendChild(el('div', 'note', info.date_source === 'folder' ? 'No capture date; month of the event folder' : 'No capture date; file modification date'));
+    date.appendChild(el('div', 'note', tr(info.date_source === 'folder' ? 'info.no_date_folder' : 'info.no_date_file')));
   }
-  row('Name', info.name);
+  row(tr('info.name'), info.name);
   var folder = info.path.indexOf('/') >= 0 ? info.path.slice(0, info.path.lastIndexOf('/')) : '';
   if (folder) {
     var fb = el('button', '', folder);
     fb.onclick = function () { closeLightbox(); setFilter({ folder: info.folder_id, tags: [], q: '' }); };
-    row('Folder', fb);
+    row(tr('info.folder'), fb);
   }
-  if (info.width && info.height) row('Size', info.width + ' × ' + info.height + ' · ' + formatBytes(info.size));
-  else row('Size', formatBytes(info.size));
-  if (info.duration_ms) row('Length', Math.round(info.duration_ms / 1000) + ' s');
-  row('Camera', info.camera);
+  if (info.width && info.height) row(tr('info.size'), info.width + ' × ' + info.height + ' · ' + formatBytes(info.size));
+  else row(tr('info.size'), formatBytes(info.size));
+  if (info.duration_ms) row(tr('info.length'), tr('info.seconds', { n: Math.round(info.duration_ms / 1000) }));
+  row(tr('info.camera'), info.camera);
   infoTags(row, info);
   if (info.linked && info.linked.length) {
     var versions = el('div');
-    info.linked.forEach(function (l) { versions.appendChild(el('div', '', l.path + (l.missing ? ' (missing)' : ''))); });
-    row('Versions', versions);
+    info.linked.forEach(function (l) { versions.appendChild(el('div', '', l.path + (l.missing ? ' ' + tr('info.missing') : ''))); });
+    row(tr('info.versions'), versions);
   }
   infoFaces(row, info);
   panel.appendChild(dl);
@@ -1077,9 +1077,9 @@ function renderPanel() {
 
   var actions = el('div', 'actions');
   infoReveal(actions, info);
-  var move = el('button', 'btn quiet', 'Move…');
+  var move = el('button', 'btn quiet', tr('sel.move'));
   move.onclick = function () { moveDialog([info.id], function () { closeLightbox(); }); };
-  var trash = el('button', 'btn danger', 'Move to trash');
+  var trash = el('button', 'btn danger', tr('sel.trash'));
   trash.onclick = function () { trashDialog([info.id], function () { closeLightbox(); }); };
   actions.appendChild(move);
   actions.appendChild(trash);
@@ -1169,25 +1169,25 @@ function loadInfo() {
     state.reveal = info.reveal || null;
     document.title = info.name + ' · shoebox';
     var parts = [
-      info.photos.toLocaleString() + ' photos',
-      info.videos.toLocaleString() + ' videos',
+      trn('count.photos', info.photos),
+      trn('count.videos', info.videos),
     ];
-    if (info.missing) parts.push(info.missing.toLocaleString() + ' missing');
-    $('nav-trash').textContent = info.trash ? 'Trash (' + info.trash + ')' : 'Trash';
+    if (info.missing) parts.push(tr('status.missing', { n: info.missing }));
+    $('nav-trash').textContent = info.trash ? tr('side.trash_n', { n: info.trash }) : tr('side.trash');
     if (info.thumbs_done < info.thumbs_total) {
-      parts.push('thumbnails ' + Math.floor(100 * info.thumbs_done / info.thumbs_total) + '%');
+      parts.push(tr('status.thumbs', { pct: Math.floor(100 * info.thumbs_done / info.thumbs_total) }));
     }
     var scan = info.jobs.filter(function (j) { return j.kind === 'scan'; })[0];
-    if (info.busy) parts.push('scan running…');
-    else if (scan) parts.push('last scan ' + new Date(scan.started_at * 1000).toLocaleDateString());
-    if (!info.ffmpeg && info.videos) parts.push('no ffmpeg: video previews made by the browser');
+    if (info.busy) parts.push(tr('status.scanning'));
+    else if (scan) parts.push(tr('status.last_scan', { date: I18n.date(new Date(scan.started_at * 1000)) }));
+    if (!info.ffmpeg && info.videos) parts.push(tr('status.no_ffmpeg'));
     var f = info.faces, c = info.clusters;
     $('nav-faces').hidden = !f.faces;
-    if (f.running) parts.push('finding faces ' + Math.floor(100 * f.done / Math.max(f.total, 1)) + '%');
-    else if (f.done && f.done < f.total) parts.push('faces: ' + (f.total - f.done).toLocaleString() + ' photos to look at');
-    if (c.embedding) parts.push('learning drawn faces…');
-    if (c.running && c.total) parts.push('grouping faces ' + Math.floor(100 * c.done / Math.max(c.total, 1)) + '%');
-    else if (c.running || c.stale) parts.push('grouping faces…');
+    if (f.running) parts.push(tr('status.finding_faces', { pct: Math.floor(100 * f.done / Math.max(f.total, 1)) }));
+    else if (f.done && f.done < f.total) parts.push(tr('status.faces_todo', { count: trn('count.photos', f.total - f.done) }));
+    if (c.embedding) parts.push(tr('status.learning'));
+    if (c.running && c.total) parts.push(tr('status.grouping_pct', { pct: Math.floor(100 * c.done / Math.max(c.total, 1)) }));
+    else if (c.running || c.stale) parts.push(tr('status.grouping'));
     facesInfo(info);
     $('status').textContent = parts.join(' · ');
 
@@ -1240,8 +1240,6 @@ function toast(text) {
   toastTimer = setTimeout(function () { t.hidden = true; }, 4000);
 }
 
-function plural(n, one, many) { return n.toLocaleString() + ' ' + (n === 1 ? one : many); }
-
 // A small dialog. actions: [{label, cls, onclick(close)}]; onclick returns
 // false to keep the dialog open.
 function openModal(title, body, actions) {
@@ -1276,10 +1274,10 @@ function report(title, lines) {
   if (!lines || !lines.length) return;
   var ul = el('ul', 'filelist');
   lines.forEach(function (l) { ul.appendChild(el('li', '', l)); });
-  openModal(title, ul, [{ label: 'OK' }]);
+  openModal(title, ul, [{ label: tr('app.ok') }]);
 }
 
-function failed(e) { openModal('That did not work', String(e.message || e), [{ label: 'OK' }]); }
+function failed(e) { openModal(tr('app.failed'), String(e.message || e), [{ label: tr('app.ok') }]); }
 
 // ------------------------------------------------------------------ selection
 
@@ -1332,10 +1330,10 @@ function allSelected(start, end) {
 function updateSelbar() {
   var n = selectedIds().length;
   $('selbar').hidden = !state.selecting;
-  var hint = window.matchMedia('(pointer: fine)').matches ? 'Click photos to select, Shift-click for a range' : 'Tap photos to select';
-  $('sel-count').textContent = n ? plural(n, 'photo', 'photos') : hint;
+  var hint = tr(window.matchMedia('(pointer: fine)').matches ? 'sel.hint_mouse' : 'sel.hint_touch');
+  $('sel-count').textContent = n ? trn('count.photos', n) : hint;
   Array.prototype.forEach.call(document.querySelectorAll('.sec .pick'), function (b) {
-    b.textContent = state.data && allSelected(parseInt(b.dataset.start, 10), parseInt(b.dataset.end, 10)) ? 'Deselect' : 'Select all';
+    b.textContent = tr(state.data && allSelected(parseInt(b.dataset.start, 10), parseInt(b.dataset.end, 10)) ? 'grid.deselect' : 'grid.select_all');
   });
   $('sel-move').disabled = $('sel-trash').disabled = $('sel-tag').disabled = $('sel-untag').disabled = !n;
 }
@@ -1354,12 +1352,12 @@ $('sel-untag').onclick = function () { removeTagDialog(selectedIds()); };
 
 function moveDialog(ids, done) {
   var body = el('div');
-  body.appendChild(el('p', '', 'Move ' + plural(ids.length, 'photo', 'photos') + ' into the folder:'));
+  body.appendChild(el('p', '', tr('move.text', { count: trn('count.photos', ids.length) })));
   var input = el('input');
   input.type = 'text';
   input.className = 'wide';
   input.setAttribute('list', 'folder-list');
-  input.placeholder = 'e.g. 2021-03 Ausflug or Familie/Weihnachten';
+  input.placeholder = tr('move.placeholder');
   var current = state.filter.folder && state.folderById[state.filter.folder];
   if (current && current.path) input.value = current.path;
   body.appendChild(input);
@@ -1368,41 +1366,41 @@ function moveDialog(ids, done) {
   keep.type = 'checkbox';
   keep.checked = true;
   keepLabel.appendChild(keep);
-  keepLabel.appendChild(document.createTextNode(' Keep tags'));
-  keepLabel.title = 'Checked: the photos’ own tags move along. Unchecked: they are dropped. Folder tags always follow the new folder.';
+  keepLabel.appendChild(document.createTextNode(' ' + tr('move.keep_tags')));
+  keepLabel.title = tr('move.keep_hint');
   body.appendChild(keepLabel);
-  body.appendChild(el('p', 'hint', 'Folders that do not exist yet are created. RAW, Live Photo and sidecar files of the same name move along. Nothing is ever overwritten.'));
+  body.appendChild(el('p', 'hint', tr('move.hint')));
   var error = el('p', 'error');
   body.appendChild(error);
   var go = function (btn) {
     var folder = input.value.trim();
-    if (!folder) { error.textContent = 'Choose a folder.'; return false; }
+    if (!folder) { error.textContent = tr('move.choose'); return false; }
     btn.disabled = true;
     post(LIBAPI + '/move', { ids: ids, folder: folder, keep_tags: keep.checked }).then(function (r) {
       closeModal();
       if (done) done();
-      toast(plural(r.files.length, 'file', 'files') + ' moved to ' + r.folder);
-      report('Some photos stayed where they were', r.skipped);
+      toast(tr('move.done', { count: trn('count.files', r.files.length), folder: r.folder }));
+      report(tr('move.skipped'), r.skipped);
       changed();
     }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
     return false;
   };
-  var buttons = openModal('Move', body, [{ label: 'Cancel', cls: 'quiet' }, { label: 'Move', onclick: go }]);
+  var buttons = openModal(tr('move.title'), body, [{ label: tr('app.cancel'), cls: 'quiet' }, { label: tr('move.title'), onclick: go }]);
   input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go(buttons[1]); });
 }
 
 function trashDialog(ids, done) {
   openModal(
-    'Move to trash',
-    'Move ' + plural(ids.length, 'photo', 'photos') + ' (with their RAW, Live Photo and sidecar files) to the shoebox trash? You can put them back from there until the trash is emptied.',
-    [{ label: 'Cancel', cls: 'quiet' }, {
-      label: 'Move to trash', cls: 'danger', focus: true, onclick: function (btn) {
+    tr('sel.trash'),
+    tr('trash.text', { count: trn('count.photos', ids.length) }),
+    [{ label: tr('app.cancel'), cls: 'quiet' }, {
+      label: tr('sel.trash'), cls: 'danger', focus: true, onclick: function (btn) {
         btn.disabled = true;
         post(LIBAPI + '/trash', { ids: ids }).then(function (r) {
           closeModal();
           if (done) done();
-          toast(plural(r.files.length + r.sidecars, 'file', 'files') + ' moved to the trash');
-          report('Some photos were not moved to the trash', r.skipped);
+          toast(tr('trash.done', { count: trn('count.files', r.files.length + r.sidecars) }));
+          report(tr('trash.skipped'), r.skipped);
           changed();
         }).catch(function (e) { closeModal(); failed(e); });
         return false;
@@ -1418,19 +1416,19 @@ function renameFolder(folder) {
   input.className = 'wide';
   input.value = folder.path;
   body.appendChild(input);
-  body.appendChild(el('p', 'hint', 'Change the name, or the whole path to move the folder. Event folders are named “YYYY-MM Name”.'));
+  body.appendChild(el('p', 'hint', tr('rename.hint')));
   var error = el('p', 'error');
   body.appendChild(error);
   var go = function (btn) {
     btn.disabled = true;
     post(LIBAPI + '/folders/' + folder.id + '/rename', { path: input.value }).then(function (r) {
       closeModal();
-      toast('Now ' + r.path);
+      toast(tr('rename.now', { path: r.path }));
       changed();
     }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
     return false;
   };
-  var buttons = openModal('Rename folder', body, [{ label: 'Cancel', cls: 'quiet' }, { label: 'Rename', onclick: go }]);
+  var buttons = openModal(tr('rename.title'), body, [{ label: tr('app.cancel'), cls: 'quiet' }, { label: tr('rename.button'), onclick: go }]);
   input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go(buttons[1]); });
 }
 
@@ -1453,7 +1451,7 @@ function importDialog(files) {
   year.style.width = '6em';
   var month = el('select');
   for (var m = 1; m <= 12; m++) {
-    var o = el('option', '', new Date(2000, m - 1, 1).toLocaleDateString(undefined, { month: 'long' }));
+    var o = el('option', '', I18n.date(new Date(2000, m - 1, 1), { month: 'long' }));
     o.value = m;
     month.appendChild(o);
   }
@@ -1461,7 +1459,7 @@ function importDialog(files) {
   var name = el('input');
   name.type = 'text';
   name.className = 'grow';
-  name.placeholder = 'Event, e.g. Ausflug';
+  name.placeholder = tr('import.event_placeholder');
   fields.appendChild(year);
   fields.appendChild(month);
   fields.appendChild(name);
@@ -1469,7 +1467,7 @@ function importDialog(files) {
   var target = el('p', 'hint', '');
   body.appendChild(target);
 
-  var picker = el('label', 'picker', 'Choose photos and videos, or drop them here');
+  var picker = el('label', 'picker', tr('import.picker'));
   var input = el('input');
   input.type = 'file';
   input.multiple = true;
@@ -1484,7 +1482,7 @@ function importDialog(files) {
   var describe = function () {
     var y = parseInt(year.value, 10), mo = parseInt(month.value, 10);
     var folder = (y || '????') + '-' + (mo < 10 ? '0' : '') + mo + ' ' + (name.value.trim() || '…');
-    target.textContent = 'Into the folder “' + folder + '”. Files keep their dates; files already in the library are skipped.';
+    target.textContent = tr('import.target', { folder: folder });
   };
   [year, month, name].forEach(function (f) {
     f.addEventListener('input', function () { if (f !== name) importState.touched = true; describe(); });
@@ -1508,7 +1506,7 @@ function importDialog(files) {
       month.value = d.getMonth() + 1;
       describe();
     }
-    buttons[1].textContent = 'Import ' + plural(importState.files.length, 'file', 'files');
+    buttons[1].textContent = tr('import.button', { count: trn('count.files', importState.files.length) });
   };
   input.addEventListener('change', function () { addFiles(input.files); input.value = ''; });
   importState.add = addFiles;
@@ -1516,15 +1514,15 @@ function importDialog(files) {
   var go = function (btn) {
     error.textContent = '';
     var pending = importState.files.filter(function (x) { return !x.done; });
-    if (!pending.length) { error.textContent = 'Choose some files first.'; return false; }
+    if (!pending.length) { error.textContent = tr('import.choose'); return false; }
     post(LIBAPI + '/import/folder', { year: parseInt(year.value, 10), month: parseInt(month.value, 10), name: name.value })
       .then(function (r) { runImport(r.folder, pending, btn, buttons[0]); })
       .catch(function (e) { error.textContent = e.message; });
     return false;
   };
-  var buttons = openModal('Import photos', body, [
-    { label: 'Close', cls: 'quiet', onclick: function () { return !importState.busy; } },
-    { label: 'Import', onclick: go },
+  var buttons = openModal(tr('app.import'), body, [
+    { label: tr('app.close'), cls: 'quiet', onclick: function () { return !importState.busy; } },
+    { label: tr('import.go'), onclick: go },
   ]);
   closeModal.onclose = function () { importState.add = null; };
   if (files && files.length) addFiles(files);
@@ -1540,12 +1538,13 @@ function runImport(folder, pending, btn, closeBtn) {
     if (k >= pending.length) {
       importState.busy = false;
       closeBtn.disabled = false;
-      btn.textContent = 'Done';
+      btn.textContent = tr('app.done');
       btn.disabled = false;
       btn.onclick = function () { closeModal(); };
-      toast(plural(counts.imported, 'file', 'files') + ' imported' +
-        (counts.duplicate ? ', ' + counts.duplicate + ' already there' : '') +
-        (counts.failed ? ', ' + counts.failed + ' failed' : ''));
+      var summary = [tr('import.imported', { count: trn('count.files', counts.imported) })];
+      if (counts.duplicate) summary.push(tr('import.n_duplicate', { n: counts.duplicate }));
+      if (counts.failed) summary.push(tr('import.n_failed', { n: counts.failed }));
+      toast(summary.join(', '));
       loadInfo();
       // Show the folder the files went to.
       loadFolders().then(function () {
@@ -1574,18 +1573,18 @@ function runImport(folder, pending, btn, closeBtn) {
       if (xhr.status === 200 && body.status === 'imported') {
         item.done = true;
         counts.imported++;
-        finish(true, body.path.split('/').pop() === item.file.name ? 'imported' : 'imported as ' + body.path.split('/').pop());
+        finish(true, body.path.split('/').pop() === item.file.name ? tr('import.file_imported') : tr('import.file_imported_as', { name: body.path.split('/').pop() }));
       } else if (xhr.status === 200) {
         item.done = true;
         counts.duplicate++;
         item.state.title = body.duplicate_of;
-        finish(true, 'already in ' + body.duplicate_of.split('/').slice(0, -1).join('/'));
+        finish(true, tr('import.file_already_in', { folder: body.duplicate_of.split('/').slice(0, -1).join('/') }));
       } else {
         counts.failed++;
         finish(false, body.error || 'HTTP ' + xhr.status);
       }
     };
-    xhr.onerror = function () { counts.failed++; finish(false, 'connection lost'); };
+    xhr.onerror = function () { counts.failed++; finish(false, tr('import.lost')); };
     xhr.send(item.file);
   };
   next(0);
@@ -1603,7 +1602,7 @@ $('import').onclick = function () { importDialog(); };
   window.addEventListener('drop', function (ev) {
     if (!hasFiles(ev)) return;
     ev.preventDefault();
-    if (isAll()) { $('dropzone').hidden = true; depth = 0; toast('Pick one drive to import into'); return; }
+    if (isAll()) { $('dropzone').hidden = true; depth = 0; toast(tr('import.pick_drive')); return; }
     depth = 0;
     $('dropzone').hidden = true;
     if (importState.add && !$('modal').hidden) importState.add(ev.dataTransfer.files);
@@ -1616,10 +1615,10 @@ $('import').onclick = function () { importDialog(); };
 var DUP_KINDS_IDS = ['identical', 'resolution', 'edited', 'similar'];
 var dupState = { groups: [], shown: 0, marked: {}, seen: {}, sameFolder: null, lowerQuality: null, types: dupTypes() };
 var DUP_KINDS = [
-  { id: 'identical', label: 'Identical photos', hint: 'The same file, copied.' },
-  { id: 'resolution', label: 'Same photo, different resolution', hint: 'The same picture in another size, quality or name (a messenger copy, say).' },
-  { id: 'edited', label: 'Original and edited', hint: 'An iPhone edit (the “E” in IMG_E1234, a portrait blur, say) next to its original. Keep the one you like, or both.' },
-  { id: 'similar', label: 'Similar photos', hint: 'Different shots that look alike: a series, repeated clicks, a burst.' },
+  { id: 'identical', get label() { return tr('dups.kind.identical'); }, get hint() { return tr('dups.kind.identical.hint'); } },
+  { id: 'resolution', get label() { return tr('dups.kind.resolution'); }, get hint() { return tr('dups.kind.resolution.hint'); } },
+  { id: 'edited', get label() { return tr('dups.kind.edited'); }, get hint() { return tr('dups.kind.edited.hint'); } },
+  { id: 'similar', get label() { return tr('dups.kind.similar'); }, get hint() { return tr('dups.kind.similar.hint'); } },
 ];
 
 // Which kinds of duplicates are shown (remembered in this browser).
@@ -1647,7 +1646,7 @@ var dupTab = 'here';
 function addDupTabs(page) {
   if (drives.list.length < 2 || isAll()) return;
   var tabs = el('div', 'tabs');
-  [['here', 'On this drive'], ['across', 'Across drives']].forEach(function (t) {
+  [['here', tr('dups.tab.here')], ['across', tr('dups.tab.across')]].forEach(function (t) {
     var b = el('button', dupTab === t[0] ? 'on' : '', t[1]);
     b.onclick = function () { dupTab = t[0]; loadDuplicates(); };
     tabs.appendChild(b);
@@ -1664,32 +1663,32 @@ function loadDuplicates() {
 function loadDuplicatesAcross() {
   var page = $('page');
   page.textContent = '';
-  page.appendChild(el('h2', '', 'Duplicates'));
+  page.appendChild(el('h2', '', tr('dups.title')));
   addDupTabs(page);
-  var sub = el('p', 'sub', 'Looking…');
+  var sub = el('p', 'sub', tr('dups.looking'));
   page.appendChild(sub);
   return api('/api/all/duplicates?limit=200').then(function (r) {
     if (state.filter.view !== 'duplicates') return;
     sub.textContent = r.total_groups
-      ? plural(r.total_groups, 'photo exists', 'photos exist') + ' on more than one drive (' + r.compared.join(', ') + '). Move the copy you do not need to the trash of its drive.'
-      : 'No photo exists on more than one drive' + (r.compared.length > 1 ? ' (' + r.compared.join(', ') + ').' : '.');
+      ? tr('dups.across.some', { count: trn('count.photos_exist', r.total_groups), drives: r.compared.join(', ') })
+      : r.compared.length > 1 ? tr('dups.across.none_in', { drives: r.compared.join(', ') }) : tr('dups.across.none');
     r.excluded.forEach(function (x) {
       var b = el('div', 'banner');
-      b.appendChild(document.createTextNode(x.name + ' is not compared: ' + x.reason + '. '));
-      var go = el('button', 'link', 'Decide in All drives →');
+      b.appendChild(document.createTextNode(tr('dups.excluded', { name: x.name, reason: x.reason })));
+      var go = el('button', 'link', tr('dups.decide'));
       go.onclick = function () { showView('drives'); };
       b.appendChild(go);
       page.appendChild(b);
     });
     r.groups.forEach(function (g) { page.appendChild(crossGroupNode(g)); });
-    if (r.total_groups > r.groups.length) page.appendChild(el('p', 'sub', 'Showing the first ' + r.groups.length + ' of ' + r.total_groups + '.'));
+    if (r.total_groups > r.groups.length) page.appendChild(el('p', 'sub', tr('dups.first_of', { shown: r.groups.length, total: r.total_groups })));
   }).catch(failed);
 }
 
 function crossGroupNode(g) {
   var box = el('div', 'group');
   var head = el('div', 'group-head');
-  head.appendChild(el('span', 'label', 'Same content on ' + plural(new Set(g.files.map(function (f) { return f.library; })).size, 'drive', 'drives')));
+  head.appendChild(el('span', 'label', tr('dups.same_on', { count: trn('count.drives', new Set(g.files.map(function (f) { return f.library; })).size) })));
   box.appendChild(head);
   var cards = el('div', 'cards');
   g.files.forEach(function (f) {
@@ -1706,21 +1705,21 @@ function crossGroupNode(g) {
     a.appendChild(img);
     card.appendChild(a);
     card.appendChild(el('div', 'name', f.name));
-    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : '(top level)';
+    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : tr('dups.top_level');
     var fb = el('button', 'folder', folder);
-    fb.title = 'Show this photo in ' + f.name;
+    fb.title = tr('dups.show_in', { name: f.name });
     fb.onclick = function () { switchLibrary(f.library, 'q=' + encodeURIComponent(f.path.split('/').pop())); };
     card.appendChild(fb);
     card.appendChild(el('div', 'meta', f.path.split('/').pop() + ' · ' + formatBytes(g.size)));
-    var trash = el('button', 'btn danger', 'Move to trash');
+    var trash = el('button', 'btn danger', tr('sel.trash'));
     trash.onclick = function () {
-      openModal('Move to trash', 'Move this copy on ' + f.name + ' (' + f.path + ') to the trash of that drive? The same photo stays on the other drive' + (g.files.length > 2 ? 's' : '') + '. You can put it back from the trash until it is emptied.', [
-        { label: 'Cancel', cls: 'quiet' },
-        { label: 'Move to trash', cls: 'danger', onclick: function (btn) {
+      openModal(tr('sel.trash'), trn('dups.cross_trash', g.files.length - 1, { name: f.name, path: f.path }), [
+        { label: tr('app.cancel'), cls: 'quiet' },
+        { label: tr('sel.trash'), cls: 'danger', onclick: function (btn) {
           btn.disabled = true;
           post('/api/lib/' + f.library + '/trash', { ids: [f.id] }).then(function (r) {
             closeModal();
-            toast(plural(r.files.length + r.sidecars, 'file', 'files') + ' moved to the trash of ' + f.name);
+            toast(tr('dups.cross_trashed', { count: trn('count.files', r.files.length + r.sidecars), name: f.name }));
             loadDuplicatesAcross();
           }).catch(function (e) { closeModal(); failed(e); });
           return false;
@@ -1737,9 +1736,9 @@ function crossGroupNode(g) {
 function loadDuplicatesHere() {
   var page = $('page');
   page.textContent = '';
-  page.appendChild(el('h2', '', 'Duplicates'));
+  page.appendChild(el('h2', '', tr('dups.title')));
   addDupTabs(page);
-  page.appendChild(el('p', 'sub', 'Looking…'));
+  page.appendChild(el('p', 'sub', tr('dups.looking')));
   return Promise.all([api(LIBAPI + '/duplicates'), api(LIBAPI + '/duplicates/same-folder'), api(LIBAPI + '/duplicates/lower-quality')]).then(function (res) {
     if (state.filter.view !== 'duplicates') return;
     dupState.groups = res[0].groups;
@@ -1767,15 +1766,13 @@ function loadDuplicatesHere() {
 function renderDuplicates() {
   var page = $('page');
   page.textContent = '';
-  page.appendChild(el('h2', '', 'Duplicates'));
+  page.appendChild(el('h2', '', tr('dups.title')));
   addDupTabs(page);
-  page.appendChild(el('p', 'sub', dupState.groups.length
-    ? 'Tick “delete this copy” on the files to remove; of every photo the best file is left unticked and one file per group always stays. Decided groups are not shown again.'
-    : 'No duplicates. Photos added since the last scan are compared once they have thumbnails.'));
+  page.appendChild(el('p', 'sub', tr(dupState.groups.length ? 'dups.sub' : 'dups.none')));
   if (dupState.groups.length) page.appendChild(dupToolbar());
   var box = el('div');
   page.appendChild(box);
-  var more = el('button', 'btn quiet', 'Show more');
+  var more = el('button', 'btn quiet', tr('app.show_more'));
   more.onclick = function () { showGroups(box, more); };
   page.appendChild(more);
   var action = el('div', 'dup-bar');
@@ -1791,7 +1788,7 @@ function showGroups(box, more) {
   for (var k = dupState.shown; k < end; k++) box.appendChild(groupNode(groups[k]));
   dupState.shown = end;
   more.hidden = end >= groups.length;
-  if (!groups.length && dupState.groups.length) box.appendChild(el('p', 'sub', 'No duplicates of the chosen kinds.'));
+  if (!groups.length && dupState.groups.length) box.appendChild(el('p', 'sub', tr('dups.none_kinds')));
 }
 
 // Ticked files in the groups that are shown.
@@ -1812,7 +1809,7 @@ function dupToolbar() {
   dupState.groups.forEach(function (g) { count[g.kind] = (count[g.kind] || 0) + 1; });
   var refreshLabel = function () {
     var on = DUP_KINDS.filter(function (k) { return dupState.types[k.id]; });
-    sum.textContent = 'Show: ' + (on.length === DUP_KINDS.length ? 'all kinds' : on.length ? on.map(function (k) { return k.label; }).join(', ') : 'nothing') + ' ▾';
+    sum.textContent = tr('dups.show', { what: on.length === DUP_KINDS.length ? tr('dups.all_kinds') : on.length ? on.map(function (k) { return k.label; }).join(', ') : tr('dups.nothing') });
   };
   DUP_KINDS.forEach(function (k) {
     var label = el('label', 'check');
@@ -1841,16 +1838,16 @@ function dupToolbar() {
   bar.appendChild(filter);
   var sf = dupState.sameFolder, lq = dupState.lowerQuality;
   var buttons = el('div', 'dup-buttons');
-  var same = el('button', 'btn', 'Clear Same Folder Copies');
+  var same = el('button', 'btn', tr('dups.same_folder'));
   same.title = sf && sf.copies
-    ? 'Deletes ' + plural(sf.copies, 'file', 'files') + ': identical copies in the same folder as another copy. The best one stays, no review.'
-    : 'No identical copies in the same folder.';
+    ? tr('dups.same_folder_hint', { count: trn('count.files', sf.copies) })
+    : tr('dups.same_folder_none');
   same.disabled = !(sf && sf.copies);
   same.onclick = removeSameFolder;
-  var low = el('button', 'btn', 'Clear Lower Quality Copies');
+  var low = el('button', 'btn', tr('dups.lower'));
   low.title = lq && lq.copies
-    ? 'Deletes ' + plural(lq.copies, 'file', 'files') + ': the same photo in a lower resolution or without its metadata (a messenger copy, say). The better file stays, no review.'
-    : 'No lower-quality versions of a photo.';
+    ? tr('dups.lower_hint', { count: trn('count.files', lq.copies) })
+    : tr('dups.lower_none');
   low.disabled = !(lq && lq.copies);
   low.onclick = removeLowerQuality;
   buttons.appendChild(same);
@@ -1867,8 +1864,8 @@ function updateDupBar() {
   bar.hidden = n === 0;
   bar.textContent = '';
   if (!n) return;
-  bar.appendChild(el('span', '', plural(n, 'copy', 'copies') + ' marked'));
-  var clear = el('button', 'btn quiet', 'Clear');
+  bar.appendChild(el('span', '', tr('dups.marked', { count: trn('count.copies', n) })));
+  var clear = el('button', 'btn quiet', tr('dups.clear'));
   clear.onclick = function () {
     Array.prototype.forEach.call(document.querySelectorAll('.copy input[type=checkbox]:checked'), function (cb) {
       cb.checked = false;
@@ -1876,7 +1873,7 @@ function updateDupBar() {
     });
   };
   bar.appendChild(clear);
-  var del = el('button', 'btn danger', 'Move to trash');
+  var del = el('button', 'btn danger', tr('sel.trash'));
   del.onclick = deleteMarked;
   bar.appendChild(del);
 }
@@ -1905,7 +1902,7 @@ function dupThumb(f, compare) {
   if (compare) {
     // Opens the group's pictures side by side instead of one in a new tab.
     a.removeAttribute('target');
-    a.title = 'Compare the photos';
+    a.title = tr('dups.compare');
     a.onclick = function (e) { e.preventDefault(); compare(f); };
   }
   return a;
@@ -1919,7 +1916,7 @@ function isEdit(f) { return /^img_e\d+/i.test(f.name); }
 function compareDialog(g, start, onKeep) {
   var back = el('div', 'modal');
   var dlg = el('div', 'dialog compare');
-  dlg.appendChild(el('h2', '', 'Which one do you like most?'));
+  dlg.appendChild(el('h2', '', tr('dups.compare_title')));
   var strip = el('div', 'compare-strip');
   var close = function () { back.remove(); document.removeEventListener('keydown', onKey); };
   var onKey = function (e) { if (e.key === 'Escape') close(); };
@@ -1930,19 +1927,19 @@ function compareDialog(g, start, onKeep) {
     img.alt = f.name;
     img.src = LIBAPI + '/files/' + f.id + (f.kind === 'video' ? '/thumb' : '/view') + '?v=' + f.version;
     col.appendChild(img);
-    col.appendChild(el('div', 'name', f.name + (g.kind === 'edited' ? (isEdit(f) ? ' · edited' : ' · original') : '')));
+    col.appendChild(el('div', 'name', f.name + (g.kind === 'edited' ? ' · ' + tr(isEdit(f) ? 'dups.edited_lower' : 'dups.original_lower') : '')));
     var meta = [];
     if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
     meta.push((f.size / 1e6).toFixed(1) + ' MB');
     col.appendChild(el('div', 'meta', meta.join(' · ')));
-    var keep = el('button', 'btn', 'Keep this one');
+    var keep = el('button', 'btn', tr('dups.keep_this'));
     keep.onclick = function () { close(); onKeep(f); };
     col.appendChild(keep);
     strip.appendChild(col);
   });
   dlg.appendChild(strip);
   var row = el('div', 'actions');
-  var done = el('button', 'btn quiet', 'Close');
+  var done = el('button', 'btn quiet', tr('app.close'));
   done.onclick = close;
   row.appendChild(done);
   dlg.appendChild(row);
@@ -1967,17 +1964,17 @@ function groupNode(g) {
         ids.forEach(function (id) { delete dupState.marked[id]; });
         box.remove();
         updateDupBar();
-        toast(decision === 'linked' ? 'Kept as versions of one photo' : 'Kept as different photos');
+        toast(tr(decision === 'linked' ? 'dups.kept_versions' : 'dups.kept_different'));
       }).catch(function (e) { b.disabled = false; failed(e); });
     };
     head.appendChild(b);
   };
-  if (g.kind === 'similar') decide('distinct', 'Different photos');
-  decide('linked', g.kind === 'identical' ? 'Keep all copies' : g.kind === 'resolution' ? 'Keep all versions'
-    : g.kind === 'edited' ? 'Keep both' : 'Versions of one photo');
+  if (g.kind === 'similar') decide('distinct', tr('dups.btn_different'));
+  decide('linked', tr(g.kind === 'identical' ? 'dups.btn_keep_copies' : g.kind === 'resolution' ? 'dups.btn_keep_versions'
+    : g.kind === 'edited' ? 'dups.btn_keep_both' : 'dups.btn_versions'));
   box.appendChild(head);
   box.appendChild(el('p', 'group-hint', g.kind === 'similar' || g.kind === 'edited'
-    ? kind.hint + ' Every card is one file; click a picture to compare them large.'
+    ? tr('dups.group_hint_series', { hint: kind.hint })
     : kind.hint));
 
   var boxes = [];
@@ -2013,27 +2010,27 @@ function groupNode(g) {
     boxes.push(cb);
     cards.push({ f: f, cb: cb });
     label.appendChild(cb);
-    label.appendChild(document.createTextNode(' delete this copy'));
+    label.appendChild(document.createTextNode(' ' + tr('dups.delete_copy')));
     card.appendChild(label);
     card.classList.toggle('marked', cb.checked);
-    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : '(top level)';
+    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : tr('dups.top_level');
     var fb = el('button', 'folder', folder);
     fb.title = f.path;
     fb.onclick = function () { setFilter({ folder: f.folder_id, tags: [], q: '' }); };
     card.appendChild(fb);
     if (showName) card.appendChild(el('div', 'name', f.name));
-    if (g.kind === 'edited') card.appendChild(el('div', 'badge', isEdit(f) ? 'Edited' : 'Original'));
+    if (g.kind === 'edited') card.appendChild(el('div', 'badge', tr(isEdit(f) ? 'dups.badge_edited' : 'dups.badge_original')));
     var meta = [];
     if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
     meta.push((f.size / 1e6).toFixed(1) + ' MB');
     card.appendChild(el('div', 'meta', meta.join(' · ')));
-    if (f.keeper) card.appendChild(el('div', 'meta worse', 'lower quality than the best version'));
-    card.appendChild(el('div', 'meta', f.taken ? formatDate({ taken: f.taken, date_source: 'file' }) : 'no capture date'));
+    if (f.keeper) card.appendChild(el('div', 'meta worse', tr('dups.lower_quality')));
+    card.appendChild(el('div', 'meta', f.taken ? formatDate({ taken: f.taken, date_source: 'file' }) : tr('dups.no_capture_date')));
     if (f.tags && f.tags.length) {
       var tags = el('div', 'tagline');
       f.tags.forEach(function (t) {
         var chip = el('span', 'chip' + (t.own ? ' own' : ''), (t.own ? '' : '📁 ') + t.name);
-        chip.title = t.own ? 'Own tag' : 'Folder tag';
+        chip.title = tr(t.own ? 'dups.own_tag' : 'dups.folder_tag');
         tags.appendChild(chip);
       });
       card.appendChild(tags);
@@ -2068,7 +2065,7 @@ function groupNode(g) {
     var name = el('div', 'name', first.name + ' ');
     if (first.same) {
       var same = el('span', 'same', String.fromCharCode(64 + first.same));
-      same.title = 'Files with the same letter are identical';
+      same.title = tr('dups.same_letter');
       name.appendChild(same);
     }
     left.appendChild(name);
@@ -2115,9 +2112,9 @@ function deleteMarked() {
     return false;
   };
   openModal(
-    'Move to trash',
-    'Move ' + plural(total, 'copy', 'copies') + ' to the shoebox trash? In every group at least one copy stays. The tags and the capture date of a deleted copy are added to the copy that stays (as tags you can remove again). You can put the copies back from the trash.',
-    [{ label: 'Cancel', cls: 'quiet' }, { label: 'Move to trash', cls: 'danger', focus: true, onclick: run }]
+    tr('sel.trash'),
+    tr('dups.delete_text', { count: trn('count.copies', total) }),
+    [{ label: tr('app.cancel'), cls: 'quiet' }, { label: tr('sel.trash'), cls: 'danger', focus: true, onclick: run }]
   );
 }
 
@@ -2129,11 +2126,11 @@ function collectRemoved(done, r) {
 }
 
 function finishRemoved(done) {
-  var text = plural(done.files, 'copy', 'copies') + ' moved to the trash';
-  if (done.tags) text += ', ' + plural(done.tags, 'tag', 'tags') + ' carried over';
-  if (done.dates) text += ', ' + plural(done.dates, 'capture date', 'capture dates') + ' taken over';
-  toast(text);
-  report('Some copies were not moved to the trash', done.skipped);
+  var text = [tr('dups.done.trashed', { count: trn('count.copies', done.files) })];
+  if (done.tags) text.push(tr('dups.done.tags', { count: trn('count.tags', done.tags) }));
+  if (done.dates) text.push(tr('dups.done.dates', { count: trn('count.capture_dates', done.dates) }));
+  toast(text.join(', '));
+  report(tr('dups.skipped'), done.skipped);
   dupState.marked = {};
   changed();
 }
@@ -2143,7 +2140,7 @@ function finishRemoved(done) {
 function askDates(conflicts, done) {
   return new Promise(function (resolve, reject) {
     var body = el('div');
-    body.appendChild(el('p', '', 'These photos have copies with different capture dates. Which date should the photo that stays have? (Stored in the library only; the file is not changed.)'));
+    body.appendChild(el('p', '', tr('dups.dates.text')));
     var picks = [];
     conflicts.forEach(function (c) {
       c.list.forEach(function (x, n) {
@@ -2162,10 +2159,10 @@ function askDates(conflicts, done) {
         });
       });
     });
-    openModal('Capture dates differ', body, [{
-      label: 'Cancel', cls: 'quiet', onclick: function () { resolve(); },
+    openModal(tr('dups.dates.title'), body, [{
+      label: tr('app.cancel'), cls: 'quiet', onclick: function () { resolve(); },
     }, {
-      label: 'Move to trash', cls: 'danger', onclick: function (btn) {
+      label: tr('sel.trash'), cls: 'danger', onclick: function (btn) {
         btn.disabled = true;
         var chosen = {};
         picks.forEach(function (p) {
@@ -2191,15 +2188,15 @@ function askDates(conflicts, done) {
 function removeLowerQuality() {
   var lq = dupState.lowerQuality;
   openModal(
-    'Remove lower-quality versions',
-    plural(lq.copies, 'copy', 'copies') + ' (of ' + plural(lq.groups, 'photo', 'photos') + ') are surely the same photo as a better file: the same picture with fewer pixels or without the capture date, as after sending it by messenger. They go to the shoebox trash without review; the better file stays. Folders, tags and capture dates of the removed copies are carried over to it. Photos that merely look alike (other shots of a series) are never touched.',
-    [{ label: 'Cancel', cls: 'quiet' }, {
-      label: 'Move to trash', cls: 'danger', focus: true, onclick: function (btn) {
+    tr('dups.lower.title'),
+    tr('dups.lower.text', { copies: trn('count.copies', lq.copies), photos: trn('count.photos', lq.groups) }),
+    [{ label: tr('app.cancel'), cls: 'quiet' }, {
+      label: tr('sel.trash'), cls: 'danger', focus: true, onclick: function (btn) {
         btn.disabled = true;
         post(LIBAPI + '/duplicates/lower-quality', {}).then(function (r) {
           closeModal();
-          toast(plural(r.removed, 'copy', 'copies') + ' moved to the trash, ' + plural(r.tags_added, 'tag', 'tags') + ' carried over');
-          report('Some copies were not moved to the trash', r.skipped);
+          toast(tr('dups.lower.done', { copies: trn('count.copies', r.removed), tags: trn('count.tags', r.tags_added) }));
+          report(tr('dups.skipped'), r.skipped);
           changed();
         }).catch(function (e) { closeModal(); failed(e); });
         return false;
@@ -2211,15 +2208,15 @@ function removeLowerQuality() {
 function removeSameFolder() {
   var sf = dupState.sameFolder;
   openModal(
-    'Remove exact duplicates',
-    plural(sf.copies, 'copy', 'copies') + ' (' + plural(sf.groups, 'photo', 'photos') + ') have identical content to another file in the same folder. They go to the shoebox trash without review; in each folder one stays: the highest resolution, and the one with the original name rather than “IMG_1 (2)” or “IMG_1 - Copy”. Similar photos and copies in other folders are not touched. Tags and capture dates are carried over to the copy that stays.',
-    [{ label: 'Cancel', cls: 'quiet' }, {
-      label: 'Move to trash', cls: 'danger', focus: true, onclick: function (btn) {
+    tr('dups.same.title'),
+    tr('dups.same.text', { copies: trn('count.copies', sf.copies), photos: trn('count.photos', sf.groups) }),
+    [{ label: tr('app.cancel'), cls: 'quiet' }, {
+      label: tr('sel.trash'), cls: 'danger', focus: true, onclick: function (btn) {
         btn.disabled = true;
         post(LIBAPI + '/duplicates/same-folder', {}).then(function (r) {
           closeModal();
-          toast(plural(r.removed, 'copy', 'copies') + ' moved to the trash');
-          report('Some copies were not moved to the trash', r.skipped);
+          toast(tr('dups.done.trashed', { count: trn('count.copies', r.removed) }));
+          report(tr('dups.skipped'), r.skipped);
           changed();
         }).catch(function (e) { closeModal(); failed(e); });
         return false;
@@ -2235,18 +2232,18 @@ function loadTrash() {
     if (state.filter.view !== 'trash') return;
     var page = $('page');
     page.textContent = '';
-    page.appendChild(el('h2', '', 'Trash'));
+    page.appendChild(el('h2', '', tr('side.trash')));
     var batches = [], byBatch = {};
     items.forEach(function (it) {
       if (!byBatch[it.batch]) { byBatch[it.batch] = []; batches.push(it.batch); }
       byBatch[it.batch].push(it);
     });
     page.appendChild(el('p', 'sub', batches.length
-      ? plural(batches.length, 'photo', 'photos') + ' in .shoebox/trash on the drive. Put them back, or delete them for good.'
-      : 'The trash is empty.'));
+      ? tr('trash.page_sub', { count: trn('count.photos', batches.length) })
+      : tr('trash.empty')));
     if (batches.length) {
       var bar = el('div', 'toolbar');
-      var empty = el('button', 'btn danger', 'Empty trash');
+      var empty = el('button', 'btn danger', tr('trash.empty_btn'));
       empty.onclick = function () { emptyTrash(null, batches.length); };
       bar.appendChild(empty);
       page.appendChild(bar);
@@ -2265,11 +2262,11 @@ function loadTrash() {
       thumb.appendChild(img);
       card.appendChild(thumb);
       card.appendChild(el('div', 'name', first.path.split('/').pop()));
-      var folder = first.path.indexOf('/') >= 0 ? first.path.slice(0, first.path.lastIndexOf('/')) : '(top level)';
+      var folder = first.path.indexOf('/') >= 0 ? first.path.slice(0, first.path.lastIndexOf('/')) : tr('dups.top_level');
       card.appendChild(el('div', 'meta', folder));
-      var extra = files.length > 1 ? ' · with ' + files.slice(1).map(function (f) { return f.path.split('/').pop(); }).join(', ') : '';
-      card.appendChild(el('div', 'meta', 'deleted ' + new Date(first.deleted_at * 1000).toLocaleDateString() + extra));
-      var restore = el('button', 'btn quiet', 'Put back');
+      var extra = files.length > 1 ? tr('trash.with', { names: files.slice(1).map(function (f) { return f.path.split('/').pop(); }).join(', ') }) : '';
+      card.appendChild(el('div', 'meta', tr('trash.deleted', { date: I18n.date(new Date(first.deleted_at * 1000)), extra: extra })));
+      var restore = el('button', 'btn quiet', tr('trash.put_back'));
       restore.onclick = function () {
         restore.disabled = true;
         post(LIBAPI + '/trash/' + b + '/restore').then(function () { toast('Put back ' + first.path); changed(); })
@@ -2609,7 +2606,7 @@ function loadFaces() {
   page.appendChild(faceToolbar());
   var grid = el('div', 'faces');
   page.appendChild(grid);
-  var more = el('button', 'btn quiet', 'Show more');
+  var more = el('button', 'btn quiet', tr('app.show_more'));
   more.hidden = true;
   more.onclick = function () { moreFaces(grid, more); };
   page.appendChild(more);
@@ -3503,7 +3500,7 @@ function loadPersonPage() {
     var grid = el('div', 'faces');
     grid.id = 'pp-grid';
     page.appendChild(grid);
-    var more = el('button', 'btn quiet', 'Show more');
+    var more = el('button', 'btn quiet', tr('app.show_more'));
     more.hidden = true;
     more.onclick = function () { morePersonFaces(grid, more, tab); };
     page.appendChild(more);
@@ -3781,7 +3778,7 @@ function loadUnnamed() {
   var box = el('div', 'clusters');
   box.id = 'un-box';
   page.appendChild(box);
-  var more = el('button', 'btn quiet', 'Show more');
+  var more = el('button', 'btn quiet', tr('app.show_more'));
   more.hidden = true;
   more.onclick = function () { moreClusters(box, more); };
   page.appendChild(more);
