@@ -314,6 +314,36 @@ fn own_tags_survive_moves_rescans_and_the_trash() {
 }
 
 #[test]
+fn move_without_keep_tags_drops_own_tags() {
+    let lib = Library::new("tags-nokeep");
+    lib.scan();
+    let before = lib.snapshot();
+    let img1 = id_of(&lib, "2020-07 Urlaub Griechenland/IMG_0001.JPG");
+    let img2 = id_of(&lib, "2020-07 Urlaub Griechenland/IMG_0002.JPG");
+    let server = start(&lib, None);
+    let addr = server.addr;
+    add(addr, &[img1, img2], "Aurelia");
+    add(addr, &[img1], "Nur eins");
+
+    // Default: tags move along.
+    let r = post(addr, "/api/move", &json!({ "ids": [img1], "folder": "Sortiert" }));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    assert_eq!(own_tags(&lib, img1), ["Aurelia", "Nur eins"]);
+
+    // keep_tags false: own tags are dropped, folder tags follow the path,
+    // and a tag nobody has any more is gone.
+    let r = post(addr, "/api/move", &json!({ "ids": [img1, img2], "folder": "Neu", "keep_tags": false }));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    for id in [img1, img2] {
+        assert!(own_tags(&lib, id).is_empty());
+        assert_eq!(folder_tags(&lib, id), ["Neu"]);
+    }
+    assert!(find(&tag_list(addr, ""), "Aurelia").is_none());
+    server.stop().unwrap();
+    assert!(user_rows(&lib).is_empty());
+}
+
+#[test]
 fn guard_every_tag_endpoint_leaves_originals_untouched() {
     let lib = Library::new("tags-guard");
     lib.scan();

@@ -53,6 +53,14 @@ pub struct TagRef {
     pub name: String,
 }
 
+/// Take all own tags off one file (a move without "keep tags"). Folder tags
+/// stay; a tag nothing refers to any more goes.
+pub fn drop_own(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute("DELETE FROM file_tags WHERE file_id = ?1 AND source = 'user'", [id])?;
+    conn.execute("DELETE FROM tags WHERE NOT EXISTS (SELECT 1 FROM file_tags WHERE tag_id = tags.id)", [])?;
+    Ok(())
+}
+
 #[derive(Debug, Serialize)]
 pub struct Changed {
     /// The tag in its stored spelling (`None` when removing a name no file has).

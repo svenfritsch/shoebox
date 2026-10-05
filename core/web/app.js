@@ -1237,6 +1237,14 @@ function moveDialog(ids, done) {
   var current = state.filter.folder && state.folderById[state.filter.folder];
   if (current && current.path) input.value = current.path;
   body.appendChild(input);
+  var keepLabel = el('label', 'check');
+  var keep = el('input');
+  keep.type = 'checkbox';
+  keep.checked = true;
+  keepLabel.appendChild(keep);
+  keepLabel.appendChild(document.createTextNode(' Keep tags'));
+  keepLabel.title = 'Checked: the photos’ own tags move along. Unchecked: they are dropped. Folder tags always follow the new folder.';
+  body.appendChild(keepLabel);
   body.appendChild(el('p', 'hint', 'Folders that do not exist yet are created. RAW, Live Photo and sidecar files of the same name move along. Nothing is ever overwritten.'));
   var error = el('p', 'error');
   body.appendChild(error);
@@ -1244,7 +1252,7 @@ function moveDialog(ids, done) {
     var folder = input.value.trim();
     if (!folder) { error.textContent = 'Choose a folder.'; return false; }
     btn.disabled = true;
-    post('/api/move', { ids: ids, folder: folder }).then(function (r) {
+    post('/api/move', { ids: ids, folder: folder, keep_tags: keep.checked }).then(function (r) {
       closeModal();
       if (done) done();
       toast(plural(r.files.length, 'file', 'files') + ' moved to ' + r.folder);
