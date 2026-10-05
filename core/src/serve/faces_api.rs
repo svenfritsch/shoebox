@@ -41,7 +41,8 @@ pub(super) async fn similar(
 }
 
 /// A face's crop: from `thumbs.db`, else made from the original (all faces
-/// of the photo from one decode) and stored.
+/// of the photo from one decode) and stored if the face still needs one
+/// (`faces::wanted`).
 pub(super) async fn crop(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Response> {
     crop_of(app, move |conn| faces::face(conn, id)).await
 }
@@ -82,10 +83,14 @@ async fn crop_of(
         }
         let boxes = faces::boxes_of(&app.conn.lock().unwrap(), &key)?;
         let result = faces::render_crops(&LibHeif::new(), &src, &boxes);
-        if !matches!(&result, Err(e) if thumbs::is_transient(e))
-            && let Err(e) = faces::store_crops(&app.conn.lock().unwrap(), &key, &boxes, &result)
-        {
-            eprintln!("could not store face crops: {e:#}"); // still worth sending
+        if !matches!(&result, Err(e) if thumbs::is_transient(e)) {
+            // Only faces still waiting for a decision and people's pictures
+            // are kept; a decided face is made again whenever it is asked for.
+            let conn = app.conn.lock().unwrap();
+            let stored = faces::wanted(&conn, &key, &boxes).and_then(|wanted| faces::store_crops(&conn, &key, &boxes, &wanted, &result));
+            if let Err(e) = stored {
+                eprintln!("could not store face crops: {e:#}"); // still worth sending
+            }
         }
         Ok(result.and_then(|crops| {
             boxes.iter().position(|x| *x == b).and_then(|i| crops.into_iter().nth(i)).ok_or_else(|| "face gone".into())

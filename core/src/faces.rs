@@ -4,10 +4,17 @@
 //!
 //! Everything here only reads `recognition.db` (and the face decisions in
 //! `library.db`: faces marked "not a face" are counted, and listed only when
-//! asked for, see `people.rs`). The one thing written is the crop cache in `thumbs.db` (`thumbs.faces`, keyed by content and
-//! box like the faces), and crops are made from the original under the
-//! guard (`fingerprint::read_unchanged`), like thumbnails.
+//! asked for, see `people.rs`). The one thing written is the crop cache in
+//! `thumbs.db` (`thumbs.faces`, keyed by content and box like the faces), and
+//! crops are made from the original under the guard
+//! (`fingerprint::read_unchanged`), like thumbnails.
+//!
+//! The cache only holds what is still needed: the faces nobody has decided
+//! about yet (waiting for a name) and the picture shown for each person. A
+//! face that is confirmed, ignored or "not a face" has no stored crop (the
+//! UI cuts it out of the photo's thumbnail); `prune_crops` removes them.
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -19,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use crate::db;
 use crate::fingerprint;
 use crate::media;
+use crate::people::Matched;
 use crate::recognize::{self, FACES, FACES_ROT, KINDS};
 use crate::thumbs::{self, Source};
 
@@ -627,8 +635,74 @@ fn crop(img: &DynamicImage, b: &FaceBox) -> DynamicImage {
     thumbs::shrink(c, CROP_EDGE)
 }
 
-/// Replace the crops stored for a content (or store why there are none).
-pub fn store_crops(conn: &Connection, key: &str, boxes: &[FaceBox], result: &Result<Vec<Vec<u8>>, String>) -> Result<()> {
+/// Which of `boxes` (the faces of one content, see `boxes_of`) need a stored
+/// crop: faces without a decision, and the box a person's picture is cut
+/// from. Decided faces are cut out of the photo's thumbnail by the UI.
+pub fn wanted(conn: &Connection, key: &str, boxes: &[FaceBox]) -> Result<Vec<bool>> {
+    let m = Matched::load(conn, Some(key))?;
+    let mut keep: HashSet<[u64; 4]> = (0..m.faces.len()).filter(|&i| m.decided(i).is_none()).map(|i| bits(m.faces[i].b)).collect();
+    keep.extend(covers(conn)?.into_iter().filter(|(k, _)| k == key).map(|(_, b)| bits(b)));
+    Ok(boxes.iter().map(|b| keep.contains(&bits([b.x, b.y, b.w, b.h]))).collect())
+}
+
+fn bits(b: [f64; 4]) -> [u64; 4] {
+    b.map(f64::to_bits)
+}
+
+/// The content and box each person's picture is cut from.
+fn covers(conn: &Connection) -> Result<Vec<(String, [f64; 4])>> {
+    if !crate::people::table_exists(conn, "main", "people")? {
+        return Ok(Vec::new());
+    }
+    let rows: Vec<(Option<String>, Option<String>)> = conn
+        .prepare("SELECT cover_key, cover_box FROM people")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|(key, b)| key.zip(b.and_then(|b| serde_json::from_str::<[f64; 4]>(&b).ok())))
+        .collect())
+}
+
+/// Remove the stored crops nobody needs: those of faces with a decision
+/// (confirmed, ignored, "not a face") that are not a person's picture, and
+/// of faces that are not found any more. Safe to run at any time; returns
+/// how many went. Does nothing when `recognition.db` or the cache is missing.
+pub fn prune_crops(conn: &Connection) -> Result<u64> {
+    if !crate::people::table_exists(conn, "thumbs", "faces")? || !crate::people::table_exists(conn, "recog", "faces")? {
+        return Ok(0);
+    }
+    let m = Matched::load(conn, None)?;
+    let mut keep: HashSet<(String, [u64; 4])> =
+        (0..m.faces.len()).filter(|&i| m.decided(i).is_none()).map(|i| (m.faces[i].key.clone(), bits(m.faces[i].b))).collect();
+    keep.extend(covers(conn)?.into_iter().map(|(k, b)| (k, bits(b))));
+    let stored: Vec<(String, f64, f64, f64, f64)> = conn
+        .prepare("SELECT key, x, y, w, h FROM thumbs.faces")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let tx = conn.unchecked_transaction()?;
+    let mut removed = 0;
+    {
+        let mut delete = tx.prepare("DELETE FROM thumbs.faces WHERE key = ?1 AND x = ?2 AND y = ?3 AND w = ?4 AND h = ?5")?;
+        for (key, x, y, w, h) in stored {
+            if !keep.contains(&(key.clone(), bits([x, y, w, h]))) {
+                removed += delete.execute(params![key, x, y, w, h])? as u64;
+            }
+        }
+    }
+    tx.commit()?;
+    Ok(removed)
+}
+
+/// Replace the crops stored for a content (or store why there are none),
+/// only for the boxes `wanted` says need one.
+pub fn store_crops(
+    conn: &Connection,
+    key: &str,
+    boxes: &[FaceBox],
+    wanted: &[bool],
+    result: &Result<Vec<Vec<u8>>, String>,
+) -> Result<()> {
     let tx = conn.unchecked_transaction()?;
     tx.execute("DELETE FROM thumbs.faces WHERE key = ?1", [key])?;
     {
@@ -636,6 +710,9 @@ pub fn store_crops(conn: &Connection, key: &str, boxes: &[FaceBox], result: &Res
             "INSERT OR REPLACE INTO thumbs.faces (key, x, y, w, h, jpeg, error, made_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         )?;
         for (i, b) in boxes.iter().enumerate() {
+            if !wanted.get(i).copied().unwrap_or(false) {
+                continue;
+            }
             let (jpeg, error) = match result {
                 Ok(crops) => (crops.get(i), None),
                 Err(e) => (None, Some(e.as_str())),

@@ -2249,6 +2249,14 @@ $('sizer').addEventListener('contextmenu', function (ev) {
   items.push({ label: 'Copy path', run: function () {
     api('/api/files/' + id).then(function (info) { copyPath(info.path); }).catch(failed);
   } });
+  // On one person's photos (from the sidebar or as the only search term):
+  // their face in this photo becomes their picture.
+  var only = state.filter.people && state.filter.people.length === 1 ? state.filter.people[0] : null;
+  if (only != null && state.personNames[only]) {
+    items.push({ label: 'Use as ' + state.personNames[only] + '’s picture', run: function () {
+      post('/api/people/' + only + '/cover', { file: id }).then(function () { toast('Picture changed'); peopleChanged(); }).catch(failed);
+    } });
+  }
   showMenu(ev.clientX, ev.clientY, items);
 });
 
@@ -2727,10 +2735,45 @@ function avatar(p, cls) {
   return a;
 }
 
+// A face cut out of its photo's thumbnail here in the browser, for faces that
+// have a decision: the server keeps no crop of them (only of faces still
+// waiting for a name and of people's pictures). Same square with room around
+// the face as the server's crops (faces.rs, `crop`); the thumbnail is
+// already there from the grid.
+var ZOOM_MARGIN = 0.25;
+
+function zoomFace(face) {
+  var box = el('span', 'zoom');
+  if (face.file == null) return box;
+  var inner = el('span');
+  if (face.roll) inner.style.transform = 'rotate(' + face.roll + 'deg)';
+  var img = el('img');
+  img.alt = '';
+  img.decoding = 'async';
+  img.onload = function () {
+    var iw = img.naturalWidth, ih = img.naturalHeight;
+    if (!iw || !ih) return;
+    var side = Math.max(1, Math.min(Math.max(face.w * iw, face.h * ih) * (1 + 2 * ZOOM_MARGIN), iw, ih));
+    var x0 = Math.min(Math.max((face.x + face.w / 2) * iw - side / 2, 0), Math.max(iw - side, 0));
+    var y0 = Math.min(Math.max((face.y + face.h / 2) * ih - side / 2, 0), Math.max(ih - side, 0));
+    img.style.width = (iw / side * 100) + '%';
+    img.style.height = (ih / side * 100) + '%';
+    img.style.left = (-x0 / side * 100) + '%';
+    img.style.top = (-y0 / side * 100) + '%';
+    box.classList.add('ready');
+  };
+  img.src = '/api/files/' + face.file + '/thumb?v=' + face.version;
+  inner.appendChild(img);
+  box.appendChild(inner);
+  return box;
+}
+
 function faceImg(face, cls) {
   var a = el('span', 'avatar' + (cls ? ' ' + cls : ''));
   var url = cropUrl(face);
-  if (url) {
+  if (face.state === 'ignored' && face.file != null) {
+    a.appendChild(zoomFace(face));
+  } else if (url) {
     var img = el('img');
     img.alt = '';
     img.loading = 'lazy';
@@ -3321,7 +3364,10 @@ function personFaceCard(face, tab) {
   a.href = '#';
   a.title = 'Open the photo';
   var url = cropUrl(face);
-  if (url) {
+  if (tab === 'confirmed' && face.file != null) {
+    // Confirmed faces have no stored crop: cut out of the photo's thumbnail.
+    a.appendChild(zoomFace(face));
+  } else if (url) {
     var img = el('img');
     img.alt = '';
     img.loading = 'lazy';
@@ -3804,7 +3850,9 @@ function infoFaces(row, info) {
 
 function infoFace(info, f, k) {
   var line = el('div', 'pface');
-  var pic = faceImg(f, 'small');
+  // A named person shows their picture (no crop of the face is kept); the
+  // box on the photo shows which face it is.
+  var pic = f.state === 'confirmed' && f.person ? avatar(people.byId[f.person.id] || { name: f.person.name }, 'small') : faceImg(f, 'small');
   pic.title = 'Show where it is';
   pic.onclick = function () { lb.hover = lb.hover === k ? null : k; drawFaces(); };
   line.appendChild(pic);

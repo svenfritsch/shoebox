@@ -171,6 +171,12 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
     let conn = db::open_shared(&db_path)?;
     thumbs::attach(&conn, &db_path)?;
     recognize::attach(&conn, &db_path)?;
+    // Older versions kept a crop of every face looked at, and some people have
+    // no picture of their own yet.
+    let (covers, pruned) = people_api::tidy(&conn);
+    if covers > 0 || pruned > 0 {
+        println!("Tidied up: {covers} people got a picture, {pruned} face crops nobody needs were removed.");
+    }
 
     let pin = match (&opts.pin, opts.lan) {
         (Some(p), _) if p.trim().len() < 4 => bail!("the PIN needs at least 4 characters"),

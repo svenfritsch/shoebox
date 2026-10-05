@@ -48,7 +48,7 @@ progress. Update the status section when a phase moves.
     bin/shoebox.exe              ← later
     bin/ffmpeg                   ← optional, static, for video posters
     library.db                   ← SQLite index (+ rotating backup copy)
-    thumbs.db                    ← preview BLOBs keyed by quick hash
+    thumbs.db                    ← preview BLOBs keyed by quick hash, face crops only for undecided faces and people's pictures
     recognition.db               ← faces (boxes + embeddings) keyed by quick hash
     recognizer/                  ← optional (recognizer/install.sh)
       runtime/<os>-<arch>/       ← standalone Python (copies, no symlinks: exFAT)
@@ -182,6 +182,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 5b-2 | Search by several tags at once (AND, chips); people join in with 5c-3 | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **5c-1 done**, checked on the real drive; **5c-2 and 5c-3 done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5d | Duplicates UI: one row per photo, multi-select, bulk delete within a folder, tag and capture-date carry-over; Move dialog "keep tags"; trash dialog focus | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
+| 5e | Lean `thumbs.db`: face crops only for faces without a decision and for each person's picture; right-click "Use as … picture" on a person's photos | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 6 | Pets | |
 | 7 | Backup verification, launchers, packaging | |
 
@@ -483,4 +484,5 @@ mark the known false finds "not a face" (list in [phase5.md](phase5.md)).
 the combined 5c-2/5c-3 list in [phase5.md](phase5.md), all in the UI and
 from the iPad. 5d (duplicates UI and tag carry-over) is built and comes before
 phase 6 (pets); check it on the drive and the iPad (list in
-[phase5.md](phase5.md)).
+[phase5.md](phase5.md)). 5e (lean `thumbs.db`) is built: update, start `serve`
+once (it removes the old crops) and go through its list in [phase5.md](phase5.md).
