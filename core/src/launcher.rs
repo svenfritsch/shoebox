@@ -45,6 +45,8 @@ pub struct Options {
     pub port: u16,
     /// Open the page in the browser, and the photo app when it starts.
     pub open_browser: bool,
+    /// The JSON file with the remembered paths (default: `config_path()`).
+    pub config: Option<PathBuf>,
 }
 
 pub struct Launcher {
@@ -88,6 +90,7 @@ pub fn start(opts: &Options) -> Result<Launcher> {
         app: Mutex::new(None),
         open_browser: opts.open_browser,
         next_id: Mutex::new(0),
+        config: opts.config.clone().or_else(config_path),
     });
     let router = router(shared.clone());
     let (tx, rx) = oneshot::channel::<()>();
@@ -112,7 +115,7 @@ pub fn start(opts: &Options) -> Result<Launcher> {
 
 /// `shoebox` without arguments: run until the window is closed with Ctrl-C.
 pub fn run() -> Result<()> {
-    let launcher = start(&Options { port: DEFAULT_PORT, open_browser: true })?;
+    let launcher = start(&Options { port: DEFAULT_PORT, open_browser: true, config: None })?;
     println!("shoebox {} launcher: {}", env!("CARGO_PKG_VERSION"), launcher.url);
     println!("Leave this window open while you use shoebox; close it to stop.");
     launcher.wait()
@@ -148,6 +151,76 @@ pub fn open_browser(url: &str) {
         .spawn();
 }
 
+// ---------------------------------------------------------------- config
+
+/// What the launcher remembers between starts, as JSON:
+/// `{ "paths": ["/Volumes/Fotos", "/Volumes/Fotos 2"] }`. It lives in the
+/// user's own configuration folder (not on a drive, whose mount point differs
+/// from computer to computer), never next to the photos. `$SHOEBOX_CONFIG`
+/// names another file.
+#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
+pub struct Config {
+    #[serde(default)]
+    pub paths: Vec<String>,
+}
+
+pub fn config_path() -> Option<PathBuf> {
+    if let Some(p) = std::env::var_os("SHOEBOX_CONFIG").filter(|p| !p.is_empty()) {
+        return Some(p.into());
+    }
+    let home = || std::env::var_os("HOME").filter(|h| !h.is_empty()).map(PathBuf::from);
+    let dir = if cfg!(target_os = "macos") {
+        home()?.join("Library/Application Support")
+    } else if cfg!(target_os = "windows") {
+        std::env::var_os("APPDATA").map(PathBuf::from)?
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME").filter(|p| !p.is_empty()).map(PathBuf::from).or_else(|| home().map(|h| h.join(".config")))?
+    };
+    Some(dir.join("shoebox").join("launcher.json"))
+}
+
+impl Config {
+    /// A missing or unreadable file is an empty configuration.
+    pub fn load(path: &Path) -> Config {
+        std::fs::read(path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+    }
+
+    /// Written to a temporary file and renamed, so a crash never leaves half a file.
+    pub fn save(&self, path: &Path) -> Result<()> {
+        use anyhow::Context;
+        let dir = path.parent().context("the configuration file has no folder")?;
+        std::fs::create_dir_all(dir)?;
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(&tmp, serde_json::to_vec_pretty(self)?)?;
+        std::fs::rename(&tmp, path).with_context(|| format!("write {}", path.display()))?;
+        Ok(())
+    }
+
+    /// Trimmed, without empty entries and duplicates.
+    fn cleaned(paths: Vec<String>) -> Config {
+        let mut seen = std::collections::HashSet::new();
+        let paths = paths
+            .into_iter()
+            .map(|p| p.trim().to_string())
+            .filter(|p| !p.is_empty() && p.len() < 4096 && seen.insert(p.clone()))
+            .take(50)
+            .collect();
+        Config { paths }
+    }
+}
+
+async fn config_get(State(shared): State<Arc<Shared>>) -> Json<Config> {
+    Json(shared.config.as_deref().map(Config::load).unwrap_or_default())
+}
+
+async fn config_set(State(shared): State<Arc<Shared>>, Json(body): Json<Config>) -> Result<Json<Config>, ApiError> {
+    let config = Config::cleaned(body.paths);
+    if let Some(path) = &shared.config {
+        config.save(path).map_err(ApiError::Internal)?;
+    }
+    Ok(Json(config))
+}
+
 // ---------------------------------------------------------------- state
 
 struct Shared {
@@ -156,10 +229,11 @@ struct Shared {
     app: Mutex<Option<AppRunning>>,
     open_browser: bool,
     next_id: Mutex<u64>,
+    config: Option<PathBuf>,
 }
 
 struct AppRunning {
-    root: PathBuf,
+    roots: Vec<PathBuf>,
     url: String,
     server: serve::Server,
 }
@@ -180,6 +254,16 @@ struct JobState {
     finished_at: Option<u64>,
     /// `Some(true)` when the job ended with nothing wrong.
     ok: Option<bool>,
+    /// Stopped with "Cancel"; what was done is kept.
+    cancelled: bool,
+    roots: Vec<String>,
+    /// The folder being worked on (several can be given).
+    current_root: Option<String>,
+    /// Added in front of file names when several folders are processed.
+    #[serde(skip)]
+    prefix: String,
+    /// One entry per folder, as far as they got.
+    results: Vec<RootResult>,
     progress: Option<ProgressInfo>,
     lines: VecDeque<String>,
     ok_count: u64,
@@ -188,7 +272,16 @@ struct JobState {
     failures: Vec<FileResult>,
     /// The latest files that went through.
     recent_ok: VecDeque<FileResult>,
-    /// The command's final `Stats` / `Report`, as the CLI's `--json` prints.
+    /// The final `Stats` / `Report` of a single folder, as the CLI's `--json`
+    /// prints it (`results` has them for all folders).
+    result: Option<serde_json::Value>,
+    error: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+struct RootResult {
+    root: String,
+    ok: bool,
     result: Option<serde_json::Value>,
     error: Option<String>,
 }
@@ -218,6 +311,7 @@ impl JobState {
             }
             Event::Progress { label, done, total } => self.progress = Some(ProgressInfo { label, done, total }),
             Event::File { path, ok, note } => {
+                let path = if self.prefix.is_empty() { path } else { format!("{}{path}", self.prefix) };
                 let item = FileResult { path, ok, note };
                 if ok {
                     self.ok_count += 1;
@@ -246,7 +340,11 @@ fn now_secs() -> u64 {
 struct JobRequest {
     /// `scan`, `verify`, `recognize` or `faces_stats`.
     kind: String,
+    /// One folder, or several in `roots`: they are processed one after the other.
+    #[serde(default)]
     root: String,
+    #[serde(default)]
+    roots: Vec<String>,
     #[serde(default)]
     quick: bool,
     #[serde(default)]
@@ -300,16 +398,41 @@ fn run_command(req: &JobRequest, root: PathBuf) -> Result<(serde_json::Value, bo
     })
 }
 
+/// The folders of a request: `roots` plus `root`, each an existing folder.
+fn request_roots(req: &JobRequest) -> Result<Vec<PathBuf>, ApiError> {
+    let mut all: Vec<&str> = req.roots.iter().map(String::as_str).collect();
+    if !req.root.trim().is_empty() {
+        all.push(&req.root);
+    }
+    if all.is_empty() {
+        return Err(ApiError::BadRequest("enter at least one folder".into()));
+    }
+    let mut roots: Vec<PathBuf> = Vec::new();
+    for raw in all {
+        let root = PathBuf::from(raw.trim())
+            .canonicalize()
+            .ok()
+            .filter(|r| r.is_dir())
+            .ok_or_else(|| ApiError::BadRequest(format!("{raw:?} is not a folder on this computer")))?;
+        if !roots.contains(&root) {
+            roots.push(root);
+        }
+    }
+    Ok(roots)
+}
+
+fn short_name(root: &Path) -> String {
+    root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| root.display().to_string())
+}
+
 fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
     if !matches!(req.kind.as_str(), "scan" | "verify" | "recognize" | "faces_stats") {
         return Err(ApiError::BadRequest(format!("unknown command {:?}", req.kind)));
     }
-    let root = PathBuf::from(req.root.trim());
-    let root = root
-        .canonicalize()
-        .ok()
-        .filter(|r| r.is_dir())
-        .ok_or_else(|| ApiError::BadRequest(format!("{:?} is not a folder on this computer", req.root)))?;
+    if shared.app.lock().unwrap().is_some() {
+        return Err(ApiError::Conflict("stop the photo app first".into()));
+    }
+    let roots = request_roots(&req)?;
     let id = {
         let mut next = shared.next_id.lock().unwrap();
         *next += 1;
@@ -323,12 +446,14 @@ fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
         *job = JobState {
             id,
             kind: req.kind.clone(),
-            root: root.display().to_string(),
+            root: roots[0].display().to_string(),
+            roots: roots.iter().map(|r| r.display().to_string()).collect(),
             running: true,
             started_at: now_secs(),
             ..JobState::default()
         };
     }
+    report::clear_cancel();
     let shared = shared.clone();
     std::thread::Builder::new()
         .name("shoebox-job".into())
@@ -337,24 +462,68 @@ fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
             let guard = report::install(Arc::new(move |event| {
                 sink_state.job.lock().unwrap().apply(event);
             }));
-            let outcome = run_command(&req, root);
+            let many = roots.len() > 1;
+            for root in roots {
+                if report::cancelled() {
+                    break;
+                }
+                {
+                    let mut job = shared.job.lock().unwrap();
+                    job.current_root = Some(root.display().to_string());
+                    job.progress = None;
+                    job.prefix = if many { format!("{}: ", short_name(&root)) } else { String::new() };
+                }
+                if many {
+                    crate::say!("== {} ==", root.display());
+                }
+                let outcome = run_command(&req, root.clone());
+                let mut job = shared.job.lock().unwrap();
+                let entry = match outcome {
+                    Ok((result, clean)) => RootResult { root: root.display().to_string(), ok: clean, result: Some(result), error: None },
+                    Err(e) if e.is::<report::Cancelled>() || e.is::<recognize::Interrupted>() => {
+                        job.cancelled = true;
+                        RootResult { root: root.display().to_string(), ok: false, result: None, error: Some(format!("{e:#}")) }
+                    }
+                    Err(e) => RootResult { root: root.display().to_string(), ok: false, result: None, error: Some(format!("{e:#}")) },
+                };
+                job.results.push(entry);
+            }
             drop(guard);
+            let was_cancelled = report::cancelled();
+            report::clear_cancel();
             let mut job = shared.job.lock().unwrap();
             job.running = false;
+            job.current_root = None;
+            job.prefix.clear();
             job.finished_at = Some(now_secs());
-            match outcome {
-                Ok((result, clean)) => {
-                    job.result = Some(result);
-                    job.ok = Some(clean && job.fail_count == 0);
-                }
-                Err(e) => {
-                    job.error = Some(format!("{e:#}"));
-                    job.ok = Some(false);
+            if was_cancelled {
+                job.cancelled = true;
+            }
+            if job.results.len() == 1 {
+                job.result = job.results[0].result.clone();
+                job.error = job.results[0].error.clone();
+            } else {
+                let failed: Vec<String> =
+                    job.results.iter().filter_map(|r| r.error.as_ref().map(|e| format!("{}: {e}", short_name(Path::new(&r.root))))).collect();
+                if !failed.is_empty() {
+                    job.error = Some(failed.join("\n"));
                 }
             }
+            job.ok = Some(!job.cancelled && job.fail_count == 0 && job.results.iter().all(|r| r.ok));
         })
         .map_err(|e| ApiError::Internal(e.into()))?;
     Ok(id)
+}
+
+/// "Cancel": like Ctrl-C on the command line. The running command finishes
+/// the file it is on, keeps what it committed and stops.
+async fn job_cancel(State(shared): State<Arc<Shared>>) -> Json<serde_json::Value> {
+    let running = shared.job.lock().unwrap().running;
+    if running {
+        report::request_cancel();
+        shared.job.lock().unwrap().apply(Event::Line { text: "Cancelling…".into() });
+    }
+    Json(serde_json::json!({ "cancelling": running }))
 }
 
 // ---------------------------------------------------------------- routes
@@ -365,6 +534,8 @@ fn router(shared: Arc<Shared>) -> Router {
         .route("/api/job", get(job_state).post(job_start))
         .route("/api/app", get(app_state).post(app_start))
         .route("/api/app/stop", post(app_stop))
+        .route("/api/job/cancel", post(job_cancel))
+        .route("/api/config", get(config_get).post(config_set))
         .fallback(asset)
         .layer(middleware::from_fn(guard))
         .with_state(shared)
@@ -423,32 +594,43 @@ async fn job_state(State(shared): State<Arc<Shared>>) -> Json<serde_json::Value>
 
 #[derive(Deserialize)]
 struct AppRequest {
+    #[serde(default)]
     root: String,
+    #[serde(default)]
+    roots: Vec<String>,
     #[serde(default)]
     port: Option<u16>,
 }
 
-/// "Start photo app": only now does `serve` start.
+/// "Start photo app": only now does `serve` start, with every chosen folder
+/// as one library. A drive that is not plugged in is offline in the app.
 async fn app_start(State(shared): State<Arc<Shared>>, Json(req): Json<AppRequest>) -> Result<Json<serde_json::Value>, ApiError> {
     let url = tokio::task::spawn_blocking(move || -> Result<String, ApiError> {
         if shared.job.lock().unwrap().running {
             return Err(ApiError::Conflict("a command is still running".into()));
         }
-        let root = PathBuf::from(req.root.trim())
-            .canonicalize()
-            .ok()
-            .filter(|r| r.is_dir())
-            .ok_or_else(|| ApiError::BadRequest(format!("{:?} is not a folder on this computer", req.root)))?;
+        let jobless = JobRequest {
+            kind: String::new(),
+            root: req.root.clone(),
+            roots: req.roots.clone(),
+            quick: false,
+            no_thumbs: false,
+            limit: None,
+            retry_failed: false,
+            rotated: false,
+        };
+        let roots = request_roots(&jobless)?;
         let mut app = shared.app.lock().unwrap();
         if let Some(running) = app.as_ref() {
-            if running.root == root {
+            if running.roots == roots {
                 return Ok(running.url.clone());
             }
-            return Err(ApiError::Conflict(format!("the photo app is already running for {}", running.root.display())));
+            return Err(ApiError::Conflict("the photo app is already running; stop it first".into()));
         }
         let server = serve::start(
             &serve::Options {
-                root: root.clone(),
+                root: roots[0].clone(),
+                more_roots: roots[1..].to_vec(),
                 db: None,
                 port: req.port.unwrap_or(serve::DEFAULT_PORT),
                 lan: false,
@@ -463,7 +645,7 @@ async fn app_start(State(shared): State<Arc<Shared>>, Json(req): Json<AppRequest
         if shared.open_browser {
             open_browser(&url);
         }
-        *app = Some(AppRunning { root, url: url.clone(), server });
+        *app = Some(AppRunning { roots, url: url.clone(), server });
         Ok(url)
     })
     .await
@@ -474,7 +656,11 @@ async fn app_start(State(shared): State<Arc<Shared>>, Json(req): Json<AppRequest
 async fn app_state(State(shared): State<Arc<Shared>>) -> Json<serde_json::Value> {
     let app = shared.app.lock().unwrap();
     Json(match app.as_ref() {
-        Some(a) => serde_json::json!({ "running": true, "url": a.url, "root": a.root.display().to_string() }),
+        Some(a) => serde_json::json!({
+            "running": true,
+            "url": a.url,
+            "roots": a.roots.iter().map(|r| r.display().to_string()).collect::<Vec<_>>(),
+        }),
         None => serde_json::json!({ "running": false }),
     })
 }

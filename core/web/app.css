@@ -397,3 +397,34 @@ body.selecting .sec .pick { display: inline; }
   .person .avatar.big { width: 76px; height: 76px; }
 }
 .side-head { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 10px 14px 0; }
+
+/* ---- several drives */
+.drives-box { padding: 10px 14px 0; }
+.drives-box .side-head { margin: 0 0 6px; padding: 0; }
+.drive-list { list-style: none; margin: 0 0 6px; padding: 0; }
+.drive-list li { margin: 0; }
+.drive-list button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 6px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--fg); font: inherit; cursor: pointer; }
+.drive-list button:hover { background: var(--panel); }
+.drive-list li.current button { background: var(--panel); font-weight: 600; }
+.drive-list .dot { width: 9px; height: 9px; border-radius: 50%; background: #3a9b5c; flex: none; }
+.drive-list li.offline .dot { background: transparent; border: 2px solid var(--muted); }
+.drive-list li.offline button { color: var(--muted); }
+.drive-list .tag { margin-left: auto; font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; }
+.drive-list .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drives-box > .link { font-size: 13px; padding: 4px 8px; color: var(--accent); }
+.banner { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 12px 14px; margin: 0 0 14px; }
+.banner.warn { border-color: #d9a066; }
+.banner .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.drive-card { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin: 0 0 8px; }
+.drive-card .title { font-weight: 600; }
+.drive-card.offline { opacity: .6; }
+.drive-card .role { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.drive-card select { padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
+.pill { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; font-size: 12px; color: var(--muted); margin-right: 4px; }
+.pill.on { color: var(--fg); background: var(--panel); }
+.xgroup { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin: 0 0 8px; }
+.xgroup .path { font-size: 13px; word-break: break-all; }
+.xgroup .path b { font-weight: 600; }
+.people-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+.person-merged { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; min-width: 170px; }
+.person-merged .n { font-weight: 600; }

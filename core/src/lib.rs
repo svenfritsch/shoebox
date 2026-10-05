@@ -14,6 +14,7 @@ pub mod import;
 pub mod launcher;
 pub mod library;
 pub mod media;
+pub mod multi;
 pub mod organize;
 pub mod people;
 pub mod phash;

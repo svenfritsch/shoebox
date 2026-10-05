@@ -283,11 +283,30 @@ pub fn start_with(lib: &Library, pin: Option<&str>, reveal: Option<serve::Reveal
     serve::start(
         &serve::Options {
             root: lib.root.clone(),
+            more_roots: Vec::new(),
             db: None,
             port: 0,
             lan: false,
             pin: pin.map(str::to_string),
             reveal,
+            recognizer: Some(env!("CARGO_BIN_EXE_shoebox-fake-recognizer").into()),
+        },
+        false,
+    )
+    .unwrap()
+}
+
+/// One server for several libraries (the first is the main one).
+pub fn start_many(libs: &[&Library], extra_missing: &[&Path]) -> serve::Server {
+    serve::start(
+        &serve::Options {
+            root: libs[0].root.clone(),
+            more_roots: libs[1..].iter().map(|l| l.root.clone()).chain(extra_missing.iter().map(|p| p.to_path_buf())).collect(),
+            db: None,
+            port: 0,
+            lan: false,
+            pin: None,
+            reveal: None,
             recognizer: Some(env!("CARGO_BIN_EXE_shoebox-fake-recognizer").into()),
         },
         false,

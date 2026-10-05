@@ -12,8 +12,16 @@ use common::*;
 use serde_json::{Value, json};
 use shoebox::launcher;
 
+/// Jobs share one cancel flag and one report sink per process: the tests that
+/// run jobs take turns.
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn serial() -> std::sync::MutexGuard<'static, ()> {
+    SERIAL.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 fn start_launcher() -> launcher::Launcher {
-    launcher::start(&launcher::Options { port: 0, open_browser: false }).unwrap()
+    launcher::start(&launcher::Options { port: 0, open_browser: false, config: None }).unwrap()
 }
 
 /// The launcher's routes are not library routes: `/raw` sends them as written.
@@ -41,6 +49,7 @@ fn run_job(addr: SocketAddr, body: Value) -> Value {
 
 #[test]
 fn guard_commands_run_from_the_launcher_leave_originals_untouched() {
+    let _turn = serial();
     let lib = Library::new("launcher-guard");
     let before = lib.snapshot();
     let launcher = start_launcher();
@@ -112,6 +121,7 @@ fn only_this_computer_and_only_with_the_header() {
 
 #[test]
 fn the_photo_app_starts_only_when_asked() {
+    let _turn = serial();
     let lib = Library::new("launcher-app");
     let launcher = start_launcher();
     let addr = launcher.addr;
@@ -132,9 +142,15 @@ fn the_photo_app_starts_only_when_asked() {
     assert_eq!(lget(addr, "/api/app").json()["running"], true);
     // Asking again for the same folder gives the same app.
     assert_eq!(lpost(addr, "/api/app", &json!({ "root": root })).json()["url"], url);
+    // While the photo app runs, nothing else may change the library.
+    let busy = lpost(addr, "/api/job", &json!({ "kind": "scan", "root": root }));
+    assert_eq!(busy.status, 409);
+    assert!(busy.json()["error"].as_str().unwrap().contains("stop the photo app"));
 
     assert_eq!(lpost(addr, "/api/app/stop", &json!({})).status, 200);
     assert_eq!(lget(addr, "/api/app").json()["running"], false);
+    // Stopped: commands work again.
+    assert_eq!(run_job(addr, json!({ "kind": "verify", "root": root, "quick": true }))["ok"], true);
     launcher.stop().unwrap();
 }
 
@@ -143,4 +159,118 @@ fn the_drive_is_found_from_where_the_binary_sits() {
     let exe = Path::new("/Volumes/Fotos/.shoebox/bin/shoebox-macos");
     assert_eq!(launcher::drive_of_binary(exe).as_deref(), Some(Path::new("/Volumes/Fotos")));
     assert_eq!(launcher::drive_of_binary(Path::new("/usr/local/bin/shoebox")), None);
+}
+
+#[test]
+fn several_folders_run_one_after_the_other_with_a_result_each() {
+    let _turn = serial();
+    let a = Library::new("launcher-many-a");
+    let b = Library::new("launcher-many-b");
+    let missing = std::env::temp_dir().join("shoebox-launcher-nothing-here");
+    let launcher = start_launcher();
+    let addr = launcher.addr;
+
+    let bad = lpost(addr, "/api/job", &json!({ "kind": "scan", "roots": [a.root, missing] }));
+    assert_eq!(bad.status, 400, "one wrong folder stops the request before anything runs");
+
+    let roots = [a.root.display().to_string(), b.root.display().to_string()];
+    let job = run_job(addr, json!({ "kind": "scan", "roots": roots }));
+    assert_eq!(job["ok"], true, "{job}");
+    assert_eq!(job["results"].as_array().unwrap().len(), 2);
+    assert!(job["results"].as_array().unwrap().iter().all(|r| r["ok"] == true && r["result"]["added"].as_u64().unwrap() >= 5));
+    // Results name the folder they belong to.
+    let name_a = a.root.file_name().unwrap().to_str().unwrap();
+    let name_b = b.root.file_name().unwrap().to_str().unwrap();
+    let paths: Vec<String> = job["recent_ok"].as_array().unwrap().iter().map(|f| f["path"].as_str().unwrap().to_string()).collect();
+    assert!(paths.iter().any(|p| p.starts_with(&format!("{name_a}: "))), "{paths:?}");
+    assert!(paths.iter().any(|p| p.starts_with(&format!("{name_b}: "))), "{paths:?}");
+    // Both got their index.
+    assert!(a.path(".shoebox/library.db").is_file() && b.path(".shoebox/library.db").is_file());
+    launcher.stop().unwrap();
+}
+
+#[test]
+fn the_remembered_folders_are_a_json_file() {
+    let dir = std::env::temp_dir().join(format!("shoebox-launcher-config-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let file = dir.join("nested").join("launcher.json");
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(file.clone()) }).unwrap();
+    let addr = launcher.addr;
+
+    assert_eq!(lget(addr, "/api/config").json(), json!({ "paths": [] }), "no file yet");
+    let saved = lpost(addr, "/api/config", &json!({ "paths": [" /Volumes/Fotos ", "/Volumes/Fotos", "", "/Volumes/Fotos 2"] }));
+    assert_eq!(saved.status, 200);
+    assert_eq!(saved.json(), json!({ "paths": ["/Volumes/Fotos", "/Volumes/Fotos 2"] }), "trimmed, no duplicates");
+    // A plain JSON file a person can read and edit.
+    let on_disk: serde_json::Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    assert_eq!(on_disk, json!({ "paths": ["/Volumes/Fotos", "/Volumes/Fotos 2"] }));
+    assert_eq!(launcher::Config::load(&file).paths.len(), 2);
+    launcher.stop().unwrap();
+
+    // The next start offers them again; a broken file is just empty.
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(file.clone()) }).unwrap();
+    assert_eq!(lget(launcher.addr, "/api/config").json()["paths"][0], "/Volumes/Fotos");
+    launcher.stop().unwrap();
+    std::fs::write(&file, b"{ not json").unwrap();
+    assert_eq!(launcher::Config::load(&file).paths.len(), 0);
+    // Changing it needs the header like everything else.
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(file) }).unwrap();
+    let json_ct = ("Content-Type", "application/json");
+    assert_eq!(bare_request(launcher.addr, "POST", "/raw/api/config", &[json_ct], br#"{"paths":["/x"]}"#).status, 403);
+    launcher.stop().unwrap();
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn cancel_stops_a_running_command_like_ctrl_c_and_keeps_what_was_done() {
+    let _turn = serial();
+    let lib = Library::new("launcher-cancel");
+    // A picture the fake recognizer never answers: the run hangs until cancelled.
+    image::RgbImage::from_pixel(64, 64, image::Rgb([0, 0, 255])).save(lib.path("blue.png")).unwrap();
+    lib.scan_opts(true, false, false);
+    unsafe { std::env::set_var("SHOEBOX_RECOGNIZER", env!("CARGO_BIN_EXE_shoebox-fake-recognizer")) };
+    let launcher = start_launcher();
+    let addr = launcher.addr;
+    let root = lib.root.display().to_string();
+
+    // Nothing to cancel.
+    assert_eq!(lpost(addr, "/api/job/cancel", &json!({})).json()["cancelling"], false);
+
+    assert_eq!(lpost(addr, "/api/job", &json!({ "kind": "recognize", "root": root })).status, 200);
+    let deadline = Instant::now() + Duration::from_secs(60);
+    loop {
+        let job = lget(addr, "/api/job").json();
+        let waiting = job["lines"].as_array().unwrap().iter().any(|l| l.as_str().unwrap().contains("pictures to look at"));
+        if waiting && job["ok_count"].as_u64().unwrap() + job["fail_count"].as_u64().unwrap() >= 1 {
+            break;
+        }
+        assert!(job["running"] == true, "the run ended by itself: {job}");
+        assert!(Instant::now() < deadline, "never started");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(lpost(addr, "/api/job/cancel", &json!({})).json()["cancelling"], true);
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let job = loop {
+        let job = lget(addr, "/api/job").json();
+        if job["running"] == false {
+            break job;
+        }
+        assert!(Instant::now() < deadline, "cancel did not stop the run");
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    assert_eq!(job["cancelled"], true, "{job}");
+    assert_eq!(job["ok"], false);
+    // What was found before is kept, and the job is marked as stopped, not failed.
+    let state: String = rusqlite::Connection::open(lib.path(".shoebox/recognition.db"))
+        .unwrap()
+        .query_row("SELECT state FROM jobs ORDER BY id DESC LIMIT 1", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(state, "interrupted");
+
+    // A cancelled scan resumes: the next command starts normally.
+    unsafe { std::env::remove_var("SHOEBOX_RECOGNIZER") };
+    let again = run_job(addr, json!({ "kind": "verify", "root": root, "quick": true }));
+    assert_eq!(again["cancelled"], false);
+    assert_eq!(again["ok"], true, "{again}");
+    launcher.stop().unwrap();
 }

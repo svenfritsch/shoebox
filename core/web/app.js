@@ -100,7 +100,7 @@ $('login-form').addEventListener('submit', function (ev) {
 
 // ------------------------------------------------------------------ filters (in the URL hash)
 
-var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person'];
+var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person', 'drives'];
 
 function readHash() {
   var f = { folder: null, tags: [], people: [], q: '', view: null, id: null, tab: null };
@@ -150,6 +150,7 @@ function applyFilter() {
   $('nav-dups').classList.toggle('active', view === 'duplicates');
   $('nav-trash').classList.toggle('active', view === 'trash');
   $('nav-faces').classList.toggle('active', view === 'faces');
+  $('nav-drives').classList.toggle('active', view === 'drives');
   markFacesSection();
   if (view) {
     endSelection();
@@ -437,6 +438,7 @@ function markActiveFolder() {
 $('all').onclick = function () { setFilter({ folder: null, tags: [], people: [], q: '' }); };
 $('nav-dups').onclick = function () { showView('duplicates'); };
 $('nav-trash').onclick = function () { showView('trash'); };
+$('nav-drives').onclick = function () { showView('drives'); };
 
 $('menu').onclick = function () {
   if (window.matchMedia('(max-width: 760px)').matches) document.body.classList.toggle('side-open');
@@ -1103,6 +1105,7 @@ function loadView(view) {
   else if (view === 'people') loadPeoplePage();
   else if (view === 'unnamed') loadUnnamed();
   else if (view === 'person') loadPersonPage();
+  else if (view === 'drives') loadDrivesPage();
   else loadTrash();
 }
 
@@ -3441,8 +3444,161 @@ function nameDrawnFace(info, frac) {
 
 // ------------------------------------------------------------------ start
 
+// ------------------------------------------------------------------ several drives
+
+// Each drive has its own library; the routes carry its id. The drive that is
+// shown is remembered; switching reloads the page. A drive that is not
+// plugged in is listed as offline and the rest keeps working.
+var drives = { list: [], current: null, offlineTimer: null };
+
+function chosenLibrary(libs) {
+  var saved = null;
+  try { saved = localStorage.getItem('shoebox-library'); } catch (e) { /* private window */ }
+  return libs.filter(function (l) { return l.id === saved; })[0]
+    || libs.filter(function (l) { return l.online; })[0] || libs[0];
+}
+
+function switchLibrary(id) {
+  try { localStorage.setItem('shoebox-library', id); } catch (e) { /* ignore */ }
+  location.hash = '';
+  location.reload();
+}
+
+function renderDriveList() {
+  var multi = drives.list.length > 1;
+  $('drives-box').hidden = !multi;
+  $('nav-drives').hidden = !multi;
+  var ul = $('drive-list');
+  ul.textContent = '';
+  drives.list.forEach(function (l) {
+    var li = el('li', (l.id === drives.current.id ? 'current ' : '') + (l.online ? '' : 'offline'));
+    var b = el('button');
+    b.appendChild(el('span', 'dot'));
+    b.appendChild(el('span', 'name', l.name));
+    if (!l.online) b.appendChild(el('span', 'tag', 'offline'));
+    else if (l.role === 'backup') b.appendChild(el('span', 'tag', 'backup'));
+    b.title = l.online ? l.name : l.name + ' is not connected' + (l.reason ? ' (' + l.reason + ')' : '');
+    b.onclick = function () { if (l.id !== drives.current.id) switchLibrary(l.id); };
+    li.appendChild(b);
+    ul.appendChild(li);
+  });
+}
+
+// The chosen drive is offline: say so, and come back by itself when it is plugged in.
+function showOffline() {
+  var page = $('page');
+  $('page').hidden = false;
+  $('sizer').hidden = true;
+  $('empty').hidden = true;
+  page.textContent = '';
+  page.appendChild(el('h2', '', drives.current.name + ' is offline'));
+  page.appendChild(el('p', 'sub', 'This drive is not connected. Plug it in and it opens by itself; nothing was changed. '
+    + 'The other drives in the list on the left keep working.'));
+  var overview = el('button', 'btn quiet', 'Show all drives');
+  overview.onclick = function () { location.hash = '#view=drives'; location.reload(); };
+  page.appendChild(overview);
+  $('title').textContent = drives.current.name;
+  clearInterval(drives.offlineTimer);
+  drives.offlineTimer = setInterval(function () {
+    api('/api/libraries').then(function (libs) {
+      var now = libs.filter(function (l) { return l.id === drives.current.id; })[0];
+      if (now && now.online) location.reload();
+    }).catch(function () {});
+  }, 4000);
+}
+
+function loadDrivesPage() {
+  var page = $('page');
+  page.textContent = '';
+  page.appendChild(el('h2', '', 'All drives'));
+  page.appendChild(el('p', 'sub', 'Each drive keeps its own library. Here they are compared, without copying anything.'));
+  var drivesBox = el('div'), dupBox = el('div'), peopleBox = el('div');
+  page.appendChild(drivesBox);
+  page.appendChild(el('h2', '', 'Duplicates across drives'));
+  page.appendChild(dupBox);
+  page.appendChild(el('h2', '', 'People across drives'));
+  page.appendChild(peopleBox);
+  var role = function (d, value) {
+    post('/api/all/role', { library: d.library, role: value }).then(function () { toast(d.name + ': ' + value); loadDrivesPage(); refreshDrives(); }).catch(failed);
+  };
+  api('/api/all/drives').then(function (list) {
+    list.forEach(function (d) {
+      var card = el('div', 'drive-card' + (d.online ? '' : ' offline'));
+      card.appendChild(el('span', 'title', d.name));
+      card.appendChild(el('span', 'pill' + (d.online ? ' on' : ''), d.online ? 'online' : 'offline'));
+      if (d.online) {
+        var wrap = el('span', 'role');
+        wrap.appendChild(el('span', 'sub', 'This drive is'));
+        var sel = el('select');
+        [['unknown', 'not decided'], ['separate', 'separate: has its own photos'], ['backup', 'a backup of another drive']].forEach(function (o) {
+          var opt = el('option', '', o[1]); opt.value = o[0]; if (d.role === o[0]) opt.selected = true; sel.appendChild(opt);
+        });
+        sel.onchange = function () { role(d, sel.value); };
+        wrap.appendChild(sel);
+        card.appendChild(wrap);
+      }
+      drivesBox.appendChild(card);
+      if (d.online && d.role === 'unknown' && d.suggested_backup_of) {
+        var b = el('div', 'banner warn');
+        b.appendChild(el('div', '', d.name + ' looks like a backup of ' + d.suggested_backup_of + ': almost everything on it is on the other drive too. '
+          + 'Until you decide, it is left out of the duplicate list.'));
+        var row = el('div', 'row');
+        var yes = el('button', 'btn', 'Yes, it is a backup'); yes.onclick = function () { role(d, 'backup'); };
+        var no = el('button', 'btn quiet', 'No, it has its own photos'); no.onclick = function () { role(d, 'separate'); };
+        row.appendChild(yes); row.appendChild(no);
+        b.appendChild(row);
+        drivesBox.appendChild(b);
+      }
+    });
+  }).catch(failed);
+  api('/api/all/duplicates?limit=200').then(function (r) {
+    if (r.excluded.length) {
+      r.excluded.forEach(function (x) { dupBox.appendChild(el('p', 'sub', 'Left out: ' + x.name + ' (' + x.reason + ')')); });
+    }
+    dupBox.appendChild(el('p', 'sub', r.total_groups
+      ? plural(r.total_groups, 'photo exists', 'photos exist') + ' on more than one drive' + (r.compared.length ? ' (compared: ' + r.compared.join(', ') + ')' : '') + '.'
+      : 'No photo exists on more than one drive' + (r.compared.length > 1 ? ' (compared: ' + r.compared.join(', ') + ').' : '.')));
+    r.groups.slice(0, 50).forEach(function (g) {
+      var box = el('div', 'xgroup');
+      g.files.forEach(function (f) {
+        var line = el('div', 'path');
+        line.appendChild(el('b', '', f.name + ': '));
+        line.appendChild(document.createTextNode(f.path));
+        box.appendChild(line);
+      });
+      dupBox.appendChild(box);
+    });
+  }).catch(failed);
+  api('/api/all/people').then(function (r) {
+    if (r.offline.length) peopleBox.appendChild(el('p', 'sub', 'Not included, offline: ' + r.offline.join(', ')));
+    if (!r.people.length) peopleBox.appendChild(el('p', 'sub', 'Nobody is named yet.'));
+    var grid = el('div', 'people-grid');
+    r.people.forEach(function (p) {
+      var c = el('div', 'person-merged');
+      c.appendChild(el('div', 'n', p.name));
+      c.appendChild(el('div', 'sub', plural(p.photos, 'photo', 'photos') + (p.group ? ' · ' + p.group : '')));
+      p.libraries.forEach(function (l) { c.appendChild(el('span', 'pill', l.name + ' · ' + l.faces)); });
+      grid.appendChild(c);
+    });
+    peopleBox.appendChild(grid);
+  }).catch(failed);
+}
+
+function refreshDrives() {
+  return api('/api/libraries').then(function (libs) {
+    return api('/api/all/drives').catch(function () { return []; }).then(function (roles) {
+      libs.forEach(function (l) { var r = roles.filter(function (x) { return x.library === l.id; })[0]; l.role = r ? r.role : 'unknown'; });
+      drives.list = libs;
+      drives.current = libs.filter(function (l) { return drives.current && l.id === drives.current.id; })[0] || chosenLibrary(libs);
+      renderDriveList();
+    });
+  });
+}
+
 api('/api/libraries').then(function (libs) {
-  LIBAPI = '/api/lib/' + libs[0].id;
+  drives.list = libs;
+  drives.current = chosenLibrary(libs);
+  LIBAPI = '/api/lib/' + drives.current.id;
   return api('/api/session');
 }).then(function (s) {
   if (!s.authenticated) {
@@ -3450,10 +3606,18 @@ api('/api/libraries').then(function (libs) {
     showLogin();
     return;
   }
-  state.filter = readHash();
-  $('search').value = state.filter.q;
-  return Promise.all([loadFolders(), loadInfo(), loadOwnTags(), loadPeople()]).then(function () {
-    applyFilter();
-    setInterval(loadInfo, 20000);
+  return refreshDrives().then(function () {
+    setInterval(refreshDrives, 10000);
+    if (!drives.current.online) {
+      // Nothing of this library can be loaded: only the overview of the drives can be shown.
+      if (readHash().view === 'drives') { state.filter = readHash(); applyFilter(); } else showOffline();
+      return;
+    }
+    state.filter = readHash();
+    $('search').value = state.filter.q;
+    return Promise.all([loadFolders(), loadInfo(), loadOwnTags(), loadPeople()]).then(function () {
+      applyFilter();
+      setInterval(loadInfo, 20000);
+    });
   });
 }).catch(function (e) { console.error(e); });

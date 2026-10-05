@@ -345,3 +345,69 @@ fn library_routes_need_the_library_id() {
     let json = ("Content-Type", "application/json");
     assert_eq!(bare_request(addr, "POST", &format!("/raw/api/lib/{id}/move"), &[json], body).status, 403);
 }
+
+/// The drive's library id and its routes, for a server with several libraries.
+fn lib_ids(addr: std::net::SocketAddr) -> Vec<(String, String, bool)> {
+    get(addr, "/api/libraries")
+        .json()
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| (l["id"].as_str().unwrap().to_string(), l["name"].as_str().unwrap().to_string(), l["online"].as_bool().unwrap()))
+        .collect()
+}
+
+#[test]
+fn several_libraries_share_one_server_and_an_unplugged_drive_is_only_offline() {
+    let a = Library::new("multi-a");
+    let b = Library::new("multi-b");
+    // Same ids in both databases (the same layout), but different photos.
+    b.jpeg("Familie/Weihnachten/DSC_2001.jpg", 99);
+    a.scan_opts(false, false, false);
+    b.scan_opts(false, false, false);
+    let before = (a.snapshot(), b.snapshot());
+    let missing = std::env::temp_dir().join(format!("shoebox-it-{}-multi-never-plugged", std::process::id()));
+    let server = start_many(&[&a, &b], &[&missing]);
+    let addr = server.addr;
+
+    let libs = lib_ids(addr);
+    assert_eq!(libs.len(), 3);
+    assert_eq!(libs.iter().map(|l| l.2).collect::<Vec<_>>(), [true, true, false], "a drive that was never plugged in is offline");
+    let (id_a, id_b, id_missing) = (libs[0].0.clone(), libs[1].0.clone(), libs[2].0.clone());
+    assert_eq!(libs[0].1, a.root.file_name().unwrap().to_str().unwrap());
+
+    // Each library answers for itself; the same file id means different photos.
+    let route = |id: &str, rest: &str| format!("/raw/api/lib/{id}/{rest}");
+    let (ta, tb) = (get(addr, &route(&id_a, "timeline")).json(), get(addr, &route(&id_b, "timeline")).json());
+    assert_eq!(ids(&ta), ids(&tb), "both databases hand out the same ids");
+    let (fa, fb) = (get(addr, &route(&id_a, &format!("files/{}", ids(&ta)[0]))).json(), get(addr, &route(&id_b, &format!("files/{}", ids(&tb)[0]))).json());
+    assert_eq!(fa["id"], fb["id"]);
+    assert_ne!(get(addr, &route(&id_a, "info")).json()["name"], get(addr, &route(&id_b, "info")).json()["name"]);
+
+    // Offline: 503 with a clear message, the others are not affected.
+    let off = get(addr, &route(&id_missing, "timeline"));
+    assert_eq!(off.status, 503);
+    assert_eq!(off.json()["offline"], true);
+    assert_eq!(get(addr, &route(&id_a, "timeline")).status, 200);
+
+    // Unplug a running drive: only it goes offline. (A look at the drive is
+    // trusted for two seconds.)
+    let gone = b.root.with_extension("unplugged");
+    std::fs::rename(&b.root, &gone).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(2300));
+    let r = get(addr, &route(&id_b, "timeline")); assert_eq!(r.status, 503, "{}", String::from_utf8_lossy(&r.body[..r.body.len().min(300)]));
+    let libs = lib_ids(addr);
+    assert_eq!(libs.iter().map(|l| l.2).collect::<Vec<_>>(), [true, false, false]);
+    assert_eq!(get(addr, &route(&id_a, "timeline")).status, 200);
+    assert_eq!(get(addr, &route(&id_a, "info")).status, 200);
+
+    // Plug it in again: it opens by itself.
+    std::fs::rename(&gone, &b.root).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(2300));
+    assert_eq!(get(addr, &route(&id_b, "timeline")).status, 200);
+    assert_eq!(lib_ids(addr).iter().map(|l| l.2).collect::<Vec<_>>(), [true, true, false]);
+
+    // Changes on one library do not touch the other, and only read what they should.
+    server.stop().unwrap();
+    assert_eq!((a.snapshot(), b.snapshot()), before);
+}

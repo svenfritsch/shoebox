@@ -401,7 +401,7 @@ impl std::fmt::Display for Interrupted {
 impl std::error::Error for Interrupted {}
 
 fn interrupted() -> bool {
-    INTERRUPTED.load(Ordering::Relaxed)
+    INTERRUPTED.load(Ordering::Relaxed) || crate::report::cancelled()
 }
 
 /// Let Ctrl-C (and `kill`) end a run in an orderly way: the current batch is

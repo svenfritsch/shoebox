@@ -42,6 +42,37 @@ impl Drop for Installed {
     }
 }
 
+// ---------------------------------------------------------------- cancel
+
+/// The launcher's "Cancel": the same as Ctrl-C for a command line run. The
+/// commands look at it between files, keep what they have committed and stop;
+/// running them again continues.
+static CANCEL: AtomicBool = AtomicBool::new(false);
+
+pub fn request_cancel() {
+    CANCEL.store(true, Ordering::SeqCst);
+}
+
+pub fn clear_cancel() {
+    CANCEL.store(false, Ordering::SeqCst);
+}
+
+pub fn cancelled() -> bool {
+    CANCEL.load(Ordering::Relaxed)
+}
+
+/// The command stopped because it was cancelled.
+#[derive(Debug)]
+pub struct Cancelled;
+
+impl std::fmt::Display for Cancelled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("cancelled; what was done so far is kept, run it again to continue")
+    }
+}
+
+impl std::error::Error for Cancelled {}
+
 /// Send the usual output to standard error (so standard output can be JSON).
 pub fn text_to_stderr(on: bool) {
     TO_STDERR.store(on, Ordering::SeqCst);

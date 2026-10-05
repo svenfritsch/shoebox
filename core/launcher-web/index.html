@@ -13,11 +13,16 @@
     <p class="sub">Your photo library on this drive. Nothing is copied or changed in your photos.</p>
   </header>
 
+  <fieldset id="controls">
   <section class="card">
     <h2>1 · Where are your photos?</h2>
-    <label for="root">Drive or photo folder (the folder that holds your photos)</label>
-    <input id="root" list="drives" placeholder="/Volumes/MyDrive" autocomplete="off" spellcheck="false">
+    <label for="root">Drives or photo folders (type a path, press Enter to add it)</label>
+    <div class="chipbox" id="chipbox">
+      <ul id="path-chips" aria-label="Chosen folders"></ul>
+      <input id="root" list="drives" placeholder="/Volumes/MyDrive" autocomplete="off" spellcheck="false">
+    </div>
     <datalist id="drives"></datalist>
+    <p class="hint">Detected drives, click to add:</p>
     <div id="drive-chips" class="chips" aria-label="Detected drives"></div>
     <p id="root-hint" class="hint"></p>
   </section>
@@ -35,9 +40,13 @@
       <label><input type="checkbox" id="opt-rotated"> Recognize: also look for faces lying down (slower)</label>
     </div>
   </section>
+  </fieldset>
 
   <section class="card" id="progress-card" hidden>
-    <h2 id="job-title">Working…</h2>
+    <div class="title-row">
+      <h2 id="job-title">Working…</h2>
+      <button id="cancel" class="danger" hidden>Cancel</button>
+    </div>
     <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div id="bar-fill"></div></div>
     <p id="progress-label" class="hint"></p>
     <div id="summary" class="summary" hidden></div>

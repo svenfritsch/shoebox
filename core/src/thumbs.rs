@@ -309,6 +309,9 @@ pub fn generate(conn: &Connection, root: &Path) -> Result<Stats> {
             let mut done = 0;
             let result = (|| -> Result<()> {
                 for (rel, src, result) in rx.iter() {
+                    if crate::report::cancelled() {
+                        return Err(crate::report::Cancelled.into());
+                    }
                     done += 1;
                     match &result {
                         Ok(_) => {

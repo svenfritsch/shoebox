@@ -340,6 +340,10 @@ fn index(conn: &Connection, root: &Path, walked: &Walked, job_id: i64, stats: &m
     let mut parser = MediaParser::new();
     let mut progress = Progress::new(walked.files.len() as u64);
     for (i, f) in walked.files.iter().enumerate() {
+        if crate::report::cancelled() {
+            batch.commit()?;
+            return Err(crate::report::Cancelled.into());
+        }
         progress.tick(|done, total| format!("indexed {done}/{total}"));
         let path = root.join(&f.rel.raw);
         let folder_id = folder_ids[f.rel.parent_nfc()];
@@ -641,6 +645,11 @@ fn hash_pending(conn: &Connection, root: &Path, stats: &mut Stats) -> Result<()>
     let mut batch = Batch::begin(conn)?;
     let mut progress = Progress::new(total_bytes);
     for (id, rel, size, mtime) in &pending {
+        if crate::report::cancelled() {
+            batch.commit()?;
+            job.finish(conn, "interrupted", &serde_json::json!({ "files": stats.full_hashed }))?;
+            return Err(crate::report::Cancelled.into());
+        }
         let path = root.join(rel);
         match hash_unchanged(&path, *size, *mtime) {
             Ok(hash) => {

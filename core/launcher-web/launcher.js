@@ -6,7 +6,6 @@
 var $ = function (id) { return document.getElementById(id); };
 var KINDS = { scan: 'Scan', verify: 'Verify', recognize: 'Recognize', faces_stats: 'Face stats' };
 var polling = null;
-var shown = { job: 0 };
 
 function api(path, body) {
   var opts = { credentials: 'same-origin' };
@@ -23,41 +22,94 @@ function api(path, body) {
   });
 }
 
-function root() { return $('root').value.trim(); }
+// ---------------------------------------------------------------- folders (chips)
+
+var paths = [];          // the chosen folders, remembered in the launcher's JSON config
+var drives = [];
+var busy = false;        // a command is running
+var serving = false;     // the photo app is running: everything else is locked
+
+function savePaths() {
+  api('/api/config', { paths: paths }).catch(function () { /* the list still works */ });
+}
+
+function addPath(value) {
+  value = value.trim();
+  if (!value || paths.indexOf(value) >= 0) return;
+  paths.push(value);
+  renderChips();
+  savePaths();
+}
+
+function removePath(value) {
+  paths = paths.filter(function (p) { return p !== value; });
+  renderChips();
+  savePaths();
+}
+
+function renderChips() {
+  var ul = $('path-chips');
+  ul.textContent = '';
+  paths.forEach(function (p) {
+    var li = document.createElement('li');
+    var known = drives.filter(function (d) { return d.path === p; })[0];
+    if (drives.length && !known && p.indexOf('/Volumes/') === 0) li.className = 'offline';
+    var name = document.createElement('span'); name.className = 'name'; name.textContent = p; name.title = p;
+    var x = document.createElement('button');
+    x.type = 'button'; x.textContent = '×'; x.title = 'Remove'; x.setAttribute('aria-label', 'Remove ' + p);
+    x.onclick = function () { removePath(p); };
+    li.appendChild(name); li.appendChild(x);
+    ul.appendChild(li);
+  });
+  $('root').placeholder = paths.length ? 'Add another folder…' : '/Volumes/MyDrive';
+}
+
+$('root').addEventListener('keydown', function (ev) {
+  if (ev.key === 'Enter') {
+    ev.preventDefault();
+    addPath($('root').value);
+    $('root').value = '';
+  } else if (ev.key === 'Backspace' && !$('root').value && paths.length) {
+    removePath(paths[paths.length - 1]);
+  }
+});
+// A suggestion picked from the list is a finished path: add it right away.
+$('root').addEventListener('change', function () {
+  var v = $('root').value.trim();
+  if (v && drives.some(function (d) { return d.path === v; })) { addPath(v); $('root').value = ''; }
+});
+$('chipbox').addEventListener('click', function (ev) { if (ev.target === this) $('root').focus(); });
 
 function loadDrives() {
-  api('/api/drives').then(function (drives) {
-    var list = $('drives'), chips = $('drive-chips');
-    list.textContent = ''; chips.textContent = '';
+  return api('/api/drives').then(function (list) {
+    drives = list;
+    var dl = $('drives'), chips = $('drive-chips');
+    dl.textContent = ''; chips.textContent = '';
     drives.forEach(function (d) {
-      var o = document.createElement('option'); o.value = d.path; list.appendChild(o);
+      var o = document.createElement('option'); o.value = d.path; dl.appendChild(o);
       var b = document.createElement('button');
-      b.textContent = d.name; b.title = d.path;
+      b.type = 'button'; b.textContent = d.name; b.title = d.path;
       if (d.library) b.className = 'has-lib';
-      b.onclick = function () { $('root').value = d.path; rememberRoot(); };
+      b.onclick = function () { addPath(d.path); };
       chips.appendChild(b);
     });
-    var saved = null;
-    try { saved = localStorage.getItem('shoebox-root'); } catch (e) { /* private window */ }
-    if (!root()) {
-      var lib = drives.filter(function (d) { return d.library; })[0];
-      $('root').value = saved || (lib && lib.path) || '';
-    }
     $('root-hint').textContent = drives.length
       ? 'A check mark marks drives that already have a shoebox library.'
       : 'No drives found automatically: type the path of your drive or photo folder.';
+    renderChips();
   }).catch(function (e) { $('root-hint').textContent = String(e.message); });
 }
 
-function rememberRoot() {
-  try { localStorage.setItem('shoebox-root', root()); } catch (e) { /* ignore */ }
+function loadConfig() {
+  return api('/api/config').then(function (c) { paths = c.paths || []; renderChips(); }).catch(function () {});
 }
 
+// ---------------------------------------------------------------- commands
+
 function startJob(kind) {
-  if (!root()) { $('root').focus(); $('root-hint').textContent = 'Enter the folder first.'; return; }
-  rememberRoot();
+  if (!paths.length) { $('root').focus(); $('root-hint').textContent = 'Add at least one folder first.'; return; }
   api('/api/job', {
-    kind: kind, root: root(),
+    kind: kind, roots: paths,
     quick: $('opt-quick').checked, rotated: $('opt-rotated').checked,
   }).then(function () {
     $('progress-card').hidden = false;
@@ -78,6 +130,13 @@ function poll() {
   }).catch(function () { polling = setTimeout(poll, 2000); });
 }
 
+// Everything that starts or changes something is locked while a command or
+// the photo app runs; only Cancel (command) or Stop (app) stay usable.
+function applyLocks() {
+  $('controls').disabled = busy || serving;
+  $('start-app').disabled = busy;
+}
+
 function pill(text, cls) {
   var s = document.createElement('span'); s.className = 'pill ' + (cls || ''); s.textContent = text; return s;
 }
@@ -86,9 +145,14 @@ function render(job) {
   if (!job.id) return;
   $('progress-card').hidden = false;
   var name = KINDS[job.kind] || job.kind;
-  document.querySelectorAll('.actions button').forEach(function (b) { b.disabled = job.running; });
-  $('start-app').disabled = job.running;
-  $('job-title').textContent = job.running ? name + ' is running…' : name + (job.ok ? ' finished' : ' finished with problems');
+  busy = job.running;
+  applyLocks();
+  $('cancel').hidden = !job.running;
+  $('cancel').disabled = false;
+  var where = job.current_root && job.roots.length > 1 ? ' (' + job.current_root + ')' : '';
+  $('job-title').textContent = job.running ? name + ' is running…' + where
+    : job.cancelled ? name + ' was cancelled (what was done is kept)'
+    : name + (job.ok ? ' finished' : ' finished with problems');
   var bar = document.querySelector('.bar');
   var p = job.progress;
   var pct = p && p.total ? Math.min(100, Math.round(100 * p.done / p.total)) : null;
@@ -102,7 +166,13 @@ function render(job) {
   summary.hidden = false;
   summary.appendChild(pill(job.ok_count.toLocaleString() + ' worked', 'ok'));
   summary.appendChild(pill(job.fail_count.toLocaleString() + ' failed', job.fail_count ? 'bad' : ''));
-  if (job.result && !job.running) summaryOf(job).forEach(function (t) { summary.appendChild(pill(t)); });
+  if (!job.running) {
+    job.results.forEach(function (r) {
+      if (!r.result) return;
+      var label = job.results.length > 1 ? r.root.split(/[\\/]/).filter(Boolean).pop() + ': ' : '';
+      summaryOf(job.kind, r.result).forEach(function (t) { summary.appendChild(pill(label + t)); });
+    });
+  }
   $('job-error').hidden = !job.error;
   $('job-error').textContent = job.error || '';
 
@@ -125,8 +195,9 @@ function render(job) {
   $('lines').textContent = job.lines.join('\n');
 }
 
-function summaryOf(job) {
-  var r = job.result, out = [];
+function summaryOf(kind, r) {
+  var out = [];
+  var job = { kind: kind };
   if (job.kind === 'scan') out.push(r.added + ' added', r.moved + ' moved', r.changed + ' changed', r.missing + ' missing');
   else if (job.kind === 'verify') out.push(r.checked + ' checked', r.missing.length + ' missing', r.damaged.length + ' damaged');
   else if (job.kind === 'recognize' && r.faces !== undefined) out.push(r.faces + ' faces');
@@ -135,14 +206,16 @@ function summaryOf(job) {
 }
 
 function appState() {
-  api('/api/app').then(function (s) {
+  return api('/api/app').then(function (s) {
+    serving = !!s.running;
+    applyLocks();
     $('stop-app').hidden = !s.running;
     $('start-app').textContent = s.running ? 'Open photo app' : 'Start photo app';
-    if (s.running) $('app-state').innerHTML = '';
     if (s.running) {
       var a = document.createElement('a'); a.href = s.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = s.url;
-      $('app-state').textContent = 'Running for ' + s.root + ' at ';
+      $('app-state').textContent = 'Running for ' + s.roots.join(', ') + ' at ';
       $('app-state').appendChild(a);
+      $('app-state').appendChild(document.createTextNode('. Stop it to scan, verify or change folders.'));
     }
   });
 }
@@ -151,17 +224,21 @@ document.querySelectorAll('.actions button').forEach(function (b) {
   b.onclick = function () { startJob(b.dataset.kind); };
 });
 $('only-failed').onchange = poll;
-$('root').onchange = rememberRoot;
 $('start-app').onclick = function () {
-  if (!root()) { $('root').focus(); return; }
-  rememberRoot();
-  api('/api/app', { root: root() }).then(function (r) {
-    appState();
-    window.open(r.url, '_blank', 'noopener');
+  if (serving) { window.open($('app-state').querySelector('a').href, '_blank', 'noopener'); return; }
+  if (!paths.length) { $('root').focus(); $('root-hint').textContent = 'Add at least one folder first.'; return; }
+  api('/api/app', { roots: paths }).then(function (r) {
+    return appState().then(function () { window.open(r.url, '_blank', 'noopener'); });
   }).catch(function (e) { $('app-state').textContent = e.message; });
 };
-$('stop-app').onclick = function () { api('/api/app/stop', {}).then(function () { appState(); $('app-state').textContent = 'Photo app stopped.'; }); };
+$('stop-app').onclick = function () {
+  api('/api/app/stop', {}).then(appState).then(function () { $('app-state').textContent = 'Photo app stopped.'; });
+};
+$('cancel').onclick = function () {
+  $('cancel').disabled = true;
+  api('/api/job/cancel', {}).then(poll);
+};
 
-loadDrives();
+loadConfig().then(loadDrives);
 appState();
 poll();

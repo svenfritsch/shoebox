@@ -108,6 +108,9 @@ enum Command {
     Serve {
         /// Library root (scanned before with `shoebox scan`).
         root: PathBuf,
+        /// More libraries (other drives) to open alongside. One that is not
+        /// plugged in is shown as offline.
+        more: Vec<PathBuf>,
         /// Database to use instead of `<root>/.shoebox/library.db`.
         #[arg(long)]
         db: Option<PathBuf>,
@@ -205,8 +208,8 @@ fn main() -> ExitCode {
                 true
             })
         }
-        Command::Serve { root, db, port, lan, pin, recognizer } => {
-            serve::run(&serve::Options { root, db, port, lan, pin, reveal: None, recognizer }).map(|_| true)
+        Command::Serve { root, more, db, port, lan, pin, recognizer } => {
+            serve::run(&serve::Options { root, more_roots: more, db, port, lan, pin, reveal: None, recognizer }).map(|_| true)
         }
     };
     finish(result)

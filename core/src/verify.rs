@@ -91,6 +91,11 @@ pub fn run(opts: &Options) -> Result<Report> {
     let mut batch = Batch::begin(&conn)?;
     let mut progress = Progress::new(total_bytes);
     for (id, rel, size, mtime, full_hash, missing) in files {
+        if crate::report::cancelled() {
+            batch.commit()?;
+            job.finish(&conn, "interrupted", &report)?;
+            return Err(crate::report::Cancelled.into());
+        }
         report.checked += 1;
         let path = root.join(rel);
         progress.add(*size, |done, total| {
