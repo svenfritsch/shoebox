@@ -181,6 +181,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 5b | Own tags (add/remove, many photos at once, search), user data backup | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5b-2 | Search by several tags at once (AND, chips); people join in with 5c-3 | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **5c-1 done**, checked on the real drive; **5c-2 and 5c-3 done except the real-hardware run** (see [phase5.md](phase5.md)) |
+| 5d | Duplicates UI: one row per photo, multi-select, bulk delete within a folder, tag and capture-date carry-over; Move dialog "keep tags"; trash dialog focus | |
 | 6 | Pets | |
 | 7 | Backup verification, launchers, packaging | |
 
@@ -339,6 +340,34 @@ Open:
       ([phase5.md](phase5.md)). The real-hardware check, with the 5c-2
       checks folded in and all in the UI, is in its list.
 
+### Phase 5d details (duplicates UI and tag carry-over)
+
+Planned, one PR. Feedback after 5c.
+
+UI
+- Trash dialog: focus the "Move to trash" button when it opens, so Enter confirms.
+- Move dialog: checkbox "Keep tags". Checked: the photos' own tags move along (as today). Unchecked: they are dropped.
+- Duplicates page: one row per photo instead of one card per copy. Left: one thumbnail and the file name. Right: one compact card per copy with the metadata (resolution, size in MB, folder, tags, capture date). The thumbnail is shown once per group, not once per copy.
+- Each copy card has a checkbox "delete this copy". At least one card per group must stay unchecked; the last unchecked one is disabled, so the original can never be deleted.
+- Multi-select: select copies across groups and trash them in one action.
+
+Bulk action (same folder)
+- Button at the top of the page: remove all exact duplicates (same full hash) that lie in the same folder, without review. The copy with the highest resolution stays (tie: keep the oldest path). Near duplicates (phash) are never touched.
+- Copies in different folders always need the user's decision, because the folder carries meaning.
+
+Metadata and tags must not get lost
+- Folder tags of a deleted copy are added to the surviving original as own, removable tags (folder tags themselves stay non-removable). Example: "Weihnachten/braten.jpg" survives, the copy in "Kochen" is trashed, so the original gets the removable tag "Kochen".
+- Capture date: if the original has none or differs from a copy, take over the existing/oldest date automatically. Stored as an override in `library.db`, never written into the file (originals stay untouched, see principles). Only real conflicts that cannot be merged cleanly ask the user.
+- Own tags of the deleted copy are merged into the original as well.
+
+Tests
+- Guard stays green (`organize.rs`: only paths change, nothing is modified).
+- New: tag carry-over, capture-date merge, "at least one stays" rule, same-folder bulk action only on exact duplicates.
+
+Open
+- [ ] Check the new duplicates page on the real drive and the iPad.
+- [ ] Confirm the GitHub Actions run is green.
+
 ## Build notes and pitfalls (learned in phases 0–4)
 
 - **Spaces in paths.** The repo may live under a path with spaces.
@@ -441,4 +470,5 @@ name a few people and look at the suggestions and the "maybe" list, and
 mark the known false finds "not a face" (list in [phase5.md](phase5.md)).
 5c-3 (the UI) is built: install the protocol 2 recognizer, then go through
 the combined 5c-2/5c-3 list in [phase5.md](phase5.md), all in the UI and
-from the iPad. Next is phase 6 (pets).
+from the iPad. 5d (duplicates UI and tag carry-over) is planned and comes
+before phase 6 (pets).
