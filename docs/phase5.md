@@ -654,6 +654,33 @@ Folders
   `GET /api/timeline` takes `person` several times (AND).
 - Recognition and clustering progress in the status line.
 
+### 5c feedback: clusters too big
+
+First look at the real drive: one cluster of 2,566 faces (a mother, her
+fair-haired children and babies chained together), too long to scroll, "Select"
+in a column of the grid was cramped, and an expanded card could not be closed
+again. Built:
+
+- **Cluster size capped at `clusters::MAX_CLUSTER` = 100.** A cluster grows
+  from neighbour to neighbour at 0.60, which chains similar-looking people
+  together. A cluster of more than 100 faces is split with a stricter
+  similarity (0.62, 0.64, … up to 1.0, `SPLIT_STEP`) using the neighbour
+  lists: the weak links break first, and every piece still too large is
+  split again. Faces that are still joined at 1.0 are cut into pieces of
+  100. So the smallest threshold that fits is used, rather than a fixed 0.90
+  for all. Unit tests in `clusters.rs`.
+- **"Looks like X (721 of 2566)"** has a second button "✓ Only the 721" next
+  to "✓ X": it names only the faces suggested for X (≥ `SUGGEST_SIM`); the
+  rest of the card stays. (Whole card: "✓ X", as before.)
+- **Cards**: opening all faces ("+N") or "Select" makes the card as wide as
+  the page, with bigger faces, and a "Close ✕" button in a sticky head that
+  stays at the top while scrolling.
+- **Shift-click** selects a range wherever faces are selected, as in the
+  photo grid: the face check page, a person's faces and the cards under
+  Unnamed (`pickSpan` in `app.js`; the range runs from the last face
+  clicked to this one, in the order shown). The duplicates page has no
+  range: its boxes keep at least one copy per group.
+
 ## 5d: duplicates UI and tag carry-over
 
 Built, one commit per step. Scope and rules are in "Phase 5d details" in
@@ -842,6 +869,10 @@ Built, one commit per step. Scope and rules are in "Phase 5d details" in
     one core of a 2.1 GHz Xeon for 10,000 made-up faces, so expect a few
     seconds). Run it again: neighbour lists are kept, it should take a
     fraction.
+  - [ ] After 5c feedback (clusters of at most 100): run `shoebox recognize`
+    once, open Unnamed: no card over 100 faces, how many cards now, is the
+    largest one a single person? "✓ Only the N" on a card with a
+    suggestion; "+N" and "Select" widen the card, "Close ✕" stays visible.
   - [ ] `shoebox serve`: "Faces" appears in the sidebar with "Unnamed (N
     clusters)". Open it: are the largest cards one person each? Big mixed
     ones (small children: 0.60 may be too loose for them)? Scroll to the
