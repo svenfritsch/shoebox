@@ -584,6 +584,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/import", post(import_file))
         .route("/api/duplicates", get(duplicates_list))
         .route("/api/duplicates/decide", post(duplicates_decide))
+        .route("/api/duplicates/remove", post(duplicates_remove))
         .route("/api/trash", get(trash_list).post(trash_files))
         .route("/api/trash/{id}/thumb", get(trash_thumb))
         .route("/api/trash/{batch}/restore", post(trash_restore))
@@ -1424,6 +1425,18 @@ async fn duplicates_decide(State(app): State<Arc<App>>, Json(req): Json<DecideRe
     change(&app, move |_, conn| duplicates::decide(conn, &req.ids, req.decision.as_deref()))
         .await
         .map(|n| Json(serde_json::json!({ "pairs": n })))
+}
+
+#[derive(Deserialize)]
+struct RemoveCopiesRequest {
+    /// Copies that stay (at least one).
+    keep: Vec<i64>,
+    /// Copies that go to the trash; their tags go to a copy that stays.
+    remove: Vec<i64>,
+}
+
+async fn duplicates_remove(State(app): State<Arc<App>>, Json(req): Json<RemoveCopiesRequest>) -> ApiResult<Json<duplicates::Removed>> {
+    change(&app, move |app, conn| duplicates::remove_copies(conn, &app.root, &req.keep, &req.remove)).await.map(Json)
 }
 
 #[derive(Deserialize)]

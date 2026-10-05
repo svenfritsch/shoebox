@@ -8,11 +8,14 @@
 
 use std::collections::{HashMap, HashSet};
 
+use std::path::Path;
+
 use anyhow::{Result, bail};
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 
 use crate::db;
+use crate::organize;
 use crate::phash;
 
 /// Same threshold as the plan: copies stay within it, different photos land
@@ -228,6 +231,137 @@ pub fn linked(conn: &Connection, id: i64) -> Result<Vec<Linked>> {
         .query_map([id], |r| Ok(Linked { id: r.get(0)?, path: r.get(1)?, missing: r.get(2)? }))?
         .collect::<rusqlite::Result<_>>()?;
     Ok(rows)
+}
+
+// ------------------------------------------------------------ removing copies
+
+/// What the user's choice of copies to delete did.
+#[derive(Debug, Default, Serialize)]
+pub struct Removed {
+    pub trashed: organize::Trashed,
+    /// Tags put on surviving files as own tags (a file can get several).
+    pub tags_added: u64,
+}
+
+struct Copy {
+    id: i64,
+    path: String,
+    full_hash: Option<String>,
+    phash: Option<u64>,
+    pixels: u64,
+    added_at: i64,
+}
+
+fn copy_of(conn: &Connection, id: i64) -> Result<Copy> {
+    let row = conn
+        .query_row(
+            "SELECT id, path_nfc, full_hash, phash, coalesce(width, 0) * coalesce(height, 0), added_at
+             FROM files WHERE id = ?1 AND missing_since IS NULL",
+            [id],
+            |r| {
+                Ok(Copy {
+                    id: r.get(0)?,
+                    path: r.get(1)?,
+                    full_hash: r.get(2)?,
+                    phash: r.get::<_, Option<String>>(3)?.as_deref().and_then(phash::from_hex),
+                    pixels: r.get::<_, i64>(4)? as u64,
+                    added_at: r.get(5)?,
+                })
+            },
+        )
+        .optional()?;
+    row.ok_or_else(|| anyhow::anyhow!("file {id} is not in the library (any more)"))
+}
+
+/// The best of `keep` to inherit from `gone`: identical content first, else
+/// a similar photo; the highest resolution, then the earliest record.
+fn heir<'a>(gone: &Copy, keep: &'a [Copy]) -> Option<&'a Copy> {
+    let same = |k: &&Copy| gone.full_hash.is_some() && k.full_hash == gone.full_hash;
+    let similar = |k: &&Copy| match (gone.phash, k.phash) {
+        (Some(a), Some(b)) => phash::distance(a, b) <= NEAR_BITS,
+        _ => false,
+    };
+    let best = |mut c: Vec<&'a Copy>| {
+        c.sort_by(|a, b| b.pixels.cmp(&a.pixels).then(a.added_at.cmp(&b.added_at)).then(a.path.cmp(&b.path)));
+        c.into_iter().next()
+    };
+    best(keep.iter().filter(same).collect()).or_else(|| best(keep.iter().filter(similar).collect()))
+}
+
+/// Names of a file's tags of one source (`folder` or `user`).
+fn tag_names(conn: &Connection, id: i64, source: &str) -> Result<Vec<String>> {
+    Ok(conn
+        .prepare(
+            "SELECT t.name FROM file_tags ft JOIN tags t ON t.id = ft.tag_id
+             WHERE ft.file_id = ?1 AND ft.source = ?2 ORDER BY t.name",
+        )?
+        .query_map(params![id, source], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?)
+}
+
+/// Give `heir` the tags of a copy that goes away (its folder tags and own
+/// tags) as own tags, unless the heir has the tag as a folder tag already.
+/// Returns how many it got.
+fn carry_names(conn: &Connection, heir: i64, names: &[String]) -> Result<u64> {
+    let mut have: HashSet<String> = tag_names(conn, heir, "folder")?.iter().map(|n| db::tag_fold(n)).collect();
+    let mut added = 0;
+    for name in names {
+        if !have.insert(db::tag_fold(name)) {
+            continue;
+        }
+        let tag = db::own_tag_id(conn, name)?;
+        added += conn.execute(
+            "INSERT OR IGNORE INTO file_tags (file_id, tag_id, source) VALUES (?1, ?2, 'user')",
+            params![heir, tag],
+        )? as u64;
+    }
+    Ok(added)
+}
+
+/// Move `remove` to the trash while `keep` stays. At least one file must
+/// stay, and each removed file must be a duplicate of one that stays (same
+/// content, or a similar photo), so this cannot delete anything else. What
+/// would be lost goes to the survivor first: the folder tags and own tags of
+/// a removed copy become own tags of the heir (see `heir`).
+pub fn remove_copies(conn: &Connection, root: &Path, keep: &[i64], remove: &[i64]) -> Result<Removed> {
+    if keep.is_empty() {
+        bail!("at least one copy has to stay");
+    }
+    if remove.is_empty() {
+        bail!("nothing to delete");
+    }
+    if remove.iter().any(|id| keep.contains(id)) {
+        bail!("a copy cannot both stay and go");
+    }
+    let keep: Vec<Copy> = keep.iter().map(|&id| copy_of(conn, id)).collect::<Result<_>>()?;
+    let gone: Vec<Copy> = remove.iter().map(|&id| copy_of(conn, id)).collect::<Result<_>>()?;
+    let mut heirs = Vec::new();
+    for g in &gone {
+        match heir(g, &keep) {
+            Some(h) => heirs.push((g.id, g.path.clone(), h.id)),
+            None => bail!("{} is not a duplicate of a file that stays", g.path),
+        }
+    }
+    // Tags are read before the records of the removed files go.
+    let mut carries = Vec::new();
+    for (gone_id, path, heir) in &heirs {
+        let mut names = tag_names(conn, *gone_id, "folder")?;
+        names.extend(tag_names(conn, *gone_id, "user")?);
+        carries.push((*gone_id, path.clone(), *heir, names));
+    }
+    let ids: Vec<i64> = gone.iter().map(|g| g.id).collect();
+    let trashed = organize::trash_files(conn, root, &ids)?;
+    let mut out = Removed { tags_added: 0, trashed };
+    let done: HashSet<&String> = out.trashed.files.iter().collect();
+    let tx = conn.unchecked_transaction()?;
+    for (_, path, heir, names) in &carries {
+        if !done.contains(path) {
+            continue; // stayed where it was: nothing to carry
+        }
+        out.tags_added += carry_names(&tx, *heir, names)?;
+    }
+    tx.commit()?;
+    Ok(out)
 }
 
 struct UnionFind {
