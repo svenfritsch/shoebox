@@ -19,6 +19,7 @@ latest `main`, so conflicts stay small.
 | **5b** | Own tags: add/remove, many photos at once, search; user data backup | 1 (done) | `library.db` v3 |
 | **5b-2** | Search by several tags at once (AND); people join in with 5c-3 | 1 (done) | none |
 | **5c** | Faces | 3: **5c-1** check recognition, **5c-2** people/groups/clustering backend, **5c-3** UI | `library.db` v4 (5c-2) |
+| **5d** | Duplicates UI and tag carry-over (see [plan.md](plan.md)) | 1, separate commits per step | `library.db` v5 (capture-date override) |
 
 Conflict hot spots and how to avoid them:
 
@@ -653,6 +654,15 @@ Folders
   `GET /api/timeline` takes `person` several times (AND).
 - Recognition and clustering progress in the status line.
 
+## 5d: duplicates UI and tag carry-over
+
+Scope and rules are in "Phase 5d details" in [plan.md](plan.md). Build
+order (one commit each): trash dialog focus; Move dialog "Keep tags";
+duplicates page with one row per photo; "delete this copy" checkboxes with
+the at-least-one-stays rule; carry-over of tags; capture-date override
+(schema v5, `userdata.json` version 3); multi-select across groups; same-folder
+bulk action. Open points decided while building are listed here as built.
+
 ## Later (not in phase 5)
 
 - Undo for assignments.
@@ -780,3 +790,27 @@ Folders
     groups and decisions (drawn faces with `manual`); delete
     `recognition.db` and run `shoebox recognize`: every name and decision
     is still there. `shoebox verify` afterwards.
+- [ ] 5d, on the old Intel MacBook against the exFAT drive, then the iPad
+      (feedback needed from you; note what looks wrong):
+  - [ ] Trash dialog: select a photo, "Move to trash": the button has focus,
+    Enter confirms, Escape cancels.
+  - [ ] Move dialog: "Keep tags" checked keeps the photo's own tags after
+    the move; unchecked drops them (folder tags follow the new folder).
+  - [ ] Duplicates page: one thumbnail per group, one card per copy with
+    resolution, MB, folder, tags and capture date. Do the numbers match the
+    info panel? Is the layout readable on the iPad?
+  - [ ] Tick "delete this copy" on all but one card: the last unchecked
+    box is disabled, so the original cannot be deleted.
+  - [ ] Delete a copy in another folder: the survivor shows the copy's
+    folder as a removable own tag (and the copy's own tags). Remove it
+    again with ✕. Folder tags stay without ✕.
+  - [ ] Capture date: a pair where the dates differ or one is missing; the
+    survivor shows the existing/oldest date. Check the file itself in the
+    Finder: modified and created dates unchanged (`shoebox verify`).
+  - [ ] Multi-select across groups, trash in one action; restore one from
+    the trash page (tags come back).
+  - [ ] Bulk action "same folder": note the count in the confirm dialog,
+    run it; the highest resolution stays, near duplicates and copies in
+    other folders are untouched. How long on the full library?
+  - [ ] `shoebox verify` afterwards; restart `serve`: the override and the
+    carried tags are still there; `userdata.json` lists them.
