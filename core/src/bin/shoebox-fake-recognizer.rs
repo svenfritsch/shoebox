@@ -25,6 +25,20 @@
 //! turned 90° clockwise, and none when turned 270°; one whose left quarter is
 //! yellow is answered upright and hangs once turned.
 //!
+//! One cue gives faces of one person with a chosen similarity (for people
+//! and suggestions, `core/tests/people.rs`):
+//!
+//! | Top quarter white (all channels > 250), bottom quarter grey (channels within 4 of each other) | Reply |
+//! |---|---|
+//! | the middle half has mean colour *c*, the grey is *g* | one face in the middle (as for any picture), of the person a plain picture of colour *c* shows, with a cosine similarity of round(40 *g* / 255) / 40 to that plain picture's face |
+//!
+//! The rest of such an embedding points in a direction of its own per
+//! person and grey (pseudo-random, at right angles to the person's), so two
+//! such faces with similarities *a* and *b* to the person are about *a*·*b*
+//! similar to each other (± 0.1), and two with the same grey are the same
+//! face. So grey 147 (0.575) is close enough to suggest but not to cluster,
+//! 115 (0.45) only "maybe", 64 (0.25) nothing.
+//!
 //! `--protocol <n>` overrides the protocol in the hello; `--silent` never
 //! says hello.
 
@@ -64,6 +78,7 @@ fn main() {
         let id = req["id"].clone();
         let reply = match picture(&req) {
             Err(e) => json!({ "id": id, "error": e }),
+            Ok((w, h, _, Some((Edge::Top, Cue::Variant { colour, grey })))) => variant_reply(&id, w, h, colour, grey),
             Ok((_, _, _, Some((Edge::Top, Cue::Yellow)))) => {
                 std::thread::sleep(std::time::Duration::from_secs(3600));
                 return;
@@ -119,10 +134,13 @@ enum Edge {
     Right,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum Cue {
     Cyan,
     Yellow,
+    /// White top: a face like the plain picture of `colour` (the middle
+    /// half's), its similarity set by the bottom quarter's `grey`.
+    Variant { colour: [f64; 3], grey: f64 },
 }
 
 /// Width, height, mean colour, and the edge that is pure cyan or yellow.
@@ -156,6 +174,12 @@ fn picture(req: &Value) -> Result<Picture, String> {
             None
         }
     };
+    let (top, bottom) = (mean(0, 0, w, h / 4), mean(0, h - h / 4, w, h));
+    let grey = (bottom[0] - bottom[1]).abs() < 4.0 && (bottom[1] - bottom[2]).abs() < 4.0;
+    if top.iter().all(|&c| c > 250.0) && grey {
+        let colour = mean(0, h / 4, w, h - h / 4);
+        return Ok((w, h, mean(0, 0, w, h), Some((Edge::Top, Cue::Variant { colour, grey: bottom[1] }))));
+    }
     let edge = [
         (Edge::Top, mean(0, 0, w, h / 4)),
         (Edge::Bottom, mean(0, h - h / 4, w, h)),
@@ -184,12 +208,54 @@ fn lying_face_reply(id: &Value, w: u32, h: u32) -> Value {
     })
 }
 
-fn face_reply(id: &Value, w: u32, h: u32, rgb: [f64; 3]) -> Value {
-    // Quantised, so JPEG noise does not change the person.
+/// The person a colour stands for. Quantised, so JPEG noise does not
+/// change the person.
+fn person_number(rgb: [f64; 3]) -> u64 {
     let q = rgb.map(|c| (c / 32.0).round());
-    let mut emb: Vec<f32> = (0..DIM).map(|i| ((i as f64 + 1.0) * (q[0] + 2.0 * q[1] + 3.0 * q[2] + 1.0)).sin() as f32).collect();
-    let norm = emb.iter().map(|v| v * v).sum::<f32>().sqrt();
-    emb.iter_mut().for_each(|v| *v /= norm);
+    (q[0] + 2.0 * q[1] + 3.0 * q[2] + 1.0) as u64
+}
+
+/// The embedding of a plain picture of this colour: the person.
+fn person(rgb: [f64; 3]) -> Vec<f32> {
+    let k = person_number(rgb) as f64;
+    normalised((0..DIM).map(|i| ((i as f64 + 1.0) * k).sin() as f32).collect())
+}
+
+fn normalised(mut v: Vec<f32>) -> Vec<f32> {
+    let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+    v.iter_mut().for_each(|x| *x /= norm);
+    v
+}
+
+fn face_reply(id: &Value, w: u32, h: u32, rgb: [f64; 3]) -> Value {
+    centred_face(id, w, h, &person(rgb))
+}
+
+/// The white-top cue: the person of `colour`, `grey` away from them.
+fn variant_reply(id: &Value, w: u32, h: u32, colour: [f64; 3], grey: f64) -> Value {
+    let p = person(colour);
+    let steps = (grey / 255.0 * 40.0).round();
+    let sim = (steps / 40.0).clamp(0.0, 1.0) as f32;
+    // A direction of its own per person and grey (pseudo-random), at right
+    // angles to the person's.
+    let mut x = (person_number(colour) * 100 + steps as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(1);
+    let other: Vec<f32> = (0..DIM)
+        .map(|_| {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            ((x >> 40) as f64 / (1u64 << 24) as f64 * 2.0 - 1.0) as f32
+        })
+        .collect();
+    let along: f32 = other.iter().zip(&p).map(|(a, b)| a * b).sum();
+    let other = normalised(other.iter().zip(&p).map(|(o, q)| o - along * q).collect());
+    let rest = (1.0 - sim * sim).max(0.0).sqrt();
+    let emb = normalised(p.iter().zip(&other).map(|(q, o)| sim * q + rest * o).collect());
+    centred_face(id, w, h, &emb)
+}
+
+/// One face in the middle of the picture, half as wide and high.
+fn centred_face(id: &Value, w: u32, h: u32, emb: &[f32]) -> Value {
     let bytes: Vec<u8> = emb.iter().flat_map(|v| v.to_le_bytes()).collect();
     let (fw, fh) = (w as f64, h as f64);
     json!({

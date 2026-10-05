@@ -26,6 +26,12 @@
 //! `library.db.bak` and writes `userdata.json` (at most once a minute, and
 //! when it stops).
 //!
+//! People, groups and face decisions (`/api/people`, `/api/groups`,
+//! `/api/clusters`, `/api/faces/…`, see `people.rs`) are user data in the
+//! index like own tags. Clusters and suggestions are recomputed in the
+//! background (`clusters.rs`) after every such change, when the server
+//! starts, and when `recognition.db` got new faces.
+//!
 //! Self-healing paths: when a file is not where the index says (moved in the
 //! Finder while shoebox runs), the server runs the scan's index step in the
 //! background, which finds it again by its hashes.
@@ -33,7 +39,7 @@
 use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Component, Path as FsPath, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak, mpsc};
 use std::time::{Duration, Instant};
 
@@ -56,11 +62,13 @@ use tower_http::services::ServeFile;
 
 use crate::browse::{self, Snapshot};
 use crate::classify::Kind;
+use crate::clusters;
 use crate::db;
 use crate::duplicates;
 use crate::import;
 use crate::media;
 use crate::organize;
+use crate::people;
 use crate::recognize;
 use crate::reveal;
 use crate::scan;
@@ -68,6 +76,7 @@ use crate::tags as own_tags;
 use crate::thumbs::{self, Source};
 
 mod faces_api;
+mod people_api;
 
 pub const DEFAULT_PORT: u16 = 7878;
 const SESSION_COOKIE: &str = "shoebox_session";
@@ -84,6 +93,8 @@ const BACKUP_INTERVAL: Duration = Duration::from_secs(60);
 /// A job that has not reported progress for this long belongs to a process
 /// that died.
 const JOB_ALIVE_SECS: i64 = 120;
+/// Changes that come in this soon after another one are clustered together.
+const CLUSTER_DELAY: Duration = Duration::from_millis(300);
 
 /// Opens a photo in the computer's file manager; tests swap in a recorder.
 pub type RevealFn = Arc<dyn Fn(&FsPath) -> Result<()> + Send + Sync>;
@@ -179,6 +190,7 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
     import::clean_incoming(&root);
     let (heal_tx, heal_rx) = mpsc::channel();
     let (backup_tx, backup_rx) = mpsc::channel();
+    let (clusters_tx, clusters_rx) = mpsc::channel();
     let app = Arc::new(App {
         root,
         db_path,
@@ -191,6 +203,11 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
         dirty: AtomicBool::new(false),
         heal: Mutex::new(heal_tx),
         backup: Mutex::new(backup_tx),
+        clusters: Mutex::new(clusters_tx),
+        clusters_wanted: AtomicU64::new(0),
+        clusters_done: AtomicU64::new(0),
+        faces_seen: AtomicI64::new(-1),
+        stopping: AtomicBool::new(false),
         ffmpeg: media::find_ffmpeg(),
         reveal: opts.reveal.clone().unwrap_or_else(|| -> RevealFn { Arc::new(|p: &FsPath| reveal::reveal(p)) }),
         renders: Semaphore::new(workers),
@@ -198,6 +215,8 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
     });
     spawn_healer(Arc::downgrade(&app), heal_rx);
     spawn_backups(Arc::downgrade(&app), backup_rx);
+    spawn_clusterer(Arc::downgrade(&app), clusters_rx);
+    app.request_clusters();
     let router = router(app.clone());
 
     let (tx, rx) = oneshot::channel::<()>();
@@ -220,6 +239,7 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
                 .await?;
             Ok::<(), anyhow::Error>(())
         })?;
+        app.stopping.store(true, Ordering::SeqCst);
         // Like a scan, leave a copy of the index after changing it.
         if app.dirty.load(Ordering::SeqCst) {
             app.backup()?;
@@ -251,6 +271,16 @@ struct App {
     heal: Mutex<mpsc::Sender<()>>,
     /// Asks the background thread for a backup of the index and user data.
     backup: Mutex<mpsc::Sender<()>>,
+    /// Asks the background thread to recompute clusters and suggestions.
+    clusters: Mutex<mpsc::Sender<u64>>,
+    /// Counts those requests, and the requests covered by a finished run.
+    clusters_wanted: AtomicU64,
+    clusters_done: AtomicU64,
+    /// `recognition.db`'s faces when they were last clustered (a number
+    /// that changes when `recognize` adds or replaces faces).
+    faces_seen: AtomicI64,
+    /// The server is stopping: background work ends early.
+    stopping: AtomicBool,
     ffmpeg: Option<PathBuf>,
     reveal: RevealFn,
     /// Limits concurrent decodes to the number of cores.
@@ -302,6 +332,38 @@ impl App {
         );
         db::backup(&conn, &self.db_path)?;
         Ok(())
+    }
+
+    /// Ask for the clusters and suggestions to be recomputed.
+    fn request_clusters(&self) {
+        let n = self.clusters_wanted.fetch_add(1, Ordering::SeqCst) + 1;
+        let _ = self.clusters.lock().unwrap().send(n);
+    }
+
+    /// The clustering itself, on a connection of its own. Skipped while
+    /// `shoebox recognize` runs: it clusters when it is done.
+    fn cluster(&self) -> Result<()> {
+        let conn = db::open_shared(&self.db_path)?;
+        recognize::attach(&conn, &self.db_path)?;
+        if recognize::running(&conn)? || clusters::running(&conn)? {
+            return Ok(());
+        }
+        let seen = faces_fingerprint(&conn)?;
+        let stopping = || self.stopping.load(Ordering::SeqCst);
+        match clusters::run(&conn, &stopping, &mut |_, _| {}) {
+            Ok(s) => {
+                self.faces_seen.store(seen, Ordering::SeqCst);
+                if s.listed > 0 {
+                    println!(
+                        "Clusters: {} faces, {} without a decision in {} clusters ({:.1} s).",
+                        s.faces, s.unnamed, s.clusters, s.seconds
+                    );
+                }
+                Ok(())
+            }
+            Err(e) if e.is::<recognize::Interrupted>() => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 
     /// Copy the index to `library.db.bak` and write `userdata.json`.
@@ -377,6 +439,33 @@ fn spawn_healer(app: Weak<App>, requests: mpsc::Receiver<()>) {
     });
 }
 
+/// A number that changes when `recognize` adds or replaces faces.
+fn faces_fingerprint(conn: &Connection) -> Result<i64> {
+    Ok(conn.query_row("SELECT count(*) * 1000003 + coalesce(max(id), 0) FROM recog.faces", [], |r| r.get(0))?)
+}
+
+/// Recomputes clusters and suggestions as they are asked for: requests that
+/// come in while one runs (or within `CLUSTER_DELAY`) are covered by the
+/// next run. Ends with the server.
+fn spawn_clusterer(app: Weak<App>, requests: mpsc::Receiver<u64>) {
+    std::thread::spawn(move || {
+        while let Ok(mut wanted) = requests.recv() {
+            std::thread::sleep(CLUSTER_DELAY);
+            while let Ok(n) = requests.try_recv() {
+                wanted = wanted.max(n);
+            }
+            let Some(app) = app.upgrade() else { break };
+            if app.stopping.load(Ordering::SeqCst) {
+                break;
+            }
+            if let Err(e) = app.cluster() {
+                eprintln!("could not group the faces: {e:#}");
+            }
+            app.clusters_done.fetch_max(wanted, Ordering::SeqCst);
+        }
+    });
+}
+
 /// Backs up the index and the user data after changes: right away after the
 /// first change, then at most every `BACKUP_INTERVAL` (changes in between are
 /// covered by the next one). Ends with the server, which backs up once more
@@ -430,6 +519,30 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/faces/stats", get(faces_api::stats))
         .route("/api/faces/{id}/crop", get(faces_api::crop))
         .route("/api/faces/{id}/similar", get(faces_api::similar))
+        .route("/api/faces/confirm", post(people_api::confirm))
+        .route("/api/faces/reject", post(people_api::reject))
+        .route("/api/faces/assign", post(people_api::assign))
+        .route("/api/faces/ignore", post(people_api::ignore))
+        .route("/api/faces/not-face", post(people_api::not_face))
+        .route("/api/faces/undo", post(people_api::undo))
+        .route("/api/faces/manual", post(people_api::manual))
+        .route("/api/people", get(people_api::list).post(people_api::create))
+        .route("/api/people/{id}", get(people_api::get_person))
+        .route("/api/people/{id}/faces", get(people_api::person_faces))
+        .route("/api/people/{id}/rename", post(people_api::rename))
+        .route("/api/people/{id}/merge", post(people_api::merge))
+        .route("/api/people/{id}/hide", post(people_api::hide))
+        .route("/api/people/{id}/group", post(people_api::set_group))
+        .route("/api/people/{id}/cover", post(people_api::set_cover))
+        .route("/api/groups", get(people_api::groups).post(people_api::create_group))
+        .route("/api/groups/reorder", post(people_api::reorder_groups))
+        .route("/api/groups/{id}/rename", post(people_api::rename_group))
+        .route("/api/groups/{id}/delete", post(people_api::delete_group))
+        .route("/api/clusters", get(people_api::clusters))
+        .route("/api/clusters/{id}/faces", get(people_api::cluster_faces))
+        .route("/api/clusters/{id}/name", post(people_api::name_cluster))
+        .route("/api/clusters/{id}/ignore", post(people_api::ignore_cluster))
+        .route("/api/clusters/{id}/not-face", post(people_api::not_face_cluster))
         .fallback(asset)
         .layer(middleware::from_fn_with_state(app.clone(), guard))
         .with_state(app)
@@ -644,6 +757,15 @@ struct JobInfo {
 }
 
 #[derive(Serialize)]
+struct ClustersInfo {
+    #[serde(flatten)]
+    overview: clusters::Overview,
+    /// A recomputation is asked for or running in this server: what the
+    /// cache says may be behind the latest decisions.
+    stale: bool,
+}
+
+#[derive(Serialize)]
 struct Info {
     name: String,
     version: &'static str,
@@ -663,6 +785,8 @@ struct Info {
     trash: u64,
     /// Face recognition (`shoebox recognize`).
     faces: recognize::Overview,
+    /// Clusters and suggestions (5c-2).
+    clusters: ClustersInfo,
     /// Text of the "show in the file manager" button ("Show in Finder", …),
     /// only for requests from this computer; `null` for other devices.
     reveal: Option<&'static str>,
@@ -709,6 +833,18 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
         let busy = jobs_running(&conn)?;
         let (data_version, generation) = app.version(&conn)?;
         let trash: i64 = conn.query_row("SELECT count(DISTINCT batch) FROM trash", [], |r| r.get(0))?;
+        let faces = recognize::overview(&conn)?;
+        // New faces from a `recognize` run that stopped before clustering.
+        if !faces.running
+            && app.clusters_done.load(Ordering::SeqCst) == app.clusters_wanted.load(Ordering::SeqCst)
+            && faces_fingerprint(&conn)? != app.faces_seen.load(Ordering::SeqCst)
+        {
+            app.request_clusters();
+        }
+        let clusters = ClustersInfo {
+            overview: clusters::overview(&conn)?,
+            stale: app.clusters_done.load(Ordering::SeqCst) < app.clusters_wanted.load(Ordering::SeqCst),
+        };
         Ok(Json(Info {
             name: app.name.clone(),
             version: env!("CARGO_PKG_VERSION"),
@@ -722,7 +858,8 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
             busy,
             index_version: format!("{data_version}.{generation}"),
             trash: trash as u64,
-            faces: recognize::overview(&conn)?,
+            faces,
+            clusters,
             reveal,
         }))
     })
@@ -746,13 +883,15 @@ fn param<'a>(pairs: &'a Pairs, key: &str) -> Option<&'a str> {
 }
 
 /// The timeline filter of a request: `folder`, `tag` (several, all must
-/// match) and `q` (free text).
+/// match), `q` (free text) and `person` (photos with a confirmed face of
+/// them).
 fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
     let number = |v: &str| v.parse::<i64>().map_err(|_| ApiError::BadRequest(format!("not a number: {v}")));
     Ok(browse::Query {
         folder: param(pairs, "folder").filter(|v| !v.is_empty()).map(number).transpose()?,
         tags: pairs.iter().filter(|(k, v)| k == "tag" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
         text: param(pairs, "q").map(str::to_string).filter(|s| !s.trim().is_empty()),
+        person: param(pairs, "person").filter(|v| !v.is_empty()).map(number).transpose()?,
     })
 }
 
@@ -767,7 +906,7 @@ async fn tags(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiRes
         let own = param(&pairs, "own").is_some_and(|o| o != "0");
         let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(50);
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
-        let all = if filter.folder.is_none() && filter.tags.is_empty() {
+        let all = if filter.folder.is_none() && filter.tags.is_empty() && filter.person.is_none() {
             browse::all_tags(&conn)?
         } else {
             let snapshot = app.snapshot(&conn)?;
@@ -848,8 +987,12 @@ struct FileInfo {
     live: Option<i64>,
     /// Other versions of this photo (linked duplicates).
     linked: Vec<duplicates::Linked>,
-    /// Faces found by `shoebox recognize`; `null` if it has not looked yet.
-    faces: Option<Vec<recognize::Face>>,
+    /// Faces found by `shoebox recognize` (and drawn by hand), with who
+    /// they are or might be; "not a face" is left out. `null` if it has not
+    /// looked yet.
+    faces: Option<Vec<people::FileFace>>,
+    /// Confirmed faces that are no longer found (after a model change).
+    faces_lost: Vec<people::FaceItem>,
 }
 
 async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Json<FileInfo>> {
@@ -858,19 +1001,20 @@ async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiRe
         let details = browse::details(&conn, id)?.ok_or(ApiError::NotFound)?;
         let snapshot = app.snapshot(&conn)?;
         let item = snapshot.items.iter().find(|it| it.id == id);
+        let key: Option<String> =
+            conn.query_row("SELECT quick_hash FROM files WHERE id = ?1", [id], |r| r.get(0)).optional()?;
+        let faces = match key {
+            Some(key) => people::file_faces(&conn, &key)?,
+            None => people::FileFaces { faces: None, lost: Vec::new() },
+        };
         Ok(Json(FileInfo {
             details,
             date_source: item.map(|it| it.date_source),
             sort_date: item.map(|it| it.sort.clone()),
             live: item.and_then(|it| it.live),
             linked: duplicates::linked(&conn, id)?,
-            faces: match conn
-                .query_row("SELECT quick_hash FROM files WHERE id = ?1", [id], |r| r.get::<_, String>(0))
-                .optional()?
-            {
-                Some(key) => recognize::faces_of(&conn, &key)?,
-                None => None,
-            },
+            faces: faces.faces,
+            faces_lost: faces.lost,
         }))
     })
     .await
@@ -1028,7 +1172,13 @@ async fn change<T: Send + 'static>(
         app.generation.fetch_add(1, Ordering::SeqCst);
         app.dirty.store(true, Ordering::SeqCst);
         let _ = app.backup.lock().unwrap().send(());
-        result.map_err(|e| ApiError::BadRequest(format!("{e:#}")))
+        result.map_err(|e| {
+            if e.is::<people::Stale>() {
+                ApiError::Conflict(format!("{e}"))
+            } else {
+                ApiError::BadRequest(format!("{e:#}"))
+            }
+        })
     })
     .await
 }

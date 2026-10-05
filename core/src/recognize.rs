@@ -23,6 +23,9 @@
 //! `--rotated` adds a second pass (task `faces-rot`) that sends the same copy
 //! turned 90° and 270° and turns the boxes back; a face found that way is
 //! only kept where the upright pass found none.
+//!
+//! After the passes, the faces are grouped and matched to the people the
+//! user named (`clusters.rs`, a cache in the same file).
 
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -72,7 +75,7 @@ const POLL: Duration = Duration::from_millis(200);
 /// A `running` job that has not reported progress for this long is dead.
 const JOB_ALIVE_SECS: i64 = 120;
 
-const SCHEMA_VERSION: i32 = 2;
+const SCHEMA_VERSION: i32 = 3;
 const SCHEMA_V1: &str = "
 CREATE TABLE recog.jobs (
     id          INTEGER PRIMARY KEY,
@@ -119,6 +122,23 @@ const SCHEMA_V2: &str = "
 -- (box and landmarks are stored upright all the same).
 ALTER TABLE recog.faces ADD COLUMN roll INTEGER NOT NULL DEFAULT 0;
 ";
+/// v3 (5c-2): the clustering cache (`clusters.rs`). Recomputed from the
+/// faces and the user's decisions in `library.db`; nothing here is user data.
+const SCHEMA_V3: &str = "
+-- The nearest neighbours of a face (among faces large enough to cluster),
+-- computed once per face, so a clustering run resumes where it stopped.
+CREATE TABLE IF NOT EXISTS recog.neighbours (
+    face INTEGER PRIMARY KEY,       -- recog.faces.id
+    list BLOB NOT NULL              -- (face id i64, similarity f32) little-endian, most similar first
+);
+-- Every face without a decision: its cluster and the person suggested for it.
+CREATE TABLE IF NOT EXISTS recog.clusters (
+    face       INTEGER PRIMARY KEY, -- recog.faces.id
+    cluster    INTEGER NOT NULL,    -- 1 is the largest; numbers change with every run
+    person     INTEGER,             -- people.id in library.db, if one is close enough
+    similarity REAL
+);
+";
 
 /// Location of `recognition.db` for a library database.
 pub fn path_for(db_path: &Path) -> PathBuf {
@@ -150,13 +170,20 @@ pub fn attach(conn: &Connection, db_path: &Path) -> Result<()> {
         tx.pragma_update(Some("recog"), "user_version", 2)?;
         tx.commit()?;
     }
+    if version < 3 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V3)?;
+        tx.pragma_update(Some("recog"), "user_version", 3)?;
+        tx.commit()?;
+    }
     Ok(())
 }
 
-/// Whether a `recognize` run is going on right now (in any process).
+/// Whether a `recognize` run is going on right now (in any process). The
+/// clustering after it has a job of its own (`clusters::running`).
 pub fn running(conn: &Connection) -> Result<bool> {
     let n: i64 = conn.query_row(
-        "SELECT count(*) FROM recog.jobs WHERE state = 'running' AND updated_at > ?1",
+        "SELECT count(*) FROM recog.jobs WHERE state = 'running' AND updated_at > ?1 AND kind IN ('faces', 'faces-rot')",
         [db::now() - JOB_ALIVE_SECS],
         |r| r.get(0),
     )?;
@@ -692,6 +719,8 @@ pub struct Stats {
     /// The rotated pass (`--rotated`), if it ran; its `faces` are the ones
     /// it added.
     pub rotated: Option<Box<Stats>>,
+    /// The clustering after the run.
+    pub clusters: Option<crate::clusters::Summary>,
 }
 
 /// A picture to look at: one file per content.
@@ -752,7 +781,11 @@ pub fn run(opts: &Options) -> Result<Stats> {
             JOB_ALIVE_SECS / 60
         );
     }
-    conn.execute("UPDATE recog.jobs SET state = 'interrupted', finished_at = updated_at WHERE state = 'running'", [])?;
+    conn.execute(
+        "UPDATE recog.jobs SET state = 'interrupted', finished_at = updated_at
+         WHERE state = 'running' AND kind IN ('faces', 'faces-rot')",
+        [],
+    )?;
 
     catch_interrupts();
     println!("Starting the recognizer ({})…", cmd.program.display());
@@ -770,6 +803,15 @@ pub fn run(opts: &Options) -> Result<Stats> {
         Ok(stats)
     });
     worker.stop();
+    // Clusters and suggestions from scratch, with what was found now.
+    let result = result.and_then(|mut stats| {
+        if crate::clusters::running(&conn)? {
+            println!("Clusters: `shoebox serve` is grouping the faces right now; it takes the new ones too.");
+        } else {
+            stats.clusters = Some(crate::clusters::run_printing(&conn, &interrupted)?);
+        }
+        Ok(stats)
+    });
     // An interrupted run keeps what it found, so that is backed up too.
     if result.as_ref().map_or_else(|e| e.is::<Interrupted>(), |_| true) {
         db::backup_schema(&conn, "recog", &path_for(&db_path))?;
@@ -809,6 +851,7 @@ pub fn recognize(
                 AND key NOT IN (SELECT quick_hash FROM trash WHERE quick_hash IS NOT NULL)";
     let pruned = conn.execute(&format!("DELETE FROM recog.looked WHERE key {gone} AND task = '{FACES}'"), [])? as u64;
     conn.execute(&format!("DELETE FROM recog.looked WHERE key {gone}"), [])?;
+    forget_neighbours(conn, &format!("key {gone}"), [])?;
     conn.execute(&format!("DELETE FROM recog.faces WHERE key {gone}"), [])?;
     Ok(Stats { pruned, ..stats })
 }
@@ -1098,6 +1141,7 @@ pub fn iou(a: [f64; 4], b: [f64; 4]) -> f64 {
 /// pass; returns the number of faces stored. The rotated pass depends on
 /// what is found upright, so its result is dropped too and redone later.
 fn store(conn: &Connection, key: &str, model: &str, outcome: &Result<Found, Failure>) -> Result<usize> {
+    forget_neighbours(conn, "key = ?1", [key])?;
     conn.execute("DELETE FROM recog.faces WHERE key = ?1", [key])?;
     conn.execute("DELETE FROM recog.looked WHERE key = ?1 AND task = ?2", params![key, FACES_ROT])?;
     store_looked(conn, key, FACES, model, outcome)?;
@@ -1111,6 +1155,7 @@ fn store(conn: &Connection, key: &str, model: &str, outcome: &Result<Found, Fail
 /// face of the upright pass (nor a better one of its own) are added. Returns
 /// the number added.
 fn store_rotated(conn: &Connection, key: &str, model: &str, outcome: &Result<Found, Failure>) -> Result<usize> {
+    forget_neighbours(conn, "key = ?1 AND roll != 0", [key])?;
     conn.execute("DELETE FROM recog.faces WHERE key = ?1 AND roll != 0", [key])?;
     let found = match outcome {
         Ok(found) => found,
@@ -1133,6 +1178,16 @@ fn store_rotated(conn: &Connection, key: &str, model: &str, outcome: &Result<Fou
     let added_found = Found { width: found.width, height: found.height, faces: added };
     store_looked(conn, key, FACES_ROT, model, &Ok(added_found.clone()))?;
     insert_faces(conn, key, model, &added_found.faces)
+}
+
+/// Drop the neighbour lists of faces about to be deleted: a new face can get
+/// the id of a deleted one, and must not inherit its list.
+fn forget_neighbours(conn: &Connection, faces_where: &str, params: impl rusqlite::Params) -> Result<()> {
+    conn.prepare_cached(&format!(
+        "DELETE FROM recog.neighbours WHERE face IN (SELECT id FROM recog.faces WHERE {faces_where})"
+    ))?
+    .execute(params)?;
+    Ok(())
 }
 
 fn store_looked(conn: &Connection, key: &str, task: &str, model: &str, outcome: &Result<Found, Failure>) -> Result<()> {

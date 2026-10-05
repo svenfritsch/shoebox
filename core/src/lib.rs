@@ -1,8 +1,10 @@
 //! shoebox: portable photo library manager. The binary in `main.rs` is a
 //! thin CLI over these modules; integration tests use them directly.
 
+pub mod ann;
 pub mod browse;
 pub mod classify;
+pub mod clusters;
 pub mod db;
 pub mod duplicates;
 pub mod faces;
@@ -12,6 +14,7 @@ pub mod import;
 pub mod library;
 pub mod media;
 pub mod organize;
+pub mod people;
 pub mod phash;
 pub mod probe;
 pub mod recognize;

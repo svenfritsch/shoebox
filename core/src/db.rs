@@ -15,7 +15,7 @@ pub const FILE: &str = "library.db";
 const BACKUP_SUFFIX: &str = ".bak";
 
 /// Bump when the schema changes and add a step to `migrate`.
-const SCHEMA_VERSION: i32 = 3;
+const SCHEMA_VERSION: i32 = 4;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -121,6 +121,39 @@ ALTER TABLE tags ADD COLUMN fold TEXT;        -- tag_fold(name)
 CREATE INDEX tags_fold ON tags(fold);
 ";
 
+/// Phase 5c-2: people, groups and what the user decided about faces
+/// (`people.rs`). User data like own tags: `recognition.db` stays a cache.
+const SCHEMA_V4: &str = "
+CREATE TABLE IF NOT EXISTS groups (
+    id       INTEGER PRIMARY KEY,
+    name     TEXT NOT NULL UNIQUE,
+    position INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS people (
+    id        INTEGER PRIMARY KEY,
+    name      TEXT NOT NULL UNIQUE,
+    group_id  INTEGER REFERENCES groups(id) ON DELETE SET NULL,  -- one group at most; NULL: no group
+    cover_key TEXT,                 -- quick_hash + box of the face shown for this person
+    cover_box TEXT,                 -- JSON [x, y, w, h]
+    hidden    INTEGER NOT NULL DEFAULT 0
+);
+-- What the user decided about a face, for detected and hand-drawn faces
+-- alike. Keyed by content and box, so it survives moves, rescans and model
+-- changes: a detected face takes over the decision whose box it overlaps
+-- best (IoU >= 0.5).
+CREATE TABLE IF NOT EXISTS face_decisions (
+    id        INTEGER PRIMARY KEY,
+    key       TEXT NOT NULL,        -- files.quick_hash
+    x REAL NOT NULL, y REAL NOT NULL, w REAL NOT NULL, h REAL NOT NULL,
+    person_id INTEGER REFERENCES people(id) ON DELETE CASCADE,  -- NULL with 'ignored' and 'not_face'
+    decision  TEXT NOT NULL,        -- confirmed, rejected (not this person), ignored (stranger), not_face (false find)
+    manual    INTEGER NOT NULL DEFAULT 0,  -- 1: the box was drawn by hand, not detected
+    at        INTEGER NOT NULL      -- Unix seconds
+);
+CREATE INDEX IF NOT EXISTS face_decisions_key ON face_decisions(key);
+CREATE INDEX IF NOT EXISTS face_decisions_person ON face_decisions(person_id);
+";
+
 /// Default database location for a library root.
 pub fn default_path(root: &Path) -> PathBuf {
     root.join(DIR).join(FILE)
@@ -179,6 +212,12 @@ fn migrate(conn: &Connection) -> Result<()> {
             tx.execute("UPDATE tags SET fold = ?2 WHERE id = ?1", params![id, tag_fold(&name)])?;
         }
         tx.pragma_update(None, "user_version", 3)?;
+        tx.commit()?;
+    }
+    if version < 4 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V4)?;
+        tx.pragma_update(None, "user_version", 4)?;
         tx.commit()?;
     }
     Ok(())
@@ -336,6 +375,28 @@ mod tests {
         assert_eq!(find_tag(&conn, "NEU ").unwrap(), Some(3));
         assert_eq!(tag_id(&conn, "neu").unwrap(), 4);
         conn.execute("UPDATE trash SET user_tags = '[]' WHERE 0", []).unwrap();
+        // v4 on top: people and face decisions, and a re-run changes nothing.
+        conn.execute("INSERT INTO people (name) VALUES ('Aurelia')", []).unwrap();
+        conn.pragma_update(None, "user_version", 3).unwrap();
+        drop(conn);
+        let conn = open(&path).unwrap();
+        let n: i64 = conn.query_row("SELECT count(*) FROM people", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 1);
+        conn.execute(
+            "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, at) VALUES ('k', 0, 0, 1, 1, 1, 'confirmed', 0)",
+            [],
+        )
+        .unwrap();
+        // Deleting a group leaves its people without one; deleting a person
+        // takes their decisions along.
+        conn.execute("INSERT INTO groups (name, position) VALUES ('Familie', 1)", []).unwrap();
+        conn.execute("UPDATE people SET group_id = 1", []).unwrap();
+        conn.execute("DELETE FROM groups", []).unwrap();
+        let group: Option<i64> = conn.query_row("SELECT group_id FROM people", [], |r| r.get(0)).unwrap();
+        assert_eq!(group, None);
+        conn.execute("DELETE FROM people", []).unwrap();
+        let n: i64 = conn.query_row("SELECT count(*) FROM face_decisions", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 0);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
