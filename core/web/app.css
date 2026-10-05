@@ -361,7 +361,13 @@ body.selecting .sec .pick { display: inline; }
 .clusters { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
 .cluster { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--panel); display: flex; flex-direction: column; gap: 8px; }
 .cluster.busy { opacity: .5; pointer-events: none; }
-.cluster .chead { font-weight: 600; font-size: 14px; }
+.cluster .chead { font-weight: 600; font-size: 14px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* An open card (all faces, or Select) is as wide as the page; its head stays
+   in view while the faces scroll, so it can always be closed. */
+.cluster.open { grid-column: 1 / -1; }
+.cluster.open .chead { position: sticky; top: 0; z-index: 5; background: var(--panel); padding: 8px 0; border-bottom: 1px solid var(--line); }
+.cluster.open .cface .avatar.big { width: 72px; height: 72px; }
+.cluster .cclose { flex: none; }
 .cluster .cfaces { display: flex; flex-wrap: wrap; gap: 6px; }
 .cluster .cface { display: block; border-radius: 50%; }
 .cluster .cface .avatar.big { width: 64px; height: 64px; }
@@ -439,3 +445,9 @@ body.selecting .sec .pick { display: inline; }
 .compare-col .name { font-weight: 600; font-size: 13px; word-break: break-all; }
 .compare-col .meta { color: var(--muted); font-size: 12px; }
 .copy .badge { align-self: flex-start; background: var(--cell-bg); border-radius: 10px; padding: 1px 8px; font-weight: 600; }
+
+/* Collapsible sidebar sections */
+.side-tags h3, .side-head { display: flex; align-items: center; }
+.side-tags h3 .link { padding: 0; font: inherit; text-transform: inherit; letter-spacing: inherit; }
+.caret { width: 18px; flex: none; background: none; border: 0; color: var(--muted); padding: 2px 0; font-size: 11px; cursor: pointer; }
+.caret:disabled { opacity: .3; cursor: default; }

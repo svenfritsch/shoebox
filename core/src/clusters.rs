@@ -13,6 +13,8 @@
 //! - Clusters, from scratch every time: faces without a decision that are
 //!   neighbours end up in one cluster. Faces with a decision (confirmed,
 //!   ignored, not a face) never take part.
+//! - A cluster of more than `MAX_CLUSTER` faces is split with a stricter
+//!   similarity (0.62, 0.64, …) until every piece fits.
 //! - Suggestions: every face without a decision is compared with the
 //!   confirmed faces of every person (best match, so confirmed faces from
 //!   several ages bridge the gap a single reference cannot), never with a
@@ -41,6 +43,14 @@ use crate::recognize::{FACES, Interrupted, KINDS};
 /// grows from neighbour to neighbour, and on the real drive everything at
 /// 0.60 and above was the same person.
 pub const CLUSTER_SIM: f32 = 0.60;
+/// No card holds more faces than this: nobody can look through 2,500 faces
+/// to find the odd one out. A larger cluster (one that chained from
+/// neighbour to neighbour, say a mother, her children and other fair
+/// children) is split by raising the similarity in `SPLIT_STEP`s until its
+/// pieces fit; faces that stay joined even at 1.0 are cut into pieces of
+/// this size.
+pub const MAX_CLUSTER: usize = 100;
+const SPLIT_STEP: f32 = 0.02;
 /// Neighbours kept per face.
 pub const NEIGHBOURS: usize = 24;
 /// Confirmed faces looked at per face for its suggestion (the most similar).
@@ -222,13 +232,7 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
     // computed again (cheap), so a list can never join faces that are not
     // close.
     let mut parent: Vec<usize> = (0..n).collect();
-    fn root(parent: &mut [usize], mut i: usize) -> usize {
-        while parent[i] != i {
-            parent[i] = parent[parent[i]];
-            i = parent[i];
-        }
-        i
-    }
+    let mut edges: Vec<(usize, usize, f32)> = Vec::new();
     {
         let mut stmt = conn.prepare("SELECT face, list FROM recog.neighbours")?;
         let mut rows = stmt.query([])?;
@@ -240,7 +244,9 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
             let bytes: Vec<u8> = r.get(1)?;
             for other in decode(&bytes) {
                 let Some(&j) = pos.get(&other) else { continue };
-                if open[j] && ann::dot(all.row(i), all.row(j)) >= CLUSTER_SIM {
+                let sim = if open[j] { ann::dot(all.row(i), all.row(j)) } else { 0.0 };
+                if sim >= CLUSTER_SIM {
+                    edges.push((i, j, sim));
                     let (a, b) = (root(&mut parent, i), root(&mut parent, j));
                     if a != b {
                         parent[a.max(b)] = a.min(b);
@@ -253,7 +259,24 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
     for i in (0..n).filter(|&i| open[i]) {
         members.entry(root(&mut parent, i)).or_default().push(i);
     }
-    let mut groups: Vec<Vec<usize>> = members.into_values().collect();
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    let mut big_edges: HashMap<usize, Vec<(usize, usize, f32)>> = HashMap::new();
+    if members.values().any(|m| m.len() > MAX_CLUSTER) {
+        for &(i, j, sim) in &edges {
+            let r = root(&mut parent, i);
+            if members[&r].len() > MAX_CLUSTER {
+                big_edges.entry(r).or_default().push((i, j, sim));
+            }
+        }
+    }
+    for (r, m) in members {
+        if m.len() > MAX_CLUSTER {
+            split(m, big_edges.remove(&r).unwrap_or_default(), CLUSTER_SIM, &mut groups);
+        } else {
+            groups.push(m);
+        }
+    }
+    drop(edges);
     groups.sort_by(|a, b| b.len().cmp(&a.len()).then(a[0].cmp(&b[0])));
 
     // Suggestions: the most similar confirmed faces of every person, and
@@ -311,6 +334,53 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
     tx.commit()?;
     summary.seconds = started.elapsed().as_secs_f64();
     Ok(summary)
+}
+
+/// Union-find: the root of `i`, flattening the path.
+fn root(parent: &mut [usize], mut i: usize) -> usize {
+    while parent[i] != i {
+        parent[i] = parent[parent[i]];
+        i = parent[i];
+    }
+    i
+}
+
+/// Cut a cluster of more than `MAX_CLUSTER` faces into pieces that fit:
+/// join its faces again with a similarity `SPLIT_STEP` higher, and do the
+/// same with every piece still too large.
+fn split(members: Vec<usize>, edges: Vec<(usize, usize, f32)>, sim: f32, out: &mut Vec<Vec<usize>>) {
+    if members.len() <= MAX_CLUSTER {
+        out.push(members);
+        return;
+    }
+    let sim = sim + SPLIT_STEP;
+    if sim > 1.0 {
+        out.extend(members.chunks(MAX_CLUSTER).map(<[usize]>::to_vec));
+        return;
+    }
+    let at: HashMap<usize, usize> = members.iter().enumerate().map(|(k, &i)| (i, k)).collect();
+    let mut parent: Vec<usize> = (0..members.len()).collect();
+    let edges: Vec<(usize, usize, f32)> = edges.into_iter().filter(|e| e.2 >= sim).collect();
+    for &(i, j, _) in &edges {
+        let (a, b) = (root(&mut parent, at[&i]), root(&mut parent, at[&j]));
+        if a != b {
+            parent[a.max(b)] = a.min(b);
+        }
+    }
+    let mut pieces: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (k, &i) in members.iter().enumerate() {
+        pieces.entry(root(&mut parent, k)).or_default().push(i);
+    }
+    let mut piece_edges: HashMap<usize, Vec<(usize, usize, f32)>> = HashMap::new();
+    for e in edges {
+        let r = root(&mut parent, at[&e.0]);
+        if pieces[&r].len() > MAX_CLUSTER {
+            piece_edges.entry(r).or_default().push(e);
+        }
+    }
+    for (r, m) in pieces {
+        split(m, piece_edges.remove(&r).unwrap_or_default(), sim, out);
+    }
 }
 
 /// Faces drawn by hand that serve as references: confirmed for a person,
@@ -395,4 +465,40 @@ pub fn overview(conn: &Connection) -> Result<Overview> {
         suggested: suggested as u64,
         people: people as u64,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sizes(mut out: Vec<Vec<usize>>) -> Vec<usize> {
+        out.sort_by_key(|g| std::cmp::Reverse(g.len()));
+        out.iter().map(Vec::len).collect()
+    }
+
+    /// Three tight groups of 60 joined by weak links make one chained
+    /// cluster of 180: it falls apart into the three.
+    #[test]
+    fn a_chained_cluster_is_split_where_the_links_are_weak() {
+        let mut edges = Vec::new();
+        for g in 0..3 {
+            for k in 1..60 {
+                edges.push((g * 60, g * 60 + k, 0.9));
+            }
+        }
+        edges.push((0, 60, 0.62));
+        edges.push((60, 120, 0.64));
+        let mut out = Vec::new();
+        split((0..180).collect(), edges, CLUSTER_SIM, &mut out);
+        assert_eq!(sizes(out), vec![60, 60, 60]);
+    }
+
+    /// Faces that stay joined at every similarity are cut into pieces.
+    #[test]
+    fn identical_faces_are_cut_into_pieces() {
+        let edges: Vec<_> = (1..250).map(|k| (0, k, 1.0)).collect();
+        let mut out = Vec::new();
+        split((0..250).collect(), edges, CLUSTER_SIM, &mut out);
+        assert_eq!(sizes(out), vec![100, 100, 50]);
+    }
 }
