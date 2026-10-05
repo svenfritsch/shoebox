@@ -34,6 +34,10 @@ pub const SURE_BITS: u32 = 4;
 /// pictures (screenshots, say) get no such leeway.
 pub const SURE_BITS_STRIPPED: u32 = 6;
 
+/// Looser limit for an original and its edit (same folder, same camera
+/// number): a portrait blur or a filter moves the hash.
+pub const EDIT_BITS: u32 = 20;
+
 pub const DECISIONS: &[&str] = &["distinct", "linked"];
 
 #[derive(Debug, Clone, Serialize)]
@@ -79,8 +83,9 @@ pub struct Group {
     /// All files have identical content.
     pub exact: bool,
     /// `identical` (same content), `resolution` (surely the same photo,
-    /// differing in size, quality or name) or `similar` (different shots
-    /// that look alike: a series, repeated clicks).
+    /// differing in size, quality or name), `edited` (an iPhone original
+    /// and its "E" edit) or `similar` (different shots that look alike: a
+    /// series, repeated clicks).
     pub kind: &'static str,
     pub files: Vec<DupFile>,
 }
@@ -227,6 +232,41 @@ pub fn copy_named(names: &[&str]) -> Vec<bool> {
         .collect()
 }
 
+/// A camera's file name: `IMG_6621.HEIC`, or `IMG_E6621.HEIC` for the
+/// edited version an iPhone writes next to the original. Returns the
+/// lowercase prefix, whether it is the edited one, and the number. Names
+/// with anything else in them (a copy's "(2)", a messenger's date) do not
+/// parse.
+fn camera_name(name: &str) -> Option<(String, bool, u64)> {
+    let stem = name.rsplit_once('.').map_or(name, |(s, _)| s);
+    let l = library::nfc(stem).to_lowercase();
+    let letters = l.len() - l.trim_start_matches(|c: char| c.is_ascii_lowercase()).len();
+    let (prefix, rest) = l.split_at(letters);
+    if !matches!(prefix, "img" | "dsc" | "dscn" | "dscf" | "pxl" | "mvimg" | "p") {
+        return None;
+    }
+    let rest = rest.strip_prefix(['_', '-']).unwrap_or(rest);
+    let (edited, digits) = match rest.strip_prefix('e') {
+        Some(d) => (true, d),
+        None => (false, rest),
+    };
+    if digits.len() < 3 || !digits.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    Some((prefix.to_string(), edited, digits.parse().ok()?))
+}
+
+/// Camera names with different numbers are different shots, whatever the
+/// pictures look like.
+fn names_differ(a: &str, b: &str) -> bool {
+    matches!((camera_name(a), camera_name(b)), (Some(x), Some(y)) if x.2 != y.2)
+}
+
+/// An original and its iPhone edit ("IMG_6616" and "IMG_E6616").
+fn original_and_edit(a: &str, b: &str) -> bool {
+    matches!((camera_name(a), camera_name(b)), (Some(x), Some(y)) if x.0 == y.0 && x.2 == y.2 && x.1 != y.1)
+}
+
 fn pixels(r: &Row) -> u64 {
     r.file.width.unwrap_or(0) as u64 * r.file.height.unwrap_or(0) as u64
 }
@@ -246,6 +286,11 @@ fn same_photo(a: &Row, b: &Row) -> bool {
     }
     if a.full_hash.is_some() && a.full_hash == b.full_hash {
         return true;
+    }
+    // Shots with different camera numbers, and an original next to its edit,
+    // are never "the same photo in another size".
+    if names_differ(&a.file.name, &b.file.name) || original_and_edit(&a.file.name, &b.file.name) {
+        return false;
     }
     let (Some(pa), Some(pb)) = (a.phash, b.phash) else { return false };
     let stripped = a.file.taken.is_some() != b.file.taken.is_some();
@@ -381,6 +426,31 @@ pub fn find(candidates: &Candidates) -> Vec<Group> {
         }
     }
 
+    // An iPhone edit can look quite different from its original (a portrait
+    // blur); same camera number plus a loose hash match joins them.
+    let mut by_number: HashMap<(String, u64), Vec<usize>> = HashMap::new();
+    for (i, r) in rows.iter().enumerate() {
+        if let Some((prefix, _, n)) = camera_name(&r.file.name) {
+            by_number.entry((prefix, n)).or_default().push(i);
+        }
+    }
+    for members in by_number.values().filter(|m| m.len() > 1) {
+        for (k, &i) in members.iter().enumerate() {
+            for &j in &members[k + 1..] {
+                let close = matches!((rows[i].phash, rows[j].phash), (Some(a), Some(b)) if phash::distance(a, b) <= EDIT_BITS);
+                if close
+                    && !same_content(i, j)
+                    && original_and_edit(&rows[i].file.name, &rows[j].file.name)
+                    && rows[i].file.folder_id == rows[j].file.folder_id
+                    && open(i, j)
+                {
+                    sets.union(i, j);
+                    near_edges.push(i);
+                }
+            }
+        }
+    }
+
     let near_roots: HashSet<usize> = near_edges.into_iter().map(|i| sets.find(i)).collect();
     let mut members: HashMap<usize, Vec<usize>> = HashMap::new();
     for i in 0..rows.len() {
@@ -415,7 +485,9 @@ pub fn find(candidates: &Candidates) -> Vec<Group> {
             let newest = files.iter().filter_map(|f| f.taken.clone()).max().unwrap_or_default();
             let rows_in_group: HashSet<u32> = files.iter().map(|f| f.row).collect();
             let exact = !near_roots.contains(&root);
+            let edited = files.iter().enumerate().any(|(x, a)| files[x + 1..].iter().any(|b| original_and_edit(&a.name, &b.name)));
             let kind = match (rows_in_group.len(), exact) {
+                _ if edited => "edited",
                 (1, true) => "identical",
                 (1, false) => "resolution",
                 _ => "similar",
@@ -897,5 +969,21 @@ mod tests {
         assert_eq!(flags(&["IMG_0412.jpg", "IMG-20240812-WA0007.jpg"]), [false, false]);
         // A copy of a copy points at the original.
         assert_eq!(flags(&["a.jpg", "a (2).jpg", "a (2) (2).jpg"]), [false, true, true]);
+    }
+
+    #[test]
+    fn camera_numbers_tell_shots_apart() {
+        assert!(names_differ("IMG_6621.HEIC", "IMG_6620.HEIC"));
+        assert!(!names_differ("IMG_6621.HEIC", "IMG_6621.JPG"));
+        assert!(!names_differ("IMG_6621.HEIC", "IMG-20250726-WA0001.jpg"));
+        assert!(!names_differ("IMG_6621 (2).HEIC", "IMG_6620.HEIC"));
+    }
+
+    #[test]
+    fn iphone_edits_pair_with_their_original() {
+        assert!(original_and_edit("IMG_6616.HEIC", "IMG_E6616.HEIC"));
+        assert!(original_and_edit("IMG_E6616.JPG", "img_6616.heic"));
+        assert!(!original_and_edit("IMG_6616.HEIC", "IMG_6616.JPG"));
+        assert!(!original_and_edit("IMG_6616.HEIC", "IMG_E6617.HEIC"));
     }
 }
