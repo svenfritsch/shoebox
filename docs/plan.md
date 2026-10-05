@@ -180,7 +180,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 5a | Show in Finder / Explorer, copy path | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5b | Own tags (add/remove, many photos at once, search), user data backup | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5b-2 | Search by several tags at once (AND, chips); people join in with 5c-3 | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **5c-1 done**, checked on the real drive; **5c-2 done except the real-hardware run** (see [phase5.md](phase5.md)); 5c-3 next |
+| 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **5c-1 done**, checked on the real drive; **5c-2 and 5c-3 done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 6 | Pets | |
 | 7 | Backup verification, launchers, packaging | |
 
@@ -331,8 +331,13 @@ Open:
       the API, user data backup; "Not a face" on the face check page and the
       5a refinement. The real-hardware check (clustering time, naming, a
       "maybe" list, the leg and the hands) is in its list.
-- [ ] 5c-3: Faces in the sidebar, people in the info panel, corrections;
-      people as search terms (several people together, e.g. two friends).
+- [x] 5c-3: Faces in the sidebar (groups, people, Unnamed), the overview,
+      a person's faces (suggested, maybe, not them), unnamed cards with a
+      split, groups, corrections, people in the info panel, drawn faces
+      (protocol 2 `embed`, `recognition.db` v4), people as search terms
+      (several together, AND); a generation per cluster
+      ([phase5.md](phase5.md)). The real-hardware check, with the 5c-2
+      checks folded in and all in the UI, is in its list.
 
 ## Build notes and pitfalls (learned in phases 0–4)
 
@@ -411,6 +416,13 @@ Open:
 - **SIMD without fast-math.** A plain `iter().map(a * b).sum()` cannot be
   vectorised (float addition is not reordered); `ann::dot` keeps eight
   sums side by side, which the compiler turns into SIMD.
+- **Every change bumps `index_version`**, people and decisions included, and
+  the status poll then reloads the open view. Pages that change their
+  cards in place (Unnamed, a person's faces) are left alone by `reloadAll`,
+  or the place and typed names are lost.
+- **Cluster numbers change after every decision.** Clusters are a cache
+  recomputed from scratch, so actions on a card carry the cluster's own
+  `generation` (a hash of its faces), not its number or a list-wide one.
 - **Git push** uses SSH via the 1Password agent with the "GitHub" key pinned
   in this repo's `core.sshCommand` (the keychain's HTTPS login belongs to a
   different account, `svenfritschpeers`).
@@ -427,4 +439,6 @@ page and time `shoebox recognize --rotated` (list in [phase5.md](phase5.md)).
 decisions, clustering) is built; on the drive time the first clustering,
 name a few people and look at the suggestions and the "maybe" list, and
 mark the known false finds "not a face" (list in [phase5.md](phase5.md)).
-Next is 5c-3 (the UI).
+5c-3 (the UI) is built: install the protocol 2 recognizer, then go through
+the combined 5c-2/5c-3 list in [phase5.md](phase5.md), all in the UI and
+from the iPad. Next is phase 6 (pets).

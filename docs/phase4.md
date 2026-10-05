@@ -112,6 +112,8 @@ SHOEBOX_TEST_FACE=face.jpg python3 -m unittest -v recognizer/test_recognizer.py
   `clusters(face, cluster, person, similarity)`, plus `clusters` jobs (see
   [phase5.md](phase5.md)). Still a cache: deleting the file loses no
   decision.
+- v4 (phase 5c-3) adds `drawn(key, x, y, w, h, model, aligned, emb, error)`:
+  embeddings of faces drawn by hand (protocol 2, task `embed`).
 
 ## API additions
 
