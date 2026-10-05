@@ -24,6 +24,7 @@ use rusqlite::{Connection, params};
 use serde::Serialize;
 use walkdir::WalkDir;
 
+use crate::say;
 use crate::classify::{self, Kind};
 use crate::db::{self, Job};
 use crate::fingerprint::{self, Stamp};
@@ -86,8 +87,11 @@ pub fn index_library(conn: &Connection, root: &Path) -> Result<Stats> {
     let walked = walk(root, &mut stats);
     stats.files = walked.files.len() as u64;
     stats.folders = walked.folders.len() as u64;
-    println!("Found {} media files in {} folders ({} system entries skipped).", stats.files, stats.folders, stats.ignored);
+    say!("Found {} media files in {} folders ({} system entries skipped).", stats.files, stats.folders, stats.ignored);
 
+    for entry in &stats.skipped {
+        crate::report::failed_text(entry);
+    }
     let job = Job::start(conn, "scan")?;
     stats.job_id = job.id;
     match index(conn, root, &walked, job.id, &mut stats) {
@@ -115,9 +119,9 @@ pub fn run(opts: &Options) -> Result<Stats> {
     }
     let conn = db::open(&db_path)?;
 
-    println!("Scanning {}", root.display());
+    say!("Scanning {}", root.display());
     let mut stats = index_library(&conn, &root)?;
-    println!(
+    say!(
         "Index: {} added, {} changed, {} moved, {} unchanged ({} with time-zone shift), {} missing.",
         stats.added,
         stats.changed,
@@ -128,7 +132,7 @@ pub fn run(opts: &Options) -> Result<Stats> {
     );
     if opts.forget_missing {
         stats.forgotten = forget_missing(&conn, stats.job_id)?;
-        println!("Forgot {} missing files.", stats.forgotten);
+        say!("Forgot {} missing files.", stats.forgotten);
     }
     db::backup(&conn, &db_path)?;
 
@@ -146,12 +150,12 @@ pub fn run(opts: &Options) -> Result<Stats> {
             r.get::<_, i64>(0)
         })? as u64;
     if stats.hash_pending > 0 {
-        println!("{} files still need a full hash (run `shoebox scan` again).", stats.hash_pending);
+        say!("{} files still need a full hash (run `shoebox scan` again).", stats.hash_pending);
     }
     if !stats.skipped.is_empty() {
-        println!("Skipped ({}):", stats.skipped.len());
+        say!("Skipped ({}):", stats.skipped.len());
         for s in &stats.skipped {
-            println!("  {s}");
+            say!("  {s}");
         }
     }
     Ok(stats)
@@ -630,7 +634,7 @@ fn hash_pending(conn: &Connection, root: &Path, stats: &mut Stats) -> Result<()>
         return Ok(());
     }
     let total_bytes: u64 = pending.iter().map(|p| p.2).sum();
-    println!("Full hashes: {} files, {}…", pending.len(), human_bytes(total_bytes));
+    say!("Full hashes: {} files, {}…", pending.len(), human_bytes(total_bytes));
 
     let job = Job::start(conn, "hash")?;
     let started = Instant::now();
@@ -643,8 +647,12 @@ fn hash_pending(conn: &Connection, root: &Path, stats: &mut Stats) -> Result<()>
                 conn.execute("UPDATE files SET full_hash = ?2 WHERE id = ?1", params![id, hash])?;
                 stats.full_hashed += 1;
                 stats.bytes_full_hashed += size;
+                crate::report::file(rel, true, "hashed");
             }
-            Err(e) => stats.skipped.push(format!("{rel}: {e}")),
+            Err(e) => {
+                crate::report::file(rel, false, e.to_string());
+                stats.skipped.push(format!("{rel}: {e}"));
+            }
         }
         if batch.tick()? {
             job.progress(conn, stats.bytes_full_hashed, Some(total_bytes))?;
@@ -656,7 +664,7 @@ fn hash_pending(conn: &Connection, root: &Path, stats: &mut Stats) -> Result<()>
     batch.commit()?;
     job.progress(conn, stats.bytes_full_hashed, Some(total_bytes))?;
     job.finish(conn, "done", &serde_json::json!({ "files": stats.full_hashed, "bytes": stats.bytes_full_hashed }))?;
-    println!(
+    say!(
         "Hashed {} files ({}) in {:.0}s.",
         stats.full_hashed,
         human_bytes(stats.bytes_full_hashed),
@@ -702,16 +710,21 @@ impl<'c> Batch<'c> {
     }
 }
 
-/// Prints a progress line every few seconds.
+/// Prints a progress line every few seconds; the launcher gets it several
+/// times a second, as numbers for its progress bar.
 pub(crate) struct Progress {
     done: u64,
     total: u64,
     last: Instant,
+    /// `None` until the first event, which goes out right away.
+    last_event: Option<Instant>,
 }
+
+const PROGRESS_EVENT_INTERVAL: Duration = Duration::from_millis(250);
 
 impl Progress {
     pub(crate) fn new(total: u64) -> Self {
-        Progress { done: 0, total, last: Instant::now() }
+        Progress { done: 0, total, last: Instant::now(), last_event: None }
     }
 
     pub(crate) fn tick(&mut self, line: impl FnOnce(u64, u64) -> String) {
@@ -720,8 +733,18 @@ impl Progress {
 
     pub(crate) fn add(&mut self, n: u64, line: impl FnOnce(u64, u64) -> String) {
         self.done += n;
-        if self.last.elapsed() >= PROGRESS_INTERVAL {
-            println!("  {}", line(self.done, self.total));
+        let print = self.last.elapsed() >= PROGRESS_INTERVAL;
+        let event = crate::report::listening() && self.last_event.is_none_or(|t| t.elapsed() >= PROGRESS_EVENT_INTERVAL);
+        if !print && !event {
+            return;
+        }
+        let text = line(self.done, self.total);
+        if event {
+            crate::report::emit(crate::report::Event::Progress { label: text.clone(), done: self.done, total: self.total });
+            self.last_event = Some(Instant::now());
+        }
+        if print {
+            say!("  {text}");
             self.last = Instant::now();
         }
     }

@@ -42,6 +42,39 @@ Goal: people who are not technical can use shoebox without a terminal.
 - macOS: Gatekeeper blocks a double-clicked binary, so `Start shoebox.command`
   stays as fallback. To check: the best behaviour on Windows and Linux.
 
+Built (first slice, `core/src/launcher.rs`, page in `core/launcher-web/`):
+- `shoebox` without arguments starts the launcher on `127.0.0.1:7879` (next
+  free port if taken) and opens the browser. Own small axum server, no
+  library needed. The page offers a path field with detected drives
+  (`/Volumes`, `/media`, `/mnt`, Windows drive letters, and the drive the
+  binary sits on when it is in `<drive>/.shoebox/bin/`), buttons Scan, Verify,
+  Recognize, Face stats, a progress bar, a per-file result list (✓/✗, "only
+  problems" filter) and a summary. "Start photo app" starts `serve` in-process
+  only when pressed (`POST /api/app`).
+- One field for "drive or photo folder": the folder that holds `.shoebox` and
+  the photos, which is how the scanner works (a separate photo folder inside
+  the drive is not supported yet).
+- `core/src/report.rs`: the commands print through `say!` and report
+  `Event::{Line, Progress, File}` to an installed sink (the launcher's job
+  state); the CLI output is unchanged. `--json` on `scan`, `verify`,
+  `recognize` and `faces stats` prints the result on standard output and the
+  usual text on standard error. Launcher and CLI call the same functions.
+- Safety: peer and `Host` header must be local, non-GET needs `X-Shoebox`,
+  one job at a time (409 otherwise). `core/tests/launcher.rs` runs scan,
+  verify, face stats and recognize through the API under the guard
+  (snapshot of size, mtime, created and hash before and after).
+- Not yet done: cancel button, remembering several paths, serving more than
+  one folder, the platform checks below.
+
+Platform behaviour to check on real machines (not tried yet):
+- macOS: a double-clicked binary is blocked by Gatekeeper; `Start
+  shoebox.command` stays the way in (it only has to start the binary).
+- Windows: a double-click opens a console window and runs the launcher;
+  SmartScreen warns about unsigned downloads once.
+- Linux: file managers often open an executable in an editor or ask; a
+  `.desktop` file or `Start shoebox.sh` with "run in terminal" is the
+  fallback.
+
 ## 3. Multiple drives
 
 - Every drive keeps its own `.shoebox` folder with `library.db`, `thumbs.db`
@@ -73,6 +106,6 @@ Done:
 - [x] Library id in all API routes (one library; several come with section 3)
 
 Open:
-- [ ] Launcher UI (section 2)
+- [ ] Launcher UI (section 2): first slice built, platform checks and polish open
 - [ ] Multiple drives (section 3)
 - [ ] Backups and packaging (section 4)

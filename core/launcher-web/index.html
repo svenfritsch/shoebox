@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>shoebox launcher</title>
+<link rel="stylesheet" href="launcher.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1>shoebox</h1>
+    <p class="sub">Your photo library on this drive. Nothing is copied or changed in your photos.</p>
+  </header>
+
+  <section class="card">
+    <h2>1 · Where are your photos?</h2>
+    <label for="root">Drive or photo folder (the folder that holds your photos)</label>
+    <input id="root" list="drives" placeholder="/Volumes/MyDrive" autocomplete="off" spellcheck="false">
+    <datalist id="drives"></datalist>
+    <div id="drive-chips" class="chips" aria-label="Detected drives"></div>
+    <p id="root-hint" class="hint"></p>
+  </section>
+
+  <section class="card">
+    <h2>2 · What should shoebox do?</h2>
+    <div class="actions">
+      <button data-kind="scan">Scan<span>find new, moved and changed photos</span></button>
+      <button data-kind="verify">Verify<span>check that nothing was lost or damaged</span></button>
+      <button data-kind="recognize">Recognize<span>find the faces in your photos</span></button>
+      <button data-kind="faces_stats">Face stats<span>how recognition went</span></button>
+    </div>
+    <div class="options">
+      <label><input type="checkbox" id="opt-quick"> Quick (Scan: skip full hashes · Verify: size and date only)</label>
+      <label><input type="checkbox" id="opt-rotated"> Recognize: also look for faces lying down (slower)</label>
+    </div>
+  </section>
+
+  <section class="card" id="progress-card" hidden>
+    <h2 id="job-title">Working…</h2>
+    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div id="bar-fill"></div></div>
+    <p id="progress-label" class="hint"></p>
+    <div id="summary" class="summary" hidden></div>
+    <p id="job-error" class="error" hidden></p>
+    <div class="list-head">
+      <h3>Results per file</h3>
+      <label><input type="checkbox" id="only-failed"> only problems</label>
+    </div>
+    <ul id="results" class="results"></ul>
+    <details><summary>Messages</summary><pre id="lines"></pre></details>
+  </section>
+
+  <section class="card">
+    <h2>3 · Open your photos</h2>
+    <button id="start-app" class="primary">Start photo app</button>
+    <button id="stop-app" class="quiet" hidden>Stop photo app</button>
+    <p id="app-state" class="hint">The photo app starts only when you press this button. Scan first if this is a new drive.</p>
+  </section>
+</main>
+<script src="launcher.js"></script>
+</body>
+</html>

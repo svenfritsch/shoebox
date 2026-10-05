@@ -22,6 +22,7 @@ use libheif_rs::LibHeif;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 
+use crate::say;
 use crate::classify::Kind;
 use crate::db::{self, Job};
 use crate::fingerprint;
@@ -273,11 +274,11 @@ pub fn generate(conn: &Connection, root: &Path) -> Result<Stats> {
         pending.into_iter().partition(|(_, s)| s.kind != Kind::Video || ffmpeg.is_some());
     stats.no_ffmpeg = videos_skipped.len() as u64;
     if stats.no_ffmpeg > 0 {
-        println!("No ffmpeg next to shoebox or on PATH: {} videos get no poster for now.", stats.no_ffmpeg);
+        say!("No ffmpeg next to shoebox or on PATH: {} videos get no poster for now.", stats.no_ffmpeg);
     }
 
     if !pending.is_empty() {
-        println!("Thumbnails: {} to make…", pending.len());
+        say!("Thumbnails: {} to make…", pending.len());
         let job = Job::start(conn, "thumbs")?;
         let started = Instant::now();
         let total = pending.len() as u64;
@@ -310,9 +311,13 @@ pub fn generate(conn: &Connection, root: &Path) -> Result<Stats> {
                 for (rel, src, result) in rx.iter() {
                     done += 1;
                     match &result {
-                        Ok(_) => stats.made += 1,
+                        Ok(_) => {
+                            stats.made += 1;
+                            crate::report::file(&rel, true, "thumbnail made");
+                        }
                         Err(e) => {
                             stats.failed += 1;
+                            crate::report::file(&rel, false, e.to_string());
                             stats.errors.push(format!("{rel}: {e}"));
                         }
                     }
@@ -339,12 +344,12 @@ pub fn generate(conn: &Connection, root: &Path) -> Result<Stats> {
             job.progress(conn, done, Some(total))?;
             job.finish(conn, "done", &stats)
         })?;
-        println!("Made {} thumbnails in {:.0}s ({} failed).", stats.made, started.elapsed().as_secs_f64(), stats.failed);
+        say!("Made {} thumbnails in {:.0}s ({} failed).", stats.made, started.elapsed().as_secs_f64(), stats.failed);
         for e in stats.errors.iter().take(20) {
-            println!("  {e}");
+            say!("  {e}");
         }
         if stats.errors.len() > 20 {
-            println!("  … {} more", stats.errors.len() - 20);
+            say!("  … {} more", stats.errors.len() - 20);
         }
     }
 

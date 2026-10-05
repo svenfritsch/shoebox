@@ -12,6 +12,7 @@ use anyhow::{Context, Result};
 use rusqlite::params;
 use serde::Serialize;
 
+use crate::say;
 use crate::db::{self, Job};
 use crate::fingerprint;
 use crate::scan::{Batch, Progress, hash_unchanged, human_bytes, rate};
@@ -78,7 +79,7 @@ pub fn run(opts: &Options) -> Result<Report> {
         .collect::<rusqlite::Result<_>>()?;
     let files = &files[..opts.limit.unwrap_or(usize::MAX).min(files.len())];
     let total_bytes: u64 = files.iter().map(|f| f.2).sum();
-    println!(
+    say!(
         "Verifying {} files ({}){}…",
         files.len(),
         human_bytes(total_bytes),
@@ -98,23 +99,28 @@ pub fn run(opts: &Options) -> Result<Report> {
         let stamp = match fingerprint::stamp(&path) {
             Ok(s) => s,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                crate::report::file(rel, false, "missing from the drive");
                 report.missing.push(rel.clone());
                 continue;
             }
             Err(e) => {
+                crate::report::file(rel, false, e.to_string());
                 report.errors.push(format!("{rel}: {e}"));
                 continue;
             }
         };
         if *missing || stamp.size != *size || stamp.mtime_ns != *mtime as i128 {
+            crate::report::file(rel, false, "changed since the last scan");
             report.changed.push(rel.clone());
             continue;
         }
         if opts.quick {
+            crate::report::file(rel, true, "size and date match");
             report.ok += 1;
             continue;
         }
         let Some(expected) = full_hash else {
+            crate::report::file(rel, true, "no full hash yet");
             report.unhashed += 1;
             continue;
         };
@@ -122,13 +128,20 @@ pub fn run(opts: &Options) -> Result<Report> {
             Ok(hash) if &hash == expected => {
                 report.ok += 1;
                 report.bytes += size;
+                crate::report::file(rel, true, "content matches");
                 conn.execute("UPDATE files SET verified_at = ?2 WHERE id = ?1", params![id, db::now()])?;
                 if batch.tick()? {
                     job.progress(&conn, report.checked, Some(files.len() as u64))?;
                 }
             }
-            Ok(_) => report.damaged.push(rel.clone()),
-            Err(e) => report.errors.push(format!("{rel}: {e}")),
+            Ok(_) => {
+                crate::report::file(rel, false, "DAMAGED: content differs although size and date match");
+                report.damaged.push(rel.clone());
+            }
+            Err(e) => {
+                crate::report::file(rel, false, e.to_string());
+                report.errors.push(format!("{rel}: {e}"));
+            }
         }
     }
     batch.commit()?;
@@ -139,21 +152,21 @@ pub fn run(opts: &Options) -> Result<Report> {
 }
 
 fn print_report(r: &Report) {
-    println!();
-    println!("Checked {} files: {} OK.", r.checked, r.ok);
+    say!();
+    say!("Checked {} files: {} OK.", r.checked, r.ok);
     if r.unhashed > 0 {
-        println!("{} files have no full hash yet (run `shoebox scan`).", r.unhashed);
+        say!("{} files have no full hash yet (run `shoebox scan`).", r.unhashed);
     }
     let list = |title: &str, items: &[String]| {
         if items.is_empty() {
             return;
         }
-        println!("{title} ({}):", items.len());
+        say!("{title} ({}):", items.len());
         for i in items.iter().take(50) {
-            println!("  {i}");
+            say!("  {i}");
         }
         if items.len() > 50 {
-            println!("  … {} more", items.len() - 50);
+            say!("  … {} more", items.len() - 50);
         }
     };
     list("DAMAGED: content differs although size and date match", &r.damaged);
@@ -161,6 +174,6 @@ fn print_report(r: &Report) {
     list("Changed since the last scan (run `shoebox scan`)", &r.changed);
     list("Errors", &r.errors);
     if !r.database_ok {
-        println!("The database failed its integrity check.");
+        say!("The database failed its integrity check.");
     }
 }

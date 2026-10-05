@@ -48,6 +48,7 @@ use libheif_rs::LibHeif;
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 
+use crate::say;
 use crate::classify::Kind;
 use crate::db::{self, Job};
 use crate::fingerprint;
@@ -879,9 +880,9 @@ pub fn run(opts: &Options) -> Result<Stats> {
     )?;
 
     catch_interrupts();
-    println!("Starting the recognizer ({})…", cmd.program.display());
+    say!("Starting the recognizer ({})…", cmd.program.display());
     let mut worker = Worker::start(cmd, opts.timeouts)?;
-    println!(
+    say!(
         "Recognizer {} ready: faces with {}.",
         worker.version().unwrap_or("(unknown version)"),
         worker.faces_model().model
@@ -893,7 +894,7 @@ pub fn run(opts: &Options) -> Result<Stats> {
         }
         let drawn = embed_drawn(&conn, &root, &mut worker, opts.retry_failed, &interrupted)?;
         if drawn.embedded + drawn.failed > 0 {
-            println!(
+            say!(
                 "Faces drawn by hand: {} embedded ({} without landmarks: not used for suggestions), {} failed.",
                 drawn.embedded, drawn.plain, drawn.failed
             );
@@ -905,7 +906,7 @@ pub fn run(opts: &Options) -> Result<Stats> {
     // Clusters and suggestions from scratch, with what was found now.
     let result = result.and_then(|mut stats| {
         if crate::clusters::running(&conn)? {
-            println!("Clusters: `shoebox serve` is grouping the faces right now; it takes the new ones too.");
+            say!("Clusters: `shoebox serve` is grouping the faces right now; it takes the new ones too.");
         } else {
             stats.clusters = Some(crate::clusters::run_printing(&conn, &interrupted)?);
         }
@@ -1019,8 +1020,8 @@ fn run_pass(
         return Ok(stats);
     }
     match pass {
-        Pass::Upright => println!("Faces: {} pictures to look at…", pending.len()),
-        Pass::Rotated => println!("Faces, turned 90° and 270°: {} pictures to look at…", pending.len()),
+        Pass::Upright => say!("Faces: {} pictures to look at…", pending.len()),
+        Pass::Rotated => say!("Faces, turned 90° and 270°: {} pictures to look at…", pending.len()),
     }
     let job = Job::start_in(conn, "recog.jobs", pass.task())?;
     let result = look_at(conn, root, worker, pass, pending, &job, &mut stats);
@@ -1088,6 +1089,7 @@ fn look_at(
                     Ok(prepared) => ask_all(worker, prepared)?,
                     Err(e) if thumbs::is_transient(&e) => {
                         stats.skipped += 1;
+                        crate::report::file(&p.rel, false, e.to_string());
                         stats.errors.push(format!("{}: {e}", p.rel));
                         continue;
                     }
@@ -1095,7 +1097,10 @@ fn look_at(
                 };
                 if let Err(f) = &outcome {
                     stats.failed += 1;
+                    crate::report::file(&p.rel, false, failure_text(f));
                     stats.errors.push(format!("{}: {}", p.rel, failure_text(f)));
+                } else {
+                    crate::report::file(&p.rel, true, "looked at");
                 }
                 let kept = match pass {
                     Pass::Upright => store(conn, &p.key, &stats.model, &outcome)?,
@@ -1130,7 +1135,7 @@ fn look_at(
         Pass::Upright => "faces",
         Pass::Rotated => "faces added",
     };
-    println!(
+    say!(
         "Looked at {} pictures in {:.0}s: {} {what}, {} failed, {} skipped.",
         stats.looked + stats.failed,
         started.elapsed().as_secs_f64(),
@@ -1139,10 +1144,10 @@ fn look_at(
         stats.skipped
     );
     for e in stats.errors.iter().take(20) {
-        println!("  {e}");
+        say!("  {e}");
     }
     if stats.errors.len() > 20 {
-        println!("  … {} more", stats.errors.len() - 20);
+        say!("  … {} more", stats.errors.len() - 20);
     }
     Ok(())
 }

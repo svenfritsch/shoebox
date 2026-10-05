@@ -85,7 +85,7 @@ const SESSION_DAYS: u64 = 30;
 const LOGIN_ATTEMPTS_PER_MINUTE: usize = 5;
 const IMMUTABLE: &str = "private, max-age=31536000, immutable";
 /// Required on every request that is not a GET (see the module docs).
-const WRITE_HEADER: &str = "x-shoebox";
+pub(crate) const WRITE_HEADER: &str = "x-shoebox";
 /// At most one background search for moved files in this time.
 const HEAL_INTERVAL: Duration = Duration::from_secs(30);
 /// At most one backup of the index and the user data in this time.
@@ -583,6 +583,7 @@ pub fn library_id(name: &str) -> String {
 
 /// Marks a request that came in through `/api/lib/{id}/…`.
 #[derive(Clone)]
+#[allow(dead_code)] // the id picks the library once several are open
 struct LibraryScope(String);
 
 /// The routes that belong to no library.
@@ -772,7 +773,7 @@ impl Auth {
 }
 
 /// A request from this machine that addresses it by IP or as localhost.
-fn is_local(peer: IpAddr, host: Option<&str>) -> bool {
+pub(crate) fn is_local(peer: IpAddr, host: Option<&str>) -> bool {
     let peer_local = peer.is_loopback() || matches!(peer, IpAddr::V6(v6) if v6.to_ipv4_mapped().is_some_and(|v4| v4.is_loopback()));
     peer_local && host.is_some_and(host_is_literal)
 }
@@ -787,7 +788,7 @@ fn host_is_literal(host: &str) -> bool {
     name.eq_ignore_ascii_case("localhost") || name.parse::<IpAddr>().is_ok()
 }
 
-fn host(headers: &HeaderMap) -> Option<&str> {
+pub(crate) fn host(headers: &HeaderMap) -> Option<&str> {
     headers.get(header::HOST).and_then(|h| h.to_str().ok())
 }
 
