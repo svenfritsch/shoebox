@@ -1134,7 +1134,8 @@ function openModal(title, body, actions) {
   });
   $('modal').hidden = false;
   var input = b.querySelector('input:not([type=file])');
-  if (input) input.focus();
+  var preferred = actions.findIndex(function (act) { return act.focus; });
+  if (input) input.focus(); else if (preferred >= 0) buttons[preferred].focus();
   return buttons;
 }
 
@@ -1261,7 +1262,7 @@ function trashDialog(ids, done) {
     'Move to trash',
     'Move ' + plural(ids.length, 'photo', 'photos') + ' (with their RAW, Live Photo and sidecar files) to the shoebox trash? You can put them back from there until the trash is emptied.',
     [{ label: 'Cancel', cls: 'quiet' }, {
-      label: 'Move to trash', cls: 'danger', onclick: function (btn) {
+      label: 'Move to trash', cls: 'danger', focus: true, onclick: function (btn) {
         btn.disabled = true;
         post('/api/trash', { ids: ids }).then(function (r) {
           closeModal();
