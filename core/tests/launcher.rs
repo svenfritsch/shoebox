@@ -222,6 +222,39 @@ fn the_remembered_folders_are_a_json_file() {
 }
 
 #[test]
+fn recognize_pets_runs_the_pets_pass_under_the_guard() {
+    let _turn = serial();
+    let lib = Library::new("launcher-pets");
+    // A red picture is a cat, a blue one a dog, for the fake recognizer.
+    image::RgbImage::from_pixel(64, 64, image::Rgb([200, 60, 40])).save(lib.path("cat.png")).unwrap();
+    image::RgbImage::from_pixel(64, 64, image::Rgb([40, 60, 200])).save(lib.path("dog.png")).unwrap();
+    lib.scan_opts(true, false, false);
+    let before = lib.snapshot();
+    unsafe { std::env::set_var("SHOEBOX_RECOGNIZER", env!("CARGO_BIN_EXE_shoebox-fake-recognizer")) };
+    let launcher = start_launcher();
+    let root = lib.root.display().to_string();
+
+    // The plain button looks for faces only; the pets button also for cats and dogs.
+    let faces = run_job(launcher.addr, json!({ "kind": "recognize", "root": root }));
+    assert_eq!(faces["ok"], true, "{faces}");
+    assert!(faces["result"]["pets"].is_null(), "no pet models were asked for");
+    let pets = run_job(launcher.addr, json!({ "kind": "recognize_pets", "root": root }));
+    assert_eq!(pets["ok"], true, "{pets}");
+    // The fake finds one pet in every picture (the library's own photos, and the
+    // fixtures when CI has them, so the count is the library's, not a constant).
+    let photos = lib.count("SELECT count(DISTINCT quick_hash) FROM files WHERE missing_since IS NULL AND kind IN ('jpeg', 'png', 'heic')");
+    assert!(photos >= 8, "{photos}");
+    assert_eq!(pets["result"]["pets"]["faces"], photos, "{pets}");
+    assert_eq!(pets["result"]["pets"]["looked"], photos);
+    assert_eq!(pets["result"]["faces"], 0, "the faces were done by the first run");
+    let clustered = pets["result"]["clusters"]["pets"]["faces"].as_i64().unwrap();
+    assert!(clustered > 0 && clustered <= photos, "clustered in a space of their own: {pets}");
+    assert_eq!(pets["result"]["pets"]["model"], "fake-pets-1");
+    assert_eq!(lib.snapshot(), before, "looking for pets changed an original");
+    launcher.stop().unwrap();
+}
+
+#[test]
 fn cancel_stops_a_running_command_like_ctrl_c_and_keeps_what_was_done() {
     let _turn = serial();
     let lib = Library::new("launcher-cancel");

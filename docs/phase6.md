@@ -31,7 +31,7 @@ Goal: people who are not technical can use shoebox without a terminal.
   of `serve`, and opens the page in the browser. No library has to be running.
 - Embedded web page (rust-embed), no native GUI: same on every OS, lean binary.
 - Field for drive and photo folder path (suggesting detected drives);
-  buttons Scan, Verify, Recognize, Face Stats. "Start photo app" starts
+  buttons Scan, Verify, Recognize, Recognize pets (phase 7: the same, then cats and dogs), Face Stats. "Start photo app" starts
   `serve`, and only then.
 - Results are visual: progress bars and a result list showing per file
   whether it worked or failed (scan, verify).

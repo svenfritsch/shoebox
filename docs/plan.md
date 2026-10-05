@@ -53,7 +53,7 @@ progress. Update the status section when a phase moves.
     recognizer/                  ← optional (recognizer/install.sh)
       runtime/<os>-<arch>/       ← standalone Python (copies, no symlinks: exFAT)
       recognizer.py
-      models/                    ← ONNX: YuNet, SFace, animal detector, CLIP
+      models/                    ← ONNX: YuNet, SFace, pet detector, CLIP
   Start shoebox.command          ← launcher scripts per OS
 ```
 
@@ -156,9 +156,11 @@ shows them side by side; the user keeps both, links them, or deletes one
   editable. Names, groups and decisions live in `library.db`, keyed by
   content and box so they survive moves and model changes; `recognition.db`
   stays a cache. Details in [phase5.md](phase5.md).
-- Pets: COCO detector for cat/dog; individual pets ("Spooky") via CLIP or
-  DINOv2 embeddings of the crop matched against labelled examples. CLIP also
-  enables text search later.
+- Pets (phase 7, [phase7.md](phase7.md)): a COCO detector (YOLOX) finds cats
+  and dogs, an image embedder (DINOv2-small preferred, PP-ResNet50 as the
+  checked fallback) describes the whole pet; individual pets ("Spooky")
+  are matched like people, in a space of their own with stricter thresholds.
+  CLIP is for text search later and a separate model.
 - Expected first run on the old Intel Mac: ~4–5 h for faces over 100k photos,
   similar for pets. Background job, resumable, progress in the UI.
 
@@ -184,7 +186,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 5d | Duplicates UI: one row per photo, multi-select, bulk delete within a folder, tag and capture-date carry-over; Move dialog "keep tags"; trash dialog focus | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5e | Lean `thumbs.db`: face crops only for faces without a decision and for each person's picture; right-click "Use as … picture" on a person's photos | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | **In progress**: library id, launcher (cancel, saved folders, start scripts) and the multi-drive core (hub, offline, backup roles, common timeline, cross-drive duplicates and people) built; backup verification (`shoebox backup`, launcher button, All drives page) built; real-hardware checks and Linux/Windows packaging open |
-| 7 | Pets | |
+| 7 | Pets: cats and dogs found (`shoebox recognize --pets`, launcher button "Recognize pets"), named, grouped and searched like people, also by kind ("all cats", "Katze", "Hund"); pets the detector missed can be drawn by hand; Settings → Calibration with the Face check and the new Pet check | **Built except the real-hardware run and DINOv2** (see [phase7.md](phase7.md)) |
 
 ### Phase 0 details
 
@@ -428,6 +430,16 @@ Open
 
 ## Build notes and pitfalls (learned in phases 0–4)
 
+- **Pets are rows of `recog.faces` with a species**, and everything that
+  deletes or compares faces must say which kind: the faces pass only touches
+  `species IS NULL`, the pets pass only the others, clustering and
+  suggestions are per model (`pets::Space`), and a decision matches only
+  a face of its own kind (`face_decisions.species`). A new query over
+  `recog.faces` that forgets this mixes embeddings of different lengths.
+- **Embedding scales differ per model.** PP-ResNet50 features give 0.50–0.68
+  for different pets (SFace: well under 0.35), so thresholds belong to
+  the model (`Space::thresholds`), never to a constant shared with faces.
+
 - **Spaces in paths.** The repo may live under a path with spaces.
   `build-deps.sh` uses bash arrays for CMake args; never unquote paths.
 - **No pkg-config for libheif.** Homebrew's libheif leaked into the link once.
@@ -533,3 +545,10 @@ phase 6 (launcher UI, multiple drives, backups, packaging; pets follow in phase 
 check it on the drive and the iPad (list in
 [phase5.md](phase5.md)). 5e (lean `thumbs.db`) is built: update, start `serve`
 once (it removes the old crops) and go through its list in [phase5.md](phase5.md).
+
+Pets (phase 7) are built on top of the launcher branch: install or update the
+recognizer (`recognizer/install.sh`; `fetch-models.sh` now also fetches
+YOLOX and PP-ResNet50), run `shoebox recognize --pets` (or "Recognize pets"
+in the launcher), then look at Settings → Calibration → Pet check and name
+a few pets under Unnamed → Pets. DINOv2 is still to be dropped in and
+calibrated (list in [phase7.md](phase7.md)).

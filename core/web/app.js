@@ -112,10 +112,16 @@ $('login-form').addEventListener('submit', function (ev) {
 
 // ------------------------------------------------------------------ filters (in the URL hash)
 
-var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person', 'drives'];
+var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person', 'drives', 'settings', 'pets'];
+// Pet search terms (`pet=` in the URL and the API): a species or any pet.
+var PET_TERMS = {
+  cat: { icon: '🐱', label: 'All cats' },
+  dog: { icon: '🐶', label: 'All dogs' },
+  pet: { icon: '🐾', label: 'Any pet' },
+};
 
 function readHash() {
-  var f = { folder: null, tags: [], people: [], q: '', view: null, id: null, tab: null };
+  var f = { folder: null, tags: [], people: [], pets: [], q: '', view: null, id: null, tab: null };
   location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
     var i = kv.indexOf('=');
     if (i < 0) return;
@@ -125,6 +131,8 @@ function readHash() {
     var all = isAll();
     if (k === 'tag') { var t = all ? v : parseInt(v, 10); if (t && f.tags.indexOf(t) < 0) f.tags.push(t); }
     if (k === 'person') { var pp = all ? v : parseInt(v, 10); if (pp && f.people.indexOf(pp) < 0) f.people.push(pp); }
+    // A kind of pet (all cats, all dogs, any pet): the same on every drive.
+    if (k === 'pet' && PET_TERMS[v] && f.pets.indexOf(v) < 0) f.pets.push(v);
     if (k === 'q') f.q = v;
     if (k === 'view' && VIEWS.indexOf(v) >= 0) f.view = v;
     if (k === 'id') f.id = parseInt(v, 10) || null;
@@ -139,7 +147,7 @@ function readHash() {
 // folder, any number of tags and people (`tag`, `person` repeated in the
 // URL) and free text.
 function setFilter(f) {
-  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], q: f.q }).replace(/^\?/, '');
+  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], q: f.q }).replace(/^\?/, '');
   if (h === location.hash.replace(/^#/, '')) { applyFilter(); return; }
   location.hash = h; // triggers hashchange -> applyFilter
 }
@@ -147,7 +155,7 @@ function setFilter(f) {
 // The current filter with some terms changed.
 function withFilter(changes) {
   var f = state.filter;
-  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), q: f.q }, changes);
+  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), pets: f.pets.slice(), q: f.q }, changes);
 }
 
 function showView(view, id, tab) { setFilter({ view: view, id: id, tab: tab, folder: null, tags: [], people: [], q: '' }); }
@@ -165,7 +173,7 @@ function applyFilter() {
   $('sizer').hidden = !!view;
   $('nav-dups').classList.toggle('active', view === 'duplicates');
   $('nav-trash').classList.toggle('active', view === 'trash');
-  $('nav-faces').classList.toggle('active', view === 'faces');
+  $('nav-settings').classList.toggle('active', view === 'settings' || view === 'faces' || view === 'pets');
   $('nav-drives').classList.toggle('active', view === 'drives');
   markFacesSection();
   updateSections();
@@ -215,11 +223,16 @@ function renderChips() {
       setFilter(withFilter({ people: f.people.filter(function (p) { return p !== id; }) }));
     });
   });
+  f.pets.forEach(function (species) {
+    add(PET_TERMS[species].icon + ' ' + PET_TERMS[species].label, function () {
+      setFilter(withFilter({ pets: f.pets.filter(function (p) { return p !== species; }) }));
+    });
+  });
   if (f.q) add('“' + f.q + '”', function () { setFilter(withFilter({ q: '' })); });
   var terms = box.children.length;
   if (terms) {
     var more = el('button', 'chip more', '+');
-    more.title = 'Add a tag, person or folder to the search';
+    more.title = 'Add a tag, person, pet or folder to the search';
     more.onclick = function () { $('search').value = ''; $('search').focus(); suggest(''); };
     box.appendChild(more);
   }
@@ -227,7 +240,7 @@ function renderChips() {
   if (terms >= 2) {
     var clear = el('button', 'chip clear', 'Clear all');
     clear.title = 'Show all photos again';
-    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], q: '' }); };
+    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], pets: [], q: '' }); };
     box.appendChild(clear);
   }
   personHead(box, f);
@@ -271,7 +284,8 @@ $('search').addEventListener('keydown', function (ev) {
   } else if (ev.key === 'Backspace' && this.value === '') {
     // Like a token field: the last chip goes.
     var f = state.filter;
-    if (f.people.length) setFilter(withFilter({ people: f.people.slice(0, -1) }));
+    if (f.pets.length) setFilter(withFilter({ pets: f.pets.slice(0, -1) }));
+    else if (f.people.length) setFilter(withFilter({ people: f.people.slice(0, -1) }));
     else if (f.tags.length) setFilter(withFilter({ tags: f.tags.slice(0, -1) }));
     else if (f.folder) setFilter(withFilter({ folder: null }));
   }
@@ -282,16 +296,18 @@ function suggest(text) {
   if (f.view) { closeSuggest(); return; }
   if (isAll()) { suggestAll(text, seq); return; }
   var needle = text.trim();
-  var within = { q: needle, tag: f.tags, person: f.people, folder: f.folder };
+  var within = { q: needle, tag: f.tags, person: f.people, pet: f.pets, folder: f.folder };
   Promise.all([
     api(LIBAPI + '/tags' + query(Object.assign({ limit: 8 }, within))),
     api(LIBAPI + '/people/search' + query(Object.assign({ limit: 6 }, within))).catch(function () { return []; }),
+    api(LIBAPI + '/pets/search' + query(within)).catch(function () { return []; }),
   ]).then(function (r) {
     if (seq !== sugg.seq) return;
     var items = r[1].map(function (p) {
       state.personNames[p.id] = p.name;
       return { kind: 'person', id: p.id, label: p.name, count: p.photos };
     });
+    r[2].forEach(function (p) { items.push({ kind: 'pet', id: p.species, label: PET_TERMS[p.species].label, count: p.photos }); });
     r[0].forEach(function (t) {
       state.tagNames[t.id] = t.name;
       items.push({ kind: 'tag', id: t.id, label: t.name, count: t.count, folderTag: t.kind === 'folder' });
@@ -312,10 +328,19 @@ function suggestAll(text, seq) {
   var needle = text.trim(), low = needle.toLowerCase(), f = state.filter;
   var people = Date.now() - allPeople.at < 30000 ? Promise.resolve(allPeople.list)
     : api('/api/all/people').then(function (r) { allPeople = { at: Date.now(), list: r.people }; return r.people; });
-  Promise.all([api('/api/all/tags' + query({ q: needle, limit: 8 })), people.catch(function () { return []; })]).then(function (r) {
+  // Pet terms mean the same on every drive: add up what the drives that take part answer.
+  var pets = Promise.all(drives.allLibs.map(function (l) {
+    return api('/api/lib/' + l.id + '/pets/search' + query({ q: needle, pet: f.pets })).catch(function () { return []; });
+  })).then(function (lists) {
+    var sum = {};
+    lists.forEach(function (list) { list.forEach(function (h) { sum[h.species] = (sum[h.species] || 0) + h.photos; }); });
+    return Object.keys(sum).sort(function (a, b) { return sum[b] - sum[a]; }).map(function (s) { return { species: s, photos: sum[s] }; });
+  });
+  Promise.all([api('/api/all/tags' + query({ q: needle, limit: 8 })), people.catch(function () { return []; }), pets]).then(function (r) {
     if (seq !== sugg.seq) return;
     var items = r[1].filter(function (p) { return f.people.indexOf(p.name) < 0 && (!low || p.name.toLowerCase().indexOf(low) >= 0); })
       .slice(0, 6).map(function (p) { return { kind: 'person', id: p.name, label: p.name, count: p.photos }; });
+    r[2].forEach(function (p) { items.push({ kind: 'pet', id: p.species, label: PET_TERMS[p.species].label, count: p.photos }); });
     r[0].filter(function (t) { return f.tags.indexOf(t.name) < 0; }).forEach(function (t) {
       items.push({ kind: 'tag', id: t.name, label: t.name, count: t.count, folderTag: t.kind === 'folder' });
     });
@@ -331,16 +356,17 @@ function showSuggest(items) {
   var last = null;
   items.forEach(function (it, i) {
     if (it.kind !== last) {
-      var f = state.filter, narrowed = !isAll() && (f.tags.length || f.people.length || f.folder);
+      var f = state.filter, narrowed = !isAll() && (f.tags.length || f.people.length || f.pets.length || f.folder);
       var head = it.kind === 'tag' ? (narrowed ? 'Tags in these photos' : 'Tags')
-        : it.kind === 'person' ? (narrowed ? 'People in these photos' : 'People') : 'Folders';
+        : it.kind === 'person' ? (narrowed ? 'People in these photos' : 'People')
+          : it.kind === 'pet' ? (narrowed ? 'Pets in these photos' : 'Pets') : 'Folders';
       box.appendChild(el('div', 'head', head));
       last = it.kind;
     }
     var b = el('button', 'item');
     b.type = 'button';
     b.setAttribute('role', 'option');
-    b.appendChild(el('span', 'label', ({ folder: '📁 ', person: '👤 ' }[it.kind] || '# ') + it.label));
+    b.appendChild(el('span', 'label', (it.kind === 'pet' ? PET_TERMS[it.id].icon + ' ' : ({ folder: '📁 ', person: '👤 ' }[it.kind] || '# ')) + it.label));
     b.appendChild(el('span', 'count', it.count.toLocaleString()));
     b.onmousedown = function (ev) { ev.preventDefault(); }; // keep the focus in the box
     b.onclick = function () { pickSuggest(it); };
@@ -364,6 +390,7 @@ function pickSuggest(it) {
   var f = state.filter;
   if (it.kind === 'tag') setFilter(withFilter({ tags: f.tags.indexOf(it.id) < 0 ? f.tags.concat([it.id]) : f.tags, q: '' }));
   else if (it.kind === 'person') setFilter(withFilter({ people: f.people.indexOf(it.id) < 0 ? f.people.concat([it.id]) : f.people, q: '' }));
+  else if (it.kind === 'pet') setFilter(withFilter({ pets: f.pets.indexOf(it.id) < 0 ? f.pets.concat([it.id]) : f.pets, q: '' }));
   else setFilter(withFilter({ folder: it.id, q: '' }));
 }
 
@@ -525,8 +552,8 @@ function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
 function loadTimeline(resetScroll) {
   var seq = ++state.loadSeq;
   var f = state.filter;
-  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, q: f.q })
-    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, q: f.q });
+  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, pet: f.pets, q: f.q })
+    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, pet: f.pets, q: f.q });
   return api(url).then(function (data) {
     if (seq !== state.loadSeq) return;
     if (isAll()) allTimelineLoaded(data);
@@ -981,7 +1008,7 @@ function drawFaces() {
   info.faces.forEach(function (f, k) {
     var hot = lb.hover === k;
     if (!lb.showFaces && !hot) return;
-    var b = el('div', 'face-box' + (hot ? ' hot' : '') + (f.manual != null ? ' drawn' : ''));
+    var b = el('div', 'face-box' + (hot ? ' hot' : '') + (f.manual != null ? ' drawn' : '') + (f.species ? ' pet' : ''));
     b.style.left = (r.left - s.left + f.x * r.width) + 'px';
     b.style.top = (r.top - s.top + f.y * r.height) + 'px';
     b.style.width = (f.w * r.width) + 'px';
@@ -989,7 +1016,7 @@ function drawFaces() {
     if (f.person && f.state !== 'ignored') {
       b.appendChild(el('span', 'face-name', f.person.name + (f.state === 'confirmed' ? '' : '?')));
     }
-    b.title = f.score != null ? 'score ' + f.score.toFixed(2) : 'drawn by hand';
+    b.title = (f.species ? f.species + ', ' : '') + (f.score != null ? 'score ' + f.score.toFixed(2) : 'drawn by hand');
     stage.appendChild(b);
   });
 }
@@ -1182,9 +1209,9 @@ function loadInfo() {
     else if (scan) parts.push('last scan ' + new Date(scan.started_at * 1000).toLocaleDateString());
     if (!info.ffmpeg && info.videos) parts.push('no ffmpeg: video previews made by the browser');
     var f = info.faces, c = info.clusters;
-    $('nav-faces').hidden = !f.faces;
     if (f.running) parts.push('finding faces ' + Math.floor(100 * f.done / Math.max(f.total, 1)) + '%');
     else if (f.done && f.done < f.total) parts.push('faces: ' + (f.total - f.done).toLocaleString() + ' photos to look at');
+    if (!f.running && f.pets_done && f.pets_done < f.total) parts.push('pets: ' + (f.total - f.pets_done).toLocaleString() + ' photos to look at');
     if (c.embedding) parts.push('learning drawn faces…');
     if (c.running && c.total) parts.push('grouping faces ' + Math.floor(100 * c.done / Math.max(c.total, 1)) + '%');
     else if (c.running || c.stale) parts.push('grouping faces…');
@@ -1218,7 +1245,8 @@ function reloadAll() {
 
 function loadView(view) {
   if (view === 'duplicates') loadDuplicates();
-  else if (view === 'faces') loadFaces();
+  else if (view === 'settings') loadSettings();
+  else if (view === 'faces' || view === 'pets') loadFaces();
   else if (view === 'people') loadPeoplePage();
   else if (view === 'unnamed') loadUnnamed();
   else if (view === 'person') loadPersonPage();
@@ -2588,6 +2616,13 @@ function loadOwnTags() {
 // shows the marked ones, to undo a mistake.
 
 var faceState = { sort: 'size', desc: false, filter: 'all', faces: [], total: 0, minPx: 30, picking: false, picked: {} };
+// `pet`: a pet drawn by hand, whose species nobody said.
+var PET_ICON = { cat: '🐱', dog: '🐶', pet: '🐾' };
+function petIcon(species) { return PET_ICON[species] || ''; }
+
+// The check page of people's faces (view `faces`) or of cats and dogs (view `pets`).
+function checkKind() { return state.filter.view === 'pets' ? 'pets' : 'faces'; }
+function onCheckPage() { return state.filter.view === 'faces' || state.filter.view === 'pets'; }
 var PAGE_FACES = 300;
 var FACE_SORTS = [
   ['size', false, 'Smallest first'], ['size', true, 'Largest first'],
@@ -2597,15 +2632,25 @@ var FACE_FILTERS = [
   ['all', 'All faces'], ['small', 'Too small for clustering'], ['large', 'Large enough'], ['rotated', 'Found turned'],
   ['not_face', 'Marked “not a face”'],
 ];
+// Cats and dogs are not looked for in turned copies, and the false finds are no pets.
+var PET_FILTERS = [
+  ['all', 'All pets'], ['small', 'Too small for clustering'], ['large', 'Large enough'], ['not_face', 'Marked “not a pet”'],
+];
+function checkFilters() { return checkKind() === 'pets' ? PET_FILTERS : FACE_FILTERS; }
 
-$('nav-faces').onclick = function () { showView('faces'); };
+$('nav-settings').onclick = function () { showView('settings'); };
 
 function loadFaces() {
   var page = $('page');
+  var kind = checkKind();
   page.textContent = '';
-  page.appendChild(el('h2', '', 'Face check'));
+  var back = el('button', 'link back', '← Settings');
+  back.onclick = function () { showView('settings'); };
+  page.appendChild(back);
+  page.appendChild(el('h2', '', kind === 'pets' ? 'Pet check' : 'Face check'));
   var sub = el('p', 'sub', 'Looking…');
   page.appendChild(sub);
+  if (!checkFilters().some(function (o) { return o[0] === faceState.filter; })) faceState.filter = 'all';
   page.appendChild(faceToolbar());
   var grid = el('div', 'faces');
   page.appendChild(grid);
@@ -2617,19 +2662,21 @@ function loadFaces() {
   faceState.faces = [];
   faceState.picked = {};
   updateFacePick();
-  api(LIBAPI + '/faces/stats').then(function (s) {
-    if (state.filter.view === 'faces') sub.textContent = faceSummary(s);
+  api(LIBAPI + '/faces/stats' + query({ kind: kind === 'pets' ? 'pets' : null })).then(function (s) {
+    if (checkKind() === kind && onCheckPage()) sub.textContent = faceSummary(s);
   }).catch(function () {});
   return moreFaces(grid, more);
 }
 
 function faceSummary(s) {
-  var parts = [plural(s.faces, 'face', 'faces') + ' in ' + plural(s.looked - s.failed, 'photo', 'photos')];
+  var pets = s.kind === 'pets';
+  var noun = pets ? ['pet', 'pets'] : ['face', 'faces'];
+  var parts = [plural(s.faces, noun[0], noun[1]) + ' in ' + plural(s.looked - s.failed, 'photo', 'photos')];
   if (s.failed) parts.push(plural(s.failed, 'photo', 'photos') + ' failed');
   if (s.looked < s.photos) parts.push((s.photos - s.looked).toLocaleString() + ' still to look at');
   parts.push(s.small.toLocaleString() + ' under ' + s.min_cluster_px + ' px (too small for clustering)');
-  parts.push(s.rotated_looked ? plural(s.rotated_faces, 'face', 'faces') + ' found turned' : 'not looked at turned yet');
-  if (s.not_faces) parts.push(plural(s.not_faces, 'face', 'faces') + ' marked “not a face”');
+  if (!pets) parts.push(s.rotated_looked ? plural(s.rotated_faces, 'face', 'faces') + ' found turned' : 'not looked at turned yet');
+  if (s.not_faces) parts.push(plural(s.not_faces, noun[0], noun[1]) + ' marked “not ' + (pets ? 'a pet' : 'a face') + '”');
   var widths = s.widths.map(function (b) {
     var label = b.from == null ? '< ' + b.to : b.to == null ? b.from + '+' : b.from + '–' + b.to;
     return label + ' px: ' + b.count.toLocaleString();
@@ -2653,7 +2700,7 @@ function faceToolbar() {
     loadFaces();
   };
   var filter = el('select');
-  FACE_FILTERS.forEach(function (o) {
+  checkFilters().forEach(function (o) {
     var opt = el('option', '', o[1]);
     opt.value = o[0];
     opt.selected = o[0] === faceState.filter;
@@ -2706,7 +2753,8 @@ function updateFacePick() {
   $('face-pick').classList.toggle('active', faceState.picking);
   $('face-pick-count').textContent = n ? plural(n, 'face', 'faces') : 'Tap faces to select';
   var mark = $('face-pick-mark');
-  mark.textContent = faceState.filter === 'not_face' ? 'It is a face' : 'Not a face';
+  var what = checkKind() === 'pets' ? 'a pet' : 'a face';
+  mark.textContent = faceState.filter === 'not_face' ? 'It is ' + what : 'Not ' + what;
   mark.disabled = !n;
 }
 
@@ -2732,17 +2780,20 @@ function markFaces(ids) {
 function moreFaces(grid, more) {
   var f = faceState.filter;
   var q = query({
+    kind: checkKind() === 'pets' ? 'pets' : null,
     sort: faceState.sort, desc: faceState.desc ? 'true' : null, offset: faceState.faces.length, limit: PAGE_FACES,
     max_px: f === 'small' ? faceState.minPx : null, min_px: f === 'large' ? faceState.minPx : null,
     rotated: f === 'rotated' ? 'true' : null, not_face: f === 'not_face' ? 'true' : null,
   });
   more.disabled = true;
   return api(LIBAPI + '/faces' + q).then(function (r) {
-    if (state.filter.view !== 'faces') return;
+    if (!onCheckPage()) return;
     faceState.total = r.total;
     faceState.minPx = r.min_cluster_px;
     r.faces.forEach(function (face) { faceState.faces.push(face); grid.appendChild(faceCard(face, null)); });
-    if (!faceState.total) grid.appendChild(el('p', 'sub', 'No faces here. `shoebox recognize` finds them.'));
+    if (!faceState.total) grid.appendChild(el('p', 'sub', checkKind() === 'pets'
+      ? 'No pets here. `shoebox recognize --pets` (or “Recognize pets” in the launcher) finds them.'
+      : 'No faces here. `shoebox recognize` finds them.'));
     more.disabled = false;
     more.hidden = faceState.faces.length >= faceState.total;
   }).catch(failed);
@@ -2787,16 +2838,18 @@ function faceCard(face, similarity) {
   var caption = Math.round(face.px) + ' px · ' + face.score.toFixed(2);
   if (similarity != null) caption = similarity.toFixed(2) + ' · ' + caption;
   card.appendChild(el('div', 'meta', caption));
+  if (face.species) card.appendChild(el('span', 'tag', petIcon(face.species) + ' ' + face.species));
   if (face.small) card.appendChild(el('span', 'tag', 'small'));
   if (face.roll) card.appendChild(el('span', 'tag', 'turned'));
   if (similarity == null) {
     var near = el('button', 'near', '≈');
-    near.title = 'Most similar faces';
+    near.title = face.species ? 'Most similar pets' : 'Most similar faces';
     near.onclick = function () { similarFaces(face); };
     card.appendChild(near);
     var undo = faceState.filter === 'not_face';
     var mark = el('button', 'mark', undo ? '↺' : '✕');
-    mark.title = undo ? 'It is a face (undo “not a face”)' : 'Not a face';
+    var what = face.species ? 'a pet' : 'a face';
+    mark.title = undo ? 'It is ' + what + ' (undo “not ' + what + '”)' : 'Not ' + what;
     mark.onclick = function () { markFaces([face.id]); };
     card.appendChild(mark);
   }
@@ -2808,12 +2861,12 @@ function faceCard(face, similarity) {
 function similarFaces(face) {
   api(LIBAPI + '/faces/' + face.id + '/similar?limit=24').then(function (list) {
     var box = el('div');
-    box.appendChild(el('p', 'hint', 'Cosine similarity of the embeddings (1 = identical), most similar first. Click a face to open its photo.'));
+    box.appendChild(el('p', 'hint', 'Cosine similarity of the embeddings (1 = identical), most similar first. Click ' + (face.species ? 'a pet' : 'a face') + ' to open its photo.'));
     var grid = el('div', 'faces');
     grid.appendChild(faceCard(face, 1));
     list.forEach(function (n) { grid.appendChild(faceCard(n, n.similarity)); });
     box.appendChild(grid);
-    openModal('Most similar faces', box, [{ label: 'Close' }]);
+    openModal(face.species ? 'Most similar pets' : 'Most similar faces', box, [{ label: 'Close' }]);
   }).catch(failed);
 }
 
@@ -2825,6 +2878,41 @@ function openFacePhoto(face) {
   state.data = { count: 1, ids: [face.file], kinds: letter, days: [0], versions: (face.version + '00000000').slice(0, 8), live: [] };
   lb.restore = function () { state.data = saved; };
   openLightbox(0);
+}
+
+// ------------------------------------------------------------------ settings
+
+// Settings: for now the calibration pages, which show what recognition found
+// so thresholds and false finds can be judged on the real photos.
+function loadSettings() {
+  var page = $('page');
+  page.textContent = '';
+  page.appendChild(el('h2', '', 'Settings'));
+  var sec = el('section', 'settings-section');
+  sec.appendChild(el('h3', '', 'Calibration'));
+  sec.appendChild(el('p', 'hint', 'Look at what recognition found in your photos: sizes, scores, nearest neighbours and false finds. Nothing here changes a photo.'));
+  var cards = el('div', 'settings-cards');
+  [
+    ['faces', 'Face check', 'People’s faces: how many were found, how small they are, which look alike.'],
+    ['pets', 'Pet check', 'Cats and dogs: how many were found, how small they are, which look alike.'],
+  ].forEach(function (c) {
+    var card = el('button', 'settings-card');
+    card.type = 'button';
+    card.appendChild(el('span', 'title', c[1]));
+    card.appendChild(el('span', 'hint', c[2]));
+    var line = el('span', 'sub', 'Looking…');
+    card.appendChild(line);
+    card.onclick = function () { showView(c[0]); };
+    cards.appendChild(card);
+    api(LIBAPI + '/faces/stats' + query({ kind: c[0] === 'pets' ? 'pets' : null })).then(function (s) {
+      line.textContent = s.faces
+        ? plural(s.faces, c[0] === 'pets' ? 'pet' : 'face', c[0] === 'pets' ? 'pets' : 'faces') + ' in ' + plural(s.looked - s.failed, 'photo', 'photos')
+        : s.looked ? 'Looked at ' + plural(s.looked, 'photo', 'photos') + ', nothing found.'
+          : c[0] === 'pets' ? 'Not looked for yet: `shoebox recognize --pets`, or “Recognize pets” in the launcher.' : 'Not looked for yet: `shoebox recognize`.';
+    }).catch(function () { line.textContent = ''; });
+  });
+  sec.appendChild(cards);
+  page.appendChild(sec);
 }
 
 // ------------------------------------------------------------------ faces: people, groups, unnamed (5c-3)
@@ -2896,7 +2984,8 @@ function cropUrl(face) {
 
 // A round face: the person's cover, or their initials.
 function avatar(p, cls) {
-  var a = el('span', 'avatar' + (cls ? ' ' + cls : ''));
+  var a = el('span', 'avatar' + (cls ? ' ' + cls : '') + (p && p.species ? ' pet pet-' + p.species : ''));
+  if (p && p.species) a.title = p.species;
   if (p && (p.cover != null || p.cover_manual != null)) {
     var img = el('img');
     img.alt = '';
@@ -2943,7 +3032,8 @@ function zoomFace(face) {
 }
 
 function faceImg(face, cls) {
-  var a = el('span', 'avatar' + (cls ? ' ' + cls : ''));
+  var a = el('span', 'avatar' + (cls ? ' ' + cls : '') + (face.species ? ' pet pet-' + face.species : ''));
+  if (face.species) a.title = face.species;
   var url = cropUrl(face);
   if (face.state === 'ignored' && face.file != null) {
     a.appendChild(zoomFace(face));
@@ -3029,7 +3119,7 @@ function renderFacesSection() {
         var pli = el('li');
         var prow = el('div', 'row');
         prow.appendChild(avatar(p, 'tiny'));
-        var b = el('button', 'name', p.name);
+        var b = el('button', 'name', (p.species ? petIcon(p.species) + ' ' : '') + p.name);
         b.dataset.person = p.id;
         b.onclick = function () { showPerson(p.id); };
         prow.appendChild(b);
@@ -3363,7 +3453,7 @@ function personHead(box, f) {
   var head = el('div', 'person-head');
   head.appendChild(avatar(p, 'big'));
   var text = el('div', 'ptext');
-  text.appendChild(el('div', 'pname', p.name));
+  text.appendChild(el('div', 'pname', (p.species ? petIcon(p.species) + ' ' : '') + p.name));
   var g = people.groups.filter(function (x) { return x.id === p.group_id; })[0];
   text.appendChild(el('div', 'pmeta', plural(p.photos, 'photo', 'photos') + ' · ' + (g ? g.name : 'no group')));
   head.appendChild(text);
@@ -3396,8 +3486,9 @@ function loadPeoplePage() {
   ng.onclick = function () { newGroup(); };
   var gs = el('button', 'btn quiet', 'Groups…');
   gs.onclick = groupsDialog;
-  var check = el('button', 'btn quiet', 'Face check');
-  check.onclick = function () { showView('faces'); };
+  var check = el('button', 'btn quiet', 'Calibration');
+  check.title = 'Face check and pet check, in Settings';
+  check.onclick = function () { showView('settings'); };
   bar.appendChild(ng);
   bar.appendChild(gs);
   bar.appendChild(check);
@@ -3432,7 +3523,7 @@ function personTile(p) {
   a.href = '#';
   a.onclick = function (ev) { ev.preventDefault(); showPerson(p.id); };
   a.appendChild(avatar(p, 'big'));
-  a.appendChild(el('span', 'pname', p.name));
+  a.appendChild(el('span', 'pname', (p.species ? petIcon(p.species) + ' ' : '') + p.name));
   a.appendChild(el('span', 'pmeta', plural(p.photos, 'photo', 'photos')));
   t.appendChild(a);
   if (p.suggested + p.maybe) {
@@ -3465,8 +3556,8 @@ function loadPersonPage() {
     var head = el('div', 'person-head');
     head.appendChild(avatar(p, 'big'));
     var text = el('div', 'ptext');
-    text.appendChild(el('h2', 'pname', p.name));
-    text.appendChild(el('div', 'pmeta', plural(p.photos, 'photo', 'photos') + ' · ' + plural(p.faces, 'face', 'faces') + ' confirmed'));
+    text.appendChild(el('h2', 'pname', (p.species ? petIcon(p.species) + ' ' : '') + p.name));
+    text.appendChild(el('div', 'pmeta', plural(p.photos, 'photo', 'photos') + ' · ' + plural(p.faces, p.species ? p.species : 'face', p.species ? p.species + 's' : 'faces') + ' confirmed'));
     head.appendChild(text);
     var photos = el('button', 'btn quiet', 'Photos');
     photos.onclick = function () { showPerson(p.id); };
@@ -3743,7 +3834,7 @@ function nameFacesDialog(faces, done) {
       // A drawn face nothing was detected at: drawn again with the new name.
       return Promise.all(drawn.map(function (d) {
         return post(LIBAPI + '/faces/undo', { manual: [d.manual] }).then(function () {
-          return post(LIBAPI + '/faces/manual', Object.assign({ file: d.file, box: [d.x, d.y, d.w, d.h] }, who));
+          return post(LIBAPI + '/faces/manual', Object.assign({ file: d.file, box: [d.x, d.y, d.w, d.h], pet: d.species ? true : undefined }, who));
         });
       })).then(function () { return r; });
     }).then(function (r) {
@@ -3768,7 +3859,8 @@ function nameFacesDialog(faces, done) {
 
 // ---- unnamed clusters
 
-var un = { shown: 0, total: 0, unnamed: 0 };
+var un = { shown: 0, total: 0, unnamed: 0, kind: 'all' };
+var UN_KINDS = [['all', 'People and pets'], ['faces', 'People'], ['pets', 'Pets (cats and dogs)']];
 var PAGE_CLUSTERS = 30;
 
 function loadUnnamed() {
@@ -3778,6 +3870,20 @@ function loadUnnamed() {
   var sub = el('p', 'sub', 'Looking…');
   sub.id = 'un-sub';
   page.appendChild(sub);
+  // Pets are named like people, but listed apart when asked.
+  var kinds = el('select');
+  kinds.id = 'un-kind';
+  kinds.setAttribute('aria-label', 'Which faces');
+  UN_KINDS.forEach(function (o) {
+    var opt = el('option', '', o[1]);
+    opt.value = o[0];
+    opt.selected = o[0] === un.kind;
+    kinds.appendChild(opt);
+  });
+  kinds.onchange = function () { un.kind = kinds.value; loadUnnamed(); };
+  var bar = el('div', 'toolbar');
+  bar.appendChild(kinds);
+  page.appendChild(bar);
   var box = el('div', 'clusters');
   box.id = 'un-box';
   page.appendChild(box);
@@ -3792,14 +3898,16 @@ function loadUnnamed() {
 function unnamedSummary() {
   var sub = $('un-sub');
   if (!sub) return;
+  var pets = un.kind === 'pets';
   sub.textContent = un.total
-    ? plural(un.unnamed, 'face', 'faces') + ' without a name, in ' + plural(un.total, 'cluster', 'clusters') + ' of similar faces, largest first. Name a card, or say they are strangers (Ignore) or no faces at all. “Select” names only some faces of a card.'
-    : 'Every face large enough has a name (or is ignored). New photos bring new ones after `shoebox recognize`.';
+    ? plural(un.unnamed, pets ? 'pet' : 'face', pets ? 'pets' : 'faces') + ' without a name, in ' + plural(un.total, 'cluster', 'clusters') + ' of similar ' + (pets ? 'pets' : 'faces') + ', largest first. Name a card, or say they are strangers (Ignore) or no ' + (pets ? 'pets' : 'faces') + ' at all. “Select” names only some faces of a card.'
+    : pets ? 'Every cat and dog large enough has a name (or is ignored). New photos bring new ones after `shoebox recognize --pets`.'
+      : 'Every face large enough has a name (or is ignored). New photos bring new ones after `shoebox recognize`.';
 }
 
 function moreClusters(box, more) {
   more.disabled = true;
-  return api(LIBAPI + '/clusters' + query({ offset: un.shown, limit: PAGE_CLUSTERS, samples: 8 })).then(function (r) {
+  return api(LIBAPI + '/clusters' + query({ offset: un.shown, limit: PAGE_CLUSTERS, samples: 8, kind: un.kind === 'all' ? null : un.kind })).then(function (r) {
     if (state.filter.view !== 'unnamed') return;
     un.total = r.total;
     un.unnamed = r.unnamed;
@@ -3924,7 +4032,8 @@ function clusterCard(c) {
   var picked = function () { return Object.keys(card.picked).map(Number); };
   var update = function () {
     var n = picked().length;
-    count.textContent = plural(c.size, 'face', 'faces') + (card.picking ? ' · ' + (n ? n + ' selected' : 'tap faces to select') : '');
+    var pets = c.faces.length > 0 && c.faces.every(function (f) { return f.species; });
+    count.textContent = (pets ? plural(c.size, 'pet', 'pets') : plural(c.size, 'face', 'faces')) + (card.picking ? ' · ' + (n ? n + ' selected' : 'tap faces to select') : '');
     pick.classList.toggle('active', card.picking);
     card.classList.toggle('picking', card.picking);
     card.classList.toggle('open', expanded || card.picking);
@@ -4030,8 +4139,8 @@ function infoFaces(row, info) {
     tools.appendChild(show);
   }
   if (lb.details && state.data && state.data.kinds[state.open] !== 'v') {
-    var add = el('button', '', '+ Add face');
-    add.title = 'Draw a box around a face that was missed';
+    var add = el('button', '', '+ Add face or pet');
+    add.title = 'Draw a box around a face or a pet that was missed';
     add.onclick = startDrawing;
     tools.appendChild(add);
   }
@@ -4085,6 +4194,7 @@ function infoFace(info, f, k) {
     };
     who.appendChild(add);
   }
+  if (f.species) who.appendChild(el('span', 'note', ' ' + petIcon(f.species) + ' ' + f.species));
   if (f.small) who.appendChild(el('span', 'note', ' small'));
   line.appendChild(menuButton(function () {
     var items = [];
@@ -4108,7 +4218,7 @@ function infoFace(info, f, k) {
         items.push({ label: 'May be ' + n + ' after all', run: function () { send('unreject', { faces: ids, person_id: pid }); } });
       });
     }
-    items.push({ label: 'Not a face', run: function () { send('not-face', { faces: ids }); } });
+    items.push({ label: f.species ? 'Not a ' + f.species : 'Not a face', run: function () { send('not-face', { faces: ids }); } });
     return items;
   }, 'More for this face'));
   return line;
@@ -4150,7 +4260,7 @@ function startDrawing() {
   layer.appendChild(rect);
   stage.appendChild(layer);
   var hint = el('div', 'draw-hint');
-  hint.appendChild(el('span', '', 'Drag a box around the face'));
+  hint.appendChild(el('span', '', 'Drag a box around the face or pet'));
   var cancel = el('button', 'btn quiet small', 'Cancel');
   cancel.onclick = function () { stopDrawing(); };
   hint.appendChild(cancel);
@@ -4204,18 +4314,35 @@ function stopDrawing() {
 function nameDrawnFace(info, frac) {
   var body = el('div');
   body.appendChild(el('p', '', 'Who is it?'));
+  // A cat or a dog the detector missed: a pet is embedded as a whole, a face by its eyes, nose and mouth.
+  var petBox = el('input');
+  petBox.type = 'checkbox';
+  petBox.id = 'draw-pet';
   var save = function (who) {
-    post(LIBAPI + '/faces/manual', Object.assign({ file: info.id, box: frac }, who)).then(function () {
+    var pet = petBox.checked;
+    post(LIBAPI + '/faces/manual', Object.assign({ file: info.id, box: frac, pet: pet || undefined }, who)).then(function () {
       closeModal();
       stopDrawing();
-      toast('Face added');
+      toast(pet ? 'Pet added' : 'Face added');
       infoFacesChanged(info.id);
     }).catch(failed);
   };
   var field = personField(function (who) { save(who); }, { allowNew: true, placeholder: 'Name' });
   body.appendChild(field);
-  body.appendChild(el('p', 'hint', 'The box is kept in shoebox’s index, never written into the photo. Its face is learned for suggestions when the recognizer finds its eyes, nose and mouth in it.'));
-  openModal('Add face', body, [
+  var petRow = el('label', 'check');
+  petRow.appendChild(petBox);
+  petRow.appendChild(document.createTextNode(' This is a pet (a cat or a dog)'));
+  body.appendChild(petRow);
+  var hint = el('p', 'hint');
+  var hintText = function () {
+    hint.textContent = petBox.checked
+      ? 'The box is kept in shoebox’s index, never written into the photo. The whole pet in the box is learned for suggestions.'
+      : 'The box is kept in shoebox’s index, never written into the photo. Its face is learned for suggestions when the recognizer finds its eyes, nose and mouth in it.';
+  };
+  petBox.onchange = hintText;
+  hintText();
+  body.appendChild(hint);
+  openModal('Add face or pet', body, [
     { label: 'Draw again', cls: 'quiet', onclick: function () { var r = lb.drawing && lb.drawing.layer.querySelector('.draw-box'); if (r) r.hidden = true; } },
     { label: 'Cancel', cls: 'quiet', onclick: function () { stopDrawing(); } },
     { label: 'Save', onclick: function () { var who = field.value(); if (!who) return false; save(who); return false; } },

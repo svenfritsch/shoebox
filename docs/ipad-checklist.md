@@ -61,7 +61,8 @@ own lists for the MacBook and the drive.
 
 ## Face check (5c-1, [phase5.md](phase5.md))
 
-- [ ] The Face check page scrolls; tapping a crop opens the photo and
+- [ ] "Settings" in the sidebar opens the Calibration cards; "Face check"
+      opens the page. It scrolls; tapping a crop opens the photo and
       closing the viewer returns to the page; "≈" shows similar faces.
 
 ## Faces and people (5c-3, [phase5.md](phase5.md))
@@ -78,3 +79,20 @@ own lists for the MacBook and the drive.
 - [ ] "Move to group…" and "Merge into…" from a person's ⋯ menu (drag and
       drop is for a mouse).
 - [ ] Search: two people from the suggestions, as chips.
+
+## Pets (phase 7, [phase7.md](phase7.md))
+
+- [ ] Settings → Pet check: the crops show whole pets with 🐱/🐶 tags;
+      "≈" lists the same pet at the top (0.9 and more) and other pets
+      far below it; "← Settings" goes back.
+- [ ] Unnamed: the filter "Pets (cats and dogs)" lists only pet cards;
+      name one, it appears in the sidebar with its pet and can be put in
+      a group with people ("Move to group…").
+- [ ] "+ Add face or pet" with a finger on a pet the detector missed (a
+      small one, or from behind): tick "This is a pet", name it; it shows
+      as "🐾 pet" in the panel, with a blue box, and the pet's other photos
+      get suggested after a moment.
+- [ ] Search "kat" or "hund": the suggestions show 🐱 All cats / 🐶 All dogs
+      with counts; tapping one gives a chip and those photos; ✕ removes it.
+- [ ] A pet's page and the viewer: its photos, the blue box and "dog" /
+      "cat" in the info panel, ✓/✗ for a suggested pet.
