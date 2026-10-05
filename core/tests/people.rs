@@ -940,3 +940,83 @@ fn people_as_search_terms_and_undoing_a_rejection() {
     assert_eq!(lib.snapshot(), before);
     server.stop().unwrap();
 }
+
+/// `thumbs.db` keeps a crop only for faces waiting for a decision and for
+/// the picture shown for each person; deciding a face (or choosing another
+/// picture) removes the crops nobody needs, also at the next start, and
+/// "Use as … picture" works from a photo too.
+#[test]
+fn only_faces_waiting_for_a_decision_and_pictures_keep_a_crop() {
+    let lib = empty("people-crops");
+    for n in 1..=3 {
+        plain(&lib, &format!("Anna/a{n}.png"), ANNA, n);
+    }
+    plain(&lib, "Ben/b1.png", BEN, 1);
+    lib.scan();
+    recognize(&lib);
+    let before = lib.snapshot();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    wait_for_clusters(addr);
+    let thumbs = Connection::open(lib.path(".shoebox/thumbs.db")).unwrap();
+    let stored = || -> i64 { thumbs.query_row("SELECT count(*) FROM faces WHERE jpeg IS NOT NULL", [], |r| r.get(0)).unwrap() };
+    let rels = ["Anna/a1.png", "Anna/a2.png", "Anna/a3.png", "Ben/b1.png"];
+    let ids: Vec<i64> = rels.iter().map(|r| face_id(addr, &lib, r)).collect();
+    let crop = |id: i64| get(addr, &format!("/api/faces/{id}/crop")).status;
+
+    // Nothing is decided: every face waits for a name and keeps its crop.
+    assert!(ids.iter().all(|&id| crop(id) == 200));
+    assert_eq!(stored(), 4);
+    let saved: Vec<(String, f64, f64, f64, f64, Vec<u8>, i64)> = thumbs
+        .prepare("SELECT key, x, y, w, h, jpeg, made_at FROM faces")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+
+    // Anna's three faces are confirmed: Ben's face and Anna's picture stay.
+    ok(addr, "/api/faces/assign", &json!({ "faces": &ids[..3], "name": "Anna" }));
+    let people = get(addr, "/api/people").json();
+    let anna = people[0]["id"].as_i64().unwrap();
+    let cover = people[0]["cover"].as_i64().unwrap();
+    assert!(ids[..3].contains(&cover), "the picture is one of her faces");
+    assert_eq!(stored(), 2);
+    // A decided face can still be shown (made again, not stored).
+    assert!(ids.iter().all(|&id| crop(id) == 200));
+    assert_eq!(stored(), 2);
+
+    // Another picture, from a photo: the old one goes, the new one is made
+    // when it is shown. Ben has no confirmed face; both ways at once is wrong.
+    let next = if cover == ids[0] { 1 } else { 0 };
+    let file = id_of(&lib, rels[next]);
+    let changed = ok(addr, &format!("/api/people/{anna}/cover"), &json!({ "file": file }));
+    assert_eq!(changed["cover"], ids[next]);
+    assert_eq!(stored(), 1);
+    assert_eq!(crop(ids[next]), 200);
+    assert_eq!(stored(), 2);
+    let ben_file = id_of(&lib, "Ben/b1.png");
+    assert_eq!(post(addr, &format!("/api/people/{anna}/cover"), &json!({ "file": ben_file })).status, 400);
+    assert_eq!(post(addr, &format!("/api/people/{anna}/cover"), &json!({ "file": file, "face": ids[0] })).status, 400);
+    assert_eq!(get(addr, &format!("/api/people/{anna}")).json()["cover"], ids[next]);
+
+    // Ben's face is "not a face": nothing waits for a decision any more.
+    ok(addr, "/api/faces/not-face", &json!({ "faces": [ids[3]] }));
+    assert_eq!(stored(), 1);
+    server.stop().unwrap();
+
+    // Crops an older version stored for every face are removed at the start,
+    // and the picture stays.
+    for r in &saved {
+        thumbs
+            .execute("INSERT OR REPLACE INTO faces (key, x, y, w, h, jpeg, error, made_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7)",
+                rusqlite::params![r.0, r.1, r.2, r.3, r.4, r.5, r.6])
+            .unwrap();
+    }
+    assert_eq!(stored(), 4);
+    let server = start(&lib, None);
+    assert_eq!(stored(), 1);
+    assert_eq!(get(server.addr, &format!("/api/people/{anna}")).json()["cover"], ids[next]);
+    server.stop().unwrap();
+    assert_eq!(lib.snapshot(), before, "the crops changed an original");
+}

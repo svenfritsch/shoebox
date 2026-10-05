@@ -312,6 +312,14 @@ body.selecting .sec .pick { display: inline; }
   font-size: 13px; font-weight: 600;
 }
 .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* A face cut out of the photo's thumbnail in the browser (no stored crop):
+   the box and the image are placed with percentages of the square. */
+.zoom { position: relative; display: block; overflow: hidden; background: var(--cell-bg); }
+.zoom > span { position: absolute; inset: 0; display: block; }
+.zoom img { position: absolute; max-width: none; object-fit: fill; visibility: hidden; }
+.zoom.ready img { visibility: visible; }
+.face .crop .zoom { width: 100%; height: 100%; }
+.avatar .zoom { width: 100%; height: 100%; }
 .avatar.tiny { width: 20px; height: 20px; font-size: 9px; margin-right: 4px; }
 .avatar.small { width: 36px; height: 36px; cursor: pointer; }
 .avatar.big { width: 72px; height: 72px; font-size: 22px; }
