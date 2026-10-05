@@ -675,6 +675,11 @@ again. Built:
 - **Cards**: opening all faces ("+N") or "Select" makes the card as wide as
   the page, with bigger faces, and a "Close ✕" button in a sticky head that
   stays at the top while scrolling.
+- **Shift-click** selects a range wherever faces are selected, as in the
+  photo grid: the face check page, a person's faces and the cards under
+  Unnamed (`pickSpan` in `app.js`; the range runs from the last face
+  clicked to this one, in the order shown). The duplicates page has no
+  range: its boxes keep at least one copy per group.
 
 ## 5d: duplicates UI and tag carry-over
 

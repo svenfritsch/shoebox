@@ -718,6 +718,24 @@ $('sizer').addEventListener('mousedown', function (ev) {
   if (ev.shiftKey && ev.target.closest('.cell')) ev.preventDefault();
 });
 
+// Shift-click in a list of faces being selected: the items from the last one
+// clicked (`anchor`, an id as `idOf` gives it) to this one, both included, in
+// either order; null if there is no anchor in the list. The anchor stays.
+function pickSpan(list, idOf, anchor, id) {
+  var a = -1, b = -1;
+  list.forEach(function (x, i) {
+    if (idOf(x) === anchor) a = i;
+    if (idOf(x) === id) b = i;
+  });
+  if (a < 0 || b < 0) return null;
+  return list.slice(Math.min(a, b), Math.max(a, b) + 1);
+}
+
+// Keep Shift-click on faces from selecting the page's text.
+document.addEventListener('mousedown', function (ev) {
+  if (ev.shiftKey && ev.target.closest && ev.target.closest('.face, .cface')) ev.preventDefault();
+});
+
 var ticking = false;
 $('scroller').addEventListener('scroll', function () {
   if (ticking) return;
@@ -2402,6 +2420,7 @@ function facePickBar() {
 
 function clearFacePicks() {
   faceState.picked = {};
+  faceState.anchor = null;
   Array.prototype.forEach.call(document.querySelectorAll('.face.sel'), function (c) { c.classList.remove('sel'); });
 }
 
@@ -2472,8 +2491,18 @@ function faceCard(face, similarity) {
   a.onclick = function (ev) {
     ev.preventDefault();
     if (faceState.picking && similarity == null) {
-      if (faceState.picked[face.id]) delete faceState.picked[face.id]; else faceState.picked[face.id] = true;
-      card.classList.toggle('sel', !!faceState.picked[face.id]);
+      var span = ev.shiftKey && pickSpan(faceState.faces, function (x) { return x.id; }, faceState.anchor, face.id);
+      if (span) {
+        span.forEach(function (x) {
+          faceState.picked[x.id] = true;
+          var c = document.querySelector('.face[data-id="' + x.id + '"]');
+          if (c) c.classList.add('sel');
+        });
+      } else {
+        if (faceState.picked[face.id]) delete faceState.picked[face.id]; else faceState.picked[face.id] = true;
+        card.classList.toggle('sel', !!faceState.picked[face.id]);
+        faceState.anchor = face.id;
+      }
       updateFacePick();
       return;
     }
@@ -3214,8 +3243,20 @@ function personFaceCard(face, tab) {
     ev.preventDefault();
     if (pp.picking) {
       if (!key) return;
-      if (pp.picked[key]) delete pp.picked[key]; else pp.picked[key] = face;
-      card.classList.toggle('sel', !!pp.picked[key]);
+      var span = ev.shiftKey && pickSpan(pp.faces, faceKey, pp.anchor, key);
+      if (span) {
+        span.forEach(function (x) {
+          var k = faceKey(x);
+          if (!k) return;
+          pp.picked[k] = x;
+          var c = document.querySelector('#pp-grid .face[data-key="' + k + '"]');
+          if (c) c.classList.add('sel');
+        });
+      } else {
+        if (pp.picked[key]) delete pp.picked[key]; else pp.picked[key] = face;
+        card.classList.toggle('sel', !!pp.picked[key]);
+        pp.anchor = key;
+      }
       updatePersonPick();
       return;
     }
@@ -3345,6 +3386,7 @@ function personPickBar(tab) {
 }
 
 function clearPersonPicks() {
+  pp.anchor = null;
   pp.picked = {};
   Array.prototype.forEach.call(document.querySelectorAll('#pp-grid .face.sel'), function (c) { c.classList.remove('sel'); });
 }
@@ -3468,8 +3510,15 @@ function clusterCard(c) {
       f.onclick = function (ev) {
         ev.preventDefault();
         if (card.picking) {
-          if (card.picked[face.id]) delete card.picked[face.id]; else card.picked[face.id] = true;
-          f.classList.toggle('sel', !!card.picked[face.id]);
+          var span = ev.shiftKey && pickSpan(faces, function (x) { return x.id; }, card.anchor, face.id);
+          if (span) {
+            span.forEach(function (x) { card.picked[x.id] = true; });
+            renderFaces();
+          } else {
+            if (card.picked[face.id]) delete card.picked[face.id]; else card.picked[face.id] = true;
+            f.classList.toggle('sel', !!card.picked[face.id]);
+            card.anchor = face.id;
+          }
           update();
           return;
         }
@@ -3522,7 +3571,7 @@ function clusterCard(c) {
   };
   pick.onclick = function () {
     card.picking = !card.picking;
-    if (!card.picking) card.picked = {};
+    if (!card.picking) { card.picked = {}; card.anchor = null; }
     else expanded = true;
     loadAll().then(function () {
       renderFaces();
