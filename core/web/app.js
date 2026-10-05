@@ -1486,17 +1486,18 @@ $('import').onclick = function () { importDialog(); };
 
 // ------------------------------------------------------------------ duplicates page
 
-var DUP_KINDS_IDS = ['identical', 'resolution', 'similar'];
+var DUP_KINDS_IDS = ['identical', 'resolution', 'edited', 'similar'];
 var dupState = { groups: [], shown: 0, marked: {}, seen: {}, sameFolder: null, lowerQuality: null, types: dupTypes() };
 var DUP_KINDS = [
   { id: 'identical', label: 'Identical photos', hint: 'The same file, copied.' },
   { id: 'resolution', label: 'Same photo, different resolution', hint: 'The same picture in another size, quality or name (a messenger copy, say).' },
+  { id: 'edited', label: 'Original and edited', hint: 'An iPhone edit (the “E” in IMG_E1234, a portrait blur, say) next to its original. Keep the one you like, or both.' },
   { id: 'similar', label: 'Similar photos', hint: 'Different shots that look alike: a series, repeated clicks, a burst.' },
 ];
 
 // Which kinds of duplicates are shown (remembered in this browser).
 function dupTypes() {
-  var t = { identical: true, resolution: true, similar: true };
+  var t = { identical: true, resolution: true, edited: true, similar: true };
   try {
     var saved = JSON.parse(localStorage.getItem('dupTypes') || 'null');
     if (saved) DUP_KINDS_IDS.forEach(function (k) { if (saved[k] === false) t[k] = false; });
@@ -1666,7 +1667,7 @@ function dupRows(g) {
   return rows;
 }
 
-function dupThumb(f) {
+function dupThumb(f, compare) {
   var a = el('a', 'thumb');
   a.href = '/api/files/' + f.id + (f.kind === 'video' ? '/original' : '/view') + '?v=' + f.version;
   a.target = '_blank';
@@ -1676,7 +1677,53 @@ function dupThumb(f) {
   img.loading = 'lazy';
   img.src = '/api/files/' + f.id + '/thumb?v=' + f.version;
   a.appendChild(img);
+  if (compare) {
+    // Opens the group's pictures side by side instead of one in a new tab.
+    a.removeAttribute('target');
+    a.title = 'Compare the photos';
+    a.onclick = function (e) { e.preventDefault(); compare(f); };
+  }
   return a;
+}
+
+// "IMG_E1234" is the edited version of "IMG_1234" (iPhone).
+function isEdit(f) { return /^img_e\d+/i.test(f.name); }
+
+// The group's photos large and side by side; "Keep this one" ticks all the
+// others for deletion (the dialog closes), so the choice is one click.
+function compareDialog(g, start, onKeep) {
+  var back = el('div', 'modal');
+  var dlg = el('div', 'dialog compare');
+  dlg.appendChild(el('h2', '', 'Which one do you like most?'));
+  var strip = el('div', 'compare-strip');
+  var close = function () { back.remove(); document.removeEventListener('keydown', onKey); };
+  var onKey = function (e) { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  g.files.forEach(function (f) {
+    var col = el('div', 'compare-col' + (f.id === start.id ? ' start' : ''));
+    var img = el('img');
+    img.alt = f.name;
+    img.src = '/api/files/' + f.id + (f.kind === 'video' ? '/thumb' : '/view') + '?v=' + f.version;
+    col.appendChild(img);
+    col.appendChild(el('div', 'name', f.name + (g.kind === 'edited' ? (isEdit(f) ? ' · edited' : ' · original') : '')));
+    var meta = [];
+    if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
+    meta.push((f.size / 1e6).toFixed(1) + ' MB');
+    col.appendChild(el('div', 'meta', meta.join(' · ')));
+    var keep = el('button', 'btn', 'Keep this one');
+    keep.onclick = function () { close(); onKeep(f); };
+    col.appendChild(keep);
+    strip.appendChild(col);
+  });
+  dlg.appendChild(strip);
+  var row = el('div', 'actions');
+  var done = el('button', 'btn quiet', 'Close');
+  done.onclick = close;
+  row.appendChild(done);
+  dlg.appendChild(row);
+  back.onclick = function (e) { if (e.target === back) close(); };
+  back.appendChild(dlg);
+  document.body.appendChild(back);
 }
 
 function groupNode(g) {
@@ -1701,10 +1748,11 @@ function groupNode(g) {
     head.appendChild(b);
   };
   if (g.kind === 'similar') decide('distinct', 'Different photos');
-  decide('linked', g.kind === 'identical' ? 'Keep all copies' : g.kind === 'resolution' ? 'Keep all versions' : 'Versions of one photo');
+  decide('linked', g.kind === 'identical' ? 'Keep all copies' : g.kind === 'resolution' ? 'Keep all versions'
+    : g.kind === 'edited' ? 'Keep both' : 'Versions of one photo');
   box.appendChild(head);
-  box.appendChild(el('p', 'group-hint', g.kind === 'similar'
-    ? kind.hint + ' Every card is one file; its thumbnail is on the card.'
+  box.appendChild(el('p', 'group-hint', g.kind === 'similar' || g.kind === 'edited'
+    ? kind.hint + ' Every card is one file; click a picture to compare them large.'
     : kind.hint));
 
   var boxes = [];
@@ -1715,9 +1763,18 @@ function groupNode(g) {
   };
   // One card per file: the check box, where it is, what it is, its tags.
   // `thumb`: the card carries its own thumbnail (similar photos).
+  var cards = [];
+  // "Keep this one" in the compare dialog: tick every other file, untick it.
+  var keepOnly = function (keep) {
+    cards.forEach(function (c) {
+      c.cb.checked = c.f.id !== keep.id;
+      c.cb.dispatchEvent(new Event('change'));
+    });
+  };
+  var compare = function (f) { compareDialog(g, f, keepOnly); };
   var copyCard = function (f, showName, thumb) {
     var card = el('div', 'copy' + (thumb ? ' with-thumb' : ''));
-    if (thumb) card.appendChild(dupThumb(f));
+    if (thumb) card.appendChild(dupThumb(f, compare));
     var label = el('label', 'check');
     var cb = el('input');
     cb.type = 'checkbox';
@@ -1729,6 +1786,7 @@ function groupNode(g) {
       updateDupBar();
     };
     boxes.push(cb);
+    cards.push({ f: f, cb: cb });
     label.appendChild(cb);
     label.appendChild(document.createTextNode(' delete this copy'));
     card.appendChild(label);
@@ -1739,6 +1797,7 @@ function groupNode(g) {
     fb.onclick = function () { setFilter({ folder: f.folder_id, tags: [], q: '' }); };
     card.appendChild(fb);
     if (showName) card.appendChild(el('div', 'name', f.name));
+    if (g.kind === 'edited') card.appendChild(el('div', 'badge', isEdit(f) ? 'Edited' : 'Original'));
     var meta = [];
     if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
     meta.push((f.size / 1e6).toFixed(1) + ' MB');
@@ -1762,7 +1821,7 @@ function groupNode(g) {
     });
   };
 
-  if (g.kind === 'similar') {
+  if (g.kind === 'similar' || g.kind === 'edited') {
     // Different shots side by side, each card with its own thumbnail; a
     // shot's other versions (a messenger copy) follow it.
     var series = el('div', 'copies series');

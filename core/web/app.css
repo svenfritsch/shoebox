@@ -430,3 +430,12 @@ body.selecting .sec .pick { display: inline; }
   .person .avatar.big { width: 76px; height: 76px; }
 }
 .side-head { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 10px 14px 0; }
+
+.dialog.compare { width: min(96vw, 1200px); max-width: none; }
+.compare-strip { display: flex; gap: 12px; overflow-x: auto; margin-bottom: 12px; }
+.compare-col { flex: 1 1 0; min-width: 240px; display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+.compare-col.start { border-color: var(--accent); }
+.compare-col img { width: 100%; max-height: 65vh; object-fit: contain; background: var(--cell-bg); border-radius: 6px; }
+.compare-col .name { font-weight: 600; font-size: 13px; word-break: break-all; }
+.compare-col .meta { color: var(--muted); font-size: 12px; }
+.copy .badge { align-self: flex-start; background: var(--cell-bg); border-radius: 10px; padding: 1px 8px; font-weight: 600; }
