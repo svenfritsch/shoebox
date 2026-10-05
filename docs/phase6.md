@@ -49,7 +49,17 @@ Goal: people who are not technical can use shoebox without a terminal.
   shared experience; the UI takes two or more paths.
 - People are matched by name: the same name on different drives is the same
   person. Groups, names and decisions stay in the drive's own `library.db`.
-- Duplicates across drives are found by comparing hashes (e.g. `ATTACH`).
+- Duplicates across drives are found by comparing hashes: SQLite `ATTACH`
+  opens the other drive's `library.db` in the same connection, so one query
+  compares the full hashes without reading any photo.
+- Backup drive or separate drive: a drive that is a backup must never produce
+  duplicate suggestions. A drive counts as a backup when the user marks it so,
+  or when nearly all its hashes (threshold to be chosen, e.g. 90 %) already
+  exist on another drive; the UI then asks once to confirm. Backups go through
+  the backup verification (section 4) instead; duplicates are only proposed
+  within a drive and between drives that count as separate.
+- Offline drives: no request may fail the application; the drive's routes
+  answer "offline" and the UI greys it out until it is plugged in again.
 - An unplugged drive shows as "offline"; the rest keeps working.
 
 ## 4. Backups and packaging

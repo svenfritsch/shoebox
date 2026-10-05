@@ -369,7 +369,9 @@ Open:
       database and would collide); built first in phase 6. People match by
       name across drives (same name = same person); groups, names and
       decisions stay in each drive's `library.db`. Duplicates across drives
-      are found by hash comparison (e.g. `ATTACH`). An unplugged drive shows
+      are found by hash comparison (e.g. `ATTACH`), but never against a
+      backup drive: backup and separate drive must be told apart (marked by
+      the user or detected by overlap of hashes). An unplugged drive shows
       as "offline" while the rest keeps working. Fallback: if this part
       turns out much bigger than planned, only it moves to a later phase 8;
       the launcher and backups stay in phase 6.
