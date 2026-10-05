@@ -67,3 +67,6 @@ fieldset:disabled { cursor: not-allowed; }
 .title-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .title-row h2 { margin: 0; }
 button.danger { color: var(--bad); border-color: var(--bad); padding: 6px 16px; }
+.actions b { font-weight: inherit; }
+.lang { margin-top: 16px; text-align: right; font-size: 13px; color: var(--muted); }
+.lang select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; margin-left: 6px; }

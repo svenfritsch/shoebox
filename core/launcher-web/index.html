@@ -3,70 +3,75 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>shoebox launcher</title>
+<title data-i18n="launcher.title">shoebox launcher</title>
 <link rel="stylesheet" href="launcher.css">
+<script src="i18n/i18n.js"></script>
 </head>
 <body>
 <main>
   <header>
     <h1>shoebox</h1>
-    <p class="sub">Your photo library on this drive. Nothing is copied or changed in your photos.</p>
+    <p class="sub" data-i18n="launcher.sub">Your photo library on this drive. Nothing is copied or changed in your photos.</p>
   </header>
 
   <fieldset id="controls">
   <section class="card">
-    <h2>1 · Where are your photos?</h2>
-    <label for="root">Drives or photo folders (type a path, press Enter to add it)</label>
+    <h2 data-i18n="launcher.step1">1 · Where are your photos?</h2>
+    <label for="root" data-i18n="launcher.root.label">Drives or photo folders (type a path, press Enter to add it)</label>
     <div class="chipbox" id="chipbox">
-      <ul id="path-chips" aria-label="Chosen folders"></ul>
-      <input id="root" list="drives" placeholder="/Volumes/MyDrive" autocomplete="off" spellcheck="false">
+      <ul id="path-chips" data-i18n-aria-label="launcher.root.chosen" aria-label="Chosen folders"></ul>
+      <input id="root" list="drives" data-i18n-placeholder="launcher.root.placeholder" placeholder="/Volumes/MyDrive" autocomplete="off" spellcheck="false">
     </div>
     <datalist id="drives"></datalist>
-    <p class="hint">Detected drives, click to add:</p>
-    <div id="drive-chips" class="chips" aria-label="Detected drives"></div>
+    <p class="hint" data-i18n="launcher.drives.hint">Detected drives, click to add:</p>
+    <div id="drive-chips" class="chips" data-i18n-aria-label="launcher.drives.detected" aria-label="Detected drives"></div>
     <p id="root-hint" class="hint"></p>
   </section>
 
   <section class="card">
-    <h2>2 · What should shoebox do?</h2>
+    <h2 data-i18n="launcher.step2">2 · What should shoebox do?</h2>
     <div class="actions">
-      <button data-kind="scan">Scan<span>find new, moved and changed photos</span></button>
-      <button data-kind="verify">Verify<span>check that nothing was lost or damaged</span></button>
-      <button data-kind="recognize">Recognize<span>find the faces in your photos</span></button>
-      <button data-kind="faces_stats">Face stats<span>how recognition went</span></button>
-      <button data-kind="backup">Backup check<span>is the 2nd folder a complete copy of the 1st?</span></button>
+      <button data-kind="scan"><b data-i18n="launcher.kind.scan">Scan</b><span data-i18n="launcher.kind.scan.desc">find new, moved and changed photos</span></button>
+      <button data-kind="verify"><b data-i18n="launcher.kind.verify">Verify</b><span data-i18n="launcher.kind.verify.desc">check that nothing was lost or damaged</span></button>
+      <button data-kind="recognize"><b data-i18n="launcher.kind.recognize">Recognize</b><span data-i18n="launcher.kind.recognize.desc">find the faces in your photos</span></button>
+      <button data-kind="faces_stats"><b data-i18n="launcher.kind.faces_stats">Face stats</b><span data-i18n="launcher.kind.faces_stats.desc">how recognition went</span></button>
+      <button data-kind="backup"><b data-i18n="launcher.kind.backup">Backup check</b><span data-i18n="launcher.kind.backup.desc">is the 2nd folder a complete copy of the 1st?</span></button>
     </div>
     <div class="options">
-      <label><input type="checkbox" id="opt-quick"> Quick (Scan: skip full hashes · Verify: size and date only)</label>
-      <label><input type="checkbox" id="opt-rotated"> Recognize: also look for faces lying down (slower)</label>
-      <label><input type="checkbox" id="opt-deep"> Backup check: also re-read the backup drive (finds bit rot; slow)</label>
+      <label><input type="checkbox" id="opt-quick"> <span data-i18n="launcher.opt.quick">Quick (Scan: skip full hashes · Verify: size and date only)</span></label>
+      <label><input type="checkbox" id="opt-rotated"> <span data-i18n="launcher.opt.rotated">Recognize: also look for faces lying down (slower)</span></label>
+      <label><input type="checkbox" id="opt-deep"> <span data-i18n="launcher.opt.deep">Backup check: also re-read the backup drive (finds bit rot; slow)</span></label>
     </div>
   </section>
   </fieldset>
 
   <section class="card" id="progress-card" hidden>
     <div class="title-row">
-      <h2 id="job-title">Working…</h2>
-      <button id="cancel" class="danger" hidden>Cancel</button>
+      <h2 id="job-title" data-i18n="launcher.working">Working…</h2>
+      <button id="cancel" class="danger" data-i18n="launcher.cancel" hidden>Cancel</button>
     </div>
     <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div id="bar-fill"></div></div>
     <p id="progress-label" class="hint"></p>
     <div id="summary" class="summary" hidden></div>
     <p id="job-error" class="error" hidden></p>
     <div class="list-head">
-      <h3>Results per file</h3>
-      <label><input type="checkbox" id="only-failed"> only problems</label>
+      <h3 data-i18n="launcher.results">Results per file</h3>
+      <label><input type="checkbox" id="only-failed"> <span data-i18n="launcher.only_problems">only problems</span></label>
     </div>
     <ul id="results" class="results"></ul>
-    <details><summary>Messages</summary><pre id="lines"></pre></details>
+    <details><summary data-i18n="launcher.messages">Messages</summary><pre id="lines"></pre></details>
   </section>
 
   <section class="card">
-    <h2>3 · Open your photos</h2>
-    <button id="start-app" class="primary">Start photo app</button>
-    <button id="stop-app" class="quiet" hidden>Stop photo app</button>
-    <p id="app-state" class="hint">The photo app starts only when you press this button. Scan first if this is a new drive.</p>
+    <h2 data-i18n="launcher.step3">3 · Open your photos</h2>
+    <button id="start-app" class="primary" data-i18n="launcher.app.start">Start photo app</button>
+    <button id="stop-app" class="quiet" data-i18n="launcher.app.stop" hidden>Stop photo app</button>
+    <p id="app-state" class="hint" data-i18n="launcher.app.idle">The photo app starts only when you press this button. Scan first if this is a new drive.</p>
   </section>
+<footer class="lang">
+    <label for="lang" data-i18n="launcher.lang">Language</label>
+    <select id="lang"></select>
+  </footer>
 </main>
 <script src="launcher.js"></script>
 </body>

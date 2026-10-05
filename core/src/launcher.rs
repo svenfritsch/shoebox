@@ -793,10 +793,16 @@ async fn drives() -> Json<Vec<Drive>> {
 #[folder = "launcher-web/"]
 struct Assets;
 
+/// Translations and their loader, shared with the photo app (`i18n/`).
+#[derive(rust_embed::RustEmbed)]
+#[folder = "i18n/"]
+#[prefix = "i18n/"]
+struct I18n;
+
 async fn asset(uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
     let path = if path.is_empty() { "index.html" } else { path };
-    let Some(file) = Assets::get(path) else {
+    let Some(file) = Assets::get(path).or_else(|| I18n::get(path)) else {
         return (StatusCode::NOT_FOUND, "not found").into_response();
     };
     let mime = match path.rsplit('.').next() {
@@ -804,6 +810,7 @@ async fn asset(uri: Uri) -> Response {
         Some("js") => "text/javascript; charset=utf-8",
         Some("css") => "text/css; charset=utf-8",
         Some("svg") => "image/svg+xml",
+        Some("json") => "application/json",
         _ => "application/octet-stream",
     };
     ([(header::CONTENT_TYPE, mime)], file.data.into_owned()).into_response()

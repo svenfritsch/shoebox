@@ -185,6 +185,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 5e | Lean `thumbs.db`: face crops only for faces without a decision and for each person's picture; right-click "Use as … picture" on a person's photos | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | **In progress**: library id, launcher (cancel, saved folders, start scripts) and the multi-drive core (hub, offline, backup roles, common timeline, cross-drive duplicates and people) built; backup verification (`shoebox backup`, launcher button, All drives page) built; real-hardware checks and Linux/Windows packaging open |
 | 7 | Pets | |
+| 8 | UI translation, German and English, JSON message files (design and steps in [phase8.md](phase8.md)) | **In progress**: loader, key test and launcher done; photo app open |
 
 ### Phase 0 details
 
