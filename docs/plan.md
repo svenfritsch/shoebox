@@ -145,7 +145,7 @@ Exact: same full hash. Near: perceptual hash Hamming distance ≤ 8. The UI
 shows them side by side; the user keeps both, links them, or deletes one
 (with confirmation).
 
-### Recognition (phases 4–6)
+### Recognition (phases 4–5 and 7)
 
 - Faces: YuNet (detect) + SFace (128-d embedding) via OpenCV in the worker.
   ~150k faces expected → approximate nearest-neighbour index in Rust,
@@ -162,7 +162,7 @@ shows them side by side; the user keeps both, links them, or deletes one
 - Expected first run on the old Intel Mac: ~4–5 h for faces over 100k photos,
   similar for pets. Background job, resumable, progress in the UI.
 
-### Backups (phase 7)
+### Backups (phase 6)
 
 shoebox doesn't copy; rsync / Carbon Copy Cloner do. shoebox registers
 backup targets, verifies them against its hashes (missing, different, bit
@@ -181,8 +181,8 @@ rot) and shows "last backup N days ago, M files new since".
 | 5b | Own tags (add/remove, many photos at once, search), user data backup | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5b-2 | Search by several tags at once (AND, chips); people join in with 5c-3 | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **5c-1 done**, checked on the real drive; **5c-2 and 5c-3 done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 6 | Pets | |
-| 7 | Backup verification, launchers, packaging | |
+| 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | Planned |
+| 7 | Pets | |
 
 ### Phase 0 details
 
@@ -339,6 +339,42 @@ Open:
       ([phase5.md](phase5.md)). The real-hardware check, with the 5c-2
       checks folded in and all in the UI, is in its list.
 
+### Phase 6 details
+
+Planned in [phase6.md](phase6.md): launcher UI, multiple drives, backup
+verification and packaging. Order: library id in all API routes first, then
+the launcher, then backups and packaging.
+
+Done:
+
+Open:
+- [ ] Launcher UI: double-click on the binary (no arguments) starts a
+      launcher mode, independent of `serve`, that opens an embedded web page
+      (rust-embed, no native GUI) in the browser; the library need not be
+      running. Fields for drive and photo folder paths (suggesting detected
+      drives); buttons for Scan, Verify, Recognize and Face Stats; a separate
+      "Start photo app" button starts `serve` only then. Results shown
+      visually: progress bars and a per-file result list (succeeded /
+      failed). The CLI commands return structured results (JSON); CLI and
+      UI share the same logic. Safety rules stay: localhost only,
+      `X-Shoebox` header on non-GET requests, guard tests cover all new
+      paths. macOS: Gatekeeper blocks a double-clicked binary, so
+      `Start shoebox.command` stays as fallback; check the best behaviour
+      for Windows and Linux.
+- [ ] Multiple drives: each drive keeps its own `.shoebox` folder
+      (`library.db`, `thumbs.db`, `recognition.db`); the app opens several
+      libraries at once with one shared experience, and the UI accepts two
+      or more paths. All API routes carry a library id (file ids are per
+      database and would collide); built first in phase 6. People match by
+      name across drives (same name = same person); groups, names and
+      decisions stay in each drive's `library.db`. Duplicates across drives
+      are found by hash comparison (e.g. `ATTACH`). An unplugged drive shows
+      as "offline" while the rest keeps working. Fallback: if this part
+      turns out much bigger than planned, only it moves to a later phase 8;
+      the launcher and backups stay in phase 6.
+- [ ] Backup verification, launchers, packaging (the former phase 7, see
+      "Backups" above).
+
 ## Build notes and pitfalls (learned in phases 0–4)
 
 - **Spaces in paths.** The repo may live under a path with spaces.
@@ -441,4 +477,4 @@ name a few people and look at the suggestions and the "maybe" list, and
 mark the known false finds "not a face" (list in [phase5.md](phase5.md)).
 5c-3 (the UI) is built: install the protocol 2 recognizer, then go through
 the combined 5c-2/5c-3 list in [phase5.md](phase5.md), all in the UI and
-from the iPad. Next is phase 6 (pets).
+from the iPad. Next is phase 6 (launcher UI, multiple drives, backups, packaging); pets follow in phase 7.
