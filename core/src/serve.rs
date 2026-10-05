@@ -584,6 +584,9 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/import", post(import_file))
         .route("/api/duplicates", get(duplicates_list))
         .route("/api/duplicates/decide", post(duplicates_decide))
+        .route("/api/duplicates/remove", post(duplicates_remove))
+        .route("/api/duplicates/same-folder", get(duplicates_same_folder).post(duplicates_remove_same_folder))
+        .route("/api/duplicates/lower-quality", get(duplicates_lower_quality).post(duplicates_remove_lower_quality))
         .route("/api/trash", get(trash_list).post(trash_files))
         .route("/api/trash/{id}/thumb", get(trash_thumb))
         .route("/api/trash/{batch}/restore", post(trash_restore))
@@ -1275,10 +1278,17 @@ struct MoveRequest {
     ids: Vec<i64>,
     /// Folder path relative to the library (NFC); created if needed.
     folder: String,
+    /// Own tags move along (default) or are dropped.
+    #[serde(default = "keep_tags_default")]
+    keep_tags: bool,
+}
+
+fn keep_tags_default() -> bool {
+    true
 }
 
 async fn move_files(State(app): State<Arc<App>>, Json(req): Json<MoveRequest>) -> ApiResult<Json<organize::Moved>> {
-    change(&app, move |app, conn| organize::move_files(conn, &app.root, &req.ids, &req.folder)).await.map(Json)
+    change(&app, move |app, conn| organize::move_files_with(conn, &app.root, &req.ids, &req.folder, req.keep_tags)).await.map(Json)
 }
 
 #[derive(Deserialize)]
@@ -1399,7 +1409,9 @@ async fn duplicates_list(State(app): State<Arc<App>>) -> ApiResult<Response> {
         let shown: HashSet<i64> = app.snapshot(&conn)?.items.iter().map(|it| it.id).collect();
         let candidates = duplicates::load(&conn, &shown)?;
         drop(conn);
-        let groups = Arc::new(duplicates::find(&candidates));
+        let mut groups = duplicates::find(&candidates);
+        duplicates::add_tags(&app.conn.lock().unwrap(), &mut groups)?;
+        let groups = Arc::new(groups);
         *app.duplicates.lock().unwrap() = Some((version, groups.clone()));
         Ok(Json(DuplicateList { groups: groups.as_slice() }).into_response())
     })
@@ -1417,6 +1429,63 @@ async fn duplicates_decide(State(app): State<Arc<App>>, Json(req): Json<DecideRe
     change(&app, move |_, conn| duplicates::decide(conn, &req.ids, req.decision.as_deref()))
         .await
         .map(|n| Json(serde_json::json!({ "pairs": n })))
+}
+
+#[derive(Deserialize)]
+struct RemoveCopiesRequest {
+    /// Copies that stay (at least one).
+    keep: Vec<i64>,
+    /// Copies that go to the trash; their tags go to a copy that stays.
+    remove: Vec<i64>,
+    /// For capture dates that conflict: the date to take, per surviving file.
+    #[serde(default)]
+    dates: std::collections::HashMap<i64, String>,
+}
+
+async fn duplicates_remove(State(app): State<Arc<App>>, Json(req): Json<RemoveCopiesRequest>) -> ApiResult<Json<duplicates::Removed>> {
+    change(&app, move |app, conn| duplicates::remove_copies(conn, &app.root, &req.keep, &req.remove, &req.dates)).await.map(Json)
+}
+
+fn same_folder_plan(app: &App, conn: &Connection) -> anyhow::Result<Vec<(i64, Vec<i64>)>> {
+    let shown: HashSet<i64> = app.snapshot(conn)?.items.iter().map(|it| it.id).collect();
+    Ok(duplicates::same_folder_plan(&duplicates::load(conn, &shown)?))
+}
+
+/// What the "same folder" button would do: contents and files.
+async fn duplicates_same_folder(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
+    blocking(&app, |app| {
+        let conn = app.conn.lock().unwrap();
+        let plan = same_folder_plan(app, &conn)?;
+        let copies: usize = plan.iter().map(|(_, gone)| gone.len()).sum();
+        Ok(Json(serde_json::json!({ "groups": plan.len(), "copies": copies })))
+    })
+    .await
+}
+
+/// Delete exact duplicates in the same folder without review.
+async fn duplicates_remove_same_folder(State(app): State<Arc<App>>) -> ApiResult<Json<duplicates::BulkRemoved>> {
+    change(&app, |app, conn| duplicates::remove_planned(conn, &app.root, &same_folder_plan(app, conn)?)).await.map(Json)
+}
+
+fn lower_quality_plan(app: &App, conn: &Connection) -> anyhow::Result<Vec<(i64, Vec<i64>)>> {
+    let shown: HashSet<i64> = app.snapshot(conn)?.items.iter().map(|it| it.id).collect();
+    Ok(duplicates::lower_quality_plan(&duplicates::load(conn, &shown)?))
+}
+
+/// What the "lower quality" button would do: photos and files.
+async fn duplicates_lower_quality(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
+    blocking(&app, |app| {
+        let conn = app.conn.lock().unwrap();
+        let plan = lower_quality_plan(app, &conn)?;
+        let copies: usize = plan.iter().map(|(_, gone)| gone.len()).sum();
+        Ok(Json(serde_json::json!({ "groups": plan.len(), "copies": copies })))
+    })
+    .await
+}
+
+/// Delete versions that are surely the same photo in lower quality.
+async fn duplicates_remove_lower_quality(State(app): State<Arc<App>>) -> ApiResult<Json<duplicates::BulkRemoved>> {
+    change(&app, |app, conn| duplicates::remove_planned(conn, &app.root, &lower_quality_plan(app, conn)?)).await.map(Json)
 }
 
 #[derive(Deserialize)]

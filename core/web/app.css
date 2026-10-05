@@ -202,6 +202,39 @@ body.selecting #select { color: var(--accent); }
 .card .meta { color: var(--muted); }
 .card .folder { background: none; border: 0; padding: 0; color: var(--accent); text-align: left; font-size: 12px; word-break: break-all; }
 .card .same { display: inline-block; background: var(--accent); color: #fff; border-radius: 4px; padding: 0 5px; font-weight: 600; }
+.group-hint { margin: -4px 0 8px; font-size: 12px; color: var(--muted); }
+.dup-top { margin-bottom: 12px; }
+.dup-row { display: flex; gap: 14px; padding: 10px 0; border-top: 1px solid var(--line); align-items: flex-start; }
+.dup-row:first-of-type { border-top: 0; }
+.dup-photo { flex: none; width: 160px; font-size: 12px; display: flex; flex-direction: column; gap: 3px; }
+.dup-photo .thumb { display: block; width: 160px; height: 160px; background: var(--cell-bg); border-radius: 8px; overflow: hidden; }
+.dup-photo .thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.dup-photo .name, .copy .name { font-weight: 600; font-size: 13px; word-break: break-all; }
+.dup-photo .same { display: inline-block; background: var(--accent); color: #fff; border-radius: 4px; padding: 0 5px; font-weight: 600; }
+.copies { flex: 1; display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.copy { width: 220px; font-size: 12px; display: flex; flex-direction: column; gap: 3px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+.copy.with-thumb .thumb { display: block; width: 100%; height: 150px; background: var(--cell-bg); border-radius: 6px; overflow: hidden; margin-bottom: 4px; }
+.copy.with-thumb .thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.copies.series { gap: 10px; }
+.copy.marked { border-color: var(--danger, #c0392b); background: rgba(192, 57, 43, 0.06); }
+.copy .check { display: flex; align-items: center; gap: 4px; font-weight: 600; }
+.copy .check input { width: 18px; height: 18px; }
+.copy .meta { color: var(--muted); }
+.copy .meta.worse { color: #c63b2f; }
+.dup-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; justify-content: space-between; }
+.dup-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; justify-content: flex-end; }
+.dup-filter { position: relative; }
+.dup-filter summary { list-style: none; cursor: pointer; display: inline-block; }
+.dup-filter summary::-webkit-details-marker { display: none; }
+.dup-filter-menu { position: absolute; z-index: 5; top: 100%; left: 0; margin-top: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2); white-space: nowrap; }
+.dup-filter-menu label { display: flex; align-items: center; gap: 6px; }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.copy .folder { background: none; border: 0; padding: 0; color: var(--accent); text-align: left; font-size: 12px; word-break: break-all; }
+.copy .tagline { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.copy .chip { background: var(--cell-bg); border-radius: 10px; padding: 1px 8px; }
+.copy .chip.own { background: var(--accent); color: #fff; }
+.dup-bar { position: sticky; bottom: 12px; display: flex; align-items: center; gap: 10px; justify-content: center; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2); width: fit-content; margin: 0 auto; }
+@media (max-width: 700px) { .dup-row { flex-direction: column; } .copy { width: 100%; } }
 .card .btn { margin-top: 4px; padding: 4px 10px; font-size: 13px; align-self: flex-start; }
 .lb-panel .actions { justify-content: flex-start; }
 .lb-panel .btn.quiet { background: rgba(255,255,255,.15); color: #eee; }

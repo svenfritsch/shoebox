@@ -1134,7 +1134,8 @@ function openModal(title, body, actions) {
   });
   $('modal').hidden = false;
   var input = b.querySelector('input:not([type=file])');
-  if (input) input.focus();
+  var preferred = actions.findIndex(function (act) { return act.focus; });
+  if (input) input.focus(); else if (preferred >= 0) buttons[preferred].focus();
   return buttons;
 }
 
@@ -1236,6 +1237,14 @@ function moveDialog(ids, done) {
   var current = state.filter.folder && state.folderById[state.filter.folder];
   if (current && current.path) input.value = current.path;
   body.appendChild(input);
+  var keepLabel = el('label', 'check');
+  var keep = el('input');
+  keep.type = 'checkbox';
+  keep.checked = true;
+  keepLabel.appendChild(keep);
+  keepLabel.appendChild(document.createTextNode(' Keep tags'));
+  keepLabel.title = 'Checked: the photos’ own tags move along. Unchecked: they are dropped. Folder tags always follow the new folder.';
+  body.appendChild(keepLabel);
   body.appendChild(el('p', 'hint', 'Folders that do not exist yet are created. RAW, Live Photo and sidecar files of the same name move along. Nothing is ever overwritten.'));
   var error = el('p', 'error');
   body.appendChild(error);
@@ -1243,7 +1252,7 @@ function moveDialog(ids, done) {
     var folder = input.value.trim();
     if (!folder) { error.textContent = 'Choose a folder.'; return false; }
     btn.disabled = true;
-    post('/api/move', { ids: ids, folder: folder }).then(function (r) {
+    post('/api/move', { ids: ids, folder: folder, keep_tags: keep.checked }).then(function (r) {
       closeModal();
       if (done) done();
       toast(plural(r.files.length, 'file', 'files') + ' moved to ' + r.folder);
@@ -1261,7 +1270,7 @@ function trashDialog(ids, done) {
     'Move to trash',
     'Move ' + plural(ids.length, 'photo', 'photos') + ' (with their RAW, Live Photo and sidecar files) to the shoebox trash? You can put them back from there until the trash is emptied.',
     [{ label: 'Cancel', cls: 'quiet' }, {
-      label: 'Move to trash', cls: 'danger', onclick: function (btn) {
+      label: 'Move to trash', cls: 'danger', focus: true, onclick: function (btn) {
         btn.disabled = true;
         post('/api/trash', { ids: ids }).then(function (r) {
           closeModal();
@@ -1477,7 +1486,28 @@ $('import').onclick = function () { importDialog(); };
 
 // ------------------------------------------------------------------ duplicates page
 
-var dupState = { groups: [], shown: 0 };
+var DUP_KINDS_IDS = ['identical', 'resolution', 'similar'];
+var dupState = { groups: [], shown: 0, marked: {}, seen: {}, sameFolder: null, lowerQuality: null, types: dupTypes() };
+var DUP_KINDS = [
+  { id: 'identical', label: 'Identical photos', hint: 'The same file, copied.' },
+  { id: 'resolution', label: 'Same photo, different resolution', hint: 'The same picture in another size, quality or name (a messenger copy, say).' },
+  { id: 'similar', label: 'Similar photos', hint: 'Different shots that look alike: a series, repeated clicks, a burst.' },
+];
+
+// Which kinds of duplicates are shown (remembered in this browser).
+function dupTypes() {
+  var t = { identical: true, resolution: true, similar: true };
+  try {
+    var saved = JSON.parse(localStorage.getItem('dupTypes') || 'null');
+    if (saved) DUP_KINDS_IDS.forEach(function (k) { if (saved[k] === false) t[k] = false; });
+  } catch (e) { /* storage may be blocked */ }
+  return t;
+}
+
+function visibleGroups() {
+  return dupState.groups.filter(function (g) { return dupState.types[g.kind]; });
+}
+
 var PAGE_GROUPS = 30;
 
 function loadDuplicates() {
@@ -1485,11 +1515,27 @@ function loadDuplicates() {
   page.textContent = '';
   page.appendChild(el('h2', '', 'Duplicates'));
   page.appendChild(el('p', 'sub', 'Looking…'));
-  return api('/api/duplicates').then(function (r) {
+  return Promise.all([api('/api/duplicates'), api('/api/duplicates/same-folder'), api('/api/duplicates/lower-quality')]).then(function (res) {
     if (state.filter.view !== 'duplicates') return;
-    dupState.groups = r.groups;
+    dupState.groups = res[0].groups;
+    dupState.sameFolder = res[1];
+    dupState.lowerQuality = res[2];
     dupState.shown = 0;
+    // Ticks survive a reload (a scan finishing meanwhile) for copies still listed.
+    var still = {};
+    dupState.groups.forEach(function (g) {
+      g.files.forEach(function (f) {
+        if (dupState.marked[f.id]) still[f.id] = true;
+        // Of every photo with several files all but the best start ticked
+        // (the best quality, then the one without a copy's name), once
+        // (unticking one stays unticked after a reload).
+        else if (!f.pick && !dupState.seen[f.id]) still[f.id] = true;
+        if (!f.pick) dupState.seen[f.id] = true;
+      });
+    });
+    dupState.marked = still;
     renderDuplicates();
+    updateDupBar();
   }).catch(failed);
 }
 
@@ -1497,87 +1543,405 @@ function renderDuplicates() {
   var page = $('page');
   page.textContent = '';
   page.appendChild(el('h2', '', 'Duplicates'));
-  var exact = dupState.groups.filter(function (g) { return g.exact; }).length;
-  var near = dupState.groups.length - exact;
   page.appendChild(el('p', 'sub', dupState.groups.length
-    ? plural(exact, 'group', 'groups') + ' of identical copies, ' + plural(near, 'group', 'groups') + ' of similar photos. Decide per group; decided groups are not shown again.'
+    ? 'Tick “delete this copy” on the files to remove; of every photo the best file is left unticked and one file per group always stays. Decided groups are not shown again.'
     : 'No duplicates. Photos added since the last scan are compared once they have thumbnails.'));
+  if (dupState.groups.length) page.appendChild(dupToolbar());
   var box = el('div');
   page.appendChild(box);
   var more = el('button', 'btn quiet', 'Show more');
   more.onclick = function () { showGroups(box, more); };
   page.appendChild(more);
+  var action = el('div', 'dup-bar');
+  action.id = 'dup-bar';
+  action.hidden = true;
+  page.appendChild(action);
   showGroups(box, more);
 }
 
 function showGroups(box, more) {
-  var end = Math.min(dupState.groups.length, dupState.shown + PAGE_GROUPS);
-  for (var k = dupState.shown; k < end; k++) box.appendChild(groupNode(dupState.groups[k]));
+  var groups = visibleGroups();
+  var end = Math.min(groups.length, dupState.shown + PAGE_GROUPS);
+  for (var k = dupState.shown; k < end; k++) box.appendChild(groupNode(groups[k]));
   dupState.shown = end;
-  more.hidden = end >= dupState.groups.length;
+  more.hidden = end >= groups.length;
+  if (!groups.length && dupState.groups.length) box.appendChild(el('p', 'sub', 'No duplicates of the chosen kinds.'));
+}
+
+// Ticked files in the groups that are shown.
+function markedCount() {
+  var n = 0;
+  visibleGroups().forEach(function (g) { g.files.forEach(function (f) { if (dupState.marked[f.id]) n++; }); });
+  return n;
+}
+
+// Left: which kinds to show (a drop-down with check boxes). Right: the two
+// buttons that clear without review.
+function dupToolbar() {
+  var bar = el('div', 'dup-top');
+  var filter = el('details', 'dup-filter');
+  var sum = el('summary', 'btn quiet');
+  var menu = el('div', 'dup-filter-menu');
+  var count = {};
+  dupState.groups.forEach(function (g) { count[g.kind] = (count[g.kind] || 0) + 1; });
+  var refreshLabel = function () {
+    var on = DUP_KINDS.filter(function (k) { return dupState.types[k.id]; });
+    sum.textContent = 'Show: ' + (on.length === DUP_KINDS.length ? 'all kinds' : on.length ? on.map(function (k) { return k.label; }).join(', ') : 'nothing') + ' ▾';
+  };
+  DUP_KINDS.forEach(function (k) {
+    var label = el('label', 'check');
+    label.title = k.hint;
+    var cb = el('input');
+    cb.type = 'checkbox';
+    cb.checked = dupState.types[k.id];
+    cb.onchange = function () {
+      dupState.types[k.id] = cb.checked;
+      try { localStorage.setItem('dupTypes', JSON.stringify(dupState.types)); } catch (e) { /* ignore */ }
+      refreshLabel();
+      var open = filter.open;
+      dupState.shown = 0;
+      renderDuplicates();
+      updateDupBar();
+      var again = document.querySelector('.dup-filter');
+      if (again && open) again.open = true;
+    };
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(' ' + k.label + ' (' + (count[k.id] || 0) + ')'));
+    menu.appendChild(label);
+  });
+  refreshLabel();
+  filter.appendChild(sum);
+  filter.appendChild(menu);
+  bar.appendChild(filter);
+  var sf = dupState.sameFolder, lq = dupState.lowerQuality;
+  var buttons = el('div', 'dup-buttons');
+  var same = el('button', 'btn', 'Clear Same Folder Copies');
+  same.title = sf && sf.copies
+    ? 'Deletes ' + plural(sf.copies, 'file', 'files') + ': identical copies in the same folder as another copy. The best one stays, no review.'
+    : 'No identical copies in the same folder.';
+  same.disabled = !(sf && sf.copies);
+  same.onclick = removeSameFolder;
+  var low = el('button', 'btn', 'Clear Lower Quality Copies');
+  low.title = lq && lq.copies
+    ? 'Deletes ' + plural(lq.copies, 'file', 'files') + ': the same photo in a lower resolution or without its metadata (a messenger copy, say). The better file stays, no review.'
+    : 'No lower-quality versions of a photo.';
+  low.disabled = !(lq && lq.copies);
+  low.onclick = removeLowerQuality;
+  buttons.appendChild(same);
+  buttons.appendChild(low);
+  bar.appendChild(buttons);
+  return bar;
+}
+
+// The bar with the delete button, shown while copies are ticked.
+function updateDupBar() {
+  var bar = $('dup-bar');
+  if (!bar) return;
+  var n = markedCount();
+  bar.hidden = n === 0;
+  bar.textContent = '';
+  if (!n) return;
+  bar.appendChild(el('span', '', plural(n, 'copy', 'copies') + ' marked'));
+  var clear = el('button', 'btn quiet', 'Clear');
+  clear.onclick = function () {
+    Array.prototype.forEach.call(document.querySelectorAll('.copy input[type=checkbox]:checked'), function (cb) {
+      cb.checked = false;
+      cb.dispatchEvent(new Event('change'));
+    });
+  };
+  bar.appendChild(clear);
+  var del = el('button', 'btn danger', 'Move to trash');
+  del.onclick = deleteMarked;
+  bar.appendChild(del);
+}
+
+// One row per photo (content); the copies as cards on its right.
+function dupRows(g) {
+  var rows = [], byKey = {};
+  g.files.forEach(function (f) {
+    var key = 'r' + f.row;
+    if (!byKey[key]) { byKey[key] = []; rows.push(byKey[key]); }
+    byKey[key].push(f);
+  });
+  return rows;
+}
+
+function dupThumb(f) {
+  var a = el('a', 'thumb');
+  a.href = '/api/files/' + f.id + (f.kind === 'video' ? '/original' : '/view') + '?v=' + f.version;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  var img = el('img');
+  img.alt = '';
+  img.loading = 'lazy';
+  img.src = '/api/files/' + f.id + '/thumb?v=' + f.version;
+  a.appendChild(img);
+  return a;
 }
 
 function groupNode(g) {
   var box = el('div', 'group');
   var head = el('div', 'group-head');
-  head.appendChild(el('span', 'label', g.exact ? 'Identical copies' : 'Similar photos'));
+  var kind = DUP_KINDS.filter(function (k) { return k.id === g.kind; })[0];
+  var title = el('span', 'label', kind.label);
+  title.title = kind.hint;
+  head.appendChild(title);
   var ids = g.files.map(function (f) { return f.id; });
   var decide = function (decision, label) {
     var b = el('button', 'btn quiet', label);
     b.onclick = function () {
       b.disabled = true;
       post('/api/duplicates/decide', { ids: ids, decision: decision }).then(function () {
+        ids.forEach(function (id) { delete dupState.marked[id]; });
         box.remove();
+        updateDupBar();
         toast(decision === 'linked' ? 'Kept as versions of one photo' : 'Kept as different photos');
       }).catch(function (e) { b.disabled = false; failed(e); });
     };
     head.appendChild(b);
   };
-  if (!g.exact) decide('distinct', 'Different photos');
-  decide('linked', g.exact ? 'Keep all copies' : 'Versions of one photo');
+  if (g.kind === 'similar') decide('distinct', 'Different photos');
+  decide('linked', g.kind === 'identical' ? 'Keep all copies' : g.kind === 'resolution' ? 'Keep all versions' : 'Versions of one photo');
   box.appendChild(head);
+  box.appendChild(el('p', 'group-hint', g.kind === 'similar'
+    ? kind.hint + ' Every card is one file; its thumbnail is on the card.'
+    : kind.hint));
 
-  var cards = el('div', 'cards');
-  g.files.forEach(function (f) {
-    var card = el('div', 'card');
-    var a = el('a', 'thumb');
-    a.href = '/api/files/' + f.id + (f.kind === 'video' ? '/original' : '/view') + '?v=' + f.version;
-    a.target = '_blank';
-    a.rel = 'noopener';
-    var img = el('img');
-    img.alt = '';
-    img.loading = 'lazy';
-    img.src = '/api/files/' + f.id + '/thumb?v=' + f.version;
-    a.appendChild(img);
-    card.appendChild(a);
-    var name = el('div', 'name', f.name + ' ');
-    if (f.same) {
-      var same = el('span', 'same', String.fromCharCode(64 + f.same));
+  var boxes = [];
+  // At least one copy of the group stays: the last unticked box is disabled.
+  var refresh = function () {
+    var open = boxes.filter(function (b) { return !b.checked; });
+    boxes.forEach(function (b) { b.disabled = !b.checked && open.length === 1; });
+  };
+  // One card per file: the check box, where it is, what it is, its tags.
+  // `thumb`: the card carries its own thumbnail (similar photos).
+  var copyCard = function (f, showName, thumb) {
+    var card = el('div', 'copy' + (thumb ? ' with-thumb' : ''));
+    if (thumb) card.appendChild(dupThumb(f));
+    var label = el('label', 'check');
+    var cb = el('input');
+    cb.type = 'checkbox';
+    cb.checked = !!dupState.marked[f.id];
+    cb.onchange = function () {
+      if (cb.checked) dupState.marked[f.id] = true; else delete dupState.marked[f.id];
+      card.classList.toggle('marked', cb.checked);
+      refresh();
+      updateDupBar();
+    };
+    boxes.push(cb);
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(' delete this copy'));
+    card.appendChild(label);
+    card.classList.toggle('marked', cb.checked);
+    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : '(top level)';
+    var fb = el('button', 'folder', folder);
+    fb.title = f.path;
+    fb.onclick = function () { setFilter({ folder: f.folder_id, tags: [], q: '' }); };
+    card.appendChild(fb);
+    if (showName) card.appendChild(el('div', 'name', f.name));
+    var meta = [];
+    if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
+    meta.push((f.size / 1e6).toFixed(1) + ' MB');
+    card.appendChild(el('div', 'meta', meta.join(' · ')));
+    if (f.keeper) card.appendChild(el('div', 'meta worse', 'lower quality than the best version'));
+    card.appendChild(el('div', 'meta', f.taken ? formatDate({ taken: f.taken, date_source: 'file' }) : 'no capture date'));
+    if (f.tags && f.tags.length) {
+      var tags = el('div', 'tagline');
+      f.tags.forEach(function (t) {
+        var chip = el('span', 'chip' + (t.own ? ' own' : ''), (t.own ? '' : '📁 ') + t.name);
+        chip.title = t.own ? 'Own tag' : 'Folder tag';
+        tags.appendChild(chip);
+      });
+      card.appendChild(tags);
+    }
+    return card;
+  };
+  var bestFirst = function (copies) {
+    return copies.slice().sort(function (a, b) {
+      return (!!b.pick - !!a.pick) || ((b.width || 0) * (b.height || 0) - (a.width || 0) * (a.height || 0));
+    });
+  };
+
+  if (g.kind === 'similar') {
+    // Different shots side by side, each card with its own thumbnail; a
+    // shot's other versions (a messenger copy) follow it.
+    var series = el('div', 'copies series');
+    dupRows(g).forEach(function (copies) {
+      bestFirst(copies).forEach(function (f) { series.appendChild(copyCard(f, true, true)); });
+    });
+    box.appendChild(series);
+    refresh();
+    return box;
+  }
+
+  dupRows(g).forEach(function (copies) {
+    var row = el('div', 'dup-row');
+    // The photo shown is the best version of the row; its cards come first.
+    copies = bestFirst(copies);
+    var first = copies[0];
+    var left = el('div', 'dup-photo');
+    left.appendChild(dupThumb(first));
+    var name = el('div', 'name', first.name + ' ');
+    if (first.same) {
+      var same = el('span', 'same', String.fromCharCode(64 + first.same));
       same.title = 'Files with the same letter are identical';
       name.appendChild(same);
     }
-    card.appendChild(name);
-    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : '(top level)';
-    var fb = el('button', 'folder', folder);
-    fb.onclick = function () { setFilter({ folder: f.folder_id, tags: [], q: '' }); };
-    card.appendChild(fb);
-    var meta = [];
-    if (f.taken) meta.push(formatDate({ taken: f.taken, date_source: 'file' }));
-    if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
-    meta.push(formatBytes(f.size));
-    card.appendChild(el('div', 'meta', meta.join(' · ')));
-    var del = el('button', 'btn danger', 'Move to trash');
-    del.onclick = function () {
-      trashDialog([f.id], function () {
-        card.remove();
-        if (cards.children.length < 2) box.remove();
+    left.appendChild(name);
+    row.appendChild(left);
+    var cards = el('div', 'copies');
+    copies.forEach(function (f) { cards.appendChild(copyCard(f, copies.length > 1 || first.name !== f.name, false)); });
+    row.appendChild(cards);
+    box.appendChild(row);
+  });
+  refresh();
+  return box;
+}
+
+// Sends the marked copies, one request per group. Capture dates that really
+// conflict are asked for afterwards, then those groups are sent again.
+function deleteMarked() {
+  var jobs = [], total = 0;
+  visibleGroups().forEach(function (g) {
+    var remove = g.files.filter(function (f) { return dupState.marked[f.id]; }).map(function (f) { return f.id; });
+    if (!remove.length) return;
+    var keep = g.files.filter(function (f) { return !dupState.marked[f.id]; }).map(function (f) { return f.id; });
+    if (!keep.length) return;
+    jobs.push({ keep: keep, remove: remove });
+    total += remove.length;
+  });
+  if (!jobs.length) return;
+  var run = function (btn) {
+    btn.disabled = true;
+    var done = { files: 0, tags: 0, dates: 0, skipped: [] }, conflicts = [];
+    var send = function (job, i) {
+      if (i >= jobs.length) return Promise.resolve();
+      return post('/api/duplicates/remove', job).then(function (r) {
+        if (r.conflicts && r.conflicts.length) conflicts.push({ job: job, list: r.conflicts });
+        else collectRemoved(done, r);
+        return send(jobs[i + 1], i + 1);
       });
     };
-    card.appendChild(del);
-    cards.appendChild(card);
+    send(jobs[0], 0).then(function () {
+      closeModal();
+      if (conflicts.length) return askDates(conflicts, done);
+    }).then(function () {
+      finishRemoved(done);
+    }).catch(function (e) { closeModal(); failed(e); changed(); });
+    return false;
+  };
+  openModal(
+    'Move to trash',
+    'Move ' + plural(total, 'copy', 'copies') + ' to the shoebox trash? In every group at least one copy stays. The tags and the capture date of a deleted copy are added to the copy that stays (as tags you can remove again). You can put the copies back from the trash.',
+    [{ label: 'Cancel', cls: 'quiet' }, { label: 'Move to trash', cls: 'danger', focus: true, onclick: run }]
+  );
+}
+
+function collectRemoved(done, r) {
+  done.files += r.trashed.files.length;
+  done.tags += r.tags_added;
+  done.dates += r.dates_set;
+  (r.trashed.skipped || []).forEach(function (s) { done.skipped.push(s); });
+}
+
+function finishRemoved(done) {
+  var text = plural(done.files, 'copy', 'copies') + ' moved to the trash';
+  if (done.tags) text += ', ' + plural(done.tags, 'tag', 'tags') + ' carried over';
+  if (done.dates) text += ', ' + plural(done.dates, 'capture date', 'capture dates') + ' taken over';
+  toast(text);
+  report('Some copies were not moved to the trash', done.skipped);
+  dupState.marked = {};
+  changed();
+}
+
+// Copies with capture dates that cannot be merged: the user picks one date
+// per photo that stays.
+function askDates(conflicts, done) {
+  return new Promise(function (resolve, reject) {
+    var body = el('div');
+    body.appendChild(el('p', '', 'These photos have copies with different capture dates. Which date should the photo that stays have? (Stored in the library only; the file is not changed.)'));
+    var picks = [];
+    conflicts.forEach(function (c) {
+      c.list.forEach(function (x, n) {
+        body.appendChild(el('div', 'name', x.path));
+        x.dates.forEach(function (d, k) {
+          var label = el('label', 'check');
+          var radio = el('input');
+          radio.type = 'radio';
+          radio.name = 'date-' + c.job.keep[0] + '-' + n;
+          radio.value = d;
+          radio.checked = k === 0;
+          label.appendChild(radio);
+          label.appendChild(document.createTextNode(' ' + formatDate({ taken: d, date_source: 'file' })));
+          body.appendChild(label);
+          if (k === 0) picks.push({ job: c.job, keep: x.keep, radio: radio, name: radio.name });
+        });
+      });
+    });
+    openModal('Capture dates differ', body, [{
+      label: 'Cancel', cls: 'quiet', onclick: function () { resolve(); },
+    }, {
+      label: 'Move to trash', cls: 'danger', onclick: function (btn) {
+        btn.disabled = true;
+        var chosen = {};
+        picks.forEach(function (p) {
+          var sel = document.querySelector('input[name="' + p.name + '"]:checked');
+          (chosen[p.job.keep[0]] = chosen[p.job.keep[0]] || {})[p.keep] = sel ? sel.value : p.radio.value;
+        });
+        var jobs = conflicts.map(function (c) { return c.job; });
+        var send = function (i) {
+          if (i >= jobs.length) return Promise.resolve();
+          var job = jobs[i];
+          return post('/api/duplicates/remove', { keep: job.keep, remove: job.remove, dates: chosen[job.keep[0]] }).then(function (r) {
+            collectRemoved(done, r);
+            return send(i + 1);
+          });
+        };
+        send(0).then(function () { closeModal(); resolve(); }).catch(function (e) { closeModal(); reject(e); });
+        return false;
+      },
+    }]);
   });
-  box.appendChild(cards);
-  return box;
+}
+
+function removeLowerQuality() {
+  var lq = dupState.lowerQuality;
+  openModal(
+    'Remove lower-quality versions',
+    plural(lq.copies, 'copy', 'copies') + ' (of ' + plural(lq.groups, 'photo', 'photos') + ') are surely the same photo as a better file: the same picture with fewer pixels or without the capture date, as after sending it by messenger. They go to the shoebox trash without review; the better file stays. Folders, tags and capture dates of the removed copies are carried over to it. Photos that merely look alike (other shots of a series) are never touched.',
+    [{ label: 'Cancel', cls: 'quiet' }, {
+      label: 'Move to trash', cls: 'danger', focus: true, onclick: function (btn) {
+        btn.disabled = true;
+        post('/api/duplicates/lower-quality', {}).then(function (r) {
+          closeModal();
+          toast(plural(r.removed, 'copy', 'copies') + ' moved to the trash, ' + plural(r.tags_added, 'tag', 'tags') + ' carried over');
+          report('Some copies were not moved to the trash', r.skipped);
+          changed();
+        }).catch(function (e) { closeModal(); failed(e); });
+        return false;
+      },
+    }]
+  );
+}
+
+function removeSameFolder() {
+  var sf = dupState.sameFolder;
+  openModal(
+    'Remove exact duplicates',
+    plural(sf.copies, 'copy', 'copies') + ' (' + plural(sf.groups, 'photo', 'photos') + ') have identical content to another file in the same folder. They go to the shoebox trash without review; in each folder one stays: the highest resolution, and the one with the original name rather than “IMG_1 (2)” or “IMG_1 - Copy”. Similar photos and copies in other folders are not touched. Tags and capture dates are carried over to the copy that stays.',
+    [{ label: 'Cancel', cls: 'quiet' }, {
+      label: 'Move to trash', cls: 'danger', focus: true, onclick: function (btn) {
+        btn.disabled = true;
+        post('/api/duplicates/same-folder', {}).then(function (r) {
+          closeModal();
+          toast(plural(r.removed, 'copy', 'copies') + ' moved to the trash');
+          report('Some copies were not moved to the trash', r.skipped);
+          changed();
+        }).catch(function (e) { closeModal(); failed(e); });
+        return false;
+      },
+    }]
+  );
 }
 
 // ------------------------------------------------------------------ trash page

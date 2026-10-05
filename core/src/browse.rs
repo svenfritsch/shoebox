@@ -15,6 +15,7 @@ use rusqlite::{Connection, OptionalExtension, params_from_iter};
 use serde::Serialize;
 
 use crate::classify::Kind;
+use crate::db;
 use crate::library;
 
 /// Videos at most this long that share folder and name with a still are the
@@ -142,10 +143,11 @@ impl Snapshot {
         }
         let mut rows = Vec::new();
         {
-            let mut stmt = conn.prepare(
-                "SELECT id, kind, folder_id, name, path_nfc, taken, mtime_ns, duration_ms, quick_hash
+            let mut stmt = conn.prepare(&format!(
+                "SELECT id, kind, folder_id, name, path_nfc, {}, mtime_ns, duration_ms, quick_hash
                  FROM files WHERE missing_since IS NULL AND kind != 'raw'",
-            )?;
+                db::TAKEN
+            ))?;
             let mut q = stmt.query([])?;
             while let Some(r) = q.next()? {
                 let Some(kind) = Kind::parse(&r.get::<_, String>(1)?) else { continue };
@@ -484,9 +486,13 @@ pub struct Details {
 pub fn details(conn: &Connection, id: i64) -> Result<Option<Details>> {
     let d = conn
         .query_row(
-            "SELECT id, name, path_nfc, folder_id, kind, size, taken, taken_offset, mtime_ns, width, height,
-                    duration_ms, camera, missing_since IS NOT NULL
-             FROM files WHERE id = ?1",
+            &format!(
+                "SELECT id, name, path_nfc, folder_id, kind, size, {}, {}, mtime_ns, width, height,
+                        duration_ms, camera, missing_since IS NOT NULL
+                 FROM files WHERE id = ?1",
+                db::TAKEN,
+                db::TAKEN_OFFSET
+            ),
             [id],
             |r| {
                 Ok(Details {

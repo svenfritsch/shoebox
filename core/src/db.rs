@@ -15,7 +15,7 @@ pub const FILE: &str = "library.db";
 const BACKUP_SUFFIX: &str = ".bak";
 
 /// Bump when the schema changes and add a step to `migrate`.
-const SCHEMA_VERSION: i32 = 4;
+const SCHEMA_VERSION: i32 = 5;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -123,6 +123,25 @@ CREATE INDEX tags_fold ON tags(fold);
 
 /// Phase 5c-2: people, groups and what the user decided about faces
 /// (`people.rs`). User data like own tags: `recognition.db` stays a cache.
+/// Phase 5d: a capture date the user's duplicate clean-up took over from a
+/// deleted copy. Kept apart from `files.taken`, which every scan re-reads
+/// from the file; keyed by content like thumbnails. Never written into the
+/// photo.
+const SCHEMA_V5: &str = "
+CREATE TABLE IF NOT EXISTS taken_overrides (
+    key          TEXT PRIMARY KEY,   -- files.quick_hash
+    taken        TEXT NOT NULL,      -- YYYY-MM-DDTHH:MM:SS
+    taken_offset TEXT,
+    at           INTEGER NOT NULL
+);
+";
+
+/// `files.taken` / `files.taken_offset` as the user sees them: an override
+/// from `taken_overrides` wins. For queries on `files` without an alias.
+pub const TAKEN: &str = "coalesce((SELECT o.taken FROM taken_overrides o WHERE o.key = files.quick_hash), files.taken)";
+pub const TAKEN_OFFSET: &str = "CASE WHEN EXISTS (SELECT 1 FROM taken_overrides o WHERE o.key = files.quick_hash)
+    THEN (SELECT o.taken_offset FROM taken_overrides o WHERE o.key = files.quick_hash) ELSE files.taken_offset END";
+
 const SCHEMA_V4: &str = "
 CREATE TABLE IF NOT EXISTS groups (
     id       INTEGER PRIMARY KEY,
@@ -218,6 +237,12 @@ fn migrate(conn: &Connection) -> Result<()> {
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V4)?;
         tx.pragma_update(None, "user_version", 4)?;
+        tx.commit()?;
+    }
+    if version < 5 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V5)?;
+        tx.pragma_update(None, "user_version", 5)?;
         tx.commit()?;
     }
     Ok(())
