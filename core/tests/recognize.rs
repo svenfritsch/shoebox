@@ -288,10 +288,47 @@ fn a_worker_that_keeps_crashing_stops_the_run() {
     assert_eq!(count(&lib, "SELECT count(*) FROM recog.looked WHERE error LIKE 'recognizer crashed%'"), 2);
 }
 
+/// Protocol 2's `embed`: one embedding per box drawn by hand, in order,
+/// with the landmarks found in it (none: the plain crop was embedded). A
+/// worker without the task refuses, and the run goes on.
+#[test]
+fn embed_task_of_protocol_2() {
+    let mut img = image::RgbImage::from_pixel(200, 100, image::Rgb([200, 150, 120]));
+    for x in 100..200 {
+        for y in 0..100 {
+            img.put_pixel(x, y, image::Rgb([128, 128, 128]));
+        }
+    }
+    let mut jpeg = Vec::new();
+    image::DynamicImage::ImageRgb8(img).write_to(&mut std::io::Cursor::new(&mut jpeg), image::ImageFormat::Png).unwrap();
+    let boxes = [[10.0, 10.0, 60.0, 80.0], [120.0, 10.0, 60.0, 80.0]];
+    let mut worker = recognize::Worker::start(fake(&[]), quick()).unwrap();
+    let found = worker.embed(&jpeg, &boxes).unwrap().unwrap();
+    assert_eq!(found.len(), 2);
+    assert_eq!(found[0].landmarks.len(), 5);
+    assert!(found[0].landmarks.iter().all(|[x, y]| (0.05..0.35).contains(x) && (0.1..0.9).contains(y)), "fractions in the box");
+    assert!(found[1].landmarks.is_empty(), "grey: no landmarks");
+    // Like a detected face of a plain picture of that colour.
+    let plain = image::RgbImage::from_pixel(200, 100, image::Rgb([200, 150, 120]));
+    let mut plain_png = Vec::new();
+    image::DynamicImage::ImageRgb8(plain).write_to(&mut std::io::Cursor::new(&mut plain_png), image::ImageFormat::Png).unwrap();
+    let face = worker.faces(&plain_png).unwrap().unwrap().faces.remove(0);
+    let sim: f32 = face.emb.iter().zip(&found[0].emb).map(|(a, b)| a * b).sum();
+    assert!(sim > 0.999, "{sim}");
+    worker.stop();
+
+    let mut old = recognize::Worker::start(fake(&["--no-embed"]), quick()).unwrap();
+    assert!(matches!(old.embed(&jpeg, &boxes).unwrap(), Err(Failure::Refused(e)) if e.contains("cannot embed")));
+    assert!(old.faces(&plain_png).unwrap().is_ok(), "still finds faces");
+    old.stop();
+}
+
 #[test]
 fn workers_that_do_not_start_are_reported() {
     let err = |cmd: WorkerCommand| format!("{:#}", recognize::Worker::start(cmd, quick()).err().unwrap());
     assert!(err(fake(&["--protocol", "99"])).contains("speaks protocol 99"));
+    // A worker of protocol 1 (before `embed`) is not taken: update both together.
+    assert!(err(fake(&["--protocol", "1"])).contains("speaks protocol 1, this shoebox 2"));
     let silent = Timeouts { start: Duration::from_millis(500), ..quick() };
     let e = format!("{:#}", recognize::Worker::start(fake(&["--silent"]), silent).err().unwrap());
     assert!(e.contains("did not start within"), "{e}");
@@ -435,6 +472,35 @@ fn real_recognizer_runs_under_the_guard() {
         // lying one is found (by the rotated pass: YuNet misses it upright).
         assert_eq!(faces("Familie/face.jpg", true), 0);
         assert!(faces("Familie/face-lying.jpg", false) + faces("Familie/face-lying.jpg", true) >= 1);
+
+        // Faces drawn by hand: one around the detected face (a little off),
+        // aligned by the landmarks found in it and close to the detected
+        // face's embedding; one on the background, the plain crop.
+        let c = conn(&lib);
+        let (x, y, w, h, emb): (f64, f64, f64, f64, Vec<u8>) = c
+            .query_row(
+                "SELECT r.x, r.y, r.w, r.h, r.emb FROM recog.faces r JOIN files f ON f.quick_hash = r.key
+                 WHERE f.path_nfc = 'Familie/face.jpg' ORDER BY r.w DESC LIMIT 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .unwrap();
+        let file = id_of(&lib, "Familie/face.jpg");
+        let who = shoebox::people::Who { person_id: None, name: Some("Face".into()) };
+        shoebox::people::add_manual(&c, file, [x - 0.05 * w, y + 0.03 * h, w * 1.1, h], &who).unwrap();
+        shoebox::people::add_manual(&c, file, [0.0, 0.0, 0.08, 0.08], &who).unwrap();
+        drop(c);
+        let stats = recognize::run(&opts).unwrap();
+        assert_eq!(lib.snapshot(), before);
+        let drawn = stats.drawn.unwrap();
+        assert_eq!((drawn.embedded, drawn.failed), (2, 0), "{drawn:?}");
+        let (aligned, drawn_emb): (bool, Vec<u8>) = conn(&lib)
+            .query_row("SELECT aligned, emb FROM recog.drawn WHERE x > 0 OR y > 0", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert!(aligned, "landmarks found around the face");
+        let floats = |b: &[u8]| -> Vec<f32> { b.chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect() };
+        let sim: f32 = floats(&emb).iter().zip(floats(&drawn_emb)).map(|(a, b)| a * b).sum();
+        assert!(sim > 0.8, "drawn and detected face: {sim}");
     }
 }
 

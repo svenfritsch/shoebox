@@ -106,6 +106,10 @@ enum Command {
         /// PIN for other devices instead of a random one (at least 4 characters).
         #[arg(long)]
         pin: Option<String>,
+        /// Recognizer for faces drawn by hand, started when one is drawn
+        /// (default: $SHOEBOX_RECOGNIZER, else the one in `<root>/.shoebox/recognizer/`).
+        #[arg(long)]
+        recognizer: Option<PathBuf>,
     },
 }
 
@@ -151,8 +155,8 @@ fn main() -> ExitCode {
             .map(|_| true)
         }
         Command::Faces { command: FacesCommand::Stats { root, db } } => faces::print_stats(&root, db.as_deref()).map(|_| true),
-        Command::Serve { root, db, port, lan, pin } => {
-            serve::run(&serve::Options { root, db, port, lan, pin, reveal: None }).map(|_| true)
+        Command::Serve { root, db, port, lan, pin, recognizer } => {
+            serve::run(&serve::Options { root, db, port, lan, pin, reveal: None, recognizer }).map(|_| true)
         }
     };
     match result {

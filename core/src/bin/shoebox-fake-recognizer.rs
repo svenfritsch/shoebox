@@ -39,8 +39,15 @@
 //! face. So grey 147 (0.575) is close enough to suggest but not to cluster,
 //! 115 (0.45) only "maybe", 64 (0.25) nothing.
 //!
-//! `--protocol <n>` overrides the protocol in the hello; `--silent` never
-//! says hello.
+//! The `embed` task (protocol 2, faces drawn by hand) embeds each box from
+//! the mean colour of the picture inside it, like a plain picture of that
+//! colour (so a box drawn on a plain picture of a person is that person).
+//! It "finds landmarks" in a box unless the inside is grey (channels within
+//! 4 of each other): then the plain crop is embedded and no landmarks come
+//! back. The misbehaviour cues above are only for `faces`.
+//!
+//! `--protocol <n>` overrides the protocol in the hello; `--no-embed` leaves
+//! `embed` out of the hello; `--silent` never says hello.
 
 use std::io::{BufRead, Write};
 
@@ -57,14 +64,18 @@ fn main() {
         std::thread::sleep(std::time::Duration::from_secs(3600));
         return;
     }
-    let protocol: u32 = arg("--protocol").and_then(|p| p.parse().ok()).unwrap_or(1);
+    let protocol: u32 = arg("--protocol").and_then(|p| p.parse().ok()).unwrap_or(2);
     let crash_once = arg("--crash-once");
     let mut out = std::io::stdout().lock();
+    let mut tasks = json!({ "faces": { "model": "fake-1", "dim": DIM } });
+    if !args.iter().any(|a| a == "--no-embed") {
+        tasks["embed"] = json!({ "model": "fake-1", "dim": DIM });
+    }
     let hello = json!({
         "hello": "shoebox-recognizer",
         "protocol": protocol,
         "version": "fake",
-        "tasks": { "faces": { "model": "fake-1", "dim": DIM } },
+        "tasks": tasks,
     });
     writeln!(out, "{hello}").unwrap();
     out.flush().unwrap();
@@ -76,6 +87,12 @@ fn main() {
             continue;
         };
         let id = req["id"].clone();
+        if req["tasks"].as_array().is_some_and(|t| t.iter().any(|t| t == "embed")) {
+            let reply = embed(&req).unwrap_or_else(|e| json!({ "id": id, "error": e }));
+            writeln!(out, "{reply}").unwrap();
+            out.flush().unwrap();
+            continue;
+        }
         let reply = match picture(&req) {
             Err(e) => json!({ "id": id, "error": e }),
             Ok((w, h, _, Some((Edge::Top, Cue::Variant { colour, grey })))) => variant_reply(&id, w, h, colour, grey),
@@ -189,6 +206,44 @@ fn picture(req: &Value) -> Result<Picture, String> {
     .into_iter()
     .find_map(|(e, m)| cue(m).map(|c| (e, c)));
     Ok((w, h, mean(0, 0, w, h), edge))
+}
+
+/// The `embed` task: per box, the person of the mean colour inside it, with
+/// landmarks unless that colour is grey.
+fn embed(req: &Value) -> Result<Value, String> {
+    let data = BASE64.decode(req["image"].as_str().ok_or("no image")?).map_err(|e| e.to_string())?;
+    let img = image::load_from_memory(&data).map_err(|_| "cannot decode image")?.to_rgb8();
+    let (w, h) = (img.width(), img.height());
+    let boxes = req["boxes"].as_array().ok_or("no boxes")?;
+    let mut out = Vec::new();
+    for b in boxes {
+        let v: Vec<f64> = b.as_array().ok_or("a box is not a list")?.iter().filter_map(Value::as_f64).collect();
+        let [x, y, bw, bh] = v[..] else { return Err("a box needs x, y, w, h".into()) };
+        let x0 = (x.max(0.0) as u32).min(w - 1);
+        let y0 = (y.max(0.0) as u32).min(h - 1);
+        let x1 = ((x + bw).ceil() as u32).clamp(x0 + 1, w);
+        let y1 = ((y + bh).ceil() as u32).clamp(y0 + 1, h);
+        let mut sum = [0f64; 3];
+        for yy in y0..y1 {
+            for xx in x0..x1 {
+                let p = img.get_pixel(xx, yy);
+                for c in 0..3 {
+                    sum[c] += p[c] as f64;
+                }
+            }
+        }
+        let n = ((x1 - x0) * (y1 - y0)) as f64;
+        let [r, g, bl] = sum.map(|s| s / n);
+        let grey = (r - g).abs() < 4.0 && (g - bl).abs() < 4.0;
+        let landmarks: Vec<[f64; 2]> = if grey {
+            Vec::new()
+        } else {
+            [(0.3, 0.35), (0.7, 0.35), (0.5, 0.55), (0.35, 0.75), (0.65, 0.75)].iter().map(|(u, v)| [x + u * bw, y + v * bh]).collect()
+        };
+        let bytes: Vec<u8> = person([r, g, bl]).iter().flat_map(|v| v.to_le_bytes()).collect();
+        out.push(json!({ "landmarks": landmarks, "emb": BASE64.encode(bytes) }));
+    }
+    Ok(json!({ "id": req["id"], "width": w, "height": h, "embed": out }))
 }
 
 /// The face of the cyan cue, in the top-left part of the picture as sent.

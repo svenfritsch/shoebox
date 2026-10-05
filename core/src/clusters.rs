@@ -17,7 +17,9 @@
 //!   confirmed faces of every person (best match, so confirmed faces from
 //!   several ages bridge the gap a single reference cannot), never with a
 //!   person it was rejected for: from `people::SUGGEST_SIM` suggested,
-//!   from `people::MAYBE_SIM` offered as "maybe".
+//!   from `people::MAYBE_SIM` offered as "maybe". Faces drawn by hand count
+//!   as confirmed faces when the worker found landmarks in their box
+//!   (`recog.drawn.aligned`); a plain crop's embedding is too unreliable.
 //!
 //! Nothing here is user data: deleting `recognition.db` loses no decision.
 
@@ -254,14 +256,25 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
     let mut groups: Vec<Vec<usize>> = members.into_values().collect();
     groups.sort_by(|a, b| b.len().cmp(&a.len()).then(a[0].cmp(&b[0])));
 
-    // Suggestions: the most similar confirmed faces of every person.
-    let refs: Vec<(usize, i64)> = (0..n)
-        .filter_map(|i| decided(i).filter(|d| d.decision == Decision::Confirmed).and_then(|d| d.person).map(|p| (i, p)))
-        .collect();
-    let ref_data: Vec<f32> = refs.iter().flat_map(|&(i, _)| all.row(i).iter().copied()).collect();
+    // Suggestions: the most similar confirmed faces of every person, and
+    // the faces drawn by hand that were aligned.
+    let mut ref_person: Vec<i64> = Vec::new();
+    let mut ref_data: Vec<f32> = Vec::new();
+    for i in 0..n {
+        if let Some(p) = decided(i).filter(|d| d.decision == Decision::Confirmed).and_then(|d| d.person) {
+            ref_person.push(p);
+            ref_data.extend_from_slice(all.row(i));
+        }
+    }
+    if let Some(model) = &model {
+        for (p, emb) in drawn_references(conn, &m, model, all.dim)? {
+            ref_person.push(p);
+            ref_data.extend(emb);
+        }
+    }
     let ref_index = Index::build(&ref_data, all.dim.max(1));
     let open_list: Vec<usize> = (0..n).filter(|&i| open[i]).collect();
-    let suggestions: Vec<Option<(i64, f32)>> = if refs.is_empty() {
+    let suggestions: Vec<Option<(i64, f32)>> = if ref_person.is_empty() {
         vec![None; open_list.len()]
     } else {
         ann::parallel(open_list.len(), |k| {
@@ -270,7 +283,7 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
             ref_index
                 .search(all.row(i), REFERENCES, people::MAYBE_SIM, None)
                 .into_iter()
-                .map(|(r, sim)| (refs[r].1, sim))
+                .map(|(r, sim)| (ref_person[r], sim))
                 .find(|(p, _)| !rejected.contains(p))
         })
     };
@@ -298,6 +311,39 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
     tx.commit()?;
     summary.seconds = started.elapsed().as_secs_f64();
     Ok(summary)
+}
+
+/// Faces drawn by hand that serve as references: confirmed for a person,
+/// over no detected face (that one's own embedding counts then), of a
+/// present photo, aligned (landmarks found), embedded with `model`, at
+/// least `MIN_CLUSTER_PX` wide.
+fn drawn_references(conn: &Connection, m: &Matched, model: &str, dim: usize) -> Result<Vec<(i64, Vec<f32>)>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT e.emb, l.width FROM recog.drawn e
+         JOIN recog.looked l ON l.key = e.key AND l.task = '{FACES}'
+         WHERE e.key = ?1 AND e.x = ?2 AND e.y = ?3 AND e.w = ?4 AND e.h = ?5 AND e.model = ?6 AND e.aligned = 1
+           AND e.emb IS NOT NULL
+           AND e.key IN (SELECT quick_hash FROM files WHERE missing_since IS NULL AND kind IN ({KINDS}))"
+    ))?;
+    let mut out = Vec::new();
+    for (d, row) in m.decisions.iter().enumerate() {
+        let Some(person) = row.person else { continue };
+        if !row.manual || row.decision != Decision::Confirmed || m.face_of[d].is_some() {
+            continue;
+        }
+        let found: Option<(Vec<u8>, Option<f64>)> = stmt
+            .query_row(params![row.key, row.b[0], row.b[1], row.b[2], row.b[3], model], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional()?;
+        let Some((bytes, width)) = found else { continue };
+        if row.b[2] * width.unwrap_or(0.0) < MIN_CLUSTER_PX {
+            continue;
+        }
+        let emb: Vec<f32> = bytes.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
+        if dim > 0 && emb.len() == dim {
+            out.push((person, emb));
+        }
+    }
+    Ok(out)
 }
 
 /// Where the clustering stands, for `/api/info`.

@@ -81,8 +81,9 @@ pub struct Query {
     /// of its name (folder tags keep their folder's exact spelling).
     pub tags: Vec<i64>,
     pub text: Option<String>,
-    /// Only photos with a confirmed face of this person (5c-2).
-    pub person: Option<i64>,
+    /// Only photos with a confirmed face of every one of these people
+    /// (AND, 5c-3).
+    pub people: Vec<i64>,
 }
 
 impl Snapshot {
@@ -253,38 +254,65 @@ impl Snapshot {
                 None => ids,
             });
         }
-        // Each word must appear in the path or in one of the file's tags.
+        // Each word must appear in the path, in one of the file's tags or in
+        // the name of someone confirmed on it.
         let mut words: Vec<(String, HashSet<i64>)> = Vec::new();
         let text = q.text.as_deref().unwrap_or("");
-        let tag_names: Vec<(i64, String)> = if text.trim().is_empty() {
-            Vec::new()
+        let (tag_names, people_names): (Vec<(i64, String)>, Vec<(i64, String)>) = if text.trim().is_empty() {
+            (Vec::new(), Vec::new())
         } else {
-            conn.prepare("SELECT id, name FROM tags")?
-                .query_map([], |r| Ok((r.get(0)?, r.get::<_, String>(1)?.to_lowercase())))?
-                .collect::<rusqlite::Result<_>>()?
+            let names = |sql: &str| -> Result<Vec<(i64, String)>> {
+                Ok(conn
+                    .prepare(sql)?
+                    .query_map([], |r| Ok((r.get(0)?, r.get::<_, String>(1)?.to_lowercase())))?
+                    .collect::<rusqlite::Result<_>>()?)
+            };
+            let people = if crate::people::table_exists(conn, "main", "people")? {
+                names("SELECT id, name FROM people")?
+            } else {
+                Vec::new()
+            };
+            (names("SELECT id, name FROM tags")?, people)
+        };
+        let mut file_keys: Option<HashMap<String, Vec<i64>>> = None;
+        let mut files_of_people = |people: &[i64]| -> Result<HashSet<i64>> {
+            if people.is_empty() {
+                return Ok(HashSet::new());
+            }
+            if file_keys.is_none() {
+                let mut by_key: HashMap<String, Vec<i64>> = HashMap::new();
+                let mut stmt = conn.prepare("SELECT id, quick_hash FROM files WHERE missing_since IS NULL")?;
+                let mut rows = stmt.query([])?;
+                while let Some(r) = rows.next()? {
+                    by_key.entry(r.get(1)?).or_default().push(r.get(0)?);
+                }
+                file_keys = Some(by_key);
+            }
+            let by_key = file_keys.as_ref().unwrap();
+            let mut ids = HashSet::new();
+            for key in crate::people::keys_of_people(conn, people)? {
+                ids.extend(by_key.get(&key).into_iter().flatten());
+            }
+            Ok(ids)
         };
         for word in text.split_whitespace() {
             let word = library::nfc(word).to_lowercase();
             let tags: Vec<i64> =
                 tag_names.iter().filter(|(_, name)| name.contains(&word)).map(|(id, _)| *id).collect();
-            let ids = file_ids_with_tags(conn, &tags)?;
+            let mut ids = file_ids_with_tags(conn, &tags)?;
+            let people: Vec<i64> =
+                people_names.iter().filter(|(_, name)| name.contains(&word)).map(|(id, _)| *id).collect();
+            ids.extend(files_of_people(&people)?);
             words.push((word, ids));
         }
-        let person: Option<HashSet<i64>> = match q.person {
-            Some(p) => {
-                let keys = crate::people::keys_of_person(conn, p)?;
-                let mut ids = HashSet::new();
-                let mut stmt = conn.prepare("SELECT id, quick_hash FROM files WHERE missing_since IS NULL")?;
-                let mut rows = stmt.query([])?;
-                while let Some(r) = rows.next()? {
-                    if keys.contains(&r.get::<_, String>(1)?) {
-                        ids.insert(r.get(0)?);
-                    }
-                }
-                Some(ids)
-            }
-            None => None,
-        };
+        let mut person: Option<HashSet<i64>> = None;
+        for &p in &q.people {
+            let ids = files_of_people(&[p])?;
+            person = Some(match person {
+                Some(have) => have.intersection(&ids).copied().collect(),
+                None => ids,
+            });
+        }
         Ok(self
             .items
             .iter()

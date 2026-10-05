@@ -43,9 +43,21 @@ pub(super) async fn similar(
 /// A face's crop: from `thumbs.db`, else made from the original (all faces
 /// of the photo from one decode) and stored.
 pub(super) async fn crop(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Response> {
+    crop_of(app, move |conn| faces::face(conn, id)).await
+}
+
+/// The crop of a face drawn by hand (its `manual` id).
+pub(super) async fn manual_crop(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Response> {
+    crop_of(app, move |conn| faces::drawn_face(conn, id)).await
+}
+
+async fn crop_of(
+    app: Arc<App>,
+    find: impl FnOnce(&rusqlite::Connection) -> anyhow::Result<Option<(String, faces::FaceBox, Option<i64>)>> + Send + 'static,
+) -> ApiResult<Response> {
     let found = blocking(&app, move |app| {
         let conn = app.conn.lock().unwrap();
-        let (key, b, file) = faces::face(&conn, id)?.ok_or(ApiError::NotFound)?;
+        let (key, b, file) = find(&conn)?.ok_or(ApiError::NotFound)?;
         match faces::load_crop(&conn, &key, &b)? {
             Some(Ok(bytes)) => Ok(Err(jpeg(bytes, IMMUTABLE))),
             Some(Err(_)) => Err(ApiError::NotFound),

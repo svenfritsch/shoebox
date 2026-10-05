@@ -311,8 +311,6 @@ pub struct View {
     present: HashMap<String, (i64, String)>,
     cache: HashMap<i64, Cached>,
     names: HashMap<i64, String>,
-    /// Of the cache: the clustering job that wrote it.
-    pub generation: i64,
     /// Content → width and height of the copy the worker saw.
     sizes: HashMap<String, (f64, f64)>,
 }
@@ -337,7 +335,6 @@ impl View {
             }
         }
         let mut cache = HashMap::new();
-        let mut generation = 0;
         if table_exists(conn, "recog", "clusters")? {
             let mut stmt = conn.prepare("SELECT face, cluster, person, similarity FROM recog.clusters")?;
             let mut rows = stmt.query([])?;
@@ -347,11 +344,6 @@ impl View {
                     Cached { cluster: r.get(1)?, person: r.get(2)?, similarity: r.get::<_, Option<f64>>(3)?.map(|s| s as f32) },
                 );
             }
-            generation = conn.query_row(
-                "SELECT coalesce(max(id), 0) FROM recog.jobs WHERE kind = 'clusters' AND state = 'done'",
-                [],
-                |r| r.get(0),
-            )?;
         }
         let names = conn
             .prepare("SELECT id, name FROM people")?
@@ -368,7 +360,7 @@ impl View {
                 sizes.insert(r.get::<_, String>(0)?, (r.get(1)?, r.get(2)?));
             }
         }
-        Ok(View { m, present, cache, names, generation, sizes })
+        Ok(View { m, present, cache, names, sizes })
     }
 
     fn person(&self, id: Option<i64>) -> Option<PersonRef> {
@@ -920,6 +912,8 @@ pub enum Action {
     NotFace,
     /// Forget every decision about the face.
     Undo,
+    /// Forget that the face is not this person (undo a rejection only).
+    Unreject(i64),
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -928,6 +922,18 @@ pub struct Decided {
     pub faces: u64,
     /// The person they were assigned to, confirmed for or rejected for.
     pub person: Option<PersonRef>,
+    /// After an action on some faces of a cluster: what is left of it
+    /// (`null` if nothing is).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cluster: Option<Option<ClusterRef>>,
+}
+
+/// A cluster as an action on it leaves it.
+#[derive(Debug, Clone, Serialize)]
+pub struct ClusterRef {
+    pub id: i64,
+    pub generation: i64,
+    pub size: u64,
 }
 
 /// Apply `action` to detected faces (`recog.faces` ids; unknown ids are
@@ -976,8 +982,8 @@ pub fn decide(conn: &Connection, faces: &[i64], action: &Action) -> Result<Decid
                     tx.execute("UPDATE face_decisions SET person_id = ?2, at = ?3 WHERE id = ?1", params![d.id, assign_to, now])?;
                 }
                 Action::Undo => delete(&tx, &rows, &|_| false)?,
-                // Decided already: nothing to confirm.
-                Action::Confirm => continue,
+                // Decided already: nothing to confirm; never rejected.
+                Action::Confirm | Action::Unreject(_) => continue,
                 _ => bail!("face {id} was drawn by hand; it can only be named again or deleted"),
             }
             changed += 1;
@@ -1036,6 +1042,13 @@ pub fn decide(conn: &Connection, faces: &[i64], action: &Action) -> Result<Decid
                 }
                 delete(&tx, &rows, &|_| false)?;
             }
+            Action::Unreject(person) => {
+                person_seen = person_seen.or(Some(*person));
+                if !v.m.states[i].rejected.contains(person) {
+                    continue;
+                }
+                delete(&tx, &rows, &|r| !(r.decision == Decision::Rejected && r.person == Some(*person)))?;
+            }
         }
         changed += 1;
     }
@@ -1044,7 +1057,7 @@ pub fn decide(conn: &Connection, faces: &[i64], action: &Action) -> Result<Decid
         None => None,
     };
     tx.commit()?;
-    Ok(Decided { faces: changed, person })
+    Ok(Decided { faces: changed, person, cluster: None })
 }
 
 /// Add a face drawn by hand on a photo: always confirmed, with a person.
@@ -1158,8 +1171,14 @@ pub struct ClusterSuggestion {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Cluster {
-    /// Its number in this generation of the cache (1 is the largest).
+    /// Its number in this computation of the cache (1 is the largest);
+    /// changes whenever the clusters are recomputed.
     pub id: i64,
+    /// Changes only when the cluster's faces change (a number below 2^48,
+    /// so JavaScript keeps it exact). Actions on the cluster pass it, so
+    /// they mean the faces that were shown even after the clusters were
+    /// renumbered.
+    pub generation: i64,
     pub size: u64,
     /// The largest faces first.
     pub faces: Vec<FaceItem>,
@@ -1169,9 +1188,6 @@ pub struct Cluster {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Clusters {
-    /// Changes whenever the clusters are recomputed; actions on a cluster
-    /// can pass it to make sure they mean the cluster that was shown.
-    pub generation: i64,
     /// Clusters (a face alone counts as one).
     pub total: u64,
     /// Faces in them: faces large enough without a decision.
@@ -1198,6 +1214,22 @@ fn grouped(v: &View) -> Vec<(i64, Vec<usize>)> {
     out
 }
 
+/// The generation of a cluster: a hash of its faces (ids and contents).
+fn generation_of(v: &View, faces: &[usize]) -> i64 {
+    let mut ids: Vec<(i64, &str)> = faces.iter().map(|&i| (v.m.faces[i].id, v.m.faces[i].key.as_str())).collect();
+    ids.sort();
+    let mut h = blake3::Hasher::new();
+    for (id, key) in ids {
+        h.update(&id.to_le_bytes());
+        h.update(key.as_bytes());
+        h.update(&[0]);
+    }
+    let b = h.finalize();
+    let mut n = [0u8; 8];
+    n[..6].copy_from_slice(&b.as_bytes()[..6]);
+    i64::from_le_bytes(n)
+}
+
 /// The clusters of faces without a decision, largest first, with up to
 /// `samples` faces each.
 pub fn clusters(conn: &Connection, offset: usize, limit: usize, samples: usize) -> Result<Clusters> {
@@ -1222,23 +1254,42 @@ pub fn clusters(conn: &Connection, offset: usize, limit: usize, samples: usize) 
                 .and_then(|(p, n)| v.person(Some(p)).map(|person| ClusterSuggestion { person, faces: n }));
             Cluster {
                 id,
+                generation: generation_of(&v, &faces),
                 size: faces.len() as u64,
                 faces: faces.iter().take(samples).map(|&i| v.item(i)).collect(),
                 suggestion,
             }
         })
         .collect();
-    Ok(Clusters { generation: v.generation, total, unnamed, clusters })
+    Ok(Clusters { total, unnamed, clusters })
 }
 
-/// All faces of a cluster (`None` if it has none, or `generation` is given
-/// and not the current one).
+/// All faces of a cluster: of the one whose faces have `generation` (its
+/// number may have changed since; `Stale` if no cluster has those faces
+/// any more), else of cluster number `id` (`None` if there is none).
 pub fn cluster_faces(conn: &Connection, id: i64, generation: Option<i64>) -> Result<Option<Vec<FaceItem>>> {
     let v = View::load(conn)?;
-    if generation.is_some_and(|g| g != v.generation) {
-        return Err(Stale.into());
-    }
-    Ok(grouped(&v).into_iter().find(|c| c.0 == id).map(|(_, faces)| faces.iter().map(|&i| v.item(i)).collect()))
+    let all = grouped(&v);
+    let found = match generation {
+        Some(g) => {
+            let mut matching = all.iter().filter(|c| generation_of(&v, &c.1) == g);
+            let first = matching.next();
+            // The same faces under the number shown, if it is still that.
+            Some(all.iter().find(|c| c.0 == id && generation_of(&v, &c.1) == g).or(first).ok_or(Stale)?)
+        }
+        None => all.iter().find(|c| c.0 == id),
+    };
+    Ok(found.map(|(_, faces)| faces.iter().map(|&i| v.item(i)).collect()))
+}
+
+/// What is left of the cluster of these faces (the ones of a cluster an
+/// action left undecided), as it is shown now.
+pub fn cluster_of(conn: &Connection, faces: &[i64]) -> Result<Option<ClusterRef>> {
+    let v = View::load(conn)?;
+    Ok(grouped(&v)
+        .into_iter()
+        .find(|(_, members)| members.iter().any(|&i| faces.contains(&v.m.faces[i].id)))
+        .map(|(id, members)| ClusterRef { id, generation: generation_of(&v, &members), size: members.len() as u64 }))
 }
 
 /// The face ids of a cluster for an action on it: `faces` if given (a
@@ -1261,12 +1312,40 @@ pub fn cluster_face_ids(conn: &Connection, id: i64, generation: Option<i64>, fac
 
 // ---------------------------------------------------------------- timeline
 
-/// Contents with a confirmed face of this person (for the timeline).
-pub fn keys_of_person(conn: &Connection, id: i64) -> Result<HashSet<String>> {
-    Ok(conn
-        .prepare("SELECT DISTINCT key FROM face_decisions WHERE person_id = ?1 AND decision = 'confirmed'")?
-        .query_map([id], |r| r.get(0))?
-        .collect::<rusqlite::Result<_>>()?)
+/// Contents with a confirmed face of any of these people (for the
+/// timeline and search).
+pub fn keys_of_people(conn: &Connection, ids: &[i64]) -> Result<HashSet<String>> {
+    let mut stmt = conn.prepare("SELECT DISTINCT key FROM face_decisions WHERE person_id = ?1 AND decision = 'confirmed'")?;
+    let mut keys = HashSet::new();
+    for id in ids {
+        keys.extend(stmt.query_map([id], |r| r.get(0))?.collect::<rusqlite::Result<Vec<String>>>()?);
+    }
+    Ok(keys)
+}
+
+/// Every person (hidden ones too) with the contents they are confirmed on.
+pub fn keys_by_person(conn: &Connection) -> Result<HashMap<i64, HashSet<String>>> {
+    let mut out: HashMap<i64, HashSet<String>> = HashMap::new();
+    let mut stmt = conn.prepare(
+        "SELECT person_id, key FROM face_decisions WHERE decision = 'confirmed' AND person_id IS NOT NULL",
+    )?;
+    let mut rows = stmt.query([])?;
+    while let Some(r) = rows.next()? {
+        out.entry(r.get(0)?).or_default().insert(r.get(1)?);
+    }
+    Ok(out)
+}
+
+/// Names of people by id (unknown ids are left out).
+pub fn person_names(conn: &Connection, ids: &[i64]) -> Result<Vec<PersonRef>> {
+    let mut stmt = conn.prepare("SELECT name FROM people WHERE id = ?1")?;
+    let mut out = Vec::new();
+    for &id in ids {
+        if let Some(name) = stmt.query_row([id], |r| r.get(0)).optional()? {
+            out.push(PersonRef { id, name });
+        }
+    }
+    Ok(out)
 }
 
 // ---------------------------------------------------------------- userdata.json

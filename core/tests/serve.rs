@@ -17,13 +17,27 @@ fn guard_thumbnails_and_serving_leave_originals_untouched() {
     lib.scan_opts(false, false, false);
     let server = start(&lib, None);
     let addr = server.addr;
-    for path in ["/", "/app.js", "/app.css", "/api/info", "/api/folders", "/api/tags", "/api/faces", "/api/faces/stats"] {
+    for path in [
+        "/",
+        "/app.js",
+        "/app.css",
+        "/api/info",
+        "/api/folders",
+        "/api/tags",
+        "/api/faces",
+        "/api/faces/stats",
+        "/api/people",
+        "/api/people/search?q=",
+        "/api/groups",
+        "/api/clusters",
+    ] {
         assert_eq!(get(addr, path).status, 200, "{path}");
     }
     // No faces before `shoebox recognize` (its own guard tests are in recognize.rs).
     assert_eq!(get(addr, "/api/faces").json()["total"], 0);
     assert_eq!(get(addr, "/api/faces/1/crop").status, 404);
     assert_eq!(get(addr, "/api/faces/1/similar").status, 404);
+    assert_eq!(get(addr, "/api/faces/manual/1/crop").status, 404);
     let timeline = get(addr, "/api/timeline").json();
     assert!(!ids(&timeline).is_empty());
     let kinds = timeline["kinds"].as_str().unwrap().as_bytes().to_vec();

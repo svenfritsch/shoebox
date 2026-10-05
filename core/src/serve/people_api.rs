@@ -4,13 +4,16 @@
 //! suggestions to be recomputed in the background. Nothing here reads an
 //! original.
 
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-use super::{ApiError, ApiResult, App, blocking, change};
+use super::{ApiError, ApiResult, App, Pairs, blocking, change, filter_of, param};
+use crate::browse;
+use crate::db;
 use crate::people::{self, Action, Who};
 
 /// Run a change to people or decisions, then recompute the clusters.
@@ -139,6 +142,54 @@ pub(super) async fn person_faces(
     .await
 }
 
+#[derive(Serialize)]
+pub(super) struct PersonHit {
+    id: i64,
+    name: String,
+    group_id: Option<i64>,
+    /// Photos with them, within the filter.
+    photos: u64,
+}
+
+/// People whose name contains `q`, for the search box: with the photos they
+/// are on within the filter (`tag`, `folder`, `person`), most first; people
+/// of the filter itself, hidden ones and ones that would show nothing are
+/// left out.
+pub(super) async fn search(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<PersonHit>>> {
+    blocking(&app, move |app| {
+        let conn = app.conn.lock().unwrap();
+        let needle = param(&pairs, "q").map(db::tag_fold).unwrap_or_default();
+        let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(8);
+        let filter = browse::Query { text: None, ..filter_of(&pairs)? };
+        let snapshot = app.snapshot(&conn)?;
+        let shown: HashSet<i64> = snapshot.query(&conn, &filter)?.iter().map(|it| it.id).collect();
+        let mut files_per_key: HashMap<String, u64> = HashMap::new();
+        {
+            let mut stmt = conn.prepare("SELECT id, quick_hash FROM files WHERE missing_since IS NULL")?;
+            let mut rows = stmt.query([])?;
+            while let Some(r) = rows.next()? {
+                if shown.contains(&r.get::<_, i64>(0)?) {
+                    *files_per_key.entry(r.get(1)?).or_default() += 1;
+                }
+            }
+        }
+        let keys = people::keys_by_person(&conn)?;
+        let mut hits: Vec<PersonHit> = people::people(&conn, false)?
+            .into_iter()
+            .filter(|p| !filter.people.contains(&p.id) && db::tag_fold(&p.name).contains(&needle))
+            .map(|p| {
+                let photos = keys.get(&p.id).into_iter().flatten().map(|k| files_per_key.get(k).copied().unwrap_or(0)).sum();
+                PersonHit { id: p.id, name: p.name, group_id: p.group_id, photos }
+            })
+            .filter(|h| h.photos > 0)
+            .collect();
+        hits.sort_by(|a, b| b.photos.cmp(&a.photos).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+        hits.truncate(limit);
+        Ok(Json(hits))
+    })
+    .await
+}
+
 // ---------------------------------------------------------------- groups
 
 pub(super) async fn groups(State(app): State<Arc<App>>) -> ApiResult<Json<Vec<people::Group>>> {
@@ -221,10 +272,16 @@ pub(super) struct ClusterRequest {
     who: Who,
 }
 
+/// A cluster that changed since it was shown is refused (409); the reply
+/// says what is left of the cluster (its new generation, for a split).
 async fn on_cluster(app: Arc<App>, id: i64, req: ClusterRequest, action: fn(Who) -> Action) -> ApiResult<Json<people::Decided>> {
     people_change(&app, move |conn| {
+        let all = people::cluster_face_ids(conn, id, req.generation, None)?;
         let faces = people::cluster_face_ids(conn, id, req.generation, req.faces.as_deref())?;
-        people::decide(conn, &faces, &action(req.who))
+        let mut done = people::decide(conn, &faces, &action(req.who))?;
+        let left: Vec<i64> = all.into_iter().filter(|f| !faces.contains(f)).collect();
+        done.cluster = Some(if left.is_empty() { None } else { people::cluster_of(conn, &left)? });
+        Ok(done)
     })
     .await
     .map(Json)
@@ -310,6 +367,12 @@ pub(super) async fn not_face(State(app): State<Arc<App>>, Json(req): Json<FacesR
     on_faces(app, req, Action::NotFace).await
 }
 
+/// Forget that faces are not this person (undo rejections, nothing else).
+pub(super) async fn unreject(State(app): State<Arc<App>>, Json(req): Json<FacesRequest>) -> ApiResult<Json<people::Decided>> {
+    let person = req.person_id.ok_or_else(|| ApiError::BadRequest("person_id is missing".into()))?;
+    on_faces(app, req, Action::Unreject(person)).await
+}
+
 /// Forget the decisions about faces; hand-drawn faces are deleted.
 pub(super) async fn undo(State(app): State<Arc<App>>, Json(req): Json<FacesRequest>) -> ApiResult<Json<people::Decided>> {
     on_faces(app, req, Action::Undo).await
@@ -327,7 +390,7 @@ pub(super) struct ManualRequest {
 
 /// A face drawn by hand (missed by the detector), with who it is.
 pub(super) async fn manual(State(app): State<Arc<App>>, Json(req): Json<ManualRequest>) -> ApiResult<Json<serde_json::Value>> {
-    people_change(&app, move |conn| people::add_manual(conn, req.file, req.b, &req.who))
-        .await
-        .map(|id| Json(serde_json::json!({ "manual": id })))
+    let added = people_change(&app, move |conn| people::add_manual(conn, req.file, req.b, &req.who)).await;
+    app.request_embed();
+    added.map(|id| Json(serde_json::json!({ "manual": id })))
 }
