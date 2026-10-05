@@ -70,7 +70,7 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Find the faces in every photo (with the optional recognizer, see
+    /// Find the faces (and with --pets the cats and dogs) in every photo (with the optional recognizer, see
     /// docs/protocol.md). Only reads originals; resumes where it stopped.
     Recognize {
         /// Library root (scanned before with `shoebox scan`).
@@ -93,6 +93,10 @@ enum Command {
         /// resumes like it).
         #[arg(long)]
         rotated: bool,
+        /// Then look for cats and dogs too (their own pass, with the pet
+        /// models; resumes like the others). They show up among the faces.
+        #[arg(long)]
+        pets: bool,
         /// Print the result as JSON on standard output (the usual text goes to
         /// standard error).
         #[arg(long)]
@@ -159,6 +163,9 @@ enum FacesCommand {
         /// Database to use instead of `<root>/.shoebox/library.db`.
         #[arg(long)]
         db: Option<PathBuf>,
+        /// Cats and dogs (`recognize --pets`) instead of people's faces.
+        #[arg(long)]
+        pets: bool,
         /// Print the result as JSON on standard output (the usual text goes to
         /// standard error).
         #[arg(long)]
@@ -208,7 +215,7 @@ fn main() -> ExitCode {
                 r.is_clean()
             })
         }
-        Command::Recognize { root, db, recognizer, limit, retry_failed, rotated, json } => {
+        Command::Recognize { root, db, recognizer, limit, retry_failed, rotated, pets, json } => {
             recognize::run(&recognize::Options {
                 root,
                 db,
@@ -216,6 +223,7 @@ fn main() -> ExitCode {
                 limit,
                 retry_failed,
                 rotated,
+                pets,
                 timeouts: recognize::Timeouts::default(),
             })
             .map(|stats| {
@@ -229,8 +237,9 @@ fn main() -> ExitCode {
                 c.ok
             })
         }
-        Command::Faces { command: FacesCommand::Stats { root, db, json } } => {
-            faces::print_stats(&root, db.as_deref()).map(|stats| {
+        Command::Faces { command: FacesCommand::Stats { root, db, pets, json } } => {
+            let space = if pets { shoebox::pets::Space::Pets } else { shoebox::pets::Space::Faces };
+            faces::print_stats_of(&root, db.as_deref(), space).map(|stats| {
                 json_out(json, &stats);
                 true
             })

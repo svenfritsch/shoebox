@@ -35,6 +35,7 @@ fn options(lib: &Library) -> recognize::Options {
         limit: None,
         retry_failed: false,
         rotated: false,
+        pets: false,
         timeouts: recognize::Timeouts {
             start: Duration::from_secs(10),
             reply: Duration::from_secs(2),
@@ -941,6 +942,268 @@ fn people_as_search_terms_and_undoing_a_rejection() {
     server.stop().unwrap();
 }
 
+// ---------------------------------------------------------------- pets (phase 7)
+
+/// Red at least as strong as blue: the fake worker's cat; the reverse: a dog.
+const SPOOKY: [u8; 3] = [200, 60, 40];
+const REX: [u8; 3] = [40, 60, 200];
+
+/// Greys of the fake's variants for pets (64 numbers, model
+/// `fake-pets-1`): similarity 0.875 (suggested: ≥ 0.85, but not joined at
+/// 0.90), 0.775 ("maybe": ≥ 0.75), 0.575 (below every pet threshold).
+const PET_SUGGESTED: u8 = 221;
+const PET_MAYBE: u8 = 195;
+const PET_FAR: u8 = 147;
+
+/// The pet among a file's faces (every fake picture also holds a face).
+fn pet_of(addr: std::net::SocketAddr, lib: &Library, rel: &str) -> Value {
+    let faces = faces_of(addr, lib, rel);
+    let mut pets = faces.iter().filter(|f| f["species"].is_string());
+    let pet = pets.next().unwrap_or_else(|| panic!("{rel}: no pet in {faces:?}")).clone();
+    assert!(pets.next().is_none(), "{rel}: one pet");
+    pet
+}
+
+fn face_of_person(addr: std::net::SocketAddr, lib: &Library, rel: &str) -> Value {
+    let faces = faces_of(addr, lib, rel);
+    let mut people = faces.iter().filter(|f| f["species"].is_null());
+    let face = people.next().unwrap_or_else(|| panic!("{rel}: no face in {faces:?}")).clone();
+    assert!(people.next().is_none());
+    face
+}
+
+/// Cats and dogs are people like the others (named, grouped, found in the
+/// timeline), but live in a space of their own: clusters and suggestions of
+/// pets only mix with pets, and ask for much stronger matches than
+/// faces do.
+#[test]
+fn pets_are_people_in_a_space_of_their_own() {
+    let lib = empty("people-pets");
+    for n in 1..=3 {
+        plain(&lib, &format!("Pets/spooky{n}.png"), SPOOKY, n);
+    }
+    for n in 1..=2 {
+        plain(&lib, &format!("Pets/rex{n}.png"), REX, n);
+    }
+    variant(&lib, "Mix/pet_suggested.png", SPOOKY, PET_SUGGESTED);
+    variant(&lib, "Mix/pet_maybe.png", SPOOKY, PET_MAYBE);
+    variant(&lib, "Mix/pet_far.png", SPOOKY, PET_FAR);
+    plain(&lib, "Anna/a1.png", ANNA, 1);
+    lib.scan_opts(true, false, false);
+    let before = lib.snapshot();
+    let stats = recognize::run(&recognize::Options { pets: true, ..options(&lib) }).unwrap();
+    assert_eq!(stats.failed, 0, "{:?}", stats.errors);
+    let pets = stats.pets.as_ref().expect("the pets pass ran");
+    assert_eq!((pets.looked, pets.faces), (9, 9), "one pet in each of the nine pictures");
+    let summary = stats.clusters.as_ref().unwrap();
+    assert_eq!(summary.pets.as_ref().map(|a| a.faces), Some(9), "{summary:?}");
+
+    let server = start(&lib, None);
+    let addr = server.addr;
+    wait_for_clusters(addr);
+
+    // Faces and pets are clustered apart; `kind` picks one.
+    let all = get(addr, "/api/clusters").json();
+    let pets = get(addr, "/api/clusters?kind=pets").json();
+    let humans = get(addr, "/api/clusters?kind=faces").json();
+    assert_eq!(all["total"].as_u64().unwrap(), pets["total"].as_u64().unwrap() + humans["total"].as_u64().unwrap());
+    assert_eq!(get(addr, "/api/clusters?kind=cats").status, 400);
+    let sizes = |list: &Value| -> Vec<u64> { list["clusters"].as_array().unwrap().iter().map(|c| c["size"].as_u64().unwrap()).collect() };
+    // Spooky's three plain pictures, Rex's two, and the three variants and
+    // Anna's photo (the fake finds a pet in every picture) alone: 0.875
+    // is below the 0.90 that joins pets.
+    assert_eq!(sizes(&pets), [3, 2, 1, 1, 1, 1]);
+    for c in pets["clusters"].as_array().unwrap() {
+        assert!(c["faces"].as_array().unwrap().iter().all(|f| f["species"].is_string()), "{c}");
+    }
+    assert!(humans["clusters"].as_array().unwrap().iter().all(|c| c["faces"].as_array().unwrap().iter().all(|f| f["species"].is_null())));
+    let species_of = |c: &Value| c["faces"][0]["species"].as_str().unwrap().to_string();
+    assert_eq!((species_of(&pets["clusters"][0]), species_of(&pets["clusters"][1])), ("cat".into(), "dog".into()));
+
+    // Name the cat's cluster like any person; the person is a pet.
+    let body = json!({ "name": "Spooky", "generation": pets["clusters"][0]["generation"] });
+    let named = ok(addr, &format!("/api/clusters/{}/name", pets["clusters"][0]["id"]), &body);
+    assert_eq!(named["faces"], 3);
+    let spooky = named["person"]["id"].as_i64().unwrap();
+    let rex_body = json!({ "name": "Rex", "generation": pets["clusters"][1]["generation"] });
+    let rex = ok(addr, &format!("/api/clusters/{}/name", pets["clusters"][1]["id"]), &rex_body)["person"]["id"].as_i64().unwrap();
+    wait_for_clusters(addr);
+    let people = get(addr, "/api/people").json();
+    let by_name = |name: &str| people.as_array().unwrap().iter().find(|p| p["name"] == name).unwrap().clone();
+    assert_eq!(by_name("Spooky")["species"], "cat");
+    assert_eq!(by_name("Rex")["species"], "dog");
+    assert!(by_name("Spooky")["cover"].is_i64());
+
+    // Suggestions among pets, at the pets' thresholds.
+    let suggested = pet_of(addr, &lib, "Mix/pet_suggested.png");
+    assert_eq!((suggested["state"].as_str(), suggested["person"]["name"].as_str()), (Some("suggested"), Some("Spooky")));
+    assert!((suggested["similarity"].as_f64().unwrap() - 0.875).abs() < 0.01);
+    let maybe = pet_of(addr, &lib, "Mix/pet_maybe.png");
+    assert_eq!((maybe["state"].as_str(), maybe["person"]["name"].as_str()), (Some("maybe"), Some("Spooky")));
+    // 0.575 would be a suggestion for a face; for a pet it is nothing.
+    let far = pet_of(addr, &lib, "Mix/pet_far.png");
+    assert!(far["state"].is_null() && far["person"].is_null(), "{far}");
+    assert_eq!(files_of(&person_faces(addr, spooky, "suggested")), [id_of(&lib, "Mix/pet_suggested.png")]);
+    assert_eq!(files_of(&person_faces(addr, spooky, "maybe")), [id_of(&lib, "Mix/pet_maybe.png")]);
+    let spooky_row = by_name("Spooky");
+    assert_eq!((spooky_row["suggested"].as_u64(), spooky_row["maybe"].as_u64()), (Some(1), Some(1)));
+
+    // The faces of the same photos are not suggested for a pet: another space.
+    for rel in ["Mix/pet_suggested.png", "Mix/pet_maybe.png", "Pets/rex1.png"] {
+        let face = face_of_person(addr, &lib, rel);
+        assert!(face["person"].is_null() || face["state"] == "confirmed", "{rel}: {face}");
+    }
+    assert!(face_of_person(addr, &lib, "Mix/pet_suggested.png")["person"].is_null());
+
+    // Confirm the suggestion like any other; the pet's timeline has the photo.
+    let id = pet_of(addr, &lib, "Mix/pet_suggested.png")["id"].as_i64().unwrap();
+    assert_eq!(ok(addr, "/api/faces/confirm", &json!({ "faces": [id] }))["person"]["id"], spooky);
+    let mut timeline = ids(&get(addr, &format!("/api/timeline?person={spooky}")).json());
+    timeline.sort();
+    let mut want: Vec<i64> = (1..=3).map(|n| id_of(&lib, &format!("Pets/spooky{n}.png"))).collect();
+    want.push(id_of(&lib, "Mix/pet_suggested.png"));
+    want.sort();
+    assert_eq!(timeline, want);
+
+    // Pets and people share groups: put the cat, the dog and a person in one.
+    let family = ok(addr, "/api/groups", &json!({ "name": "Family" }))["id"].as_i64().unwrap();
+    let anna_face = face_of_person(addr, &lib, "Anna/a1.png")["id"].as_i64().unwrap();
+    let anna = ok(addr, "/api/faces/assign", &json!({ "faces": [anna_face], "name": "Anna" }))["person"]["id"].as_i64().unwrap();
+    for p in [spooky, rex, anna] {
+        ok(addr, &format!("/api/people/{p}/group"), &json!({ "group_id": family }));
+    }
+    let people = get(addr, "/api/people").json();
+    assert!(people.as_array().unwrap().iter().all(|p| p["group_id"] == family), "{people}");
+    assert!(people.as_array().unwrap().iter().filter(|p| p["name"] == "Anna").all(|p| p["species"].is_null()));
+
+    // A cat can also be merged into another pet (the same pet under two names).
+    let merged = ok(addr, &format!("/api/people/{rex}/merge"), &json!({ "into": spooky }));
+    assert_eq!(merged["id"], spooky);
+
+    assert_eq!(lib.snapshot(), before, "nothing here may change an original");
+}
+
+/// A pet the detector missed is drawn by hand with "pet" ticked: it is a
+/// confirmed pet of its person (no species chosen), embedded with the pets
+/// model by the recognizer, a reference for suggestions among pets, and over a
+/// detected pet it is one face, never two. It never matches a person's face.
+#[test]
+fn a_pet_drawn_by_hand() {
+    let lib = empty("people-drawn-pet");
+    // A black picture with a small patch in Spooky's colour: the fake finds no
+    // pet (nor a face) in it, as its mean colour is dark ("missed"), but a
+    // box drawn around the patch embeds as Spooky.
+    save(
+        &lib,
+        "Pets/missed.png",
+        image::RgbImage::from_fn(600, 300, |x, y| image::Rgb(if (80..160).contains(&x) && (80..160).contains(&y) { SPOOKY } else { [0, 0, 0] })),
+    );
+    // 80 px wide: large enough to count as a reference (pets under 64 px do not).
+    const PATCH: [f64; 4] = [80.0 / 600.0, 80.0 / 300.0, 80.0 / 600.0, 80.0 / 300.0];
+    // Spooky as the fake sees her (not named by anyone), and a look-alike, 0.875
+    // away: it can only be suggested for Spooky through the drawn pet.
+    plain(&lib, "Pets/spooky.png", SPOOKY, 1);
+    variant(&lib, "Mix/like_spooky.png", SPOOKY, PET_SUGGESTED);
+    lib.scan_opts(true, false, false);
+    let before = lib.snapshot();
+    let stats = recognize::run(&recognize::Options { pets: true, ..options(&lib) }).unwrap();
+    assert_eq!(stats.failed, 0, "{:?}", stats.errors);
+    assert_eq!(stats.pets.as_ref().unwrap().faces, 2, "the missed picture holds no pet");
+    let server = start(&lib, None);
+    let addr = server.addr;
+    wait_for_clusters(addr);
+    let missed = id_of(&lib, "Pets/missed.png");
+    assert_eq!(faces_of(addr, &lib, "Pets/missed.png").len(), 0);
+    assert!(pet_of(addr, &lib, "Mix/like_spooky.png")["state"].is_null(), "nobody is named yet");
+
+    // Ticked "pet": a pet of an unknown species, confirmed for its person.
+    let body = json!({ "file": missed, "box": PATCH, "name": "Spooky", "pet": true });
+    let m = ok(addr, "/api/faces/manual", &body)["manual"].as_i64().unwrap();
+    let faces = faces_of(addr, &lib, "Pets/missed.png");
+    assert_eq!(faces.len(), 1);
+    assert_eq!((faces[0]["manual"].as_i64(), faces[0]["species"].as_str(), faces[0]["state"].as_str()), (Some(m), Some("pet"), Some("confirmed")));
+    let spooky = get(addr, "/api/people").json()[0].clone();
+    assert_eq!(spooky["species"], "pet", "only a drawn pet so far: {spooky}");
+    assert_eq!(spooky["cover_manual"], m);
+    let spooky = spooky["id"].as_i64().unwrap();
+    assert_eq!(get(addr, &format!("/api/faces/manual/{m}/crop")).status, 200);
+
+    // The recognizer embeds the drawn pet at the end of its run (the server does
+    // it in the background when one is drawn): with the pets model, aligned.
+    recognize::run(&recognize::Options { pets: true, ..options(&lib) }).unwrap();
+    let c = conn(&lib);
+    let (model, aligned, len): (String, bool, i64) = c
+        .query_row(
+            "SELECT model, aligned, length(emb) FROM recog.drawn WHERE key = (SELECT quick_hash FROM files WHERE path_nfc = 'Pets/missed.png')",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!((model.as_str(), aligned, len), ("fake-pets-1", true, 64 * 4));
+    drop(c);
+    wait_for_clusters(addr);
+    // A reference among pets: the look-alike is suggested, through the drawn pet alone.
+    let like = pet_of(addr, &lib, "Mix/like_spooky.png");
+    assert_eq!((like["state"].as_str(), like["person"]["name"].as_str()), (Some("suggested"), Some("Spooky")), "{like}");
+    // The person's face in the same photo is another space: not suggested.
+    assert!(face_of_person(addr, &lib, "Mix/like_spooky.png")["person"].is_null());
+
+    // Over a detected pet: one face, the drawn box, and the detected species stays.
+    let detected = pet_of(addr, &lib, "Pets/spooky.png");
+    let spooky_file = id_of(&lib, "Pets/spooky.png");
+    let body = json!({ "file": spooky_file, "box": [0.27, 0.25, 0.5, 0.5], "person_id": spooky, "pet": true });
+    let m2 = ok(addr, "/api/faces/manual", &body)["manual"].as_i64().unwrap();
+    let faces = faces_of(addr, &lib, "Pets/spooky.png");
+    let pets: Vec<&Value> = faces.iter().filter(|f| f["species"].is_string()).collect();
+    assert_eq!(pets.len(), 1, "{faces:?}");
+    assert_eq!((pets[0]["id"].as_i64(), pets[0]["manual"].as_i64()), (detected["id"].as_i64(), Some(m2)));
+    assert_eq!(pets[0]["species"], "cat");
+    assert_eq!(get(addr, &format!("/api/people/{spooky}")).json()["faces"], 2);
+    // A decision about a pet never lands on the person's face of the same photo.
+    assert!(face_of_person(addr, &lib, "Pets/spooky.png")["state"].is_null());
+
+    // A drawn pet can be deleted like a drawn face.
+    assert_eq!(ok(addr, "/api/faces/undo", &json!({ "manual": [m, m2] }))["faces"], 2);
+    assert_eq!(faces_of(addr, &lib, "Pets/missed.png").len(), 0);
+    assert_eq!(lib.snapshot(), before, "nothing here may change an original");
+    server.stop().unwrap();
+}
+
+/// A pet drawn while `serve` runs is embedded in the background, with the pets
+/// model, even if no pets pass has ever run (the worker is started for pets
+/// only because one is waiting); under the guard.
+#[test]
+fn a_pet_drawn_while_serving_is_embedded_in_the_background() {
+    let lib = empty("people-drawn-pet-bg");
+    save(
+        &lib,
+        "Pets/missed.png",
+        image::RgbImage::from_fn(600, 300, |x, y| image::Rgb(if (80..160).contains(&x) && (80..160).contains(&y) { SPOOKY } else { [0, 0, 0] })),
+    );
+    lib.scan_opts(true, false, false);
+    recognize(&lib); // faces only
+    assert_eq!(conn(&lib).query_row("SELECT count(*) FROM recog.looked WHERE task = 'pets'", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+    let before = lib.snapshot();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    wait_for_clusters(addr);
+    let body = json!({ "file": id_of(&lib, "Pets/missed.png"), "box": [80.0 / 600.0, 80.0 / 300.0, 80.0 / 600.0, 80.0 / 300.0], "name": "Spooky", "pet": true });
+    ok(addr, "/api/faces/manual", &body);
+    let drawn = || -> Vec<(String, bool, bool)> {
+        conn(&lib)
+            .prepare("SELECT model, aligned, emb IS NOT NULL FROM recog.drawn")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    };
+    wait_until("the pet's embedding", || !drawn().is_empty() && get(addr, "/api/info").json()["clusters"]["embedding"] == false);
+    assert_eq!(drawn(), [("fake-pets-1".to_string(), true, true)]);
+    assert_eq!(lib.snapshot(), before, "embedding changed an original");
+    server.stop().unwrap();
+}
+
 /// `thumbs.db` keeps a crop only for faces waiting for a decision and for
 /// the picture shown for each person; deciding a face (or choosing another
 /// picture) removes the crops nobody needs, also at the next start, and
@@ -1019,4 +1282,92 @@ fn only_faces_waiting_for_a_decision_and_pictures_keep_a_crop() {
     assert_eq!(get(server.addr, &format!("/api/people/{anna}")).json()["cover"], ids[next]);
     server.stop().unwrap();
     assert_eq!(lib.snapshot(), before, "the crops changed an original");
+}
+
+/// Searching by pet: `pet=cat|dog|pet` as a term, "cat", "katze", "hund",
+/// "pets" as typed words, together with other terms (all must match), the
+/// suggestions with their counts; named or not, drawn by hand too, and not
+/// the detections marked "not a face". Only reads originals.
+#[test]
+fn searching_by_pet_species() {
+    let lib = empty("people-pet-search");
+    // The fake finds a cat in a red picture and a dog in a blue one.
+    plain(&lib, "Fotos/miez1.png", SPOOKY, 1);
+    plain(&lib, "Fotos/miez2.png", SPOOKY, 2);
+    plain(&lib, "Fotos/bello.png", REX, 1);
+    plain(&lib, "Fotos/falsch.png", SPOOKY, 3); // a plush toy, marked "not a pet" below
+    save(&lib, "Fotos/leer.png", image::RgbImage::from_pixel(310, 150, image::Rgb([0, 0, 0]))); // other bytes than gemalt.png
+    save(&lib, "Fotos/gemalt.png", image::RgbImage::from_pixel(300, 150, image::Rgb([0, 0, 0])));
+    lib.scan_opts(true, false, false);
+    let stats = recognize::run(&recognize::Options { pets: true, ..options(&lib) }).unwrap();
+    assert_eq!(stats.failed, 0, "{:?}", stats.errors);
+    let before = lib.snapshot();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    wait_for_clusters(addr);
+    let id = |rel: &str| id_of(&lib, rel);
+    let found = |path: &str| sorted(ids(&get(addr, path).json()));
+    let want = |rels: &[&str]| sorted(rels.iter().map(|r| id(r)).collect());
+
+    // A plush toy the detector took for a cat, and a pet drawn by hand.
+    let toy = pet_of(addr, &lib, "Fotos/falsch.png")["id"].as_i64().unwrap();
+    ok(addr, "/api/faces/not-face", &json!({ "faces": [toy] }));
+    let body = json!({ "file": id("Fotos/gemalt.png"), "box": [0.1, 0.2, 0.4, 0.6], "name": "Fleck", "pet": true });
+    ok(addr, "/api/faces/manual", &body);
+
+    // The three terms.
+    assert_eq!(found("/api/timeline?pet=cat"), want(&["Fotos/miez1.png", "Fotos/miez2.png"]));
+    assert_eq!(found("/api/timeline?pet=dog"), want(&["Fotos/bello.png"]));
+    assert_eq!(
+        found("/api/timeline?pet=pet"),
+        want(&["Fotos/miez1.png", "Fotos/miez2.png", "Fotos/bello.png", "Fotos/gemalt.png"]),
+        "any pet: cats, dogs and the drawn one, not the toy"
+    );
+    // All terms must match: nothing is both.
+    assert!(found("/api/timeline?pet=cat&pet=dog").is_empty());
+    assert_eq!(found("/api/timeline?pet=cat&pet=pet"), want(&["Fotos/miez1.png", "Fotos/miez2.png"]));
+    assert!(get(addr, "/api/timeline?pet=cow").status == 400);
+
+    // With other terms: a person (named by drawing "Fleck"), free text.
+    let fleck = get(addr, "/api/people").json().as_array().unwrap().iter().find(|p| p["name"] == "Fleck").unwrap()["id"].as_i64().unwrap();
+    assert_eq!(found(&format!("/api/timeline?pet=pet&person={fleck}")), want(&["Fotos/gemalt.png"]));
+    assert_eq!(found("/api/timeline?pet=cat&q=miez2"), want(&["Fotos/miez2.png"]));
+
+    // Typed words, English and German; too short or only the start of other words, nothing.
+    for word in ["cat", "cats", "katze", "Katzen", "kat"] {
+        assert_eq!(found(&format!("/api/timeline?q={word}")), want(&["Fotos/miez1.png", "Fotos/miez2.png"]), "{word}");
+    }
+    for word in ["dog", "hund", "Hunde"] {
+        assert_eq!(found(&format!("/api/timeline?q={word}")), want(&["Fotos/bello.png"]), "{word}");
+    }
+    assert_eq!(found("/api/timeline?q=haustier").len(), 4);
+    assert_eq!(found("/api/timeline?q=pets").len(), 4);
+    assert!(found("/api/timeline?q=ca").is_empty() && found("/api/timeline?q=catalog").is_empty());
+    // A word and a term together.
+    assert_eq!(found("/api/timeline?q=katze+miez1"), want(&["Fotos/miez1.png"]));
+
+    // The suggestions: terms that fit what is typed and show something, with counts.
+    let hits = |path: &str| -> Vec<(String, u64)> {
+        get(addr, path).json().as_array().unwrap().iter().map(|h| (h["species"].as_str().unwrap().to_string(), h["photos"].as_u64().unwrap())).collect()
+    };
+    assert_eq!(hits("/api/pets/search"), [("pet".into(), 4), ("cat".into(), 2), ("dog".into(), 1)]);
+    assert_eq!(hits("/api/pets/search?q=kat"), [("cat".into(), 2)]);
+    assert_eq!(hits("/api/pets/search?q=hund"), [("dog".into(), 1)]);
+    assert!(hits("/api/pets/search?q=xyz").is_empty());
+    // Within a search: only what would still show something, and not what is already in it.
+    assert_eq!(hits("/api/pets/search?pet=cat"), [("pet".into(), 2)]);
+    assert!(hits("/api/pets/search?pet=cat&q=hund").is_empty(), "no dogs among the cats");
+    assert_eq!(hits(&format!("/api/pets/search?person={fleck}")), [("pet".into(), 1)]);
+    assert_eq!(get(addr, "/api/pets/search?pet=cow").status, 400);
+
+    // The tag suggestions narrow by the pet term too.
+    ok(addr, "/api/tags/add", &json!({ "ids": [id("Fotos/miez1.png")], "name": "Sofa" }));
+    let tags = get(addr, "/api/tags?pet=dog&limit=50").json();
+    assert!(tags.as_array().unwrap().iter().all(|t| t["name"] != "Sofa"), "no Sofa among the dogs: {tags}");
+
+    // Undoing "not a pet" brings the photo back.
+    ok(addr, "/api/faces/undo", &json!({ "faces": [toy] }));
+    assert_eq!(found("/api/timeline?pet=cat"), want(&["Fotos/miez1.png", "Fotos/miez2.png", "Fotos/falsch.png"]));
+    assert_eq!(lib.snapshot(), before, "searching changed an original");
+    server.stop().unwrap();
 }
