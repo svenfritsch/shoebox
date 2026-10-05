@@ -582,7 +582,7 @@ Folders
       `library.db.bak` appear in `.shoebox/`.
 - [ ] 5b-2: on the iPad, combine two own tags and a folder from the search
       box; the chips, the counts and a bookmarked link.
-- [ ] 5c-1: on the old Intel MacBook against the exFAT drive:
+- [x] 5c-1: on the old Intel MacBook against the exFAT drive:
   - [x] `shoebox faces stats` on the family folder (7196 photos, all
     looked at; `verify` before it: 7994 files OK): 9598 faces = the phase 4
     9564 plus 34 from a partial `--rotated` run (258 photos). Widths: 296
@@ -632,17 +632,15 @@ Folders
     (5c-2/5c-3) is what clears them; if the face check page shows that
     false finds pile up among rotated faces with low scores, the rotated
     pass can get a stricter score cut-off than the upright one.
-  - `shoebox serve`, "Face check": go through the smallest faces and the
-    lowest scores; how many false faces (posters, statues, background),
-    and are there any above 30 px? Open a few in the viewer. Try "≈" on
-    faces of people you know: up to which similarity are the neighbours
-    the same person (for 5c-2's threshold)? Crops of HEIC and EXIF-rotated
-    photos upright?
+  - [x] `shoebox serve`, "Face check": small faces, rotated faces and "≈"
+    gone through (results above); opening photos in the viewer works,
+    HEIC included.
   - [x] Time `shoebox recognize --rotated` (family folder, 7148 photos):
     interrupted after 281 photos (3 min), then continued with the other
     6866 in 2072 s (35 min, 3.3 photos/s; the estimate was ~40 min);
     0 failed, 414 faces added in all.
-  - `shoebox verify` afterwards.
+  - [x] `shoebox verify` afterwards (after both passes, the retry and the
+    face check page's crops): 7994 files OK.
 - [ ] 5c-2: on the old Intel MacBook against the exFAT drive (no naming UI
       until 5c-3: the API with `curl`, from the same computer, e.g.
       `curl -s localhost:7878/api/clusters?samples=3`, crops at

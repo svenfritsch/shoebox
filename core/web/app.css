@@ -260,3 +260,7 @@ body.selecting #select { color: var(--accent); }
 .suggest .item:hover, .suggest .item.at { background: var(--panel); }
 .chip.more, .chip.clear { padding: 3px 10px; color: var(--accent); cursor: pointer; }
 .chip.clear { border-style: dashed; }
+
+/* Range selection: "Select all" on a month heading while selecting. */
+.sec .pick { display: none; margin-left: auto; background: none; border: 0; color: var(--accent); font-size: 13px; font-weight: 400; padding: 0 2px; }
+body.selecting .sec .pick { display: inline; }

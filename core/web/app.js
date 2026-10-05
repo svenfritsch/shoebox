@@ -19,6 +19,7 @@ var state = {
   filter: { folder: null, tags: [], q: '', view: null },
   selecting: false,
   selected: {},      // id -> true
+  anchor: null,      // index of the last photo clicked while selecting (Shift-click ranges)
   data: null,        // timeline columns from /api/timeline
   live: {},          // still id -> video id
   folders: [],
@@ -416,6 +417,7 @@ function loadTimeline(resetScroll) {
   var f = state.filter;
   return api('/api/timeline' + query({ folder: f.folder, tag: f.tags, q: f.q })).then(function (data) {
     if (seq !== state.loadSeq) return;
+    state.anchor = null; // indices change with the new list
     var unnamed = f.tags.some(function (id) { return !state.tagNames[id]; });
     data.tags.forEach(function (t) { state.tagNames[t.id] = t.name; });
     if (unnamed) renderChips(); // a link with tags this page has not seen yet
@@ -463,7 +465,7 @@ function relayout() {
   state.cell = width / state.cols;
   var y = 0;
   groups().forEach(function (g) {
-    state.rows.push({ type: 'h', top: y, h: HEADER_H, label: monthLabel(g.month), n: g.end - g.start, month: g.month });
+    state.rows.push({ type: 'h', top: y, h: HEADER_H, label: monthLabel(g.month), n: g.end - g.start, month: g.month, start: g.start, end: g.end });
     y += HEADER_H;
     for (var i = g.start; i < g.end; i += state.cols) {
       state.rows.push({ type: 'r', top: y, h: state.cell, start: i, end: Math.min(i + state.cols, g.end) });
@@ -516,6 +518,14 @@ function buildRow(row) {
   if (row.type === 'h') {
     var h = el('div', 'sec', row.label);
     h.appendChild(el('span', 'n', row.n.toLocaleString()));
+    // While selecting: the whole month at once (also where Shift is missing, the iPad).
+    var pick = el('button', 'pick');
+    pick.type = 'button';
+    pick.dataset.start = row.start;
+    pick.dataset.end = row.end;
+    pick.textContent = allSelected(row.start, row.end) ? 'Deselect' : 'Select all';
+    pick.onclick = function () { selectRange(row.start, row.end - 1, !allSelected(row.start, row.end)); };
+    h.appendChild(pick);
     h.style.top = row.top + 'px';
     h.style.height = row.h + 'px';
     return h;
@@ -665,8 +675,16 @@ $('sizer').addEventListener('click', function (ev) {
   if (!a) return;
   ev.preventDefault();
   var i = parseInt(a.dataset.index, 10);
-  if (state.selecting) toggleSelected(i, a);
-  else openLightbox(i);
+  // Shift-click: everything between the last clicked photo and this one.
+  if (ev.shiftKey && state.selecting && state.anchor != null) selectRange(state.anchor, i, true);
+  else if (state.selecting || ev.shiftKey) {
+    if (!state.selecting) startSelection();
+    toggleSelected(i, a);
+  } else openLightbox(i);
+});
+// Keep Shift-click from selecting the page's text.
+$('sizer').addEventListener('mousedown', function (ev) {
+  if (ev.shiftKey && ev.target.closest('.cell')) ev.preventDefault();
 });
 
 var ticking = false;
@@ -1088,6 +1106,7 @@ function failed(e) { openModal('That did not work', String(e.message || e), [{ l
 
 function startSelection() {
   state.selecting = true;
+  state.anchor = null;
   document.body.classList.add('selecting');
   updateSelbar();
 }
@@ -1095,6 +1114,7 @@ function startSelection() {
 function endSelection() {
   state.selecting = false;
   state.selected = {};
+  state.anchor = null;
   document.body.classList.remove('selecting');
   Array.prototype.forEach.call(document.querySelectorAll('.cell.sel'), function (c) { c.classList.remove('sel'); });
   updateSelbar();
@@ -1106,13 +1126,37 @@ function toggleSelected(i, cell) {
   var id = state.data.ids[i];
   if (state.selected[id]) delete state.selected[id]; else state.selected[id] = true;
   cell.classList.toggle('sel', !!state.selected[id]);
+  state.anchor = i;
   updateSelbar();
+}
+
+// Select (or deselect) the photos from index a to b, both included, in
+// either order. The anchor stays, so another Shift-click changes the range end.
+function selectRange(a, b, on) {
+  var ids = state.data.ids;
+  for (var i = Math.min(a, b); i <= Math.max(a, b); i++) {
+    if (on) state.selected[ids[i]] = true; else delete state.selected[ids[i]];
+  }
+  if (state.anchor == null) state.anchor = a;
+  Array.prototype.forEach.call(document.querySelectorAll('.cell'), function (c) {
+    c.classList.toggle('sel', !!state.selected[ids[parseInt(c.dataset.index, 10)]]);
+  });
+  updateSelbar();
+}
+
+function allSelected(start, end) {
+  for (var i = start; i < end; i++) if (!state.selected[state.data.ids[i]]) return false;
+  return end > start;
 }
 
 function updateSelbar() {
   var n = selectedIds().length;
   $('selbar').hidden = !state.selecting;
-  $('sel-count').textContent = n ? plural(n, 'photo', 'photos') : 'Tap photos to select';
+  var hint = window.matchMedia('(pointer: fine)').matches ? 'Click photos to select, Shift-click for a range' : 'Tap photos to select';
+  $('sel-count').textContent = n ? plural(n, 'photo', 'photos') : hint;
+  Array.prototype.forEach.call(document.querySelectorAll('.sec .pick'), function (b) {
+    b.textContent = state.data && allSelected(parseInt(b.dataset.start, 10), parseInt(b.dataset.end, 10)) ? 'Deselect' : 'Select all';
+  });
   $('sel-move').disabled = $('sel-trash').disabled = $('sel-tag').disabled = $('sel-untag').disabled = !n;
 }
 
