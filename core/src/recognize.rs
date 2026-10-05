@@ -223,7 +223,10 @@ pub fn attach(conn: &Connection, db_path: &Path) -> Result<()> {
     }
     if version < 5 {
         let tx = conn.unchecked_transaction()?;
-        tx.execute_batch(SCHEMA_V5)?;
+        // A re-run (the tests lower user_version) must not add the column twice.
+        if !db::has_column(&tx, "recog", "faces", "species")? {
+            tx.execute_batch(SCHEMA_V5)?;
+        }
         tx.pragma_update(Some("recog"), "user_version", 5)?;
         tx.commit()?;
     }

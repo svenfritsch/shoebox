@@ -163,6 +163,9 @@ enum FacesCommand {
         /// Database to use instead of `<root>/.shoebox/library.db`.
         #[arg(long)]
         db: Option<PathBuf>,
+        /// Cats and dogs (`recognize --animals`) instead of people's faces.
+        #[arg(long)]
+        animals: bool,
         /// Print the result as JSON on standard output (the usual text goes to
         /// standard error).
         #[arg(long)]
@@ -234,8 +237,9 @@ fn main() -> ExitCode {
                 c.ok
             })
         }
-        Command::Faces { command: FacesCommand::Stats { root, db, json } } => {
-            faces::print_stats(&root, db.as_deref()).map(|stats| {
+        Command::Faces { command: FacesCommand::Stats { root, db, animals, json } } => {
+            let space = if animals { shoebox::animals::Space::Animals } else { shoebox::animals::Space::Faces };
+            faces::print_stats_of(&root, db.as_deref(), space).map(|stats| {
                 json_out(json, &stats);
                 true
             })

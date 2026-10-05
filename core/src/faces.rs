@@ -16,10 +16,11 @@ use libheif_rs::LibHeif;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
+use crate::animals::Space;
 use crate::db;
 use crate::fingerprint;
 use crate::media;
-use crate::recognize::{self, FACES, FACES_ROT, KINDS};
+use crate::recognize::{self, FACES_ROT, KINDS};
 use crate::thumbs::{self, Source};
 
 /// Faces narrower than this (px in the ≤1600 px copy the worker saw) are
@@ -33,6 +34,10 @@ const CROP_QUALITY: u8 = 85;
 const CROP_MARGIN: f64 = 0.25;
 
 const WIDTH_BUCKETS: [f64; 4] = [30.0, 40.0, 60.0, 120.0];
+/// The same for animals: their box holds the whole animal, so it is wider.
+const ANIMAL_WIDTH_BUCKETS: [f64; 4] = [64.0, 100.0, 200.0, 400.0];
+/// YOLOX's scores of stored animals start at the recognizer's cut-off (0.35).
+const ANIMAL_SCORE_BUCKETS: [f64; 4] = [0.45, 0.55, 0.70, 0.85];
 /// YuNet's scores of stored faces lie between 0.85 (the recognizer's cut-off)
 /// and ~0.96 (the real drive: none higher), so the buckets split that range.
 const SCORE_BUCKETS: [f64; 4] = [0.88, 0.90, 0.92, 0.94];
@@ -40,6 +45,16 @@ const SCORE_BUCKETS: [f64; 4] = [0.88, 0.90, 0.92, 0.94];
 /// Too small to take part in clustering (`MIN_CLUSTER_PX`).
 pub fn too_small(px: f64) -> bool {
     px < MIN_CLUSTER_PX
+}
+
+/// SQL for "a row of `recog.faces` (alias `f`) in this space" in a database
+/// of this `version` (before v5 there are no animals and no `species`).
+fn space_filter(space: Space, version: i32) -> &'static str {
+    match (space, version >= 5) {
+        (Space::Faces, false) => "1 = 1",
+        (Space::Animals, false) => "0 = 1",
+        (space, true) => space.filter(),
+    }
 }
 
 /// SQL for a face's width in px of the copy the worker saw (`f` a row of
@@ -84,6 +99,8 @@ pub struct Run {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Stats {
+    /// `faces` or `animals` (cats and dogs): which rows these numbers are about.
+    pub kind: &'static str,
     /// Photos on the drive (one per content).
     pub photos: u64,
     /// Of those, looked at by the upright pass (successfully or not).
@@ -112,8 +129,14 @@ pub struct Stats {
 /// The stats over present photos. `conn` has `recog` attached; a database
 /// still at schema v1 (no `roll`) works too, so this can run read-only.
 pub fn stats(conn: &Connection) -> Result<Stats> {
+    stats_of(conn, Space::Faces)
+}
+
+/// The stats of one space: people's faces, or cats and dogs.
+pub fn stats_of(conn: &Connection, space: Space) -> Result<Stats> {
     let version: i32 = conn.pragma_query_value(Some("recog"), "user_version", |r| r.get(0))?;
     let roll = if version >= 2 { "f.roll" } else { "0" };
+    let task = space.task();
     let present = format!("(SELECT DISTINCT quick_hash FROM files WHERE missing_since IS NULL AND kind IN ({KINDS}))");
 
     let photos: i64 = conn.query_row(&format!("SELECT count(*) FROM {present}"), [], |r| r.get(0))?;
@@ -124,25 +147,29 @@ pub fn stats(conn: &Connection) -> Result<Stats> {
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?)
     };
-    let (looked_n, failed) = looked(FACES)?;
-    let (rotated_looked, rotated_failed) = looked(FACES_ROT)?;
+    let (looked_n, failed) = looked(task)?;
+    // Only people's faces have a rotated pass.
+    let (rotated_looked, rotated_failed) = if space == Space::Faces { looked(FACES_ROT)? } else { (0, 0) };
     let errors = conn
         .prepare(&format!(
             "SELECT error, count(*) AS n FROM recog.looked WHERE task = ?1 AND error IS NOT NULL AND key IN {present}
              GROUP BY error ORDER BY n DESC, error"
         ))?
-        .query_map([FACES], |r| Ok(ErrorCount { message: r.get(0)?, count: r.get::<_, i64>(1)? as u64 }))?
+        .query_map([task], |r| Ok(ErrorCount { message: r.get(0)?, count: r.get::<_, i64>(1)? as u64 }))?
         .collect::<rusqlite::Result<_>>()?;
 
-    let mut widths = buckets(&WIDTH_BUCKETS);
-    let mut scores = buckets(&SCORE_BUCKETS);
+    let (mut widths, mut scores) = match space {
+        Space::Faces => (buckets(&WIDTH_BUCKETS), buckets(&SCORE_BUCKETS)),
+        Space::Animals => (buckets(&ANIMAL_WIDTH_BUCKETS), buckets(&ANIMAL_SCORE_BUCKETS)),
+    };
     let (mut faces, mut rotated_faces, mut small, mut not_faces) = (0, 0, 0, 0);
     let marked = crate::people::not_face_ids(conn)?;
     let mut rows = conn.prepare(&format!(
         "SELECT {}, f.score, {roll}, f.id FROM recog.faces f
-         JOIN recog.looked l ON l.key = f.key AND l.task = '{FACES}'
-         WHERE f.key IN {present}",
-        size_px(roll)
+         JOIN recog.looked l ON l.key = f.key AND l.task = '{task}'
+         WHERE {filter} AND f.key IN {present}",
+        size_px(roll),
+        filter = space_filter(space, version)
     ))?;
     let mut rows = rows.query([])?;
     while let Some(r) = rows.next()? {
@@ -151,7 +178,7 @@ pub fn stats(conn: &Connection) -> Result<Stats> {
         let not_face = marked.contains(&r.get(3)?);
         faces += 1;
         rotated_faces += (roll != 0) as u64;
-        small += too_small(px) as u64;
+        small += space.too_small(px) as u64;
         not_faces += not_face as u64;
         count_into(&mut widths, px, not_face);
         count_into(&mut scores, score, not_face);
@@ -160,9 +187,9 @@ pub fn stats(conn: &Connection) -> Result<Stats> {
     let runs = conn
         .prepare(
             "SELECT kind, state, started_at, finished_at, done, total FROM recog.jobs
-             WHERE kind IN ('faces', 'faces-rot') ORDER BY id DESC LIMIT 5",
+             WHERE kind IN (SELECT value FROM json_each(?1)) ORDER BY id DESC LIMIT 5",
         )?
-        .query_map([], |r| {
+        .query_map([if space == Space::Faces { r#"["faces", "faces-rot"]"# } else { r#"["animals"]"# }], |r| {
             Ok(Run {
                 kind: r.get(0)?,
                 state: r.get(1)?,
@@ -175,6 +202,7 @@ pub fn stats(conn: &Connection) -> Result<Stats> {
         .collect::<rusqlite::Result<_>>()?;
 
     Ok(Stats {
+        kind: if space == Space::Faces { "faces" } else { "animals" },
         photos: photos as u64,
         looked: looked_n as u64,
         failed: failed as u64,
@@ -187,7 +215,7 @@ pub fn stats(conn: &Connection) -> Result<Stats> {
         scores,
         small,
         not_faces,
-        min_cluster_px: MIN_CLUSTER_PX,
+        min_cluster_px: space.min_px(),
         runs,
     })
 }
@@ -236,19 +264,25 @@ pub fn open_readonly(root: &Path, db: Option<&Path>) -> Result<Option<Connection
 
 /// The stats of `shoebox faces stats`, `None` before the first
 /// `shoebox recognize`. Only reads.
-pub fn stats_for(root: &Path, db: Option<&Path>) -> Result<Option<Stats>> {
+pub fn stats_for(root: &Path, db: Option<&Path>, space: Space) -> Result<Option<Stats>> {
     match open_readonly(root, db)? {
-        Some(conn) => Ok(Some(stats(&conn)?)),
+        Some(conn) => Ok(Some(stats_of(&conn, space)?)),
         None => Ok(None),
     }
 }
 
 /// `shoebox faces stats`: print the stats. Only reads.
 pub fn print_stats(root: &Path, db: Option<&Path>) -> Result<Option<Stats>> {
-    let stats = stats_for(root, db)?;
-    match &stats {
-        Some(s) => crate::say!("{}", format_stats(s).trim_end_matches('\n')),
-        None => crate::say!("No faces yet: run `shoebox recognize` first."),
+    print_stats_of(root, db, Space::Faces)
+}
+
+/// `shoebox faces stats --animals` prints the stats of cats and dogs.
+pub fn print_stats_of(root: &Path, db: Option<&Path>, space: Space) -> Result<Option<Stats>> {
+    let stats = stats_for(root, db, space)?;
+    match (&stats, space) {
+        (Some(s), _) => crate::say!("{}", format_stats(s).trim_end_matches('\n')),
+        (None, Space::Faces) => crate::say!("No faces yet: run `shoebox recognize` first."),
+        (None, Space::Animals) => crate::say!("No animals yet: run `shoebox recognize --animals` first."),
     }
     Ok(stats)
 }
@@ -299,6 +333,8 @@ fn format_duration(secs: i64) -> String {
 }
 
 pub fn format_stats(s: &Stats) -> String {
+    let animals = s.kind == "animals";
+    let whats = if animals { "Animals" } else { "Faces" };
     let mut out = String::new();
     let waiting = s.photos.saturating_sub(s.looked);
     out.push_str(&format!("Photos:  {} looked at of {}", s.looked, s.photos));
@@ -315,11 +351,16 @@ pub fn format_stats(s: &Stats) -> String {
     }
     let ok = s.looked - s.failed;
     out.push_str(&format!(
-        "Faces:   {} ({:.2} per photo looked at)\n",
+        "{whats}:{}{} ({:.2} per photo looked at)\n",
+        if animals { " " } else { "   " },
         s.faces,
         if ok == 0 { 0.0 } else { s.faces as f64 / ok as f64 }
     ));
-    if s.rotated_looked > 0 {
+    if animals {
+        if s.looked == 0 {
+            out.push_str("Cats and dogs are not looked for yet (`shoebox recognize --animals`)\n");
+        }
+    } else if s.rotated_looked > 0 {
         out.push_str(&format!(
             "Turned:  {} photos looked at turned 90° and 270° ({} failed): {} faces added\n",
             s.rotated_looked, s.rotated_failed, s.rotated_faces
@@ -328,7 +369,7 @@ pub fn format_stats(s: &Stats) -> String {
         out.push_str("Turned:  not looked at yet (`shoebox recognize --rotated` finds faces of people lying down)\n");
     }
     if s.faces > 0 {
-        out.push_str("\nFace width in the ≤1600 px copy:\n");
+        out.push_str(&format!("\n{} width in the ≤1600 px copy:\n", if animals { "Animal" } else { "Face" }));
         format_buckets(&mut out, &s.widths, s.faces, " px", 0);
         out.push_str(&format!(
             "  Under {:.0} px (listed, too small for clustering): {} ({:.1}%)\n",
@@ -338,7 +379,8 @@ pub fn format_stats(s: &Stats) -> String {
         ));
         if s.not_faces > 0 {
             out.push_str(&format!(
-                "  Marked \"not a face\" (false finds): {} ({:.1}%)\n",
+                "  Marked \"not a {}\" (false finds): {} ({:.1}%)\n",
+                if animals { "pet" } else { "face" },
                 s.not_faces,
                 percent(s.not_faces, s.faces)
             ));
@@ -368,6 +410,8 @@ pub fn format_stats(s: &Stats) -> String {
 /// How the face check page asks for faces.
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct ListQuery {
+    /// `faces` (default) or `animals`: which kind of box to list.
+    pub kind: Option<String>,
     /// `size` (default) or `score`.
     pub sort: Option<String>,
     /// Largest / best first.
@@ -405,6 +449,9 @@ pub struct Item {
     pub roll: u16,
     /// Under `MIN_CLUSTER_PX`: listed, but not for clustering.
     pub small: bool,
+    /// `cat` or `dog` for an animal; absent for a face.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub species: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -420,20 +467,23 @@ const MAX_LIMIT: usize = 2000;
 
 /// `SELECT` of an `Item` (plus `extra` columns at the end) over faces of
 /// present photos; `f` is the face, `p` its file.
-fn item_sql(extra: &str, filter: &str) -> String {
+fn item_sql(extra: &str, filter: &str, space: Space) -> String {
     format!(
-        "SELECT f.id, p.id, p.kind, p.quick_hash, {px} AS px, f.score, f.roll{extra}
+        "SELECT f.id, p.id, p.kind, p.quick_hash, {px} AS px, f.score, f.roll, f.species{extra}
          FROM recog.faces f
-         JOIN recog.looked l ON l.key = f.key AND l.task = '{FACES}'
+         JOIN recog.looked l ON l.key = f.key AND l.task = '{task}'
          JOIN ({PRESENT}) p ON p.quick_hash = f.key
-         WHERE {filter}",
-        px = size_px("f.roll")
+         WHERE {space_filter} AND {filter}",
+        px = size_px("f.roll"),
+        task = space.task(),
+        space_filter = space.filter()
     )
 }
 
 fn item(r: &rusqlite::Row) -> rusqlite::Result<Item> {
     let key: String = r.get(3)?;
     let px: f64 = r.get::<_, Option<f64>>(4)?.unwrap_or(0.0);
+    let species: Option<String> = r.get(7)?;
     Ok(Item {
         id: r.get(0)?,
         file: r.get(1)?,
@@ -442,7 +492,8 @@ fn item(r: &rusqlite::Row) -> rusqlite::Result<Item> {
         px,
         score: r.get(5)?,
         roll: r.get(6)?,
-        small: too_small(px),
+        small: Space::of(species.as_deref()).too_small(px),
+        species,
     })
 }
 
@@ -462,9 +513,13 @@ pub fn list(conn: &Connection, q: &ListQuery) -> Result<List> {
         if q.not_face { "IN" } else { "NOT IN" },
         marked.join(",")
     );
+    let space = match q.kind.as_deref() {
+        Some("animals") => Space::Animals,
+        _ => Space::Faces,
+    };
     let sql = format!(
         "{} ORDER BY {order} {dir}, f.id LIMIT ?3 OFFSET ?4",
-        item_sql(", count(*) OVER ()", &filter)
+        item_sql(", count(*) OVER ()", &filter, space)
     );
     let limit = q.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT);
     let (min, max) = (q.min_px.unwrap_or(0.0), q.max_px.unwrap_or(f64::MAX));
@@ -472,17 +527,17 @@ pub fn list(conn: &Connection, q: &ListQuery) -> Result<List> {
     let faces = conn
         .prepare(&sql)?
         .query_map(params![min, max, limit as i64, q.offset as i64], |r| {
-            total = r.get::<_, i64>(7)? as u64;
+            total = r.get::<_, i64>(8)? as u64;
             item(r)
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     if faces.is_empty() && q.offset > 0 {
         // Past the end: count without the page.
-        total = conn.query_row(&format!("SELECT count(*) FROM ({})", item_sql("", &filter)), params![min, max], |r| {
+        total = conn.query_row(&format!("SELECT count(*) FROM ({})", item_sql("", &filter, space)), params![min, max], |r| {
             r.get::<_, i64>(0)
         })? as u64;
     }
-    Ok(List { total, faces, min_cluster_px: MIN_CLUSTER_PX })
+    Ok(List { total, faces, min_cluster_px: space.min_px() })
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -497,17 +552,18 @@ pub struct Neighbour {
 /// embeddings are closest to face `id`'s, best first; `None` if there is no
 /// such face. Only reads: a look at which threshold separates people.
 pub fn similar(conn: &Connection, id: i64, limit: usize) -> Result<Option<Vec<Neighbour>>> {
-    let target: Option<(String, Vec<u8>)> = conn
-        .query_row("SELECT model, emb FROM recog.faces WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?)))
+    let target: Option<(String, Vec<u8>, Option<String>)> = conn
+        .query_row("SELECT model, emb, species FROM recog.faces WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .optional()?;
-    let Some((model, emb)) = target else { return Ok(None) };
+    let Some((model, emb, species)) = target else { return Ok(None) };
+    let space = Space::of(species.as_deref());
     let target = floats(&emb);
     let marked = crate::people::not_face_ids(conn)?;
-    let mut stmt = conn.prepare(&item_sql(", f.emb", "f.model = ?1 AND f.id != ?2"))?;
+    let mut stmt = conn.prepare(&item_sql(", f.emb", "f.model = ?1 AND f.id != ?2", space))?;
     let mut rows = stmt.query(params![model, id])?;
     let mut all = Vec::new();
     while let Some(r) = rows.next()? {
-        let emb: Vec<u8> = r.get(7)?;
+        let emb: Vec<u8> = r.get(8)?;
         let other = floats(&emb);
         if other.len() != target.len() || marked.contains(&r.get(0)?) {
             continue;

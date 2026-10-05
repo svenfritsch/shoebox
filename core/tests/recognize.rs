@@ -858,3 +858,80 @@ fn serve_face_check_page_under_the_guard() {
     assert_eq!(stored, 0);
     server.stop().unwrap();
 }
+
+/// The animals check: stats, list, crops and neighbours of cats and dogs,
+/// separate from the faces (own size rule and buckets), under the guard.
+#[test]
+fn animals_check_page_and_stats_under_the_guard() {
+    let lib = empty("recog-animals-page");
+    // The fake's animal is half as wide as the picture.
+    for (name, w, rgb) in [("tiny", 100u32, [200u8, 60u8, 40u8]), ("small", 130, [200, 60, 90]), ("big", 300, [40, 60, 200]), ("same", 300, [40, 60, 200])] {
+        std::fs::create_dir_all(lib.path("Pets")).unwrap();
+        image::RgbImage::from_pixel(w, w, image::Rgb(rgb)).save(lib.path(&format!("Pets/{name}.png"))).unwrap();
+    }
+    // Another file of the same picture (other bytes).
+    std::fs::write(lib.path("Pets/same.png"), [std::fs::read(lib.path("Pets/big.png")).unwrap(), vec![0]].concat()).unwrap();
+    solid(&lib, "Pets/error.jpg", [10, 250, 10]);
+    lib.scan_opts(true, false, false);
+
+    let shoebox = |args: &[&str]| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_shoebox")).args(["faces", "stats"]).args(args).arg(&lib.root).output().unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8(out.stdout).unwrap() + &String::from_utf8(out.stderr).unwrap()
+    };
+    let stats = recognize::run(&recognize::Options { animals: true, ..options(&lib) }).unwrap();
+    let a = stats.animals.as_ref().unwrap();
+    // `big.png` and `same.png` hold the same picture in two files.
+    assert_eq!((a.looked, a.faces, a.failed), (5 - 1, 4, 1), "{:?}", a.errors);
+    let before = lib.snapshot();
+
+    let conn = shoebox::faces::open_readonly(&lib.root, None).unwrap().unwrap();
+    let s = shoebox::faces::stats_of(&conn, shoebox::animals::Space::Animals).unwrap();
+    assert_eq!(s.kind, "animals");
+    assert_eq!((s.photos, s.looked, s.failed, s.faces), (5, 5, 1, 4));
+    assert_eq!(s.min_cluster_px, 64.0);
+    // Box widths 50 | 65 | 150 | 150: under 64 | 64–100 | 100–200 | 200–400 | 400+
+    assert_eq!(s.widths.iter().map(|b| b.count).collect::<Vec<_>>(), [1, 1, 2, 0, 0]);
+    assert_eq!(s.small, 1);
+    assert_eq!(s.runs[0].kind, "animals");
+    // The faces' numbers are about faces: every picture also has a (fake) face.
+    let f = shoebox::faces::stats(&conn).unwrap();
+    assert_eq!((f.kind, f.faces), ("faces", 4));
+    drop(conn);
+    let text = shoebox(&["--animals"]);
+    assert!(text.contains("Animals: 4"), "{text}");
+    assert!(text.contains("Animal width"), "{text}");
+    assert!(text.contains("Under 64 px (listed, too small for clustering): 1"), "{text}");
+
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let list = get(addr, "/api/faces?kind=animals&limit=100").json();
+    assert_eq!(list["total"], 4);
+    assert_eq!(list["min_cluster_px"], 64.0);
+    let animals = list["faces"].as_array().unwrap().clone();
+    assert!(animals.iter().all(|f| f["species"].is_string()));
+    assert_eq!(animals[0]["small"], true, "smallest first");
+    assert_eq!(animals.iter().filter(|f| f["small"] == true).count(), 1);
+    assert_eq!(get(addr, "/api/faces?limit=100").json()["total"], 4, "faces are listed apart");
+    assert!(get(addr, "/api/faces?limit=100").json()["faces"].as_array().unwrap().iter().all(|f| f["species"].is_null()));
+    let summary = get(addr, "/api/faces/stats?kind=animals").json();
+    assert_eq!((summary["kind"].as_str(), summary["faces"].as_u64()), (Some("animals"), Some(4)));
+    assert_eq!(get(addr, "/api/faces/stats?kind=cats").status, 400);
+
+    // Crops of the whole animal come from the original under the guard.
+    for f in &animals {
+        let crop = get(addr, &format!("/api/faces/{}/crop", f["id"]));
+        assert_eq!(crop.status, 200, "{f}");
+        assert_eq!(crop.header("content-type"), Some("image/jpeg"));
+    }
+
+    // Neighbours are animals too: the same picture in the other file first.
+    let big = animals.iter().find(|f| f["file"] == id_of(&lib, "Pets/big.png")).unwrap();
+    let near = get(addr, &format!("/api/faces/{}/similar?limit=10", big["id"])).json();
+    let near = near.as_array().unwrap();
+    assert_eq!(near.len(), 3, "the other animals only, not the faces");
+    assert!(near.iter().all(|n| n["species"].is_string()));
+    assert_eq!(near[0]["file"], id_of(&lib, "Pets/same.png"));
+    assert!((near[0]["similarity"].as_f64().unwrap() - 1.0).abs() < 1e-3);
+    assert_eq!(lib.snapshot(), before, "the animals check changed an original");
+}
