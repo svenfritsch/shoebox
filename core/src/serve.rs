@@ -836,6 +836,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/people/{id}/faces", get(people_api::person_faces))
         .route("/api/people/{id}/rename", post(people_api::rename))
         .route("/api/people/{id}/merge", post(people_api::merge))
+        .route("/api/people/{id}/delete", post(people_api::delete))
         .route("/api/people/{id}/hide", post(people_api::hide))
         .route("/api/people/{id}/group", post(people_api::set_group))
         .route("/api/people/{id}/cover", post(people_api::set_cover))

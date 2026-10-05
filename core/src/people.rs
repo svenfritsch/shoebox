@@ -795,6 +795,18 @@ pub fn rename_person(conn: &Connection, id: i64, name: &str) -> Result<Person> {
     person_or_fail(conn, id)
 }
 
+/// Remove a person with no confirmed faces (a misspelled name): what
+/// is left of them (rejections) goes with them. Someone with faces is
+/// merged into the right person instead.
+pub fn delete_person(conn: &Connection, id: i64) -> Result<()> {
+    let p = person_or_fail(conn, id)?;
+    if p.faces > 0 {
+        bail!("{} has {} confirmed; merge them into someone instead", p.name, if p.faces == 1 { "a face".to_string() } else { format!("{} faces", p.faces) });
+    }
+    conn.execute("DELETE FROM people WHERE id = ?1", [id])?;
+    Ok(())
+}
+
 pub fn hide_person(conn: &Connection, id: i64, hidden: bool) -> Result<Person> {
     if conn.execute("UPDATE people SET hidden = ?2 WHERE id = ?1", params![id, hidden])? == 0 {
         bail!("there is no person {id}");

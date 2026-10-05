@@ -80,6 +80,11 @@ pub(super) async fn merge(
     people_change(&app, move |conn| people::merge_people(conn, id, req.into)).await.map(Json)
 }
 
+pub(super) async fn delete(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Json<serde_json::Value>> {
+    people_change(&app, move |conn| people::delete_person(conn, id)).await?;
+    Ok(Json(serde_json::json!({ "deleted": id })))
+}
+
 #[derive(Deserialize)]
 pub(super) struct HideRequest {
     hidden: bool,
