@@ -1529,6 +1529,43 @@ pub fn keys_of_people(conn: &Connection, ids: &[i64]) -> Result<HashSet<String>>
     Ok(keys)
 }
 
+/// Contents with a pet of this species in them (`pet`: of any species), named
+/// or not: detected cats and dogs (unless marked "not a face"), and pets drawn
+/// by hand. For searching; only reads, and `recog` need not be attached.
+pub fn keys_of_pets(conn: &Connection, species: &str) -> Result<HashSet<String>> {
+    let mut keys = HashSet::new();
+    let any = species == crate::pets::PET;
+    if table_exists(conn, "recog", "faces")? && db::has_column(conn, "recog", "faces", "species")? {
+        // Decisions that say a detection is no pet: matched to boxes below.
+        let mut not_pet: HashMap<String, Vec<[f64; 4]>> = HashMap::new();
+        if table_exists(conn, "main", "face_decisions")? && db::has_column(conn, "main", "face_decisions", "species")? {
+            let mut stmt = conn.prepare("SELECT key, x, y, w, h FROM face_decisions WHERE decision = 'not_face' AND species IS NOT NULL")?;
+            let mut rows = stmt.query([])?;
+            while let Some(r) = rows.next()? {
+                not_pet.entry(r.get(0)?).or_default().push([r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?]);
+            }
+        }
+        let mut stmt = conn.prepare("SELECT key, x, y, w, h FROM recog.faces WHERE species IS NOT NULL AND (?1 OR species = ?2)")?;
+        let mut rows = stmt.query(params![any, species])?;
+        while let Some(r) = rows.next()? {
+            let key: String = r.get(0)?;
+            let b: [f64; 4] = [r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?];
+            let marked = not_pet.get(&key).is_some_and(|boxes| boxes.iter().any(|d| recognize::iou(*d, b) >= MATCH_IOU));
+            if !marked {
+                keys.insert(key);
+            }
+        }
+    }
+    if table_exists(conn, "main", "face_decisions")? && db::has_column(conn, "main", "face_decisions", "species")? {
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT key FROM face_decisions
+             WHERE decision = 'confirmed' AND species IS NOT NULL AND (?1 OR species = ?2)",
+        )?;
+        keys.extend(stmt.query_map(params![any, species], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?);
+    }
+    Ok(keys)
+}
+
 /// Every person (hidden ones too) with the contents they are confirmed on.
 pub fn keys_by_person(conn: &Connection) -> Result<HashMap<i64, HashSet<String>>> {
     let mut out: HashMap<i64, HashSet<String>> = HashMap::new();

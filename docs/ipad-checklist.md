@@ -92,5 +92,7 @@ own lists for the MacBook and the drive.
       small one, or from behind): tick "This is a pet", name it; it shows
       as "🐾 pet" in the panel, with a blue box, and the pet's other photos
       get suggested after a moment.
+- [ ] Search "kat" or "hund": the suggestions show 🐱 All cats / 🐶 All dogs
+      with counts; tapping one gives a chip and those photos; ✕ removes it.
 - [ ] A pet's page and the viewer: its photos, the blue box and "dog" /
       "cat" in the info panel, ✓/✗ for a suggested pet.

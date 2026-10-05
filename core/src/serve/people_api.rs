@@ -227,6 +227,43 @@ pub(super) async fn search(State(app): State<Arc<App>>, Query(pairs): Query<Pair
     .await
 }
 
+/// A pet search term offered while typing.
+#[derive(Serialize)]
+pub(super) struct PetHit {
+    /// `cat`, `dog` or `pet` (any); the value of `pet=` in a search.
+    species: &'static str,
+    /// Photos it shows within the filter of the request.
+    photos: u64,
+}
+
+/// The pet terms ("all cats", "all dogs", "any pet") that fit what is typed
+/// (`q`, in English or German) and would show photos within the filter
+/// (`tag`, `folder`, `person`, `pet`), with how many, most first. Terms the
+/// filter already has are left out.
+pub(super) async fn pets_search(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<PetHit>>> {
+    blocking(&app, move |app| {
+        let conn = app.conn.lock().unwrap();
+        let needle = param(&pairs, "q").unwrap_or("");
+        let filter = browse::Query { text: None, ..filter_of(&pairs)? };
+        let snapshot = app.snapshot(&conn)?;
+        let mut hits = Vec::new();
+        for species in crate::pets::species_matching(needle) {
+            if filter.pets.iter().any(|p| p == species) {
+                continue;
+            }
+            let mut with = filter.clone();
+            with.pets.push(species.to_string());
+            let photos = snapshot.query(&conn, &with)?.len() as u64;
+            if photos > 0 {
+                hits.push(PetHit { species, photos });
+            }
+        }
+        hits.sort_by(|a, b| b.photos.cmp(&a.photos));
+        Ok(Json(hits))
+    })
+    .await
+}
+
 // ---------------------------------------------------------------- groups
 
 pub(super) async fn groups(State(app): State<Arc<App>>) -> ApiResult<Json<Vec<people::Group>>> {

@@ -113,9 +113,15 @@ $('login-form').addEventListener('submit', function (ev) {
 // ------------------------------------------------------------------ filters (in the URL hash)
 
 var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person', 'drives', 'settings', 'pets'];
+// Pet search terms (`pet=` in the URL and the API): a species or any pet.
+var PET_TERMS = {
+  cat: { icon: '🐱', label: 'All cats' },
+  dog: { icon: '🐶', label: 'All dogs' },
+  pet: { icon: '🐾', label: 'Any pet' },
+};
 
 function readHash() {
-  var f = { folder: null, tags: [], people: [], q: '', view: null, id: null, tab: null };
+  var f = { folder: null, tags: [], people: [], pets: [], q: '', view: null, id: null, tab: null };
   location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
     var i = kv.indexOf('=');
     if (i < 0) return;
@@ -125,6 +131,8 @@ function readHash() {
     var all = isAll();
     if (k === 'tag') { var t = all ? v : parseInt(v, 10); if (t && f.tags.indexOf(t) < 0) f.tags.push(t); }
     if (k === 'person') { var pp = all ? v : parseInt(v, 10); if (pp && f.people.indexOf(pp) < 0) f.people.push(pp); }
+    // A kind of pet (all cats, all dogs, any pet): the same on every drive.
+    if (k === 'pet' && PET_TERMS[v] && f.pets.indexOf(v) < 0) f.pets.push(v);
     if (k === 'q') f.q = v;
     if (k === 'view' && VIEWS.indexOf(v) >= 0) f.view = v;
     if (k === 'id') f.id = parseInt(v, 10) || null;
@@ -139,7 +147,7 @@ function readHash() {
 // folder, any number of tags and people (`tag`, `person` repeated in the
 // URL) and free text.
 function setFilter(f) {
-  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], q: f.q }).replace(/^\?/, '');
+  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], q: f.q }).replace(/^\?/, '');
   if (h === location.hash.replace(/^#/, '')) { applyFilter(); return; }
   location.hash = h; // triggers hashchange -> applyFilter
 }
@@ -147,7 +155,7 @@ function setFilter(f) {
 // The current filter with some terms changed.
 function withFilter(changes) {
   var f = state.filter;
-  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), q: f.q }, changes);
+  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), pets: f.pets.slice(), q: f.q }, changes);
 }
 
 function showView(view, id, tab) { setFilter({ view: view, id: id, tab: tab, folder: null, tags: [], people: [], q: '' }); }
@@ -215,11 +223,16 @@ function renderChips() {
       setFilter(withFilter({ people: f.people.filter(function (p) { return p !== id; }) }));
     });
   });
+  f.pets.forEach(function (species) {
+    add(PET_TERMS[species].icon + ' ' + PET_TERMS[species].label, function () {
+      setFilter(withFilter({ pets: f.pets.filter(function (p) { return p !== species; }) }));
+    });
+  });
   if (f.q) add('“' + f.q + '”', function () { setFilter(withFilter({ q: '' })); });
   var terms = box.children.length;
   if (terms) {
     var more = el('button', 'chip more', '+');
-    more.title = 'Add a tag, person or folder to the search';
+    more.title = 'Add a tag, person, pet or folder to the search';
     more.onclick = function () { $('search').value = ''; $('search').focus(); suggest(''); };
     box.appendChild(more);
   }
@@ -227,7 +240,7 @@ function renderChips() {
   if (terms >= 2) {
     var clear = el('button', 'chip clear', 'Clear all');
     clear.title = 'Show all photos again';
-    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], q: '' }); };
+    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], pets: [], q: '' }); };
     box.appendChild(clear);
   }
   personHead(box, f);
@@ -271,7 +284,8 @@ $('search').addEventListener('keydown', function (ev) {
   } else if (ev.key === 'Backspace' && this.value === '') {
     // Like a token field: the last chip goes.
     var f = state.filter;
-    if (f.people.length) setFilter(withFilter({ people: f.people.slice(0, -1) }));
+    if (f.pets.length) setFilter(withFilter({ pets: f.pets.slice(0, -1) }));
+    else if (f.people.length) setFilter(withFilter({ people: f.people.slice(0, -1) }));
     else if (f.tags.length) setFilter(withFilter({ tags: f.tags.slice(0, -1) }));
     else if (f.folder) setFilter(withFilter({ folder: null }));
   }
@@ -282,16 +296,18 @@ function suggest(text) {
   if (f.view) { closeSuggest(); return; }
   if (isAll()) { suggestAll(text, seq); return; }
   var needle = text.trim();
-  var within = { q: needle, tag: f.tags, person: f.people, folder: f.folder };
+  var within = { q: needle, tag: f.tags, person: f.people, pet: f.pets, folder: f.folder };
   Promise.all([
     api(LIBAPI + '/tags' + query(Object.assign({ limit: 8 }, within))),
     api(LIBAPI + '/people/search' + query(Object.assign({ limit: 6 }, within))).catch(function () { return []; }),
+    api(LIBAPI + '/pets/search' + query(within)).catch(function () { return []; }),
   ]).then(function (r) {
     if (seq !== sugg.seq) return;
     var items = r[1].map(function (p) {
       state.personNames[p.id] = p.name;
       return { kind: 'person', id: p.id, label: p.name, count: p.photos };
     });
+    r[2].forEach(function (p) { items.push({ kind: 'pet', id: p.species, label: PET_TERMS[p.species].label, count: p.photos }); });
     r[0].forEach(function (t) {
       state.tagNames[t.id] = t.name;
       items.push({ kind: 'tag', id: t.id, label: t.name, count: t.count, folderTag: t.kind === 'folder' });
@@ -312,10 +328,19 @@ function suggestAll(text, seq) {
   var needle = text.trim(), low = needle.toLowerCase(), f = state.filter;
   var people = Date.now() - allPeople.at < 30000 ? Promise.resolve(allPeople.list)
     : api('/api/all/people').then(function (r) { allPeople = { at: Date.now(), list: r.people }; return r.people; });
-  Promise.all([api('/api/all/tags' + query({ q: needle, limit: 8 })), people.catch(function () { return []; })]).then(function (r) {
+  // Pet terms mean the same on every drive: add up what the drives that take part answer.
+  var pets = Promise.all(drives.allLibs.map(function (l) {
+    return api('/api/lib/' + l.id + '/pets/search' + query({ q: needle, pet: f.pets })).catch(function () { return []; });
+  })).then(function (lists) {
+    var sum = {};
+    lists.forEach(function (list) { list.forEach(function (h) { sum[h.species] = (sum[h.species] || 0) + h.photos; }); });
+    return Object.keys(sum).sort(function (a, b) { return sum[b] - sum[a]; }).map(function (s) { return { species: s, photos: sum[s] }; });
+  });
+  Promise.all([api('/api/all/tags' + query({ q: needle, limit: 8 })), people.catch(function () { return []; }), pets]).then(function (r) {
     if (seq !== sugg.seq) return;
     var items = r[1].filter(function (p) { return f.people.indexOf(p.name) < 0 && (!low || p.name.toLowerCase().indexOf(low) >= 0); })
       .slice(0, 6).map(function (p) { return { kind: 'person', id: p.name, label: p.name, count: p.photos }; });
+    r[2].forEach(function (p) { items.push({ kind: 'pet', id: p.species, label: PET_TERMS[p.species].label, count: p.photos }); });
     r[0].filter(function (t) { return f.tags.indexOf(t.name) < 0; }).forEach(function (t) {
       items.push({ kind: 'tag', id: t.name, label: t.name, count: t.count, folderTag: t.kind === 'folder' });
     });
@@ -331,16 +356,17 @@ function showSuggest(items) {
   var last = null;
   items.forEach(function (it, i) {
     if (it.kind !== last) {
-      var f = state.filter, narrowed = !isAll() && (f.tags.length || f.people.length || f.folder);
+      var f = state.filter, narrowed = !isAll() && (f.tags.length || f.people.length || f.pets.length || f.folder);
       var head = it.kind === 'tag' ? (narrowed ? 'Tags in these photos' : 'Tags')
-        : it.kind === 'person' ? (narrowed ? 'People in these photos' : 'People') : 'Folders';
+        : it.kind === 'person' ? (narrowed ? 'People in these photos' : 'People')
+          : it.kind === 'pet' ? (narrowed ? 'Pets in these photos' : 'Pets') : 'Folders';
       box.appendChild(el('div', 'head', head));
       last = it.kind;
     }
     var b = el('button', 'item');
     b.type = 'button';
     b.setAttribute('role', 'option');
-    b.appendChild(el('span', 'label', ({ folder: '📁 ', person: '👤 ' }[it.kind] || '# ') + it.label));
+    b.appendChild(el('span', 'label', (it.kind === 'pet' ? PET_TERMS[it.id].icon + ' ' : ({ folder: '📁 ', person: '👤 ' }[it.kind] || '# ')) + it.label));
     b.appendChild(el('span', 'count', it.count.toLocaleString()));
     b.onmousedown = function (ev) { ev.preventDefault(); }; // keep the focus in the box
     b.onclick = function () { pickSuggest(it); };
@@ -364,6 +390,7 @@ function pickSuggest(it) {
   var f = state.filter;
   if (it.kind === 'tag') setFilter(withFilter({ tags: f.tags.indexOf(it.id) < 0 ? f.tags.concat([it.id]) : f.tags, q: '' }));
   else if (it.kind === 'person') setFilter(withFilter({ people: f.people.indexOf(it.id) < 0 ? f.people.concat([it.id]) : f.people, q: '' }));
+  else if (it.kind === 'pet') setFilter(withFilter({ pets: f.pets.indexOf(it.id) < 0 ? f.pets.concat([it.id]) : f.pets, q: '' }));
   else setFilter(withFilter({ folder: it.id, q: '' }));
 }
 
@@ -525,8 +552,8 @@ function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
 function loadTimeline(resetScroll) {
   var seq = ++state.loadSeq;
   var f = state.filter;
-  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, q: f.q })
-    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, q: f.q });
+  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, pet: f.pets, q: f.q })
+    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, pet: f.pets, q: f.q });
   return api(url).then(function (data) {
     if (seq !== state.loadSeq) return;
     if (isAll()) allTimelineLoaded(data);

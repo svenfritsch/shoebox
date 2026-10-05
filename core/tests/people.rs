@@ -1283,3 +1283,91 @@ fn only_faces_waiting_for_a_decision_and_pictures_keep_a_crop() {
     server.stop().unwrap();
     assert_eq!(lib.snapshot(), before, "the crops changed an original");
 }
+
+/// Searching by pet: `pet=cat|dog|pet` as a term, "cat", "katze", "hund",
+/// "pets" as typed words, together with other terms (all must match), the
+/// suggestions with their counts; named or not, drawn by hand too, and not
+/// the detections marked "not a face". Only reads originals.
+#[test]
+fn searching_by_pet_species() {
+    let lib = empty("people-pet-search");
+    // The fake finds a cat in a red picture and a dog in a blue one.
+    plain(&lib, "Fotos/miez1.png", SPOOKY, 1);
+    plain(&lib, "Fotos/miez2.png", SPOOKY, 2);
+    plain(&lib, "Fotos/bello.png", REX, 1);
+    plain(&lib, "Fotos/falsch.png", SPOOKY, 3); // a plush toy, marked "not a pet" below
+    save(&lib, "Fotos/leer.png", image::RgbImage::from_pixel(310, 150, image::Rgb([0, 0, 0]))); // other bytes than gemalt.png
+    save(&lib, "Fotos/gemalt.png", image::RgbImage::from_pixel(300, 150, image::Rgb([0, 0, 0])));
+    lib.scan_opts(true, false, false);
+    let stats = recognize::run(&recognize::Options { pets: true, ..options(&lib) }).unwrap();
+    assert_eq!(stats.failed, 0, "{:?}", stats.errors);
+    let before = lib.snapshot();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    wait_for_clusters(addr);
+    let id = |rel: &str| id_of(&lib, rel);
+    let found = |path: &str| sorted(ids(&get(addr, path).json()));
+    let want = |rels: &[&str]| sorted(rels.iter().map(|r| id(r)).collect());
+
+    // A plush toy the detector took for a cat, and a pet drawn by hand.
+    let toy = pet_of(addr, &lib, "Fotos/falsch.png")["id"].as_i64().unwrap();
+    ok(addr, "/api/faces/not-face", &json!({ "faces": [toy] }));
+    let body = json!({ "file": id("Fotos/gemalt.png"), "box": [0.1, 0.2, 0.4, 0.6], "name": "Fleck", "pet": true });
+    ok(addr, "/api/faces/manual", &body);
+
+    // The three terms.
+    assert_eq!(found("/api/timeline?pet=cat"), want(&["Fotos/miez1.png", "Fotos/miez2.png"]));
+    assert_eq!(found("/api/timeline?pet=dog"), want(&["Fotos/bello.png"]));
+    assert_eq!(
+        found("/api/timeline?pet=pet"),
+        want(&["Fotos/miez1.png", "Fotos/miez2.png", "Fotos/bello.png", "Fotos/gemalt.png"]),
+        "any pet: cats, dogs and the drawn one, not the toy"
+    );
+    // All terms must match: nothing is both.
+    assert!(found("/api/timeline?pet=cat&pet=dog").is_empty());
+    assert_eq!(found("/api/timeline?pet=cat&pet=pet"), want(&["Fotos/miez1.png", "Fotos/miez2.png"]));
+    assert!(get(addr, "/api/timeline?pet=cow").status == 400);
+
+    // With other terms: a person (named by drawing "Fleck"), free text.
+    let fleck = get(addr, "/api/people").json().as_array().unwrap().iter().find(|p| p["name"] == "Fleck").unwrap()["id"].as_i64().unwrap();
+    assert_eq!(found(&format!("/api/timeline?pet=pet&person={fleck}")), want(&["Fotos/gemalt.png"]));
+    assert_eq!(found("/api/timeline?pet=cat&q=miez2"), want(&["Fotos/miez2.png"]));
+
+    // Typed words, English and German; too short or only the start of other words, nothing.
+    for word in ["cat", "cats", "katze", "Katzen", "kat"] {
+        assert_eq!(found(&format!("/api/timeline?q={word}")), want(&["Fotos/miez1.png", "Fotos/miez2.png"]), "{word}");
+    }
+    for word in ["dog", "hund", "Hunde"] {
+        assert_eq!(found(&format!("/api/timeline?q={word}")), want(&["Fotos/bello.png"]), "{word}");
+    }
+    assert_eq!(found("/api/timeline?q=haustier").len(), 4);
+    assert_eq!(found("/api/timeline?q=pets").len(), 4);
+    assert!(found("/api/timeline?q=ca").is_empty() && found("/api/timeline?q=catalog").is_empty());
+    // A word and a term together.
+    assert_eq!(found("/api/timeline?q=katze+miez1"), want(&["Fotos/miez1.png"]));
+
+    // The suggestions: terms that fit what is typed and show something, with counts.
+    let hits = |path: &str| -> Vec<(String, u64)> {
+        get(addr, path).json().as_array().unwrap().iter().map(|h| (h["species"].as_str().unwrap().to_string(), h["photos"].as_u64().unwrap())).collect()
+    };
+    assert_eq!(hits("/api/pets/search"), [("pet".into(), 4), ("cat".into(), 2), ("dog".into(), 1)]);
+    assert_eq!(hits("/api/pets/search?q=kat"), [("cat".into(), 2)]);
+    assert_eq!(hits("/api/pets/search?q=hund"), [("dog".into(), 1)]);
+    assert!(hits("/api/pets/search?q=xyz").is_empty());
+    // Within a search: only what would still show something, and not what is already in it.
+    assert_eq!(hits("/api/pets/search?pet=cat"), [("pet".into(), 2)]);
+    assert!(hits("/api/pets/search?pet=cat&q=hund").is_empty(), "no dogs among the cats");
+    assert_eq!(hits(&format!("/api/pets/search?person={fleck}")), [("pet".into(), 1)]);
+    assert_eq!(get(addr, "/api/pets/search?pet=cow").status, 400);
+
+    // The tag suggestions narrow by the pet term too.
+    ok(addr, "/api/tags/add", &json!({ "ids": [id("Fotos/miez1.png")], "name": "Sofa" }));
+    let tags = get(addr, "/api/tags?pet=dog&limit=50").json();
+    assert!(tags.as_array().unwrap().iter().all(|t| t["name"] != "Sofa"), "no Sofa among the dogs: {tags}");
+
+    // Undoing "not a pet" brings the photo back.
+    ok(addr, "/api/faces/undo", &json!({ "faces": [toy] }));
+    assert_eq!(found("/api/timeline?pet=cat"), want(&["Fotos/miez1.png", "Fotos/miez2.png", "Fotos/falsch.png"]));
+    assert_eq!(lib.snapshot(), before, "searching changed an original");
+    server.stop().unwrap();
+}

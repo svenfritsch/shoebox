@@ -850,6 +850,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/people/{id}/group", post(people_api::set_group))
         .route("/api/people/{id}/cover", post(people_api::set_cover))
         .route("/api/people/search", get(people_api::search))
+        .route("/api/pets/search", get(people_api::pets_search))
         .route("/api/groups", get(people_api::groups).post(people_api::create_group))
         .route("/api/groups/reorder", post(people_api::reorder_groups))
         .route("/api/groups/{id}/rename", post(people_api::rename_group))
@@ -1258,6 +1259,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
     let tag_names: Vec<String> = pairs.iter().filter(|(k, v)| k == "tag" && !v.is_empty()).map(|(_, v)| v.clone()).collect();
     let person_names: Vec<String> = pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| v.clone()).collect();
     let text = param(&pairs, "q").map(str::to_string).filter(|s| !s.trim().is_empty());
+    let pet_terms = pets_of(&pairs)?;
     let libs: Vec<LibraryRef> = apps.iter().map(|a| LibraryRef { id: library_id(&a.name), name: a.name.clone() }).collect();
 
     let timeline = tokio::task::spawn_blocking(move || -> ApiResult<Timeline> {
@@ -1292,7 +1294,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
                 continue;
             }
             let snapshot = app.snapshot(&conn)?;
-            let query = browse::Query { folder: None, tags, text: text.clone(), people: people_ids };
+            let query = browse::Query { folder: None, tags, text: text.clone(), people: people_ids, pets: pet_terms.clone() };
             for it in snapshot.query(&conn, &query)? {
                 rows.push(Row {
                     sort: it.sort.clone(),
@@ -1612,7 +1614,23 @@ fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
         tags: pairs.iter().filter(|(k, v)| k == "tag" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
         text: param(pairs, "q").map(str::to_string).filter(|s| !s.trim().is_empty()),
         people: pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
+        pets: pets_of(pairs)?,
     })
+}
+
+/// The pet terms of a request (`pet=cat`, `pet=dog`, `pet=pet` for any pet,
+/// repeated: all must match), each once.
+fn pets_of(pairs: &Pairs) -> ApiResult<Vec<String>> {
+    let mut out: Vec<String> = Vec::new();
+    for (_, v) in pairs.iter().filter(|(k, v)| k == "pet" && !v.is_empty()) {
+        if !crate::pets::is_search_species(v) {
+            return Err(ApiError::BadRequest(format!("pet is cat, dog or pet, not {v:?}")));
+        }
+        if !out.contains(v) {
+            out.push(v.clone());
+        }
+    }
+    Ok(out)
 }
 
 /// Tags whose name contains `q`, most used first. With a filter (`tag`,
@@ -1626,7 +1644,7 @@ async fn tags(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiRes
         let own = param(&pairs, "own").is_some_and(|o| o != "0");
         let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(50);
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
-        let all = if filter.folder.is_none() && filter.tags.is_empty() && filter.people.is_empty() {
+        let all = if filter.folder.is_none() && filter.tags.is_empty() && filter.people.is_empty() && filter.pets.is_empty() {
             browse::all_tags(&conn)?
         } else {
             let snapshot = app.snapshot(&conn)?;

@@ -31,6 +31,41 @@ pub const SPECIES: [&str; 2] = ["cat", "dog"];
 /// which. A decision about it matches a detected cat or a dog (`kind_matches`).
 pub const PET: &str = "pet";
 
+/// What the user can search for: a species (`cat`, `dog`) or any pet (`pet`),
+/// in English and German, as typed words and in the suggestions.
+const SEARCH_TERMS: [(&str, &[&str]); 3] = [
+    ("cat", &["cat", "cats", "katze", "katzen", "kater"]),
+    ("dog", &["dog", "dogs", "hund", "hunde"]),
+    ("pet", &["pet", "pets", "haustier", "haustiere", "tier", "tiere"]),
+];
+
+/// Whether `s` is a species a search can ask for (`cat`, `dog`, `pet`).
+pub fn is_search_species(s: &str) -> bool {
+    SEARCH_TERMS.iter().any(|(species, _)| *species == s)
+}
+
+/// The search terms a typed word means: at least three letters that start one
+/// of the words for it ("kat" and "katzen" mean cats, "pets" any pet; "ca"
+/// means nothing, so it does not match pets for every word with those letters).
+pub fn species_for_word(word: &str) -> Vec<&'static str> {
+    let word = word.to_lowercase();
+    if word.chars().count() < 3 {
+        return Vec::new();
+    }
+    SEARCH_TERMS.iter().filter(|(_, aliases)| aliases.iter().any(|a| a.starts_with(&word))).map(|(s, _)| *s).collect()
+}
+
+/// The search terms a suggestion box offers for what is typed so far (all of
+/// them for nothing typed): any word for the term that contains it.
+pub fn species_matching(needle: &str) -> Vec<&'static str> {
+    let needle = needle.trim().to_lowercase();
+    SEARCH_TERMS
+        .iter()
+        .filter(|(_, aliases)| needle.is_empty() || aliases.iter().any(|a| a.contains(&needle)))
+        .map(|(s, _)| *s)
+        .collect()
+}
+
 /// Whether a decision about a face of `decision` species belongs to a detected
 /// face of `face` species: a person's (`None`) to a person's, a cat's to a
 /// cat, a drawn pet (`pet`) to any cat or dog.
@@ -150,6 +185,26 @@ mod tests {
         }
         // Strangers score up to 0.68 with ResNet features: below every threshold.
         assert!(Space::Pets.thresholds("yolox-s-2022nov+ppresnet50-2022jan").maybe > 0.68);
+    }
+
+    #[test]
+    fn typed_words_mean_a_species_in_english_and_german() {
+        assert_eq!(species_for_word("cat"), ["cat"]);
+        assert_eq!(species_for_word("Katze"), ["cat"]);
+        assert_eq!(species_for_word("kat"), ["cat"]);
+        assert_eq!(species_for_word("Hunde"), ["dog"]);
+        assert_eq!(species_for_word("dog"), ["dog"]);
+        assert_eq!(species_for_word("pets"), ["pet"]);
+        assert_eq!(species_for_word("Haustier"), ["pet"]);
+        // Too short, or only the start of another word.
+        assert!(species_for_word("ca").is_empty() && species_for_word("do").is_empty());
+        assert!(species_for_word("catalog").is_empty() && species_for_word("hundert").is_empty() && species_for_word("petra").is_empty());
+        assert_eq!(species_matching("").len(), 3);
+        assert_eq!(species_matching("ka"), ["cat"]);
+        assert_eq!(species_matching("hu"), ["dog"]);
+        assert_eq!(species_matching("t"), ["cat", "pet"], "cat, katze, tier ... contain a t");
+        assert!(species_matching("xyz").is_empty());
+        assert!(is_search_species("pet") && is_search_species("cat") && !is_search_species("horse"));
     }
 
     #[test]

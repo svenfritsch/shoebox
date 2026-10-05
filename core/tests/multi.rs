@@ -286,3 +286,59 @@ fn one_timeline_over_the_drives_by_tag_person_and_text_but_without_backups() {
 fn ids_of(timeline: &serde_json::Value) -> Vec<i64> {
     ids(timeline)
 }
+
+/// A pet by its species over the drives that take part (`pet=` is not a
+/// name: it means the same on every drive), also as typed words.
+#[test]
+fn pet_terms_work_over_the_drives() {
+    let make = |test: &str, pictures: &[(&str, [u8; 3], u8)]| {
+        let lib = Library::new(test);
+        for entry in std::fs::read_dir(&lib.root).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() { std::fs::remove_dir_all(path).unwrap() } else { std::fs::remove_file(path).unwrap() }
+        }
+        for (rel, rgb, n) in pictures {
+            let mut img = image::RgbImage::from_pixel(200, 120, image::Rgb(*rgb));
+            img.put_pixel(0, 0, image::Rgb([*n, *n, *n]));
+            std::fs::create_dir_all(lib.path(rel).parent().unwrap()).unwrap();
+            img.save(lib.path(rel)).unwrap();
+        }
+        lib.scan_opts(true, false, false);
+        let stats = shoebox::recognize::run(&shoebox::recognize::Options {
+            root: lib.root.clone(),
+            db: None,
+            recognizer: Some(env!("CARGO_BIN_EXE_shoebox-fake-recognizer").into()),
+            limit: None,
+            retry_failed: false,
+            rotated: false,
+            pets: true,
+            timeouts: Default::default(),
+        })
+        .unwrap();
+        assert_eq!(stats.failed, 0, "{:?}", stats.errors);
+        lib
+    };
+    // A red picture is a cat to the fake, a blue one a dog.
+    let a = make("multi-pets-a", &[("Fotos/miez.png", [200, 60, 40], 1)]);
+    let b = make("multi-pets-b", &[("Fotos/mieze.png", [200, 60, 40], 2), ("Fotos/bello.png", [40, 60, 200], 1)]);
+    let before = (a.snapshot(), b.snapshot());
+    let server = start_many(&[&a, &b], &[]);
+    let addr = server.addr;
+    let count = |path: &str| get(addr, path).json()["count"].as_u64().unwrap();
+    assert_eq!(count("/raw/api/all/timeline?pet=cat"), 2);
+    assert_eq!(count("/raw/api/all/timeline?pet=dog"), 1);
+    assert_eq!(count("/raw/api/all/timeline?pet=pet"), 3);
+    assert_eq!(count("/raw/api/all/timeline?pet=cat&pet=dog"), 0);
+    assert_eq!(count("/raw/api/all/timeline?q=katze"), 2);
+    assert_eq!(count("/raw/api/all/timeline?q=hund"), 1);
+    let cats = get(addr, "/raw/api/all/timeline?pet=cat").json();
+    let drives: std::collections::BTreeSet<i64> = ids_of(&cats).iter().map(|g| g / SPAN).collect();
+    assert_eq!(drives.len(), 2, "cats of both drives in one list");
+    assert_eq!(get(addr, "/raw/api/all/timeline?pet=cow").status, 400);
+    // The suggestions are per drive: each answers for itself.
+    let (ia, ib) = (lib_id(addr, &a), lib_id(addr, &b));
+    assert_eq!(get(addr, &format!("/raw/api/lib/{ia}/pets/search")).json().as_array().unwrap().len(), 2, "any pet and cats here");
+    assert_eq!(get(addr, &format!("/raw/api/lib/{ib}/pets/search")).json().as_array().unwrap().len(), 3);
+    assert_eq!((a.snapshot(), b.snapshot()), before);
+    server.stop().unwrap();
+}
