@@ -196,9 +196,32 @@ pub struct UserData {
     /// Unix seconds.
     pub written_at: i64,
     pub own_tags: Vec<OwnTag>,
+    /// Capture dates taken over when duplicates were deleted (version 3).
+    pub taken_overrides: Vec<TakenOverride>,
     /// Groups, people and face decisions (version 2).
     #[serde(flatten)]
     pub people: crate::people::UserPeople,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TakenOverride {
+    pub quick_hash: String,
+    pub taken: String,
+    pub taken_offset: Option<String>,
+    /// Where the content is now, to read the file by eye.
+    pub files: Vec<String>,
+}
+
+fn taken_overrides(conn: &Connection) -> Result<Vec<TakenOverride>> {
+    let mut out: Vec<TakenOverride> = conn
+        .prepare("SELECT key, taken, taken_offset FROM taken_overrides ORDER BY key")?
+        .query_map([], |r| Ok(TakenOverride { quick_hash: r.get(0)?, taken: r.get(1)?, taken_offset: r.get(2)?, files: Vec::new() }))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut stmt = conn.prepare("SELECT path_nfc FROM files WHERE quick_hash = ?1 AND missing_since IS NULL ORDER BY path_nfc")?;
+    for o in &mut out {
+        o.files = stmt.query_map([&o.quick_hash], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+    }
+    Ok(out)
 }
 
 #[derive(Debug, Serialize)]
@@ -259,9 +282,10 @@ pub fn user_data(conn: &Connection) -> Result<UserData> {
     own_tags.sort_by_key(|t| t.name.to_lowercase());
     Ok(UserData {
         shoebox: env!("CARGO_PKG_VERSION"),
-        version: 2,
+        version: 3,
         written_at: db::now(),
         own_tags,
+        taken_overrides: taken_overrides(conn)?,
         people: crate::people::user_data(conn)?,
     })
 }

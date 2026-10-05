@@ -1433,10 +1433,13 @@ struct RemoveCopiesRequest {
     keep: Vec<i64>,
     /// Copies that go to the trash; their tags go to a copy that stays.
     remove: Vec<i64>,
+    /// For capture dates that conflict: the date to take, per surviving file.
+    #[serde(default)]
+    dates: std::collections::HashMap<i64, String>,
 }
 
 async fn duplicates_remove(State(app): State<Arc<App>>, Json(req): Json<RemoveCopiesRequest>) -> ApiResult<Json<duplicates::Removed>> {
-    change(&app, move |app, conn| duplicates::remove_copies(conn, &app.root, &req.keep, &req.remove)).await.map(Json)
+    change(&app, move |app, conn| duplicates::remove_copies(conn, &app.root, &req.keep, &req.remove, &req.dates)).await.map(Json)
 }
 
 #[derive(Deserialize)]

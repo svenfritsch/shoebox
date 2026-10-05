@@ -8,6 +8,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use anyhow::{Result, bail};
@@ -66,8 +67,11 @@ pub struct Candidates {
 pub fn load(conn: &Connection, shown: &HashSet<i64>) -> Result<Candidates> {
     let rows: Vec<Row> = conn
         .prepare(
-            "SELECT id, name, path_nfc, folder_id, kind, size, width, height, taken, quick_hash, full_hash, phash
-             FROM files WHERE missing_since IS NULL AND kind != 'raw'",
+            &format!(
+                "SELECT id, name, path_nfc, folder_id, kind, size, width, height, {}, quick_hash, full_hash, phash
+                 FROM files WHERE missing_since IS NULL AND kind != 'raw'",
+                db::TAKEN
+            ),
         )?
         .query_map([], |r| {
             Ok(Row {
@@ -241,6 +245,93 @@ pub struct Removed {
     pub trashed: organize::Trashed,
     /// Tags put on surviving files as own tags (a file can get several).
     pub tags_added: u64,
+    /// Survivors that got another capture date (an override in `library.db`).
+    pub dates_set: u64,
+    /// Capture dates that cannot be merged cleanly: nothing was done, the
+    /// request is repeated with `dates` chosen.
+    pub conflicts: Vec<DateConflict>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DateConflict {
+    pub keep: i64,
+    pub path: String,
+    pub dates: Vec<String>,
+}
+
+/// Dates further apart than this are a real conflict, not rounding or a
+/// time zone.
+const SAME_DAY_SECS: i64 = 24 * 3600;
+
+#[derive(Debug, Clone, PartialEq)]
+struct Date {
+    taken: String,
+    offset: Option<String>,
+}
+
+impl Date {
+    fn secs(&self) -> Option<i64> {
+        chrono::NaiveDateTime::parse_from_str(&self.taken, "%Y-%m-%dT%H:%M:%S").ok().map(|d| d.and_utc().timestamp())
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum Merge {
+    /// The survivor's date stays.
+    Keep,
+    Set(Date),
+    Conflict(Vec<String>),
+}
+
+/// The capture date a survivor ends up with. It keeps its own when no copy
+/// differs; the oldest date of all wins when they are less than a day
+/// apart or the survivor has none; otherwise the user chooses.
+fn merge_dates(own: &Option<Date>, others: &[Date], choice: Option<&str>) -> Merge {
+    let mut all: Vec<&Date> = own.iter().chain(others).collect();
+    let distinct: BTreeSet<&str> = all.iter().map(|d| d.taken.as_str()).collect();
+    if distinct.len() <= 1 && (own.is_some() || all.is_empty()) {
+        return Merge::Keep;
+    }
+    all.sort_by_key(|d| d.taken.clone());
+    let spread = match (all.first().and_then(|d| d.secs()), all.last().and_then(|d| d.secs())) {
+        (Some(a), Some(b)) => Some(b - a),
+        _ => None,
+    };
+    let pick = |taken: &str| all.iter().find(|d| d.taken == taken).map(|d| (*d).clone());
+    let chosen = match choice {
+        Some(c) => pick(c),
+        None if spread.is_some_and(|s| s < SAME_DAY_SECS) || (own.is_none() && distinct.len() == 1) => all.first().map(|d| (*d).clone()),
+        None => None,
+    };
+    match chosen {
+        Some(d) if own.as_ref() == Some(&d) => Merge::Keep,
+        Some(d) => Merge::Set(d),
+        None => Merge::Conflict(distinct.iter().map(|d| d.to_string()).collect()),
+    }
+}
+
+fn date_of(conn: &Connection, id: i64) -> Result<(Option<Date>, String)> {
+    Ok(conn.query_row(
+        &format!("SELECT {}, {}, quick_hash FROM files WHERE id = ?1", db::TAKEN, db::TAKEN_OFFSET),
+        [id],
+        |r| Ok((r.get::<_, Option<String>>(0)?.map(|taken| Date { taken, offset: r.get(1).ok().flatten() }), r.get(2)?)),
+    )?)
+}
+
+/// Store the survivor's new date; if it is what the file says anyway, the
+/// override goes instead.
+fn set_date(conn: &Connection, id: i64, date: &Date) -> Result<()> {
+    let (key, native): (String, Option<String>) =
+        conn.query_row("SELECT quick_hash, taken FROM files WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    if native.as_deref() == Some(date.taken.as_str()) {
+        conn.execute("DELETE FROM taken_overrides WHERE key = ?1", [&key])?;
+    } else {
+        conn.execute(
+            "INSERT OR REPLACE INTO taken_overrides (key, taken, taken_offset, at) VALUES (?1, ?2, ?3, ?4)",
+            params![key, date.taken, date.offset, db::now()],
+        )?;
+    }
+    Ok(())
 }
 
 struct Copy {
@@ -321,9 +412,19 @@ fn carry_names(conn: &Connection, heir: i64, names: &[String]) -> Result<u64> {
 /// Move `remove` to the trash while `keep` stays. At least one file must
 /// stay, and each removed file must be a duplicate of one that stays (same
 /// content, or a similar photo), so this cannot delete anything else. What
-/// would be lost goes to the survivor first: the folder tags and own tags of
-/// a removed copy become own tags of the heir (see `heir`).
-pub fn remove_copies(conn: &Connection, root: &Path, keep: &[i64], remove: &[i64]) -> Result<Removed> {
+/// would be lost goes to the survivor first (see `heir`): the folder tags
+/// and own tags of a removed copy become own tags of the heir, and a capture
+/// date it lacks (or the oldest one) becomes its date, stored as an override
+/// in the database, never in the file. Dates that really conflict
+/// (`DateConflict`) stop everything until `dates` (heir id → chosen date)
+/// says which to take.
+pub fn remove_copies(
+    conn: &Connection,
+    root: &Path,
+    keep: &[i64],
+    remove: &[i64],
+    dates: &HashMap<i64, String>,
+) -> Result<Removed> {
     if keep.is_empty() {
         bail!("at least one copy has to stay");
     }
@@ -335,30 +436,51 @@ pub fn remove_copies(conn: &Connection, root: &Path, keep: &[i64], remove: &[i64
     }
     let keep: Vec<Copy> = keep.iter().map(|&id| copy_of(conn, id)).collect::<Result<_>>()?;
     let gone: Vec<Copy> = remove.iter().map(|&id| copy_of(conn, id)).collect::<Result<_>>()?;
-    let mut heirs = Vec::new();
+    // Everything that would be lost is read before the records go.
+    struct Carry {
+        path: String,
+        heir: i64,
+        names: Vec<String>,
+        date: Option<Date>,
+    }
+    let mut carries = Vec::new();
     for g in &gone {
-        match heir(g, &keep) {
-            Some(h) => heirs.push((g.id, g.path.clone(), h.id)),
-            None => bail!("{} is not a duplicate of a file that stays", g.path),
+        let Some(h) = heir(g, &keep) else { bail!("{} is not a duplicate of a file that stays", g.path) };
+        let mut names = tag_names(conn, g.id, "folder")?;
+        names.extend(tag_names(conn, g.id, "user")?);
+        carries.push(Carry { path: g.path.clone(), heir: h.id, names, date: date_of(conn, g.id)?.0 });
+    }
+    let merge_for = |heir: i64, done: &dyn Fn(&Carry) -> bool| -> Result<Merge> {
+        let own = date_of(conn, heir)?.0;
+        let others: Vec<Date> = carries.iter().filter(|c| c.heir == heir && done(c)).filter_map(|c| c.date.clone()).collect();
+        Ok(merge_dates(&own, &others, dates.get(&heir).map(String::as_str)))
+    };
+    let heirs: BTreeSet<i64> = carries.iter().map(|c| c.heir).collect();
+    let mut conflicts = Vec::new();
+    for &h in &heirs {
+        if let Merge::Conflict(options) = merge_for(h, &|_| true)? {
+            let path = keep.iter().find(|k| k.id == h).map(|k| k.path.clone()).unwrap_or_default();
+            conflicts.push(DateConflict { keep: h, path, dates: options });
         }
     }
-    // Tags are read before the records of the removed files go.
-    let mut carries = Vec::new();
-    for (gone_id, path, heir) in &heirs {
-        let mut names = tag_names(conn, *gone_id, "folder")?;
-        names.extend(tag_names(conn, *gone_id, "user")?);
-        carries.push((*gone_id, path.clone(), *heir, names));
+    if !conflicts.is_empty() {
+        return Ok(Removed { conflicts, ..Default::default() });
     }
+
     let ids: Vec<i64> = gone.iter().map(|g| g.id).collect();
     let trashed = organize::trash_files(conn, root, &ids)?;
-    let mut out = Removed { tags_added: 0, trashed };
-    let done: HashSet<&String> = out.trashed.files.iter().collect();
+    let mut out = Removed { trashed, ..Default::default() };
+    let done: HashSet<String> = out.trashed.files.iter().cloned().collect();
+    let went = |c: &Carry| done.contains(&c.path);
     let tx = conn.unchecked_transaction()?;
-    for (_, path, heir, names) in &carries {
-        if !done.contains(path) {
-            continue; // stayed where it was: nothing to carry
+    for c in carries.iter().filter(|c| went(c)) {
+        out.tags_added += carry_names(&tx, c.heir, &c.names)?;
+    }
+    for &h in &heirs {
+        if let Merge::Set(d) = merge_for(h, &went)? {
+            set_date(&tx, h, &d)?;
+            out.dates_set += 1;
         }
-        out.tags_added += carry_names(&tx, *heir, names)?;
     }
     tx.commit()?;
     Ok(out)
