@@ -585,6 +585,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/duplicates", get(duplicates_list))
         .route("/api/duplicates/decide", post(duplicates_decide))
         .route("/api/duplicates/remove", post(duplicates_remove))
+        .route("/api/duplicates/same-folder", get(duplicates_same_folder).post(duplicates_remove_same_folder))
         .route("/api/trash", get(trash_list).post(trash_files))
         .route("/api/trash/{id}/thumb", get(trash_thumb))
         .route("/api/trash/{batch}/restore", post(trash_restore))
@@ -1440,6 +1441,27 @@ struct RemoveCopiesRequest {
 
 async fn duplicates_remove(State(app): State<Arc<App>>, Json(req): Json<RemoveCopiesRequest>) -> ApiResult<Json<duplicates::Removed>> {
     change(&app, move |app, conn| duplicates::remove_copies(conn, &app.root, &req.keep, &req.remove, &req.dates)).await.map(Json)
+}
+
+fn same_folder_plan(app: &App, conn: &Connection) -> anyhow::Result<Vec<(i64, Vec<i64>)>> {
+    let shown: HashSet<i64> = app.snapshot(conn)?.items.iter().map(|it| it.id).collect();
+    Ok(duplicates::same_folder_plan(&duplicates::load(conn, &shown)?))
+}
+
+/// What the "same folder" button would do: contents and files.
+async fn duplicates_same_folder(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
+    blocking(&app, |app| {
+        let conn = app.conn.lock().unwrap();
+        let plan = same_folder_plan(app, &conn)?;
+        let copies: usize = plan.iter().map(|(_, gone)| gone.len()).sum();
+        Ok(Json(serde_json::json!({ "groups": plan.len(), "copies": copies })))
+    })
+    .await
+}
+
+/// Delete exact duplicates in the same folder without review.
+async fn duplicates_remove_same_folder(State(app): State<Arc<App>>) -> ApiResult<Json<duplicates::BulkRemoved>> {
+    change(&app, |app, conn| duplicates::remove_same_folder(conn, &app.root, &same_folder_plan(app, conn)?)).await.map(Json)
 }
 
 #[derive(Deserialize)]

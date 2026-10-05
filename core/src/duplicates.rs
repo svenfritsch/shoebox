@@ -51,6 +51,7 @@ pub struct Group {
 
 struct Row {
     file: DupFile,
+    added_at: i64,
     full_hash: Option<String>,
     phash: Option<u64>,
 }
@@ -68,7 +69,7 @@ pub fn load(conn: &Connection, shown: &HashSet<i64>) -> Result<Candidates> {
     let rows: Vec<Row> = conn
         .prepare(
             &format!(
-                "SELECT id, name, path_nfc, folder_id, kind, size, width, height, {}, quick_hash, full_hash, phash
+                "SELECT id, name, path_nfc, folder_id, kind, size, width, height, {}, quick_hash, full_hash, phash, added_at
                  FROM files WHERE missing_since IS NULL AND kind != 'raw'",
                 db::TAKEN
             ),
@@ -90,6 +91,7 @@ pub fn load(conn: &Connection, shown: &HashSet<i64>) -> Result<Candidates> {
                 },
                 full_hash: r.get(10)?,
                 phash: r.get::<_, Option<String>>(11)?.as_deref().and_then(phash::from_hex),
+                added_at: r.get(12)?,
             })
         })?
         .filter(|r| r.as_ref().map_or(true, |r| shown.contains(&r.file.id)))
@@ -185,6 +187,69 @@ pub fn find(candidates: &Candidates) -> Vec<Group> {
         .collect();
     groups.sort_by(|(a, ta), (b, tb)| b.exact.cmp(&a.exact).then(tb.cmp(ta)).then(a.files[0].path.cmp(&b.files[0].path)));
     groups.into_iter().map(|(g, _)| g).collect()
+}
+
+/// Exact duplicates (same full hash) that lie in the same folder: per
+/// content and folder one file stays (the highest resolution, then the
+/// earliest record, then the first path) and the others go. Near duplicates
+/// are never part of it, and a copy the user already decided about with the
+/// keeper (`distinct`, `linked`) stays too. Returns `(keep, remove)`.
+pub fn same_folder_plan(candidates: &Candidates) -> Vec<(i64, Vec<i64>)> {
+    let Candidates { rows, decided } = candidates;
+    let mut parts: HashMap<(&str, i64), Vec<&Row>> = HashMap::new();
+    for r in rows {
+        if let Some(h) = &r.full_hash {
+            parts.entry((h, r.file.folder_id)).or_default().push(r);
+        }
+    }
+    let mut plan: Vec<(i64, Vec<i64>)> = parts
+        .into_values()
+        .filter(|p| p.len() > 1)
+        .filter_map(|mut p| {
+            let pixels = |r: &Row| r.file.width.unwrap_or(0) as u64 * r.file.height.unwrap_or(0) as u64;
+            p.sort_by(|a, b| pixels(b).cmp(&pixels(a)).then(a.added_at.cmp(&b.added_at)).then(a.file.path.cmp(&b.file.path)));
+            let keep = p[0].file.id;
+            let gone: Vec<i64> = p[1..]
+                .iter()
+                .map(|r| r.file.id)
+                .filter(|&id| !decided.contains(&(keep.min(id), keep.max(id))))
+                .collect();
+            (!gone.is_empty()).then_some((keep, gone))
+        })
+        .collect();
+    plan.sort();
+    plan
+}
+
+/// What `remove_same_folder` did.
+#[derive(Debug, Default, Serialize)]
+pub struct BulkRemoved {
+    /// Contents that lost copies.
+    pub groups: u64,
+    /// Files moved to the trash.
+    pub removed: u64,
+    pub tags_added: u64,
+    pub dates_set: u64,
+    pub skipped: Vec<String>,
+}
+
+/// Carry out `same_folder_plan`; each group like `remove_copies`.
+pub fn remove_same_folder(conn: &Connection, root: &Path, plan: &[(i64, Vec<i64>)]) -> Result<BulkRemoved> {
+    let mut out = BulkRemoved::default();
+    for (keep, gone) in plan {
+        match remove_copies(conn, root, &[*keep], gone, &HashMap::new()) {
+            Ok(r) if r.conflicts.is_empty() => {
+                out.groups += 1;
+                out.removed += r.trashed.files.len() as u64;
+                out.tags_added += r.tags_added;
+                out.dates_set += r.dates_set;
+                out.skipped.extend(r.trashed.skipped);
+            }
+            Ok(r) => out.skipped.extend(r.conflicts.iter().map(|c| format!("{}: capture dates conflict", c.path))),
+            Err(e) => out.skipped.push(format!("{e:#}")),
+        }
+    }
+    Ok(out)
 }
 
 /// Record a decision for every pair among `ids`, or forget it (`None`).

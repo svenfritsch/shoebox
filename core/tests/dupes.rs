@@ -158,3 +158,63 @@ fn removing_copies_merges_capture_dates_without_touching_files() {
     assert_eq!(before[&lib.path(original)], after[&lib.path(original)]);
     assert!(lib.verify(false).is_clean());
 }
+
+#[test]
+fn same_folder_bulk_only_touches_exact_duplicates_in_one_folder() {
+    let lib = Library::new("dupes-bulk");
+    let original = "Familie/Weihnachten/DSC_2001.jpg";
+    // Exact copies: two next to the original, one in another folder.
+    fs::copy(lib.path(original), lib.path("Familie/Weihnachten/DSC_2001 (2).jpg")).unwrap();
+    fs::copy(lib.path(original), lib.path("Familie/Weihnachten/DSC_2001 (3).jpg")).unwrap();
+    fs::create_dir_all(lib.path("Kochen")).unwrap();
+    fs::copy(lib.path(original), lib.path("Kochen/braten.jpg")).unwrap();
+    // A pair in one folder the user already decided to keep; and a near one.
+    fs::copy(lib.path("Ordner mit Leerzeichen/Bild 1.jpeg"), lib.path("Ordner mit Leerzeichen/Bild 1b.jpeg")).unwrap();
+    rings(&lib.path("Ringe/gross.jpg"), 1600, 1200);
+    rings(&lib.path("Ringe/klein.jpg"), 800, 600);
+    lib.scan();
+    let before = lib.snapshot();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let (b1, b2) = (id_of(&lib, "Ordner mit Leerzeichen/Bild 1.jpeg"), id_of(&lib, "Ordner mit Leerzeichen/Bild 1b.jpeg"));
+    post(addr, "/api/duplicates/decide", &json!({ "ids": [b1, b2], "decision": "linked" }));
+    let c = id_of(&lib, "Familie/Weihnachten/DSC_2001 (2).jpg");
+    post(addr, "/api/tags/add", &json!({ "ids": [c], "name": "Lecker" }));
+
+    // The preview counts the two extra copies and nothing else.
+    let preview = get(addr, "/api/duplicates/same-folder").json();
+    assert_eq!((preview["groups"].as_i64(), preview["copies"].as_i64()), (Some(1), Some(2)));
+
+    let r = post(addr, "/api/duplicates/same-folder", &json!({}));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    let body = r.json();
+    assert_eq!((body["groups"].as_i64(), body["removed"].as_i64()), (Some(1), Some(2)));
+    // One file of the folder stays (the earliest record: scan order), the
+    // other folder, the decided pair and the near pair are as they were.
+    let left: Vec<bool> = ["DSC_2001.jpg", "DSC_2001 (2).jpg", "DSC_2001 (3).jpg"]
+        .iter()
+        .map(|n| lib.path(&format!("Familie/Weihnachten/{n}")).exists())
+        .collect();
+    assert_eq!(left.iter().filter(|e| **e).count(), 1, "{left:?}");
+    for p in ["Kochen/braten.jpg", "Ordner mit Leerzeichen/Bild 1.jpeg", "Ordner mit Leerzeichen/Bild 1b.jpeg", "Ringe/gross.jpg", "Ringe/klein.jpg"] {
+        assert!(lib.path(p).exists(), "{p}");
+    }
+    // The "Lecker" of a deleted copy lives on.
+    let stays = ["DSC_2001.jpg", "DSC_2001 (2).jpg", "DSC_2001 (3).jpg"]
+        .iter()
+        .find(|n| lib.path(&format!("Familie/Weihnachten/{n}")).exists())
+        .unwrap();
+    let stays = id_of(&lib, &format!("Familie/Weihnachten/{stays}"));
+    if stays != c {
+        assert_eq!(tags(&lib, stays, "user"), ["Lecker"]);
+    }
+    // Nothing left to do; a second run changes nothing.
+    assert_eq!(get(addr, "/api/duplicates/same-folder").json()["copies"], 0);
+    server.stop().unwrap();
+    let after = lib.snapshot();
+    assert_eq!(after.len(), before.len() - 2);
+    for (p, v) in &after {
+        assert_eq!(&before[p], v, "{}", p.display());
+    }
+    assert!(lib.verify(false).is_clean());
+}
