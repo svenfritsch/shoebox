@@ -95,6 +95,42 @@ next.
   every run; `shoebox serve` starts the worker for that right after a face
   is drawn and stops it again.
 
+### `animals`: cats and dogs
+
+An optional task (still protocol 2: a core that does not ask never sees it).
+The worker only loads the animal models when it is started with
+`--animals`; without the flag the hello has no `animals` and a request for
+it is an unknown task. `shoebox recognize --animals` starts it that way.
+
+```json
+→ {"id": 44, "tasks": ["animals"], "image": "<base64 JPEG>"}
+← {"id": 44, "width": 1600, "height": 1200,
+   "animals": [{"species": "cat", "bbox": [x, y, w, h], "score": 0.91,
+                "emb": "<base64 little-endian f32 × dim>"}]}
+```
+
+- The hello lists `"animals": {"model": "yolox-s-2022nov+ppresnet50-2022jan", "dim": 2048}`.
+  `model` names the detector and the embedder (stored with every result, so
+  results of another embedder are redone, never mixed); `dim` is the
+  embedding length and is **not** the face model's. Animal embeddings are
+  never compared with face embeddings.
+- `species` is `cat` or `dog` (COCO classes; a box counts only where that is
+  the best of all 80 classes, so a teddy bear stays one).
+- `bbox` holds the **whole animal**, in pixels of the image sent, like a
+  face's. The embedding is of that box, slightly enlarged, padded to a
+  square and scaled to the embedder's input; it is the mean of the box and
+  its mirror image, so an animal looking left matches itself looking right.
+  `emb` is L2-normalised.
+- Boxes with a shorter side under 48 px are left out.
+- The embedder is the first of `dinov2-small`, `ppresnet50-2022jan` whose
+  file is in the models folder (`SHOEBOX_ANIMAL_EMBEDDER` forces one). It
+  runs on onnxruntime if that is installed, else on OpenCV's own runner
+  (`SHOEBOX_ANIMAL_BACKEND=onnxruntime|opencv` forces one).
+- Scale: with PP-ResNet50 two photos of one animal score ≥ 0.95 after
+  brightness, blur, crop and size changes, and different animals 0.50–0.68,
+  so the core uses far stricter thresholds than for faces
+  (`core/src/animals.rs`).
+
 If the worker cannot handle one picture, it answers with an error and keeps
 running:
 

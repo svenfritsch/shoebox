@@ -61,7 +61,7 @@ enum Command {
         #[arg(long)]
         limit: Option<usize>,
     },
-    /// Find the faces in every photo (with the optional recognizer, see
+    /// Find the faces (and with --animals the cats and dogs) in every photo (with the optional recognizer, see
     /// docs/protocol.md). Only reads originals; resumes where it stopped.
     Recognize {
         /// Library root (scanned before with `shoebox scan`).
@@ -84,6 +84,10 @@ enum Command {
         /// resumes like it).
         #[arg(long)]
         rotated: bool,
+        /// Then look for cats and dogs too (their own pass, with the animal
+        /// models; resumes like the others). They show up among the faces.
+        #[arg(long)]
+        animals: bool,
     },
     /// Faces found by `shoebox recognize`.
     Faces {
@@ -142,7 +146,7 @@ fn main() -> ExitCode {
         Command::Verify { root, db, quick, limit } => {
             verify::run(&verify::Options { root, db, quick, limit }).map(|r| r.is_clean())
         }
-        Command::Recognize { root, db, recognizer, limit, retry_failed, rotated } => {
+        Command::Recognize { root, db, recognizer, limit, retry_failed, rotated, animals } => {
             recognize::run(&recognize::Options {
                 root,
                 db,
@@ -150,6 +154,7 @@ fn main() -> ExitCode {
                 limit,
                 retry_failed,
                 rotated,
+                animals,
                 timeouts: recognize::Timeouts::default(),
             })
             .map(|_| true)

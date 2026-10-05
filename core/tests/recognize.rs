@@ -31,6 +31,7 @@ fn options(lib: &Library) -> recognize::Options {
         limit: None,
         retry_failed: false,
         rotated: false,
+        animals: false,
         timeouts: quick(),
     }
 }
@@ -366,6 +367,147 @@ fn single_faces_through_the_worker() {
     assert!((same - 1.0).abs() < 1e-4);
     assert_eq!(a.faces[0].landmarks.len(), 5);
     assert_eq!(worker.faces(b"not an image").unwrap().unwrap_err(), Failure::Refused("cannot decode image".into()));
+    worker.stop();
+}
+
+/// A photo of a cat (red at least as strong as blue) or a dog, for the fake
+/// worker's `animals` task.
+const CAT: [u8; 3] = [200, 60, 40];
+const DOG: [u8; 3] = [40, 60, 200];
+
+#[test]
+fn animals_are_their_own_pass_next_to_the_faces() {
+    let lib = empty("recog-animals");
+    solid(&lib, "Pets/cat.jpg", CAT);
+    solid(&lib, "Pets/dog.jpg", DOG);
+    solid(&lib, "Pets/night.jpg", [5, 5, 5]);
+    solid(&lib, "Pets/bad.jpg", [10, 250, 10]);
+    lib.scan_opts(true, false, false);
+    let before = lib.snapshot();
+
+    // Without the flag nothing is looked for: no animal models are loaded.
+    let faces_only = recognize::run(&options(&lib)).unwrap();
+    assert!(faces_only.animals.is_none());
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NOT NULL"), 0);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.looked WHERE task = 'animals'"), 0);
+    let faces = count(&lib, "SELECT count(*) FROM recog.faces");
+    assert_eq!(faces, 2, "the cat's and the dog's picture each have a (fake) face");
+
+    let animals_on = recognize::Options { animals: true, ..options(&lib) };
+    let stats = recognize::run(&animals_on).unwrap();
+    assert_eq!(lib.snapshot(), before, "the animals pass changed an original");
+    assert_eq!((faces_only.looked, stats.looked), (3, 0), "the faces are not looked at again");
+    let a = stats.animals.expect("the animals pass ran");
+    assert_eq!((a.looked, a.faces, a.failed), (3, 2, 1), "{:?}", a.errors);
+    assert_eq!(a.model, "fake-animals-1");
+
+    // Stored with the animal model and its own embedding length; the faces stay.
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NULL"), faces);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species = 'cat'"), 1);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species = 'dog'"), 1);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NOT NULL AND model != 'fake-animals-1'"), 0);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NOT NULL AND length(emb) != 64 * 4"), 0);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NULL AND length(emb) != 128 * 4"), 0);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.looked WHERE task = 'animals'"), 4);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.looked WHERE task = 'animals' AND error IS NOT NULL"), 1);
+    let (x, w, score): (f64, f64, f64) = conn(&lib)
+        .query_row("SELECT x, w, score FROM recog.faces WHERE species = 'cat'", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .unwrap();
+    assert!((x - 0.25).abs() < 0.01 && (w - 0.5).abs() < 0.01 && score > 0.0);
+
+    // Resumable: nothing to do the second time (the failed one waits for --retry-failed).
+    let again = recognize::run(&animals_on).unwrap();
+    let a = again.animals.expect("ran");
+    assert_eq!((a.looked, a.failed), (0, 0));
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NOT NULL"), 2);
+
+    // The viewer's faces of a photo include the animal (boxes in the viewer).
+    let cat = recognize::faces_of(&conn(&lib), &lib.record_key("Pets/cat.jpg")).unwrap().unwrap();
+    assert_eq!(cat.iter().filter_map(|f| f.species.as_deref()).collect::<Vec<_>>(), ["cat"]);
+    assert_eq!(cat.len(), 2, "its face and the cat");
+    assert!(lib.verify(false).is_clean());
+}
+
+#[test]
+fn a_model_change_redoes_only_its_own_pass() {
+    let lib = empty("recog-animals-models");
+    solid(&lib, "Pets/cat.jpg", CAT);
+    solid(&lib, "Pets/dog.jpg", DOG);
+    lib.scan_opts(true, false, false);
+    let opts = recognize::Options { animals: true, ..options(&lib) };
+    recognize::run(&opts).unwrap();
+    let (faces, animals) = (
+        count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NULL"),
+        count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NOT NULL"),
+    );
+    assert_eq!((faces, animals), (2, 2));
+
+    // Another animal model: the animals are looked for again, the faces are not.
+    conn(&lib).execute("UPDATE recog.looked SET model = 'old' WHERE task = 'animals'", []).unwrap();
+    conn(&lib).execute("UPDATE recog.faces SET model = 'old' WHERE species IS NOT NULL", []).unwrap();
+    let redo = recognize::run(&opts).unwrap();
+    assert_eq!(redo.looked, 0);
+    assert_eq!(redo.animals.unwrap().looked, 2);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE model = 'old'"), 0);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NOT NULL"), 2);
+
+    // Another face model: the faces are redone and the animals stay.
+    conn(&lib).execute("UPDATE recog.looked SET model = 'old' WHERE task = 'faces'", []).unwrap();
+    conn(&lib).execute("UPDATE recog.faces SET model = 'old' WHERE species IS NULL", []).unwrap();
+    let redo = recognize::run(&opts).unwrap();
+    assert_eq!((redo.looked, redo.animals.unwrap().looked), (2, 0));
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NULL"), 2);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NOT NULL"), 2);
+
+    // `--limit` counts per pass.
+    let lib = empty("recog-animals-limit");
+    for i in 0..4u8 {
+        solid(&lib, &format!("Pets/{i}.jpg"), [200, 60 + i * 40, 40]);
+    }
+    lib.scan_opts(true, false, false);
+    let first = recognize::run(&recognize::Options { animals: true, limit: Some(3), ..options(&lib) }).unwrap();
+    assert_eq!((first.looked, first.pending), (3, 1));
+    let a = first.animals.unwrap();
+    assert_eq!((a.looked, a.pending), (3, 1));
+}
+
+#[test]
+fn the_animals_task_needs_a_worker_started_for_it() {
+    // Without --animals the hello has no animals and the core refuses to ask.
+    let mut plain = recognize::Worker::start(fake(&[]), quick()).unwrap();
+    assert!(plain.animals_model().is_none());
+    let jpeg = |rgb: [u8; 3]| {
+        let mut out = Vec::new();
+        image::RgbImage::from_pixel(80, 40, image::Rgb(rgb))
+            .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Jpeg)
+            .unwrap();
+        out
+    };
+    assert!(matches!(plain.animals(&jpeg(CAT)).unwrap(), Err(Failure::Refused(e)) if e.contains("not started for animals")));
+    plain.stop();
+
+    let mut worker = recognize::Worker::start(fake(&["--animals"]), quick()).unwrap();
+    let info = worker.animals_model().unwrap().clone();
+    assert_eq!((info.model.as_str(), info.dim), ("fake-animals-1", 64));
+    assert_eq!(worker.faces_model().dim, 128, "faces keep their own model");
+    let cat = worker.animals(&jpeg(CAT)).unwrap().unwrap();
+    let dog = worker.animals(&jpeg(DOG)).unwrap().unwrap();
+    assert_eq!((cat.width, cat.height, cat.faces.len()), (80, 40, 1));
+    assert_eq!(cat.faces[0].species.as_deref(), Some("cat"));
+    assert_eq!(dog.faces[0].species.as_deref(), Some("dog"));
+    assert_eq!(cat.faces[0].emb.len(), 64);
+    assert!(cat.faces[0].landmarks.is_empty());
+    let same = worker.animals(&jpeg(CAT)).unwrap().unwrap();
+    let dot = |a: &[f32], b: &[f32]| a.iter().zip(b).map(|(x, y)| x * y).sum::<f32>();
+    assert!((dot(&cat.faces[0].emb, &same.faces[0].emb) - 1.0).abs() < 1e-4, "same colour, same animal");
+    assert!(dot(&cat.faces[0].emb, &dog.faces[0].emb) < 0.9);
+    assert!(worker.animals(&jpeg([5, 5, 5])).unwrap().unwrap().faces.is_empty());
+    assert_eq!(
+        worker.animals(&jpeg([10, 250, 10])).unwrap().unwrap_err(),
+        Failure::Refused("fake: cannot handle green".into())
+    );
+    // Faces still work on the same worker.
+    assert_eq!(worker.faces(&jpeg(CAT)).unwrap().unwrap().faces.len(), 1);
     worker.stop();
 }
 

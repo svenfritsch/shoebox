@@ -103,6 +103,11 @@ impl Library {
             .unwrap()
     }
 
+    /// The content key (`quick_hash`) of the file at an NFC path.
+    pub fn record_key(&self, path_nfc: &str) -> String {
+        self.db().query_row("SELECT quick_hash FROM files WHERE path_nfc = ?1", [path_nfc], |r| r.get(0)).unwrap()
+    }
+
     pub fn count(&self, sql: &str) -> i64 {
         self.db().query_row(sql, [], |r| r.get(0)).unwrap()
     }

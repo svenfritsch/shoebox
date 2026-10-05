@@ -6,6 +6,13 @@
 //!   (the one of the latest upright result), at least
 //!   `faces::MIN_CLUSTER_PX` wide. Faces found by the rotated pass take
 //!   part like the others.
+//! - Cats and dogs (`animals.rs`) are another **space**: their embeddings
+//!   come from another model, so they are neighbours, clusters and
+//!   suggestions among themselves only, with thresholds of their own
+//!   (`Space::thresholds`) and at least `animals::MIN_CLUSTER_PX` wide.
+//!   Everything below is done once per space; a person is suggested for
+//!   faces of a space only through their confirmed faces in that space. The
+//!   clusters of the animals are numbered after those of the faces.
 //! - Neighbours, not all pairs: every such face looks up its nearest
 //!   neighbours (`ann::Index`, similarity ≥ `CLUSTER_SIM`) once; the lists
 //!   are kept in `recog.neighbours`, so a run that is stopped resumes, and
@@ -32,11 +39,12 @@ use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 
+use crate::animals::{Space, Thresholds};
 use crate::ann::{self, Index};
 use crate::db::{self, Job};
 use crate::faces::{self, MIN_CLUSTER_PX};
 use crate::people::{self, Decision, Matched};
-use crate::recognize::{FACES, Interrupted, KINDS};
+use crate::recognize::{Interrupted, KINDS};
 
 /// Faces at least this similar (cosine) are neighbours, and neighbours
 /// end up in one cluster. Stricter than `people::SUGGEST_SIM`: a cluster
@@ -65,6 +73,10 @@ const JOB_ALIVE_SECS: i64 = 120;
 pub struct Summary {
     /// Faces taking part (large enough, current model, present photos).
     pub faces: u64,
+    /// The same for the cats and dogs, if any were looked at: its own space,
+    /// with its own thresholds. The numbers above are the faces' only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub animals: Option<Box<Summary>>,
     /// Neighbour lists computed this time (the others were kept).
     pub listed: u64,
     /// Of `faces`, without a decision; and the clusters they form.
@@ -89,10 +101,15 @@ pub fn running(conn: &Connection) -> Result<bool> {
 /// The model of the latest upright result: embeddings of other models
 /// cannot be compared with its.
 pub fn current_model(conn: &Connection) -> Result<Option<String>> {
+    current_model_of(conn, Space::Faces)
+}
+
+/// The model of the latest result of a space's pass.
+pub fn current_model_of(conn: &Connection, space: Space) -> Result<Option<String>> {
     Ok(conn
         .query_row(
-            &format!("SELECT model FROM recog.looked WHERE task = '{FACES}' AND error IS NULL ORDER BY done_at DESC LIMIT 1"),
-            [],
+            "SELECT model FROM recog.looked WHERE task = ?1 AND error IS NULL ORDER BY done_at DESC LIMIT 1",
+            [space.task()],
             |r| r.get(0),
         )
         .optional()?)
@@ -114,6 +131,12 @@ pub fn run_printing(conn: &Connection, stop: &dyn Fn() -> bool) -> Result<Summar
         "Clusters: {} faces large enough, {} without a decision in {} clusters; {} suggested, {} maybe ({:.1} s).",
         s.faces, s.unnamed, s.clusters, s.suggested, s.maybe, s.seconds
     );
+    if let Some(a) = &s.animals {
+        println!(
+            "Clusters: {} cats and dogs large enough, {} without a decision in {} clusters; {} suggested, {} maybe.",
+            a.faces, a.unnamed, a.clusters, a.suggested, a.maybe
+        );
+    }
     Ok(s)
 }
 

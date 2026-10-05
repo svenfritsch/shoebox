@@ -46,6 +46,19 @@
 //! 4 of each other): then the plain crop is embedded and no landmarks come
 //! back. The misbehaviour cues above are only for `faces`.
 //!
+//! With `--animals` the hello also lists the task `animals` (model
+//! `fake-animals-1`, embeddings of 64 numbers, so they can never be mixed up
+//! with faces), which finds one cat or dog in the middle of every picture
+//! (the animal of the picture's mean colour: a cat when red is at least blue,
+//! else a dog; 64-d embedding, same colour same animal):
+//!
+//! | Picture | Reply to `animals` |
+//! |---|---|
+//! | dark (all channels < 16) | no animals |
+//! | pure green | an error reply |
+//! | white top quarter, grey bottom quarter | as for faces: the animal of the middle half's colour, `round(40 g / 255) / 40` similar to the plain one |
+//! | anything else | one animal, box (0.25, 0.25, 0.5, 0.5) |
+//!
 //! `--protocol <n>` overrides the protocol in the hello; `--no-embed` leaves
 //! `embed` out of the hello; `--silent` never says hello.
 
@@ -56,6 +69,8 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::{Value, json};
 
 const DIM: usize = 128;
+/// Animal embeddings are shorter than face embeddings.
+const ANIMAL_DIM: usize = 64;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -70,6 +85,10 @@ fn main() {
     let mut tasks = json!({ "faces": { "model": "fake-1", "dim": DIM } });
     if !args.iter().any(|a| a == "--no-embed") {
         tasks["embed"] = json!({ "model": "fake-1", "dim": DIM });
+    }
+    let animals = args.iter().any(|a| a == "--animals");
+    if animals {
+        tasks["animals"] = json!({ "model": "fake-animals-1", "dim": ANIMAL_DIM });
     }
     let hello = json!({
         "hello": "shoebox-recognizer",
@@ -89,6 +108,12 @@ fn main() {
         let id = req["id"].clone();
         if req["tasks"].as_array().is_some_and(|t| t.iter().any(|t| t == "embed")) {
             let reply = embed(&req).unwrap_or_else(|e| json!({ "id": id, "error": e }));
+            writeln!(out, "{reply}").unwrap();
+            out.flush().unwrap();
+            continue;
+        }
+        if req["tasks"].as_array().is_some_and(|t| t.iter().any(|t| t == "animals")) {
+            let reply = if animals { animals_reply(&req) } else { json!({ "id": id, "error": "unknown task: animals" }) };
             writeln!(out, "{reply}").unwrap();
             out.flush().unwrap();
             continue;
@@ -263,6 +288,33 @@ fn lying_face_reply(id: &Value, w: u32, h: u32) -> Value {
     })
 }
 
+/// The `animals` task: one animal in the middle, described by colour.
+fn animals_reply(req: &Value) -> Value {
+    let id = &req["id"];
+    let (w, h, mean, cue) = match picture(req) {
+        Ok(p) => p,
+        Err(e) => return json!({ "id": id, "error": e }),
+    };
+    let [r, g, b] = mean;
+    let (colour, emb) = match cue {
+        Some((Edge::Top, Cue::Variant { colour, grey })) => (colour, variant(colour, grey, ANIMAL_DIM)),
+        _ if r < 16.0 && g < 16.0 && b < 16.0 => return json!({ "id": id, "width": w, "height": h, "animals": [] }),
+        _ if pure(g, r, b) => return json!({ "id": id, "error": "fake: cannot handle green" }),
+        _ => (mean, person_dim(mean, ANIMAL_DIM)),
+    };
+    let bytes: Vec<u8> = emb.iter().flat_map(|v| v.to_le_bytes()).collect();
+    let (fw, fh) = (w as f64, h as f64);
+    json!({
+        "id": id, "width": w, "height": h,
+        "animals": [{
+            "species": if colour[0] >= colour[2] { "cat" } else { "dog" },
+            "bbox": [fw / 4.0, fh / 4.0, fw / 2.0, fh / 2.0],
+            "score": 0.9,
+            "emb": BASE64.encode(bytes),
+        }],
+    })
+}
+
 /// The person a colour stands for. Quantised, so JPEG noise does not
 /// change the person.
 fn person_number(rgb: [f64; 3]) -> u64 {
@@ -272,8 +324,12 @@ fn person_number(rgb: [f64; 3]) -> u64 {
 
 /// The embedding of a plain picture of this colour: the person.
 fn person(rgb: [f64; 3]) -> Vec<f32> {
+    person_dim(rgb, DIM)
+}
+
+fn person_dim(rgb: [f64; 3], dim: usize) -> Vec<f32> {
     let k = person_number(rgb) as f64;
-    normalised((0..DIM).map(|i| ((i as f64 + 1.0) * k).sin() as f32).collect())
+    normalised((0..dim).map(|i| ((i as f64 + 1.0) * k).sin() as f32).collect())
 }
 
 fn normalised(mut v: Vec<f32>) -> Vec<f32> {
@@ -288,13 +344,19 @@ fn face_reply(id: &Value, w: u32, h: u32, rgb: [f64; 3]) -> Value {
 
 /// The white-top cue: the person of `colour`, `grey` away from them.
 fn variant_reply(id: &Value, w: u32, h: u32, colour: [f64; 3], grey: f64) -> Value {
-    let p = person(colour);
+    centred_face(id, w, h, &variant(colour, grey, DIM))
+}
+
+/// An embedding of `dim` numbers `grey`-steps away from the plain one of
+/// `colour`.
+fn variant(colour: [f64; 3], grey: f64, dim: usize) -> Vec<f32> {
+    let p = person_dim(colour, dim);
     let steps = (grey / 255.0 * 40.0).round();
     let sim = (steps / 40.0).clamp(0.0, 1.0) as f32;
     // A direction of its own per person and grey (pseudo-random), at right
     // angles to the person's.
     let mut x = (person_number(colour) * 100 + steps as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(1);
-    let other: Vec<f32> = (0..DIM)
+    let other: Vec<f32> = (0..dim)
         .map(|_| {
             x ^= x << 13;
             x ^= x >> 7;
@@ -305,8 +367,7 @@ fn variant_reply(id: &Value, w: u32, h: u32, colour: [f64; 3], grey: f64) -> Val
     let along: f32 = other.iter().zip(&p).map(|(a, b)| a * b).sum();
     let other = normalised(other.iter().zip(&p).map(|(o, q)| o - along * q).collect());
     let rest = (1.0 - sim * sim).max(0.0).sqrt();
-    let emb = normalised(p.iter().zip(&other).map(|(q, o)| sim * q + rest * o).collect());
-    centred_face(id, w, h, &emb)
+    normalised(p.iter().zip(&other).map(|(q, o)| sim * q + rest * o).collect())
 }
 
 /// One face in the middle of the picture, half as wide and high.

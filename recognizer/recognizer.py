@@ -5,6 +5,7 @@ Speaks the JSON-lines protocol in docs/protocol.md on stdin/stdout. Stateless:
 pixels in, boxes and embeddings out. Never opens the library or the database.
 
     python3 recognizer.py            # what shoebox runs
+    python3 recognizer.py --animals  # also loads the cat and dog models
     echo '{"id": 1, "tasks": ["faces"], "path": "photo.jpg"}' | python3 recognizer.py
     echo '{"id": 2, "tasks": ["embed"], "path": "photo.jpg", "boxes": [[100, 80, 60, 70]]}' | python3 recognizer.py
 
@@ -12,6 +13,9 @@ Models (ONNX, from the OpenCV model zoo) are looked up in ./models next to this
 file, or in $SHOEBOX_MODELS:
     face_detection_yunet_2023mar.onnx   (YuNet, detection + 5 landmarks)
     face_recognition_sface_2021dec.onnx (SFace, 128-d embedding)
+and for --animals:
+    object_detection_yolox_2022nov.onnx (YOLOX-S, COCO: cats and dogs)
+    dinov2_small.onnx or image_classification_ppresnet50_2022jan.onnx (embedding)
 """
 
 import base64
@@ -20,7 +24,7 @@ import os
 import sys
 
 PROTOCOL = 2
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 DETECTOR = "face_detection_yunet_2023mar.onnx"
 EMBEDDER = "face_recognition_sface_2021dec.onnx"
@@ -46,6 +50,52 @@ EMBED_PAD = 0.5
 EMBED_REGION = 320
 # A detection belongs to the drawn box when they overlap at least this much.
 EMBED_IOU = 0.3
+
+
+# Animals (task "animals"): a COCO detector finds cats and dogs, an image
+# embedder describes each animal's box. Optional: without the models the
+# worker still does faces.
+ANIMAL_DETECTOR = "object_detection_yolox_2022nov.onnx"
+ANIMAL_DETECTOR_ID = "yolox-s-2022nov"
+# COCO class numbers of the animals we keep.
+COCO_ANIMALS = {15: "cat", 16: "dog"}
+# Objectness times class score; lower finds more animals that are partly
+# hidden or far away, higher fewer plush toys.
+ANIMAL_SCORE = 0.35
+ANIMAL_NMS = 0.45
+YOLOX_SIZE = 640
+# Animals smaller than this (px, shorter side of the box) give embeddings too
+# poor to tell individuals apart.
+MIN_ANIMAL = 48
+# The box is enlarged by this much on every side before it is embedded, so
+# ears and paws that the detector cut off are in.
+ANIMAL_PAD = 0.08
+# Embedder input: the box is padded to a square and scaled to this.
+IMAGENET_MEAN = (0.485, 0.456, 0.406)
+IMAGENET_STD = (0.229, 0.224, 0.225)
+# The embedders in order of preference; the first whose file is in the models
+# folder is used. `output`: the name of the output holding the embedding
+# (None: the first output; a sequence of tokens gives its first, the class
+# token).
+EMBEDDERS = [
+    # DINOv2-small as exported by Hugging Face (onnx-community/dinov2-small);
+    # best at telling individual animals apart. Not part of fetch-models.sh:
+    # see recognizer/README.md.
+    {"id": "dinov2-small", "file": "dinov2_small.onnx", "size": 224, "mean": IMAGENET_MEAN, "std": IMAGENET_STD, "output": "pooler_output"},
+    # PP-ResNet50 from the OpenCV zoo: its second output is the pooled
+    # 2048-d feature before the classifier.
+    {
+        "id": "ppresnet50-2022jan",
+        "file": "image_classification_ppresnet50_2022jan.onnx",
+        "size": 224,
+        "mean": IMAGENET_MEAN,
+        "std": IMAGENET_STD,
+        "output": "save_infer_model/scale_1.tmp_0",
+    },
+]
+# Average the embedding of the box and of its mirror image, so an animal
+# looking left matches itself looking right.
+ANIMAL_FLIP = True
 
 
 def models_dir():
@@ -181,6 +231,178 @@ class Embed:
         return best
 
 
+class Embedder:
+    """An ONNX image embedder: behind onnxruntime when that is installed,
+    else behind OpenCV's own runner (the oldest Intel Macs have no
+    onnxruntime wheel). SHOEBOX_ANIMAL_BACKEND = auto | onnxruntime | opencv."""
+
+    def __init__(self, cv2, np, spec, path):
+        self.cv2 = cv2
+        self.np = np
+        self.spec = spec
+        self.session = None
+        self.net = None
+        backend = os.environ.get("SHOEBOX_ANIMAL_BACKEND", "auto")
+        if backend not in ("auto", "onnxruntime", "opencv"):
+            raise SystemExit(f"recognizer: SHOEBOX_ANIMAL_BACKEND must be auto, onnxruntime or opencv, not {backend!r}")
+        if backend in ("auto", "onnxruntime"):
+            try:
+                import onnxruntime
+
+                options = onnxruntime.SessionOptions()
+                options.log_severity_level = 3
+                self.session = onnxruntime.InferenceSession(path, options, providers=["CPUExecutionProvider"])
+            except ImportError:
+                if backend == "onnxruntime":
+                    raise SystemExit("recognizer: onnxruntime is not installed (pip install onnxruntime)")
+        if self.session is None:
+            self.net = cv2.dnn.readNetFromONNX(path)
+        self.backend = "onnxruntime" if self.session is not None else "opencv"
+        self.dim = len(self.vector(np.zeros((spec["size"], spec["size"], 3), dtype=np.uint8)))
+
+    def vector(self, square):
+        """The raw embedding of a square BGR picture of `size` px."""
+        np = self.np
+        spec = self.spec
+        rgb = square[:, :, ::-1].astype(np.float32) / 255.0
+        rgb = (rgb - np.array(spec["mean"], dtype=np.float32)) / np.array(spec["std"], dtype=np.float32)
+        blob = np.ascontiguousarray(rgb.transpose(2, 0, 1)[None])
+        wanted = spec["output"]
+        if self.session is not None:
+            names = [o.name for o in self.session.get_outputs()]
+            outs = self.session.run(None, {self.session.get_inputs()[0].name: blob})
+            out = outs[names.index(wanted)] if wanted in names else outs[0]
+        else:
+            self.net.setInput(blob)
+            names = list(self.net.getUnconnectedOutLayersNames())
+            if wanted in names:
+                out = self.net.forward(names)[names.index(wanted)]
+            else:
+                out = self.net.forward()
+        out = np.asarray(out, dtype=np.float32)
+        if out.ndim == 3:  # a sequence of tokens: the first is the class token
+            out = out[:, 0]
+        return out.reshape(-1)
+
+    def __call__(self, square):
+        """The L2-normalised embedding of a square BGR picture; with
+        ANIMAL_FLIP the mean of it and its mirror image."""
+        np = self.np
+        views = [square, square[:, ::-1]] if ANIMAL_FLIP else [square]
+        total = None
+        for view in views:
+            v = self.vector(np.ascontiguousarray(view))
+            n = float(np.linalg.norm(v))
+            if not np.isfinite(n) or n == 0.0:
+                return None
+            v = v / n
+            total = v if total is None else total + v
+        n = float(np.linalg.norm(total))
+        if not np.isfinite(n) or n == 0.0:
+            return None
+        return base64.b64encode((total / n).astype("<f4").tobytes()).decode("ascii")
+
+
+class Animals:
+    """Cats and dogs (protocol 2, optional task "animals"): YOLOX finds the
+    animals (COCO classes cat and dog), the embedder describes each box.
+    Boxes hold the whole animal, not just its face."""
+
+    def __init__(self, cv2, np):
+        self.cv2 = cv2
+        self.np = np
+        d = models_dir()
+        detector = os.path.join(d, ANIMAL_DETECTOR)
+        if not os.path.isfile(detector):
+            raise SystemExit(f"recognizer: model missing: {detector} (run recognizer/fetch-models.sh)")
+        forced = os.environ.get("SHOEBOX_ANIMAL_EMBEDDER")
+        spec = next((s for s in EMBEDDERS if (forced or s["id"]) == s["id"] and os.path.isfile(os.path.join(d, s["file"]))), None)
+        if spec is None:
+            raise SystemExit(f"recognizer: no animal embedder in {d} (run recognizer/fetch-models.sh)")
+        self.net = cv2.dnn.readNetFromONNX(detector)
+        self.embedder = Embedder(cv2, np, spec, os.path.join(d, spec["file"]))
+        self.model = f"{ANIMAL_DETECTOR_ID}+{spec['id']}"
+        self.dim = self.embedder.dim
+        grids, strides = [], []
+        for s in (8, 16, 32):
+            n = YOLOX_SIZE // s
+            gx, gy = np.meshgrid(np.arange(n), np.arange(n))
+            grids.append(np.stack((gx, gy), 2).reshape(-1, 2))
+            strides.append(np.full((n * n, 1), s))
+        self.grids = np.concatenate(grids).astype(np.float32)
+        self.strides = np.concatenate(strides).astype(np.float32)
+
+    def __call__(self, img, req=None):
+        np = self.np
+        h, w = img.shape[:2]
+        animals = []
+        for species, score, (x, y, bw, bh) in self.detect(img):
+            if min(bw, bh) < MIN_ANIMAL:
+                continue
+            emb = self.embedder(self.square(img, x, y, bw, bh))
+            if emb is None:
+                continue
+            x0, y0 = max(0.0, x), max(0.0, y)
+            x1, y1 = min(float(w), x + bw), min(float(h), y + bh)
+            animals.append(
+                {
+                    "species": species,
+                    "bbox": [round(x0, 2), round(y0, 2), round(x1 - x0, 2), round(y1 - y0, 2)],
+                    "score": round(score, 4),
+                    "emb": emb,
+                }
+            )
+        animals.sort(key=lambda a: -a["score"])
+        return animals
+
+    def detect(self, img):
+        """[(species, score, (x, y, w, h))] in pixels of `img`, best first."""
+        np, cv2 = self.np, self.cv2
+        h, w = img.shape[:2]
+        r = min(YOLOX_SIZE / h, YOLOX_SIZE / w)
+        nh, nw = max(1, int(h * r)), max(1, int(w * r))
+        canvas = np.full((YOLOX_SIZE, YOLOX_SIZE, 3), 114, dtype=np.uint8)
+        canvas[:nh, :nw] = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_LINEAR)
+        self.net.setInput(np.ascontiguousarray(canvas.astype(np.float32).transpose(2, 0, 1)[None]))
+        out = self.net.forward()[0]
+        xy = (out[:, :2] + self.grids) * self.strides
+        wh = np.exp(out[:, 2:4]) * self.strides
+        scores = out[:, 5:] * out[:, 4:5]
+        # A cat or a dog only where that is the best of all 80 classes: a
+        # teddy bear that scores a little as a cat stays a teddy bear.
+        best = scores.argmax(1)
+        ours = np.isin(best, list(COCO_ANIMALS))
+        score = np.where(ours, scores[np.arange(len(best)), best], 0.0)
+        keep = score >= ANIMAL_SCORE
+        if not keep.any():
+            return []
+        boxes = np.concatenate([xy[keep] - wh[keep] / 2, wh[keep]], 1) / r
+        kept_score, kept_class = score[keep], best[keep]
+        picked = cv2.dnn.NMSBoxes(boxes.tolist(), kept_score.tolist(), ANIMAL_SCORE, ANIMAL_NMS)
+        found = []
+        for i in np.array(picked).reshape(-1):
+            x, y, bw, bh = (float(v) for v in boxes[i])
+            found.append((COCO_ANIMALS[int(kept_class[i])], float(kept_score[i]), (x, y, bw, bh)))
+        return found
+
+    def square(self, img, x, y, bw, bh):
+        """The box, a little enlarged, padded to a square with grey and
+        scaled to the embedder's input size."""
+        np, cv2 = self.np, self.cv2
+        h, w = img.shape[:2]
+        pad = ANIMAL_PAD * max(bw, bh)
+        x0, y0 = max(0, int(x - pad)), max(0, int(y - pad))
+        x1, y1 = min(w, int(round(x + bw + pad))), min(h, int(round(y + bh + pad)))
+        crop = img[y0:y1, x0:x1]
+        ch, cw = crop.shape[:2]
+        side = max(ch, cw)
+        canvas = np.full((side, side, 3), 114, dtype=np.uint8)
+        top, left = (side - ch) // 2, (side - cw) // 2
+        canvas[top : top + ch, left : left + cw] = crop
+        size = self.embedder.spec["size"]
+        return cv2.resize(canvas, (size, size), interpolation=cv2.INTER_AREA if side > size else cv2.INTER_CUBIC)
+
+
 def decode(cv2, np, req):
     if "image" in req:
         data = np.frombuffer(base64.b64decode(req["image"], validate=True), dtype=np.uint8)
@@ -225,6 +447,11 @@ def main():
         pass
     faces = Faces(cv2, np)
     tasks = {"faces": faces, "embed": Embed(faces, cv2, np)}
+    # The animal models are big and the drive may be slow: only loaded when
+    # the core asks for animals (`recognizer.py --animals`).
+    animals = Animals(cv2, np) if "--animals" in sys.argv[1:] else None
+    if animals is not None:
+        tasks["animals"] = animals
     hello = {
         "hello": "shoebox-recognizer",
         "protocol": PROTOCOL,
@@ -236,6 +463,8 @@ def main():
             "embed": {"model": FACES_MODEL, "dim": FACES_DIM},
         },
     }
+    if animals is not None:
+        hello["tasks"]["animals"] = {"model": animals.model, "dim": animals.dim}
     out.write(json.dumps(hello) + "\n")
     out.flush()
 
