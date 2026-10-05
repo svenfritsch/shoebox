@@ -804,6 +804,21 @@ pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
                     .max_by(|a, b| a.1.total_cmp(&b.1))
                     .map(|(i, _)| v.m.faces[i].id)
             });
+            let cover = chosen.or(c.largest.map(|(_, id)| id));
+            // A hand-drawn face the person's picture was set to.
+            let chosen_manual = p.cover.as_ref().and_then(|(key, b)| {
+                v.m.decisions
+                    .iter()
+                    .find(|d| {
+                        d.manual
+                            && d.decision == Decision::Confirmed
+                            && d.person == Some(p.id)
+                            && d.key == *key
+                            && v.is_present(key)
+                            && recognize::iou(d.b, *b) >= MATCH_IOU
+                    })
+                    .map(|d| d.id)
+            });
             Person {
                 id: p.id,
                 name: p.name,
@@ -823,8 +838,14 @@ pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
                     }
                     .to_string()
                 }),
-                cover: chosen.or(c.largest.map(|(_, id)| id)),
-                cover_manual: if chosen.or(c.largest.map(|(_, id)| id)).is_none() { c.drawn.map(|(_, id)| id) } else { None },
+                cover: if chosen.is_none() && chosen_manual.is_some() { None } else { cover },
+                cover_manual: if chosen.is_none() && chosen_manual.is_some() {
+                    chosen_manual
+                } else if cover.is_none() {
+                    c.drawn.map(|(_, id)| id)
+                } else {
+                    None
+                },
             }
         })
         .collect())
@@ -865,6 +886,18 @@ pub fn rename_person(conn: &Connection, id: i64, name: &str) -> Result<Person> {
     person_or_fail(conn, id)
 }
 
+/// Remove a person with no confirmed faces (a misspelled name): what
+/// is left of them (rejections) goes with them. Someone with faces is
+/// merged into the right person instead.
+pub fn delete_person(conn: &Connection, id: i64) -> Result<()> {
+    let p = person_or_fail(conn, id)?;
+    if p.faces > 0 {
+        bail!("{} has {} confirmed; merge them into someone instead", p.name, if p.faces == 1 { "a face".to_string() } else { format!("{} faces", p.faces) });
+    }
+    conn.execute("DELETE FROM people WHERE id = ?1", [id])?;
+    Ok(())
+}
+
 pub fn hide_person(conn: &Connection, id: i64, hidden: bool) -> Result<Person> {
     if conn.execute("UPDATE people SET hidden = ?2 WHERE id = ?1", params![id, hidden])? == 0 {
         bail!("there is no person {id}");
@@ -898,6 +931,97 @@ pub fn set_cover(conn: &Connection, id: i64, face: i64) -> Result<Person> {
         params![id, f.key, serde_json::to_string(&f.b)?],
     )?;
     person_or_fail(conn, id)
+}
+
+/// Show the person's largest confirmed face in this photo (a file) for the
+/// person: the right-click "Use as … picture" on a photo.
+pub fn set_cover_from_file(conn: &Connection, id: i64, file: i64) -> Result<Person> {
+    let key: String = conn
+        .query_row("SELECT quick_hash FROM files WHERE id = ?1 AND missing_since IS NULL", [file], |r| r.get(0))
+        .optional()?
+        .ok_or_else(|| anyhow::anyhow!("there is no file {file}"))?;
+    if !exists(conn, "people", id)? {
+        bail!("there is no person {id}");
+    }
+    let m = Matched::load(conn, Some(&key))?;
+    let mut best: Option<(f64, [f64; 4])> = None;
+    let mut consider = |b: [f64; 4]| {
+        if best.is_none_or(|(area, _)| b[2] * b[3] > area) {
+            best = Some((b[2] * b[3], b));
+        }
+    };
+    for i in 0..m.faces.len() {
+        if m.decided(i).is_some_and(|d| d.decision == Decision::Confirmed && d.person == Some(id)) {
+            consider(m.faces[i].b);
+        }
+    }
+    for (d, face) in m.decisions.iter().zip(&m.face_of) {
+        if face.is_none() && d.manual && d.decision == Decision::Confirmed && d.person == Some(id) {
+            consider(d.b);
+        }
+    }
+    let Some((_, b)) = best else { bail!("this photo has no confirmed face of that person") };
+    conn.execute("UPDATE people SET cover_key = ?2, cover_box = ?3 WHERE id = ?1", params![id, key, serde_json::to_string(&b)?])?;
+    person_or_fail(conn, id)
+}
+
+/// Give everyone with confirmed faces a picture of their own, kept until
+/// they choose another: the largest confirmed face (the face itself when
+/// there is one), and a new one when the picture's face is not theirs any
+/// more. Run after every change to people, so a person's picture does not
+/// jump to a bigger face later. Returns how many people got a new picture.
+pub fn ensure_covers(conn: &Connection) -> Result<u64> {
+    if !table_exists(conn, "main", "people")? {
+        return Ok(0);
+    }
+    let v = View::load(conn)?;
+    let covers: HashMap<i64, (String, [f64; 4])> = person_rows(conn)?.into_iter().filter_map(|p| Some((p.id, p.cover?))).collect();
+    let mut valid: HashSet<i64> = HashSet::new();
+    let mut largest: HashMap<i64, (f64, String, [f64; 4])> = HashMap::new();
+    let mut drawn: HashMap<i64, (f64, String, [f64; 4])> = HashMap::new();
+    // A picture stays while its face is confirmed for the person, present or
+    // not (a photo on a drive that is not plugged in must not lose it); a new
+    // one is only taken from photos that are there.
+    let mut note = |person: i64, key: &str, b: [f64; 4], size: f64, drawn_face: bool| {
+        if covers.get(&person).is_some_and(|(k, cb)| k == key && recognize::iou(b, *cb) >= MATCH_IOU) {
+            valid.insert(person);
+        }
+        if !v.is_present(key) {
+            return;
+        }
+        let by = if drawn_face { &mut drawn } else { &mut largest };
+        if by.get(&person).is_none_or(|(s, _, _)| size > *s) {
+            by.insert(person, (size, key.to_string(), b));
+        }
+    };
+    for i in 0..v.m.faces.len() {
+        let f = &v.m.faces[i];
+        if let Some(d) = v.m.decided(i).filter(|d| d.decision == Decision::Confirmed)
+            && let Some(p) = d.person
+        {
+            note(p, &f.key, f.b, f.px, false);
+        }
+    }
+    for d in v.unmatched() {
+        let row = &v.m.decisions[d];
+        if row.manual
+            && row.decision == Decision::Confirmed
+            && let Some(p) = row.person
+        {
+            note(p, &row.key, row.b, row.b[2], true);
+        }
+    }
+    let mut changed = 0;
+    for p in person_rows(conn)? {
+        if valid.contains(&p.id) {
+            continue;
+        }
+        if let Some((_, key, b)) = largest.remove(&p.id).or_else(|| drawn.remove(&p.id)) {
+            conn.execute("UPDATE people SET cover_key = ?2, cover_box = ?3 WHERE id = ?1", params![p.id, key, serde_json::to_string(&b)?])?;
+            changed += 1;
+        }
+    }
+    Ok(changed)
 }
 
 /// Merge person `from` into `into`: all of `from`'s decisions become

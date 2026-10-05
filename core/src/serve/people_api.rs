@@ -14,16 +14,39 @@ use serde::{Deserialize, Serialize};
 use super::{ApiError, ApiResult, App, Pairs, blocking, change, filter_of, param};
 use crate::browse;
 use crate::db;
+use crate::faces;
 use crate::people::{self, Action, Who};
 
-/// Run a change to people or decisions, then recompute the clusters.
+/// Run a change to people or decisions, tidy up what it left behind, then
+/// recompute the clusters.
 async fn people_change<T: Send + 'static>(
     app: &Arc<App>,
     f: impl FnOnce(&rusqlite::Connection) -> anyhow::Result<T> + Send + 'static,
 ) -> ApiResult<T> {
-    let result = change(app, move |_, conn| f(conn)).await;
+    let result = change(app, move |_, conn| {
+        let done = f(conn)?;
+        tidy(conn);
+        Ok(done)
+    })
+    .await;
     app.request_clusters();
     result
+}
+
+/// After a change to people or decisions: everyone with confirmed faces has a
+/// picture, and faces that are decided lose their stored crops (the old
+/// picture of someone who chose a new one included). The change itself is
+/// done by now, so a failure here is only reported.
+pub(super) fn tidy(conn: &rusqlite::Connection) -> (u64, u64) {
+    let covers = people::ensure_covers(conn).unwrap_or_else(|e| {
+        eprintln!("could not set people's pictures: {e:#}");
+        0
+    });
+    let pruned = faces::prune_crops(conn).unwrap_or_else(|e| {
+        eprintln!("could not remove face crops: {e:#}");
+        0
+    });
+    (covers, pruned)
 }
 
 // ---------------------------------------------------------------- people
@@ -80,6 +103,11 @@ pub(super) async fn merge(
     people_change(&app, move |conn| people::merge_people(conn, id, req.into)).await.map(Json)
 }
 
+pub(super) async fn delete(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Json<serde_json::Value>> {
+    people_change(&app, move |conn| people::delete_person(conn, id)).await?;
+    Ok(Json(serde_json::json!({ "deleted": id })))
+}
+
 #[derive(Deserialize)]
 pub(super) struct HideRequest {
     hidden: bool,
@@ -107,9 +135,12 @@ pub(super) async fn set_group(
     people_change(&app, move |conn| people::set_group(conn, id, req.group_id)).await.map(Json)
 }
 
+/// The picture of a person: one of their confirmed faces, or (`file`) their
+/// largest confirmed face in a photo.
 #[derive(Deserialize)]
 pub(super) struct CoverRequest {
-    face: i64,
+    face: Option<i64>,
+    file: Option<i64>,
 }
 
 pub(super) async fn set_cover(
@@ -117,7 +148,13 @@ pub(super) async fn set_cover(
     Path(id): Path<i64>,
     Json(req): Json<CoverRequest>,
 ) -> ApiResult<Json<people::Person>> {
-    people_change(&app, move |conn| people::set_cover(conn, id, req.face)).await.map(Json)
+    people_change(&app, move |conn| match (req.face, req.file) {
+        (Some(face), None) => people::set_cover(conn, id, face),
+        (None, Some(file)) => people::set_cover_from_file(conn, id, file),
+        _ => anyhow::bail!("send either a face or a file"),
+    })
+    .await
+    .map(Json)
 }
 
 #[derive(Deserialize)]

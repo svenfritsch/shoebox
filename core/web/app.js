@@ -416,11 +416,17 @@ function loadFolders() {
   });
 }
 
+// Material "keyboard arrow" icons for the expand/collapse buttons.
+var ARROW_DOWN = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>';
+var ARROW_RIGHT = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M8.59 16.59 13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>';
+function setArrow(btn, open) { btn.innerHTML = open ? ARROW_DOWN : ARROW_RIGHT; }
+
 function folderNode(f, depth) {
   var li = el('li');
   var row = el('div', 'row');
   var kids = f.children.filter(function (c) { return c.count > 0; });
-  var toggle = el('button', 'toggle', kids.length ? '▸' : '');
+  var toggle = el('button', 'toggle');
+  if (kids.length) setArrow(toggle, false);
   var name = el('button', 'name', f.name);
   name.dataset.id = f.id;
   name.title = f.path;
@@ -440,7 +446,7 @@ function folderNode(f, depth) {
       markActiveFolder();
     }
     if (ul) ul.hidden = !open;
-    toggle.textContent = open ? '▾' : '▸';
+    setArrow(toggle, open);
   };
   li._expand = expand;
   toggle.onclick = function () { expand(!ul || ul.hidden); };
@@ -498,7 +504,7 @@ function updateSections() {
     var locked = sectionHasActive(id);
     var open = locked || !sectionClosed[id];
     c.disabled = locked;
-    c.textContent = open ? '▾' : '▸';
+    setArrow(c, open);
     c.setAttribute('aria-expanded', String(open));
     $(c.dataset.body).hidden = !open;
   });
@@ -2419,6 +2425,14 @@ $('sizer').addEventListener('contextmenu', function (ev) {
   items.push({ label: 'Copy path', run: function () {
     api(LIBAPI + '/files/' + id).then(function (info) { copyPath(info.path); }).catch(failed);
   } });
+  // On one person's photos (from the sidebar or as the only search term):
+  // their face in this photo becomes their picture.
+  var only = state.filter.people && state.filter.people.length === 1 ? state.filter.people[0] : null;
+  if (only != null && state.personNames[only]) {
+    items.push({ label: 'Use as ' + state.personNames[only] + '’s picture', run: function () {
+      post('/api/people/' + only + '/cover', { file: id }).then(function () { toast('Picture changed'); peopleChanged(); }).catch(failed);
+    } });
+  }
   showMenu(ev.clientX, ev.clientY, items);
 });
 
@@ -2958,11 +2972,46 @@ function avatar(p, cls) {
   return a;
 }
 
+// A face cut out of its photo's thumbnail here in the browser, for faces that
+// have a decision: the server keeps no crop of them (only of faces still
+// waiting for a name and of people's pictures). Same square with room around
+// the face as the server's crops (faces.rs, `crop`); the thumbnail is
+// already there from the grid.
+var ZOOM_MARGIN = 0.25;
+
+function zoomFace(face) {
+  var box = el('span', 'zoom');
+  if (face.file == null) return box;
+  var inner = el('span');
+  if (face.roll) inner.style.transform = 'rotate(' + face.roll + 'deg)';
+  var img = el('img');
+  img.alt = '';
+  img.decoding = 'async';
+  img.onload = function () {
+    var iw = img.naturalWidth, ih = img.naturalHeight;
+    if (!iw || !ih) return;
+    var side = Math.max(1, Math.min(Math.max(face.w * iw, face.h * ih) * (1 + 2 * ZOOM_MARGIN), iw, ih));
+    var x0 = Math.min(Math.max((face.x + face.w / 2) * iw - side / 2, 0), Math.max(iw - side, 0));
+    var y0 = Math.min(Math.max((face.y + face.h / 2) * ih - side / 2, 0), Math.max(ih - side, 0));
+    img.style.width = (iw / side * 100) + '%';
+    img.style.height = (ih / side * 100) + '%';
+    img.style.left = (-x0 / side * 100) + '%';
+    img.style.top = (-y0 / side * 100) + '%';
+    box.classList.add('ready');
+  };
+  img.src = '/api/files/' + face.file + '/thumb?v=' + face.version;
+  inner.appendChild(img);
+  box.appendChild(inner);
+  return box;
+}
+
 function faceImg(face, cls) {
   var a = el('span', 'avatar' + (cls ? ' ' + cls : '') + (face.species ? ' pet pet-' + face.species : ''));
   if (face.species) a.title = face.species;
   var url = cropUrl(face);
-  if (url) {
+  if (face.state === 'ignored' && face.file != null) {
+    a.appendChild(zoomFace(face));
+  } else if (url) {
     var img = el('img');
     img.alt = '';
     img.loading = 'lazy';
@@ -3026,7 +3075,8 @@ function renderFacesSection() {
     var key = s.id == null ? 'none' : s.id;
     var li = el('li');
     var row = el('div', 'row');
-    var toggle = el('button', 'toggle', s.people.length ? (people.open[key] ? '▾' : '▸') : '');
+    var toggle = el('button', 'toggle');
+    if (s.people.length) setArrow(toggle, !!people.open[key]);
     var name = el('button', 'name', s.name);
     name.title = s.people.length ? 'Show or hide its people' : 'Nobody in it yet';
     var flip = function () { people.open[key] = !people.open[key]; renderFacesSection(); };
@@ -3214,6 +3264,22 @@ function renamePerson(p) {
   });
 }
 
+// Only for someone without faces (a misspelled name); others are merged.
+function deletePersonDialog(p) {
+  openModal('Delete person', 'Delete “' + p.name + '”? Nobody is confirmed as them, so no photo changes.', [
+    { label: 'Cancel', cls: 'quiet' },
+    { label: 'Delete', cls: 'danger', onclick: function () {
+      post(LIBAPI + '/people/' + p.id + '/delete').then(function () {
+        toast('“' + p.name + '” deleted');
+        peopleChanged();
+        if (state.filter.people.indexOf(p.id) >= 0) setFilter({ people: state.filter.people.filter(function (x) { return x !== p.id; }) });
+        else if (state.filter.view === 'person' && state.filter.id === p.id) showView('people');
+        else if (state.filter.view) loadView(state.filter.view);
+      }).catch(failed);
+    } },
+  ]);
+}
+
 function newGroup(then) {
   nameDialog('New group', '', 'Create', function (name) {
     return post(LIBAPI + '/groups', { name: name }).then(function (g) {
@@ -3335,7 +3401,7 @@ function personMenuItems(p) {
     { label: 'Rename…', run: function () { renamePerson(p); } },
     { label: 'Move to group…', run: function () { moveToGroupDialog(p); } },
     { label: 'Merge into…', run: function () { mergeDialog(p); } },
-  ];
+  ].concat(p.faces === 0 ? [{ label: 'Delete…', run: function () { deletePersonDialog(p); } }] : []);
 }
 
 // A ⋯ button that opens a menu below itself (works by touch).
@@ -3554,7 +3620,10 @@ function personFaceCard(face, tab) {
   a.href = '#';
   a.title = 'Open the photo';
   var url = cropUrl(face);
-  if (url) {
+  if (tab === 'confirmed' && face.file != null) {
+    // Confirmed faces have no stored crop: cut out of the photo's thumbnail.
+    a.appendChild(zoomFace(face));
+  } else if (url) {
     var img = el('img');
     img.alt = '';
     img.loading = 'lazy';
@@ -4055,7 +4124,9 @@ function infoFaces(row, info) {
 
 function infoFace(info, f, k) {
   var line = el('div', 'pface');
-  var pic = faceImg(f, 'small');
+  // A named person shows their picture (no crop of the face is kept); the
+  // box on the photo shows which face it is.
+  var pic = f.state === 'confirmed' && f.person ? avatar(people.byId[f.person.id] || { name: f.person.name }, 'small') : faceImg(f, 'small');
   pic.title = 'Show where it is';
   pic.onclick = function () { lb.hover = lb.hover === k ? null : k; drawFaces(); };
   line.appendChild(pic);

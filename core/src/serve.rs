@@ -365,6 +365,12 @@ impl App {
         recognize::attach(&conn, &db_path)?;
 
         let name = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| root.display().to_string());
+        // Older versions kept a crop of every face looked at, and some people
+        // have no picture of their own yet.
+        let (covers, pruned) = people_api::tidy(&conn);
+        if covers > 0 || pruned > 0 {
+            println!("{name}: tidied up, {covers} people got a picture, {pruned} face crops nobody needs were removed.");
+        }
         import::clean_incoming(&root);
         let (heal_tx, heal_rx) = mpsc::channel();
         let (backup_tx, backup_rx) = mpsc::channel();
@@ -839,6 +845,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/people/{id}/faces", get(people_api::person_faces))
         .route("/api/people/{id}/rename", post(people_api::rename))
         .route("/api/people/{id}/merge", post(people_api::merge))
+        .route("/api/people/{id}/delete", post(people_api::delete))
         .route("/api/people/{id}/hide", post(people_api::hide))
         .route("/api/people/{id}/group", post(people_api::set_group))
         .route("/api/people/{id}/cover", post(people_api::set_cover))

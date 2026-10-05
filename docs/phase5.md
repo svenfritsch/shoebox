@@ -286,7 +286,8 @@ in "Still to check on real hardware" below.
   turned upright for rotated faces, ≤ 160 px. All crops of a photo come
   from one decode at 1600 px; a photo that changed since the last scan
   gets none and nothing is stored. The scan's thumbnail pass prunes crops
-  of content that is gone.
+  of content that is gone. (Since 5e only faces without a decision and
+  people's pictures stay stored.)
 - Tests (`core/tests/recognize.rs`): `--rotated` under the guard (a face
   found only turned, put back at the right box, nothing counted twice,
   resumable, redone after a new upright result), Ctrl-C during the rotated
@@ -785,6 +786,50 @@ Built, one commit per step. Scope and rules are in "Phase 5d details" in
   `move_without_keep_tags_drops_own_tags` in `tags.rs`. The page was driven with
   Playwright (Chromium, 1280 × 800) on a small library.
 
+## 5e: lean `thumbs.db` (crops only for faces that wait)
+
+Feedback after 5d: on the real drive `thumbs.db` was 285 MB (7196 photos × 28 KB
+= 197 MB, 8836 face crops × 6.1 KB = 53 MB). Photo thumbnails have to stay; the
+face crops grew with every face anyone ever looked at, up to ~1 GB at the
+expected 150k faces, although only the ones waiting for a decision need a
+picture of their own.
+
+Decided:
+- A face is **decided** when it is confirmed, ignored or "not a face". A face
+  that is only "not this person" still waits (it is unnamed).
+- `thumbs.faces` keeps a crop only for **faces without a decision** and for
+  **the picture of each person**. Decided faces have none.
+- Where a decided face is shown, the browser cuts it out of the photo's
+  thumbnail (`zoomFace` in `app.js`: same square and 25% room as the server's
+  crops, rotated for turned faces; no request, no stored bytes): the
+  "Confirmed" tab of a person's faces and ignored faces in the info panel.
+  Confirmed faces in the info panel show the person's picture instead; "Show
+  boxes" / hovering still shows where that face is.
+- A person's picture is stored once and stays until the user changes it:
+  `people::ensure_covers` gives everyone with confirmed faces a picture (the
+  largest confirmed face; the face itself when there is one) and picks a new one
+  only when the old face is not theirs any more. It runs after every change to
+  people and at the start of `serve`. A picture whose photo is missing is kept.
+  Pictures stay 160 px (shown at 72 px).
+- One cleanup rule instead of a hook in every action: `faces::prune_crops`
+  deletes every stored crop that is neither a face without a decision nor a
+  person's picture. It runs at the start of `serve` (this is what removes the
+  old crops once) and after every change to people or decisions
+  (`people_api::tidy`), so "Use as … picture" drops the old picture by itself.
+  `crop_of` stores a crop only when `faces::wanted` says so; a decided face asked
+  for anyway (face check page, nearest neighbours) is made again, not stored.
+- Right-click on a photo while the grid shows exactly one person (sidebar or
+  the only search term): "Use as <name>'s picture" next to "Show in Finder" /
+  "Copy path". `POST /api/people/{id}/cover` takes `{face}` or `{file}` (their
+  largest confirmed face in that photo; 400 when there is none).
+- No `VACUUM`: the freed pages of `thumbs.db` are reused by the thumbnails of
+  the scans still to come, so the file stops growing instead of shrinking.
+
+Tests: `only_faces_waiting_for_a_decision_and_pictures_keep_a_crop` in
+`core/tests/people.rs` (crops of waiting faces, deciding removes them, a
+decided face still shown but not stored, the picture changed from a photo, old
+crops removed at the start, guard).
+
 ## Later (not in phase 5)
 
 - Undo for assignments.
@@ -952,3 +997,17 @@ Built, one commit per step. Scope and rules are in "Phase 5d details" in
     other folders are untouched. How long on the full library?
   - [ ] `shoebox verify` afterwards; restart `serve`: the override and the
     carried tags are still there; `userdata.json` lists them.
+
+- [ ] 5e: update, start `serve` once. It prints "Tidied up: N people got a
+      picture, M face crops nobody needs were removed" and `thumbs.db` stops
+      growing (the file keeps its size, the pages are reused by the next scans).
+  - [ ] Every person still shows their picture (sidebar, overview, person page).
+  - [ ] A person's "Confirmed" tab shows the faces zoomed out of the photos;
+        the faces are recognisable (the thumbnails are 384 px).
+  - [ ] Info panel: named people show their picture, unnamed ones their face;
+        hovering a line shows the box on the photo.
+  - [ ] Name a cluster: the cards disappear and `thumbs.db`'s face rows shrink
+        (`sqlite3 -readonly .../thumbs.db "SELECT count(*) FROM faces"`).
+  - [ ] Right-click a photo on a person's page (from the sidebar and from the
+        search box): "Use as … picture" changes the picture; on a photo of
+        someone else it says why not.

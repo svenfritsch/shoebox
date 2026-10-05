@@ -48,7 +48,7 @@ progress. Update the status section when a phase moves.
     bin/shoebox.exe              ← later
     bin/ffmpeg                   ← optional, static, for video posters
     library.db                   ← SQLite index (+ rotating backup copy)
-    thumbs.db                    ← preview BLOBs keyed by quick hash
+    thumbs.db                    ← preview BLOBs keyed by quick hash, face crops only for undecided faces and people's pictures
     recognition.db               ← faces (boxes + embeddings) keyed by quick hash
     recognizer/                  ← optional (recognizer/install.sh)
       runtime/<os>-<arch>/       ← standalone Python (copies, no symlinks: exFAT)
@@ -184,6 +184,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 5b-2 | Search by several tags at once (AND, chips); people join in with 5c-3 | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **5c-1 done**, checked on the real drive; **5c-2 and 5c-3 done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5d | Duplicates UI: one row per photo, multi-select, bulk delete within a folder, tag and capture-date carry-over; Move dialog "keep tags"; trash dialog focus | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
+| 5e | Lean `thumbs.db`: face crops only for faces without a decision and for each person's picture; right-click "Use as … picture" on a person's photos | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | **In progress**: library id, launcher (cancel, saved folders, start scripts) and the multi-drive core (hub, offline, backup roles, common timeline, cross-drive duplicates and people) built; backup verification (`shoebox backup`, launcher button, All drives page) built; real-hardware checks and Linux/Windows packaging open |
 | 7 | Pets: cats and dogs found (`shoebox recognize --pets`, launcher button "Recognize pets"), named, grouped and searched like people; Settings → Calibration with the Face check and the new Pet check | **Built except the real-hardware run and DINOv2** (see [phase7.md](phase7.md)) |
 
@@ -542,7 +543,8 @@ the combined 5c-2/5c-3 list in [phase5.md](phase5.md), all in the UI and
 from the iPad. 5d (duplicates UI and tag carry-over) is built and comes before
 phase 6 (launcher UI, multiple drives, backups, packaging; pets follow in phase 7);
 check it on the drive and the iPad (list in
-[phase5.md](phase5.md)).
+[phase5.md](phase5.md)). 5e (lean `thumbs.db`) is built: update, start `serve`
+once (it removes the old crops) and go through its list in [phase5.md](phase5.md).
 
 Pets (phase 7) are built on top of the launcher branch: install or update the
 recognizer (`recognizer/install.sh`; `fetch-models.sh` now also fetches
