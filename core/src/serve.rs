@@ -1408,7 +1408,9 @@ async fn duplicates_list(State(app): State<Arc<App>>) -> ApiResult<Response> {
         let shown: HashSet<i64> = app.snapshot(&conn)?.items.iter().map(|it| it.id).collect();
         let candidates = duplicates::load(&conn, &shown)?;
         drop(conn);
-        let groups = Arc::new(duplicates::find(&candidates));
+        let mut groups = duplicates::find(&candidates);
+        duplicates::add_tags(&app.conn.lock().unwrap(), &mut groups)?;
+        let groups = Arc::new(groups);
         *app.duplicates.lock().unwrap() = Some((version, groups.clone()));
         Ok(Json(DuplicateList { groups: groups.as_slice() }).into_response())
     })

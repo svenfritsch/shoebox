@@ -56,6 +56,11 @@ fn removing_copies_keeps_one_and_carries_tags_over() {
     let addr = server.addr;
     post(addr, "/api/tags/add", &json!({ "ids": [kochen], "name": "Lecker" }));
 
+    // The page gets each copy's tags: folder tags and own tags apart.
+    let groups = get(addr, "/api/duplicates").json();
+    let copy = groups["groups"][0]["files"].as_array().unwrap().iter().find(|f| f["id"] == kochen).unwrap().clone();
+    assert_eq!(copy["tags"], json!([{ "name": "Kochen", "own": false }, { "name": "Lecker", "own": true }]));
+
     // Rules: something must stay, something must go, the two are distinct,
     // and only duplicates of a kept file can go.
     for (keep, gone) in [(vec![], vec![kochen]), (vec![orig], vec![]), (vec![orig, kochen], vec![kochen]), (vec![orig], vec![other])] {

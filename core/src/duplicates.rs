@@ -40,6 +40,15 @@ pub struct DupFile {
     pub version: String,
     /// Files in the group with the same number have identical content.
     pub same: Option<u32>,
+    /// Folder tags and own tags (filled in by `add_tags`, after `find`).
+    pub tags: Vec<DupTag>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DupTag {
+    pub name: String,
+    /// An own tag (removable); otherwise it comes from the folder.
+    pub own: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -88,6 +97,7 @@ pub fn load(conn: &Connection, shown: &HashSet<i64>) -> Result<Candidates> {
                     taken: r.get(8)?,
                     version: r.get::<_, String>(9)?.chars().take(8).collect(),
                     same: None,
+                    tags: Vec::new(),
                 },
                 full_hash: r.get(10)?,
                 phash: r.get::<_, Option<String>>(11)?.as_deref().and_then(phash::from_hex),
@@ -187,6 +197,18 @@ pub fn find(candidates: &Candidates) -> Vec<Group> {
         .collect();
     groups.sort_by(|(a, ta), (b, tb)| b.exact.cmp(&a.exact).then(tb.cmp(ta)).then(a.files[0].path.cmp(&b.files[0].path)));
     groups.into_iter().map(|(g, _)| g).collect()
+}
+
+/// Put the tags on the files of the groups (they are only needed there).
+pub fn add_tags(conn: &Connection, groups: &mut [Group]) -> Result<()> {
+    let mut stmt = conn.prepare(
+        "SELECT t.name, ft.source = 'user' FROM file_tags ft JOIN tags t ON t.id = ft.tag_id
+         WHERE ft.file_id = ?1 ORDER BY ft.source = 'user', t.name",
+    )?;
+    for f in groups.iter_mut().flat_map(|g| g.files.iter_mut()) {
+        f.tags = stmt.query_map([f.id], |r| Ok(DupTag { name: r.get(0)?, own: r.get(1)? }))?.collect::<rusqlite::Result<_>>()?;
+    }
+    Ok(())
 }
 
 /// Exact duplicates (same full hash) that lie in the same folder: per
