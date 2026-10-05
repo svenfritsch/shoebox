@@ -181,7 +181,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 5b | Own tags (add/remove, many photos at once, search), user data backup | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5b-2 | Search by several tags at once (AND, chips); people join in with 5c-3 | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **5c-1 done**, checked on the real drive; **5c-2 and 5c-3 done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | Planned |
+| 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | **In progress**: library id in the routes done |
 | 7 | Pets | |
 
 ### Phase 0 details
@@ -346,6 +346,7 @@ verification and packaging. Order: library id in all API routes first, then
 the launcher, then backups and packaging.
 
 Done:
+- Library id in all API routes (`/api/lib/{lib}/…`, `/api/libraries`).
 
 Open:
 - [ ] Launcher UI: double-click on the binary (no arguments) starts a

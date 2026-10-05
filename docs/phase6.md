@@ -13,6 +13,16 @@ route carries a library id (`/api/lib/{lib}/files/{id}` and so on); the UI
 keeps the id with every file reference. Built before anything else in this
 phase, with one library, so the single-drive behaviour stays testable.
 
+Built: all routes except `/api/session`, `/api/login` and `/api/libraries`
+live under `/api/lib/{lib}/…` (the other docs still write the short form).
+`serve::scope_request` rewrites the path before routing and marks the request,
+so the handlers are unchanged for now; `guard` answers 404 to a library route
+without the id, an unknown id matches nothing. The id is eight hex digits of
+the BLAKE3 hash of the NFC folder name (`serve::library_id`). `/api/libraries`
+lists `{id, name, online}`; the UI builds `LIBAPI` from it. Test helpers add the
+prefix themselves (`/raw/…` sends a path as written). Next step: an `App` per
+library and the id choosing between them.
+
 ## 2. Launcher UI
 
 Goal: people who are not technical can use shoebox without a terminal.
@@ -50,9 +60,9 @@ OS and packaging.
 ## Checklist
 
 Done:
+- [x] Library id in all API routes (one library; several come with section 3)
 
 Open:
-- [ ] Library id in all API routes
 - [ ] Launcher UI (section 2)
 - [ ] Multiple drives (section 3)
 - [ ] Backups and packaging (section 4)

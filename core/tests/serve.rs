@@ -319,3 +319,29 @@ fn timeline_order_filters_and_search() {
     }
     server.stop().unwrap();
 }
+
+#[test]
+fn library_routes_need_the_library_id() {
+    let lib = Library::new("serve-library-id");
+    lib.scan_opts(false, false, false);
+    let server = start(&lib, None);
+    let addr = server.addr;
+
+    let libs = get(addr, "/api/libraries").json();
+    assert_eq!(libs.as_array().unwrap().len(), 1);
+    let id = libs[0]["id"].as_str().unwrap().to_string();
+    assert_eq!(id, shoebox::serve::library_id(libs[0]["name"].as_str().unwrap()));
+    assert_eq!(libs[0]["online"], true);
+
+    // The id is part of the path, query strings survive the rewrite.
+    assert_eq!(get(addr, &format!("/raw/api/lib/{id}/info")).status, 200);
+    assert_eq!(get(addr, &format!("/raw/api/lib/{id}/tags?limit=1")).status, 200);
+    // Without an id, or with another one, nothing is served (file ids are per database).
+    for path in ["/raw/api/info", "/raw/api/files/1/thumb", "/raw/api/lib/00000000/info", "/raw/api/lib/info"] {
+        assert_eq!(get(addr, path).status, 404, "{path}");
+    }
+    // Changes keep the X-Shoebox rule under the new paths.
+    let body = br#"{"ids":[],"folder":1}"#;
+    let json = ("Content-Type", "application/json");
+    assert_eq!(bare_request(addr, "POST", &format!("/raw/api/lib/{id}/move"), &[json], body).status, 403);
+}

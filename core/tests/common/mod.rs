@@ -165,8 +165,34 @@ impl Response {
     }
 }
 
+/// Library routes live under `/api/lib/{id}/`; the tests write `/api/…` and
+/// this adds the id of the server at `addr` (asked once from
+/// `/api/libraries`). `/raw/api/…` is sent as it is, to test the refusal.
+fn scoped(addr: SocketAddr, path: &str) -> String {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static IDS: OnceLock<Mutex<HashMap<SocketAddr, String>>> = OnceLock::new();
+    if let Some(raw) = path.strip_prefix("/raw") {
+        return raw.to_string();
+    }
+    let global = ["/api/session", "/api/login", "/api/libraries", "/api/lib/"];
+    if !path.starts_with("/api/") || global.iter().any(|g| path.starts_with(g)) {
+        return path.to_string();
+    }
+    let ids = IDS.get_or_init(Default::default);
+    let known = ids.lock().unwrap().get(&addr).cloned();
+    let id = known.unwrap_or_else(|| {
+        let r = send(addr, "GET /api/libraries HTTP/1.1\r\nConnection: close\r\nHost: localhost\r\n".to_string(), b"");
+        let id = r.json()[0]["id"].as_str().unwrap().to_string();
+        ids.lock().unwrap().insert(addr, id.clone());
+        id
+    });
+    format!("/api/lib/{id}/{}", &path["/api/".len()..])
+}
+
 /// A bare HTTP/1.1 client, enough for these tests.
 pub fn request(addr: SocketAddr, method: &str, path: &str, headers: &[(&str, &str)], body: &[u8]) -> Response {
+    let path = &scoped(addr, path);
     let mut head = format!("{method} {path} HTTP/1.1\r\nConnection: close\r\nContent-Length: {}\r\n", body.len());
     if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("host")) {
         head.push_str("Host: localhost\r\n");
@@ -183,6 +209,7 @@ pub fn request(addr: SocketAddr, method: &str, path: &str, headers: &[(&str, &st
 
 /// Like `request`, without the `X-Shoebox` header.
 pub fn bare_request(addr: SocketAddr, method: &str, path: &str, headers: &[(&str, &str)], body: &[u8]) -> Response {
+    let path = &scoped(addr, path);
     let mut head = format!("{method} {path} HTTP/1.1\r\nConnection: close\r\nContent-Length: {}\r\nHost: localhost\r\n", body.len());
     for (k, v) in headers {
         head.push_str(&format!("{k}: {v}\r\n"));

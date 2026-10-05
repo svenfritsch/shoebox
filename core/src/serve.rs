@@ -198,6 +198,7 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
     let app = Arc::new(App {
         root,
         db_path,
+        lib_id: library_id(&name),
         name,
         conn: Mutex::new(conn),
         snapshot: Mutex::new(None),
@@ -226,7 +227,10 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
     spawn_embedder(Arc::downgrade(&app), embed_rx);
     app.request_clusters();
     app.request_embed();
-    let router = router(app.clone());
+    let known = app.lib_id.clone();
+    let router = tower::ServiceBuilder::new()
+        .map_request(move |req: Request| scope_request(&known, req))
+        .service(router(app.clone()));
 
     let (tx, rx) = oneshot::channel::<()>();
     let thread = std::thread::Builder::new().name("shoebox-serve".into()).spawn(move || -> Result<()> {
@@ -243,7 +247,7 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
                     let _ = rx.await;
                 }
             };
-            axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>())
+            axum::serve(listener, axum::ServiceExt::<Request>::into_make_service_with_connect_info::<SocketAddr>(router))
                 .with_graceful_shutdown(stop)
                 .await?;
             Ok::<(), anyhow::Error>(())
@@ -262,6 +266,8 @@ struct App {
     root: PathBuf,
     db_path: PathBuf,
     name: String,
+    /// Names this library in every library route (`/api/lib/{id}/…`).
+    lib_id: String,
     /// One connection (library.db with thumbs.db attached); requests are
     /// short, and rendering happens outside the lock.
     conn: Mutex<Connection>,
@@ -565,10 +571,53 @@ fn spawn_backups(app: Weak<App>, requests: mpsc::Receiver<()>) {
     });
 }
 
+/// A library's id in the routes: eight hex digits of the NFC-normalised name
+/// of its folder (the drive's name), so it is the same in every session and
+/// on every machine. File ids are per database, so a file is only known by
+/// (library id, file id).
+pub fn library_id(name: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    let nfc: String = name.nfc().collect();
+    blake3::hash(nfc.as_bytes()).to_hex()[..8].to_string()
+}
+
+/// Marks a request that came in through `/api/lib/{id}/…`.
+#[derive(Clone)]
+struct LibraryScope(String);
+
+/// The routes that belong to no library.
+fn is_global(path: &str) -> bool {
+    matches!(path, "/api/session" | "/api/login" | "/api/libraries")
+}
+
+/// Turns `/api/lib/{id}/rest` into `/api/rest` before routing and remembers
+/// the id, so the handlers stay as they are; with several libraries the id
+/// picks the one they work on. A library route without an id is refused by
+/// `guard`, an unknown id matches no route.
+fn scope_request(known: &str, mut req: Request) -> Request {
+    let Some(rest) = req.uri().path().strip_prefix("/api/lib/") else { return req };
+    let (id, tail) = rest.split_once('/').unwrap_or((rest, ""));
+    if id != known {
+        *req.uri_mut() = Uri::from_static("/api/lib/unknown");
+        return req;
+    }
+    let new = match req.uri().query() {
+        Some(q) => format!("/api/{tail}?{q}"),
+        None => format!("/api/{tail}"),
+    };
+    if let Ok(uri) = new.parse::<Uri>() {
+        let id = id.to_string();
+        *req.uri_mut() = uri;
+        req.extensions_mut().insert(LibraryScope(id));
+    }
+    req
+}
+
 fn router(app: Arc<App>) -> Router {
     Router::new()
         .route("/api/session", get(session))
         .route("/api/login", post(login))
+        .route("/api/libraries", get(libraries))
         .route("/api/info", get(info))
         .route("/api/folders", get(folders))
         .route("/api/tags", get(tags))
@@ -780,9 +829,14 @@ fn lan_address() -> Option<IpAddr> {
 /// every response.
 async fn guard(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, req: Request, next: Next) -> Response {
     let path = req.uri().path();
-    let open = !path.starts_with("/api/") || path == "/api/session" || path == "/api/login";
+    let open = !path.starts_with("/api/") || is_global(path);
+    // Library routes only exist as /api/lib/{id}/…, which `scope_request`
+    // has rewritten by now and marked.
+    let unscoped = path.starts_with("/api/") && !is_global(path) && req.extensions().get::<LibraryScope>().is_none();
     let safe = matches!(*req.method(), Method::GET | Method::HEAD);
-    let mut res = if !safe && !req.headers().contains_key(WRITE_HEADER) {
+    let mut res = if unscoped {
+        ApiError::NotFound.into_response()
+    } else if !safe && !req.headers().contains_key(WRITE_HEADER) {
         ApiError::Forbidden("missing X-Shoebox header").into_response()
     } else if open || app.auth.allows(peer.ip(), req.headers()) {
         next.run(req).await
@@ -805,6 +859,19 @@ struct SessionInfo {
 
 async fn session(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: HeaderMap) -> Json<SessionInfo> {
     Json(SessionInfo { authenticated: app.auth.allows(peer.ip(), &headers), pin_enabled: app.auth.pin.is_some() })
+}
+
+#[derive(Serialize)]
+struct LibraryInfo {
+    id: String,
+    name: String,
+    /// False for a drive that is unplugged (with several libraries).
+    online: bool,
+}
+
+/// The libraries this server has open, for the UI to build its routes from.
+async fn libraries(State(app): State<Arc<App>>) -> Json<Vec<LibraryInfo>> {
+    Json(vec![LibraryInfo { id: app.lib_id.clone(), name: app.name.clone(), online: true }])
 }
 
 #[derive(Deserialize)]

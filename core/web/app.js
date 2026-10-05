@@ -37,6 +37,11 @@ var state = {
 
 // ------------------------------------------------------------------ api
 
+// Every library has an id and all its routes live under /api/lib/<id>
+// (file ids are per database). Set in the start code below, from
+// /api/libraries, before the first library request.
+var LIBAPI = null;
+
 function api(path, opts) {
   return fetch(path, Object.assign({ credentials: 'same-origin' }, opts)).then(function (r) {
     if (r.status === 401) { showLogin(); throw new Error('login required'); }
@@ -260,8 +265,8 @@ function suggest(text) {
   var needle = text.trim();
   var within = { q: needle, tag: f.tags, person: f.people, folder: f.folder };
   Promise.all([
-    api('/api/tags' + query(Object.assign({ limit: 8 }, within))),
-    api('/api/people/search' + query(Object.assign({ limit: 6 }, within))).catch(function () { return []; }),
+    api(LIBAPI + '/tags' + query(Object.assign({ limit: 8 }, within))),
+    api(LIBAPI + '/people/search' + query(Object.assign({ limit: 6 }, within))).catch(function () { return []; }),
   ]).then(function (r) {
     if (seq !== sugg.seq) return;
     var items = r[1].map(function (p) {
@@ -331,7 +336,7 @@ var suggestSeq = 0;
 function suggestTags(text) {
   var seq = ++suggestSeq;
   if (!text.trim()) return;
-  api('/api/tags' + query({ q: text.trim(), limit: 12 })).then(function (tags) {
+  api(LIBAPI + '/tags' + query({ q: text.trim(), limit: 12 })).then(function (tags) {
     if (seq !== suggestSeq) return;
     var list = $('tag-list');
     list.textContent = '';
@@ -348,7 +353,7 @@ function suggestTags(text) {
 // ------------------------------------------------------------------ folders
 
 function loadFolders() {
-  return api('/api/folders').then(function (folders) {
+  return api(LIBAPI + '/folders').then(function (folders) {
     state.folders = folders;
     state.folderById = {};
     folders.forEach(function (f) { state.folderById[f.id] = f; f.children = []; });
@@ -445,7 +450,7 @@ function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
 function loadTimeline(resetScroll) {
   var seq = ++state.loadSeq;
   var f = state.filter;
-  return api('/api/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, q: f.q })).then(function (data) {
+  return api(LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, q: f.q })).then(function (data) {
     if (seq !== state.loadSeq) return;
     state.anchor = null; // indices change with the new list
     var unnamed = f.tags.some(function (id) { return !state.tagNames[id]; }) || f.people.some(function (id) { return !state.personNames[id]; });
@@ -542,7 +547,7 @@ function render() {
 
 function thumbUrl(i) {
   var d = state.data;
-  return '/api/files/' + d.ids[i] + '/thumb?v=' + d.versions.substr(i * 8, 8);
+  return LIBAPI + '/files/' + d.ids[i] + '/thumb?v=' + d.versions.substr(i * 8, 8);
 }
 
 function buildRow(row) {
@@ -654,7 +659,7 @@ function grabFrame(job) {
     var at = isFinite(v.duration) ? v.duration / 10 : 0;
     if (at > 0) { v.onseeked = draw; v.currentTime = at; } else if (v.readyState >= 2) draw(); else v.onloadeddata = draw;
   };
-  v.src = '/api/files/' + job.id + '/original';
+  v.src = LIBAPI + '/files/' + job.id + '/original';
 }
 
 // Where item i sits in the layout.
@@ -827,7 +832,7 @@ function showItem() {
   stage.textContent = '';
   $('lb-prev').hidden = i <= 0;
   $('lb-next').hidden = i >= d.count - 1;
-  $('lb-download').href = '/api/files/' + id + '/original?download=1';
+  $('lb-download').href = LIBAPI + '/files/' + id + '/original?download=1';
   $('lb-live').hidden = !state.live[id];
   $('lb-title').textContent = '';
   lb.hover = null;
@@ -840,7 +845,7 @@ function showItem() {
     v.playsInline = true;
     v.preload = 'metadata';
     v.poster = frames.cache[id] || thumbUrl(i);
-    v.src = '/api/files/' + id + '/original';
+    v.src = LIBAPI + '/files/' + id + '/original';
     stage.appendChild(v);
   } else {
     var img = el('img');
@@ -857,7 +862,7 @@ function showItem() {
     });
   }
 
-  api('/api/files/' + id).then(function (info) {
+  api(LIBAPI + '/files/' + id).then(function (info) {
     if (state.open !== i) return;
     lb.details = info;
     $('lb-title').textContent = formatDate(info) + ' · ' + info.name;
@@ -896,7 +901,7 @@ window.addEventListener('resize', drawFaces);
 
 function viewUrl(i) {
   var d = state.data;
-  return '/api/files/' + d.ids[i] + '/view?v=' + d.versions.substr(i * 8, 8);
+  return LIBAPI + '/files/' + d.ids[i] + '/view?v=' + d.versions.substr(i * 8, 8);
 }
 
 function formatDate(info) {
@@ -980,7 +985,7 @@ $('lb-live').onclick = function () {
   var v = el('video');
   v.autoplay = true;
   v.playsInline = true;
-  v.src = '/api/files/' + video + '/original';
+  v.src = LIBAPI + '/files/' + video + '/original';
   v.onended = function () { v.remove(); if (still) still.hidden = false; };
   if (still) still.hidden = true;
   stage.appendChild(v);
@@ -1041,7 +1046,7 @@ document.addEventListener('keydown', function (ev) {
 // ------------------------------------------------------------------ status
 
 function loadInfo() {
-  return api('/api/info').then(function (info) {
+  return api(LIBAPI + '/info').then(function (info) {
     $('title').textContent = info.name;
     state.reveal = info.reveal || null;
     document.title = info.name + ' · shoebox';
@@ -1243,7 +1248,7 @@ function moveDialog(ids, done) {
     var folder = input.value.trim();
     if (!folder) { error.textContent = 'Choose a folder.'; return false; }
     btn.disabled = true;
-    post('/api/move', { ids: ids, folder: folder }).then(function (r) {
+    post(LIBAPI + '/move', { ids: ids, folder: folder }).then(function (r) {
       closeModal();
       if (done) done();
       toast(plural(r.files.length, 'file', 'files') + ' moved to ' + r.folder);
@@ -1263,7 +1268,7 @@ function trashDialog(ids, done) {
     [{ label: 'Cancel', cls: 'quiet' }, {
       label: 'Move to trash', cls: 'danger', onclick: function (btn) {
         btn.disabled = true;
-        post('/api/trash', { ids: ids }).then(function (r) {
+        post(LIBAPI + '/trash', { ids: ids }).then(function (r) {
           closeModal();
           if (done) done();
           toast(plural(r.files.length + r.sidecars, 'file', 'files') + ' moved to the trash');
@@ -1288,7 +1293,7 @@ function renameFolder(folder) {
   body.appendChild(error);
   var go = function (btn) {
     btn.disabled = true;
-    post('/api/folders/' + folder.id + '/rename', { path: input.value }).then(function (r) {
+    post(LIBAPI + '/folders/' + folder.id + '/rename', { path: input.value }).then(function (r) {
       closeModal();
       toast('Now ' + r.path);
       changed();
@@ -1382,7 +1387,7 @@ function importDialog(files) {
     error.textContent = '';
     var pending = importState.files.filter(function (x) { return !x.done; });
     if (!pending.length) { error.textContent = 'Choose some files first.'; return false; }
-    post('/api/import/folder', { year: parseInt(year.value, 10), month: parseInt(month.value, 10), name: name.value })
+    post(LIBAPI + '/import/folder', { year: parseInt(year.value, 10), month: parseInt(month.value, 10), name: name.value })
       .then(function (r) { runImport(r.folder, pending, btn, buttons[0]); })
       .catch(function (e) { error.textContent = e.message; });
     return false;
@@ -1421,7 +1426,7 @@ function runImport(folder, pending, btn, closeBtn) {
     }
     var item = pending[k];
     var xhr = new XMLHttpRequest();
-    var url = '/api/import' + query({ folder: folder, name: item.file.name, modified: item.file.lastModified || null });
+    var url = LIBAPI + '/import' + query({ folder: folder, name: item.file.name, modified: item.file.lastModified || null });
     xhr.open('POST', url);
     xhr.setRequestHeader('X-Shoebox', '1');
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
@@ -1485,7 +1490,7 @@ function loadDuplicates() {
   page.textContent = '';
   page.appendChild(el('h2', '', 'Duplicates'));
   page.appendChild(el('p', 'sub', 'Looking…'));
-  return api('/api/duplicates').then(function (r) {
+  return api(LIBAPI + '/duplicates').then(function (r) {
     if (state.filter.view !== 'duplicates') return;
     dupState.groups = r.groups;
     dupState.shown = 0;
@@ -1526,7 +1531,7 @@ function groupNode(g) {
     var b = el('button', 'btn quiet', label);
     b.onclick = function () {
       b.disabled = true;
-      post('/api/duplicates/decide', { ids: ids, decision: decision }).then(function () {
+      post(LIBAPI + '/duplicates/decide', { ids: ids, decision: decision }).then(function () {
         box.remove();
         toast(decision === 'linked' ? 'Kept as versions of one photo' : 'Kept as different photos');
       }).catch(function (e) { b.disabled = false; failed(e); });
@@ -1541,13 +1546,13 @@ function groupNode(g) {
   g.files.forEach(function (f) {
     var card = el('div', 'card');
     var a = el('a', 'thumb');
-    a.href = '/api/files/' + f.id + (f.kind === 'video' ? '/original' : '/view') + '?v=' + f.version;
+    a.href = LIBAPI + '/files/' + f.id + (f.kind === 'video' ? '/original' : '/view') + '?v=' + f.version;
     a.target = '_blank';
     a.rel = 'noopener';
     var img = el('img');
     img.alt = '';
     img.loading = 'lazy';
-    img.src = '/api/files/' + f.id + '/thumb?v=' + f.version;
+    img.src = LIBAPI + '/files/' + f.id + '/thumb?v=' + f.version;
     a.appendChild(img);
     card.appendChild(a);
     var name = el('div', 'name', f.name + ' ');
@@ -1583,7 +1588,7 @@ function groupNode(g) {
 // ------------------------------------------------------------------ trash page
 
 function loadTrash() {
-  return api('/api/trash').then(function (items) {
+  return api(LIBAPI + '/trash').then(function (items) {
     if (state.filter.view !== 'trash') return;
     var page = $('page');
     page.textContent = '';
@@ -1612,7 +1617,7 @@ function loadTrash() {
       var thumb = el('div', 'thumb');
       var img = el('img');
       img.alt = '';
-      img.src = '/api/trash/' + first.id + '/thumb';
+      img.src = LIBAPI + '/trash/' + first.id + '/thumb';
       img.onerror = function () { this.remove(); };
       thumb.appendChild(img);
       card.appendChild(thumb);
@@ -1624,7 +1629,7 @@ function loadTrash() {
       var restore = el('button', 'btn quiet', 'Put back');
       restore.onclick = function () {
         restore.disabled = true;
-        post('/api/trash/' + b + '/restore').then(function () { toast('Put back ' + first.path); changed(); })
+        post(LIBAPI + '/trash/' + b + '/restore').then(function () { toast('Put back ' + first.path); changed(); })
           .catch(function (e) { restore.disabled = false; failed(e); });
       };
       card.appendChild(restore);
@@ -1641,7 +1646,7 @@ function emptyTrash(batch, n) {
   openModal('Delete for good', 'Delete ' + plural(n, 'photo', 'photos') + ' (with their companion files) from the drive? This cannot be undone.', [
     { label: 'Cancel', cls: 'quiet' },
     { label: 'Delete', cls: 'danger', onclick: function () {
-      post('/api/trash/empty', { batch: batch }).then(function (r) {
+      post(LIBAPI + '/trash/empty', { batch: batch }).then(function (r) {
         toast(plural(r.deleted, 'file', 'files') + ' deleted');
         changed();
       }).catch(failed);
@@ -1655,7 +1660,7 @@ function emptyTrash(batch, n) {
 // Only offered (state.reveal) to a browser on that computer; an iPad cannot
 // open a Finder window over there.
 function revealFile(id) {
-  post('/api/files/' + id + '/reveal').then(function (r) {
+  post(LIBAPI + '/files/' + id + '/reveal').then(function (r) {
     toast('Shown in ' + r.app);
   }).catch(failed);
 }
@@ -1773,7 +1778,7 @@ $('sizer').addEventListener('contextmenu', function (ev) {
   var items = [];
   if (state.reveal) items.push({ label: state.reveal, run: function () { revealFile(id); } });
   items.push({ label: 'Copy path', run: function () {
-    api('/api/files/' + id).then(function (info) { copyPath(info.path); }).catch(failed);
+    api(LIBAPI + '/files/' + id).then(function (info) { copyPath(info.path); }).catch(failed);
   } });
   showMenu(ev.clientX, ev.clientY, items);
 });
@@ -1801,7 +1806,7 @@ function infoTags(row, info) {
     x.title = 'Remove this tag';
     x.setAttribute('aria-label', 'Remove tag ' + t.name);
     x.onclick = function () {
-      post('/api/tags/remove', { ids: [info.id], name: t.name }).then(function () { tagsChanged(info.id); }).catch(failed);
+      post(LIBAPI + '/tags/remove', { ids: [info.id], name: t.name }).then(function () { tagsChanged(info.id); }).catch(failed);
     };
     chip.appendChild(name);
     chip.appendChild(x);
@@ -1815,7 +1820,7 @@ function infoTags(row, info) {
       if (ev.key === 'Escape') { input.replaceWith(add); return; }
       if (ev.key !== 'Enter' || !input.value.trim()) return;
       input.disabled = true;
-      post('/api/tags/add', { ids: [info.id], name: input.value }).then(function () { tagsChanged(info.id); })
+      post(LIBAPI + '/tags/add', { ids: [info.id], name: input.value }).then(function () { tagsChanged(info.id); })
         .catch(function (e) { input.disabled = false; failed(e); });
     };
     add.replaceWith(input);
@@ -1843,7 +1848,7 @@ function tagsChanged(id) {
   // viewer keeps its photos until it closes).
   if (id == null && !state.filter.view && (state.filter.tags.length || state.filter.q)) loadTimeline(false);
   if (id == null || !lb.details || lb.details.id !== id) return;
-  api('/api/files/' + id).then(function (info) {
+  api(LIBAPI + '/files/' + id).then(function (info) {
     if (!lb.details || lb.details.id !== id) return;
     lb.details = info;
     renderPanel();
@@ -1862,7 +1867,7 @@ function addTagDialog(ids) {
   var go = function (btn) {
     if (!input.value.trim()) { error.textContent = 'Type a tag name.'; return false; }
     btn.disabled = true;
-    post('/api/tags/add', { ids: ids, name: input.value }).then(function (r) {
+    post(LIBAPI + '/tags/add', { ids: ids, name: input.value }).then(function (r) {
       closeModal();
       toast(r.files ? plural(r.files, 'photo', 'photos') + ' tagged “' + r.tag.name + '”' : 'All of them have “' + r.tag.name + '” already');
       tagsChanged(null);
@@ -1876,7 +1881,7 @@ function addTagDialog(ids) {
 
 // Lists the own tags on the selection; folder tags cannot be removed.
 function removeTagDialog(ids) {
-  post('/api/tags/selection', { ids: ids }).then(function (tags) {
+  post(LIBAPI + '/tags/selection', { ids: ids }).then(function (tags) {
     if (!tags.length) {
       openModal('Remove tag', 'None of these photos has an own tag. Folder tags come from where a photo is; move it to change them.', [{ label: 'OK' }]);
       return;
@@ -1888,7 +1893,7 @@ function removeTagDialog(ids) {
       var b = el('button', '', t.name + ' (' + t.count.toLocaleString() + ')');
       b.onclick = function () {
         b.disabled = true;
-        post('/api/tags/remove', { ids: ids, name: t.name }).then(function (r) {
+        post(LIBAPI + '/tags/remove', { ids: ids, name: t.name }).then(function (r) {
           closeModal();
           toast('“' + t.name + '” removed from ' + plural(r.files, 'photo', 'photos'));
           tagsChanged(null);
@@ -1903,7 +1908,7 @@ function removeTagDialog(ids) {
 
 // Sidebar: the tags the user added, most used first.
 function loadOwnTags() {
-  return api('/api/tags' + query({ own: 1, limit: 500 })).then(function (tags) {
+  return api(LIBAPI + '/tags' + query({ own: 1, limit: 500 })).then(function (tags) {
     var list = $('own-tags');
     list.textContent = '';
     tags.forEach(function (t) {
@@ -1961,7 +1966,7 @@ function loadFaces() {
   faceState.faces = [];
   faceState.picked = {};
   updateFacePick();
-  api('/api/faces/stats').then(function (s) {
+  api(LIBAPI + '/faces/stats').then(function (s) {
     if (state.filter.view === 'faces') sub.textContent = faceSummary(s);
   }).catch(function () {});
   return moreFaces(grid, more);
@@ -2058,7 +2063,7 @@ function updateFacePick() {
 function markFaces(ids) {
   if (!ids.length) return;
   var undo = faceState.filter === 'not_face';
-  post(undo ? '/api/faces/undo' : '/api/faces/not-face', { faces: ids }).then(function (r) {
+  post(undo ? LIBAPI + '/faces/undo' : LIBAPI + '/faces/not-face', { faces: ids }).then(function (r) {
     ids.forEach(function (id) {
       var card = document.querySelector('.face[data-id="' + id + '"]');
       if (card) card.remove();
@@ -2080,7 +2085,7 @@ function moreFaces(grid, more) {
     rotated: f === 'rotated' ? 'true' : null, not_face: f === 'not_face' ? 'true' : null,
   });
   more.disabled = true;
-  return api('/api/faces' + q).then(function (r) {
+  return api(LIBAPI + '/faces' + q).then(function (r) {
     if (state.filter.view !== 'faces') return;
     faceState.total = r.total;
     faceState.minPx = r.min_cluster_px;
@@ -2102,7 +2107,7 @@ function faceCard(face, similarity) {
   var img = el('img');
   img.alt = '';
   img.loading = 'lazy';
-  img.src = '/api/faces/' + face.id + '/crop';
+  img.src = LIBAPI + '/faces/' + face.id + '/crop';
   img.onerror = function () { card.classList.add('broken'); };
   a.appendChild(img);
   a.onclick = function (ev) {
@@ -2139,7 +2144,7 @@ function faceCard(face, similarity) {
 // The nearest neighbours by embedding (read only): which similarity still
 // means "same person" is what 5c-2 needs to know.
 function similarFaces(face) {
-  api('/api/faces/' + face.id + '/similar?limit=24').then(function (list) {
+  api(LIBAPI + '/faces/' + face.id + '/similar?limit=24').then(function (list) {
     var box = el('div');
     box.appendChild(el('p', 'hint', 'Cosine similarity of the embeddings (1 = identical), most similar first. Click a face to open its photo.'));
     var grid = el('div', 'faces');
@@ -2172,7 +2177,7 @@ var people = { list: [], byId: {}, groups: [], open: {}, info: null, watch: null
 function fold(s) { return String(s).normalize('NFC').toLowerCase(); }
 
 function loadPeople() {
-  return Promise.all([api('/api/people'), api('/api/groups')]).then(function (r) {
+  return Promise.all([api(LIBAPI + '/people'), api(LIBAPI + '/groups')]).then(function (r) {
     people.list = r[0];
     people.groups = r[1];
     people.byId = {};
@@ -2222,8 +2227,8 @@ function peopleChanged() {
 }
 
 function cropUrl(face) {
-  if (face.manual != null) return '/api/faces/manual/' + face.manual + '/crop';
-  if (face.id != null) return '/api/faces/' + face.id + '/crop';
+  if (face.manual != null) return LIBAPI + '/faces/manual/' + face.manual + '/crop';
+  if (face.id != null) return LIBAPI + '/faces/' + face.id + '/crop';
   return null;
 }
 
@@ -2234,7 +2239,7 @@ function avatar(p, cls) {
     var img = el('img');
     img.alt = '';
     img.loading = 'lazy';
-    img.src = p.cover != null ? '/api/faces/' + p.cover + '/crop' : '/api/faces/manual/' + p.cover_manual + '/crop';
+    img.src = p.cover != null ? LIBAPI + '/faces/' + p.cover + '/crop' : LIBAPI + '/faces/manual/' + p.cover_manual + '/crop';
     a.appendChild(img);
   } else {
     a.textContent = p ? p.name.split(/\s+/).map(function (w) { return w.charAt(0); }).join('').slice(0, 2).toUpperCase() : '?';
@@ -2288,7 +2293,7 @@ function dropOnGroup(node, groupId) {
 }
 
 function setGroup(p, groupId) {
-  return post('/api/people/' + p.id + '/group', { group_id: groupId }).then(function () {
+  return post(LIBAPI + '/people/' + p.id + '/group', { group_id: groupId }).then(function () {
     var g = people.groups.filter(function (x) { return x.id === groupId; })[0];
     toast(p.name + (g ? ' is in “' + g.name + '” now' : ' is in no group now'));
     peopleChanged();
@@ -2488,7 +2493,7 @@ function nameDialog(title, value, label, save) {
 
 function renamePerson(p) {
   nameDialog('Rename', p.name, 'Rename', function (name) {
-    return post('/api/people/' + p.id + '/rename', { name: name }).then(function (r) {
+    return post(LIBAPI + '/people/' + p.id + '/rename', { name: name }).then(function (r) {
       toast('Now “' + r.name + '”');
       state.personNames[p.id] = r.name;
       peopleChanged();
@@ -2499,7 +2504,7 @@ function renamePerson(p) {
 
 function newGroup(then) {
   nameDialog('New group', '', 'Create', function (name) {
-    return post('/api/groups', { name: name }).then(function (g) {
+    return post(LIBAPI + '/groups', { name: name }).then(function (g) {
       toast('Group “' + g.name + '” created');
       return loadPeople().then(function () {
         if (then) then(g);
@@ -2543,7 +2548,7 @@ function mergeDialog(p) {
       into = into || (who && who.person_id);
       if (!into) { error.textContent = 'Choose someone from the list.'; return false; }
       btn.disabled = true;
-      post('/api/people/' + p.id + '/merge', { into: into }).then(function (r) {
+      post(LIBAPI + '/people/' + p.id + '/merge', { into: into }).then(function (r) {
         closeModal();
         toast(p.name + ' merged into ' + r.name);
         peopleChanged();
@@ -2579,13 +2584,13 @@ function groupsDialog() {
         var ids = people.groups.map(function (x) { return x.id; });
         ids.splice(k, 1);
         ids.splice(k + d, 0, g.id);
-        post('/api/groups/reorder', { ids: ids }).then(function (gs) { people.groups = gs; render(); peopleChanged(); }).catch(failed);
+        post(LIBAPI + '/groups/reorder', { ids: ids }).then(function (gs) { people.groups = gs; render(); peopleChanged(); }).catch(failed);
       };
       btn('↑', 'Move up', function () { move(-1); }, k === 0);
       btn('↓', 'Move down', function () { move(1); }, k === people.groups.length - 1);
       btn('Rename', 'Rename', function () {
         nameDialog('Rename group', g.name, 'Rename', function (name) {
-          return post('/api/groups/' + g.id + '/rename', { name: name }).then(function () {
+          return post(LIBAPI + '/groups/' + g.id + '/rename', { name: name }).then(function () {
             return loadPeople().then(function () { groupsDialog(); if (state.filter.view === 'people') loadPeoplePage(); });
           });
         });
@@ -2594,7 +2599,7 @@ function groupsDialog() {
         openModal('Delete group', 'Delete “' + g.name + '”? ' + (g.people ? plural(g.people, 'person', 'people') + ' in it will be in no group; nobody is deleted.' : 'Nobody is in it.'), [
           { label: 'Cancel', cls: 'quiet', onclick: function () { setTimeout(groupsDialog, 0); } },
           { label: 'Delete', cls: 'danger', onclick: function () {
-            post('/api/groups/' + g.id + '/delete').then(function () {
+            post(LIBAPI + '/groups/' + g.id + '/delete').then(function () {
               toast('Group “' + g.name + '” deleted');
               return loadPeople().then(function () { groupsDialog(); if (state.filter.view === 'people') loadPeoplePage(); });
             }).catch(failed);
@@ -2739,7 +2744,7 @@ function loadPersonPage() {
   pp.faces = [];
   pp.picked = {};
   pp.picking = false;
-  return api('/api/people/' + f.id).then(function (p) {
+  return api(LIBAPI + '/people/' + f.id).then(function (p) {
     if (state.filter.view !== 'person' || state.filter.id !== p.id) return;
     pp.person = p;
     state.personNames[p.id] = p.name;
@@ -2808,14 +2813,14 @@ function personTabCounts(p) {
 // The counts in the tabs after the suggestions were recomputed.
 function loadPersonCounts() {
   var id = state.filter.id;
-  api('/api/people/' + id).then(function (p) {
+  api(LIBAPI + '/people/' + id).then(function (p) {
     if (state.filter.view === 'person' && state.filter.id === id) { pp.person = p; personTabCounts(p); }
   }).catch(function () {});
 }
 
 function morePersonFaces(grid, more, tab) {
   more.disabled = true;
-  return api('/api/people/' + pp.person.id + '/faces' + query({ state: tab, offset: pp.faces.length, limit: 200 })).then(function (r) {
+  return api(LIBAPI + '/people/' + pp.person.id + '/faces' + query({ state: tab, offset: pp.faces.length, limit: 200 })).then(function (r) {
     if (state.filter.view !== 'person') return;
     pp.total = r.total;
     r.faces.forEach(function (face) { pp.faces.push(face); grid.appendChild(personFaceCard(face, tab)); });
@@ -2893,7 +2898,7 @@ function confirmedFaceMenu(face) {
   items.push({ label: 'Not ' + p.name, run: function () { personAction('reject', [face.id]); } });
   items.push({ label: 'Name someone else…', run: function () { nameFacesDialog([face], personRefresh); } });
   items.push({ label: 'Use as ' + p.name + '’s picture', run: function () {
-    post('/api/people/' + p.id + '/cover', { face: face.id }).then(function () { toast('Picture changed'); peopleChanged(); }).catch(failed);
+    post(LIBAPI + '/people/' + p.id + '/cover', { face: face.id }).then(function () { toast('Picture changed'); peopleChanged(); }).catch(failed);
   } });
   items.push({ label: 'Not a face', run: function () { personAction('not-face', [face.id]); } });
   return items;
@@ -2910,7 +2915,7 @@ function personAction(action, ids, manual) {
   if (!ids.length && !manual.length) return;
   var body = { faces: ids, manual: manual };
   if (action === 'reject' || action === 'unreject') body.person_id = p.id;
-  post('/api/faces/' + action, body).then(function (r) {
+  post(LIBAPI + '/faces/' + action, body).then(function (r) {
     var gone = {};
     ids.forEach(function (x) { gone['f' + x] = true; });
     manual.forEach(function (x) { gone['m' + x] = true; });
@@ -3003,12 +3008,12 @@ function nameFacesDialog(faces, done) {
   var save = function (who) {
     var ids = faces.map(function (x) { return x.id; }).filter(function (x) { return x != null; });
     var drawn = faces.filter(function (x) { return x.id == null && x.manual != null; });
-    var req = ids.length ? post('/api/faces/assign', Object.assign({ faces: ids }, who)) : Promise.resolve({ faces: 0 });
+    var req = ids.length ? post(LIBAPI + '/faces/assign', Object.assign({ faces: ids }, who)) : Promise.resolve({ faces: 0 });
     req.then(function (r) {
       // A drawn face nothing was detected at: drawn again with the new name.
       return Promise.all(drawn.map(function (d) {
-        return post('/api/faces/undo', { manual: [d.manual] }).then(function () {
-          return post('/api/faces/manual', Object.assign({ file: d.file, box: [d.x, d.y, d.w, d.h] }, who));
+        return post(LIBAPI + '/faces/undo', { manual: [d.manual] }).then(function () {
+          return post(LIBAPI + '/faces/manual', Object.assign({ file: d.file, box: [d.x, d.y, d.w, d.h] }, who));
         });
       })).then(function () { return r; });
     }).then(function (r) {
@@ -3064,7 +3069,7 @@ function unnamedSummary() {
 
 function moreClusters(box, more) {
   more.disabled = true;
-  return api('/api/clusters' + query({ offset: un.shown, limit: PAGE_CLUSTERS, samples: 8 })).then(function (r) {
+  return api(LIBAPI + '/clusters' + query({ offset: un.shown, limit: PAGE_CLUSTERS, samples: 8 })).then(function (r) {
     if (state.filter.view !== 'unnamed') return;
     un.total = r.total;
     un.unnamed = r.unnamed;
@@ -3110,7 +3115,7 @@ function clusterCard(c) {
       var all = el('button', 'cmore', '+' + (c.size - faces.length).toLocaleString());
       all.title = 'Show all ' + c.size + ' faces';
       all.onclick = function () {
-        api('/api/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
+        api(LIBAPI + '/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
           faces = list;
           renderFaces();
         }).catch(function (e) { stale(e); });
@@ -3190,7 +3195,7 @@ function clusterCard(c) {
       body.faces = some;
     }
     card.classList.add('busy');
-    post('/api/clusters/' + c.id + '/' + action, body).then(function (r) {
+    post(LIBAPI + '/clusters/' + c.id + '/' + action, body).then(function (r) {
       card.classList.remove('busy');
       toast(action === 'name' ? plural(r.faces, 'face', 'faces') + ' named ' + r.person.name
         : action === 'ignore' ? plural(r.faces, 'face', 'faces') + ' ignored' : plural(r.faces, 'face', 'faces') + ' marked “not a face”');
@@ -3263,7 +3268,7 @@ function infoFace(info, f, k) {
   var who = el('span', 'who');
   line.appendChild(who);
   var changed = function () { infoFacesChanged(info.id); };
-  var send = function (action, body) { return post('/api/faces/' + action, body).then(changed).catch(failed); };
+  var send = function (action, body) { return post(LIBAPI + '/faces/' + action, body).then(changed).catch(failed); };
   var ids = f.id != null ? [f.id] : [];
   if (f.state === 'confirmed') {
     var name = el('button', 'pname', f.person.name);
@@ -3308,7 +3313,7 @@ function infoFace(info, f, k) {
       items.push({ label: 'Not ' + f.person.name, run: function () { send('reject', { faces: ids, person_id: f.person.id }); } });
       items.push({ label: 'Name someone else…', run: function () { nameFacesDialog([f], changed); } });
       items.push({ label: 'Use as ' + f.person.name + '’s picture', run: function () {
-        post('/api/people/' + f.person.id + '/cover', { face: f.id }).then(function () { toast('Picture changed'); peopleChanged(); }).catch(failed);
+        post(LIBAPI + '/people/' + f.person.id + '/cover', { face: f.id }).then(function () { toast('Picture changed'); peopleChanged(); }).catch(failed);
       } });
     }
     if (f.state !== 'ignored') items.push({ label: 'Ignore (a stranger)', run: function () { send('ignore', { faces: ids }); } });
@@ -3329,7 +3334,7 @@ function infoFace(info, f, k) {
 function infoFacesChanged(id) {
   peopleChanged();
   if (!lb.details || lb.details.id !== id) return;
-  api('/api/files/' + id).then(function (info) {
+  api(LIBAPI + '/files/' + id).then(function (info) {
     if (!lb.details || lb.details.id !== id) return;
     lb.details = info;
     lb.hover = null;
@@ -3416,7 +3421,7 @@ function nameDrawnFace(info, frac) {
   var body = el('div');
   body.appendChild(el('p', '', 'Who is it?'));
   var save = function (who) {
-    post('/api/faces/manual', Object.assign({ file: info.id, box: frac }, who)).then(function () {
+    post(LIBAPI + '/faces/manual', Object.assign({ file: info.id, box: frac }, who)).then(function () {
       closeModal();
       stopDrawing();
       toast('Face added');
@@ -3436,7 +3441,10 @@ function nameDrawnFace(info, frac) {
 
 // ------------------------------------------------------------------ start
 
-api('/api/session').then(function (s) {
+api('/api/libraries').then(function (libs) {
+  LIBAPI = '/api/lib/' + libs[0].id;
+  return api('/api/session');
+}).then(function (s) {
   if (!s.authenticated) {
     if (!s.pin_enabled) $('login-text').textContent = 'This shoebox only accepts connections from its own computer. Restart it with --lan to allow other devices.';
     showLogin();
