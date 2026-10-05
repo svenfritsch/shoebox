@@ -656,12 +656,54 @@ Folders
 
 ## 5d: duplicates UI and tag carry-over
 
-Scope and rules are in "Phase 5d details" in [plan.md](plan.md). Build
-order (one commit each): trash dialog focus; Move dialog "Keep tags";
-duplicates page with one row per photo; "delete this copy" checkboxes with
-the at-least-one-stays rule; carry-over of tags; capture-date override
-(schema v5, `userdata.json` version 3); multi-select across groups; same-folder
-bulk action. Open points decided while building are listed here as built.
+Built, one commit per step. Scope and rules are in "Phase 5d details" in
+[plan.md](plan.md). As built:
+
+- **Trash dialog**: `openModal` takes `focus: true` on an action; the "Move to
+  trash" button has focus, Enter confirms.
+- **Move dialog**: "Keep tags" (default checked). `POST /api/move` takes
+  `keep_tags` (default true); unchecked drops the moved photos' own tags
+  (`organize::move_files_with`, `tags::drop_own`), folder tags follow the path.
+- **Deleting copies**: `POST /api/duplicates/remove {keep, remove, dates?}`
+  (`duplicates::remove_copies`). At least one copy must stay; every removed
+  file must be a duplicate of a kept one (same full hash, or phash within 8
+  bits), so the endpoint cannot delete anything else. Reply: `{trashed,
+  tags_added, dates_set, conflicts}`.
+- **Who inherits**: each removed copy hands over to the kept copy with the same
+  content, else a similar one; the highest resolution, then the earliest
+  record, then the first path. Its folder tags and own tags become **own tags**
+  of the heir (not where the heir has that tag as a folder tag), read before the
+  record goes, applied only for copies that really reached the trash.
+- **Capture date** (`library.db` v5, `taken_overrides`, keyed by `quick_hash`,
+  so it follows the content like thumbnails; `db::TAKEN` is the date as shown
+  in the timeline and info panel; the scan keeps rewriting `files.taken`
+  untouched, the file is never modified). Rule (`merge_dates`): the heir keeps
+  its date when no copy differs; if it has none, or dates differ by less than a
+  day, the **oldest** wins; further apart is a real conflict: nothing happens,
+  the reply has `conflicts: [{keep, path, dates}]`, the UI asks and repeats the
+  request with `dates: {<keep id>: "<chosen>"}`. Exact copies share content and
+  therefore one date, so conflicts only arise among similar photos.
+  `userdata.json` is version 3 and lists `taken_overrides`.
+- **Same-folder button**: `GET /api/duplicates/same-folder` → `{groups, copies}`,
+  `POST` does it (`duplicates::same_folder_plan`). Per (full hash, folder) one
+  file stays: highest resolution (identical for exact copies, so in practice
+  the tie rule decides), then the earliest record (`added_at`), then the first
+  path. "Oldest path" in the plan is read as oldest record. Pairs already
+  decided `distinct` or `linked` with the keeper are skipped; near duplicates
+  and other folders are never part of it.
+- **Duplicates page** (`app.js`, `groupNode`): rows per content; left one
+  thumbnail and the file name, right a card per copy (resolution, MB, folder,
+  capture date, tags: 📁 folder tags, own tags filled). "delete this copy" on
+  each card; the last unticked box of a group is disabled. Ticks work across
+  groups; the bar at the bottom (“N copies marked”, Clear, Move to trash)
+  sends one request per group, then asks about conflicting dates once.
+  `GET /api/duplicates` files carry `tags: [{name, own}]`.
+- Tests: `core/tests/dupes.rs` (at-least-one rule and non-duplicates refused,
+  tag carry-over without duplicating folder tags, date merge incl. conflict
+  and rescan, bulk action only on exact duplicates in one folder and skipping
+  decided pairs, guard: originals unchanged, `verify` clean), plus
+  `move_without_keep_tags_drops_own_tags` in `tags.rs`. The page was driven with
+  Playwright (Chromium, 1280 × 800) on a small library.
 
 ## Later (not in phase 5)
 

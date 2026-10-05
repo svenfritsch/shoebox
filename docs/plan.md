@@ -181,7 +181,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 5b | Own tags (add/remove, many photos at once, search), user data backup | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5b-2 | Search by several tags at once (AND, chips); people join in with 5c-3 | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **5c-1 done**, checked on the real drive; **5c-2 and 5c-3 done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 5d | Duplicates UI: one row per photo, multi-select, bulk delete within a folder, tag and capture-date carry-over; Move dialog "keep tags"; trash dialog focus | |
+| 5d | Duplicates UI: one row per photo, multi-select, bulk delete within a folder, tag and capture-date carry-over; Move dialog "keep tags"; trash dialog focus | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 6 | Pets | |
 | 7 | Backup verification, launchers, packaging | |
 
@@ -342,7 +342,7 @@ Open:
 
 ### Phase 5d details (duplicates UI and tag carry-over)
 
-Planned, one PR. Feedback after 5c.
+Built, one PR, one commit per step (as built: [phase5.md](phase5.md)). Feedback after 5c.
 
 UI
 - Trash dialog: focus the "Move to trash" button when it opens, so Enter confirms.
@@ -365,7 +365,7 @@ Tests
 - New: tag carry-over, capture-date merge, "at least one stays" rule, same-folder bulk action only on exact duplicates.
 
 Open
-- [ ] Check the new duplicates page on the real drive and the iPad.
+- [ ] Check the new duplicates page on the real drive and the iPad (list in [phase5.md](phase5.md)).
 - [ ] Confirm the GitHub Actions run is green.
 
 ## Build notes and pitfalls (learned in phases 0–4)
@@ -470,5 +470,6 @@ name a few people and look at the suggestions and the "maybe" list, and
 mark the known false finds "not a face" (list in [phase5.md](phase5.md)).
 5c-3 (the UI) is built: install the protocol 2 recognizer, then go through
 the combined 5c-2/5c-3 list in [phase5.md](phase5.md), all in the UI and
-from the iPad. 5d (duplicates UI and tag carry-over) is planned and comes
-before phase 6 (pets).
+from the iPad. 5d (duplicates UI and tag carry-over) is built and comes before
+phase 6 (pets); check it on the drive and the iPad (list in
+[phase5.md](phase5.md)).
