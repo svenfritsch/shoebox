@@ -3447,10 +3447,17 @@ function clusterCard(c) {
   var head = el('div', 'chead');
   var count = el('span', 'csize');
   head.appendChild(count);
+  // Open a card (all faces, or Select) and it takes the whole width; this
+  // button stays at the top of the screen while the faces scroll by.
+  var close = el('button', 'btn small cclose', 'Close ✕');
+  close.title = 'Back to the short card';
+  close.hidden = true;
+  head.appendChild(close);
   card.appendChild(head);
   var grid = el('div', 'cfaces');
   card.appendChild(grid);
   var faces = c.faces.slice();
+  var expanded = false;
   var renderFaces = function () {
     grid.textContent = '';
     faces.forEach(function (face) {
@@ -3476,7 +3483,9 @@ function clusterCard(c) {
       all.onclick = function () {
         api('/api/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
           faces = list;
+          expanded = true;
           renderFaces();
+          update();
         }).catch(function (e) { stale(e); });
       };
       grid.appendChild(all);
@@ -3504,11 +3513,30 @@ function clusterCard(c) {
   notFace.onclick = function () { act('not-face', {}); };
   var pick = el('button', 'btn quiet', 'Select');
   pick.title = 'Name, ignore or mark only some faces of this card';
+  // Select needs all the faces to choose from.
+  var loadAll = function () {
+    if (faces.length >= c.size) return Promise.resolve();
+    return api('/api/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
+      faces = list;
+    });
+  };
   pick.onclick = function () {
     card.picking = !card.picking;
     if (!card.picking) card.picked = {};
+    else expanded = true;
+    loadAll().then(function () {
+      renderFaces();
+      update();
+    }).catch(function (e) { stale(e); });
+  };
+  close.onclick = function () {
+    card.picking = false;
+    card.picked = {};
+    expanded = false;
+    faces = faces.slice(0, 8);
     renderFaces();
     update();
+    card.scrollIntoView({ block: 'nearest' });
   };
   tools.appendChild(ignore);
   tools.appendChild(notFace);
@@ -3521,6 +3549,8 @@ function clusterCard(c) {
     count.textContent = plural(c.size, 'face', 'faces') + (card.picking ? ' · ' + (n ? n + ' selected' : 'tap faces to select') : '');
     pick.classList.toggle('active', card.picking);
     card.classList.toggle('picking', card.picking);
+    card.classList.toggle('open', expanded || card.picking);
+    close.hidden = !(expanded || card.picking);
     var some = card.picking && n;
     nameBtn.textContent = some ? 'Name ' + n : 'Name';
     ignore.textContent = some ? 'Ignore ' + n : 'Ignore';
@@ -3533,8 +3563,23 @@ function clusterCard(c) {
       suggestion.appendChild(el('b', '', s.person.name));
       suggestion.appendChild(el('span', '', ' (' + s.faces + ' of ' + c.size + ') '));
       var yes = el('button', 'btn small', '✓ ' + s.person.name);
+      yes.title = 'Name all ' + c.size + ' faces of this card ' + s.person.name;
       yes.onclick = function () { act('name', { person_id: s.person.id }); };
       suggestion.appendChild(yes);
+      if (s.faces < c.size) {
+        // Only the faces that really look like them; the rest stays.
+        var only = el('button', 'btn small', '✓ Only the ' + s.faces.toLocaleString());
+        only.title = 'Name only the ' + s.faces + ' faces recognised as ' + s.person.name + '; the other ' + (c.size - s.faces) + ' stay unnamed';
+        only.onclick = function () {
+          loadAll().then(function () {
+            var ids = faces.filter(function (x) { return x.state === 'suggested' && x.person && x.person.id === s.person.id; })
+              .map(function (x) { return x.id; });
+            if (!ids.length) return;
+            act('name', { person_id: s.person.id }, ids);
+          }).catch(function (e) { stale(e); });
+        };
+        suggestion.appendChild(only);
+      }
     }
     suggestion.hidden = !suggestion.firstChild;
   };
@@ -3546,9 +3591,9 @@ function clusterCard(c) {
   };
   // Name, ignore or "not a face": the whole card, or the faces selected in
   // it. The card's generation makes sure only the faces shown are meant.
-  var act = function (action, who) {
+  var act = function (action, who, only) {
     var body = Object.assign({ generation: c.generation }, who);
-    var some = card.picking ? picked() : null;
+    var some = only || (card.picking ? picked() : null);
     if (some) {
       if (!some.length) return;
       body.faces = some;
