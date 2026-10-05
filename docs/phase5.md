@@ -701,6 +701,11 @@ Built, one commit per step. Scope and rules are in "Phase 5d details" in
   Folder Copies" and "Clear Lower Quality Copies"; the number of files is in
   the tooltip and the confirmation, not in the label (a bracketed count was
   unclear); they are disabled when there is nothing to clear.
+- **Similar photos as cards with thumbnails**: in a "similar" group the shots
+  are not rows with one thumbnail each; all files lie side by side in one
+  wrapping row, every card with its own thumbnail (a shot's other versions
+  follow it). Identical and same-photo groups keep one thumbnail at the start
+  of the row, since repeating it would add nothing.
 - **Pre-selection and the original name**: of every photo with several files
   all but the `pick` are ticked (the page, once; an untick stays). The pick is
   the best quality, then a capture date, then **the file without a copy's

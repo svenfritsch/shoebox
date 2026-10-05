@@ -1666,6 +1666,19 @@ function dupRows(g) {
   return rows;
 }
 
+function dupThumb(f) {
+  var a = el('a', 'thumb');
+  a.href = '/api/files/' + f.id + (f.kind === 'video' ? '/original' : '/view') + '?v=' + f.version;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  var img = el('img');
+  img.alt = '';
+  img.loading = 'lazy';
+  img.src = '/api/files/' + f.id + '/thumb?v=' + f.version;
+  a.appendChild(img);
+  return a;
+}
+
 function groupNode(g) {
   var box = el('div', 'group');
   var head = el('div', 'group-head');
@@ -1691,7 +1704,7 @@ function groupNode(g) {
   decide('linked', g.kind === 'identical' ? 'Keep all copies' : g.kind === 'resolution' ? 'Keep all versions' : 'Versions of one photo');
   box.appendChild(head);
   box.appendChild(el('p', 'group-hint', g.kind === 'similar'
-    ? kind.hint + ' Every photo below is its own shot; its copies are on the right.'
+    ? kind.hint + ' Every card is one file; its thumbnail is on the card.'
     : kind.hint));
 
   var boxes = [];
@@ -1700,24 +1713,74 @@ function groupNode(g) {
     var open = boxes.filter(function (b) { return !b.checked; });
     boxes.forEach(function (b) { b.disabled = !b.checked && open.length === 1; });
   };
+  // One card per file: the check box, where it is, what it is, its tags.
+  // `thumb`: the card carries its own thumbnail (similar photos).
+  var copyCard = function (f, showName, thumb) {
+    var card = el('div', 'copy' + (thumb ? ' with-thumb' : ''));
+    if (thumb) card.appendChild(dupThumb(f));
+    var label = el('label', 'check');
+    var cb = el('input');
+    cb.type = 'checkbox';
+    cb.checked = !!dupState.marked[f.id];
+    cb.onchange = function () {
+      if (cb.checked) dupState.marked[f.id] = true; else delete dupState.marked[f.id];
+      card.classList.toggle('marked', cb.checked);
+      refresh();
+      updateDupBar();
+    };
+    boxes.push(cb);
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(' delete this copy'));
+    card.appendChild(label);
+    card.classList.toggle('marked', cb.checked);
+    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : '(top level)';
+    var fb = el('button', 'folder', folder);
+    fb.title = f.path;
+    fb.onclick = function () { setFilter({ folder: f.folder_id, tags: [], q: '' }); };
+    card.appendChild(fb);
+    if (showName) card.appendChild(el('div', 'name', f.name));
+    var meta = [];
+    if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
+    meta.push((f.size / 1e6).toFixed(1) + ' MB');
+    card.appendChild(el('div', 'meta', meta.join(' · ')));
+    if (f.keeper) card.appendChild(el('div', 'meta worse', 'lower quality than the best version'));
+    card.appendChild(el('div', 'meta', f.taken ? formatDate({ taken: f.taken, date_source: 'file' }) : 'no capture date'));
+    if (f.tags && f.tags.length) {
+      var tags = el('div', 'tagline');
+      f.tags.forEach(function (t) {
+        var chip = el('span', 'chip' + (t.own ? ' own' : ''), (t.own ? '' : '📁 ') + t.name);
+        chip.title = t.own ? 'Own tag' : 'Folder tag';
+        tags.appendChild(chip);
+      });
+      card.appendChild(tags);
+    }
+    return card;
+  };
+  var bestFirst = function (copies) {
+    return copies.slice().sort(function (a, b) {
+      return (!!b.pick - !!a.pick) || ((b.width || 0) * (b.height || 0) - (a.width || 0) * (a.height || 0));
+    });
+  };
+
+  if (g.kind === 'similar') {
+    // Different shots side by side, each card with its own thumbnail; a
+    // shot's other versions (a messenger copy) follow it.
+    var series = el('div', 'copies series');
+    dupRows(g).forEach(function (copies) {
+      bestFirst(copies).forEach(function (f) { series.appendChild(copyCard(f, true, true)); });
+    });
+    box.appendChild(series);
+    refresh();
+    return box;
+  }
+
   dupRows(g).forEach(function (copies) {
     var row = el('div', 'dup-row');
     // The photo shown is the best version of the row; its cards come first.
-    copies = copies.slice().sort(function (a, b) {
-      return (!!b.pick - !!a.pick) || ((b.width || 0) * (b.height || 0) - (a.width || 0) * (a.height || 0));
-    });
+    copies = bestFirst(copies);
     var first = copies[0];
     var left = el('div', 'dup-photo');
-    var a = el('a', 'thumb');
-    a.href = '/api/files/' + first.id + (first.kind === 'video' ? '/original' : '/view') + '?v=' + first.version;
-    a.target = '_blank';
-    a.rel = 'noopener';
-    var img = el('img');
-    img.alt = '';
-    img.loading = 'lazy';
-    img.src = '/api/files/' + first.id + '/thumb?v=' + first.version;
-    a.appendChild(img);
-    left.appendChild(a);
+    left.appendChild(dupThumb(first));
     var name = el('div', 'name', first.name + ' ');
     if (first.same) {
       var same = el('span', 'same', String.fromCharCode(64 + first.same));
@@ -1727,46 +1790,7 @@ function groupNode(g) {
     left.appendChild(name);
     row.appendChild(left);
     var cards = el('div', 'copies');
-    copies.forEach(function (f) {
-      var card = el('div', 'copy');
-      var label = el('label', 'check');
-      var cb = el('input');
-      cb.type = 'checkbox';
-      cb.checked = !!dupState.marked[f.id];
-      cb.onchange = function () {
-        if (cb.checked) dupState.marked[f.id] = true; else delete dupState.marked[f.id];
-        card.classList.toggle('marked', cb.checked);
-        refresh();
-        updateDupBar();
-      };
-      boxes.push(cb);
-      label.appendChild(cb);
-      label.appendChild(document.createTextNode(' delete this copy'));
-      card.appendChild(label);
-      card.classList.toggle('marked', cb.checked);
-      var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : '(top level)';
-      var fb = el('button', 'folder', folder);
-      fb.title = f.path;
-      fb.onclick = function () { setFilter({ folder: f.folder_id, tags: [], q: '' }); };
-      card.appendChild(fb);
-      if (copies.length > 1 || first.name !== f.name) card.appendChild(el('div', 'name', f.name));
-      var meta = [];
-      if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
-      meta.push((f.size / 1e6).toFixed(1) + ' MB');
-      card.appendChild(el('div', 'meta', meta.join(' · ')));
-      if (f.keeper) card.appendChild(el('div', 'meta worse', 'lower quality than the best version'));
-      card.appendChild(el('div', 'meta', f.taken ? formatDate({ taken: f.taken, date_source: 'file' }) : 'no capture date'));
-      if (f.tags && f.tags.length) {
-        var tags = el('div', 'tagline');
-        f.tags.forEach(function (t) {
-          var chip = el('span', 'chip' + (t.own ? ' own' : ''), (t.own ? '' : '📁 ') + t.name);
-          chip.title = t.own ? 'Own tag' : 'Folder tag';
-          tags.appendChild(chip);
-        });
-        card.appendChild(tags);
-      }
-      cards.appendChild(card);
-    });
+    copies.forEach(function (f) { cards.appendChild(copyCard(f, copies.length > 1 || first.name !== f.name, false)); });
     row.appendChild(cards);
     box.appendChild(row);
   });

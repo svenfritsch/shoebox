@@ -213,6 +213,9 @@ body.selecting #select { color: var(--accent); }
 .dup-photo .same { display: inline-block; background: var(--accent); color: #fff; border-radius: 4px; padding: 0 5px; font-weight: 600; }
 .copies { flex: 1; display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
 .copy { width: 220px; font-size: 12px; display: flex; flex-direction: column; gap: 3px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+.copy.with-thumb .thumb { display: block; width: 100%; height: 150px; background: var(--cell-bg); border-radius: 6px; overflow: hidden; margin-bottom: 4px; }
+.copy.with-thumb .thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.copies.series { gap: 10px; }
 .copy.marked { border-color: var(--danger, #c0392b); background: rgba(192, 57, 43, 0.06); }
 .copy .check { display: flex; align-items: center; gap: 4px; font-weight: 600; }
 .copy .check input { width: 18px; height: 18px; }
