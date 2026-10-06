@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Turn the full-size PNG screenshots in shots/ into 1800 px JPEGs (what the
-PDFs need, and light enough to keep in git)."""
+"""Turn the full-size PNG screenshots in assets/ into 1800 px JPEGs (what the
+guide needs, and light enough to keep in git)."""
 import os
 from PIL import Image
-base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "shots")
+base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 for lang in sorted(os.listdir(base)):
     d = os.path.join(base, lang)
     for f in sorted(os.listdir(d)):

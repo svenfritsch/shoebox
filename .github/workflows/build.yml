@@ -155,36 +155,15 @@ jobs:
           name: shoebox-linux
           path: dist/
 
-  # The guide: English and German PDF, built from docs/guide (sources and the
-  # screenshots kept there). Runs on every push and pull request so a broken
-  # guide shows before a release; the release job attaches the PDFs.
-  guide:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Fonts
-        run: sudo apt-get install -y fonts-inter
-
-      - name: Build the PDFs
-        run: |
-          CHROME="$(command -v google-chrome || command -v chromium)" docs/guide/build.sh
-          # one PDF per language, ten pages each at the moment; fail on an empty or missing one
-          for l in en de; do test -s docs/guide/shoebox-guide-$l.pdf; done
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: shoebox-guide
-          path: docs/guide/shoebox-guide-*.pdf
-
   # Push a tag like `v0.1.0-phase1` to publish the binaries as a GitHub
   # release. Workflow artifacts need a GitHub login, expire, and lose the
   # executable bit; release assets don't. The recognizer installer goes
-  # along, so the drive can be set up without a clone of the repo, and so do
-  # the two guide PDFs (English, German).
+  # along, so the drive can be set up without a clone of the repo, and so does
+  # the guide (docs/guide: HTML and plain text, English and German, with its
+  # screenshots), in the folder `guide` of the archive.
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [macos, guide]
+    needs: [macos]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -198,6 +177,8 @@ jobs:
       - name: Package
         run: |
           mkdir -p release
+          # never ship a guide whose text copy is stale or whose images are missing
+          python3 docs/guide/html2txt.py --check
           for os in macos; do
             pkg="$RUNNER_TEMP/shoebox-$os"
             mkdir -p "$pkg/recognizer"
@@ -206,13 +187,12 @@ jobs:
             cp "scripts/launchers/Start shoebox.command" "$pkg/"
             chmod +x "$pkg/Start shoebox.command"
             cp recognizer/README.md recognizer/install.sh recognizer/fetch-models.sh recognizer/recognizer.py "$pkg/recognizer/"
+            mkdir -p "$pkg/guide"
+            cp -R docs/guide/shoebox-en.html docs/guide/shoebox-de.html docs/guide/shoebox-en.txt docs/guide/shoebox-de.txt docs/guide/assets "$pkg/guide/"
             chmod +x "$pkg/recognizer/install.sh" "$pkg/recognizer/fetch-models.sh"
             tar -C "$RUNNER_TEMP" -czf release/shoebox-$os.tar.gz shoebox-$os
           done
-          # The guide (landing page + handbook), one PDF per language, built
-          # by the guide job from this very commit.
-          cp artifacts/shoebox-guide/shoebox-guide-en.pdf artifacts/shoebox-guide/shoebox-guide-de.pdf release/
-          (cd release && sha256sum *.tar.gz *.pdf > SHA256SUMS)
+          (cd release && sha256sum *.tar.gz > SHA256SUMS)
 
       - name: Publish
         env:

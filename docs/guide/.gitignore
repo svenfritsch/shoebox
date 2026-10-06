@@ -1,2 +1,2 @@
-_html/
-shoebox-guide-*.pdf
+# full-size PNGs from screenshots.sh before shrink-shots.py turns them into JPEGs
+assets/*/*.png
