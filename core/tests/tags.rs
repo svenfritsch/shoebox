@@ -204,7 +204,7 @@ fn own_tags_add_remove_many_at_once_and_fold_names() {
     }
     server.stop().unwrap();
     let data: Value = serde_json::from_slice(&fs::read(&userdata).unwrap()).unwrap();
-    assert_eq!(data["version"], 3);
+    assert_eq!(data["version"], 4);
     let names: Vec<&str> = data["own_tags"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
     assert_eq!(names, ["\u{d6}sterreich"]);
     let files = data["own_tags"][0]["files"].as_array().unwrap();

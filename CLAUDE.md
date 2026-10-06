@@ -16,6 +16,10 @@ current status and next step. Update its status table when a phase moves.
 - Originals change only through explicit user actions (move, rename, trash,
   import) in `organize.rs`/`import.rs`: rename only, never copy, never
   replace, and only files that still match the index.
+- The one exception: turning a JPEG (`organize::rotate`) overwrites the two
+  bytes of its EXIF Orientation tag in place, only when the file matches the
+  index, and checks the full hash afterwards (old content plus those two
+  bytes). Never anything else in an original.
 - UI text is never hard-coded: `tr()`/`trn()`/`data-i18n` with a key in both
   `core/i18n/en.json` and `de.json` (see docs/phase8.md; `core/tests/i18n.rs`
   checks it).

@@ -635,7 +635,8 @@ fn user_data_backup_has_people_groups_and_decisions() {
     server.stop().unwrap();
 
     let data: Value = serde_json::from_slice(&std::fs::read(lib.path(".shoebox/userdata.json")).unwrap()).unwrap();
-    assert_eq!(data["version"], 3);
+    assert_eq!(data["version"], 4);
+    assert_eq!(data["view_turns"], json!([]));
     assert_eq!(data["groups"], json!([{ "name": "Familie", "position": 1 }]));
     assert_eq!(data["people"][0]["name"], "Anna");
     assert_eq!(data["people"][0]["group"], "Familie");

@@ -508,7 +508,7 @@ pub(crate) fn insert_file(conn: &Connection, f: &Found, folder_id: i64, info: &F
 
 /// New content at a known path: refresh everything and drop the full hash,
 /// which the hash pass recomputes.
-fn update_file(conn: &Connection, id: i64, f: &Found, info: &FileInfo) -> Result<()> {
+pub(crate) fn update_file(conn: &Connection, id: i64, f: &Found, info: &FileInfo) -> Result<()> {
     let m = &info.meta;
     conn.execute(
         "UPDATE files SET kind = ?2, size = ?3, mtime_ns = ?4, created_ns = ?5, quick_hash = ?6, full_hash = NULL,

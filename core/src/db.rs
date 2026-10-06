@@ -15,7 +15,7 @@ pub const FILE: &str = "library.db";
 const BACKUP_SUFFIX: &str = ".bak";
 
 /// Bump when the schema changes and add a step to `migrate`.
-const SCHEMA_VERSION: i32 = 7;
+const SCHEMA_VERSION: i32 = 8;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -239,6 +239,31 @@ pub fn has_column(conn: &Connection, schema: &str, table: &str, column: &str) ->
     Ok(names.iter().any(|n| n == column))
 }
 
+/// Photos that cannot be turned in the file (HEIC, PNG) are turned in
+/// shoebox only, by content like `taken_overrides`.
+const SCHEMA_V8: &str = "
+CREATE TABLE IF NOT EXISTS view_turns (
+    key      TEXT PRIMARY KEY,   -- files.quick_hash
+    quarters INTEGER NOT NULL,   -- 1 to 3 quarter turns clockwise
+    at       INTEGER NOT NULL
+);
+";
+
+/// How far shoebox shows the content with this quick hash turned, in quarter
+/// turns clockwise (0 to 3). The file itself is not changed.
+pub fn view_turn(conn: &Connection, quick_hash: &str) -> Result<i32> {
+    Ok(conn
+        .query_row("SELECT quarters FROM view_turns WHERE key = ?1", [quick_hash], |r| r.get(0))
+        .optional()?
+        .unwrap_or(0))
+}
+
+/// What the web page puts on picture addresses (`?v=`) so a changed picture is
+/// fetched again: 7 characters of the quick hash and the view turn.
+pub fn version_of(quick_hash: &str, turn: i32) -> String {
+    format!("{}{}", quick_hash.chars().take(7).collect::<String>(), turn.rem_euclid(4))
+}
+
 fn migrate(conn: &Connection) -> Result<()> {
     let version: i32 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
     if version > SCHEMA_VERSION {
@@ -292,6 +317,12 @@ fn migrate(conn: &Connection) -> Result<()> {
             tx.execute_batch(SCHEMA_V7)?;
         }
         tx.pragma_update(None, "user_version", 7)?;
+        tx.commit()?;
+    }
+    if version < 8 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V8)?;
+        tx.pragma_update(None, "user_version", 8)?;
         tx.commit()?;
     }
     Ok(())

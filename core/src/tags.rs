@@ -198,6 +198,8 @@ pub struct UserData {
     pub own_tags: Vec<OwnTag>,
     /// Capture dates taken over when duplicates were deleted (version 3).
     pub taken_overrides: Vec<TakenOverride>,
+    /// Photos shown turned in shoebox only (version 4).
+    pub view_turns: Vec<ViewTurn>,
     /// Groups, people and face decisions (version 2).
     #[serde(flatten)]
     pub people: crate::people::UserPeople,
@@ -220,6 +222,26 @@ fn taken_overrides(conn: &Connection) -> Result<Vec<TakenOverride>> {
     let mut stmt = conn.prepare("SELECT path_nfc FROM files WHERE quick_hash = ?1 AND missing_since IS NULL ORDER BY path_nfc")?;
     for o in &mut out {
         o.files = stmt.query_map([&o.quick_hash], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+    }
+    Ok(out)
+}
+
+#[derive(Debug, Serialize)]
+pub struct ViewTurn {
+    pub quick_hash: String,
+    /// Quarter turns clockwise.
+    pub quarters: i32,
+    pub files: Vec<String>,
+}
+
+fn view_turns(conn: &Connection) -> Result<Vec<ViewTurn>> {
+    let mut out: Vec<ViewTurn> = conn
+        .prepare("SELECT key, quarters FROM view_turns ORDER BY key")?
+        .query_map([], |r| Ok(ViewTurn { quick_hash: r.get(0)?, quarters: r.get(1)?, files: Vec::new() }))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut stmt = conn.prepare("SELECT path_nfc FROM files WHERE quick_hash = ?1 AND missing_since IS NULL ORDER BY path_nfc")?;
+    for t in &mut out {
+        t.files = stmt.query_map([&t.quick_hash], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
     }
     Ok(out)
 }
@@ -282,10 +304,11 @@ pub fn user_data(conn: &Connection) -> Result<UserData> {
     own_tags.sort_by_key(|t| t.name.to_lowercase());
     Ok(UserData {
         shoebox: env!("CARGO_PKG_VERSION"),
-        version: 3,
+        version: 4,
         written_at: db::now(),
         own_tags,
         taken_overrides: taken_overrides(conn)?,
+        view_turns: view_turns(conn)?,
         people: crate::people::user_data(conn)?,
     })
 }

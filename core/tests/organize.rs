@@ -373,3 +373,156 @@ fn files_moved_behind_shoeboxs_back_are_found_again() {
     assert_eq!(get(addr, &format!("/api/files/{id}")).json()["path"], "Familie/Weihnachten 2012/DSC_2001.jpg");
     server.stop().unwrap();
 }
+
+/// A JPEG with an EXIF block holding only an Orientation tag (big-endian).
+fn jpeg_with_orientation(seed: u8, orientation: u16) -> Vec<u8> {
+    let mut tiff = b"MM\0\x2A\0\0\0\x08\0\x01\x01\x12\0\x03\0\0\0\x01".to_vec();
+    tiff.extend(orientation.to_be_bytes());
+    tiff.extend([0, 0, 0, 0, 0, 0]);
+    let mut exif = vec![0xFF, 0xE1];
+    exif.extend(((tiff.len() + 8) as u16).to_be_bytes());
+    exif.extend(b"Exif\0\0");
+    exif.extend(tiff);
+    let plain = jpeg_bytes(seed);
+    let mut out = plain[..2].to_vec();
+    out.extend(exif);
+    out.extend(&plain[2..]);
+    out
+}
+
+/// Turning a JPEG writes two bytes into the original and nothing else: same
+/// size and creation time, the rest byte for byte, the index in line again,
+/// and what the user decided about the photo follows it.
+#[test]
+fn rotate_changes_only_the_orientation_bytes_and_keeps_the_users_data() {
+    let lib = Library::new("rotate");
+    lib.write("Turn/up.jpg", &jpeg_with_orientation(7, 1));
+    lib.write("Turn/side.jpg", &jpeg_with_orientation(8, 6));
+    lib.write("Turn/plain.jpg", &jpeg_bytes(9)); // no EXIF: cannot be turned in place
+    lib.scan();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let (up, side, plain) = (id_of(&lib, "Turn/up.jpg"), id_of(&lib, "Turn/side.jpg"), id_of(&lib, "Turn/plain.jpg"));
+
+    let key: String = lib.db().query_row("SELECT quick_hash FROM files WHERE id = ?1", [up], |r| r.get(0)).unwrap();
+    lib.db()
+        .execute("INSERT INTO taken_overrides (key, taken, taken_offset, at) VALUES (?1, '2001-02-03T04:05:06', NULL, 0)", [&key])
+        .unwrap();
+    lib.db()
+        .execute(
+            "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at) VALUES (?1, 0.1, 0.2, 0.3, 0.1, NULL, 'ignored', 0, 0)",
+            [&key],
+        )
+        .unwrap();
+    let before = lib.snapshot();
+    let original = fs::read(lib.path("Turn/up.jpg")).unwrap();
+
+    // Not without the header.
+    let refused = bare_request(addr, "POST", &format!("/api/files/{up}/rotate"), &[("Content-Type", "application/json")], b"{\"turns\":1}");
+    assert_eq!(refused.status, 403);
+    assert_eq!(lib.snapshot(), before);
+
+    // A quarter turn to the left: orientation 1 becomes 8.
+    let r = post(addr, &format!("/api/files/{up}/rotate"), &json!({ "turns": -1 }));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    assert_eq!(r.json()["orientation"], 8);
+    let turned = fs::read(lib.path("Turn/up.jpg")).unwrap();
+    assert_eq!(turned.len(), original.len());
+    let differing: Vec<usize> = (0..turned.len()).filter(|&i| turned[i] != original[i]).collect();
+    assert_eq!(differing.len(), 1, "{differing:?}"); // 0x0001 -> 0x0008: one byte
+    let after = lib.snapshot();
+    let (stamp_before, _) = &before[&lib.path("Turn/up.jpg")];
+    let (stamp_after, hash_after) = &after[&lib.path("Turn/up.jpg")];
+    assert_eq!((stamp_after.size, stamp_after.created_ns), (stamp_before.size, stamp_before.created_ns));
+    // Every other file is untouched.
+    for (path, entry) in &before {
+        if path != &lib.path("Turn/up.jpg") {
+            assert_eq!(&after[path], entry, "{}", path.display());
+        }
+    }
+    // The index knows the new content, and a scan finds nothing to do.
+    let (_, full, _) = lib.record("Turn/up.jpg").unwrap();
+    assert_eq!(full.as_ref(), Some(hash_after));
+    assert_index_in_line(&lib);
+
+    // The user's data moved to the new content, turned with the picture.
+    let new_key: String = lib.db().query_row("SELECT quick_hash FROM files WHERE id = ?1", [up], |r| r.get(0)).unwrap();
+    assert_ne!(new_key, key);
+    assert_eq!(r.json()["version"], format!("{}0", &new_key[..7]));
+    let taken: String = lib.db().query_row("SELECT taken FROM taken_overrides WHERE key = ?1", [&new_key], |r| r.get(0)).unwrap();
+    assert_eq!(taken, "2001-02-03T04:05:06");
+    let (x, y, w, h): (f64, f64, f64, f64) = lib
+        .db()
+        .query_row("SELECT x, y, w, h FROM face_decisions WHERE key = ?1", [&new_key], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+        .unwrap();
+    // Counter-clockwise: (x, y, w, h) -> (y, 1 - x - w, h, w).
+    for (got, want) in [(x, 0.2), (y, 0.6), (w, 0.1), (h, 0.3)] {
+        assert!((got - want).abs() < 1e-9, "{got} != {want}");
+    }
+    let old_left: i64 = lib.db().query_row("SELECT count(*) FROM face_decisions WHERE key = ?1", [&key], |r| r.get(0)).unwrap();
+    assert_eq!(old_left, 0);
+
+    // Turning back restores the original bytes exactly.
+    let back = post(addr, &format!("/api/files/{up}/rotate"), &json!({ "turns": 1 }));
+    assert_eq!(back.status, 200);
+    assert_eq!(fs::read(lib.path("Turn/up.jpg")).unwrap(), original);
+    assert_index_in_line(&lib);
+
+    // Another orientation, and a half turn (6 -> 8 is 180°).
+    let r = post(addr, &format!("/api/files/{side}/rotate"), &json!({ "turns": 2 })).json();
+    assert_eq!(r["orientation"], 8);
+
+    // What cannot be turned in place is refused and left alone.
+    let snap = lib.snapshot();
+    let r = post(addr, &format!("/api/files/{plain}/rotate"), &json!({ "turns": 1 }));
+    assert_eq!(r.status, 400, "{}", String::from_utf8_lossy(&r.body));
+    assert_eq!(post(addr, &format!("/api/files/{up}/rotate"), &json!({ "turns": 4 })).status, 400);
+    assert_eq!(lib.snapshot(), snap);
+    assert_index_in_line(&lib);
+    server.stop().unwrap();
+}
+
+/// A PNG (and a HEIC) is only shown turned: the file is not opened for
+/// writing, the picture comes out turned, and turning four times is no turn.
+#[test]
+fn png_is_turned_in_shoebox_only() {
+    let lib = Library::new("rotate-view");
+    lib.scan();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let png = id_of(&lib, "Familie/Screenshot.png"); // 64 x 48
+    let before = lib.snapshot();
+    let dims = |path: String| {
+        let r = get(addr, &path);
+        assert_eq!(r.status, 200, "{path}");
+        let img = image::load_from_memory(&r.body).unwrap();
+        (img.width(), img.height())
+    };
+    assert_eq!(dims(format!("/api/files/{png}/view")), (64, 48));
+
+    let r = post(addr, &format!("/api/files/{png}/rotate"), &json!({ "turns": 1 }));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    let r = r.json();
+    assert_eq!((r["view_only"].as_bool(), r["orientation"].as_i64()), (Some(true), Some(0)));
+    assert_eq!(lib.snapshot(), before, "the file changed");
+    assert_eq!(dims(format!("/api/files/{png}/view")), (48, 64));
+    assert_eq!(dims(format!("/api/files/{png}/thumb")), (48, 64));
+    assert_eq!(get(addr, &format!("/api/files/{png}")).json()["view_turn"], 1);
+    // The picture addresses change, so browsers fetch the turned one.
+    let timeline = get(addr, "/api/timeline").json();
+    let at = ids(&timeline).iter().position(|&i| i == png).unwrap();
+    assert_eq!(timeline["versions"].as_str().unwrap()[at * 8 + 7..at * 8 + 8], *"1");
+    assert_eq!(r["version"].as_str().unwrap(), &timeline["versions"].as_str().unwrap()[at * 8..at * 8 + 8]);
+
+    // It is remembered by content, written to userdata.json, and adds up.
+    let turns: i64 = lib.db().query_row("SELECT quarters FROM view_turns", [], |r| r.get(0)).unwrap();
+    assert_eq!(turns, 1);
+    post(addr, &format!("/api/files/{png}/rotate"), &json!({ "turns": -3 }));
+    assert_eq!(dims(format!("/api/files/{png}/view")), (64, 48)); // 1 - 3 = 2: half a turn
+    post(addr, &format!("/api/files/{png}/rotate"), &json!({ "turns": 2 }));
+    let rows: i64 = lib.db().query_row("SELECT count(*) FROM view_turns", [], |r| r.get(0)).unwrap();
+    assert_eq!(rows, 0);
+    assert_eq!(get(addr, &format!("/api/files/{png}/view")).header("content-type"), Some("image/png"));
+    assert_eq!(lib.snapshot(), before);
+    server.stop().unwrap();
+}

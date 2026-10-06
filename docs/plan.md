@@ -8,7 +8,8 @@ progress. Update the status section when a phase moves.
 
 - **No copies, no changes to originals.** shoebox only indexes files by path
   and hash. Originals are opened read-only; the only operations that touch
-  them are explicit user actions (move, import, delete duplicate).
+  them are explicit user actions (move, import, delete duplicate, and turning
+  a JPEG, which changes the two bytes of its EXIF Orientation tag in place).
 - **Timestamps are sacred.** EXIF `DateTimeOriginal` and the file's created
   date must never change. Moving within the drive uses `rename`, which keeps
   all timestamps. Every scan path is covered by the *guard* (see below).
@@ -557,6 +558,64 @@ Open:
 - **Git push** uses SSH via the 1Password agent with the "GitHub" key pinned
   in this repo's `core.sshCommand` (the keychain's HTTPS login belongs to a
   different account, `svenfritschpeers`).
+
+## Rotate (lightbox)
+
+Rotate button (`r` left, Shift+R or Option-click right) in the detail view,
+like the Finder's Quick Look. Two mechanisms, chosen by what the file really
+is (`organize::turn`, going by content, not name):
+
+- **JPEG: in the file.** `organize::rotate` patches the EXIF Orientation tag
+  in place (`orientation.rs`): two bytes, lossless, same size, creation date
+  kept; the modification date is the file system's, as in the Finder. Before:
+  the file matches the index (size, mtime, full hash if known). After: its
+  full hash must equal the old bytes with those two changed, else the old
+  bytes are put back. The quick hash changes, so the index record is updated
+  and the capture-date override, face decisions (boxes turned with the
+  picture) and a person's picture follow to the new key; thumbnails and
+  detected faces are made again (next view, next `shoebox recognize`).
+  Refused: a JPEG without an Orientation tag (adding one shifts every byte
+  after it). The small EXIF thumbnail inside the file is not turned.
+- **HEIC and PNG: in shoebox only.** The turn is stored in `library.db`
+  (`view_turns`, keyed by quick hash like `taken_overrides`, in
+  `userdata.json` v4) and applied when shoebox serves the picture
+  (`/thumb`, `/view`: decode, turn, encode). The file is not opened for
+  writing. Finder, Explorer, the download button and other apps show it as it
+  was. The `?v=` of the picture addresses carries the turn
+  (`db::version_of`: 7 hash characters and the turn), so browsers fetch the
+  new picture.
+
+**Why HEIC is not turned in the file** (measured on a real iPhone HEIC with
+macOS Preview, 4032×3024, 1.91 MB, after one rotation):
+- Preview writes a whole new file: 99.9% of the bytes differ, the `ftyp`
+  and `meta` boxes are rebuilt, and the size drops 18% (1.56 MB). The pixel
+  size is reported swapped (3024×4032), so the turn is baked into re-encoded
+  pixels: lossy. The Apple HDR gain map brand (`tmap`) is gone from the
+  header, so HDR information is probably dropped too.
+- A lossless change would add an `irot` box to the container. Rotation of a
+  HEIC lives there, not in EXIF (HEIF readers, libheif and Apple's apps
+  ignore the EXIF Orientation of a HEIC). Landscape iPhone photos usually
+  have no `irot` box, so adding one grows `meta`, which shifts the absolute
+  offsets in `iloc` (every item's position in `mdat`) and means writing a
+  new file and replacing the original: against the rename-only rule. The
+  gain map is a second image with its own transform that would have to be
+  kept consistent. Decided against; no plan to do it.
+- Live Photos: the still is turned in the view, the paired video is not.
+
+**Pitfalls of the view-only turn:**
+- Face boxes are in the file's orientation; the lightbox turns them for
+  display (`turnedBox`), "Add face" is disabled while a photo is turned, and
+  face crops (people pages, face check) are cut from the file as it is, so
+  they show the unturned photo.
+- Duplicate, people and trash pages build their addresses without the turn
+  (`take(8)` of the quick hash in `duplicates.rs`, `people.rs`, `faces.rs`);
+  the server still turns the picture, but a browser that cached the old one
+  keeps it until reload.
+- Identical copies (same quick hash) share the turn; a copy that is edited
+  elsewhere (new content) starts unturned. The turn is not carried when a
+  JPEG is turned in the file, and not removed when the last copy goes.
+- Real-hardware check: turn a copy of a JPEG and look at it in Finder and
+  Explorer; turn a HEIC and a PNG and check Finder shows them as before.
 
 ## Next step
 

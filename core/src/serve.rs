@@ -810,6 +810,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/files/{id}/view", get(view))
         .route("/api/files/{id}/original", get(original))
         .route("/api/files/{id}/reveal", post(reveal_file))
+        .route("/api/files/{id}/rotate", post(rotate_file))
         .route("/api/move", post(move_files))
         .route("/api/folders/{id}/rename", post(rename_folder))
         .route("/api/import/folder", post(import_folder))
@@ -1753,6 +1754,10 @@ struct FileInfo {
     faces: Option<Vec<people::FileFace>>,
     /// Confirmed faces that are no longer found (after a model change).
     faces_lost: Vec<people::FaceItem>,
+    /// Quarter turns clockwise that shoebox shows the photo turned (HEIC,
+    /// PNG; the file itself is as it was). Face boxes are in the file's
+    /// orientation.
+    view_turn: i32,
 }
 
 async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Json<FileInfo>> {
@@ -1763,6 +1768,10 @@ async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiRe
         let item = snapshot.items.iter().find(|it| it.id == id);
         let key: Option<String> =
             conn.query_row("SELECT quick_hash FROM files WHERE id = ?1", [id], |r| r.get(0)).optional()?;
+        let view_turn = match &key {
+            Some(key) => db::view_turn(&conn, key)?,
+            None => 0,
+        };
         let faces = match key {
             Some(key) => people::file_faces(&conn, &key)?,
             None => people::FileFaces { faces: None, lost: Vec::new() },
@@ -1775,6 +1784,7 @@ async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiRe
             linked: duplicates::linked(&conn, id)?,
             faces: faces.faces,
             faces_lost: faces.lost,
+            view_turn,
         }))
     })
     .await
@@ -1791,22 +1801,23 @@ fn jpeg(bytes: Vec<u8>, cache: &'static str) -> Response {
 async fn thumb(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Response> {
     // A stored thumbnail is served even while its file is being looked for
     // (moved behind shoebox's back); only making one needs the file.
-    let src = blocking(&app, move |app| {
+    let (src, turn) = blocking(&app, move |app| {
         let conn = app.conn.lock().unwrap();
         let key: String = conn
             .query_row("SELECT quick_hash FROM files WHERE id = ?1 AND missing_since IS NULL", [id], |r| r.get(0))
             .optional()?
             .ok_or(ApiError::NotFound)?;
+        let turn = db::view_turn(&conn, &key)?;
         match thumbs::load(&conn, &key)? {
-            Some(Ok(bytes)) => Ok(Err(jpeg(bytes, IMMUTABLE))),
+            Some(Ok(bytes)) => Ok((Err(bytes), turn)),
             Some(Err(_)) => Err(ApiError::NotFound),
-            None => app.source(&conn, id)?.filter(|s| s.kind != Kind::Raw).map(Ok).ok_or(ApiError::NotFound),
+            None => Ok((app.source(&conn, id)?.filter(|s| s.kind != Kind::Raw).map(Ok).ok_or(ApiError::NotFound)?, turn)),
         }
     })
     .await?;
     let src = match src {
         Ok(src) => src,
-        Err(stored) => return Ok(stored),
+        Err(stored) => return turned_jpeg(&app, stored, turn).await,
     };
 
     // Not made yet (scan ran with --no-thumbs, or is still busy): make it now.
@@ -1826,24 +1837,40 @@ async fn thumb(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Re
     })
     .await?;
     match made {
-        Ok(bytes) => Ok(jpeg(bytes, IMMUTABLE)),
+        Ok(bytes) => turned_jpeg(&app, bytes, turn).await,
         Err(_) => Err(ApiError::NotFound),
     }
+}
+
+/// A rendered picture, turned the way the user turned it in shoebox
+/// (`view_turns`); as it is when it was not.
+async fn turned_jpeg(app: &Arc<App>, bytes: Vec<u8>, turn: i32) -> ApiResult<Response> {
+    if turn == 0 {
+        return Ok(jpeg(bytes, IMMUTABLE));
+    }
+    let bytes = blocking(app, move |_| {
+        media::turn_jpeg(&bytes, turn, 85).map_err(ApiError::Internal)
+    })
+    .await?;
+    Ok(jpeg(bytes, IMMUTABLE))
 }
 
 /// The full-screen image: the original where browsers can show it, a large
 /// JPEG rendering for HEIC.
 async fn view(State(app): State<Arc<App>>, Path(id): Path<i64>, req: Request) -> ApiResult<Response> {
-    let (src, content) = blocking(&app, move |app| {
-        let src = app.source(&app.conn.lock().unwrap(), id)?.ok_or(ApiError::NotFound)?;
+    let (src, content, turn) = blocking(&app, move |app| {
+        let conn = app.conn.lock().unwrap();
+        let src = app.source(&conn, id)?.ok_or(ApiError::NotFound)?;
         let content = media::content_kind(src.kind, &src.path);
-        Ok((src, content))
+        let turn = db::view_turn(&conn, &src.quick_hash)?;
+        Ok((src, content, turn))
     })
     .await?;
     match src.kind {
         // A file whose name does not match its content (a JPEG called
-        // `.HEIC`) is rendered, so the browser gets what the type says.
-        Kind::Jpeg | Kind::Png | Kind::Video if content == src.kind => serve_file(&src.path, req, None).await,
+        // `.HEIC`) is rendered, so the browser gets what the type says. A
+        // picture the user turned in shoebox is rendered turned.
+        Kind::Jpeg | Kind::Png | Kind::Video if content == src.kind && turn == 0 => serve_file(&src.path, req, None).await,
         Kind::Raw => Err(ApiError::NotFound),
         Kind::Jpeg | Kind::Png | Kind::Video | Kind::Heic => {
             let _permit = app.renders.acquire().await.map_err(|e| ApiError::Internal(e.into()))?;
@@ -1851,7 +1878,7 @@ async fn view(State(app): State<Arc<App>>, Path(id): Path<i64>, req: Request) ->
                 thumbs::render_view(&LibHeif::new(), &src).map_err(|e| ApiError::Internal(anyhow::anyhow!(e)))
             })
             .await?;
-            Ok(jpeg(bytes, IMMUTABLE))
+            turned_jpeg(&app, bytes, turn).await
         }
     }
 }
@@ -1959,6 +1986,22 @@ fn keep_tags_default() -> bool {
 
 async fn move_files(State(app): State<Arc<App>>, Json(req): Json<MoveRequest>) -> ApiResult<Json<organize::Moved>> {
     change(&app, move |app, conn| organize::move_files_with(conn, &app.root, &req.ids, &req.folder, req.keep_tags)).await.map(Json)
+}
+
+#[derive(Deserialize)]
+struct RotateRequest {
+    /// Quarter turns clockwise; negative turns counter-clockwise.
+    turns: i32,
+}
+
+/// Turn a photo: a JPEG in the file (its EXIF Orientation tag, in place), a
+/// HEIC or PNG in shoebox only; see `organize::turn`.
+async fn rotate_file(
+    State(app): State<Arc<App>>,
+    Path(id): Path<i64>,
+    Json(req): Json<RotateRequest>,
+) -> ApiResult<Json<organize::Rotated>> {
+    change(&app, move |app, conn| organize::turn(conn, &app.root, id, req.turns)).await.map(Json)
 }
 
 #[derive(Deserialize)]

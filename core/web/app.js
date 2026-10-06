@@ -990,6 +990,10 @@ function showItem() {
   $('lb-next').hidden = i >= d.count - 1;
   $('lb-download').href = fileBase(id) + '/original?download=1';
   $('lb-live').hidden = !state.live[id];
+  var rot = $('lb-rotate');
+  rot.hidden = isAll() || kind === 'v';
+  rot.disabled = kind !== 'j' && kind !== 'h' && kind !== 'p';
+  rot.title = tr(rot.disabled ? 'lb.rotate_raw' : kind === 'j' ? 'lb.rotate_hint' : 'lb.rotate_view_hint');
   $('lb-title').textContent = '';
   lb.hover = null;
   stopDrawing();
@@ -1041,6 +1045,7 @@ function drawFaces() {
   info.faces.forEach(function (f, k) {
     var hot = lb.hover === k;
     if (!lb.showFaces && !hot) return;
+    f = turnedBox(f, info.view_turn || 0);
     var b = el('div', 'face-box' + (hot ? ' hot' : '') + (f.manual != null ? ' drawn' : '') + (f.species ? ' pet' : ''));
     b.style.left = (r.left - s.left + f.x * r.width) + 'px';
     b.style.top = (r.top - s.top + f.y * r.height) + 'px';
@@ -1054,6 +1059,18 @@ function drawFaces() {
   });
 }
 window.addEventListener('resize', drawFaces);
+
+// A face's box (fractions of the picture as the file has it) for a picture
+// that shoebox shows turned by `q` quarter turns clockwise.
+function turnedBox(f, q) {
+  q = ((q % 4) + 4) % 4;
+  if (!q) return f;
+  var b = [f.x, f.y, f.w, f.h];
+  var t = q === 1 ? [1 - b[1] - b[3], b[0], b[3], b[2]]
+    : q === 2 ? [1 - b[0] - b[2], 1 - b[1] - b[3], b[2], b[3]]
+    : [b[1], 1 - b[0] - b[2], b[3], b[2]];
+  return Object.assign({}, f, { x: t[0], y: t[1], w: t[2], h: t[3] });
+}
 
 function viewUrl(i) {
   var d = state.data;
@@ -1146,6 +1163,34 @@ function renderPanel() {
   panel.appendChild(actions);
 }
 
+// Turns a JPEG on the drive (its EXIF orientation, two bytes, no loss), like
+// the rotate button of the Finder's Quick Look; a HEIC or PNG is only shown
+// turned by shoebox (its file stays as it is). `turns` is in quarter turns
+// clockwise.
+function rotateOpen(turns) {
+  var d = state.data, i = state.open;
+  if (!d || i < 0 || isAll() || d.kinds[i] === 'v' || d.kinds[i] === 'r' || lb.rotating) return;
+  lb.rotating = true;
+  var id = d.ids[i];
+  post(fileBase(id) + '/rotate', { turns: turns }).then(function (r) {
+    lb.rotating = false;
+    // The address of the picture carries the version, so the new one is
+    // fetched; the grid follows when the status poll sees the change.
+    if (state.data === d && d.ids[i] === id) {
+      d.versions = d.versions.slice(0, i * 8) + r.version + d.versions.slice(i * 8 + 8);
+      if (state.open === i) showItem();
+    }
+    if (r.view_only && !lb.toldViewOnly) {
+      lb.toldViewOnly = true;
+      toast(tr('lb.rotate_view_only'));
+    }
+  }).catch(function (e) {
+    lb.rotating = false;
+    toast(e.message);
+  });
+}
+
+$('lb-rotate').onclick = function (ev) { rotateOpen(ev && ev.altKey ? 1 : -1); };
 $('lb-close').onclick = closeLightbox;
 $('lb-prev').onclick = function () { step(-1); };
 $('lb-next').onclick = function () { step(1); };
@@ -1201,6 +1246,7 @@ document.addEventListener('keydown', function (ev) {
   else if (ev.key === 'ArrowLeft') step(-1);
   else if (ev.key === 'ArrowRight') step(1);
   else if (ev.key === 'i') $('lb-info').onclick();
+  else if ((ev.key === 'r' || ev.key === 'R') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) rotateOpen(ev.shiftKey ? 1 : -1);
 });
 
 // Swipe left/right on touch screens.
@@ -4174,6 +4220,10 @@ function infoFaces(row, info) {
     var add = el('button', '', tr('info.add_face'));
     add.title = tr('info.add_face_hint');
     add.onclick = startDrawing;
+    if (lb.details.view_turn) {
+      add.disabled = true;
+      add.title = tr('info.add_face_turned');
+    }
     tools.appendChild(add);
   }
   box.appendChild(tools);
