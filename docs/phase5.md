@@ -748,6 +748,14 @@ Built, one commit per step. Scope and rules are in "Phase 5d details" in
   camera-style names with the same prefix and different numbers
   ("IMG_4284", "IMG_4285 1") never count as the same photo. They are rows of
   a "Similar photos" group.
+- **Folders that hold copies** (feedback: a packaged InDesign project keeps
+  its photos as copies in a "Link" folder): Settings has a list of folder
+  names (library setting `dup_copy_folders`, `GET/POST
+  /api/lib/{id}/duplicates/copy-folders`; compared NFC and case-insensitively,
+  at any level of the path, one name each). A file inside such a folder is
+  never the pick of its photo (the first criterion, before quality) and is
+  ticked by "Preselect copies" whenever the same photo lies elsewhere, even if
+  it is not worse; its card says "in a folder for copies". Empty by default.
 - **Pre-selection and the original name**: of every photo with several files
   all but the `pick` are ticked (the page, once; an untick stays). The pick is
   the best quality, then a capture date, then **the file without a copy's
@@ -991,6 +999,9 @@ crops removed at the start, guard).
     hides and shows them. Does a file with a copy-style name
     (“IMG (2)”, “IMG - Copy”, “IMG copy 2”, “IMG (1)”) ever stay while the
     original name is ticked? Note any pattern that is not recognised.
+  - [ ] Settings → “Folders that hold copies”: add “Link” (or “Links”); the
+    photos of an InDesign project's Link folder are ticked, the same photo
+    elsewhere is the one that stays. Remove the name again.
   - [ ] A photo and its WhatsApp (or other messenger) copy: they are one row,
     the messenger copy is ticked and says “lower quality”. Do other shots
     of a series stay in rows of their own? Any wrongly ticked copy, or a

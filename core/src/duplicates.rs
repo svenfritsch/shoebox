@@ -61,6 +61,10 @@ pub struct DupFile {
     /// (a resized or re-sent copy) or identical copies; the page shows them
     /// side by side with one thumbnail.
     pub row: u32,
+    /// Lies in a folder the user named as a place for copies (InDesign's
+    /// "Links", say): never the one to keep, and ticked when it is the same
+    /// photo as one that lies elsewhere.
+    pub in_copies: bool,
     /// Surely the same photo as the best file of its row, only worse (fewer
     /// pixels, or without the metadata the best one has): the id of that
     /// best file, which is the one to keep. The page ticks these.
@@ -104,6 +108,46 @@ pub struct Candidates {
     decided: HashSet<(i64, i64)>,
 }
 
+/// Folder names (any level of a path) where copies live, not originals: a
+/// packaged InDesign project keeps the photos it uses in a "Links" folder.
+/// Kept per library as the setting `dup_copy_folders` (a JSON list).
+pub const COPY_FOLDERS_KEY: &str = "dup_copy_folders";
+
+fn fold_name(name: &str) -> String {
+    library::nfc(name.trim()).to_lowercase()
+}
+
+pub fn copy_folders(conn: &Connection) -> Result<Vec<String>> {
+    let names: Vec<String> = db::setting(conn, COPY_FOLDERS_KEY)?.and_then(|j| serde_json::from_str(&j).ok()).unwrap_or_default();
+    Ok(names)
+}
+
+pub fn set_copy_folders(conn: &Connection, names: &[String]) -> Result<Vec<String>> {
+    let mut clean: Vec<String> = Vec::new();
+    for n in names {
+        let n = library::nfc(n.trim());
+        if n.is_empty() || n.contains('/') || n.chars().any(char::is_control) {
+            bail!("a folder name is one name, without “/” (got “{n}”)");
+        }
+        if !clean.iter().any(|c| fold_name(c) == fold_name(&n)) {
+            clean.push(n);
+        }
+    }
+    db::set_setting(conn, COPY_FOLDERS_KEY, (!clean.is_empty()).then(|| serde_json::to_string(&clean).unwrap()).as_deref())?;
+    Ok(clean)
+}
+
+/// Does a folder of the path (not the file's name) carry one of the names?
+fn in_copy_folder(path: &str, names: &[String]) -> bool {
+    if names.is_empty() {
+        return false;
+    }
+    let folded: Vec<String> = names.iter().map(|n| fold_name(n)).collect();
+    let mut parts: Vec<&str> = path.split('/').collect();
+    parts.pop();
+    parts.iter().any(|p| folded.iter().any(|n| *n == fold_name(p)))
+}
+
 /// The files in `shown` (what the timeline shows: present, no RAW, no Live
 /// Photo videos) and the decisions taken so far.
 pub fn load(conn: &Connection, shown: &HashSet<i64>) -> Result<Candidates> {
@@ -132,6 +176,7 @@ pub fn load(conn: &Connection, shown: &HashSet<i64>) -> Result<Candidates> {
                     tags: Vec::new(),
                     row: 0,
                     keeper: None,
+                    in_copies: false,
                     pick: false,
                 },
                 full_hash: r.get(10)?,
@@ -141,6 +186,11 @@ pub fn load(conn: &Connection, shown: &HashSet<i64>) -> Result<Candidates> {
         })?
         .filter(|r| r.as_ref().map_or(true, |r| shown.contains(&r.file.id)))
         .collect::<rusqlite::Result<_>>()?;
+    let copy_folders = copy_folders(conn)?;
+    let mut rows = rows;
+    for r in &mut rows {
+        r.file.in_copies = in_copy_folder(&r.file.path, &copy_folders);
+    }
     let decided: HashSet<(i64, i64)> = conn
         .prepare("SELECT a, b FROM dup_decisions")?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
@@ -354,7 +404,7 @@ fn photo_rows(rows: &[Row], order: &[usize], open: &dyn Fn(usize, usize) -> bool
     };
     let key = |i: usize| {
         let r = &rows[i];
-        (pixels(r), r.file.taken.is_some(), !copy_name[&i], r.file.size, std::cmp::Reverse(r.added_at), std::cmp::Reverse(r.file.path.clone()))
+        (!r.file.in_copies, pixels(r), r.file.taken.is_some(), !copy_name[&i], r.file.size, std::cmp::Reverse(r.added_at), std::cmp::Reverse(r.file.path.clone()))
     };
     let mut best: HashMap<u32, usize> = HashMap::new();
     for (x, &i) in order.iter().enumerate() {
@@ -539,8 +589,10 @@ pub fn same_folder_plan(candidates: &Candidates) -> Vec<(i64, Vec<i64>)> {
             let copies = copy_named(&p.iter().map(|r| r.file.name.as_str()).collect::<Vec<_>>());
             let flag: HashMap<i64, bool> = p.iter().map(|r| r.file.id).zip(copies).collect();
             p.sort_by(|a, b| {
-                pixels(b)
-                    .cmp(&pixels(a))
+                a.file
+                    .in_copies
+                    .cmp(&b.file.in_copies)
+                    .then(pixels(b).cmp(&pixels(a)))
                     .then(flag[&a.file.id].cmp(&flag[&b.file.id]))
                     .then(a.added_at.cmp(&b.added_at))
                     .then(a.file.path.cmp(&b.file.path))

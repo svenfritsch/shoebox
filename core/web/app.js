@@ -1972,7 +1972,7 @@ function suggestedIds(g) {
   g.files.forEach(function (f) { if (f.pick) pickOf[f.row] = f; });
   return g.files.filter(function (f) {
     var best = pickOf[f.row];
-    return !f.pick && (f.keeper || (f.same && best && best.same === f.same));
+    return !f.pick && (f.keeper || (f.same && best && best.same === f.same) || (f.in_copies && best && !best.in_copies));
   }).map(function (f) { return f.id; });
 }
 
@@ -2192,6 +2192,7 @@ function groupNode(g) {
     meta.push((f.size / 1e6).toFixed(1) + ' MB');
     card.appendChild(el('div', 'meta', meta.join(' · ')));
     if (f.keeper) card.appendChild(el('div', 'meta worse', tr('dups.lower_quality')));
+    if (f.in_copies) card.appendChild(el('div', 'meta', tr('dups.in_copies')));
     card.appendChild(el('div', 'meta', f.taken ? formatDate({ taken: f.taken, date_source: 'file' }) : tr('dups.no_capture_date')));
     if (f.tags && f.tags.length) {
       var tags = el('div', 'tagline');
@@ -3053,6 +3054,54 @@ function loadSettings() {
   });
   sec.appendChild(cards);
   page.appendChild(sec);
+  page.appendChild(copyFoldersSection());
+}
+
+// Folder names whose files are copies, not originals (InDesign's "Links").
+function copyFoldersSection() {
+  var sec = el('section', 'settings-section');
+  sec.appendChild(el('h3', '', tr('settings.copy_folders')));
+  sec.appendChild(el('p', 'hint', tr('settings.copy_folders_hint')));
+  var chips = el('div', 'tagline');
+  var folders = [];
+  var save = function (next) {
+    return post(LIBAPI + '/duplicates/copy-folders', { folders: next }).then(function (r) {
+      folders = r.folders;
+      draw();
+    }).catch(failed);
+  };
+  var draw = function () {
+    chips.textContent = '';
+    if (!folders.length) chips.appendChild(el('span', 'hint', tr('settings.copy_folders_none')));
+    folders.forEach(function (name) {
+      var chip = el('span', 'chip own', name + ' ');
+      var x = el('button', 'chip-x', '✕');
+      x.type = 'button';
+      x.title = tr('settings.copy_folders_remove');
+      x.onclick = function () { save(folders.filter(function (f) { return f !== name; })); };
+      chip.appendChild(x);
+      chips.appendChild(chip);
+    });
+  };
+  var row = el('div', 'copy-folder-row');
+  var input = el('input');
+  input.type = 'text';
+  input.placeholder = tr('settings.copy_folders_placeholder');
+  var add = el('button', 'btn', tr('settings.copy_folders_add'));
+  var go = function () {
+    var name = input.value.trim();
+    if (!name) return;
+    input.value = '';
+    save(folders.concat([name]));
+  };
+  add.onclick = go;
+  input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go(); });
+  row.appendChild(input);
+  row.appendChild(add);
+  sec.appendChild(chips);
+  sec.appendChild(row);
+  api(LIBAPI + '/duplicates/copy-folders').then(function (r) { folders = r.folders; draw(); }).catch(function () { draw(); });
+  return sec;
 }
 
 // ------------------------------------------------------------------ faces: people, groups, unnamed (5c-3)

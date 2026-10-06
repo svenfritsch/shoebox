@@ -386,3 +386,33 @@ fn shots_of_a_series_are_not_one_photo_in_two_versions() {
     assert!(fa["pick"] == true && fb["pick"] == true);
     server.stop().unwrap();
 }
+
+#[test]
+fn files_in_a_copies_folder_are_never_the_original() {
+    let lib = Library::new("dupes-copies-folder");
+    // A packaged InDesign project: its "Link" folder holds copies. The Link
+    // folder sorts (and so is scanned) first.
+    lib.jpeg("Album/Projekt/Link/IMG_0508.JPG", 7);
+    fs::create_dir_all(lib.path("Fotos")).unwrap();
+    fs::copy(lib.path("Album/Projekt/Link/IMG_0508.JPG"), lib.path("Fotos/IMG_0508.JPG")).unwrap();
+    lib.scan();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let pick = |all: &[Value], path: &str| file_of(all, path)["pick"].as_bool().unwrap();
+
+    // Nothing named yet: a tie, the earlier record is the pick.
+    assert_eq!(get(addr, "/api/duplicates/copy-folders").json()["folders"], json!([]));
+    let all = groups(addr);
+    assert_ne!(pick(&all, "Album/Projekt/Link/IMG_0508.JPG"), pick(&all, "Fotos/IMG_0508.JPG"));
+
+    // Named (any case, any level of the path): the one outside is the pick.
+    assert_eq!(post(addr, "/api/duplicates/copy-folders", &json!({ "folders": [" link ", "Link", "Pfad/x"] })).status, 400);
+    let r = post(addr, "/api/duplicates/copy-folders", &json!({ "folders": [" link ", "LINK"] }));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    assert_eq!(r.json()["folders"], json!(["link"]));
+    let all = groups(addr);
+    assert!(pick(&all, "Fotos/IMG_0508.JPG") && !pick(&all, "Album/Projekt/Link/IMG_0508.JPG"));
+    assert_eq!(file_of(&all, "Album/Projekt/Link/IMG_0508.JPG")["in_copies"], true);
+    assert_eq!(file_of(&all, "Fotos/IMG_0508.JPG")["in_copies"], false);
+    server.stop().unwrap();
+}

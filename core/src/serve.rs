@@ -819,6 +819,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/duplicates/decide", post(duplicates_decide))
         .route("/api/duplicates/remove", post(duplicates_remove))
         .route("/api/duplicates/same-folder", get(duplicates_same_folder).post(duplicates_remove_same_folder))
+        .route("/api/duplicates/copy-folders", get(duplicates_copy_folders).post(duplicates_set_copy_folders))
         .route("/api/duplicates/lower-quality", get(duplicates_lower_quality).post(duplicates_remove_lower_quality))
         .route("/api/trash", get(trash_list).post(trash_files))
         .route("/api/trash/{id}/thumb", get(trash_thumb))
@@ -2178,6 +2179,26 @@ async fn duplicates_same_folder(State(app): State<Arc<App>>) -> ApiResult<Json<s
 /// Delete exact duplicates in the same folder without review.
 async fn duplicates_remove_same_folder(State(app): State<Arc<App>>) -> ApiResult<Json<duplicates::BulkRemoved>> {
     change(&app, |app, conn| duplicates::remove_planned(conn, &app.root, &same_folder_plan(app, conn)?)).await.map(Json)
+}
+
+/// Folder names whose files count as copies, not originals.
+async fn duplicates_copy_folders(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
+    blocking(&app, |app| {
+        let conn = app.conn.lock().unwrap();
+        Ok(Json(serde_json::json!({ "folders": duplicates::copy_folders(&conn)? })))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct CopyFoldersRequest {
+    folders: Vec<String>,
+}
+
+async fn duplicates_set_copy_folders(State(app): State<Arc<App>>, Json(req): Json<CopyFoldersRequest>) -> ApiResult<Json<serde_json::Value>> {
+    change(&app, move |_, conn| duplicates::set_copy_folders(conn, &req.folders))
+        .await
+        .map(|folders| Json(serde_json::json!({ "folders": folders })))
 }
 
 fn lower_quality_plan(app: &App, conn: &Connection) -> anyhow::Result<Vec<(i64, Vec<i64>)>> {
