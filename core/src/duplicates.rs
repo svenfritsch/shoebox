@@ -884,12 +884,28 @@ pub fn remove_copies(
         return Ok(Removed { conflicts, ..Default::default() });
     }
 
+    // What a backup check needs later, read before the records go: the removed
+    // copy's content and the content of the copy that stays.
+    let mut remembered = Vec::new();
+    for (g, c) in gone.iter().zip(&carries) {
+        let kept_hash = keep.iter().find(|k| k.id == c.heir).and_then(|k| k.full_hash.clone());
+        if let (Some(full_hash), Some(kept_hash)) = (g.full_hash.clone(), kept_hash) {
+            let size: i64 = conn.query_row("SELECT size FROM files WHERE id = ?1", [g.id], |r| r.get(0))?;
+            remembered.push((g.path.clone(), size, full_hash, kept_hash));
+        }
+    }
     let ids: Vec<i64> = gone.iter().map(|g| g.id).collect();
     let trashed = organize::trash_files(conn, root, &ids)?;
     let mut out = Removed { trashed, ..Default::default() };
     let done: HashSet<String> = out.trashed.files.iter().cloned().collect();
     let went = |c: &Carry| done.contains(&c.path);
     let tx = conn.unchecked_transaction()?;
+    for (path, size, full_hash, kept_hash) in remembered.iter().filter(|r| done.contains(&r.0)) {
+        tx.execute(
+            "INSERT INTO removed_copies (path_nfc, size, full_hash, kept_hash, removed_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![path, size, full_hash, kept_hash, db::now()],
+        )?;
+    }
     for c in carries.iter().filter(|c| went(c)) {
         out.tags_added += carry_names(&tx, c.heir, &c.names)?;
     }

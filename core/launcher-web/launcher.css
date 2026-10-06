@@ -76,3 +76,6 @@ header { position: relative; }
 .chipbox li.unticked .name { text-decoration: line-through; color: var(--muted); }
 .chipbox li .badge { font-size: 11px; font-weight: 600; color: var(--ok); white-space: nowrap; }
 .results .reveal { padding: 0 8px; font-size: 16px; line-height: 22px; border-radius: 6px; }
+.cleanup { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.cleanup p { margin: 0 0 8px; }
+.cleanup label { display: flex; gap: 8px; align-items: center; margin: 0 0 10px; }

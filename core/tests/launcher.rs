@@ -434,3 +434,41 @@ fn a_result_can_be_shown_on_both_drives_but_only_inside_the_jobs_folders() {
     assert_eq!(original.snapshot(), before, "showing a file changes nothing");
     launcher.stop().unwrap();
 }
+
+#[test]
+fn the_backup_check_lists_removed_copies_and_the_cleanup_job_takes_them_off_the_backup() {
+    let _turn = serial();
+    let photo = "Familie/Weihnachten/DSC_2001.jpg";
+    let libs: Vec<Library> = ["launcher-clean-original", "launcher-clean-copy"].iter().map(|n| Library::new(n)).collect();
+    for lib in &libs {
+        let _ = std::fs::remove_dir_all(lib.path("fixtures"));
+        std::fs::create_dir_all(lib.path("Kochen")).unwrap();
+        std::fs::copy(lib.path(photo), lib.path("Kochen/braten.jpg")).unwrap();
+        lib.scan();
+    }
+    let (original, backup) = (&libs[0], &libs[1]);
+    shoebox::duplicates::remove_copies(&original.db(), &original.root, &[id_of(original, photo)], &[id_of(original, "Kochen/braten.jpg")], &Default::default()).unwrap();
+    shoebox::organize::empty_trash(&original.db(), &original.root, None).unwrap();
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(std::env::temp_dir().join(format!("shoebox-clean-{}.json", std::process::id()))), reveal: None }).unwrap();
+    let addr = launcher.addr;
+    let (o, b) = (original.root.display().to_string(), backup.root.display().to_string());
+
+    let job = run_job(addr, json!({ "kind": "backup", "roots": [o, b] }));
+    assert_eq!(job["ok"], true, "removed copies are not a problem of the backup: {job}");
+    assert_eq!(job["result"]["report"]["removed"], 1);
+    assert_eq!(job["result"]["report"]["removed_files"][0]["path"], "Kochen/braten.jpg");
+    assert!(job["recent_ok"].as_array().unwrap().iter().any(|f| f["path"] == "Kochen/braten.jpg" && f["note"].as_str().unwrap().contains("still on the backup")));
+
+    // Exactly the two drives, like the check itself.
+    assert_eq!(lpost(addr, "/api/job", &json!({ "kind": "backup_cleanup", "roots": [o] })).status, 400);
+    let before = original.snapshot();
+    let job = run_job(addr, json!({ "kind": "backup_cleanup", "roots": [o, b], "forever": true }));
+    assert_eq!(job["ok"], true, "{job}");
+    assert_eq!(job["result"]["removed"], json!(["Kochen/braten.jpg"]));
+    assert!(!backup.path("Kochen/braten.jpg").exists());
+    assert!(backup.path(photo).exists());
+    assert_eq!(original.snapshot(), before, "the original is untouched");
+    let job = run_job(addr, json!({ "kind": "backup", "roots": [o, b] }));
+    assert_eq!(job["result"]["report"]["removed"], 0);
+    launcher.stop().unwrap();
+}

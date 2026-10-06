@@ -15,7 +15,7 @@ pub const FILE: &str = "library.db";
 const BACKUP_SUFFIX: &str = ".bak";
 
 /// Bump when the schema changes and add a step to `migrate`.
-const SCHEMA_VERSION: i32 = 8;
+const SCHEMA_VERSION: i32 = 9;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -264,6 +264,22 @@ pub fn version_of(quick_hash: &str, turn: i32) -> String {
     format!("{}{}", quick_hash.chars().take(7).collect::<String>(), turn.rem_euclid(4))
 }
 
+/// Copies the user removed on the duplicates screen. The trash forgets what
+/// was in it once it is emptied; this keeps, for good, that a copy with this
+/// content was removed here although another copy stays, so a backup check can
+/// find the copy on the backup drive. Content hashes and paths only.
+const SCHEMA_V9: &str = "
+CREATE TABLE IF NOT EXISTS removed_copies (
+    id         INTEGER PRIMARY KEY,
+    path_nfc   TEXT NOT NULL,        -- where the removed copy was
+    size       INTEGER NOT NULL,
+    full_hash  TEXT NOT NULL,        -- its content
+    kept_hash  TEXT NOT NULL,        -- the content of the copy that stays (the same for an exact copy)
+    removed_at INTEGER NOT NULL      -- Unix seconds
+);
+CREATE INDEX IF NOT EXISTS removed_copies_hash ON removed_copies(full_hash);
+";
+
 fn migrate(conn: &Connection) -> Result<()> {
     let version: i32 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
     if version > SCHEMA_VERSION {
@@ -323,6 +339,12 @@ fn migrate(conn: &Connection) -> Result<()> {
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V8)?;
         tx.pragma_update(None, "user_version", 8)?;
+        tx.commit()?;
+    }
+    if version < 9 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V9)?;
+        tx.pragma_update(None, "user_version", 9)?;
         tx.commit()?;
     }
     Ok(())

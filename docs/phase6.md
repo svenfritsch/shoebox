@@ -187,10 +187,34 @@ Backup verification, built (`core/src/backup.rs`, `multi::backup_report`):
   both" button that opens the file on the original and on the backup in
   Finder / Explorer (`POST /api/reveal`: only folders of the job on screen,
   only paths inside them).
+- Copies removed on the duplicates screen. Deleting there moves a copy into
+  `.shoebox/trash/<batch>/` on its drive (one batch per photo with its RAW,
+  Live Photo and sidecar files) and the `trash` table keeps what is needed to
+  put it back; emptying the trash deletes those files and their batch folders
+  (the `.shoebox/trash` folder goes with the last one) and the table rows. So
+  that the backup can still be told, `duplicates::remove_copies` also writes
+  a row to `removed_copies` (library schema v9: the removed copy's path, size
+  and content hash, plus the hash of the copy that stays; no file content),
+  which emptying the trash does not touch. A plain "Move to trash" of a photo
+  is not recorded: it may be the only copy.
+  The backup check lists, as "removed here, still on the backup", the
+  backup's files that match such a row by path and content and are safe to
+  remove: the kept content is still on the original, the original has no such
+  file at that path again, and the backup keeps another file with the kept
+  content (`multi::removable_on_backup`). They do not make the check fail: a
+  backup that holds more is still complete.
+  `backup::cleanup` (launcher: "Delete duplicates from backup as well", job
+  `backup_cleanup`) removes them from the backup one at a time, asking again
+  before each (`multi::still_removable`, so the last copy of a content on the
+  backup can never go), through `organize::trash_files` on the backup's own
+  index: they land in the backup's `.shoebox/trash`, or are deleted for good
+  with "Delete for good". A file that no longer matches the backup's index is
+  skipped with a reason. Nothing on the original changes. Tests:
+  `core/tests/backup.rs`, `core/tests/launcher.rs`.
 - `--deep` (launcher: "also re-read the backup drive") then runs `verify` on
   the backup drive: bit rot shows as DAMAGED although size and date match.
 - UI: the "All drives" page shows a status box per backup drive with the
-  lists; the photo app never writes to a backup.
+  lists; the photo app never writes to a backup (only the cleanup below does, on request).
 - Tests: `core/tests/backup.rs`, `core/tests/launcher.rs`.
 
 Packaging: the release archive contains the macOS binary, `recognizer/` and

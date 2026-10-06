@@ -215,6 +215,7 @@ function pill(text, cls) {
 var reloadedFor = 0;
 function render(job) {
   if (!job.id) return;
+  showCleanup(job);
   if (job.kind === 'backup' && !job.running && reloadedFor !== job.id) { reloadedFor = job.id; loadConfig(); }
   $('progress-card').hidden = false;
   var name = kindName(job.kind);
@@ -281,10 +282,35 @@ function render(job) {
   $('lines').textContent = job.lines.join('\n');
 }
 
+// After a backup check: copies removed on the duplicates screen that the backup still holds.
+var cleanupJob = null;
+function showCleanup(job) {
+  var rep = job.kind === 'backup' && !job.running && job.result && job.result.report;
+  var box = $('cleanup-box');
+  box.hidden = !(rep && rep.removed > 0);
+  if (box.hidden) return;
+  cleanupJob = job;
+  $('cleanup-text').textContent = tr('launcher.cleanup.found', { n: rep.removed, backup: driveName(job.roots[1]) });
+}
+$('cleanup-forever').checked = (function () { try { return localStorage.getItem('shoebox.cleanup.forever') === '1'; } catch (e) { return false; } })();
+$('cleanup-go').onclick = function () {
+  if (!cleanupJob) return;
+  var forever = $('cleanup-forever').checked;
+  var n = cleanupJob.result.report.removed;
+  var name = driveName(cleanupJob.roots[1]);
+  if (!window.confirm(tr(forever ? 'launcher.cleanup.confirm_forever' : 'launcher.cleanup.confirm', { n: n, backup: name }))) return;
+  try { localStorage.setItem('shoebox.cleanup.forever', forever ? '1' : '0'); } catch (e) { /* only a convenience */ }
+  api('/api/job', { kind: 'backup_cleanup', roots: cleanupJob.roots, forever: forever }).then(poll).catch(function (e) {
+    $('job-error').hidden = false; $('job-error').textContent = e.message;
+  });
+};
+
 function summaryOf(kind, r) {
   var out = [];
   if (kind === 'scan') out.push(tr('launcher.sum.added', { n: r.added }), tr('launcher.sum.moved', { n: r.moved }), tr('launcher.sum.changed', { n: r.changed }), tr('launcher.sum.missing', { n: r.missing }));
   else if (kind === 'backup') out.push(tr('launcher.sum.backup_covered', { covered: r.report.covered, compared: r.report.compared }), tr('launcher.sum.backup_missing', { n: r.report.missing }), tr('launcher.sum.backup_different', { n: r.report.different }), tr('launcher.sum.backup_extra', { n: r.report.extra }));
+  if (kind === 'backup' && r.report.removed) out.push(tr('launcher.sum.backup_removed', { n: r.report.removed }));
+  else if (kind === 'backup_cleanup') out.push(tr('launcher.sum.cleanup', { n: r.removed.length }), tr('launcher.sum.cleanup_skipped', { n: r.skipped.length }));
   else if (kind === 'verify') out.push(tr('launcher.sum.checked', { n: r.checked }), tr('launcher.sum.missing', { n: r.missing.length }), tr('launcher.sum.damaged', { n: r.damaged.length }));
   else if (kind === 'recognize' && r.faces !== undefined) out.push(tr('launcher.sum.faces', { n: r.faces }));
   else if (kind === 'recognize_pets' && r.pets) out.push(tr('launcher.sum.pets', { n: r.pets.faces }), tr('launcher.failed', { n: r.pets.failed }));

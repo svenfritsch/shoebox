@@ -465,6 +465,9 @@ struct JobRequest {
     /// Backup check: also re-read the backup drive's files.
     #[serde(default)]
     deep: bool,
+    /// Backup cleanup: delete for good instead of moving into the backup's trash.
+    #[serde(default)]
+    forever: bool,
 }
 
 /// Run one command and return its result as JSON plus whether it was clean.
@@ -480,6 +483,15 @@ fn run_command(req: &JobRequest, roots: Vec<PathBuf>) -> Result<(serde_json::Val
                 limit: 200,
             })?;
             (serde_json::to_value(&check)?, check.ok)
+        }
+        "backup_cleanup" => {
+            let done = crate::backup::cleanup(&crate::backup::CleanupOptions {
+                primary: roots[0].clone(),
+                backup: roots.get(1).cloned().ok_or_else(|| anyhow::anyhow!("a backup cleanup needs the original drive and the backup"))?,
+                forever: req.forever,
+            })?;
+            let clean = done.skipped.is_empty();
+            (serde_json::to_value(&done)?, clean)
         }
         "scan" => {
             let stats = scan::run(&scan::Options {
@@ -547,14 +559,14 @@ fn short_name(root: &Path) -> String {
 }
 
 fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
-    if !matches!(req.kind.as_str(), "scan" | "verify" | "recognize" | "recognize_pets" | "faces_stats" | "backup") {
+    if !matches!(req.kind.as_str(), "scan" | "verify" | "recognize" | "recognize_pets" | "faces_stats" | "backup" | "backup_cleanup") {
         return Err(ApiError::BadRequest(format!("unknown command {:?}", req.kind)));
     }
     if shared.app.lock().unwrap().is_some() {
         return Err(ApiError::Conflict("stop the photo app first".into()));
     }
     let roots = request_roots(&req)?;
-    if req.kind == "backup" && roots.len() != 2 {
+    if req.kind.starts_with("backup") && roots.len() != 2 {
         return Err(ApiError::BadRequest("a backup check compares two folders: the original drive first, then the backup".into()));
     }
     let id = {
@@ -588,7 +600,7 @@ fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
             }));
             // A backup check is one run over the two folders; the others run once per folder.
             let groups: Vec<Vec<PathBuf>> =
-                if req.kind == "backup" { vec![roots.clone()] } else { roots.iter().map(|r| vec![r.clone()]).collect() };
+                if req.kind.starts_with("backup") { vec![roots.clone()] } else { roots.iter().map(|r| vec![r.clone()]).collect() };
             let many = groups.len() > 1;
             for group in groups {
                 let root = group[0].clone();
@@ -756,6 +768,7 @@ async fn app_start(State(shared): State<Arc<Shared>>, Json(req): Json<AppRequest
             retry_failed: false,
             rotated: false,
             deep: false,
+            forever: false,
         };
         let roots = request_roots(&jobless)?;
         let mut app = shared.app.lock().unwrap();

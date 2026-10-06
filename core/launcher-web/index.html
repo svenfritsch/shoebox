@@ -59,6 +59,11 @@
     <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div id="bar-fill"></div></div>
     <p id="progress-label" class="hint"></p>
     <div id="summary" class="summary" hidden></div>
+    <div id="cleanup-box" class="cleanup" hidden>
+      <p id="cleanup-text"></p>
+      <label><input type="checkbox" id="cleanup-forever"> <span data-i18n="launcher.cleanup.forever">Delete for good (skip the backup's trash folder)</span></label>
+      <button id="cleanup-go" class="primary" data-i18n="launcher.cleanup.button">Delete duplicates from backup as well</button>
+    </div>
     <p id="job-error" class="error" hidden></p>
     <div class="list-head">
       <h3 data-i18n="launcher.results">Results per file</h3>
