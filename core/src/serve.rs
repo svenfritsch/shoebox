@@ -2235,10 +2235,16 @@ async fn tags_selection(State(app): State<Arc<App>>, Json(req): Json<IdsRequest>
 #[folder = "web/"]
 struct Assets;
 
+/// Translations and their loader, shared with the launcher (`i18n/`).
+#[derive(rust_embed::Embed)]
+#[folder = "i18n/"]
+#[prefix = "i18n/"]
+struct I18n;
+
 async fn asset(uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
     let path = if path.is_empty() { "index.html" } else { path };
-    let Some(file) = Assets::get(path) else {
+    let Some(file) = Assets::get(path).or_else(|| I18n::get(path)) else {
         return (StatusCode::NOT_FOUND, "not found").into_response();
     };
     let mime = match path.rsplit('.').next() {

@@ -4,7 +4,7 @@
 // the X-Shoebox header, like the photo app.
 
 var $ = function (id) { return document.getElementById(id); };
-var KINDS = { scan: 'Scan', verify: 'Verify', recognize: 'Recognize', recognize_pets: 'Recognize pets', faces_stats: 'Face stats', backup: 'Backup check' };
+function kindName(kind) { return tr('launcher.kind.' + kind); }
 var polling = null;
 
 function api(path, body) {
@@ -56,12 +56,12 @@ function renderChips() {
     if (drives.length && !known && p.indexOf('/Volumes/') === 0) li.className = 'offline';
     var name = document.createElement('span'); name.className = 'name'; name.textContent = p; name.title = p;
     var x = document.createElement('button');
-    x.type = 'button'; x.textContent = '×'; x.title = 'Remove'; x.setAttribute('aria-label', 'Remove ' + p);
+    x.type = 'button'; x.textContent = '×'; x.title = tr('launcher.remove'); x.setAttribute('aria-label', tr('launcher.remove_path', { path: p }));
     x.onclick = function () { removePath(p); };
     li.appendChild(name); li.appendChild(x);
     ul.appendChild(li);
   });
-  $('root').placeholder = paths.length ? 'Add another folder…' : '/Volumes/MyDrive';
+  $('root').placeholder = tr(paths.length ? 'launcher.root.placeholder_more' : 'launcher.root.placeholder');
 }
 
 $('root').addEventListener('keydown', function (ev) {
@@ -94,8 +94,8 @@ function loadDrives() {
       chips.appendChild(b);
     });
     $('root-hint').textContent = drives.length
-      ? 'A check mark marks drives that already have a shoebox library.'
-      : 'No drives found automatically: type the path of your drive or photo folder.';
+      ? tr('launcher.drives.has_lib')
+      : tr('launcher.drives.none');
     renderChips();
   }).catch(function (e) { $('root-hint').textContent = String(e.message); });
 }
@@ -107,9 +107,9 @@ function loadConfig() {
 // ---------------------------------------------------------------- commands
 
 function startJob(kind) {
-  if (!paths.length) { $('root').focus(); $('root-hint').textContent = 'Add at least one folder first.'; return; }
+  if (!paths.length) { $('root').focus(); $('root-hint').textContent = tr('launcher.need_folder'); return; }
   if (kind === 'backup' && paths.length !== 2) {
-    $('root-hint').textContent = 'Backup check compares exactly two folders: the original drive first, then the backup.';
+    $('root-hint').textContent = tr('launcher.backup_two');
     return;
   }
   api('/api/job', {
@@ -121,7 +121,7 @@ function startJob(kind) {
     poll();
   }).catch(function (e) {
     $('progress-card').hidden = false;
-    $('job-title').textContent = KINDS[kind] + ' did not start';
+    $('job-title').textContent = tr('launcher.not_started', { name: kindName(kind) });
     $('job-error').hidden = false; $('job-error').textContent = e.message;
   });
 }
@@ -148,28 +148,28 @@ function pill(text, cls) {
 function render(job) {
   if (!job.id) return;
   $('progress-card').hidden = false;
-  var name = KINDS[job.kind] || job.kind;
+  var name = kindName(job.kind);
   busy = job.running;
   applyLocks();
   $('cancel').hidden = !job.running;
   $('cancel').disabled = false;
   var where = job.current_root && job.roots.length > 1 ? ' (' + job.current_root + ')' : '';
-  $('job-title').textContent = job.running ? name + ' is running…' + where
-    : job.cancelled ? name + ' was cancelled (what was done is kept)'
-    : name + (job.ok ? ' finished' : ' finished with problems');
+  $('job-title').textContent = job.running ? tr('launcher.running', { name: name, where: where })
+    : job.cancelled ? tr('launcher.cancelled', { name: name })
+    : tr(job.ok ? 'launcher.finished' : 'launcher.finished_problems', { name: name });
   var bar = document.querySelector('.bar');
   var p = job.progress;
   var pct = p && p.total ? Math.min(100, Math.round(100 * p.done / p.total)) : null;
   bar.classList.toggle('busy', job.running && pct === null);
   $('bar-fill').style.width = job.running ? (pct === null ? '30%' : pct + '%') : '100%';
   bar.setAttribute('aria-valuenow', job.running ? (pct === null ? '' : pct) : 100);
-  $('progress-label').textContent = job.running ? (p ? p.label : 'Starting…') : '';
+  $('progress-label').textContent = job.running ? (p ? p.label : tr('launcher.starting')) : '';
 
   var summary = $('summary');
   summary.textContent = '';
   summary.hidden = false;
-  summary.appendChild(pill(job.ok_count.toLocaleString() + ' worked', 'ok'));
-  summary.appendChild(pill(job.fail_count.toLocaleString() + ' failed', job.fail_count ? 'bad' : ''));
+  summary.appendChild(pill(tr('launcher.worked', { n: job.ok_count }), 'ok'));
+  summary.appendChild(pill(tr('launcher.failed', { n: job.fail_count }), job.fail_count ? 'bad' : ''));
   if (!job.running) {
     // One pill per folder, so several drives stay readable.
     job.results.forEach(function (r) {
@@ -194,7 +194,7 @@ function render(job) {
     ul.appendChild(li);
   });
   if (!items.length) {
-    var li = document.createElement('li'); li.textContent = job.running ? 'Nothing to show yet.' : (only ? 'No problems.' : 'No files.');
+    var li = document.createElement('li'); li.textContent = tr(job.running ? 'launcher.nothing_yet' : only ? 'launcher.no_problems' : 'launcher.no_files');
     ul.appendChild(li);
   }
   $('lines').textContent = job.lines.join('\n');
@@ -202,13 +202,12 @@ function render(job) {
 
 function summaryOf(kind, r) {
   var out = [];
-  var job = { kind: kind };
-  if (job.kind === 'scan') out.push(r.added + ' added', r.moved + ' moved', r.changed + ' changed', r.missing + ' missing');
-  else if (job.kind === 'backup') out.push(r.report.covered + ' of ' + r.report.compared + ' on the backup', r.report.missing + ' not yet', r.report.different + ' different', r.report.extra + ' only on the backup');
-  else if (job.kind === 'verify') out.push(r.checked + ' checked', r.missing.length + ' missing', r.damaged.length + ' damaged');
-  else if (job.kind === 'recognize' && r.faces !== undefined) out.push(r.faces + ' faces');
-  else if (job.kind === 'recognize_pets' && r.pets) out.push(r.pets.faces + ' cats and dogs', r.pets.failed + ' failed');
-  else if (job.kind === 'faces_stats') out.push(r === null ? 'no faces yet' : (r.faces + ' faces'));
+  if (kind === 'scan') out.push(tr('launcher.sum.added', { n: r.added }), tr('launcher.sum.moved', { n: r.moved }), tr('launcher.sum.changed', { n: r.changed }), tr('launcher.sum.missing', { n: r.missing }));
+  else if (kind === 'backup') out.push(tr('launcher.sum.backup_covered', { covered: r.report.covered, compared: r.report.compared }), tr('launcher.sum.backup_missing', { n: r.report.missing }), tr('launcher.sum.backup_different', { n: r.report.different }), tr('launcher.sum.backup_extra', { n: r.report.extra }));
+  else if (kind === 'verify') out.push(tr('launcher.sum.checked', { n: r.checked }), tr('launcher.sum.missing', { n: r.missing.length }), tr('launcher.sum.damaged', { n: r.damaged.length }));
+  else if (kind === 'recognize' && r.faces !== undefined) out.push(tr('launcher.sum.faces', { n: r.faces }));
+  else if (kind === 'recognize_pets' && r.pets) out.push(tr('launcher.sum.pets', { n: r.pets.faces }), tr('launcher.failed', { n: r.pets.failed }));
+  else if (kind === 'faces_stats') out.push(r === null ? tr('launcher.sum.no_faces') : tr('launcher.sum.faces', { n: r.faces }));
   return out;
 }
 
@@ -217,12 +216,12 @@ function appState() {
     serving = !!s.running;
     applyLocks();
     $('stop-app').hidden = !s.running;
-    $('start-app').textContent = s.running ? 'Open photo app' : 'Start photo app';
+    $('start-app').textContent = tr(s.running ? 'launcher.app.open' : 'launcher.app.start');
     if (s.running) {
       var a = document.createElement('a'); a.href = s.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = s.url;
-      $('app-state').textContent = 'Running for ' + s.roots.join(', ') + ' at ';
+      $('app-state').textContent = tr('launcher.app.running', { roots: s.roots.join(', ') });
       $('app-state').appendChild(a);
-      $('app-state').appendChild(document.createTextNode('. Stop it to scan, verify or change folders.'));
+      $('app-state').appendChild(document.createTextNode(tr('launcher.app.running_end')));
     }
   });
 }
@@ -233,19 +232,29 @@ document.querySelectorAll('.actions button').forEach(function (b) {
 $('only-failed').onchange = poll;
 $('start-app').onclick = function () {
   if (serving) { window.open($('app-state').querySelector('a').href, '_blank', 'noopener'); return; }
-  if (!paths.length) { $('root').focus(); $('root-hint').textContent = 'Add at least one folder first.'; return; }
+  if (!paths.length) { $('root').focus(); $('root-hint').textContent = tr('launcher.need_folder'); return; }
   api('/api/app', { roots: paths }).then(function (r) {
     return appState().then(function () { window.open(r.url, '_blank', 'noopener'); });
   }).catch(function (e) { $('app-state').textContent = e.message; });
 };
 $('stop-app').onclick = function () {
-  api('/api/app/stop', {}).then(appState).then(function () { $('app-state').textContent = 'Photo app stopped.'; });
+  api('/api/app/stop', {}).then(appState).then(function () { $('app-state').textContent = tr('launcher.app.stopped'); });
 };
 $('cancel').onclick = function () {
   $('cancel').disabled = true;
   api('/api/job/cancel', {}).then(poll);
 };
 
-loadConfig().then(loadDrives);
-appState();
-poll();
+// The messages first: everything below builds text from them.
+I18n.ready.then(function () {
+  var sel = $('lang');
+  Object.keys(I18n.langs).forEach(function (code) {
+    var o = document.createElement('option'); o.value = code; o.textContent = I18n.langs[code];
+    if (code === I18n.lang) o.selected = true;
+    sel.appendChild(o);
+  });
+  sel.onchange = function () { I18n.setLang(sel.value); };
+  loadConfig().then(loadDrives);
+  appState();
+  poll();
+});

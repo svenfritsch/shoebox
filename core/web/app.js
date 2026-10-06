@@ -106,7 +106,7 @@ $('login-form').addEventListener('submit', function (ev) {
     body: JSON.stringify({ pin: $('pin').value }),
   }).then(function (r) {
     if (r.ok) { location.reload(); return; }
-    return r.json().then(function (body) { $('login-error').textContent = body.error || 'Wrong PIN'; });
+    return r.json().then(function (body) { $('login-error').textContent = body.error || tr('login.wrong'); });
   }).catch(function (e) { $('login-error').textContent = String(e); });
 });
 
@@ -116,9 +116,9 @@ var TYPES = ['photo', 'video', 'live'];
 var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person', 'drives', 'settings', 'pets'];
 // Pet search terms (`pet=` in the URL and the API): a species or any pet.
 var PET_TERMS = {
-  cat: { icon: '🐱', label: 'All cats' },
-  dog: { icon: '🐶', label: 'All dogs' },
-  pet: { icon: '🐾', label: 'Any pet' },
+  cat: { icon: '🐱', get label() { return tr('pet.term.cat'); } },
+  dog: { icon: '🐶', get label() { return tr('pet.term.dog'); } },
+  pet: { icon: '🐾', get label() { return tr('pet.term.pet'); } },
 };
 
 function readHash() {
@@ -201,7 +201,7 @@ function renderChips() {
   var add = function (label, clear) {
     var c = el('span', 'chip', label);
     var x = el('button', '', '✕');
-    x.title = 'Remove from the search';
+    x.title = tr('chip.remove');
     x.onclick = clear;
     c.appendChild(x);
     box.appendChild(c);
@@ -211,7 +211,7 @@ function renderChips() {
     add('📁 ' + (folder.path || folder.name), function () { setFilter(withFilter({ folder: null })); });
     if (folder.path) {
       var edit = el('button', 'edit', '✎');
-      edit.title = 'Rename or move this folder';
+      edit.title = tr('chip.rename_folder');
       edit.onclick = function () { renameFolder(folder); };
       box.lastChild.insertBefore(edit, box.lastChild.lastChild);
     }
@@ -235,14 +235,14 @@ function renderChips() {
   var terms = box.children.length;
   if (terms) {
     var more = el('button', 'chip more', '+');
-    more.title = 'Add a tag, person, pet or folder to the search';
+    more.title = tr('chip.add');
     more.onclick = function () { $('search').value = ''; $('search').focus(); suggest(''); };
     box.appendChild(more);
   }
   // One click for the whole search; the ✕ on a chip drops just that term.
   if (terms >= 2) {
-    var clear = el('button', 'chip clear', 'Clear all');
-    clear.title = 'Show all photos again';
+    var clear = el('button', 'chip clear', tr('chip.clear_all'));
+    clear.title = tr('chip.clear_all_hint');
     clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], pets: [], q: '' }); };
     box.appendChild(clear);
   }
@@ -257,13 +257,13 @@ state.personNames = {};
 // A check box drop-down: Photos, Videos (stand-alone only) and Live Photos.
 // Any ticked type matches; it combines with the rest of the search.
 var typeBoxes = Array.prototype.slice.call($('types-menu').querySelectorAll('input'));
-var TYPE_LABELS = { photo: 'Photos', video: 'Videos', live: 'Live' };
+function typeLabel(t) { return tr(t === 'live' ? 'types.live_short' : 'types.' + t); }
 
 function markTypes() {
   var on = state.filter.types;
   typeBoxes.forEach(function (b) { b.checked = on.indexOf(b.value) >= 0; });
   var btn = $('types-btn');
-  btn.textContent = (on.length ? on.map(function (t) { return TYPE_LABELS[t]; }).join(', ') : 'Type') + ' ▾';
+  btn.textContent = (on.length ? on.map(typeLabel).join(', ') : tr('types.label')) + ' ▾';
   btn.classList.toggle('on', on.length > 0);
   $('types').hidden = !!state.filter.view;
 }
@@ -390,9 +390,9 @@ function showSuggest(items) {
   items.forEach(function (it, i) {
     if (it.kind !== last) {
       var f = state.filter, narrowed = !isAll() && (f.tags.length || f.people.length || f.pets.length || f.folder);
-      var head = it.kind === 'tag' ? (narrowed ? 'Tags in these photos' : 'Tags')
-        : it.kind === 'person' ? (narrowed ? 'People in these photos' : 'People')
-          : it.kind === 'pet' ? (narrowed ? 'Pets in these photos' : 'Pets') : 'Folders';
+      var head = it.kind === 'tag' ? tr(narrowed ? 'search.tags_here' : 'search.tags')
+        : it.kind === 'person' ? tr(narrowed ? 'search.people_here' : 'search.people')
+          : it.kind === 'pet' ? tr(narrowed ? 'search.pets_here' : 'search.pets') : tr('search.folders');
       box.appendChild(el('div', 'head', head));
       last = it.kind;
     }
@@ -400,7 +400,7 @@ function showSuggest(items) {
     b.type = 'button';
     b.setAttribute('role', 'option');
     b.appendChild(el('span', 'label', (it.kind === 'pet' ? PET_TERMS[it.id].icon + ' ' : ({ folder: '📁 ', person: '👤 ' }[it.kind] || '# ')) + it.label));
-    b.appendChild(el('span', 'count', it.count.toLocaleString()));
+    b.appendChild(el('span', 'count', I18n.number(it.count)));
     b.onmousedown = function (ev) { ev.preventDefault(); }; // keep the focus in the box
     b.onclick = function () { pickSuggest(it); };
     b.dataset.i = i;
@@ -490,7 +490,7 @@ function folderNode(f, depth) {
   var name = el('button', 'name', f.name);
   name.dataset.id = f.id;
   name.title = f.path;
-  var count = el('span', 'count', f.count.toLocaleString());
+  var count = el('span', 'count', I18n.number(f.count));
   row.appendChild(toggle);
   row.appendChild(name);
   row.appendChild(count);
@@ -622,9 +622,9 @@ function groups() {
 
 function monthLabel(month) {
   var y = Math.floor(month / 100), m = month % 100;
-  if (!y) return 'No date';
+  if (!y) return tr('grid.no_date');
   if (!m) return String(y);
-  return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  return I18n.date(new Date(y, m - 1, 1), { month: 'long', year: 'numeric' });
 }
 
 function relayout() {
@@ -691,13 +691,13 @@ function thumbUrl(i) {
 function buildRow(row) {
   if (row.type === 'h') {
     var h = el('div', 'sec', row.label);
-    h.appendChild(el('span', 'n', row.n.toLocaleString()));
+    h.appendChild(el('span', 'n', I18n.number(row.n)));
     // While selecting: the whole month at once (also where Shift is missing, the iPad).
     var pick = el('button', 'pick');
     pick.type = 'button';
     pick.dataset.start = row.start;
     pick.dataset.end = row.end;
-    pick.textContent = allSelected(row.start, row.end) ? 'Deselect' : 'Select all';
+    pick.textContent = tr(allSelected(row.start, row.end) ? 'grid.deselect' : 'grid.select_all');
     pick.onclick = function () { selectRange(row.start, row.end - 1, !allSelected(row.start, row.end)); };
     h.appendChild(pick);
     h.style.top = row.top + 'px';
@@ -910,7 +910,7 @@ window.addEventListener('resize', function () {
 function fillYears() {
   var sel = $('years');
   sel.textContent = '';
-  var placeholder = el('option', '', 'Year');
+  var placeholder = el('option', '', tr('grid.year'));
   placeholder.value = '';
   sel.appendChild(placeholder);
   var seen = {};
@@ -1049,7 +1049,7 @@ function drawFaces() {
     if (f.person && f.state !== 'ignored') {
       b.appendChild(el('span', 'face-name', f.person.name + (f.state === 'confirmed' ? '' : '?')));
     }
-    b.title = (f.species ? f.species + ', ' : '') + (f.score != null ? 'score ' + f.score.toFixed(2) : 'drawn by hand');
+    b.title = (f.species ? speciesName(f.species) + ', ' : '') + (f.score != null ? tr('face.score', { score: f.score.toFixed(2) }) : tr('face.drawn'));
     stage.appendChild(b);
   });
 }
@@ -1065,8 +1065,8 @@ function formatDate(info) {
   if (!s) return '';
   var p = s.split(/[-T:]/).map(Number);
   var date = new Date(p[0], p[1] - 1, p[2], p[3] || 0, p[4] || 0);
-  if (info.date_source === 'folder') return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  if (info.date_source === 'folder') return I18n.date(date, { month: 'long', year: 'numeric' });
+  return I18n.dateTime(date, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
 function formatBytes(n) {
@@ -1082,15 +1082,15 @@ function renderPanelAll(info) {
   var lib = drives.allLibs[Math.floor(state.data.ids[state.open] / SPAN)];
   var dl = el('dl');
   var row = function (label, value) { if (value) { dl.appendChild(el('dt', '', label)); dl.appendChild(el('dd', '', value)); } };
-  row('Date', formatDate(info));
-  row('Drive', lib.name);
-  row('Path', info.path);
-  row('Size', (info.width && info.height ? info.width + ' × ' + info.height + ' · ' : '') + formatBytes(info.size));
-  row('Camera', info.camera);
+  row(tr('info.date'), formatDate(info));
+  row(tr('info.drive'), lib.name);
+  row(tr('info.path'), info.path);
+  row(tr('info.size'), (info.width && info.height ? info.width + ' × ' + info.height + ' · ' : '') + formatBytes(info.size));
+  row(tr('info.camera'), info.camera);
   panel.appendChild(dl);
   var actions = el('div', 'actions');
-  var open = el('button', 'btn quiet', 'Open in ' + lib.name);
-  open.title = 'Tags, faces, moving and the rest are done in the photo\'s own drive';
+  var open = el('button', 'btn quiet', tr('info.open_in', { name: lib.name }));
+  open.title = tr('info.open_in_hint');
   open.onclick = function () { switchLibrary(lib.id, 'folder=' + info.folder_id); };
   actions.appendChild(open);
   panel.appendChild(actions);
@@ -1110,26 +1110,26 @@ function renderPanel() {
     dl.appendChild(dd);
     return dd;
   };
-  var date = row('Date', formatDate(info) + (info.taken_offset ? ' (UTC' + info.taken_offset + ')' : ''));
+  var date = row(tr('info.date'), formatDate(info) + (info.taken_offset ? ' (UTC' + info.taken_offset + ')' : ''));
   if (date && info.date_source !== 'file') {
-    date.appendChild(el('div', 'note', info.date_source === 'folder' ? 'No capture date; month of the event folder' : 'No capture date; file modification date'));
+    date.appendChild(el('div', 'note', tr(info.date_source === 'folder' ? 'info.no_date_folder' : 'info.no_date_file')));
   }
-  row('Name', info.name);
+  row(tr('info.name'), info.name);
   var folder = info.path.indexOf('/') >= 0 ? info.path.slice(0, info.path.lastIndexOf('/')) : '';
   if (folder) {
     var fb = el('button', '', folder);
     fb.onclick = function () { closeLightbox(); setFilter({ folder: info.folder_id, tags: [], q: '' }); };
-    row('Folder', fb);
+    row(tr('info.folder'), fb);
   }
-  if (info.width && info.height) row('Size', info.width + ' × ' + info.height + ' · ' + formatBytes(info.size));
-  else row('Size', formatBytes(info.size));
-  if (info.duration_ms) row('Length', Math.round(info.duration_ms / 1000) + ' s');
-  row('Camera', info.camera);
+  if (info.width && info.height) row(tr('info.size'), info.width + ' × ' + info.height + ' · ' + formatBytes(info.size));
+  else row(tr('info.size'), formatBytes(info.size));
+  if (info.duration_ms) row(tr('info.length'), tr('info.seconds', { n: Math.round(info.duration_ms / 1000) }));
+  row(tr('info.camera'), info.camera);
   infoTags(row, info);
   if (info.linked && info.linked.length) {
     var versions = el('div');
-    info.linked.forEach(function (l) { versions.appendChild(el('div', '', l.path + (l.missing ? ' (missing)' : ''))); });
-    row('Versions', versions);
+    info.linked.forEach(function (l) { versions.appendChild(el('div', '', l.path + (l.missing ? ' ' + tr('info.missing') : ''))); });
+    row(tr('info.versions'), versions);
   }
   infoFaces(row, info);
   panel.appendChild(dl);
@@ -1137,9 +1137,9 @@ function renderPanel() {
 
   var actions = el('div', 'actions');
   infoReveal(actions, info);
-  var move = el('button', 'btn quiet', 'Move…');
+  var move = el('button', 'btn quiet', tr('sel.move'));
   move.onclick = function () { moveDialog([info.id], function () { closeLightbox(); }); };
-  var trash = el('button', 'btn danger', 'Move to trash');
+  var trash = el('button', 'btn danger', tr('sel.trash'));
   trash.onclick = function () { trashDialog([info.id], function () { closeLightbox(); }); };
   actions.appendChild(move);
   actions.appendChild(trash);
@@ -1226,28 +1226,28 @@ document.addEventListener('keydown', function (ev) {
 function loadInfo() {
   return api(LIBAPI + '/info').then(function (info) {
     $('title').textContent = info.name;
-    state.reveal = info.reveal || null;
+    state.reveal = revealLabel(info.reveal);
     document.title = info.name + ' · shoebox';
     var parts = [
-      info.photos.toLocaleString() + ' photos',
-      info.videos.toLocaleString() + ' videos',
+      trn('count.photos', info.photos),
+      trn('count.videos', info.videos),
     ];
-    if (info.missing) parts.push(info.missing.toLocaleString() + ' missing');
-    $('nav-trash').textContent = info.trash ? 'Trash (' + info.trash + ')' : 'Trash';
+    if (info.missing) parts.push(tr('status.missing', { n: info.missing }));
+    $('nav-trash').textContent = info.trash ? tr('side.trash_n', { n: info.trash }) : tr('side.trash');
     if (info.thumbs_done < info.thumbs_total) {
-      parts.push('thumbnails ' + Math.floor(100 * info.thumbs_done / info.thumbs_total) + '%');
+      parts.push(tr('status.thumbs', { pct: Math.floor(100 * info.thumbs_done / info.thumbs_total) }));
     }
     var scan = info.jobs.filter(function (j) { return j.kind === 'scan'; })[0];
-    if (info.busy) parts.push('scan running…');
-    else if (scan) parts.push('last scan ' + new Date(scan.started_at * 1000).toLocaleDateString());
-    if (!info.ffmpeg && info.videos) parts.push('no ffmpeg: video previews made by the browser');
+    if (info.busy) parts.push(tr('status.scanning'));
+    else if (scan) parts.push(tr('status.last_scan', { date: I18n.date(new Date(scan.started_at * 1000)) }));
+    if (!info.ffmpeg && info.videos) parts.push(tr('status.no_ffmpeg'));
     var f = info.faces, c = info.clusters;
-    if (f.running) parts.push('finding faces ' + Math.floor(100 * f.done / Math.max(f.total, 1)) + '%');
-    else if (f.done && f.done < f.total) parts.push('faces: ' + (f.total - f.done).toLocaleString() + ' photos to look at');
-    if (!f.running && f.pets_done && f.pets_done < f.total) parts.push('pets: ' + (f.total - f.pets_done).toLocaleString() + ' photos to look at');
-    if (c.embedding) parts.push('learning drawn faces…');
-    if (c.running && c.total) parts.push('grouping faces ' + Math.floor(100 * c.done / Math.max(c.total, 1)) + '%');
-    else if (c.running || c.stale) parts.push('grouping faces…');
+    if (f.running) parts.push(tr('status.finding_faces', { pct: Math.floor(100 * f.done / Math.max(f.total, 1)) }));
+    else if (f.done && f.done < f.total) parts.push(tr('status.faces_todo', { count: trn('count.photos', f.total - f.done) }));
+    if (!f.running && f.pets_done && f.pets_done < f.total) parts.push(tr('status.pets_todo', { count: trn('count.photos', f.total - f.pets_done) }));
+    if (c.embedding) parts.push(tr('status.learning'));
+    if (c.running && c.total) parts.push(tr('status.grouping_pct', { pct: Math.floor(100 * c.done / Math.max(c.total, 1)) }));
+    else if (c.running || c.stale) parts.push(tr('status.grouping'));
     facesInfo(info);
     $('status').textContent = parts.join(' · ');
 
@@ -1301,8 +1301,6 @@ function toast(text) {
   toastTimer = setTimeout(function () { t.hidden = true; }, 4000);
 }
 
-function plural(n, one, many) { return n.toLocaleString() + ' ' + (n === 1 ? one : many); }
-
 // A small dialog. actions: [{label, cls, onclick(close)}]; onclick returns
 // false to keep the dialog open.
 function openModal(title, body, actions) {
@@ -1337,10 +1335,10 @@ function report(title, lines) {
   if (!lines || !lines.length) return;
   var ul = el('ul', 'filelist');
   lines.forEach(function (l) { ul.appendChild(el('li', '', l)); });
-  openModal(title, ul, [{ label: 'OK' }]);
+  openModal(title, ul, [{ label: tr('app.ok') }]);
 }
 
-function failed(e) { openModal('That did not work', String(e.message || e), [{ label: 'OK' }]); }
+function failed(e) { openModal(tr('app.failed'), String(e.message || e), [{ label: tr('app.ok') }]); }
 
 // ------------------------------------------------------------------ selection
 
@@ -1393,10 +1391,10 @@ function allSelected(start, end) {
 function updateSelbar() {
   var n = selectedIds().length;
   $('selbar').hidden = !state.selecting;
-  var hint = window.matchMedia('(pointer: fine)').matches ? 'Click photos to select, Shift-click for a range' : 'Tap photos to select';
-  $('sel-count').textContent = n ? plural(n, 'photo', 'photos') : hint;
+  var hint = tr(window.matchMedia('(pointer: fine)').matches ? 'sel.hint_mouse' : 'sel.hint_touch');
+  $('sel-count').textContent = n ? trn('count.photos', n) : hint;
   Array.prototype.forEach.call(document.querySelectorAll('.sec .pick'), function (b) {
-    b.textContent = state.data && allSelected(parseInt(b.dataset.start, 10), parseInt(b.dataset.end, 10)) ? 'Deselect' : 'Select all';
+    b.textContent = tr(state.data && allSelected(parseInt(b.dataset.start, 10), parseInt(b.dataset.end, 10)) ? 'grid.deselect' : 'grid.select_all');
   });
   $('sel-move').disabled = $('sel-trash').disabled = $('sel-tag').disabled = $('sel-untag').disabled = !n;
 }
@@ -1415,12 +1413,12 @@ $('sel-untag').onclick = function () { removeTagDialog(selectedIds()); };
 
 function moveDialog(ids, done) {
   var body = el('div');
-  body.appendChild(el('p', '', 'Move ' + plural(ids.length, 'photo', 'photos') + ' into the folder:'));
+  body.appendChild(el('p', '', tr('move.text', { count: trn('count.photos', ids.length) })));
   var input = el('input');
   input.type = 'text';
   input.className = 'wide';
   input.setAttribute('list', 'folder-list');
-  input.placeholder = 'e.g. 2021-03 Ausflug or Familie/Weihnachten';
+  input.placeholder = tr('move.placeholder');
   var current = state.filter.folder && state.folderById[state.filter.folder];
   if (current && current.path) input.value = current.path;
   body.appendChild(input);
@@ -1429,41 +1427,41 @@ function moveDialog(ids, done) {
   keep.type = 'checkbox';
   keep.checked = true;
   keepLabel.appendChild(keep);
-  keepLabel.appendChild(document.createTextNode(' Keep tags'));
-  keepLabel.title = 'Checked: the photos’ own tags move along. Unchecked: they are dropped. Folder tags always follow the new folder.';
+  keepLabel.appendChild(document.createTextNode(' ' + tr('move.keep_tags')));
+  keepLabel.title = tr('move.keep_hint');
   body.appendChild(keepLabel);
-  body.appendChild(el('p', 'hint', 'Folders that do not exist yet are created. RAW, Live Photo and sidecar files of the same name move along. Nothing is ever overwritten.'));
+  body.appendChild(el('p', 'hint', tr('move.hint')));
   var error = el('p', 'error');
   body.appendChild(error);
   var go = function (btn) {
     var folder = input.value.trim();
-    if (!folder) { error.textContent = 'Choose a folder.'; return false; }
+    if (!folder) { error.textContent = tr('move.choose'); return false; }
     btn.disabled = true;
     post(LIBAPI + '/move', { ids: ids, folder: folder, keep_tags: keep.checked }).then(function (r) {
       closeModal();
       if (done) done();
-      toast(plural(r.files.length, 'file', 'files') + ' moved to ' + r.folder);
-      report('Some photos stayed where they were', r.skipped);
+      toast(tr('move.done', { count: trn('count.files', r.files.length), folder: r.folder }));
+      report(tr('move.skipped'), r.skipped);
       changed();
     }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
     return false;
   };
-  var buttons = openModal('Move', body, [{ label: 'Cancel', cls: 'quiet' }, { label: 'Move', onclick: go }]);
+  var buttons = openModal(tr('move.title'), body, [{ label: tr('app.cancel'), cls: 'quiet' }, { label: tr('move.title'), onclick: go }]);
   input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go(buttons[1]); });
 }
 
 function trashDialog(ids, done) {
   openModal(
-    'Move to trash',
-    'Move ' + plural(ids.length, 'photo', 'photos') + ' (with their RAW, Live Photo and sidecar files) to the shoebox trash? You can put them back from there until the trash is emptied.',
-    [{ label: 'Cancel', cls: 'quiet' }, {
-      label: 'Move to trash', cls: 'danger', focus: true, onclick: function (btn) {
+    tr('sel.trash'),
+    tr('trash.text', { count: trn('count.photos', ids.length) }),
+    [{ label: tr('app.cancel'), cls: 'quiet' }, {
+      label: tr('sel.trash'), cls: 'danger', focus: true, onclick: function (btn) {
         btn.disabled = true;
         post(LIBAPI + '/trash', { ids: ids }).then(function (r) {
           closeModal();
           if (done) done();
-          toast(plural(r.files.length + r.sidecars, 'file', 'files') + ' moved to the trash');
-          report('Some photos were not moved to the trash', r.skipped);
+          toast(tr('trash.done', { count: trn('count.files', r.files.length + r.sidecars) }));
+          report(tr('trash.skipped'), r.skipped);
           changed();
         }).catch(function (e) { closeModal(); failed(e); });
         return false;
@@ -1479,19 +1477,19 @@ function renameFolder(folder) {
   input.className = 'wide';
   input.value = folder.path;
   body.appendChild(input);
-  body.appendChild(el('p', 'hint', 'Change the name, or the whole path to move the folder. Event folders are named “YYYY-MM Name”.'));
+  body.appendChild(el('p', 'hint', tr('rename.hint')));
   var error = el('p', 'error');
   body.appendChild(error);
   var go = function (btn) {
     btn.disabled = true;
     post(LIBAPI + '/folders/' + folder.id + '/rename', { path: input.value }).then(function (r) {
       closeModal();
-      toast('Now ' + r.path);
+      toast(tr('rename.now', { path: r.path }));
       changed();
     }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
     return false;
   };
-  var buttons = openModal('Rename folder', body, [{ label: 'Cancel', cls: 'quiet' }, { label: 'Rename', onclick: go }]);
+  var buttons = openModal(tr('rename.title'), body, [{ label: tr('app.cancel'), cls: 'quiet' }, { label: tr('rename.button'), onclick: go }]);
   input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go(buttons[1]); });
 }
 
@@ -1514,7 +1512,7 @@ function importDialog(files) {
   year.style.width = '6em';
   var month = el('select');
   for (var m = 1; m <= 12; m++) {
-    var o = el('option', '', new Date(2000, m - 1, 1).toLocaleDateString(undefined, { month: 'long' }));
+    var o = el('option', '', I18n.date(new Date(2000, m - 1, 1), { month: 'long' }));
     o.value = m;
     month.appendChild(o);
   }
@@ -1522,7 +1520,7 @@ function importDialog(files) {
   var name = el('input');
   name.type = 'text';
   name.className = 'grow';
-  name.placeholder = 'Event, e.g. Ausflug';
+  name.placeholder = tr('import.event_placeholder');
   fields.appendChild(year);
   fields.appendChild(month);
   fields.appendChild(name);
@@ -1530,7 +1528,7 @@ function importDialog(files) {
   var target = el('p', 'hint', '');
   body.appendChild(target);
 
-  var picker = el('label', 'picker', 'Choose photos and videos, or drop them here');
+  var picker = el('label', 'picker', tr('import.picker'));
   var input = el('input');
   input.type = 'file';
   input.multiple = true;
@@ -1545,7 +1543,7 @@ function importDialog(files) {
   var describe = function () {
     var y = parseInt(year.value, 10), mo = parseInt(month.value, 10);
     var folder = (y || '????') + '-' + (mo < 10 ? '0' : '') + mo + ' ' + (name.value.trim() || '…');
-    target.textContent = 'Into the folder “' + folder + '”. Files keep their dates; files already in the library are skipped.';
+    target.textContent = tr('import.target', { folder: folder });
   };
   [year, month, name].forEach(function (f) {
     f.addEventListener('input', function () { if (f !== name) importState.touched = true; describe(); });
@@ -1569,7 +1567,7 @@ function importDialog(files) {
       month.value = d.getMonth() + 1;
       describe();
     }
-    buttons[1].textContent = 'Import ' + plural(importState.files.length, 'file', 'files');
+    buttons[1].textContent = tr('import.button', { count: trn('count.files', importState.files.length) });
   };
   input.addEventListener('change', function () { addFiles(input.files); input.value = ''; });
   importState.add = addFiles;
@@ -1577,15 +1575,15 @@ function importDialog(files) {
   var go = function (btn) {
     error.textContent = '';
     var pending = importState.files.filter(function (x) { return !x.done; });
-    if (!pending.length) { error.textContent = 'Choose some files first.'; return false; }
+    if (!pending.length) { error.textContent = tr('import.choose'); return false; }
     post(LIBAPI + '/import/folder', { year: parseInt(year.value, 10), month: parseInt(month.value, 10), name: name.value })
       .then(function (r) { runImport(r.folder, pending, btn, buttons[0]); })
       .catch(function (e) { error.textContent = e.message; });
     return false;
   };
-  var buttons = openModal('Import photos', body, [
-    { label: 'Close', cls: 'quiet', onclick: function () { return !importState.busy; } },
-    { label: 'Import', onclick: go },
+  var buttons = openModal(tr('app.import'), body, [
+    { label: tr('app.close'), cls: 'quiet', onclick: function () { return !importState.busy; } },
+    { label: tr('import.go'), onclick: go },
   ]);
   closeModal.onclose = function () { importState.add = null; };
   if (files && files.length) addFiles(files);
@@ -1601,12 +1599,13 @@ function runImport(folder, pending, btn, closeBtn) {
     if (k >= pending.length) {
       importState.busy = false;
       closeBtn.disabled = false;
-      btn.textContent = 'Done';
+      btn.textContent = tr('app.done');
       btn.disabled = false;
       btn.onclick = function () { closeModal(); };
-      toast(plural(counts.imported, 'file', 'files') + ' imported' +
-        (counts.duplicate ? ', ' + counts.duplicate + ' already there' : '') +
-        (counts.failed ? ', ' + counts.failed + ' failed' : ''));
+      var summary = [tr('import.imported', { count: trn('count.files', counts.imported) })];
+      if (counts.duplicate) summary.push(tr('import.n_duplicate', { n: counts.duplicate }));
+      if (counts.failed) summary.push(tr('import.n_failed', { n: counts.failed }));
+      toast(summary.join(', '));
       loadInfo();
       // Show the folder the files went to.
       loadFolders().then(function () {
@@ -1635,18 +1634,18 @@ function runImport(folder, pending, btn, closeBtn) {
       if (xhr.status === 200 && body.status === 'imported') {
         item.done = true;
         counts.imported++;
-        finish(true, body.path.split('/').pop() === item.file.name ? 'imported' : 'imported as ' + body.path.split('/').pop());
+        finish(true, body.path.split('/').pop() === item.file.name ? tr('import.file_imported') : tr('import.file_imported_as', { name: body.path.split('/').pop() }));
       } else if (xhr.status === 200) {
         item.done = true;
         counts.duplicate++;
         item.state.title = body.duplicate_of;
-        finish(true, 'already in ' + body.duplicate_of.split('/').slice(0, -1).join('/'));
+        finish(true, tr('import.file_already_in', { folder: body.duplicate_of.split('/').slice(0, -1).join('/') }));
       } else {
         counts.failed++;
         finish(false, body.error || 'HTTP ' + xhr.status);
       }
     };
-    xhr.onerror = function () { counts.failed++; finish(false, 'connection lost'); };
+    xhr.onerror = function () { counts.failed++; finish(false, tr('import.lost')); };
     xhr.send(item.file);
   };
   next(0);
@@ -1664,7 +1663,7 @@ $('import').onclick = function () { importDialog(); };
   window.addEventListener('drop', function (ev) {
     if (!hasFiles(ev)) return;
     ev.preventDefault();
-    if (isAll()) { $('dropzone').hidden = true; depth = 0; toast('Pick one drive to import into'); return; }
+    if (isAll()) { $('dropzone').hidden = true; depth = 0; toast(tr('import.pick_drive')); return; }
     depth = 0;
     $('dropzone').hidden = true;
     if (importState.add && !$('modal').hidden) importState.add(ev.dataTransfer.files);
@@ -1677,10 +1676,10 @@ $('import').onclick = function () { importDialog(); };
 var DUP_KINDS_IDS = ['identical', 'resolution', 'edited', 'similar'];
 var dupState = { groups: [], shown: 0, marked: {}, seen: {}, sameFolder: null, lowerQuality: null, types: dupTypes() };
 var DUP_KINDS = [
-  { id: 'identical', label: 'Identical photos', hint: 'The same file, copied.' },
-  { id: 'resolution', label: 'Same photo, different resolution', hint: 'The same picture in another size, quality or name (a messenger copy, say).' },
-  { id: 'edited', label: 'Original and edited', hint: 'An iPhone edit (the “E” in IMG_E1234, a portrait blur, say) next to its original. Keep the one you like, or both.' },
-  { id: 'similar', label: 'Similar photos', hint: 'Different shots that look alike: a series, repeated clicks, a burst.' },
+  { id: 'identical', get label() { return tr('dups.kind.identical'); }, get hint() { return tr('dups.kind.identical.hint'); } },
+  { id: 'resolution', get label() { return tr('dups.kind.resolution'); }, get hint() { return tr('dups.kind.resolution.hint'); } },
+  { id: 'edited', get label() { return tr('dups.kind.edited'); }, get hint() { return tr('dups.kind.edited.hint'); } },
+  { id: 'similar', get label() { return tr('dups.kind.similar'); }, get hint() { return tr('dups.kind.similar.hint'); } },
 ];
 
 // Which kinds of duplicates are shown (remembered in this browser).
@@ -1708,7 +1707,7 @@ var dupTab = 'here';
 function addDupTabs(page) {
   if (drives.list.length < 2 || isAll()) return;
   var tabs = el('div', 'tabs');
-  [['here', 'On this drive'], ['across', 'Across drives']].forEach(function (t) {
+  [['here', tr('dups.tab.here')], ['across', tr('dups.tab.across')]].forEach(function (t) {
     var b = el('button', dupTab === t[0] ? 'on' : '', t[1]);
     b.onclick = function () { dupTab = t[0]; loadDuplicates(); };
     tabs.appendChild(b);
@@ -1725,32 +1724,32 @@ function loadDuplicates() {
 function loadDuplicatesAcross() {
   var page = $('page');
   page.textContent = '';
-  page.appendChild(el('h2', '', 'Duplicates'));
+  page.appendChild(el('h2', '', tr('dups.title')));
   addDupTabs(page);
-  var sub = el('p', 'sub', 'Looking…');
+  var sub = el('p', 'sub', tr('dups.looking'));
   page.appendChild(sub);
   return api('/api/all/duplicates?limit=200').then(function (r) {
     if (state.filter.view !== 'duplicates') return;
     sub.textContent = r.total_groups
-      ? plural(r.total_groups, 'photo exists', 'photos exist') + ' on more than one drive (' + r.compared.join(', ') + '). Move the copy you do not need to the trash of its drive.'
-      : 'No photo exists on more than one drive' + (r.compared.length > 1 ? ' (' + r.compared.join(', ') + ').' : '.');
+      ? tr('dups.across.some', { count: trn('count.photos_exist', r.total_groups), drives: r.compared.join(', ') })
+      : r.compared.length > 1 ? tr('dups.across.none_in', { drives: r.compared.join(', ') }) : tr('dups.across.none');
     r.excluded.forEach(function (x) {
       var b = el('div', 'banner');
-      b.appendChild(document.createTextNode(x.name + ' is not compared: ' + x.reason + '. '));
-      var go = el('button', 'link', 'Decide in All drives →');
+      b.appendChild(document.createTextNode(tr('dups.excluded', { name: x.name, reason: x.reason })));
+      var go = el('button', 'link', tr('dups.decide'));
       go.onclick = function () { showView('drives'); };
       b.appendChild(go);
       page.appendChild(b);
     });
     r.groups.forEach(function (g) { page.appendChild(crossGroupNode(g)); });
-    if (r.total_groups > r.groups.length) page.appendChild(el('p', 'sub', 'Showing the first ' + r.groups.length + ' of ' + r.total_groups + '.'));
+    if (r.total_groups > r.groups.length) page.appendChild(el('p', 'sub', tr('dups.first_of', { shown: r.groups.length, total: r.total_groups })));
   }).catch(failed);
 }
 
 function crossGroupNode(g) {
   var box = el('div', 'group');
   var head = el('div', 'group-head');
-  head.appendChild(el('span', 'label', 'Same content on ' + plural(new Set(g.files.map(function (f) { return f.library; })).size, 'drive', 'drives')));
+  head.appendChild(el('span', 'label', tr('dups.same_on', { count: trn('count.drives', new Set(g.files.map(function (f) { return f.library; })).size) })));
   box.appendChild(head);
   var cards = el('div', 'cards');
   g.files.forEach(function (f) {
@@ -1767,21 +1766,21 @@ function crossGroupNode(g) {
     a.appendChild(img);
     card.appendChild(a);
     card.appendChild(el('div', 'name', f.name));
-    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : '(top level)';
+    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : tr('dups.top_level');
     var fb = el('button', 'folder', folder);
-    fb.title = 'Show this photo in ' + f.name;
+    fb.title = tr('dups.show_in', { name: f.name });
     fb.onclick = function () { switchLibrary(f.library, 'q=' + encodeURIComponent(f.path.split('/').pop())); };
     card.appendChild(fb);
     card.appendChild(el('div', 'meta', f.path.split('/').pop() + ' · ' + formatBytes(g.size)));
-    var trash = el('button', 'btn danger', 'Move to trash');
+    var trash = el('button', 'btn danger', tr('sel.trash'));
     trash.onclick = function () {
-      openModal('Move to trash', 'Move this copy on ' + f.name + ' (' + f.path + ') to the trash of that drive? The same photo stays on the other drive' + (g.files.length > 2 ? 's' : '') + '. You can put it back from the trash until it is emptied.', [
-        { label: 'Cancel', cls: 'quiet' },
-        { label: 'Move to trash', cls: 'danger', onclick: function (btn) {
+      openModal(tr('sel.trash'), trn('dups.cross_trash', g.files.length - 1, { name: f.name, path: f.path }), [
+        { label: tr('app.cancel'), cls: 'quiet' },
+        { label: tr('sel.trash'), cls: 'danger', onclick: function (btn) {
           btn.disabled = true;
           post('/api/lib/' + f.library + '/trash', { ids: [f.id] }).then(function (r) {
             closeModal();
-            toast(plural(r.files.length + r.sidecars, 'file', 'files') + ' moved to the trash of ' + f.name);
+            toast(tr('dups.cross_trashed', { count: trn('count.files', r.files.length + r.sidecars), name: f.name }));
             loadDuplicatesAcross();
           }).catch(function (e) { closeModal(); failed(e); });
           return false;
@@ -1798,9 +1797,9 @@ function crossGroupNode(g) {
 function loadDuplicatesHere() {
   var page = $('page');
   page.textContent = '';
-  page.appendChild(el('h2', '', 'Duplicates'));
+  page.appendChild(el('h2', '', tr('dups.title')));
   addDupTabs(page);
-  page.appendChild(el('p', 'sub', 'Looking…'));
+  page.appendChild(el('p', 'sub', tr('dups.looking')));
   return Promise.all([api(LIBAPI + '/duplicates'), api(LIBAPI + '/duplicates/same-folder'), api(LIBAPI + '/duplicates/lower-quality')]).then(function (res) {
     if (state.filter.view !== 'duplicates') return;
     dupState.groups = res[0].groups;
@@ -1828,15 +1827,13 @@ function loadDuplicatesHere() {
 function renderDuplicates() {
   var page = $('page');
   page.textContent = '';
-  page.appendChild(el('h2', '', 'Duplicates'));
+  page.appendChild(el('h2', '', tr('dups.title')));
   addDupTabs(page);
-  page.appendChild(el('p', 'sub', dupState.groups.length
-    ? 'Tick “delete this copy” on the files to remove; of every photo the best file is left unticked and one file per group always stays. Decided groups are not shown again.'
-    : 'No duplicates. Photos added since the last scan are compared once they have thumbnails.'));
+  page.appendChild(el('p', 'sub', tr(dupState.groups.length ? 'dups.sub' : 'dups.none')));
   if (dupState.groups.length) page.appendChild(dupToolbar());
   var box = el('div');
   page.appendChild(box);
-  var more = el('button', 'btn quiet', 'Show more');
+  var more = el('button', 'btn quiet', tr('app.show_more'));
   more.onclick = function () { showGroups(box, more); };
   page.appendChild(more);
   var action = el('div', 'dup-bar');
@@ -1852,7 +1849,7 @@ function showGroups(box, more) {
   for (var k = dupState.shown; k < end; k++) box.appendChild(groupNode(groups[k]));
   dupState.shown = end;
   more.hidden = end >= groups.length;
-  if (!groups.length && dupState.groups.length) box.appendChild(el('p', 'sub', 'No duplicates of the chosen kinds.'));
+  if (!groups.length && dupState.groups.length) box.appendChild(el('p', 'sub', tr('dups.none_kinds')));
 }
 
 // Ticked files in the groups that are shown.
@@ -1873,7 +1870,7 @@ function dupToolbar() {
   dupState.groups.forEach(function (g) { count[g.kind] = (count[g.kind] || 0) + 1; });
   var refreshLabel = function () {
     var on = DUP_KINDS.filter(function (k) { return dupState.types[k.id]; });
-    sum.textContent = 'Show: ' + (on.length === DUP_KINDS.length ? 'all kinds' : on.length ? on.map(function (k) { return k.label; }).join(', ') : 'nothing') + ' ▾';
+    sum.textContent = tr('dups.show', { what: on.length === DUP_KINDS.length ? tr('dups.all_kinds') : on.length ? on.map(function (k) { return k.label; }).join(', ') : tr('dups.nothing') });
   };
   DUP_KINDS.forEach(function (k) {
     var label = el('label', 'check');
@@ -1902,16 +1899,16 @@ function dupToolbar() {
   bar.appendChild(filter);
   var sf = dupState.sameFolder, lq = dupState.lowerQuality;
   var buttons = el('div', 'dup-buttons');
-  var same = el('button', 'btn', 'Clear Same Folder Copies');
+  var same = el('button', 'btn', tr('dups.same_folder'));
   same.title = sf && sf.copies
-    ? 'Deletes ' + plural(sf.copies, 'file', 'files') + ': identical copies in the same folder as another copy. The best one stays, no review.'
-    : 'No identical copies in the same folder.';
+    ? tr('dups.same_folder_hint', { count: trn('count.files', sf.copies) })
+    : tr('dups.same_folder_none');
   same.disabled = !(sf && sf.copies);
   same.onclick = removeSameFolder;
-  var low = el('button', 'btn', 'Clear Lower Quality Copies');
+  var low = el('button', 'btn', tr('dups.lower'));
   low.title = lq && lq.copies
-    ? 'Deletes ' + plural(lq.copies, 'file', 'files') + ': the same photo in a lower resolution or without its metadata (a messenger copy, say). The better file stays, no review.'
-    : 'No lower-quality versions of a photo.';
+    ? tr('dups.lower_hint', { count: trn('count.files', lq.copies) })
+    : tr('dups.lower_none');
   low.disabled = !(lq && lq.copies);
   low.onclick = removeLowerQuality;
   buttons.appendChild(same);
@@ -1928,8 +1925,8 @@ function updateDupBar() {
   bar.hidden = n === 0;
   bar.textContent = '';
   if (!n) return;
-  bar.appendChild(el('span', '', plural(n, 'copy', 'copies') + ' marked'));
-  var clear = el('button', 'btn quiet', 'Clear');
+  bar.appendChild(el('span', '', tr('dups.marked', { count: trn('count.copies', n) })));
+  var clear = el('button', 'btn quiet', tr('dups.clear'));
   clear.onclick = function () {
     Array.prototype.forEach.call(document.querySelectorAll('.copy input[type=checkbox]:checked'), function (cb) {
       cb.checked = false;
@@ -1937,7 +1934,7 @@ function updateDupBar() {
     });
   };
   bar.appendChild(clear);
-  var del = el('button', 'btn danger', 'Move to trash');
+  var del = el('button', 'btn danger', tr('sel.trash'));
   del.onclick = deleteMarked;
   bar.appendChild(del);
 }
@@ -1966,7 +1963,7 @@ function dupThumb(f, compare) {
   if (compare) {
     // Opens the group's pictures side by side instead of one in a new tab.
     a.removeAttribute('target');
-    a.title = 'Compare the photos';
+    a.title = tr('dups.compare');
     a.onclick = function (e) { e.preventDefault(); compare(f); };
   }
   return a;
@@ -1980,7 +1977,7 @@ function isEdit(f) { return /^img_e\d+/i.test(f.name); }
 function compareDialog(g, start, onKeep) {
   var back = el('div', 'modal');
   var dlg = el('div', 'dialog compare');
-  dlg.appendChild(el('h2', '', 'Which one do you like most?'));
+  dlg.appendChild(el('h2', '', tr('dups.compare_title')));
   var strip = el('div', 'compare-strip');
   var close = function () { back.remove(); document.removeEventListener('keydown', onKey); };
   var onKey = function (e) { if (e.key === 'Escape') close(); };
@@ -1991,19 +1988,19 @@ function compareDialog(g, start, onKeep) {
     img.alt = f.name;
     img.src = LIBAPI + '/files/' + f.id + (f.kind === 'video' ? '/thumb' : '/view') + '?v=' + f.version;
     col.appendChild(img);
-    col.appendChild(el('div', 'name', f.name + (g.kind === 'edited' ? (isEdit(f) ? ' · edited' : ' · original') : '')));
+    col.appendChild(el('div', 'name', f.name + (g.kind === 'edited' ? ' · ' + tr(isEdit(f) ? 'dups.edited_lower' : 'dups.original_lower') : '')));
     var meta = [];
     if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
     meta.push((f.size / 1e6).toFixed(1) + ' MB');
     col.appendChild(el('div', 'meta', meta.join(' · ')));
-    var keep = el('button', 'btn', 'Keep this one');
+    var keep = el('button', 'btn', tr('dups.keep_this'));
     keep.onclick = function () { close(); onKeep(f); };
     col.appendChild(keep);
     strip.appendChild(col);
   });
   dlg.appendChild(strip);
   var row = el('div', 'actions');
-  var done = el('button', 'btn quiet', 'Close');
+  var done = el('button', 'btn quiet', tr('app.close'));
   done.onclick = close;
   row.appendChild(done);
   dlg.appendChild(row);
@@ -2028,17 +2025,17 @@ function groupNode(g) {
         ids.forEach(function (id) { delete dupState.marked[id]; });
         box.remove();
         updateDupBar();
-        toast(decision === 'linked' ? 'Kept as versions of one photo' : 'Kept as different photos');
+        toast(tr(decision === 'linked' ? 'dups.kept_versions' : 'dups.kept_different'));
       }).catch(function (e) { b.disabled = false; failed(e); });
     };
     head.appendChild(b);
   };
-  if (g.kind === 'similar') decide('distinct', 'Different photos');
-  decide('linked', g.kind === 'identical' ? 'Keep all copies' : g.kind === 'resolution' ? 'Keep all versions'
-    : g.kind === 'edited' ? 'Keep both' : 'Versions of one photo');
+  if (g.kind === 'similar') decide('distinct', tr('dups.btn_different'));
+  decide('linked', tr(g.kind === 'identical' ? 'dups.btn_keep_copies' : g.kind === 'resolution' ? 'dups.btn_keep_versions'
+    : g.kind === 'edited' ? 'dups.btn_keep_both' : 'dups.btn_versions'));
   box.appendChild(head);
   box.appendChild(el('p', 'group-hint', g.kind === 'similar' || g.kind === 'edited'
-    ? kind.hint + ' Every card is one file; click a picture to compare them large.'
+    ? tr('dups.group_hint_series', { hint: kind.hint })
     : kind.hint));
 
   var boxes = [];
@@ -2074,27 +2071,27 @@ function groupNode(g) {
     boxes.push(cb);
     cards.push({ f: f, cb: cb });
     label.appendChild(cb);
-    label.appendChild(document.createTextNode(' delete this copy'));
+    label.appendChild(document.createTextNode(' ' + tr('dups.delete_copy')));
     card.appendChild(label);
     card.classList.toggle('marked', cb.checked);
-    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : '(top level)';
+    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : tr('dups.top_level');
     var fb = el('button', 'folder', folder);
     fb.title = f.path;
     fb.onclick = function () { setFilter({ folder: f.folder_id, tags: [], q: '' }); };
     card.appendChild(fb);
     if (showName) card.appendChild(el('div', 'name', f.name));
-    if (g.kind === 'edited') card.appendChild(el('div', 'badge', isEdit(f) ? 'Edited' : 'Original'));
+    if (g.kind === 'edited') card.appendChild(el('div', 'badge', tr(isEdit(f) ? 'dups.badge_edited' : 'dups.badge_original')));
     var meta = [];
     if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
     meta.push((f.size / 1e6).toFixed(1) + ' MB');
     card.appendChild(el('div', 'meta', meta.join(' · ')));
-    if (f.keeper) card.appendChild(el('div', 'meta worse', 'lower quality than the best version'));
-    card.appendChild(el('div', 'meta', f.taken ? formatDate({ taken: f.taken, date_source: 'file' }) : 'no capture date'));
+    if (f.keeper) card.appendChild(el('div', 'meta worse', tr('dups.lower_quality')));
+    card.appendChild(el('div', 'meta', f.taken ? formatDate({ taken: f.taken, date_source: 'file' }) : tr('dups.no_capture_date')));
     if (f.tags && f.tags.length) {
       var tags = el('div', 'tagline');
       f.tags.forEach(function (t) {
         var chip = el('span', 'chip' + (t.own ? ' own' : ''), (t.own ? '' : '📁 ') + t.name);
-        chip.title = t.own ? 'Own tag' : 'Folder tag';
+        chip.title = tr(t.own ? 'dups.own_tag' : 'dups.folder_tag');
         tags.appendChild(chip);
       });
       card.appendChild(tags);
@@ -2129,7 +2126,7 @@ function groupNode(g) {
     var name = el('div', 'name', first.name + ' ');
     if (first.same) {
       var same = el('span', 'same', String.fromCharCode(64 + first.same));
-      same.title = 'Files with the same letter are identical';
+      same.title = tr('dups.same_letter');
       name.appendChild(same);
     }
     left.appendChild(name);
@@ -2176,9 +2173,9 @@ function deleteMarked() {
     return false;
   };
   openModal(
-    'Move to trash',
-    'Move ' + plural(total, 'copy', 'copies') + ' to the shoebox trash? In every group at least one copy stays. The tags and the capture date of a deleted copy are added to the copy that stays (as tags you can remove again). You can put the copies back from the trash.',
-    [{ label: 'Cancel', cls: 'quiet' }, { label: 'Move to trash', cls: 'danger', focus: true, onclick: run }]
+    tr('sel.trash'),
+    tr('dups.delete_text', { count: trn('count.copies', total) }),
+    [{ label: tr('app.cancel'), cls: 'quiet' }, { label: tr('sel.trash'), cls: 'danger', focus: true, onclick: run }]
   );
 }
 
@@ -2190,11 +2187,11 @@ function collectRemoved(done, r) {
 }
 
 function finishRemoved(done) {
-  var text = plural(done.files, 'copy', 'copies') + ' moved to the trash';
-  if (done.tags) text += ', ' + plural(done.tags, 'tag', 'tags') + ' carried over';
-  if (done.dates) text += ', ' + plural(done.dates, 'capture date', 'capture dates') + ' taken over';
-  toast(text);
-  report('Some copies were not moved to the trash', done.skipped);
+  var text = [tr('dups.done.trashed', { count: trn('count.copies', done.files) })];
+  if (done.tags) text.push(tr('dups.done.tags', { count: trn('count.tags', done.tags) }));
+  if (done.dates) text.push(tr('dups.done.dates', { count: trn('count.capture_dates', done.dates) }));
+  toast(text.join(', '));
+  report(tr('dups.skipped'), done.skipped);
   dupState.marked = {};
   changed();
 }
@@ -2204,7 +2201,7 @@ function finishRemoved(done) {
 function askDates(conflicts, done) {
   return new Promise(function (resolve, reject) {
     var body = el('div');
-    body.appendChild(el('p', '', 'These photos have copies with different capture dates. Which date should the photo that stays have? (Stored in the library only; the file is not changed.)'));
+    body.appendChild(el('p', '', tr('dups.dates.text')));
     var picks = [];
     conflicts.forEach(function (c) {
       c.list.forEach(function (x, n) {
@@ -2223,10 +2220,10 @@ function askDates(conflicts, done) {
         });
       });
     });
-    openModal('Capture dates differ', body, [{
-      label: 'Cancel', cls: 'quiet', onclick: function () { resolve(); },
+    openModal(tr('dups.dates.title'), body, [{
+      label: tr('app.cancel'), cls: 'quiet', onclick: function () { resolve(); },
     }, {
-      label: 'Move to trash', cls: 'danger', onclick: function (btn) {
+      label: tr('sel.trash'), cls: 'danger', onclick: function (btn) {
         btn.disabled = true;
         var chosen = {};
         picks.forEach(function (p) {
@@ -2252,15 +2249,15 @@ function askDates(conflicts, done) {
 function removeLowerQuality() {
   var lq = dupState.lowerQuality;
   openModal(
-    'Remove lower-quality versions',
-    plural(lq.copies, 'copy', 'copies') + ' (of ' + plural(lq.groups, 'photo', 'photos') + ') are surely the same photo as a better file: the same picture with fewer pixels or without the capture date, as after sending it by messenger. They go to the shoebox trash without review; the better file stays. Folders, tags and capture dates of the removed copies are carried over to it. Photos that merely look alike (other shots of a series) are never touched.',
-    [{ label: 'Cancel', cls: 'quiet' }, {
-      label: 'Move to trash', cls: 'danger', focus: true, onclick: function (btn) {
+    tr('dups.lower.title'),
+    tr('dups.lower.text', { copies: trn('count.copies', lq.copies), photos: trn('count.photos', lq.groups) }),
+    [{ label: tr('app.cancel'), cls: 'quiet' }, {
+      label: tr('sel.trash'), cls: 'danger', focus: true, onclick: function (btn) {
         btn.disabled = true;
         post(LIBAPI + '/duplicates/lower-quality', {}).then(function (r) {
           closeModal();
-          toast(plural(r.removed, 'copy', 'copies') + ' moved to the trash, ' + plural(r.tags_added, 'tag', 'tags') + ' carried over');
-          report('Some copies were not moved to the trash', r.skipped);
+          toast(tr('dups.lower.done', { copies: trn('count.copies', r.removed), tags: trn('count.tags', r.tags_added) }));
+          report(tr('dups.skipped'), r.skipped);
           changed();
         }).catch(function (e) { closeModal(); failed(e); });
         return false;
@@ -2272,15 +2269,15 @@ function removeLowerQuality() {
 function removeSameFolder() {
   var sf = dupState.sameFolder;
   openModal(
-    'Remove exact duplicates',
-    plural(sf.copies, 'copy', 'copies') + ' (' + plural(sf.groups, 'photo', 'photos') + ') have identical content to another file in the same folder. They go to the shoebox trash without review; in each folder one stays: the highest resolution, and the one with the original name rather than “IMG_1 (2)” or “IMG_1 - Copy”. Similar photos and copies in other folders are not touched. Tags and capture dates are carried over to the copy that stays.',
-    [{ label: 'Cancel', cls: 'quiet' }, {
-      label: 'Move to trash', cls: 'danger', focus: true, onclick: function (btn) {
+    tr('dups.same.title'),
+    tr('dups.same.text', { copies: trn('count.copies', sf.copies), photos: trn('count.photos', sf.groups) }),
+    [{ label: tr('app.cancel'), cls: 'quiet' }, {
+      label: tr('sel.trash'), cls: 'danger', focus: true, onclick: function (btn) {
         btn.disabled = true;
         post(LIBAPI + '/duplicates/same-folder', {}).then(function (r) {
           closeModal();
-          toast(plural(r.removed, 'copy', 'copies') + ' moved to the trash');
-          report('Some copies were not moved to the trash', r.skipped);
+          toast(tr('dups.done.trashed', { count: trn('count.copies', r.removed) }));
+          report(tr('dups.skipped'), r.skipped);
           changed();
         }).catch(function (e) { closeModal(); failed(e); });
         return false;
@@ -2296,18 +2293,18 @@ function loadTrash() {
     if (state.filter.view !== 'trash') return;
     var page = $('page');
     page.textContent = '';
-    page.appendChild(el('h2', '', 'Trash'));
+    page.appendChild(el('h2', '', tr('side.trash')));
     var batches = [], byBatch = {};
     items.forEach(function (it) {
       if (!byBatch[it.batch]) { byBatch[it.batch] = []; batches.push(it.batch); }
       byBatch[it.batch].push(it);
     });
     page.appendChild(el('p', 'sub', batches.length
-      ? plural(batches.length, 'photo', 'photos') + ' in .shoebox/trash on the drive. Put them back, or delete them for good.'
-      : 'The trash is empty.'));
+      ? tr('trash.page_sub', { count: trn('count.photos', batches.length) })
+      : tr('trash.empty')));
     if (batches.length) {
       var bar = el('div', 'toolbar');
-      var empty = el('button', 'btn danger', 'Empty trash');
+      var empty = el('button', 'btn danger', tr('trash.empty_btn'));
       empty.onclick = function () { emptyTrash(null, batches.length); };
       bar.appendChild(empty);
       page.appendChild(bar);
@@ -2326,18 +2323,18 @@ function loadTrash() {
       thumb.appendChild(img);
       card.appendChild(thumb);
       card.appendChild(el('div', 'name', first.path.split('/').pop()));
-      var folder = first.path.indexOf('/') >= 0 ? first.path.slice(0, first.path.lastIndexOf('/')) : '(top level)';
+      var folder = first.path.indexOf('/') >= 0 ? first.path.slice(0, first.path.lastIndexOf('/')) : tr('dups.top_level');
       card.appendChild(el('div', 'meta', folder));
-      var extra = files.length > 1 ? ' · with ' + files.slice(1).map(function (f) { return f.path.split('/').pop(); }).join(', ') : '';
-      card.appendChild(el('div', 'meta', 'deleted ' + new Date(first.deleted_at * 1000).toLocaleDateString() + extra));
-      var restore = el('button', 'btn quiet', 'Put back');
+      var extra = files.length > 1 ? tr('trash.with', { names: files.slice(1).map(function (f) { return f.path.split('/').pop(); }).join(', ') }) : '';
+      card.appendChild(el('div', 'meta', tr('trash.deleted', { date: I18n.date(new Date(first.deleted_at * 1000)), extra: extra })));
+      var restore = el('button', 'btn quiet', tr('trash.put_back'));
       restore.onclick = function () {
         restore.disabled = true;
-        post(LIBAPI + '/trash/' + b + '/restore').then(function () { toast('Put back ' + first.path); changed(); })
+        post(LIBAPI + '/trash/' + b + '/restore').then(function () { toast(tr('trash.put_back_done', { path: first.path })); changed(); })
           .catch(function (e) { restore.disabled = false; failed(e); });
       };
       card.appendChild(restore);
-      var del = el('button', 'btn danger', 'Delete for good');
+      var del = el('button', 'btn danger', tr('trash.delete_for_good'));
       del.onclick = function () { emptyTrash(b, 1); };
       card.appendChild(del);
       cards.appendChild(card);
@@ -2347,11 +2344,11 @@ function loadTrash() {
 }
 
 function emptyTrash(batch, n) {
-  openModal('Delete for good', 'Delete ' + plural(n, 'photo', 'photos') + ' (with their companion files) from the drive? This cannot be undone.', [
-    { label: 'Cancel', cls: 'quiet' },
-    { label: 'Delete', cls: 'danger', onclick: function () {
+  openModal(tr('trash.delete_for_good'), tr('trash.delete_text', { count: trn('count.photos', n) }), [
+    { label: tr('app.cancel'), cls: 'quiet' },
+    { label: tr('trash.delete_btn'), cls: 'danger', onclick: function () {
       post(LIBAPI + '/trash/empty', { batch: batch }).then(function (r) {
-        toast(plural(r.deleted, 'file', 'files') + ' deleted');
+        toast(tr('trash.deleted_toast', { count: trn('count.files', r.deleted) }));
         changed();
       }).catch(failed);
     } },
@@ -2363,9 +2360,12 @@ function emptyTrash(batch, n) {
 // Ask the computer that runs shoebox to show the file in its file manager.
 // Only offered (state.reveal) to a browser on that computer; an iPad cannot
 // open a Finder window over there.
+var REVEAL_LABELS = { 'Show in Finder': 'reveal.finder', 'Show in Explorer': 'reveal.explorer', 'Open folder': 'reveal.folder' };
+function revealLabel(text) { return text ? (REVEAL_LABELS[text] ? tr(REVEAL_LABELS[text]) : text) : null; }
+
 function revealFile(id) {
   post(LIBAPI + '/files/' + id + '/reveal').then(function (r) {
-    toast('Shown in ' + r.app);
+    toast(tr('reveal.shown', { app: r.app === 'file manager' ? tr('reveal.file_manager') : r.app }));
   }).catch(failed);
 }
 
@@ -2377,7 +2377,7 @@ function infoReveal(actions, info) {
     reveal.onclick = function () { revealFile(info.id); };
     actions.appendChild(reveal);
   }
-  var copy = el('button', 'btn quiet', 'Copy path');
+  var copy = el('button', 'btn quiet', tr('reveal.copy_path'));
   copy.title = info.path;
   copy.onclick = function () { copyPath(info.path); };
   actions.appendChild(copy);
@@ -2386,13 +2386,13 @@ function infoReveal(actions, info) {
 // The path within the library, as in the info panel. Works on every device.
 function copyPath(path) {
   copyText(path).then(function (ok) {
-    if (ok) { toast('Path copied'); return; }
+    if (ok) { toast(tr('reveal.copied')); return; }
     // No clipboard access: show the path, selected, for copying by hand.
     var box = el('input');
     box.readOnly = true;
     box.value = path;
     box.onfocus = function () { box.select(); };
-    openModal('Path', box, [{ label: 'OK' }]);
+    openModal(tr('info.path'), box, [{ label: tr('app.ok') }]);
   });
 }
 
@@ -2481,15 +2481,15 @@ $('sizer').addEventListener('contextmenu', function (ev) {
   var id = state.data.ids[parseInt(a.dataset.index, 10)];
   var items = [];
   if (state.reveal) items.push({ label: state.reveal, run: function () { revealFile(id); } });
-  items.push({ label: 'Copy path', run: function () {
+  items.push({ label: tr('reveal.copy_path'), run: function () {
     api(LIBAPI + '/files/' + id).then(function (info) { copyPath(info.path); }).catch(failed);
   } });
   // On one person's photos (from the sidebar or as the only search term):
   // their face in this photo becomes their picture.
   var only = state.filter.people && state.filter.people.length === 1 ? state.filter.people[0] : null;
   if (only != null && state.personNames[only]) {
-    items.push({ label: 'Use as ' + state.personNames[only] + '’s picture', run: function () {
-      post('/api/people/' + only + '/cover', { file: id }).then(function () { toast('Picture changed'); peopleChanged(); }).catch(failed);
+    items.push({ label: tr('menu.use_as', { name: state.personNames[only] }), run: function () {
+      post('/api/people/' + only + '/cover', { file: id }).then(function () { toast(tr('menu.picture_changed')); peopleChanged(); }).catch(failed);
     } });
   }
   showMenu(ev.clientX, ev.clientY, items);
@@ -2506,7 +2506,7 @@ function infoTags(row, info) {
     var show = function () { closeLightbox(); setFilter({ folder: null, tags: [t.id], q: '' }); };
     if (t.source === 'folder') {
       var b = el('button', '', '📁 ' + t.name);
-      b.title = 'Folder tag: comes from where the photo is';
+      b.title = tr('tags.folder_hint');
       b.onclick = show;
       tags.appendChild(b);
       return;
@@ -2515,8 +2515,8 @@ function infoTags(row, info) {
     var name = el('button', '', t.name);
     name.onclick = show;
     var x = el('button', 'x', '✕');
-    x.title = 'Remove this tag';
-    x.setAttribute('aria-label', 'Remove tag ' + t.name);
+    x.title = tr('tags.remove_hint');
+    x.setAttribute('aria-label', tr('tags.remove_label', { name: t.name }));
     x.onclick = function () {
       post(LIBAPI + '/tags/remove', { ids: [info.id], name: t.name }).then(function () { tagsChanged(info.id); }).catch(failed);
     };
@@ -2524,7 +2524,7 @@ function infoTags(row, info) {
     chip.appendChild(x);
     tags.appendChild(chip);
   });
-  var add = el('button', 'add', '+ Tag');
+  var add = el('button', 'add', tr('tags.add'));
   add.onclick = function () {
     var input = tagInput();
     input.onkeydown = function (ev) {
@@ -2539,14 +2539,14 @@ function infoTags(row, info) {
     input.focus();
   };
   tags.appendChild(add);
-  row('Tags', tags);
+  row(tr('info.tags'), tags);
 }
 
 // A text field that suggests existing tags while typing.
 function tagInput() {
   var input = el('input');
   input.type = 'text';
-  input.placeholder = 'Tag name';
+  input.placeholder = tr('tags.placeholder');
   input.setAttribute('list', 'tag-list');
   input.setAttribute('enterkeyhint', 'done');
   input.addEventListener('input', function () { suggestTags(input.value); });
@@ -2569,24 +2569,24 @@ function tagsChanged(id) {
 
 function addTagDialog(ids) {
   var body = el('div');
-  body.appendChild(el('p', '', 'Add a tag to ' + plural(ids.length, 'photo', 'photos') + ':'));
+  body.appendChild(el('p', '', tr('tags.add_text', { count: trn('count.photos', ids.length) })));
   var input = tagInput();
   input.className = 'wide';
   body.appendChild(input);
-  body.appendChild(el('p', 'hint', 'Tags are kept in shoebox’s index, never written into the photos. Names are matched ignoring case.'));
+  body.appendChild(el('p', 'hint', tr('tags.add_hint')));
   var error = el('p', 'error');
   body.appendChild(error);
   var go = function (btn) {
-    if (!input.value.trim()) { error.textContent = 'Type a tag name.'; return false; }
+    if (!input.value.trim()) { error.textContent = tr('tags.type_name'); return false; }
     btn.disabled = true;
     post(LIBAPI + '/tags/add', { ids: ids, name: input.value }).then(function (r) {
       closeModal();
-      toast(r.files ? plural(r.files, 'photo', 'photos') + ' tagged “' + r.tag.name + '”' : 'All of them have “' + r.tag.name + '” already');
+      toast(r.files ? tr('tags.added', { count: trn('count.photos', r.files), name: r.tag.name }) : tr('tags.already', { name: r.tag.name }));
       tagsChanged(null);
     }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
     return false;
   };
-  var buttons = openModal('Add tag', body, [{ label: 'Cancel', cls: 'quiet' }, { label: 'Add', onclick: go }]);
+  var buttons = openModal(tr('tags.add_title'), body, [{ label: tr('app.cancel'), cls: 'quiet' }, { label: tr('tags.add_btn'), onclick: go }]);
   input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go(buttons[1]); });
   input.focus();
 }
@@ -2595,26 +2595,26 @@ function addTagDialog(ids) {
 function removeTagDialog(ids) {
   post(LIBAPI + '/tags/selection', { ids: ids }).then(function (tags) {
     if (!tags.length) {
-      openModal('Remove tag', 'None of these photos has an own tag. Folder tags come from where a photo is; move it to change them.', [{ label: 'OK' }]);
+      openModal(tr('tags.remove_title'), tr('tags.none_own'), [{ label: tr('app.ok') }]);
       return;
     }
     var body = el('div');
-    body.appendChild(el('p', '', 'Remove which tag from ' + plural(ids.length, 'photo', 'photos') + '?'));
+    body.appendChild(el('p', '', tr('tags.remove_which', { count: trn('count.photos', ids.length) })));
     var list = el('div', 'taglist');
     tags.forEach(function (t) {
-      var b = el('button', '', t.name + ' (' + t.count.toLocaleString() + ')');
+      var b = el('button', '', t.name + ' (' + I18n.number(t.count) + ')');
       b.onclick = function () {
         b.disabled = true;
         post(LIBAPI + '/tags/remove', { ids: ids, name: t.name }).then(function (r) {
           closeModal();
-          toast('“' + t.name + '” removed from ' + plural(r.files, 'photo', 'photos'));
+          toast(tr('tags.removed', { name: t.name, count: trn('count.photos', r.files) }));
           tagsChanged(null);
         }).catch(function (e) { closeModal(); failed(e); });
       };
       list.appendChild(b);
     });
     body.appendChild(list);
-    openModal('Remove tag', body, [{ label: 'Cancel', cls: 'quiet' }]);
+    openModal(tr('tags.remove_title'), body, [{ label: tr('app.cancel'), cls: 'quiet' }]);
   }).catch(failed);
 }
 
@@ -2632,7 +2632,7 @@ function loadOwnTags() {
       name.dataset.tag = t.id;
       name.onclick = function () { setFilter({ folder: null, tags: [t.id], q: '' }); };
       r.appendChild(name);
-      r.appendChild(el('span', 'count', t.count.toLocaleString()));
+      r.appendChild(el('span', 'count', I18n.number(t.count)));
       li.appendChild(r);
       list.appendChild(li);
     });
@@ -2652,22 +2652,25 @@ var faceState = { sort: 'size', desc: false, filter: 'all', faces: [], total: 0,
 // `pet`: a pet drawn by hand, whose species nobody said.
 var PET_ICON = { cat: '🐱', dog: '🐶', pet: '🐾' };
 function petIcon(species) { return PET_ICON[species] || ''; }
+function speciesName(species) { return tr('pet.species.' + (PET_ICON[species] ? species : 'pet')); }
+// "3 cats", "1 dog": the pets of one species (or just pets).
+function animalCount(species, n) { return trn('count.' + (species === 'cat' ? 'cats' : species === 'dog' ? 'dogs' : 'pets'), n); }
 
 // The check page of people's faces (view `faces`) or of cats and dogs (view `pets`).
 function checkKind() { return state.filter.view === 'pets' ? 'pets' : 'faces'; }
 function onCheckPage() { return state.filter.view === 'faces' || state.filter.view === 'pets'; }
 var PAGE_FACES = 300;
 var FACE_SORTS = [
-  ['size', false, 'Smallest first'], ['size', true, 'Largest first'],
-  ['score', false, 'Lowest score first'], ['score', true, 'Highest score first'],
+  ['size', false, 'facecheck.sort.smallest'], ['size', true, 'facecheck.sort.largest'],
+  ['score', false, 'facecheck.sort.lowest'], ['score', true, 'facecheck.sort.highest'],
 ];
 var FACE_FILTERS = [
-  ['all', 'All faces'], ['small', 'Too small for clustering'], ['large', 'Large enough'], ['rotated', 'Found turned'],
-  ['not_face', 'Marked “not a face”'],
+  ['all', 'facecheck.filter.all'], ['small', 'facecheck.filter.small'], ['large', 'facecheck.filter.large'], ['rotated', 'facecheck.filter.rotated'],
+  ['not_face', 'facecheck.filter.not_face'],
 ];
 // Cats and dogs are not looked for in turned copies, and the false finds are no pets.
 var PET_FILTERS = [
-  ['all', 'All pets'], ['small', 'Too small for clustering'], ['large', 'Large enough'], ['not_face', 'Marked “not a pet”'],
+  ['all', 'facecheck.pet_filter.all'], ['small', 'facecheck.filter.small'], ['large', 'facecheck.filter.large'], ['not_face', 'facecheck.pet_filter.not_face'],
 ];
 function checkFilters() { return checkKind() === 'pets' ? PET_FILTERS : FACE_FILTERS; }
 
@@ -2677,17 +2680,17 @@ function loadFaces() {
   var page = $('page');
   var kind = checkKind();
   page.textContent = '';
-  var back = el('button', 'link back', '← Settings');
+  var back = el('button', 'link back', tr('settings.back'));
   back.onclick = function () { showView('settings'); };
   page.appendChild(back);
-  page.appendChild(el('h2', '', kind === 'pets' ? 'Pet check' : 'Face check'));
-  var sub = el('p', 'sub', 'Looking…');
+  page.appendChild(el('h2', '', tr(kind === 'pets' ? 'side.pet_check' : 'side.face_check')));
+  var sub = el('p', 'sub', tr('dups.looking'));
   page.appendChild(sub);
   if (!checkFilters().some(function (o) { return o[0] === faceState.filter; })) faceState.filter = 'all';
   page.appendChild(faceToolbar());
   var grid = el('div', 'faces');
   page.appendChild(grid);
-  var more = el('button', 'btn quiet', 'Show more');
+  var more = el('button', 'btn quiet', tr('app.show_more'));
   more.hidden = true;
   more.onclick = function () { moreFaces(grid, more); };
   page.appendChild(more);
@@ -2703,25 +2706,25 @@ function loadFaces() {
 
 function faceSummary(s) {
   var pets = s.kind === 'pets';
-  var noun = pets ? ['pet', 'pets'] : ['face', 'faces'];
-  var parts = [plural(s.faces, noun[0], noun[1]) + ' in ' + plural(s.looked - s.failed, 'photo', 'photos')];
-  if (s.failed) parts.push(plural(s.failed, 'photo', 'photos') + ' failed');
-  if (s.looked < s.photos) parts.push((s.photos - s.looked).toLocaleString() + ' still to look at');
-  parts.push(s.small.toLocaleString() + ' under ' + s.min_cluster_px + ' px (too small for clustering)');
-  if (!pets) parts.push(s.rotated_looked ? plural(s.rotated_faces, 'face', 'faces') + ' found turned' : 'not looked at turned yet');
-  if (s.not_faces) parts.push(plural(s.not_faces, noun[0], noun[1]) + ' marked “not ' + (pets ? 'a pet' : 'a face') + '”');
+  var things = function (n) { return trn(pets ? 'count.pets' : 'count.faces', n); };
+  var parts = [tr('facecheck.faces_in', { faces: things(s.faces), photos: trn('count.photos', s.looked - s.failed) })];
+  if (s.failed) parts.push(tr('facecheck.failed', { count: trn('count.photos', s.failed) }));
+  if (s.looked < s.photos) parts.push(tr('facecheck.todo', { n: s.photos - s.looked }));
+  parts.push(tr('facecheck.small', { n: s.small, px: s.min_cluster_px }));
+  if (!pets) parts.push(s.rotated_looked ? tr('facecheck.turned', { count: trn('count.faces', s.rotated_faces) }) : tr('facecheck.turned_none'));
+  if (s.not_faces) parts.push(tr(pets ? 'facecheck.not_pets' : 'facecheck.not_faces', { count: things(s.not_faces) }));
   var widths = s.widths.map(function (b) {
     var label = b.from == null ? '< ' + b.to : b.to == null ? b.from + '+' : b.from + '–' + b.to;
-    return label + ' px: ' + b.count.toLocaleString();
+    return label + ' px: ' + I18n.number(b.count);
   });
-  return parts.join(' · ') + '. Widths in the copy the recognizer saw: ' + widths.join(', ') + '.';
+  return parts.join(' · ') + '. ' + tr('facecheck.widths', { widths: widths.join(', ') });
 }
 
 function faceToolbar() {
   var bar = el('div', 'toolbar');
   var sort = el('select');
   FACE_SORTS.forEach(function (o, k) {
-    var opt = el('option', '', o[2]);
+    var opt = el('option', '', tr(o[2]));
     opt.value = k;
     opt.selected = o[0] === faceState.sort && o[1] === faceState.desc;
     sort.appendChild(opt);
@@ -2734,13 +2737,13 @@ function faceToolbar() {
   };
   var filter = el('select');
   checkFilters().forEach(function (o) {
-    var opt = el('option', '', o[1]);
+    var opt = el('option', '', tr(o[1]));
     opt.value = o[0];
     opt.selected = o[0] === faceState.filter;
     filter.appendChild(opt);
   });
   filter.onchange = function () { faceState.filter = filter.value; loadFaces(); };
-  var pick = el('button', 'btn quiet', 'Select');
+  var pick = el('button', 'btn quiet', tr('facecheck.select'));
   pick.id = 'face-pick';
   pick.onclick = function () {
     faceState.picking = !faceState.picking;
@@ -2764,7 +2767,7 @@ function facePickBar() {
   var mark = el('button', 'btn');
   mark.id = 'face-pick-mark';
   mark.onclick = function () { markFaces(Object.keys(faceState.picked).map(Number)); };
-  var done = el('button', 'btn quiet', 'Done');
+  var done = el('button', 'btn quiet', tr('app.done'));
   done.onclick = function () { faceState.picking = false; clearFacePicks(); updateFacePick(); };
   bar.appendChild(count);
   bar.appendChild(mark);
@@ -2784,10 +2787,11 @@ function updateFacePick() {
   var n = Object.keys(faceState.picked).length;
   bar.hidden = !faceState.picking;
   $('face-pick').classList.toggle('active', faceState.picking);
-  $('face-pick-count').textContent = n ? plural(n, 'face', 'faces') : 'Tap faces to select';
+  var pets = checkKind() === 'pets';
+  $('face-pick-count').textContent = n ? trn(pets ? 'count.pets' : 'count.faces', n) : tr('facecheck.tap');
   var mark = $('face-pick-mark');
-  var what = checkKind() === 'pets' ? 'a pet' : 'a face';
-  mark.textContent = faceState.filter === 'not_face' ? 'It is ' + what : 'Not ' + what;
+  var undoing = faceState.filter === 'not_face';
+  mark.textContent = tr(pets ? (undoing ? 'facecheck.is_pet' : 'facecheck.not_pet') : (undoing ? 'facecheck.is_face' : 'facecheck.not_face'));
   mark.disabled = !n;
 }
 
@@ -2806,7 +2810,7 @@ function markFaces(ids) {
     faceState.faces = faceState.faces.filter(function (f) { return ids.indexOf(f.id) < 0; });
     faceState.total -= before - faceState.faces.length;
     updateFacePick();
-    toast(undo ? plural(r.faces, 'face', 'faces') + ' back' : plural(r.faces, 'face', 'faces') + ' marked “not a face”');
+    toast(tr(undo ? 'facecheck.back' : 'facecheck.marked', { count: trn('count.faces', r.faces) }));
   }).catch(failed);
 }
 
@@ -2824,9 +2828,7 @@ function moreFaces(grid, more) {
     faceState.total = r.total;
     faceState.minPx = r.min_cluster_px;
     r.faces.forEach(function (face) { faceState.faces.push(face); grid.appendChild(faceCard(face, null)); });
-    if (!faceState.total) grid.appendChild(el('p', 'sub', checkKind() === 'pets'
-      ? 'No pets here. `shoebox recognize --pets` (or “Recognize pets” in the launcher) finds them.'
-      : 'No faces here. `shoebox recognize` finds them.'));
+    if (!faceState.total) grid.appendChild(el('p', 'sub', tr(checkKind() === 'pets' ? 'facecheck.none_pets' : 'facecheck.none')));
     more.disabled = false;
     more.hidden = faceState.faces.length >= faceState.total;
   }).catch(failed);
@@ -2839,7 +2841,7 @@ function faceCard(face, similarity) {
   card.dataset.id = face.id;
   var a = el('a', 'crop');
   a.href = '#';
-  a.title = 'Open the photo';
+  a.title = tr('facecheck.open_photo');
   var img = el('img');
   img.alt = '';
   img.loading = 'lazy';
@@ -2871,18 +2873,17 @@ function faceCard(face, similarity) {
   var caption = Math.round(face.px) + ' px · ' + face.score.toFixed(2);
   if (similarity != null) caption = similarity.toFixed(2) + ' · ' + caption;
   card.appendChild(el('div', 'meta', caption));
-  if (face.species) card.appendChild(el('span', 'tag', petIcon(face.species) + ' ' + face.species));
-  if (face.small) card.appendChild(el('span', 'tag', 'small'));
-  if (face.roll) card.appendChild(el('span', 'tag', 'turned'));
+  if (face.species) card.appendChild(el('span', 'tag', petIcon(face.species) + ' ' + speciesName(face.species)));
+  if (face.small) card.appendChild(el('span', 'tag', tr('facecheck.tag_small')));
+  if (face.roll) card.appendChild(el('span', 'tag', tr('facecheck.tag_turned')));
   if (similarity == null) {
     var near = el('button', 'near', '≈');
-    near.title = face.species ? 'Most similar pets' : 'Most similar faces';
+    near.title = tr(face.species ? 'facecheck.similar_pets' : 'facecheck.similar_btn');
     near.onclick = function () { similarFaces(face); };
     card.appendChild(near);
     var undo = faceState.filter === 'not_face';
     var mark = el('button', 'mark', undo ? '↺' : '✕');
-    var what = face.species ? 'a pet' : 'a face';
-    mark.title = undo ? 'It is ' + what + ' (undo “not ' + what + '”)' : 'Not ' + what;
+    mark.title = face.species ? tr(undo ? 'facecheck.undo_hint_pet' : 'facecheck.not_pet') : tr(undo ? 'facecheck.undo_hint' : 'facecheck.not_face');
     mark.onclick = function () { markFaces([face.id]); };
     card.appendChild(mark);
   }
@@ -2894,12 +2895,12 @@ function faceCard(face, similarity) {
 function similarFaces(face) {
   api(LIBAPI + '/faces/' + face.id + '/similar?limit=24').then(function (list) {
     var box = el('div');
-    box.appendChild(el('p', 'hint', 'Cosine similarity of the embeddings (1 = identical), most similar first. Click ' + (face.species ? 'a pet' : 'a face') + ' to open its photo.'));
+    box.appendChild(el('p', 'hint', tr(face.species ? 'facecheck.similar_hint_pet' : 'facecheck.similar_hint')));
     var grid = el('div', 'faces');
     grid.appendChild(faceCard(face, 1));
     list.forEach(function (n) { grid.appendChild(faceCard(n, n.similarity)); });
     box.appendChild(grid);
-    openModal(face.species ? 'Most similar pets' : 'Most similar faces', box, [{ label: 'Close' }]);
+    openModal(tr(face.species ? 'facecheck.similar_pets' : 'facecheck.similar_btn'), box, [{ label: tr('app.close') }]);
   }).catch(failed);
 }
 
@@ -2920,28 +2921,28 @@ function openFacePhoto(face) {
 function loadSettings() {
   var page = $('page');
   page.textContent = '';
-  page.appendChild(el('h2', '', 'Settings'));
+  page.appendChild(el('h2', '', tr('settings.title')));
   var sec = el('section', 'settings-section');
-  sec.appendChild(el('h3', '', 'Calibration'));
-  sec.appendChild(el('p', 'hint', 'Look at what recognition found in your photos: sizes, scores, nearest neighbours and false finds. Nothing here changes a photo.'));
+  sec.appendChild(el('h3', '', tr('settings.calibration')));
+  sec.appendChild(el('p', 'hint', tr('settings.calibration_hint')));
   var cards = el('div', 'settings-cards');
   [
-    ['faces', 'Face check', 'People’s faces: how many were found, how small they are, which look alike.'],
-    ['pets', 'Pet check', 'Cats and dogs: how many were found, how small they are, which look alike.'],
+    ['faces', tr('side.face_check'), tr('settings.faces_desc')],
+    ['pets', tr('side.pet_check'), tr('settings.pets_desc')],
   ].forEach(function (c) {
     var card = el('button', 'settings-card');
     card.type = 'button';
     card.appendChild(el('span', 'title', c[1]));
     card.appendChild(el('span', 'hint', c[2]));
-    var line = el('span', 'sub', 'Looking…');
+    var line = el('span', 'sub', tr('dups.looking'));
     card.appendChild(line);
     card.onclick = function () { showView(c[0]); };
     cards.appendChild(card);
     api(LIBAPI + '/faces/stats' + query({ kind: c[0] === 'pets' ? 'pets' : null })).then(function (s) {
       line.textContent = s.faces
-        ? plural(s.faces, c[0] === 'pets' ? 'pet' : 'face', c[0] === 'pets' ? 'pets' : 'faces') + ' in ' + plural(s.looked - s.failed, 'photo', 'photos')
-        : s.looked ? 'Looked at ' + plural(s.looked, 'photo', 'photos') + ', nothing found.'
-          : c[0] === 'pets' ? 'Not looked for yet: `shoebox recognize --pets`, or “Recognize pets” in the launcher.' : 'Not looked for yet: `shoebox recognize`.';
+        ? tr('facecheck.faces_in', { faces: trn(c[0] === 'pets' ? 'count.pets' : 'count.faces', s.faces), photos: trn('count.photos', s.looked - s.failed) })
+        : s.looked ? tr('settings.looked_none', { photos: trn('count.photos', s.looked) })
+          : tr(c[0] === 'pets' ? 'settings.not_yet_pets' : 'settings.not_yet_faces');
     }).catch(function () { line.textContent = ''; });
   });
   sec.appendChild(cards);
@@ -2976,7 +2977,7 @@ function groupedPeople() {
   var out = people.groups.map(function (g) { return { id: g.id, name: g.name, people: [] }; });
   var byGroup = {};
   out.forEach(function (s) { byGroup[s.id] = s; });
-  var none = { id: null, name: 'No group', people: [] };
+  var none = { id: null, name: tr('people.no_group'), people: [] };
   people.list.forEach(function (p) { (byGroup[p.group_id] || none).people.push(p); });
   if (none.people.length) out.push(none);
   return out;
@@ -3115,7 +3116,7 @@ function dropOnGroup(node, groupId) {
 function setGroup(p, groupId) {
   return post(LIBAPI + '/people/' + p.id + '/group', { group_id: groupId }).then(function () {
     var g = people.groups.filter(function (x) { return x.id === groupId; })[0];
-    toast(p.name + (g ? ' is in “' + g.name + '” now' : ' is in no group now'));
+    toast(g ? tr('people.is_in', { name: p.name, group: g.name }) : tr('people.is_in_none', { name: p.name }));
     peopleChanged();
     if (state.filter.view === 'people') loadPeople().then(loadPeoplePage);
   }).catch(failed);
@@ -3137,7 +3138,7 @@ function renderFacesSection() {
     var toggle = el('button', 'toggle');
     if (s.people.length) setArrow(toggle, !!people.open[key]);
     var name = el('button', 'name', s.name);
-    name.title = s.people.length ? 'Show or hide its people' : 'Nobody in it yet';
+    name.title = tr(s.people.length ? 'people.group_toggle' : 'people.group_empty');
     var flip = function () { people.open[key] = !people.open[key]; renderFacesSection(); };
     toggle.onclick = flip;
     name.onclick = flip;
@@ -3156,7 +3157,7 @@ function renderFacesSection() {
         b.dataset.person = p.id;
         b.onclick = function () { showPerson(p.id); };
         prow.appendChild(b);
-        prow.appendChild(el('span', 'count', p.photos.toLocaleString()));
+        prow.appendChild(el('span', 'count', I18n.number(p.photos)));
         dragPerson(prow, p);
         pli.appendChild(prow);
         ul.appendChild(pli);
@@ -3169,7 +3170,7 @@ function renderFacesSection() {
   var uli = el('li');
   var urow = el('div', 'row');
   urow.appendChild(el('span', 'toggle', ''));
-  var ub = el('button', 'name', 'Unnamed' + (c ? ' (' + plural(c.clusters, 'cluster', 'clusters') + ')' : ''));
+  var ub = el('button', 'name', c ? tr('people.unnamed_n', { count: trn('count.clusters', c.clusters) }) : tr('people.unnamed'));
   ub.dataset.view = 'unnamed';
   ub.onclick = function () { showView('unnamed'); };
   urow.appendChild(ub);
@@ -3200,7 +3201,7 @@ function personField(done, opts) {
   var wrap = el('div', 'pfield');
   var input = el('input');
   input.type = 'text';
-  input.placeholder = opts.placeholder || 'Name';
+  input.placeholder = opts.placeholder || tr('people.name_placeholder');
   input.autocomplete = 'off';
   input.setAttribute('autocapitalize', 'words');
   input.setAttribute('enterkeyhint', 'done');
@@ -3244,7 +3245,7 @@ function personField(done, opts) {
     });
     if (opts.allowNew && text && !exact) {
       var it = { who: { name: text }, label: text };
-      var b = el('button', 'item new', '+ New person “' + text + '”');
+      var b = el('button', 'item new', tr('people.new_person', { name: text }));
       b.type = 'button';
       b.onmousedown = function (ev) { ev.preventDefault(); };
       b.onclick = function () { pick(it); };
@@ -3302,20 +3303,20 @@ function nameDialog(title, value, label, save) {
   var error = el('p', 'error');
   body.appendChild(error);
   var go = function (btn) {
-    if (!input.value.trim()) { error.textContent = 'Type a name.'; return false; }
+    if (!input.value.trim()) { error.textContent = tr('people.type_name'); return false; }
     btn.disabled = true;
     save(input.value.trim()).then(function () { closeModal(); }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
     return false;
   };
-  var buttons = openModal(title, body, [{ label: 'Cancel', cls: 'quiet' }, { label: label, onclick: go }]);
+  var buttons = openModal(title, body, [{ label: tr('app.cancel'), cls: 'quiet' }, { label: label, onclick: go }]);
   input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go(buttons[1]); });
   input.select();
 }
 
 function renamePerson(p) {
-  nameDialog('Rename', p.name, 'Rename', function (name) {
+  nameDialog(tr('people.rename'), p.name, tr('people.rename'), function (name) {
     return post(LIBAPI + '/people/' + p.id + '/rename', { name: name }).then(function (r) {
-      toast('Now “' + r.name + '”');
+      toast(tr('people.renamed', { name: r.name }));
       state.personNames[p.id] = r.name;
       peopleChanged();
       if (state.filter.view) loadView(state.filter.view); else renderChips();
@@ -3325,11 +3326,11 @@ function renamePerson(p) {
 
 // Only for someone without faces (a misspelled name); others are merged.
 function deletePersonDialog(p) {
-  openModal('Delete person', 'Delete “' + p.name + '”? Nobody is confirmed as them, so no photo changes.', [
-    { label: 'Cancel', cls: 'quiet' },
-    { label: 'Delete', cls: 'danger', onclick: function () {
+  openModal(tr('people.delete_title'), tr('people.delete_text', { name: p.name }), [
+    { label: tr('app.cancel'), cls: 'quiet' },
+    { label: tr('app.delete'), cls: 'danger', onclick: function () {
       post(LIBAPI + '/people/' + p.id + '/delete').then(function () {
-        toast('“' + p.name + '” deleted');
+        toast(tr('people.deleted', { name: p.name }));
         peopleChanged();
         if (state.filter.people.indexOf(p.id) >= 0) setFilter({ people: state.filter.people.filter(function (x) { return x !== p.id; }) });
         else if (state.filter.view === 'person' && state.filter.id === p.id) showView('people');
@@ -3340,9 +3341,9 @@ function deletePersonDialog(p) {
 }
 
 function newGroup(then) {
-  nameDialog('New group', '', 'Create', function (name) {
+  nameDialog(tr('people.new_group'), '', tr('people.create'), function (name) {
     return post(LIBAPI + '/groups', { name: name }).then(function (g) {
-      toast('Group “' + g.name + '” created');
+      toast(tr('people.group_created', { name: g.name }));
       return loadPeople().then(function () {
         if (then) then(g);
         else if (state.filter.view === 'people') loadPeoplePage();
@@ -3353,7 +3354,7 @@ function newGroup(then) {
 
 function moveToGroupDialog(p) {
   var body = el('div');
-  body.appendChild(el('p', '', 'Put ' + p.name + ' into:'));
+  body.appendChild(el('p', '', tr('people.put_into', { name: p.name })));
   var list = el('div', 'taglist');
   var choice = function (label, id, current) {
     var b = el('button', current ? 'current' : '', label + (current ? ' ✓' : ''));
@@ -3361,33 +3362,33 @@ function moveToGroupDialog(p) {
     list.appendChild(b);
   };
   people.groups.forEach(function (g) { choice(g.name, g.id, p.group_id === g.id); });
-  choice('No group', null, p.group_id == null);
+  choice(tr('people.no_group'), null, p.group_id == null);
   body.appendChild(list);
-  body.appendChild(el('p', 'hint', 'A person is in one group at most. On a computer you can also drag people onto a group.'));
-  openModal('Move to group', body, [
-    { label: 'New group…', cls: 'quiet', onclick: function () { setTimeout(function () { newGroup(function (g) { setGroup(p, g.id); }); }, 0); } },
-    { label: 'Cancel', cls: 'quiet' },
+  body.appendChild(el('p', 'hint', tr('people.group_hint')));
+  openModal(tr('people.to_group_title'), body, [
+    { label: tr('people.new_group_btn'), cls: 'quiet', onclick: function () { setTimeout(function () { newGroup(function (g) { setGroup(p, g.id); }); }, 0); } },
+    { label: tr('app.cancel'), cls: 'quiet' },
   ]);
 }
 
 function mergeDialog(p) {
   var body = el('div');
-  body.appendChild(el('p', '', 'Merge ' + p.name + ' into:'));
+  body.appendChild(el('p', '', tr('people.merge_text', { name: p.name })));
   var into = null;
-  var field = personField(function (who) { into = who.person_id; }, { except: [p.id], placeholder: 'Who is it really?' });
+  var field = personField(function (who) { into = who.person_id; }, { except: [p.id], placeholder: tr('people.merge_placeholder') });
   body.appendChild(field);
-  body.appendChild(el('p', 'hint', 'All faces of ' + p.name + ' (and the photos they are on) become that person’s; ' + p.name + ' is removed. The other person keeps their name and group.'));
+  body.appendChild(el('p', 'hint', tr('people.merge_hint', { name: p.name })));
   var error = el('p', 'error');
   body.appendChild(error);
-  openModal('Merge', body, [{ label: 'Cancel', cls: 'quiet' }, {
-    label: 'Merge', onclick: function (btn) {
+  openModal(tr('people.merge_title'), body, [{ label: tr('app.cancel'), cls: 'quiet' }, {
+    label: tr('people.merge_title'), onclick: function (btn) {
       var who = field.value();
       into = into || (who && who.person_id);
-      if (!into) { error.textContent = 'Choose someone from the list.'; return false; }
+      if (!into) { error.textContent = tr('people.choose_someone'); return false; }
       btn.disabled = true;
       post(LIBAPI + '/people/' + p.id + '/merge', { into: into }).then(function (r) {
         closeModal();
-        toast(p.name + ' merged into ' + r.name);
+        toast(tr('people.merged', { name: p.name, into: r.name }));
         peopleChanged();
         if (state.filter.people.indexOf(p.id) >= 0 || (state.filter.view === 'person' && state.filter.id === p.id)) showPerson(r.id);
         else if (state.filter.view) loadView(state.filter.view);
@@ -3404,11 +3405,11 @@ function groupsDialog() {
   body.appendChild(list);
   var render = function () {
     list.textContent = '';
-    if (!people.groups.length) list.appendChild(el('p', 'hint', 'No groups yet.'));
+    if (!people.groups.length) list.appendChild(el('p', 'hint', tr('people.groups_none')));
     people.groups.forEach(function (g, k) {
       var row = el('div', 'grow-row');
       row.appendChild(el('span', 'gname', g.name));
-      row.appendChild(el('span', 'gcount', plural(g.people, 'person', 'people')));
+      row.appendChild(el('span', 'gcount', trn('count.people', g.people)));
       var btn = function (label, title, run, disabled) {
         var b = el('button', 'btn quiet small', label);
         b.title = title;
@@ -3423,21 +3424,21 @@ function groupsDialog() {
         ids.splice(k + d, 0, g.id);
         post(LIBAPI + '/groups/reorder', { ids: ids }).then(function (gs) { people.groups = gs; render(); peopleChanged(); }).catch(failed);
       };
-      btn('↑', 'Move up', function () { move(-1); }, k === 0);
-      btn('↓', 'Move down', function () { move(1); }, k === people.groups.length - 1);
-      btn('Rename', 'Rename', function () {
-        nameDialog('Rename group', g.name, 'Rename', function (name) {
+      btn('↑', tr('people.move_up'), function () { move(-1); }, k === 0);
+      btn('↓', tr('people.move_down'), function () { move(1); }, k === people.groups.length - 1);
+      btn(tr('people.rename'), tr('people.rename'), function () {
+        nameDialog(tr('people.rename_group'), g.name, tr('people.rename'), function (name) {
           return post(LIBAPI + '/groups/' + g.id + '/rename', { name: name }).then(function () {
             return loadPeople().then(function () { groupsDialog(); if (state.filter.view === 'people') loadPeoplePage(); });
           });
         });
       });
-      btn('Delete', 'Delete', function () {
-        openModal('Delete group', 'Delete “' + g.name + '”? ' + (g.people ? plural(g.people, 'person', 'people') + ' in it will be in no group; nobody is deleted.' : 'Nobody is in it.'), [
-          { label: 'Cancel', cls: 'quiet', onclick: function () { setTimeout(groupsDialog, 0); } },
-          { label: 'Delete', cls: 'danger', onclick: function () {
+      btn(tr('app.delete'), tr('app.delete'), function () {
+        openModal(tr('people.delete_group_title'), tr('people.delete_group_text', { name: g.name, detail: g.people ? tr('people.delete_group_some', { count: trn('count.people', g.people) }) : tr('people.delete_group_none') }), [
+          { label: tr('app.cancel'), cls: 'quiet', onclick: function () { setTimeout(groupsDialog, 0); } },
+          { label: tr('app.delete'), cls: 'danger', onclick: function () {
             post(LIBAPI + '/groups/' + g.id + '/delete').then(function () {
-              toast('Group “' + g.name + '” deleted');
+              toast(tr('people.group_deleted', { name: g.name }));
               return loadPeople().then(function () { groupsDialog(); if (state.filter.view === 'people') loadPeoplePage(); });
             }).catch(failed);
           } },
@@ -3447,28 +3448,28 @@ function groupsDialog() {
     });
   };
   render();
-  openModal('Groups', body, [
-    { label: 'New group…', cls: 'quiet', onclick: function () { setTimeout(function () { newGroup(function () { groupsDialog(); }); }, 0); } },
-    { label: 'Done', onclick: function () { if (state.filter.view === 'people') loadPeoplePage(); } },
+  openModal(tr('people.groups_title'), body, [
+    { label: tr('people.new_group_btn'), cls: 'quiet', onclick: function () { setTimeout(function () { newGroup(function () { groupsDialog(); }); }, 0); } },
+    { label: tr('app.done'), onclick: function () { if (state.filter.view === 'people') loadPeoplePage(); } },
   ]);
 }
 
 function personMenuItems(p) {
   return [
-    { label: 'Show photos', run: function () { showPerson(p.id); } },
-    { label: 'Review faces', run: function () { showView('person', p.id, p.suggested ? 'suggested' : p.maybe ? 'maybe' : 'confirmed'); } },
-    { label: 'Rename…', run: function () { renamePerson(p); } },
-    { label: 'Move to group…', run: function () { moveToGroupDialog(p); } },
-    { label: 'Merge into…', run: function () { mergeDialog(p); } },
-  ].concat(p.faces === 0 ? [{ label: 'Delete…', run: function () { deletePersonDialog(p); } }] : []);
+    { label: tr('people.menu.show'), run: function () { showPerson(p.id); } },
+    { label: tr('people.menu.review'), run: function () { showView('person', p.id, p.suggested ? 'suggested' : p.maybe ? 'maybe' : 'confirmed'); } },
+    { label: tr('people.menu.rename'), run: function () { renamePerson(p); } },
+    { label: tr('people.menu.move'), run: function () { moveToGroupDialog(p); } },
+    { label: tr('people.menu.merge'), run: function () { mergeDialog(p); } },
+  ].concat(p.faces === 0 ? [{ label: tr('people.menu.delete'), run: function () { deletePersonDialog(p); } }] : []);
 }
 
 // A ⋯ button that opens a menu below itself (works by touch).
 function menuButton(items, title) {
   var b = el('button', 'more-btn', '⋯');
   b.type = 'button';
-  b.title = title || 'More';
-  b.setAttribute('aria-label', title || 'More');
+  b.title = title || tr('people.more');
+  b.setAttribute('aria-label', title || tr('people.more'));
   b.onclick = function (ev) {
     ev.preventDefault();
     ev.stopPropagation();
@@ -3488,13 +3489,13 @@ function personHead(box, f) {
   var text = el('div', 'ptext');
   text.appendChild(el('div', 'pname', (p.species ? petIcon(p.species) + ' ' : '') + p.name));
   var g = people.groups.filter(function (x) { return x.id === p.group_id; })[0];
-  text.appendChild(el('div', 'pmeta', plural(p.photos, 'photo', 'photos') + ' · ' + (g ? g.name : 'no group')));
+  text.appendChild(el('div', 'pmeta', trn('count.photos', p.photos) + ' · ' + (g ? g.name : tr('people.no_group_lower'))));
   head.appendChild(text);
   var review = p.suggested + p.maybe;
-  var faces = el('button', 'btn quiet', review ? 'Check ' + plural(review, 'face', 'faces') : 'Faces');
+  var faces = el('button', 'btn quiet', review ? tr('people.check', { count: trn('count.faces', review) }) : tr('side.faces'));
   faces.onclick = function () { showView('person', p.id, p.suggested ? 'suggested' : p.maybe ? 'maybe' : 'confirmed'); };
   head.appendChild(faces);
-  head.appendChild(menuButton(personMenuItems(p).slice(1), 'More for ' + p.name));
+  head.appendChild(menuButton(personMenuItems(p).slice(1), tr('people.more_for', { name: p.name })));
   box.insertBefore(head, box.firstChild);
 }
 
@@ -3504,30 +3505,32 @@ function loadPeoplePage() {
   var page = $('page');
   if (state.filter.view !== 'people') return;
   page.textContent = '';
-  page.appendChild(el('h2', '', 'Faces'));
+  page.appendChild(el('h2', '', tr('side.faces')));
   var c = people.info && people.info.clusters;
   var sub = el('p', 'sub');
-  sub.appendChild(document.createTextNode(plural(people.list.length, 'person', 'people') + (c ? ' · ' + plural(c.unnamed, 'face', 'faces') + ' without a name in ' + plural(c.clusters, 'cluster', 'clusters') + ' ' : ' ')));
+  sub.appendChild(document.createTextNode((c
+    ? tr('people.overview_unnamed', { people: trn('count.people', people.list.length), faces: trn('count.faces', c.unnamed), clusters: trn('count.clusters', c.clusters) })
+    : tr('people.overview', { people: trn('count.people', people.list.length) })) + ' '));
   if (c && c.clusters) {
-    var name = el('button', 'link', 'Name them →');
+    var name = el('button', 'link', tr('people.name_them'));
     name.onclick = function () { showView('unnamed'); };
     sub.appendChild(name);
   }
   page.appendChild(sub);
   var bar = el('div', 'toolbar');
-  var ng = el('button', 'btn quiet', 'New group…');
+  var ng = el('button', 'btn quiet', tr('people.new_group_btn'));
   ng.onclick = function () { newGroup(); };
-  var gs = el('button', 'btn quiet', 'Groups…');
+  var gs = el('button', 'btn quiet', tr('people.groups_btn'));
   gs.onclick = groupsDialog;
-  var check = el('button', 'btn quiet', 'Calibration');
-  check.title = 'Face check and pet check, in Settings';
+  var check = el('button', 'btn quiet', tr('settings.calibration'));
+  check.title = tr('people.calibration_hint');
   check.onclick = function () { showView('settings'); };
   bar.appendChild(ng);
   bar.appendChild(gs);
   bar.appendChild(check);
   page.appendChild(bar);
   var sections = groupedPeople();
-  if (!people.list.length) page.appendChild(el('p', 'sub', 'Nobody is named yet. Name faces under “Unnamed”, or in the info panel of a photo.'));
+  if (!people.list.length) page.appendChild(el('p', 'sub', tr('people.nobody_named')));
   sections.forEach(function (s) {
     var sec = el('section', 'pgroup');
     var h = el('h3', '', s.name);
@@ -3535,7 +3538,7 @@ function loadPeoplePage() {
     sec.appendChild(h);
     var grid = el('div', 'people');
     s.people.forEach(function (p) { grid.appendChild(personTile(p)); });
-    if (!s.people.length) grid.appendChild(el('p', 'hint', 'Nobody in it yet: “Move to group…” on a person, or drag one here.'));
+    if (!s.people.length) grid.appendChild(el('p', 'hint', tr('people.group_empty_hint')));
     sec.appendChild(grid);
     dropOnGroup(sec, s.id);
     page.appendChild(sec);
@@ -3543,7 +3546,7 @@ function loadPeoplePage() {
   // "No group" as a drop target even when nobody is in it.
   if (people.groups.length && !sections.some(function (s) { return s.id == null; })) {
     var none = el('section', 'pgroup empty-drop');
-    none.appendChild(el('h3', '', 'No group'));
+    none.appendChild(el('h3', '', tr('people.no_group')));
     dropOnGroup(none, null);
     page.appendChild(none);
   }
@@ -3557,22 +3560,22 @@ function personTile(p) {
   a.onclick = function (ev) { ev.preventDefault(); showPerson(p.id); };
   a.appendChild(avatar(p, 'big'));
   a.appendChild(el('span', 'pname', (p.species ? petIcon(p.species) + ' ' : '') + p.name));
-  a.appendChild(el('span', 'pmeta', plural(p.photos, 'photo', 'photos')));
+  a.appendChild(el('span', 'pmeta', trn('count.photos', p.photos)));
   t.appendChild(a);
   if (p.suggested + p.maybe) {
-    var badge = el('button', 'pbadge', (p.suggested + p.maybe).toLocaleString() + ' to check');
-    badge.title = 'Faces suggested for ' + p.name;
+    var badge = el('button', 'pbadge', tr('people.to_check', { n: p.suggested + p.maybe }));
+    badge.title = tr('people.suggested_for', { name: p.name });
     badge.onclick = function () { showView('person', p.id, p.suggested ? 'suggested' : 'maybe'); };
     t.appendChild(badge);
   }
-  t.appendChild(menuButton(personMenuItems(p), 'More for ' + p.name));
+  t.appendChild(menuButton(personMenuItems(p), tr('people.more_for', { name: p.name })));
   dragPerson(t, p);
   return t;
 }
 
 // ---- a person's faces
 
-var PERSON_TABS = [['confirmed', 'Confirmed'], ['suggested', 'Suggested'], ['maybe', 'Maybe'], ['rejected', 'Not them']];
+var PERSON_TABS = [['confirmed', 'person.tab.confirmed'], ['suggested', 'person.tab.suggested'], ['maybe', 'person.tab.maybe'], ['rejected', 'person.tab.rejected']];
 var pp = { person: null, faces: [], total: 0, picking: false, picked: {} };
 
 function loadPersonPage() {
@@ -3590,12 +3593,12 @@ function loadPersonPage() {
     head.appendChild(avatar(p, 'big'));
     var text = el('div', 'ptext');
     text.appendChild(el('h2', 'pname', (p.species ? petIcon(p.species) + ' ' : '') + p.name));
-    text.appendChild(el('div', 'pmeta', plural(p.photos, 'photo', 'photos') + ' · ' + plural(p.faces, p.species ? p.species : 'face', p.species ? p.species + 's' : 'faces') + ' confirmed'));
+    text.appendChild(el('div', 'pmeta', tr('person.meta', { photos: trn('count.photos', p.photos), faces: p.species ? animalCount(p.species, p.faces) : trn('count.faces', p.faces) })));
     head.appendChild(text);
-    var photos = el('button', 'btn quiet', 'Photos');
+    var photos = el('button', 'btn quiet', tr('person.photos'));
     photos.onclick = function () { showPerson(p.id); };
     head.appendChild(photos);
-    head.appendChild(menuButton(personMenuItems(p).slice(2), 'More for ' + p.name));
+    head.appendChild(menuButton(personMenuItems(p).slice(2), tr('people.more_for', { name: p.name })));
     page.appendChild(head);
     var tabs = el('div', 'tabs');
     tabs.id = 'person-tabs';
@@ -3607,19 +3610,14 @@ function loadPersonPage() {
     });
     page.appendChild(tabs);
     personTabCounts(p);
-    page.appendChild(el('p', 'sub', {
-      confirmed: 'Faces named ' + p.name + ', largest first. Select some to take them out (“Not ' + p.name + '”) or give them another name.',
-      suggested: 'Faces that look like ' + p.name + ' (from all confirmed faces), most similar first. ✓ confirms, ✗ says it is someone else.',
-      maybe: 'Faces that might be ' + p.name + ', less sure than the suggestions. ✓ confirms, ✗ says it is someone else.',
-      rejected: 'Faces marked “not ' + p.name + '”. They are never suggested for ' + p.name + ' again; ↺ undoes that.',
-    }[tab]));
+    page.appendChild(el('p', 'sub', tr('person.sub.' + tab, { name: p.name })));
     var bar = el('div', 'toolbar');
-    var pick = el('button', 'btn quiet', 'Select');
+    var pick = el('button', 'btn quiet', tr('facecheck.select'));
     pick.id = 'pp-pick';
     pick.onclick = function () { pp.picking = !pp.picking; if (!pp.picking) clearPersonPicks(); updatePersonPick(); };
     bar.appendChild(pick);
     if (tab === 'suggested') {
-      var all = el('button', 'btn quiet', 'Confirm all shown');
+      var all = el('button', 'btn quiet', tr('person.confirm_all'));
       all.onclick = function () { personAction('confirm', pp.faces.map(function (x) { return x.id; }).filter(function (x) { return x != null; })); };
       bar.appendChild(all);
     }
@@ -3627,7 +3625,7 @@ function loadPersonPage() {
     var grid = el('div', 'faces');
     grid.id = 'pp-grid';
     page.appendChild(grid);
-    var more = el('button', 'btn quiet', 'Show more');
+    var more = el('button', 'btn quiet', tr('app.show_more'));
     more.hidden = true;
     more.onclick = function () { morePersonFaces(grid, more, tab); };
     page.appendChild(more);
@@ -3635,7 +3633,7 @@ function loadPersonPage() {
     updatePersonPick();
     return morePersonFaces(grid, more, tab);
   }).catch(function (e) {
-    if (e.status === 404) { page.appendChild(el('p', 'sub', 'This person does not exist (any more).')); return; }
+    if (e.status === 404) { page.appendChild(el('p', 'sub', tr('person.missing'))); return; }
     failed(e);
   });
 }
@@ -3644,7 +3642,7 @@ function personTabCounts(p) {
   var counts = { confirmed: p.faces, suggested: p.suggested, maybe: p.maybe };
   Array.prototype.forEach.call(document.querySelectorAll('#person-tabs .tab'), function (b) {
     var t = PERSON_TABS.filter(function (x) { return x[0] === b.dataset.tab; })[0];
-    b.textContent = t[1] + (counts[t[0]] != null ? ' (' + counts[t[0]].toLocaleString() + ')' : '');
+    b.textContent = tr(t[1]) + (counts[t[0]] != null ? ' (' + I18n.number(counts[t[0]]) + ')' : '');
   });
 }
 
@@ -3662,7 +3660,7 @@ function morePersonFaces(grid, more, tab) {
     if (state.filter.view !== 'person') return;
     pp.total = r.total;
     r.faces.forEach(function (face) { pp.faces.push(face); grid.appendChild(personFaceCard(face, tab)); });
-    if (!pp.total) grid.appendChild(el('p', 'sub', 'None.'));
+    if (!pp.total) grid.appendChild(el('p', 'sub', tr('person.none')));
     more.disabled = false;
     more.hidden = pp.faces.length >= pp.total;
   }).catch(failed);
@@ -3677,7 +3675,7 @@ function personFaceCard(face, tab) {
   card.dataset.key = key;
   var a = el('a', 'crop');
   a.href = '#';
-  a.title = 'Open the photo';
+  a.title = tr('facecheck.open_photo');
   var url = cropUrl(face);
   if (tab === 'confirmed' && face.file != null) {
     // Confirmed faces have no stored crop: cut out of the photo's thumbnail.
@@ -3716,11 +3714,11 @@ function personFaceCard(face, tab) {
     if (face.file != null) openFacePhoto(face);
   };
   card.appendChild(a);
-  var caption = face.similarity != null ? Math.round(face.similarity * 100) + '% alike' : Math.round(face.px) + ' px';
-  if (face.lost) caption = 'no longer found';
-  else if (face.manual != null) caption = 'drawn by hand';
+  var caption = face.similarity != null ? tr('person.alike', { pct: Math.round(face.similarity * 100) }) : Math.round(face.px) + ' px';
+  if (face.lost) caption = tr('person.lost');
+  else if (face.manual != null) caption = tr('face.drawn');
   card.appendChild(el('div', 'meta', caption));
-  if (face.small) card.appendChild(el('span', 'tag', 'small'));
+  if (face.small) card.appendChild(el('span', 'tag', tr('facecheck.tag_small')));
   var acts = el('div', 'acts');
   var act = function (label, title, cls, run) {
     var b = el('button', cls, label);
@@ -3730,12 +3728,12 @@ function personFaceCard(face, tab) {
     acts.appendChild(b);
   };
   if (tab === 'suggested' || tab === 'maybe') {
-    act('✓', 'It is ' + p.name, 'yes', function () { personAction('confirm', [face.id]); });
-    act('✗', 'Not ' + p.name, 'no', function () { personAction('reject', [face.id]); });
+    act('✓', tr('person.it_is', { name: p.name }), 'yes', function () { personAction('confirm', [face.id]); });
+    act('✗', tr('person.not', { name: p.name }), 'no', function () { personAction('reject', [face.id]); });
   } else if (tab === 'rejected') {
-    act('↺', 'Undo “not ' + p.name + '”', 'undo', function () { personAction('unreject', [face.id]); });
+    act('↺', tr('person.undo_not', { name: p.name }), 'undo', function () { personAction('unreject', [face.id]); });
   } else if (!face.lost) {
-    card.appendChild(menuButton(function () { return confirmedFaceMenu(face); }, 'More for this face'));
+    card.appendChild(menuButton(function () { return confirmedFaceMenu(face); }, tr('person.more_face')));
   }
   card.appendChild(acts);
   return card;
@@ -3744,16 +3742,16 @@ function personFaceCard(face, tab) {
 function confirmedFaceMenu(face) {
   var p = pp.person, items = [];
   if (face.manual != null) {
-    items.push({ label: 'Name someone else…', run: function () { nameFacesDialog([face], personRefresh); } });
-    items.push({ label: 'Delete this drawn face', run: function () { personAction('undo', [], [face.manual]); } });
+    items.push({ label: tr('person.name_else'), run: function () { nameFacesDialog([face], personRefresh); } });
+    items.push({ label: tr('person.delete_drawn'), run: function () { personAction('undo', [], [face.manual]); } });
     return items;
   }
-  items.push({ label: 'Not ' + p.name, run: function () { personAction('reject', [face.id]); } });
-  items.push({ label: 'Name someone else…', run: function () { nameFacesDialog([face], personRefresh); } });
-  items.push({ label: 'Use as ' + p.name + '’s picture', run: function () {
-    post(LIBAPI + '/people/' + p.id + '/cover', { face: face.id }).then(function () { toast('Picture changed'); peopleChanged(); }).catch(failed);
+  items.push({ label: tr('person.not', { name: p.name }), run: function () { personAction('reject', [face.id]); } });
+  items.push({ label: tr('person.name_else'), run: function () { nameFacesDialog([face], personRefresh); } });
+  items.push({ label: tr('menu.use_as', { name: p.name }), run: function () {
+    post(LIBAPI + '/people/' + p.id + '/cover', { face: face.id }).then(function () { toast(tr('menu.picture_changed')); peopleChanged(); }).catch(failed);
   } });
-  items.push({ label: 'Not a face', run: function () { personAction('not-face', [face.id]); } });
+  items.push({ label: tr('facecheck.not_face'), run: function () { personAction('not-face', [face.id]); } });
   return items;
 }
 
@@ -3781,12 +3779,13 @@ function personAction(action, ids, manual) {
       return false;
     });
     updatePersonPick();
+    var count = trn('count.faces', r.faces);
     toast({
-      confirm: plural(r.faces, 'face', 'faces') + ' confirmed as ' + p.name,
-      reject: plural(r.faces, 'face', 'faces') + ': not ' + p.name,
-      unreject: plural(r.faces, 'face', 'faces') + ' may be ' + p.name + ' again',
-      'not-face': plural(r.faces, 'face', 'faces') + ' marked “not a face”',
-      undo: 'Drawn face deleted',
+      confirm: tr('person.toast.confirm', { count: count, name: p.name }),
+      reject: tr('person.toast.reject', { count: count, name: p.name }),
+      unreject: tr('person.toast.unreject', { count: count, name: p.name }),
+      'not-face': tr('facecheck.marked', { count: count }),
+      undo: tr('person.toast.undo'),
     }[action]);
     peopleChanged();
     loadPersonCounts();
@@ -3810,7 +3809,7 @@ function personPickBar(tab) {
     };
     bar.appendChild(b);
   };
-  var all = el('button', 'btn quiet', 'All');
+  var all = el('button', 'btn quiet', tr('person.all'));
   all.onclick = function () {
     pp.faces.forEach(function (face) {
       var k = faceKey(face);
@@ -3823,16 +3822,16 @@ function personPickBar(tab) {
   };
   bar.appendChild(all);
   if (tab === 'suggested' || tab === 'maybe') {
-    button('Confirm', '', function (faces, ids) { personAction('confirm', ids); });
-    button('Not ' + p.name, 'quiet', function (faces, ids) { personAction('reject', ids); });
+    button(tr('person.confirm'), '', function (faces, ids) { personAction('confirm', ids); });
+    button(tr('person.not', { name: p.name }), 'quiet', function (faces, ids) { personAction('reject', ids); });
   } else if (tab === 'rejected') {
-    button('Undo', '', function (faces, ids) { personAction('unreject', ids); });
+    button(tr('person.undo'), '', function (faces, ids) { personAction('unreject', ids); });
   } else {
-    button('Not ' + p.name, 'quiet', function (faces, ids) { personAction('reject', ids); });
-    button('Name…', '', function (faces) { nameFacesDialog(faces, personRefresh); });
-    button('Not a face', 'quiet', function (faces, ids) { personAction('not-face', ids); });
+    button(tr('person.not', { name: p.name }), 'quiet', function (faces, ids) { personAction('reject', ids); });
+    button(tr('person.name_btn'), '', function (faces) { nameFacesDialog(faces, personRefresh); });
+    button(tr('facecheck.not_face'), 'quiet', function (faces, ids) { personAction('not-face', ids); });
   }
-  var done = el('button', 'btn quiet', 'Done');
+  var done = el('button', 'btn quiet', tr('app.done'));
   done.onclick = function () { pp.picking = false; clearPersonPicks(); updatePersonPick(); };
   bar.appendChild(done);
   return bar;
@@ -3850,7 +3849,7 @@ function updatePersonPick() {
   var n = Object.keys(pp.picked).length;
   bar.hidden = !pp.picking;
   $('pp-pick').classList.toggle('active', pp.picking);
-  $('pp-count').textContent = n ? plural(n, 'face', 'faces') : 'Tap faces to select';
+  $('pp-count').textContent = n ? trn('count.faces', n) : tr('facecheck.tap');
   Array.prototype.forEach.call(bar.querySelectorAll('.pp-act'), function (b) { b.disabled = !n; });
 }
 
@@ -3858,7 +3857,7 @@ function updatePersonPick() {
 // a new person.
 function nameFacesDialog(faces, done) {
   var body = el('div');
-  body.appendChild(el('p', '', 'Who is on ' + (faces.length === 1 ? 'this face' : 'these ' + faces.length + ' faces') + '?'));
+  body.appendChild(el('p', '', faces.length === 1 ? tr('person.who_one') : tr('person.who_many', { n: faces.length })));
   var save = function (who) {
     var ids = faces.map(function (x) { return x.id; }).filter(function (x) { return x != null; });
     var drawn = faces.filter(function (x) { return x.id == null && x.manual != null; });
@@ -3872,15 +3871,15 @@ function nameFacesDialog(faces, done) {
       })).then(function () { return r; });
     }).then(function (r) {
       closeModal();
-      toast(plural(faces.length, 'face', 'faces') + ' named ' + (r.person ? r.person.name : who.name || state.personNames[who.person_id] || ''));
+      toast(tr('person.named', { count: trn('count.faces', faces.length), name: r.person ? r.person.name : who.name || state.personNames[who.person_id] || '' }));
       peopleChanged();
       if (done) done();
     }).catch(failed);
   };
-  var field = personField(function (who) { save(who); }, { allowNew: true, placeholder: 'Name' });
+  var field = personField(function (who) { save(who); }, { allowNew: true, placeholder: tr('people.name_placeholder') });
   body.appendChild(field);
-  openModal('Name', body, [{ label: 'Cancel', cls: 'quiet' }, {
-    label: 'Name', onclick: function () {
+  openModal(tr('person.name'), body, [{ label: tr('app.cancel'), cls: 'quiet' }, {
+    label: tr('person.name'), onclick: function () {
       var who = field.value();
       if (!who) return false;
       save(who);
@@ -3893,22 +3892,22 @@ function nameFacesDialog(faces, done) {
 // ---- unnamed clusters
 
 var un = { shown: 0, total: 0, unnamed: 0, kind: 'all' };
-var UN_KINDS = [['all', 'People and pets'], ['faces', 'People'], ['pets', 'Pets (cats and dogs)']];
+var UN_KINDS = [['all', 'unnamed.kind.all'], ['faces', 'unnamed.kind.faces'], ['pets', 'unnamed.kind.pets']];
 var PAGE_CLUSTERS = 30;
 
 function loadUnnamed() {
   var page = $('page');
   page.textContent = '';
-  page.appendChild(el('h2', '', 'Unnamed'));
-  var sub = el('p', 'sub', 'Looking…');
+  page.appendChild(el('h2', '', tr('people.unnamed')));
+  var sub = el('p', 'sub', tr('dups.looking'));
   sub.id = 'un-sub';
   page.appendChild(sub);
   // Pets are named like people, but listed apart when asked.
   var kinds = el('select');
   kinds.id = 'un-kind';
-  kinds.setAttribute('aria-label', 'Which faces');
+  kinds.setAttribute('aria-label', tr('unnamed.which'));
   UN_KINDS.forEach(function (o) {
-    var opt = el('option', '', o[1]);
+    var opt = el('option', '', tr(o[1]));
     opt.value = o[0];
     opt.selected = o[0] === un.kind;
     kinds.appendChild(opt);
@@ -3920,7 +3919,7 @@ function loadUnnamed() {
   var box = el('div', 'clusters');
   box.id = 'un-box';
   page.appendChild(box);
-  var more = el('button', 'btn quiet', 'Show more');
+  var more = el('button', 'btn quiet', tr('app.show_more'));
   more.hidden = true;
   more.onclick = function () { moreClusters(box, more); };
   page.appendChild(more);
@@ -3933,9 +3932,8 @@ function unnamedSummary() {
   if (!sub) return;
   var pets = un.kind === 'pets';
   sub.textContent = un.total
-    ? plural(un.unnamed, pets ? 'pet' : 'face', pets ? 'pets' : 'faces') + ' without a name, in ' + plural(un.total, 'cluster', 'clusters') + ' of similar ' + (pets ? 'pets' : 'faces') + ', largest first. Name a card, or say they are strangers (Ignore) or no ' + (pets ? 'pets' : 'faces') + ' at all. “Select” names only some faces of a card.'
-    : pets ? 'Every cat and dog large enough has a name (or is ignored). New photos bring new ones after `shoebox recognize --pets`.'
-      : 'Every face large enough has a name (or is ignored). New photos bring new ones after `shoebox recognize`.';
+    ? tr(pets ? 'unnamed.summary_pets' : 'unnamed.summary', { faces: trn(pets ? 'count.pets' : 'count.faces', un.unnamed), clusters: trn('count.clusters', un.total) })
+    : tr(pets ? 'unnamed.done_pets' : 'unnamed.done');
 }
 
 function moreClusters(box, more) {
@@ -3961,8 +3959,8 @@ function clusterCard(c) {
   head.appendChild(count);
   // Open a card (all faces, or Select) and it takes the whole width; this
   // button stays at the top of the screen while the faces scroll by.
-  var close = el('button', 'btn small cclose', 'Close ✕');
-  close.title = 'Back to the short card';
+  var close = el('button', 'btn small cclose', tr('unnamed.close'));
+  close.title = tr('unnamed.close_hint');
   close.hidden = true;
   head.appendChild(close);
   card.appendChild(head);
@@ -3975,7 +3973,7 @@ function clusterCard(c) {
     faces.forEach(function (face) {
       var f = el('a', 'cface' + (card.picked[face.id] ? ' sel' : '') + (face.small ? ' small' : ''));
       f.href = '#';
-      f.title = card.picking ? 'Select' : 'Open the photo';
+      f.title = tr(card.picking ? 'facecheck.select' : 'facecheck.open_photo');
       f.appendChild(faceImg(face, 'big'));
       f.onclick = function (ev) {
         ev.preventDefault();
@@ -3997,8 +3995,8 @@ function clusterCard(c) {
       grid.appendChild(f);
     });
     if (c.size > faces.length) {
-      var all = el('button', 'cmore', '+' + (c.size - faces.length).toLocaleString());
-      all.title = 'Show all ' + c.size + ' faces';
+      var all = el('button', 'cmore', '+' + I18n.number(c.size - faces.length));
+      all.title = tr('unnamed.show_all', { n: c.size });
       all.onclick = function () {
         api(LIBAPI + '/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
           faces = list;
@@ -4013,9 +4011,9 @@ function clusterCard(c) {
   var suggestion = el('div', 'csugg');
   card.appendChild(suggestion);
   var row = el('div', 'crow');
-  var field = personField(function (who) { act('name', who); }, { allowNew: true, placeholder: 'Who is it?' });
+  var field = personField(function (who) { act('name', who); }, { allowNew: true, placeholder: tr('unnamed.who') });
   row.appendChild(field);
-  var nameBtn = el('button', 'btn', 'Name');
+  var nameBtn = el('button', 'btn', tr('person.name'));
   nameBtn.onclick = function () {
     var who = field.value();
     if (!who) { field.input.focus(); return; }
@@ -4024,14 +4022,14 @@ function clusterCard(c) {
   row.appendChild(nameBtn);
   card.appendChild(row);
   var tools = el('div', 'crow tools');
-  var ignore = el('button', 'btn quiet', 'Ignore');
-  ignore.title = 'Strangers: nobody needs to name them';
+  var ignore = el('button', 'btn quiet', tr('unnamed.ignore'));
+  ignore.title = tr('unnamed.ignore_hint');
   ignore.onclick = function () { act('ignore', {}); };
-  var notFace = el('button', 'btn quiet', 'Not a face');
-  notFace.title = 'False finds: no face at all';
+  var notFace = el('button', 'btn quiet', tr('facecheck.not_face'));
+  notFace.title = tr('unnamed.notface_hint');
   notFace.onclick = function () { act('not-face', {}); };
-  var pick = el('button', 'btn quiet', 'Select');
-  pick.title = 'Name, ignore or mark only some faces of this card';
+  var pick = el('button', 'btn quiet', tr('facecheck.select'));
+  pick.title = tr('unnamed.select_hint');
   // Select needs all the faces to choose from.
   var loadAll = function () {
     if (faces.length >= c.size) return Promise.resolve();
@@ -4066,30 +4064,30 @@ function clusterCard(c) {
   var update = function () {
     var n = picked().length;
     var pets = c.faces.length > 0 && c.faces.every(function (f) { return f.species; });
-    count.textContent = (pets ? plural(c.size, 'pet', 'pets') : plural(c.size, 'face', 'faces')) + (card.picking ? ' · ' + (n ? n + ' selected' : 'tap faces to select') : '');
+    count.textContent = trn(pets ? 'count.pets' : 'count.faces', c.size) + (card.picking ? ' · ' + (n ? tr('unnamed.selected', { n: n }) : tr('unnamed.tap')) : '');
     pick.classList.toggle('active', card.picking);
     card.classList.toggle('picking', card.picking);
     card.classList.toggle('open', expanded || card.picking);
     close.hidden = !(expanded || card.picking);
     var some = card.picking && n;
-    nameBtn.textContent = some ? 'Name ' + n : 'Name';
-    ignore.textContent = some ? 'Ignore ' + n : 'Ignore';
-    notFace.textContent = some ? n + ' not a face' : 'Not a face';
+    nameBtn.textContent = some ? tr('unnamed.name_n', { n: n }) : tr('person.name');
+    ignore.textContent = some ? tr('unnamed.ignore_n', { n: n }) : tr('unnamed.ignore');
+    notFace.textContent = some ? tr('unnamed.notface_n', { n: n }) : tr('facecheck.not_face');
     nameBtn.disabled = ignore.disabled = notFace.disabled = card.picking && !n;
     suggestion.textContent = '';
     if (c.suggestion && !card.picking) {
       var s = c.suggestion;
-      suggestion.appendChild(el('span', '', 'Looks like '));
+      suggestion.appendChild(el('span', '', tr('unnamed.looks_like') + ' '));
       suggestion.appendChild(el('b', '', s.person.name));
-      suggestion.appendChild(el('span', '', ' (' + s.faces + ' of ' + c.size + ') '));
+      suggestion.appendChild(el('span', '', ' ' + tr('unnamed.of', { faces: s.faces, size: c.size }) + ' '));
       var yes = el('button', 'btn small', '✓ ' + s.person.name);
-      yes.title = 'Name all ' + c.size + ' faces of this card ' + s.person.name;
+      yes.title = tr('unnamed.name_all', { size: c.size, name: s.person.name });
       yes.onclick = function () { act('name', { person_id: s.person.id }); };
       suggestion.appendChild(yes);
       if (s.faces < c.size) {
         // Only the faces that really look like them; the rest stays.
-        var only = el('button', 'btn small', '✓ Only the ' + s.faces.toLocaleString());
-        only.title = 'Name only the ' + s.faces + ' faces recognised as ' + s.person.name + '; the other ' + (c.size - s.faces) + ' stay unnamed';
+        var only = el('button', 'btn small', tr('unnamed.only', { n: s.faces }));
+        only.title = tr('unnamed.only_hint', { n: s.faces, name: s.person.name, rest: c.size - s.faces });
         only.onclick = function () {
           loadAll().then(function () {
             var ids = faces.filter(function (x) { return x.state === 'suggested' && x.person && x.person.id === s.person.id; })
@@ -4105,7 +4103,7 @@ function clusterCard(c) {
   };
   var stale = function (e) {
     if (e.status === 409) {
-      toast('These faces were regrouped in the meantime; here are the cards as they are now.');
+      toast(tr('unnamed.regrouped'));
       loadUnnamed();
     } else failed(e);
   };
@@ -4121,8 +4119,9 @@ function clusterCard(c) {
     card.classList.add('busy');
     post(LIBAPI + '/clusters/' + c.id + '/' + action, body).then(function (r) {
       card.classList.remove('busy');
-      toast(action === 'name' ? plural(r.faces, 'face', 'faces') + ' named ' + r.person.name
-        : action === 'ignore' ? plural(r.faces, 'face', 'faces') + ' ignored' : plural(r.faces, 'face', 'faces') + ' marked “not a face”');
+      var n = trn('count.faces', r.faces);
+      toast(action === 'name' ? tr('person.named', { count: n, name: r.person.name })
+        : action === 'ignore' ? tr('unnamed.ignored', { count: n }) : tr('facecheck.marked', { count: n }));
       un.unnamed -= r.faces;
       if (!r.cluster) {
         card.remove();
@@ -4156,29 +4155,29 @@ function clusterCard(c) {
 function infoFaces(row, info) {
   var box = el('div', 'pfaces');
   var faces = info.faces || [];
-  if (!info.faces) box.appendChild(el('div', 'note', 'Not looked at for faces yet (shoebox recognize).'));
-  else if (!faces.length) box.appendChild(el('div', 'note', 'No faces found.'));
+  if (!info.faces) box.appendChild(el('div', 'note', tr('info.faces_unlooked')));
+  else if (!faces.length) box.appendChild(el('div', 'note', tr('info.no_faces')));
   faces.forEach(function (f, k) { box.appendChild(infoFace(info, f, k)); });
   (info.faces_lost || []).forEach(function (f) {
     var line = el('div', 'pface lost');
     line.appendChild(el('span', 'avatar small'));
-    line.appendChild(el('span', 'who', (f.person ? f.person.name : '?') + ' (face no longer found)'));
+    line.appendChild(el('span', 'who', tr('info.face_lost', { name: f.person ? f.person.name : '?' })));
     box.appendChild(line);
   });
   var tools = el('div', 'ptools');
   if (faces.length) {
-    var show = el('button', '', lb.showFaces ? 'Hide boxes' : 'Show boxes');
+    var show = el('button', '', tr(lb.showFaces ? 'info.hide_boxes' : 'info.show_boxes'));
     show.onclick = function () { lb.showFaces = !lb.showFaces; renderPanel(); };
     tools.appendChild(show);
   }
   if (lb.details && state.data && state.data.kinds[state.open] !== 'v') {
-    var add = el('button', '', '+ Add face or pet');
-    add.title = 'Draw a box around a face or a pet that was missed';
+    var add = el('button', '', tr('info.add_face'));
+    add.title = tr('info.add_face_hint');
     add.onclick = startDrawing;
     tools.appendChild(add);
   }
   box.appendChild(tools);
-  row('People', box);
+  row(tr('info.people'), box);
 }
 
 function infoFace(info, f, k) {
@@ -4186,7 +4185,7 @@ function infoFace(info, f, k) {
   // A named person shows their picture (no crop of the face is kept); the
   // box on the photo shows which face it is.
   var pic = f.state === 'confirmed' && f.person ? avatar(people.byId[f.person.id] || { name: f.person.name }, 'small') : faceImg(f, 'small');
-  pic.title = 'Show where it is';
+  pic.title = tr('info.show_where');
   pic.onclick = function () { lb.hover = lb.hover === k ? null : k; drawFaces(); };
   line.appendChild(pic);
   line.addEventListener('mouseenter', function () { lb.hover = k; drawFaces(); });
@@ -4198,62 +4197,62 @@ function infoFace(info, f, k) {
   var ids = f.id != null ? [f.id] : [];
   if (f.state === 'confirmed') {
     var name = el('button', 'pname', f.person.name);
-    name.title = 'Photos of ' + f.person.name;
+    name.title = tr('info.photos_of', { name: f.person.name });
     name.onclick = function () { showPerson(f.person.id); };
     who.appendChild(name);
   } else if (f.state === 'suggested' || f.state === 'maybe') {
-    who.appendChild(el('span', 'guess', (f.state === 'maybe' ? 'Maybe ' : '') + f.person.name + '?'));
+    who.appendChild(el('span', 'guess', tr(f.state === 'maybe' ? 'info.guess_maybe' : 'info.guess', { name: f.person.name })));
     var yes = el('button', 'yes', '✓');
-    yes.title = 'It is ' + f.person.name;
+    yes.title = tr('person.it_is', { name: f.person.name });
     yes.setAttribute('aria-label', yes.title);
     yes.onclick = function () { send('confirm', { faces: ids }); };
     var no = el('button', 'no', '✗');
-    no.title = 'Not ' + f.person.name;
+    no.title = tr('person.not', { name: f.person.name });
     no.setAttribute('aria-label', no.title);
     no.onclick = function () { send('reject', { faces: ids, person_id: f.person.id }); };
     who.appendChild(yes);
     who.appendChild(no);
   } else if (f.state === 'ignored') {
-    who.appendChild(el('span', 'note', 'Stranger'));
+    who.appendChild(el('span', 'note', tr('info.stranger')));
   }
   if (f.state !== 'confirmed') {
-    var add = el('button', 'add', f.state === 'suggested' || f.state === 'maybe' ? 'Other…' : '+ Name');
+    var add = el('button', 'add', tr(f.state === 'suggested' || f.state === 'maybe' ? 'info.other_person' : 'info.plus_name'));
     add.onclick = function () {
       var field = personField(function (person) {
         send('assign', Object.assign({ faces: ids }, person));
-      }, { allowNew: true, placeholder: 'Who is it?', onEscape: function () { field.replaceWith(add); } });
+      }, { allowNew: true, placeholder: tr('unnamed.who'), onEscape: function () { field.replaceWith(add); } });
       add.replaceWith(field);
       field.input.focus();
     };
     who.appendChild(add);
   }
-  if (f.species) who.appendChild(el('span', 'note', ' ' + petIcon(f.species) + ' ' + f.species));
-  if (f.small) who.appendChild(el('span', 'note', ' small'));
+  if (f.species) who.appendChild(el('span', 'note', ' ' + petIcon(f.species) + ' ' + speciesName(f.species)));
+  if (f.small) who.appendChild(el('span', 'note', ' ' + tr('facecheck.tag_small')));
   line.appendChild(menuButton(function () {
     var items = [];
     if (f.manual != null) {
-      items.push({ label: 'Name someone else…', run: function () { nameFacesDialog([Object.assign({ file: info.id }, f)], changed); } });
-      items.push({ label: 'Delete this drawn face', run: function () { send('undo', { manual: [f.manual] }); } });
+      items.push({ label: tr('person.name_else'), run: function () { nameFacesDialog([Object.assign({ file: info.id }, f)], changed); } });
+      items.push({ label: tr('person.delete_drawn'), run: function () { send('undo', { manual: [f.manual] }); } });
       return items;
     }
     if (f.state === 'confirmed') {
-      items.push({ label: 'Not ' + f.person.name, run: function () { send('reject', { faces: ids, person_id: f.person.id }); } });
-      items.push({ label: 'Name someone else…', run: function () { nameFacesDialog([f], changed); } });
-      items.push({ label: 'Use as ' + f.person.name + '’s picture', run: function () {
-        post(LIBAPI + '/people/' + f.person.id + '/cover', { face: f.id }).then(function () { toast('Picture changed'); peopleChanged(); }).catch(failed);
+      items.push({ label: tr('person.not', { name: f.person.name }), run: function () { send('reject', { faces: ids, person_id: f.person.id }); } });
+      items.push({ label: tr('person.name_else'), run: function () { nameFacesDialog([f], changed); } });
+      items.push({ label: tr('menu.use_as', { name: f.person.name }), run: function () {
+        post(LIBAPI + '/people/' + f.person.id + '/cover', { face: f.id }).then(function () { toast(tr('menu.picture_changed')); peopleChanged(); }).catch(failed);
       } });
     }
-    if (f.state !== 'ignored') items.push({ label: 'Ignore (a stranger)', run: function () { send('ignore', { faces: ids }); } });
-    if (f.state) items.push({ label: 'Forget what was said', run: function () { send('undo', { faces: ids }); } });
+    if (f.state !== 'ignored') items.push({ label: tr('info.ignore_stranger'), run: function () { send('ignore', { faces: ids }); } });
+    if (f.state) items.push({ label: tr('info.forget'), run: function () { send('undo', { faces: ids }); } });
     if (f.rejected && f.rejected.length) {
       f.rejected.forEach(function (pid) {
-        var n = state.personNames[pid] || 'someone';
-        items.push({ label: 'May be ' + n + ' after all', run: function () { send('unreject', { faces: ids, person_id: pid }); } });
+        var n = state.personNames[pid] || tr('info.someone');
+        items.push({ label: tr('info.maybe_after_all', { name: n }), run: function () { send('unreject', { faces: ids, person_id: pid }); } });
       });
     }
-    items.push({ label: f.species ? 'Not a ' + f.species : 'Not a face', run: function () { send('not-face', { faces: ids }); } });
+    items.push({ label: tr(f.species ? 'pet.not_a.' + (PET_ICON[f.species] ? f.species : 'pet') : 'facecheck.not_face'), run: function () { send('not-face', { faces: ids }); } });
     return items;
-  }, 'More for this face'));
+  }, tr('person.more_face')));
   return line;
 }
 
@@ -4293,8 +4292,8 @@ function startDrawing() {
   layer.appendChild(rect);
   stage.appendChild(layer);
   var hint = el('div', 'draw-hint');
-  hint.appendChild(el('span', '', 'Drag a box around the face or pet'));
-  var cancel = el('button', 'btn quiet small', 'Cancel');
+  hint.appendChild(el('span', '', tr('draw.hint')));
+  var cancel = el('button', 'btn quiet small', tr('app.cancel'));
   cancel.onclick = function () { stopDrawing(); };
   hint.appendChild(cancel);
   $('lightbox').appendChild(hint);
@@ -4346,7 +4345,7 @@ function stopDrawing() {
 
 function nameDrawnFace(info, frac) {
   var body = el('div');
-  body.appendChild(el('p', '', 'Who is it?'));
+  body.appendChild(el('p', '', tr('unnamed.who')));
   // A cat or a dog the detector missed: a pet is embedded as a whole, a face by its eyes, nose and mouth.
   var petBox = el('input');
   petBox.type = 'checkbox';
@@ -4356,29 +4355,27 @@ function nameDrawnFace(info, frac) {
     post(LIBAPI + '/faces/manual', Object.assign({ file: info.id, box: frac, pet: pet || undefined }, who)).then(function () {
       closeModal();
       stopDrawing();
-      toast(pet ? 'Pet added' : 'Face added');
+      toast(tr(pet ? 'draw.added_pet' : 'draw.added'));
       infoFacesChanged(info.id);
     }).catch(failed);
   };
-  var field = personField(function (who) { save(who); }, { allowNew: true, placeholder: 'Name' });
+  var field = personField(function (who) { save(who); }, { allowNew: true, placeholder: tr('people.name_placeholder') });
   body.appendChild(field);
   var petRow = el('label', 'check');
   petRow.appendChild(petBox);
-  petRow.appendChild(document.createTextNode(' This is a pet (a cat or a dog)'));
+  petRow.appendChild(document.createTextNode(' ' + tr('draw.is_pet')));
   body.appendChild(petRow);
   var hint = el('p', 'hint');
   var hintText = function () {
-    hint.textContent = petBox.checked
-      ? 'The box is kept in shoebox’s index, never written into the photo. The whole pet in the box is learned for suggestions.'
-      : 'The box is kept in shoebox’s index, never written into the photo. Its face is learned for suggestions when the recognizer finds its eyes, nose and mouth in it.';
+    hint.textContent = tr(petBox.checked ? 'draw.note_pet' : 'draw.note');
   };
   petBox.onchange = hintText;
   hintText();
   body.appendChild(hint);
-  openModal('Add face or pet', body, [
-    { label: 'Draw again', cls: 'quiet', onclick: function () { var r = lb.drawing && lb.drawing.layer.querySelector('.draw-box'); if (r) r.hidden = true; } },
-    { label: 'Cancel', cls: 'quiet', onclick: function () { stopDrawing(); } },
-    { label: 'Save', onclick: function () { var who = field.value(); if (!who) return false; save(who); return false; } },
+  openModal(tr('draw.title'), body, [
+    { label: tr('draw.again'), cls: 'quiet', onclick: function () { var r = lb.drawing && lb.drawing.layer.querySelector('.draw-box'); if (r) r.hidden = true; } },
+    { label: tr('app.cancel'), cls: 'quiet', onclick: function () { stopDrawing(); } },
+    { label: tr('draw.save'), onclick: function () { var who = field.value(); if (!who) return false; save(who); return false; } },
   ]);
   field.input.focus();
 }
@@ -4418,8 +4415,8 @@ function renderDriveList() {
     var all = el('li', 'all-entry' + (isAll() ? ' current' : ''));
     var ab = el('button');
     ab.appendChild(el('span', 'dot'));
-    ab.appendChild(el('span', 'name', 'All drives'));
-    ab.title = 'One timeline over every drive that is not a backup';
+    ab.appendChild(el('span', 'name', tr('drives.all')));
+    ab.title = tr('drives.all_hint');
     ab.onclick = function () { if (!isAll()) switchLibrary('all', ''); };
     all.appendChild(ab);
     ul.appendChild(all);
@@ -4429,9 +4426,9 @@ function renderDriveList() {
     var b = el('button');
     b.appendChild(el('span', 'dot'));
     b.appendChild(el('span', 'name', l.name));
-    if (!l.online) b.appendChild(el('span', 'tag', 'offline'));
-    else if (l.role === 'backup') b.appendChild(el('span', 'tag', 'backup'));
-    b.title = l.online ? l.name : l.name + ' is not connected' + (l.reason ? ' (' + l.reason + ')' : '');
+    if (!l.online) b.appendChild(el('span', 'tag', tr('drives.offline')));
+    else if (l.role === 'backup') b.appendChild(el('span', 'tag', tr('drives.backup')));
+    b.title = l.online ? l.name : l.reason ? tr('drives.not_connected_reason', { name: l.name, reason: l.reason }) : tr('drives.not_connected', { name: l.name });
     b.onclick = function () { if (isAll() || l.id !== drives.current.id) switchLibrary(l.id); };
     li.appendChild(b);
     ul.appendChild(li);
@@ -4445,10 +4442,9 @@ function showOffline() {
   $('sizer').hidden = true;
   $('empty').hidden = true;
   page.textContent = '';
-  page.appendChild(el('h2', '', drives.current.name + ' is offline'));
-  page.appendChild(el('p', 'sub', 'This drive is not connected. Plug it in and it opens by itself; nothing was changed. '
-    + 'The other drives in the list on the left keep working.'));
-  var overview = el('button', 'btn quiet', 'Show all drives');
+  page.appendChild(el('h2', '', tr('drives.offline_title', { name: drives.current.name })));
+  page.appendChild(el('p', 'sub', tr('drives.offline_text')));
+  var overview = el('button', 'btn quiet', tr('drives.show_all'));
   overview.onclick = function () { location.hash = '#view=drives'; location.reload(); };
   page.appendChild(overview);
   $('title').textContent = drives.current.name;
@@ -4464,22 +4460,22 @@ function showOffline() {
 function loadDrivesPage() {
   var page = $('page');
   page.textContent = '';
-  page.appendChild(el('h2', '', 'All drives'));
-  page.appendChild(el('p', 'sub', 'Each drive keeps its own library. Here they are compared, without copying anything.'));
+  page.appendChild(el('h2', '', tr('drives.all')));
+  page.appendChild(el('p', 'sub', tr('drives.page_sub')));
   var drivesBox = el('div'), peopleBox = el('div');
   page.appendChild(drivesBox);
-  page.appendChild(el('h2', '', 'People across drives'));
+  page.appendChild(el('h2', '', tr('drives.people_across')));
   page.appendChild(peopleBox);
   var role = function (d, value, of) {
-    post('/api/all/role', { library: d.library, role: value, of: of || null }).then(function () { toast(d.name + ': ' + value); loadDrivesPage(); refreshDrives(); }).catch(failed);
+    post('/api/all/role', { library: d.library, role: value, of: of || null }).then(function () { toast(tr('drives.role_toast', { name: d.name, role: tr('drives.role.' + value) })); loadDrivesPage(); refreshDrives(); }).catch(failed);
   };
   api('/api/all/drives').then(function (list) {
     var shown = list.filter(function (d) { return d.shown_in_all; }).length;
     var tools = el('div', 'toolbar');
-    var allBtn = el('button', 'btn', 'Photos of all drives');
-    allBtn.title = 'One timeline over ' + plural(shown, 'drive', 'drives');
+    var allBtn = el('button', 'btn', tr('drives.photos_all'));
+    allBtn.title = tr('drives.timeline_hint', { count: trn('count.drives', shown) });
     allBtn.onclick = function () { switchLibrary('all', ''); };
-    var dups = el('button', 'btn quiet', 'Duplicates across drives');
+    var dups = el('button', 'btn quiet', tr('drives.dups_across'));
     dups.onclick = function () { dupTab = 'across'; showView('duplicates'); };
     tools.appendChild(allBtn);
     tools.appendChild(dups);
@@ -4487,13 +4483,13 @@ function loadDrivesPage() {
     list.forEach(function (d) {
       var card = el('div', 'drive-card' + (d.online ? '' : ' offline'));
       card.appendChild(el('span', 'title', d.name));
-      card.appendChild(el('span', 'pill' + (d.online ? ' on' : ''), d.online ? 'online' : 'offline'));
-      if (d.online && !d.shown_in_all) card.appendChild(el('span', 'pill', 'not in the common views'));
+      card.appendChild(el('span', 'pill' + (d.online ? ' on' : ''), tr(d.online ? 'drives.online' : 'drives.offline')));
+      if (d.online && !d.shown_in_all) card.appendChild(el('span', 'pill', tr('drives.not_in_common')));
       if (d.online) {
         var wrap = el('span', 'role');
-        wrap.appendChild(el('span', 'sub', 'This drive is'));
+        wrap.appendChild(el('span', 'sub', tr('drives.this_is')));
         var sel = el('select');
-        [['unknown', 'not decided'], ['separate', 'separate: has its own photos'], ['backup', 'a backup of another drive']].forEach(function (o) {
+        [['unknown', tr('drives.role.unknown')], ['separate', tr('drives.role.separate')], ['backup', tr('drives.role.backup')]].forEach(function (o) {
           var opt = el('option', '', o[1]); opt.value = o[0]; if (d.role === o[0]) opt.selected = true; sel.appendChild(opt);
         });
         sel.onchange = function () { role(d, sel.value); };
@@ -4504,16 +4500,15 @@ function loadDrivesPage() {
       if (d.online && d.role === 'backup') {
         var slot = el('div', 'backup-status');
         slot.dataset.library = d.library;
-        slot.appendChild(el('p', 'sub', 'Comparing with the original drive…'));
+        slot.appendChild(el('p', 'sub', tr('drives.comparing')));
         drivesBox.appendChild(slot);
       }
       if (d.online && d.role === 'unknown' && d.suggested_backup_of) {
         var b = el('div', 'banner warn');
-        b.appendChild(el('div', '', d.name + ' looks like a backup of ' + d.suggested_backup_of + ': almost everything on it is on the other drive too. '
-          + 'Until you decide, it is left out of the common timeline and the duplicates across drives.'));
+        b.appendChild(el('div', '', tr('drives.looks_backup', { name: d.name, other: d.suggested_backup_of })));
         var row = el('div', 'row');
-        var yes = el('button', 'btn', 'Yes, it is a backup'); yes.onclick = function () { role(d, 'backup'); };
-        var no = el('button', 'btn quiet', 'No, it has its own photos'); no.onclick = function () { role(d, 'separate'); };
+        var yes = el('button', 'btn', tr('drives.yes_backup')); yes.onclick = function () { role(d, 'backup'); };
+        var no = el('button', 'btn quiet', tr('drives.no_backup')); no.onclick = function () { role(d, 'separate'); };
         row.appendChild(yes); row.appendChild(no);
         b.appendChild(row);
         drivesBox.appendChild(b);
@@ -4524,15 +4519,15 @@ function loadDrivesPage() {
     Array.prototype.forEach.call(drivesBox.querySelectorAll('.backup-status'), function (slot) { renderBackup(slot, list.filter(function (b) { return b.library === slot.dataset.library; })[0]); });
   }).catch(failed);
   api('/api/all/people').then(function (r) {
-    if (r.offline.length) peopleBox.appendChild(el('p', 'sub', 'Not included, offline: ' + r.offline.join(', ')));
-    if (!r.people.length) peopleBox.appendChild(el('p', 'sub', 'Nobody is named yet.'));
+    if (r.offline.length) peopleBox.appendChild(el('p', 'sub', tr('drives.people_offline', { names: r.offline.join(', ') })));
+    if (!r.people.length) peopleBox.appendChild(el('p', 'sub', tr('drives.nobody')));
     var grid = el('div', 'people-grid');
     r.people.forEach(function (p) {
       var c = el('div', 'person-merged');
       c.appendChild(el('div', 'n', p.name));
-      c.appendChild(el('div', 'sub', plural(p.photos, 'photo', 'photos') + (p.group ? ' · ' + p.group : '')));
+      c.appendChild(el('div', 'sub', trn('count.photos', p.photos) + (p.group ? ' · ' + p.group : '')));
       p.libraries.forEach(function (l) { c.appendChild(el('span', 'pill', l.name + ' · ' + l.faces)); });
-      var show = el('button', 'btn quiet', 'Photos on all drives');
+      var show = el('button', 'btn quiet', tr('drives.photos_everywhere'));
       show.onclick = function () { switchLibrary('all', 'person=' + encodeURIComponent(p.name)); };
       c.appendChild(show);
       grid.appendChild(c);
@@ -4551,15 +4546,15 @@ function allTimelineLoaded(data) {
     $('scroller').insertBefore(note, $('filters'));
   }
   var out = data.left_out.map(function (x) { return x.name + ' (' + x.reason.split(';')[0] + ')'; });
-  note.textContent = 'Photos of ' + data.libs.map(function (l) { return l.name; }).join(', ') + (out.length ? ' · not shown: ' + out.join(', ') : '');
-  $('status').textContent = plural(data.count, 'photo', 'photos') + ' on ' + plural(data.libs.length, 'drive', 'drives') + ' · for looking; open a photo\'s drive to change things';
+  note.textContent = tr('drives.note', { libs: data.libs.map(function (l) { return l.name; }).join(', ') }) + (out.length ? tr('drives.note_out', { out: out.join(', ') }) : '');
+  $('status').textContent = tr('drives.status', { photos: trn('count.photos', data.count), drives: trn('count.drives', data.libs.length) });
 }
 
 // How long ago a Unix time was, for "last backup".
 function daysAgo(t) {
-  if (!t) return 'never';
+  if (!t) return tr('time.never');
   var d = Math.floor((Date.now() / 1000 - t) / 86400);
-  return d <= 0 ? 'today' : d === 1 ? '1 day ago' : d + ' days ago';
+  return d <= 0 ? tr('time.today') : trn('time.days_ago', d);
 }
 
 // A backup drive against the drive it copies, from the two indexes (nothing is
@@ -4569,25 +4564,24 @@ function daysAgo(t) {
 function renderBackup(slot, b) {
   slot.textContent = '';
   if (!b || !b.primary) {
-    slot.appendChild(el('p', 'sub', (b && b.note) || 'No comparison possible.'));
+    slot.appendChild(el('p', 'sub', (b && b.note) || tr('drives.backup_none')));
     return;
   }
   var box = el('div', 'banner' + (b.up_to_date ? '' : ' warn'));
-  box.appendChild(el('div', '', (b.up_to_date ? '✓ ' : '! ') + b.backup + ' is a backup of ' + b.primary + ': '
-    + (b.up_to_date ? 'it holds all ' + plural(b.compared, 'file', 'files') + '.'
-      : plural(b.missing, 'file', 'files') + ' not on it yet' + (b.different ? ', ' + b.different + ' different' : '') + '.')));
-  box.appendChild(el('div', 'sub', 'Last backup: ' + daysAgo(b.backup_last_new_files) + ' (new files last arrived); the backup drive was scanned ' + daysAgo(b.backup_last_scan)
-    + '. Scan it after every backup to bring this up to date.'
-    + (b.unhashed ? ' ' + plural(b.unhashed, 'file', 'files') + ' of ' + b.primary + ' have no full hash yet and are not compared.' : '')
-    + (b.extra ? ' ' + plural(b.extra, 'file', 'files') + ' only on the backup (gone or changed on ' + b.primary + ').' : '')));
-  var lists = [['Not on the backup yet', b.missing, b.missing_files], ['Different on the backup', b.different, b.different_files], ['Only on the backup', b.extra, b.extra_files]];
+  box.appendChild(el('div', '', (b.up_to_date ? '✓ ' : '! ') + (b.up_to_date
+    ? tr('drives.backup_all', { backup: b.backup, primary: b.primary, files: trn('count.files', b.compared) })
+    : tr('drives.backup_some', { backup: b.backup, primary: b.primary, files: trn('count.files', b.missing), different: b.different ? tr('drives.backup_diff', { n: b.different }) : '' }))));
+  box.appendChild(el('div', 'sub', tr('drives.backup_last', { last: daysAgo(b.backup_last_new_files), scan: daysAgo(b.backup_last_scan) })
+    + (b.unhashed ? tr('drives.backup_unhashed', { files: trn('count.files', b.unhashed), primary: b.primary }) : '')
+    + (b.extra ? tr('drives.backup_extra', { files: trn('count.files', b.extra), primary: b.primary }) : '')));
+  var lists = [[tr('drives.list_missing'), b.missing, b.missing_files], [tr('drives.list_different'), b.different, b.different_files], [tr('drives.list_extra'), b.extra, b.extra_files]];
   lists.forEach(function (l) {
     if (!l[1]) return;
     var det = el('details');
-    det.appendChild(el('summary', '', l[0] + ' (' + l[1].toLocaleString() + ')'));
+    det.appendChild(el('summary', '', l[0] + ' (' + I18n.number(l[1]) + ')'));
     var ul = el('ul', 'pathlist');
     l[2].forEach(function (f) { ul.appendChild(el('li', '', f.path)); });
-    if (l[1] > l[2].length) ul.appendChild(el('li', 'sub', '… ' + (l[1] - l[2].length).toLocaleString() + ' more'));
+    if (l[1] > l[2].length) ul.appendChild(el('li', 'sub', tr('drives.more', { n: l[1] - l[2].length })));
     det.appendChild(ul);
     box.appendChild(det);
   });
@@ -4605,14 +4599,25 @@ function refreshDrives() {
   });
 }
 
-api('/api/libraries').then(function (libs) {
+// The messages first: everything below builds its text from them.
+I18n.ready.then(function () {
+  var sel = $('lang');
+  Object.keys(I18n.langs).forEach(function (code) {
+    var o = el('option', '', I18n.langs[code]);
+    o.value = code;
+    if (code === I18n.lang) o.selected = true;
+    sel.appendChild(o);
+  });
+  sel.onchange = function () { I18n.setLang(sel.value); };
+  return api('/api/libraries');
+}).then(function (libs) {
   drives.list = libs;
   drives.current = chosenLibrary(libs);
   LIBAPI = '/api/lib/' + drives.current.id;
   return api('/api/session');
 }).then(function (s) {
   if (!s.authenticated) {
-    if (!s.pin_enabled) $('login-text').textContent = 'This shoebox only accepts connections from its own computer. Restart it with --lan to allow other devices.';
+    if (!s.pin_enabled) $('login-text').textContent = tr('login.local_only');
     showLogin();
     return;
   }
@@ -4627,8 +4632,8 @@ api('/api/libraries').then(function (libs) {
     $('search').value = state.filter.q;
     if (isAll()) {
       // The common timeline: no folders, tags or faces of its own; the drives answer by name.
-      $('title').textContent = 'All drives';
-      document.title = 'All drives · shoebox';
+      $('title').textContent = tr('drives.all');
+      document.title = tr('drives.all') + ' · shoebox';
       applyFilter();
       return;
     }
