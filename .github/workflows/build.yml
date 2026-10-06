@@ -158,7 +158,8 @@ jobs:
   # Push a tag like `v0.1.0-phase1` to publish the binaries as a GitHub
   # release. Workflow artifacts need a GitHub login, expire, and lose the
   # executable bit; release assets don't. The recognizer installer goes
-  # along, so the drive can be set up without a clone of the repo.
+  # along, so the drive can be set up without a clone of the repo, and so do
+  # the two guide PDFs (English, German).
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [macos]
@@ -186,7 +187,10 @@ jobs:
             chmod +x "$pkg/recognizer/install.sh" "$pkg/recognizer/fetch-models.sh"
             tar -C "$RUNNER_TEMP" -czf release/shoebox-$os.tar.gz shoebox-$os
           done
-          (cd release && sha256sum *.tar.gz > SHA256SUMS)
+          # The guide (landing page + handbook), one PDF per language, built
+          # from docs/guide and committed there.
+          cp docs/guide/shoebox-guide-en.pdf docs/guide/shoebox-guide-de.pdf release/
+          (cd release && sha256sum *.tar.gz *.pdf > SHA256SUMS)
 
       - name: Publish
         env:
