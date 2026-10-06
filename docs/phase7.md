@@ -307,3 +307,14 @@ On the drive (Intel MacBook and/or a modern Mac):
 - **Pictures on the wall** (a person who is not in the room): use "Ignore";
   "Not a face" is for detector mistakes. Neither trains anything: only
   confirmed faces are references.
+
+## Follow-up: single faces on the Unnamed page
+
+Clusters of one or two faces are no longer cards. `GET /api/clusters` takes
+`size=large|small|all` (small: at most `people::SMALL_CLUSTER` = 2 faces; the
+reply also has `small_faces`). The Unnamed page shows the cards of larger
+clusters, then a "Single faces" grid of thumbnails (largest first): tap to
+select, Shift-tap for a range, ↗ opens the photo. A bar at the bottom holds the
+person field with "Name", "Ignore" and "Not a face" ("Not a pet" when only pets
+are selected), using `/api/faces/assign|ignore|not-face` on the picked face ids.
+Not yet done: the "not matched yet" filter on the Face check and Pet check pages.

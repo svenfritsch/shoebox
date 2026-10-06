@@ -3980,7 +3980,136 @@ function loadUnnamed() {
   more.onclick = function () { moreClusters(box, more); };
   page.appendChild(more);
   un.shown = 0;
-  return moreClusters(box, more);
+  var singles = singlesSection();
+  page.appendChild(singles.section);
+  page.appendChild(singles.bar);
+  return Promise.all([moreClusters(box, more), singles.load()]);
+}
+
+// Clusters of one or two faces are not worth a card each: their faces are
+// listed together as thumbnails, picked one by one (tap, Shift-tap for a
+// range) and named, ignored or marked "not a face" from the bar below.
+var SINGLES_PAGE = 60;
+
+function singlesSection() {
+  var st = { faces: [], picked: {}, anchor: null, shown: 0, total: 0, count: 0, tiles: {} };
+  var section = el('section', 'singles');
+  section.hidden = true;
+  var head = el('h3');
+  var hint = el('p', 'sub', tr('unnamed.singles_hint'));
+  var grid = el('div', 'sface-grid');
+  var more = el('button', 'btn quiet', tr('app.show_more'));
+  more.hidden = true;
+  section.appendChild(head);
+  section.appendChild(hint);
+  section.appendChild(grid);
+  section.appendChild(more);
+
+  var bar = el('div', 'selbar singles-bar');
+  bar.hidden = true;
+  var count = el('span');
+  bar.appendChild(count);
+  var field = personField(function () { name(); }, { allowNew: true, placeholder: tr('unnamed.who') });
+  bar.appendChild(field);
+  var nameBtn = el('button', 'btn', tr('person.name'));
+  var ignore = el('button', 'btn quiet', tr('unnamed.ignore'));
+  ignore.title = tr('unnamed.ignore_hint');
+  var notFace = el('button', 'btn quiet', tr('facecheck.not_face'));
+  var done = el('button', 'btn quiet', tr('app.done'));
+  [nameBtn, ignore, notFace, done].forEach(function (b) { bar.appendChild(b); });
+
+  var picked = function () { return st.faces.filter(function (f) { return st.picked[f.id]; }); };
+  var update = function () {
+    var chosen = picked(), n = chosen.length;
+    var pets = n > 0 && chosen.every(function (f) { return f.species; });
+    head.textContent = tr('unnamed.singles', { count: trn('count.faces', st.count) });
+    section.hidden = !st.faces.length && st.shown >= st.total;
+    count.textContent = trn('count.faces', n);
+    notFace.textContent = tr(pets ? 'pet.not_a.pet' : 'facecheck.not_face');
+    notFace.title = tr(pets ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint');
+    bar.hidden = !n;
+    nameBtn.disabled = ignore.disabled = notFace.disabled = !n;
+    more.hidden = st.shown >= st.total;
+  };
+  var tile = function (face) {
+    var t = el('a', 'cface' + (st.picked[face.id] ? ' sel' : '') + (face.small ? ' small' : ''));
+    t.href = '#';
+    t.title = tr('facecheck.select');
+    t.appendChild(faceImg(face, 'big'));
+    var open = el('span', 'copen', '↗');
+    open.title = tr('facecheck.open_photo');
+    open.onclick = function (ev) { ev.preventDefault(); ev.stopPropagation(); openFacePhoto(face); };
+    t.appendChild(open);
+    t.onclick = function (ev) {
+      ev.preventDefault();
+      var span = ev.shiftKey && pickSpan(st.faces, function (x) { return x.id; }, st.anchor, face.id);
+      if (span) {
+        span.forEach(function (x) { st.picked[x.id] = true; if (st.tiles[x.id]) st.tiles[x.id].classList.add('sel'); });
+      } else {
+        if (st.picked[face.id]) delete st.picked[face.id]; else st.picked[face.id] = true;
+        t.classList.toggle('sel', !!st.picked[face.id]);
+        st.anchor = face.id;
+      }
+      update();
+    };
+    st.tiles[face.id] = t;
+    return t;
+  };
+  var load = function () {
+    more.disabled = true;
+    return api(LIBAPI + '/clusters' + query({ size: 'small', offset: st.shown, limit: SINGLES_PAGE, samples: 2, kind: un.kind === 'all' ? null : un.kind })).then(function (r) {
+      if (state.filter.view !== 'unnamed') return;
+      st.total = r.total;
+      st.count = r.unnamed;
+      st.shown += r.clusters.length;
+      r.clusters.forEach(function (c) {
+        c.faces.forEach(function (face) { st.faces.push(face); grid.appendChild(tile(face)); });
+      });
+      more.disabled = false;
+      update();
+    }).catch(failed);
+  };
+  more.onclick = load;
+
+  var act = function (action, who) {
+    var chosen = picked();
+    if (!chosen.length) return;
+    var ids = chosen.map(function (f) { return f.id; });
+    var pets = chosen.every(function (f) { return f.species; });
+    bar.classList.add('busy');
+    var request = action === 'assign' ? post(LIBAPI + '/faces/assign', Object.assign({ faces: ids }, who))
+      : post(LIBAPI + '/faces/' + action, { faces: ids });
+    request.then(function (r) {
+      bar.classList.remove('busy');
+      var n = trn('count.faces', ids.length);
+      toast(action === 'assign' ? tr('person.named', { count: n, name: r.person ? r.person.name : who.name || '' })
+        : action === 'ignore' ? tr('unnamed.ignored', { count: n }) : tr(pets ? 'facecheck.marked_pet' : 'facecheck.marked', { count: n }));
+      var gone = {};
+      ids.forEach(function (id) { gone[id] = true; if (st.tiles[id]) st.tiles[id].remove(); delete st.tiles[id]; });
+      st.faces = st.faces.filter(function (f) { return !gone[f.id]; });
+      st.picked = {};
+      st.anchor = null;
+      st.count -= ids.length;
+      field.input.value = '';
+      update();
+      peopleChanged();
+    }).catch(function (e) { bar.classList.remove('busy'); failed(e); loadUnnamed(); });
+  };
+  var name = function () {
+    var who = field.value();
+    if (!who) { field.input.focus(); return; }
+    act('assign', who);
+  };
+  nameBtn.onclick = name;
+  ignore.onclick = function () { act('ignore'); };
+  notFace.onclick = function () { act('not-face'); };
+  done.onclick = function () {
+    Object.keys(st.picked).forEach(function (id) { if (st.tiles[id]) st.tiles[id].classList.remove('sel'); });
+    st.picked = {};
+    st.anchor = null;
+    update();
+  };
+  return { section: section, bar: bar, load: load };
 }
 
 function unnamedSummary() {
@@ -3994,7 +4123,7 @@ function unnamedSummary() {
 
 function moreClusters(box, more) {
   more.disabled = true;
-  return api(LIBAPI + '/clusters' + query({ offset: un.shown, limit: PAGE_CLUSTERS, samples: 8, kind: un.kind === 'all' ? null : un.kind })).then(function (r) {
+  return api(LIBAPI + '/clusters' + query({ size: 'large', offset: un.shown, limit: PAGE_CLUSTERS, samples: 8, kind: un.kind === 'all' ? null : un.kind })).then(function (r) {
     if (state.filter.view !== 'unnamed') return;
     un.total = r.total;
     un.unnamed = r.unnamed;

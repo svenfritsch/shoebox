@@ -590,5 +590,7 @@
   "unnamed.notface_n_pet": "{n} not a pet",
   "facecheck.marked_pet": "{count} marked “not a pet”",
   "facecheck.filter.pet_face": "Taken for a pet’s face",
-  "facecheck.pet_faces": "{count} taken for a pet’s face (not listed)"
+  "facecheck.pet_faces": "{count} taken for a pet’s face (not listed)",
+  "unnamed.singles": "Single faces ({count})",
+  "unnamed.singles_hint": "Alone or in pairs, nothing similar found. Tap the ones that belong together (Shift-tap for a range), then name, ignore or mark them below; ↗ opens the photo."
 }

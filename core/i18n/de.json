@@ -590,5 +590,7 @@
   "unnamed.notface_n_pet": "{n} kein Haustier",
   "facecheck.marked_pet": "{count} als „kein Haustier“ markiert",
   "facecheck.filter.pet_face": "Für ein Tiergesicht gehalten",
-  "facecheck.pet_faces": "{count} für ein Tiergesicht gehalten (nicht aufgelistet)"
+  "facecheck.pet_faces": "{count} für ein Tiergesicht gehalten (nicht aufgelistet)",
+  "unnamed.singles": "Einzelne Gesichter ({count})",
+  "unnamed.singles_hint": "Allein oder zu zweit, nichts Ähnliches gefunden. Tippe die an, die zusammengehören (Umschalt-Tippen für einen Bereich), und benenne, ignoriere oder markiere sie unten; ↗ öffnet das Foto."
 }

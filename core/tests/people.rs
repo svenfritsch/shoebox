@@ -1025,6 +1025,14 @@ fn pets_are_people_in_a_space_of_their_own() {
     // Anna's photo (the fake finds a pet in every picture) alone: 0.875
     // is below the 0.90 that joins pets.
     assert_eq!(sizes(&pets), [3, 2, 1, 1, 1, 1]);
+    // The unnamed page lists clusters of up to two faces apart, to pick one by one.
+    let large = get(addr, "/api/clusters?kind=pets&size=large").json();
+    let small = get(addr, "/api/clusters?kind=pets&size=small").json();
+    assert_eq!(sizes(&large), [3]);
+    assert_eq!(sizes(&small).len(), 5);
+    assert!(sizes(&small).iter().all(|&n| n <= 2));
+    assert_eq!((small["unnamed"].as_u64(), large["small_faces"].as_u64()), (Some(6), Some(6)), "{small} {large}");
+    assert_eq!(get(addr, "/api/clusters?size=huge").status, 400);
     for c in pets["clusters"].as_array().unwrap() {
         assert!(c["faces"].as_array().unwrap().iter().all(|f| f["species"].is_string()), "{c}");
     }

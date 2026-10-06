@@ -1466,6 +1466,9 @@ pub struct Clusters {
     pub total: u64,
     /// Faces in them: faces large enough without a decision.
     pub unnamed: u64,
+    /// Faces in clusters of up to `SMALL_CLUSTER` faces (whatever `size`
+    /// asked for): the ones listed one by one.
+    pub small_faces: u64,
     pub clusters: Vec<Cluster>,
 }
 
@@ -1507,12 +1510,36 @@ fn generation_of(v: &View, faces: &[usize]) -> i64 {
     i64::from_le_bytes(n)
 }
 
+/// Clusters of up to this many faces are "small": listed as single faces to
+/// pick one by one, not as cards.
+pub const SMALL_CLUSTER: usize = 2;
+
+/// Which clusters to list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Size {
+    All,
+    /// More than `SMALL_CLUSTER` faces.
+    Large,
+    /// At most `SMALL_CLUSTER` faces.
+    Small,
+}
+
 /// The clusters of faces without a decision, largest first, with up to
 /// `samples` faces each; only those of one space (people's faces or
 /// pets) if `kind` is given. Faces and pets never share a cluster.
-pub fn clusters(conn: &Connection, offset: usize, limit: usize, samples: usize, kind: Option<Space>) -> Result<Clusters> {
+pub fn clusters(conn: &Connection, offset: usize, limit: usize, samples: usize, kind: Option<Space>, size: Size) -> Result<Clusters> {
     let v = View::load(conn)?;
-    let all = grouped(&v, kind);
+    let mut all = grouped(&v, kind);
+    let singles: u64 = all.iter().filter(|c| c.1.len() <= SMALL_CLUSTER).map(|c| c.1.len() as u64).sum();
+    all.retain(|c| match size {
+        Size::All => true,
+        Size::Large => c.1.len() > SMALL_CLUSTER,
+        Size::Small => c.1.len() <= SMALL_CLUSTER,
+    });
+    if size == Size::Small {
+        // Largest faces first, so the ones that can be recognised come first.
+        all.sort_by(|a, b| v.m.faces[b.1[0]].px.total_cmp(&v.m.faces[a.1[0]].px).then(a.0.cmp(&b.0)));
+    }
     let unnamed = all.iter().map(|c| c.1.len() as u64).sum();
     let total = all.len() as u64;
     let clusters = all
@@ -1539,7 +1566,7 @@ pub fn clusters(conn: &Connection, offset: usize, limit: usize, samples: usize, 
             }
         })
         .collect();
-    Ok(Clusters { total, unnamed, clusters })
+    Ok(Clusters { total, unnamed, small_faces: singles, clusters })
 }
 
 /// All faces of a cluster: of the one whose faces have `generation` (its

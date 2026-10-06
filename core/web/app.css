@@ -547,3 +547,18 @@ body.selecting .sec .pick { display: inline; }
 .page .back { margin: 0 0 4px; padding: 0; }
 .dialog .check { display: flex; align-items: center; gap: 6px; margin: 10px 0 4px; }
 .dialog .check input { width: 18px; height: 18px; }
+
+/* Faces alone or in pairs, picked one by one (unnamed page) */
+.singles { margin-top: 24px; padding-bottom: 90px; }
+.singles h3 { margin: 0 0 4px; }
+.sface-grid { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
+.sface-grid .cface { position: relative; display: block; border-radius: 50%; }
+.sface-grid .cface .avatar.big { width: 64px; height: 64px; }
+.sface-grid .cface.small .avatar { outline: 2px dashed var(--muted); outline-offset: -2px; }
+.sface-grid .cface.sel .avatar { outline: 3px solid var(--accent); outline-offset: -3px; }
+.sface-grid .copen { position: absolute; right: -2px; top: -2px; width: 18px; height: 18px; border-radius: 50%; background: var(--panel); border: 1px solid var(--line); color: var(--fg); font-size: 11px; line-height: 16px; text-align: center; opacity: 0; }
+.sface-grid .cface:hover .copen, .sface-grid .cface.sel .copen { opacity: 1; }
+@media (hover: none) { .sface-grid .copen { opacity: 1; } }
+.singles-bar { flex-wrap: wrap; white-space: normal; max-width: calc(100% - 24px); }
+.singles-bar .pfield { min-width: 160px; }
+.singles-bar.busy { opacity: .6; pointer-events: none; }
