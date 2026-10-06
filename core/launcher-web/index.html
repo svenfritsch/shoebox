@@ -42,6 +42,14 @@
       <button data-kind="faces_stats"><b data-i18n="launcher.kind.faces_stats">Face stats</b><span data-i18n="launcher.kind.faces_stats.desc">how recognition went</span></button>
       <button data-kind="backup"><b data-i18n="launcher.kind.backup">Backup check</b><span data-i18n="launcher.kind.backup.desc">is the 2nd folder a complete copy of the 1st?</span></button>
     </div>
+    <div id="backup-pick" class="backup-pick" hidden>
+      <h3 data-i18n="launcher.backup.title">Backup check: which folder is which?</h3>
+      <label for="bk-orig" data-i18n="launcher.backup.original">Original (the photos you work with)</label>
+      <select id="bk-orig"></select>
+      <label for="bk-copy" data-i18n="launcher.backup.copy">Backup (the copy that should hold everything)</label>
+      <select id="bk-copy"></select>
+      <p class="hint" data-i18n="launcher.backup.hint">Other folders in the list are ignored by the backup check.</p>
+    </div>
     <div class="options">
       <label><input type="checkbox" id="opt-quick"> <span data-i18n="launcher.opt.quick">Quick (Scan: skip full hashes · Verify: size and date only)</span></label>
       <label><input type="checkbox" id="opt-rotated"> <span data-i18n="launcher.opt.rotated">Recognize: also look for faces lying down (slower)</span></label>

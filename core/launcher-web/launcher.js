@@ -62,7 +62,35 @@ function renderChips() {
     ul.appendChild(li);
   });
   $('root').placeholder = tr(paths.length ? 'launcher.root.placeholder_more' : 'launcher.root.placeholder');
+  renderBackupPick();
 }
+
+// The backup check compares exactly two of the chosen folders; the person says which is which.
+var bkOrig = '', bkCopy = '';
+function renderBackupPick() {
+  var box = $('backup-pick');
+  box.hidden = paths.length < 2;
+  if (paths.length < 2) { bkOrig = bkCopy = ''; return; }
+  if (paths.indexOf(bkOrig) < 0) bkOrig = paths[0];
+  if (paths.indexOf(bkCopy) < 0 || bkCopy === bkOrig) bkCopy = paths.filter(function (p) { return p !== bkOrig; })[0];
+  [['bk-orig', bkOrig], ['bk-copy', bkCopy]].forEach(function (pair) {
+    var sel = $(pair[0]);
+    sel.textContent = '';
+    paths.forEach(function (p) {
+      var o = document.createElement('option'); o.value = p; o.textContent = p;
+      if (p === pair[1]) o.selected = true;
+      sel.appendChild(o);
+    });
+  });
+  document.querySelectorAll('#path-chips li').forEach(function (li, i) {
+    var role = paths[i] === bkOrig ? 'launcher.badge.original' : paths[i] === bkCopy ? 'launcher.badge.backup' : '';
+    if (!role) return;
+    var b = document.createElement('span'); b.className = 'badge'; b.textContent = tr(role);
+    li.insertBefore(b, li.querySelector('button'));
+  });
+}
+$('bk-orig').addEventListener('change', function () { bkOrig = this.value; renderBackupPick(); });
+$('bk-copy').addEventListener('change', function () { bkCopy = this.value; renderBackupPick(); });
 
 $('root').addEventListener('keydown', function (ev) {
   if (ev.key === 'Enter') {
@@ -108,12 +136,12 @@ function loadConfig() {
 
 function startJob(kind) {
   if (!paths.length) { $('root').focus(); $('root-hint').textContent = tr('launcher.need_folder'); return; }
-  if (kind === 'backup' && paths.length !== 2) {
+  if (kind === 'backup' && (paths.length < 2 || !bkOrig || !bkCopy || bkOrig === bkCopy)) {
     $('root-hint').textContent = tr('launcher.backup_two');
     return;
   }
   api('/api/job', {
-    kind: kind, roots: paths,
+    kind: kind, roots: kind === 'backup' ? [bkOrig, bkCopy] : paths,
     quick: $('opt-quick').checked, rotated: $('opt-rotated').checked, deep: $('opt-deep').checked,
   }).then(function () {
     $('progress-card').hidden = false;
@@ -170,6 +198,9 @@ function render(job) {
   summary.hidden = false;
   summary.appendChild(pill(tr('launcher.worked', { n: job.ok_count }), 'ok'));
   summary.appendChild(pill(tr('launcher.failed', { n: job.fail_count }), job.fail_count ? 'bad' : ''));
+  if (job.kind === 'backup' && job.roots.length === 2) {
+    summary.appendChild(pill(tr('launcher.backup.pair', { orig: job.roots[0], copy: job.roots[1] })));
+  }
   if (!job.running) {
     // One pill per folder, so several drives stay readable.
     job.results.forEach(function (r) {
