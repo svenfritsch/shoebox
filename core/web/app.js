@@ -1137,12 +1137,12 @@ function renderPanel() {
   };
   var date = row(tr('info.date'), formatDate(info) + (info.taken_offset ? ' (UTC' + info.taken_offset + ')' : ''));
   if (date && info.date_source !== 'file') {
-    // Not the day the photo was taken: say so next to the date.
+    // Not the day the photo was taken: say so next to the date; which
+    // fallback was used is in the tooltip.
     var badge = el('span', 'estimated', tr('info.estimated'));
-    badge.title = tr('info.estimated_hint');
+    badge.title = tr('info.estimated_hint') + '\n' + tr(info.date_source === 'created' ? 'info.no_date_created'
+      : info.date_source === 'folder' ? 'info.no_date_folder' : 'info.no_date_file');
     date.appendChild(badge);
-    date.appendChild(el('div', 'note', tr(info.date_source === 'created' ? 'info.no_date_created'
-      : info.date_source === 'folder' ? 'info.no_date_folder' : 'info.no_date_file')));
   }
   row(tr('info.name'), info.name);
   var folder = info.path.indexOf('/') >= 0 ? info.path.slice(0, info.path.lastIndexOf('/')) : '';
@@ -1477,7 +1477,7 @@ function moveDialog(ids, done) {
   input.type = 'text';
   input.className = 'wide';
   input.setAttribute('list', 'folder-list');
-  input.placeholder = tr('move.placeholder');
+  input.placeholder = tr('move.placeholder', { event: eventFolderName(2021, 3, tr('pattern.example_event')) });
   var current = state.filter.folder && state.folderById[state.filter.folder];
   if (current && current.path) input.value = current.path;
   body.appendChild(input);
@@ -1536,7 +1536,7 @@ function renameFolder(folder) {
   input.className = 'wide';
   input.value = folder.path;
   body.appendChild(input);
-  body.appendChild(el('p', 'hint', tr('rename.hint')));
+  body.appendChild(el('p', 'hint', tr('rename.hint', { pattern: patternLabel(eventPattern) })));
   var error = el('p', 'error');
   body.appendChild(error);
   var go = function (btn) {
@@ -1601,7 +1601,7 @@ function importDialog(files) {
 
   var describe = function () {
     var y = parseInt(year.value, 10), mo = parseInt(month.value, 10);
-    var folder = (y || '????') + '-' + (mo < 10 ? '0' : '') + mo + ' ' + (name.value.trim() || '…');
+    var folder = eventFolderName(y, mo, name.value.trim() || '…');
     target.textContent = tr('import.target', { folder: folder });
   };
   [year, month, name].forEach(function (f) {
@@ -3081,7 +3081,81 @@ function loadSettings() {
   });
   sec.appendChild(cards);
   page.appendChild(sec);
+  page.appendChild(eventPatternSection());
   page.appendChild(copyFoldersSection());
+}
+
+// How event folders are named when the app creates them (the library's
+// setting, e.g. "YYYY-MM Name"); the scanner reads every form.
+var eventPattern = 'YYYY-MM Name';
+
+function loadEventPattern() {
+  return api(LIBAPI + '/event-pattern').then(function (r) { eventPattern = r.pattern; }).catch(function () {});
+}
+
+// The folder name for a year, month and event name, as the server makes it.
+function eventFolderName(year, month, name, pattern) {
+  var m = /^(YYYY|YY)([.-])MM([ _.-]?)Name$/.exec(pattern || eventPattern) || ['', 'YYYY', '-', ' '];
+  var y = !year ? (m[1] === 'YYYY' ? '????' : '??')
+    : m[1] === 'YYYY' ? ('000' + year).slice(-4) : ('0' + (year % 100)).slice(-2);
+  return y + m[2] + (month < 10 ? '0' : '') + month + m[3] + name;
+}
+
+// The pattern written with the letters of the UI language (JJJJ-MM Name).
+function patternLabel(pattern) {
+  var keys = { YYYY: 'pattern.year4', YY: 'pattern.year2', MM: 'pattern.month', Name: 'pattern.name' };
+  return pattern.replace(/YYYY|YY|MM|Name/g, function (m) { return tr(keys[m]); });
+}
+
+// Settings: how new event folders are named. Three choices, so the result
+// always fits what the scanner reads (no free text to get wrong).
+function eventPatternSection() {
+  var sec = el('section', 'settings-section');
+  sec.appendChild(el('h3', '', tr('settings.event_pattern')));
+  sec.appendChild(el('p', 'hint', tr('settings.event_pattern_hint')));
+  var row = el('div', 'copy-folder-row');
+  var choose = function (label, options, current) {
+    var wrap = el('label', 'pattern-choice', label + ' ');
+    var sel = el('select');
+    options.forEach(function (o) {
+      var opt = el('option', '', o[1]);
+      opt.value = o[0];
+      if (o[0] === current) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    wrap.appendChild(sel);
+    row.appendChild(wrap);
+    return sel;
+  };
+  var m = /^(YYYY|YY)([.-])MM([ _.-]?)Name$/.exec(eventPattern) || ['', 'YYYY', '-', ' '];
+  var year = choose(tr('settings.event_year'), [['YYYY', tr('settings.event_year4')], ['YY', tr('settings.event_year2')]], m[1]);
+  var sep = choose(tr('settings.event_sep'), [['-', tr('settings.sep_dash')], ['.', tr('settings.sep_dot')]], m[2]);
+  var gap = choose(tr('settings.event_gap'), [[' ', tr('settings.gap_space')], ['_', tr('settings.gap_underscore')],
+    ['.', tr('settings.gap_dot')], ['-', tr('settings.gap_dash')], ['', tr('settings.gap_none')]], m[3]);
+  var preview = el('p', 'hint', '');
+  var error = el('p', 'error');
+  var current = function () { return year.value + sep.value + 'MM' + gap.value + 'Name'; };
+  var draw = function () {
+    preview.textContent = tr('settings.event_preview', {
+      example: eventFolderName(2020, 7, tr('pattern.example_name'), current()),
+      pattern: patternLabel(current()),
+    });
+  };
+  [year, sep, gap].forEach(function (sel) {
+    sel.onchange = function () {
+      error.textContent = '';
+      draw();
+      post(LIBAPI + '/event-pattern', { pattern: current() }).then(function (r) {
+        eventPattern = r.pattern;
+        toast(tr('settings.event_saved'));
+      }).catch(function (e) { error.textContent = e.message; });
+    };
+  });
+  draw();
+  sec.appendChild(row);
+  sec.appendChild(preview);
+  sec.appendChild(error);
+  return sec;
 }
 
 // Folder names whose files are copies, not originals (InDesign's "Links").
@@ -4954,6 +5028,7 @@ I18n.ready.then(function () {
   }
   return refreshDrives().then(function () {
     setInterval(refreshDrives, 10000);
+    if (drives.current.online) loadEventPattern();
     if (!drives.current.online) {
       // Nothing of this library can be loaded: only the overview of the drives can be shown.
       if (readHash().view === 'drives') { state.filter = readHash(); applyFilter(); } else showOffline();

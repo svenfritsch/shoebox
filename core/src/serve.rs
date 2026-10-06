@@ -819,6 +819,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/duplicates/decide", post(duplicates_decide))
         .route("/api/duplicates/remove", post(duplicates_remove))
         .route("/api/duplicates/same-folder", get(duplicates_same_folder).post(duplicates_remove_same_folder))
+        .route("/api/event-pattern", get(event_pattern_get).post(event_pattern_set))
         .route("/api/duplicates/copy-folders", get(duplicates_copy_folders).post(duplicates_set_copy_folders))
         .route("/api/duplicates/lower-quality", get(duplicates_lower_quality).post(duplicates_remove_lower_quality))
         .route("/api/trash", get(trash_list).post(trash_files))
@@ -2025,9 +2026,10 @@ struct EventFolderRequest {
 
 /// The `YYYY-MM Name` folder an import goes to, and whether it exists.
 async fn import_folder(State(app): State<Arc<App>>, Json(req): Json<EventFolderRequest>) -> ApiResult<Json<serde_json::Value>> {
-    let folder = import::event_folder(req.year, req.month, &req.name).map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
     blocking(&app, move |app| {
         let conn = app.conn.lock().unwrap();
+        let folder = import::event_folder(&import::event_pattern(&conn)?, req.year, req.month, &req.name)
+            .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
         let folder_fold = organize::fold(&folder);
         let existing = app
             .snapshot(&conn)?
@@ -2185,6 +2187,26 @@ async fn duplicates_copy_folders(State(app): State<Arc<App>>) -> ApiResult<Json<
         Ok(Json(serde_json::json!({ "folders": duplicates::copy_folders(&conn)? })))
     })
     .await
+}
+
+/// How event folders are named when the app creates them (`YYYY-MM Name`).
+async fn event_pattern_get(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
+    blocking(&app, |app| {
+        let conn = app.conn.lock().unwrap();
+        Ok(Json(serde_json::json!({ "pattern": import::event_pattern(&conn)?.format() })))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct EventPatternRequest {
+    pattern: String,
+}
+
+async fn event_pattern_set(State(app): State<Arc<App>>, Json(req): Json<EventPatternRequest>) -> ApiResult<Json<serde_json::Value>> {
+    change(&app, move |_, conn| import::set_event_pattern(conn, &req.pattern))
+        .await
+        .map(|p| Json(serde_json::json!({ "pattern": p.format() })))
 }
 
 #[derive(Deserialize)]
