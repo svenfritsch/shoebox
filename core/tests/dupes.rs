@@ -172,6 +172,29 @@ fn removing_copies_merges_capture_dates_without_touching_files() {
 }
 
 #[test]
+fn own_tags_of_a_lower_quality_copy_go_to_the_better_one() {
+    let lib = Library::new("dupes-lower-quality");
+    rings(&lib.path("Ringe/gross.jpg"), 1600, 1200);
+    rings(&lib.path("Ringe/klein.jpg"), 800, 600);
+    lib.scan();
+    let (gross, klein) = (id_of(&lib, "Ringe/gross.jpg"), id_of(&lib, "Ringe/klein.jpg"));
+    let server = start(&lib, None);
+    let addr = server.addr;
+    // The user tagged the smaller copy by mistake.
+    post(addr, "/api/tags/add", &json!({ "ids": [klein], "name": "Handgetippt" }));
+    assert!(tags(&lib, gross, "user").is_empty());
+
+    let r = remove(addr, &[gross], &[klein]);
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    assert!(!lib.path("Ringe/klein.jpg").exists());
+    // The tag lives on the survivor, and the trash keeps a copy too.
+    assert_eq!(tags(&lib, gross, "user"), ["Handgetippt"]);
+    let in_trash: String = lib.db().query_row("SELECT user_tags FROM trash", [], |r| r.get(0)).unwrap();
+    assert!(in_trash.contains("Handgetippt"), "{in_trash}");
+    server.stop().unwrap();
+}
+
+#[test]
 fn same_folder_bulk_only_touches_exact_duplicates_in_one_folder() {
     let lib = Library::new("dupes-bulk");
     let original = "Familie/Weihnachten/DSC_2001.jpg";
