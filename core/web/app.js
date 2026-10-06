@@ -112,6 +112,7 @@ $('login-form').addEventListener('submit', function (ev) {
 
 // ------------------------------------------------------------------ filters (in the URL hash)
 
+var TYPES = ['photo', 'video', 'live'];
 var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person', 'drives', 'settings', 'pets'];
 // Pet search terms (`pet=` in the URL and the API): a species or any pet.
 var PET_TERMS = {
@@ -121,7 +122,7 @@ var PET_TERMS = {
 };
 
 function readHash() {
-  var f = { folder: null, tags: [], people: [], pets: [], q: '', view: null, id: null, tab: null };
+  var f = { folder: null, tags: [], people: [], pets: [], types: [], q: '', view: null, id: null, tab: null };
   location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
     var i = kv.indexOf('=');
     if (i < 0) return;
@@ -131,6 +132,7 @@ function readHash() {
     var all = isAll();
     if (k === 'tag') { var t = all ? v : parseInt(v, 10); if (t && f.tags.indexOf(t) < 0) f.tags.push(t); }
     if (k === 'person') { var pp = all ? v : parseInt(v, 10); if (pp && f.people.indexOf(pp) < 0) f.people.push(pp); }
+    if (k === 'type' && TYPES.indexOf(v) >= 0 && f.types.indexOf(v) < 0) f.types.push(v);
     // A kind of pet (all cats, all dogs, any pet): the same on every drive.
     if (k === 'pet' && PET_TERMS[v] && f.pets.indexOf(v) < 0) f.pets.push(v);
     if (k === 'q') f.q = v;
@@ -147,7 +149,7 @@ function readHash() {
 // folder, any number of tags and people (`tag`, `person` repeated in the
 // URL) and free text.
 function setFilter(f) {
-  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], q: f.q }).replace(/^\?/, '');
+  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], type: f.types || [], q: f.q }).replace(/^\?/, '');
   if (h === location.hash.replace(/^#/, '')) { applyFilter(); return; }
   location.hash = h; // triggers hashchange -> applyFilter
 }
@@ -155,7 +157,7 @@ function setFilter(f) {
 // The current filter with some terms changed.
 function withFilter(changes) {
   var f = state.filter;
-  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), pets: f.pets.slice(), q: f.q }, changes);
+  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), pets: f.pets.slice(), types: f.types.slice(), q: f.q }, changes);
 }
 
 function showView(view, id, tab) { setFilter({ view: view, id: id, tab: tab, folder: null, tags: [], people: [], q: '' }); }
@@ -164,6 +166,7 @@ function applyFilter() {
   state.filter = readHash();
   $('search').value = state.filter.q;
   renderChips();
+  markTypes();
   // Still typing: offer what narrows the new search down.
   if (document.activeElement === $('search')) suggest($('search').value);
   markActiveFolder();
@@ -249,6 +252,36 @@ function renderChips() {
 state.tagNames = {};
 state.personNames = {};
 
+// ------------------------------------------------------------------ type filter
+
+// A check box drop-down: Photos, Videos (stand-alone only) and Live Photos.
+// Any ticked type matches; it combines with the rest of the search.
+var typeBoxes = Array.prototype.slice.call($('types-menu').querySelectorAll('input'));
+var TYPE_LABELS = { photo: 'Photos', video: 'Videos', live: 'Live' };
+
+function markTypes() {
+  var on = state.filter.types;
+  typeBoxes.forEach(function (b) { b.checked = on.indexOf(b.value) >= 0; });
+  var btn = $('types-btn');
+  btn.textContent = (on.length ? on.map(function (t) { return TYPE_LABELS[t]; }).join(', ') : 'Type') + ' ▾';
+  btn.classList.toggle('on', on.length > 0);
+  $('types').hidden = !!state.filter.view;
+}
+
+function setTypesOpen(open) {
+  $('types-menu').hidden = !open;
+  $('types-btn').setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+$('types-btn').onclick = function () { setTypesOpen($('types-menu').hidden); };
+typeBoxes.forEach(function (b) {
+  b.onchange = function () {
+    setFilter(withFilter({ types: typeBoxes.filter(function (x) { return x.checked; }).map(function (x) { return x.value; }) }));
+  };
+});
+document.addEventListener('click', function (ev) { if (!$('types').contains(ev.target)) setTypesOpen(false); });
+document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') setTypesOpen(false); });
+
 // ------------------------------------------------------------------ search box
 
 // Typing searches the text right away (words in paths and tag names); the
@@ -296,7 +329,7 @@ function suggest(text) {
   if (f.view) { closeSuggest(); return; }
   if (isAll()) { suggestAll(text, seq); return; }
   var needle = text.trim();
-  var within = { q: needle, tag: f.tags, person: f.people, pet: f.pets, folder: f.folder };
+  var within = { q: needle, tag: f.tags, person: f.people, pet: f.pets, type: f.types, folder: f.folder };
   Promise.all([
     api(LIBAPI + '/tags' + query(Object.assign({ limit: 8 }, within))),
     api(LIBAPI + '/people/search' + query(Object.assign({ limit: 6 }, within))).catch(function () { return []; }),
@@ -479,7 +512,7 @@ function folderNode(f, depth) {
   toggle.onclick = function () { expand(!ul || ul.hidden); };
   name.onclick = function () {
     expand(true);
-    setFilter({ folder: f.id, tags: [], people: [], q: state.filter.q });
+    setFilter({ folder: f.id, tags: [], people: [], types: state.filter.types, q: state.filter.q });
   };
   return li;
 }
@@ -552,8 +585,8 @@ function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
 function loadTimeline(resetScroll) {
   var seq = ++state.loadSeq;
   var f = state.filter;
-  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, pet: f.pets, q: f.q })
-    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, pet: f.pets, q: f.q });
+  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, pet: f.pets, type: f.types, q: f.q })
+    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, pet: f.pets, type: f.types, q: f.q });
   return api(url).then(function (data) {
     if (seq !== state.loadSeq) return;
     if (isAll()) allTimelineLoaded(data);
