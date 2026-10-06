@@ -385,6 +385,15 @@ fn shots_of_a_series_are_not_one_photo_in_two_versions() {
     assert_eq!((fa["keeper"].as_i64(), fb["keeper"].as_i64()), (None, None));
     assert!(fa["pick"] == true && fb["pick"] == true);
     server.stop().unwrap();
+
+    // Without any capture date the numbers in the names still tell the
+    // shots apart; the " 1" import suffix is ignored.
+    set_taken(&lib, a, None);
+    set_taken(&lib, b, None);
+    let server = start(&lib, None);
+    let all = groups(server.addr);
+    assert_ne!(file_of(&all, "2010er/IMG_4284 1.JPG")["row"], file_of(&all, "2010er/IMG_4285 1.JPG")["row"]);
+    server.stop().unwrap();
 }
 
 #[test]

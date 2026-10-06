@@ -283,24 +283,30 @@ pub fn copy_named(names: &[&str]) -> Vec<bool> {
 }
 
 /// A camera's file name: `IMG_6621.HEIC`, or `IMG_E6621.HEIC` for the
-/// edited version an iPhone writes next to the original. Returns the
-/// lowercase prefix, whether it is the edited one, and the number. Names
-/// with anything else in them (a copy's "(2)", a messenger's date) do not
-/// parse.
+/// edited version an iPhone writes next to the original. Only the first part
+/// counts: a copy's suffix after it ("IMG_6621 1", "IMG_6621 (2)",
+/// "IMG_6621 - Copy") is ignored, so a copy still carries its shot's number.
+/// Returns the lowercase prefix, whether it is the edited one, and the
+/// number. Names whose number runs on into something else (a messenger's
+/// "IMG-20250726-WA0001", a Pixel's "PXL_20250101_120000123") do not parse.
 fn camera_name(name: &str) -> Option<(String, bool, u64)> {
     let stem = name.rsplit_once('.').map_or(name, |(s, _)| s);
     let l = library::nfc(stem).to_lowercase();
+    let l = l.trim_start_matches('_');
     let letters = l.len() - l.trim_start_matches(|c: char| c.is_ascii_lowercase()).len();
     let (prefix, rest) = l.split_at(letters);
-    if !matches!(prefix, "img" | "dsc" | "dscn" | "dscf" | "pxl" | "mvimg" | "p") {
+    if !matches!(prefix, "img" | "dsc" | "dscn" | "dscf" | "pxl" | "mvimg" | "p" | "dji" | "gopr" | "sam" | "pict" | "cimg" | "image") {
         return None;
     }
-    let rest = rest.strip_prefix(['_', '-']).unwrap_or(rest);
-    let (edited, digits) = match rest.strip_prefix('e') {
-        Some(d) => (true, d),
-        None => (false, rest),
+    let rest = rest.strip_prefix(['_', '-', ' ']).unwrap_or(rest);
+    let (edited, rest) = match rest.strip_prefix('e') {
+        Some(d) if d.starts_with(|c: char| c.is_ascii_digit()) => (true, d),
+        _ => (false, rest),
     };
-    if digits.len() < 3 || !digits.chars().all(|c| c.is_ascii_digit()) {
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    let after = &rest[digits.len()..];
+    // Whatever follows the number must be a copy's suffix, not more name.
+    if !(3..=6).contains(&digits.len()) || !(after.is_empty() || after.starts_with([' ', '('])) {
         return None;
     }
     Some((prefix.to_string(), edited, digits.parse().ok()?))
@@ -1035,7 +1041,14 @@ mod tests {
         assert!(names_differ("IMG_6621.HEIC", "IMG_6620.HEIC"));
         assert!(!names_differ("IMG_6621.HEIC", "IMG_6621.JPG"));
         assert!(!names_differ("IMG_6621.HEIC", "IMG-20250726-WA0001.jpg"));
-        assert!(!names_differ("IMG_6621 (2).HEIC", "IMG_6620.HEIC"));
+        // A copy's suffix is ignored: it still belongs to its own shot.
+        assert!(names_differ("IMG_6621 (2).HEIC", "IMG_6620.HEIC"));
+        assert!(names_differ("IMG_4285 1.JPG", "IMG_4284 1.JPG"));
+        assert!(names_differ("IMG_4285 - Copy.JPG", "IMG_4284.JPG"));
+        assert!(!names_differ("IMG_4284 1.JPG", "IMG_4284.JPG"));
+        assert!(!names_differ("IMG_6621 (2).HEIC", "IMG_6621.HEIC"));
+        assert!(!names_differ("PXL_20250101_120000123.jpg", "PXL_20250101_120000456.jpg"));
+        assert!(names_differ("_DSC1235.NEF", "_DSC1234.JPG"));
     }
 
     #[test]

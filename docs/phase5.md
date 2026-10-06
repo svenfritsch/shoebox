@@ -756,6 +756,16 @@ Built, one commit per step. Scope and rules are in "Phase 5d details" in
   never the pick of its photo (the first criterion, before quality) and is
   ticked by "Preselect copies" whenever the same photo lies elsewhere, even if
   it is not worse; its card says "in a folder for copies". Empty by default.
+- **Names decide first** (feedback: a series from one device always counts
+  up, and a trailing " 1" is a copy's suffix): only the first part of a camera
+  name is read (`camera_name`: IMG, DSC, DSCN, DSCF, PXL, MVIMG, P, DJI, GOPR,
+  SAM, PICT, CIMG, IMAGE, a leading `_` as in `_DSC1234`; 3–6 digits; an iPhone
+  edit's `E`). What follows the number counts only if it starts with a space
+  or "(": "IMG_4285 1", "IMG_6621 (2)", "IMG_4285 - Copy" are shot 4285 and 6621.
+  Two such names with different numbers are two shots, whatever the pictures
+  and capture dates say (`names_differ`); a messenger's
+  "IMG-20250726-WA0001" or a Pixel's date name does not parse and never vetoes.
+  Only when the names say nothing, the same-size-and-date rule below decides.
 - **Pre-selection and the original name**: of every photo with several files
   all but the `pick` are ticked (the page, once; an untick stays). The pick is
   the best quality, then a capture date, then **the file without a copy's
