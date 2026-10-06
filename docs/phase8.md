@@ -17,7 +17,7 @@ files, no dependencies, no build step.
 - English is the fallback for any key missing in another language.
 - Language: the saved choice (`localStorage`, key `shoebox.lang`), else the
   first browser language we have, else English. A selector in the sidebar
-  footer (launcher: page footer) saves the choice and reloads, because the
+  footer (launcher: top right of the page) saves the choice and reloads, because the
   UI is built once from the messages.
 - Dates and numbers use `I18n.date` / `I18n.number` (the chosen language, not
   the browser's).
