@@ -72,3 +72,7 @@ header { position: relative; }
 .lang { position: absolute; top: 0; right: 0; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
 .lang label { margin: 0; font-size: 13px; }
 .lang select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; }
+.chipbox li input[type=checkbox] { flex: 0 0 auto; min-width: 0; width: auto; margin: 0 2px 0 0; }
+.chipbox li.unticked .name { text-decoration: line-through; color: var(--muted); }
+.chipbox li .badge { font-size: 11px; font-weight: 600; color: var(--ok); white-space: nowrap; }
+.results .reveal { padding: 0 8px; font-size: 16px; line-height: 22px; border-radius: 6px; }
