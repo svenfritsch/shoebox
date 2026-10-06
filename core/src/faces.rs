@@ -129,6 +129,9 @@ pub struct Stats {
     pub small: u64,
     /// Of `faces`, marked "not a face" by the user (false finds).
     pub not_faces: u64,
+    /// Faces the face detector found in a dog or cat (inside a pet, outside
+    /// any person): not counted in `faces`, listed under "taken for a pet's".
+    pub pet_faces: u64,
     pub min_cluster_px: f64,
     /// The last runs of `shoebox recognize`, newest first.
     pub runs: Vec<Run>,
@@ -171,7 +174,9 @@ pub fn stats_of(conn: &Connection, space: Space) -> Result<Stats> {
         Space::Pets => (buckets(&PET_WIDTH_BUCKETS), buckets(&PET_SCORE_BUCKETS)),
     };
     let (mut faces, mut rotated_faces, mut small, mut not_faces) = (0, 0, 0, 0);
-    let marked = crate::people::not_face_ids(conn)?;
+    let m = crate::people::Matched::load(conn, None)?;
+    let (marked, pet_ids) = (m.not_faces(), m.pet_faces());
+    let mut pet_faces = 0;
     let mut rows = conn.prepare(&format!(
         "SELECT {}, f.score, {roll}, f.id FROM recog.faces f
          JOIN recog.looked l ON l.key = f.key AND l.task = '{task}'
@@ -183,7 +188,12 @@ pub fn stats_of(conn: &Connection, space: Space) -> Result<Stats> {
     while let Some(r) = rows.next()? {
         let (px, score, roll): (Option<f64>, f64, i64) = (r.get(0)?, r.get(1)?, r.get(2)?);
         let px = px.unwrap_or(0.0);
-        let not_face = marked.contains(&r.get(3)?);
+        let id: i64 = r.get(3)?;
+        if pet_ids.contains(&id) {
+            pet_faces += 1;
+            continue;
+        }
+        let not_face = marked.contains(&id);
         faces += 1;
         rotated_faces += (roll != 0) as u64;
         small += space.too_small(px) as u64;
@@ -223,6 +233,7 @@ pub fn stats_of(conn: &Connection, space: Space) -> Result<Stats> {
         scores,
         small,
         not_faces,
+        pet_faces,
         min_cluster_px: space.min_px(),
         runs,
     })
@@ -436,6 +447,10 @@ pub struct ListQuery {
     /// otherwise.
     #[serde(default)]
     pub not_face: bool,
+    /// Only faces taken for a pet's (inside a dog or cat the pets pass
+    /// found, outside any person); they are left out otherwise.
+    #[serde(default)]
+    pub pet_face: bool,
     #[serde(default)]
     pub offset: usize,
     pub limit: Option<usize>,
@@ -514,13 +529,22 @@ pub fn list(conn: &Connection, q: &ListQuery) -> Result<List> {
     };
     let dir = if q.desc { "DESC" } else { "ASC" };
     // Ids are numbers from the database, so they can go into the SQL.
-    let marked: Vec<String> = crate::people::not_face_ids(conn)?.iter().map(i64::to_string).collect();
-    let filter = format!(
-        "px >= ?1 AND px < ?2{} AND f.id {} ({})",
-        if q.rotated { " AND f.roll != 0" } else { "" },
-        if q.not_face { "IN" } else { "NOT IN" },
-        marked.join(",")
-    );
+    let m = crate::people::Matched::load(conn, None)?;
+    let join = |ids: HashSet<i64>| ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+    let pet_faces = m.pet_faces();
+    let filter = if q.pet_face {
+        format!("px >= ?1 AND px < ?2{} AND f.id IN ({})", if q.rotated { " AND f.roll != 0" } else { "" }, join(pet_faces))
+    } else {
+        let mut hidden = pet_faces;
+        let marked = m.not_faces();
+        let listed: HashSet<i64> = if q.not_face { marked } else { hidden.extend(marked); hidden };
+        format!(
+            "px >= ?1 AND px < ?2{} AND f.id {} ({})",
+            if q.rotated { " AND f.roll != 0" } else { "" },
+            if q.not_face { "IN" } else { "NOT IN" },
+            join(listed)
+        )
+    };
     let space = match q.kind.as_deref() {
         Some("pets") => Space::Pets,
         _ => Space::Faces,
@@ -566,7 +590,9 @@ pub fn similar(conn: &Connection, id: i64, limit: usize) -> Result<Option<Vec<Ne
     let Some((model, emb, species)) = target else { return Ok(None) };
     let space = Space::of(species.as_deref());
     let target = floats(&emb);
-    let marked = crate::people::not_face_ids(conn)?;
+    let m = crate::people::Matched::load(conn, None)?;
+    let mut marked = m.not_faces();
+    marked.extend(m.pet_faces());
     let mut stmt = conn.prepare(&item_sql(", f.emb", "f.model = ?1 AND f.id != ?2", space))?;
     let mut rows = stmt.query(params![model, id])?;
     let mut all = Vec::new();

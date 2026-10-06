@@ -222,7 +222,7 @@ function renderChips() {
     });
   });
   f.people.forEach(function (id) {
-    add('👤 ' + (state.personNames[id] || id), function () {
+    add((petIcon(state.personSpecies[id]) || '👤') + ' ' + (state.personNames[id] || id), function () {
       setFilter(withFilter({ people: f.people.filter(function (p) { return p !== id; }) }));
     });
   });
@@ -251,6 +251,7 @@ function renderChips() {
 }
 state.tagNames = {};
 state.personNames = {};
+state.personSpecies = {}; // id -> cat, dog or pet, for people who are pets
 
 // ------------------------------------------------------------------ type filter
 
@@ -338,7 +339,8 @@ function suggest(text) {
     if (seq !== sugg.seq) return;
     var items = r[1].map(function (p) {
       state.personNames[p.id] = p.name;
-      return { kind: 'person', id: p.id, label: p.name, count: p.photos };
+      state.personSpecies[p.id] = p.species;
+      return { kind: 'person', id: p.id, label: p.name, count: p.photos, person: p };
     });
     r[2].forEach(function (p) { items.push({ kind: 'pet', id: p.species, label: PET_TERMS[p.species].label, count: p.photos }); });
     r[0].forEach(function (t) {
@@ -372,7 +374,7 @@ function suggestAll(text, seq) {
   Promise.all([api('/api/all/tags' + query({ q: needle, limit: 8 })), people.catch(function () { return []; }), pets]).then(function (r) {
     if (seq !== sugg.seq) return;
     var items = r[1].filter(function (p) { return f.people.indexOf(p.name) < 0 && (!low || p.name.toLowerCase().indexOf(low) >= 0); })
-      .slice(0, 6).map(function (p) { return { kind: 'person', id: p.name, label: p.name, count: p.photos }; });
+      .slice(0, 6).map(function (p) { return { kind: 'person', id: p.name, label: p.name, count: p.photos, person: { name: p.name, species: p.species } }; });
     r[2].forEach(function (p) { items.push({ kind: 'pet', id: p.species, label: PET_TERMS[p.species].label, count: p.photos }); });
     r[0].filter(function (t) { return f.tags.indexOf(t.name) < 0; }).forEach(function (t) {
       items.push({ kind: 'tag', id: t.name, label: t.name, count: t.count, folderTag: t.kind === 'folder' });
@@ -391,7 +393,7 @@ function showSuggest(items) {
     if (it.kind !== last) {
       var f = state.filter, narrowed = !isAll() && (f.tags.length || f.people.length || f.pets.length || f.folder);
       var head = it.kind === 'tag' ? tr(narrowed ? 'search.tags_here' : 'search.tags')
-        : it.kind === 'person' ? tr(narrowed ? 'search.people_here' : 'search.people')
+        : it.kind === 'person' ? tr(narrowed ? 'search.faces_here' : 'side.faces')
           : it.kind === 'pet' ? tr(narrowed ? 'search.pets_here' : 'search.pets') : tr('search.folders');
       box.appendChild(el('div', 'head', head));
       last = it.kind;
@@ -399,7 +401,13 @@ function showSuggest(items) {
     var b = el('button', 'item');
     b.type = 'button';
     b.setAttribute('role', 'option');
-    b.appendChild(el('span', 'label', (it.kind === 'pet' ? PET_TERMS[it.id].icon + ' ' : ({ folder: '📁 ', person: '👤 ' }[it.kind] || '# ')) + it.label));
+    // People as in the sidebar: their picture, and the dog or cat for a pet.
+    var label = el('span', 'label');
+    if (it.kind === 'person') label.appendChild(avatar(it.person, 'tiny'));
+    label.appendChild(document.createTextNode((it.kind === 'pet' ? PET_TERMS[it.id].icon + ' '
+      : it.kind === 'person' ? (petIcon(it.person && it.person.species) ? petIcon(it.person.species) + ' ' : '')
+        : ({ folder: '📁 ' }[it.kind] || '# ')) + it.label));
+    b.appendChild(label);
     b.appendChild(el('span', 'count', I18n.number(it.count)));
     b.onmousedown = function (ev) { ev.preventDefault(); }; // keep the focus in the box
     b.onclick = function () { pickSuggest(it); };
@@ -2712,7 +2720,7 @@ var FACE_SORTS = [
 ];
 var FACE_FILTERS = [
   ['all', 'facecheck.filter.all'], ['small', 'facecheck.filter.small'], ['large', 'facecheck.filter.large'], ['rotated', 'facecheck.filter.rotated'],
-  ['not_face', 'facecheck.filter.not_face'],
+  ['not_face', 'facecheck.filter.not_face'], ['pet_face', 'facecheck.filter.pet_face'],
 ];
 // Cats and dogs are not looked for in turned copies, and the false finds are no pets.
 var PET_FILTERS = [
@@ -2758,6 +2766,7 @@ function faceSummary(s) {
   if (s.looked < s.photos) parts.push(tr('facecheck.todo', { n: s.photos - s.looked }));
   parts.push(tr('facecheck.small', { n: s.small, px: s.min_cluster_px }));
   if (!pets) parts.push(s.rotated_looked ? tr('facecheck.turned', { count: trn('count.faces', s.rotated_faces) }) : tr('facecheck.turned_none'));
+  if (s.pet_faces) parts.push(tr('facecheck.pet_faces', { count: trn('count.faces', s.pet_faces) }));
   if (s.not_faces) parts.push(tr(pets ? 'facecheck.not_pets' : 'facecheck.not_faces', { count: things(s.not_faces) }));
   var widths = s.widths.map(function (b) {
     var label = b.from == null ? '< ' + b.to : b.to == null ? b.from + '+' : b.from + '–' + b.to;
@@ -2866,7 +2875,7 @@ function moreFaces(grid, more) {
     kind: checkKind() === 'pets' ? 'pets' : null,
     sort: faceState.sort, desc: faceState.desc ? 'true' : null, offset: faceState.faces.length, limit: PAGE_FACES,
     max_px: f === 'small' ? faceState.minPx : null, min_px: f === 'large' ? faceState.minPx : null,
-    rotated: f === 'rotated' ? 'true' : null, not_face: f === 'not_face' ? 'true' : null,
+    rotated: f === 'rotated' ? 'true' : null, not_face: f === 'not_face' ? 'true' : null, pet_face: f === 'pet_face' ? 'true' : null,
   });
   more.disabled = true;
   return api(LIBAPI + '/faces' + q).then(function (r) {
@@ -3011,7 +3020,7 @@ function loadPeople() {
     people.list = r[0];
     people.groups = r[1];
     people.byId = {};
-    r[0].forEach(function (p) { people.byId[p.id] = p; state.personNames[p.id] = p.name; });
+    r[0].forEach(function (p) { people.byId[p.id] = p; state.personNames[p.id] = p.name; state.personSpecies[p.id] = p.species; });
     renderFacesSection();
     renderChips();
   }).catch(function () {});
@@ -3635,6 +3644,7 @@ function loadPersonPage() {
     if (state.filter.view !== 'person' || state.filter.id !== p.id) return;
     pp.person = p;
     state.personNames[p.id] = p.name;
+    state.personSpecies[p.id] = p.species;
     var head = el('div', 'person-head');
     head.appendChild(avatar(p, 'big'));
     var text = el('div', 'ptext');
@@ -3797,7 +3807,7 @@ function confirmedFaceMenu(face) {
   items.push({ label: tr('menu.use_as', { name: p.name }), run: function () {
     post(LIBAPI + '/people/' + p.id + '/cover', { face: face.id }).then(function () { toast(tr('menu.picture_changed')); peopleChanged(); }).catch(failed);
   } });
-  items.push({ label: tr('facecheck.not_face'), run: function () { personAction('not-face', [face.id]); } });
+  items.push({ label: tr(p.species ? 'pet.not_a.pet' : 'facecheck.not_face'), run: function () { personAction('not-face', [face.id]); } });
   return items;
 }
 
@@ -3830,7 +3840,7 @@ function personAction(action, ids, manual) {
       confirm: tr('person.toast.confirm', { count: count, name: p.name }),
       reject: tr('person.toast.reject', { count: count, name: p.name }),
       unreject: tr('person.toast.unreject', { count: count, name: p.name }),
-      'not-face': tr('facecheck.marked', { count: count }),
+      'not-face': tr(p.species ? 'facecheck.marked_pet' : 'facecheck.marked', { count: count }),
       undo: tr('person.toast.undo'),
     }[action]);
     peopleChanged();
@@ -3875,7 +3885,7 @@ function personPickBar(tab) {
   } else {
     button(tr('person.not', { name: p.name }), 'quiet', function (faces, ids) { personAction('reject', ids); });
     button(tr('person.name_btn'), '', function (faces) { nameFacesDialog(faces, personRefresh); });
-    button(tr('facecheck.not_face'), 'quiet', function (faces, ids) { personAction('not-face', ids); });
+    button(tr(p.species ? 'pet.not_a.pet' : 'facecheck.not_face'), 'quiet', function (faces, ids) { personAction('not-face', ids); });
   }
   var done = el('button', 'btn quiet', tr('app.done'));
   done.onclick = function () { pp.picking = false; clearPersonPicks(); updatePersonPick(); };
@@ -4071,8 +4081,10 @@ function clusterCard(c) {
   var ignore = el('button', 'btn quiet', tr('unnamed.ignore'));
   ignore.title = tr('unnamed.ignore_hint');
   ignore.onclick = function () { act('ignore', {}); };
-  var notFace = el('button', 'btn quiet', tr('facecheck.not_face'));
-  notFace.title = tr('unnamed.notface_hint');
+  // A card of pets says "not a pet": the finds that are no pet at all.
+  var petCard = c.faces.length > 0 && c.faces.every(function (f) { return f.species; });
+  var notFace = el('button', 'btn quiet', tr(petCard ? 'pet.not_a.pet' : 'facecheck.not_face'));
+  notFace.title = tr(petCard ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint');
   notFace.onclick = function () { act('not-face', {}); };
   var pick = el('button', 'btn quiet', tr('facecheck.select'));
   pick.title = tr('unnamed.select_hint');
@@ -4118,7 +4130,7 @@ function clusterCard(c) {
     var some = card.picking && n;
     nameBtn.textContent = some ? tr('unnamed.name_n', { n: n }) : tr('person.name');
     ignore.textContent = some ? tr('unnamed.ignore_n', { n: n }) : tr('unnamed.ignore');
-    notFace.textContent = some ? tr('unnamed.notface_n', { n: n }) : tr('facecheck.not_face');
+    notFace.textContent = some ? tr(petCard ? 'unnamed.notface_n_pet' : 'unnamed.notface_n', { n: n }) : tr(petCard ? 'pet.not_a.pet' : 'facecheck.not_face');
     nameBtn.disabled = ignore.disabled = notFace.disabled = card.picking && !n;
     suggestion.textContent = '';
     if (c.suggestion && !card.picking) {
@@ -4167,7 +4179,7 @@ function clusterCard(c) {
       card.classList.remove('busy');
       var n = trn('count.faces', r.faces);
       toast(action === 'name' ? tr('person.named', { count: n, name: r.person.name })
-        : action === 'ignore' ? tr('unnamed.ignored', { count: n }) : tr('facecheck.marked', { count: n }));
+        : action === 'ignore' ? tr('unnamed.ignored', { count: n }) : tr(petCard ? 'facecheck.marked_pet' : 'facecheck.marked', { count: n }));
       un.unnamed -= r.faces;
       if (!r.cluster) {
         card.remove();
@@ -4300,7 +4312,7 @@ function infoFace(info, f, k) {
         items.push({ label: tr('info.maybe_after_all', { name: n }), run: function () { send('unreject', { faces: ids, person_id: pid }); } });
       });
     }
-    items.push({ label: tr(f.species ? 'pet.not_a.' + (PET_ICON[f.species] ? f.species : 'pet') : 'facecheck.not_face'), run: function () { send('not-face', { faces: ids }); } });
+    items.push({ label: tr(f.species ? 'pet.not_a.pet' : 'facecheck.not_face'), run: function () { send('not-face', { faces: ids }); } });
     return items;
   }, tr('person.more_face')));
   return line;

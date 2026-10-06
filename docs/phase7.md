@@ -276,3 +276,34 @@ On the drive (Intel MacBook and/or a modern Mac):
 - [ ] Pet terms in the all-drives suggestions are summed per request; for
       many drives a cache like the people list would be kinder.
 - [ ] Text search over photo content (CLIP) is a later phase of its own.
+
+## Follow-up: pet faces, species, search
+
+- **A pet's face is not a person's.** The pets pass also returns the people
+  it saw (COCO `person` boxes, `people` in the `pets` reply, pixels) and the
+  core keeps them in `recog.bodies` (recognition.db v6). At read time
+  (`Matched::pet_faces`) a detected person's face nobody decided on is "taken
+  for a pet's face" when ≥70% of it lies inside a pet box (not marked "not a
+  pet") and <50% inside a person box (`pets::is_pet_face`). Such faces are
+  left out of clusters, Unnamed, suggestions, the viewer and info panel and
+  the Face check list; the Face check counts them (`pet_faces`) and lists
+  them under the filter "Taken for a pet's face". Any decision, or drawing the
+  face by hand, shows it again. Without people boxes (older worker, no pets
+  pass) nothing is hidden. Fake worker cue: pure yellow bottom quarter = no
+  person found.
+- **Pet cards say "Not a pet" / "Kein Haustier"** (cluster card, person
+  page, toasts, info panel menu). It marks a false find (no pet at all); it
+  does not say which species. To say "that is a cat", name it with a cat's
+  name.
+- **Species follows the person** (`people::person_species`): once a face is
+  confirmed, its box, the info panel, the person and the pet search all use
+  the person's species (majority of confirmed faces), so a dog taken for a
+  cat but named Layka is a dog everywhere. Unconfirmed suggestions still show
+  what was detected.
+- **Search suggestions**: the "People" section is now "Faces"/"Gesichter" like
+  the sidebar, with the person's picture and a dog/cat icon for pets
+  (`species`, `cover`, `cover_manual` in `/api/people/search`, `species` in
+  `/api/all/people`); filter chips use the same icon.
+- **Pictures on the wall** (a person who is not in the room): use "Ignore";
+  "Not a face" is for detector mistakes. Neither trains anything: only
+  confirmed faces are references.

@@ -329,6 +329,8 @@ pub struct MergedPerson {
     pub faces: u64,
     pub photos: u64,
     pub hidden: bool,
+    /// `cat`, `dog` or `pet` for a pet (the first drive that knows), else absent.
+    pub species: Option<String>,
     /// Where this person is known: the same name on a drive is the same person.
     pub libraries: Vec<PersonOnDrive>,
 }
@@ -360,12 +362,14 @@ pub fn merge_people(per_drive: &[(String, String, Vec<crate::people::Person>, Ve
                 faces: 0,
                 photos: 0,
                 hidden: true,
+                species: None,
                 libraries: Vec::new(),
             });
             entry.group = entry.group.take().or(group);
             entry.faces += p.faces;
             entry.photos += p.photos;
             entry.hidden &= p.hidden;
+            entry.species = entry.species.take().or_else(|| p.species.clone());
             entry.libraries.push(PersonOnDrive {
                 library: lib.clone(),
                 name: lib_name.clone(),

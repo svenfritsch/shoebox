@@ -93,7 +93,7 @@ const POLL: Duration = Duration::from_millis(200);
 /// A `running` job that has not reported progress for this long is dead.
 const JOB_ALIVE_SECS: i64 = 120;
 
-const SCHEMA_VERSION: i32 = 5;
+const SCHEMA_VERSION: i32 = 6;
 const SCHEMA_V1: &str = "
 CREATE TABLE recog.jobs (
     id          INTEGER PRIMARY KEY,
@@ -181,6 +181,19 @@ const SCHEMA_V5: &str = "
 ALTER TABLE recog.faces ADD COLUMN species TEXT;
 ";
 
+/// v6 (phase 7): where the pets pass saw people, so that a pet's face is not
+/// taken for a person's (`pets::is_pet_face`). Boxes are fractions.
+const SCHEMA_V6: &str = "
+CREATE TABLE IF NOT EXISTS recog.bodies (
+    key TEXT NOT NULL,
+    x   REAL NOT NULL,
+    y   REAL NOT NULL,
+    w   REAL NOT NULL,
+    h   REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS recog.bodies_key ON bodies (key);
+";
+
 /// Location of `recognition.db` for a library database.
 pub fn path_for(db_path: &Path) -> PathBuf {
     db_path.with_file_name(FILE)
@@ -230,6 +243,12 @@ pub fn attach(conn: &Connection, db_path: &Path) -> Result<()> {
             tx.execute_batch(SCHEMA_V5)?;
         }
         tx.pragma_update(Some("recog"), "user_version", 5)?;
+        tx.commit()?;
+    }
+    if version < 6 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V6)?;
+        tx.pragma_update(Some("recog"), "user_version", 6)?;
         tx.commit()?;
     }
     Ok(())
@@ -346,6 +365,8 @@ struct Reply {
     #[serde(rename = "embed-pets")]
     embed_pets: Option<Vec<RawEmbedded>>,
     pets: Option<Vec<RawPet>>,
+    /// People the pets pass saw, in pixels (`[x, y, w, h]`).
+    people: Option<Vec<[f64; 4]>>,
     error: Option<String>,
 }
 
@@ -408,6 +429,8 @@ pub struct Found {
     pub width: u32,
     pub height: u32,
     pub faces: Vec<Face>,
+    /// People seen by the pets pass (fractions); empty otherwise.
+    pub people: Vec<[f64; 4]>,
 }
 
 /// Why a picture got no result.
@@ -804,7 +827,7 @@ impl Worker {
                 emb,
             });
         }
-        Ok(Found { width, height, faces })
+        Ok(Found { width, height, faces, people: Vec::new() })
     }
 
     fn parse_pets(&self, reply: Reply) -> Result<Found, String> {
@@ -815,6 +838,18 @@ impl Worker {
         };
         let raw = reply.pets.ok_or("reply without pets")?;
         let (fw, fh) = (width as f64, height as f64);
+        // A worker without the people boxes (older) just sends none.
+        let people: Vec<[f64; 4]> = reply
+            .people
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|b| b.iter().all(|v| v.is_finite()) && b[2] > 0.0 && b[3] > 0.0)
+            .map(|[x, y, w, h]| {
+                let (x0, y0) = ((x / fw).clamp(0.0, 1.0), (y / fh).clamp(0.0, 1.0));
+                let (x1, y1) = (((x + w) / fw).clamp(0.0, 1.0), ((y + h) / fh).clamp(0.0, 1.0));
+                [x0, y0, x1 - x0, y1 - y0]
+            })
+            .collect();
         let mut faces = Vec::with_capacity(raw.len());
         for a in raw {
             let [x, y, w, h] = a.bbox;
@@ -839,7 +874,7 @@ impl Worker {
                 emb,
             });
         }
-        Ok(Found { width, height, faces })
+        Ok(Found { width, height, faces, people })
     }
 
     /// Close the worker's stdin and wait for it to exit (kill it after the
@@ -906,6 +941,7 @@ fn parse_reply(line: &str, id: u64) -> Option<Reply> {
             embed: None,
             embed_pets: None,
             pets: None,
+            people: None,
             error: Some(format!("bad reply: {e}")),
         }),
     }
@@ -1114,6 +1150,7 @@ pub fn recognize(
     conn.execute(&format!("DELETE FROM recog.looked WHERE key {gone}"), [])?;
     forget_neighbours(conn, &format!("key {gone}"), [])?;
     conn.execute(&format!("DELETE FROM recog.faces WHERE key {gone}"), [])?;
+    conn.execute(&format!("DELETE FROM recog.bodies WHERE key {gone}"), [])?;
     Ok(Stats { pruned, ..stats })
 }
 
@@ -1367,10 +1404,11 @@ fn ask_all(worker: &mut Worker, pass: Pass, prepared: Prepared) -> Result<Result
             Err(f) => return Ok(Err(f)),
         };
         let (width, height) = if roll % 180 == 0 { (found.width, found.height) } else { (found.height, found.width) };
+        let people = if roll == 0 { found.people } else { Vec::new() };
         let faces = found.faces.into_iter().map(|f| unrotate(f, roll));
         match &mut all {
             Some(a) => a.faces.extend(faces),
-            None => all = Some(Found { width, height, faces: faces.collect() }),
+            None => all = Some(Found { width, height, faces: faces.collect(), people }),
         }
     }
     Ok(all.ok_or_else(|| Failure::Refused("nothing to look at".into())))
@@ -1659,7 +1697,7 @@ fn store_rotated(conn: &Connection, key: &str, model: &str, outcome: &Result<Fou
             added.push(f.clone());
         }
     }
-    let added_found = Found { width: found.width, height: found.height, faces: added };
+    let added_found = Found { width: found.width, height: found.height, faces: added, people: Vec::new() };
     store_looked(conn, key, FACES_ROT, model, &Ok(added_found.clone()))?;
     insert_faces(conn, key, model, &added_found.faces)
 }
@@ -1669,9 +1707,16 @@ fn store_rotated(conn: &Connection, key: &str, model: &str, outcome: &Result<Fou
 fn store_pets(conn: &Connection, key: &str, model: &str, outcome: &Result<Found, Failure>) -> Result<usize> {
     forget_neighbours(conn, "key = ?1 AND species IS NOT NULL", [key])?;
     conn.execute("DELETE FROM recog.faces WHERE key = ?1 AND species IS NOT NULL", [key])?;
+    conn.execute("DELETE FROM recog.bodies WHERE key = ?1", [key])?;
     store_looked(conn, key, PETS, model, outcome)?;
     match outcome {
-        Ok(found) => insert_faces(conn, key, model, &found.faces),
+        Ok(found) => {
+            let mut insert = conn.prepare_cached("INSERT INTO recog.bodies (key, x, y, w, h) VALUES (?1, ?2, ?3, ?4, ?5)")?;
+            for [x, y, w, h] in &found.people {
+                insert.execute(params![key, x, y, w, h])?;
+            }
+            insert_faces(conn, key, model, &found.faces)
+        }
         Err(_) => Ok(0),
     }
 }

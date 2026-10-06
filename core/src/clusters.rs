@@ -171,7 +171,7 @@ impl Eligible {
     }
 }
 
-fn eligible(conn: &Connection, space: Space, model: &str) -> Result<Eligible> {
+fn eligible(conn: &Connection, space: Space, model: &str, hidden: &HashSet<i64>) -> Result<Eligible> {
     let mut stmt = conn.prepare(&format!(
         "SELECT f.id, f.emb FROM recog.faces f
          JOIN recog.looked l ON l.key = f.key AND l.task = '{task}'
@@ -193,7 +193,11 @@ fn eligible(conn: &Connection, space: Space, model: &str) -> Result<Eligible> {
         if emb.is_empty() || emb.len() != out.dim {
             continue;
         }
-        out.ids.push(r.get(0)?);
+        let id: i64 = r.get(0)?;
+        if hidden.contains(&id) {
+            continue;
+        }
+        out.ids.push(id);
         out.data.extend(emb);
     }
     Ok(out)
@@ -227,9 +231,11 @@ struct Analysis {
 fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut dyn FnMut(u64, u64)) -> Result<Summary> {
     let started = Instant::now();
     let mut parts: Vec<Part> = Vec::new();
+    // A dog's face found by the face detector belongs to the pet, not here.
+    let hidden = crate::people::pet_face_ids(conn)?;
     for space in [Space::Faces, Space::Pets] {
         let Some(model) = current_model_of(conn, space)? else { continue };
-        let all = eligible(conn, space, &model)?;
+        let all = eligible(conn, space, &model, &hidden)?;
         let th = space.thresholds(&model);
         parts.push(Part { space, model, th, all, todo: Vec::new() });
     }

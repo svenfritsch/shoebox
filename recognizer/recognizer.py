@@ -63,6 +63,11 @@ COCO_PETS = {15: "cat", 16: "dog"}
 # hidden or far away, higher fewer plush toys.
 PET_SCORE = 0.35
 PET_NMS = 0.45
+# COCO class 0, person. The pets task also reports where people are, so the
+# core can tell a pet's face (a "face" found inside a pet and outside every
+# person) from a person's.
+COCO_PERSON = 0
+PEOPLE_SCORE = 0.4
 YOLOX_SIZE = 640
 # Pets smaller than this (px, shorter side of the box) give embeddings too
 # poor to tell individuals apart.
@@ -335,6 +340,7 @@ class Pets:
     def __call__(self, img, req=None):
         np = self.np
         h, w = img.shape[:2]
+        self.people = []
         pets = []
         for species, score, (x, y, bw, bh) in self.detect(img):
             if min(bw, bh) < MIN_PET:
@@ -373,17 +379,29 @@ class Pets:
         best = scores.argmax(1)
         ours = np.isin(best, list(COCO_PETS))
         score = np.where(ours, scores[np.arange(len(best)), best], 0.0)
-        keep = score >= PET_SCORE
-        if not keep.any():
+        # People the same way (the best of all classes), for `people`.
+        person = np.where(best == COCO_PERSON, scores[:, COCO_PERSON], 0.0)
+        self.people = [
+            [round(float(v), 2) for v in box]
+            for _, box in self.pick(xy, wh, r, person, PEOPLE_SCORE)
+        ]
+        return [(COCO_PETS[int(best[i])], sc, box) for i, (sc, box) in self.pick(xy, wh, r, score, PET_SCORE, True)]
+
+    def pick(self, xy, wh, r, score, threshold, with_index=False):
+        """The boxes whose score reaches `threshold`, after non-maximum
+        suppression, best first: [(index, (score, box))] with `with_index`,
+        else [(score, box)]; boxes are (x, y, w, h) in pixels of the picture."""
+        np, cv2 = self.np, self.cv2
+        keep = np.nonzero(score >= threshold)[0]
+        if not len(keep):
             return []
         boxes = np.concatenate([xy[keep] - wh[keep] / 2, wh[keep]], 1) / r
-        kept_score, kept_class = score[keep], best[keep]
-        picked = cv2.dnn.NMSBoxes(boxes.tolist(), kept_score.tolist(), PET_SCORE, PET_NMS)
-        found = []
-        for i in np.array(picked).reshape(-1):
-            x, y, bw, bh = (float(v) for v in boxes[i])
-            found.append((COCO_PETS[int(kept_class[i])], float(kept_score[i]), (x, y, bw, bh)))
-        return found
+        picked = cv2.dnn.NMSBoxes(boxes.tolist(), score[keep].tolist(), threshold, PET_NMS)
+        out = []
+        for k in np.array(picked).reshape(-1):
+            box = tuple(float(v) for v in boxes[k])
+            out.append((int(keep[k]), (float(score[keep][k]), box)) if with_index else (float(score[keep][k]), box))
+        return out
 
     def square(self, img, x, y, bw, bh):
         """The box, a little enlarged, padded to a square with grey and
@@ -456,6 +474,10 @@ def handle(cv2, np, tasks, req):
         if task not in tasks:
             raise ValueError(f"unknown task: {task}")
         reply[task] = tasks[task](img, req)
+        if task == "pets":
+            # Where people are (pixels of the picture): not pets, but they tell
+            # a pet's face from a person's.
+            reply["people"] = tasks[task].people
     return reply
 
 
