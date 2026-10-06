@@ -562,3 +562,5 @@ body.selecting .sec .pick { display: inline; }
 .singles-bar { flex-wrap: wrap; white-space: normal; max-width: calc(100% - 24px); }
 .singles-bar .pfield { min-width: 160px; }
 .singles-bar.busy { opacity: .6; pointer-events: none; }
+.sface-grid .cface:focus-visible { outline: none; }
+.sface-grid .cface:focus-visible .avatar { box-shadow: 0 0 0 3px var(--bg, #000), 0 0 0 5px var(--fg); }

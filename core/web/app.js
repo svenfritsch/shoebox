@@ -2965,7 +2965,12 @@ function openFacePhoto(face) {
   var saved = state.data;
   var letter = { jpeg: 'j', png: 'p', heic: 'h' }[face.kind] || 'j';
   state.data = { count: 1, ids: [face.file], kinds: letter, days: [0], versions: (face.version + '00000000').slice(0, 8), live: [] };
-  lb.restore = function () { state.data = saved; };
+  // Back to the thumbnail it was opened from (keyboard: Tab, Space, Space).
+  var from = document.activeElement;
+  lb.restore = function () {
+    state.data = saved;
+    if (from && from.isConnected && from.focus) from.focus();
+  };
   openLightbox(0);
 }
 
@@ -4015,7 +4020,7 @@ function singlesSection() {
   var ignore = el('button', 'btn quiet', tr('unnamed.ignore'));
   ignore.title = tr('unnamed.ignore_hint');
   var notFace = el('button', 'btn quiet', tr('facecheck.not_face'));
-  var done = el('button', 'btn quiet', tr('app.done'));
+  var done = el('button', 'btn quiet', tr('unnamed.clear'));
   [nameBtn, ignore, notFace, done].forEach(function (b) { bar.appendChild(b); });
 
   var picked = function () { return st.faces.filter(function (f) { return st.picked[f.id]; }); };
@@ -4040,6 +4045,19 @@ function singlesSection() {
     open.title = tr('facecheck.open_photo');
     open.onclick = function (ev) { ev.preventDefault(); ev.stopPropagation(); openFacePhoto(face); };
     t.appendChild(open);
+    // Keyboard: Tab between thumbnails (or ←/→), Enter selects (the click
+    // below), Space opens the photo and, in the viewer, closes it again.
+    t.onkeydown = function (ev) {
+      if (ev.altKey || ev.metaKey || ev.ctrlKey) return;
+      if (ev.key === ' ') {
+        ev.preventDefault();
+        ev.stopPropagation(); // the viewer's own Space (close) must not see this one
+        openFacePhoto(face);
+      } else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
+        var next = ev.key === 'ArrowLeft' ? t.previousElementSibling : t.nextElementSibling;
+        if (next) { ev.preventDefault(); next.focus(); }
+      }
+    };
     t.onclick = function (ev) {
       ev.preventDefault();
       var span = ev.shiftKey && pickSpan(st.faces, function (x) { return x.id; }, st.anchor, face.id);
