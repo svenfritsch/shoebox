@@ -132,6 +132,7 @@ button { cursor: pointer; }
 .lb-panel .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .lb-panel .tags button, .lb-panel dd button { background: rgba(255,255,255,.12); color: #eee; border: 0; border-radius: 99px; padding: 2px 10px; font-size: 13px; }
 .lb-panel .note { color: #999; font-size: 12px; }
+.lb-panel .estimated { display: inline-block; margin-left: 8px; padding: 0 7px; border-radius: 9px; background: #f0d3a8; color: #6b3d0f; font-size: 11px; font-weight: 600; vertical-align: 1px; cursor: help; }
 
 .login { position: fixed; inset: 0; z-index: 30; background: var(--bg); display: flex; align-items: center; justify-content: center; }
 .login form { display: flex; flex-direction: column; gap: 12px; width: min(320px, 90vw); text-align: center; }

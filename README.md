@@ -22,9 +22,10 @@ Plan and status: [docs/plan.md](docs/plan.md); usage per phase in `docs/`
 
 ## Guide
 
-A landing page and handbook as PDF, one per language: [English](docs/guide/shoebox-guide-en.pdf),
-[Deutsch](docs/guide/shoebox-guide-de.pdf). Both are attached to every release;
-sources and how to rebuild them: [docs/guide/](docs/guide/README.md).
+A landing page and handbook as PDF, one per language (English and German).
+Both are built from `docs/guide/` by the release workflow and attached to every
+release as `shoebox-guide-en.pdf` and `shoebox-guide-de.pdf`; sources and how
+to rebuild them: [docs/guide/](docs/guide/README.md).
 
 ## Video previews (optional)
 

@@ -40,7 +40,7 @@ T = {
   "title": "shoebox: your photo library, on the drive",
   "tagline": "Your photo library, on the drive.",
   "lede": "shoebox is a small program that lives on your external drive next to your photos. It indexes them, shows them in a fast timeline in your browser, and helps you tag, sort, import and de-duplicate, without ever copying them or touching their metadata.",
-  "badges": [("shield", "Originals stay untouched"), ("drive", "Lives on your drive"), ("lock", "Private: no cloud, no account"), ("tablet", "Browse from the iPad too")],
+  "badges": [("shield", "Originals stay untouched"), ("drive", "Lives on your drive"), ("lock", "Private: no cloud, no account"), ("tablet", "Browse from the iPad too"), ("globe", "macOS today · Linux &amp; Windows next")],
   "cover_note": "Guide · English",
   "other_lang": "Deutsche Version: shoebox-guide-de.pdf",
   "footer": "shoebox guide",
@@ -48,14 +48,14 @@ T = {
   "ov_sub": "One page in your browser, a timeline of everything on the drive.",
   "features": [
     ("grid", "Timeline", "All photos and videos by month, with a year jump, folder tree and a viewer with full-size info."),
-    ("search", "Search & filter", "Type a person, pet, tag or folder. Combine several as chips. Filter by photos, videos or Live Photos."),
+    ("search", "Search & filter", "Type a person, pet, tag or folder. Combine keywords for a more complex search. Filter by photos, videos or Live Photos."),
     ("tag", "Tags", "Your own tags on many photos at once. Folders count as tags too. Stored in the index, never in the photos."),
     ("move", "Move & organise", "Move photos to a folder (created if needed). RAW, Live Photo and sidecar files travel along."),
-    ("import", "Import", "Drop photos and videos into the window; they land in a “YYYY-MM Event” folder and keep their dates."),
+    ("import", "Import", "Pick the photos of an event or drop them into the window: they land in a new event folder and keep their dates."),
     ("dup", "Duplicates", "Finds identical, resized, edited and look-alike photos. You review; the best copy always stays."),
     ("trash", "Safe trash", "Deleted photos go to a trash on the drive. Put them back, or delete them for good."),
     ("people", "People & pets", "Optional recognition groups faces, cats and dogs. You name them; shoebox suggests the rest."),
-    ("drive", "Several drives", "Open more drives side by side, see which are backups, and check that a backup is complete."),
+    ("drive", "Several drives", "Browse the photos of several drives in one common timeline, even when they sit on different disks. Backups are recognised and checked."),
   ],
   "glance_h": "The screen at a glance",
   "glance_sub": "Everything is on one page. Here is where things are.",
@@ -72,7 +72,7 @@ T = {
     ("Language & status", "Switch English / German; see scan, thumbnail and drive status."),
   ],
   "session_h": "A typical session",
-  "session": "Plug in the drive and double-click <b>Start shoebox</b>. <b>Scan</b> (quick when little has changed) and open the photo app. <b>Import</b> new photos into an event folder, then tag and sort. Look at <b>Duplicates</b> now and then, and run the <b>Backup check</b> after every backup.",
+  "session": "Plug in the drive and double-click <b>Start shoebox</b>. <b>Scan</b> (quick when little has changed) and open the photo app. <b>Import</b> the photos of an event: pick them, name the event, and shoebox creates the event folder. Then tag and sort. Look at <b>Duplicates</b> now and then, and run the <b>Backup check</b> after every backup.",
   "start_h": "Get started in three steps",
   "start_sub": "macOS, Intel (10.13 or newer) and Apple Silicon. Nothing to install.",
   "steps": [
@@ -97,22 +97,22 @@ T = {
   "browse_h": "Browse and view",
   "browse_sub": "Scroll through the timeline, jump by year, open a photo.",
   "browse_items": [
-    ("Timeline", "Photos are grouped by capture date, newest first. The <b>Year</b> menu jumps; the month heading shows where you are. Photos without a capture date use the folder’s month."),
+    ("Timeline", "Photos are grouped by capture date, newest first. The <b>Year</b> menu jumps; the month heading shows where you are. A photo without a capture date takes the file’s created date, or else the month of its event folder; the info panel then marks the date as <b>estimated</b>."),
     ("Folders", "The sidebar mirrors the folders on your drive. Click one to see only its photos. Rename or move a folder from its chip."),
-    ("Viewer", "Click a photo. <b>ⓘ</b> opens the info panel: date, camera, size, tags, people, and buttons to open the folder or copy the path."),
+    ("Viewer", "Click a photo. <b>ⓘ</b> opens the info panel: date (marked <b>estimated</b> when it is not the day the photo was taken), camera, size, tags, people, and buttons to open the folder or copy the path."),
     ("Rotate", "<b>r</b> turns left, <b>Shift+R</b> right. For JPEGs this changes only the two bytes of the rotation flag; for other formats the turn exists in shoebox only."),
   ],
   "grid_cap": "The timeline: months, folders, search, type filter and year jump.",
   "viewer_cap": "The viewer with its info panel.",
   "keys_h": "Keyboard in the viewer",
-  "keys": [("← →", "previous / next"), ("i", "info panel"), ("r · Shift+R", "rotate left / right"), ("Esc · Space", "close")],
+  "keys": [("← →", "previous / next"), ("i", "show / hide the info panel"), ("Space", "open / close the viewer (on a photo picked with the arrow keys)"), ("r · Shift+R", "rotate left / right"), ("Esc", "close the viewer")],
   "find_h": "Find and organise",
   "find_sub": "Search, select, tag and move: all of it works on many photos at once.",
   "find_items": [
     ("Search", "Type in the search box: suggestions appear for tags, people and folders. Pick several and they become chips that narrow the result; × removes one, <b>Clear all</b> starts over."),
     ("Select", "Press <b>☑</b>, then click photos (Shift-click for a range; on the iPad just tap). “Select all” on a month heading takes the whole month."),
     ("Tag", "<b>Add tag…</b> puts your own tag on the selection. Tags live in shoebox’s index, never in the photo files."),
-    ("Move", "<b>Move…</b> asks for a folder. New folders are created, nothing is ever overwritten, and RAW, Live Photo and sidecar files move along. “Keep tags” decides whether the photos’ own tags go with them."),
+    ("Move", "<b>Move…</b> asks for a folder. New folders are created, nothing is ever overwritten, and RAW, Live Photo and sidecar files move along. “Keep tags” decides whether the photos’ own tags go with them; folder tags always follow the new folder."),
   ],
   "search_cap": "Suggestions as you type.",
   "select_cap": "Three photos selected; the bar offers Move, Tag and Trash.",
@@ -120,18 +120,29 @@ T = {
   "move_cap": "Moving into a new event folder.",
   "import_h": "Import, duplicates and trash",
   "import_items": [
-    ("Import", "Press <b>⤒</b> (or drop files on the window). Choose year, month and an event name: files go to <b>YYYY-MM Event</b>, keep their dates, and files already in the library are skipped."),
+    ("Import", "Press <b>⤒</b> (or drop files on the window). Choose year, month and an event name: shoebox creates the event folder <b>YYYY-MM Event</b>, the files keep their dates, and files already in the library are skipped. <i>Coming soon:</i> in <b>Settings</b> you choose your own pattern, using Y for the year and M for the month (J and M in German), for example <code>YYYY.MM Event</code>."),
     ("Duplicates", "<b>Duplicates</b> lists four kinds: identical, same photo in another size, original and edited, and look-alikes. Tick <b>delete this copy</b> on what you want gone; the best file stays and at least one per group always does. Tags and capture dates of a removed copy carry over."),
-    ("Shortcuts", "<b>Clear Same Folder Copies</b> and <b>Clear Lower Quality Copies</b> clean up the clear-cut cases in one go. <b>Different photos</b> and <b>Versions of one photo</b> record your decision so the group does not return."),
+    ("Shortcuts", "<b>Clear Same Folder Copies</b> and <b>Clear Lower Quality Copies</b> clean up the clear-cut cases in one go. Groups of similar photos need your decision: choose <b>Different photos</b> or <b>Versions of one photo</b>, and shoebox remembers it so the group does not return."),
     ("Trash", "Nothing is deleted right away. Trashed photos wait in <code>.shoebox/trash</code> on the drive: <b>Put back</b> or <b>Delete for good</b>."),
   ],
   "import_cap": "Import dialog.",
   "dups_cap": "Duplicates: a pre-ticked messenger copy next to its original.",
   "trash_cap": "The trash page.",
-  "people_h": "People, pets, drives and the iPad",
+  "people_h": "People and pets",
+  "people_sub": "Optional: shoebox finds faces, cats and dogs; you give them names.",
   "people_items": [
-    ("People & pets (optional)", "Install the recognizer once (<code>recognizer/install.sh /Volumes/MyDrive</code>), then run <b>Recognize</b> in the launcher. A <b>Faces</b> section appears in the sidebar. Name a card under <b>Unnamed</b>, then confirm (✓) or reject (✗) the suggestions. Group people, merge duplicates of a person, and draw a box around a face that was missed. Cats and dogs work the same way."),
-    ("Several drives", "Start with more than one folder and each drive appears in the sidebar. <b>All drives</b> shows backups, photos that exist on more than one drive, and people across drives. A drive that is unplugged is shown as offline."),
+    ("Find them", "Install the recognizer once (<code>recognizer/install.sh /Volumes/MyDrive</code>). Then close the photo app and run <b>Recognize</b> (and <b>Recognize pets</b>) in the launcher. A <b>Faces</b> section appears in the sidebar."),
+    ("Name them", "Under <b>Unnamed</b>, shoebox shows cards of similar faces. Type a name once and the whole card is named; later, confirm (✓) or reject (✗) the suggestions. Group people, merge two cards of one person, mark strangers with <b>Ignore</b>."),
+    ("In the viewer", "The info panel lists who is on the photo and draws a box around each face or pet. Click a name to see all their photos, or draw a box around a face or pet that was missed."),
+    ("Search", "Names work in the search box like tags, and so do kinds such as “all cats”. Combine a person with a tag, a folder or another person."),
+    ("New photos", "Recognition does not start by itself after an import yet. Close the photo app and run <b>Recognize</b> again: it only looks at the new photos."),
+  ],
+  "unnamed_cap": "Unnamed cards: one name for every face on a card.",
+  "info_people_cap": "The info panel names the girl and the cat; boxes show where they are.",
+  "people_screens_note": "Sample pictures are drawn comics, not real photos.",
+  "drives_h": "Drives, backups and the iPad",
+  "drives_items": [
+    ("Several drives", "Start shoebox with more than one drive and each one appears in the sidebar. <b>All drives</b> gives you one common timeline across all of them, and shows backups, photos that exist on more than one drive, and people across drives. A drive that is unplugged is shown as offline."),
     ("Backup check", "Choose the original first and the backup second. shoebox compares the two indexes (no photo is read) and lists what is not on the backup yet, what differs and what exists only on the backup. <i>Also re-read the backup</i> finds bit rot."),
     ("iPad & other devices", "In Terminal: <code>shoebox serve /Volumes/MyDrive --lan</code>. It prints an address and a PIN; open the address in Safari on the same Wi-Fi and enter the PIN once. Swipe in the viewer, tap to select."),
   ],
@@ -168,7 +179,7 @@ T = {
   "title": "shoebox: deine Fotobibliothek auf dem Laufwerk",
   "tagline": "Deine Fotobibliothek, auf dem Laufwerk.",
   "lede": "shoebox ist ein kleines Programm, das auf deinem externen Laufwerk neben deinen Fotos liegt. Es indexiert sie, zeigt sie im Browser in einer schnellen Zeitleiste und hilft beim Verschlagworten, Sortieren, Importieren und Aufräumen von Duplikaten, ohne sie je zu kopieren oder ihre Metadaten anzufassen.",
-  "badges": [("shield", "Originale bleiben unberührt"), ("drive", "Liegt auf deinem Laufwerk"), ("lock", "Privat: keine Cloud, kein Konto"), ("tablet", "Auch am iPad nutzbar")],
+  "badges": [("shield", "Originale bleiben unberührt"), ("drive", "Liegt auf deinem Laufwerk"), ("lock", "Privat: keine Cloud, kein Konto"), ("tablet", "Auch am iPad nutzbar"), ("globe", "macOS heute · Linux &amp; Windows folgen")],
   "cover_note": "Handbuch · Deutsch",
   "other_lang": "English version: shoebox-guide-en.pdf",
   "footer": "shoebox Handbuch",
@@ -176,14 +187,14 @@ T = {
   "ov_sub": "Eine Seite im Browser, eine Zeitleiste von allem auf dem Laufwerk.",
   "features": [
     ("grid", "Zeitleiste", "Alle Fotos und Videos nach Monat, mit Jahressprung, Ordnerbaum und einer Ansicht mit Infos zum Foto."),
-    ("search", "Suchen & Filtern", "Tippe eine Person, ein Haustier, einen Tag oder Ordner. Mehrere ergeben Chips. Filter nach Fotos, Videos oder Live Photos."),
+    ("search", "Suchen & Filtern", "Tippe eine Person, ein Haustier, einen Tag oder Ordner. Kombiniere Schlagwörter für eine komplexere Suche. Filter nach Fotos, Videos oder Live Photos."),
     ("tag", "Tags", "Eigene Tags für viele Fotos auf einmal. Auch Ordner zählen als Tags. Im Index gespeichert, nie in den Fotos."),
     ("move", "Verschieben & ordnen", "Fotos in einen Ordner verschieben (wird bei Bedarf angelegt). RAW-, Live-Photo- und Sidecar-Dateien wandern mit."),
-    ("import", "Importieren", "Fotos und Videos ins Fenster ziehen; sie landen in einem Ordner „JJJJ-MM Ereignis“ und behalten ihre Daten."),
+    ("import", "Importieren", "Die Fotos eines Ereignisses auswählen oder ins Fenster ziehen: Sie landen in einem neuen Ereignisordner und behalten ihre Daten."),
     ("dup", "Duplikate", "Findet identische, verkleinerte, bearbeitete und ähnliche Fotos. Du prüfst; die beste Kopie bleibt immer."),
     ("trash", "Sicherer Papierkorb", "Gelöschte Fotos landen in einem Papierkorb auf dem Laufwerk. Zurücklegen oder endgültig löschen."),
     ("people", "Personen & Haustiere", "Optionale Erkennung gruppiert Gesichter, Katzen und Hunde. Du vergibst Namen, shoebox schlägt den Rest vor."),
-    ("drive", "Mehrere Laufwerke", "Mehrere Laufwerke nebeneinander öffnen, Backups erkennen und prüfen, ob ein Backup vollständig ist."),
+    ("drive", "Mehrere Laufwerke", "Die Fotos mehrerer Laufwerke in einer gemeinsamen Zeitleiste durchstöbern, auch wenn sie auf verschiedenen Platten liegen. Backups werden erkannt und geprüft."),
   ],
   "glance_h": "Die Oberfläche im Überblick",
   "glance_sub": "Alles ist auf einer Seite. So findest du dich zurecht.",
@@ -200,7 +211,7 @@ T = {
     ("Sprache & Status", "Zwischen Deutsch und Englisch wechseln; Scan-, Vorschau- und Laufwerksstatus."),
   ],
   "session_h": "Ein typischer Ablauf",
-  "session": "Laufwerk anstecken und <b>Start shoebox</b> doppelklicken. <b>Scannen</b> (geht schnell, wenn sich wenig geändert hat) und die Foto-App öffnen. Neue Fotos in einen Ereignisordner <b>importieren</b>, dann taggen und sortieren. Ab und zu die <b>Duplikate</b> ansehen und nach jedem Backup die <b>Backup-Prüfung</b> laufen lassen.",
+  "session": "Laufwerk anstecken und <b>Start shoebox</b> doppelklicken. <b>Scannen</b> (geht schnell, wenn sich wenig geändert hat) und die Foto-App öffnen. Die Fotos eines Ereignisses <b>importieren</b>: auswählen, das Ereignis benennen, und shoebox legt den Ereignisordner an. Dann taggen und sortieren. Ab und zu die <b>Duplikate</b> ansehen und nach jedem Backup die <b>Backup-Prüfung</b> laufen lassen.",
   "start_h": "In drei Schritten loslegen",
   "start_sub": "macOS, Intel (ab 10.13) und Apple Silicon. Nichts zu installieren.",
   "steps": [
@@ -225,22 +236,22 @@ T = {
   "browse_h": "Stöbern und ansehen",
   "browse_sub": "Durch die Zeitleiste scrollen, nach Jahr springen, ein Foto öffnen.",
   "browse_items": [
-    ("Zeitleiste", "Fotos sind nach Aufnahmedatum gruppiert, neueste zuerst. Das Menü <b>Jahr</b> springt; die Monatsüberschrift zeigt, wo du bist. Fotos ohne Aufnahmedatum nehmen den Monat ihres Ordners."),
+    ("Zeitleiste", "Fotos sind nach Aufnahmedatum gruppiert, neueste zuerst. Das Menü <b>Jahr</b> springt; die Monatsüberschrift zeigt, wo du bist. Ein Foto ohne Aufnahmedatum nimmt das Erstellungsdatum der Datei, sonst den Monat seines Ereignisordners; das Infofeld markiert das Datum dann als <b>geschätzt</b>."),
     ("Ordner", "Die Seitenleiste spiegelt die Ordner deines Laufwerks. Ein Klick zeigt nur dessen Fotos. Einen Ordner kannst du über seinen Chip umbenennen oder verschieben."),
-    ("Ansicht", "Foto anklicken. <b>ⓘ</b> öffnet das Infofeld: Datum, Kamera, Größe, Tags, Personen und Knöpfe, um den Ordner zu öffnen oder den Pfad zu kopieren."),
+    ("Ansicht", "Foto anklicken. <b>ⓘ</b> öffnet das Infofeld: Datum (als <b>geschätzt</b> markiert, wenn es nicht der Aufnahmetag ist), Kamera, Größe, Tags, Personen und Knöpfe, um den Ordner zu öffnen oder den Pfad zu kopieren."),
     ("Drehen", "<b>r</b> dreht nach links, <b>Umschalt+R</b> nach rechts. Bei JPEGs ändern sich nur die zwei Bytes der Drehmarke; bei anderen Formaten gilt die Drehung nur in shoebox."),
   ],
   "grid_cap": "Die Zeitleiste: Monate, Ordner, Suche, Typfilter und Jahressprung.",
   "viewer_cap": "Die Ansicht mit Infofeld.",
   "keys_h": "Tastatur in der Ansicht",
-  "keys": [("← →", "vorheriges / nächstes"), ("i", "Infofeld"), ("r · Umschalt+R", "nach links / rechts drehen"), ("Esc · Leertaste", "schließen")],
+  "keys": [("← →", "vorheriges / nächstes"), ("i", "Infofeld ein- / ausblenden"), ("Leertaste", "Ansicht öffnen / schließen (bei einem per Pfeiltasten gewählten Foto)"), ("r · Umschalt+R", "nach links / rechts drehen"), ("Esc", "Ansicht schließen")],
   "find_h": "Finden und ordnen",
   "find_sub": "Suchen, auswählen, taggen und verschieben: alles geht für viele Fotos auf einmal.",
   "find_items": [
     ("Suchen", "Tippe ins Suchfeld: Vorschläge erscheinen für Tags, Personen und Ordner. Mehrere gewählte werden zu Chips, die das Ergebnis eingrenzen; × entfernt einen, <b>Alle entfernen</b> beginnt neu."),
     ("Auswählen", "<b>☑</b> drücken, dann Fotos anklicken (mit Umschalt für einen Bereich; am iPad einfach tippen). „Alle auswählen“ an einer Monatsüberschrift nimmt den ganzen Monat."),
     ("Taggen", "<b>Tag hinzufügen …</b> gibt der Auswahl deinen eigenen Tag. Tags leben im Index von shoebox, nie in den Fotodateien."),
-    ("Verschieben", "<b>Verschieben …</b> fragt nach einem Ordner. Neue Ordner werden angelegt, nichts wird überschrieben, RAW-, Live-Photo- und Sidecar-Dateien wandern mit. „Tags behalten“ entscheidet, ob die eigenen Tags der Fotos mitgehen."),
+    ("Verschieben", "<b>Verschieben …</b> fragt nach einem Ordner. Neue Ordner werden angelegt, nichts wird überschrieben, RAW-, Live-Photo- und Sidecar-Dateien wandern mit. „Tags behalten“ entscheidet, ob die eigenen Tags der Fotos mitgehen; Ordner-Tags folgen immer dem neuen Ordner."),
   ],
   "search_cap": "Vorschläge beim Tippen.",
   "select_cap": "Drei Fotos ausgewählt; die Leiste bietet Verschieben, Tag und Papierkorb.",
@@ -248,18 +259,29 @@ T = {
   "move_cap": "In einen neuen Ereignisordner verschieben.",
   "import_h": "Import, Duplikate und Papierkorb",
   "import_items": [
-    ("Importieren", "<b>⤒</b> drücken (oder Dateien aufs Fenster ziehen). Jahr, Monat und Ereignisnamen wählen: Die Dateien kommen nach <b>JJJJ-MM Ereignis</b>, behalten ihre Daten, und Dateien, die schon in der Bibliothek sind, werden übersprungen."),
+    ("Importieren", "<b>⤒</b> drücken (oder Dateien aufs Fenster ziehen). Jahr, Monat und Ereignisnamen wählen: shoebox legt den Ereignisordner <b>JJJJ-MM Ereignis</b> an, die Dateien behalten ihre Daten, und Dateien, die schon in der Bibliothek sind, werden übersprungen. <i>In Kürze:</i> In den <b>Einstellungen</b> wählst du dein eigenes Muster, mit J für das Jahr und M für den Monat, zum Beispiel <code>JJJJ.MM Ereignis</code>."),
     ("Duplikate", "<b>Duplikate</b> zeigt vier Arten: identisch, dasselbe Foto in anderer Größe, Original und bearbeitet sowie Ähnliche. Hake <b>diese Kopie löschen</b> bei dem an, was weg soll; die beste Datei bleibt, und pro Gruppe bleibt immer mindestens eine. Tags und Aufnahmedatum einer entfernten Kopie gehen auf die übrige über."),
-    ("Abkürzungen", "<b>Kopien im selben Ordner entfernen</b> und <b>Kopien geringerer Qualität entfernen</b> räumen die eindeutigen Fälle in einem Zug auf. <b>Verschiedene Fotos</b> und <b>Versionen eines Fotos</b> merken sich deine Entscheidung, damit die Gruppe nicht wiederkommt."),
+    ("Abkürzungen", "<b>Kopien im selben Ordner entfernen</b> und <b>Kopien geringerer Qualität entfernen</b> räumen die eindeutigen Fälle in einem Zug auf. Gruppen ähnlicher Fotos brauchen deine Entscheidung: Wähle <b>Verschiedene Fotos</b> oder <b>Versionen eines Fotos</b>, und shoebox merkt sie sich, damit die Gruppe nicht wiederkommt."),
     ("Papierkorb", "Nichts wird sofort gelöscht. Gelöschte Fotos warten in <code>.shoebox/trash</code> auf dem Laufwerk: <b>Zurücklegen</b> oder <b>Endgültig löschen</b>."),
   ],
   "import_cap": "Der Import-Dialog.",
   "dups_cap": "Duplikate: eine vorgewählte Messenger-Kopie neben ihrem Original.",
   "trash_cap": "Die Papierkorb-Seite.",
-  "people_h": "Personen, Haustiere, Laufwerke und das iPad",
+  "people_h": "Personen und Haustiere",
+  "people_sub": "Optional: shoebox findet Gesichter, Katzen und Hunde; du vergibst die Namen.",
   "people_items": [
-    ("Personen & Haustiere (optional)", "Einmal den Recognizer installieren (<code>recognizer/install.sh /Volumes/MeinLaufwerk</code>), dann im Starter <b>Erkennen</b> ausführen. In der Seitenleiste erscheint der Bereich <b>Gesichter</b>. Eine Karte unter <b>Unbenannt</b> benennen, dann Vorschläge bestätigen (✓) oder ablehnen (✗). Personen gruppieren, doppelte Personen zusammenführen, ein übersehenes Gesicht mit einem Rahmen markieren. Katzen und Hunde funktionieren genauso."),
-    ("Mehrere Laufwerke", "Mit mehr als einem Ordner starten, und jedes Laufwerk erscheint in der Seitenleiste. <b>Alle Laufwerke</b> zeigt Backups, Fotos auf mehreren Laufwerken und Personen laufwerksübergreifend. Ein abgestecktes Laufwerk steht als offline da."),
+    ("Finden", "Einmal den Recognizer installieren (<code>recognizer/install.sh /Volumes/MeinLaufwerk</code>). Dann die Foto-App schließen und im Starter <b>Erkennen</b> (und <b>Haustiere erkennen</b>) ausführen. In der Seitenleiste erscheint der Bereich <b>Gesichter</b>."),
+    ("Benennen", "Unter <b>Unbenannt</b> zeigt shoebox Karten mit ähnlichen Gesichtern. Einmal einen Namen eintippen, und die ganze Karte ist benannt; später Vorschläge bestätigen (✓) oder ablehnen (✗). Personen gruppieren, zwei Karten einer Person zusammenführen, Fremde mit <b>Ignorieren</b> markieren."),
+    ("In der Ansicht", "Das Infofeld nennt, wer auf dem Foto ist, und zeichnet um jedes Gesicht oder Tier einen Rahmen. Ein Klick auf einen Namen zeigt alle Fotos der Person; ein übersehenes Gesicht oder Tier kannst du mit einem Rahmen markieren."),
+    ("Suchen", "Namen funktionieren im Suchfeld wie Tags, ebenso Arten wie „alle Katzen“. Kombiniere eine Person mit einem Tag, einem Ordner oder einer weiteren Person."),
+    ("Neue Fotos", "Die Erkennung startet nach einem Import noch nicht von selbst. Foto-App schließen und <b>Erkennen</b> erneut ausführen: Es werden nur die neuen Fotos angesehen."),
+  ],
+  "unnamed_cap": "Unbenannt: ein Name für alle Gesichter einer Karte.",
+  "info_people_cap": "Das Infofeld nennt das Mädchen und die Katze; Rahmen zeigen, wo sie sind.",
+  "people_screens_note": "Die Beispielbilder sind gezeichnete Comics, keine echten Fotos.",
+  "drives_h": "Laufwerke, Backups und das iPad",
+  "drives_items": [
+    ("Mehrere Laufwerke", "shoebox mit mehr als einem Laufwerk starten, und jedes erscheint in der Seitenleiste. <b>Alle Laufwerke</b> zeigt eine gemeinsame Zeitleiste über alle, dazu Backups, Fotos auf mehreren Laufwerken und Personen laufwerksübergreifend. Ein abgestecktes Laufwerk steht als offline da."),
     ("Backup-Prüfung", "Erst das Original wählen, dann das Backup. shoebox vergleicht die beiden Indizes (kein Foto wird gelesen) und listet, was noch nicht auf dem Backup ist, was abweicht und was nur auf dem Backup liegt. <i>Auch das Backup neu lesen</i> findet Bitfäule."),
     ("iPad & andere Geräte", "Im Terminal: <code>shoebox serve /Volumes/MeinLaufwerk --lan</code>. Es zeigt eine Adresse und eine PIN; die Adresse in Safari im selben WLAN öffnen und die PIN einmal eingeben. In der Ansicht wischen, zum Auswählen tippen."),
   ],
@@ -420,7 +442,7 @@ def build(lang):
     pages.append(page(t, 3, f'''<h2>{t["start_h"]}</h2><p class="sub">{t["start_sub"]}</p>
       <div class="two" style="grid-template-columns:1.05fr .95fr">
         <div>{steps}<div class="panel" style="margin-top:3mm"><h3>{t["launcher_tasks_h"]}</h3><div class="kv">{tasks}</div></div></div>
-        <div>{shot(L, "12-launcher", t["launcher_cap"], "crop", "--h:150mm")}</div>
+        <div>{shot(L, "12-launcher", t["launcher_cap"])}</div>
       </div>
       <div class="panel" style="margin-top:6mm"><h3>{t["tip_h"]}</h3><ul>{tips}</ul><p style="margin:2mm 0 0 0;color:var(--muted)">{t["lang_note"]}</p></div>'''))
 
@@ -457,13 +479,22 @@ def build(lang):
       </div>
       <div style="margin-top:5mm">{shot(L, "09-duplicates", t["dups_cap"], "cropb", "--h:86mm")}</div>'''))
 
-    # 7 people, drives, ipad
-    pages.append(page(t, 7, f'''<h2>{t["people_h"]}</h2><p class="sub">&nbsp;</p>
+    # 7 people and pets
+    pages.append(page(t, 7, f'''<h2>{t["people_h"]}</h2><p class="sub">{t["people_sub"]}</p>
       <div class="pad">
-        <div style="flex:1.7">{items(t["people_items"])}</div>
-        <div style="flex:1">{shot(L, "13-ipad", t["ipad_cap"], "crop", "--h:130mm")}</div>
-      </div>
-      <div class="panel" style="margin-top:5mm"><h3>{t["cli_h"]}</h3><div class="kv" style="grid-template-columns:78mm 1fr">{"".join(f'<div class="k"><code>{a}</code></div><div>{b}</div>' for a, b in t["cli"])}</div></div>'''))
+        <div style="flex:1.05">{items(t["people_items"])}</div>
+        <div style="flex:1" class="stack">{shot(L, "14-unnamed", t["unnamed_cap"], "crop", "--h:64mm")}
+          {shot(L, "16-info-people", t["info_people_cap"])}
+          <p style="color:var(--muted);font-size:7.8pt">{t["people_screens_note"]}</p></div>
+      </div>'''))
+
+    # 8 drives, backups, ipad
+    pages.append(page(t, 8, f'''<h2>{t["drives_h"]}</h2><p class="sub">&nbsp;</p>
+      <div class="pad">
+        <div style="flex:1.7">{items(t["drives_items"])}
+          <div class="panel" style="margin-top:6mm"><h3>{t["cli_h"]}</h3><div class="kv" style="grid-template-columns:1fr">{"".join(f'<div><code>{a}</code><br><span style="color:var(--muted)">{b}</span></div>' for a, b in t["cli"])}</div></div></div>
+        <div style="flex:1">{shot(L, "13-ipad", t["ipad_cap"], "crop", "--h:150mm")}</div>
+      </div>'''))
 
     # 8 safety + faq
     safe = "".join(f'<div class="card"><div class="ic">{ICONS[i]}</div><h3>{h}</h3><p>{p}</p></div>'

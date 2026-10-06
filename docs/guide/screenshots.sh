@@ -14,8 +14,10 @@ export NODE_PATH=${NODE_PATH:-$(npm root -g)}
 for lang in en de; do
     out=$PWD/shots/$lang; rm -rf "$out"; mkdir -p "$out"
     rm -rf "$LIB" /tmp/shoebox-guide-home; mkdir -p "$LIB" /tmp/shoebox-guide-home
-    python3 make-sample-library.py "$LIB" "$lang"
+    python3 make-sample-library.py "$LIB" "$lang" /tmp/shoebox-guide-ann.json
     "$BIN" scan "$LIB" >/dev/null 2>&1
+    # faces and cats from the mock recognizer (no models needed)
+    SHOEBOX_MOCK_ANN=/tmp/shoebox-guide-ann.json "$BIN" recognize "$LIB" --recognizer "$PWD/mock-recognizer.py" --pets >/dev/null 2>&1
     "$BIN" serve "$LIB" --port 7900 >/dev/null 2>&1 & pid=$!
     sleep 2
     node screenshots.mjs app "$lang" "$out" http://localhost:7900/ "$LIB"

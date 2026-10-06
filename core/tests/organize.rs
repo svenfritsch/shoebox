@@ -140,7 +140,10 @@ fn guard_moves_renames_and_trash_keep_every_file_intact() {
         lib.db().query_row("SELECT parent_id FROM folders WHERE id = ?1", [konflikt], |r| r.get(0)).unwrap();
     assert_eq!(parent, folder_id(&lib, "Archiv"));
 
-    // An event folder renamed to another month: tags and timeline follow.
+    // An event folder renamed to another month: tags and timeline follow
+    // (for a photo without a capture date or a created date; the files here
+    // are made just now, so they have created dates).
+    lib.db().execute("UPDATE files SET created_ns = NULL", []).unwrap();
     let event = folder_id(&lib, "2020-07 Urlaub Griechenland");
     let r = post(addr, &format!("/api/folders/{event}/rename"), &json!({ "path": "2020-06 Urlaub Kreta" }));
     assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));

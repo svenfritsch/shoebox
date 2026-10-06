@@ -1,23 +1,26 @@
 # Guide (landing page and handbook)
 
 `shoebox-guide-en.pdf` and `shoebox-guide-de.pdf` are the product's landing
-page and handbook, one PDF per language. They are committed here and the
-release workflow attaches both to every release (`.github/workflows/build.yml`,
-job `release`).
+page and handbook, one PDF per language. They are **not kept in git**: the
+`guide` job of `.github/workflows/build.yml` builds them from these sources on
+every push and pull request (artifact `shoebox-guide`), and the `release` job
+attaches the two PDFs to each release, so every release carries a fresh guide.
 
 Edit the text in `build-guide.py` (English and German side by side: keep both
-in step, and take UI names from `core/i18n/en.json` / `de.json`).
+in step, and take UI names from `core/i18n/en.json` / `de.json`). The
+screenshots in `shots/` are committed.
 
 ```sh
-# 1. only when the UI changed: new screenshots (sample library with synthetic
-#    photos, created at /Volumes/Photos; needs a built shoebox binary,
-#    Python with Pillow and numpy, Node with Playwright and a Chromium)
-CHROME=/path/to/chrome docs/guide/screenshots.sh core/target/release/shoebox
-# 2. the PDFs (also needs the Inter font installed)
+# the PDFs (needs python3, Chrome/Chromium and the Inter font)
 CHROME=/path/to/chrome docs/guide/build.sh
-# 3. commit shots/, the PDFs and whatever else changed
+
+# only when the UI changed: new screenshots. They come from a sample library
+# of drawn, synthetic pictures (a comic girl and a cat, created at
+# /Volumes/Photos) with faces and pets from a mock recognizer, so no models
+# are needed. Needs a built shoebox binary, Python with Pillow and numpy, and
+# Node with Playwright and a Chromium.
+CHROME=/path/to/chrome docs/guide/screenshots.sh core/target/release/shoebox
 ```
 
-`make-sample-library.py` makes the sample photos (no real people or photos are
-in the repo). Not in the screenshots: people and pets, which need the
-recognizer and its models.
+`comic.py` draws the pictures, `make-sample-library.py` builds the library,
+`mock-recognizer.py` answers the recognizer protocol for it (docs/protocol.md).

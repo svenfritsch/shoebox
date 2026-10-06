@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Generate a small sample library (synthetic landscapes, no real people) for
-the guide's screenshots.  usage: make-sample-library.py OUTDIR [en|de]"""
+the guide's screenshots.  usage: make-sample-library.py OUTDIR [en|de] [annotations.json]"""
 import math, os, random, sys
 import numpy as np
 from PIL import Image, ImageFilter
@@ -81,13 +81,45 @@ for folder, shots in LIB.items():
         ex[0x0132] = date
         im.save(os.path.join(out, folder, f"IMG_{1000 + n}.jpg"), quality=88, exif=ex)
 
+# Comic pictures (a girl, Mia, and a cat, Whiskers) for the people and pets
+# screenshots, and the annotations the mock recognizer answers from.
+import json
+import numpy as np
+from comic import scene
+COMIC = {
+    "2025-05 Garden party": [("park", "2025:05:17 15:20:00"), ("garden", "2025:05:17 16:05:00"), ("close", "2025:05:17 17:40:00")],
+    "2025-07 Beach": [("beach", "2025:07:12 11:30:00"), ("sofa", "2025:07:20 19:10:00"), ("cat2", "2025:07:21 09:00:00")],
+}
+DE_COMIC = {"2025-05 Garden party": "2025-05 Gartenfest", "2025-07 Beach": "2025-07 Strand"}
+annotations = []
+for folder, shots in COMIC.items():
+    folder = DE_COMIC[folder] if lang == "de" else folder
+    os.makedirs(os.path.join(out, folder), exist_ok=True)
+    for name, date in shots:
+        n += 1
+        im, faces, pets = scene(name)
+        ex = Image.Exif()
+        ex[0x0110] = "Sample Camera"
+        ex.get_ifd(0x8769)[0x9003] = date
+        ex.get_ifd(0x8769)[0x9004] = date
+        ex[0x0132] = date
+        path = os.path.join(out, folder, f"IMG_{1000 + n}.jpg")
+        im.save(path, quality=88, exif=ex)
+        fp = np.asarray(Image.open(path).convert("L").resize((16, 16), Image.BILINEAR), dtype=float).ravel()
+        annotations.append({"fp": fp.tolist(),
+                            "faces": [{"who": w, "bbox": b} for w, b, _ in faces],
+                            "pets": [{"who": w, "species": "cat", "bbox": b} for w, b, _ in pets]})
+if len(sys.argv) > 3:
+    json.dump(annotations, open(sys.argv[3], "w"))
+
 # Duplicates for the guide: an exact copy and a messenger-sized copy.
 src = os.path.join(out, first, "IMG_1001.jpg")
 os.makedirs(os.path.join(out, "Messenger"), exist_ok=True)
 import shutil
 shutil.copy2(src, os.path.join(out, "Messenger", "IMG_1001 copy.jpg"))
 small = os.path.join(out, "Messenger", "WhatsApp Image.jpg")
-Image.open(src).resize((640, 427)).save(small, quality=70)  # no EXIF, as after a messenger
+small_im = Image.open(src).resize((640, 427))
+small_im.save(small, quality=70, exif=Image.open(src).getexif())
 import datetime
 t = datetime.datetime(2024, 6, 14, 6, 40).timestamp()
 os.utime(small, (t, t))

@@ -1129,7 +1129,12 @@ function renderPanel() {
   };
   var date = row(tr('info.date'), formatDate(info) + (info.taken_offset ? ' (UTC' + info.taken_offset + ')' : ''));
   if (date && info.date_source !== 'file') {
-    date.appendChild(el('div', 'note', tr(info.date_source === 'folder' ? 'info.no_date_folder' : 'info.no_date_file')));
+    // Not the day the photo was taken: say so next to the date.
+    var badge = el('span', 'estimated', tr('info.estimated'));
+    badge.title = tr('info.estimated_hint');
+    date.appendChild(badge);
+    date.appendChild(el('div', 'note', tr(info.date_source === 'created' ? 'info.no_date_created'
+      : info.date_source === 'folder' ? 'info.no_date_folder' : 'info.no_date_file')));
   }
   row(tr('info.name'), info.name);
   var folder = info.path.indexOf('/') >= 0 ? info.path.slice(0, info.path.lastIndexOf('/')) : '';
