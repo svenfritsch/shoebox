@@ -1484,9 +1484,9 @@ function moveDialog(ids, done) {
   var keepLabel = el('label', 'check');
   var keep = el('input');
   keep.type = 'checkbox';
-  keep.checked = true;
+  keep.checked = false;
   keepLabel.appendChild(keep);
-  keepLabel.appendChild(document.createTextNode(' ' + tr('move.keep_tags')));
+  keepLabel.appendChild(document.createTextNode(' ' + tr('move.keep_folder_tags')));
   keepLabel.title = tr('move.keep_hint');
   body.appendChild(keepLabel);
   body.appendChild(el('p', 'hint', tr('move.hint')));
@@ -1496,7 +1496,7 @@ function moveDialog(ids, done) {
     var folder = input.value.trim();
     if (!folder) { error.textContent = tr('move.choose'); return false; }
     btn.disabled = true;
-    post(LIBAPI + '/move', { ids: ids, folder: folder, keep_tags: keep.checked }).then(function (r) {
+    post(LIBAPI + '/move', { ids: ids, folder: folder, keep_folder_tags: keep.checked }).then(function (r) {
       closeModal();
       if (done) done();
       toast(tr('move.done', { count: trn('count.files', r.files.length), folder: r.folder }));

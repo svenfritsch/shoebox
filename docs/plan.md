@@ -144,20 +144,19 @@ built:
 
 Until it exists, the guide PDFs (`docs/guide/`) say so.
 
-### Move dialog: what "Keep tags" should mean (to adjust)
+### Move dialog: "Keep folder tags" (built)
 
-Today (`organize::move_files_with`) the checkbox "Keep tags" decides whether
-a photo's **own** tags (the ones the user added by hand) move along:
-unchecked, they are dropped. That is not what we want: own tags belong to the
-photo and must **always** move with it. The checkbox should only be about the
-**folder tags**, the tags a photo has from where it lies. Folder tags always
-follow the new folder; "keep" would mean also keeping the old folder's tags
-on the photo, as own tags. To do: change `move_group` so own tags are never
-dropped, make the checkbox mean "also keep the old folder's tags as own
-tags" (default: off), rewrite `move.keep_tags` / `move.keep_hint` in both
-languages, and adjust the tests in `core/tests/organize.rs` and the guide
-(`docs/guide/build-guide.py`, "Move"). The guide describes today's behaviour
-until then.
+A photo's **own** tags (the ones the user added by hand) are never lost: they
+always move with the photo, and duplicate cleanup (`duplicates::remove_copies`)
+already hands the own and folder tags of a removed copy to the survivor as own
+tags. Adding tags by hand is slow work, so the index must always keep as many
+as possible. The Move dialog checkbox is only about the generated **folder
+tags**, which are the ones that would otherwise be lost: "Keep folder tags" /
+"Ordnertags behalten" (default: off) keeps the old folder's tags on the photo
+as own tags; folder tags always follow the new folder either way.
+`POST /api/move` takes `keep_folder_tags` (default false); see
+`organize::move_files_with`, `tags::keep_as_own` and
+`move_always_keeps_own_tags_and_can_keep_folder_tags` in `core/tests/tags.rs`.
 
 ### Recognition after an import (open)
 
@@ -251,7 +250,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 5b | Own tags (add/remove, many photos at once, search), user data backup | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5b-2 | Search by several tags at once (AND, chips); people join in with 5c-3 | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **5c-1 done**, checked on the real drive; **5c-2 and 5c-3 done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 5d | Duplicates UI: one row per photo, multi-select, bulk delete within a folder, tag and capture-date carry-over; Move dialog "keep tags"; trash dialog focus | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
+| 5d | Duplicates UI: one row per photo, multi-select, bulk delete within a folder, tag and capture-date carry-over; Move dialog "keep folder tags"; trash dialog focus | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5e | Lean `thumbs.db`: face crops only for faces without a decision and for each person's picture; right-click "Use as … picture" on a person's photos | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5f | "Type" check box drop-down (Photos, Videos, Live Photos) next to the search box | **Done except the real-hardware run** (see "Phase 5f details") |
 | 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | **In progress**: library id, launcher (cancel, saved folders, start scripts) and the multi-drive core (hub, offline, backup roles, common timeline, cross-drive duplicates and people) built; backup verification (`shoebox backup`, launcher button, All drives page) built; real-hardware checks and Linux/Windows packaging open |
@@ -465,7 +464,7 @@ Built, one PR, one commit per step (as built: [phase5.md](phase5.md)). Feedback 
 
 UI
 - Trash dialog: focus the "Move to trash" button when it opens, so Enter confirms.
-- Move dialog: checkbox "Keep tags". Checked: the photos' own tags move along (as today). Unchecked: they are dropped.
+- Move dialog: checkbox "Keep folder tags". Own tags always move along; checked, the old folder's tags also stay as own tags (default: off).
 - Duplicates page: one row per photo instead of one card per copy. Left: one thumbnail and the file name. Right: one compact card per copy with the metadata (resolution, size in MB, folder, tags, capture date). The thumbnail is shown once per group, not once per copy.
 - Each copy card has a checkbox "delete this copy". At least one card per group must stay unchecked; the last unchecked one is disabled, so the original can never be deleted.
 - Multi-select: select copies across groups and trash them in one action.
