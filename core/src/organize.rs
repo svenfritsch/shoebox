@@ -654,7 +654,9 @@ pub fn rotate(conn: &Connection, root: &Path, id: i64, quarters: i32) -> Result<
         bail!("{name} differs from the index (hash); check it before changing it");
     }
 
-    let slot = orientation::find(&bytes).map_err(|e| anyhow!("{name}: {e:#}"))?;
+    // Nothing has been written yet when this fails; `turn` then falls back to
+    // turning the view.
+    let slot = orientation::find(&bytes).map_err(|e| if e.is::<orientation::NoOrientation>() { e } else { anyhow!("{name}: {e:#}") })?;
     let value = orientation::turned(slot.value, quarters);
     let old_bytes = [bytes[slot.offset], bytes[slot.offset + 1]];
     let new_bytes = slot.bytes(value);
@@ -694,8 +696,9 @@ pub fn rotate(conn: &Connection, root: &Path, id: i64, quarters: i32) -> Result<
     Ok(Rotated { id, version: db::version_of(&key, 0), orientation: value, view_only: false })
 }
 
-/// Turn a photo by `turns` quarter turns clockwise: a JPEG in the file
-/// (`rotate`), anything else that shoebox can show (HEIC, PNG) in shoebox only.
+/// Turn a photo by `turns` quarter turns clockwise: a JPEG with an
+/// Orientation tag in the file (`rotate`), anything else that shoebox can
+/// show (HEIC, PNG, a JPEG without the tag) in shoebox only.
 ///
 /// HEIC keeps its rotation in a box that is often missing, and adding it, or
 /// anything to a PNG, means writing a new file; Apple's Preview does that and
@@ -704,7 +707,12 @@ pub fn turn(conn: &Connection, root: &Path, id: i64, turns: i32) -> Result<Rotat
     let rec = load(conn, id)?.ok_or_else(|| anyhow!("not in the index"))?;
     let kind = classify::Kind::parse(&rec.kind).ok_or_else(|| anyhow!("{}: unknown kind", rec.path_nfc))?;
     match media::content_kind(kind, &root.join(&rec.path)) {
-        classify::Kind::Jpeg => rotate(conn, root, id, turns),
+        // A JPEG without an Orientation tag (WhatsApp strips all EXIF) cannot
+        // be turned in place; shoebox shows it turned instead.
+        classify::Kind::Jpeg => match rotate(conn, root, id, turns) {
+            Err(e) if e.is::<orientation::NoOrientation>() => turn_view(conn, &rec, turns),
+            done => done,
+        },
         classify::Kind::Heic | classify::Kind::Png => turn_view(conn, &rec, turns),
         _ => bail!("{}: only photos can be turned", rec.path_nfc),
     }

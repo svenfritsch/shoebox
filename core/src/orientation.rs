@@ -9,6 +9,19 @@ use anyhow::{Result, bail};
 const ORIENTATION: u16 = 0x0112;
 const TYPE_SHORT: u16 = 3;
 
+/// The photo has no EXIF Orientation tag (WhatsApp and many editors strip
+/// all EXIF data). Adding one means inserting bytes, which is not done.
+#[derive(Debug)]
+pub struct NoOrientation;
+
+impl std::fmt::Display for NoOrientation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the photo has no EXIF orientation to change")
+    }
+}
+
+impl std::error::Error for NoOrientation {}
+
 /// The Orientation value inside a JPEG file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Slot {
@@ -58,7 +71,7 @@ pub fn find(file: &[u8]) -> Result<Slot> {
         }
         pos += len;
     }
-    bail!("the photo has no EXIF orientation to change")
+    Err(NoOrientation.into())
 }
 
 /// `tiff` is the TIFF structure inside the Exif segment, at `base` in the file.
@@ -99,7 +112,7 @@ fn in_tiff(file: &[u8], base: usize, tiff: &[u8]) -> Result<Slot> {
         debug_assert!(offset + 2 <= file.len());
         return Ok(Slot { offset, big_endian, value: value as u8 });
     }
-    bail!("the photo has no EXIF orientation to change")
+    Err(NoOrientation.into())
 }
 
 /// Each orientation as the 2×2 matrix that takes the stored picture to the

@@ -574,9 +574,13 @@ is (`organize::turn`, going by content, not name):
   and the capture-date override, face decisions (boxes turned with the
   picture) and a person's picture follow to the new key; thumbnails and
   detected faces are made again (next view, next `shoebox recognize`).
-  Refused: a JPEG without an Orientation tag (adding one shifts every byte
-  after it). The small EXIF thumbnail inside the file is not turned.
-- **HEIC and PNG: in shoebox only.** The turn is stored in `library.db`
+  A JPEG without an Orientation tag (WhatsApp and many editors strip all
+  EXIF) is turned in shoebox only, like HEIC: adding the tag inserts ~36
+  bytes after the JPEG header, which shifts the rest of the file, so it
+  cannot be done in place; a rewrite would give the file a new creation date
+  (and a crash in between would damage it). The small EXIF thumbnail inside
+  the file is not turned.
+- **HEIC, PNG and JPEG without the tag: in shoebox only.** The turn is stored in `library.db`
   (`view_turns`, keyed by quick hash like `taken_overrides`, in
   `userdata.json` v4) and applied when shoebox serves the picture
   (`/thumb`, `/view`: decode, turn, encode). The file is not opened for

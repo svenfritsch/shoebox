@@ -472,10 +472,14 @@ fn rotate_changes_only_the_orientation_bytes_and_keeps_the_users_data() {
     let r = post(addr, &format!("/api/files/{side}/rotate"), &json!({ "turns": 2 })).json();
     assert_eq!(r["orientation"], 8);
 
-    // What cannot be turned in place is refused and left alone.
+    // A JPEG without an Orientation tag (WhatsApp) is left alone and shown turned.
     let snap = lib.snapshot();
     let r = post(addr, &format!("/api/files/{plain}/rotate"), &json!({ "turns": 1 }));
-    assert_eq!(r.status, 400, "{}", String::from_utf8_lossy(&r.body));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    assert_eq!(r.json()["view_only"], true);
+    assert_eq!(lib.snapshot(), snap);
+    let turned = image::load_from_memory(&get(addr, &format!("/api/files/{plain}/view")).body).unwrap();
+    assert_eq!((turned.width(), turned.height()), (150, 200)); // 200 x 150 turned
     assert_eq!(post(addr, &format!("/api/files/{up}/rotate"), &json!({ "turns": 4 })).status, 400);
     assert_eq!(lib.snapshot(), snap);
     assert_index_in_line(&lib);
