@@ -29,8 +29,9 @@ var off = {};            // the ones that are not ticked (everything else is)
 var recentPaths = [];        // every folder ever added: offered in the drop-down again
 var backups = {};        // backup folder -> { of, at }: a backup check found it complete
 var drives = [];
+var runningKind = '';    // the kind of the command that runs
 var busy = false;        // a command is running
-var serving = false;     // the photo app is running: everything else is locked
+var serving = false;     // the photo app is running: only recognition may still run
 
 function tickedPaths() {
   return paths.filter(function (p) { return !off[p]; });
@@ -202,10 +203,19 @@ function poll() {
 }
 
 // Everything that starts or changes something is locked while a command or
-// the photo app runs; only Cancel (command) or Stop (app) stay usable.
+// the photo app runs; only Cancel (command) or Stop (app) stay usable. The
+// recognition buttons are the exception while the photo app runs, and the
+// photo app can be started while recognition runs.
+var BESIDE_APP = ['recognize', 'recognize_pets', 'faces_stats'];
+
 function applyLocks() {
   $('controls').disabled = busy || serving;
-  $('start-app').disabled = busy;
+  document.querySelectorAll('.actions button').forEach(function (b) {
+    b.disabled = busy || (serving && BESIDE_APP.indexOf(b.dataset.kind) < 0);
+  });
+  $('opt-quick').disabled = $('opt-deep').disabled = busy || serving;
+  $('opt-rotated').disabled = busy;
+  $('start-app').disabled = busy && BESIDE_APP.indexOf(runningKind) < 0;
 }
 
 function pill(text, cls) {
@@ -220,6 +230,7 @@ function render(job) {
   $('progress-card').hidden = false;
   var name = kindName(job.kind);
   busy = job.running;
+  runningKind = job.running ? job.kind : '';
   applyLocks();
   $('cancel').hidden = !job.running;
   $('cancel').disabled = false;
