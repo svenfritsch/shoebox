@@ -357,3 +357,32 @@ fn groups_are_identical_same_photo_in_another_size_or_similar_shots() {
     assert_eq!(file_of(&all, "Messenger/IMG-WA0001.jpg")["keeper"], a);
     server.stop().unwrap();
 }
+
+/// A copy of `from` with one pixel changed: other bytes, same picture and size.
+fn tweaked_copy(from: &std::path::Path, to: &std::path::Path) {
+    fs::create_dir_all(to.parent().unwrap()).unwrap();
+    let mut img = image::open(from).unwrap().to_rgb8();
+    img.put_pixel(3, 3, image::Rgb([1, 2, 3]));
+    img.save(to).unwrap();
+}
+
+#[test]
+fn shots_of_a_series_are_not_one_photo_in_two_versions() {
+    let lib = Library::new("dupes-series");
+    rings(&lib.path("2010er/IMG_4284 1.JPG"), 1600, 1200);
+    tweaked_copy(&lib.path("2010er/IMG_4284 1.JPG"), &lib.path("2010er/IMG_4285 1.JPG"));
+    // Without capture dates, other names: the same picture saved twice.
+    tweaked_copy(&lib.path("2010er/IMG_4284 1.JPG"), &lib.path("Export/foto.jpg"));
+    lib.scan();
+    let (a, b) = (id_of(&lib, "2010er/IMG_4284 1.JPG"), id_of(&lib, "2010er/IMG_4285 1.JPG"));
+    // Same capture second, same size: a burst.
+    set_taken(&lib, a, Some("2015-12-21T15:20:00"));
+    set_taken(&lib, b, Some("2015-12-21T15:20:00"));
+    let server = start(&lib, None);
+    let all = groups(server.addr);
+    let (fa, fb) = (file_of(&all, "2010er/IMG_4284 1.JPG"), file_of(&all, "2010er/IMG_4285 1.JPG"));
+    assert_ne!(fa["row"], fb["row"]);
+    assert_eq!((fa["keeper"].as_i64(), fb["keeper"].as_i64()), (None, None));
+    assert!(fa["pick"] == true && fb["pick"] == true);
+    server.stop().unwrap();
+}

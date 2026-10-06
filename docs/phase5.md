@@ -735,6 +735,19 @@ Built, one commit per step. Scope and rules are in "Phase 5d details" in
   wrapping row, every card with its own thumbnail (a shot's other versions
   follow it). Identical and same-photo groups keep one thumbnail at the start
   of the row, since repeating it would add nothing.
+- **The bar** (Preselect copies / Clear / Move to trash) stays while the page shows
+  duplicates. Clear unticks everything in the shown groups, also the ones
+  below the first page; “Preselect copies” puts the suggestion back and is disabled
+  while the ticks are exactly the suggestion; Clear and Move to trash are
+  disabled with nothing ticked, so one can Clear, tick a single copy and move
+  just that. The suggestion is the clearly worse copies and exact repeats of
+  the best file, never a different shot.
+- **Series are not versions** (feedback: IMG_4284 and IMG_4285 were shown as
+  one photo): files with a capture date each, the same size and different
+  bytes are different shots (a burst puts several in one second), and two
+  camera-style names with the same prefix and different numbers
+  ("IMG_4284", "IMG_4285 1") never count as the same photo. They are rows of
+  a "Similar photos" group.
 - **Pre-selection and the original name**: of every photo with several files
   all but the `pick` are ticked (the page, once; an untick stays). The pick is
   the best quality, then a capture date, then **the file without a copy's

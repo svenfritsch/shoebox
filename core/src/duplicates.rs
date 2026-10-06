@@ -305,6 +305,13 @@ fn same_photo(a: &Row, b: &Row) -> bool {
     if (sa - sb).abs() / sa.max(sb) > 0.02 {
         return false;
     }
+    // Two files with a capture date, the same size and different bytes are
+    // two shots of a series (a burst puts several in one second), not one
+    // photo twice: a copy differs in size or has lost its metadata.
+    let size = |r: &Row| (r.file.width.unwrap_or(0).max(r.file.height.unwrap_or(0)), r.file.width.unwrap_or(0).min(r.file.height.unwrap_or(0)));
+    if a.file.taken.is_some() && b.file.taken.is_some() && size(a) == size(b) {
+        return false;
+    }
     match (&a.file.taken, &b.file.taken) {
         (Some(x), Some(y)) => matches!((secs(x), secs(y)), (Some(x), Some(y)) if (x - y).abs() <= 2),
         _ => true,
