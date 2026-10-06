@@ -501,12 +501,13 @@ pub struct Moved {
 /// Move photos into a folder (NFC path, created if needed), each with its
 /// companions. A photo whose group cannot move completely stays put.
 pub fn move_files(conn: &Connection, root: &Path, ids: &[i64], folder: &str) -> Result<Moved> {
-    move_files_with(conn, root, ids, folder, true)
+    move_files_with(conn, root, ids, folder, false)
 }
 
-/// As `move_files`; without `keep_tags` the photos' own tags are dropped
-/// (folder tags always follow the new folder).
-pub fn move_files_with(conn: &Connection, root: &Path, ids: &[i64], folder: &str, keep_tags: bool) -> Result<Moved> {
+/// As `move_files`. The photos' own tags always move along and folder tags
+/// follow the new folder; with `keep_folder_tags` the tags of the old folder
+/// stay on the photos as own tags too.
+pub fn move_files_with(conn: &Connection, root: &Path, ids: &[i64], folder: &str, keep_folder_tags: bool) -> Result<Moved> {
     let folder = check_folder_path(folder)?;
     let (folder_id, folder_raw) = ensure_folder(conn, root, &folder)?;
     let dir = root.join(&folder_raw);
@@ -522,7 +523,7 @@ pub fn move_files_with(conn: &Connection, root: &Path, ids: &[i64], folder: &str
                 None => Ok(()),
             }
         });
-        if let Err(e) = result.and_then(|()| move_group(conn, root, &group, folder_id, &folder_raw, keep_tags, &mut names, &mut out)) {
+        if let Err(e) = result.and_then(|()| move_group(conn, root, &group, folder_id, &folder_raw, keep_folder_tags, &mut names, &mut out)) {
             out.skipped.push(format!("{}: {e:#}", group.files[0].path_nfc));
         }
     }
@@ -535,7 +536,7 @@ fn move_group(
     group: &Group,
     folder_id: i64,
     folder_raw: &str,
-    keep_tags: bool,
+    keep_folder_tags: bool,
     names: &mut Names,
     out: &mut Moved,
 ) -> Result<()> {
@@ -550,10 +551,10 @@ fn move_group(
             let to = rename_into(&from, &dir, name, names)?;
             let raw = join(folder_raw, name);
             let rel = RelPath { nfc: library::nfc(&raw), raw };
+            // Own tags are attached to the file id and always survive.
+            let old_folder_tags = if keep_folder_tags { crate::tags::folder_names(&tx, f.id)? } else { Vec::new() };
             set_path(&tx, f.id, &rel, folder_id)?;
-            if !keep_tags {
-                crate::tags::drop_own(&tx, f.id)?;
-            }
+            crate::tags::keep_as_own(&tx, f.id, &old_folder_tags)?;
             out.files.push(rel.nfc);
             check_kept(&before, &to)?;
         }

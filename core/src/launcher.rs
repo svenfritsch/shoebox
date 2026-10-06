@@ -558,11 +558,19 @@ fn short_name(root: &Path) -> String {
     root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| root.display().to_string())
 }
 
+/// Recognition may run while the photo app is open: `serve` opens the
+/// databases shared, skips its own clustering and embedding while a
+/// recognition job is running, and a moved or changed original is skipped by
+/// the guard. Scan, verify and backup checks stay locked out.
+fn runs_beside_app(kind: &str) -> bool {
+    matches!(kind, "recognize" | "recognize_pets" | "faces_stats")
+}
+
 fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
     if !matches!(req.kind.as_str(), "scan" | "verify" | "recognize" | "recognize_pets" | "faces_stats" | "backup" | "backup_cleanup") {
         return Err(ApiError::BadRequest(format!("unknown command {:?}", req.kind)));
     }
-    if shared.app.lock().unwrap().is_some() {
+    if !runs_beside_app(&req.kind) && shared.app.lock().unwrap().is_some() {
         return Err(ApiError::Conflict("stop the photo app first".into()));
     }
     let roots = request_roots(&req)?;
@@ -755,8 +763,11 @@ struct AppRequest {
 /// as one library. A drive that is not plugged in is offline in the app.
 async fn app_start(State(shared): State<Arc<Shared>>, Json(req): Json<AppRequest>) -> Result<Json<serde_json::Value>, ApiError> {
     let url = tokio::task::spawn_blocking(move || -> Result<String, ApiError> {
-        if shared.job.lock().unwrap().running {
-            return Err(ApiError::Conflict("a command is still running".into()));
+        {
+            let job = shared.job.lock().unwrap();
+            if job.running && !runs_beside_app(&job.kind) {
+                return Err(ApiError::Conflict("a command is still running".into()));
+            }
         }
         let jobless = JobRequest {
             kind: String::new(),

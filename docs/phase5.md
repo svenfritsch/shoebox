@@ -689,9 +689,10 @@ Built, one commit per step. Scope and rules are in "Phase 5d details" in
 
 - **Trash dialog**: `openModal` takes `focus: true` on an action; the "Move to
   trash" button has focus, Enter confirms.
-- **Move dialog**: "Keep tags" (default checked). `POST /api/move` takes
-  `keep_tags` (default true); unchecked drops the moved photos' own tags
-  (`organize::move_files_with`, `tags::drop_own`), folder tags follow the path.
+- **Move dialog**: "Keep folder tags" (default unchecked). Own tags always
+  move along. `POST /api/move` takes `keep_folder_tags` (default false);
+  checked, the old folder's tags stay on the photos as own tags
+  (`organize::move_files_with`, `tags::keep_as_own`); folder tags follow the path.
 - **Deleting copies**: `POST /api/duplicates/remove {keep, remove, dates?}`
   (`duplicates::remove_copies`). At least one copy must stay; every removed
   file must be a duplicate of a kept one (same full hash, or phash within 8
@@ -815,7 +816,7 @@ Built, one commit per step. Scope and rules are in "Phase 5d details" in
   decided pairs, lower-quality versions: rows, `keeper`, a burst shot with another
   capture time and a stretched picture stay out, 6 bits count only with a lost
   date, guard: originals unchanged, `verify` clean), plus
-  `move_without_keep_tags_drops_own_tags` in `tags.rs`. The page was driven with
+  `move_always_keeps_own_tags_and_can_keep_folder_tags` in `tags.rs`. The page was driven with
   Playwright (Chromium, 1280 × 800) on a small library.
 
 ## 5e: lean `thumbs.db` (crops only for faces that wait)
@@ -997,8 +998,9 @@ crops removed at the start, guard).
       (feedback needed from you; note what looks wrong):
   - [ ] Trash dialog: select a photo, "Move to trash": the button has focus,
     Enter confirms, Escape cancels.
-  - [ ] Move dialog: "Keep tags" checked keeps the photo's own tags after
-    the move; unchecked drops them (folder tags follow the new folder).
+  - [ ] Move dialog: the photo's own tags are always there after the move;
+    "Keep folder tags" checked also keeps the old folder's tags as own tags
+    (folder tags follow the new folder).
   - [ ] Duplicates page: one thumbnail per group, one card per copy with
     resolution, MB, folder, tags and capture date. Do the numbers match the
     info panel? Is the layout readable on the iPad?
