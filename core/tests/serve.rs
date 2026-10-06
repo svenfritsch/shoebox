@@ -21,6 +21,9 @@ fn guard_thumbnails_and_serving_leave_originals_untouched() {
         "/",
         "/app.js",
         "/app.css",
+        "/i18n/i18n.js",
+        "/i18n/en.json",
+        "/i18n/de.json",
         "/api/info",
         "/api/folders",
         "/api/tags",
@@ -316,7 +319,26 @@ fn timeline_order_filters_and_search() {
         assert!(all["live"].as_array().unwrap().iter().any(|p| p[0] == still && p[1] == video));
         assert!(!all_ids.contains(&video));
         assert!(all_ids.contains(&id_of(&lib, "fixtures/2020-07 Urlaub Griechenland/VID_0003.mp4")));
+
+        // Type filter: Live lists the stills that have a video, Videos only
+        // stand-alone videos (never the Live Photo's clip).
+        assert_eq!(ids(&timeline("?type=live")), vec![still]);
+        let videos = ids(&timeline("?type=video"));
+        assert!(videos.contains(&id_of(&lib, "fixtures/2020-07 Urlaub Griechenland/VID_0003.mp4")));
+        assert!(!videos.contains(&video) && !videos.contains(&still));
     }
+
+    // Type filter: Photos are the stills, Videos the videos, several are "or".
+    let kinds_of = |t: &serde_json::Value| t["kinds"].as_str().unwrap().to_string();
+    let photos = timeline("?type=photo");
+    assert!(!kinds_of(&photos).contains('v') && !ids(&photos).is_empty());
+    assert!(kinds_of(&timeline("?type=video")).chars().all(|c| c == 'v'));
+    assert_eq!(ids(&timeline("?type=photo&type=video")).len(), all_ids.len());
+    // It combines with the other filters (and).
+    let in_familie_photos = ids(&timeline(&format!("?folder={}&type=photo", folder_id("Familie"))));
+    assert_eq!(in_familie_photos.len(), 2);
+    assert!(ids(&timeline(&format!("?folder={}&type=video", folder_id("Familie")))).is_empty());
+    assert_eq!(get(addr, "/api/timeline?type=raw").status, 400);
     server.stop().unwrap();
 }
 

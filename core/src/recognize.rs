@@ -28,6 +28,12 @@
 //! too (task `embed`, protocol 2): at the end of every run, and in the
 //! background in `shoebox serve` right after one is drawn (`embed_drawn`).
 //!
+//! Cats and dogs (phase 6, `pets.rs`) have a pass of their own,
+//! `--pets`, task `pets`: the worker (started with `--pets`) finds
+//! them and embeds each box with another model. They are rows of
+//! `recog.faces` with `species` set, so the viewer, the people and the face
+//! check treat them like faces, and no face pass ever touches them.
+//!
 //! After the passes, the faces are grouped and matched to the people the
 //! user named (`clusters.rs`, a cache in the same file).
 
@@ -70,6 +76,11 @@ pub const FACES: &str = "faces";
 pub const FACES_ROT: &str = "faces-rot";
 /// The embedding of a box drawn by hand (protocol 2).
 pub const EMBED: &str = "embed";
+/// Cats and dogs (an optional task of protocol 2): its own pass, model and
+/// embeddings (`pets.rs`).
+pub const PETS: &str = "pets";
+/// The embedding of a pet's box drawn by hand (with `--pets`).
+pub const EMBED_PETS: &str = "embed-pets";
 /// A face from the turned copies is kept only if it overlaps every face of
 /// the upright pass (and every one kept before it) less than this.
 pub const ROTATED_MAX_IOU: f64 = 0.3;
@@ -82,7 +93,7 @@ const POLL: Duration = Duration::from_millis(200);
 /// A `running` job that has not reported progress for this long is dead.
 const JOB_ALIVE_SECS: i64 = 120;
 
-const SCHEMA_VERSION: i32 = 4;
+const SCHEMA_VERSION: i32 = 5;
 const SCHEMA_V1: &str = "
 CREATE TABLE recog.jobs (
     id          INTEGER PRIMARY KEY,
@@ -163,6 +174,13 @@ CREATE TABLE IF NOT EXISTS recog.drawn (
 );
 ";
 
+/// v5 (phase 6): cats and dogs are faces with a species.
+const SCHEMA_V5: &str = "
+-- NULL: a person's face; 'cat' or 'dog': a pet (its box holds the whole
+-- pet, its embedding comes from another model and has another length).
+ALTER TABLE recog.faces ADD COLUMN species TEXT;
+";
+
 /// Location of `recognition.db` for a library database.
 pub fn path_for(db_path: &Path) -> PathBuf {
     db_path.with_file_name(FILE)
@@ -205,6 +223,15 @@ pub fn attach(conn: &Connection, db_path: &Path) -> Result<()> {
         tx.pragma_update(Some("recog"), "user_version", 4)?;
         tx.commit()?;
     }
+    if version < 5 {
+        let tx = conn.unchecked_transaction()?;
+        // A re-run (the tests lower user_version) must not add the column twice.
+        if !db::has_column(&tx, "recog", "faces", "species")? {
+            tx.execute_batch(SCHEMA_V5)?;
+        }
+        tx.pragma_update(Some("recog"), "user_version", 5)?;
+        tx.commit()?;
+    }
     Ok(())
 }
 
@@ -212,7 +239,7 @@ pub fn attach(conn: &Connection, db_path: &Path) -> Result<()> {
 /// clustering after it has a job of its own (`clusters::running`).
 pub fn running(conn: &Connection) -> Result<bool> {
     let n: i64 = conn.query_row(
-        "SELECT count(*) FROM recog.jobs WHERE state = 'running' AND updated_at > ?1 AND kind IN ('faces', 'faces-rot')",
+        "SELECT count(*) FROM recog.jobs WHERE state = 'running' AND updated_at > ?1 AND kind IN ('faces', 'faces-rot', 'pets')",
         [db::now() - JOB_ALIVE_SECS],
         |r| r.get(0),
     )?;
@@ -226,6 +253,15 @@ pub fn running(conn: &Connection) -> Result<bool> {
 pub struct WorkerCommand {
     pub program: PathBuf,
     pub args: Vec<OsString>,
+}
+
+impl WorkerCommand {
+    /// The same worker, asked to load the cat and dog models too.
+    pub fn with_pets(&self) -> WorkerCommand {
+        let mut cmd = self.clone();
+        cmd.args.push("--pets".into());
+        cmd
+    }
 }
 
 /// The worker to use: `explicit` (`--recognizer`) or `$SHOEBOX_RECOGNIZER`
@@ -301,16 +337,27 @@ struct Hello {
     tasks: HashMap<String, TaskInfo>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct Reply {
     width: Option<u32>,
     height: Option<u32>,
     faces: Option<Vec<RawFace>>,
     embed: Option<Vec<RawEmbedded>>,
+    #[serde(rename = "embed-pets")]
+    embed_pets: Option<Vec<RawEmbedded>>,
+    pets: Option<Vec<RawPet>>,
     error: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
+struct RawPet {
+    species: String,
+    bbox: [f64; 4],
+    score: f64,
+    emb: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 struct RawEmbedded {
     /// Empty when no landmarks were found in the box.
     #[serde(default)]
@@ -327,7 +374,7 @@ pub struct Embedded {
     pub emb: Vec<f32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct RawFace {
     bbox: [f64; 4],
     score: f64,
@@ -347,6 +394,9 @@ pub struct Face {
     pub landmarks: Vec<[f64; 2]>,
     /// 0, or 90/270 for a face the rotated pass found in a turned copy.
     pub roll: u16,
+    /// `cat` or `dog` for a pet, `None` for a person's face.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub species: Option<String>,
     #[serde(skip)]
     pub emb: Vec<f32>,
 }
@@ -516,8 +566,12 @@ pub struct Worker {
     timeouts: Timeouts,
     process: Option<Process>,
     faces: TaskInfo,
+    /// Cats and dogs, if the worker was started with them (`--pets`).
+    pets: Option<TaskInfo>,
     /// The worker can embed boxes drawn by hand, comparably to its faces.
     embed: bool,
+    /// … and boxes drawn around pets, comparably to its pets.
+    embed_pets: bool,
     version: Option<String>,
     next_id: u64,
     crashes_in_row: u32,
@@ -535,12 +589,18 @@ impl Worker {
             bail!("the recognizer reports no face model");
         }
         let embed = hello.tasks.get(EMBED).is_some_and(|e| e.model == faces.model && e.dim == faces.dim);
+        let pets = hello.tasks.get(PETS).filter(|a| a.dim > 0 && !a.model.is_empty()).cloned();
+        let embed_pets = pets
+            .as_ref()
+            .is_some_and(|a| hello.tasks.get(EMBED_PETS).is_some_and(|e| e.model == a.model && e.dim == a.dim));
         Ok(Worker {
             cmd,
             timeouts,
             process: Some(process),
             faces,
+            pets,
             embed,
+            embed_pets,
             version: hello.version,
             next_id: 1,
             crashes_in_row: 0,
@@ -551,6 +611,11 @@ impl Worker {
     /// Model and embedding size for faces.
     pub fn faces_model(&self) -> &TaskInfo {
         &self.faces
+    }
+
+    /// Model and embedding size for pets, if the worker does them.
+    pub fn pets_model(&self) -> Option<&TaskInfo> {
+        self.pets.as_ref()
     }
 
     pub fn version(&self) -> Option<&str> {
@@ -565,6 +630,16 @@ impl Worker {
         Ok(self.ask(request)?.and_then(|reply| self.parse_faces(reply).map_err(Failure::Refused)))
     }
 
+    /// Find the cats and dogs in a picture. The faces of the result are the
+    /// pets (their `species` is set). The outer error as for `faces`.
+    pub fn pets(&mut self, image: &[u8]) -> Result<Result<Found, Failure>> {
+        if self.pets.is_none() {
+            return Ok(Err(Failure::Refused("the recognizer was not started for pets".into())));
+        }
+        let request = serde_json::json!({ "tasks": [PETS], "image": BASE64.encode(image) });
+        Ok(self.ask(request)?.and_then(|reply| self.parse_pets(reply).map_err(Failure::Refused)))
+    }
+
     /// Embeddings of boxes in a picture (`[x, y, w, h]` in its pixels), in
     /// the same order. The outer error as for `faces`.
     pub fn embed(&mut self, image: &[u8], boxes: &[[f64; 4]]) -> Result<Result<Vec<Embedded>, Failure>> {
@@ -572,15 +647,37 @@ impl Worker {
             return Ok(Err(Failure::Refused("the recognizer cannot embed faces drawn by hand".into())));
         }
         let request = serde_json::json!({ "tasks": [EMBED], "image": BASE64.encode(image), "boxes": boxes });
-        Ok(self.ask(request)?.and_then(|reply| self.parse_embedded(reply, boxes.len()).map_err(Failure::Refused)))
+        Ok(self.ask(request)?.and_then(|reply| {
+            let raw = reply.embed.clone();
+            self.parse_embedded(&reply, raw, boxes.len(), self.faces.dim).map_err(Failure::Refused)
+        }))
     }
 
-    fn parse_embedded(&self, reply: Reply, boxes: usize) -> Result<Vec<Embedded>, String> {
+    /// Embeddings of boxes drawn around pets (`[x, y, w, h]` in the
+    /// picture's pixels), made like the ones of detected pets. The outer
+    /// error as for `faces`.
+    pub fn embed_pets(&mut self, image: &[u8], boxes: &[[f64; 4]]) -> Result<Result<Vec<Embedded>, Failure>> {
+        let Some(dim) = self.pets.as_ref().filter(|_| self.embed_pets).map(|a| a.dim) else {
+            return Ok(Err(Failure::Refused("the recognizer cannot embed pets drawn by hand".into())));
+        };
+        let request = serde_json::json!({ "tasks": [EMBED_PETS], "image": BASE64.encode(image), "boxes": boxes });
+        Ok(self.ask(request)?.and_then(|reply| {
+            let raw = reply.embed_pets.clone();
+            self.parse_embedded(&reply, raw, boxes.len(), dim).map_err(Failure::Refused)
+        }))
+    }
+
+    /// Whether the worker can embed boxes drawn around pets.
+    pub fn can_embed_pets(&self) -> bool {
+        self.embed_pets
+    }
+
+    fn parse_embedded(&self, reply: &Reply, raw: Option<Vec<RawEmbedded>>, boxes: usize, dim: usize) -> Result<Vec<Embedded>, String> {
         let (fw, fh) = match (reply.width, reply.height) {
             (Some(w), Some(h)) if w > 0 && h > 0 => (w as f64, h as f64),
             _ => return Err("reply without the picture's size".into()),
         };
-        let raw = reply.embed.ok_or("reply without embeddings")?;
+        let raw = raw.ok_or("reply without embeddings")?;
         if raw.len() != boxes {
             return Err(format!("{} embeddings for {boxes} boxes", raw.len()));
         }
@@ -593,16 +690,16 @@ impl Worker {
                         .filter(|p| p.iter().all(|v| v.is_finite()))
                         .map(|[px, py]| [(px / fw).clamp(0.0, 1.0), (py / fh).clamp(0.0, 1.0)])
                         .collect(),
-                    emb: self.decode_emb(&e.emb)?,
+                    emb: self.decode_emb(&e.emb, dim)?,
                 })
             })
             .collect()
     }
 
-    fn decode_emb(&self, b64: &str) -> Result<Vec<f32>, String> {
+    fn decode_emb(&self, b64: &str, dim: usize) -> Result<Vec<f32>, String> {
         let bytes = BASE64.decode(b64).map_err(|e| format!("embedding is not base64: {e}"))?;
-        if bytes.len() != self.faces.dim * 4 {
-            return Err(format!("embedding has {} bytes, expected {}", bytes.len(), self.faces.dim * 4));
+        if bytes.len() != dim * 4 {
+            return Err(format!("embedding has {} bytes, expected {}", bytes.len(), dim * 4));
         }
         let emb: Vec<f32> = bytes.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
         if !emb.iter().all(|v| v.is_finite()) {
@@ -617,6 +714,12 @@ impl Worker {
             match hello.tasks.get(FACES) {
                 Some(t) if t.model == self.faces.model && t.dim == self.faces.dim => {}
                 _ => bail!("the recognizer came back with another face model"),
+            }
+            if let Some(a) = &self.pets {
+                match hello.tasks.get(PETS) {
+                    Some(t) if t.model == a.model && t.dim == a.dim => {}
+                    _ => bail!("the recognizer came back with another pet model"),
+                }
             }
             self.process = Some(process);
             self.restarts += 1;
@@ -680,7 +783,7 @@ impl Worker {
             if !(f.bbox.iter().all(|v| v.is_finite()) && f.score.is_finite() && w > 0.0 && h > 0.0) {
                 return Err("reply with an invalid face box".into());
             }
-            let emb = self.decode_emb(&f.emb)?;
+            let emb = self.decode_emb(&f.emb, self.faces.dim)?;
             // Boxes may reach past the edge of the picture; keep the part inside.
             let (x0, y0) = ((x / fw).clamp(0.0, 1.0), (y / fh).clamp(0.0, 1.0));
             let (x1, y1) = (((x + w) / fw).clamp(0.0, 1.0), ((y + h) / fh).clamp(0.0, 1.0));
@@ -697,6 +800,42 @@ impl Worker {
                     .map(|[px, py]| [(px / fw).clamp(0.0, 1.0), (py / fh).clamp(0.0, 1.0)])
                     .collect(),
                 roll: 0,
+                species: None,
+                emb,
+            });
+        }
+        Ok(Found { width, height, faces })
+    }
+
+    fn parse_pets(&self, reply: Reply) -> Result<Found, String> {
+        let dim = self.pets.as_ref().map_or(0, |a| a.dim);
+        let (width, height) = match (reply.width, reply.height) {
+            (Some(w), Some(h)) if w > 0 && h > 0 => (w, h),
+            _ => return Err("reply without the picture's size".into()),
+        };
+        let raw = reply.pets.ok_or("reply without pets")?;
+        let (fw, fh) = (width as f64, height as f64);
+        let mut faces = Vec::with_capacity(raw.len());
+        for a in raw {
+            let [x, y, w, h] = a.bbox;
+            if !(a.bbox.iter().all(|v| v.is_finite()) && a.score.is_finite() && w > 0.0 && h > 0.0) {
+                return Err("reply with an invalid pet box".into());
+            }
+            if !crate::pets::is_species(&a.species) {
+                return Err(format!("reply with an unknown species {:?}", truncate(&a.species, 20)));
+            }
+            let emb = self.decode_emb(&a.emb, dim)?;
+            let (x0, y0) = ((x / fw).clamp(0.0, 1.0), (y / fh).clamp(0.0, 1.0));
+            let (x1, y1) = (((x + w) / fw).clamp(0.0, 1.0), ((y + h) / fh).clamp(0.0, 1.0));
+            faces.push(Face {
+                x: x0,
+                y: y0,
+                w: x1 - x0,
+                h: y1 - y0,
+                score: a.score,
+                landmarks: Vec::new(),
+                roll: 0,
+                species: Some(a.species),
                 emb,
             });
         }
@@ -760,7 +899,15 @@ fn parse_reply(line: &str, id: u64) -> Option<Reply> {
     }
     match serde_json::from_value(value) {
         Ok(r) => Some(r),
-        Err(e) => Some(Reply { width: None, height: None, faces: None, embed: None, error: Some(format!("bad reply: {e}")) }),
+        Err(e) => Some(Reply {
+            width: None,
+            height: None,
+            faces: None,
+            embed: None,
+            embed_pets: None,
+            pets: None,
+            error: Some(format!("bad reply: {e}")),
+        }),
     }
 }
 
@@ -786,6 +933,9 @@ pub struct Options {
     /// After the upright pass, look at the photos turned 90° and 270° too
     /// (faces of people lying down).
     pub rotated: bool,
+    /// Then look for cats and dogs too (`pets.rs`): their own pass, with
+    /// the worker started with the pet models.
+    pub pets: bool,
     pub timeouts: Timeouts,
 }
 
@@ -809,6 +959,9 @@ pub struct Stats {
     /// The rotated pass (`--rotated`), if it ran; its `faces` are the ones
     /// it added.
     pub rotated: Option<Box<Stats>>,
+    /// The pets pass (`--pets`), if it ran; its `faces` are the cats
+    /// and dogs found.
+    pub pets: Option<Box<Stats>>,
     /// Faces drawn by hand that got their embedding in this run.
     pub drawn: Option<DrawnStats>,
     /// The clustering after the run.
@@ -830,6 +983,8 @@ enum Pass {
     Upright,
     /// The copy turned 90° and 270°, for faces the upright pass missed.
     Rotated,
+    /// Cats and dogs, upright, with the pet models.
+    Pets,
 }
 
 impl Pass {
@@ -837,13 +992,14 @@ impl Pass {
         match self {
             Pass::Upright => FACES,
             Pass::Rotated => FACES_ROT,
+            Pass::Pets => PETS,
         }
     }
 
     /// How far (clockwise) the copies sent to the worker are turned.
     fn rolls(self) -> &'static [u16] {
         match self {
-            Pass::Upright => &[0],
+            Pass::Upright | Pass::Pets => &[0],
             Pass::Rotated => &[90, 270],
         }
     }
@@ -875,27 +1031,44 @@ pub fn run(opts: &Options) -> Result<Stats> {
     }
     conn.execute(
         "UPDATE recog.jobs SET state = 'interrupted', finished_at = updated_at
-         WHERE state = 'running' AND kind IN ('faces', 'faces-rot')",
+         WHERE state = 'running' AND kind IN ('faces', 'faces-rot', 'pets')",
         [],
     )?;
 
     catch_interrupts();
     say!("Starting the recognizer ({})…", cmd.program.display());
+    let cmd = if opts.pets { cmd.with_pets() } else { cmd };
     let mut worker = Worker::start(cmd, opts.timeouts)?;
     say!(
         "Recognizer {} ready: faces with {}.",
         worker.version().unwrap_or("(unknown version)"),
         worker.faces_model().model
     );
+    if opts.pets {
+        match worker.pets_model() {
+            Some(a) => say!("Cats and dogs with {}.", a.model),
+            None => {
+                worker.stop();
+                bail!(
+                    "the recognizer cannot find pets: its models are missing or it is too old \
+                     (run recognizer/fetch-models.sh, or recognizer/install.sh again; see recognizer/README.md)"
+                );
+            }
+        }
+    }
     let result = recognize(&conn, &root, &mut worker, opts.limit, opts.retry_failed).and_then(|mut stats| {
         if opts.rotated {
             let rotated = recognize_rotated(&conn, &root, &mut worker, opts.limit, opts.retry_failed)?;
             stats.rotated = Some(Box::new(rotated));
         }
+        if opts.pets {
+            let pets = recognize_pets(&conn, &root, &mut worker, opts.limit, opts.retry_failed)?;
+            stats.pets = Some(Box::new(pets));
+        }
         let drawn = embed_drawn(&conn, &root, &mut worker, opts.retry_failed, &interrupted)?;
         if drawn.embedded + drawn.failed > 0 {
             say!(
-                "Faces drawn by hand: {} embedded ({} without landmarks: not used for suggestions), {} failed.",
+                "Faces and pets drawn by hand: {} embedded ({} faces without landmarks: not used for suggestions), {} failed.",
                 drawn.embedded, drawn.plain, drawn.failed
             );
         }
@@ -931,19 +1104,7 @@ pub fn recognize(
     retry_failed: bool,
 ) -> Result<Stats> {
     let model = worker.faces_model().model.clone();
-    let pending = pending(
-        conn,
-        &format!(
-            "SELECT f.quick_hash, f.path, f.kind, f.size, f.mtime_ns
-             FROM files f LEFT JOIN recog.looked l ON l.key = f.quick_hash AND l.task = '{FACES}'
-             WHERE f.missing_since IS NULL AND f.kind IN ({KINDS})
-               AND (l.key IS NULL OR l.model != ?1 OR (?2 AND l.error IS NOT NULL))
-             GROUP BY f.quick_hash
-             ORDER BY max(coalesce(f.taken, '')) DESC, min(f.path_nfc)"
-        ),
-        &model,
-        retry_failed,
-    )?;
+    let pending = pending(conn, &not_looked_sql(FACES), &model, retry_failed)?;
     let stats = run_pass(conn, root, worker, Pass::Upright, pending, limit)?;
 
     // Trashed files keep theirs until the trash is emptied.
@@ -954,6 +1115,37 @@ pub fn recognize(
     forget_neighbours(conn, &format!("key {gone}"), [])?;
     conn.execute(&format!("DELETE FROM recog.faces WHERE key {gone}"), [])?;
     Ok(Stats { pruned, ..stats })
+}
+
+/// Photos not looked at yet for `task` with the worker's model (`?1`), or
+/// that failed and are tried again (`?2`): newest first.
+fn not_looked_sql(task: &str) -> String {
+    format!(
+        "SELECT f.quick_hash, f.path, f.kind, f.size, f.mtime_ns
+         FROM files f LEFT JOIN recog.looked l ON l.key = f.quick_hash AND l.task = '{task}'
+         WHERE f.missing_since IS NULL AND f.kind IN ({KINDS})
+           AND (l.key IS NULL OR l.model != ?1 OR (?2 AND l.error IS NOT NULL))
+         GROUP BY f.quick_hash
+         ORDER BY max(coalesce(f.taken, '')) DESC, min(f.path_nfc)"
+    )
+}
+
+/// The pets pass: every photo that has not been looked at for cats and
+/// dogs with the worker's pet model (newest first), at most `limit`.
+/// Needs a worker started for pets. Resumable like `recognize`; `conn`
+/// must have `recog` attached.
+pub fn recognize_pets(
+    conn: &Connection,
+    root: &Path,
+    worker: &mut Worker,
+    limit: Option<usize>,
+    retry_failed: bool,
+) -> Result<Stats> {
+    let Some(model) = worker.pets_model().map(|a| a.model.clone()) else {
+        bail!("the recognizer was not started for pets");
+    };
+    let pending = pending(conn, &not_looked_sql(PETS), &model, retry_failed)?;
+    run_pass(conn, root, worker, Pass::Pets, pending, limit)
 }
 
 /// The rotated pass: every photo the upright pass looked at (with the same
@@ -1011,7 +1203,11 @@ fn run_pass(
     mut pending: Vec<Pending>,
     limit: Option<usize>,
 ) -> Result<Stats> {
-    let mut stats = Stats { model: worker.faces_model().model.clone(), ..Stats::default() };
+    let model = match pass {
+        Pass::Pets => worker.pets_model().map(|a| a.model.clone()).unwrap_or_default(),
+        _ => worker.faces_model().model.clone(),
+    };
+    let mut stats = Stats { model, ..Stats::default() };
     if let Some(limit) = limit.filter(|&l| l < pending.len()) {
         stats.pending = (pending.len() - limit) as u64;
         pending.truncate(limit);
@@ -1022,6 +1218,7 @@ fn run_pass(
     match pass {
         Pass::Upright => say!("Faces: {} pictures to look at…", pending.len()),
         Pass::Rotated => say!("Faces, turned 90° and 270°: {} pictures to look at…", pending.len()),
+        Pass::Pets => say!("Cats and dogs: {} pictures to look at…", pending.len()),
     }
     let job = Job::start_in(conn, "recog.jobs", pass.task())?;
     let result = look_at(conn, root, worker, pass, pending, &job, &mut stats);
@@ -1086,7 +1283,7 @@ fn look_at(
                 }
                 done += 1;
                 let outcome = match image {
-                    Ok(prepared) => ask_all(worker, prepared)?,
+                    Ok(prepared) => ask_all(worker, pass, prepared)?,
                     Err(e) if thumbs::is_transient(&e) => {
                         stats.skipped += 1;
                         crate::report::file(&p.rel, false, e.to_string());
@@ -1105,6 +1302,7 @@ fn look_at(
                 let kept = match pass {
                     Pass::Upright => store(conn, &p.key, &stats.model, &outcome)?,
                     Pass::Rotated => store_rotated(conn, &p.key, &stats.model, &outcome)?,
+                    Pass::Pets => store_pets(conn, &p.key, &stats.model, &outcome)?,
                 };
                 if outcome.is_ok() {
                     stats.looked += 1;
@@ -1134,6 +1332,7 @@ fn look_at(
     let what = match pass {
         Pass::Upright => "faces",
         Pass::Rotated => "faces added",
+        Pass::Pets => "pets",
     };
     say!(
         "Looked at {} pictures in {:.0}s: {} {what}, {} failed, {} skipped.",
@@ -1155,11 +1354,12 @@ fn look_at(
 /// Send every copy of a picture to the worker (a crash is tried once more
 /// with a fresh worker: maybe it was not this picture) and put the faces of
 /// the turned copies back upright. The first failure fails the picture.
-fn ask_all(worker: &mut Worker, prepared: Prepared) -> Result<Result<Found, Failure>> {
+fn ask_all(worker: &mut Worker, pass: Pass, prepared: Prepared) -> Result<Result<Found, Failure>> {
     let mut all: Option<Found> = None;
     for (roll, jpeg) in prepared.copies {
-        let found = match worker.faces(&jpeg)? {
-            Err(Failure::Crashed(_)) => worker.faces(&jpeg)?,
+        let ask = |w: &mut Worker| if pass == Pass::Pets { w.pets(&jpeg) } else { w.faces(&jpeg) };
+        let found = match ask(worker)? {
+            Err(Failure::Crashed(_)) => ask(worker)?,
             other => other,
         };
         let found = match found {
@@ -1187,11 +1387,13 @@ pub struct DrawnStats {
     pub skipped: u64,
 }
 
-/// Embed the faces drawn by hand that have no embedding of the worker's
-/// model yet (`retry_failed`: also those that failed before), photo by
-/// photo, each read under the guard. Embeddings of boxes no longer drawn
-/// are dropped. `stop` is asked between photos. `conn` has `recog`
-/// attached.
+/// Embed the faces and pets drawn by hand that have no embedding of the
+/// worker's model yet (`retry_failed`: also those that failed before), photo
+/// by photo, each read under the guard. A face drawn by hand is embedded with
+/// the faces model, a pet (a decision with a species) with the pets
+/// model, which needs a worker started for pets: without one the pets
+/// wait. Embeddings of boxes no longer drawn are dropped. `stop` is asked
+/// between photos. `conn` has `recog` attached.
 pub fn embed_drawn(
     conn: &Connection,
     root: &Path,
@@ -1199,26 +1401,30 @@ pub fn embed_drawn(
     retry_failed: bool,
     stop: &dyn Fn() -> bool,
 ) -> Result<DrawnStats> {
-    let model = worker.faces_model().model.clone();
+    let faces_model = worker.faces_model().model.clone();
+    let pets_model = worker.pets_model().filter(|_| worker.can_embed_pets()).map(|a| a.model.clone());
     conn.execute(
         "DELETE FROM recog.drawn WHERE NOT EXISTS (SELECT 1 FROM face_decisions d WHERE d.manual = 1
            AND d.key = recog.drawn.key AND d.x = recog.drawn.x AND d.y = recog.drawn.y AND d.w = recog.drawn.w AND d.h = recog.drawn.h)",
         [],
     )?;
-    // Per content: a present file and the boxes still to embed.
-    let mut todo: Vec<(Pending, Vec<[f64; 4]>)> = Vec::new();
+    // Per content: a present file and the boxes still to embed (`true`: a pet).
+    let mut todo: Vec<(Pending, Vec<([f64; 4], bool)>)> = Vec::new();
     {
         let mut stmt = conn.prepare(&format!(
-            "SELECT d.key, d.x, d.y, d.w, d.h, f.path, f.kind, f.size, f.mtime_ns FROM face_decisions d
+            "SELECT d.key, d.x, d.y, d.w, d.h, f.path, f.kind, f.size, f.mtime_ns, d.species IS NOT NULL
+             FROM face_decisions d
              JOIN files f ON f.quick_hash = d.key AND f.missing_since IS NULL AND f.kind IN ({KINDS})
              LEFT JOIN recog.drawn e ON e.key = d.key AND e.x = d.x AND e.y = d.y AND e.w = d.w AND e.h = d.h
-             WHERE d.manual = 1 AND (e.key IS NULL OR e.model != ?1 OR (?2 AND e.error IS NOT NULL))
+             WHERE d.manual = 1 AND (d.species IS NULL OR ?3 IS NOT NULL)
+               AND (e.key IS NULL OR e.model != CASE WHEN d.species IS NULL THEN ?1 ELSE ?3 END
+                    OR (?2 AND e.error IS NOT NULL))
              ORDER BY d.key, f.path_nfc"
         ))?;
-        let mut rows = stmt.query(params![model, retry_failed])?;
+        let mut rows = stmt.query(params![faces_model, retry_failed, pets_model])?;
         while let Some(r) = rows.next()? {
             let key: String = r.get(0)?;
-            let b: [f64; 4] = [r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?];
+            let b: ([f64; 4], bool) = ([r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?], r.get(9)?);
             let Some(kind) = Kind::parse(&r.get::<_, String>(6)?) else { continue };
             if todo.last().is_none_or(|(p, _)| p.key != key) {
                 let p = Pending { key, rel: r.get(5)?, kind, size: r.get::<_, i64>(7)? as u64, mtime_ns: r.get(8)? };
@@ -1242,19 +1448,45 @@ pub fn embed_drawn(
             let (w, h) = (img.width() as f64, img.height() as f64);
             media::encode_jpeg(&img, QUALITY).map(|jpeg| (jpeg, w, h)).map_err(|e| format!("{e:#}"))
         });
-        let outcome = match copy {
+        // One outcome per box, in order: faces go to `embed`, pets to
+        // `embed_pets`, each in one request (a crash is tried once more).
+        let outcomes: Vec<Result<Embedded, Failure>> = match copy {
             Ok((jpeg, w, h)) => {
-                let px: Vec<[f64; 4]> = boxes.iter().map(|b| [b[0] * w, b[1] * h, b[2] * w, b[3] * h]).collect();
-                match worker.embed(&jpeg, &px)? {
-                    Err(Failure::Crashed(_)) => worker.embed(&jpeg, &px)?,
-                    other => other,
+                let mut out: Vec<Option<Result<Embedded, Failure>>> = vec![None; boxes.len()];
+                for pets in [false, true] {
+                    let which: Vec<usize> = (0..boxes.len()).filter(|&i| boxes[i].1 == pets).collect();
+                    if which.is_empty() {
+                        continue;
+                    }
+                    let px: Vec<[f64; 4]> = which.iter().map(|&i| {
+                        let b = boxes[i].0;
+                        [b[0] * w, b[1] * h, b[2] * w, b[3] * h]
+                    }).collect();
+                    let ask = |worker: &mut Worker| if pets { worker.embed_pets(&jpeg, &px) } else { worker.embed(&jpeg, &px) };
+                    let answer = match ask(worker)? {
+                        Err(Failure::Crashed(_)) => ask(worker)?,
+                        other => other,
+                    };
+                    match answer {
+                        Ok(list) => {
+                            for (&i, e) in which.iter().zip(list) {
+                                out[i] = Some(Ok(e));
+                            }
+                        }
+                        Err(f) => {
+                            for &i in &which {
+                                out[i] = Some(Err(f.clone()));
+                            }
+                        }
+                    }
                 }
+                out.into_iter().map(|o| o.expect("every box was asked")).collect()
             }
             Err(e) if thumbs::is_transient(&e) => {
                 stats.skipped += 1;
                 continue;
             }
-            Err(e) => Err(Failure::Refused(e)),
+            Err(e) => boxes.iter().map(|_| Err(Failure::Refused(e.clone()))).collect(),
         };
         let tx = conn.unchecked_transaction()?;
         {
@@ -1262,12 +1494,14 @@ pub fn embed_drawn(
                 "INSERT OR REPLACE INTO recog.drawn (key, x, y, w, h, model, aligned, emb, error, done_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             )?;
-            for (i, b) in boxes.iter().enumerate() {
-                let (aligned, emb, error) = match &outcome {
-                    Ok(list) => {
-                        let e = &list[i];
+            for (&(b, pet), outcome) in boxes.iter().zip(&outcomes) {
+                let model = if pet { pets_model.as_deref().unwrap_or_default() } else { faces_model.as_str() };
+                // A pet's box is "aligned" like a detected pet's: the whole
+                // pet is embedded, there are no landmarks to find.
+                let (aligned, emb, error) = match outcome {
+                    Ok(e) => {
                         let bytes: Vec<u8> = e.emb.iter().flat_map(|v| v.to_le_bytes()).collect();
-                        (!e.landmarks.is_empty(), Some(bytes), None)
+                        (pet || !e.landmarks.is_empty(), Some(bytes), None)
                     }
                     Err(f) => (false, None, Some(failure_text(f))),
                 };
@@ -1287,20 +1521,38 @@ pub fn embed_drawn(
     Ok(stats)
 }
 
-/// Faces drawn by hand (on present photos) not yet tried with `model` (with
-/// any model if `None`); ones that failed wait for `--retry-failed`.
-pub fn drawn_pending(conn: &Connection, model: Option<&str>) -> Result<u64> {
-    let n: i64 = conn.query_row(
-        &format!(
-            "SELECT count(*) FROM face_decisions d
-             WHERE d.manual = 1 AND d.key IN (SELECT quick_hash FROM files WHERE missing_since IS NULL AND kind IN ({KINDS}))
-               AND NOT EXISTS (SELECT 1 FROM recog.drawn e WHERE e.key = d.key AND e.x = d.x AND e.y = d.y
-                                 AND e.w = d.w AND e.h = d.h AND (?1 IS NULL OR e.model = ?1))"
-        ),
-        [model],
-        |r| r.get(0),
-    )?;
-    Ok(n as u64)
+/// Drawn faces and pets that wait for an embedding.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct DrawnPending {
+    pub faces: u64,
+    pub pets: u64,
+}
+
+impl DrawnPending {
+    pub fn total(self) -> u64 {
+        self.faces + self.pets
+    }
+}
+
+/// Faces and pets drawn by hand (on present photos) not yet tried with the
+/// faces model (`faces_model`, any model if `None`) or the pets model
+/// (`pets_model`); ones that failed wait for `--retry-failed`.
+pub fn drawn_pending(conn: &Connection, faces_model: Option<&str>, pets_model: Option<&str>) -> Result<DrawnPending> {
+    let count = |pets: bool, model: Option<&str>| -> Result<u64> {
+        let n: i64 = conn.query_row(
+            &format!(
+                "SELECT count(*) FROM face_decisions d
+                 WHERE d.manual = 1 AND (d.species IS NOT NULL) = ?2
+                   AND d.key IN (SELECT quick_hash FROM files WHERE missing_since IS NULL AND kind IN ({KINDS}))
+                   AND NOT EXISTS (SELECT 1 FROM recog.drawn e WHERE e.key = d.key AND e.x = d.x AND e.y = d.y
+                                     AND e.w = d.w AND e.h = d.h AND (?1 IS NULL OR e.model = ?1))"
+            ),
+            params![model, pets],
+            |r| r.get(0),
+        )?;
+        Ok(n as u64)
+    };
+    Ok(DrawnPending { faces: count(false, faces_model)?, pets: count(true, pets_model)? })
 }
 
 fn failure_text(f: &Failure) -> String {
@@ -1372,8 +1624,9 @@ pub fn iou(a: [f64; 4], b: [f64; 4]) -> f64 {
 /// pass; returns the number of faces stored. The rotated pass depends on
 /// what is found upright, so its result is dropped too and redone later.
 fn store(conn: &Connection, key: &str, model: &str, outcome: &Result<Found, Failure>) -> Result<usize> {
-    forget_neighbours(conn, "key = ?1", [key])?;
-    conn.execute("DELETE FROM recog.faces WHERE key = ?1", [key])?;
+    // Pets have a pass of their own: this one leaves their rows alone.
+    forget_neighbours(conn, "key = ?1 AND species IS NULL", [key])?;
+    conn.execute("DELETE FROM recog.faces WHERE key = ?1 AND species IS NULL", [key])?;
     conn.execute("DELETE FROM recog.looked WHERE key = ?1 AND task = ?2", params![key, FACES_ROT])?;
     store_looked(conn, key, FACES, model, outcome)?;
     match outcome {
@@ -1386,14 +1639,14 @@ fn store(conn: &Connection, key: &str, model: &str, outcome: &Result<Found, Fail
 /// face of the upright pass (nor a better one of its own) are added. Returns
 /// the number added.
 fn store_rotated(conn: &Connection, key: &str, model: &str, outcome: &Result<Found, Failure>) -> Result<usize> {
-    forget_neighbours(conn, "key = ?1 AND roll != 0", [key])?;
-    conn.execute("DELETE FROM recog.faces WHERE key = ?1 AND roll != 0", [key])?;
+    forget_neighbours(conn, "key = ?1 AND roll != 0 AND species IS NULL", [key])?;
+    conn.execute("DELETE FROM recog.faces WHERE key = ?1 AND roll != 0 AND species IS NULL", [key])?;
     let found = match outcome {
         Ok(found) => found,
         Err(_) => return store_looked(conn, key, FACES_ROT, model, outcome).map(|_| 0),
     };
     let mut kept: Vec<[f64; 4]> = conn
-        .prepare_cached("SELECT x, y, w, h FROM recog.faces WHERE key = ?1")?
+        .prepare_cached("SELECT x, y, w, h FROM recog.faces WHERE key = ?1 AND species IS NULL")?
         .query_map([key], |r| Ok([r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?]))?
         .collect::<rusqlite::Result<_>>()?;
     let mut candidates: Vec<&Face> = found.faces.iter().collect();
@@ -1409,6 +1662,18 @@ fn store_rotated(conn: &Connection, key: &str, model: &str, outcome: &Result<Fou
     let added_found = Found { width: found.width, height: found.height, faces: added };
     store_looked(conn, key, FACES_ROT, model, &Ok(added_found.clone()))?;
     insert_faces(conn, key, model, &added_found.faces)
+}
+
+/// Replace what is stored for a content with a new result of the pets
+/// pass; returns the number of pets stored. Faces are not touched.
+fn store_pets(conn: &Connection, key: &str, model: &str, outcome: &Result<Found, Failure>) -> Result<usize> {
+    forget_neighbours(conn, "key = ?1 AND species IS NOT NULL", [key])?;
+    conn.execute("DELETE FROM recog.faces WHERE key = ?1 AND species IS NOT NULL", [key])?;
+    store_looked(conn, key, PETS, model, outcome)?;
+    match outcome {
+        Ok(found) => insert_faces(conn, key, model, &found.faces),
+        Err(_) => Ok(0),
+    }
 }
 
 /// Drop the neighbour lists of faces about to be deleted: a new face can get
@@ -1438,13 +1703,13 @@ fn store_looked(conn: &Connection, key: &str, task: &str, model: &str, outcome: 
 
 fn insert_faces(conn: &Connection, key: &str, model: &str, faces: &[Face]) -> Result<usize> {
     let mut insert = conn.prepare_cached(
-        "INSERT INTO recog.faces (key, model, x, y, w, h, score, landmarks, emb, roll)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        "INSERT INTO recog.faces (key, model, x, y, w, h, score, landmarks, emb, roll, species)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
     )?;
     for f in faces {
         let emb: Vec<u8> = f.emb.iter().flat_map(|v| v.to_le_bytes()).collect();
         let landmarks = (!f.landmarks.is_empty()).then(|| serde_json::to_string(&f.landmarks)).transpose()?;
-        insert.execute(params![key, model, f.x, f.y, f.w, f.h, f.score, landmarks, emb, f.roll])?;
+        insert.execute(params![key, model, f.x, f.y, f.w, f.h, f.score, landmarks, emb, f.roll, f.species])?;
     }
     Ok(faces.len())
 }
@@ -1452,19 +1717,17 @@ fn insert_faces(conn: &Connection, key: &str, model: &str, faces: &[Face]) -> Re
 /// The faces stored for a content: `None` if it has not been looked at (or
 /// failed), else the boxes.
 pub fn faces_of(conn: &Connection, key: &str) -> Result<Option<Vec<Face>>> {
-    let looked: Option<bool> = conn
-        .query_row(
-            "SELECT error IS NULL FROM recog.looked WHERE key = ?1 AND task = ?2",
-            params![key, FACES],
-            |r| r.get(0),
-        )
-        .map(Some)
-        .or_else(|e| if e == rusqlite::Error::QueryReturnedNoRows { Ok(None) } else { Err(e) })?;
-    if looked != Some(true) {
+    // Looked at for faces or for pets, successfully.
+    let looked: bool = conn.query_row(
+        "SELECT count(*) > 0 FROM recog.looked WHERE key = ?1 AND task IN (?2, ?3) AND error IS NULL",
+        params![key, FACES, PETS],
+        |r| r.get(0),
+    )?;
+    if !looked {
         return Ok(None);
     }
     let faces = conn
-        .prepare("SELECT x, y, w, h, score, landmarks, roll FROM recog.faces WHERE key = ?1 ORDER BY x")?
+        .prepare("SELECT x, y, w, h, score, landmarks, roll, species FROM recog.faces WHERE key = ?1 ORDER BY x")?
         .query_map([key], |r| {
             let landmarks: Option<String> = r.get(5)?;
             Ok(Face {
@@ -1475,6 +1738,7 @@ pub fn faces_of(conn: &Connection, key: &str) -> Result<Option<Vec<Face>>> {
                 score: r.get(4)?,
                 landmarks: landmarks.and_then(|l| serde_json::from_str(&l).ok()).unwrap_or_default(),
                 roll: r.get(6)?,
+                species: r.get(7)?,
                 emb: Vec::new(),
             })
         })?
@@ -1490,6 +1754,10 @@ pub struct Overview {
     pub total: u64,
     /// Faces found in present photos.
     pub faces: u64,
+    /// Photos looked at for cats and dogs (`--pets`), successfully or
+    /// not, and the pets found in present photos.
+    pub pets_done: u64,
+    pub pets: u64,
     /// A `recognize` run is going on.
     pub running: bool,
 }
@@ -1504,7 +1772,23 @@ pub fn overview(conn: &Connection) -> Result<Overview> {
         [],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
     )?;
-    Ok(Overview { done: done as u64, total: total as u64, faces: faces as u64, running: running(conn)? })
+    let (pets_done, pets): (i64, i64) = conn.query_row(
+        &format!(
+            "SELECT count(l.key), coalesce(sum(l.found), 0) FROM
+               (SELECT DISTINCT quick_hash FROM files WHERE missing_since IS NULL AND kind IN ({KINDS})) f
+             JOIN recog.looked l ON l.key = f.quick_hash AND l.task = '{PETS}'"
+        ),
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    Ok(Overview {
+        done: done as u64,
+        total: total as u64,
+        faces: faces as u64,
+        pets_done: pets_done as u64,
+        pets: pets as u64,
+        running: running(conn)?,
+    })
 }
 
 #[cfg(test)]
@@ -1525,7 +1809,7 @@ mod tests {
     }
 
     fn face(x: f64, y: f64, w: f64, h: f64) -> Face {
-        Face { x, y, w, h, score: 0.9, landmarks: vec![[x, y]], roll: 0, emb: Vec::new() }
+        Face { x, y, w, h, score: 0.9, landmarks: vec![[x, y]], roll: 0, species: None, emb: Vec::new() }
     }
 
     fn close(a: [f64; 4], b: [f64; 4]) -> bool {

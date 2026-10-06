@@ -15,7 +15,7 @@ pub const FILE: &str = "library.db";
 const BACKUP_SUFFIX: &str = ".bak";
 
 /// Bump when the schema changes and add a step to `migrate`.
-const SCHEMA_VERSION: i32 = 7;
+const SCHEMA_VERSION: i32 = 8;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -224,9 +224,24 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 ";
 
+/// Phase 7 (pets): a decision says which kind of face it is about, so a
+/// cat and a person whose boxes coincide in a photo are never mixed up.
+/// NULL: a person's face (all decisions made before cats and dogs existed);
+/// otherwise `cat` or `dog`, the species of the pet it was made on.
+const SCHEMA_V7: &str = "
+ALTER TABLE face_decisions ADD COLUMN species TEXT;
+";
+
+/// Whether `table` of `schema` has a column.
+pub fn has_column(conn: &Connection, schema: &str, table: &str, column: &str) -> Result<bool> {
+    let mut stmt = conn.prepare(&format!("SELECT name FROM pragma_table_info('{table}', '{schema}')"))?;
+    let names = stmt.query_map([], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(names.iter().any(|n| n == column))
+}
+
 /// Photos that cannot be turned in the file (HEIC, PNG) are turned in
 /// shoebox only, by content like `taken_overrides`.
-const SCHEMA_V7: &str = "
+const SCHEMA_V8: &str = "
 CREATE TABLE IF NOT EXISTS view_turns (
     key      TEXT PRIMARY KEY,   -- files.quick_hash
     quarters INTEGER NOT NULL,   -- 1 to 3 quarter turns clockwise
@@ -297,8 +312,17 @@ fn migrate(conn: &Connection) -> Result<()> {
     }
     if version < 7 {
         let tx = conn.unchecked_transaction()?;
-        tx.execute_batch(SCHEMA_V7)?;
+        // A re-run (the tests lower user_version) must not add it twice.
+        if !has_column(&tx, "main", "face_decisions", "species")? {
+            tx.execute_batch(SCHEMA_V7)?;
+        }
         tx.pragma_update(None, "user_version", 7)?;
+        tx.commit()?;
+    }
+    if version < 8 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V8)?;
+        tx.pragma_update(None, "user_version", 8)?;
         tx.commit()?;
     }
     Ok(())
@@ -490,6 +514,23 @@ mod tests {
         conn.execute("DELETE FROM people", []).unwrap();
         let n: i64 = conn.query_row("SELECT count(*) FROM face_decisions", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 0);
+        // v7: decisions know their species; a re-run of the step changes nothing.
+        assert!(has_column(&conn, "main", "face_decisions", "species").unwrap());
+        conn.execute(
+            "INSERT INTO people (name) VALUES ('Spooky')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, at, species) VALUES ('k', 0, 0, 1, 1, (SELECT id FROM people), 'confirmed', 0, 'cat')",
+            [],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 6).unwrap();
+        drop(conn);
+        let conn = open(&path).unwrap();
+        let species: Option<String> = conn.query_row("SELECT species FROM face_decisions", [], |r| r.get(0)).unwrap();
+        assert_eq!(species.as_deref(), Some("cat"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

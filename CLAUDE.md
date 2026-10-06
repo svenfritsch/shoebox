@@ -20,6 +20,9 @@ current status and next step. Update its status table when a phase moves.
   bytes of its EXIF Orientation tag in place, only when the file matches the
   index, and checks the full hash afterwards (old content plus those two
   bytes). Never anything else in an original.
+- UI text is never hard-coded: `tr()`/`trn()`/`data-i18n` with a key in both
+  `core/i18n/en.json` and `de.json` (see docs/phase8.md; `core/tests/i18n.rs`
+  checks it).
 - Paths may contain spaces and decomposed Unicode: quote everything, compare
   NFC-normalised.
 

@@ -120,6 +120,20 @@ fn only_this_computer_and_only_with_the_header() {
 }
 
 #[test]
+fn the_launcher_serves_its_translations() {
+    let launcher = start_launcher();
+    let addr = launcher.addr;
+    assert_eq!(lget(addr, "/i18n/i18n.js").status, 200);
+    for lang in ["en", "de"] {
+        let messages = lget(addr, &format!("/i18n/{lang}.json"));
+        assert_eq!(messages.status, 200, "{lang}");
+        assert_eq!(messages.header("content-type"), Some("application/json"));
+        assert!(messages.json()["launcher.step1"].is_string(), "{lang}");
+    }
+    launcher.stop().unwrap();
+}
+
+#[test]
 fn the_photo_app_starts_only_when_asked() {
     let _turn = serial();
     let lib = Library::new("launcher-app");
@@ -219,6 +233,39 @@ fn the_remembered_folders_are_a_json_file() {
     assert_eq!(bare_request(launcher.addr, "POST", "/raw/api/config", &[json_ct], br#"{"paths":["/x"]}"#).status, 403);
     launcher.stop().unwrap();
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn recognize_pets_runs_the_pets_pass_under_the_guard() {
+    let _turn = serial();
+    let lib = Library::new("launcher-pets");
+    // A red picture is a cat, a blue one a dog, for the fake recognizer.
+    image::RgbImage::from_pixel(64, 64, image::Rgb([200, 60, 40])).save(lib.path("cat.png")).unwrap();
+    image::RgbImage::from_pixel(64, 64, image::Rgb([40, 60, 200])).save(lib.path("dog.png")).unwrap();
+    lib.scan_opts(true, false, false);
+    let before = lib.snapshot();
+    unsafe { std::env::set_var("SHOEBOX_RECOGNIZER", env!("CARGO_BIN_EXE_shoebox-fake-recognizer")) };
+    let launcher = start_launcher();
+    let root = lib.root.display().to_string();
+
+    // The plain button looks for faces only; the pets button also for cats and dogs.
+    let faces = run_job(launcher.addr, json!({ "kind": "recognize", "root": root }));
+    assert_eq!(faces["ok"], true, "{faces}");
+    assert!(faces["result"]["pets"].is_null(), "no pet models were asked for");
+    let pets = run_job(launcher.addr, json!({ "kind": "recognize_pets", "root": root }));
+    assert_eq!(pets["ok"], true, "{pets}");
+    // The fake finds one pet in every picture (the library's own photos, and the
+    // fixtures when CI has them, so the count is the library's, not a constant).
+    let photos = lib.count("SELECT count(DISTINCT quick_hash) FROM files WHERE missing_since IS NULL AND kind IN ('jpeg', 'png', 'heic')");
+    assert!(photos >= 8, "{photos}");
+    assert_eq!(pets["result"]["pets"]["faces"], photos, "{pets}");
+    assert_eq!(pets["result"]["pets"]["looked"], photos);
+    assert_eq!(pets["result"]["faces"], 0, "the faces were done by the first run");
+    let clustered = pets["result"]["clusters"]["pets"]["faces"].as_i64().unwrap();
+    assert!(clustered > 0 && clustered <= photos, "clustered in a space of their own: {pets}");
+    assert_eq!(pets["result"]["pets"]["model"], "fake-pets-1");
+    assert_eq!(lib.snapshot(), before, "looking for pets changed an original");
+    launcher.stop().unwrap();
 }
 
 #[test]

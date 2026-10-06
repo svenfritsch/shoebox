@@ -357,7 +357,8 @@ fn now_secs() -> u64 {
 
 #[derive(Deserialize, Clone)]
 struct JobRequest {
-    /// `scan`, `verify`, `recognize` or `faces_stats`.
+    /// `scan`, `verify`, `recognize`, `recognize_pets` (the same, then cats
+    /// and dogs too), `faces_stats` or `backup`.
     kind: String,
     /// One folder, or several in `roots`: they are processed one after the other.
     #[serde(default)]
@@ -409,7 +410,7 @@ fn run_command(req: &JobRequest, roots: Vec<PathBuf>) -> Result<(serde_json::Val
             let clean = r.is_clean();
             (serde_json::to_value(&r)?, clean)
         }
-        "recognize" => {
+        "recognize" | "recognize_pets" => {
             let stats = recognize::run(&recognize::Options {
                 root,
                 db: None,
@@ -417,9 +418,10 @@ fn run_command(req: &JobRequest, roots: Vec<PathBuf>) -> Result<(serde_json::Val
                 limit: req.limit,
                 retry_failed: req.retry_failed,
                 rotated: req.rotated,
+                pets: req.kind == "recognize_pets",
                 timeouts: recognize::Timeouts::default(),
             })?;
-            let clean = stats.errors.is_empty();
+            let clean = stats.errors.is_empty() && stats.pets.as_ref().is_none_or(|a| a.errors.is_empty());
             (serde_json::to_value(&stats)?, clean)
         }
         "faces_stats" => {
@@ -458,7 +460,7 @@ fn short_name(root: &Path) -> String {
 }
 
 fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
-    if !matches!(req.kind.as_str(), "scan" | "verify" | "recognize" | "faces_stats" | "backup") {
+    if !matches!(req.kind.as_str(), "scan" | "verify" | "recognize" | "recognize_pets" | "faces_stats" | "backup") {
         return Err(ApiError::BadRequest(format!("unknown command {:?}", req.kind)));
     }
     if shared.app.lock().unwrap().is_some() {
@@ -793,10 +795,16 @@ async fn drives() -> Json<Vec<Drive>> {
 #[folder = "launcher-web/"]
 struct Assets;
 
+/// Translations and their loader, shared with the photo app (`i18n/`).
+#[derive(rust_embed::RustEmbed)]
+#[folder = "i18n/"]
+#[prefix = "i18n/"]
+struct I18n;
+
 async fn asset(uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
     let path = if path.is_empty() { "index.html" } else { path };
-    let Some(file) = Assets::get(path) else {
+    let Some(file) = Assets::get(path).or_else(|| I18n::get(path)) else {
         return (StatusCode::NOT_FOUND, "not found").into_response();
     };
     let mime = match path.rsplit('.').next() {
@@ -804,6 +812,7 @@ async fn asset(uri: Uri) -> Response {
         Some("js") => "text/javascript; charset=utf-8",
         Some("css") => "text/css; charset=utf-8",
         Some("svg") => "image/svg+xml",
+        Some("json") => "application/json",
         _ => "application/octet-stream",
     };
     ([(header::CONTENT_TYPE, mime)], file.data.into_owned()).into_response()

@@ -46,6 +46,24 @@
 //! 4 of each other): then the plain crop is embedded and no landmarks come
 //! back. The misbehaviour cues above are only for `faces`.
 //!
+//! With `--pets` the hello also lists the task `pets` (model
+//! `fake-pets-1`, embeddings of 64 numbers, so they can never be mixed up
+//! with faces), which finds one cat or dog in the middle of every picture
+//! (the pet of the picture's mean colour: a cat when red is at least blue,
+//! else a dog; 64-d embedding, same colour same pet):
+//!
+//! | Picture | Reply to `pets` |
+//! |---|---|
+//! | dark (all channels < 16) | no pets |
+//! | pure green | an error reply |
+//! | white top quarter, grey bottom quarter | as for faces: the pet of the middle half's colour, `round(40 g / 255) / 40` similar to the plain one |
+//! | anything else | one pet, box (0.25, 0.25, 0.5, 0.5) |
+//!
+//! With `--pets` the task `embed-pets` (a pet's box drawn by hand) embeds each
+//! box from the mean colour inside it, as the pet of that colour (64 numbers):
+//! a box drawn on a plain picture of a pet is that pet. No landmarks, no
+//! misbehaviour cues.
+//!
 //! `--protocol <n>` overrides the protocol in the hello; `--no-embed` leaves
 //! `embed` out of the hello; `--silent` never says hello.
 
@@ -56,6 +74,8 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::{Value, json};
 
 const DIM: usize = 128;
+/// Pet embeddings are shorter than face embeddings.
+const PET_DIM: usize = 64;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -70,6 +90,11 @@ fn main() {
     let mut tasks = json!({ "faces": { "model": "fake-1", "dim": DIM } });
     if !args.iter().any(|a| a == "--no-embed") {
         tasks["embed"] = json!({ "model": "fake-1", "dim": DIM });
+    }
+    let pets = args.iter().any(|a| a == "--pets");
+    if pets {
+        tasks["pets"] = json!({ "model": "fake-pets-1", "dim": PET_DIM });
+        tasks["embed-pets"] = json!({ "model": "fake-pets-1", "dim": PET_DIM });
     }
     let hello = json!({
         "hello": "shoebox-recognizer",
@@ -89,6 +114,18 @@ fn main() {
         let id = req["id"].clone();
         if req["tasks"].as_array().is_some_and(|t| t.iter().any(|t| t == "embed")) {
             let reply = embed(&req).unwrap_or_else(|e| json!({ "id": id, "error": e }));
+            writeln!(out, "{reply}").unwrap();
+            out.flush().unwrap();
+            continue;
+        }
+        if req["tasks"].as_array().is_some_and(|t| t.iter().any(|t| t == "embed-pets")) {
+            let reply = if pets { embed_pets(&req) } else { json!({ "id": id, "error": "unknown task: embed-pets" }) };
+            writeln!(out, "{reply}").unwrap();
+            out.flush().unwrap();
+            continue;
+        }
+        if req["tasks"].as_array().is_some_and(|t| t.iter().any(|t| t == "pets")) {
+            let reply = if pets { pets_reply(&req) } else { json!({ "id": id, "error": "unknown task: pets" }) };
             writeln!(out, "{reply}").unwrap();
             out.flush().unwrap();
             continue;
@@ -263,6 +300,66 @@ fn lying_face_reply(id: &Value, w: u32, h: u32) -> Value {
     })
 }
 
+/// The `embed-pets` task: per box, the pet of the mean colour inside it.
+fn embed_pets(req: &Value) -> Value {
+    let id = &req["id"];
+    let result = (|| -> Result<Value, String> {
+        let data = BASE64.decode(req["image"].as_str().ok_or("no image")?).map_err(|e| e.to_string())?;
+        let img = image::load_from_memory(&data).map_err(|_| "cannot decode image")?.to_rgb8();
+        let (w, h) = (img.width(), img.height());
+        let mut out = Vec::new();
+        for b in req["boxes"].as_array().ok_or("no boxes")? {
+            let v: Vec<f64> = b.as_array().ok_or("a box is not a list")?.iter().filter_map(Value::as_f64).collect();
+            let [x, y, bw, bh] = v[..] else { return Err("a box needs x, y, w, h".into()) };
+            let x0 = (x.max(0.0) as u32).min(w - 1);
+            let y0 = (y.max(0.0) as u32).min(h - 1);
+            let x1 = ((x + bw).ceil() as u32).clamp(x0 + 1, w);
+            let y1 = ((y + bh).ceil() as u32).clamp(y0 + 1, h);
+            let mut sum = [0f64; 3];
+            for yy in y0..y1 {
+                for xx in x0..x1 {
+                    let p = img.get_pixel(xx, yy);
+                    for c in 0..3 {
+                        sum[c] += p[c] as f64;
+                    }
+                }
+            }
+            let n = ((x1 - x0) * (y1 - y0)) as f64;
+            let bytes: Vec<u8> = person_dim(sum.map(|s| s / n), PET_DIM).iter().flat_map(|v| v.to_le_bytes()).collect();
+            out.push(json!({ "emb": BASE64.encode(bytes) }));
+        }
+        Ok(json!({ "id": id, "width": w, "height": h, "embed-pets": out }))
+    })();
+    result.unwrap_or_else(|e| json!({ "id": id, "error": e }))
+}
+
+/// The `pets` task: one pet in the middle, described by colour.
+fn pets_reply(req: &Value) -> Value {
+    let id = &req["id"];
+    let (w, h, mean, cue) = match picture(req) {
+        Ok(p) => p,
+        Err(e) => return json!({ "id": id, "error": e }),
+    };
+    let [r, g, b] = mean;
+    let (colour, emb) = match cue {
+        Some((Edge::Top, Cue::Variant { colour, grey })) => (colour, variant(colour, grey, PET_DIM)),
+        _ if r < 16.0 && g < 16.0 && b < 16.0 => return json!({ "id": id, "width": w, "height": h, "pets": [] }),
+        _ if pure(g, r, b) => return json!({ "id": id, "error": "fake: cannot handle green" }),
+        _ => (mean, person_dim(mean, PET_DIM)),
+    };
+    let bytes: Vec<u8> = emb.iter().flat_map(|v| v.to_le_bytes()).collect();
+    let (fw, fh) = (w as f64, h as f64);
+    json!({
+        "id": id, "width": w, "height": h,
+        "pets": [{
+            "species": if colour[0] >= colour[2] { "cat" } else { "dog" },
+            "bbox": [fw / 4.0, fh / 4.0, fw / 2.0, fh / 2.0],
+            "score": 0.9,
+            "emb": BASE64.encode(bytes),
+        }],
+    })
+}
+
 /// The person a colour stands for. Quantised, so JPEG noise does not
 /// change the person.
 fn person_number(rgb: [f64; 3]) -> u64 {
@@ -272,8 +369,12 @@ fn person_number(rgb: [f64; 3]) -> u64 {
 
 /// The embedding of a plain picture of this colour: the person.
 fn person(rgb: [f64; 3]) -> Vec<f32> {
+    person_dim(rgb, DIM)
+}
+
+fn person_dim(rgb: [f64; 3], dim: usize) -> Vec<f32> {
     let k = person_number(rgb) as f64;
-    normalised((0..DIM).map(|i| ((i as f64 + 1.0) * k).sin() as f32).collect())
+    normalised((0..dim).map(|i| ((i as f64 + 1.0) * k).sin() as f32).collect())
 }
 
 fn normalised(mut v: Vec<f32>) -> Vec<f32> {
@@ -288,13 +389,19 @@ fn face_reply(id: &Value, w: u32, h: u32, rgb: [f64; 3]) -> Value {
 
 /// The white-top cue: the person of `colour`, `grey` away from them.
 fn variant_reply(id: &Value, w: u32, h: u32, colour: [f64; 3], grey: f64) -> Value {
-    let p = person(colour);
+    centred_face(id, w, h, &variant(colour, grey, DIM))
+}
+
+/// An embedding of `dim` numbers `grey`-steps away from the plain one of
+/// `colour`.
+fn variant(colour: [f64; 3], grey: f64, dim: usize) -> Vec<f32> {
+    let p = person_dim(colour, dim);
     let steps = (grey / 255.0 * 40.0).round();
     let sim = (steps / 40.0).clamp(0.0, 1.0) as f32;
     // A direction of its own per person and grey (pseudo-random), at right
     // angles to the person's.
     let mut x = (person_number(colour) * 100 + steps as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(1);
-    let other: Vec<f32> = (0..DIM)
+    let other: Vec<f32> = (0..dim)
         .map(|_| {
             x ^= x << 13;
             x ^= x >> 7;
@@ -305,8 +412,7 @@ fn variant_reply(id: &Value, w: u32, h: u32, colour: [f64; 3], grey: f64) -> Val
     let along: f32 = other.iter().zip(&p).map(|(a, b)| a * b).sum();
     let other = normalised(other.iter().zip(&p).map(|(o, q)| o - along * q).collect());
     let rest = (1.0 - sim * sim).max(0.0).sqrt();
-    let emb = normalised(p.iter().zip(&other).map(|(q, o)| sim * q + rest * o).collect());
-    centred_face(id, w, h, &emb)
+    normalised(p.iter().zip(&other).map(|(q, o)| sim * q + rest * o).collect())
 }
 
 /// One face in the middle of the picture, half as wide and high.
