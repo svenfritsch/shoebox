@@ -357,3 +357,75 @@ fn groups_are_identical_same_photo_in_another_size_or_similar_shots() {
     assert_eq!(file_of(&all, "Messenger/IMG-WA0001.jpg")["keeper"], a);
     server.stop().unwrap();
 }
+
+/// A copy of `from` with one pixel changed: other bytes, same picture and size.
+fn tweaked_copy(from: &std::path::Path, to: &std::path::Path) {
+    fs::create_dir_all(to.parent().unwrap()).unwrap();
+    let mut img = image::open(from).unwrap().to_rgb8();
+    img.put_pixel(3, 3, image::Rgb([1, 2, 3]));
+    img.save(to).unwrap();
+}
+
+#[test]
+fn shots_of_a_series_are_not_one_photo_in_two_versions() {
+    let lib = Library::new("dupes-series");
+    rings(&lib.path("2010er/IMG_4284 1.JPG"), 1600, 1200);
+    tweaked_copy(&lib.path("2010er/IMG_4284 1.JPG"), &lib.path("2010er/IMG_4285 1.JPG"));
+    // Without capture dates, other names: the same picture saved twice.
+    tweaked_copy(&lib.path("2010er/IMG_4284 1.JPG"), &lib.path("Export/foto.jpg"));
+    lib.scan();
+    let (a, b) = (id_of(&lib, "2010er/IMG_4284 1.JPG"), id_of(&lib, "2010er/IMG_4285 1.JPG"));
+    // Same capture second, same size: a burst.
+    set_taken(&lib, a, Some("2015-12-21T15:20:00"));
+    set_taken(&lib, b, Some("2015-12-21T15:20:00"));
+    let server = start(&lib, None);
+    let all = groups(server.addr);
+    let (fa, fb) = (file_of(&all, "2010er/IMG_4284 1.JPG"), file_of(&all, "2010er/IMG_4285 1.JPG"));
+    assert_ne!(fa["row"], fb["row"]);
+    assert_eq!((fa["keeper"].as_i64(), fb["keeper"].as_i64()), (None, None));
+    assert!(fa["pick"] == true && fb["pick"] == true);
+    server.stop().unwrap();
+
+    // Without any capture date the numbers in the names still tell the
+    // shots apart; the " 1" import suffix is ignored.
+    set_taken(&lib, a, None);
+    set_taken(&lib, b, None);
+    let server = start(&lib, None);
+    let all = groups(server.addr);
+    assert_ne!(file_of(&all, "2010er/IMG_4284 1.JPG")["row"], file_of(&all, "2010er/IMG_4285 1.JPG")["row"]);
+    server.stop().unwrap();
+}
+
+#[test]
+fn files_in_a_copies_folder_are_never_the_original() {
+    let lib = Library::new("dupes-copies-folder");
+    // A packaged InDesign project: its "Link" folder holds copies. The Link
+    // folder sorts (and so is scanned) first.
+    lib.jpeg("Album/Projekt/Link/IMG_0508.JPG", 7);
+    fs::create_dir_all(lib.path("Fotos")).unwrap();
+    fs::copy(lib.path("Album/Projekt/Link/IMG_0508.JPG"), lib.path("Fotos/IMG_0508.JPG")).unwrap();
+    lib.scan();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let pick = |all: &[Value], path: &str| file_of(all, path)["pick"].as_bool().unwrap();
+
+    // Nothing named yet: a tie, the earlier record is the pick.
+    assert_eq!(get(addr, "/api/duplicates/copy-folders").json()["folders"], json!([]));
+    let all = groups(addr);
+    assert_ne!(pick(&all, "Album/Projekt/Link/IMG_0508.JPG"), pick(&all, "Fotos/IMG_0508.JPG"));
+
+    // Named (case matters, any level of the path): "link" is not "Link".
+    post(addr, "/api/duplicates/copy-folders", &json!({ "folders": ["link"] }));
+    let all = groups(addr);
+    assert_eq!(file_of(&all, "Album/Projekt/Link/IMG_0508.JPG")["in_copies"], false);
+    // Named: the one outside is the pick.
+    assert_eq!(post(addr, "/api/duplicates/copy-folders", &json!({ "folders": ["Link", "Pfad/x"] })).status, 400);
+    let r = post(addr, "/api/duplicates/copy-folders", &json!({ "folders": [" Link ", "link", "Link"] }));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    assert_eq!(r.json()["folders"], json!(["Link", "link"]));
+    let all = groups(addr);
+    assert!(pick(&all, "Fotos/IMG_0508.JPG") && !pick(&all, "Album/Projekt/Link/IMG_0508.JPG"));
+    assert_eq!(file_of(&all, "Album/Projekt/Link/IMG_0508.JPG")["in_copies"], true);
+    assert_eq!(file_of(&all, "Fotos/IMG_0508.JPG")["in_copies"], false);
+    server.stop().unwrap();
+}
