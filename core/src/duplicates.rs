@@ -113,8 +113,10 @@ pub struct Candidates {
 /// Kept per library as the setting `dup_copy_folders` (a JSON list).
 pub const COPY_FOLDERS_KEY: &str = "dup_copy_folders";
 
+/// Names are compared NFC-normalised and case-sensitively: "Link" and "link"
+/// are two names (list both to match both).
 fn fold_name(name: &str) -> String {
-    library::nfc(name.trim()).to_lowercase()
+    library::nfc(name.trim())
 }
 
 pub fn copy_folders(conn: &Connection) -> Result<Vec<String>> {

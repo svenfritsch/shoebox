@@ -414,11 +414,15 @@ fn files_in_a_copies_folder_are_never_the_original() {
     let all = groups(addr);
     assert_ne!(pick(&all, "Album/Projekt/Link/IMG_0508.JPG"), pick(&all, "Fotos/IMG_0508.JPG"));
 
-    // Named (any case, any level of the path): the one outside is the pick.
-    assert_eq!(post(addr, "/api/duplicates/copy-folders", &json!({ "folders": [" link ", "Link", "Pfad/x"] })).status, 400);
-    let r = post(addr, "/api/duplicates/copy-folders", &json!({ "folders": [" link ", "LINK"] }));
+    // Named (case matters, any level of the path): "link" is not "Link".
+    post(addr, "/api/duplicates/copy-folders", &json!({ "folders": ["link"] }));
+    let all = groups(addr);
+    assert_eq!(file_of(&all, "Album/Projekt/Link/IMG_0508.JPG")["in_copies"], false);
+    // Named: the one outside is the pick.
+    assert_eq!(post(addr, "/api/duplicates/copy-folders", &json!({ "folders": ["Link", "Pfad/x"] })).status, 400);
+    let r = post(addr, "/api/duplicates/copy-folders", &json!({ "folders": [" Link ", "link", "Link"] }));
     assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
-    assert_eq!(r.json()["folders"], json!(["link"]));
+    assert_eq!(r.json()["folders"], json!(["Link", "link"]));
     let all = groups(addr);
     assert!(pick(&all, "Fotos/IMG_0508.JPG") && !pick(&all, "Album/Projekt/Link/IMG_0508.JPG"));
     assert_eq!(file_of(&all, "Album/Projekt/Link/IMG_0508.JPG")["in_copies"], true);

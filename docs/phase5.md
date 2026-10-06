@@ -751,7 +751,7 @@ Built, one commit per step. Scope and rules are in "Phase 5d details" in
 - **Folders that hold copies** (feedback: a packaged InDesign project keeps
   its photos as copies in a "Link" folder): Settings has a list of folder
   names (library setting `dup_copy_folders`, `GET/POST
-  /api/lib/{id}/duplicates/copy-folders`; compared NFC and case-insensitively,
+  /api/lib/{id}/duplicates/copy-folders`; compared NFC-normalised and case-sensitively ("Link" and "link" are two names),
   at any level of the path, one name each). A file inside such a folder is
   never the pick of its photo (the first criterion, before quality) and is
   ticked by "Preselect copies" whenever the same photo lies elsewhere, even if
