@@ -61,6 +61,10 @@ pub struct DupFile {
     /// (a resized or re-sent copy) or identical copies; the page shows them
     /// side by side with one thumbnail.
     pub row: u32,
+    /// Lies in a folder the user named as a place for copies (InDesign's
+    /// "Links", say): never the one to keep, and ticked when it is the same
+    /// photo as one that lies elsewhere.
+    pub in_copies: bool,
     /// Surely the same photo as the best file of its row, only worse (fewer
     /// pixels, or without the metadata the best one has): the id of that
     /// best file, which is the one to keep. The page ticks these.
@@ -104,6 +108,48 @@ pub struct Candidates {
     decided: HashSet<(i64, i64)>,
 }
 
+/// Folder names (any level of a path) where copies live, not originals: a
+/// packaged InDesign project keeps the photos it uses in a "Links" folder.
+/// Kept per library as the setting `dup_copy_folders` (a JSON list).
+pub const COPY_FOLDERS_KEY: &str = "dup_copy_folders";
+
+/// Names are compared NFC-normalised and case-sensitively: "Link" and "link"
+/// are two names (list both to match both).
+fn fold_name(name: &str) -> String {
+    library::nfc(name.trim())
+}
+
+pub fn copy_folders(conn: &Connection) -> Result<Vec<String>> {
+    let names: Vec<String> = db::setting(conn, COPY_FOLDERS_KEY)?.and_then(|j| serde_json::from_str(&j).ok()).unwrap_or_default();
+    Ok(names)
+}
+
+pub fn set_copy_folders(conn: &Connection, names: &[String]) -> Result<Vec<String>> {
+    let mut clean: Vec<String> = Vec::new();
+    for n in names {
+        let n = library::nfc(n.trim());
+        if n.is_empty() || n.contains('/') || n.chars().any(char::is_control) {
+            bail!("a folder name is one name, without “/” (got “{n}”)");
+        }
+        if !clean.iter().any(|c| fold_name(c) == fold_name(&n)) {
+            clean.push(n);
+        }
+    }
+    db::set_setting(conn, COPY_FOLDERS_KEY, (!clean.is_empty()).then(|| serde_json::to_string(&clean).unwrap()).as_deref())?;
+    Ok(clean)
+}
+
+/// Does a folder of the path (not the file's name) carry one of the names?
+fn in_copy_folder(path: &str, names: &[String]) -> bool {
+    if names.is_empty() {
+        return false;
+    }
+    let folded: Vec<String> = names.iter().map(|n| fold_name(n)).collect();
+    let mut parts: Vec<&str> = path.split('/').collect();
+    parts.pop();
+    parts.iter().any(|p| folded.iter().any(|n| *n == fold_name(p)))
+}
+
 /// The files in `shown` (what the timeline shows: present, no RAW, no Live
 /// Photo videos) and the decisions taken so far.
 pub fn load(conn: &Connection, shown: &HashSet<i64>) -> Result<Candidates> {
@@ -132,6 +178,7 @@ pub fn load(conn: &Connection, shown: &HashSet<i64>) -> Result<Candidates> {
                     tags: Vec::new(),
                     row: 0,
                     keeper: None,
+                    in_copies: false,
                     pick: false,
                 },
                 full_hash: r.get(10)?,
@@ -141,6 +188,11 @@ pub fn load(conn: &Connection, shown: &HashSet<i64>) -> Result<Candidates> {
         })?
         .filter(|r| r.as_ref().map_or(true, |r| shown.contains(&r.file.id)))
         .collect::<rusqlite::Result<_>>()?;
+    let copy_folders = copy_folders(conn)?;
+    let mut rows = rows;
+    for r in &mut rows {
+        r.file.in_copies = in_copy_folder(&r.file.path, &copy_folders);
+    }
     let decided: HashSet<(i64, i64)> = conn
         .prepare("SELECT a, b FROM dup_decisions")?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
@@ -233,24 +285,30 @@ pub fn copy_named(names: &[&str]) -> Vec<bool> {
 }
 
 /// A camera's file name: `IMG_6621.HEIC`, or `IMG_E6621.HEIC` for the
-/// edited version an iPhone writes next to the original. Returns the
-/// lowercase prefix, whether it is the edited one, and the number. Names
-/// with anything else in them (a copy's "(2)", a messenger's date) do not
-/// parse.
+/// edited version an iPhone writes next to the original. Only the first part
+/// counts: a copy's suffix after it ("IMG_6621 1", "IMG_6621 (2)",
+/// "IMG_6621 - Copy") is ignored, so a copy still carries its shot's number.
+/// Returns the lowercase prefix, whether it is the edited one, and the
+/// number. Names whose number runs on into something else (a messenger's
+/// "IMG-20250726-WA0001", a Pixel's "PXL_20250101_120000123") do not parse.
 fn camera_name(name: &str) -> Option<(String, bool, u64)> {
     let stem = name.rsplit_once('.').map_or(name, |(s, _)| s);
     let l = library::nfc(stem).to_lowercase();
+    let l = l.trim_start_matches('_');
     let letters = l.len() - l.trim_start_matches(|c: char| c.is_ascii_lowercase()).len();
     let (prefix, rest) = l.split_at(letters);
-    if !matches!(prefix, "img" | "dsc" | "dscn" | "dscf" | "pxl" | "mvimg" | "p") {
+    if !matches!(prefix, "img" | "dsc" | "dscn" | "dscf" | "pxl" | "mvimg" | "p" | "dji" | "gopr" | "sam" | "pict" | "cimg" | "image") {
         return None;
     }
-    let rest = rest.strip_prefix(['_', '-']).unwrap_or(rest);
-    let (edited, digits) = match rest.strip_prefix('e') {
-        Some(d) => (true, d),
-        None => (false, rest),
+    let rest = rest.strip_prefix(['_', '-', ' ']).unwrap_or(rest);
+    let (edited, rest) = match rest.strip_prefix('e') {
+        Some(d) if d.starts_with(|c: char| c.is_ascii_digit()) => (true, d),
+        _ => (false, rest),
     };
-    if digits.len() < 3 || !digits.chars().all(|c| c.is_ascii_digit()) {
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    let after = &rest[digits.len()..];
+    // Whatever follows the number must be a copy's suffix, not more name.
+    if !(3..=6).contains(&digits.len()) || !(after.is_empty() || after.starts_with([' ', '('])) {
         return None;
     }
     Some((prefix.to_string(), edited, digits.parse().ok()?))
@@ -305,6 +363,13 @@ fn same_photo(a: &Row, b: &Row) -> bool {
     if (sa - sb).abs() / sa.max(sb) > 0.02 {
         return false;
     }
+    // Two files with a capture date, the same size and different bytes are
+    // two shots of a series (a burst puts several in one second), not one
+    // photo twice: a copy differs in size or has lost its metadata.
+    let size = |r: &Row| (r.file.width.unwrap_or(0).max(r.file.height.unwrap_or(0)), r.file.width.unwrap_or(0).min(r.file.height.unwrap_or(0)));
+    if a.file.taken.is_some() && b.file.taken.is_some() && size(a) == size(b) {
+        return false;
+    }
     match (&a.file.taken, &b.file.taken) {
         (Some(x), Some(y)) => matches!((secs(x), secs(y)), (Some(x), Some(y)) if (x - y).abs() <= 2),
         _ => true,
@@ -347,7 +412,7 @@ fn photo_rows(rows: &[Row], order: &[usize], open: &dyn Fn(usize, usize) -> bool
     };
     let key = |i: usize| {
         let r = &rows[i];
-        (pixels(r), r.file.taken.is_some(), !copy_name[&i], r.file.size, std::cmp::Reverse(r.added_at), std::cmp::Reverse(r.file.path.clone()))
+        (!r.file.in_copies, pixels(r), r.file.taken.is_some(), !copy_name[&i], r.file.size, std::cmp::Reverse(r.added_at), std::cmp::Reverse(r.file.path.clone()))
     };
     let mut best: HashMap<u32, usize> = HashMap::new();
     for (x, &i) in order.iter().enumerate() {
@@ -532,8 +597,10 @@ pub fn same_folder_plan(candidates: &Candidates) -> Vec<(i64, Vec<i64>)> {
             let copies = copy_named(&p.iter().map(|r| r.file.name.as_str()).collect::<Vec<_>>());
             let flag: HashMap<i64, bool> = p.iter().map(|r| r.file.id).zip(copies).collect();
             p.sort_by(|a, b| {
-                pixels(b)
-                    .cmp(&pixels(a))
+                a.file
+                    .in_copies
+                    .cmp(&b.file.in_copies)
+                    .then(pixels(b).cmp(&pixels(a)))
                     .then(flag[&a.file.id].cmp(&flag[&b.file.id]))
                     .then(a.added_at.cmp(&b.added_at))
                     .then(a.file.path.cmp(&b.file.path))
@@ -976,7 +1043,14 @@ mod tests {
         assert!(names_differ("IMG_6621.HEIC", "IMG_6620.HEIC"));
         assert!(!names_differ("IMG_6621.HEIC", "IMG_6621.JPG"));
         assert!(!names_differ("IMG_6621.HEIC", "IMG-20250726-WA0001.jpg"));
-        assert!(!names_differ("IMG_6621 (2).HEIC", "IMG_6620.HEIC"));
+        // A copy's suffix is ignored: it still belongs to its own shot.
+        assert!(names_differ("IMG_6621 (2).HEIC", "IMG_6620.HEIC"));
+        assert!(names_differ("IMG_4285 1.JPG", "IMG_4284 1.JPG"));
+        assert!(names_differ("IMG_4285 - Copy.JPG", "IMG_4284.JPG"));
+        assert!(!names_differ("IMG_4284 1.JPG", "IMG_4284.JPG"));
+        assert!(!names_differ("IMG_6621 (2).HEIC", "IMG_6621.HEIC"));
+        assert!(!names_differ("PXL_20250101_120000123.jpg", "PXL_20250101_120000456.jpg"));
+        assert!(names_differ("_DSC1235.NEF", "_DSC1234.JPG"));
     }
 
     #[test]

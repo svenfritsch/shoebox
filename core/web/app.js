@@ -1720,7 +1720,7 @@ $('import').onclick = function () { importDialog(); };
 // ------------------------------------------------------------------ duplicates page
 
 var DUP_KINDS_IDS = ['identical', 'resolution', 'edited', 'similar'];
-var dupState = { groups: [], shown: 0, marked: {}, seen: {}, sameFolder: null, lowerQuality: null, types: dupTypes() };
+var dupState = { syncs: [], groups: [], shown: 0, marked: {}, seen: {}, sameFolder: null, lowerQuality: null, types: dupTypes() };
 var DUP_KINDS = [
   { id: 'identical', get label() { return tr('dups.kind.identical'); }, get hint() { return tr('dups.kind.identical.hint'); } },
   { id: 'resolution', get label() { return tr('dups.kind.resolution'); }, get hint() { return tr('dups.kind.resolution.hint'); } },
@@ -1855,13 +1855,13 @@ function loadDuplicatesHere() {
     // Ticks survive a reload (a scan finishing meanwhile) for copies still listed.
     var still = {};
     dupState.groups.forEach(function (g) {
+      var suggested = {};
+      suggestedIds(g).forEach(function (id) { suggested[id] = true; });
       g.files.forEach(function (f) {
         if (dupState.marked[f.id]) still[f.id] = true;
-        // Of every photo with several files all but the best start ticked
-        // (the best quality, then the one without a copy's name), once
-        // (unticking one stays unticked after a reload).
-        else if (!f.pick && !dupState.seen[f.id]) still[f.id] = true;
-        if (!f.pick) dupState.seen[f.id] = true;
+        // The suggestion starts ticked, once (an untick stays after a reload).
+        else if (suggested[f.id] && !dupState.seen[f.id]) still[f.id] = true;
+        if (suggested[f.id]) dupState.seen[f.id] = true;
       });
     });
     dupState.marked = still;
@@ -1873,6 +1873,7 @@ function loadDuplicatesHere() {
 function renderDuplicates() {
   var page = $('page');
   page.textContent = '';
+  dupState.syncs = [];
   page.appendChild(el('h2', '', tr('dups.title')));
   addDupTabs(page);
   page.appendChild(el('p', 'sub', tr(dupState.groups.length ? 'dups.sub' : 'dups.none')));
@@ -1963,24 +1964,72 @@ function dupToolbar() {
   return bar;
 }
 
-// The bar with the delete button, shown while copies are ticked.
+// What the page ticks by itself in a group: of every photo the files that
+// are surely worse (a smaller or stripped copy) or the same file again, never
+// the best one, and never a different shot that merely looks alike.
+function suggestedIds(g) {
+  var pickOf = {};
+  g.files.forEach(function (f) { if (f.pick) pickOf[f.row] = f; });
+  return g.files.filter(function (f) {
+    var best = pickOf[f.row];
+    return !f.pick && (f.keeper || (f.same && best && best.same === f.same) || (f.in_copies && best && !best.in_copies));
+  }).map(function (f) { return f.id; });
+}
+
+// The suggestion for all groups that are shown.
+function autoMarked() {
+  var auto = {};
+  visibleGroups().forEach(function (g) { suggestedIds(g).forEach(function (id) { auto[id] = true; }); });
+  return auto;
+}
+
+// Ticked files of the groups that are shown, as a set of ids.
+function shownMarked() {
+  var m = {};
+  visibleGroups().forEach(function (g) { g.files.forEach(function (f) { if (dupState.marked[f.id]) m[f.id] = true; }); });
+  return m;
+}
+
+// Puts the check boxes in line with `dupState.marked`, also for the groups
+// that are not on screen yet.
+function syncDupBoxes() {
+  dupState.syncs.forEach(function (sync) { sync(); });
+  updateDupBar();
+}
+
+// The bar stays while there are duplicates: Preselect copies puts the page's
+// pre-selection back, Clear unticks everything, Move to trash deletes
+// whatever is ticked (also a single file after a Clear).
 function updateDupBar() {
   var bar = $('dup-bar');
   if (!bar) return;
-  var n = markedCount();
-  bar.hidden = n === 0;
+  var groups = visibleGroups();
+  bar.hidden = groups.length === 0;
   bar.textContent = '';
-  if (!n) return;
+  if (!groups.length) return;
+  var marked = shownMarked(), auto = autoMarked();
+  var n = Object.keys(marked).length;
   bar.appendChild(el('span', '', tr('dups.marked', { count: trn('count.copies', n) })));
+  var same = Object.keys(auto).length === n && Object.keys(auto).every(function (id) { return marked[id]; });
+  var preselect = el('button', 'btn quiet', tr('dups.preselect'));
+  preselect.title = tr('dups.preselect_hint');
+  preselect.disabled = same;
+  preselect.onclick = function () {
+    Object.keys(marked).forEach(function (id) { delete dupState.marked[id]; });
+    Object.keys(auto).forEach(function (id) { dupState.marked[id] = true; });
+    syncDupBoxes();
+  };
+  bar.appendChild(preselect);
   var clear = el('button', 'btn quiet', tr('dups.clear'));
+  clear.title = tr('dups.clear_hint');
+  clear.disabled = n === 0;
   clear.onclick = function () {
-    Array.prototype.forEach.call(document.querySelectorAll('.copy input[type=checkbox]:checked'), function (cb) {
-      cb.checked = false;
-      cb.dispatchEvent(new Event('change'));
-    });
+    Object.keys(marked).forEach(function (id) { delete dupState.marked[id]; });
+    syncDupBoxes();
   };
   bar.appendChild(clear);
   var del = el('button', 'btn danger', tr('sel.trash'));
+  del.disabled = n === 0;
   del.onclick = deleteMarked;
   bar.appendChild(del);
 }
@@ -2084,11 +2133,18 @@ function groupNode(g) {
     ? tr('dups.group_hint_series', { hint: kind.hint })
     : kind.hint));
 
-  var boxes = [];
+  var boxes = [], cardSyncs = [];
   // At least one copy of the group stays: the last unticked box is disabled.
   var refresh = function () {
     var open = boxes.filter(function (b) { return !b.checked; });
     boxes.forEach(function (b) { b.disabled = !b.checked && open.length === 1; });
+  };
+  var registerGroup = function () {
+    refresh();
+    dupState.syncs.push(function () {
+      cardSyncs.forEach(function (sync) { sync(); });
+      refresh();
+    });
   };
   // One card per file: the check box, where it is, what it is, its tags.
   // `thumb`: the card carries its own thumbnail (similar photos).
@@ -2116,6 +2172,10 @@ function groupNode(g) {
     };
     boxes.push(cb);
     cards.push({ f: f, cb: cb });
+    cardSyncs.push(function () {
+      cb.checked = !!dupState.marked[f.id];
+      card.classList.toggle('marked', cb.checked);
+    });
     label.appendChild(cb);
     label.appendChild(document.createTextNode(' ' + tr('dups.delete_copy')));
     card.appendChild(label);
@@ -2132,6 +2192,7 @@ function groupNode(g) {
     meta.push((f.size / 1e6).toFixed(1) + ' MB');
     card.appendChild(el('div', 'meta', meta.join(' · ')));
     if (f.keeper) card.appendChild(el('div', 'meta worse', tr('dups.lower_quality')));
+    if (f.in_copies) card.appendChild(el('div', 'meta', tr('dups.in_copies')));
     card.appendChild(el('div', 'meta', f.taken ? formatDate({ taken: f.taken, date_source: 'file' }) : tr('dups.no_capture_date')));
     if (f.tags && f.tags.length) {
       var tags = el('div', 'tagline');
@@ -2158,7 +2219,7 @@ function groupNode(g) {
       bestFirst(copies).forEach(function (f) { series.appendChild(copyCard(f, true, true)); });
     });
     box.appendChild(series);
-    refresh();
+    registerGroup();
     return box;
   }
 
@@ -2182,7 +2243,7 @@ function groupNode(g) {
     row.appendChild(cards);
     box.appendChild(row);
   });
-  refresh();
+  registerGroup();
   return box;
 }
 
@@ -2993,6 +3054,54 @@ function loadSettings() {
   });
   sec.appendChild(cards);
   page.appendChild(sec);
+  page.appendChild(copyFoldersSection());
+}
+
+// Folder names whose files are copies, not originals (InDesign's "Links").
+function copyFoldersSection() {
+  var sec = el('section', 'settings-section');
+  sec.appendChild(el('h3', '', tr('settings.copy_folders')));
+  sec.appendChild(el('p', 'hint', tr('settings.copy_folders_hint')));
+  var chips = el('div', 'tagline');
+  var folders = [];
+  var save = function (next) {
+    return post(LIBAPI + '/duplicates/copy-folders', { folders: next }).then(function (r) {
+      folders = r.folders;
+      draw();
+    }).catch(failed);
+  };
+  var draw = function () {
+    chips.textContent = '';
+    if (!folders.length) chips.appendChild(el('span', 'hint', tr('settings.copy_folders_none')));
+    folders.forEach(function (name) {
+      var chip = el('span', 'chip own', name + ' ');
+      var x = el('button', 'chip-x', '✕');
+      x.type = 'button';
+      x.title = tr('settings.copy_folders_remove');
+      x.onclick = function () { save(folders.filter(function (f) { return f !== name; })); };
+      chip.appendChild(x);
+      chips.appendChild(chip);
+    });
+  };
+  var row = el('div', 'copy-folder-row');
+  var input = el('input');
+  input.type = 'text';
+  input.placeholder = tr('settings.copy_folders_placeholder');
+  var add = el('button', 'btn', tr('settings.copy_folders_add'));
+  var go = function () {
+    var name = input.value.trim();
+    if (!name) return;
+    input.value = '';
+    save(folders.concat([name]));
+  };
+  add.onclick = go;
+  input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go(); });
+  row.appendChild(input);
+  row.appendChild(add);
+  sec.appendChild(chips);
+  sec.appendChild(row);
+  api(LIBAPI + '/duplicates/copy-folders').then(function (r) { folders = r.folders; draw(); }).catch(function () { draw(); });
+  return sec;
 }
 
 // ------------------------------------------------------------------ faces: people, groups, unnamed (5c-3)
