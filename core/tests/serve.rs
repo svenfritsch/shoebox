@@ -401,7 +401,9 @@ fn several_libraries_share_one_server_and_an_unplugged_drive_is_only_offline() {
     // Each library answers for itself; the same file id means different photos.
     let route = |id: &str, rest: &str| format!("/raw/api/lib/{id}/{rest}");
     let (ta, tb) = (get(addr, &route(&id_a, "timeline")).json(), get(addr, &route(&id_b, "timeline")).json());
-    assert_eq!(ids(&ta), ids(&tb), "both databases hand out the same ids");
+    // Sorted: photos without EXIF are dated by mtime, and the two libraries are written a moment apart.
+    let sorted = |v: &serde_json::Value| { let mut i = ids(v); i.sort(); i };
+    assert_eq!(sorted(&ta), sorted(&tb), "both databases hand out the same ids");
     let (fa, fb) = (get(addr, &route(&id_a, &format!("files/{}", ids(&ta)[0]))).json(), get(addr, &route(&id_b, &format!("files/{}", ids(&tb)[0]))).json());
     assert_eq!(fa["id"], fb["id"]);
     assert_ne!(get(addr, &route(&id_a, "info")).json()["name"], get(addr, &route(&id_b, "info")).json()["name"]);
