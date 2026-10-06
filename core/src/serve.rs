@@ -1259,6 +1259,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
     let tag_names: Vec<String> = pairs.iter().filter(|(k, v)| k == "tag" && !v.is_empty()).map(|(_, v)| v.clone()).collect();
     let person_names: Vec<String> = pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| v.clone()).collect();
     let text = param(&pairs, "q").map(str::to_string).filter(|s| !s.trim().is_empty());
+    let types = types_of(&pairs)?;
     let pet_terms = pets_of(&pairs)?;
     let libs: Vec<LibraryRef> = apps.iter().map(|a| LibraryRef { id: library_id(&a.name), name: a.name.clone() }).collect();
 
@@ -1294,7 +1295,14 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
                 continue;
             }
             let snapshot = app.snapshot(&conn)?;
-            let query = browse::Query { folder: None, tags, text: text.clone(), people: people_ids, pets: pet_terms.clone() };
+            let query = browse::Query {
+                folder: None,
+                tags,
+                text: text.clone(),
+                people: people_ids,
+                pets: pet_terms.clone(),
+                types: types.clone(),
+            };
             for it in snapshot.query(&conn, &query)? {
                 rows.push(Row {
                     sort: it.sort.clone(),
@@ -1604,8 +1612,17 @@ fn param<'a>(pairs: &'a Pairs, key: &str) -> Option<&'a str> {
     pairs.iter().rev().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
 }
 
+/// `type=photo|video|live`, several allowed (any of them matches).
+fn types_of(pairs: &Pairs) -> ApiResult<Vec<browse::MediaType>> {
+    pairs
+        .iter()
+        .filter(|(k, v)| k == "type" && !v.is_empty())
+        .map(|(_, v)| browse::MediaType::parse(v).ok_or_else(|| ApiError::BadRequest(format!("unknown type: {v}"))))
+        .collect()
+}
+
 /// The timeline filter of a request: `folder`, `tag` (several, all must
-/// match), `q` (free text) and `person` (several, all must match: photos
+/// match), `type` (several, any matches), `q` (free text) and `person` (several, all must match: photos
 /// with a confirmed face of each).
 fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
     let number = |v: &str| v.parse::<i64>().map_err(|_| ApiError::BadRequest(format!("not a number: {v}")));
@@ -1614,6 +1631,7 @@ fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
         tags: pairs.iter().filter(|(k, v)| k == "tag" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
         text: param(pairs, "q").map(str::to_string).filter(|s| !s.trim().is_empty()),
         people: pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
+        types: types_of(pairs)?,
         pets: pets_of(pairs)?,
     })
 }

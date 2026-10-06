@@ -185,6 +185,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **5c-1 done**, checked on the real drive; **5c-2 and 5c-3 done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5d | Duplicates UI: one row per photo, multi-select, bulk delete within a folder, tag and capture-date carry-over; Move dialog "keep tags"; trash dialog focus | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5e | Lean `thumbs.db`: face crops only for faces without a decision and for each person's picture; right-click "Use as … picture" on a person's photos | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
+| 5f | "Type" check box drop-down (Photos, Videos, Live Photos) next to the search box | **Done except the real-hardware run** (see "Phase 5f details") |
 | 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | **In progress**: library id, launcher (cancel, saved folders, start scripts) and the multi-drive core (hub, offline, backup roles, common timeline, cross-drive duplicates and people) built; backup verification (`shoebox backup`, launcher button, All drives page) built; real-hardware checks and Linux/Windows packaging open |
 | 7 | Pets: cats and dogs found (`shoebox recognize --pets`, launcher button "Recognize pets"), named, grouped and searched like people, also by kind ("all cats", "Katze", "Hund"); pets the detector missed can be drawn by hand; Settings → Calibration with the Face check and the new Pet check | **Built except the real-hardware run and DINOv2** (see [phase7.md](phase7.md)) |
 | 8 | UI translation, German and English, JSON message files (design and steps in [phase8.md](phase8.md)) | **Built, check open**: loader, key test, launcher and the whole photo app; the real-hardware check, a native read-through of the German texts and the CI run are open |
@@ -427,6 +428,36 @@ Tests
 
 Open
 - [ ] Check the new duplicates page on the real drive and the iPad (list in [phase5.md](phase5.md)).
+- [ ] Confirm the GitHub Actions run is green.
+
+### Phase 5f details (filter by file type)
+
+Feedback: a type used to be found by typing an extension (".mp4") into the
+search box, which matches it as a word in the path: you had to know the
+extension, it found only that one, and it also hit folders or tags that
+merely contain the text.
+
+Decided: a **check box drop-down "Type"** next to the search box (option A),
+nothing else. No suggestions in the search box, no sidebar entries, no
+separate extensions (MP4 vs MOV); typing ".mp4" keeps working as before.
+
+- Entries: **Photos** (all stills, a Live Photo's still included),
+  **Videos** (stand-alone videos only: the clip of a Live Photo is folded into
+  its still and is never listed), **Live Photos** (the stills that have a
+  clip). Ticked types are OR; the filter is AND with folder, tags, people and
+  text. Nothing ticked means everything.
+- **RAW gets no entry** (RAW stays hidden in the UI, see Decisions).
+- API: `type=photo|video|live` (repeatable) on the timeline, the tag and
+  people suggestions and the common timeline `/api/all/timeline`; an unknown
+  value is a 400. The filter lives in the URL hash (`type=video`), so it
+  survives reload and back; picking a folder keeps it, "All photos" and
+  "Clear all" drop it. Read-only over the index, so no guard change.
+- Tests: `timeline_order_filters_and_search` in `core/tests/serve.rs` (types,
+  OR, AND with a folder, Live and Videos with the fixtures, 400).
+
+Open:
+- [ ] Check the drop-down on the real drive and the iPad (it opens on tap,
+      closes on a tap outside, the button shows what is ticked).
 - [ ] Confirm the GitHub Actions run is green.
 
 ## Build notes and pitfalls (learned in phases 0–4)

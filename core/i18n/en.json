@@ -576,5 +576,11 @@
   "draw.note_pet": "The box is kept in shoebox’s index, never written into the photo. The whole pet in the box is learned for suggestions.",
   "launcher.kind.recognize_pets": "Recognize pets",
   "launcher.kind.recognize_pets.desc": "find cats and dogs; they show up among the faces",
-  "launcher.sum.pets": "{n} cats and dogs"
+  "launcher.sum.pets": "{n} cats and dogs",
+  "types.hint": "Show only some types",
+  "types.label": "Type",
+  "types.photo": "Photos",
+  "types.video": "Videos",
+  "types.live": "Live Photos",
+  "types.live_short": "Live"
 }
