@@ -155,13 +155,36 @@ jobs:
           name: shoebox-linux
           path: dist/
 
+  # The guide: English and German PDF, built from docs/guide (sources and the
+  # screenshots kept there). Runs on every push and pull request so a broken
+  # guide shows before a release; the release job attaches the PDFs.
+  guide:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fonts
+        run: sudo apt-get install -y fonts-inter
+
+      - name: Build the PDFs
+        run: |
+          CHROME="$(command -v google-chrome || command -v chromium)" docs/guide/build.sh
+          # one PDF per language, ten pages each at the moment; fail on an empty or missing one
+          for l in en de; do test -s docs/guide/shoebox-guide-$l.pdf; done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shoebox-guide
+          path: docs/guide/shoebox-guide-*.pdf
+
   # Push a tag like `v0.1.0-phase1` to publish the binaries as a GitHub
   # release. Workflow artifacts need a GitHub login, expire, and lose the
   # executable bit; release assets don't. The recognizer installer goes
-  # along, so the drive can be set up without a clone of the repo.
+  # along, so the drive can be set up without a clone of the repo, and so do
+  # the two guide PDFs (English, German).
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [macos]
+    needs: [macos, guide]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -186,7 +209,10 @@ jobs:
             chmod +x "$pkg/recognizer/install.sh" "$pkg/recognizer/fetch-models.sh"
             tar -C "$RUNNER_TEMP" -czf release/shoebox-$os.tar.gz shoebox-$os
           done
-          (cd release && sha256sum *.tar.gz > SHA256SUMS)
+          # The guide (landing page + handbook), one PDF per language, built
+          # by the guide job from this very commit.
+          cp artifacts/shoebox-guide/shoebox-guide-en.pdf artifacts/shoebox-guide/shoebox-guide-de.pdf release/
+          (cd release && sha256sum *.tar.gz *.pdf > SHA256SUMS)
 
       - name: Publish
         env:

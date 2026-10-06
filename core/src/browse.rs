@@ -2,9 +2,10 @@
 //! and tags. Read-only over the index; the server keeps one `Snapshot` until
 //! another process (a scan) commits to the database.
 //!
-//! Sorting: newest first by capture date. A file without one takes the
-//! month of its nearest `YYYY-MM Name` folder, and failing that its
-//! modification date. RAW files are not shown (their JPEG/HEIC twin is), and
+//! Sorting: newest first by capture date. A file without one takes its
+//! created date, failing that the month of its nearest `YYYY-MM Name`
+//! folder, and failing that its modification date; the info panel marks
+//! such a date as estimated. RAW files are not shown (their JPEG/HEIC twin is), and
 //! the short video of a Live Photo is folded into its still.
 
 use std::collections::{HashMap, HashSet};
@@ -27,9 +28,11 @@ const LIVE_MAX_MS: i64 = 6_000;
 pub enum DateSource {
     /// Capture date from the file (EXIF, video container).
     File,
-    /// Month of the event folder.
+    /// The file's created date (no capture date in the file).
+    Created,
+    /// Month of the event folder (no capture date, no created date).
     Folder,
-    /// Modification date.
+    /// Modification date (nothing better known).
     Modified,
 }
 
@@ -172,6 +175,7 @@ impl Snapshot {
             path_lower: String,
             taken: Option<String>,
             mtime_ns: i64,
+            created_ns: Option<i64>,
             duration_ms: Option<i64>,
             quick_hash: String,
             turn: i32,
@@ -179,7 +183,7 @@ impl Snapshot {
         let mut rows = Vec::new();
         {
             let mut stmt = conn.prepare(&format!(
-                "SELECT id, kind, folder_id, name, path_nfc, {}, mtime_ns, duration_ms, quick_hash,
+                "SELECT id, kind, folder_id, name, path_nfc, {}, mtime_ns, created_ns, duration_ms, quick_hash,
                         coalesce((SELECT quarters FROM view_turns v WHERE v.key = files.quick_hash), 0)
                  FROM files WHERE missing_since IS NULL AND kind != 'raw'",
                 db::TAKEN
@@ -197,9 +201,10 @@ impl Snapshot {
                     path_lower: r.get::<_, String>(4)?.to_lowercase(),
                     taken: r.get(5)?,
                     mtime_ns: r.get(6)?,
-                    duration_ms: r.get(7)?,
-                    quick_hash: r.get(8)?,
-                    turn: r.get(9)?,
+                    created_ns: r.get(7)?,
+                    duration_ms: r.get(8)?,
+                    quick_hash: r.get(9)?,
+                    turn: r.get(10)?,
                 });
             }
         }
@@ -227,10 +232,14 @@ impl Snapshot {
             .iter()
             .filter(|r| !hidden.contains(&r.id))
             .map(|r| {
-                let (sort, date_source) = match (&r.taken, event_of.get(&r.folder_id).copied().flatten()) {
-                    (Some(t), _) => (t.clone(), DateSource::File),
-                    (None, Some((y, m))) => (format!("{y:04}-{m:02}-01T00:00:00"), DateSource::Folder),
-                    (None, None) => (local_time(r.mtime_ns), DateSource::Modified),
+                // The capture date; else the file's created date; else the
+                // month of the event folder; else the modification date.
+                let created = r.created_ns.filter(|&ns| ns > 0);
+                let (sort, date_source) = match (&r.taken, created, event_of.get(&r.folder_id).copied().flatten()) {
+                    (Some(t), _, _) => (t.clone(), DateSource::File),
+                    (None, Some(ns), _) => (local_time(ns), DateSource::Created),
+                    (None, None, Some((y, m))) => (format!("{y:04}-{m:02}-01T00:00:00"), DateSource::Folder),
+                    (None, None, None) => (local_time(r.mtime_ns), DateSource::Modified),
                 };
                 Item {
                     id: r.id,

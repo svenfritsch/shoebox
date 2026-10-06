@@ -20,6 +20,13 @@ detection with `shoebox recognize`) done except the runs on real hardware.
 Plan and status: [docs/plan.md](docs/plan.md); usage per phase in `docs/`
 ([recognizer](docs/phase4.md)).
 
+## Guide
+
+A landing page and handbook as PDF, one per language (English and German).
+Both are built from `docs/guide/` by the release workflow and attached to every
+release as `shoebox-guide-en.pdf` and `shoebox-guide-de.pdf`; sources and how
+to rebuild them: [docs/guide/](docs/guide/README.md).
+
 ## Video previews (optional)
 
 shoebox makes the grid previews of videos with `ffmpeg`. It is not bundled;

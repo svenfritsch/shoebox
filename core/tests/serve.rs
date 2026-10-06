@@ -260,6 +260,11 @@ fn timeline_order_filters_and_search() {
     let lib = Library::new("timeline");
     lib.write("Familie/IMG_0009.CR2", b"raw stand-in");
     lib.scan_opts(false, true, false);
+    // The files are made just now, so they have created dates. Take the one
+    // of the event-folder photo away (the folder's month then decides), and
+    // give the screenshot a known created date (2019-03-04 12:00 UTC).
+    lib.db().execute("UPDATE files SET created_ns = NULL WHERE path_nfc = '2020-07 Urlaub Griechenland/IMG_0001.JPG'", []).unwrap();
+    lib.db().execute("UPDATE files SET created_ns = 1551700800000000000 WHERE path_nfc = 'Familie/Screenshot.png'", []).unwrap();
     let server = start(&lib, None);
     let addr = server.addr;
     let timeline = |q: &str| get(addr, &format!("/api/timeline{q}")).json();
@@ -272,7 +277,13 @@ fn timeline_order_filters_and_search() {
     let days: Vec<u64> = all["days"].as_array().unwrap().iter().map(|d| d.as_u64().unwrap()).collect();
     assert!(days.windows(2).all(|w| w[0] >= w[1]), "{days:?}");
 
-    // No capture date in an event folder: the folder's month.
+    // No capture date: the file's created date.
+    let screenshot = id_of(&lib, "Familie/Screenshot.png");
+    let pos = all_ids.iter().position(|&i| i == screenshot).unwrap();
+    assert_eq!(days[pos], 20190304);
+    assert_eq!(get(addr, &format!("/api/files/{screenshot}")).json()["date_source"], "created");
+
+    // No capture date and no created date, in an event folder: the folder's month.
     let griechenland = id_of(&lib, "2020-07 Urlaub Griechenland/IMG_0001.JPG");
     let pos = all_ids.iter().position(|&i| i == griechenland).unwrap();
     assert_eq!(days[pos], 20200701);

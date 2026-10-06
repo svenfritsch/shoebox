@@ -34,7 +34,7 @@ progress. Update the status section when a phase moves.
 | Scale | ~100,000 files, 150 GB today, up to 1 TB |
 | Repo | `core/` (Rust), `recognizer/` (Python), `scripts/`, `docker/`, `docs/` |
 | Dev environment | Docker for Linux builds/tests; native macOS builds with rustup; GitHub Actions for both |
-| CI until v1.0 | macOS only (PRs: arm64; main/tags: universal + Rosetta). Linux, incl. the real recognizer, runs only when started by hand; releases ship `shoebox-macos` plus `recognizer/` |
+| CI until v1.0 | macOS only (PRs: arm64; main/tags: universal + Rosetta). Linux, incl. the real recognizer, runs only when started by hand; releases ship `shoebox-macos` plus `recognizer/` and the guide PDFs (`docs/guide/`, English and German) |
 
 ## Architecture
 
@@ -106,6 +106,73 @@ Later option: run the ONNX models in Rust (`tract` or `ort`) and drop Python.
 Drag and drop in the browser (works from other devices too, as an upload).
 Dialog asks year, month, event name and creates `YYYY-MM Name`. File modified
 dates are set from the browser's `File.lastModified`.
+
+### Dates shown for a photo
+
+The timeline and the info panel use, in this order: the capture date in the
+file (EXIF, video container); else the file's created date; else the month
+of the nearest event folder (`YYYY-MM Name`, shown as the 1st of that
+month); else the modification date. Only the first is the day the photo was
+taken: for the others the info panel shows an "estimated" mark next to the
+date (hover: "Not the date the photo was taken") and a note that says which
+fallback was used. Before, the order was capture date, folder month,
+modification date; the created date goes first because it is usually the
+better guess, but a copy made years later has a created date of its own: the
+folder month stays the answer when the drive does not report a created date.
+Nothing is ever written to the file (see the rules at the top).
+
+### Event folder naming (planned: configurable)
+
+Today an import and "rename folder" use the fixed pattern `YYYY-MM Name`
+(`import::event_folder`, parsed again by the scanner into
+`folders.event_year/event_month`). Planned: **a setting in the UI's Settings
+page**, so everybody can use their own pattern, for example `JJJJ.MM Name` in
+Germany. The pattern uses the letters for year and month of the UI language
+(`Y`/`M` in English, `J`/`M` in German; `JJJJ` or `YYYY` is the 4-digit year,
+`MM` the month) plus the separator the user types. Open points before it is
+built:
+
+- Store it per library (the `settings` table of `library.db`) or per
+  installation; default `YYYY-MM Name` / `JJJJ-MM Name` so existing libraries
+  keep working.
+- The scanner has to recognise event folders by the chosen pattern, and must
+  keep recognising `YYYY-MM Name` folders (old ones, other drives).
+- The import dialog, the rename hint (`rename.hint`) and the move dialog
+  placeholder (`move.placeholder`) show the pattern in the UI language.
+- A changed pattern does not rename existing folders (originals only change
+  through explicit actions); the scanner reads both.
+
+Until it exists, the guide PDFs (`docs/guide/`) say so.
+
+### Move dialog: what "Keep tags" should mean (to adjust)
+
+Today (`organize::move_files_with`) the checkbox "Keep tags" decides whether
+a photo's **own** tags (the ones the user added by hand) move along:
+unchecked, they are dropped. That is not what we want: own tags belong to the
+photo and must **always** move with it. The checkbox should only be about the
+**folder tags**, the tags a photo has from where it lies. Folder tags always
+follow the new folder; "keep" would mean also keeping the old folder's tags
+on the photo, as own tags. To do: change `move_group` so own tags are never
+dropped, make the checkbox mean "also keep the old folder's tags as own
+tags" (default: off), rewrite `move.keep_tags` / `move.keep_hint` in both
+languages, and adjust the tests in `core/tests/organize.rs` and the guide
+(`docs/guide/build-guide.py`, "Move"). The guide describes today's behaviour
+until then.
+
+### Recognition after an import (open)
+
+`shoebox recognize` (faces, `--rotated`, `--pets`) only runs when the user
+starts it: from the launcher, or in Terminal. The photo app does not call it:
+`serve` only clusters faces and embeds faces and pets drawn by hand, and the
+launcher refuses to run a job while the photo app is running ("the photo app
+is already running; stop it first"). So photos imported (or added by a scan)
+while the photo app is open stay unrecognised until the user stops the app and
+runs Recognize in the launcher. To do: after an import (and after a rescan
+that found new files), `serve` starts the recognizer in the background for
+the new photos only (faces, the turned pass and pets, the way `shoebox
+recognize` resumes), with progress in the status line (`status.finding_faces`
+exists), and skips it when no recognizer is installed or a `recognize` run is
+going.
 
 ### Scanner (phase 1)
 
