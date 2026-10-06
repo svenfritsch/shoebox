@@ -184,6 +184,11 @@ pub(super) struct PersonHit {
     id: i64,
     name: String,
     group_id: Option<i64>,
+    /// `cat`, `dog` or `pet` for a pet, else absent.
+    species: Option<String>,
+    /// Their picture, as in the sidebar.
+    cover: Option<i64>,
+    cover_manual: Option<i64>,
     /// Photos with them, within the filter.
     photos: u64,
 }
@@ -216,7 +221,7 @@ pub(super) async fn search(State(app): State<Arc<App>>, Query(pairs): Query<Pair
             .filter(|p| !filter.people.contains(&p.id) && db::tag_fold(&p.name).contains(&needle))
             .map(|p| {
                 let photos = keys.get(&p.id).into_iter().flatten().map(|k| files_per_key.get(k).copied().unwrap_or(0)).sum();
-                PersonHit { id: p.id, name: p.name, group_id: p.group_id, photos }
+                PersonHit { id: p.id, name: p.name, group_id: p.group_id, species: p.species, cover: p.cover, cover_manual: p.cover_manual, photos }
             })
             .filter(|h| h.photos > 0)
             .collect();
@@ -312,6 +317,9 @@ pub(super) struct ClustersQuery {
     samples: Option<usize>,
     /// `faces` or `pets`: only that kind of cluster (default: both).
     kind: Option<String>,
+    /// `large` (more than two faces), `small` (one or two, to pick one by
+    /// one) or `all` (default).
+    size: Option<String>,
 }
 
 pub(super) async fn clusters(State(app): State<Arc<App>>, Query(q): Query<ClustersQuery>) -> ApiResult<Json<people::Clusters>> {
@@ -322,7 +330,13 @@ pub(super) async fn clusters(State(app): State<Arc<App>>, Query(q): Query<Cluste
         Some("pets") => Some(crate::pets::Space::Pets),
         Some(other) => return Err(ApiError::BadRequest(format!("kind is faces or pets, not {other:?}"))),
     };
-    blocking(&app, move |app| Ok(Json(people::clusters(&app.conn.lock().unwrap(), q.offset, limit, samples, kind)?))).await
+    let size = match q.size.as_deref() {
+        None | Some("") | Some("all") => people::Size::All,
+        Some("large") => people::Size::Large,
+        Some("small") => people::Size::Small,
+        Some(other) => return Err(ApiError::BadRequest(format!("size is large, small or all, not {other:?}"))),
+    };
+    blocking(&app, move |app| Ok(Json(people::clusters(&app.conn.lock().unwrap(), q.offset, limit, samples, kind, size)?))).await
 }
 
 #[derive(Deserialize)]

@@ -87,6 +87,8 @@ pub struct Bucket {
     pub count: u64,
     /// Of `count`, marked "not a face" (false finds).
     pub not_face: u64,
+    /// Of `count`, not matched yet: no decision, nobody suggested.
+    pub unmatched: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -129,6 +131,12 @@ pub struct Stats {
     pub small: u64,
     /// Of `faces`, marked "not a face" by the user (false finds).
     pub not_faces: u64,
+    /// Faces the face detector found in a dog or cat (inside a pet, outside
+    /// any person): not counted in `faces`, listed under "taken for a pet's".
+    pub pet_faces: u64,
+    /// Of `faces`, not matched yet: no decision, nobody suggested (also not
+    /// as "maybe"). What recognition could not place.
+    pub unmatched: u64,
     pub min_cluster_px: f64,
     /// The last runs of `shoebox recognize`, newest first.
     pub runs: Vec<Run>,
@@ -171,7 +179,10 @@ pub fn stats_of(conn: &Connection, space: Space) -> Result<Stats> {
         Space::Pets => (buckets(&PET_WIDTH_BUCKETS), buckets(&PET_SCORE_BUCKETS)),
     };
     let (mut faces, mut rotated_faces, mut small, mut not_faces) = (0, 0, 0, 0);
-    let marked = crate::people::not_face_ids(conn)?;
+    let view = crate::people::View::load(conn)?;
+    let (marked, pet_ids, unmatched_ids) = (view.m.not_faces(), view.m.pet_faces(), view.unplaced_ids());
+    let mut unmatched = 0;
+    let mut pet_faces = 0;
     let mut rows = conn.prepare(&format!(
         "SELECT {}, f.score, {roll}, f.id FROM recog.faces f
          JOIN recog.looked l ON l.key = f.key AND l.task = '{task}'
@@ -183,13 +194,20 @@ pub fn stats_of(conn: &Connection, space: Space) -> Result<Stats> {
     while let Some(r) = rows.next()? {
         let (px, score, roll): (Option<f64>, f64, i64) = (r.get(0)?, r.get(1)?, r.get(2)?);
         let px = px.unwrap_or(0.0);
-        let not_face = marked.contains(&r.get(3)?);
+        let id: i64 = r.get(3)?;
+        if pet_ids.contains(&id) {
+            pet_faces += 1;
+            continue;
+        }
+        let not_face = marked.contains(&id);
+        let is_unmatched = unmatched_ids.contains(&id);
+        unmatched += is_unmatched as u64;
         faces += 1;
         rotated_faces += (roll != 0) as u64;
         small += space.too_small(px) as u64;
         not_faces += not_face as u64;
-        count_into(&mut widths, px, not_face);
-        count_into(&mut scores, score, not_face);
+        count_into(&mut widths, px, not_face, is_unmatched);
+        count_into(&mut scores, score, not_face, is_unmatched);
     }
 
     let runs = conn
@@ -223,6 +241,8 @@ pub fn stats_of(conn: &Connection, space: Space) -> Result<Stats> {
         scores,
         small,
         not_faces,
+        pet_faces,
+        unmatched,
         min_cluster_px: space.min_px(),
         runs,
     })
@@ -232,17 +252,18 @@ fn buckets(edges: &[f64]) -> Vec<Bucket> {
     let mut out = Vec::with_capacity(edges.len() + 1);
     let mut from = None;
     for &e in edges {
-        out.push(Bucket { from, to: Some(e), count: 0, not_face: 0 });
+        out.push(Bucket { from, to: Some(e), count: 0, not_face: 0, unmatched: 0 });
         from = Some(e);
     }
-    out.push(Bucket { from, to: None, count: 0, not_face: 0 });
+    out.push(Bucket { from, to: None, count: 0, not_face: 0, unmatched: 0 });
     out
 }
 
-fn count_into(buckets: &mut [Bucket], value: f64, not_face: bool) {
+fn count_into(buckets: &mut [Bucket], value: f64, not_face: bool, unmatched: bool) {
     if let Some(b) = buckets.iter_mut().find(|b| b.to.is_none_or(|to| value < to)) {
         b.count += 1;
         b.not_face += not_face as u64;
+        b.unmatched += unmatched as u64;
     }
 }
 
@@ -436,6 +457,13 @@ pub struct ListQuery {
     /// otherwise.
     #[serde(default)]
     pub not_face: bool,
+    /// Only faces taken for a pet's (inside a dog or cat the pets pass
+    /// found, outside any person); they are left out otherwise.
+    #[serde(default)]
+    pub pet_face: bool,
+    /// Only faces not matched yet (see `Stats::unmatched`).
+    #[serde(default)]
+    pub unmatched: bool,
     #[serde(default)]
     pub offset: usize,
     pub limit: Option<usize>,
@@ -514,13 +542,28 @@ pub fn list(conn: &Connection, q: &ListQuery) -> Result<List> {
     };
     let dir = if q.desc { "DESC" } else { "ASC" };
     // Ids are numbers from the database, so they can go into the SQL.
-    let marked: Vec<String> = crate::people::not_face_ids(conn)?.iter().map(i64::to_string).collect();
-    let filter = format!(
-        "px >= ?1 AND px < ?2{} AND f.id {} ({})",
-        if q.rotated { " AND f.roll != 0" } else { "" },
-        if q.not_face { "IN" } else { "NOT IN" },
-        marked.join(",")
-    );
+    let m = crate::people::Matched::load(conn, None)?;
+    let join = |ids: HashSet<i64>| ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+    let pet_faces = m.pet_faces();
+    let filter = if q.unmatched {
+        format!(
+            "px >= ?1 AND px < ?2{} AND f.id IN ({})",
+            if q.rotated { " AND f.roll != 0" } else { "" },
+            join(crate::people::View::load(conn)?.unplaced_ids())
+        )
+    } else if q.pet_face {
+        format!("px >= ?1 AND px < ?2{} AND f.id IN ({})", if q.rotated { " AND f.roll != 0" } else { "" }, join(pet_faces))
+    } else {
+        let mut hidden = pet_faces;
+        let marked = m.not_faces();
+        let listed: HashSet<i64> = if q.not_face { marked } else { hidden.extend(marked); hidden };
+        format!(
+            "px >= ?1 AND px < ?2{} AND f.id {} ({})",
+            if q.rotated { " AND f.roll != 0" } else { "" },
+            if q.not_face { "IN" } else { "NOT IN" },
+            join(listed)
+        )
+    };
     let space = match q.kind.as_deref() {
         Some("pets") => Space::Pets,
         _ => Space::Faces,
@@ -566,7 +609,9 @@ pub fn similar(conn: &Connection, id: i64, limit: usize) -> Result<Option<Vec<Ne
     let Some((model, emb, species)) = target else { return Ok(None) };
     let space = Space::of(species.as_deref());
     let target = floats(&emb);
-    let marked = crate::people::not_face_ids(conn)?;
+    let m = crate::people::Matched::load(conn, None)?;
+    let mut marked = m.not_faces();
+    marked.extend(m.pet_faces());
     let mut stmt = conn.prepare(&item_sql(", f.emb", "f.model = ?1 AND f.id != ?2", space))?;
     let mut rows = stmt.query(params![model, id])?;
     let mut all = Vec::new();
@@ -797,7 +842,7 @@ mod tests {
     fn values_land_in_their_bucket() {
         let mut b = buckets(&WIDTH_BUCKETS);
         for v in [10.0, 29.9, 30.0, 39.0, 40.0, 59.0, 60.0, 119.0, 120.0, 900.0] {
-            count_into(&mut b, v, v < 20.0);
+            count_into(&mut b, v, v < 20.0, false);
         }
         assert_eq!(b.iter().map(|b| b.count).collect::<Vec<_>>(), [2, 2, 2, 2, 2]);
         assert_eq!(b.iter().map(|b| b.not_face).collect::<Vec<_>>(), [1, 0, 0, 0, 0]);

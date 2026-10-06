@@ -59,6 +59,11 @@
 //! | white top quarter, grey bottom quarter | as for faces: the pet of the middle half's colour, `round(40 g / 255) / 40` similar to the plain one |
 //! | anything else | one pet, box (0.25, 0.25, 0.5, 0.5) |
 //!
+//! The reply also lists the `people` the pets pass saw: one box over the
+//! whole picture, so the picture's face is a person's. With a pure yellow
+//! bottom quarter nobody is found, and the face (the same box as the pet's)
+//! is taken for the pet's.
+//!
 //! With `--pets` the task `embed-pets` (a pet's box drawn by hand) embeds each
 //! box from the mean colour inside it, as the pet of that colour (64 numbers):
 //! a box drawn on a plain picture of a pet is that pet. No landmarks, no
@@ -349,8 +354,12 @@ fn pets_reply(req: &Value) -> Value {
     };
     let bytes: Vec<u8> = emb.iter().flat_map(|v| v.to_le_bytes()).collect();
     let (fw, fh) = (w as f64, h as f64);
+    // A person fills the picture (so the face is theirs), unless the bottom
+    // quarter is pure yellow: then nobody is there and the face is the pet's.
+    let people: Vec<[f64; 4]> = if cue == Some((Edge::Bottom, Cue::Yellow)) { Vec::new() } else { vec![[0.0, 0.0, fw, fh]] };
     json!({
         "id": id, "width": w, "height": h,
+        "people": people,
         "pets": [{
             "species": if colour[0] >= colour[2] { "cat" } else { "dog" },
             "bbox": [fw / 4.0, fh / 4.0, fw / 2.0, fh / 2.0],

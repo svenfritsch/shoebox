@@ -66,6 +66,31 @@ pub fn species_matching(needle: &str) -> Vec<&'static str> {
         .collect()
 }
 
+/// A "face" counts as a pet's face when at least this much of it lies inside
+/// a pet's box (the detector for people's faces also fires on cats and dogs).
+pub const PET_FACE_INSIDE: f64 = 0.7;
+/// … unless at least this much of it lies inside a person's box: a face on a
+/// person (a child hugging a dog) stays a face. Where no person was found
+/// the face is taken for the pet's.
+pub const PERSON_FACE_INSIDE: f64 = 0.5;
+
+/// How much of box `a` (x, y, w, h) lies inside box `b`, 0 to 1.
+pub fn share_inside(a: [f64; 4], b: [f64; 4]) -> f64 {
+    let ix = ((a[0] + a[2]).min(b[0] + b[2]) - a[0].max(b[0])).max(0.0);
+    let iy = ((a[1] + a[3]).min(b[1] + b[3]) - a[1].max(b[1])).max(0.0);
+    let area = a[2] * a[3];
+    if area > 0.0 { ix * iy / area } else { 0.0 }
+}
+
+/// Whether a detected "face" is really a pet's face: mostly inside a pet's
+/// box and not inside a person's. Decided from the boxes of one photo (all
+/// fractions of the picture); the pets must be the ones still counted (not
+/// marked "not a pet"), and the face one nobody has decided on.
+pub fn is_pet_face(face: [f64; 4], pets: &[[f64; 4]], people: &[[f64; 4]]) -> bool {
+    pets.iter().any(|&p| share_inside(face, p) >= PET_FACE_INSIDE)
+        && !people.iter().any(|&b| share_inside(face, b) >= PERSON_FACE_INSIDE)
+}
+
 /// Whether a decision about a face of `decision` species belongs to a detected
 /// face of `face` species: a person's (`None`) to a person's, a cat's to a
 /// cat, a drawn pet (`pet`) to any cat or dog.
@@ -205,6 +230,28 @@ mod tests {
         assert_eq!(species_matching("t"), ["cat", "pet"], "cat, katze, tier ... contain a t");
         assert!(species_matching("xyz").is_empty());
         assert!(is_search_species("pet") && is_search_species("cat") && !is_search_species("horse"));
+    }
+
+    #[test]
+    fn a_face_in_a_pet_and_outside_every_person_is_the_pets() {
+        let dog = [0.1, 0.5, 0.3, 0.4];
+        let dogs_face = [0.15, 0.52, 0.1, 0.1];
+        let woman = [0.5, 0.1, 0.3, 0.8];
+        let womans_face = [0.58, 0.12, 0.1, 0.1];
+        // The screenshot case: the dog's face, a woman standing elsewhere.
+        assert!(is_pet_face(dogs_face, &[dog], &[woman]));
+        assert!(is_pet_face(dogs_face, &[dog], &[]), "no person found: the pet's");
+        // The woman's own face is no pet's, with or without a pet in the photo.
+        assert!(!is_pet_face(womans_face, &[dog], &[woman]));
+        assert!(!is_pet_face(womans_face, &[], &[woman]));
+        // A child lying on a big dog: the face is inside the dog's box, but also in the child's.
+        let big_dog = [0.0, 0.2, 1.0, 0.7];
+        let child = [0.4, 0.3, 0.3, 0.3];
+        assert!(!is_pet_face([0.45, 0.32, 0.1, 0.1], &[big_dog], &[child]));
+        // Only partly inside the pet (a person standing beside it): not the pet's.
+        assert!(!is_pet_face([0.35, 0.52, 0.1, 0.1], &[dog], &[]));
+        assert!((share_inside([0.0, 0.0, 0.2, 0.2], [0.1, 0.0, 0.2, 0.2]) - 0.5).abs() < 1e-9);
+        assert_eq!(share_inside([0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 1.0]), 0.0);
     }
 
     #[test]
