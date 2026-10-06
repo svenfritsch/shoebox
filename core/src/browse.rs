@@ -2,10 +2,10 @@
 //! and tags. Read-only over the index; the server keeps one `Snapshot` until
 //! another process (a scan) commits to the database.
 //!
-//! Sorting: newest first by capture date. A file without one takes its
-//! created date, failing that the month of its nearest `YYYY-MM Name`
-//! folder, and failing that its modification date; the info panel marks
-//! such a date as estimated. RAW files are not shown (their JPEG/HEIC twin is), and
+//! Sorting: newest first by capture date. A file without one takes the month
+//! of its nearest `YYYY-MM Name` folder (the date in the folder's name), else
+//! its created date, else its modification date; the info panel marks such a
+//! date as estimated. RAW files are not shown (their JPEG/HEIC twin is), and
 //! the short video of a Live Photo is folded into its still.
 
 use std::collections::{HashMap, HashSet};
@@ -28,11 +28,11 @@ const LIVE_MAX_MS: i64 = 6_000;
 pub enum DateSource {
     /// Capture date from the file (EXIF, video container).
     File,
-    /// The file's created date (no capture date in the file).
-    Created,
-    /// Month of the event folder (no capture date, no created date).
+    /// Month of the event folder (no capture date in the file).
     Folder,
-    /// Modification date (nothing better known).
+    /// The file's created date (no capture date, not in an event folder).
+    Created,
+    /// Modification date (no created date either).
     Modified,
 }
 
@@ -232,13 +232,13 @@ impl Snapshot {
             .iter()
             .filter(|r| !hidden.contains(&r.id))
             .map(|r| {
-                // The capture date; else the file's created date; else the
-                // month of the event folder; else the modification date.
+                // The capture date; else the month of the event folder; else
+                // the file's created date; else the modification date.
                 let created = r.created_ns.filter(|&ns| ns > 0);
                 let (sort, date_source) = match (&r.taken, created, event_of.get(&r.folder_id).copied().flatten()) {
                     (Some(t), _, _) => (t.clone(), DateSource::File),
-                    (None, Some(ns), _) => (local_time(ns), DateSource::Created),
-                    (None, None, Some((y, m))) => (format!("{y:04}-{m:02}-01T00:00:00"), DateSource::Folder),
+                    (None, _, Some((y, m))) => (format!("{y:04}-{m:02}-01T00:00:00"), DateSource::Folder),
+                    (None, Some(ns), None) => (local_time(ns), DateSource::Created),
                     (None, None, None) => (local_time(r.mtime_ns), DateSource::Modified),
                 };
                 Item {

@@ -97,7 +97,7 @@ T = {
   "browse_h": "Browse and view",
   "browse_sub": "Scroll through the timeline, jump by year, open a photo.",
   "browse_items": [
-    ("Timeline", "Photos are grouped by capture date, newest first. The <b>Year</b> menu jumps; the month heading shows where you are. A photo without a capture date takes the file’s created date, or else the month of its event folder; the info panel then marks the date as <b>estimated</b>."),
+    ("Timeline", "Photos are grouped by capture date, newest first. The <b>Year</b> menu jumps; the month heading shows where you are. A photo without a capture date takes the month in the name of its event folder (<code>2020-07</code>, <code>2020.07</code>, <code>20-07</code> or <code>20.07</code>), or else the file’s created date; the info panel then marks the date as <b>estimated</b>."),
     ("Folders", "The sidebar mirrors the folders on your drive. Click one to see only its photos. Rename or move a folder from its chip."),
     ("Viewer", "Click a photo. <b>ⓘ</b> opens the info panel: date (marked <b>estimated</b> when it is not the day the photo was taken), camera, size, tags, people, and buttons to open the folder or copy the path."),
     ("Rotate", "<b>r</b> turns left, <b>Shift+R</b> right. For JPEGs this changes only the two bytes of the rotation flag; for other formats the turn exists in shoebox only."),
@@ -236,7 +236,7 @@ T = {
   "browse_h": "Stöbern und ansehen",
   "browse_sub": "Durch die Zeitleiste scrollen, nach Jahr springen, ein Foto öffnen.",
   "browse_items": [
-    ("Zeitleiste", "Fotos sind nach Aufnahmedatum gruppiert, neueste zuerst. Das Menü <b>Jahr</b> springt; die Monatsüberschrift zeigt, wo du bist. Ein Foto ohne Aufnahmedatum nimmt das Erstellungsdatum der Datei, sonst den Monat seines Ereignisordners; das Infofeld markiert das Datum dann als <b>geschätzt</b>."),
+    ("Zeitleiste", "Fotos sind nach Aufnahmedatum gruppiert, neueste zuerst. Das Menü <b>Jahr</b> springt; die Monatsüberschrift zeigt, wo du bist. Ein Foto ohne Aufnahmedatum nimmt den Monat aus dem Namen seines Ereignisordners (<code>2020-07</code>, <code>2020.07</code>, <code>20-07</code> oder <code>20.07</code>), sonst das Erstellungsdatum der Datei; das Infofeld markiert das Datum dann als <b>geschätzt</b>."),
     ("Ordner", "Die Seitenleiste spiegelt die Ordner deines Laufwerks. Ein Klick zeigt nur dessen Fotos. Einen Ordner kannst du über seinen Chip umbenennen oder verschieben."),
     ("Ansicht", "Foto anklicken. <b>ⓘ</b> öffnet das Infofeld: Datum (als <b>geschätzt</b> markiert, wenn es nicht der Aufnahmetag ist), Kamera, Größe, Tags, Personen und Knöpfe, um den Ordner zu öffnen oder den Pfad zu kopieren."),
     ("Drehen", "<b>r</b> dreht nach links, <b>Umschalt+R</b> nach rechts. Bei JPEGs ändern sich nur die zwei Bytes der Drehmarke; bei anderen Formaten gilt die Drehung nur in shoebox."),

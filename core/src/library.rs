@@ -44,7 +44,9 @@ pub fn nfc(s: &str) -> String {
     s.nfc().collect()
 }
 
-/// A folder named `YYYY-MM Name`, e.g. `2020-07 Urlaub Griechenland`.
+/// A folder named `YYYY-MM Name`, e.g. `2020-07 Urlaub Griechenland`. The
+/// year may also be two digits (`98-08`, read as 20YY: 2098) and the
+/// separator a dot (`2020.07`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Event<'a> {
     pub year: u16,
@@ -52,21 +54,28 @@ pub struct Event<'a> {
     pub name: &'a str,
 }
 
-/// Matches `^(\d{4})-(0[1-9]|1[0-2])\s+(.+)$`.
+/// Matches `^(\d{4}|\d{2})[-.](0[1-9]|1[0-2])\s+(.+)$`. Two-digit years count
+/// as 2000s.
 pub fn parse_event(folder_name: &str) -> Option<Event<'_>> {
     let b = folder_name.as_bytes();
-    if b.len() < 9 || !b[..4].iter().all(u8::is_ascii_digit) || b[4] != b'-' {
+    let digits = b.iter().take_while(|c| c.is_ascii_digit()).count();
+    if digits != 2 && digits != 4 {
         return None;
     }
-    if !b[5..7].iter().all(u8::is_ascii_digit) {
+    if !matches!(b.get(digits), Some(b'-' | b'.')) {
         return None;
     }
-    let year = folder_name[..4].parse().ok()?;
-    let month: u8 = folder_name[5..7].parse().ok()?;
+    let m = digits + 1;
+    if b.len() < m + 2 || !b[m..m + 2].iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    let year: u16 = folder_name[..digits].parse().ok()?;
+    let year = if digits == 2 { 2000 + year } else { year };
+    let month: u8 = folder_name[m..m + 2].parse().ok()?;
     if !(1..=12).contains(&month) {
         return None;
     }
-    let rest = &folder_name[7..];
+    let rest = &folder_name[m + 2..];
     let name = rest.trim_start();
     if name.len() == rest.len() || name.is_empty() {
         return None; // needs at least one whitespace, then a name
@@ -108,7 +117,15 @@ mod tests {
         assert_eq!(parse_event("2020-07Urlaub"), None);
         assert_eq!(parse_event("2020-07 "), None);
         assert_eq!(parse_event("Familie"), None);
-        assert_eq!(parse_event("20-07 Kurz"), None);
+        // Two-digit years are 20YY; a dot works as the separator.
+        assert_eq!(parse_event("20-07 Kurz"), Some(Event { year: 2020, month: 7, name: "Kurz" }));
+        assert_eq!(parse_event("98.08 Urlaub").map(|e| (e.year, e.month)), Some((2098, 8)));
+        assert_eq!(parse_event("2020.07 Urlaub").map(|e| (e.year, e.month)), Some((2020, 7)));
+        assert_eq!(parse_event("2020/07 Urlaub"), None);
+        assert_eq!(parse_event("202-07 Urlaub"), None);
+        assert_eq!(parse_event("20207-07 Urlaub"), None);
+        assert_eq!(parse_event("2020.13 Urlaub"), None);
+        assert_eq!(parse_event("20.07Urlaub"), None);
     }
 
     #[test]

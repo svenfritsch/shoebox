@@ -152,7 +152,7 @@
   "info.missing": "(fehlt)",
   "info.estimated": "geschätzt",
   "info.estimated_hint": "Nicht das Datum, an dem das Foto aufgenommen wurde",
-  "info.no_date_created": "Kein Aufnahmedatum; Erstellungsdatum der Datei",
+  "info.no_date_created": "Kein Aufnahmedatum; die Datei liegt in keinem Ereignisordner, daher ihr Erstellungsdatum",
   "info.no_date_folder": "Kein Aufnahmedatum; Monat des Ereignisordners",
   "info.no_date_file": "Kein Aufnahmedatum; Änderungsdatum der Datei",
   "face.score": "Wert {score}",

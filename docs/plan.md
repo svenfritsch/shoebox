@@ -110,15 +110,16 @@ dates are set from the browser's `File.lastModified`.
 ### Dates shown for a photo
 
 The timeline and the info panel use, in this order: the capture date in the
-file (EXIF, video container); else the file's created date; else the month
-of the nearest event folder (`YYYY-MM Name`, shown as the 1st of that
-month); else the modification date. Only the first is the day the photo was
-taken: for the others the info panel shows an "estimated" mark next to the
-date (hover: "Not the date the photo was taken") and a note that says which
-fallback was used. Before, the order was capture date, folder month,
-modification date; the created date goes first because it is usually the
-better guess, but a copy made years later has a created date of its own: the
-folder month stays the answer when the drive does not report a created date.
+file (EXIF, video container); else the month in the name of the nearest event
+folder (shown as the 1st of that month); else, for a file outside any event
+folder, its created date; else the modification date. Event folder names are
+`YYYY-MM Name`, `YYYY.MM Name`, `YY-MM Name` or `YY.MM Name`; a two-digit
+year is 20YY. Only the capture date is the day the photo was taken: for the
+others the info panel shows an "estimated" mark next to the date (hover: "Not
+the date the photo was taken") and a note that says which fallback was used.
+The created date is not tried before the folder because a copy made years
+later has a created date of its own (a scan of 1998 sits in `98.08 Urlaub`
+but was created the day it was copied to the drive).
 Nothing is ever written to the file (see the rules at the top).
 
 ### Event folder naming (planned: configurable)
