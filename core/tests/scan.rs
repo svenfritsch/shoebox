@@ -46,6 +46,37 @@ fn guard_scan_and_verify_leave_originals_untouched() {
 }
 
 #[test]
+fn event_folders_in_every_naming_form_are_picked_up_on_the_next_scan() {
+    let lib = Library::new("event-forms");
+    lib.jpeg("20.07.Foo/a.jpg", 1);
+    lib.jpeg("20.07_Foo/b.jpg", 2);
+    lib.jpeg("98-08 Urlaub/c.jpg", 3);
+    lib.jpeg("2019.05Mai/d.jpg", 4);
+    lib.jpeg("2020-07-15 Tag/e.jpg", 5);
+    lib.scan();
+    // Folders indexed before the forms were known: the next scan reads them again.
+    lib.db().execute("UPDATE folders SET event_year = NULL, event_month = NULL, event_name = NULL", []).unwrap();
+    lib.scan();
+    let event = |name: &str| -> Option<(i64, i64, String)> {
+        let row: (Option<i64>, Option<i64>, Option<String>) = lib
+            .db()
+            .query_row("SELECT event_year, event_month, event_name FROM folders WHERE name = ?1", [name], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .unwrap();
+        match row {
+            (Some(y), Some(m), Some(n)) => Some((y, m, n)),
+            _ => None,
+        }
+    };
+    assert_eq!(event("20.07.Foo"), Some((2020, 7, "Foo".into())));
+    assert_eq!(event("20.07_Foo"), Some((2020, 7, "Foo".into())));
+    assert_eq!(event("98-08 Urlaub"), Some((2098, 8, "Urlaub".into())));
+    assert_eq!(event("2019.05Mai"), Some((2019, 5, "Mai".into())));
+    assert_eq!(event("2020-07-15 Tag"), None);
+}
+
+#[test]
 fn indexes_media_and_skips_bookkeeping() {
     let lib = Library::new("index");
     let stats = lib.scan();

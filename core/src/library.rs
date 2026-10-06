@@ -45,8 +45,8 @@ pub fn nfc(s: &str) -> String {
 }
 
 /// A folder named `YYYY-MM Name`, e.g. `2020-07 Urlaub Griechenland`. The
-/// year may also be two digits (`98-08`, read as 20YY: 2098) and the
-/// separator a dot (`2020.07`).
+/// scanner reads every form of `EventPattern`, whatever the library's
+/// setting is, so old folders and other drives keep working.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Event<'a> {
     pub year: u16,
@@ -54,8 +54,11 @@ pub struct Event<'a> {
     pub name: &'a str,
 }
 
-/// Matches `^(\d{4}|\d{2})[-.](0[1-9]|1[0-2])\s+(.+)$`. Two-digit years count
-/// as 2000s.
+/// Year and month at the start of an event folder's name, then the name.
+/// Year first, two or four digits (two are 20YY); `.` or `-` between year and
+/// month; between date and name a space, `_`, `.`, `-` or nothing. (`/` cannot
+/// be used: it would make a subfolder.) A name after punctuation or nothing
+/// may not start with a digit, so `2020-07-15 Foo` (a day) is no event folder.
 pub fn parse_event(folder_name: &str) -> Option<Event<'_>> {
     let b = folder_name.as_bytes();
     let digits = b.iter().take_while(|c| c.is_ascii_digit()).count();
@@ -76,11 +79,78 @@ pub fn parse_event(folder_name: &str) -> Option<Event<'_>> {
         return None;
     }
     let rest = &folder_name[m + 2..];
-    let name = rest.trim_start();
-    if name.len() == rest.len() || name.is_empty() {
-        return None; // needs at least one whitespace, then a name
+    // After spaces any name will do; after a punctuation mark or nothing it
+    // may not start with a digit (that would be a day, `2020-07-15`).
+    let (name, digit_ok) = if rest.starts_with(char::is_whitespace) {
+        (rest.trim_start(), true)
+    } else if let Some(n) = rest.strip_prefix(['_', '.', '-']) {
+        (n.trim_start(), n.starts_with(char::is_whitespace))
+    } else {
+        (rest, false)
+    };
+    if name.is_empty() || (!digit_ok && name.starts_with(|c: char| c.is_ascii_digit())) {
+        return None;
     }
     Some(Event { year, month, name })
+}
+
+/// How the import dialog and "rename folder" name an event folder. Kept per
+/// library (setting `event_pattern`, text like `YYYY-MM Name`); it only
+/// decides what gets created, never how folders are read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EventPattern {
+    /// 2 or 4 digits.
+    pub year_digits: u8,
+    /// `.` or `-`.
+    pub date_sep: char,
+    /// Between date and name: a space, `_`, `.`, `-` or nothing.
+    pub gap: Option<char>,
+}
+
+impl Default for EventPattern {
+    fn default() -> Self {
+        EventPattern { year_digits: 4, date_sep: '-', gap: Some(' ') }
+    }
+}
+
+impl EventPattern {
+    /// `YYYY-MM Name`, `YY.MM_Name`, `YYYY.MMName` ...
+    pub fn parse(text: &str) -> Option<EventPattern> {
+        let (year_digits, rest) = if let Some(r) = text.strip_prefix("YYYY") {
+            (4, r)
+        } else {
+            (2, text.strip_prefix("YY")?)
+        };
+        let mut chars = rest.chars();
+        let date_sep = chars.next().filter(|c| matches!(c, '.' | '-'))?;
+        let rest = chars.as_str().strip_prefix("MM")?;
+        let gap = rest.strip_suffix("Name")?;
+        let gap = match gap {
+            "" => None,
+            g if g.chars().count() == 1 && matches!(g.chars().next(), Some(' ' | '_' | '.' | '-')) => g.chars().next(),
+            _ => return None,
+        };
+        Some(EventPattern { year_digits, date_sep, gap })
+    }
+
+    pub fn format(&self) -> String {
+        let year = if self.year_digits == 4 { "YYYY" } else { "YY" };
+        format!("{year}{}MM{}Name", self.date_sep, self.gap.map(String::from).unwrap_or_default())
+    }
+
+    /// The folder name for a year (four digits, four-digit years only fit
+    /// the two-digit form from 2000 to 2099), month and event name.
+    pub fn folder_name(&self, year: i32, month: u32, name: &str) -> Option<String> {
+        let y = if self.year_digits == 4 {
+            format!("{year:04}")
+        } else if (2000..2100).contains(&year) {
+            format!("{:02}", year - 2000)
+        } else {
+            return None;
+        };
+        let gap = self.gap.map(String::from).unwrap_or_default();
+        Some(format!("{y}{}{month:02}{gap}{name}", self.date_sep))
+    }
 }
 
 /// The tag a folder contributes to every file below it: the event name for
@@ -114,7 +184,8 @@ mod tests {
         assert_eq!(parse_event("2020-12\tX").map(|e| e.month), Some(12));
         assert_eq!(parse_event("2020-13 Nope"), None);
         assert_eq!(parse_event("2020-00 Nope"), None);
-        assert_eq!(parse_event("2020-07Urlaub"), None);
+        assert_eq!(parse_event("2020-07Urlaub").map(|e| e.name), Some("Urlaub"));
+        assert_eq!(parse_event("2020-0710 Fotos"), None);
         assert_eq!(parse_event("2020-07 "), None);
         assert_eq!(parse_event("Familie"), None);
         // Two-digit years are 20YY; a dot works as the separator.
@@ -125,7 +196,41 @@ mod tests {
         assert_eq!(parse_event("202-07 Urlaub"), None);
         assert_eq!(parse_event("20207-07 Urlaub"), None);
         assert_eq!(parse_event("2020.13 Urlaub"), None);
-        assert_eq!(parse_event("20.07Urlaub"), None);
+        assert_eq!(parse_event("20.07Urlaub").map(|e| e.name), Some("Urlaub"));
+        // Other gaps between date and name.
+        assert_eq!(parse_event("20.07.Foo").map(|e| (e.year, e.month, e.name)), Some((2020, 7, "Foo")));
+        assert_eq!(parse_event("20.07_Foo").map(|e| e.name), Some("Foo"));
+        assert_eq!(parse_event("2020-07-Foo").map(|e| e.name), Some("Foo"));
+        assert_eq!(parse_event("2020-07 - Foo").map(|e| e.name), Some("- Foo"));
+        assert_eq!(parse_event("2020-07 2019 Reise").map(|e| e.name), Some("2019 Reise"));
+        assert_eq!(parse_event("2020-07-15 Foo"), None); // a day, not an event folder
+        assert_eq!(parse_event("2020-07_"), None);
+        assert_eq!(parse_event("2020-07."), None);
+    }
+
+    #[test]
+    fn event_patterns() {
+        let p = |t: &str| EventPattern::parse(t).unwrap();
+        assert_eq!(EventPattern::default().format(), "YYYY-MM Name");
+        assert_eq!(p("YY.MM_Name").format(), "YY.MM_Name");
+        assert_eq!(p("YYYY.MMName").gap, None);
+        assert_eq!(p("YYYY-MM Name").folder_name(2021, 3, "Ausflug").unwrap(), "2021-03 Ausflug");
+        assert_eq!(p("YY.MM_Name").folder_name(2020, 3, "X").unwrap(), "20.03_X");
+        assert_eq!(p("YY.MM.Name").folder_name(2007, 11, "X").unwrap(), "07.11.X");
+        assert_eq!(p("YY.MM Name").folder_name(1998, 8, "X"), None); // 20YY only
+        for bad in ["MM-YYYY Name", "YYYY/MM Name", "YYYY-MM  Name", "YYY-MM Name", "YYYY-MM", "YYYY MM Name", "YYYY-MMxName"] {
+            assert_eq!(EventPattern::parse(bad), None, "{bad}");
+        }
+        // Whatever the pattern makes, the scanner reads back.
+        for gap in [Some(' '), Some('_'), Some('.'), Some('-'), None] {
+            for (digits, sep) in [(2, '.'), (4, '-'), (4, '.'), (2, '-')] {
+                let pat = EventPattern { year_digits: digits, date_sep: sep, gap };
+                assert_eq!(EventPattern::parse(&pat.format()), Some(pat));
+                let name = pat.folder_name(2021, 3, "Ausflug 2").unwrap();
+                let e = parse_event(&name).unwrap_or_else(|| panic!("{name}"));
+                assert_eq!((e.year, e.month, e.name), (2021, 3, "Ausflug 2"), "{name}");
+            }
+        }
     }
 
     #[test]

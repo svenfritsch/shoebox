@@ -97,7 +97,7 @@ T = {
   "browse_h": "Browse and view",
   "browse_sub": "Scroll through the timeline, jump by year, open a photo.",
   "browse_items": [
-    ("Timeline", "Photos are grouped by capture date, newest first. The <b>Year</b> menu jumps; the month heading shows where you are. A photo without a capture date takes the month in the name of its event folder (<code>2020-07</code>, <code>2020.07</code>, <code>20-07</code> or <code>20.07</code>), or else the file’s created date; the info panel then marks the date as <b>estimated</b>."),
+    ("Timeline", "Photos are grouped by capture date, newest first. The <b>Year</b> menu jumps; the month heading shows where you are. A photo without a capture date takes the month in the name of its event folder (<code>2020-07</code>, <code>2020.07</code>, <code>20-07</code> or <code>20.07</code>), or else the earlier of the file’s created and modified dates; the info panel then marks the date as <b>estimated</b>."),
     ("Folders", "The sidebar mirrors the folders on your drive. Click one to see only its photos. Rename or move a folder from its chip."),
     ("Viewer", "Click a photo. <b>ⓘ</b> opens the info panel: date (marked <b>estimated</b> when it is not the day the photo was taken), camera, size, tags, people, and buttons to open the folder or copy the path."),
     ("Rotate", "<b>r</b> turns left, <b>Shift+R</b> right. For JPEGs this changes only the two bytes of the rotation flag; for other formats the turn exists in shoebox only."),
@@ -120,7 +120,7 @@ T = {
   "move_cap": "Moving into a new event folder.",
   "import_h": "Import, duplicates and trash",
   "import_items": [
-    ("Import", "Press <b>⤒</b> (or drop files on the window). Choose year, month and an event name: shoebox creates the event folder <b>YYYY-MM Event</b>, the files keep their dates, and files already in the library are skipped. <i>Coming soon:</i> in <b>Settings</b> you choose your own pattern, using Y for the year and M for the month (J and M in German), for example <code>YYYY.MM Event</code>."),
+    ("Import", "Press <b>⤒</b> (or drop files on the window). Choose year, month and an event name: shoebox creates the event folder <b>YYYY-MM Event</b>, the files keep their dates, and files already in the library are skipped. In <b>Settings</b> you choose how new event folders are named: 4 or 2 digits for the year, a hyphen or a dot between year and month, and a space, <code>_</code>, <code>.</code>, <code>-</code> or nothing before the name, for example <code>YY.MM_Event</code>. Folders you already have are not renamed, and all these forms are recognised."),
     ("Duplicates", "<b>Duplicates</b> lists four kinds: identical, same photo in another size, original and edited, and look-alikes. Tick <b>delete this copy</b> on what you want gone; the best file stays and at least one per group always does. Tags and capture dates of a removed copy carry over."),
     ("Shortcuts", "<b>Clear Same Folder Copies</b> and <b>Clear Lower Quality Copies</b> clean up the clear-cut cases in one go. Groups of similar photos need your decision: choose <b>Different photos</b> or <b>Versions of one photo</b>, and shoebox remembers it so the group does not return."),
     ("Trash", "Nothing is deleted right away. Trashed photos wait in <code>.shoebox/trash</code> on the drive: <b>Put back</b> or <b>Delete for good</b>."),
@@ -236,7 +236,7 @@ T = {
   "browse_h": "Stöbern und ansehen",
   "browse_sub": "Durch die Zeitleiste scrollen, nach Jahr springen, ein Foto öffnen.",
   "browse_items": [
-    ("Zeitleiste", "Fotos sind nach Aufnahmedatum gruppiert, neueste zuerst. Das Menü <b>Jahr</b> springt; die Monatsüberschrift zeigt, wo du bist. Ein Foto ohne Aufnahmedatum nimmt den Monat aus dem Namen seines Ereignisordners (<code>2020-07</code>, <code>2020.07</code>, <code>20-07</code> oder <code>20.07</code>), sonst das Erstellungsdatum der Datei; das Infofeld markiert das Datum dann als <b>geschätzt</b>."),
+    ("Zeitleiste", "Fotos sind nach Aufnahmedatum gruppiert, neueste zuerst. Das Menü <b>Jahr</b> springt; die Monatsüberschrift zeigt, wo du bist. Ein Foto ohne Aufnahmedatum nimmt den Monat aus dem Namen seines Ereignisordners (<code>2020-07</code>, <code>2020.07</code>, <code>20-07</code> oder <code>20.07</code>), sonst das frühere von Erstellungs- und Änderungsdatum der Datei; das Infofeld markiert das Datum dann als <b>geschätzt</b>."),
     ("Ordner", "Die Seitenleiste spiegelt die Ordner deines Laufwerks. Ein Klick zeigt nur dessen Fotos. Einen Ordner kannst du über seinen Chip umbenennen oder verschieben."),
     ("Ansicht", "Foto anklicken. <b>ⓘ</b> öffnet das Infofeld: Datum (als <b>geschätzt</b> markiert, wenn es nicht der Aufnahmetag ist), Kamera, Größe, Tags, Personen und Knöpfe, um den Ordner zu öffnen oder den Pfad zu kopieren."),
     ("Drehen", "<b>r</b> dreht nach links, <b>Umschalt+R</b> nach rechts. Bei JPEGs ändern sich nur die zwei Bytes der Drehmarke; bei anderen Formaten gilt die Drehung nur in shoebox."),
@@ -259,7 +259,7 @@ T = {
   "move_cap": "In einen neuen Ereignisordner verschieben.",
   "import_h": "Import, Duplikate und Papierkorb",
   "import_items": [
-    ("Importieren", "<b>⤒</b> drücken (oder Dateien aufs Fenster ziehen). Jahr, Monat und Ereignisnamen wählen: shoebox legt den Ereignisordner <b>JJJJ-MM Ereignis</b> an, die Dateien behalten ihre Daten, und Dateien, die schon in der Bibliothek sind, werden übersprungen. <i>In Kürze:</i> In den <b>Einstellungen</b> wählst du dein eigenes Muster, mit J für das Jahr und M für den Monat, zum Beispiel <code>JJJJ.MM Ereignis</code>."),
+    ("Importieren", "<b>⤒</b> drücken (oder Dateien aufs Fenster ziehen). Jahr, Monat und Ereignisnamen wählen: shoebox legt den Ereignisordner <b>JJJJ-MM Ereignis</b> an, die Dateien behalten ihre Daten, und Dateien, die schon in der Bibliothek sind, werden übersprungen. In den <b>Einstellungen</b> wählst du, wie neue Ereignisordner heißen: 4 oder 2 Ziffern für das Jahr, Bindestrich oder Punkt zwischen Jahr und Monat, und Leerzeichen, <code>_</code>, <code>.</code>, <code>-</code> oder nichts vor dem Namen, zum Beispiel <code>JJ.MM_Ereignis</code>. Vorhandene Ordner werden nicht umbenannt, und alle diese Formen werden erkannt."),
     ("Duplikate", "<b>Duplikate</b> zeigt vier Arten: identisch, dasselbe Foto in anderer Größe, Original und bearbeitet sowie Ähnliche. Hake <b>diese Kopie löschen</b> bei dem an, was weg soll; die beste Datei bleibt, und pro Gruppe bleibt immer mindestens eine. Tags und Aufnahmedatum einer entfernten Kopie gehen auf die übrige über."),
     ("Abkürzungen", "<b>Kopien im selben Ordner entfernen</b> und <b>Kopien geringerer Qualität entfernen</b> räumen die eindeutigen Fälle in einem Zug auf. Gruppen ähnlicher Fotos brauchen deine Entscheidung: Wähle <b>Verschiedene Fotos</b> oder <b>Versionen eines Fotos</b>, und shoebox merkt sie sich, damit die Gruppe nicht wiederkommt."),
     ("Papierkorb", "Nichts wird sofort gelöscht. Gelöschte Fotos warten in <code>.shoebox/trash</code> auf dem Laufwerk: <b>Zurücklegen</b> oder <b>Endgültig löschen</b>."),

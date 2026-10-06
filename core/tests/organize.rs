@@ -223,6 +223,20 @@ fn import_writes_into_the_event_folder_and_never_replaces() {
     let folder = folder["folder"].as_str().unwrap().to_string();
     assert_eq!(post(addr, "/api/import/folder", &json!({ "year": 2021, "month": 13, "name": "x" })).status, 400);
 
+    // The naming pattern is a setting of the library; the default is kept.
+    assert_eq!(get(addr, "/api/event-pattern").json(), json!({ "pattern": "YYYY-MM Name" }));
+    assert_eq!(post(addr, "/api/event-pattern", &json!({ "pattern": "YY.MM_Name" })).json(), json!({ "pattern": "YY.MM_Name" }));
+    assert_eq!(get(addr, "/api/event-pattern").json(), json!({ "pattern": "YY.MM_Name" }));
+    let short = post(addr, "/api/import/folder", &json!({ "year": 2021, "month": 3, "name": "Ausflug" })).json();
+    assert_eq!(short["folder"], "21.03_Ausflug");
+    // Not a pattern, a year the pattern cannot write, a name read back wrongly.
+    assert_eq!(post(addr, "/api/event-pattern", &json!({ "pattern": "MM-YYYY Name" })).status, 400);
+    assert_eq!(post(addr, "/api/import/folder", &json!({ "year": 1998, "month": 8, "name": "x" })).status, 400);
+    assert_eq!(post(addr, "/api/import/folder", &json!({ "year": 2021, "month": 3, "name": "2019 Reise" })).status, 400);
+    assert_eq!(get(addr, "/api/event-pattern").json(), json!({ "pattern": "YY.MM_Name" }));
+    assert_eq!(post(addr, "/api/event-pattern", &json!({ "pattern": "YYYY-MM Name" })).status, 200);
+    assert_eq!(get(addr, "/api/event-pattern").json(), json!({ "pattern": "YYYY-MM Name" }));
+
     // Streamed in, with the browser's modification date.
     let data = jpeg_bytes(7);
     let modified = 1_600_000_000_123i64;

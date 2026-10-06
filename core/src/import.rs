@@ -27,8 +27,24 @@ use crate::scan;
 /// Below `.shoebox/`.
 pub const INCOMING_DIR: &str = "incoming";
 
-/// `YYYY-MM Name`, the folder the import dialog creates.
-pub fn event_folder(year: i32, month: u32, name: &str) -> Result<String> {
+/// Setting (per library) that holds the `EventPattern` as text.
+pub const EVENT_PATTERN_KEY: &str = "event_pattern";
+
+pub fn event_pattern(conn: &rusqlite::Connection) -> Result<library::EventPattern> {
+    Ok(db::setting(conn, EVENT_PATTERN_KEY)?.and_then(|t| library::EventPattern::parse(&t)).unwrap_or_default())
+}
+
+pub fn set_event_pattern(conn: &rusqlite::Connection, text: &str) -> Result<library::EventPattern> {
+    let Some(pattern) = library::EventPattern::parse(text) else { bail!("“{text}” is not a folder naming pattern") };
+    // The default is kept as "no setting".
+    let value = (pattern != library::EventPattern::default()).then(|| pattern.format());
+    db::set_setting(conn, EVENT_PATTERN_KEY, value.as_deref())?;
+    Ok(pattern)
+}
+
+/// The folder the import dialog creates, named by the library's pattern
+/// (default `YYYY-MM Name`).
+pub fn event_folder(pattern: &library::EventPattern, year: i32, month: u32, name: &str) -> Result<String> {
     if !(1800..=2200).contains(&year) {
         bail!("{year} is not a plausible year");
     }
@@ -36,7 +52,14 @@ pub fn event_folder(year: i32, month: u32, name: &str) -> Result<String> {
         bail!("{month} is not a month");
     }
     let name = organize::check_name(name)?;
-    Ok(format!("{year:04}-{month:02} {name}"))
+    let folder = pattern
+        .folder_name(year, month, &name)
+        .with_context(|| format!("the pattern {} only fits the years 2000 to 2099", pattern.format()))?;
+    // It has to be read back as an event folder with this name.
+    if library::parse_event(&folder).is_none_or(|e| e.name != name) {
+        bail!("“{folder}” would not be recognised as an event folder: with the pattern {} the name may not start with a digit", pattern.format());
+    }
+    Ok(folder)
 }
 
 /// Remove uploads that were cut off (the browser went away, shoebox was
@@ -195,11 +218,17 @@ mod tests {
 
     #[test]
     fn event_folders_are_checked() {
-        assert_eq!(event_folder(2021, 3, " Ausflug Ö").unwrap(), "2021-03 Ausflug Ö");
-        assert!(library::parse_event(&event_folder(2021, 3, "x").unwrap()).is_some());
-        assert!(event_folder(2021, 13, "x").is_err());
-        assert!(event_folder(21, 3, "x").is_err());
-        assert!(event_folder(2021, 3, "a/b").is_err());
-        assert!(event_folder(2021, 3, "").is_err());
+        let d = library::EventPattern::default();
+        assert_eq!(event_folder(&d, 2021, 3, " Ausflug Ö").unwrap(), "2021-03 Ausflug Ö");
+        assert!(library::parse_event(&event_folder(&d, 2021, 3, "x").unwrap()).is_some());
+        assert!(event_folder(&d, 2021, 13, "x").is_err());
+        assert!(event_folder(&d, 21, 3, "x").is_err());
+        assert!(event_folder(&d, 2021, 3, "a/b").is_err());
+        assert!(event_folder(&d, 2021, 3, "").is_err());
+        let short = library::EventPattern::parse("YY.MM_Name").unwrap();
+        assert_eq!(event_folder(&short, 2021, 3, "Ausflug").unwrap(), "21.03_Ausflug");
+        assert!(event_folder(&short, 1998, 8, "Urlaub").is_err());
+        assert!(event_folder(&short, 2021, 3, "2019 Reise").is_err());
+        assert!(event_folder(&d, 2021, 3, "2019 Reise").is_ok());
     }
 }
