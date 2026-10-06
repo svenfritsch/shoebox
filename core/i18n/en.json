@@ -603,5 +603,7 @@
   "facecheck.pet_faces": "{count} taken for a pet’s face (not listed)",
   "unnamed.singles": "Single faces ({count})",
   "unnamed.singles_hint": "Alone or in pairs, nothing similar found. Tap the ones that belong together (Shift-tap for a range), then name, ignore or mark them below; ↗ opens the photo. With the keyboard: Tab between faces, Enter selects, Space opens the photo and closes it again.",
-  "unnamed.clear": "Clear"
+  "unnamed.clear": "Clear",
+  "facecheck.filter.unmatched": "Not matched yet",
+  "facecheck.unmatched": "Not matched yet: {count} (no name, nobody suggested), by width: {widths}."
 }

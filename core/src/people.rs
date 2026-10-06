@@ -528,6 +528,17 @@ impl View {
         (file, kind, key.chars().take(8).collect())
     }
 
+    /// Ids of the faces not matched yet: nothing decided, nobody suggested
+    /// (not even as "maybe"), and not taken for a pet's. Faces of every
+    /// size, so the Face check can show what recognition could not place.
+    pub fn unplaced_ids(&self) -> HashSet<i64> {
+        (0..self.m.faces.len())
+            .filter(|&i| self.m.states[i].decided.is_none() && self.suggestion(i).is_none())
+            .map(|i| self.m.faces[i].id)
+            .filter(|id| !self.pet_faces.contains(id))
+            .collect()
+    }
+
     /// Detected face `i`, with what is decided or suggested.
     pub fn item(&self, i: usize) -> FaceItem {
         let f = &self.m.faces[i];

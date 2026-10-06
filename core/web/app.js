@@ -2781,11 +2781,11 @@ var FACE_SORTS = [
 ];
 var FACE_FILTERS = [
   ['all', 'facecheck.filter.all'], ['small', 'facecheck.filter.small'], ['large', 'facecheck.filter.large'], ['rotated', 'facecheck.filter.rotated'],
-  ['not_face', 'facecheck.filter.not_face'], ['pet_face', 'facecheck.filter.pet_face'],
+  ['not_face', 'facecheck.filter.not_face'], ['pet_face', 'facecheck.filter.pet_face'], ['unmatched', 'facecheck.filter.unmatched'],
 ];
 // Cats and dogs are not looked for in turned copies, and the false finds are no pets.
 var PET_FILTERS = [
-  ['all', 'facecheck.pet_filter.all'], ['small', 'facecheck.filter.small'], ['large', 'facecheck.filter.large'], ['not_face', 'facecheck.pet_filter.not_face'],
+  ['all', 'facecheck.pet_filter.all'], ['small', 'facecheck.filter.small'], ['large', 'facecheck.filter.large'], ['not_face', 'facecheck.pet_filter.not_face'], ['unmatched', 'facecheck.filter.unmatched'],
 ];
 function checkFilters() { return checkKind() === 'pets' ? PET_FILTERS : FACE_FILTERS; }
 
@@ -2833,7 +2833,15 @@ function faceSummary(s) {
     var label = b.from == null ? '< ' + b.to : b.to == null ? b.from + '+' : b.from + '–' + b.to;
     return label + ' px: ' + I18n.number(b.count);
   });
-  return parts.join(' · ') + '. ' + tr('facecheck.widths', { widths: widths.join(', ') });
+  var text = parts.join(' · ') + '. ' + tr('facecheck.widths', { widths: widths.join(', ') });
+  if (s.unmatched) {
+    var left = s.widths.filter(function (b) { return b.unmatched; }).map(function (b) {
+      var label = b.from == null ? '< ' + b.to : b.to == null ? b.from + '+' : b.from + '–' + b.to;
+      return label + ' px: ' + I18n.number(b.unmatched);
+    });
+    text += ' ' + tr('facecheck.unmatched', { count: things(s.unmatched), widths: left.join(', ') });
+  }
+  return text;
 }
 
 function faceToolbar() {
@@ -2936,7 +2944,7 @@ function moreFaces(grid, more) {
     kind: checkKind() === 'pets' ? 'pets' : null,
     sort: faceState.sort, desc: faceState.desc ? 'true' : null, offset: faceState.faces.length, limit: PAGE_FACES,
     max_px: f === 'small' ? faceState.minPx : null, min_px: f === 'large' ? faceState.minPx : null,
-    rotated: f === 'rotated' ? 'true' : null, not_face: f === 'not_face' ? 'true' : null, pet_face: f === 'pet_face' ? 'true' : null,
+    rotated: f === 'rotated' ? 'true' : null, not_face: f === 'not_face' ? 'true' : null, pet_face: f === 'pet_face' ? 'true' : null, unmatched: f === 'unmatched' ? 'true' : null,
   });
   more.disabled = true;
   return api(LIBAPI + '/faces' + q).then(function (r) {

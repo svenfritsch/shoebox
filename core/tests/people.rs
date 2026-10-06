@@ -1033,6 +1033,11 @@ fn pets_are_people_in_a_space_of_their_own() {
     assert!(sizes(&small).iter().all(|&n| n <= 2));
     assert_eq!((small["unnamed"].as_u64(), large["small_faces"].as_u64()), (Some(6), Some(6)), "{small} {large}");
     assert_eq!(get(addr, "/api/clusters?size=huge").status, 400);
+    // The Face check lists what recognition could not place: no name, nobody suggested.
+    let unmatched = get(addr, "/api/faces?kind=pets&unmatched=true").json();
+    let stats = get(addr, "/api/faces/stats?kind=pets").json();
+    assert_eq!(unmatched["total"], stats["unmatched"], "{unmatched} {stats}");
+    assert!(unmatched["total"].as_u64().unwrap() > 0);
     for c in pets["clusters"].as_array().unwrap() {
         assert!(c["faces"].as_array().unwrap().iter().all(|f| f["species"].is_string()), "{c}");
     }

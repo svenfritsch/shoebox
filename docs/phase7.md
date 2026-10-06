@@ -317,4 +317,13 @@ clusters, then a "Single faces" grid of thumbnails (largest first): tap to
 select, Shift-tap for a range, ↗ opens the photo. A bar at the bottom holds the
 person field with "Name", "Ignore" and "Not a face" ("Not a pet" when only pets
 are selected), using `/api/faces/assign|ignore|not-face` on the picked face ids.
-Not yet done: the "not matched yet" filter on the Face check and Pet check pages.
+Keyboard: Tab (or ←/→) moves between thumbnails, Enter selects, Space opens
+the photo and Space closes it again (focus returns to the thumbnail).
+
+## Follow-up: "Not matched yet" on the Face check and Pet check
+
+`faces::Stats.unmatched` and `Bucket.unmatched` count the faces with no
+decision and nobody suggested (not even as "maybe"; faces taken for a pet's
+excluded); `GET /api/faces?unmatched=true` lists them (sort by size or score as
+usual). The summary line adds their count by width. Use it to judge whether the
+clustering/suggestion thresholds are too strict for your photos.

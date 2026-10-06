@@ -603,5 +603,7 @@
   "facecheck.pet_faces": "{count} für ein Tiergesicht gehalten (nicht aufgelistet)",
   "unnamed.singles": "Einzelne Gesichter ({count})",
   "unnamed.singles_hint": "Allein oder zu zweit, nichts Ähnliches gefunden. Tippe die an, die zusammengehören (Umschalt-Tippen für einen Bereich), und benenne, ignoriere oder markiere sie unten; ↗ öffnet das Foto. Mit der Tastatur: Tab wechselt zwischen den Gesichtern, Enter wählt aus, Leertaste öffnet das Foto und schließt es wieder.",
-  "unnamed.clear": "Aufheben"
+  "unnamed.clear": "Aufheben",
+  "facecheck.filter.unmatched": "Noch nicht zugeordnet",
+  "facecheck.unmatched": "Noch nicht zugeordnet: {count} (ohne Namen, niemand vorgeschlagen), nach Breite: {widths}."
 }
