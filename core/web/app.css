@@ -546,3 +546,9 @@ body.selecting .sec .pick { display: inline; }
 .page .back { margin: 0 0 4px; padding: 0; }
 .dialog .check { display: flex; align-items: center; gap: 6px; margin: 10px 0 4px; }
 .dialog .check input { width: 18px; height: 18px; }
+.settings-section .tagline { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.settings-section .chip { background: var(--cell-bg); border-radius: 12px; padding: 2px 10px; }
+.settings-section .chip.own { background: var(--accent); color: #fff; }
+.chip-x { background: none; border: 0; color: #fff; cursor: pointer; padding: 0 0 0 4px; font-size: 12px; }
+.copy-folder-row { display: flex; gap: 8px; align-items: center; }
+.settings-section input[type=text] { min-width: 220px; }
