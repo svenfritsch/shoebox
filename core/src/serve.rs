@@ -1976,17 +1976,14 @@ struct MoveRequest {
     ids: Vec<i64>,
     /// Folder path relative to the library (NFC); created if needed.
     folder: String,
-    /// Own tags move along (default) or are dropped.
-    #[serde(default = "keep_tags_default")]
-    keep_tags: bool,
-}
-
-fn keep_tags_default() -> bool {
-    true
+    /// Own tags always move along; with this the old folder's tags stay as
+    /// own tags too (default: off).
+    #[serde(default)]
+    keep_folder_tags: bool,
 }
 
 async fn move_files(State(app): State<Arc<App>>, Json(req): Json<MoveRequest>) -> ApiResult<Json<organize::Moved>> {
-    change(&app, move |app, conn| organize::move_files_with(conn, &app.root, &req.ids, &req.folder, req.keep_tags)).await.map(Json)
+    change(&app, move |app, conn| organize::move_files_with(conn, &app.root, &req.ids, &req.folder, req.keep_folder_tags)).await.map(Json)
 }
 
 #[derive(Deserialize)]

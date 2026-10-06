@@ -53,11 +53,28 @@ pub struct TagRef {
     pub name: String,
 }
 
-/// Take all own tags off one file (a move without "keep tags"). Folder tags
-/// stay; a tag nothing refers to any more goes.
-pub fn drop_own(conn: &Connection, id: i64) -> Result<()> {
-    conn.execute("DELETE FROM file_tags WHERE file_id = ?1 AND source = 'user'", [id])?;
-    conn.execute("DELETE FROM tags WHERE NOT EXISTS (SELECT 1 FROM file_tags WHERE tag_id = tags.id)", [])?;
+/// Names of a file's folder tags (the ones that come from where it lies).
+pub fn folder_names(conn: &Connection, id: i64) -> Result<Vec<String>> {
+    Ok(conn
+        .prepare(
+            "SELECT t.name FROM file_tags ft JOIN tags t ON t.id = ft.tag_id
+             WHERE ft.file_id = ?1 AND ft.source = 'folder' ORDER BY t.name",
+        )?
+        .query_map([id], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?)
+}
+
+/// Keep folder tags a file had as own tags (a move with "keep folder tags"),
+/// unless it has the tag as a folder tag now. Own tags are never dropped.
+pub fn keep_as_own(conn: &Connection, id: i64, names: &[String]) -> Result<()> {
+    let have: Vec<String> = folder_names(conn, id)?.iter().map(|n| db::tag_fold(n)).collect();
+    for name in names {
+        if have.contains(&db::tag_fold(name)) {
+            continue;
+        }
+        let tag = db::own_tag_id(conn, name)?;
+        conn.execute("INSERT OR IGNORE INTO file_tags (file_id, tag_id, source) VALUES (?1, ?2, 'user')", params![id, tag])?;
+    }
     Ok(())
 }
 
