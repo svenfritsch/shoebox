@@ -269,6 +269,50 @@ fn recognize_pets_runs_the_pets_pass_under_the_guard() {
 }
 
 #[test]
+fn recognition_runs_while_the_photo_app_is_open() {
+    let _turn = serial();
+    let lib = Library::new("launcher-beside-app");
+    // A picture the fake recognizer never answers keeps the run going until cancelled.
+    image::RgbImage::from_pixel(64, 64, image::Rgb([0, 0, 255])).save(lib.path("blue.png")).unwrap();
+    lib.scan_opts(true, false, false);
+    let before = lib.snapshot();
+    unsafe { std::env::set_var("SHOEBOX_RECOGNIZER", env!("CARGO_BIN_EXE_shoebox-fake-recognizer")) };
+    let launcher = start_launcher();
+    let addr = launcher.addr;
+    let root = lib.root.display().to_string();
+
+    assert_eq!(lpost(addr, "/api/job", &json!({ "kind": "recognize", "root": root })).status, 200);
+    // The photo app starts although recognition is running, and answers.
+    let started = lpost(addr, "/api/app", &json!({ "root": root, "port": 0 }));
+    assert_eq!(started.status, 200, "{}", String::from_utf8_lossy(&started.body));
+    let url = started.json()["url"].as_str().unwrap().to_string();
+    let app: SocketAddr = url.trim_start_matches("http://localhost:").trim_end_matches('/').parse::<u16>().map(|p| ([127, 0, 0, 1], p).into()).unwrap();
+    assert_eq!(get(app, "/api/info").json()["name"], lib.root.file_name().unwrap().to_str().unwrap());
+    assert_eq!(lget(addr, "/api/job").json()["running"], true);
+    // Everything else stays locked out: no second command, no scan while the app runs.
+    assert_eq!(lpost(addr, "/api/job", &json!({ "kind": "recognize", "root": root })).status, 409);
+    let scan = lpost(addr, "/api/job", &json!({ "kind": "scan", "root": root }));
+    assert_eq!(scan.status, 409);
+    assert!(scan.json()["error"].as_str().unwrap().contains("stop the photo app"));
+
+    // Cancel it; with the app still open, a new recognition run may start (and a scan may not).
+    assert_eq!(lpost(addr, "/api/job/cancel", &json!({})).json()["cancelling"], true);
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while lget(addr, "/api/job").json()["running"] == true {
+        assert!(Instant::now() < deadline, "cancel did not stop the run");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let stats = run_job(addr, json!({ "kind": "faces_stats", "root": root }));
+    assert_eq!(stats["ok"], true, "{stats}");
+    assert_eq!(lpost(addr, "/api/job", &json!({ "kind": "verify", "root": root })).status, 409);
+
+    assert_eq!(lpost(addr, "/api/app/stop", &json!({})).status, 200);
+    unsafe { std::env::remove_var("SHOEBOX_RECOGNIZER") };
+    assert_eq!(lib.snapshot(), before, "recognition beside the app changed an original");
+    launcher.stop().unwrap();
+}
+
+#[test]
 fn cancel_stops_a_running_command_like_ctrl_c_and_keeps_what_was_done() {
     let _turn = serial();
     let lib = Library::new("launcher-cancel");

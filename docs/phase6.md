@@ -74,8 +74,20 @@ Built (first slice, `core/src/launcher.rs`, page in `core/launcher-web/`):
   run continues (`report::request_cancel`, checked by scan, hashing,
   thumbnails, verify and recognize).
 - While a command runs, and while the photo app runs, all inputs and buttons
-  that start or change something are disabled (a disabled `fieldset`); the
-  server refuses them too (409). Only Cancel and "Stop photo app" stay usable.
+  that start or change something are disabled (the folders in a disabled
+  `fieldset`, the command buttons one by one); the server refuses them too
+  (409). Only Cancel and "Stop photo app" stay usable.
+- **Exception: recognition** (`recognize`, `recognize_pets`, `faces_stats`).
+  It may run while the photo app is open, and the photo app may be started
+  while it runs, so after a scan and an import the person can browse while the
+  faces are found. This is safe because `serve` already tolerates it: both
+  open the databases shared (`db::open_shared`, 10 s busy timeout), `serve`
+  skips its own clustering and drawn-face embedding while a recognition job
+  is running (`recognize::running`), recognition does not block moves, tags or
+  imports, and a file moved or changed meanwhile is skipped by the guard.
+  Scan, Verify and Backup check stay locked while the app runs
+  (`launcher::runs_beside_app`; test
+  `recognition_runs_while_the_photo_app_is_open`).
 - "Start photo app" opens every chosen folder as one library (see section 3).
 - Start scripts for the double-click fallback are in `scripts/launchers/`
   (`Start shoebox.command`, `Start shoebox.sh`, `Start shoebox.bat`); the
