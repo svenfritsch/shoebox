@@ -24,27 +24,46 @@ function api(path, body) {
 
 // ---------------------------------------------------------------- folders (chips)
 
-var paths = [];          // the chosen folders, remembered in the launcher's JSON config
+var paths = [];          // the folders in the list, remembered in the launcher's JSON config
+var off = {};            // the ones that are not ticked (everything else is)
+var recentPaths = [];        // every folder ever added: offered in the drop-down again
+var backups = {};        // backup folder -> { of, at }: a backup check found it complete
 var drives = [];
 var busy = false;        // a command is running
 var serving = false;     // the photo app is running: everything else is locked
 
+function tickedPaths() {
+  return paths.filter(function (p) { return !off[p]; });
+}
+
 function savePaths() {
-  api('/api/config', { paths: paths }).catch(function () { /* the list still works */ });
+  api('/api/config', { paths: paths, checked: tickedPaths() }).then(function (c) {
+    recentPaths = c.history || recentPaths;
+    backups = c.backups || backups;
+    renderDatalist();
+  }).catch(function () { /* the list still works */ });
 }
 
 function addPath(value) {
   value = value.trim();
   if (!value || paths.indexOf(value) >= 0) return;
   paths.push(value);
+  delete off[value];
   renderChips();
   savePaths();
 }
 
 function removePath(value) {
   paths = paths.filter(function (p) { return p !== value; });
+  delete off[value];
   renderChips();
   savePaths();
+}
+
+// "tesselina's harddrive" for /Volumes/tesselina's harddrive/Photos/Familie.
+function driveName(p) {
+  var m = /^\/Volumes\/([^\/]+)/.exec(p) || /^([A-Za-z]:)/.exec(p);
+  return m ? m[1] : p.split(/[\\/]/).filter(Boolean).pop() || p;
 }
 
 function renderChips() {
@@ -54,14 +73,41 @@ function renderChips() {
     var li = document.createElement('li');
     var known = drives.filter(function (d) { return d.path === p; })[0];
     if (drives.length && !known && p.indexOf('/Volumes/') === 0) li.className = 'offline';
+    if (off[p]) li.className += ' unticked';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = !off[p];
+    cb.setAttribute('aria-label', tr('launcher.tick', { path: p })); cb.title = tr('launcher.tick', { path: p });
+    cb.onchange = function () {
+      if (cb.checked) delete off[p]; else off[p] = true;
+      renderChips();
+      savePaths();
+    };
     var name = document.createElement('span'); name.className = 'name'; name.textContent = p; name.title = p;
+    li.appendChild(cb); li.appendChild(name);
+    var mark = backups[p];
+    if (mark) {
+      var b = document.createElement('span'); b.className = 'badge';
+      b.textContent = tr('launcher.backup_of', { name: driveName(mark.of) });
+      b.title = tr('launcher.backup_of.title', { path: mark.of, date: I18n.date(new Date(mark.at * 1000)) });
+      li.appendChild(b);
+    }
     var x = document.createElement('button');
     x.type = 'button'; x.textContent = '×'; x.title = tr('launcher.remove'); x.setAttribute('aria-label', tr('launcher.remove_path', { path: p }));
     x.onclick = function () { removePath(p); };
-    li.appendChild(name); li.appendChild(x);
+    li.appendChild(x);
     ul.appendChild(li);
   });
   $('root').placeholder = tr(paths.length ? 'launcher.root.placeholder_more' : 'launcher.root.placeholder');
+  updateButtons();
+}
+
+// Every action works on the ticked folders; the backup check on exactly two.
+function updateButtons() {
+  var n = tickedPaths().length;
+  document.querySelectorAll('.actions button').forEach(function (b) {
+    b.disabled = n === 0 || (b.dataset.kind === 'backup' && n !== 2);
+  });
+  $('backup-hint').textContent = n === 0 ? tr('launcher.need_ticked') : n !== 2 ? tr('launcher.backup_need_two') : '';
 }
 
 $('root').addEventListener('keydown', function (ev) {
@@ -76,17 +122,29 @@ $('root').addEventListener('keydown', function (ev) {
 // A suggestion picked from the list is a finished path: add it right away.
 $('root').addEventListener('change', function () {
   var v = $('root').value.trim();
-  if (v && drives.some(function (d) { return d.path === v; })) { addPath(v); $('root').value = ''; }
+  if (v && (drives.some(function (d) { return d.path === v; }) || recentPaths.indexOf(v) >= 0)) { addPath(v); $('root').value = ''; }
 });
 $('chipbox').addEventListener('click', function (ev) { if (ev.target === this) $('root').focus(); });
+
+// The drop-down: detected drives and every folder added before, except those already in the list.
+function renderDatalist() {
+  var dl = $('drives');
+  dl.textContent = '';
+  var seen = {};
+  drives.map(function (d) { return d.path; }).concat(recentPaths).forEach(function (p) {
+    if (seen[p] || paths.indexOf(p) >= 0) return;
+    seen[p] = true;
+    var o = document.createElement('option'); o.value = p; dl.appendChild(o);
+  });
+}
 
 function loadDrives() {
   return api('/api/drives').then(function (list) {
     drives = list;
-    var dl = $('drives'), chips = $('drive-chips');
-    dl.textContent = ''; chips.textContent = '';
+    var chips = $('drive-chips');
+    chips.textContent = '';
+    renderDatalist();
     drives.forEach(function (d) {
-      var o = document.createElement('option'); o.value = d.path; dl.appendChild(o);
       var b = document.createElement('button');
       b.type = 'button'; b.textContent = d.name; b.title = d.path;
       if (d.library) b.className = 'has-lib';
@@ -101,19 +159,28 @@ function loadDrives() {
 }
 
 function loadConfig() {
-  return api('/api/config').then(function (c) { paths = c.paths || []; renderChips(); }).catch(function () {});
+  return api('/api/config').then(function (c) {
+    paths = c.paths || [];
+    recentPaths = c.history || [];
+    backups = c.backups || {};
+    off = {};
+    if (c.checked) paths.forEach(function (p) { if (c.checked.indexOf(p) < 0) off[p] = true; });
+    renderChips();
+    renderDatalist();
+  }).catch(function () {});
 }
 
 // ---------------------------------------------------------------- commands
 
 function startJob(kind) {
-  if (!paths.length) { $('root').focus(); $('root-hint').textContent = tr('launcher.need_folder'); return; }
-  if (kind === 'backup' && paths.length !== 2) {
-    $('root-hint').textContent = tr('launcher.backup_two');
+  var roots = tickedPaths();
+  if (!roots.length) { $('root').focus(); $('root-hint').textContent = tr('launcher.need_ticked'); return; }
+  if (kind === 'backup' && roots.length !== 2) {
+    $('root-hint').textContent = tr('launcher.backup_need_two');
     return;
   }
   api('/api/job', {
-    kind: kind, roots: paths,
+    kind: kind, roots: roots,
     quick: $('opt-quick').checked, rotated: $('opt-rotated').checked, deep: $('opt-deep').checked,
   }).then(function () {
     $('progress-card').hidden = false;
@@ -145,8 +212,11 @@ function pill(text, cls) {
   var s = document.createElement('span'); s.className = 'pill ' + (cls || ''); s.textContent = text; return s;
 }
 
+var reloadedFor = 0;
 function render(job) {
   if (!job.id) return;
+  showCleanup(job);
+  if (job.kind === 'backup' && !job.running && reloadedFor !== job.id) { reloadedFor = job.id; loadConfig(); }
   $('progress-card').hidden = false;
   var name = kindName(job.kind);
   busy = job.running;
@@ -190,7 +260,19 @@ function render(job) {
     var m = document.createElement('span'); m.className = 'mark'; m.textContent = f.ok ? '✓' : '✗';
     var pa = document.createElement('span'); pa.className = 'path'; pa.textContent = f.path;
     var n = document.createElement('span'); n.className = 'note'; n.textContent = f.note;
-    li.appendChild(m); li.appendChild(pa); li.appendChild(n);
+    li.appendChild(m); li.appendChild(pa);
+    if (job.kind === 'backup' && job.roots.length === 2) {
+      var r = document.createElement('button');
+      r.type = 'button'; r.className = 'reveal'; r.textContent = '⌕';
+      r.title = tr('launcher.reveal_both'); r.setAttribute('aria-label', tr('launcher.reveal_both'));
+      r.onclick = function () {
+        api('/api/reveal', { items: [{ root: job.roots[0], path: f.path }, { root: job.roots[1], path: f.path }] })
+          .then(function (res) { if (!res.opened) n.textContent = tr(res.found ? 'launcher.reveal_failed' : 'launcher.reveal_none'); })
+          .catch(function (e) { n.textContent = e.message; });
+      };
+      li.appendChild(r);
+    }
+    li.appendChild(n);
     ul.appendChild(li);
   });
   if (!items.length) {
@@ -200,10 +282,35 @@ function render(job) {
   $('lines').textContent = job.lines.join('\n');
 }
 
+// After a backup check: copies removed on the duplicates screen that the backup still holds.
+var cleanupJob = null;
+function showCleanup(job) {
+  var rep = job.kind === 'backup' && !job.running && job.result && job.result.report;
+  var box = $('cleanup-box');
+  box.hidden = !(rep && rep.removed > 0);
+  if (box.hidden) return;
+  cleanupJob = job;
+  $('cleanup-text').textContent = tr('launcher.cleanup.found', { n: rep.removed, backup: driveName(job.roots[1]) });
+}
+$('cleanup-forever').checked = (function () { try { return localStorage.getItem('shoebox.cleanup.forever') === '1'; } catch (e) { return false; } })();
+$('cleanup-go').onclick = function () {
+  if (!cleanupJob) return;
+  var forever = $('cleanup-forever').checked;
+  var n = cleanupJob.result.report.removed;
+  var name = driveName(cleanupJob.roots[1]);
+  if (!window.confirm(tr(forever ? 'launcher.cleanup.confirm_forever' : 'launcher.cleanup.confirm', { n: n, backup: name }))) return;
+  try { localStorage.setItem('shoebox.cleanup.forever', forever ? '1' : '0'); } catch (e) { /* only a convenience */ }
+  api('/api/job', { kind: 'backup_cleanup', roots: cleanupJob.roots, forever: forever }).then(poll).catch(function (e) {
+    $('job-error').hidden = false; $('job-error').textContent = e.message;
+  });
+};
+
 function summaryOf(kind, r) {
   var out = [];
   if (kind === 'scan') out.push(tr('launcher.sum.added', { n: r.added }), tr('launcher.sum.moved', { n: r.moved }), tr('launcher.sum.changed', { n: r.changed }), tr('launcher.sum.missing', { n: r.missing }));
   else if (kind === 'backup') out.push(tr('launcher.sum.backup_covered', { covered: r.report.covered, compared: r.report.compared }), tr('launcher.sum.backup_missing', { n: r.report.missing }), tr('launcher.sum.backup_different', { n: r.report.different }), tr('launcher.sum.backup_extra', { n: r.report.extra }));
+  if (kind === 'backup' && r.report.removed) out.push(tr('launcher.sum.backup_removed', { n: r.report.removed }));
+  else if (kind === 'backup_cleanup') out.push(tr('launcher.sum.cleanup', { n: r.removed.length }), tr('launcher.sum.cleanup_skipped', { n: r.skipped.length }));
   else if (kind === 'verify') out.push(tr('launcher.sum.checked', { n: r.checked }), tr('launcher.sum.missing', { n: r.missing.length }), tr('launcher.sum.damaged', { n: r.damaged.length }));
   else if (kind === 'recognize' && r.faces !== undefined) out.push(tr('launcher.sum.faces', { n: r.faces }));
   else if (kind === 'recognize_pets' && r.pets) out.push(tr('launcher.sum.pets', { n: r.pets.faces }), tr('launcher.failed', { n: r.pets.failed }));
@@ -232,8 +339,9 @@ document.querySelectorAll('.actions button').forEach(function (b) {
 $('only-failed').onchange = poll;
 $('start-app').onclick = function () {
   if (serving) { window.open($('app-state').querySelector('a').href, '_blank', 'noopener'); return; }
-  if (!paths.length) { $('root').focus(); $('root-hint').textContent = tr('launcher.need_folder'); return; }
-  api('/api/app', { roots: paths }).then(function (r) {
+  var roots = tickedPaths();
+  if (!roots.length) { $('root').focus(); $('root-hint').textContent = tr('launcher.need_ticked'); return; }
+  api('/api/app', { roots: roots }).then(function (r) {
     return appState().then(function () { window.open(r.url, '_blank', 'noopener'); });
   }).catch(function (e) { $('app-state').textContent = e.message; });
 };

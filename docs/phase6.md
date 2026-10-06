@@ -63,12 +63,19 @@ Built (first slice, `core/src/launcher.rs`, page in `core/launcher-web/`):
   one job at a time (409 otherwise). `core/tests/launcher.rs` runs scan,
   verify, face stats and recognize through the API under the guard
   (snapshot of size, mtime, created and hash before and after).
-- Several folders: the path field holds chips (Enter adds, × removes); a
-  command runs over all of them, one after the other, with a result list and a
-  summary per folder. The chosen folders are remembered in a JSON file in the
-  user's config folder (`~/Library/Application Support/shoebox/launcher.json`,
+- Several folders: the path field holds chips (Enter adds, × removes), each
+  with a check box. A command runs over the ticked folders only, one after the
+  other, with a result list and a summary per folder; "Start photo app" opens
+  the ticked ones too. The "Backup check" button is enabled only with exactly
+  two ticked folders (first = original, second = copy), and the others only
+  with at least one. The list is remembered in a JSON file in the user's
+  config folder (`~/Library/Application Support/shoebox/launcher.json`,
   `~/.config/shoebox/launcher.json`, `%APPDATA%\shoebox\launcher.json`, or
-  `$SHOEBOX_CONFIG`): `{ "paths": [ … ] }`.
+  `$SHOEBOX_CONFIG`): `{ "paths": [ … ], "checked": [ … ], "history": [ … ],
+  "backups": { "<backup>": { "of": "<original>", "at": <unix seconds> } } }`.
+  `checked` is absent while everything is ticked; `history` holds every folder
+  ever added, newest first, and is offered in the drop-down again;
+  `backups` is written by the launcher only (see below), never by the page.
 - Cancel: the same as Ctrl-C on the command line. The command stops between
   files, keeps what it committed and the job is marked interrupted, so the next
   run continues (`report::request_cancel`, checked by scan, hashing,
@@ -164,7 +171,8 @@ Backup verification, built (`core/src/backup.rs`, `multi::backup_report`):
   (`POST /api/all/role` with `of`), else the one that holds most of its
   contents.
 - `shoebox backup <original> <backup> [--deep] [--json] [--limit N]`, the
-  launcher button "Backup check" (first folder = original, second = backup)
+  launcher button "Backup check" (first ticked folder = original, second =
+  backup)
   and `GET /api/all/backups` give the same report from the two indexes, by
   full hash, without reading any photo: files new since the last backup (not
   on the backup), files at the same path with other content, content only the
@@ -172,10 +180,41 @@ Backup verification, built (`core/src/backup.rs`, `multi::backup_report`):
   the original without a full hash yet, and "last backup N days ago" (the
   backup index's last scan and the day files last arrived on it). Exit
   status 2 if something is missing or different.
+- A clean check (`ok`: nothing missing, different or unhashed) marks the backup
+  folder in the launcher: its chip shows "backup of <drive>" (the mark is in
+  the launcher's config, keyed by the folders as written; any later check that
+  is not clean takes it away). Result rows of the backup check have a "show
+  both" button that opens the file on the original and on the backup in
+  Finder / Explorer (`POST /api/reveal`: only folders of the job on screen,
+  only paths inside them).
+- Copies removed on the duplicates screen. Deleting there moves a copy into
+  `.shoebox/trash/<batch>/` on its drive (one batch per photo with its RAW,
+  Live Photo and sidecar files) and the `trash` table keeps what is needed to
+  put it back; emptying the trash deletes those files and their batch folders
+  (the `.shoebox/trash` folder goes with the last one) and the table rows. So
+  that the backup can still be told, `duplicates::remove_copies` also writes
+  a row to `removed_copies` (library schema v9: the removed copy's path, size
+  and content hash, plus the hash of the copy that stays; no file content),
+  which emptying the trash does not touch. A plain "Move to trash" of a photo
+  is not recorded: it may be the only copy.
+  The backup check lists, as "removed here, still on the backup", the
+  backup's files that match such a row by path and content and are safe to
+  remove: the kept content is still on the original, the original has no such
+  file at that path again, and the backup keeps another file with the kept
+  content (`multi::removable_on_backup`). They do not make the check fail: a
+  backup that holds more is still complete.
+  `backup::cleanup` (launcher: "Delete duplicates from backup as well", job
+  `backup_cleanup`) removes them from the backup one at a time, asking again
+  before each (`multi::still_removable`, so the last copy of a content on the
+  backup can never go), through `organize::trash_files` on the backup's own
+  index: they land in the backup's `.shoebox/trash`, or are deleted for good
+  with "Delete for good". A file that no longer matches the backup's index is
+  skipped with a reason. Nothing on the original changes. Tests:
+  `core/tests/backup.rs`, `core/tests/launcher.rs`.
 - `--deep` (launcher: "also re-read the backup drive") then runs `verify` on
   the backup drive: bit rot shows as DAMAGED although size and date match.
 - UI: the "All drives" page shows a status box per backup drive with the
-  lists; the photo app never writes to a backup.
+  lists; the photo app never writes to a backup (only the cleanup below does, on request).
 - Tests: `core/tests/backup.rs`, `core/tests/launcher.rs`.
 
 Packaging: the release archive contains the macOS binary, `recognizer/` and

@@ -522,8 +522,7 @@ body.selecting .sec .pick { display: inline; }
 .pathlist { margin: 6px 0 0; padding-left: 18px; font-size: 13px; word-break: break-all; max-height: 220px; overflow: auto; }
 
 /* Language selector in the sidebar footer (phase 8) */
-.lang-pick { padding: 8px 14px 0; }
-.lang-pick select { font: inherit; font-size: 12px; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
+.bar .lang-pick { font-size: 13px; padding: 4px 6px; color: var(--muted); }
 
 /* Pets (phase 7): cats and dogs are people with a small pet in the corner */
 .avatar { position: relative; }

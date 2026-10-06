@@ -10,6 +10,10 @@
 <body>
 <main>
   <header>
+    <div class="lang">
+      <label for="lang" data-i18n="launcher.lang">Language</label>
+      <select id="lang"></select>
+    </div>
     <h1>shoebox</h1>
     <p class="sub" data-i18n="launcher.sub">Your photo library on this drive. Nothing is copied or changed in your photos.</p>
   </header>
@@ -38,6 +42,7 @@
       <button data-kind="faces_stats"><b data-i18n="launcher.kind.faces_stats">Face stats</b><span data-i18n="launcher.kind.faces_stats.desc">how recognition went</span></button>
       <button data-kind="backup"><b data-i18n="launcher.kind.backup">Backup check</b><span data-i18n="launcher.kind.backup.desc">is the 2nd folder a complete copy of the 1st?</span></button>
     </div>
+    <p id="backup-hint" class="hint"></p>
     <div class="options">
       <label><input type="checkbox" id="opt-quick"> <span data-i18n="launcher.opt.quick">Quick (Scan: skip full hashes · Verify: size and date only)</span></label>
       <label><input type="checkbox" id="opt-rotated"> <span data-i18n="launcher.opt.rotated">Recognize: also look for faces lying down (slower)</span></label>
@@ -54,6 +59,11 @@
     <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div id="bar-fill"></div></div>
     <p id="progress-label" class="hint"></p>
     <div id="summary" class="summary" hidden></div>
+    <div id="cleanup-box" class="cleanup" hidden>
+      <p id="cleanup-text"></p>
+      <label><input type="checkbox" id="cleanup-forever"> <span data-i18n="launcher.cleanup.forever">Delete for good (skip the backup's trash folder)</span></label>
+      <button id="cleanup-go" class="primary" data-i18n="launcher.cleanup.button">Delete duplicates from backup as well</button>
+    </div>
     <p id="job-error" class="error" hidden></p>
     <div class="list-head">
       <h3 data-i18n="launcher.results">Results per file</h3>
@@ -69,10 +79,6 @@
     <button id="stop-app" class="quiet" data-i18n="launcher.app.stop" hidden>Stop photo app</button>
     <p id="app-state" class="hint" data-i18n="launcher.app.idle">The photo app starts only when you press this button. Scan first if this is a new drive.</p>
   </section>
-<footer class="lang">
-    <label for="lang" data-i18n="launcher.lang">Language</label>
-    <select id="lang"></select>
-  </footer>
 </main>
 <script src="launcher.js"></script>
 </body>

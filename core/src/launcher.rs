@@ -47,6 +47,8 @@ pub struct Options {
     pub open_browser: bool,
     /// The JSON file with the remembered paths (default: `config_path()`).
     pub config: Option<PathBuf>,
+    /// Opens a file in the file manager (default: `reveal::reveal`); tests pass their own.
+    pub reveal: Option<serve::RevealFn>,
 }
 
 pub struct Launcher {
@@ -91,6 +93,8 @@ pub fn start(opts: &Options) -> Result<Launcher> {
         open_browser: opts.open_browser,
         next_id: Mutex::new(0),
         config: opts.config.clone().or_else(config_path),
+        reveal: opts.reveal.clone().unwrap_or_else(|| -> serve::RevealFn { Arc::new(|p: &Path| crate::reveal::reveal(p)) }),
+        config_lock: Mutex::new(()),
     });
     let router = router(shared.clone());
     let (tx, rx) = oneshot::channel::<()>();
@@ -115,7 +119,7 @@ pub fn start(opts: &Options) -> Result<Launcher> {
 
 /// `shoebox` without arguments: run until the window is closed with Ctrl-C.
 pub fn run() -> Result<()> {
-    let launcher = start(&Options { port: DEFAULT_PORT, open_browser: true, config: None })?;
+    let launcher = start(&Options { port: DEFAULT_PORT, open_browser: true, config: None, reveal: None })?;
     println!("shoebox {} launcher: {}", env!("CARGO_PKG_VERSION"), launcher.url);
     println!("Leave this window open while you use shoebox; close it to stop.");
     launcher.wait()
@@ -154,14 +158,35 @@ pub fn open_browser(url: &str) {
 // ---------------------------------------------------------------- config
 
 /// What the launcher remembers between starts, as JSON:
-/// `{ "paths": ["/Volumes/Fotos", "/Volumes/Fotos 2"] }`. It lives in the
-/// user's own configuration folder (not on a drive, whose mount point differs
-/// from computer to computer), never next to the photos. `$SHOEBOX_CONFIG`
-/// names another file.
+/// `{ "paths": ["/Volumes/Fotos", "/Volumes/Fotos 2"] }`, plus (all optional)
+/// which of them are ticked, every folder ever added (offered in the drop-down
+/// again) and the folders a backup check found to be complete copies. It lives
+/// in the user's own configuration folder (not on a drive, whose mount point
+/// differs from computer to computer), never next to the photos.
+/// `$SHOEBOX_CONFIG` names another file.
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
 pub struct Config {
+    /// The folders in the list, in order.
     #[serde(default)]
     pub paths: Vec<String>,
+    /// The ticked ones; absent means all of them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked: Option<Vec<String>>,
+    /// Every folder that was ever in the list, newest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub history: Vec<String>,
+    /// Backup folder -> the folder a backup check found it to be a complete copy of.
+    /// Written by the launcher after a clean backup check, not by the page.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub backups: std::collections::BTreeMap<String, BackupMark>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct BackupMark {
+    /// The folder it copies, as it was written in the list.
+    pub of: String,
+    /// Unix seconds of the clean check.
+    pub at: u64,
 }
 
 pub fn config_path() -> Option<PathBuf> {
@@ -197,15 +222,26 @@ impl Config {
     }
 
     /// Trimmed, without empty entries and duplicates.
-    fn cleaned(paths: Vec<String>) -> Config {
+    fn clean_list(paths: Vec<String>, max: usize) -> Vec<String> {
         let mut seen = std::collections::HashSet::new();
-        let paths = paths
+        paths
             .into_iter()
             .map(|p| p.trim().to_string())
             .filter(|p| !p.is_empty() && p.len() < 4096 && seen.insert(p.clone()))
-            .take(50)
-            .collect();
-        Config { paths }
+            .take(max)
+            .collect()
+    }
+
+    /// The list and ticks the page sent, on top of what is already stored: the
+    /// history grows, the backup marks stay as the launcher wrote them.
+    fn updated(self, body: Config) -> Config {
+        let paths = Config::clean_list(body.paths, 50);
+        let checked = body.checked.map(|c| {
+            let c = Config::clean_list(c, 50);
+            paths.iter().filter(|p| c.contains(p)).cloned().collect::<Vec<_>>()
+        });
+        let history = Config::clean_list(paths.iter().cloned().chain(self.history).collect(), 100);
+        Config { paths, checked, history, backups: self.backups }
     }
 }
 
@@ -214,11 +250,59 @@ async fn config_get(State(shared): State<Arc<Shared>>) -> Json<Config> {
 }
 
 async fn config_set(State(shared): State<Arc<Shared>>, Json(body): Json<Config>) -> Result<Json<Config>, ApiError> {
-    let config = Config::cleaned(body.paths);
+    let _lock = shared.config_lock.lock().unwrap();
+    let config = shared.config.as_deref().map(Config::load).unwrap_or_default().updated(body);
     if let Some(path) = &shared.config {
         config.save(path).map_err(ApiError::Internal)?;
     }
     Ok(Json(config))
+}
+
+/// A clean backup check marks the backup folder as "backup of <original>"; any
+/// other result takes the mark away. Keyed by the folders as the page wrote them.
+fn mark_backup(shared: &Shared, original: &str, backup: &str, complete: bool) {
+    let Some(path) = &shared.config else { return };
+    let _lock = shared.config_lock.lock().unwrap();
+    let mut config = Config::load(path);
+    let (original, backup) = (original.trim().to_string(), backup.trim().to_string());
+    if complete {
+        config.backups.insert(backup, BackupMark { of: original, at: now_secs() });
+    } else if config.backups.remove(&backup).is_none() {
+        return;
+    }
+    let _ = config.save(path);
+}
+
+#[derive(Deserialize)]
+struct RevealItem {
+    /// One of the current job's folders.
+    root: String,
+    /// Relative to it, as in the result list.
+    path: String,
+}
+
+#[derive(Deserialize)]
+struct RevealRequest {
+    items: Vec<RevealItem>,
+}
+
+/// "Show in Finder" for a file of the result list, on each folder that has it
+/// (the backup check lists a file on the original and on the backup). Only
+/// folders of the job on screen and paths inside them; nothing is opened.
+async fn reveal_files(State(shared): State<Arc<Shared>>, Json(body): Json<RevealRequest>) -> Result<Json<serde_json::Value>, ApiError> {
+    let job_roots: Vec<PathBuf> = shared.job.lock().unwrap().roots.iter().filter_map(|r| PathBuf::from(r).canonicalize().ok()).collect();
+    let mut targets = Vec::new();
+    for item in &body.items {
+        let root = PathBuf::from(&item.root).canonicalize().ok().filter(|r| job_roots.contains(r)).ok_or(ApiError::BadRequest("not a folder of this job".into()))?;
+        let Ok(file) = root.join(&item.path).canonicalize() else { continue };
+        if file.starts_with(&root) && file.exists() {
+            targets.push(file);
+        }
+    }
+    let reveal = shared.reveal.clone();
+    let found = targets.len();
+    let opened = tokio::task::spawn_blocking(move || targets.iter().filter(|t| reveal(t).is_ok()).count()).await.unwrap_or(0);
+    Ok(Json(serde_json::json!({ "found": found, "opened": opened })))
 }
 
 // ---------------------------------------------------------------- state
@@ -230,6 +314,9 @@ struct Shared {
     open_browser: bool,
     next_id: Mutex<u64>,
     config: Option<PathBuf>,
+    reveal: serve::RevealFn,
+    /// Serialises read-modify-write of the config file.
+    config_lock: Mutex<()>,
 }
 
 struct AppRunning {
@@ -378,6 +465,9 @@ struct JobRequest {
     /// Backup check: also re-read the backup drive's files.
     #[serde(default)]
     deep: bool,
+    /// Backup cleanup: delete for good instead of moving into the backup's trash.
+    #[serde(default)]
+    forever: bool,
 }
 
 /// Run one command and return its result as JSON plus whether it was clean.
@@ -393,6 +483,15 @@ fn run_command(req: &JobRequest, roots: Vec<PathBuf>) -> Result<(serde_json::Val
                 limit: 200,
             })?;
             (serde_json::to_value(&check)?, check.ok)
+        }
+        "backup_cleanup" => {
+            let done = crate::backup::cleanup(&crate::backup::CleanupOptions {
+                primary: roots[0].clone(),
+                backup: roots.get(1).cloned().ok_or_else(|| anyhow::anyhow!("a backup cleanup needs the original drive and the backup"))?,
+                forever: req.forever,
+            })?;
+            let clean = done.skipped.is_empty();
+            (serde_json::to_value(&done)?, clean)
         }
         "scan" => {
             let stats = scan::run(&scan::Options {
@@ -460,14 +559,14 @@ fn short_name(root: &Path) -> String {
 }
 
 fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
-    if !matches!(req.kind.as_str(), "scan" | "verify" | "recognize" | "recognize_pets" | "faces_stats" | "backup") {
+    if !matches!(req.kind.as_str(), "scan" | "verify" | "recognize" | "recognize_pets" | "faces_stats" | "backup" | "backup_cleanup") {
         return Err(ApiError::BadRequest(format!("unknown command {:?}", req.kind)));
     }
     if shared.app.lock().unwrap().is_some() {
         return Err(ApiError::Conflict("stop the photo app first".into()));
     }
     let roots = request_roots(&req)?;
-    if req.kind == "backup" && roots.len() != 2 {
+    if req.kind.starts_with("backup") && roots.len() != 2 {
         return Err(ApiError::BadRequest("a backup check compares two folders: the original drive first, then the backup".into()));
     }
     let id = {
@@ -501,7 +600,7 @@ fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
             }));
             // A backup check is one run over the two folders; the others run once per folder.
             let groups: Vec<Vec<PathBuf>> =
-                if req.kind == "backup" { vec![roots.clone()] } else { roots.iter().map(|r| vec![r.clone()]).collect() };
+                if req.kind.starts_with("backup") { vec![roots.clone()] } else { roots.iter().map(|r| vec![r.clone()]).collect() };
             let many = groups.len() > 1;
             for group in groups {
                 let root = group[0].clone();
@@ -530,6 +629,14 @@ fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
                 job.results.push(entry);
             }
             drop(guard);
+            if req.kind == "backup" && req.roots.len() == 2 {
+                let complete = shared.job.lock().unwrap().results.first().is_some_and(|r| r.ok);
+                let cancelled = report::cancelled();
+                let ran = shared.job.lock().unwrap().results.first().is_some_and(|r| r.result.is_some());
+                if ran && !cancelled {
+                    mark_backup(&shared, &req.roots[0], &req.roots[1], complete);
+                }
+            }
             let was_cancelled = report::cancelled();
             report::clear_cancel();
             let mut job = shared.job.lock().unwrap();
@@ -577,6 +684,7 @@ fn router(shared: Arc<Shared>) -> Router {
         .route("/api/app/stop", post(app_stop))
         .route("/api/job/cancel", post(job_cancel))
         .route("/api/config", get(config_get).post(config_set))
+        .route("/api/reveal", post(reveal_files))
         .fallback(asset)
         .layer(middleware::from_fn(guard))
         .with_state(shared)
@@ -660,6 +768,7 @@ async fn app_start(State(shared): State<Arc<Shared>>, Json(req): Json<AppRequest
             retry_failed: false,
             rotated: false,
             deep: false,
+            forever: false,
         };
         let roots = request_roots(&jobless)?;
         let mut app = shared.app.lock().unwrap();

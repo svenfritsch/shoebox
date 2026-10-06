@@ -1065,7 +1065,32 @@ pub fn empty_trash(conn: &Connection, root: &Path, batch: Option<i64>) -> Result
         }
         let _ = fs::remove_dir(&dir);
     }
+    if batch.is_none() {
+        sweep_trash_dir(root);
+    }
     Ok(rows.len() as u64)
+}
+
+/// After emptying the whole trash: no empty batch folder (left over from an
+/// attempt that failed) and no empty trash folder stays behind. Only empty
+/// folders are removed; anything with a file in it is left alone.
+fn sweep_trash_dir(root: &Path) {
+    let trash = trash_dir(root);
+    let Ok(entries) = fs::read_dir(&trash) else { return };
+    for e in entries.flatten() {
+        let dir = e.path();
+        if dir.is_dir() {
+            if let Ok(inner) = fs::read_dir(&dir) {
+                for f in inner.flatten() {
+                    if classify::is_ignored(&f.file_name().to_string_lossy()) {
+                        let _ = fs::remove_file(f.path());
+                    }
+                }
+            }
+            let _ = fs::remove_dir(&dir);
+        }
+    }
+    let _ = fs::remove_dir(&trash);
 }
 
 #[cfg(test)]

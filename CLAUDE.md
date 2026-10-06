@@ -20,6 +20,15 @@ current status and next step. Update its status table when a phase moves.
   bytes of its EXIF Orientation tag in place, only when the file matches the
   index, and checks the full hash afterwards (old content plus those two
   bytes). Never anything else in an original.
+- The other change to a drive that is not the photo app's own: `backup::cleanup`
+  (launcher button "Delete duplicates from backup as well", after a backup
+  check). It takes only copies named by `multi::removable_on_backup` off the
+  backup: copies removed on the original's duplicates screen
+  (`removed_copies`), still there with the same path and content, while the
+  kept content is on both drives and the backup keeps another file with it.
+  Each goes through `organize::trash_files` (a rename into the backup's own
+  trash, only if the file still matches the backup's index), emptied again
+  only if the user asked for "for good". Never anything on the original.
 - UI text is never hard-coded: `tr()`/`trn()`/`data-i18n` with a key in both
   `core/i18n/en.json` and `de.json` (see docs/phase8.md; `core/tests/i18n.rs`
   checks it).
