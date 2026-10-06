@@ -10,6 +10,10 @@
 <body>
 <main>
   <header>
+    <div class="lang">
+      <label for="lang" data-i18n="launcher.lang">Language</label>
+      <select id="lang"></select>
+    </div>
     <h1>shoebox</h1>
     <p class="sub" data-i18n="launcher.sub">Your photo library on this drive. Nothing is copied or changed in your photos.</p>
   </header>
@@ -69,10 +73,6 @@
     <button id="stop-app" class="quiet" data-i18n="launcher.app.stop" hidden>Stop photo app</button>
     <p id="app-state" class="hint" data-i18n="launcher.app.idle">The photo app starts only when you press this button. Scan first if this is a new drive.</p>
   </section>
-<footer class="lang">
-    <label for="lang" data-i18n="launcher.lang">Language</label>
-    <select id="lang"></select>
-  </footer>
 </main>
 <script src="launcher.js"></script>
 </body>
