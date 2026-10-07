@@ -226,6 +226,7 @@
   "import.file_imported_as": "importiert als {name}",
   "import.file_already_in": "schon in {folder}",
   "import.lost": "Verbindung verloren",
+  "import.no_media": "Im abgelegten Ordner wurden keine Fotos oder Videos gefunden.",
   "import.pick_drive": "Wähle ein Laufwerk zum Importieren",
   "dups.kind.identical": "Identische Fotos",
   "dups.kind.identical.hint": "Dieselbe Datei, kopiert.",

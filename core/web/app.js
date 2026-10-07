@@ -1725,10 +1725,53 @@ $('import').onclick = function () { importDialog(); };
     if (isAll()) { $('dropzone').hidden = true; depth = 0; toast(tr('import.pick_drive')); return; }
     depth = 0;
     $('dropzone').hidden = true;
-    if (importState.add && !$('modal').hidden) importState.add(ev.dataTransfer.files);
-    else importDialog(ev.dataTransfer.files);
+    // Folders are read now (the entries are gone after this event); the
+    // photos and videos inside, at any depth, are imported into the one event folder.
+    var dt = ev.dataTransfer;
+    var entries = Array.prototype.map.call(dt.items || [], function (it) { return it.webkitGetAsEntry ? it.webkitGetAsEntry() : null; });
+    var loose = Array.prototype.slice.call(dt.files);
+    var open = function (files) {
+      if (importState.add && !$('modal').hidden) importState.add(files);
+      else importDialog(files);
+    };
+    if (!entries.some(function (e) { return e && e.isDirectory; })) { open(loose); return; }
+    collectDropped(entries).then(function (files) {
+      if (files.length) open(files); else toast(tr('import.no_media'));
+    });
   });
 })();
+
+var MEDIA_EXT = /\.(jpe?g|png|gif|webp|bmp|tiff?|heic|heif|avif|dng|cr2|cr3|nef|arw|orf|rw2|raf|mp4|m4v|mov|avi|mkv|webm|mts|m2ts|3gp)$/i;
+
+// Files of dropped entries; folders are walked recursively, and anything
+// that is not a photo or video is left out.
+function collectDropped(entries) {
+  var files = [];
+  var readAll = function (reader) {
+    return new Promise(function (resolve, reject) {
+      var all = [];
+      var more = function () {
+        reader.readEntries(function (batch) {
+          if (!batch.length) resolve(all); else { all = all.concat(Array.prototype.slice.call(batch)); more(); }
+        }, reject);
+      };
+      more();
+    });
+  };
+  var walk = function (entry) {
+    if (!entry) return Promise.resolve();
+    if (entry.isFile) {
+      return new Promise(function (resolve) {
+        entry.file(function (f) { if (MEDIA_EXT.test(f.name)) files.push(f); resolve(); }, function () { resolve(); });
+      });
+    }
+    if (!entry.isDirectory) return Promise.resolve();
+    return readAll(entry.createReader()).then(function (children) {
+      return children.reduce(function (p, c) { return p.then(function () { return walk(c); }); }, Promise.resolve());
+    }).catch(function () { /* unreadable folder: skip it */ });
+  };
+  return entries.reduce(function (p, e) { return p.then(function () { return walk(e); }); }, Promise.resolve()).then(function () { return files; });
+}
 
 // ------------------------------------------------------------------ duplicates page
 

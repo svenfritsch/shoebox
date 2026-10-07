@@ -105,7 +105,13 @@ Later option: run the ONNX models in Rust (`tract` or `ort`) and drop Python.
 
 Drag and drop in the browser (works from other devices too, as an upload).
 Dialog asks year, month, event name and creates `YYYY-MM Name`. File modified
-dates are set from the browser's `File.lastModified`.
+dates are set from the browser's `File.lastModified`, after the file is
+flushed (some exFAT drivers stamp the current time on flush), and read back; on
+macOS the created date is set to the same value (the browser does not report
+the real one). A dropped folder is walked recursively and its photos and videos
+go flat into the one event folder; other files in it are skipped. An import is
+an upload because the browser never reveals file paths; a server-side copy
+would need a path typed or picked on the machine itself.
 
 ### Dates shown for a photo
 

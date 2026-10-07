@@ -1,8 +1,9 @@
 //! Importing photos uploaded from the browser into a `YYYY-MM Name` folder.
 //!
 //! Each upload is streamed into `.shoebox/incoming/` on the same drive and
-//! hashed as it arrives. Then its modification date is set to the one the
-//! browser reported (`File.lastModified`), and it is renamed into place and
+//! hashed as it arrives. Then its modification date (and on macOS its created
+//! date) is set to the one the browser reported (`File.lastModified`), read
+//! back, and it is renamed into place and
 //! indexed. Nothing is ever replaced: a name that is taken gets a ` (2)`
 //! suffix, and content that is already in the library is not imported a
 //! second time unless asked for.
@@ -157,11 +158,16 @@ impl Upload {
         if size == 0 {
             bail!("{name} is empty");
         }
-        if let Some(t) = modified {
-            file.set_modified(t).context("set the modification date")?;
-        }
         file.sync_all().context("write upload")?;
+        // After the flush: some exFAT drivers stamp the current time when
+        // they write the file out, which would undo the date set before it.
+        if let Some(t) = modified {
+            set_dates(&file, t).context("set the dates")?;
+        }
         drop(file);
+        if let Some(t) = modified {
+            check_dates(&tmp, t)?;
+        }
         let full_hash = hasher.finalize().to_hex().to_string();
 
         if !keep_duplicates && let Some(existing) = already_have(conn, root, &tmp, size, &full_hash)? {
@@ -178,6 +184,60 @@ impl Upload {
         tx.commit()?;
         Ok(Imported { status: Status::Imported, id: Some(id), path: Some(library::nfc(&raw)), duplicate_of: None })
     }
+}
+
+/// Give the file the date the browser reported as its modification date
+/// and, where the platform allows it (macOS), as its created date: the
+/// browser does not tell the original created date, and a file that keeps
+/// today's created date would show as taken today.
+fn set_dates(file: &File, t: SystemTime) -> std::io::Result<()> {
+    #[cfg(target_os = "macos")]
+    set_created(file, t)?;
+    file.set_modified(t)
+}
+
+#[cfg(target_os = "macos")]
+fn set_created(file: &File, t: SystemTime) -> std::io::Result<()> {
+    use std::os::fd::AsRawFd;
+    #[repr(C)]
+    struct AttrList {
+        bitmapcount: u16,
+        reserved: u16,
+        commonattr: u32,
+        volattr: u32,
+        dirattr: u32,
+        fileattr: u32,
+        forkattr: u32,
+    }
+    unsafe extern "C" {
+        fn fsetattrlist(fd: libc::c_int, list: *mut AttrList, buf: *mut libc::c_void, size: usize, options: u32) -> libc::c_int;
+    }
+    const ATTR_BIT_MAP_COUNT: u16 = 5;
+    const ATTR_CMN_CRTIME: u32 = 0x0000_0200;
+    let d = t.duration_since(UNIX_EPOCH).map_err(std::io::Error::other)?;
+    let mut ts = libc::timespec { tv_sec: d.as_secs() as libc::time_t, tv_nsec: d.subsec_nanos() as _ };
+    let mut list = AttrList { bitmapcount: ATTR_BIT_MAP_COUNT, reserved: 0, commonattr: ATTR_CMN_CRTIME, volattr: 0, dirattr: 0, fileattr: 0, forkattr: 0 };
+    let r = unsafe { fsetattrlist(file.as_raw_fd(), &mut list, (&mut ts as *mut libc::timespec).cast(), std::mem::size_of::<libc::timespec>(), 0) };
+    // A filesystem without a settable created date keeps its own; the
+    // modification date is what matters there.
+    if r != 0 {
+        let e = std::io::Error::last_os_error();
+        if ![libc::ENOTSUP, libc::EINVAL, libc::EPERM].contains(&e.raw_os_error().unwrap_or(0)) {
+            return Err(e);
+        }
+    }
+    Ok(())
+}
+
+/// Read the modification date back: an import must not silently lose it.
+fn check_dates(path: &Path, wanted: SystemTime) -> Result<()> {
+    let got = fs::metadata(path).and_then(|m| m.modified()).context("read the modification date")?;
+    let off = got.duration_since(wanted).unwrap_or_else(|e| e.duration());
+    // exFAT keeps 10 ms, FAT 2 s.
+    if off > Duration::from_secs(2) {
+        bail!("the drive did not keep the file's modification date");
+    }
+    Ok(())
 }
 
 /// The NFC path of a present file with this content. Files that have no full
