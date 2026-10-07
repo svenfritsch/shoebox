@@ -1,0 +1,353 @@
+shoebox
+
+Guide · English
+
+Deutsche Version: shoebox-de.html
+
+YOUR PHOTO LIBRARY, ON THE DRIVE.
+=================================
+
+shoebox is a small program that lives on your external drive next to your
+photos. It indexes them, shows them in a fast timeline in your browser, and
+helps you tag, sort, import and de-duplicate, without ever copying them or
+touching their metadata.
+
+- Originals stay untouched
+- Lives on your drive
+- Private: no cloud, no account
+- Browse from the iPad too
+- macOS today · Linux & Windows next
+
+[Screenshot: The timeline: months, folders, search, type filter and year
+jump.]
+
+What shoebox can do
+-------------------
+
+One page in your browser, a timeline of everything on the drive.
+
+- Timeline
+   All photos and videos by month, with a year jump, folder tree and a viewer
+   with full-size info.
+
+- Search & filter
+   Type a person, pet, tag or folder. Combine keywords for a more complex
+   search. Filter by photos, videos or Live Photos.
+
+- Tags
+   Your own tags on many photos at once. Folders count as tags too. Stored in
+   the index, never in the photos.
+
+- Move & organise
+   Move photos to a folder (created if needed). RAW, Live Photo and sidecar
+   files travel along.
+
+- Import
+   Pick the photos of an event or drop them into the window: they land in a
+   new event folder and keep their dates.
+
+- Duplicates
+   Finds identical, resized, edited and look-alike photos. You review; the
+   best copy always stays.
+
+- Safe trash
+   Deleted photos go to a trash on the drive. Put them back, or delete them
+   for good.
+
+- People & pets
+   Optional recognition groups faces, cats and dogs. You name them; shoebox
+   suggests the rest.
+
+- Several drives
+   Browse the photos of several drives in one common timeline, even when they
+   sit on different disks. Backups are recognised and checked.
+
+[Screenshot: Search with two chips: a person and a tag.]
+
+The screen at a glance
+----------------------
+
+Everything is on one page. Here is where things are.
+
+1. Folders menu
+   ☰ shows or hides the sidebar on narrow screens.
+
+2. Search box
+   People, pets, tags and folders; pick several to combine them.
+
+3. Type
+   Show only photos, videos or Live Photos.
+
+4. Year
+   Jump straight to a year.
+
+5. Select ☑
+   Pick photos to move, tag or trash.
+
+6. Import ⤒
+   Add photos and videos from this computer or the iPad.
+
+7. Quick links
+   All photos · Duplicates · Trash · Settings.
+
+8. Folders
+   Your folders, with counts. Tags, Faces and Drives appear here when you have
+   them.
+
+9. Timeline
+   Months with counts. Click a photo to open the viewer.
+
+10. Language & status
+   Switch English / German; see scan, thumbnail and drive status.
+
+A typical session
+Plug in the drive and double-click Start shoebox. Scan (quick when little has
+changed) and open the photo app. Import the photos of an event: pick them,
+name the event, and shoebox creates the event folder. Then tag and sort. Look
+at Duplicates now and then, and run the Backup check after every backup.
+
+Get started in three steps
+--------------------------
+
+macOS, Intel (10.13 or newer) and Apple Silicon. Nothing to install.
+
+1. Put it on the drive
+   Unpack shoebox-macos.tar.gz from the release. Copy shoebox-macos and Start
+   shoebox.command to the top folder of your photo drive (next to your photo
+   folders). Optional: the recognizer folder for faces. The archive also holds
+   this guide in the folder guide.
+
+2. Start the launcher
+   Double-click Start shoebox.command. A Terminal window opens (leave it open)
+   and the launcher appears in your browser. If macOS asks, right-click the
+   file and choose Open.
+
+3. Scan, then open
+   Add your drive (click it, or type /Volumes/MyDrive), press Scan, then Start
+   photo app. The first scan reads every file once and takes a while on a big
+   drive; later scans only look at what changed.
+
+Launcher tasks
+Scan: find new, moved and changed photos
+Verify: check that nothing was lost or damaged
+Recognize: find faces (and, with Recognize pets, cats and dogs)
+Backup check: is the 2nd folder a complete copy of the 1st?
+
+[Screenshot: The launcher: 1 choose the drive or folder, 2 pick a task, 3 open
+the photo app.]
+
+Good to know
+- Videos get preview images if you put a static ffmpeg next to the program
+  (.shoebox/bin/ffmpeg). Without it, the browser grabs a frame instead.
+- shoebox keeps its index and thumbnails in a hidden .shoebox folder on the
+  drive, so the drive can move to another computer.
+- Closing the Terminal window stops shoebox.
+
+The app speaks English and German: pick the language at the bottom of the
+sidebar.
+
+Browse and view
+---------------
+
+Scroll through the timeline, jump by year, open a photo.
+
+Timeline
+Photos are grouped by capture date, newest first. The Year menu jumps; the
+month heading shows where you are. A photo without a capture date takes the
+month in the name of its event folder (2020-07, 2020.07, 20-07 or 20.07), or
+else the earlier of the file’s created and modified dates; the info panel then
+marks the date as estimated.
+
+Folders
+The sidebar mirrors the folders on your drive. Click one to see only its
+photos. Rename or move a folder from its chip.
+
+Viewer
+Click a photo. ⓘ opens the info panel: date (marked estimated when it is not
+the day the photo was taken), camera, size, tags, people, and buttons to open
+the folder or copy the path.
+
+Rotate
+r turns left, Shift+R right. For JPEGs this changes only the two bytes of the
+rotation flag; for other formats the turn exists in shoebox only.
+
+[Screenshot: The viewer with its info panel.]
+
+Keyboard in the viewer
+← →: previous / next
+i: show / hide the info panel
+Space: open / close the viewer (on a photo picked with the arrow keys)
+r · Shift+R: rotate left / right
+Esc: close the viewer
+
+Find and organise
+-----------------
+
+Search, select, tag and move: all of it works on many photos at once.
+
+Search
+Type in the search box: suggestions appear for tags, people and folders. Pick
+several and they become chips that narrow the result; × removes one, Clear all
+starts over.
+
+Select
+Press ☑, then click photos (Shift-click for a range; on the iPad just tap).
+“Select all” on a month heading takes the whole month.
+
+Tag
+Add tag… puts your own tag on the selection. Tags live in shoebox’s index,
+never in the photo files.
+
+Move
+Move… asks for a folder. New folders are created, nothing is ever overwritten,
+and RAW, Live Photo and sidecar files move along. The photos’ own tags always
+go with them. “Keep folder tags” also keeps the old folder’s tags as own tags;
+folder tags always follow the new folder.
+
+[Screenshot: Suggestions as you type.]
+
+[Screenshot: Three photos selected; the bar offers Move, Tag and Trash.]
+
+[Screenshot: Adding a tag.]
+
+[Screenshot: Moving into a new event folder.]
+
+Import, duplicates and trash
+----------------------------
+
+Import
+Press ⤒ (or drop files on the window). Choose year, month and an event name:
+shoebox creates the event folder YYYY-MM Event, the files keep their dates,
+and files already in the library are skipped. In Settings you choose how new
+event folders are named: 4 or 2 digits for the year, a hyphen or a dot between
+year and month, and a space, _, ., - or nothing before the name, for example
+YY.MM_Event. Folders you already have are not renamed, and all these forms are
+recognised.
+
+Duplicates
+Duplicates lists four kinds: identical, same photo in another size, original
+and edited, and look-alikes. Tick delete this copy on what you want gone; the
+best file stays and at least one per group always does. Tags and capture dates
+of a removed copy carry over.
+
+Shortcuts
+Clear Same Folder Copies and Clear Lower Quality Copies clean up the clear-cut
+cases in one go. Groups of similar photos need your decision: choose Different
+photos or Versions of one photo, and shoebox remembers it so the group does
+not return.
+
+Trash
+Nothing is deleted right away. Trashed photos wait in .shoebox/trash on the
+drive: Put back or Delete for good.
+
+[Screenshot: Import dialog.]
+
+[Screenshot: The trash page.]
+
+[Screenshot: Duplicates: a pre-ticked messenger copy next to its original.]
+
+People and pets
+---------------
+
+Optional: shoebox finds faces, cats and dogs; you give them names.
+
+Find them
+Install the recognizer once (recognizer/install.sh /Volumes/MyDrive). Then
+close the photo app and run Recognize (and Recognize pets) in the launcher. A
+Faces section appears in the sidebar.
+
+Name them
+Under Unnamed, shoebox shows cards of similar faces. Type a name once and the
+whole card is named; later, confirm (✓) or reject (✗) the suggestions. Group
+people, merge two cards of one person, mark strangers with Ignore.
+
+In the viewer
+The info panel lists who is on the photo and draws a box around each face or
+pet. Click a name to see all their photos, or draw a box around a face or pet
+that was missed.
+
+Search
+Names work in the search box like tags, and so do kinds such as “all cats”.
+Combine a person with a tag, a folder or another person.
+
+New photos
+Recognition does not start by itself after an import yet. Close the photo app
+and run Recognize again: it only looks at the new photos.
+
+[Screenshot: Unnamed cards: one name for every face on a card.]
+
+[Screenshot: The info panel names the girl and the cat; boxes show where they
+are.]
+
+Sample pictures are drawn comics, not real photos.
+
+Drives, backups and the iPad
+----------------------------
+
+Several drives
+Start shoebox with more than one drive and each one appears in the sidebar.
+All drives gives you one common timeline across all of them, and shows
+backups, photos that exist on more than one drive, and people across drives. A
+drive that is unplugged is shown as offline.
+
+Backup check
+Choose the original first and the backup second. shoebox compares the two
+indexes (no photo is read) and lists what is not on the backup yet, what
+differs and what exists only on the backup. Also re-read the backup finds bit
+rot.
+
+iPad & other devices
+In Terminal: shoebox serve /Volumes/MyDrive --lan. It prints an address and a
+PIN; open the address in Safari on the same Wi-Fi and enter the PIN once.
+Swipe in the viewer, tap to select.
+
+Command line (optional)
+shoebox scan <folder>: index new, moved and changed files
+shoebox verify <folder>: re-read files and compare with the index
+shoebox recognize <folder> [--pets]: find faces (and pets)
+shoebox backup <original> <backup>: is the backup complete?
+shoebox serve <folder> [--lan] [--pin …]: open the photo app
+
+[Screenshot: On the iPad the same page works with touch.]
+
+Your photos are safe
+--------------------
+
+The design rule is simple: shoebox reads your originals and never writes
+anything into them.
+
+- Read-only
+   Metadata, thumbnails and tags are kept in the index on the drive, never
+   inside a photo. Capture dates and created dates never change.
+
+- Guarded
+   Every scan is checked: size, dates and a full hash before and after. Any
+   difference is an error.
+
+- Only on your command
+   Originals change only through your actions: move, rename, trash, import.
+   Always a rename, never a copy, and only if the file still matches the
+   index.
+
+- Local
+   No cloud, no account. By default only this computer can connect; other
+   devices need --lan and a PIN.
+
+If something looks off
+----------------------
+
+The grid is empty. Run Scan in the launcher first, then start the photo app.
+
+New photos are missing. Scan again. It is quick: only new and changed files
+are read.
+
+A video has no preview. Add ffmpeg (see “Good to know”) and restart the photo
+app.
+
+The iPad cannot connect. Same Wi-Fi? Started with --lan? Enter the PIN printed
+in Terminal. Restarting shoebox asks for the PIN again.
+
+A drive shows as offline. Plug it in again; shoebox picks it up when you
+reload.
+
+shoebox is open source · github.com/svenfritsch/shoebox
