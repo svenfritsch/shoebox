@@ -267,6 +267,8 @@
   "dups.clear": "Clear",
   "dups.preselect": "Preselect copies",
   "dups.preselect_hint": "Tick what the page suggests: of every photo the identical and the clearly worse copies, never the best file.",
+  "dups.preselect_edited": "Preselect edited",
+  "dups.preselect_edited_hint": "Tick the edited versions, so every original stays.",
   "dups.clear_hint": "Untick all copies.",
   "dups.in_copies": "in a folder for copies",
   "settings.copy_folders": "Folders that hold copies",
