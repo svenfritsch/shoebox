@@ -5059,4 +5059,7 @@ I18n.ready.then(function () {
       setInterval(loadInfo, 20000);
     });
   });
-}).catch(function (e) { console.error(e); });
+}).catch(function (e) { console.error(e); }).then(function () {
+  // Folders, tags and faces load separately; show them once all are there.
+  $('sidebar').classList.remove('loading');
+});
