@@ -29,6 +29,9 @@ current status and next step. Update its status table when a phase moves.
   Each goes through `organize::trash_files` (a rename into the backup's own
   trash, only if the file still matches the backup's index), emptied again
   only if the user asked for "for good". Never anything on the original.
+- Moving to the trash from the photo view and the timeline selection is off by
+  default: the library setting `allow_trash` (Settings, "Allow move to trash")
+  shows the trash icon and the selection button.
 - UI text is never hard-coded: `tr()`/`trn()`/`data-i18n` with a key in both
   `core/i18n/en.json` and `de.json` (see docs/phase8.md; `core/tests/i18n.rs`
   checks it).
