@@ -1178,8 +1178,11 @@ function renderPanel() {
 // stay as they are by default): the photo view's trash icon and the
 // selection bar's button only show then.
 var allowTrash = false;
+var trashCount = 0;
 
 function applyAllowTrash() {
+  // The trash page stays reachable while something is in it (or while it is open).
+  $('nav-trash').hidden = !allowTrash && !trashCount && state.filter.view !== 'trash';
   var d = state.data, i = state.open;
   $('lb-trash').hidden = !allowTrash || isAll() || i < 0 || !d;
   $('sel-trash').hidden = !allowTrash;
@@ -1312,6 +1315,8 @@ function loadInfo() {
     ];
     if (info.missing) parts.push(tr('status.missing', { n: info.missing }));
     $('nav-trash').textContent = info.trash ? tr('side.trash_n', { n: info.trash }) : tr('side.trash');
+    trashCount = info.trash || 0;
+    applyAllowTrash();
     if (info.thumbs_done < info.thumbs_total) {
       parts.push(tr('status.thumbs', { pct: Math.floor(100 * info.thumbs_done / info.thumbs_total) }));
     }
