@@ -71,6 +71,9 @@ pub struct Stats {
     pub full_hashed: u64,
     pub bytes_full_hashed: u64,
     pub hash_pending: u64,
+    /// New files whose content the drive had before this scan (see `arrivals`).
+    pub duplicates: Vec<crate::arrivals::Duplicate>,
+    pub duplicates_total: u64,
     pub thumbs: thumbs::Stats,
     /// Files that could not be indexed this time, with the reason.
     pub skipped: Vec<String>,
@@ -120,6 +123,7 @@ pub fn run(opts: &Options) -> Result<Stats> {
     let conn = db::open(&db_path)?;
 
     say!("Scanning {}", root.display());
+    let new_after = crate::arrivals::start(&conn)?;
     let mut stats = index_library(&conn, &root)?;
     say!(
         "Index: {} added, {} changed, {} moved, {} unchanged ({} with time-zone shift), {} missing.",
@@ -151,6 +155,18 @@ pub fn run(opts: &Options) -> Result<Stats> {
         })? as u64;
     if stats.hash_pending > 0 {
         say!("{} files still need a full hash (run `shoebox scan` again).", stats.hash_pending);
+    }
+    if opts.full_hash {
+        (stats.duplicates, stats.duplicates_total) = crate::arrivals::finish(&conn, new_after)?;
+        if stats.duplicates_total > 0 {
+            say!("{} of the new files are copies of files the drive already had:", stats.duplicates_total);
+            for d in stats.duplicates.iter().take(20) {
+                say!("  {} = {}", d.path, d.of);
+            }
+            if stats.duplicates_total > 20 {
+                say!("  … {} more", stats.duplicates_total - 20);
+            }
+        }
     }
     if !stats.skipped.is_empty() {
         say!("Skipped ({}):", stats.skipped.len());

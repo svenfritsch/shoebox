@@ -13,9 +13,14 @@ current status and next step. Update its status table when a phase moves.
   files; never change capture dates or created dates.
 - Any code that reads originals must be covered by the guard (snapshot size,
   mtime, created, full hash before and after; fail on any difference).
-- Originals change only through explicit user actions (move, rename, trash,
-  import) in `organize.rs`/`import.rs`: rename only, never copy, never
-  replace, and only files that still match the index.
+- Originals change only through explicit user actions (move, rename, trash)
+  in `organize.rs`: rename only, never copy, never replace, and only files
+  that still match the index. There is no import: photos are copied onto the
+  drive in the file manager (which keeps their dates) and a scan finds them.
+- After a scan, `arrivals::cleanup` (launcher button "Delete the new copies")
+  may remove files the scan added whose content (full hash) was on the drive
+  before that scan, through `duplicates::remove_copies` (the older copy stays;
+  trash or, if asked, for good). Never anything but those new copies.
 - The one exception: turning a JPEG (`organize::rotate`) overwrites the two
   bytes of its EXIF Orientation tag in place, only when the file matches the
   index, and checks the full hash afterwards (old content plus those two

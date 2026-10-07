@@ -10,8 +10,8 @@
 //! ones are rendered on first request, under the guard), and originals are
 //! streamed as they are, with range requests for video seeking.
 //!
-//! Originals change only through explicit actions (`organize.rs`,
-//! `import.rs`): move, rename a folder, trash/restore, import. They run one
+//! Originals change only through explicit actions (`organize.rs`): move,
+//! rename a folder, trash/restore, turn a JPEG. They run one
 //! at a time, never while a scan is running, and need an `X-Shoebox` header
 //! (like every non-GET request), which a web page on another origin cannot
 //! send without a CORS preflight that this server never grants.
@@ -46,13 +46,12 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use axum::Json;
 use axum::Router;
-use axum::body::{Body, Bytes};
+use axum::body::Body;
 use axum::extract::{ConnectInfo, Path, Query, Request, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, Uri, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use http_body_util::BodyExt;
 use libheif_rs::LibHeif;
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -65,7 +64,7 @@ use crate::classify::Kind;
 use crate::clusters;
 use crate::db;
 use crate::duplicates;
-use crate::import;
+use crate::library;
 use crate::media;
 use crate::multi;
 use crate::organize;
@@ -371,7 +370,6 @@ impl App {
         if covers > 0 || pruned > 0 {
             println!("{name}: tidied up, {covers} people got a picture, {pruned} face crops nobody needs were removed.");
         }
-        import::clean_incoming(&root);
         let (heal_tx, heal_rx) = mpsc::channel();
         let (backup_tx, backup_rx) = mpsc::channel();
         let (clusters_tx, clusters_rx) = mpsc::channel();
@@ -813,8 +811,6 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/files/{id}/rotate", post(rotate_file))
         .route("/api/move", post(move_files))
         .route("/api/folders/{id}/rename", post(rename_folder))
-        .route("/api/import/folder", post(import_folder))
-        .route("/api/import", post(import_file))
         .route("/api/duplicates", get(duplicates_list))
         .route("/api/duplicates/decide", post(duplicates_decide))
         .route("/api/duplicates/remove", post(duplicates_remove))
@@ -2017,94 +2013,6 @@ async fn rename_folder(
     change(&app, move |app, conn| organize::rename_folder(conn, &app.root, id, &req.path)).await.map(Json)
 }
 
-#[derive(Deserialize)]
-struct EventFolderRequest {
-    year: i32,
-    month: u32,
-    name: String,
-}
-
-/// The `YYYY-MM Name` folder an import goes to, and whether it exists.
-async fn import_folder(State(app): State<Arc<App>>, Json(req): Json<EventFolderRequest>) -> ApiResult<Json<serde_json::Value>> {
-    blocking(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
-        let folder = import::event_folder(&import::event_pattern(&conn)?, req.year, req.month, &req.name)
-            .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
-        let folder_fold = organize::fold(&folder);
-        let existing = app
-            .snapshot(&conn)?
-            .folders
-            .iter()
-            .find(|f| organize::fold(&f.path) == folder_fold)
-            .map(|f| (f.id, f.path.clone()));
-        Ok(Json(serde_json::json!({
-            "folder": existing.as_ref().map(|e| e.1.clone()).unwrap_or(folder),
-            "exists": existing.is_some(),
-            "id": existing.map(|e| e.0),
-        })))
-    })
-    .await
-}
-
-#[derive(Deserialize)]
-struct ImportQuery {
-    folder: String,
-    name: String,
-    /// `File.lastModified` in the browser (ms since 1970).
-    modified: Option<i64>,
-    /// Import even if the library has this content already.
-    keep: Option<u8>,
-}
-
-/// One file as the raw request body, streamed to the drive.
-async fn import_file(State(app): State<Arc<App>>, Query(q): Query<ImportQuery>, body: Body) -> ApiResult<Json<import::Imported>> {
-    let (folder, name, modified) = (q.folder.clone(), q.name.clone(), q.modified);
-    let mut upload = blocking(&app, move |app| {
-        if jobs_running(&app.conn.lock().unwrap())? {
-            return Err(ApiError::Conflict("a scan is running; try again when it is done".into()));
-        }
-        import::Upload::begin(&app.root, &folder, &name, modified).map_err(|e| ApiError::BadRequest(format!("{e:#}")))
-    })
-    .await?;
-
-    // Writing happens on a blocking thread; the body arrives here.
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<Bytes>(16);
-    let writer = tokio::task::spawn_blocking(move || -> Result<import::Upload> {
-        while let Some(chunk) = rx.blocking_recv() {
-            if let Err(e) = upload.write(&chunk) {
-                upload.abort();
-                return Err(e);
-            }
-        }
-        Ok(upload)
-    });
-    let mut body = body;
-    let mut cut_off = false;
-    while let Some(frame) = body.frame().await {
-        match frame {
-            Ok(frame) => {
-                if let Ok(data) = frame.into_data()
-                    && tx.send(data).await.is_err()
-                {
-                    break; // the writer failed; it says why
-                }
-            }
-            Err(_) => {
-                cut_off = true;
-                break;
-            }
-        }
-    }
-    drop(tx);
-    let upload = writer.await.map_err(|e| ApiError::Internal(anyhow::anyhow!("writer failed: {e}")))?.map_err(ApiError::Internal)?;
-    if cut_off {
-        upload.abort();
-        return Err(ApiError::BadRequest("the upload was cut off".into()));
-    }
-    let keep = q.keep.is_some_and(|k| k != 0);
-    change(&app, move |app, conn| upload.finish(conn, &app.root, keep)).await.map(Json)
-}
-
 #[derive(Serialize)]
 struct DuplicateList<'a> {
     groups: &'a [duplicates::Group],
@@ -2193,7 +2101,7 @@ async fn duplicates_copy_folders(State(app): State<Arc<App>>) -> ApiResult<Json<
 async fn event_pattern_get(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
     blocking(&app, |app| {
         let conn = app.conn.lock().unwrap();
-        Ok(Json(serde_json::json!({ "pattern": import::event_pattern(&conn)?.format() })))
+        Ok(Json(serde_json::json!({ "pattern": library::event_pattern(&conn)?.format() })))
     })
     .await
 }
@@ -2204,7 +2112,7 @@ struct EventPatternRequest {
 }
 
 async fn event_pattern_set(State(app): State<Arc<App>>, Json(req): Json<EventPatternRequest>) -> ApiResult<Json<serde_json::Value>> {
-    change(&app, move |_, conn| import::set_event_pattern(conn, &req.pattern))
+    change(&app, move |_, conn| library::set_event_pattern(conn, &req.pattern))
         .await
         .map(|p| Json(serde_json::json!({ "pattern": p.format() })))
 }

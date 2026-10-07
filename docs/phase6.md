@@ -86,12 +86,12 @@ Built (first slice, `core/src/launcher.rs`, page in `core/launcher-web/`):
   (409). Only Cancel and "Stop photo app" stay usable.
 - **Exception: recognition** (`recognize`, `recognize_pets`, `faces_stats`).
   It may run while the photo app is open, and the photo app may be started
-  while it runs, so after a scan and an import the person can browse while the
+  while it runs, so after a scan the person can browse while the
   faces are found. This is safe because `serve` already tolerates it: both
   open the databases shared (`db::open_shared`, 10 s busy timeout), `serve`
   skips its own clustering and drawn-face embedding while a recognition job
-  is running (`recognize::running`), recognition does not block moves, tags or
-  imports, and a file moved or changed meanwhile is skipped by the guard.
+  is running (`recognize::running`), recognition does not block moves or tags
+  and a file moved or changed meanwhile is skipped by the guard.
   Scan, Verify and Backup check stay locked while the app runs
   (`launcher::runs_beside_app`; test
   `recognition_runs_while_the_photo_app_is_open`).

@@ -226,6 +226,7 @@ var reloadedFor = 0;
 function render(job) {
   if (!job.id) return;
   showCleanup(job);
+  showArrivals(job);
   if (job.kind === 'backup' && !job.running && reloadedFor !== job.id) { reloadedFor = job.id; loadConfig(); }
   $('progress-card').hidden = false;
   var name = kindName(job.kind);
@@ -262,15 +263,17 @@ function render(job) {
   $('job-error').hidden = !job.error;
   $('job-error').textContent = job.error || '';
 
+  var dupNote = arrivalNotes(job);
   var only = $('only-failed').checked;
   var items = job.failures.concat(only ? [] : job.recent_ok.slice().reverse());
   var ul = $('results');
   ul.textContent = '';
   items.slice(0, 600).forEach(function (f) {
-    var li = document.createElement('li'); li.className = f.ok ? 'ok' : 'bad';
+    var again = dupNote[f.path.normalize('NFC')];
+    var li = document.createElement('li'); li.className = f.ok ? 'ok' + (again ? ' dup' : '') : 'bad';
     var m = document.createElement('span'); m.className = 'mark'; m.textContent = f.ok ? '✓' : '✗';
     var pa = document.createElement('span'); pa.className = 'path'; pa.textContent = f.path;
-    var n = document.createElement('span'); n.className = 'note'; n.textContent = f.note;
+    var n = document.createElement('span'); n.className = 'note'; n.textContent = again || f.note;
     li.appendChild(m); li.appendChild(pa);
     if (job.kind === 'backup' && job.roots.length === 2) {
       var r = document.createElement('button');
@@ -292,6 +295,43 @@ function render(job) {
   }
   $('lines').textContent = job.lines.join('\n');
 }
+
+// After a scan: new files whose content the drive had already (`arrivals.rs`).
+function rootPrefix(job, r) {
+  return job.results.length > 1 ? r.root.split(/[\\/]/).filter(Boolean).pop() + ': ' : '';
+}
+function arrivalNotes(job) {
+  var notes = {};
+  if (job.kind !== 'scan') return notes;
+  job.results.forEach(function (r) {
+    ((r.result && r.result.duplicates) || []).forEach(function (d) {
+      notes[(rootPrefix(job, r) + d.path).normalize('NFC')] = tr('launcher.arrivals.note', { of: d.of });
+    });
+  });
+  return notes;
+}
+var arrivalsJob = null;
+function showArrivals(job) {
+  var hit = job.kind === 'scan' && !job.running ? job.results.filter(function (r) { return r.result && r.result.duplicates_total > 0; }) : [];
+  var box = $('arrivals-box');
+  box.hidden = !hit.length;
+  if (box.hidden) return;
+  arrivalsJob = { id: job.id, roots: hit.map(function (r) { return r.root; }) };
+  arrivalsJob.n = hit.reduce(function (n, r) { return n + r.result.duplicates_total; }, 0);
+  $('arrivals-text').textContent = hit.length === 1
+    ? tr('launcher.arrivals.found', { n: arrivalsJob.n, drive: driveName(hit[0].root) })
+    : tr('launcher.arrivals.found_many', { n: arrivalsJob.n });
+}
+$('arrivals-forever').checked = (function () { try { return localStorage.getItem('shoebox.arrivals.forever') === '1'; } catch (e) { return false; } })();
+$('arrivals-go').onclick = function () {
+  if (!arrivalsJob) return;
+  var forever = $('arrivals-forever').checked;
+  if (!window.confirm(tr(forever ? 'launcher.arrivals.confirm_forever' : 'launcher.arrivals.confirm', { n: arrivalsJob.n }))) return;
+  try { localStorage.setItem('shoebox.arrivals.forever', forever ? '1' : '0'); } catch (e) { /* only a convenience */ }
+  api('/api/job', { kind: 'scan_cleanup', roots: arrivalsJob.roots, forever: forever }).then(poll).catch(function (e) {
+    $('job-error').hidden = false; $('job-error').textContent = e.message;
+  });
+};
 
 // After a backup check: copies removed on the duplicates screen that the backup still holds.
 var cleanupJob = null;
@@ -318,7 +358,10 @@ $('cleanup-go').onclick = function () {
 
 function summaryOf(kind, r) {
   var out = [];
-  if (kind === 'scan') out.push(tr('launcher.sum.added', { n: r.added }), tr('launcher.sum.moved', { n: r.moved }), tr('launcher.sum.changed', { n: r.changed }), tr('launcher.sum.missing', { n: r.missing }));
+  if (kind === 'scan') {
+    out.push(tr('launcher.sum.added', { n: r.added }), tr('launcher.sum.moved', { n: r.moved }), tr('launcher.sum.changed', { n: r.changed }), tr('launcher.sum.missing', { n: r.missing }));
+    if (r.duplicates_total) out.push(tr('launcher.sum.arrivals', { n: r.duplicates_total }));
+  } else if (kind === 'scan_cleanup') out.push(tr('launcher.sum.arrivals_removed', { n: r.removed.length }), tr('launcher.sum.cleanup_skipped', { n: r.skipped.length }));
   else if (kind === 'backup') out.push(tr('launcher.sum.backup_covered', { covered: r.report.covered, compared: r.report.compared }), tr('launcher.sum.backup_missing', { n: r.report.missing }), tr('launcher.sum.backup_different', { n: r.report.different }), tr('launcher.sum.backup_extra', { n: r.report.extra }));
   if (kind === 'backup' && r.report.removed) out.push(tr('launcher.sum.backup_removed', { n: r.report.removed }));
   else if (kind === 'backup_cleanup') out.push(tr('launcher.sum.cleanup', { n: r.removed.length }), tr('launcher.sum.cleanup_skipped', { n: r.skipped.length }));

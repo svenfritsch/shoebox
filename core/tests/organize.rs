@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use common::*;
 use serde_json::{Value, json};
-use shoebox::fingerprint::{self, Stamp};
+use shoebox::fingerprint::Stamp;
 
 /// Every file outside `.shoebox` by content: (hash, size, mtime, created).
 fn contents(lib: &Library) -> Vec<(String, Stamp)> {
@@ -199,95 +199,22 @@ fn jpeg_bytes(seed: u8) -> Vec<u8> {
     out.into_inner()
 }
 
-fn upload(addr: std::net::SocketAddr, folder: &str, name: &str, modified: Option<i64>, keep: bool, data: &[u8]) -> Response {
-    let mut path = format!("/api/import?folder={}&name={}", encode(folder), encode(name));
-    if let Some(m) = modified {
-        path.push_str(&format!("&modified={m}"));
-    }
-    if keep {
-        path.push_str("&keep=1");
-    }
-    request(addr, "POST", &path, &[("Content-Type", "application/octet-stream")], data)
-}
-
 #[test]
-fn import_writes_into_the_event_folder_and_never_replaces() {
-    let lib = Library::new("import");
-    lib.scan_with(false, false); // no full hashes yet: duplicates are found anyway
-    let before = lib.snapshot();
+fn the_event_folder_pattern_is_a_setting_of_the_library() {
+    let lib = Library::new("pattern");
+    lib.scan_with(false, false);
     let server = start(&lib, None);
     let addr = server.addr;
-
-    let folder = post(addr, "/api/import/folder", &json!({ "year": 2021, "month": 3, "name": " Ausflug O\u{308}tztal " })).json();
-    assert_eq!(folder, json!({ "folder": "2021-03 Ausflug \u{d6}tztal", "exists": false, "id": null }));
-    let folder = folder["folder"].as_str().unwrap().to_string();
-    assert_eq!(post(addr, "/api/import/folder", &json!({ "year": 2021, "month": 13, "name": "x" })).status, 400);
-
-    // The naming pattern is a setting of the library; the default is kept.
+    // The default is kept as "no setting".
     assert_eq!(get(addr, "/api/event-pattern").json(), json!({ "pattern": "YYYY-MM Name" }));
     assert_eq!(post(addr, "/api/event-pattern", &json!({ "pattern": "YY.MM_Name" })).json(), json!({ "pattern": "YY.MM_Name" }));
     assert_eq!(get(addr, "/api/event-pattern").json(), json!({ "pattern": "YY.MM_Name" }));
-    let short = post(addr, "/api/import/folder", &json!({ "year": 2021, "month": 3, "name": "Ausflug" })).json();
-    assert_eq!(short["folder"], "21.03_Ausflug");
-    // Not a pattern, a year the pattern cannot write, a name read back wrongly.
+    // Not a pattern: nothing changes.
     assert_eq!(post(addr, "/api/event-pattern", &json!({ "pattern": "MM-YYYY Name" })).status, 400);
-    assert_eq!(post(addr, "/api/import/folder", &json!({ "year": 1998, "month": 8, "name": "x" })).status, 400);
-    assert_eq!(post(addr, "/api/import/folder", &json!({ "year": 2021, "month": 3, "name": "2019 Reise" })).status, 400);
     assert_eq!(get(addr, "/api/event-pattern").json(), json!({ "pattern": "YY.MM_Name" }));
     assert_eq!(post(addr, "/api/event-pattern", &json!({ "pattern": "YYYY-MM Name" })).status, 200);
     assert_eq!(get(addr, "/api/event-pattern").json(), json!({ "pattern": "YYYY-MM Name" }));
-
-    // Streamed in, with the browser's modification date.
-    let data = jpeg_bytes(7);
-    let modified = 1_600_000_000_123i64;
-    let r = upload(addr, &folder, "IMG_1.JPG", Some(modified), false, &data);
-    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
-    let r = r.json();
-    assert_eq!(r["status"], "imported");
-    assert_eq!(r["path"], format!("{folder}/IMG_1.JPG"));
-    let path = lib.path(&format!("{folder}/IMG_1.JPG"));
-    assert_eq!(fs::read(&path).unwrap(), data);
-    assert_eq!(fingerprint::stamp(&path).unwrap().mtime_ns, modified as i128 * 1_000_000);
-    let id = r["id"].as_i64().unwrap();
-    let (_, full_hash, _) = lib.record(&format!("{folder}/IMG_1.JPG")).unwrap();
-    assert_eq!(full_hash.as_deref(), Some(blake3::hash(&data).to_hex().as_str()));
-    assert_eq!(tags_of(&lib, id), "Ausflug Ötztal");
-    let timeline = get(addr, "/api/timeline").json();
-    assert!(ids(&timeline).contains(&id));
-
-    // The same content again (under another name): not imported twice.
-    let again = upload(addr, &folder, "Kopie.jpg", None, false, &data).json();
-    assert_eq!((again["status"].as_str(), again["duplicate_of"].as_str()), (Some("duplicate"), Some(r["path"].as_str().unwrap())));
-    assert!(!lib.path(&format!("{folder}/Kopie.jpg")).exists());
-    // Also content that is in the library but not fully hashed yet.
-    let existing = fs::read(lib.path("Familie/Weihnachten/DSC_2001.jpg")).unwrap();
-    let dup = upload(addr, &folder, "DSC.jpg", None, false, &existing).json();
-    assert_eq!(dup["duplicate_of"], "Familie/Weihnachten/DSC_2001.jpg");
-    // Unless asked for.
-    let kept = upload(addr, &folder, "DSC.jpg", None, true, &existing).json();
-    assert_eq!(kept["status"], "imported");
-
-    // A taken name (in any case) gets a number; nothing is replaced.
-    let other = jpeg_bytes(8);
-    let second = upload(addr, &folder, "img_1.jpg", None, false, &other).json();
-    assert_eq!(second["path"], format!("{folder}/img_1 (2).jpg"));
-    assert_eq!(fs::read(&path).unwrap(), data);
-
-    // Refused before anything is written.
-    for (folder, name) in [(folder.as_str(), "../IMG_2.JPG"), (folder.as_str(), "notes.txt"), ("../draussen", "a.jpg"), (folder.as_str(), ".hidden.jpg")] {
-        assert_eq!(upload(addr, folder, name, None, false, &other).status, 400, "{folder}/{name}");
-    }
-    assert_eq!(upload(addr, &folder, "leer.jpg", None, false, b"").status, 400);
-    assert_eq!(listing(&lib.path(".shoebox/incoming")), Vec::<String>::new());
     server.stop().unwrap();
-
-    // Nothing that was there before changed.
-    let after = lib.snapshot();
-    for (path, value) in &before {
-        assert_eq!(after.get(path), Some(value), "{}", path.display());
-    }
-    assert_eq!(after.len(), before.len() + 3);
-    assert_index_in_line(&lib);
 }
 
 /// Rings: something with structure for the perceptual hash.

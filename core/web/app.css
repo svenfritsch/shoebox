@@ -181,11 +181,7 @@ body.selecting #select { color: var(--accent); }
 .filelist .fstate { color: var(--muted); white-space: nowrap; }
 .filelist .fstate.ok { color: #2f8a3b; }
 .filelist .fstate.bad { color: #c63b2f; }
-.picker { display: block; border: 2px dashed var(--line); border-radius: 10px; padding: 16px; text-align: center; color: var(--muted); cursor: pointer; }
-.picker input { display: none; }
 
-.dropzone { position: fixed; inset: 0; z-index: 40; background: rgba(162,98,45,.25); border: 4px dashed var(--accent); display: flex; align-items: center; justify-content: center; pointer-events: none; }
-.dropzone p { background: var(--bg); padding: 12px 20px; border-radius: 12px; font-weight: 600; }
 .toast {
   position: fixed; left: 50%; transform: translateX(-50%); top: calc(var(--bar-h) + 12px); z-index: 35; max-width: 90vw;
   background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 10px; font-size: 14px;
@@ -488,9 +484,9 @@ body.selecting .sec .pick { display: inline; }
 .person-merged { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; min-width: 170px; }
 .person-merged .n { font-weight: 600; }
 
-/* ---- the common timeline of all drives is for looking: no folders, selecting or importing */
+/* ---- the common timeline of all drives is for looking: no folders or selecting */
 .scope-all #faces-section, .scope-all #tags-section, .scope-all #folders-section, .scope-all #tree,
-.scope-all #nav-trash, .scope-all #nav-faces, .scope-all #select, .scope-all #import { display: none !important; }
+.scope-all #nav-trash, .scope-all #nav-faces, .scope-all #select { display: none !important; }
 .note-bar { margin: 8px 16px 0; font-size: 13px; color: var(--muted); }
 .tabs { display: flex; gap: 6px; margin: 0 0 14px; }
 .tabs button { padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--fg); font: inherit; cursor: pointer; }

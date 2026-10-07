@@ -256,3 +256,18 @@ mod tests {
         assert!(tags_for(&p).is_empty());
     }
 }
+
+/// Setting (per library) that holds the `EventPattern` as text.
+pub const EVENT_PATTERN_KEY: &str = "event_pattern";
+
+pub fn event_pattern(conn: &rusqlite::Connection) -> anyhow::Result<EventPattern> {
+    Ok(crate::db::setting(conn, EVENT_PATTERN_KEY)?.and_then(|t| EventPattern::parse(&t)).unwrap_or_default())
+}
+
+pub fn set_event_pattern(conn: &rusqlite::Connection, text: &str) -> anyhow::Result<EventPattern> {
+    let Some(pattern) = EventPattern::parse(text) else { anyhow::bail!("“{text}” is not a folder naming pattern") };
+    // The default is kept as "no setting".
+    let value = (pattern != EventPattern::default()).then(|| pattern.format());
+    crate::db::set_setting(conn, EVENT_PATTERN_KEY, value.as_deref())?;
+    Ok(pattern)
+}
