@@ -1992,8 +1992,19 @@ function suggestedIds(g) {
 // The suggestion for all groups that are shown.
 function autoMarked() {
   var auto = {};
-  visibleGroups().forEach(function (g) { suggestedIds(g).forEach(function (id) { auto[id] = true; }); });
+  var edits = onlyEditedShown();
+  visibleGroups().forEach(function (g) {
+    suggestedIds(g).forEach(function (id) { auto[id] = true; });
+    // On the "Original and edited" screen the button ticks the edited
+    // versions, so the originals stay.
+    if (edits) g.files.forEach(function (f) { if (isEdit(f)) auto[f.id] = true; });
+  });
   return auto;
+}
+
+// True while "Original and edited" is the only kind that is shown.
+function onlyEditedShown() {
+  return DUP_KINDS_IDS.every(function (k) { return !!dupState.types[k] === (k === 'edited'); });
 }
 
 // Ticked files of the groups that are shown, as a set of ids.
@@ -2024,8 +2035,8 @@ function updateDupBar() {
   var n = Object.keys(marked).length;
   bar.appendChild(el('span', '', tr('dups.marked', { count: trn('count.copies', n) })));
   var same = Object.keys(auto).length === n && Object.keys(auto).every(function (id) { return marked[id]; });
-  var preselect = el('button', 'btn quiet', tr('dups.preselect'));
-  preselect.title = tr('dups.preselect_hint');
+  var preselect = el('button', 'btn quiet', tr(onlyEditedShown() ? 'dups.preselect_edited' : 'dups.preselect'));
+  preselect.title = tr(onlyEditedShown() ? 'dups.preselect_edited_hint' : 'dups.preselect_hint');
   preselect.disabled = same;
   preselect.onclick = function () {
     Object.keys(marked).forEach(function (id) { delete dupState.marked[id]; });

@@ -267,6 +267,8 @@
   "dups.clear": "Aufheben",
   "dups.preselect": "Kopien vorauswählen",
   "dups.preselect_hint": "Setzt die Vorschläge der Seite: von jedem Foto die identischen und eindeutig schlechteren Kopien, nie die beste Datei.",
+  "dups.preselect_edited": "Bearbeitete vorauswählen",
+  "dups.preselect_edited_hint": "Hakt die bearbeiteten Versionen an, damit jedes Original erhalten bleibt.",
   "dups.clear_hint": "Alle Kopien abwählen.",
   "dups.in_copies": "in einem Ordner für Kopien",
   "settings.copy_folders": "Ordner mit Kopien",
