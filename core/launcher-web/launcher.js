@@ -352,9 +352,8 @@ $('start-app').onclick = function () {
   if (serving) { window.open($('app-state').querySelector('a').href, '_blank', 'noopener'); return; }
   var roots = tickedPaths();
   if (!roots.length) { $('root').focus(); $('root-hint').textContent = tr('launcher.need_ticked'); return; }
-  api('/api/app', { roots: roots }).then(function (r) {
-    return appState().then(function () { window.open(r.url, '_blank', 'noopener'); });
-  }).catch(function (e) { $('app-state').textContent = e.message; });
+  // The server opens the browser itself when it starts the app.
+  api('/api/app', { roots: roots }).then(appState).catch(function (e) { $('app-state').textContent = e.message; });
 };
 $('stop-app').onclick = function () {
   api('/api/app/stop', {}).then(appState).then(function () { $('app-state').textContent = tr('launcher.app.stopped'); });
