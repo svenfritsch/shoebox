@@ -154,8 +154,9 @@ Scroll through the timeline, jump by year, open a photo.
 Timeline
 Photos are grouped by capture date, newest first. The Year menu jumps; the
 month heading shows where you are. A photo without a capture date takes the
-file’s created date, or else the month of its event folder; the info panel
-then marks the date as estimated.
+month in the name of its event folder (2020-07, 2020.07, 20-07 or 20.07), or
+else the earlier of the file’s created and modified dates; the info panel then
+marks the date as estimated.
 
 Folders
 The sidebar mirrors the folders on your drive. Click one to see only its
@@ -217,9 +218,11 @@ Import, duplicates and trash
 Import
 Press ⤒ (or drop files on the window). Choose year, month and an event name:
 shoebox creates the event folder YYYY-MM Event, the files keep their dates,
-and files already in the library are skipped. Coming soon: in Settings you
-choose your own pattern, using Y for the year and M for the month (J and M in
-German), for example YYYY.MM Event.
+and files already in the library are skipped. In Settings you choose how new
+event folders are named: 4 or 2 digits for the year, a hyphen or a dot between
+year and month, and a space, _, ., - or nothing before the name, for example
+YY.MM_Event. Folders you already have are not renamed, and all these forms are
+recognised.
 
 Duplicates
 Duplicates lists four kinds: identical, same photo in another size, original

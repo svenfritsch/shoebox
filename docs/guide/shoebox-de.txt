@@ -161,7 +161,8 @@ Durch die Zeitleiste scrollen, nach Jahr springen, ein Foto öffnen.
 Zeitleiste
 Fotos sind nach Aufnahmedatum gruppiert, neueste zuerst. Das Menü Jahr
 springt; die Monatsüberschrift zeigt, wo du bist. Ein Foto ohne Aufnahmedatum
-nimmt das Erstellungsdatum der Datei, sonst den Monat seines Ereignisordners;
+nimmt den Monat aus dem Namen seines Ereignisordners (2020-07, 2020.07, 20-07
+oder 20.07), sonst das frühere von Erstellungs- und Änderungsdatum der Datei;
 das Infofeld markiert das Datum dann als geschätzt.
 
 Ordner
@@ -231,8 +232,11 @@ Importieren
 ⤒ drücken (oder Dateien aufs Fenster ziehen). Jahr, Monat und Ereignisnamen
 wählen: shoebox legt den Ereignisordner JJJJ-MM Ereignis an, die Dateien
 behalten ihre Daten, und Dateien, die schon in der Bibliothek sind, werden
-übersprungen. In Kürze: In den Einstellungen wählst du dein eigenes Muster,
-mit J für das Jahr und M für den Monat, zum Beispiel JJJJ.MM Ereignis.
+übersprungen. In den Einstellungen wählst du, wie neue Ereignisordner heißen:
+4 oder 2 Ziffern für das Jahr, Bindestrich oder Punkt zwischen Jahr und Monat,
+und Leerzeichen, _, ., - oder nichts vor dem Namen, zum Beispiel
+JJ.MM_Ereignis. Vorhandene Ordner werden nicht umbenannt, und alle diese
+Formen werden erkannt.
 
 Duplikate
 Duplikate zeigt vier Arten: identisch, dasselbe Foto in anderer Größe,

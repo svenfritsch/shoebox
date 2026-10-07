@@ -110,39 +110,41 @@ dates are set from the browser's `File.lastModified`.
 ### Dates shown for a photo
 
 The timeline and the info panel use, in this order: the capture date in the
-file (EXIF, video container); else the file's created date; else the month
-of the nearest event folder (`YYYY-MM Name`, shown as the 1st of that
-month); else the modification date. Only the first is the day the photo was
-taken: for the others the info panel shows an "estimated" mark next to the
-date (hover: "Not the date the photo was taken") and a note that says which
-fallback was used. Before, the order was capture date, folder month,
-modification date; the created date goes first because it is usually the
-better guess, but a copy made years later has a created date of its own: the
-folder month stays the answer when the drive does not report a created date.
+file (EXIF, video container); else the month in the name of the nearest event
+folder (shown as the 1st of that month); else, for a file outside any event
+folder, the earlier of its created and modification dates (a copy gets a new
+created date but keeps the old modification date). Event folder names start with
+year then month, 4 or 2 digits for the year (20YY), `-` or `.` between, and
+any of the gaps listed under event folder naming below. Only the capture date is the day the photo was taken: for the
+others the info panel shows an "estimated" mark next to the date (hover: "Not
+the date the photo was taken") and a tooltip on the mark says which fallback was used.
+The created date does not come before the folder because a copy made years
+later has a created date of its own (a scan of 1998 sits in `98.08 Urlaub`
+but was created the day it was copied to the drive).
 Nothing is ever written to the file (see the rules at the top).
 
-### Event folder naming (planned: configurable)
+### Event folder naming (a setting)
 
-Today an import and "rename folder" use the fixed pattern `YYYY-MM Name`
-(`import::event_folder`, parsed again by the scanner into
-`folders.event_year/event_month`). Planned: **a setting in the UI's Settings
-page**, so everybody can use their own pattern, for example `JJJJ.MM Name` in
-Germany. The pattern uses the letters for year and month of the UI language
-(`Y`/`M` in English, `J`/`M` in German; `JJJJ` or `YYYY` is the 4-digit year,
-`MM` the month) plus the separator the user types. Open points before it is
-built:
+Settings page, "Event folder names": three dropdowns (no free text, so the
+result always fits what the scanner reads). Year first: 4 digits (`YYYY`) or 2
+(`YY`, 20YY); `-` or `.` between year and month (`MM`); then a space, `_`,
+`.`, `-` or nothing before the name. Stored per library as the setting
+`event_pattern` (text such as `YY.MM_Name`; the default `YYYY-MM Name` is
+stored as no setting). `/` is not offered: it would make a subfolder. The UI
+shows the pattern with the letters of its language (`JJJJ-MM Name` in
+German) in the import dialog, the rename hint and the move placeholder.
 
-- Store it per library (the `settings` table of `library.db`) or per
-  installation; default `YYYY-MM Name` / `JJJJ-MM Name` so existing libraries
-  keep working.
-- The scanner has to recognise event folders by the chosen pattern, and must
-  keep recognising `YYYY-MM Name` folders (old ones, other drives).
-- The import dialog, the rename hint (`rename.hint`) and the move dialog
-  placeholder (`move.placeholder`) show the pattern in the UI language.
+- The pattern only decides what the app **creates** (`import::event_folder`,
+  `POST /api/import/folder`, `GET/POST /api/event-pattern`). It refuses a year
+  the pattern cannot write (2-digit years are 2000 to 2099) and a name that
+  would not be read back (after a punctuation mark or nothing the name may
+  not start with a digit).
+- The scanner (`library::parse_event`) reads every form whatever the setting
+  is, so older folders and other drives keep their date, and `2020-07-15 Foo`
+  (a day) is no event folder. A scan refreshes the stored event fields of
+  folders already indexed.
 - A changed pattern does not rename existing folders (originals only change
-  through explicit actions); the scanner reads both.
-
-Until it exists, the guide (`docs/guide/`) says so.
+  through explicit actions).
 
 ### Move dialog: "Keep folder tags" (built)
 

@@ -563,7 +563,8 @@ pub(crate) fn upsert_folders(conn: &Connection, folders: &[RelPath], job_id: i64
         "INSERT INTO folders (parent_id, path, path_nfc, name, event_year, event_month, event_name, last_seen)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
          ON CONFLICT (path_nfc) DO UPDATE SET parent_id = excluded.parent_id, path = excluded.path,
-             last_seen = excluded.last_seen
+             event_year = excluded.event_year, event_month = excluded.event_month,
+             event_name = excluded.event_name, last_seen = excluded.last_seen
          RETURNING id",
     )?;
     for folder in folders {

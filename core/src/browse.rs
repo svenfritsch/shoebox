@@ -2,9 +2,10 @@
 //! and tags. Read-only over the index; the server keeps one `Snapshot` until
 //! another process (a scan) commits to the database.
 //!
-//! Sorting: newest first by capture date. A file without one takes its
-//! created date, failing that the month of its nearest `YYYY-MM Name`
-//! folder, and failing that its modification date; the info panel marks
+//! Sorting: newest first by capture date. A file without one takes the month
+//! of its nearest `YYYY-MM Name` folder (the date in the folder's name), else
+//! the earlier of its created and modification dates (a copy gets a new
+//! created date but keeps the old modification date); the info panel marks
 //! such a date as estimated. RAW files are not shown (their JPEG/HEIC twin is), and
 //! the short video of a Live Photo is folded into its still.
 
@@ -28,11 +29,12 @@ const LIVE_MAX_MS: i64 = 6_000;
 pub enum DateSource {
     /// Capture date from the file (EXIF, video container).
     File,
-    /// The file's created date (no capture date in the file).
-    Created,
-    /// Month of the event folder (no capture date, no created date).
+    /// Month of the event folder (no capture date in the file).
     Folder,
-    /// Modification date (nothing better known).
+    /// The file's created date, the earlier of the two (no capture date, not
+    /// in an event folder).
+    Created,
+    /// Modification date: the earlier of the two, or the only one known.
     Modified,
 }
 
@@ -232,14 +234,16 @@ impl Snapshot {
             .iter()
             .filter(|r| !hidden.contains(&r.id))
             .map(|r| {
-                // The capture date; else the file's created date; else the
-                // month of the event folder; else the modification date.
+                // The capture date; else the month of the event folder; else
+                // the earlier of the file's created and modification dates.
                 let created = r.created_ns.filter(|&ns| ns > 0);
                 let (sort, date_source) = match (&r.taken, created, event_of.get(&r.folder_id).copied().flatten()) {
                     (Some(t), _, _) => (t.clone(), DateSource::File),
-                    (None, Some(ns), _) => (local_time(ns), DateSource::Created),
-                    (None, None, Some((y, m))) => (format!("{y:04}-{m:02}-01T00:00:00"), DateSource::Folder),
-                    (None, None, None) => (local_time(r.mtime_ns), DateSource::Modified),
+                    (None, _, Some((y, m))) => (format!("{y:04}-{m:02}-01T00:00:00"), DateSource::Folder),
+                    (None, created, None) => {
+                        let (ns, source) = earlier_of(created, r.mtime_ns);
+                        (local_time(ns), source)
+                    }
                 };
                 Item {
                     id: r.id,
@@ -534,6 +538,15 @@ fn file_ids_with_tags(conn: &Connection, tags: &[i64]) -> Result<HashSet<i64>> {
     Ok(ids)
 }
 
+/// The earlier of the created and modification date; the created date wins a
+/// tie, and is the only one used when the modification date is not a date.
+fn earlier_of(created: Option<i64>, mtime_ns: i64) -> (i64, DateSource) {
+    match created {
+        Some(c) if c <= mtime_ns || mtime_ns <= 0 => (c, DateSource::Created),
+        _ => (mtime_ns, DateSource::Modified),
+    }
+}
+
 fn local_time(ns: i64) -> String {
     let secs = ns.div_euclid(1_000_000_000);
     match Local.timestamp_opt(secs, 0).single() {
@@ -604,4 +617,20 @@ pub fn details(conn: &Connection, id: i64) -> Result<Option<Details>> {
         .query_map([id], |r| Ok(FileTag { id: r.get(0)?, name: r.get(1)?, source: r.get(2)? }))?
         .collect::<rusqlite::Result<_>>()?;
     Ok(Some(d))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_earlier_of_created_and_modified_is_used() {
+        // A copy: created today, modified years ago.
+        assert_eq!(earlier_of(Some(2_000), 1_000), (1_000, DateSource::Modified));
+        // Modified later than created (edited since): the creation.
+        assert_eq!(earlier_of(Some(1_000), 2_000), (1_000, DateSource::Created));
+        assert_eq!(earlier_of(Some(1_000), 1_000), (1_000, DateSource::Created));
+        assert_eq!(earlier_of(None, 2_000), (2_000, DateSource::Modified));
+        assert_eq!(earlier_of(Some(1_000), 0), (1_000, DateSource::Created));
+    }
 }
