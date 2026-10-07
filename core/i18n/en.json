@@ -56,7 +56,7 @@
   "launcher.kind.scan_cleanup": "Delete copies the scan found",
   "launcher.arrivals.found": "{n} of the new files were already on {drive}. The older copies stay where they are.",
   "launcher.arrivals.found_many": "{n} of the new files were already on these drives. The older copies stay where they are.",
-  "launcher.arrivals.tags_hint": "The folder names of the deleted copies are saved as tags on the older copies.",
+  "launcher.arrivals.tags_hint": "The folder names of the deleted copies are saved as tags on the older originals.",
   "launcher.arrivals.forever": "Delete for good (skip the trash folder)",
   "launcher.arrivals.button": "Delete the new copies",
   "launcher.arrivals.confirm": "Move the {n} new copies that were already on the drive to the library's trash? The older copies are not touched.",
