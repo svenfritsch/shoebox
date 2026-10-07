@@ -56,6 +56,7 @@
   "launcher.kind.scan_cleanup": "Vom Scan gefundene Kopien löschen",
   "launcher.arrivals.found": "{n} der neuen Dateien waren schon auf {drive}. Die älteren Kopien bleiben, wo sie sind.",
   "launcher.arrivals.found_many": "{n} der neuen Dateien waren schon auf diesen Laufwerken. Die älteren Kopien bleiben, wo sie sind.",
+  "launcher.arrivals.tags_hint": "Die Ordnernamen der gelöschten Kopien werden als Tags an den älteren Kopien gespeichert.",
   "launcher.arrivals.forever": "Endgültig löschen (ohne Papierkorb-Ordner)",
   "launcher.arrivals.button": "Die neuen Kopien löschen",
   "launcher.arrivals.confirm": "Die {n} neuen Kopien, die schon auf dem Laufwerk waren, in den Papierkorb der Bibliothek verschieben? Die älteren Kopien werden nicht angefasst.",
