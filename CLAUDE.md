@@ -39,6 +39,19 @@ current status and next step. Update its status table when a phase moves.
   checks it).
 - Paths may contain spaces and decomposed Unicode: quote everything, compare
   NFC-normalised.
+- **The guide is part of every change.** `docs/guide/build-guide.py` (English
+  and German, kept in step) is what users read about the app. A change that
+  adds, removes or alters something a person can see or do (the photo app, the
+  launcher, a button, what a command does, the safety rules above) updates the
+  guide in the same pull request, and removing a feature removes it from the
+  guide. Before finishing, grep the guide for the old behaviour and its UI
+  names (`grep -n -i '<word>' docs/guide/build-guide.py`): the feature cards,
+  the "at a glance" legend (its numbered dots sit at fixed positions on
+  `01-grid`, the `pos` list), the session text, the launcher tasks, the
+  FAQ and "Your photos are safe". If the screen changed visibly, regenerate
+  the screenshots too (`docs/guide/README.md`) and check that the dots still
+  sit on the right controls. Say in the pull request what changed in the guide,
+  or that it is not affected. The `guide` CI job builds both PDFs.
 
 ## Build and test
 
