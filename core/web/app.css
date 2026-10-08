@@ -575,10 +575,12 @@ body.selecting .sec .pick { display: inline; }
 .cell .fav {
   position: absolute; right: 5px; top: 5px; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%;
   display: flex; align-items: center; justify-content: center; font-size: 18px; color: #fff;
-  background: rgba(0,0,0,.35); opacity: 0; transition: opacity .12s; cursor: pointer;
+  background: transparent; opacity: 0; transition: opacity .12s, background .12s; cursor: pointer;
 }
-.cell .fav.on { opacity: 1; color: #ff4d6a; }
+/* A favorite: just the pink heart, always. The grey disc only while pointing at the photo. */
+.cell .fav.on { opacity: 1; color: #ff4d6a; filter: drop-shadow(0 0 2px rgba(0,0,0,.5)); }
 .cell:hover .fav, .cell .fav:focus-visible, body.selecting .cell .fav { opacity: 1; }
-@media (hover: none) { .cell .fav:not(.on) { opacity: .75; } }
+.cell:hover .fav { background: rgba(0,0,0,.35); }
+@media (hover: none) { .cell .fav:not(.on) { opacity: .75; background: rgba(0,0,0,.35); } }
 .lb-bar .fav-lb.on { color: #ff4d6a; }
 .heart { color: #e0405a; }

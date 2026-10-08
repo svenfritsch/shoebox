@@ -2612,6 +2612,8 @@ function infoTags(row, info) {
       ev.stopPropagation(); // arrows and Escape belong to the field, not the viewer
       if (ev.key === 'Escape') { input.replaceWith(add); return; }
       if (ev.key !== 'Enter' || !input.value.trim()) return;
+      // "favorite" is the heart, not a tag in the list.
+      if (isFavTag(input.value)) { setFavorite([info.id], true).then(function () { input.replaceWith(add); }); return; }
       input.disabled = true;
       post(LIBAPI + '/tags/add', { ids: [info.id], name: input.value }).then(function () { tagsChanged(info.id); })
         .catch(function (e) { input.disabled = false; failed(e); });
@@ -2664,6 +2666,7 @@ function addTagDialog(ids) {
       closeModal();
       toast(r.files ? tr('tags.added', { count: trn('count.photos', r.files), name: r.tag.name }) : tr('tags.already', { name: r.tag.name }));
       tagsChanged(null);
+      if (isFavTag(r.tag.name)) loadTimeline(false); // the hearts
     }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
     return false;
   };
@@ -2683,13 +2686,14 @@ function removeTagDialog(ids) {
     body.appendChild(el('p', '', tr('tags.remove_which', { count: trn('count.photos', ids.length) })));
     var list = el('div', 'taglist');
     tags.forEach(function (t) {
-      var b = el('button', '', t.name + ' (' + I18n.number(t.count) + ')');
+      var b = el('button', '', (isFavTag(t.name) ? '♥ ' + tr('fav.label') : t.name) + ' (' + I18n.number(t.count) + ')');
       b.onclick = function () {
         b.disabled = true;
         post(LIBAPI + '/tags/remove', { ids: ids, name: t.name }).then(function (r) {
           closeModal();
           toast(tr('tags.removed', { name: t.name, count: trn('count.photos', r.files) }));
           tagsChanged(null);
+          if (isFavTag(t.name)) loadTimeline(false); // the hearts
         }).catch(function (e) { closeModal(); failed(e); });
       };
       list.appendChild(b);
