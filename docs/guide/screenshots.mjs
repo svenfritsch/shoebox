@@ -9,7 +9,8 @@ const ctx = await b.newContext({ viewport: { width: 1280, height: 860 }, deviceS
 await ctx.addInitScript((l) => { try { localStorage.setItem('shoebox.lang', l); } catch (e) {} }, lang);
 const p = await ctx.newPage();
 const de = lang === 'de';
-const TAG = de ? 'Favoriten' : 'Favorites';
+// Not 'Favorites': that word is the heart feature now.
+const TAG = 'Highlights';
 const HOLIDAY = de ? '2025-08 Urlaub' : '2025-08 Holiday';
 const shot = (name, opts = {}) => p.screenshot({ path: `${out}/${name}.png`, ...opts });
 const wait = (ms = 600) => p.waitForTimeout(ms);
@@ -23,9 +24,23 @@ if (mode === 'launcher') {
   await p.click('button[data-kind=scan]');
   await p.waitForSelector('#summary:not(:empty)', { timeout: 60000 }); await wait(1500);
   await shot('launcher-overview', { fullPage: true });
+  // A photo copied onto the drive by hand, then a second scan: the scan lists
+  // it as already there and offers to delete the new copy.
+  const { readdirSync, mkdirSync, copyFileSync } = await import('node:fs');
+  const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => e.name.startsWith('.') ? [] : e.isDirectory() ? walk(`${d}/${e.name}`) : /\.jpe?g$/i.test(e.name) ? [`${d}/${e.name}`] : []);
+  const src = walk(libPath).sort()[0];
+  const dir = `${libPath}/${de ? '2025-09 Neue Fotos' : '2025-09 New photos'}`;
+  mkdirSync(dir, { recursive: true });
+  copyFileSync(src, `${dir}/${src.split('/').pop()}`);
+  await p.click('button[data-kind=scan]');
+  await p.waitForSelector('#arrivals-box:not([hidden])', { timeout: 60000 }); await wait(1500);
+  await p.locator('#progress-card').screenshot({ path: `${out}/scan-copies.png` });
   await b.close(); process.exit(0);
 }
 
+await p.goto(url); await p.waitForSelector('.cell'); await wait(1000);
+// Moving to the trash is off until it is allowed in the settings; the guide shows it on.
+await p.evaluate(() => post(LIBAPI + '/allow-trash', { allow: true }));
 await p.goto(url); await p.waitForSelector('.cell'); await wait(2500);
 await shot('ui-overview');
 
@@ -93,12 +108,6 @@ await p.keyboard.press('ArrowDown'); await p.keyboard.press('Enter'); await wait
 await p.keyboard.press('Escape'); await p.locator('#title').click(); await wait(800);
 await shot('multitag-search');
 await p.click('#all'); await wait(500);
-
-// Import dialog.
-await p.click('#import'); await wait(600);
-await shot('import-dialog');
-await p.keyboard.press('Escape'); await wait(300);
-await p.click('#modal-actions button >> nth=0').catch(() => {}); await wait(300);
 
 // Trash: trash a photo, show the page.
 await p.click('#all'); await wait(600);

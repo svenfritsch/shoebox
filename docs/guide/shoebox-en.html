@@ -111,7 +111,7 @@
     <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l5 5"/></symbol>
     <symbol id="i-tag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12V4h8l10 10-8 8L3 12z"/><circle cx="7.5" cy="8.5" r="1.2"/></symbol>
     <symbol id="i-move" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/><path d="M9 13h7m-3-3l3 3-3 3"/></symbol>
-    <symbol id="i-import" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m-4-4l4 4 4-4"/><path d="M4 19h16"/></symbol>
+    <symbol id="i-add" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m-4-4l4 4 4-4"/><path d="M4 19h16"/></symbol>
     <symbol id="i-dup" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></symbol>
     <symbol id="i-people" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><circle cx="17" cy="9" r="2.4"/><path d="M17 14c2.5 0 4.5 2 4.5 5"/></symbol>
@@ -134,7 +134,7 @@
         </div>
       </div>
       <h1>Your photo library, on the drive.</h1>
-      <p class="lede">shoebox is a small program that lives on your external drive next to your photos. It indexes them, shows them in a fast timeline in your browser, and helps you tag, sort, import and de-duplicate, without ever copying them or touching their metadata.</p>
+      <p class="lede">shoebox is a small program that lives on your external drive next to your photos. It indexes them, shows them in a fast timeline in your browser, and helps you tag, sort and de-duplicate, without ever copying them or touching their metadata.</p>
       <ul class="badges">
         <li><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><span>Originals stay untouched</span></li>
         <li><svg class="ic" aria-hidden="true"><use href="#i-drive"/></svg><span>Lives on your drive</span></li>
@@ -154,7 +154,7 @@
       <li><a href="#start">Get started in three steps</a></li>
       <li><a href="#browse">Browse and view</a></li>
       <li><a href="#find">Find and organise</a></li>
-      <li><a href="#import">Import, duplicates and trash</a></li>
+      <li><a href="#adding-photos">Adding photos, duplicates and trash</a></li>
       <li><a href="#people">People and pets</a></li>
       <li><a href="#drives">Drives, backups and the iPad</a></li>
       <li><a href="#safety">Your photos are safe</a></li>
@@ -189,9 +189,9 @@
           <p>Move photos to a folder (created if needed). RAW, Live Photo and sidecar files travel along.</p>
         </li>
         <li>
-          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-import"/></svg></div>
-          <h3>Import</h3>
-          <p>Pick the photos of an event or drop them into the window: they land in a new event folder and keep their dates.</p>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-add"/></svg></div>
+          <h3>Adding photos</h3>
+          <p>Copy the photos of an event onto the drive in Finder or File Explorer (dates are kept) and Scan. Copies of files the drive already had are listed, and you can delete them.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-dup"/></svg></div>
@@ -226,15 +226,16 @@
       <div class="shotwrap">
         <img src="assets/en/ui-overview.jpg" alt="" loading="lazy" style="display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:.6rem;box-shadow:0 .2rem 1rem rgba(60,35,10,.16)">
         <span class="dot" style="left:5.0%;top:8.9%" data-txt="skip">1</span>
-        <span class="dot" style="left:63%;top:7.8%" data-txt="skip">2</span>
-        <span class="dot" style="left:82.2%;top:7.8%" data-txt="skip">3</span>
-        <span class="dot" style="left:89.2%;top:7.8%" data-txt="skip">4</span>
-        <span class="dot" style="left:94.0%;top:7.8%" data-txt="skip">5</span>
-        <span class="dot" style="left:97.4%;top:7.8%" data-txt="skip">6</span>
+        <span class="dot" style="left:55.5%;top:7.8%" data-txt="skip">2</span>
+        <span class="dot" style="left:73.8%;top:7.8%" data-txt="skip">3</span>
+        <span class="dot" style="left:78.8%;top:7.8%" data-txt="skip">4</span>
+        <span class="dot" style="left:85.2%;top:7.8%" data-txt="skip">5</span>
+        <span class="dot" style="left:90.0%;top:7.8%" data-txt="skip">6</span>
         <span class="dot" style="left:20.6%;top:11.6%" data-txt="skip">7</span>
         <span class="dot" style="left:20.6%;top:26%" data-txt="skip">8</span>
         <span class="dot" style="left:58%;top:33%" data-txt="skip">9</span>
-        <span class="dot" style="left:19.2%;top:91.5%" data-txt="skip">10</span>
+        <span class="dot" style="left:95.2%;top:7.8%" data-txt="skip">10</span>
+        <span class="dot" style="left:13.0%;top:93.0%" data-txt="skip">11</span>
       </div>
       <ol class="legend">
         <li>
@@ -246,12 +247,12 @@
           <p>People, pets, tags and folders; pick several to combine them.</p>
         </li>
         <li>
-          <h3>Type</h3>
-          <p>Show only photos, videos or Live Photos.</p>
-        </li>
-        <li>
           <h3>Favorites ♥</h3>
           <p>Show only the photos you have hearted. Also found by typing <i>favorite</i> in the search box.</p>
+        </li>
+        <li>
+          <h3>Type</h3>
+          <p>Show only photos, videos or Live Photos.</p>
         </li>
         <li>
           <h3>Year</h3>
@@ -260,10 +261,6 @@
         <li>
           <h3>Select ☑</h3>
           <p>Pick photos to move, tag or trash.</p>
-        </li>
-        <li>
-          <h3>Import ⤒</h3>
-          <p>Add photos and videos from this computer or the iPad.</p>
         </li>
         <li>
           <h3>Quick links</h3>
@@ -278,13 +275,17 @@
           <p>Months with counts. Click a photo to open the viewer.</p>
         </li>
         <li>
-          <h3>Language & status</h3>
-          <p>Switch English / German; see scan, thumbnail and drive status.</p>
+          <h3>Language</h3>
+          <p>Switch English / German.</p>
+        </li>
+        <li>
+          <h3>Status</h3>
+          <p>Scan, thumbnail and drive status at the bottom of the sidebar.</p>
         </li>
       </ol>
       <div class="panel">
         <h3>A typical session</h3>
-        <p>Plug in the drive and double-click <b>Start shoebox</b>. <b>Scan</b> (quick when little has changed) and open the photo app. <b>Import</b> the photos of an event: pick them, name the event, and shoebox creates the event folder. Then tag and sort. Look at <b>Duplicates</b> now and then, and run the <b>Backup check</b> after every backup.</p>
+        <p>Plug in the drive and double-click <b>Start shoebox</b>. <b>Scan</b> (quick when little has changed) and open the photo app. To add the photos of an event, copy their folder onto the drive in Finder (named like <b>2025-08 Holiday</b>) and <b>Scan</b> again: if some files were on the drive already, the launcher offers to delete the new copies. Then tag and sort. Look at <b>Duplicates</b> now and then, and run the <b>Backup check</b> after every backup.</p>
       </div>
     </section>
 
@@ -311,7 +312,7 @@
             <h3>Launcher tasks</h3>
             <dl>
                 <dt>Scan</dt>
-                <dd>find new, moved and changed photos</dd>
+                <dd>find new, moved and changed photos, and new copies of files the drive already had</dd>
                 <dt>Verify</dt>
                 <dd>check that nothing was lost or damaged</dd>
                 <dt>Recognize</dt>
@@ -434,13 +435,13 @@
       </div>
     </section>
 
-    <section id="import">
-      <h2>Import, duplicates and trash</h2>
+    <section id="adding-photos">
+      <h2>Adding photos, duplicates and trash</h2>
       <div class="cols">
         <div class="items">
           <div>
-            <h3>Import</h3>
-            <p>Press <b>⤒</b> (or drop files on the window). Choose year, month and an event name: shoebox creates the event folder <b>YYYY-MM Event</b>, the files keep their dates, and files already in the library are skipped. In <b>Settings</b> you choose how new event folders are named: 4 or 2 digits for the year, a hyphen or a dot between year and month, and a space, <code>_</code>, <code>.</code>, <code>-</code> or nothing before the name, for example <code>YY.MM_Event</code>. Folders you already have are not renamed, and all these forms are recognised.</p>
+            <h3>Adding photos</h3>
+            <p>Copy or move the photos onto the drive in Finder or File Explorer, which keeps their dates, ideally into a folder named <b>YYYY-MM Event</b>, and press <b>Scan</b>. If the scan finds new files the drive already had, the launcher marks them <i>already on the drive</i> and offers <b>Delete the new copies</b> (to the trash, or for good). The older original stays and gets the deleted copy’s folder name as a tag. <b>Settings</b> sets how event folders are named in suggestions (for example <code>YY.MM_Event</code>); existing folders are not renamed and all forms are recognised.</p>
           </div>
           <div>
             <h3>Duplicates</h3>
@@ -456,13 +457,13 @@
           </div>
           <div>
             <h3>Trash</h3>
-            <p>Nothing is deleted right away. Trashed photos wait in <code>.shoebox/trash</code> on the drive: <b>Put back</b> or <b>Delete for good</b>.</p>
+            <p>Nothing is deleted right away. Trashed photos wait in <code>.shoebox/trash</code> on the drive: <b>Put back</b> or <b>Delete for good</b>. Moving photos to the trash is off by default: switch it on once in <b>Settings</b> (<i>Allow move to trash</i>).</p>
           </div>
         </div>
         <div>
           <figure>
-            <img src="assets/en/import-dialog.jpg" alt="" loading="lazy">
-            <figcaption>Import dialog.</figcaption>
+            <img src="assets/en/scan-copies.jpg" alt="" loading="lazy">
+            <figcaption>After a scan: new copies of files the drive already had.</figcaption>
           </figure>
           <figure>
             <img src="assets/en/trash.jpg" alt="" loading="lazy">
@@ -499,7 +500,7 @@
           </div>
           <div>
             <h3>New photos</h3>
-            <p>Recognition does not start by itself after an import yet. Close the photo app and run <b>Recognize</b> again: it only looks at the new photos.</p>
+            <p>Recognition does not start by itself after a scan yet. Close the photo app and run <b>Recognize</b> again: it only looks at the new photos.</p>
           </div>
         </div>
         <div>
@@ -574,7 +575,7 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-bolt"/></svg></div>
           <h3>Only on your command</h3>
-          <p>Originals change only through your actions: move, rename, trash, import. Always a rename, never a copy, and only if the file still matches the index.</p>
+          <p>Originals change only through your actions: move, rename, trash. Always a rename, never a copy, and only if the file still matches the index. The only other thing shoebox removes is a new copy of a file the drive already had, and only when you press the button after a scan.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-globe"/></svg></div>
