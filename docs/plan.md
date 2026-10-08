@@ -110,11 +110,15 @@ The user copies or moves a folder onto the drive there (dates are kept) and
 runs Scan. The scan knows which records are new (their id is higher than any
 record before it started) and, once everything is hashed, lists the new files
 whose content the drive already had (`arrivals.rs`, `Stats.duplicates`, shown
-in the launcher's result list as "already on the drive: <older copy>"). The
+in the launcher as "same content as: <older copy>"). The
 launcher then offers "Delete the new copies" (`scan_cleanup`): each goes
 through `duplicates::remove_copies` (trash, or for good if ticked; tags and
 dates go to the older copy; a backup check learns it was removed on purpose).
-Only copies that have an older copy are listed: two new files that only match
+The scan result also lists the files behind its other counts (`Stats.moved_files`
+with the old path, `changed_files`, `missing_files`; at most 5000 each, the counts
+stay exact). The launcher shows them as tabs next to "Results per file" (Moved,
+Changed, Missing, Already on the drive, each with its count; a tab only appears
+when its count is above 0, "Added" has none). Only copies that have an older copy are listed: two new files that only match
 each other, a first scan, a quick scan and a file that moved are not, and the
 offer is gone after the next scan. Those cases are for the duplicates screen.
 

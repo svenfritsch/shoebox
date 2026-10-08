@@ -72,10 +72,12 @@
       <button id="arrivals-go" class="primary" data-i18n="launcher.arrivals.button">Delete the new copies</button>
     </div>
     <p id="job-error" class="error" hidden></p>
+    <div id="tabs" class="tabs" role="tablist" hidden></div>
     <div class="list-head">
-      <h3 data-i18n="launcher.results">Results per file</h3>
-      <label><input type="checkbox" id="only-failed"> <span data-i18n="launcher.only_problems">only problems</span></label>
+      <h3 id="results-title" data-i18n="launcher.results">Results per file</h3>
+      <label id="only-failed-label"><input type="checkbox" id="only-failed"> <span data-i18n="launcher.only_problems">only problems</span></label>
     </div>
+    <p id="tab-hint" class="hint" hidden></p>
     <ul id="results" class="results"></ul>
     <details><summary data-i18n="launcher.messages">Messages</summary><pre id="lines"></pre></details>
   </section>

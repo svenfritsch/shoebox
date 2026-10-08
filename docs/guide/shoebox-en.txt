@@ -125,7 +125,10 @@ macOS, Intel (10.13 or newer) and Apple Silicon. Nothing to install.
 3. Scan, then open
    Add your drive (click it, or type /Volumes/MyDrive), press Scan, then Start
    photo app. The first scan reads every file once and takes a while on a big
-   drive; later scans only look at what changed.
+   drive; later scans only look at what changed. When it finishes, the tabs
+   Moved, Changed, Missing and Already on the drive (each with its count) list
+   exactly which files they mean; for new files you already had, the tab shows
+   the older copy right next to each one.
 
 Launcher tasks
 Scan: find new, moved and changed photos
