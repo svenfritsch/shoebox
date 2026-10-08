@@ -34,7 +34,7 @@ Eine Seite im Browser, eine Zeitleiste von allem auf dem Laufwerk.
 - Suchen & Filtern
    Tippe eine Person, ein Haustier, einen Tag oder Ordner. Kombiniere
    Schlagwörter für eine komplexere Suche. Filter nach Fotos, Videos oder Live
-   Photos.
+   Photos, oder zeige nur deine Favoriten ♥.
 
 - Tags
    Eigene Tags für viele Fotos auf einmal. Auch Ordner zählen als Tags. Im
@@ -82,26 +82,30 @@ Alles ist auf einer Seite. So findest du dich zurecht.
 3. Typ
    Nur Fotos, Videos oder Live Photos zeigen.
 
-4. Jahr
+4. Favoriten ♥
+   Nur die Fotos zeigen, die du mit einem Herz markiert hast. Auch zu finden,
+   wenn du favorit ins Suchfeld tippst.
+
+5. Jahr
    Direkt zu einem Jahr springen.
 
-5. Auswählen ☑
+6. Auswählen ☑
    Fotos zum Verschieben, Taggen oder in den Papierkorb wählen.
 
-6. Importieren ⤒
+7. Importieren ⤒
    Fotos und Videos von diesem Computer oder vom iPad hinzufügen.
 
-7. Schnellzugriff
+8. Schnellzugriff
    Alle Fotos · Duplikate · Papierkorb · Einstellungen.
 
-8. Ordner
+9. Ordner
    Deine Ordner mit Anzahl. Tags, Gesichter und Laufwerke erscheinen hier,
    sobald es sie gibt.
 
-9. Zeitleiste
+10. Zeitleiste
    Monate mit Anzahl. Ein Klick auf ein Foto öffnet die Ansicht.
 
-10. Sprache & Status
+11. Sprache & Status
    Zwischen Deutsch und Englisch wechseln; Scan-, Vorschau- und
    Laufwerksstatus.
 
@@ -175,6 +179,13 @@ Foto anklicken. ⓘ öffnet das Infofeld: Datum (als geschätzt markiert, wenn e
 nicht der Aufnahmetag ist), Kamera, Größe, Tags, Personen und Knöpfe, um den
 Ordner zu öffnen oder den Pfad zu kopieren.
 
+Favoriten
+Das ♥ in der oberen Leiste der Ansicht oder die Taste f markiert das Foto als
+Favorit. In der Zeitleiste sitzt dasselbe Herz oben rechts in jedem Foto (es
+erscheint, wenn du mit der Maus darüberfährst; Favoriten zeigen es immer).
+Noch einmal klicken nimmt es wieder weg. Intern ist ein Favorit einfach dein
+eigener Tag favorite, im Index gespeichert wie jeder Tag, nie im Foto.
+
 Drehen
 r dreht nach links, Umschalt+R nach rechts. Bei JPEGs ändern sich nur die zwei
 Bytes der Drehmarke; bei anderen Formaten gilt die Drehung nur in shoebox.
@@ -186,6 +197,7 @@ Tastatur in der Ansicht
 i: Infofeld ein- / ausblenden
 Leertaste: Ansicht öffnen / schließen (bei einem per Pfeiltasten gewählten
 Foto)
+f: zu Favoriten hinzufügen / entfernen
 r · Umschalt+R: nach links / rechts drehen
 Esc: Ansicht schließen
 
@@ -198,7 +210,10 @@ einmal.
 Suchen
 Tippe ins Suchfeld: Vorschläge erscheinen für Tags, Personen und Ordner.
 Mehrere gewählte werden zu Chips, die das Ergebnis eingrenzen; × entfernt
-einen, Alle entfernen beginnt neu.
+einen, Alle entfernen beginnt neu. Deine Favoriten findest du mit dem ♥-Knopf
+neben Typ, oder tippe favorit (deutsch) bzw. favorite (englisch) und wähle ♥
+Favoriten; das lässt sich mit allem anderen kombinieren, z. B. Favoriten einer
+Person oder eines Jahres.
 
 Auswählen
 ☑ drücken, dann Fotos anklicken (mit Umschalt für einen Bereich; am iPad

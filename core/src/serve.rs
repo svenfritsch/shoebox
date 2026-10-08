@@ -827,6 +827,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/tags/add", post(tags_add))
         .route("/api/tags/remove", post(tags_remove))
         .route("/api/tags/selection", post(tags_selection))
+        .route("/api/favorites", post(favorites_set))
         .route("/api/faces", get(faces_api::list))
         .route("/api/faces/stats", get(faces_api::stats))
         .route("/api/faces/{id}/crop", get(faces_api::crop))
@@ -1261,6 +1262,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
     let text = param(&pairs, "q").map(str::to_string).filter(|s| !s.trim().is_empty());
     let types = types_of(&pairs)?;
     let pet_terms = pets_of(&pairs)?;
+    let fav = fav_of(&pairs);
     let libs: Vec<LibraryRef> = apps.iter().map(|a| LibraryRef { id: library_id(&a.name), name: a.name.clone() }).collect();
 
     let timeline = tokio::task::spawn_blocking(move || -> ApiResult<Timeline> {
@@ -1272,6 +1274,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
             day: u32,
             version: String,
             live: Option<i64>,
+            fav: bool,
         }
         let mut rows: Vec<Row> = Vec::new();
         for (d, app) in apps.iter().enumerate() {
@@ -1302,9 +1305,12 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
                 people: people_ids,
                 pets: pet_terms.clone(),
                 types: types.clone(),
+                fav,
             };
+            let hearts = own_tags::favorite_ids(&conn)?;
             for it in snapshot.query(&conn, &query)? {
                 rows.push(Row {
+                    fav: hearts.contains(&it.id),
                     sort: it.sort.clone(),
                     path: it.path_lower.clone(),
                     gid: d as i64 * ID_SPAN + it.id,
@@ -1331,8 +1337,12 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
             live: Vec::new(),
             tags: Vec::new(),
             people: Vec::new(),
+            favs: Vec::new(),
         };
         for r in rows {
+            if r.fav {
+                t.favs.push(r.gid);
+            }
             t.ids.push(r.gid);
             t.kinds.push(r.kind);
             t.days.push(r.day);
@@ -1633,7 +1643,13 @@ fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
         people: pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
         types: types_of(pairs)?,
         pets: pets_of(pairs)?,
+        fav: fav_of(pairs),
     })
+}
+
+/// `fav=1`: only favorites.
+fn fav_of(pairs: &Pairs) -> bool {
+    param(pairs, "fav").is_some_and(|v| !v.is_empty() && v != "0")
 }
 
 /// The pet terms of a request (`pet=cat`, `pet=dog`, `pet=pet` for any pet,
@@ -1697,6 +1713,8 @@ struct Timeline {
     tags: Vec<browse::TagName>,
     /// Names of the people in the filter, for their chips.
     people: Vec<people::PersonRef>,
+    /// Ids of the items with a heart.
+    favs: Vec<i64>,
 }
 
 async fn timeline(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Timeline>> {
@@ -1707,6 +1725,7 @@ async fn timeline(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> Ap
         let items = snapshot.query(&conn, &query)?;
         let tags = browse::tag_names(&conn, &query.tags)?;
         let people = people::person_names(&conn, &query.people)?;
+        let hearts = own_tags::favorite_ids(&conn)?;
         drop(conn);
         let mut t = Timeline {
             count: items.len(),
@@ -1717,8 +1736,12 @@ async fn timeline(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> Ap
             live: Vec::new(),
             tags,
             people,
+            favs: Vec::new(),
         };
         for it in items {
+            if hearts.contains(&it.id) {
+                t.favs.push(it.id);
+            }
             t.ids.push(it.id);
             t.kinds.push(match it.kind {
                 Kind::Jpeg => 'j',
@@ -2240,6 +2263,17 @@ async fn tags_add(State(app): State<Arc<App>>, Json(req): Json<TagRequest>) -> A
 /// Only own tags go; folder tags stay (see `tags.rs`).
 async fn tags_remove(State(app): State<Arc<App>>, Json(req): Json<TagRequest>) -> ApiResult<Json<own_tags::Changed>> {
     change(&app, move |_, conn| own_tags::remove(conn, &req.ids, &req.name)).await.map(Json)
+}
+
+#[derive(Deserialize)]
+struct FavoriteRequest {
+    ids: Vec<i64>,
+    on: bool,
+}
+
+/// The heart: the own tag `favorite` on or off (see `tags::FAVORITE`).
+async fn favorites_set(State(app): State<Arc<App>>, Json(req): Json<FavoriteRequest>) -> ApiResult<Json<own_tags::Changed>> {
+    change(&app, move |_, conn| own_tags::set_favorite(conn, &req.ids, req.on)).await.map(Json)
 }
 
 /// The own tags on a selection, for "Remove tag…".

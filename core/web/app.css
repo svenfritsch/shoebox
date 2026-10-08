@@ -568,3 +568,17 @@ body.selecting .sec .pick { display: inline; }
 .chip-x { background: none; border: 0; color: #fff; cursor: pointer; padding: 0 0 0 4px; font-size: 12px; }
 .copy-folder-row { display: flex; gap: 8px; align-items: center; }
 .settings-section input[type=text] { min-width: 220px; }
+
+/* favorites: the heart */
+.fav-btn { display: inline-flex; align-items: center; justify-content: center; font-size: 18px; padding: 6px 9px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: inherit; }
+.fav-btn.on { border-color: var(--accent); color: #e0405a; }
+.cell .fav {
+  position: absolute; right: 5px; top: 5px; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font-size: 18px; color: #fff;
+  background: rgba(0,0,0,.35); opacity: 0; transition: opacity .12s; cursor: pointer;
+}
+.cell .fav.on { opacity: 1; color: #ff4d6a; }
+.cell:hover .fav, .cell .fav:focus-visible, body.selecting .cell .fav { opacity: 1; }
+@media (hover: none) { .cell .fav:not(.on) { opacity: .75; } }
+.lb-bar .fav-lb.on { color: #ff4d6a; }
+.heart { color: #e0405a; }

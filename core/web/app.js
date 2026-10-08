@@ -122,7 +122,7 @@ var PET_TERMS = {
 };
 
 function readHash() {
-  var f = { folder: null, tags: [], people: [], pets: [], types: [], q: '', view: null, id: null, tab: null };
+  var f = { folder: null, tags: [], people: [], pets: [], types: [], fav: false, q: '', view: null, id: null, tab: null };
   location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
     var i = kv.indexOf('=');
     if (i < 0) return;
@@ -135,6 +135,7 @@ function readHash() {
     if (k === 'type' && TYPES.indexOf(v) >= 0 && f.types.indexOf(v) < 0) f.types.push(v);
     // A kind of pet (all cats, all dogs, any pet): the same on every drive.
     if (k === 'pet' && PET_TERMS[v] && f.pets.indexOf(v) < 0) f.pets.push(v);
+    if (k === 'fav') f.fav = v === '1';
     if (k === 'q') f.q = v;
     if (k === 'view' && VIEWS.indexOf(v) >= 0) f.view = v;
     if (k === 'id') f.id = parseInt(v, 10) || null;
@@ -149,7 +150,7 @@ function readHash() {
 // folder, any number of tags and people (`tag`, `person` repeated in the
 // URL) and free text.
 function setFilter(f) {
-  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], type: f.types || [], q: f.q }).replace(/^\?/, '');
+  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], type: f.types || [], fav: f.fav ? 1 : null, q: f.q }).replace(/^\?/, '');
   if (h === location.hash.replace(/^#/, '')) { applyFilter(); return; }
   location.hash = h; // triggers hashchange -> applyFilter
 }
@@ -157,7 +158,7 @@ function setFilter(f) {
 // The current filter with some terms changed.
 function withFilter(changes) {
   var f = state.filter;
-  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), pets: f.pets.slice(), types: f.types.slice(), q: f.q }, changes);
+  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), pets: f.pets.slice(), types: f.types.slice(), fav: f.fav, q: f.q }, changes);
 }
 
 function showView(view, id, tab) { setFilter({ view: view, id: id, tab: tab, folder: null, tags: [], people: [], q: '' }); }
@@ -231,6 +232,7 @@ function renderChips() {
       setFilter(withFilter({ pets: f.pets.filter(function (p) { return p !== species; }) }));
     });
   });
+  if (f.fav) add('♥ ' + tr('fav.label'), function () { setFilter(withFilter({ fav: false })); });
   if (f.q) add('“' + f.q + '”', function () { setFilter(withFilter({ q: '' })); });
   var terms = box.children.length;
   if (terms) {
@@ -243,7 +245,7 @@ function renderChips() {
   if (terms >= 2) {
     var clear = el('button', 'chip clear', tr('chip.clear_all'));
     clear.title = tr('chip.clear_all_hint');
-    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], pets: [], q: '' }); };
+    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], pets: [], fav: false, q: '' }); };
     box.appendChild(clear);
   }
   personHead(box, f);
@@ -261,6 +263,7 @@ var typeBoxes = Array.prototype.slice.call($('types-menu').querySelectorAll('inp
 function typeLabel(t) { return tr(t === 'live' ? 'types.live_short' : 'types.' + t); }
 
 function markTypes() {
+  markFavFilter();
   var on = state.filter.types;
   typeBoxes.forEach(function (b) { b.checked = on.indexOf(b.value) >= 0; });
   var btn = $('types-btn');
@@ -282,6 +285,82 @@ typeBoxes.forEach(function (b) {
 });
 document.addEventListener('click', function (ev) { if (!$('types').contains(ev.target)) setTypesOpen(false); });
 document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') setTypesOpen(false); });
+
+// ------------------------------------------------------------------ favorites
+
+// The heart: an own tag called "favorite" in the database (`tags.rs`), shown
+// as a heart everywhere. The tag itself is left out of tag lists and the info
+// panel. The button next to the type filter shows only favorites; typing
+// "favorite" / "favorit" in the search box offers the same as a suggestion.
+var FAV_TAG = 'favorite';
+function isFavTag(name) { return String(name).trim().toLowerCase() === FAV_TAG; }
+var HEART_ON = '<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true"><path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>';
+var HEART_OFF = '<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M12 20.4l-1.1-1C6 15.1 3 12.4 3 8.9 3 6.5 4.8 4.7 7.2 4.7c1.4 0 2.7.6 3.6 1.7l1.2 1.4 1.2-1.4c.9-1.1 2.2-1.7 3.6-1.7C19.2 4.7 21 6.5 21 8.9c0 3.5-3 6.2-7.9 10.5l-1.1 1z"/></svg>';
+
+function markFavFilter() {
+  var on = !!state.filter.fav, b = $('fav-btn');
+  b.classList.toggle('on', on);
+  b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  b.innerHTML = on ? HEART_ON : HEART_OFF;
+  b.hidden = !!state.filter.view;
+}
+$('fav-btn').onclick = function () { setFilter(withFilter({ fav: !state.filter.fav })); };
+
+// Heart or un-heart photos (ids of the current list), then update what shows.
+function setFavorite(ids, on) {
+  return post(LIBAPI + '/favorites', { ids: ids, on: on }).then(function () {
+    ids.forEach(function (id) { if (on) state.favs[id] = true; else delete state.favs[id]; });
+    paintHearts();
+    // Showing only favorites: the list changes (the open viewer keeps its photos until it closes).
+    if (!on && state.filter.fav && state.open < 0) loadTimeline(false);
+    loadOwnTags();
+    if (ids.length === 1 && lb.details && lb.details.id === ids[0]) tagsChanged(ids[0]);
+  }).catch(failed);
+}
+
+function heartButton(id, cls) {
+  var b = el('button', cls), on = !!state.favs[id];
+  b.type = 'button';
+  b.innerHTML = on ? HEART_ON : HEART_OFF;
+  b.classList.toggle('on', on);
+  b.title = tr(on ? 'fav.remove' : 'fav.add');
+  b.setAttribute('aria-label', b.title);
+  b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  return b;
+}
+
+// Redraw the hearts that are on screen (grid cells and the viewer).
+function paintHearts() {
+  var d = state.data;
+  if (d) Array.prototype.forEach.call(document.querySelectorAll('.cell .fav'), function (b) {
+    var id = d.ids[parseInt(b.parentNode.dataset.index, 10)], on = !!state.favs[id];
+    b.innerHTML = on ? HEART_ON : HEART_OFF;
+    b.classList.toggle('on', on);
+    b.title = tr(on ? 'fav.remove' : 'fav.add');
+    b.setAttribute('aria-label', b.title);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  markLightboxHeart();
+}
+
+function markLightboxHeart() {
+  var d = state.data, i = state.open, b = $('lb-fav');
+  if (!d || i < 0) return;
+  var on = !!state.favs[d.ids[i]];
+  b.innerHTML = on ? HEART_ON : HEART_OFF;
+  b.classList.toggle('on', on);
+  b.title = tr(on ? 'fav.remove_hint' : 'fav.add_hint');
+  b.setAttribute('aria-label', tr(on ? 'fav.remove' : 'fav.add'));
+  b.setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+
+function toggleFavoriteOpen() {
+  var d = state.data, i = state.open;
+  if (!d || i < 0 || isAll()) return;
+  var id = d.ids[i];
+  setFavorite([id], !state.favs[id]);
+}
+$('lb-fav').onclick = toggleFavoriteOpen;
 
 // ------------------------------------------------------------------ search box
 
@@ -318,32 +397,45 @@ $('search').addEventListener('keydown', function (ev) {
   } else if (ev.key === 'Backspace' && this.value === '') {
     // Like a token field: the last chip goes.
     var f = state.filter;
-    if (f.pets.length) setFilter(withFilter({ pets: f.pets.slice(0, -1) }));
+    if (f.fav) setFilter(withFilter({ fav: false }));
+    else if (f.pets.length) setFilter(withFilter({ pets: f.pets.slice(0, -1) }));
     else if (f.people.length) setFilter(withFilter({ people: f.people.slice(0, -1) }));
     else if (f.tags.length) setFilter(withFilter({ tags: f.tags.slice(0, -1) }));
     else if (f.folder) setFilter(withFilter({ folder: null }));
   }
 });
 
+// "♥ Favorites" when what is typed starts a word for it (favorite, favorit,
+// the UI language's own word) and something has a heart.
+function favSuggestion(needle, f) {
+  var low = needle.toLowerCase();
+  if (f.fav || !state.favCount || low.length < 2) return [];
+  var words = ['favorite', 'favorites', 'favourite', 'favorit', 'favoriten', tr('fav.label').toLowerCase()];
+  if (!words.some(function (w) { return w.indexOf(low) === 0; })) return [];
+  return [{ kind: 'fav', id: 'fav', label: tr('fav.label'), count: state.favCount }];
+}
+
 function suggest(text) {
   var seq = ++sugg.seq, f = state.filter;
   if (f.view) { closeSuggest(); return; }
   if (isAll()) { suggestAll(text, seq); return; }
   var needle = text.trim();
-  var within = { q: needle, tag: f.tags, person: f.people, pet: f.pets, type: f.types, folder: f.folder };
+  var within = { q: needle, tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, folder: f.folder };
   Promise.all([
     api(LIBAPI + '/tags' + query(Object.assign({ limit: 8 }, within))),
     api(LIBAPI + '/people/search' + query(Object.assign({ limit: 6 }, within))).catch(function () { return []; }),
     api(LIBAPI + '/pets/search' + query(within)).catch(function () { return []; }),
   ]).then(function (r) {
     if (seq !== sugg.seq) return;
-    var items = r[1].map(function (p) {
+    var items = favSuggestion(needle, f);
+    items = items.concat(r[1].map(function (p) {
       state.personNames[p.id] = p.name;
       state.personSpecies[p.id] = p.species;
       return { kind: 'person', id: p.id, label: p.name, count: p.photos, person: p };
-    });
+    }));
     r[2].forEach(function (p) { items.push({ kind: 'pet', id: p.species, label: PET_TERMS[p.species].label, count: p.photos }); });
     r[0].forEach(function (t) {
+      if (isFavTag(t.name)) return; // the heart, offered above
       state.tagNames[t.id] = t.name;
       items.push({ kind: 'tag', id: t.id, label: t.name, count: t.count, folderTag: t.kind === 'folder' });
     });
@@ -376,7 +468,8 @@ function suggestAll(text, seq) {
     var items = r[1].filter(function (p) { return f.people.indexOf(p.name) < 0 && (!low || p.name.toLowerCase().indexOf(low) >= 0); })
       .slice(0, 6).map(function (p) { return { kind: 'person', id: p.name, label: p.name, count: p.photos, person: { name: p.name, species: p.species } }; });
     r[2].forEach(function (p) { items.push({ kind: 'pet', id: p.species, label: PET_TERMS[p.species].label, count: p.photos }); });
-    r[0].filter(function (t) { return f.tags.indexOf(t.name) < 0; }).forEach(function (t) {
+    items = favSuggestion(needle, f).concat(items);
+    r[0].filter(function (t) { return f.tags.indexOf(t.name) < 0 && !isFavTag(t.name); }).forEach(function (t) {
       items.push({ kind: 'tag', id: t.name, label: t.name, count: t.count, folderTag: t.kind === 'folder' });
     });
     showSuggest(items);
@@ -392,7 +485,7 @@ function showSuggest(items) {
   items.forEach(function (it, i) {
     if (it.kind !== last) {
       var f = state.filter, narrowed = !isAll() && (f.tags.length || f.people.length || f.pets.length || f.folder);
-      var head = it.kind === 'tag' ? tr(narrowed ? 'search.tags_here' : 'search.tags')
+      var head = it.kind === 'fav' ? tr('fav.label') : it.kind === 'tag' ? tr(narrowed ? 'search.tags_here' : 'search.tags')
         : it.kind === 'person' ? tr(narrowed ? 'search.faces_here' : 'side.faces')
           : it.kind === 'pet' ? tr(narrowed ? 'search.pets_here' : 'search.pets') : tr('search.folders');
       box.appendChild(el('div', 'head', head));
@@ -404,7 +497,7 @@ function showSuggest(items) {
     // People as in the sidebar: their picture, and the dog or cat for a pet.
     var label = el('span', 'label');
     if (it.kind === 'person') label.appendChild(avatar(it.person, 'tiny'));
-    label.appendChild(document.createTextNode((it.kind === 'pet' ? PET_TERMS[it.id].icon + ' '
+    label.appendChild(document.createTextNode((it.kind === 'fav' ? '♥ ' : it.kind === 'pet' ? PET_TERMS[it.id].icon + ' '
       : it.kind === 'person' ? (petIcon(it.person && it.person.species) ? petIcon(it.person.species) + ' ' : '')
         : ({ folder: '📁 ' }[it.kind] || '# ')) + it.label));
     b.appendChild(label);
@@ -429,7 +522,8 @@ function pickSuggest(it) {
   clearTimeout(searchTimer);
   $('search').value = '';
   var f = state.filter;
-  if (it.kind === 'tag') setFilter(withFilter({ tags: f.tags.indexOf(it.id) < 0 ? f.tags.concat([it.id]) : f.tags, q: '' }));
+  if (it.kind === 'fav') setFilter(withFilter({ fav: true, q: '' }));
+  else if (it.kind === 'tag') setFilter(withFilter({ tags: f.tags.indexOf(it.id) < 0 ? f.tags.concat([it.id]) : f.tags, q: '' }));
   else if (it.kind === 'person') setFilter(withFilter({ people: f.people.indexOf(it.id) < 0 ? f.people.concat([it.id]) : f.people, q: '' }));
   else if (it.kind === 'pet') setFilter(withFilter({ pets: f.pets.indexOf(it.id) < 0 ? f.pets.concat([it.id]) : f.pets, q: '' }));
   else setFilter(withFilter({ folder: it.id, q: '' }));
@@ -445,6 +539,7 @@ function suggestTags(text) {
     var list = $('tag-list');
     list.textContent = '';
     tags.forEach(function (t) {
+      if (isFavTag(t.name)) return;
       state.tagNames[t.id] = t.name;
       var o = el('option');
       o.value = t.name;
@@ -520,7 +615,7 @@ function folderNode(f, depth) {
   toggle.onclick = function () { expand(!ul || ul.hidden); };
   name.onclick = function () {
     expand(true);
-    setFilter({ folder: f.id, tags: [], people: [], types: state.filter.types, q: state.filter.q });
+    setFilter({ folder: f.id, tags: [], people: [], types: state.filter.types, fav: state.filter.fav, q: state.filter.q });
   };
   return li;
 }
@@ -593,8 +688,8 @@ function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
 function loadTimeline(resetScroll) {
   var seq = ++state.loadSeq;
   var f = state.filter;
-  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, pet: f.pets, type: f.types, q: f.q })
-    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, pet: f.pets, type: f.types, q: f.q });
+  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, q: f.q })
+    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, q: f.q });
   return api(url).then(function (data) {
     if (seq !== state.loadSeq) return;
     if (isAll()) allTimelineLoaded(data);
@@ -604,6 +699,8 @@ function loadTimeline(resetScroll) {
     data.people.forEach(function (p) { state.personNames[p.id] = p.name; });
     if (unnamed) renderChips(); // a link with tags this page has not seen yet
     state.data = data;
+    state.favs = {};
+    (data.favs || []).forEach(function (id) { state.favs[id] = true; });
     state.live = {};
     data.live.forEach(function (p) { state.live[p[0]] = p[1]; });
     var scroller = $('scroller');
@@ -735,6 +832,7 @@ function buildRow(row) {
     var badge = KIND_BADGE[kind] || '';
     if (state.live[d.ids[i]]) badge = 'LIVE';
     if (badge) a.appendChild(el('span', 'badge', badge));
+    if (!isAll()) a.appendChild(heartButton(d.ids[i], 'fav'));
     e.appendChild(a);
   }
   return e;
@@ -857,6 +955,8 @@ $('sizer').addEventListener('click', function (ev) {
   if (!a) return;
   ev.preventDefault();
   var i = parseInt(a.dataset.index, 10);
+  // The heart in the corner: heart or un-heart, nothing else.
+  if (ev.target.closest('.fav')) { var fid = state.data.ids[i]; setFavorite([fid], !state.favs[fid]); return; }
   // Shift-click: everything between the last clicked photo and this one.
   if (ev.shiftKey && state.selecting && state.anchor != null) selectRange(state.anchor, i, true);
   else if (state.selecting || ev.shiftKey) {
@@ -998,6 +1098,8 @@ function showItem() {
   $('lb-next').hidden = i >= d.count - 1;
   $('lb-download').href = fileBase(id) + '/original?download=1';
   $('lb-live').hidden = !state.live[id];
+  $('lb-fav').hidden = isAll();
+  markLightboxHeart();
   applyAllowTrash();
   var rot = $('lb-rotate');
   rot.hidden = isAll() || kind === 'v';
@@ -1281,6 +1383,7 @@ document.addEventListener('keydown', function (ev) {
   else if (ev.key === 'ArrowLeft') step(-1);
   else if (ev.key === 'ArrowRight') step(1);
   else if (ev.key === 'i') $('lb-info').onclick();
+  else if ((ev.key === 'f' || ev.key === 'F') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) toggleFavoriteOpen();
   else if ((ev.key === 'r' || ev.key === 'R') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) rotateOpen(ev.shiftKey ? 1 : -1);
 });
 
@@ -2480,6 +2583,7 @@ function infoTags(row, info) {
   var tags = el('div', 'tags');
   info.tags.forEach(function (t) {
     state.tagNames[t.id] = t.name;
+    if (t.source === 'user' && isFavTag(t.name)) return; // the heart in the top bar
     var show = function () { closeLightbox(); setFilter({ folder: null, tags: [t.id], q: '' }); };
     if (t.source === 'folder') {
       var b = el('button', '', '📁 ' + t.name);
@@ -2600,6 +2704,21 @@ function loadOwnTags() {
   return api(LIBAPI + '/tags' + query({ own: 1, limit: 500 })).then(function (tags) {
     var list = $('own-tags');
     list.textContent = '';
+    state.favCount = 0;
+    tags = tags.filter(function (t) {
+      if (isFavTag(t.name)) state.favCount = t.count;
+      return !isFavTag(t.name);
+    });
+    if (state.favCount) {
+      var fli = el('li'), fr = el('div', 'row');
+      fr.appendChild(el('span', 'toggle heart', '♥'));
+      var fname = el('button', 'name', tr('fav.label'));
+      fname.onclick = function () { setFilter({ folder: null, tags: [], fav: true, q: '' }); };
+      fr.appendChild(fname);
+      fr.appendChild(el('span', 'count', I18n.number(state.favCount)));
+      fli.appendChild(fr);
+      list.appendChild(fli);
+    }
     tags.forEach(function (t) {
       state.tagNames[t.id] = t.name;
       var li = el('li');
@@ -2613,7 +2732,7 @@ function loadOwnTags() {
       li.appendChild(r);
       list.appendChild(li);
     });
-    $('tags-section').hidden = !tags.length;
+    $('tags-section').hidden = !tags.length && !state.favCount;
     markActiveFolder();
     renderChips();
   }).catch(function () {});

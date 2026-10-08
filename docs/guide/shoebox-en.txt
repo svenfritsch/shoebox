@@ -32,7 +32,8 @@ One page in your browser, a timeline of everything on the drive.
 
 - Search & filter
    Type a person, pet, tag or folder. Combine keywords for a more complex
-   search. Filter by photos, videos or Live Photos.
+   search. Filter by photos, videos or Live Photos, or show only your
+   favorites ♥.
 
 - Tags
    Your own tags on many photos at once. Folders count as tags too. Stored in
@@ -78,26 +79,30 @@ Everything is on one page. Here is where things are.
 3. Type
    Show only photos, videos or Live Photos.
 
-4. Year
+4. Favorites ♥
+   Show only the photos you have hearted. Also found by typing favorite in the
+   search box.
+
+5. Year
    Jump straight to a year.
 
-5. Select ☑
+6. Select ☑
    Pick photos to move, tag or trash.
 
-6. Import ⤒
+7. Import ⤒
    Add photos and videos from this computer or the iPad.
 
-7. Quick links
+8. Quick links
    All photos · Duplicates · Trash · Settings.
 
-8. Folders
+9. Folders
    Your folders, with counts. Tags, Faces and Drives appear here when you have
    them.
 
-9. Timeline
+10. Timeline
    Months with counts. Click a photo to open the viewer.
 
-10. Language & status
+11. Language & status
    Switch English / German; see scan, thumbnail and drive status.
 
 A typical session
@@ -167,6 +172,13 @@ Click a photo. ⓘ opens the info panel: date (marked estimated when it is not
 the day the photo was taken), camera, size, tags, people, and buttons to open
 the folder or copy the path.
 
+Favorites
+The ♥ in the top bar of the viewer, or the key f, marks the photo as a
+favorite. In the timeline the same heart sits in the top right corner of each
+photo (it appears when you point at a photo; hearted photos always show it).
+Click it again to take it off. Under the hood a favorite is just your own tag
+favorite, kept in the index like any tag, never in the photo.
+
 Rotate
 r turns left, Shift+R right. For JPEGs this changes only the two bytes of the
 rotation flag; for other formats the turn exists in shoebox only.
@@ -177,6 +189,7 @@ Keyboard in the viewer
 ← →: previous / next
 i: show / hide the info panel
 Space: open / close the viewer (on a photo picked with the arrow keys)
+f: add to / remove from favorites
 r · Shift+R: rotate left / right
 Esc: close the viewer
 
@@ -188,7 +201,9 @@ Search, select, tag and move: all of it works on many photos at once.
 Search
 Type in the search box: suggestions appear for tags, people and folders. Pick
 several and they become chips that narrow the result; × removes one, Clear all
-starts over.
+starts over. To find your favorites press the ♥ button next to Type, or type
+favorite (English) or favorit (German) and pick ♥ Favorites; it combines with
+everything else, e.g. favorites of one person or one year.
 
 Select
 Press ☑, then click photos (Shift-click for a range; on the iPad just tap).
