@@ -358,3 +358,18 @@ fn verify_is_clean_after_moves() {
     let report = lib.verify(false);
     assert!(report.is_clean(), "{report:?}");
 }
+
+#[test]
+fn verify_does_not_fail_a_copy_whose_content_is_still_there() {
+    let lib = Library::new("verify-merged-copy");
+    let data = fs::read(lib.path("Familie/Weihnachten/DSC_2001.jpg")).unwrap();
+    lib.write("Aurelia/IMG_9156.JPG", &data);
+    lib.write("Familie/Aurelia/IMG_9156.JPG", &data);
+    lib.scan();
+    // The copy in Aurelia/ goes away; its content stays at Familie/Aurelia/.
+    fs::remove_file(lib.path("Aurelia/IMG_9156.JPG")).unwrap();
+    assert_eq!(lib.scan().missing, 1);
+    let report = lib.verify(false);
+    assert!(report.is_clean(), "{report:?}");
+    assert_eq!(report.relocated, 1);
+}
