@@ -4438,20 +4438,34 @@ function clusterCard(c) {
 function infoFaces(row, info) {
   var box = el('div', 'pfaces');
   var faces = info.faces || [];
+  // "Select" turns the list into a checklist (picking mode) with a bar to
+  // ignore or mark several faces at once. The pick belongs to one photo.
+  if (!lb.pick || lb.pick.file !== info.id) lb.pick = { file: info.id, on: false, ids: {} };
+  var pick = lb.pick;
+  var pickable = faces.filter(function (f) { return f.id != null; });
+  if (!pickable.length) pick.on = false;
+  box.classList.toggle('picking', pick.on);
   if (!info.faces) box.appendChild(el('div', 'note', tr('info.faces_unlooked')));
   else if (!faces.length) box.appendChild(el('div', 'note', tr('info.no_faces')));
-  faces.forEach(function (f, k) { box.appendChild(infoFace(info, f, k)); });
+  faces.forEach(function (f, k) { box.appendChild(infoFace(info, f, k, pick)); });
   (info.faces_lost || []).forEach(function (f) {
     var line = el('div', 'pface lost');
     line.appendChild(el('span', 'avatar small'));
     line.appendChild(el('span', 'who', tr('info.face_lost', { name: f.person ? f.person.name : '?' })));
     box.appendChild(line);
   });
+  if (pick.on) box.appendChild(infoPickBar(info, pickable, pick));
   var tools = el('div', 'ptools');
   if (faces.length) {
     var show = el('button', '', tr(lb.showFaces ? 'info.hide_boxes' : 'info.show_boxes'));
     show.onclick = function () { lb.showFaces = !lb.showFaces; renderPanel(); };
     tools.appendChild(show);
+  }
+  if (pickable.length > 1 && !pick.on) {
+    var select = el('button', '', tr('info.select'));
+    select.title = tr('info.select_hint');
+    select.onclick = function () { pick.on = true; pick.ids = {}; renderPanel(); };
+    tools.appendChild(select);
   }
   if (lb.details && state.data && state.data.kinds[state.open] !== 'v') {
     var add = el('button', '', tr('info.add_face'));
@@ -4467,8 +4481,70 @@ function infoFaces(row, info) {
   row(tr('info.people'), box);
 }
 
-function infoFace(info, f, k) {
+// The bar under the list in picking mode: how many are ticked, a shortcut to
+// tick every face nobody has named, and Ignore / Not a face for the ticked.
+function infoPickBar(info, pickable, pick) {
+  var bar = el('div', 'pickbar');
+  var chosen = pickable.filter(function (f) { return pick.ids[f.id]; });
+  var n = chosen.length;
+  var pets = n > 0 && chosen.every(function (f) { return f.species; });
+  var head = el('div', 'pickhead');
+  head.appendChild(el('span', 'pickcount', n ? trn('count.faces', n) : tr('info.select_none')));
+  var unnamed = pickable.filter(function (f) { return f.state !== 'confirmed' && f.state !== 'ignored'; });
+  if (unnamed.length) {
+    var all = el('button', 'link', tr('info.select_unnamed'));
+    all.onclick = function () { unnamed.forEach(function (f) { pick.ids[f.id] = true; }); renderPanel(); };
+    head.appendChild(all);
+  }
+  bar.appendChild(head);
+  var row = el('div', 'pickacts');
+  var ignore = el('button', 'btn quiet', n ? tr('unnamed.ignore_n', { n: n }) : tr('unnamed.ignore'));
+  ignore.title = tr('unnamed.ignore_hint');
+  var notFace = el('button', 'btn quiet', n ? tr(pets ? 'unnamed.notface_n_pet' : 'unnamed.notface_n', { n: n }) : tr('facecheck.not_face'));
+  notFace.title = tr(pets ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint');
+  var cancel = el('button', 'btn quiet', tr('app.cancel'));
+  ignore.disabled = notFace.disabled = !n;
+  var act = function (action) {
+    var ids = chosen.map(function (f) { return f.id; });
+    bar.classList.add('busy');
+    post(LIBAPI + '/faces/' + action, { faces: ids }).then(function () {
+      var count = trn('count.faces', ids.length);
+      toast(action === 'ignore' ? tr('unnamed.ignored', { count: count }) : tr(pets ? 'facecheck.marked_pet' : 'facecheck.marked', { count: count }));
+      pick.on = false;
+      pick.ids = {};
+      infoFacesChanged(info.id);
+    }).catch(function (e) { bar.classList.remove('busy'); failed(e); });
+  };
+  ignore.onclick = function () { act('ignore'); };
+  notFace.onclick = function () { act('not-face'); };
+  cancel.onclick = function () { pick.on = false; pick.ids = {}; renderPanel(); };
+  [ignore, notFace, cancel].forEach(function (b) { row.appendChild(b); });
+  bar.appendChild(row);
+  return bar;
+}
+
+function infoFace(info, f, k, pick) {
   var line = el('div', 'pface');
+  if (pick && pick.on) {
+    // Picking mode: the whole row is a checkbox; its own buttons are hidden.
+    if (f.id == null) {
+      line.classList.add('nopick');
+    } else {
+      line.classList.add('pickable');
+      if (pick.ids[f.id]) line.classList.add('picked');
+      var tick = el('input');
+      tick.type = 'checkbox';
+      tick.checked = !!pick.ids[f.id];
+      tick.setAttribute('aria-label', tr('facecheck.select'));
+      var toggle = function () {
+        if (pick.ids[f.id]) delete pick.ids[f.id]; else pick.ids[f.id] = true;
+        renderPanel();
+      };
+      tick.onchange = toggle;
+      line.onclick = function (ev) { if (ev.target !== tick) toggle(); };
+      line.appendChild(tick);
+    }
+  }
   // A named person shows their picture (no crop of the face is kept); the
   // box on the photo shows which face it is.
   var pic = f.state === 'confirmed' && f.person ? avatar(people.byId[f.person.id] || { name: f.person.name }, 'small') : faceImg(f, 'small');
