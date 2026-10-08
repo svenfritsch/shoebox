@@ -182,7 +182,7 @@ function startJob(kind) {
   }
   api('/api/job', {
     kind: kind, roots: roots,
-    quick: $('opt-quick').checked, rotated: $('opt-rotated').checked, deep: $('opt-deep').checked,
+    quick: $('opt-quick').checked, deep: $('opt-deep').checked,
   }).then(function () {
     $('progress-card').hidden = false;
     $('progress-card').scrollIntoView({ behavior: 'smooth' });
@@ -206,7 +206,7 @@ function poll() {
 // the photo app runs; only Cancel (command) or Stop (app) stay usable. The
 // recognition buttons are the exception while the photo app runs, and the
 // photo app can be started while recognition runs.
-var BESIDE_APP = ['recognize', 'recognize_pets', 'faces_stats'];
+var BESIDE_APP = ['recognize', 'recognize_pets', 'recognize_rotated', 'faces_stats'];
 
 function applyLocks() {
   $('controls').disabled = busy || serving;
@@ -214,7 +214,6 @@ function applyLocks() {
     b.disabled = busy || (serving && BESIDE_APP.indexOf(b.dataset.kind) < 0);
   });
   $('opt-quick').disabled = $('opt-deep').disabled = busy || serving;
-  $('opt-rotated').disabled = busy;
   $('start-app').disabled = busy && BESIDE_APP.indexOf(runningKind) < 0;
 }
 
@@ -229,6 +228,7 @@ function render(job) {
   lastJob = job;
   showCleanup(job);
   showArrivals(job);
+  showForget(job);
   if (job.kind === 'backup' && !job.running && reloadedFor !== job.id) { reloadedFor = job.id; loadConfig(); }
   $('progress-card').hidden = false;
   var name = kindName(job.kind);
@@ -415,6 +415,26 @@ $('arrivals-go').onclick = function () {
   });
 };
 
+// After a verify that found files gone: forget their records (`scan::forget_missing_records`).
+var forgetJob = null;
+function showForget(job) {
+  var hit = job.kind === 'verify' && !job.running
+    ? job.results.filter(function (r) { return r.result && (r.result.missing.length + (r.result.relocated || 0)) > 0; }) : [];
+  var box = $('forget-box');
+  box.hidden = !hit.length;
+  if (box.hidden) return;
+  forgetJob = { roots: hit.map(function (r) { return r.root; }) };
+  forgetJob.n = hit.reduce(function (n, r) { return n + r.result.missing.length + (r.result.relocated || 0); }, 0);
+  $('forget-text').textContent = tr('launcher.forget.found', { n: forgetJob.n });
+}
+$('forget-go').onclick = function () {
+  if (!forgetJob) return;
+  if (!window.confirm(tr('launcher.forget.confirm', { n: forgetJob.n }))) return;
+  api('/api/job', { kind: 'forget_missing', roots: forgetJob.roots }).then(poll).catch(function (e) {
+    $('job-error').hidden = false; $('job-error').textContent = e.message;
+  });
+};
+
 // After a backup check: copies removed on the duplicates screen that the backup still holds.
 var cleanupJob = null;
 function showCleanup(job) {
@@ -450,7 +470,8 @@ function summaryOf(kind, r) {
   else if (kind === 'verify') {
     out.push(tr('launcher.sum.checked', { n: r.checked }), tr('launcher.sum.missing', { n: r.missing.length }), tr('launcher.sum.damaged', { n: r.damaged.length }));
     if (r.relocated) out.push(tr('launcher.sum.relocated', { n: r.relocated }));
-  } else if (kind === 'recognize' && r.faces !== undefined) out.push(tr('launcher.sum.faces', { n: r.faces }));
+  } else if ((kind === 'recognize' || kind === 'recognize_rotated') && r.faces !== undefined) out.push(tr('launcher.sum.faces', { n: r.faces }));
+  else if (kind === 'forget_missing') out.push(tr('launcher.sum.forgotten', { n: r.forgotten }));
   else if (kind === 'recognize_pets' && r.pets) out.push(tr('launcher.sum.pets', { n: r.pets.faces }), tr('launcher.failed', { n: r.pets.failed }));
   else if (kind === 'faces_stats') out.push(r === null ? tr('launcher.sum.no_faces') : tr('launcher.sum.faces', { n: r.faces }));
   return out;

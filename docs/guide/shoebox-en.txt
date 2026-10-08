@@ -146,8 +146,13 @@ or before you rely on a backup), not after every move. Moves are not its
 business: a moved photo has its new place in the index and passes. A photo
 whose path is gone but whose content is still on the drive elsewhere (a
 duplicate you deleted) is listed as "relocated", not as a failure. Only
-content that is nowhere on the drive any more counts as missing.
+content that is nowhere on the drive any more counts as missing. If files are
+gone, a button appears after the check that forgets their records (only the
+index changes, no photo is touched).
 Recognize: find faces (and, with Recognize pets, cats and dogs)
+Recognize lying down: also find faces lying down (slower)
+Recognize pets: find cats and dogs; they show up among the faces
+Face stats: how recognition went
 Backup check: is the 2nd folder a complete copy of the 1st?
 
 [Screenshot: The launcher: 1 choose the drive or folder, 2 pick a task, 3 open

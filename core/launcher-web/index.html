@@ -40,6 +40,7 @@
       <button data-kind="scan"><b data-i18n="launcher.kind.scan">Scan</b><span data-i18n="launcher.kind.scan.desc">find new, moved and changed photos</span></button>
       <button data-kind="verify"><b data-i18n="launcher.kind.verify">Verify</b><span data-i18n="launcher.kind.verify.desc">check that nothing was lost or damaged</span></button>
       <button data-kind="recognize"><b data-i18n="launcher.kind.recognize">Recognize</b><span data-i18n="launcher.kind.recognize.desc">find the faces in your photos</span></button>
+      <button data-kind="recognize_rotated"><b data-i18n="launcher.kind.recognize_rotated">Recognize lying down</b><span data-i18n="launcher.kind.recognize_rotated.desc">also find faces lying down in the photos (slower)</span></button>
       <button data-kind="recognize_pets"><b data-i18n="launcher.kind.recognize_pets">Recognize pets</b><span data-i18n="launcher.kind.recognize_pets.desc">find cats and dogs; they show up among the faces</span></button>
       <button data-kind="faces_stats"><b data-i18n="launcher.kind.faces_stats">Face stats</b><span data-i18n="launcher.kind.faces_stats.desc">how recognition went</span></button>
       <button data-kind="backup"><b data-i18n="launcher.kind.backup">Backup check</b><span data-i18n="launcher.kind.backup.desc">is the 2nd folder a complete copy of the 1st?</span></button>
@@ -47,7 +48,6 @@
     <p id="backup-hint" class="hint"></p>
     <div class="options">
       <label><input type="checkbox" id="opt-quick"> <span data-i18n="launcher.opt.quick">Quick (Scan: skip full hashes · Verify: size and date only)</span></label>
-      <label><input type="checkbox" id="opt-rotated"> <span data-i18n="launcher.opt.rotated">Recognize: also look for faces lying down (slower)</span></label>
       <label><input type="checkbox" id="opt-deep"> <span data-i18n="launcher.opt.deep">Backup check: also re-read the backup drive (finds bit rot; slow)</span></label>
     </div>
   </section>
@@ -70,6 +70,11 @@
       <p class="hint" data-i18n="launcher.arrivals.tags_hint">The folder names of the deleted copies are saved as tags on the older originals.</p>
       <label><input type="checkbox" id="arrivals-forever"> <span data-i18n="launcher.arrivals.forever">Delete for good (skip the trash folder)</span></label>
       <button id="arrivals-go" class="primary" data-i18n="launcher.arrivals.button">Delete the new copies</button>
+    </div>
+    <div id="forget-box" class="cleanup" hidden>
+      <p id="forget-text"></p>
+      <p class="hint" data-i18n="launcher.forget.hint">Only the index changes; no photo file is touched. Photos that are still on the drive under another path stay.</p>
+      <button id="forget-go" class="primary" data-i18n="launcher.forget.button">Forget the missing files</button>
     </div>
     <p id="job-error" class="error" hidden></p>
     <div id="tabs" class="tabs" role="tablist" hidden></div>

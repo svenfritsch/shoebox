@@ -155,8 +155,12 @@ verschobenes Foto hat im Index seinen neuen Platz und besteht die Prüfung. Ein
 Foto, dessen Pfad weg ist, dessen Inhalt aber anderswo auf dem Laufwerk noch
 liegt (eine gelöschte Kopie), steht als „umgezogen“ in der Liste, nicht als
 Fehler. Nur Inhalt, der nirgends mehr auf dem Laufwerk liegt, zählt als
-fehlend.
+fehlend. Fehlen Dateien, erscheint nach der Prüfung ein Knopf, der ihre
+Einträge vergisst (nur der Index ändert sich, kein Foto wird angefasst).
 Erkennen: Gesichter finden (mit „Haustiere erkennen“ auch Katzen und Hunde)
+Liegende Gesichter erkennen: auch liegende Gesichter finden (langsamer)
+Haustiere erkennen: Katzen und Hunde finden; sie erscheinen bei den Gesichtern
+Gesichts-Statistik: wie die Erkennung gelaufen ist
 Backup-Prüfung: ist der 2. Ordner eine vollständige Kopie des 1.?
 
 [Screenshot: Der Starter: 1 Laufwerk oder Ordner wählen, 2 Aufgabe wählen, 3
