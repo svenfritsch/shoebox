@@ -468,6 +468,10 @@ fn favorites_are_the_own_tag_favorite_and_found_by_heart_or_word() {
     assert_eq!(heart(&[img1, dsc], true)["files"], 2);
     assert_eq!(own_tags(&lib, img1), vec!["favorite"]);
     assert_eq!(heart(&[img1], true)["files"], 0, "already there");
+    // Typed as a tag, the other words are the heart too.
+    assert_eq!(add(addr, &[img1], "Favoriten")["tag"]["name"], "favorite");
+    assert_eq!(remove(addr, &[dsc], "favorit")["files"], 1);
+    assert_eq!(heart(&[dsc], true)["files"], 1);
 
     // The timeline says which of its photos have a heart; `fav=1` and the
     // words in both languages find them.

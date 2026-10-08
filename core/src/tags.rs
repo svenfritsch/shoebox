@@ -44,6 +44,10 @@ pub fn check_name(name: &str) -> Result<String> {
     if name.chars().any(char::is_control) {
         bail!("tag names cannot contain control characters");
     }
+    // "Favoriten" and the like are the heart, not a tag of their own.
+    if means_favorite(&name) {
+        return Ok(FAVORITE.to_string());
+    }
     Ok(name)
 }
 
@@ -60,9 +64,20 @@ pub fn is_favorite_word(word: &str) -> bool {
         && ["favorite", "favorites", "favourite", "favourites", "favorit", "favoriten"].iter().any(|w| w.starts_with(&word))
 }
 
+/// Names typed as a tag that mean the heart: the stored name and its other
+/// spellings (the plural, German, British). They all become `FAVORITE`.
+const FAVORITE_ALIASES: [&str; 5] = ["favorites", "favourite", "favourites", "favorit", "favoriten"];
+
 /// Is this tag name the favorites tag (the UI shows it as a heart, not as a tag)?
 pub fn is_favorite_name(name: &str) -> bool {
     db::tag_fold(name) == FAVORITE
+}
+
+/// Does a typed tag name mean the heart (`favorite`, `favorites`, `favorit`,
+/// `favoriten`, …)?
+pub fn means_favorite(name: &str) -> bool {
+    let fold = db::tag_fold(name);
+    fold == FAVORITE || FAVORITE_ALIASES.contains(&fold.as_str())
 }
 
 /// Heart a file or take the heart off. Only the user's own tag counts: a
@@ -396,6 +411,10 @@ mod tests {
         assert!(is_favorite_word("Favoriten") && is_favorite_word("fav") && is_favorite_word("favorite"));
         assert!(!is_favorite_word("fa") && !is_favorite_word("favoriten2") && !is_favorite_name("favorites"));
         assert!(is_favorite_name(" Favorite "));
+        for n in ["Favorit", " FAVORITEN", "favorites"] {
+            assert_eq!(check_name(n).unwrap(), "favorite", "{n}");
+        }
+        assert_eq!(check_name("Favoritenstraße").unwrap(), "Favoritenstraße");
         assert_eq!(db::tag_fold("O\u{308}STERREICH"), db::tag_fold("\u{f6}sterreich"));
     }
 }

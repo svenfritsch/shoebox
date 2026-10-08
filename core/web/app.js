@@ -294,6 +294,9 @@ document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') se
 // "favorite" / "favorit" in the search box offers the same as a suggestion.
 var FAV_TAG = 'favorite';
 function isFavTag(name) { return String(name).trim().toLowerCase() === FAV_TAG; }
+// What typing in a tag field means the heart (the server maps these to the tag too).
+var FAV_TYPED = [FAV_TAG, 'favorites', 'favourite', 'favourites', 'favorit', 'favoriten'];
+function meansFav(name) { return FAV_TYPED.indexOf(String(name).trim().toLowerCase()) >= 0; }
 var HEART_ON = '<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true"><path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>';
 var HEART_OFF = '<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" d="M12 20.4l-1.1-1C6 15.1 3 12.4 3 8.9 3 6.5 4.8 4.7 7.2 4.7c1.4 0 2.7.6 3.6 1.7l1.2 1.4 1.2-1.4c.9-1.1 2.2-1.7 3.6-1.7C19.2 4.7 21 6.5 21 8.9c0 3.5-3 6.2-7.9 10.5l-1.1 1z"/></svg>';
 
@@ -2613,7 +2616,7 @@ function infoTags(row, info) {
       if (ev.key === 'Escape') { input.replaceWith(add); return; }
       if (ev.key !== 'Enter' || !input.value.trim()) return;
       // "favorite" is the heart, not a tag in the list.
-      if (isFavTag(input.value)) { setFavorite([info.id], true).then(function () { input.replaceWith(add); }); return; }
+      if (meansFav(input.value)) { setFavorite([info.id], true).then(function () { input.replaceWith(add); }); return; }
       input.disabled = true;
       post(LIBAPI + '/tags/add', { ids: [info.id], name: input.value }).then(function () { tagsChanged(info.id); })
         .catch(function (e) { input.disabled = false; failed(e); });
@@ -2666,7 +2669,7 @@ function addTagDialog(ids) {
       closeModal();
       toast(r.files ? tr('tags.added', { count: trn('count.photos', r.files), name: r.tag.name }) : tr('tags.already', { name: r.tag.name }));
       tagsChanged(null);
-      if (isFavTag(r.tag.name)) loadTimeline(false); // the hearts
+      if (isFavTag(r.tag.name)) loadTimeline(false); // the hearts (any spelling came back as the tag)
     }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
     return false;
   };

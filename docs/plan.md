@@ -714,6 +714,9 @@ has one "♥ Favorites" row instead.
   accepts the English and German words (favorite(s), favorit(en)) whatever
   language the UI is in, like the pet words. The tag is stored in English
   only, so "favorit" is not a second tag.
+- Typed as a tag name (info panel, bulk "Add tag…", the API), `favorite`, `favorites`,
+  `favorit`, `favoriten` (and `favourite(s)`) all mean the heart: `tags::check_name`
+  maps them to `favorite`, so there is no second tag.
 - The timeline response carries `favs` (ids of the shown items with a heart).
 - Only the user's own tag counts; a folder named "favorite" does not make its
   photos favorites. Read-only over originals, so no guard change.
