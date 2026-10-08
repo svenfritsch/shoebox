@@ -47,6 +47,7 @@ button.quiet { margin-left: 8px; }
 .results .ok .mark { color: var(--ok); } .results .bad .mark { color: var(--bad); }
 .results .path { flex: 1 1 55%; min-width: 0; word-break: break-all; }
 .results .note { color: var(--muted); font-size: 13px; flex: 0 1 auto; max-width: 100%; }
+.results .dup .note { color: var(--text); font-weight: 600; }
 .results .bad .note { flex-basis: 100%; padding-left: calc(1.2em + 10px); }
 details { margin-top: 12px; }
 pre { max-height: 220px; overflow: auto; font-size: 12px; background: var(--bg); padding: 10px; border-radius: 8px; white-space: pre-wrap; }

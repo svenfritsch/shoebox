@@ -11,7 +11,9 @@
 //! peer address and `Host` header against DNS rebinding), `X-Shoebox` on
 //! every request that is not a GET, one job at a time. The launcher never
 //! writes anywhere a CLI command would not: scan writes `.shoebox/`, the
-//! others only read, and every one of them reads originals under the guard.
+//! others only read (except the two cleanup buttons, which take duplicate
+//! copies off a drive after a scan or a backup check), and every one of them
+//! reads originals under the guard.
 
 use std::collections::VecDeque;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -444,8 +446,9 @@ fn now_secs() -> u64 {
 
 #[derive(Deserialize, Clone)]
 struct JobRequest {
-    /// `scan`, `verify`, `recognize`, `recognize_pets` (the same, then cats
-    /// and dogs too), `faces_stats` or `backup`.
+    /// `scan`, `scan_cleanup` (remove the copies the last scan found), `verify`,
+    /// `recognize`, `recognize_pets` (the same, then cats and dogs too),
+    /// `faces_stats`, `backup` or `backup_cleanup`.
     kind: String,
     /// One folder, or several in `roots`: they are processed one after the other.
     #[serde(default)]
@@ -465,7 +468,8 @@ struct JobRequest {
     /// Backup check: also re-read the backup drive's files.
     #[serde(default)]
     deep: bool,
-    /// Backup cleanup: delete for good instead of moving into the backup's trash.
+    /// Cleanup (of a backup, or of the copies a scan found): delete for good
+    /// instead of moving into the trash.
     #[serde(default)]
     forever: bool,
 }
@@ -490,6 +494,11 @@ fn run_command(req: &JobRequest, roots: Vec<PathBuf>) -> Result<(serde_json::Val
                 backup: roots.get(1).cloned().ok_or_else(|| anyhow::anyhow!("a backup cleanup needs the original drive and the backup"))?,
                 forever: req.forever,
             })?;
+            let clean = done.skipped.is_empty();
+            (serde_json::to_value(&done)?, clean)
+        }
+        "scan_cleanup" => {
+            let done = crate::arrivals::cleanup(&crate::arrivals::CleanupOptions { root, forever: req.forever })?;
             let clean = done.skipped.is_empty();
             (serde_json::to_value(&done)?, clean)
         }
@@ -567,7 +576,7 @@ fn runs_beside_app(kind: &str) -> bool {
 }
 
 fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
-    if !matches!(req.kind.as_str(), "scan" | "verify" | "recognize" | "recognize_pets" | "faces_stats" | "backup" | "backup_cleanup") {
+    if !matches!(req.kind.as_str(), "scan" | "verify" | "recognize" | "recognize_pets" | "faces_stats" | "backup" | "backup_cleanup" | "scan_cleanup") {
         return Err(ApiError::BadRequest(format!("unknown command {:?}", req.kind)));
     }
     if !runs_beside_app(&req.kind) && shared.app.lock().unwrap().is_some() {

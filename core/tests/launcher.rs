@@ -516,3 +516,34 @@ fn the_backup_check_lists_removed_copies_and_the_cleanup_job_takes_them_off_the_
     assert_eq!(job["result"]["report"]["removed"], 0);
     launcher.stop().unwrap();
 }
+
+#[test]
+fn the_scan_reports_copies_of_old_files_and_the_cleanup_job_removes_them() {
+    let _turn = serial();
+    let photo = "Familie/Weihnachten/DSC_2001.jpg";
+    let lib = Library::new("launcher-arrivals");
+    let _ = std::fs::remove_dir_all(lib.path("fixtures"));
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: None, reveal: None }).unwrap();
+    let addr = launcher.addr;
+    let root = lib.root.display().to_string();
+
+    // The first scan has nothing older to compare with.
+    let job = run_job(addr, json!({ "kind": "scan", "roots": [root] }));
+    assert_eq!(job["result"]["duplicates_total"], 0, "{job}");
+
+    std::fs::create_dir_all(lib.path("Neu")).unwrap();
+    std::fs::copy(lib.path(photo), lib.path("Neu/kopie.jpg")).unwrap();
+    let job = run_job(addr, json!({ "kind": "scan", "roots": [root] }));
+    assert_eq!(job["result"]["duplicates_total"], 1, "{job}");
+    assert_eq!(job["result"]["duplicates"], json!([{ "path": "Neu/kopie.jpg", "of": photo, "size": std::fs::metadata(lib.path(photo)).unwrap().len() }]));
+
+    let before = lib.snapshot();
+    let job = run_job(addr, json!({ "kind": "scan_cleanup", "roots": [root] }));
+    assert_eq!(job["ok"], true, "{job}");
+    assert_eq!(job["result"]["removed"], json!(["Neu/kopie.jpg"]));
+    assert!(!lib.path("Neu/kopie.jpg").exists());
+    let mut expected = before;
+    expected.retain(|p, _| !p.ends_with("Neu/kopie.jpg"));
+    assert_eq!(lib.snapshot(), expected, "only the new copy went");
+    launcher.stop().unwrap();
+}

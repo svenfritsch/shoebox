@@ -135,22 +135,6 @@ impl Names {
     }
 }
 
-/// `name`, or `stem (2).ext`, `stem (3).ext`, … if that is taken in `dir`.
-pub(crate) fn free_name(dir: &Path, name: &str) -> Result<String> {
-    let names = Names::load(dir)?;
-    if names.get(name).is_none() {
-        return Ok(name.to_string());
-    }
-    let (stem, ext) = match name.rsplit_once('.') {
-        Some((s, e)) => (s, format!(".{e}")),
-        None => (name, String::new()),
-    };
-    (2..10_000)
-        .map(|n| format!("{stem} ({n}){ext}"))
-        .find(|candidate| names.get(candidate).is_none())
-        .ok_or_else(|| anyhow!("no free name for {name}"))
-}
-
 // ---------------------------------------------------------------- renaming
 
 /// `rename` that fails instead of replacing an existing `to`. Atomic where
@@ -1117,16 +1101,10 @@ mod tests {
     }
 
     #[test]
-    fn free_names_get_a_number() {
+    fn renaming_never_replaces() {
         let dir = std::env::temp_dir().join(format!("shoebox-names-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        assert_eq!(free_name(&dir, "IMG_1.JPG").unwrap(), "IMG_1.JPG");
-        fs::write(dir.join("img_1.jpg"), b"x").unwrap();
-        assert_eq!(free_name(&dir, "IMG_1.JPG").unwrap(), "IMG_1 (2).JPG");
-        fs::write(dir.join("IMG_1 (2).JPG"), b"x").unwrap();
-        assert_eq!(free_name(&dir, "IMG_1.JPG").unwrap(), "IMG_1 (3).JPG");
-
         // No replacing, whatever the platform.
         fs::write(dir.join("a"), b"a").unwrap();
         fs::write(dir.join("b"), b"b").unwrap();

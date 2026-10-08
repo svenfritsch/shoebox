@@ -16,7 +16,7 @@ files, no dependencies, no build step.
   `-placeholder` and `-aria-label` for attributes.
 - English is the fallback for any key missing in another language.
 - Language: the saved choice (`localStorage`, key `shoebox.lang`), else the
-  first browser language we have, else English. A selector at the top right (photo app: toolbar, right of Import;
+  first browser language we have, else English. A selector at the top right (photo app: toolbar;
   launcher: top of the page) saves the choice and reloads, because the
   UI is built once from the messages.
 - Dates and numbers use `I18n.date` / `I18n.number` (the chosen language, not
@@ -51,7 +51,7 @@ with the same placeholders, plural messages have an `.other` form, every
 | Loader, embedding, key test, launcher | Done |
 | Photo app: static page, login, sidebar, toolbar, language selector | Done |
 | Photo app: grid, viewer, info panel, status line | Done |
-| Photo app: selection, move, trash, import, tags | Done |
+| Photo app: selection, move, trash, tags | Done |
 | Photo app: duplicates, trash page | Done |
 | Photo app: faces and people | Done |
 | Photo app: drives | Done |

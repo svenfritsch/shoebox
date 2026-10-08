@@ -8,7 +8,7 @@ progress. Update the status section when a phase moves.
 
 - **No copies, no changes to originals.** shoebox only indexes files by path
   and hash. Originals are opened read-only; the only operations that touch
-  them are explicit user actions (move, import, delete duplicate, and turning
+  them are explicit user actions (move, delete duplicate, and turning
   a JPEG, which changes the two bytes of its EXIF Orientation tag in place).
 - **Timestamps are sacred.** EXIF `DateTimeOriginal` and the file's created
   date must never change. Moving within the drive uses `rename`, which keeps
@@ -62,7 +62,7 @@ progress. Update the status section when a phase moves.
 
 - **Rust core** owns everything stateful: walking, hashing, metadata,
   SQLite (single writer), thumbnails, web UI (assets embedded with
-  `rust-embed`), import/move/duplicates, backup verification, and the
+  `rust-embed`), move/duplicates, backup verification, and the
   clustering/matching of recognition embeddings.
 - **Python recognizer** is stateless: image path in, boxes + labels +
   embeddings out. No DB access, no knowledge of names. If it's missing, the
@@ -101,11 +101,22 @@ Later option: run the ONNX models in Rust (`tract` or `ort`) and drop Python.
   `Familie/Weihnachten` is found under "Familie" and under "Weihnachten".
 - Never assume every folder starts with a date.
 
-### Import
+### Adding photos (no import)
 
-Drag and drop in the browser (works from other devices too, as an upload).
-Dialog asks year, month, event name and creates `YYYY-MM Name`. File modified
-dates are set from the browser's `File.lastModified`.
+There is no upload or import in the app: a browser never reveals file paths,
+so an upload could not keep a file's created date, and the app is meant to be
+a viewer and tagger while the drive is managed in the Finder / File Explorer.
+The user copies or moves a folder onto the drive there (dates are kept) and
+runs Scan. The scan knows which records are new (their id is higher than any
+record before it started) and, once everything is hashed, lists the new files
+whose content the drive already had (`arrivals.rs`, `Stats.duplicates`, shown
+in the launcher's result list as "already on the drive: <older copy>"). The
+launcher then offers "Delete the new copies" (`scan_cleanup`): each goes
+through `duplicates::remove_copies` (trash, or for good if ticked; tags and
+dates go to the older copy; a backup check learns it was removed on purpose).
+Only copies that have an older copy are listed: two new files that only match
+each other, a first scan, a quick scan and a file that moved are not, and the
+offer is gone after the next scan. Those cases are for the duplicates screen.
 
 ### Dates shown for a photo
 
@@ -132,10 +143,10 @@ result always fits what the scanner reads). Year first: 4 digits (`YYYY`) or 2
 `event_pattern` (text such as `YY.MM_Name`; the default `YYYY-MM Name` is
 stored as no setting). `/` is not offered: it would make a subfolder. The UI
 shows the pattern with the letters of its language (`JJJJ-MM Name` in
-German) in the import dialog, the rename hint and the move placeholder.
+German) in the rename hint and the move placeholder.
 
-- The pattern only decides what the app **creates** (`import::event_folder`,
-  `POST /api/import/folder`, `GET/POST /api/event-pattern`). It refuses a year
+- The pattern only decides what the app **creates** (`library::event_pattern`,
+  `GET/POST /api/event-pattern`). It refuses a year
   the pattern cannot write (2-digit years are 2000 to 2099) and a name that
   would not be read back (after a punctuation mark or nothing the name may
   not start with a digit).
@@ -160,16 +171,16 @@ as own tags; folder tags always follow the new folder either way.
 `organize::move_files_with`, `tags::keep_as_own` and
 `move_always_keeps_own_tags_and_can_keep_folder_tags` in `core/tests/tags.rs`.
 
-### Recognition after an import (open)
+### Recognition after a scan (open)
 
 `shoebox recognize` (faces, `--rotated`, `--pets`) only runs when the user
 starts it: from the launcher, or in Terminal. The photo app does not call it:
 `serve` only clusters faces and embeds faces and pets drawn by hand, and the
 launcher refuses to run a job while the photo app is running ("the photo app
-is already running; stop it first"). So photos imported (or added by a scan)
+is already running; stop it first"). So photos added by a scan
 while the photo app is open stay unrecognised until the user stops the app and
-runs Recognize in the launcher. To do: after an import (and after a rescan
-that found new files), `serve` starts the recognizer in the background for
+runs Recognize in the launcher. To do: after a rescan
+that found new files,, `serve` starts the recognizer in the background for
 the new photos only (faces, the turned pass and pets, the way `shoebox
 recognize` resumes), with progress in the status line (`status.finding_faces`
 exists), and skips it when no recognizer is installed or a `recognize` run is
@@ -203,7 +214,7 @@ created and full hash before and after, and failing on any difference.
 `shoebox probe` does this at runtime; `core/tests/scan.rs` does it for
 `scan` and `verify`, `core/tests/serve.rs` for thumbnails and every
 endpoint of `serve`, `core/tests/recognize.rs` for `recognize` (both
-passes) and the face crops. Explicit changes (move, rename, trash, import) are
+passes) and the face crops. Explicit changes (move, rename, trash) are
 covered by `core/tests/organize.rs`: every file keeps content, size and
 timestamps, only its path changes, nothing is replaced, and a scan and
 `verify` afterwards find the index in line with the drive.
@@ -246,7 +257,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 0 | Toolchain + portability probe (`shoebox probe`) | **Done except the real-hardware run** (see below) |
 | 1 | Scanner + SQLite schema + incremental rescan + move detection + guard integration test. CLI: `shoebox scan`, `shoebox verify` | **Done except the real-hardware run** (see below) |
 | 2 | `thumbs.db` + perceptual hash, web UI (virtualised timeline grid, folder tree, tag search, video playback), LAN access with PIN. `shoebox serve` | **Done except the real-hardware run** (see below) |
-| 3 | Import dialog, move (with RAW pairs, case-only renames), duplicates UI, self-healing paths | **Done except the real-hardware run** (see below) |
+| 3 | Move (with RAW pairs, case-only renames), duplicates UI, self-healing paths | **Done except the real-hardware run** (see below) |
 | 4 | Worker protocol + Python recognizer (faces), worker supervision in Rust | **Done except the real-hardware run** (see below) |
 | 5a | Show in Finder / Explorer, copy path | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5b | Own tags (add/remove, many photos at once, search), user data backup | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
@@ -336,23 +347,21 @@ Done (see [phase3.md](phase3.md)):
   trash in `.shoebox/trash/` with restore and empty. Only `rename`, never
   replacing (`RENAME_NOREPLACE` / `RENAME_EXCL`), names compared NFC and
   case-insensitively, files must match the index.
-- `core/src/import.rs`: browser upload streamed into `.shoebox/incoming/`,
-  hashed on the way, mtime from `File.lastModified`, renamed into
-  `YYYY-MM Name`, indexed with its full hash; known content is skipped,
-  taken names get ` (2)`.
+- `core/src/arrivals.rs` (added after phase 3, replacing the browser upload
+  `import.rs`): see "Adding photos" above.
 - `core/src/duplicates.rs`: exact (full hash) and near (`phash` ≤ 8 bits,
   all pairs on all cores) groups; decisions per pair (`distinct`,
   `linked`) in schema v2.
 - Self-healing paths: `serve` runs the scan's index step in the background
   when a file is not where the index says.
-- UI: selection with move/trash, import dialog with drag and drop, folder
+- UI: selection with move/trash, folder
   rename, duplicates and trash pages. Added later: Shift-click selects a
   range, "Select all" on a month heading selects the month (the iPad has no
   Shift). Every non-GET request needs an
   `X-Shoebox` header (CSRF protection for localhost without PIN).
 
 Open:
-- [ ] Moves, renames and imports on the exFAT drive from the old Intel
+- [ ] Moves and renames on the exFAT drive from the old Intel
       MacBook and the iPad (checklist in [phase3.md](phase3.md)).
 - [ ] Confirm the GitHub Actions run is green.
 

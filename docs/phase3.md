@@ -1,14 +1,14 @@
-# Phase 3: import, move, duplicates, self-healing paths
+# Phase 3: move, duplicates, self-healing paths
 
 `shoebox serve` can now change the library, on explicit request only:
-import photos into a `YYYY-MM Name` folder, move photos (with their RAW,
+move photos (with their RAW,
 Live Photo and sidecar files), rename or move folders, move photos to a
 trash and back, and settle duplicates. It also follows files that were moved
 in the Finder while it runs. The integration tests are in
 `core/tests/organize.rs`; they drive everything through the web API, like
 the UI does.
 
-## Rules for changes (`core/src/organize.rs`, `core/src/import.rs`)
+## Rules for changes (`core/src/organize.rs`)
 
 - **Only `rename`.** On one drive it keeps content, size and every timestamp
   (modified and created). Nothing is copied, rewritten or replaced. After
@@ -62,27 +62,12 @@ files again (new ids; the full hash is reused if size and mtime are
 unchanged). *Delete for good* / *Empty trash* deletes the files, after a
 confirmation. Thumbnails of trashed files are kept until then.
 
-## Import
+## Import (removed)
 
-The ⤒ button or dropping files anywhere on the page opens the dialog: year,
-month (both preset from the oldest file's date) and event name give the
-folder `YYYY-MM Name` (at the top level; an existing folder with that name
-in any spelling is used).
-
-- Files are uploaded one after the other as the raw request body
-  (`POST /api/import?folder=&name=&modified=`), streamed into
-  `.shoebox/incoming/` on the same drive and hashed (BLAKE3) on the way.
-- The modification date is set from the browser's `File.lastModified`
-  before the file is renamed into place. The created date is the time of the
-  import (it cannot be set portably).
-- A file whose content is in the library already (same full hash; files
-  without a full hash yet are hashed when their quick hash matches) is not
-  imported again and the dialog says where it is. `keep=1` imports anyway.
-- A taken name (any case or Unicode form) gets ` (2)`, ` (3)`, …
-- The new file is indexed at once, with its full hash. Its thumbnail and
-  perceptual hash are made when it is first shown (or by the next scan).
-- Cut-off uploads are deleted; leftovers in `incoming/` are removed when
-  `serve` starts.
+The browser upload (⤒ button, drag and drop, `POST /api/import`) was removed:
+see "Adding photos" in [plan.md](plan.md). Copy the photos onto the drive in
+the file manager and scan; the scan reports copies of files the drive had
+(`core/src/arrivals.rs`, `core/tests/arrivals.rs`).
 
 ## Duplicates (`core/src/duplicates.rs`)
 
@@ -124,8 +109,6 @@ grants.
 |---|---|
 | `POST /api/move` `{ids, folder}` | Move photos with companions |
 | `POST /api/folders/{id}/rename` `{path}` | Rename or move a folder |
-| `POST /api/import/folder` `{year, month, name}` | The `YYYY-MM Name` folder (and whether it exists) |
-| `POST /api/import?folder=&name=&modified=&keep=` | One file as the raw body |
 | `GET /api/duplicates` | Undecided groups |
 | `POST /api/duplicates/decide` `{ids, decision}` | `distinct`, `linked`, or `null` to forget |
 | `GET /api/trash`, `POST /api/trash` `{ids}` | List / move to the trash |
@@ -149,8 +132,6 @@ full_hash, deleted_at)`. Older databases are migrated on open.
   rename on the same drive and can be undone from the UI.
 - **Companions by name stem** (same folder, case-insensitive), not only
   RAW and Live Photo: an `IMG_1.JPG` with an `IMG_1.HEIC` moves as one.
-- **Imports go to the top level** as `YYYY-MM Name`; moving them elsewhere
-  is a folder move.
 - **Duplicates compare all pairs** instead of an index structure: simple,
   exact, and fast enough at 100,000 photos with caching.
 - **No CLI for moves yet**; the UI and API cover it.
@@ -160,8 +141,5 @@ full_hash, deleted_at)`. Older databases are migrated on open.
 - [ ] Moves and case-only folder renames on the exFAT drive from the old
       Intel MacBook: timestamps (modified and created) unchanged, whether
       `renamex_np(RENAME_EXCL)` works on exFAT or the fallback is used.
-- [ ] Import from the iPad: Safari may convert HEIC to JPEG when picking from
-      the photo library ("Most Compatible"); check what arrives and its date.
-- [ ] Drag and drop from the Finder into the browser; large videos.
 - [ ] Duplicates page on the full library: time of the first load.
 - [ ] Self-healing: move a folder in the Finder while browsing.
