@@ -111,7 +111,7 @@
     <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l5 5"/></symbol>
     <symbol id="i-tag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12V4h8l10 10-8 8L3 12z"/><circle cx="7.5" cy="8.5" r="1.2"/></symbol>
     <symbol id="i-move" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/><path d="M9 13h7m-3-3l3 3-3 3"/></symbol>
-    <symbol id="i-import" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m-4-4l4 4 4-4"/><path d="M4 19h16"/></symbol>
+    <symbol id="i-add" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m-4-4l4 4 4-4"/><path d="M4 19h16"/></symbol>
     <symbol id="i-dup" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></symbol>
     <symbol id="i-people" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><circle cx="17" cy="9" r="2.4"/><path d="M17 14c2.5 0 4.5 2 4.5 5"/></symbol>
@@ -134,7 +134,7 @@
         </div>
       </div>
       <h1>Deine Fotobibliothek, auf dem Laufwerk.</h1>
-      <p class="lede">shoebox ist ein kleines Programm, das auf deinem externen Laufwerk neben deinen Fotos liegt. Es indexiert sie, zeigt sie im Browser in einer schnellen Zeitleiste und hilft beim Verschlagworten, Sortieren, Importieren und Aufräumen von Duplikaten, ohne sie je zu kopieren oder ihre Metadaten anzufassen.</p>
+      <p class="lede">shoebox ist ein kleines Programm, das auf deinem externen Laufwerk neben deinen Fotos liegt. Es indexiert sie, zeigt sie im Browser in einer schnellen Zeitleiste und hilft beim Verschlagworten, Sortieren und Aufräumen von Duplikaten, ohne sie je zu kopieren oder ihre Metadaten anzufassen.</p>
       <ul class="badges">
         <li><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><span>Originale bleiben unberührt</span></li>
         <li><svg class="ic" aria-hidden="true"><use href="#i-drive"/></svg><span>Liegt auf deinem Laufwerk</span></li>
@@ -154,7 +154,7 @@
       <li><a href="#start">In drei Schritten loslegen</a></li>
       <li><a href="#browse">Stöbern und ansehen</a></li>
       <li><a href="#find">Finden und ordnen</a></li>
-      <li><a href="#import">Import, Duplikate und Papierkorb</a></li>
+      <li><a href="#adding-photos">Fotos hinzufügen, Duplikate und Papierkorb</a></li>
       <li><a href="#people">Personen und Haustiere</a></li>
       <li><a href="#drives">Laufwerke, Backups und das iPad</a></li>
       <li><a href="#safety">Deine Fotos sind sicher</a></li>
@@ -189,9 +189,9 @@
           <p>Fotos in einen Ordner verschieben (wird bei Bedarf angelegt). RAW-, Live-Photo- und Sidecar-Dateien wandern mit.</p>
         </li>
         <li>
-          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-import"/></svg></div>
-          <h3>Importieren</h3>
-          <p>Die Fotos eines Ereignisses auswählen oder ins Fenster ziehen: Sie landen in einem neuen Ereignisordner und behalten ihre Daten.</p>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-add"/></svg></div>
+          <h3>Fotos hinzufügen</h3>
+          <p>Die Fotos eines Ereignisses im Finder oder Explorer aufs Laufwerk kopieren (die Daten bleiben erhalten) und scannen. Kopien von Dateien, die das Laufwerk schon hatte, werden aufgelistet und lassen sich löschen.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-dup"/></svg></div>
@@ -226,15 +226,16 @@
       <div class="shotwrap">
         <img src="assets/de/ui-overview.jpg" alt="" loading="lazy" style="display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:.6rem;box-shadow:0 .2rem 1rem rgba(60,35,10,.16)">
         <span class="dot" style="left:5.0%;top:8.9%" data-txt="skip">1</span>
-        <span class="dot" style="left:63%;top:7.8%" data-txt="skip">2</span>
-        <span class="dot" style="left:82.2%;top:7.8%" data-txt="skip">3</span>
-        <span class="dot" style="left:89.2%;top:7.8%" data-txt="skip">4</span>
-        <span class="dot" style="left:94.0%;top:7.8%" data-txt="skip">5</span>
-        <span class="dot" style="left:97.4%;top:7.8%" data-txt="skip">6</span>
+        <span class="dot" style="left:55.5%;top:7.8%" data-txt="skip">2</span>
+        <span class="dot" style="left:73.8%;top:7.8%" data-txt="skip">3</span>
+        <span class="dot" style="left:78.8%;top:7.8%" data-txt="skip">4</span>
+        <span class="dot" style="left:85.2%;top:7.8%" data-txt="skip">5</span>
+        <span class="dot" style="left:90.0%;top:7.8%" data-txt="skip">6</span>
         <span class="dot" style="left:20.6%;top:11.6%" data-txt="skip">7</span>
         <span class="dot" style="left:20.6%;top:26%" data-txt="skip">8</span>
         <span class="dot" style="left:58%;top:33%" data-txt="skip">9</span>
-        <span class="dot" style="left:19.2%;top:91.5%" data-txt="skip">10</span>
+        <span class="dot" style="left:95.2%;top:7.8%" data-txt="skip">10</span>
+        <span class="dot" style="left:13.0%;top:93.0%" data-txt="skip">11</span>
       </div>
       <ol class="legend">
         <li>
@@ -246,12 +247,12 @@
           <p>Personen, Haustiere, Tags und Ordner; mehrere wählen, um sie zu kombinieren.</p>
         </li>
         <li>
-          <h3>Typ</h3>
-          <p>Nur Fotos, Videos oder Live Photos zeigen.</p>
-        </li>
-        <li>
           <h3>Favoriten ♥</h3>
           <p>Nur die Fotos zeigen, die du mit einem Herz markiert hast. Auch zu finden, wenn du <i>favorit</i> ins Suchfeld tippst.</p>
+        </li>
+        <li>
+          <h3>Typ</h3>
+          <p>Nur Fotos, Videos oder Live Photos zeigen.</p>
         </li>
         <li>
           <h3>Jahr</h3>
@@ -260,10 +261,6 @@
         <li>
           <h3>Auswählen ☑</h3>
           <p>Fotos zum Verschieben, Taggen oder in den Papierkorb wählen.</p>
-        </li>
-        <li>
-          <h3>Importieren ⤒</h3>
-          <p>Fotos und Videos von diesem Computer oder vom iPad hinzufügen.</p>
         </li>
         <li>
           <h3>Schnellzugriff</h3>
@@ -278,13 +275,17 @@
           <p>Monate mit Anzahl. Ein Klick auf ein Foto öffnet die Ansicht.</p>
         </li>
         <li>
-          <h3>Sprache & Status</h3>
-          <p>Zwischen Deutsch und Englisch wechseln; Scan-, Vorschau- und Laufwerksstatus.</p>
+          <h3>Sprache</h3>
+          <p>Zwischen Deutsch und Englisch wechseln.</p>
+        </li>
+        <li>
+          <h3>Status</h3>
+          <p>Scan-, Vorschau- und Laufwerksstatus unten in der Seitenleiste.</p>
         </li>
       </ol>
       <div class="panel">
         <h3>Ein typischer Ablauf</h3>
-        <p>Laufwerk anstecken und <b>Start shoebox</b> doppelklicken. <b>Scannen</b> (geht schnell, wenn sich wenig geändert hat) und die Foto-App öffnen. Die Fotos eines Ereignisses <b>importieren</b>: auswählen, das Ereignis benennen, und shoebox legt den Ereignisordner an. Dann taggen und sortieren. Ab und zu die <b>Duplikate</b> ansehen und nach jedem Backup die <b>Backup-Prüfung</b> laufen lassen.</p>
+        <p>Laufwerk anstecken und <b>Start shoebox</b> doppelklicken. <b>Scannen</b> (geht schnell, wenn sich wenig geändert hat) und die Foto-App öffnen. Für die Fotos eines Ereignisses den Ordner im Finder aufs Laufwerk kopieren (benannt wie <b>2025-08 Urlaub</b>) und erneut <b>scannen</b>: Waren einzelne Dateien schon auf dem Laufwerk, bietet der Launcher an, die neuen Kopien zu löschen. Dann taggen und sortieren. Ab und zu die <b>Duplikate</b> ansehen und nach jedem Backup die <b>Backup-Prüfung</b> laufen lassen.</p>
       </div>
     </section>
 
@@ -311,7 +312,7 @@
             <h3>Aufgaben im Starter</h3>
             <dl>
                 <dt>Scannen</dt>
-                <dd>neue, verschobene und geänderte Fotos finden</dd>
+                <dd>neue, verschobene und geänderte Fotos finden, und neue Kopien von Dateien, die das Laufwerk schon hatte</dd>
                 <dt>Prüfen</dt>
                 <dd>prüfen, dass nichts verloren oder beschädigt ist</dd>
                 <dt>Erkennen</dt>
@@ -434,13 +435,13 @@
       </div>
     </section>
 
-    <section id="import">
-      <h2>Import, Duplikate und Papierkorb</h2>
+    <section id="adding-photos">
+      <h2>Fotos hinzufügen, Duplikate und Papierkorb</h2>
       <div class="cols">
         <div class="items">
           <div>
-            <h3>Importieren</h3>
-            <p><b>⤒</b> drücken (oder Dateien aufs Fenster ziehen). Jahr, Monat und Ereignisnamen wählen: shoebox legt den Ereignisordner <b>JJJJ-MM Ereignis</b> an, die Dateien behalten ihre Daten, und Dateien, die schon in der Bibliothek sind, werden übersprungen. In den <b>Einstellungen</b> wählst du, wie neue Ereignisordner heißen: 4 oder 2 Ziffern für das Jahr, Bindestrich oder Punkt zwischen Jahr und Monat, und Leerzeichen, <code>_</code>, <code>.</code>, <code>-</code> oder nichts vor dem Namen, zum Beispiel <code>JJ.MM_Ereignis</code>. Vorhandene Ordner werden nicht umbenannt, und alle diese Formen werden erkannt.</p>
+            <h3>Fotos hinzufügen</h3>
+            <p>Die Fotos im Finder oder Explorer aufs Laufwerk kopieren oder verschieben (dabei bleiben ihre Daten erhalten), am besten in einen Ordner namens <b>JJJJ-MM Ereignis</b>, und <b>Scannen</b> drücken. Findet der Scan neue Dateien, die das Laufwerk schon hatte, markiert der Launcher sie mit <i>schon auf dem Laufwerk</i> und bietet <b>Die neuen Kopien löschen</b> an (in den Papierkorb oder endgültig). Das ältere Original bleibt und bekommt den Ordnernamen der gelöschten Kopie als Tag. In den <b>Einstellungen</b> wählst du, wie Ereignisordner in Vorschlägen heißen (zum Beispiel <code>JJ.MM_Ereignis</code>); vorhandene Ordner werden nicht umbenannt, und alle Formen werden erkannt.</p>
           </div>
           <div>
             <h3>Duplikate</h3>
@@ -456,13 +457,13 @@
           </div>
           <div>
             <h3>Papierkorb</h3>
-            <p>Nichts wird sofort gelöscht. Gelöschte Fotos warten in <code>.shoebox/trash</code> auf dem Laufwerk: <b>Zurücklegen</b> oder <b>Endgültig löschen</b>.</p>
+            <p>Nichts wird sofort gelöscht. Gelöschte Fotos warten in <code>.shoebox/trash</code> auf dem Laufwerk: <b>Zurücklegen</b> oder <b>Endgültig löschen</b>. Das Legen in den Papierkorb ist standardmäßig aus: Schalte es einmal in den <b>Einstellungen</b> ein (<i>In den Papierkorb legen erlauben</i>).</p>
           </div>
         </div>
         <div>
           <figure>
-            <img src="assets/de/import-dialog.jpg" alt="" loading="lazy">
-            <figcaption>Der Import-Dialog.</figcaption>
+            <img src="assets/de/scan-copies.jpg" alt="" loading="lazy">
+            <figcaption>Nach einem Scan: neue Kopien von Dateien, die das Laufwerk schon hatte.</figcaption>
           </figure>
           <figure>
             <img src="assets/de/trash.jpg" alt="" loading="lazy">
@@ -499,7 +500,7 @@
           </div>
           <div>
             <h3>Neue Fotos</h3>
-            <p>Die Erkennung startet nach einem Import noch nicht von selbst. Foto-App schließen und <b>Erkennen</b> erneut ausführen: Es werden nur die neuen Fotos angesehen.</p>
+            <p>Die Erkennung startet nach einem Scan noch nicht von selbst. Foto-App schließen und <b>Erkennen</b> erneut ausführen: Es werden nur die neuen Fotos angesehen.</p>
           </div>
         </div>
         <div>
@@ -574,7 +575,7 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-bolt"/></svg></div>
           <h3>Nur auf deinen Befehl</h3>
-          <p>Originale ändern sich nur durch deine Aktionen: verschieben, umbenennen, Papierkorb, importieren. Immer ein Umbenennen, nie ein Kopieren, und nur wenn die Datei noch zum Index passt.</p>
+          <p>Originale ändern sich nur durch deine Aktionen: verschieben, umbenennen, Papierkorb. Immer ein Umbenennen, nie ein Kopieren, und nur wenn die Datei noch zum Index passt. Das Einzige, was shoebox sonst entfernt, ist eine neue Kopie einer Datei, die das Laufwerk schon hatte, und nur, wenn du nach einem Scan den Knopf drückst.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-globe"/></svg></div>

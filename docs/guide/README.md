@@ -15,6 +15,9 @@ keep the `assets` folder with the HTML.
 
 ## Editing
 
+The guide must match the app: whoever changes what a person can see or do
+updates it in the same pull request (see the rules in `CLAUDE.md`).
+
 Edit the text in the two HTML files (keep both in step, and take UI names from
 `core/i18n/en.json` / `de.json`), then refresh the text copies and commit them:
 

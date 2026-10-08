@@ -42,6 +42,24 @@ current status and next step. Update its status table when a phase moves.
   checks it).
 - Paths may contain spaces and decomposed Unicode: quote everything, compare
   NFC-normalised.
+- **The guide is part of every change.** `docs/guide/shoebox-en.html` and
+  `shoebox-de.html` (kept in step) are what users read about the app. A change
+  that adds, removes or alters something a person can see or do (the photo app,
+  the launcher, a button, a setting, what a command does, the safety rules
+  above) updates both files in the same pull request, and removing a feature
+  removes it from the guide. Before finishing, grep both files for the old
+  behaviour and its UI names (`grep -n -i '<word>' docs/guide/shoebox-*.html`)
+  and read the guide's pages that touch it: the feature cards, the "at a
+  glance" legend (its numbered dots sit at fixed positions on `ui-overview`,
+  one dot per legend item, in the order of the screen), the typical session,
+  the launcher tasks, the sections on the feature, the FAQ and "Your photos are
+  safe". If the screen changed visibly, regenerate the screenshots
+  (`docs/guide/README.md`) and check that the dots still sit on the right
+  controls; the sample screenshots must not use a word that is a feature now
+  (the tag "Favorites" is the heart). Then run `python3 docs/guide/html2txt.py`
+  and commit the `.txt` files. Say in the pull request what changed in the
+  guide, or that it is not affected. Look at `main` first: a pull request
+  stacked on a branch that is already merged never reaches `main`.
 
 ## Build and test
 
