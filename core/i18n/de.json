@@ -17,7 +17,7 @@
   "launcher.kind.faces_stats": "Gesichts-Statistik",
   "launcher.kind.backup": "Backup-Prüfung",
   "launcher.kind.scan.desc": "neue, verschobene und geänderte Fotos finden",
-  "launcher.kind.verify.desc": "prüfen, dass nichts verloren oder beschädigt ist",
+  "launcher.kind.verify.desc": "jede Datei neu lesen, um Schäden zu finden (langsam, hin und wieder)",
   "launcher.kind.recognize.desc": "die Gesichter in deinen Fotos finden",
   "launcher.kind.faces_stats.desc": "wie die Erkennung gelaufen ist",
   "launcher.kind.backup.desc": "ist der 2. angehakte Ordner eine vollständige Kopie des 1. angehakten?",

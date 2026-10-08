@@ -136,8 +136,17 @@ macOS, Intel (10.13 or newer) and Apple Silicon. Nothing to install.
    the older copy right next to each one.
 
 Launcher tasks
-Scan: find new, moved and changed photos
-Verify: check that nothing was lost or damaged
+Scan: find new, moved and changed photos. Fast: it only looks at what changed
+since the last scan, and the tabs list what this scan changed. Run it after
+you move, rename or add photos.
+Verify: check that nothing was lost or damaged. It re-reads every file and
+compares it with what the index remembers, which finds files that were
+silently damaged on the drive. Slow, so run it now and then (every few months,
+or before you rely on a backup), not after every move. Moves are not its
+business: a moved photo has its new place in the index and passes. A photo
+whose path is gone but whose content is still on the drive elsewhere (a
+duplicate you deleted) is listed as "relocated", not as a failure. Only
+content that is nowhere on the drive any more counts as missing.
 Recognize: find faces (and, with Recognize pets, cats and dogs)
 Backup check: is the 2nd folder a complete copy of the 1st?
 

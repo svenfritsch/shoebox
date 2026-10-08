@@ -17,7 +17,7 @@
   "launcher.kind.faces_stats": "Face stats",
   "launcher.kind.backup": "Backup check",
   "launcher.kind.scan.desc": "find new, moved and changed photos",
-  "launcher.kind.verify.desc": "check that nothing was lost or damaged",
+  "launcher.kind.verify.desc": "re-read every file to find damage (slow, now and then)",
   "launcher.kind.recognize.desc": "find the faces in your photos",
   "launcher.kind.faces_stats.desc": "how recognition went",
   "launcher.kind.backup.desc": "is the 2nd ticked folder a complete copy of the 1st ticked?",
