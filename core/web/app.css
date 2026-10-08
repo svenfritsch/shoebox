@@ -425,6 +425,21 @@ body.selecting .sec .pick { display: inline; }
 .lb-panel .pface .note, .lb-panel .pfaces > .note { color: #999; font-size: 12px; }
 .lb-panel .pface.lost { color: #999; font-size: 12px; }
 .lb-panel .avatar { background: rgba(255,255,255,.12); }
+/* picking mode: rows are checkboxes, their own buttons step aside */
+.lb-panel .pfaces.picking .pface { padding: 4px 6px; margin: 0 -6px; border-radius: 10px; }
+.lb-panel .pface.pickable { cursor: pointer; }
+.lb-panel .pface.pickable:hover { background: rgba(255,255,255,.07); }
+.lb-panel .pface.picked { background: rgba(255,255,255,.14); }
+.lb-panel .pface.picked .avatar { outline: 3px solid var(--accent); outline-offset: -3px; }
+.lb-panel .pface.nopick { opacity: .45; padding-left: 28px; }
+.lb-panel .pface input[type=checkbox] { width: 18px; height: 18px; flex: none; accent-color: var(--accent); }
+.lb-panel .pfaces.picking .pface .who button:not(.pname), .lb-panel .pfaces.picking .pface .more-btn { display: none; }
+.lb-panel .pfaces.picking .pface .pname { pointer-events: none; }
+.lb-panel .pickbar { position: sticky; bottom: 0; display: flex; flex-direction: column; gap: 8px; padding: 10px; margin-top: 4px; border-radius: 12px; background: #2a2a2a; border: 1px solid rgba(255,255,255,.18); }
+.lb-panel .pickbar.busy { opacity: .6; pointer-events: none; }
+.lb-panel .pickhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.lb-panel .pickhead .link { background: none; border: 0; padding: 0; color: var(--accent); font-size: 13px; }
+.lb-panel .pickacts { display: flex; gap: 6px; flex-wrap: wrap; }
 .lb-panel .ptools { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
 .lb-panel .pfield { width: 100%; }
 .lb-panel .pfield input { background: rgba(0,0,0,.3); color: #eee; border-color: rgba(255,255,255,.3); font-size: 16px; padding: 4px 10px; border-radius: 99px; }
