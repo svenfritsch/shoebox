@@ -35,7 +35,7 @@ the tarball. Nothing else is built, so there is no Chrome, font or PDF step.
 ## Screenshots
 
 Only when the UI changed. They come from a sample library of drawn, synthetic
-pictures (a comic girl and a cat, created at /Volumes/Photos) with faces and
+pictures (comic people, a dog and a cat, created at /Volumes/Photos) with faces and
 pets from a mock recognizer, so no models are needed. Needs a built shoebox
 binary, Python with Pillow and numpy, and Node with Playwright and a Chromium.
 

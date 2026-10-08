@@ -90,7 +90,21 @@ COMIC = {
     "2025-05 Garden party": [("park", "2025:05:17 15:20:00"), ("garden", "2025:05:17 16:05:00"), ("close", "2025:05:17 17:40:00")],
     "2025-07 Beach": [("beach", "2025:07:12 11:30:00"), ("sofa", "2025:07:20 19:10:00"), ("cat2", "2025:07:21 09:00:00")],
 }
-DE_COMIC = {"2025-05 Garden party": "2025-05 Gartenfest", "2025-07 Beach": "2025-07 Strand"}
+# More comic people for the face-tagging screenshots: a family, friends and
+# colleagues (three each), a dog with the cat, two strangers and a framed
+# picture that only looks like a face. They are older than the others so the
+# timeline's first photos stay the same.
+COMIC.update({
+    "2023-06 Dog walk": [("pets:park:0", "2023:06:10 10:00:00"), ("pets:garden:1", "2023:06:10 11:30:00"), ("pets:beach:2", "2023:06:11 16:00:00")],
+    "2023-08 Family picnic": [("grp:garden:mia,rosa,ben:0", "2023:08:05 13:00:00"), ("grp:park:mia,rosa,ben:1", "2023:08:05 15:10:00"), ("grp:indoor:mia,rosa,ben:2", "2023:08:06 18:20:00")],
+    "2023-09 Friends weekend": [("grp:park:lena,jonas,sam:0", "2023:09:16 12:00:00"), ("grp:beach:lena,jonas,sam:1", "2023:09:16 15:30:00"), ("grp:garden:lena,jonas,sam:2", "2023:09:17 11:15:00")],
+    "2023-10 Team day": [("grp:indoor:priya,marco,chen:0", "2023:10:12 09:30:00"), ("grp:park:priya,marco,chen:1", "2023:10:12 13:00:00"), ("grp:garden:priya,marco,chen:2", "2023:10:12 16:45:00")],
+    "2023-11 City walk": [("strangers:park", "2023:11:04 11:00:00"), ("strangers:beach", "2023:11:04 14:20:00"), ("poster", "2023:11:04 17:00:00")],
+})
+DE_COMIC = {"2025-05 Garden party": "2025-05 Gartenfest", "2025-07 Beach": "2025-07 Strand",
+            "2023-06 Dog walk": "2023-06 Hundespaziergang", "2023-08 Family picnic": "2023-08 Familienpicknick",
+            "2023-09 Friends weekend": "2023-09 Freundewochenende", "2023-10 Team day": "2023-10 Teamtag",
+            "2023-11 City walk": "2023-11 Stadtbummel"}
 annotations = []
 for folder, shots in COMIC.items():
     folder = DE_COMIC[folder] if lang == "de" else folder
@@ -108,7 +122,7 @@ for folder, shots in COMIC.items():
         fp = np.asarray(Image.open(path).convert("L").resize((16, 16), Image.BILINEAR), dtype=float).ravel()
         annotations.append({"fp": fp.tolist(),
                             "faces": [{"who": w, "bbox": b} for w, b, _ in faces],
-                            "pets": [{"who": w, "species": "cat", "bbox": b} for w, b, _ in pets]})
+                            "pets": [{"who": w, "species": "dog" if w == "buddy" else "cat", "bbox": b} for w, b, _ in pets]})
 if len(sys.argv) > 3:
     json.dump(annotations, open(sys.argv[3], "w"))
 

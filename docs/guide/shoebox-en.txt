@@ -292,8 +292,9 @@ Faces section appears in the sidebar.
 
 Name them
 Under Unnamed, shoebox shows cards of similar faces. Type a name once and the
-whole card is named; later, confirm (✓) or reject (✗) the suggestions. Group
-people, merge two cards of one person, mark strangers with Ignore.
+whole card is named; later, confirm (✓) or reject (✗) the suggestions. The
+next two pages show every step, with groups and the buttons for strangers and
+false finds.
 
 In the viewer
 The info panel lists who is on the photo and draws a box around each face or
@@ -314,6 +315,74 @@ run Recognize again: it only looks at the new photos.
 are.]
 
 Sample pictures are drawn comics, not real photos.
+
+Tag faces, step by step
+-----------------------
+
+After Recognize, every face waits for a name. You do not have to name them
+all.
+
+1. Open Unnamed
+   In the sidebar, open Faces and then Unnamed. Each card holds faces that
+   look alike, the biggest card first. Cats and dogs have cards of their own;
+   the menu above the cards chooses People, Pets or both.
+
+2. Name a card
+   Type the name once and press Name: the whole card is named. Start typing to
+   pick a person you already have, or choose + New person. After that shoebox
+   suggests more faces of them (Looks like Mia): confirm with ✓ or reject with
+   ✗.
+
+3. Strangers and false finds
+   Ignore is for strangers, and for faces on posters, screens and pictures:
+   nobody needs to name them. Not a face (for pets Not a pet) is for false
+   finds that are no face at all. Nothing is deleted and no photo is touched;
+   shoebox only notes the decision in its own database.
+
+4. Only some faces of a card
+   Select lets you tick the faces yourself. The buttons then work on those
+   only: Name 2, Ignore 2, 2 not a face. Use it when a card mixes two people.
+
+[Screenshot: Unnamed: a card for every group of similar faces, with Ignore and
+Not a face.]
+
+[Screenshot: Select: two faces ticked on a card.]
+
+Several faces in a photo, and groups
+------------------------------------
+
+Tick faces in the viewer. Sort people into groups such as Family, Friends and
+Colleagues.
+
+In a photo
+Open a photo and its info panel (ⓘ). Under People every face has its picture
+and a name, or + Name. Select turns the list into a checklist: tick several
+faces (All unnamed ticks every face nobody has named), then Ignore or Not a
+face for all of them at once. + Add face or pet draws a box around a face that
+was missed.
+
+Groups
+Faces shows people by group. New group… makes one; Groups… renames, reorders
+and deletes groups. A person is in one group at most, and deleting a group
+deletes nobody.
+
+Put people into groups
+Use ⋯ on a person, then Move to group…, or drag the person onto a group in the
+sidebar. Pets work the same way: a group Pets can hold the dog and the cat.
+
+Corrections
+The same ⋯ menu has Merge into… for two cards of one person. On a person’s
+page, Review faces lists Confirmed, Suggested, Maybe and Not them, and a face
+marked by mistake can go back with ↺. Calibration (Face check, Pet check)
+shows what recognition found: small faces, scores and false finds.
+
+[Screenshot: Two passers-by ticked in a photo: Ignore 2 or 2 not a face.]
+
+[Screenshot: Faces: people by group, with the pets in their own group.]
+
+[Screenshot: Groups…: rename, reorder, delete.]
+
+[Screenshot: Move to group… from a person’s ⋯ menu.]
 
 Drives, backups and the iPad
 ----------------------------
