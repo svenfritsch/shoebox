@@ -816,6 +816,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/duplicates/remove", post(duplicates_remove))
         .route("/api/duplicates/same-folder", get(duplicates_same_folder).post(duplicates_remove_same_folder))
         .route("/api/event-pattern", get(event_pattern_get).post(event_pattern_set))
+        .route("/api/allow-trash", get(allow_trash_get).post(allow_trash_set))
         .route("/api/duplicates/copy-folders", get(duplicates_copy_folders).post(duplicates_set_copy_folders))
         .route("/api/duplicates/lower-quality", get(duplicates_lower_quality).post(duplicates_remove_lower_quality))
         .route("/api/trash", get(trash_list).post(trash_files))
@@ -2115,6 +2116,32 @@ async fn event_pattern_set(State(app): State<Arc<App>>, Json(req): Json<EventPat
     change(&app, move |_, conn| library::set_event_pattern(conn, &req.pattern))
         .await
         .map(|p| Json(serde_json::json!({ "pattern": p.format() })))
+}
+
+/// Setting `allow_trash`: off unless the user turned it on in the settings
+/// (the photo view and the timeline selection offer "Move to trash" only then).
+const ALLOW_TRASH_KEY: &str = "allow_trash";
+
+async fn allow_trash_get(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
+    blocking(&app, |app| {
+        let conn = app.conn.lock().unwrap();
+        Ok(Json(serde_json::json!({ "allow": db::setting(&conn, ALLOW_TRASH_KEY)?.as_deref() == Some("1") })))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct AllowTrashRequest {
+    allow: bool,
+}
+
+async fn allow_trash_set(State(app): State<Arc<App>>, Json(req): Json<AllowTrashRequest>) -> ApiResult<Json<serde_json::Value>> {
+    change(&app, move |_, conn| {
+        db::set_setting(conn, ALLOW_TRASH_KEY, req.allow.then_some("1"))?;
+        Ok(req.allow)
+    })
+    .await
+    .map(|allow| Json(serde_json::json!({ "allow": allow })))
 }
 
 #[derive(Deserialize)]

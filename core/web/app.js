@@ -998,6 +998,7 @@ function showItem() {
   $('lb-next').hidden = i >= d.count - 1;
   $('lb-download').href = fileBase(id) + '/original?download=1';
   $('lb-live').hidden = !state.live[id];
+  applyAllowTrash();
   var rot = $('lb-rotate');
   rot.hidden = isAll() || kind === 'v';
   rot.disabled = kind !== 'j' && kind !== 'h' && kind !== 'p';
@@ -1169,12 +1170,33 @@ function renderPanel() {
   infoReveal(actions, info);
   var move = el('button', 'btn quiet', tr('sel.move'));
   move.onclick = function () { moveDialog([info.id], function () { closeLightbox(); }); };
-  var trash = el('button', 'btn danger', tr('sel.trash'));
-  trash.onclick = function () { trashDialog([info.id], function () { closeLightbox(); }); };
   actions.appendChild(move);
-  actions.appendChild(trash);
   panel.appendChild(actions);
 }
+
+// Moving to the trash is off until it is allowed in the settings (originals
+// stay as they are by default): the photo view's trash icon and the
+// selection bar's button only show then.
+var allowTrash = false;
+var trashCount = 0;
+
+function applyAllowTrash() {
+  // The trash page stays reachable while something is in it (or while it is open).
+  $('nav-trash').hidden = !allowTrash && !trashCount && state.filter.view !== 'trash';
+  var d = state.data, i = state.open;
+  $('lb-trash').hidden = !allowTrash || isAll() || i < 0 || !d;
+  $('sel-trash').hidden = !allowTrash;
+}
+
+function loadAllowTrash() {
+  return api(LIBAPI + '/allow-trash').then(function (r) { allowTrash = !!r.allow; applyAllowTrash(); }).catch(function () {});
+}
+
+$('lb-trash').onclick = function () {
+  var d = state.data, i = state.open;
+  if (!allowTrash || !d || i < 0 || isAll()) return;
+  trashDialog([d.ids[i]], function () { closeLightbox(); });
+};
 
 // Turns a JPEG on the drive (its EXIF orientation, two bytes, no loss), like
 // the rotate button of the Finder's Quick Look; a HEIC or PNG is only shown
@@ -1293,6 +1315,8 @@ function loadInfo() {
     ];
     if (info.missing) parts.push(tr('status.missing', { n: info.missing }));
     $('nav-trash').textContent = info.trash ? tr('side.trash_n', { n: info.trash }) : tr('side.trash');
+    trashCount = info.trash || 0;
+    applyAllowTrash();
     if (info.thumbs_done < info.thumbs_total) {
       parts.push(tr('status.thumbs', { pct: Math.floor(100 * info.thumbs_done / info.thumbs_total) }));
     }
@@ -2914,8 +2938,33 @@ function loadSettings() {
   });
   sec.appendChild(cards);
   page.appendChild(sec);
+  page.appendChild(allowTrashSection());
   page.appendChild(eventPatternSection());
   page.appendChild(copyFoldersSection());
+}
+
+// Settings: whether photos can be moved to the trash from the photo view and
+// the timeline selection. Off by default: shoebox leaves the originals alone.
+function allowTrashSection() {
+  var sec = el('section', 'settings-section');
+  sec.appendChild(el('h3', '', tr('settings.allow_trash')));
+  var label = el('label', 'check-row');
+  var box = el('input');
+  box.type = 'checkbox';
+  box.checked = allowTrash;
+  box.onchange = function () {
+    var want = box.checked;
+    post(LIBAPI + '/allow-trash', { allow: want }).then(function (r) {
+      allowTrash = !!r.allow;
+      applyAllowTrash();
+      toast(tr('settings.allow_trash_saved'));
+    }).catch(function (e) { box.checked = allowTrash; failed(e); });
+  };
+  label.appendChild(box);
+  label.appendChild(document.createTextNode(' ' + tr('settings.allow_trash_label')));
+  sec.appendChild(label);
+  sec.appendChild(el('p', 'hint', tr('settings.allow_trash_hint')));
+  return sec;
 }
 
 // How event folders are named when the app creates them (the library's
@@ -4861,7 +4910,7 @@ I18n.ready.then(function () {
   }
   return refreshDrives().then(function () {
     setInterval(refreshDrives, 10000);
-    if (drives.current.online) loadEventPattern();
+    if (drives.current.online) { loadEventPattern(); loadAllowTrash(); }
     if (!drives.current.online) {
       // Nothing of this library can be loaded: only the overview of the drives can be shown.
       if (readHash().view === 'drives') { state.filter = readHash(); applyFilter(); } else showOffline();

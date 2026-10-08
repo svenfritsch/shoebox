@@ -694,6 +694,18 @@ macOS Preview, 4032×3024, 1.91 MB, after one rotation):
 - Real-hardware check: turn a copy of a JPEG and look at it in Finder and
   Explorer; turn a HEIC and a PNG and check Finder shows them as before.
 
+## Trash is opt-in
+
+Moving photos to the trash is off by default, because shoebox's key goal is to
+leave originals alone. The library setting `allow_trash` (Settings, "Allow
+move to trash"; `/api/allow-trash`) turns it on. Only then does the photo view
+show the trash icon (top bar, between rotate and download) and the timeline
+selection bar offer "Move to trash". The sidebar's Trash entry is hidden while
+the setting is off and the trash is empty; it stays while something is in the
+trash. UI gating only: the trash API and the duplicates screens are unchanged.
+Real-hardware check: with the setting off there is no trash icon or button;
+tick it and both appear.
+
 ## Next step
 
 Run the phase 0–4 hardware checklists on the old Intel MacBook and the iPad
