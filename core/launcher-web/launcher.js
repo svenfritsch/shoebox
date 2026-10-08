@@ -223,8 +223,10 @@ function pill(text, cls) {
 }
 
 var reloadedFor = 0;
+var lastJob = null;
 function render(job) {
   if (!job.id) return;
+  lastJob = job;
   showCleanup(job);
   showArrivals(job);
   if (job.kind === 'backup' && !job.running && reloadedFor !== job.id) { reloadedFor = job.id; loadConfig(); }
@@ -263,11 +265,24 @@ function render(job) {
   $('job-error').hidden = !job.error;
   $('job-error').textContent = job.error || '';
 
+  var tabs = scanTabs(job);
+  if (!tabs.some(function (t) { return t.id === activeTab; })) activeTab = 'results';
+  renderTabs(tabs);
+  var tab = tabs.filter(function (t) { return t.id === activeTab; })[0];
+  var ul = $('results');
+  ul.textContent = '';
+  $('tab-hint').hidden = !(tab && tab.hint);
+  $('tab-hint').textContent = tab && tab.hint ? tr(tab.hint) : '';
+  $('only-failed-label').hidden = activeTab !== 'results';
+  if (tab && tab.items) renderItems(ul, tab);
+  else renderResults(job, ul);
+  $('lines').textContent = job.lines.join('\n');
+}
+
+function renderResults(job, ul) {
   var dupNote = arrivalNotes(job);
   var only = $('only-failed').checked;
   var items = job.failures.concat(only ? [] : job.recent_ok.slice().reverse());
-  var ul = $('results');
-  ul.textContent = '';
   items.slice(0, 600).forEach(function (f) {
     var again = dupNote[f.path.normalize('NFC')];
     var li = document.createElement('li'); li.className = f.ok ? 'ok' + (again ? ' dup' : '') : 'bad';
@@ -276,15 +291,7 @@ function render(job) {
     var n = document.createElement('span'); n.className = 'note'; n.textContent = again || f.note;
     li.appendChild(m); li.appendChild(pa);
     if (job.kind === 'backup' && job.roots.length === 2) {
-      var r = document.createElement('button');
-      r.type = 'button'; r.className = 'reveal'; r.textContent = '⌕';
-      r.title = tr('launcher.reveal_both'); r.setAttribute('aria-label', tr('launcher.reveal_both'));
-      r.onclick = function () {
-        api('/api/reveal', { items: [{ root: job.roots[0], path: f.path }, { root: job.roots[1], path: f.path }] })
-          .then(function (res) { if (!res.opened) n.textContent = tr(res.found ? 'launcher.reveal_failed' : 'launcher.reveal_none'); })
-          .catch(function (e) { n.textContent = e.message; });
-      };
-      li.appendChild(r);
+      li.appendChild(revealButton(n, [{ root: job.roots[0], path: f.path }, { root: job.roots[1], path: f.path }], 'launcher.reveal_both'));
     }
     li.appendChild(n);
     ul.appendChild(li);
@@ -293,7 +300,82 @@ function render(job) {
     var li = document.createElement('li'); li.textContent = tr(job.running ? 'launcher.nothing_yet' : only ? 'launcher.no_problems' : 'launcher.no_files');
     ul.appendChild(li);
   }
-  $('lines').textContent = job.lines.join('\n');
+}
+
+function revealButton(status, items, label) {
+  var r = document.createElement('button');
+  r.type = 'button'; r.className = 'reveal'; r.textContent = '⌕';
+  r.title = tr(label); r.setAttribute('aria-label', tr(label));
+  r.onclick = function () {
+    api('/api/reveal', { items: items })
+      .then(function (res) { if (!res.opened) status.textContent = tr(res.found ? 'launcher.reveal_failed' : 'launcher.reveal_none'); })
+      .catch(function (e) { status.textContent = e.message; });
+  };
+  return r;
+}
+
+// After a scan: one tab per kind of file that needs a look, next to the results.
+var activeTab = 'results';
+function scanTabs(job) {
+  var tabs = [{ id: 'results', label: tr('launcher.results') }];
+  if (job.kind !== 'scan' || job.running) return tabs;
+  var kinds = [
+    { id: 'moved', key: 'moved_files', total: 'moved', hint: 'launcher.tab.moved.hint', label: 'launcher.tab.moved' },
+    { id: 'changed', key: 'changed_files', total: 'changed', hint: 'launcher.tab.changed.hint', label: 'launcher.tab.changed', warn: true },
+    { id: 'missing', key: 'missing_files', total: 'missing', hint: 'launcher.tab.missing.hint', label: 'launcher.tab.missing', warn: true, gone: true },
+    { id: 'arrivals', key: 'duplicates', total: 'duplicates_total', label: 'launcher.tab.arrivals' },
+  ];
+  kinds.forEach(function (k) {
+    var items = [], total = 0;
+    job.results.forEach(function (r) {
+      if (!r.result) return;
+      var pre = rootPrefix(job, r);
+      total += r.result[k.total] || 0;
+      (r.result[k.key] || []).forEach(function (x) {
+        var o = typeof x === 'string' ? { path: x } : x;
+        var item = { root: r.root, path: o.path, text: pre + o.path, gone: k.gone };
+        if (k.id === 'moved') item.note = tr('launcher.tab.moved.was', { from: o.from });
+        if (k.id === 'arrivals') { item.note = tr('launcher.arrivals.note', { of: o.of }); item.also = o.of; }
+        items.push(item);
+      });
+    });
+    if (total > 0) tabs.push({ id: k.id, label: tr(k.label, { n: total.toLocaleString() }), items: items, total: total, hint: k.hint, warn: k.warn });
+  });
+  return tabs;
+}
+function renderTabs(tabs) {
+  var bar = $('tabs');
+  bar.hidden = tabs.length < 2;
+  $('results-title').hidden = tabs.length > 1;
+  bar.textContent = '';
+  tabs.forEach(function (t) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.setAttribute('role', 'tab'); b.textContent = t.label;
+    b.setAttribute('aria-selected', t.id === activeTab ? 'true' : 'false');
+    if (t.warn) b.className = 'warn';
+    b.onclick = function () { activeTab = t.id; if (lastJob) render(lastJob); };
+    bar.appendChild(b);
+  });
+}
+function renderItems(ul, tab) {
+  tab.items.slice(0, 600).forEach(function (it) {
+    var li = document.createElement('li'); li.className = 'item';
+    var pa = document.createElement('span'); pa.className = 'path'; pa.textContent = it.text;
+    var n = document.createElement('span'); n.className = 'note'; n.textContent = it.note || '';
+    li.appendChild(pa);
+    if (!it.gone) {
+      var shown = [{ root: it.root, path: it.path }];
+      if (it.also) shown.push({ root: it.root, path: it.also });
+      li.appendChild(revealButton(n, shown, it.also ? 'launcher.reveal_copies' : 'launcher.reveal_one'));
+    }
+    if (it.note) li.appendChild(n);
+    ul.appendChild(li);
+  });
+  if (tab.total > 600) {
+    var li = document.createElement('li'); li.className = 'item';
+    li.textContent = tr('launcher.tab.more', { n: (tab.total - 600).toLocaleString() });
+    ul.appendChild(li);
+  }
 }
 
 // After a scan: new files whose content the drive had already (`arrivals.rs`).

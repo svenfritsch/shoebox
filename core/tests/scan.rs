@@ -156,6 +156,14 @@ fn moves_keep_their_record() {
 
     let stats = lib.scan();
     assert_eq!((stats.moved, stats.added, stats.missing, stats.full_hashed), (2, 0, 0, 0));
+    let listed: Vec<(&str, &str)> = stats.moved_files.iter().map(|m| (m.path.as_str(), m.from.as_str())).collect();
+    assert_eq!(
+        listed,
+        [
+            ("2020-08 Neu/IMG_0001.JPG", "2020-07 Urlaub Griechenland/IMG_0001.JPG"),
+            ("Familie/Weihnachten 2012/DSC_2001.jpg", "Familie/Weihnachten/DSC_2001.jpg"),
+        ]
+    );
     assert_eq!(lib.record("2020-08 Neu/IMG_0001.JPG"), Some((id1, hash1, false)));
     assert_eq!(lib.record("Familie/Weihnachten 2012/DSC_2001.jpg").unwrap().0, id2);
     assert_eq!(lib.count("SELECT count(*) FROM folders WHERE path_nfc = 'Familie/Weihnachten'"), 0);
@@ -214,6 +222,7 @@ fn same_size_and_quick_hash_but_different_content_is_not_a_move() {
     lib.write("b/other.jpg", &data);
     let stats = lib.scan();
     assert_eq!((stats.moved, stats.added, stats.missing), (0, 1, 1));
+    assert_eq!(stats.missing_files, ["a/original.jpg"]);
     let (id_after, _, missing) = lib.record("a/original.jpg").unwrap();
     assert_eq!((id_after, missing), (id, true));
 }
@@ -228,6 +237,7 @@ fn changed_content_is_reindexed_and_rehashed() {
 
     let stats = lib.scan();
     assert_eq!((stats.changed, stats.full_hashed), (1, 1));
+    assert_eq!(stats.changed_files, ["Familie/Weihnachten/DSC_2001.jpg"]);
     let (id_after, hash_after, _) = lib.record("Familie/Weihnachten/DSC_2001.jpg").unwrap();
     assert_eq!(id_after, id);
     assert!(hash_after.is_some() && hash_after != hash);

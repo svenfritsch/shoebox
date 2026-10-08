@@ -67,6 +67,12 @@ pub struct Stats {
     pub moved: u64,
     pub renamed_unicode: u64,
     pub missing: u64,
+    /// The files behind `moved`, `changed` and `missing` for the launcher's
+    /// tabs (NFC paths, sorted, at most `MAX_LISTED` each; the counts above
+    /// are exact).
+    pub moved_files: Vec<Moved>,
+    pub changed_files: Vec<String>,
+    pub missing_files: Vec<String>,
     pub forgotten: u64,
     pub full_hashed: u64,
     pub bytes_full_hashed: u64,
@@ -80,6 +86,22 @@ pub struct Stats {
     /// The `scan` job that brought the index in line.
     #[serde(skip)]
     pub job_id: i64,
+}
+
+/// A file that kept its content but not its place.
+#[derive(Debug, Clone, Serialize)]
+pub struct Moved {
+    pub path: String,
+    pub from: String,
+}
+
+/// How many files of each kind a scan lists by name.
+const MAX_LISTED: usize = 5000;
+
+fn list_push<T>(list: &mut Vec<T>, item: T) {
+    if list.len() < MAX_LISTED {
+        list.push(item);
+    }
 }
 
 /// Steps 1–4: walk the library and bring the index in line with it, as one
@@ -349,6 +371,7 @@ fn index(conn: &Connection, root: &Path, walked: &Walked, job_id: i64, stats: &m
         rec.missing = false;
         records.insert(f.rel.nfc.clone(), rec);
         stats.moved += 1;
+        list_push(&mut stats.moved_files, Moved { path: f.rel.nfc.clone(), from: old_nfc });
         batch.tick()?;
     }
 
@@ -416,6 +439,7 @@ fn index(conn: &Connection, root: &Path, walked: &Walked, job_id: i64, stats: &m
                 Ok(info) => {
                     update_file(conn, rec.id, f, &info)?;
                     stats.changed += 1;
+                    list_push(&mut stats.changed_files, f.rel.nfc.clone());
                 }
                 Err(e) => stats.skipped.push(format!("{}: {e}", f.rel.raw)),
             }
@@ -433,8 +457,13 @@ fn index(conn: &Connection, root: &Path, walked: &Walked, job_id: i64, stats: &m
         if !rec.missing && !found_nfc.contains(path_nfc.as_str()) {
             conn.execute("UPDATE files SET missing_since = ?2 WHERE id = ?1", params![rec.id, now])?;
             stats.missing += 1;
+            stats.missing_files.push(path_nfc.clone());
         }
     }
+    stats.missing_files.sort();
+    stats.missing_files.truncate(MAX_LISTED);
+    stats.moved_files.sort_by(|a, b| a.path.cmp(&b.path));
+    stats.changed_files.sort();
     prune(conn, job_id)?;
     batch.commit()
 }

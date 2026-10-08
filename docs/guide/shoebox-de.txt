@@ -132,7 +132,10 @@ macOS, Intel (ab 10.13) und Apple Silicon. Nichts zu installieren.
    Laufwerk hinzufügen (anklicken oder /Volumes/MeinLaufwerk tippen), Scannen
    drücken, dann Foto-App starten. Der erste Scan liest jede Datei einmal und
    dauert bei großen Laufwerken eine Weile; später werden nur Änderungen
-   angesehen.
+   angesehen. Nach dem Scan listen die Reiter Verschoben, Geändert, Fehlend
+   und Schon auf dem Laufwerk (jeweils mit Anzahl) genau auf, um welche
+   Dateien es geht; bei neuen Dateien, die du schon hattest, steht die ältere
+   Kopie gleich daneben.
 
 Aufgaben im Starter
 Scannen: neue, verschobene und geänderte Fotos finden
