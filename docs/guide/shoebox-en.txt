@@ -250,9 +250,17 @@ of a removed copy carry over.
 
 Shortcuts
 Clear Same Folder Copies and Clear Lower Quality Copies clean up the clear-cut
-cases in one go. Groups of similar photos need your decision: choose Different
-photos or Versions of one photo, and shoebox remembers it so the group does
-not return.
+cases in one go.
+
+Buttons on a group
+Each group has buttons at its top right. They say that you have looked at it
+and want nothing deleted; shoebox remembers it, so the group does not return.
+They differ by kind: Keep all copies (identical photos: the copies stay on
+purpose), Keep all versions (same photo in another size: all versions stay),
+Keep both (original and edited). For look-alikes there are two: Different
+photos (separate shots, not duplicates at all) and Versions of one photo (the
+same shot, kept as versions). Click a look-alike photo to compare them large
+and press Keep this one: after you confirm, all the others go to the trash.
 
 Trash
 Nothing is deleted right away. Trashed photos wait in .shoebox/trash on the
