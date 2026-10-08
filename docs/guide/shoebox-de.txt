@@ -266,7 +266,7 @@ Abkürzungen
 Kopien im selben Ordner entfernen und Kopien geringerer Qualität entfernen
 räumen die eindeutigen Fälle in einem Zug auf.
 
-Schaltflächen einer Gruppe
+Was tun mit einer Gruppe
 Jede Gruppe hat oben rechts bis zu zwei Schaltflächen. Alle behalten heißt:
 Diese Dateien bleiben, und sie gehören zusammen. Verschiedene Fotos (nur bei
 ähnlichen Fotos) heißt: Das sind getrennte Aufnahmen, keine Kopien

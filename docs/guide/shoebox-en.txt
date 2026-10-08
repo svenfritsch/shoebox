@@ -252,7 +252,7 @@ Shortcuts
 Clear Same Folder Copies and Clear Lower Quality Copies clean up the clear-cut
 cases in one go.
 
-Buttons on a group
+What to do with a group
 Every group has up to two buttons at its top right. Keep all means: these
 files stay, and they belong together. Different photos (only on groups of
 look-alikes) means: these are separate shots, not copies of each other. Either
