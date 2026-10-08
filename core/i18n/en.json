@@ -70,7 +70,7 @@
   "launcher.tab.arrivals": "Already on the drive ({n})",
   "launcher.tab.moved.hint": "These files kept their content but sit in another folder or have a new name now. Nothing in them was changed.",
   "launcher.tab.changed.hint": "The content, size or date of these files is not what the index remembered. The index took the new state; the files were not touched.",
-  "launcher.tab.missing.hint": "The index knows these files, but they are not on the drive. Nothing was deleted. If they turn up elsewhere later, the next scan counts them as moved.",
+  "launcher.tab.missing.hint": "Each path below is exactly as the index has it, and no file is there. Nothing was deleted. If a file turns up elsewhere later, the next scan counts it as moved.",
   "launcher.tab.moved.was": "was: {from}",
   "launcher.tab.more": "… and {n} more not listed here",
   "launcher.sum.arrivals": "{n} already on the drive",

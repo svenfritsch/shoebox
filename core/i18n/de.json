@@ -70,7 +70,7 @@
   "launcher.tab.arrivals": "Schon auf dem Laufwerk ({n})",
   "launcher.tab.moved.hint": "Diese Dateien haben ihren Inhalt behalten, liegen aber in einem anderen Ordner oder heißen jetzt anders. Nichts darin wurde verändert.",
   "launcher.tab.changed.hint": "Inhalt, Größe oder Datum dieser Dateien stimmt nicht mehr mit dem Index überein. Der Index hat den neuen Stand übernommen; die Dateien wurden nicht angefasst.",
-  "launcher.tab.missing.hint": "Der Index kennt diese Dateien, sie sind aber nicht auf dem Laufwerk. Nichts wurde gelöscht. Tauchen sie später woanders auf, zählt der nächste Scan sie als verschoben.",
+  "launcher.tab.missing.hint": "Jeder Pfad unten steht genau so im Index, an dieser Stelle liegt aber keine Datei. Nichts wurde gelöscht. Taucht eine Datei später woanders auf, zählt der nächste Scan sie als verschoben.",
   "launcher.tab.moved.was": "war: {from}",
   "launcher.tab.more": "… und {n} weitere, hier nicht aufgelistet",
   "launcher.sum.arrivals": "{n} schon auf dem Laufwerk",

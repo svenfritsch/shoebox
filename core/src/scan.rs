@@ -68,7 +68,7 @@ pub struct Stats {
     pub renamed_unicode: u64,
     pub missing: u64,
     /// The files behind `moved`, `changed` and `missing` for the launcher's
-    /// tabs (NFC paths, sorted, at most `MAX_LISTED` each; the counts above
+    /// tabs (paths as the index has them, sorted, at most `MAX_LISTED` each; the counts above
     /// are exact).
     pub moved_files: Vec<Moved>,
     pub changed_files: Vec<String>,
@@ -457,7 +457,7 @@ fn index(conn: &Connection, root: &Path, walked: &Walked, job_id: i64, stats: &m
         if !rec.missing && !found_nfc.contains(path_nfc.as_str()) {
             conn.execute("UPDATE files SET missing_since = ?2 WHERE id = ?1", params![rec.id, now])?;
             stats.missing += 1;
-            stats.missing_files.push(path_nfc.clone());
+            stats.missing_files.push(rec.path.clone());
         }
     }
     stats.missing_files.sort();
