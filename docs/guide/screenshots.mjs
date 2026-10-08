@@ -57,21 +57,78 @@ await shot('duplicates');
 await p.setViewportSize({ width: 1280, height: 860 });
 await p.click('#all'); await wait(800);
 
-// People and pets: the cards waiting for a name, then name them.
+// People and pets: the cards waiting for a name.
 await p.click('#nav-people'); await wait(1200);
 await p.locator('#page .link').first().click(); await wait(2500);
 await shot('people-unnamed');
-await p.evaluate(async (names) => {
+
+// "Select" on a card: tick some faces, then name, ignore or mark only those.
+const card = p.locator('#un-box .cluster').first();
+await card.locator('button.btn.quiet').nth(2).click(); await wait(500);
+await card.locator('.cface').nth(1).click(); await card.locator('.cface').nth(3).click(); await wait(300);
+await card.locator('input[type=text]').fill('Mia'); await wait(300);
+await card.screenshot({ path: `${out}/faces-select.png` });
+await card.locator('.cclose').click(); await wait(300);
+await p.click('#all'); await wait(800);
+
+// The same in the info panel of one photo: two passers-by, ticked to ignore them.
+await p.getByText(/^2023-11/).first().click(); await wait(1500);
+await p.locator('.cell').nth(1).click(); await wait(1500);
+// The info panel stays open from the earlier photo; 'i' would close it.
+if (!(await p.locator('.pfaces:visible').count())) { await p.keyboard.press('i'); await wait(1500); }
+await p.locator('.pfaces:visible .ptools button').nth(1).click(); await wait(500);
+await p.locator('.pfaces:visible .pface.pickable input').nth(0).check(); await p.locator('.pfaces:visible .pface.pickable input').nth(1).check(); await wait(500);
+await shot('info-select');
+await p.locator('.pfaces:visible .pickacts button').nth(2).click(); await wait(300);
+await p.keyboard.press('Escape'); await wait(300);
+await p.click('#all'); await wait(800);
+
+// Name everybody (the people in the drawn photos), make groups, put them in.
+// Two strangers and the framed picture stay unnamed on purpose.
+const GROUPS = de ? { family: 'Familie', friends: 'Freunde', colleagues: 'Kollegen', pets: 'Haustiere' } : { family: 'Family', friends: 'Friends', colleagues: 'Colleagues', pets: 'Pets' };
+await p.evaluate(async (g) => {
+  const WHO = { '2023-08': ['Mia', 'Rosa', 'Ben'], '2023-09': ['Lena', 'Jonas', 'Sam'], '2023-10': ['Priya', 'Marco', 'Chen'], '2025-05': ['Mia'], '2025-07': ['Mia'] };
+  const ids = {};
   for (const kind of ['faces', 'pets']) {
     const res = await api(LIBAPI + '/clusters?kind=' + kind);
     for (const c of res.clusters) {
-      await post(LIBAPI + '/clusters/' + c.id + '/name', { generation: c.generation, name: kind === 'pets' ? names.pet : names.person });
+      let name = null;
+      if (kind === 'pets') name = c.size > 5 ? 'Whiskers' : 'Buddy';
+      else {
+        const f = c.faces[0];
+        const info = await api(LIBAPI + '/files/' + f.file);
+        const row = WHO[info.path.slice(0, 7)];
+        if (row) name = row[Math.min(info.faces.map((x) => x.x).sort((a, b) => a - b).indexOf(f.x), row.length - 1)];
+      }
+      if (!name) continue;
+      const d = await post(LIBAPI + '/clusters/' + c.id + '/name', { generation: c.generation, name });
+      ids[name] = d.person.id;
     }
   }
-}, { person: 'Mia', pet: 'Whiskers' });
+  const members = { [g.family]: ['Rosa', 'Ben'], [g.friends]: ['Lena', 'Jonas', 'Sam'], [g.colleagues]: ['Priya', 'Marco', 'Chen'], [g.pets]: ['Whiskers', 'Buddy'] };
+  for (const [name, who] of Object.entries(members)) {
+    const grp = await post(LIBAPI + '/groups', { name });
+    for (const w of who) await post(LIBAPI + '/people/' + ids[w] + '/group', { group_id: grp.id });
+  }
+}, GROUPS);
 await p.goto(url); await p.waitForSelector('.cell'); await wait(2000);
 await p.click('#nav-people'); await wait(2000);
+await p.setViewportSize({ width: 1280, height: 1020 }); await wait(500);
+
+// Groups: the list with rename, order and delete ...
+await p.locator('#page button.btn.quiet').nth(1).click(); await wait(600);
+await shot('groups-dialog');
+await p.locator('#modal-actions button').last().click(); await wait(600);
+// ... and putting a person into one from the person's ⋯ menu.
+const miaMenu = p.locator('button.more-btn[aria-label$="Mia"]');
+await miaMenu.scrollIntoViewIfNeeded(); await wait(600);   // scrolling closes an open menu
+await miaMenu.click(); await wait(500);
+await p.locator('.menu button').nth(3).click(); await wait(600);
+await shot('move-to-group');
+await p.locator('#modal-body button', { hasText: GROUPS.family }).first().click(); await wait(5500);   // the toast goes, the status line settles
+await p.evaluate(() => { document.getElementById('scroller').scrollTop = 0; }); await wait(500);
 await shot('people-overview');
+await p.setViewportSize({ width: 1280, height: 860 });
 await p.click('#all'); await wait(800);
 // A photo with both of them, with the info panel.
 await p.locator('.cell').nth(5).click(); await wait(1000);

@@ -311,8 +311,8 @@ Gesichter.
 Benennen
 Unter Unbenannt zeigt shoebox Karten mit ähnlichen Gesichtern. Einmal einen
 Namen eintippen, und die ganze Karte ist benannt; später Vorschläge bestätigen
-(✓) oder ablehnen (✗). Personen gruppieren, zwei Karten einer Person
-zusammenführen, Fremde mit Ignorieren markieren.
+(✓) oder ablehnen (✗). Die nächsten beiden Seiten zeigen jeden Schritt, mit
+Gruppen und den Knöpfen für Fremde und Fehlfunde.
 
 In der Ansicht
 Das Infofeld nennt, wer auf dem Foto ist, und zeichnet um jedes Gesicht oder
@@ -334,6 +334,82 @@ angesehen.
 sie sind.]
 
 Die Beispielbilder sind gezeichnete Comics, keine echten Fotos.
+
+Gesichter taggen, Schritt für Schritt
+-------------------------------------
+
+Nach dem Erkennen wartet jedes Gesicht auf einen Namen. Du musst nicht alle
+benennen.
+
+1. Unbenannt öffnen
+   In der Seitenleiste Gesichter und dann Unbenannt öffnen. Jede Karte enthält
+   Gesichter, die sich ähneln, die größte zuerst. Katzen und Hunde haben
+   eigene Karten; das Menü über den Karten wählt Personen, Haustiere oder
+   beides.
+
+2. Eine Karte benennen
+   Den Namen einmal eintippen und Benennen drücken: Die ganze Karte ist
+   benannt. Beim Tippen erscheinen Personen, die es schon gibt; sonst + Neue
+   Person wählen. Danach schlägt shoebox weitere Gesichter vor (Sieht aus wie
+   Mia): mit ✓ bestätigen oder mit ✗ ablehnen.
+
+3. Fremde und Fehlfunde
+   Ignorieren ist für Fremde und für Gesichter auf Postern, Bildschirmen und
+   Bildern: Niemand muss sie benennen. Kein Gesicht (bei Haustieren Kein
+   Haustier) ist für Fehlfunde, die gar kein Gesicht sind. Nichts wird
+   gelöscht und kein Foto angefasst; shoebox merkt sich die Entscheidung nur
+   in seiner eigenen Datenbank.
+
+4. Nur einige Gesichter einer Karte
+   Auswählen lässt dich die Gesichter selbst ankreuzen. Die Knöpfe gelten dann
+   nur für diese: 2 benennen, 2 ignorieren, 2 kein Gesicht. Praktisch, wenn
+   eine Karte zwei Personen mischt.
+
+[Screenshot: Unbenannt: eine Karte für jede Gruppe ähnlicher Gesichter, mit
+Ignorieren und Kein Gesicht.]
+
+[Screenshot: Auswählen: zwei Gesichter einer Karte angekreuzt.]
+
+Mehrere Gesichter in einem Foto, und Gruppen
+--------------------------------------------
+
+Gesichter in der Ansicht ankreuzen. Personen in Gruppen wie Familie, Freunde
+und Kollegen sortieren.
+
+In einem Foto
+Ein Foto und sein Infofeld (ⓘ) öffnen. Unter Personen hat jedes Gesicht sein
+Bild und einen Namen oder + Name. Auswählen macht die Liste zu einer
+Checkliste: mehrere Gesichter ankreuzen (Alle ohne Namen kreuzt jedes Gesicht
+an, das niemand benannt hat), dann Ignorieren oder Kein Gesicht für alle auf
+einmal. + Gesicht oder Haustier hinzufügen zeichnet einen Rahmen um ein
+übersehenes Gesicht.
+
+Gruppen
+Gesichter zeigt die Personen nach Gruppen. Neue Gruppe … legt eine an; Gruppen
+… benennt Gruppen um, ordnet sie und löscht sie. Eine Person ist höchstens in
+einer Gruppe, und das Löschen einer Gruppe löscht niemanden.
+
+Personen in Gruppen legen
+Bei einer Person auf ⋯ klicken und In Gruppe verschieben … wählen, oder die
+Person in der Seitenleiste auf eine Gruppe ziehen. Haustiere funktionieren
+genauso: Eine Gruppe Haustiere kann den Hund und die Katze enthalten.
+
+Korrekturen
+Im selben ⋯-Menü steht Zusammenführen mit … für zwei Karten derselben Person.
+Auf der Seite einer Person listet Gesichter prüfen Bestätigt, Vorgeschlagen,
+Vielleicht und Nicht sie, und ein versehentlich markiertes Gesicht kommt mit ↺
+zurück. Kalibrierung (Gesichts- und Haustier-Prüfung) zeigt, was die Erkennung
+gefunden hat: kleine Gesichter, Werte und Fehlfunde.
+
+[Screenshot: Zwei Passanten in einem Foto angekreuzt: 2 ignorieren oder 2 kein
+Gesicht.]
+
+[Screenshot: Gesichter: Personen nach Gruppen, die Haustiere in ihrer eigenen
+Gruppe.]
+
+[Screenshot: Gruppen …: umbenennen, ordnen, löschen.]
+
+[Screenshot: In Gruppe verschieben … im ⋯-Menü einer Person.]
 
 Laufwerke, Backups und das iPad
 -------------------------------
