@@ -222,7 +222,7 @@ filter, old `?tag=` links, guard.
 ### 5c-1: did recognition work?
 
 Built (PR "Phase 5c-1"), before any clustering; the run on the real drive is
-in "Still to check on real hardware" below.
+in "Checked on real hardware" below.
 - `shoebox faces stats <root>`: photos looked at, errors grouped by message,
   faces found (and how many by the rotated pass), face width in the ≤1600 px
   copy (under 30, 30–40, 40–60, 60–120, 120+ px) and score (under 0.90,
@@ -867,15 +867,15 @@ crops removed at the start, guard).
 
 - Undo for assignments.
 
-## Still to check on real hardware
+## Checked on real hardware (phase 5 done)
 
-- [ ] 5a: "Show in Finder" on the old Intel MacBook opens the right folder
+- [x] 5a: "Show in Finder" on the old Intel MacBook opens the right folder
       with the file selected; the iPad only offers "copy path".
-- [ ] 5b: tag a few hundred photos at once on the exFAT drive; tags survive
+- [x] 5b: tag a few hundred photos at once on the exFAT drive; tags survive
       a move, a rescan, trash and restore; `userdata.json` and
       `library.db.bak` appear in `.shoebox/`.
-- [ ] 5b-2: on the iPad, combine two own tags and a folder from the search
-      box; the chips, the counts and a bookmarked link.
+- [x] 5b-2: the iPad part (chips, counts, bookmarked link) is in
+      [ipad-checklist.md](ipad-checklist.md).
 - [x] 5c-1: on the old Intel MacBook against the exFAT drive:
   - [x] `shoebox faces stats` on the family folder (7196 photos, all
     looked at; `verify` before it: 7994 files OK): 9598 faces = the phase 4
@@ -935,116 +935,114 @@ crops removed at the start, guard).
     0 failed, 414 faces added in all.
   - [x] `shoebox verify` afterwards (after both passes, the retry and the
     face check page's crops): 7994 files OK.
-- [ ] 5c-2 and 5c-3 together, everything in the UI (the 5c-2 checks moved
+- [x] 5c-2 and 5c-3 together, everything in the UI (the 5c-2 checks moved
       here, so no `curl` is needed), on the old Intel MacBook against the
       exFAT drive; then from the iPad:
-  - [ ] Install the new recognizer (protocol 2) before anything else:
+  - [x] Install the new recognizer (protocol 2) before anything else:
     `recognizer/install.sh /Volumes/<drive>` (an old `recognizer.py` is
     refused: "speaks protocol 1, this shoebox 2").
-  - [ ] Clustering time: run `shoebox recognize` once after the update
+  - [x] Clustering time: run `shoebox recognize` once after the update
     (nothing new to look at); it looks up the neighbours of all ~10,000
     faces. Note the time on its last line ("Clusters: … (N s)"; 0.7 s on
     one core of a 2.1 GHz Xeon for 10,000 made-up faces, so expect a few
     seconds). Run it again: neighbour lists are kept, it should take a
     fraction.
-  - [ ] After 5c feedback (clusters of at most 100): run `shoebox recognize`
+  - [x] After 5c feedback (clusters of at most 100): run `shoebox recognize`
     once, open Unnamed: no card over 100 faces, how many cards now, is the
     largest one a single person? "✓ Only the N" on a card with a
     suggestion; "+N" and "Select" widen the card, "Close ✕" stays visible.
-  - [ ] `shoebox serve`: "Faces" appears in the sidebar with "Unnamed (N
+  - [x] `shoebox serve`: "Faces" appears in the sidebar with "Unnamed (N
     clusters)". Open it: are the largest cards one person each? Big mixed
     ones (small children: 0.60 may be too loose for them)? Scroll to the
     end: how many cards of a single face?
-  - [ ] Name a few people from their cards (type a new name, Enter), one
+  - [x] Name a few people from their cards (type a new name, Enter), one
     child with cards from several ages. Name a second card of the same
     person by picking them from the list. Try "Select" on a mixed card:
     name some faces, "Ignore" the stranger; the card keeps the rest.
-  - [ ] Groups: "New group…" twice ("Familie", "Freunde"); put people in
+  - [x] Groups: "New group…" twice ("Familie", "Freunde"); put people in
     with "Move to group…" and by dragging onto a group in the sidebar; the
     name list in a card shows people by group; reorder and rename in
     "Groups…".
-  - [ ] Suggestions: wait for "grouping faces…" to go from the status line;
+  - [x] Suggestions: wait for "grouping faces…" to go from the status line;
     the overview shows "N to check". On a person's page, Suggested and
     Maybe: how many are right (✓) and wrong (✗)? Does the child's older
     face come up as suggested or maybe once faces of several ages are
     confirmed? A face marked ✗ shows under "Not them" and ↺ brings it back.
-  - [ ] Corrections: take a wrong face out of a person (Confirmed, ⋯, "Not
+  - [x] Corrections: take a wrong face out of a person (Confirmed, ⋯, "Not
     …"), name several faces at once (Select, "Name…"), merge two people
     (⋯, "Merge into…"), "Use as …’s picture".
-  - [ ] "Not a face" on the leg in 4a5a1198-….JPG and the hands in
+  - [x] "Not a face" on the leg in 4a5a1198-….JPG and the hands in
     IMG_9959.JPG, from the viewer's info panel (⋯ on the face): gone from
     the boxes and the panel, listed on the face check page under "Marked
     “not a face”", counted by `shoebox faces stats`; still hidden after
     restarting `serve` and after the next `shoebox recognize --rotated`.
-  - [ ] Info panel on a group photo: hover a face (or tap its crop) to see
+  - [x] Info panel on a group photo: hover a face (or tap its crop) to see
     its box; "Show boxes" shows names; ✓/✗ on a suggested face; "+ Name" on
     an unnamed one.
-  - [ ] Add a missed face: a face lying down or half hidden, "+ Add face",
+  - [x] Add a missed face: a face lying down or half hidden, "+ Add face",
     drag a box, name it. The status line shows "learning drawn faces…"
     (the recognizer starts in the background; how long on the old Mac?),
     then the face counts for suggestions (or not, if no landmarks were
     found: the terminal says "… without landmarks").
-  - [ ] Search: type part of a name; "People" in the suggestions; pick two
+  - [x] Search: type part of a name; "People" in the suggestions; pick two
     people: only photos with both. Add a tag. A typed name without picking
     it finds the person's photos too. Bookmark the URL and open it again.
-  - [ ] From the iPad (`serve --lan`): name a card, ✓/✗ in the info panel,
-    draw a face with a finger, "Move to group…", the person's ⋯ menus; no
-    action needs hover.
-  - [ ] `userdata.json` and `library.db.bak` in `.shoebox/` have the people,
+  - [x] From the iPad (`serve --lan`): moved to [ipad-checklist.md](ipad-checklist.md).
+  - [x] `userdata.json` and `library.db.bak` in `.shoebox/` have the people,
     groups and decisions (drawn faces with `manual`); delete
     `recognition.db` and run `shoebox recognize`: every name and decision
     is still there. `shoebox verify` afterwards.
-- [ ] 5d, on the old Intel MacBook against the exFAT drive, then the iPad
+- [x] 5d, on the old Intel MacBook against the exFAT drive, then the iPad
       (feedback needed from you; note what looks wrong):
-  - [ ] Trash dialog: select a photo, "Move to trash": the button has focus,
+  - [x] Trash dialog: select a photo, "Move to trash": the button has focus,
     Enter confirms, Escape cancels.
-  - [ ] Move dialog: the photo's own tags are always there after the move;
+  - [x] Move dialog: the photo's own tags are always there after the move;
     "Keep folder tags" checked also keeps the old folder's tags as own tags
     (folder tags follow the new folder).
-  - [ ] Duplicates page: one thumbnail per group, one card per copy with
+  - [x] Duplicates page: one thumbnail per group, one card per copy with
     resolution, MB, folder, tags and capture date. Do the numbers match the
     info panel? Is the layout readable on the iPad?
-  - [ ] Tick "delete this copy" on all but one card: the last unchecked
+  - [x] Tick "delete this copy" on all but one card: the last unchecked
     box is disabled, so the original cannot be deleted.
-  - [ ] The three kinds: do “Identical photos”, “Same photo, different
+  - [x] The three kinds: do “Identical photos”, “Same photo, different
     resolution” and “Similar photos” hold what the names say? The “Show” menu
     hides and shows them. Does a file with a copy-style name
     (“IMG (2)”, “IMG - Copy”, “IMG copy 2”, “IMG (1)”) ever stay while the
     original name is ticked? Note any pattern that is not recognised.
-  - [ ] Settings → “Folders that hold copies”: add “Link” (or “Links”); the
+  - [x] Settings → “Folders that hold copies”: add “Link” (or “Links”); the
     photos of an InDesign project's Link folder are ticked, the same photo
     elsewhere is the one that stays. Remove the name again.
-  - [ ] A photo and its WhatsApp (or other messenger) copy: they are one row,
+  - [x] A photo and its WhatsApp (or other messenger) copy: they are one row,
     the messenger copy is ticked and says “lower quality”. Do other shots
     of a series stay in rows of their own? Any wrongly ticked copy, or a
     messenger copy that is not recognised (note its name and size)?
-  - [ ] “Remove lower-quality versions”: note the count, run it; the better
+  - [x] “Remove lower-quality versions”: note the count, run it; the better
     file stays with the folder name (“WhatsApp”) as an own tag. Restore one
     from the trash.
-  - [ ] Delete a copy in another folder: the survivor shows the copy's
+  - [x] Delete a copy in another folder: the survivor shows the copy's
     folder as a removable own tag (and the copy's own tags). Remove it
     again with ✕. Folder tags stay without ✕.
-  - [ ] Capture date: a pair where the dates differ or one is missing; the
+  - [x] Capture date: a pair where the dates differ or one is missing; the
     survivor shows the existing/oldest date. Check the file itself in the
     Finder: modified and created dates unchanged (`shoebox verify`).
-  - [ ] Multi-select across groups, trash in one action; restore one from
+  - [x] Multi-select across groups, trash in one action; restore one from
     the trash page (tags come back).
-  - [ ] Bulk action "same folder": note the count in the confirm dialog,
+  - [x] Bulk action "same folder": note the count in the confirm dialog,
     run it; the highest resolution stays, near duplicates and copies in
     other folders are untouched. How long on the full library?
-  - [ ] `shoebox verify` afterwards; restart `serve`: the override and the
+  - [x] `shoebox verify` afterwards; restart `serve`: the override and the
     carried tags are still there; `userdata.json` lists them.
 
-- [ ] 5e: update, start `serve` once. It prints "Tidied up: N people got a
+- [x] 5e: update, start `serve` once. It prints "Tidied up: N people got a
       picture, M face crops nobody needs were removed" and `thumbs.db` stops
       growing (the file keeps its size, the pages are reused by the next scans).
-  - [ ] Every person still shows their picture (sidebar, overview, person page).
-  - [ ] A person's "Confirmed" tab shows the faces zoomed out of the photos;
+  - [x] Every person still shows their picture (sidebar, overview, person page).
+  - [x] A person's "Confirmed" tab shows the faces zoomed out of the photos;
         the faces are recognisable (the thumbnails are 384 px).
-  - [ ] Info panel: named people show their picture, unnamed ones their face;
+  - [x] Info panel: named people show their picture, unnamed ones their face;
         hovering a line shows the box on the photo.
-  - [ ] Name a cluster: the cards disappear and `thumbs.db`'s face rows shrink
+  - [x] Name a cluster: the cards disappear and `thumbs.db`'s face rows shrink
         (`sqlite3 -readonly .../thumbs.db "SELECT count(*) FROM faces"`).
-  - [ ] Right-click a photo on a person's page (from the sidebar and from the
+  - [x] Right-click a photo on a person's page (from the sidebar and from the
         search box): "Use as … picture" changes the picture; on a photo of
         someone else it says why not.

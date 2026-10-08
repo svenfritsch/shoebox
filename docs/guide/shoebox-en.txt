@@ -37,7 +37,8 @@ One page in your browser, a timeline of everything on the drive.
 
 - Tags
    Your own tags on many photos at once. Folders count as tags too. Stored in
-   the index, never in the photos.
+   the index, never in the photos, and saved in a readable file on the drive
+   too.
 
 - Move & organise
    Move photos to a folder (created if needed). RAW, Live Photo and sidecar
@@ -398,6 +399,15 @@ Choose the original first and the backup second. shoebox compares the two
 indexes (no photo is read) and lists what is not on the backup yet, what
 differs and what exists only on the backup. Also re-read the backup finds bit
 rot.
+
+Your tags and names are saved
+Everything you add yourself (own tags, people, groups, your ✓ and ✗ decisions,
+drawn faces) is kept in the index, never in a photo. While you work, shoebox
+also keeps a safety copy of the index, library.db.bak, and a readable list of
+it all, userdata.json, in the .shoebox folder on the drive. They travel with
+the drive, so a backup of the drive has them too. Open userdata.json in any
+text editor to see what you have made. If the index is ever damaged, Verify in
+the launcher points you to the safety copy.
 
 iPad & other devices
 In Terminal: shoebox serve /Volumes/MyDrive --lan. It prints an address and a

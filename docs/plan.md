@@ -263,14 +263,14 @@ rot) and shows "last backup N days ago, M files new since".
 | 2 | `thumbs.db` + perceptual hash, web UI (virtualised timeline grid, folder tree, tag search, video playback), LAN access with PIN. `shoebox serve` | **Done except the real-hardware run** (see below) |
 | 3 | Move (with RAW pairs, case-only renames), duplicates UI, self-healing paths | **Done except the real-hardware run** (see below) |
 | 4 | Worker protocol + Python recognizer (faces), worker supervision in Rust | **Done except the real-hardware run** (see below) |
-| 5a | Show in Finder / Explorer, copy path | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 5b | Own tags (add/remove, many photos at once, search), user data backup | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 5b-2 | Search by several tags at once (AND, chips); people join in with 5c-3 | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **5c-1 done**, checked on the real drive; **5c-2 and 5c-3 done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 5d | Duplicates UI: one row per photo, multi-select, bulk delete within a folder, tag and capture-date carry-over; Move dialog "keep folder tags"; trash dialog focus | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 5e | Lean `thumbs.db`: face crops only for faces without a decision and for each person's picture; right-click "Use as … picture" on a person's photos | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 5f | "Type" check box drop-down (Photos, Videos, Live Photos) next to the search box | **Done except the real-hardware run** (see "Phase 5f details") |
-| 5g | Favorites: a heart in the viewer's top bar and in the top right corner of each timeline photo; a heart button next to the type filter and "♥ Favorites" as a search suggestion | **Done except the real-hardware run** (see "Favorites" below) |
+| 5a | Show in Finder / Explorer, copy path | **Done** (see [phase5.md](phase5.md)) |
+| 5b | Own tags (add/remove, many photos at once, search), user data backup | **Done** (see [phase5.md](phase5.md)) |
+| 5b-2 | Search by several tags at once (AND, chips); people join in with 5c-3 | **Done** (see [phase5.md](phase5.md)) |
+| 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **Done**, checked on the real hardware (see [phase5.md](phase5.md)) |
+| 5d | Duplicates UI: one row per photo, multi-select, bulk delete within a folder, tag and capture-date carry-over; Move dialog "keep folder tags"; trash dialog focus | **Done** (see [phase5.md](phase5.md)) |
+| 5e | Lean `thumbs.db`: face crops only for faces without a decision and for each person's picture; right-click "Use as … picture" on a person's photos | **Done** (see [phase5.md](phase5.md)) |
+| 5f | "Type" check box drop-down (Photos, Videos, Live Photos) next to the search box | **Done** (see "Phase 5f details") |
+| 5g | Favorites: a heart in the viewer's top bar and in the top right corner of each timeline photo; a heart button next to the type filter and "♥ Favorites" as a search suggestion | **Done** (see "Favorites" below) |
 | 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | **In progress**: library id, launcher (cancel, saved folders, start scripts) and the multi-drive core (hub, offline, backup roles, common timeline, cross-drive duplicates and people) built; backup verification (`shoebox backup`, launcher button, All drives page) built; real-hardware checks and Linux/Windows packaging open |
 | 7 | Pets: cats and dogs found (`shoebox recognize --pets`, launcher button "Recognize pets"), named, grouped and searched like people, also by kind ("all cats", "Katze", "Hund"); pets the detector missed can be drawn by hand; Settings → Calibration with the Face check and the new Pet check | **Built except the real-hardware run and DINOv2** (see [phase7.md](phase7.md)) |
 | 8 | UI translation, German and English, JSON message files (design and steps in [phase8.md](phase8.md)) | **Built, check open**: loader, key test, launcher and the whole photo app; the real-hardware check, a native read-through of the German texts and the CI run are open |
@@ -510,7 +510,7 @@ Tests
 - New: tag carry-over, capture-date merge, "at least one stays" rule, same-folder bulk action only on exact duplicates.
 
 Open
-- [ ] Check the new duplicates page on the real drive and the iPad (list in [phase5.md](phase5.md)).
+- [x] Check the new duplicates page on the real drive and the iPad (list in [phase5.md](phase5.md); the iPad part is in [ipad-checklist.md](ipad-checklist.md)).
 - [ ] Confirm the GitHub Actions run is green.
 
 ### Phase 5f details (filter by file type)
@@ -744,23 +744,11 @@ tick it and both appear.
 
 ## Next step
 
-Run the phase 0–4 hardware checklists on the old Intel MacBook and the iPad
-(all iPad checks are collected in [ipad-checklist.md](ipad-checklist.md))
-(phase 4: `recognizer/install.sh` and a `shoebox recognize` run on the
-drive). 5a (reveal), 5b (own tags) and 5c-1 (face check, `--rotated`) are
-built; on the drive run `shoebox faces stats`, look through the face check
-page and time `shoebox recognize --rotated` (list in [phase5.md](phase5.md)).
-5b-2 (search by several tags) is built too. 5c-2 (people, groups,
-decisions, clustering) is built; on the drive time the first clustering,
-name a few people and look at the suggestions and the "maybe" list, and
-mark the known false finds "not a face" (list in [phase5.md](phase5.md)).
-5c-3 (the UI) is built: install the protocol 2 recognizer, then go through
-the combined 5c-2/5c-3 list in [phase5.md](phase5.md), all in the UI and
-from the iPad. 5d (duplicates UI and tag carry-over) is built and comes before
-phase 6 (launcher UI, multiple drives, backups, packaging; pets follow in phase 7);
-check it on the drive and the iPad (list in
-[phase5.md](phase5.md)). 5e (lean `thumbs.db`) is built: update, start `serve`
-once (it removes the old crops) and go through its list in [phase5.md](phase5.md).
+Phase 5 (5a–5g) is done and checked on the real hardware; its iPad checks
+are in [ipad-checklist.md](ipad-checklist.md). Run the phase 0–4 hardware
+checklists on the old Intel MacBook and the iPad (phase 4: `recognizer/install.sh`
+and a `shoebox recognize` run on the drive). Next is phase 6 (launcher UI,
+multiple drives, backups, packaging; pets follow in phase 7).
 
 Pets (phase 7) are built on top of the launcher branch: install or update the
 recognizer (`recognizer/install.sh`; `fetch-models.sh` now also fetches

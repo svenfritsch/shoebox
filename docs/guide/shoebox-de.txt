@@ -37,7 +37,8 @@ Eine Seite im Browser, eine Zeitleiste von allem auf dem Laufwerk.
 
 - Tags
    Eigene Tags für viele Fotos auf einmal. Auch Ordner zählen als Tags. Im
-   Index gespeichert, nie in den Fotos.
+   Index gespeichert, nie in den Fotos, und zusätzlich als lesbare Datei auf
+   dem Laufwerk gesichert.
 
 - Verschieben & ordnen
    Fotos in einen Ordner verschieben (wird bei Bedarf angelegt). RAW-,
@@ -425,6 +426,16 @@ Erst das Original wählen, dann das Backup. shoebox vergleicht die beiden
 Indizes (kein Foto wird gelesen) und listet, was noch nicht auf dem Backup
 ist, was abweicht und was nur auf dem Backup liegt. Auch das Backup neu lesen
 findet Bitfäule.
+
+Deine Tags und Namen sind gesichert
+Alles, was du selbst hinzufügst (eigene Tags, Personen, Gruppen, deine ✓- und
+✗-Entscheidungen, gezeichnete Gesichter), liegt im Index, nie in einem Foto.
+Während du arbeitest, legt shoebox außerdem eine Sicherheitskopie des Index
+an, library.db.bak, und eine lesbare Liste von allem, userdata.json, beide im
+Ordner .shoebox auf dem Laufwerk. Sie wandern mit dem Laufwerk, ein Backup des
+Laufwerks enthält sie also auch. userdata.json lässt sich mit jedem Texteditor
+öffnen. Ist der Index einmal beschädigt, verweist Prüfen im Launcher auf die
+Sicherheitskopie.
 
 iPad & andere Geräte
 Im Terminal: shoebox serve /Volumes/MeinLaufwerk --lan. Es zeigt eine Adresse

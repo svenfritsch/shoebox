@@ -183,7 +183,7 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-tag"/></svg></div>
           <h3>Tags</h3>
-          <p>Your own tags on many photos at once. Folders count as tags too. Stored in the index, never in the photos.</p>
+          <p>Your own tags on many photos at once. Folders count as tags too. Stored in the index, never in the photos, and saved in a readable file on the drive too.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-move"/></svg></div>
@@ -613,6 +613,10 @@
             <div>
               <h3>Backup check</h3>
               <p>Choose the original first and the backup second. shoebox compares the two indexes (no photo is read) and lists what is not on the backup yet, what differs and what exists only on the backup. <i>Also re-read the backup</i> finds bit rot.</p>
+            </div>
+            <div>
+              <h3>Your tags and names are saved</h3>
+              <p>Everything you add yourself (own tags, people, groups, your ✓ and ✗ decisions, drawn faces) is kept in the index, never in a photo. While you work, shoebox also keeps a safety copy of the index, <code>library.db.bak</code>, and a readable list of it all, <code>userdata.json</code>, in the <code>.shoebox</code> folder on the drive. They travel with the drive, so a backup of the drive has them too. Open <code>userdata.json</code> in any text editor to see what you have made. If the index is ever damaged, <b>Verify</b> in the launcher points you to the safety copy.</p>
             </div>
             <div>
               <h3>iPad & other devices</h3>

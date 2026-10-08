@@ -183,7 +183,7 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-tag"/></svg></div>
           <h3>Tags</h3>
-          <p>Eigene Tags für viele Fotos auf einmal. Auch Ordner zählen als Tags. Im Index gespeichert, nie in den Fotos.</p>
+          <p>Eigene Tags für viele Fotos auf einmal. Auch Ordner zählen als Tags. Im Index gespeichert, nie in den Fotos, und zusätzlich als lesbare Datei auf dem Laufwerk gesichert.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-move"/></svg></div>
@@ -613,6 +613,10 @@
             <div>
               <h3>Backup-Prüfung</h3>
               <p>Erst das Original wählen, dann das Backup. shoebox vergleicht die beiden Indizes (kein Foto wird gelesen) und listet, was noch nicht auf dem Backup ist, was abweicht und was nur auf dem Backup liegt. <i>Auch das Backup neu lesen</i> findet Bitfäule.</p>
+            </div>
+            <div>
+              <h3>Deine Tags und Namen sind gesichert</h3>
+              <p>Alles, was du selbst hinzufügst (eigene Tags, Personen, Gruppen, deine ✓- und ✗-Entscheidungen, gezeichnete Gesichter), liegt im Index, nie in einem Foto. Während du arbeitest, legt shoebox außerdem eine Sicherheitskopie des Index an, <code>library.db.bak</code>, und eine lesbare Liste von allem, <code>userdata.json</code>, beide im Ordner <code>.shoebox</code> auf dem Laufwerk. Sie wandern mit dem Laufwerk, ein Backup des Laufwerks enthält sie also auch. <code>userdata.json</code> lässt sich mit jedem Texteditor öffnen. Ist der Index einmal beschädigt, verweist <b>Prüfen</b> im Launcher auf die Sicherheitskopie.</p>
             </div>
             <div>
               <h3>iPad & andere Geräte</h3>
