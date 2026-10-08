@@ -253,14 +253,17 @@ Clear Same Folder Copies and Clear Lower Quality Copies clean up the clear-cut
 cases in one go.
 
 Buttons on a group
-Each group has buttons at its top right. They say that you have looked at it
-and want nothing deleted; shoebox remembers it, so the group does not return.
-They differ by kind: Keep all copies (identical photos: the copies stay on
-purpose), Keep all versions (same photo in another size: all versions stay),
-Keep both (original and edited). For look-alikes there are two: Different
-photos (separate shots, not duplicates at all) and Versions of one photo (the
-same shot, kept as versions). Click a look-alike photo to compare them large
-and press Keep this one: after you confirm, all the others go to the trash.
+Every group has up to two buttons at its top right. Keep all means: these
+files stay, and they belong together. Different photos (only on groups of
+look-alikes) means: these are separate shots, not copies of each other. Either
+way nothing is deleted and no photo is touched; shoebox only makes a note in
+its own database on the drive, so it never offers this group again. The note
+follows the photos if you move or rename them. Keep all also lists the others
+as Versions in the info panel of each photo. Photos you have decided about are
+also left alone by Clear Same Folder Copies and Clear Lower Quality Copies. To
+delete instead, tick delete this copy, or open a look-alike photo, compare
+them large and press Keep this one: after you confirm, all the others go to
+the trash.
 
 Trash
 Nothing is deleted right away. Trashed photos wait in .shoebox/trash on the

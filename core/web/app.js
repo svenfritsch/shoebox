@@ -2102,8 +2102,7 @@ function groupNode(g) {
     head.appendChild(b);
   };
   if (g.kind === 'similar') decide('distinct', tr('dups.btn_different'));
-  decide('linked', tr(g.kind === 'identical' ? 'dups.btn_keep_copies' : g.kind === 'resolution' ? 'dups.btn_keep_versions'
-    : g.kind === 'edited' ? 'dups.btn_keep_both' : 'dups.btn_versions'));
+  decide('linked', tr('dups.btn_keep'));
   box.appendChild(head);
   box.appendChild(el('p', 'group-hint', g.kind === 'similar' || g.kind === 'edited'
     ? tr('dups.group_hint_series', { hint: kind.hint })

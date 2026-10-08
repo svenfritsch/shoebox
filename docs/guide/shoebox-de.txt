@@ -267,15 +267,18 @@ Kopien im selben Ordner entfernen und Kopien geringerer Qualität entfernen
 räumen die eindeutigen Fälle in einem Zug auf.
 
 Schaltflächen einer Gruppe
-Jede Gruppe hat oben rechts Schaltflächen. Sie sagen: Ich habe die Gruppe
-angesehen und will nichts löschen; shoebox merkt sich das, die Gruppe kommt
-nicht wieder. Sie unterscheiden sich je nach Art: Alle Kopien behalten
-(identische Fotos: die Kopien bleiben mit Absicht), Alle Versionen behalten
-(dasselbe Foto in anderer Größe), Beide behalten (Original und bearbeitet).
-Bei Ähnlichen gibt es zwei: Verschiedene Fotos (eigene Aufnahmen, gar keine
-Duplikate) und Versionen eines Fotos (dieselbe Aufnahme, als Versionen
-behalten). Klicke ein ähnliches Foto an, um sie groß zu vergleichen, und wähle
-Dieses behalten: nach der Bestätigung kommen alle anderen in den Papierkorb.
+Jede Gruppe hat oben rechts bis zu zwei Schaltflächen. Alle behalten heißt:
+Diese Dateien bleiben, und sie gehören zusammen. Verschiedene Fotos (nur bei
+ähnlichen Fotos) heißt: Das sind getrennte Aufnahmen, keine Kopien
+voneinander. In beiden Fällen wird nichts gelöscht und kein Foto verändert;
+shoebox macht sich nur eine Notiz in seiner eigenen Datenbank auf dem Laufwerk
+und zeigt die Gruppe nie wieder an. Die Notiz bleibt erhalten, wenn du Fotos
+verschiebst oder umbenennst. Alle behalten zeigt die übrigen außerdem als
+Versionen im Infobereich jedes Fotos an. Entschiedene Fotos lassen auch Kopien
+im selben Ordner entfernen und Kopien geringerer Qualität entfernen in Ruhe.
+Zum Löschen hakst du stattdessen diese Kopie löschen an, oder du öffnest ein
+ähnliches Foto, vergleichst alle groß und wählst Dieses behalten: nach der
+Bestätigung kommen alle anderen in den Papierkorb.
 
 Papierkorb
 Nichts wird sofort gelöscht. Gelöschte Fotos warten in .shoebox/trash auf dem

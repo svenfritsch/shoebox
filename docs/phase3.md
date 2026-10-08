@@ -81,8 +81,8 @@ Photo videos, nothing missing):
 - All pairs of distinct hash values are compared, on all cores (~1.4 s for
   100,000 distinct hashes on 4 cores in Docker; POPCNT is used where the CPU
   has it). The result is cached until the index changes.
-- Per group: *Different photos* (`distinct`), *Versions of one photo* /
-  *Keep all copies* (`linked`), or *Move to trash* per file. Decisions are
+- Per group: *Different photos* (`distinct`), *Keep all*
+  (`linked`; one label for every kind), or *Move to trash* per file. Decisions are
   stored per pair of file ids in `dup_decisions` (survive moves); decided
   pairs are not shown again. Linked versions appear in the viewer's info
   panel.
