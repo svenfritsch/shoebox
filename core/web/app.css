@@ -433,7 +433,8 @@ body.selecting .sec .pick { display: inline; }
 .lb-panel .pface.picked .avatar { outline: 3px solid var(--accent); outline-offset: -3px; }
 .lb-panel .pface.nopick { opacity: .45; padding-left: 28px; }
 .lb-panel .pface input[type=checkbox] { width: 18px; height: 18px; flex: none; accent-color: var(--accent); }
-.lb-panel .pfaces.picking .pface .who button, .lb-panel .pfaces.picking .pface .more-btn { display: none; }
+.lb-panel .pfaces.picking .pface .who button:not(.pname), .lb-panel .pfaces.picking .pface .more-btn { display: none; }
+.lb-panel .pfaces.picking .pface .pname { pointer-events: none; }
 .lb-panel .pickbar { position: sticky; bottom: 0; display: flex; flex-direction: column; gap: 8px; padding: 10px; margin-top: 4px; border-radius: 12px; background: #2a2a2a; border: 1px solid rgba(255,255,255,.18); }
 .lb-panel .pickbar.busy { opacity: .6; pointer-events: none; }
 .lb-panel .pickhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
