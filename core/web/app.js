@@ -2466,7 +2466,7 @@ $('sizer').addEventListener('contextmenu', function (ev) {
   var only = state.filter.people && state.filter.people.length === 1 ? state.filter.people[0] : null;
   if (only != null && state.personNames[only]) {
     items.push({ label: tr('menu.use_as', { name: state.personNames[only] }), run: function () {
-      post('/api/people/' + only + '/cover', { file: id }).then(function () { toast(tr('menu.picture_changed')); peopleChanged(); }).catch(failed);
+      post(LIBAPI + '/people/' + only + '/cover', { file: id }).then(function () { toast(tr('menu.picture_changed')); peopleChanged(); }).catch(failed);
     } });
   }
   showMenu(ev.clientX, ev.clientY, items);
