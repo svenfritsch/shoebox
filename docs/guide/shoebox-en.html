@@ -176,7 +176,7 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg></div>
           <h3>Search & filter</h3>
-          <p>Type a person, pet, tag or folder. Combine keywords for a more complex search. Filter by photos, videos or Live Photos.</p>
+          <p>Type a person, pet, tag or folder. Combine keywords for a more complex search. Filter by photos, videos or Live Photos, or show only your favorites ♥.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-tag"/></svg></div>
@@ -248,6 +248,10 @@
         <li>
           <h3>Type</h3>
           <p>Show only photos, videos or Live Photos.</p>
+        </li>
+        <li>
+          <h3>Favorites ♥</h3>
+          <p>Show only the photos you have hearted. Also found by typing <i>favorite</i> in the search box.</p>
         </li>
         <li>
           <h3>Year</h3>
@@ -351,6 +355,10 @@
             <p>Click a photo. <b>ⓘ</b> opens the info panel: date (marked <b>estimated</b> when it is not the day the photo was taken), camera, size, tags, people, and buttons to open the folder or copy the path.</p>
           </div>
           <div>
+            <h3>Favorites</h3>
+            <p>The <b>♥</b> in the top bar of the viewer, or the key <b>f</b>, marks the photo as a favorite. In the timeline the same heart sits in the top right corner of each photo (it appears when you point at a photo; hearted photos always show it). Click it again to take it off. Under the hood a favorite is just your own tag <i>favorite</i>, kept in the index like any tag, never in the photo.</p>
+          </div>
+          <div>
             <h3>Rotate</h3>
             <p><b>r</b> turns left, <b>Shift+R</b> right. For JPEGs this changes only the two bytes of the rotation flag; for other formats the turn exists in shoebox only.</p>
           </div>
@@ -369,6 +377,8 @@
               <dd>show / hide the info panel</dd>
               <dt>Space</dt>
               <dd>open / close the viewer (on a photo picked with the arrow keys)</dd>
+              <dt>f</dt>
+              <dd>add to / remove from favorites</dd>
               <dt>r · Shift+R</dt>
               <dd>rotate left / right</dd>
               <dt>Esc</dt>
@@ -386,7 +396,7 @@
         <div class="items">
           <div>
             <h3>Search</h3>
-            <p>Type in the search box: suggestions appear for tags, people and folders. Pick several and they become chips that narrow the result; × removes one, <b>Clear all</b> starts over.</p>
+            <p>Type in the search box: suggestions appear for tags, people and folders. Pick several and they become chips that narrow the result; × removes one, <b>Clear all</b> starts over. To find your favorites press the <b>♥</b> button next to <b>Type</b>, or type <i>favorite</i> (English) or <i>favorit</i> (German) and pick <b>♥ Favorites</b>; it combines with everything else, e.g. favorites of one person or one year.</p>
           </div>
           <div>
             <h3>Select</h3>

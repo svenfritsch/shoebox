@@ -124,6 +124,8 @@ pub struct Query {
     /// Only photos with a pet of every one of these species (AND): `cat`,
     /// `dog` or `pet` (any); named or not (phase 7).
     pub pets: Vec<String>,
+    /// Only favorites (photos with a heart).
+    pub fav: bool,
 }
 
 impl Snapshot {
@@ -367,6 +369,7 @@ impl Snapshot {
             pet_files.insert(species.to_string(), ids.clone());
             Ok(ids)
         };
+        let favorites = || crate::tags::favorite_ids(conn).unwrap_or_default();
         for word in text.split_whitespace() {
             let word = library::nfc(word).to_lowercase();
             let tags: Vec<i64> =
@@ -379,8 +382,14 @@ impl Snapshot {
             for species in crate::pets::species_for_word(&word) {
                 ids.extend(files_of_pets(species)?);
             }
+            // "favorite", "favoriten": the photos with a heart (the tag is
+            // called "favorite" in both languages).
+            if crate::tags::is_favorite_word(&word) {
+                ids.extend(favorites());
+            }
             words.push((word, ids));
         }
+        let fav = if q.fav { Some(favorites()) } else { None };
         let mut pet: Option<HashSet<i64>> = None;
         for species in &q.pets {
             let ids = files_of_pets(species)?;
@@ -404,6 +413,7 @@ impl Snapshot {
             .filter(|it| person.as_ref().is_none_or(|p| p.contains(&it.id)))
             .filter(|it| pet.as_ref().is_none_or(|p| p.contains(&it.id)))
             .filter(|it| folders.as_ref().is_none_or(|f| f.contains(&it.folder_id)))
+            .filter(|it| fav.as_ref().is_none_or(|f| f.contains(&it.id)))
             .filter(|it| tagged.as_ref().is_none_or(|t| t.contains(&it.id)))
             .filter(|it| words.iter().all(|(w, ids)| ids.contains(&it.id) || it.path_lower.contains(w.as_str())))
             .collect())

@@ -44,7 +44,57 @@ pub fn check_name(name: &str) -> Result<String> {
     if name.chars().any(char::is_control) {
         bail!("tag names cannot contain control characters");
     }
+    // "Favoriten" and the like are the heart, not a tag of their own.
+    if means_favorite(&name) {
+        return Ok(FAVORITE.to_string());
+    }
     Ok(name)
+}
+
+/// Favorites are an own tag with this name (the heart in the UI). Stored in
+/// English whatever the UI language is; the words people type to find them
+/// are in `is_favorite_word`.
+pub const FAVORITE: &str = "favorite";
+
+/// Words that mean "favorites" in a search, in English and German: the
+/// start of one of them (three letters at least) or its plural.
+pub fn is_favorite_word(word: &str) -> bool {
+    let word = word.to_lowercase();
+    word.chars().count() >= 3
+        && ["favorite", "favorites", "favourite", "favourites", "favorit", "favoriten"].iter().any(|w| w.starts_with(&word))
+}
+
+/// Names typed as a tag that mean the heart: the stored name and its other
+/// spellings (the plural, German, British). They all become `FAVORITE`.
+const FAVORITE_ALIASES: [&str; 5] = ["favorites", "favourite", "favourites", "favorit", "favoriten"];
+
+/// Is this tag name the favorites tag (the UI shows it as a heart, not as a tag)?
+pub fn is_favorite_name(name: &str) -> bool {
+    db::tag_fold(name) == FAVORITE
+}
+
+/// Does a typed tag name mean the heart (`favorite`, `favorites`, `favorit`,
+/// `favoriten`, …)?
+pub fn means_favorite(name: &str) -> bool {
+    let fold = db::tag_fold(name);
+    fold == FAVORITE || FAVORITE_ALIASES.contains(&fold.as_str())
+}
+
+/// Heart a file or take the heart off. Only the user's own tag counts: a
+/// folder called "favorite" does not make its photos favorites.
+pub fn set_favorite(conn: &Connection, ids: &[i64], on: bool) -> Result<Changed> {
+    if on { add(conn, ids, FAVORITE) } else { remove(conn, ids, FAVORITE) }
+}
+
+/// Files with a heart.
+pub fn favorite_ids(conn: &Connection) -> Result<std::collections::HashSet<i64>> {
+    Ok(conn
+        .prepare(
+            "SELECT DISTINCT ft.file_id FROM file_tags ft JOIN tags t ON t.id = ft.tag_id
+             WHERE ft.source = 'user' AND t.fold = ?1",
+        )?
+        .query_map([FAVORITE], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -358,6 +408,13 @@ mod tests {
         assert!(check_name("a\nb").is_err());
         assert!(check_name(&"x".repeat(MAX_NAME + 1)).is_err());
         assert_eq!(db::tag_fold(" Europa-PARK"), db::tag_fold("europa-park"));
+        assert!(is_favorite_word("Favoriten") && is_favorite_word("fav") && is_favorite_word("favorite"));
+        assert!(!is_favorite_word("fa") && !is_favorite_word("favoriten2") && !is_favorite_name("favorites"));
+        assert!(is_favorite_name(" Favorite "));
+        for n in ["Favorit", " FAVORITEN", "favorites"] {
+            assert_eq!(check_name(n).unwrap(), "favorite", "{n}");
+        }
+        assert_eq!(check_name("Favoritenstraße").unwrap(), "Favoritenstraße");
         assert_eq!(db::tag_fold("O\u{308}STERREICH"), db::tag_fold("\u{f6}sterreich"));
     }
 }

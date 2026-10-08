@@ -448,3 +448,50 @@ fn search_by_several_tags_at_once() {
     server.stop().unwrap();
     assert_untouched(&before, &lib.snapshot());
 }
+
+#[test]
+fn favorites_are_the_own_tag_favorite_and_found_by_heart_or_word() {
+    let lib = Library::new("favorites");
+    lib.scan();
+    let before = lib.snapshot();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let img1 = id_of(&lib, "2020-07 Urlaub Griechenland/IMG_0001.JPG");
+    let dsc = id_of(&lib, "Familie/Weihnachten/DSC_2001.jpg");
+    let heart = |ids: &[i64], on: bool| {
+        let r = post(addr, "/api/favorites", &json!({ "ids": ids, "on": on }));
+        assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+        r.json()
+    };
+
+    // The database only gets an own tag called "favorite".
+    assert_eq!(heart(&[img1, dsc], true)["files"], 2);
+    assert_eq!(own_tags(&lib, img1), vec!["favorite"]);
+    assert_eq!(heart(&[img1], true)["files"], 0, "already there");
+    // Typed as a tag, the other words are the heart too.
+    assert_eq!(add(addr, &[img1], "Favoriten")["tag"]["name"], "favorite");
+    assert_eq!(remove(addr, &[dsc], "favorit")["files"], 1);
+    assert_eq!(heart(&[dsc], true)["files"], 1);
+
+    // The timeline says which of its photos have a heart; `fav=1` and the
+    // words in both languages find them.
+    let all = get(addr, "/api/timeline").json();
+    assert_eq!(sorted(all["favs"].as_array().unwrap().iter().map(|v| v.as_i64().unwrap()).collect()), sorted(vec![img1, dsc]));
+    let both = sorted(vec![img1, dsc]);
+    for q in ["?fav=1", "?q=favorite", "?q=favorit", "?q=Favoriten", "?q=favorites"] {
+        assert_eq!(timeline_ids(addr, q), both, "{q}");
+    }
+    assert_eq!(timeline_ids(addr, "?fav=1&q=weihnachten"), vec![dsc]);
+    assert!(timeline_ids(addr, "?q=favoriten%20nichtda").is_empty());
+    assert_eq!(timeline_ids(addr, "?fav=0").len(), ids(&all).len());
+
+    // Taking the heart off removes the tag again.
+    assert_eq!(heart(&[img1], false)["files"], 1);
+    assert_eq!(timeline_ids(addr, "?fav=1"), vec![dsc]);
+    heart(&[dsc], false);
+    assert!(timeline_ids(addr, "?fav=1").is_empty());
+    assert!(user_rows(&lib).is_empty());
+    server.stop().unwrap();
+
+    assert_untouched(&before, &lib.snapshot());
+}
