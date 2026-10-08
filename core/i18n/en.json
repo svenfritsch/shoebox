@@ -99,6 +99,7 @@
   "launcher.sum.backup_extra": "{n} only on the backup",
   "launcher.sum.checked": "{n} checked",
   "launcher.sum.damaged": "{n} damaged",
+  "launcher.sum.relocated": "{n} copies gone, content still on the drive",
   "launcher.sum.faces": "{n} faces",
   "launcher.sum.no_faces": "no faces yet",
   "launcher.lang": "Language",

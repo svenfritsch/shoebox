@@ -447,8 +447,10 @@ function summaryOf(kind, r) {
   else if (kind === 'backup') out.push(tr('launcher.sum.backup_covered', { covered: r.report.covered, compared: r.report.compared }), tr('launcher.sum.backup_missing', { n: r.report.missing }), tr('launcher.sum.backup_different', { n: r.report.different }), tr('launcher.sum.backup_extra', { n: r.report.extra }));
   if (kind === 'backup' && r.report.removed) out.push(tr('launcher.sum.backup_removed', { n: r.report.removed }));
   else if (kind === 'backup_cleanup') out.push(tr('launcher.sum.cleanup', { n: r.removed.length }), tr('launcher.sum.cleanup_skipped', { n: r.skipped.length }));
-  else if (kind === 'verify') out.push(tr('launcher.sum.checked', { n: r.checked }), tr('launcher.sum.missing', { n: r.missing.length }), tr('launcher.sum.damaged', { n: r.damaged.length }));
-  else if (kind === 'recognize' && r.faces !== undefined) out.push(tr('launcher.sum.faces', { n: r.faces }));
+  else if (kind === 'verify') {
+    out.push(tr('launcher.sum.checked', { n: r.checked }), tr('launcher.sum.missing', { n: r.missing.length }), tr('launcher.sum.damaged', { n: r.damaged.length }));
+    if (r.relocated) out.push(tr('launcher.sum.relocated', { n: r.relocated }));
+  } else if (kind === 'recognize' && r.faces !== undefined) out.push(tr('launcher.sum.faces', { n: r.faces }));
   else if (kind === 'recognize_pets' && r.pets) out.push(tr('launcher.sum.pets', { n: r.pets.faces }), tr('launcher.failed', { n: r.pets.failed }));
   else if (kind === 'faces_stats') out.push(r === null ? tr('launcher.sum.no_faces') : tr('launcher.sum.faces', { n: r.faces }));
   return out;
