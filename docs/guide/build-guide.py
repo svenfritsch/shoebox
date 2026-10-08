@@ -39,7 +39,7 @@ T = {
   "lang": "en", "file": "shoebox-guide-en.pdf",
   "title": "shoebox: your photo library, on the drive",
   "tagline": "Your photo library, on the drive.",
-  "lede": "shoebox is a small program that lives on your external drive next to your photos. It indexes them, shows them in a fast timeline in your browser, and helps you tag, sort, import and de-duplicate, without ever copying them or touching their metadata.",
+  "lede": "shoebox is a small program that lives on your external drive next to your photos. It indexes them, shows them in a fast timeline in your browser, and helps you tag, sort and de-duplicate, without ever copying them or touching their metadata.",
   "badges": [("shield", "Originals stay untouched"), ("drive", "Lives on your drive"), ("lock", "Private: no cloud, no account"), ("tablet", "Browse from the iPad too"), ("globe", "macOS today · Linux &amp; Windows next")],
   "cover_note": "Guide · English",
   "other_lang": "Deutsche Version: shoebox-guide-de.pdf",
@@ -51,7 +51,7 @@ T = {
     ("search", "Search & filter", "Type a person, pet, tag or folder. Combine keywords for a more complex search. Filter by photos, videos or Live Photos."),
     ("tag", "Tags", "Your own tags on many photos at once. Folders count as tags too. Stored in the index, never in the photos."),
     ("move", "Move & organise", "Move photos to a folder (created if needed). RAW, Live Photo and sidecar files travel along."),
-    ("import", "Import", "Pick the photos of an event or drop them into the window: they land in a new event folder and keep their dates."),
+    ("import", "Adding photos", "Copy the photos of an event onto the drive in Finder or File Explorer (dates are kept) and Scan. Copies of files the drive already had are listed, and you can delete them."),
     ("dup", "Duplicates", "Finds identical, resized, edited and look-alike photos. You review; the best copy always stays."),
     ("trash", "Safe trash", "Deleted photos go to a trash on the drive. Put them back, or delete them for good."),
     ("people", "People & pets", "Optional recognition groups faces, cats and dogs. You name them; shoebox suggests the rest."),
@@ -65,14 +65,14 @@ T = {
     ("Type", "Show only photos, videos or Live Photos."),
     ("Year", "Jump straight to a year."),
     ("Select ☑", "Pick photos to move, tag or trash."),
-    ("Import ⤒", "Add photos and videos from this computer or the iPad."),
     ("Quick links", "All photos · Duplicates · Trash · Settings."),
     ("Folders", "Your folders, with counts. Tags, Faces and Drives appear here when you have them."),
     ("Timeline", "Months with counts. Click a photo to open the viewer."),
-    ("Language & status", "Switch English / German; see scan, thumbnail and drive status."),
+    ("Language", "Switch English / German."),
+    ("Status", "Scan, thumbnail and drive status at the bottom of the sidebar."),
   ],
   "session_h": "A typical session",
-  "session": "Plug in the drive and double-click <b>Start shoebox</b>. <b>Scan</b> (quick when little has changed) and open the photo app. <b>Import</b> the photos of an event: pick them, name the event, and shoebox creates the event folder. Then tag and sort. Look at <b>Duplicates</b> now and then, and run the <b>Backup check</b> after every backup.",
+  "session": "Plug in the drive and double-click <b>Start shoebox</b>. <b>Scan</b> (quick when little has changed) and open the photo app. To add the photos of an event, copy their folder onto the drive in Finder (named like <b>2025-08 Holiday</b>) and <b>Scan</b> again: if some files were on the drive already, the launcher offers to delete the new copies. Then tag and sort. Look at <b>Duplicates</b> now and then, and run the <b>Backup check</b> after every backup.",
   "start_h": "Get started in three steps",
   "start_sub": "macOS, Intel (10.13 or newer) and Apple Silicon. Nothing to install.",
   "steps": [
@@ -83,7 +83,7 @@ T = {
   "launcher_cap": "The launcher: 1 choose the drive or folder, 2 pick a task, 3 open the photo app.",
   "launcher_tasks_h": "Launcher tasks",
   "launcher_tasks": [
-    ("Scan", "find new, moved and changed photos"),
+    ("Scan", "find new, moved and changed photos, and new copies of files the drive already had"),
     ("Verify", "check that nothing was lost or damaged"),
     ("Recognize", "find faces (and, with Recognize pets, cats and dogs)"),
     ("Backup check", "is the 2nd folder a complete copy of the 1st?"),
@@ -118,14 +118,14 @@ T = {
   "select_cap": "Three photos selected; the bar offers Move, Tag and Trash.",
   "tag_cap": "Adding a tag.",
   "move_cap": "Moving into a new event folder.",
-  "import_h": "Import, duplicates and trash",
+  "import_h": "Adding photos, duplicates and trash",
   "import_items": [
-    ("Import", "Press <b>⤒</b> (or drop files on the window). Choose year, month and an event name: shoebox creates the event folder <b>YYYY-MM Event</b>, the files keep their dates, and files already in the library are skipped. In <b>Settings</b> you choose how new event folders are named: 4 or 2 digits for the year, a hyphen or a dot between year and month, and a space, <code>_</code>, <code>.</code>, <code>-</code> or nothing before the name, for example <code>YY.MM_Event</code>. Folders you already have are not renamed, and all these forms are recognised."),
+    ("Adding photos", "There is no import button: copy or move the photos onto the drive in Finder or File Explorer, which keeps their dates, ideally into a folder named <b>YYYY-MM Event</b>, and press <b>Scan</b>. If the scan finds new files the drive already had, the launcher marks them <i>already on the drive</i> and offers <b>Delete the new copies</b> (to the trash, or for good). The older original stays and gets the deleted copy’s folder name as a tag. <b>Settings</b> sets how event folders are named in suggestions (for example <code>YY.MM_Event</code>); existing folders are not renamed and all forms are recognised."),
     ("Duplicates", "<b>Duplicates</b> lists four kinds: identical, same photo in another size, original and edited, and look-alikes. Tick <b>delete this copy</b> on what you want gone; the best file stays and at least one per group always does. Tags and capture dates of a removed copy carry over."),
     ("Shortcuts", "<b>Clear Same Folder Copies</b> and <b>Clear Lower Quality Copies</b> clean up the clear-cut cases in one go. Groups of similar photos need your decision: choose <b>Different photos</b> or <b>Versions of one photo</b>, and shoebox remembers it so the group does not return."),
     ("Trash", "Nothing is deleted right away. Trashed photos wait in <code>.shoebox/trash</code> on the drive: <b>Put back</b> or <b>Delete for good</b>."),
   ],
-  "import_cap": "Import dialog.",
+  "import_cap": "After a scan: new copies of files the drive already had.",
   "dups_cap": "Duplicates: a pre-ticked messenger copy next to its original.",
   "trash_cap": "The trash page.",
   "people_h": "People and pets",
@@ -135,7 +135,7 @@ T = {
     ("Name them", "Under <b>Unnamed</b>, shoebox shows cards of similar faces. Type a name once and the whole card is named; later, confirm (✓) or reject (✗) the suggestions. Group people, merge two cards of one person, mark strangers with <b>Ignore</b>."),
     ("In the viewer", "The info panel lists who is on the photo and draws a box around each face or pet. Click a name to see all their photos, or draw a box around a face or pet that was missed."),
     ("Search", "Names work in the search box like tags, and so do kinds such as “all cats”. Combine a person with a tag, a folder or another person."),
-    ("New photos", "Recognition does not start by itself after an import yet. Close the photo app and run <b>Recognize</b> again: it only looks at the new photos."),
+    ("New photos", "Recognition does not start by itself after a scan yet. Close the photo app and run <b>Recognize</b> again: it only looks at the new photos."),
   ],
   "unnamed_cap": "Unnamed cards: one name for every face on a card.",
   "info_people_cap": "The info panel names the girl and the cat; boxes show where they are.",
@@ -152,7 +152,7 @@ T = {
   "safe_items": [
     ("Read-only", "Metadata, thumbnails and tags are kept in the index on the drive, never inside a photo. Capture dates and created dates never change."),
     ("Guarded", "Every scan is checked: size, dates and a full hash before and after. Any difference is an error."),
-    ("Only on your command", "Originals change only through your actions: move, rename, trash, import. Always a rename, never a copy, and only if the file still matches the index."),
+    ("Only on your command", "Originals change only through your actions: move, rename, trash. Always a rename, never a copy, and only if the file still matches the index. The only other thing shoebox removes is a new copy of a file the drive already had, and only when you press the button after a scan."),
     ("Local", "No cloud, no account. By default only this computer can connect; other devices need <code>--lan</code> and a PIN."),
   ],
   "faq_h": "If something looks off",
@@ -178,7 +178,7 @@ T = {
   "lang": "de", "file": "shoebox-guide-de.pdf",
   "title": "shoebox: deine Fotobibliothek auf dem Laufwerk",
   "tagline": "Deine Fotobibliothek, auf dem Laufwerk.",
-  "lede": "shoebox ist ein kleines Programm, das auf deinem externen Laufwerk neben deinen Fotos liegt. Es indexiert sie, zeigt sie im Browser in einer schnellen Zeitleiste und hilft beim Verschlagworten, Sortieren, Importieren und Aufräumen von Duplikaten, ohne sie je zu kopieren oder ihre Metadaten anzufassen.",
+  "lede": "shoebox ist ein kleines Programm, das auf deinem externen Laufwerk neben deinen Fotos liegt. Es indexiert sie, zeigt sie im Browser in einer schnellen Zeitleiste und hilft beim Verschlagworten, Sortieren und Aufräumen von Duplikaten, ohne sie je zu kopieren oder ihre Metadaten anzufassen.",
   "badges": [("shield", "Originale bleiben unberührt"), ("drive", "Liegt auf deinem Laufwerk"), ("lock", "Privat: keine Cloud, kein Konto"), ("tablet", "Auch am iPad nutzbar"), ("globe", "macOS heute · Linux &amp; Windows folgen")],
   "cover_note": "Handbuch · Deutsch",
   "other_lang": "English version: shoebox-guide-en.pdf",
@@ -190,7 +190,7 @@ T = {
     ("search", "Suchen & Filtern", "Tippe eine Person, ein Haustier, einen Tag oder Ordner. Kombiniere Schlagwörter für eine komplexere Suche. Filter nach Fotos, Videos oder Live Photos."),
     ("tag", "Tags", "Eigene Tags für viele Fotos auf einmal. Auch Ordner zählen als Tags. Im Index gespeichert, nie in den Fotos."),
     ("move", "Verschieben & ordnen", "Fotos in einen Ordner verschieben (wird bei Bedarf angelegt). RAW-, Live-Photo- und Sidecar-Dateien wandern mit."),
-    ("import", "Importieren", "Die Fotos eines Ereignisses auswählen oder ins Fenster ziehen: Sie landen in einem neuen Ereignisordner und behalten ihre Daten."),
+    ("import", "Fotos hinzufügen", "Die Fotos eines Ereignisses im Finder oder Explorer aufs Laufwerk kopieren (die Daten bleiben erhalten) und scannen. Kopien von Dateien, die das Laufwerk schon hatte, werden aufgelistet und lassen sich löschen."),
     ("dup", "Duplikate", "Findet identische, verkleinerte, bearbeitete und ähnliche Fotos. Du prüfst; die beste Kopie bleibt immer."),
     ("trash", "Sicherer Papierkorb", "Gelöschte Fotos landen in einem Papierkorb auf dem Laufwerk. Zurücklegen oder endgültig löschen."),
     ("people", "Personen & Haustiere", "Optionale Erkennung gruppiert Gesichter, Katzen und Hunde. Du vergibst Namen, shoebox schlägt den Rest vor."),
@@ -204,14 +204,14 @@ T = {
     ("Typ", "Nur Fotos, Videos oder Live Photos zeigen."),
     ("Jahr", "Direkt zu einem Jahr springen."),
     ("Auswählen ☑", "Fotos zum Verschieben, Taggen oder in den Papierkorb wählen."),
-    ("Importieren ⤒", "Fotos und Videos von diesem Computer oder vom iPad hinzufügen."),
     ("Schnellzugriff", "Alle Fotos · Duplikate · Papierkorb · Einstellungen."),
     ("Ordner", "Deine Ordner mit Anzahl. Tags, Gesichter und Laufwerke erscheinen hier, sobald es sie gibt."),
     ("Zeitleiste", "Monate mit Anzahl. Ein Klick auf ein Foto öffnet die Ansicht."),
-    ("Sprache & Status", "Zwischen Deutsch und Englisch wechseln; Scan-, Vorschau- und Laufwerksstatus."),
+    ("Sprache", "Zwischen Deutsch und Englisch wechseln."),
+    ("Status", "Scan-, Vorschau- und Laufwerksstatus unten in der Seitenleiste."),
   ],
   "session_h": "Ein typischer Ablauf",
-  "session": "Laufwerk anstecken und <b>Start shoebox</b> doppelklicken. <b>Scannen</b> (geht schnell, wenn sich wenig geändert hat) und die Foto-App öffnen. Die Fotos eines Ereignisses <b>importieren</b>: auswählen, das Ereignis benennen, und shoebox legt den Ereignisordner an. Dann taggen und sortieren. Ab und zu die <b>Duplikate</b> ansehen und nach jedem Backup die <b>Backup-Prüfung</b> laufen lassen.",
+  "session": "Laufwerk anstecken und <b>Start shoebox</b> doppelklicken. <b>Scannen</b> (geht schnell, wenn sich wenig geändert hat) und die Foto-App öffnen. Für die Fotos eines Ereignisses den Ordner im Finder aufs Laufwerk kopieren (benannt wie <b>2025-08 Urlaub</b>) und erneut <b>scannen</b>: Waren einzelne Dateien schon auf dem Laufwerk, bietet der Launcher an, die neuen Kopien zu löschen. Dann taggen und sortieren. Ab und zu die <b>Duplikate</b> ansehen und nach jedem Backup die <b>Backup-Prüfung</b> laufen lassen.",
   "start_h": "In drei Schritten loslegen",
   "start_sub": "macOS, Intel (ab 10.13) und Apple Silicon. Nichts zu installieren.",
   "steps": [
@@ -222,7 +222,7 @@ T = {
   "launcher_cap": "Der Starter: 1 Laufwerk oder Ordner wählen, 2 Aufgabe wählen, 3 Foto-App öffnen.",
   "launcher_tasks_h": "Aufgaben im Starter",
   "launcher_tasks": [
-    ("Scannen", "neue, verschobene und geänderte Fotos finden"),
+    ("Scannen", "neue, verschobene und geänderte Fotos finden, und neue Kopien von Dateien, die das Laufwerk schon hatte"),
     ("Prüfen", "prüfen, dass nichts verloren oder beschädigt ist"),
     ("Erkennen", "Gesichter finden (mit „Haustiere erkennen“ auch Katzen und Hunde)"),
     ("Backup-Prüfung", "ist der 2. Ordner eine vollständige Kopie des 1.?"),
@@ -257,14 +257,14 @@ T = {
   "select_cap": "Drei Fotos ausgewählt; die Leiste bietet Verschieben, Tag und Papierkorb.",
   "tag_cap": "Tag hinzufügen.",
   "move_cap": "In einen neuen Ereignisordner verschieben.",
-  "import_h": "Import, Duplikate und Papierkorb",
+  "import_h": "Fotos hinzufügen, Duplikate und Papierkorb",
   "import_items": [
-    ("Importieren", "<b>⤒</b> drücken (oder Dateien aufs Fenster ziehen). Jahr, Monat und Ereignisnamen wählen: shoebox legt den Ereignisordner <b>JJJJ-MM Ereignis</b> an, die Dateien behalten ihre Daten, und Dateien, die schon in der Bibliothek sind, werden übersprungen. In den <b>Einstellungen</b> wählst du, wie neue Ereignisordner heißen: 4 oder 2 Ziffern für das Jahr, Bindestrich oder Punkt zwischen Jahr und Monat, und Leerzeichen, <code>_</code>, <code>.</code>, <code>-</code> oder nichts vor dem Namen, zum Beispiel <code>JJ.MM_Ereignis</code>. Vorhandene Ordner werden nicht umbenannt, und alle diese Formen werden erkannt."),
+    ("Fotos hinzufügen", "Es gibt keinen Import-Knopf: Die Fotos im Finder oder Explorer aufs Laufwerk kopieren oder verschieben (dabei bleiben ihre Daten erhalten), am besten in einen Ordner namens <b>JJJJ-MM Ereignis</b>, und <b>Scannen</b> drücken. Findet der Scan neue Dateien, die das Laufwerk schon hatte, markiert der Launcher sie mit <i>schon auf dem Laufwerk</i> und bietet <b>Die neuen Kopien löschen</b> an (in den Papierkorb oder endgültig). Das ältere Original bleibt und bekommt den Ordnernamen der gelöschten Kopie als Tag. In den <b>Einstellungen</b> wählst du, wie Ereignisordner in Vorschlägen heißen (zum Beispiel <code>JJ.MM_Ereignis</code>); vorhandene Ordner werden nicht umbenannt, und alle Formen werden erkannt."),
     ("Duplikate", "<b>Duplikate</b> zeigt vier Arten: identisch, dasselbe Foto in anderer Größe, Original und bearbeitet sowie Ähnliche. Hake <b>diese Kopie löschen</b> bei dem an, was weg soll; die beste Datei bleibt, und pro Gruppe bleibt immer mindestens eine. Tags und Aufnahmedatum einer entfernten Kopie gehen auf die übrige über."),
     ("Abkürzungen", "<b>Kopien im selben Ordner entfernen</b> und <b>Kopien geringerer Qualität entfernen</b> räumen die eindeutigen Fälle in einem Zug auf. Gruppen ähnlicher Fotos brauchen deine Entscheidung: Wähle <b>Verschiedene Fotos</b> oder <b>Versionen eines Fotos</b>, und shoebox merkt sie sich, damit die Gruppe nicht wiederkommt."),
     ("Papierkorb", "Nichts wird sofort gelöscht. Gelöschte Fotos warten in <code>.shoebox/trash</code> auf dem Laufwerk: <b>Zurücklegen</b> oder <b>Endgültig löschen</b>."),
   ],
-  "import_cap": "Der Import-Dialog.",
+  "import_cap": "Nach einem Scan: neue Kopien von Dateien, die das Laufwerk schon hatte.",
   "dups_cap": "Duplikate: eine vorgewählte Messenger-Kopie neben ihrem Original.",
   "trash_cap": "Die Papierkorb-Seite.",
   "people_h": "Personen und Haustiere",
@@ -274,7 +274,7 @@ T = {
     ("Benennen", "Unter <b>Unbenannt</b> zeigt shoebox Karten mit ähnlichen Gesichtern. Einmal einen Namen eintippen, und die ganze Karte ist benannt; später Vorschläge bestätigen (✓) oder ablehnen (✗). Personen gruppieren, zwei Karten einer Person zusammenführen, Fremde mit <b>Ignorieren</b> markieren."),
     ("In der Ansicht", "Das Infofeld nennt, wer auf dem Foto ist, und zeichnet um jedes Gesicht oder Tier einen Rahmen. Ein Klick auf einen Namen zeigt alle Fotos der Person; ein übersehenes Gesicht oder Tier kannst du mit einem Rahmen markieren."),
     ("Suchen", "Namen funktionieren im Suchfeld wie Tags, ebenso Arten wie „alle Katzen“. Kombiniere eine Person mit einem Tag, einem Ordner oder einer weiteren Person."),
-    ("Neue Fotos", "Die Erkennung startet nach einem Import noch nicht von selbst. Foto-App schließen und <b>Erkennen</b> erneut ausführen: Es werden nur die neuen Fotos angesehen."),
+    ("Neue Fotos", "Die Erkennung startet nach einem Scan noch nicht von selbst. Foto-App schließen und <b>Erkennen</b> erneut ausführen: Es werden nur die neuen Fotos angesehen."),
   ],
   "unnamed_cap": "Unbenannt: ein Name für alle Gesichter einer Karte.",
   "info_people_cap": "Das Infofeld nennt das Mädchen und die Katze; Rahmen zeigen, wo sie sind.",
@@ -291,7 +291,7 @@ T = {
   "safe_items": [
     ("Nur lesen", "Metadaten, Vorschaubilder und Tags liegen im Index auf dem Laufwerk, nie in einem Foto. Aufnahme- und Erstellungsdatum ändern sich nie."),
     ("Bewacht", "Jeder Scan wird kontrolliert: Größe, Daten und ein vollständiger Hash davor und danach. Jeder Unterschied ist ein Fehler."),
-    ("Nur auf deinen Befehl", "Originale ändern sich nur durch deine Aktionen: verschieben, umbenennen, Papierkorb, importieren. Immer ein Umbenennen, nie ein Kopieren, und nur wenn die Datei noch zum Index passt."),
+    ("Nur auf deinen Befehl", "Originale ändern sich nur durch deine Aktionen: verschieben, umbenennen, Papierkorb. Immer ein Umbenennen, nie ein Kopieren, und nur wenn die Datei noch zum Index passt. Das Einzige, was shoebox sonst entfernt, ist eine neue Kopie einer Datei, die das Laufwerk schon hatte, und nur, wenn du nach einem Scan den Knopf drückst."),
     ("Lokal", "Keine Cloud, kein Konto. Standardmäßig kann sich nur dieser Computer verbinden; andere Geräte brauchen <code>--lan</code> und eine PIN."),
   ],
   "faq_h": "Wenn etwas komisch aussieht",
@@ -426,8 +426,8 @@ def build(lang):
                       f'<div style="margin-top:6mm">{shot(L, "07-search-chips", None, "crop", "--h:84mm")}</div>'))
 
     # 2b at a glance
-    pos = [(5.0, 8.9), (63, 7.8), (82.2, 7.8), (89.2, 7.8), (94.0, 7.8), (97.4, 7.8),
-           (20.6, 11.6), (20.6, 26), (58, 33), (19.2, 91.5)]
+    pos = [(5.0, 8.9), (61.2, 7.8), (78.8, 7.8), (85.2, 7.8), (90.0, 7.8),
+           (20.6, 11.6), (20.6, 26), (58, 33), (95.2, 7.8), (13.0, 93.0)]
     dots = "".join(f'<span class="dot" style="left:{x}%;top:{y}%">{i+1}</span>' for i, (x, y) in enumerate(pos))
     legend = "".join(f'<div class="lg"><span class="dot s">{i+1}</span><div><b>{h}</b><br>{p}</div></div>' for i, (h, p) in enumerate(t["glance"]))
     pages.append(page(t, 0, f'''<h2>{t["glance_h"]}</h2><p class="sub">{t["glance_sub"]}</p>
@@ -474,10 +474,10 @@ def build(lang):
     pages.append(page(t, 6, f'''<h2>{t["import_h"]}</h2><p class="sub">&nbsp;</p>
       <div class="two" style="grid-template-columns:1.08fr .92fr;gap:7mm">
         <div>{items(t["import_items"])}</div>
-        <div class="stack">{shot(L, "08-import", t["import_cap"], "crop", "--h:50mm")}
+        <div class="stack">{shot(L, "08-arrivals", t["import_cap"])}
           {shot(L, "10-trash", t["trash_cap"], "crop", "--h:50mm")}</div>
       </div>
-      <div style="margin-top:5mm">{shot(L, "09-duplicates", t["dups_cap"], "cropb", "--h:86mm")}</div>'''))
+      <div style="margin-top:5mm">{shot(L, "09-duplicates", t["dups_cap"], "cropb", "--h:68mm")}</div>'''))
 
     # 7 people and pets
     pages.append(page(t, 7, f'''<h2>{t["people_h"]}</h2><p class="sub">{t["people_sub"]}</p>

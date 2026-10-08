@@ -23,6 +23,17 @@ if (mode === 'launcher') {
   await p.click('button[data-kind=scan]');
   await p.waitForSelector('#summary:not(:empty)', { timeout: 60000 }); await wait(1500);
   await shot('12-launcher', { fullPage: true });
+  // A photo copied onto the drive by hand, then a second scan: the scan lists
+  // it as already there and offers to delete the new copy.
+  const { readdirSync, mkdirSync, copyFileSync } = await import('node:fs');
+  const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => e.name.startsWith('.') ? [] : e.isDirectory() ? walk(`${d}/${e.name}`) : /\.jpe?g$/i.test(e.name) ? [`${d}/${e.name}`] : []);
+  const src = walk(libPath).sort()[0];
+  const dir = `${libPath}/${de ? '2025-09 Neue Fotos' : '2025-09 New photos'}`;
+  mkdirSync(dir, { recursive: true });
+  copyFileSync(src, `${dir}/${src.split('/').pop()}`);
+  await p.click('button[data-kind=scan]');
+  await p.waitForSelector('#arrivals-box:not([hidden])', { timeout: 60000 }); await wait(1500);
+  await p.locator('#progress-card').screenshot({ path: `${out}/08-arrivals.png` });
   await b.close(); process.exit(0);
 }
 
@@ -93,12 +104,6 @@ await p.keyboard.press('ArrowDown'); await p.keyboard.press('Enter'); await wait
 await p.keyboard.press('Escape'); await p.locator('#title').click(); await wait(800);
 await shot('07-search-chips');
 await p.click('#all'); await wait(500);
-
-// Import dialog.
-await p.click('#import'); await wait(600);
-await shot('08-import');
-await p.keyboard.press('Escape'); await wait(300);
-await p.click('#modal-actions button >> nth=0').catch(() => {}); await wait(300);
 
 // Trash: trash a photo, show the page.
 await p.click('#all'); await wait(600);

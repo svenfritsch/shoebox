@@ -6,6 +6,9 @@ page and handbook, one PDF per language. They are **not kept in git**: the
 every push and pull request (artifact `shoebox-guide`), and the `release` job
 attaches the two PDFs to each release, so every release carries a fresh guide.
 
+The guide must match the app: whoever changes what a person can see or do
+updates it in the same pull request (see the rules in `CLAUDE.md`).
+
 Edit the text in `build-guide.py` (English and German side by side: keep both
 in step, and take UI names from `core/i18n/en.json` / `de.json`). The
 screenshots in `shots/` are committed.
