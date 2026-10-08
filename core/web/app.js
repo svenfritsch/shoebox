@@ -376,7 +376,9 @@ var sugg = { items: [], at: -1, seq: 0 };
 $('search').addEventListener('input', function () {
   clearTimeout(searchTimer);
   var v = this.value;
-  searchTimer = setTimeout(function () { setFilter(withFilter({ q: v.trim() })); }, 300);
+  // A lone folder chip is replaced by what is typed, not narrowed by it.
+  var alone = v.trim() && onlyFolderChip();
+  searchTimer = setTimeout(function () { setFilter(withFilter(alone ? { folder: null, q: v.trim() } : { q: v.trim() })); }, 300);
   suggest(v);
 });
 $('search').addEventListener('focus', function () { suggest(this.value); });
@@ -394,7 +396,7 @@ $('search').addEventListener('keydown', function (ev) {
     if (open && sugg.at >= 0) { pickSuggest(sugg.items[sugg.at]); return; }
     clearTimeout(searchTimer);
     closeSuggest();
-    setFilter(withFilter({ q: this.value.trim() }));
+    setFilter(withFilter(this.value.trim() && onlyFolderChip() ? { folder: null, q: this.value.trim() } : { q: this.value.trim() }));
   } else if (ev.key === 'Escape') {
     closeSuggest();
   } else if (ev.key === 'Backspace' && this.value === '') {
@@ -407,6 +409,13 @@ $('search').addEventListener('keydown', function (ev) {
     else if (f.folder) setFilter(withFilter({ folder: null }));
   }
 });
+
+// The search is just one folder chip (opened from the sidebar): a new search
+// replaces it instead of adding to it.
+function onlyFolderChip() {
+  var f = state.filter;
+  return !!f.folder && !f.tags.length && !f.people.length && !f.pets.length && !f.fav && !f.q;
+}
 
 // "♥ Favorites" when what is typed starts a word for it (favorite, favorit,
 // the UI language's own word) and something has a heart.
@@ -525,6 +534,10 @@ function pickSuggest(it) {
   clearTimeout(searchTimer);
   $('search').value = '';
   var f = state.filter;
+  if (onlyFolderChip() && it.kind !== 'folder') {
+    setFilter(withFilter({ folder: null, fav: it.kind === 'fav', tags: it.kind === 'tag' ? [it.id] : [], people: it.kind === 'person' ? [it.id] : [], pets: it.kind === 'pet' ? [it.id] : [], q: '' }));
+    return;
+  }
   if (it.kind === 'fav') setFilter(withFilter({ fav: true, q: '' }));
   else if (it.kind === 'tag') setFilter(withFilter({ tags: f.tags.indexOf(it.id) < 0 ? f.tags.concat([it.id]) : f.tags, q: '' }));
   else if (it.kind === 'person') setFilter(withFilter({ people: f.people.indexOf(it.id) < 0 ? f.people.concat([it.id]) : f.people, q: '' }));
@@ -618,7 +631,8 @@ function folderNode(f, depth) {
   toggle.onclick = function () { expand(!ul || ul.hidden); };
   name.onclick = function () {
     expand(true);
-    setFilter({ folder: f.id, tags: [], people: [], types: state.filter.types, fav: state.filter.fav, q: state.filter.q });
+    // Opening a folder replaces the search: its chip is the only one left.
+    setFilter({ folder: f.id, tags: [], people: [], pets: [], types: state.filter.types, fav: false, q: '' });
   };
   return li;
 }
