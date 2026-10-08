@@ -22,6 +22,7 @@ var state = {
   selected: {},      // id -> true
   anchor: null,      // index of the last photo clicked while selecting (Shift-click ranges)
   data: null,        // timeline columns from /api/timeline
+  favs: {},          // still id -> true, for the loaded timeline (empty on pages that open before it)
   live: {},          // still id -> video id
   folders: [],
   folderById: {},
