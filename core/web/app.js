@@ -2043,8 +2043,8 @@ function dupThumb(f, compare) {
 // "IMG_E1234" is the edited version of "IMG_1234" (iPhone).
 function isEdit(f) { return /^img_e\d+/i.test(f.name); }
 
-// The group's photos large and side by side; "Keep this one" ticks all the
-// others for deletion (the dialog closes), so the choice is one click.
+// The group's photos large and side by side; "Keep this one" trashes all the
+// others (the dialog closes), so the choice is one click.
 function compareDialog(g, start, onKeep) {
   var back = el('div', 'modal');
   var dlg = el('div', 'dialog compare');
@@ -2102,8 +2102,7 @@ function groupNode(g) {
     head.appendChild(b);
   };
   if (g.kind === 'similar') decide('distinct', tr('dups.btn_different'));
-  decide('linked', tr(g.kind === 'identical' ? 'dups.btn_keep_copies' : g.kind === 'resolution' ? 'dups.btn_keep_versions'
-    : g.kind === 'edited' ? 'dups.btn_keep_both' : 'dups.btn_versions'));
+  decide('linked', tr('dups.btn_keep'));
   box.appendChild(head);
   box.appendChild(el('p', 'group-hint', g.kind === 'similar' || g.kind === 'edited'
     ? tr('dups.group_hint_series', { hint: kind.hint })
@@ -2125,12 +2124,14 @@ function groupNode(g) {
   // One card per file: the check box, where it is, what it is, its tags.
   // `thumb`: the card carries its own thumbnail (similar photos).
   var cards = [];
-  // "Keep this one" in the compare dialog: tick every other file, untick it.
+  // "Keep this one" in the compare dialog: tick every other file, untick it,
+  // and move the others to the trash (after the usual confirmation).
   var keepOnly = function (keep) {
     cards.forEach(function (c) {
       c.cb.checked = c.f.id !== keep.id;
       c.cb.dispatchEvent(new Event('change'));
     });
+    deleteMarked(g);
   };
   var compare = function (f) { compareDialog(g, f, keepOnly); };
   var copyCard = function (f, showName, thumb) {
@@ -2225,9 +2226,11 @@ function groupNode(g) {
 
 // Sends the marked copies, one request per group. Capture dates that really
 // conflict are asked for afterwards, then those groups are sent again.
-function deleteMarked() {
+// `only`: a single group (the compare dialog's "Keep this one").
+function deleteMarked(only) {
   var jobs = [], total = 0;
   visibleGroups().forEach(function (g) {
+    if (only && only.files && g !== only) return;
     var remove = g.files.filter(function (f) { return dupState.marked[f.id]; }).map(function (f) { return f.id; });
     if (!remove.length) return;
     var keep = g.files.filter(function (f) { return !dupState.marked[f.id]; }).map(function (f) { return f.id; });

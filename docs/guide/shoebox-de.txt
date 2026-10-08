@@ -264,9 +264,21 @@ eine. Tags und Aufnahmedatum einer entfernten Kopie gehen auf die übrige über.
 
 Abkürzungen
 Kopien im selben Ordner entfernen und Kopien geringerer Qualität entfernen
-räumen die eindeutigen Fälle in einem Zug auf. Gruppen ähnlicher Fotos
-brauchen deine Entscheidung: Wähle Verschiedene Fotos oder Versionen eines
-Fotos, und shoebox merkt sie sich, damit die Gruppe nicht wiederkommt.
+räumen die eindeutigen Fälle in einem Zug auf.
+
+Was tun mit einer Gruppe
+Jede Gruppe hat oben rechts bis zu zwei Schaltflächen. Alle behalten heißt:
+Diese Dateien bleiben, und sie gehören zusammen. Verschiedene Fotos (nur bei
+ähnlichen Fotos) heißt: Das sind getrennte Aufnahmen, keine Kopien
+voneinander. In beiden Fällen wird nichts gelöscht und kein Foto verändert;
+shoebox macht sich nur eine Notiz in seiner eigenen Datenbank auf dem Laufwerk
+und zeigt die Gruppe nie wieder an. Die Notiz bleibt erhalten, wenn du Fotos
+verschiebst oder umbenennst. Alle behalten zeigt die übrigen außerdem als
+Versionen im Infobereich jedes Fotos an. Entschiedene Fotos lassen auch Kopien
+im selben Ordner entfernen und Kopien geringerer Qualität entfernen in Ruhe.
+Zum Löschen hakst du stattdessen diese Kopie löschen an, oder du öffnest ein
+ähnliches Foto, vergleichst alle groß und wählst Dieses behalten: nach der
+Bestätigung kommen alle anderen in den Papierkorb.
 
 Papierkorb
 Nichts wird sofort gelöscht. Gelöschte Fotos warten in .shoebox/trash auf dem
