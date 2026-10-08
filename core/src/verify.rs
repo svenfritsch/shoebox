@@ -39,8 +39,6 @@ pub struct Report {
     pub damaged: Vec<String>,
     /// No full hash yet (scan has not finished hashing).
     pub unhashed: u64,
-    /// Records the scan already marked missing and that are still gone.
-    pub known_missing: u64,
     pub errors: Vec<String>,
     pub database_ok: bool,
 }
@@ -105,14 +103,6 @@ pub fn run(opts: &Options) -> Result<Report> {
         });
         let stamp = match fingerprint::stamp(&path) {
             Ok(s) => s,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound && *missing => {
-                // The scan already noticed this path is gone (moved, renamed
-                // or deleted) and kept the record only as history; the files
-                // still on the drive are checked under their current paths.
-                report.checked -= 1;
-                report.known_missing += 1;
-                continue;
-            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 crate::report::file(rel, false, "missing from the drive");
                 report.missing.push(rel.clone());
@@ -171,9 +161,6 @@ fn print_report(r: &Report) {
     say!("Checked {} files: {} OK.", r.checked, r.ok);
     if r.unhashed > 0 {
         say!("{} files have no full hash yet (run `shoebox scan`).", r.unhashed);
-    }
-    if r.known_missing > 0 {
-        say!("{} records of files that are gone (see the last scan) were skipped.", r.known_missing);
     }
     let list = |title: &str, items: &[String]| {
         if items.is_empty() {
