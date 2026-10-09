@@ -1,6 +1,6 @@
 # Phase 11: screenshots (Type filter)
 
-Planned, nothing built. Goal: the Type drop-down (phase 5f) gets a fourth
+Built with generated test pictures; the threshold is still to be set on the real drive. Goal: the Type drop-down (phase 5f) gets a fourth
 entry, **Screenshots**, so phone and computer screenshots can be shown on
 their own or left out of the timeline.
 
@@ -49,10 +49,38 @@ their own or left out of the timeline.
 
 ## 4. Open
 
-- [ ] Weights and threshold from real files (step 1).
+- [ ] Weights, threshold and the 0.40 to 0.80 flatness range from real files
+      (step 1; the test pictures are synthetic).
+- [ ] Selection-bar button "Mark as screenshot" and Calibration → Screenshot check.
 - [ ] Does iOS write `UserComment` "Screenshot" in the PNG, and in which
       versions.
 - [ ] List of display sizes to carry, and how to keep it short (match by
       aspect ratio and multiples instead of an exact list?).
 - [ ] Screenshots in video form (screen recordings): not in scope.
 - [ ] Real-hardware check on the drive.
+
+## 5. As built
+
+- `core/src/screenshots.rs`: `score()` (name 50, PNG 15 / JPEG 5, no camera
+  10, display size 25, flatness up to 50; a picture with a camera model is
+  capped at 40; HEIC, RAW, video are 0), `pixel_score()` (share of
+  neighbouring pixels with exactly the same colour, 0.40 to 0.80 mapped to 0
+  to 100, measured on the stored JPEG thumbnail so a backfill agrees with a
+  fresh thumbnail), `THRESHOLD = 60`.
+- `library.db` v10: `files.shot_pixels` (filled with the thumbnail and
+  backfilled from stored thumbnails or a twin by `thumbs::fill_shot_pixels`;
+  reset when a file changes) and `shot_marks(key = quick_hash, is_shot)`.
+  The marks are part of `userdata.json` (`shot_marks`).
+- `browse.rs`: `Item.shot` (mark, else score ≥ threshold); `Photo` = still and
+  not shot, `Screenshot` = still and shot. `serve.rs`: `type=screenshot`,
+  `POST /api/screenshots {ids, value: true|false|null}`, `screenshot` and
+  `screenshot_mark` in `/api/files/{id}`.
+- UI: Type drop-down entry, "Screenshot" row (Automatic / Yes / No) in the
+  info panel. Not built: the selection-bar button for many photos, the
+  Calibration "Screenshot check".
+- Tests: unit tests in `screenshots.rs` and `db.rs` (v10 re-run);
+  `screenshots_are_a_type_of_their_own` and the changed Photos counts in
+  `timeline_order_filters_and_search` (`core/tests/serve.rs`), with a guard
+  snapshot of the originals.
+- Guide (EN, DE, `.txt`): the Type entries and a paragraph under Search.
+  Guide screenshots not regenerated (the drop-down is closed in them).

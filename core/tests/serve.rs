@@ -361,6 +361,7 @@ fn timeline_order_filters_and_search() {
 #[test]
 fn screenshots_are_a_type_of_their_own() {
     let lib = Library::new("screenshots");
+    fs::create_dir_all(lib.path("Handy")).unwrap();
     // A phone screen: a display size, no camera, mostly flat colour, no name.
     image::RgbImage::from_fn(1170, 2532, |x, y| {
         if y < 200 || (y / 90) % 3 == 0 && x > 100 && x < 900 && (x / 6) % 5 != 0 { image::Rgb([20, 20, 30]) } else { image::Rgb([250, 250, 252]) }
