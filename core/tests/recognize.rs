@@ -629,8 +629,8 @@ fn real_recognizer_runs_under_the_guard() {
             .unwrap();
         let file = id_of(&lib, "Familie/face.jpg");
         let who = shoebox::people::Who { person_id: None, name: Some("Face".into()) };
-        shoebox::people::add_manual(&c, file, [x - 0.05 * w, y + 0.03 * h, w * 1.1, h], &who, false).unwrap();
-        shoebox::people::add_manual(&c, file, [0.0, 0.0, 0.08, 0.08], &who, false).unwrap();
+        shoebox::people::add_manual(&c, file, [x - 0.05 * w, y + 0.03 * h, w * 1.1, h], &who, None).unwrap();
+        shoebox::people::add_manual(&c, file, [0.0, 0.0, 0.08, 0.08], &who, None).unwrap();
         drop(c);
         let stats = recognize::run(&opts).unwrap();
         assert_eq!(lib.snapshot(), before);

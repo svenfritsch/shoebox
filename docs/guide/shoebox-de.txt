@@ -388,10 +388,11 @@ benennen.
 
 2. Eine Karte benennen
    Den Namen einmal eintippen und Benennen drücken: Die ganze Karte ist
-   benannt. Beim Tippen erscheinen Personen, die es schon gibt; sonst + Neue
-   Person wählen (bei Tieren steht dort + Neue Katze, + Neuer Hund oder +
-   Neues Tier). Danach schlägt shoebox weitere Gesichter vor (Sieht aus wie
-   Mia): mit ✓ bestätigen oder mit ✗ ablehnen.
+   benannt. Beim Tippen erscheinen Personen, die es schon gibt (bei Tieren nur
+   Katzen und Hunde, und umgekehrt); sonst + Neue Person wählen (bei Tieren
+   steht dort + Neue Katze, + Neuer Hund oder + Neues Tier). Danach schlägt
+   shoebox weitere Gesichter vor (Sieht aus wie Mia): mit ✓ bestätigen oder
+   mit ✗ ablehnen.
 
 3. Fremde und Fehlfunde
    Ignorieren ist für Fremde und für Gesichter auf Postern, Bildschirmen und
@@ -422,7 +423,11 @@ Bild und einen Namen oder + Name. Auswählen macht die Liste zu einer
 Checkliste: mehrere Gesichter ankreuzen (Alle ohne Namen kreuzt jedes Gesicht
 an, das niemand benannt hat), dann Ignorieren oder Kein Gesicht für alle auf
 einmal. + Gesicht oder Haustier hinzufügen zeichnet einen Rahmen um ein
-übersehenes Gesicht.
+übersehenes Gesicht oder Tier. Zuerst sagen, was es ist, Person, Katze oder
+Hund, dann benennen: Die Liste zeigt nur Namen dieser Art (keine Personen,
+wenn du eine Katze benennst), und + Neue Person, + Neue Katze oder + Neuer
+Hund legt eine neue an. Die Art eines gezeichneten Tiers lässt sich später
+nicht ändern; den Rahmen löschen und neu zeichnen.
 
 Gruppen
 Gesichter zeigt die Personen nach Gruppen. Neue Gruppe … legt eine an; Gruppen
