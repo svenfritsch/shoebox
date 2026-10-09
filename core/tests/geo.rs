@@ -208,3 +208,33 @@ fn an_older_index_reads_positions_with_the_next_scan() {
     assert_eq!(lib.count("SELECT count(*) FROM files WHERE geo_done = 0"), 0);
     assert_eq!(lib.snapshot(), before, "originals untouched");
 }
+
+#[test]
+fn a_place_combines_with_the_other_filters() {
+    let lib = Library::new("geo-combine");
+    jpeg_with_gps(&lib, GPS_PHOTO, 21);
+    lib.scan();
+    let gps = id_of(&lib, GPS_PHOTO);
+    let plain = id_of(&lib, PLAIN);
+    let server = start(&lib, None);
+    let addr = server.addr;
+    assert_eq!(post(addr, &format!("/api/files/{plain}/position"), &json!({ "lat": 48.2, "lon": 11.6 })).status, 200);
+    let home = post(addr, "/api/places", &json!({ "name": "Zuhause", "south": 48.0, "west": 11.0, "north": 48.5, "east": 12.0 })).json()["id"].as_i64().unwrap();
+    // Folder tags of the photos in the place, and the tags found when the place is part of the search.
+    let tags = |q: &str| -> Vec<String> {
+        get(addr, &format!("/api/tags?{q}")).json().as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap().to_string()).collect()
+    };
+    assert!(tags("").contains(&"Weihnachten".to_string()), "all tags without a filter");
+    let inside = tags(&format!("place={home}"));
+    assert!(inside.contains(&"Insel".to_string()) && inside.contains(&"Urlaub Griechenland".to_string()), "{inside:?}");
+    assert!(!inside.contains(&"Weihnachten".to_string()), "a tag of photos outside the place: {inside:?}");
+    // AND with a tag.
+    let insel = get(addr, "/api/tags?q=Insel").json()[0]["id"].as_i64().unwrap();
+    assert_eq!(area_ids(addr, &format!("place={home}&tag={insel}")), [gps]);
+    assert_eq!(area_ids(addr, &format!("place={home}&q=Griechenland")), [plain]);
+    // An unknown place is the client's mistake, wherever it is asked about.
+    for path in ["tags", "people/search", "pets/search", "timeline"] {
+        assert_eq!(get(addr, &format!("/api/{path}?place=9999")).status, 400, "{path}");
+    }
+    server.stop().unwrap();
+}

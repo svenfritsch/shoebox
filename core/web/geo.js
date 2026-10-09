@@ -106,7 +106,7 @@ function parseCoord(text, limit) {
 function loadGeo() {
   return api(LIBAPI + '/maps').then(function (r) {
     geo.on = !!r.on;
-    return geo.on ? loadPlaces() : renderLocationsSection();
+    return loadPlaces(); // also with maps off: a place in the search keeps its name
   }).catch(function () {});
 }
 
@@ -312,6 +312,9 @@ function loadPlaces() {
     geo.places = list;
     renderLocationsSection();
     if (geo.map) drawPlaces();
+    var f = state.filter;
+    if (f && f.place && !placeOf(f.place)) setFilter(withFilter({ place: null })); // deleted meanwhile
+    else if (f && f.place) renderChips();
   }).catch(function () {});
 }
 
@@ -753,3 +756,27 @@ function deletePlace(p) {
 }
 
 $('nav-locations').onclick = function () { showView('locations'); };
+
+// ------------------------------------------------------------------ places in the search
+
+// Places whose name contains what is typed, with their photo counts. Only with
+// maps on, and never the one the search already has.
+function placeSuggestions(needle, f) {
+  if (!geo.on || isAll()) return [];
+  var low = fold(needle);
+  return geo.places.filter(function (p) {
+    return p.count && p.id !== f.place && (!low || fold(p.name).indexOf(low) >= 0);
+  }).slice(0, 5).map(function (p) { return { kind: 'place', id: p.id, label: p.name, count: p.count }; });
+}
+
+// A place picked in the search. With nothing else in the search (the text just
+// typed is replaced by the pick, like for a tag) or on the Locations page it
+// shows the place on the map, as a click in the sidebar does. Otherwise it
+// joins the search as a chip and the timeline stays; a second place replaces
+// the first, since two areas rarely overlap.
+function pickPlace(id) {
+  var f = state.filter;
+  var chips = f.folder || f.tags.length || f.people.length || f.pets.length || f.fav || f.place;
+  if (f.view === 'locations' || !chips) showView('locations', id);
+  else setFilter(withFilter({ place: id, q: '' }));
+}

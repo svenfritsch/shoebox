@@ -123,7 +123,7 @@ var PET_TERMS = {
 };
 
 function readHash() {
-  var f = { folder: null, tags: [], people: [], pets: [], types: [], fav: false, q: '', view: null, id: null, tab: null };
+  var f = { folder: null, tags: [], people: [], pets: [], types: [], fav: false, place: null, q: '', view: null, id: null, tab: null };
   location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
     var i = kv.indexOf('=');
     if (i < 0) return;
@@ -137,6 +137,7 @@ function readHash() {
     // A kind of pet (all cats, all dogs, any pet): the same on every drive.
     if (k === 'pet' && PET_TERMS[v] && f.pets.indexOf(v) < 0) f.pets.push(v);
     if (k === 'fav') f.fav = v === '1';
+    if (k === 'place') f.place = parseInt(v, 10) || null;
     if (k === 'q') f.q = v;
     if (k === 'view' && VIEWS.indexOf(v) >= 0) f.view = v;
     if (k === 'id') f.id = parseInt(v, 10) || null;
@@ -144,6 +145,7 @@ function readHash() {
   });
   // Over all drives only these pages exist (the others belong to one drive).
   if (isAll() && f.view && f.view !== 'duplicates' && f.view !== 'drives') f.view = null;
+  if (isAll()) f.place = null; // places belong to one drive
   return f;
 }
 
@@ -151,7 +153,7 @@ function readHash() {
 // folder, any number of tags and people (`tag`, `person` repeated in the
 // URL) and free text.
 function setFilter(f) {
-  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], type: f.types || [], fav: f.fav ? 1 : null, q: f.q }).replace(/^\?/, '');
+  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], type: f.types || [], fav: f.fav ? 1 : null, place: f.place, q: f.q }).replace(/^\?/, '');
   if (h === location.hash.replace(/^#/, '')) { applyFilter(); return; }
   location.hash = h; // triggers hashchange -> applyFilter
 }
@@ -159,7 +161,9 @@ function setFilter(f) {
 // The current filter with some terms changed.
 function withFilter(changes) {
   var f = state.filter;
-  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), pets: f.pets.slice(), types: f.types.slice(), fav: f.fav, q: f.q }, changes);
+  // A place picked on the Locations page goes with the search to the timeline.
+  var place = f.view === 'locations' ? f.id : f.place;
+  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), pets: f.pets.slice(), types: f.types.slice(), fav: f.fav, place: place, q: f.q }, changes);
 }
 
 function showView(view, id, tab) { setFilter({ view: view, id: id, tab: tab, folder: null, tags: [], people: [], q: '' }); }
@@ -237,6 +241,14 @@ function renderChips() {
     });
   });
   if (f.fav) add('♥ ' + tr('fav.label'), function () { setFilter(withFilter({ fav: false })); });
+  if (f.place) {
+    var spot = placeOf(f.place);
+    add('📍 ' + (spot ? spot.name : '…'), function () { setFilter(withFilter({ place: null })); });
+    var onMap = el('button', 'edit', '🗺');
+    onMap.title = tr('chip.show_on_map');
+    onMap.onclick = function () { showView('locations', f.place); };
+    box.lastChild.insertBefore(onMap, box.lastChild.lastChild);
+  }
   if (f.q) add('“' + f.q + '”', function () { setFilter(withFilter({ q: '' })); });
   var terms = box.children.length;
   if (terms) {
@@ -249,7 +261,7 @@ function renderChips() {
   if (terms >= 2) {
     var clear = el('button', 'chip clear', tr('chip.clear_all'));
     clear.title = tr('chip.clear_all_hint');
-    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], pets: [], fav: false, q: '' }); };
+    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], pets: [], fav: false, place: null, q: '' }); };
     box.appendChild(clear);
   }
   personHead(box, f);
@@ -380,6 +392,8 @@ var sugg = { items: [], at: -1, seq: 0 };
 $('search').addEventListener('input', function () {
   clearTimeout(searchTimer);
   var v = this.value;
+  // On the Locations page typing looks for a place; the text only becomes a search with Enter.
+  if (state.filter.view === 'locations' && geo.on) { suggest(v); return; }
   searchTimer = setTimeout(function () { setFilter(withFilter({ q: v.trim() })); }, 300);
   suggest(v);
 });
@@ -405,6 +419,7 @@ $('search').addEventListener('keydown', function (ev) {
     // Like a token field: the last chip goes.
     var f = state.filter;
     if (f.fav) setFilter(withFilter({ fav: false }));
+    else if (f.place) setFilter(withFilter({ place: null }));
     else if (f.pets.length) setFilter(withFilter({ pets: f.pets.slice(0, -1) }));
     else if (f.people.length) setFilter(withFilter({ people: f.people.slice(0, -1) }));
     else if (f.tags.length) setFilter(withFilter({ tags: f.tags.slice(0, -1) }));
@@ -424,10 +439,12 @@ function favSuggestion(needle, f) {
 
 function suggest(text) {
   var seq = ++sugg.seq, f = state.filter;
+  // On the Locations page the search finds places: picking one shows it.
+  if (f.view === 'locations' && geo.on) { showSuggest(placeSuggestions(text.trim(), f)); return; }
   if (f.view) { closeSuggest(); return; }
   if (isAll()) { suggestAll(text, seq); return; }
   var needle = text.trim();
-  var within = { q: needle, tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, folder: f.folder };
+  var within = { q: needle, tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place };
   Promise.all([
     api(LIBAPI + '/tags' + query(Object.assign({ limit: 8 }, within))),
     api(LIBAPI + '/people/search' + query(Object.assign({ limit: 6 }, within))).catch(function () { return []; }),
@@ -446,6 +463,7 @@ function suggest(text) {
       state.tagNames[t.id] = t.name;
       items.push({ kind: 'tag', id: t.id, label: t.name, count: t.count, folderTag: t.kind === 'folder' });
     });
+    items = items.concat(placeSuggestions(needle, f));
     if (needle && !f.folder) {
       var low = needle.toLowerCase();
       state.folders.filter(function (fo) { return fo.path && fo.count && fo.name.toLowerCase().indexOf(low) >= 0; })
@@ -491,10 +509,10 @@ function showSuggest(items) {
   var last = null;
   items.forEach(function (it, i) {
     if (it.kind !== last) {
-      var f = state.filter, narrowed = !isAll() && (f.tags.length || f.people.length || f.pets.length || f.folder);
+      var f = state.filter, narrowed = !isAll() && (f.tags.length || f.people.length || f.pets.length || f.folder || f.place);
       var head = it.kind === 'fav' ? tr('fav.label') : it.kind === 'tag' ? tr(narrowed ? 'search.tags_here' : 'search.tags')
         : it.kind === 'person' ? tr(narrowed ? 'search.faces_here' : 'side.faces')
-          : it.kind === 'pet' ? tr(narrowed ? 'search.pets_here' : 'search.pets') : tr('search.folders');
+          : it.kind === 'pet' ? tr(narrowed ? 'search.pets_here' : 'search.pets') : it.kind === 'place' ? tr('search.places') : tr('search.folders');
       box.appendChild(el('div', 'head', head));
       last = it.kind;
     }
@@ -506,7 +524,7 @@ function showSuggest(items) {
     if (it.kind === 'person') label.appendChild(avatar(it.person, 'tiny'));
     label.appendChild(document.createTextNode((it.kind === 'fav' ? '♥ ' : it.kind === 'pet' ? PET_TERMS[it.id].icon + ' '
       : it.kind === 'person' ? (petIcon(it.person && it.person.species) ? petIcon(it.person.species) + ' ' : '')
-        : ({ folder: '📁 ' }[it.kind] || '# ')) + it.label));
+        : ({ folder: '📁 ', place: '📍 ' }[it.kind] || '# ')) + it.label));
     b.appendChild(label);
     b.appendChild(el('span', 'count', I18n.number(it.count)));
     b.onmousedown = function (ev) { ev.preventDefault(); }; // keep the focus in the box
@@ -533,6 +551,7 @@ function pickSuggest(it) {
   else if (it.kind === 'tag') setFilter(withFilter({ tags: f.tags.indexOf(it.id) < 0 ? f.tags.concat([it.id]) : f.tags, q: '' }));
   else if (it.kind === 'person') setFilter(withFilter({ people: f.people.indexOf(it.id) < 0 ? f.people.concat([it.id]) : f.people, q: '' }));
   else if (it.kind === 'pet') setFilter(withFilter({ pets: f.pets.indexOf(it.id) < 0 ? f.pets.concat([it.id]) : f.pets, q: '' }));
+  else if (it.kind === 'place') pickPlace(it.id);
   else setFilter(withFilter({ folder: it.id, q: '' }));
 }
 
@@ -697,7 +716,7 @@ function loadTimeline(resetScroll) {
   var seq = ++state.loadSeq;
   var f = state.filter;
   var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, q: f.q })
-    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, q: f.q });
+    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, place: f.place, q: f.q });
   return api(url).then(function (data) {
     if (seq !== state.loadSeq) return;
     if (isAll()) allTimelineLoaded(data);
@@ -1465,7 +1484,7 @@ function reloadAll() {
   loadFolders();
   loadOwnTags();
   loadPeople();
-  if (geo.on) loadPlaces();
+  loadPlaces();
   // The unnamed clusters and a person's faces change their cards in place
   // after each action; loading them again would lose the place and what is
   // typed in other cards.

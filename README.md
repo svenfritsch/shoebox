@@ -28,6 +28,14 @@ every release: open `guide/shoebox-en.html` or `guide/shoebox-de.html` in a
 browser (`shoebox-en.txt` / `shoebox-de.txt` hold the same text). Sources and
 how to edit them: [docs/guide/](docs/guide/README.md).
 
+## Third-party licenses
+
+`THIRD-PARTY-LICENSES.txt` lists the libraries inside the binary (Rust crates,
+libheif and libde265, Leaflet) with their licence texts. It sits next to the
+program in every release archive. After a change to `Cargo.lock` or to
+`core/web/vendor/`, regenerate it with `python3 scripts/third-party-licenses.py`
+(the release job checks it).
+
 ## Video previews (optional)
 
 shoebox makes the grid previews of videos with `ffmpeg`. It is not bundled;

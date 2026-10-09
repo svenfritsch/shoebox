@@ -144,6 +144,18 @@ pub fn files_in(conn: &Connection, area: &Area) -> Result<std::collections::Hash
 
 // ---------------------------------------------------------------- places
 
+/// A search asked for a place that does not exist (the API answers 400).
+#[derive(Debug)]
+pub struct NoSuchPlace;
+
+impl std::fmt::Display for NoSuchPlace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "no such place")
+    }
+}
+
+impl std::error::Error for NoSuchPlace {}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Place {
     pub id: i64,

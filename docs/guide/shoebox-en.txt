@@ -216,7 +216,8 @@ Type in the search box: suggestions appear for tags, people and folders. Pick
 several and they become chips that narrow the result; × removes one, Clear all
 starts over. To find your favorites press the ♥ button next to Type, or type
 favorite (English) or favorit (German) and pick ♥ Favorites; it combines with
-everything else, e.g. favorites of one person or one year.
+everything else, e.g. favorites of one person or one year. With maps on (see
+“Locations and maps”) the suggestions also offer your places.
 
 Select
 Press ☑, then click photos (Shift-click for a range; on the iPad just tap).
@@ -432,8 +433,16 @@ A place is a named area, like “Home” or “Island XY”. Press New place, cl
 two opposite corners on the map and give it a name: every photo with a
 location inside the area belongs to it, now and later. Places are listed under
 Locations in the sidebar with their number of photos; click one to see its
-photos. In the list on the right you can Rename a place, Draw area again or
-delete it; only the place goes, never a photo or its location.
+photos. You can also search for a place by name. If the search is empty,
+picking a place opens it on the map, like a click in the sidebar (a Type
+filter is dropped then, as on every click in the sidebar). If the search
+already has chips (a folder, tag, person, pet, favorites ♥), the place joins
+them as a chip 📍 and you stay in the timeline: all chips must match, so “Home”
++ “Anna” shows Anna’s photos taken at home. A second place replaces the first.
+The 🗺 on the chip shows the place on the map, and a place chosen on the map
+goes along when you add another chip. In the list on the right you can Rename
+a place, Draw area again or delete it; only the place goes, never a photo or
+its location.
 
 Places and the locations you set are written to userdata.json next to the
 index on the drive, together with your tags and people.
@@ -515,3 +524,6 @@ A map is empty or says Offline. Maps need the internet. Check the connection
 and open the photo again; without it everything else works as before.
 
 shoebox is open source · github.com/svenfritsch/shoebox
+
+The libraries inside shoebox and their licences are listed in
+THIRD-PARTY-LICENSES.txt, next to the program in the download.

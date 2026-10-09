@@ -714,5 +714,7 @@
   "geo.here_count": "{count} here",
   "geo.pick": "Click a pin or a place to see its photos here.",
   "geo.maps_needed": "The Locations page needs maps. Turn them on in Settings.",
-  "geo.open_settings": "Open Settings"
+  "geo.open_settings": "Open Settings",
+  "search.places": "Places",
+  "chip.show_on_map": "Show this place on the map"
 }

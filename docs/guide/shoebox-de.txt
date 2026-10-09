@@ -224,7 +224,8 @@ Mehrere gewählte werden zu Chips, die das Ergebnis eingrenzen; × entfernt
 einen, Alle entfernen beginnt neu. Deine Favoriten findest du mit dem ♥-Knopf
 neben Typ, oder tippe favorit (deutsch) bzw. favorite (englisch) und wähle ♥
 Favoriten; das lässt sich mit allem anderen kombinieren, z. B. Favoriten einer
-Person oder eines Jahres.
+Person oder eines Jahres. Bei eingeschalteten Karten (siehe „Orte und Karten“)
+bieten die Vorschläge auch deine Orte an.
 
 Auswählen
 ☑ drücken, dann Fotos anklicken (mit Umschalt für einen Bereich; am iPad
@@ -464,9 +465,17 @@ Ein Ort ist ein benannter Bereich, etwa „Zuhause“ oder „Insel XY“. Drüc
 Neuer Ort, klicke zwei gegenüberliegende Ecken auf der Karte an und gib einen
 Namen ein: Jedes Foto mit einem Ort innerhalb des Bereichs gehört dazu, jetzt
 und später. Die Orte stehen mit ihrer Fotozahl unter Orte in der Seitenleiste;
-ein Klick zeigt ihre Fotos. In der Liste rechts kannst du einen Ort
-Umbenennen, den Bereich neu zeichnen oder ihn löschen; es verschwindet nur der
-Ort, nie ein Foto oder dessen Ort.
+ein Klick zeigt ihre Fotos. Du kannst auch nach dem Namen eines Orts suchen.
+Ist die Suche leer, öffnet die Auswahl den Ort auf der Karte, wie ein Klick in
+der Seitenleiste (ein Typ-Filter fällt dabei weg, wie bei jedem Klick in der
+Seitenleiste). Hat die Suche schon Chips (Ordner, Tag, Person, Haustier,
+Favoriten ♥), kommt der Ort als Chip 📍 dazu und du bleibst in der Zeitleiste:
+Alle Chips müssen passen, „Zuhause“ + „Anna“ zeigt also Annas Fotos von zu
+Hause. Ein zweiter Ort ersetzt den ersten. Das 🗺 am Chip zeigt den Ort auf der
+Karte, und ein auf der Karte gewählter Ort geht mit, wenn du einen weiteren
+Chip hinzufügst. In der Liste rechts kannst du einen Ort Umbenennen, den
+Bereich neu zeichnen oder ihn löschen; es verschwindet nur der Ort, nie ein
+Foto oder dessen Ort.
 
 Orte und die von dir festgelegten Aufnahmeorte stehen zusammen mit deinen Tags
 und Personen in userdata.json neben dem Index auf dem Laufwerk.
@@ -551,3 +560,6 @@ Verbindung prüfen und das Foto noch einmal öffnen; alles andere funktioniert
 wie zuvor.
 
 shoebox ist Open Source · github.com/svenfritsch/shoebox
+
+Die Bibliotheken in shoebox und ihre Lizenzen stehen in
+THIRD-PARTY-LICENSES.txt, neben dem Programm im Download.

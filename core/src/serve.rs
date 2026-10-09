@@ -891,6 +891,9 @@ enum ApiError {
 
 impl From<anyhow::Error> for ApiError {
     fn from(e: anyhow::Error) -> Self {
+        if e.is::<crate::geo::NoSuchPlace>() {
+            return ApiError::BadRequest(format!("{e}"));
+        }
         ApiError::Internal(e)
     }
 }
@@ -1696,7 +1699,13 @@ async fn tags(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiRes
         let own = param(&pairs, "own").is_some_and(|o| o != "0");
         let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(50);
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
-        let all = if filter.folder.is_none() && filter.tags.is_empty() && filter.people.is_empty() && filter.pets.is_empty() {
+        let all = if filter.folder.is_none()
+            && filter.tags.is_empty()
+            && filter.people.is_empty()
+            && filter.pets.is_empty()
+            && filter.place.is_none()
+            && filter.area.is_none()
+        {
             browse::all_tags(&conn)?
         } else {
             let snapshot = app.snapshot(&conn)?;

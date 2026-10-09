@@ -714,5 +714,7 @@
   "geo.here_count": "{count} hier",
   "geo.pick": "Klicke auf eine Markierung oder einen Ort, um hier die Fotos zu sehen.",
   "geo.maps_needed": "Die Seite „Orte“ braucht Karten. In den Einstellungen einschalten.",
-  "geo.open_settings": "Einstellungen öffnen"
+  "geo.open_settings": "Einstellungen öffnen",
+  "search.places": "Orte",
+  "chip.show_on_map": "Diesen Ort auf der Karte zeigen"
 }

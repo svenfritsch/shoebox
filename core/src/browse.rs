@@ -396,7 +396,7 @@ impl Snapshot {
         let fav = if q.fav { Some(favorites()) } else { None };
         let mut located: Option<HashSet<i64>> = None;
         for area in q.area.into_iter().chain(match q.place {
-            Some(id) => Some(crate::geo::place(conn, id)?.ok_or_else(|| anyhow::anyhow!("no such place"))?.area),
+            Some(id) => Some(crate::geo::place(conn, id)?.ok_or(crate::geo::NoSuchPlace)?.area),
             None => None,
         }) {
             let ids = crate::geo::files_in(conn, &area)?;
