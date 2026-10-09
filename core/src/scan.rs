@@ -652,6 +652,26 @@ pub(crate) fn set_folder_tags(conn: &Connection, file_id: i64, rel: &RelPath) ->
     Ok(())
 }
 
+/// Delete the records of files that are gone (launcher button "Forget
+/// missing"); photos on the drive are not touched.
+pub fn forget_missing_records(root: &Path) -> Result<u64> {
+    let root = root.canonicalize().with_context(|| format!("cannot open {}", root.display()))?;
+    let db_path = db::default_path(&root);
+    if !db_path.is_file() {
+        bail!("no index at {} (run a scan first)", db_path.display());
+    }
+    let conn = db::open(&db_path)?;
+    // Files deleted since the last scan are marked missing first, so every
+    // path a verify called missing is forgotten, and moves are followed.
+    index_library(&conn, &root)?;
+    let job = Job::start(&conn, "forget")?;
+    let n = forget_missing(&conn, job.id)?;
+    say!("Forgot {n} missing files.");
+    job.finish(&conn, "done", &serde_json::json!({ "forgotten": n }))?;
+    db::backup(&conn, &db_path)?;
+    Ok(n)
+}
+
 fn forget_missing(conn: &Connection, job_id: i64) -> Result<u64> {
     let tx = conn.unchecked_transaction()?;
     let n = tx.execute("DELETE FROM files WHERE missing_since IS NOT NULL", [])?;

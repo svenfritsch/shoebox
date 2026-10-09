@@ -447,8 +447,9 @@ fn now_secs() -> u64 {
 #[derive(Deserialize, Clone)]
 struct JobRequest {
     /// `scan`, `scan_cleanup` (remove the copies the last scan found), `verify`,
+    /// `forget_missing` (drop the records of files that are gone),
     /// `recognize`, `recognize_pets` (the same, then cats and dogs too),
-    /// `faces_stats`, `backup` or `backup_cleanup`.
+    /// `recognize_rotated` (also faces lying down), `faces_stats`, `backup` or `backup_cleanup`.
     kind: String,
     /// One folder, or several in `roots`: they are processed one after the other.
     #[serde(default)]
@@ -518,14 +519,18 @@ fn run_command(req: &JobRequest, roots: Vec<PathBuf>) -> Result<(serde_json::Val
             let clean = r.is_clean();
             (serde_json::to_value(&r)?, clean)
         }
-        "recognize" | "recognize_pets" => {
+        "forget_missing" => {
+            let n = scan::forget_missing_records(&root)?;
+            (serde_json::json!({ "forgotten": n }), true)
+        }
+        "recognize" | "recognize_pets" | "recognize_rotated" => {
             let stats = recognize::run(&recognize::Options {
                 root,
                 db: None,
                 recognizer: None,
                 limit: req.limit,
                 retry_failed: req.retry_failed,
-                rotated: req.rotated,
+                rotated: req.rotated || req.kind == "recognize_rotated",
                 pets: req.kind == "recognize_pets",
                 timeouts: recognize::Timeouts::default(),
             })?;
@@ -572,11 +577,11 @@ fn short_name(root: &Path) -> String {
 /// recognition job is running, and a moved or changed original is skipped by
 /// the guard. Scan, verify and backup checks stay locked out.
 fn runs_beside_app(kind: &str) -> bool {
-    matches!(kind, "recognize" | "recognize_pets" | "faces_stats")
+    matches!(kind, "recognize" | "recognize_pets" | "recognize_rotated" | "faces_stats")
 }
 
 fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
-    if !matches!(req.kind.as_str(), "scan" | "verify" | "recognize" | "recognize_pets" | "faces_stats" | "backup" | "backup_cleanup" | "scan_cleanup") {
+    if !matches!(req.kind.as_str(), "scan" | "forget_missing" | "verify" | "recognize" | "recognize_pets" | "recognize_rotated" | "recognize_rotated" | "faces_stats" | "backup" | "backup_cleanup" | "scan_cleanup") {
         return Err(ApiError::BadRequest(format!("unknown command {:?}", req.kind)));
     }
     if !runs_beside_app(&req.kind) && shared.app.lock().unwrap().is_some() {
