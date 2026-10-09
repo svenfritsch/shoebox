@@ -9,9 +9,8 @@ DEINE FOTOBIBLIOTHEK, AUF DEM LAUFWERK.
 
 shoebox ist ein kleines Programm, das auf deinem externen Laufwerk neben
 deinen Fotos liegt. Es indexiert sie, zeigt sie im Browser in einer schnellen
-Zeitleiste und hilft beim Verschlagworten, Sortieren, Importieren und
-Aufräumen von Duplikaten, ohne sie je zu kopieren oder ihre Metadaten
-anzufassen.
+Zeitleiste und hilft beim Verschlagworten, Sortieren und Aufräumen von
+Duplikaten, ohne sie je zu kopieren oder ihre Metadaten anzufassen.
 
 - Originale bleiben unberührt
 - Liegt auf deinem Laufwerk
@@ -33,8 +32,8 @@ Eine Seite im Browser, eine Zeitleiste von allem auf dem Laufwerk.
 
 - Suchen & Filtern
    Tippe eine Person, ein Haustier, einen Tag oder Ordner. Kombiniere
-   Schlagwörter für eine komplexere Suche. Filter nach Fotos, Videos oder Live
-   Photos, oder zeige nur deine Favoriten ♥.
+   Schlagwörter für eine komplexere Suche. Filter nach Fotos, Videos, Live
+   Photos oder Screenshots, oder zeige nur deine Favoriten ♥.
 
 - Tags
    Eigene Tags für viele Fotos auf einmal. Auch Ordner zählen als Tags. Im
@@ -44,9 +43,10 @@ Eine Seite im Browser, eine Zeitleiste von allem auf dem Laufwerk.
    Fotos in einen Ordner verschieben (wird bei Bedarf angelegt). RAW-,
    Live-Photo- und Sidecar-Dateien wandern mit.
 
-- Importieren
-   Die Fotos eines Ereignisses auswählen oder ins Fenster ziehen: Sie landen
-   in einem neuen Ereignisordner und behalten ihre Daten.
+- Fotos hinzufügen
+   Die Fotos eines Ereignisses im Finder oder Explorer aufs Laufwerk kopieren
+   (die Daten bleiben erhalten) und scannen. Kopien von Dateien, die das
+   Laufwerk schon hatte, werden aufgelistet und lassen sich löschen.
 
 - Duplikate
    Findet identische, verkleinerte, bearbeitete und ähnliche Fotos. Du prüfst;
@@ -65,6 +65,11 @@ Eine Seite im Browser, eine Zeitleiste von allem auf dem Laufwerk.
    auch wenn sie auf verschiedenen Platten liegen. Backups werden erkannt und
    geprüft.
 
+- Orte
+   Optionale Karten, standardmäßig aus: eine Karte in den Infos von Fotos mit
+   GPS-Daten, eine Weltkarte aller deiner Fotos und benannte Orte wie
+   „Zuhause“, die ihre Fotos von selbst sammeln.
+
 [Screenshot: Suche mit zwei Chips: eine Person und ein Tag.]
 
 Die Oberfläche im Überblick
@@ -79,12 +84,15 @@ Alles ist auf einer Seite. So findest du dich zurecht.
    Personen, Haustiere, Tags und Ordner; mehrere wählen, um sie zu
    kombinieren.
 
-3. Typ
-   Nur Fotos, Videos oder Live Photos zeigen.
-
-4. Favoriten ♥
+3. Favoriten ♥
    Nur die Fotos zeigen, die du mit einem Herz markiert hast. Auch zu finden,
    wenn du favorit ins Suchfeld tippst.
+
+4. Typ
+   Hake an, was gezeigt werden soll; ohne Haken wird alles gezeigt. Fotos:
+   Standbilder ohne Screenshots (fahre über das ⓘ). Videos: eigenständige
+   Videos. Live Photos: Fotos mit einem kurzen Clip. Screenshots: Bilder von
+   einem Handy- oder Computerbildschirm.
 
 5. Jahr
    Direkt zu einem Jahr springen.
@@ -92,29 +100,30 @@ Alles ist auf einer Seite. So findest du dich zurecht.
 6. Auswählen ☑
    Fotos zum Verschieben, Taggen oder in den Papierkorb wählen.
 
-7. Importieren ⤒
-   Fotos und Videos von diesem Computer oder vom iPad hinzufügen.
-
-8. Schnellzugriff
+7. Schnellzugriff
    Alle Fotos · Duplikate · Papierkorb · Einstellungen.
 
-9. Ordner
+8. Ordner
    Deine Ordner mit Anzahl. Tags, Gesichter und Laufwerke erscheinen hier,
-   sobald es sie gibt.
+   sobald es sie gibt, und Orte, wenn Karten eingeschaltet sind.
 
-10. Zeitleiste
+9. Zeitleiste
    Monate mit Anzahl. Ein Klick auf ein Foto öffnet die Ansicht.
 
-11. Sprache & Status
-   Zwischen Deutsch und Englisch wechseln; Scan-, Vorschau- und
-   Laufwerksstatus.
+10. Sprache
+   Zwischen Deutsch und Englisch wechseln.
+
+11. Status
+   Scan-, Vorschau- und Laufwerksstatus unten in der Seitenleiste.
 
 Ein typischer Ablauf
 Laufwerk anstecken und Start shoebox doppelklicken. Scannen (geht schnell,
-wenn sich wenig geändert hat) und die Foto-App öffnen. Die Fotos eines
-Ereignisses importieren: auswählen, das Ereignis benennen, und shoebox legt
-den Ereignisordner an. Dann taggen und sortieren. Ab und zu die Duplikate
-ansehen und nach jedem Backup die Backup-Prüfung laufen lassen.
+wenn sich wenig geändert hat) und die Foto-App öffnen. Für die Fotos eines
+Ereignisses den Ordner im Finder aufs Laufwerk kopieren (benannt wie 2025-08
+Urlaub) und erneut scannen: Waren einzelne Dateien schon auf dem Laufwerk,
+bietet der Launcher an, die neuen Kopien zu löschen. Dann taggen und
+sortieren. Ab und zu die Duplikate ansehen und nach jedem Backup die
+Backup-Prüfung laufen lassen.
 
 In drei Schritten loslegen
 --------------------------
@@ -145,7 +154,8 @@ Aufgaben im Starter
 Scannen: neue, verschobene und geänderte Fotos finden. Schnell: es schaut nur
 auf das, was sich seit dem letzten Scan geändert hat, und die Reiter zeigen,
 was dieser Scan geändert hat. Nach dem Verschieben, Umbenennen oder Hinzufügen
-von Fotos ausführen.
+von Fotos ausführen. Es listet auch neue Kopien von Dateien, die das Laufwerk
+schon hatte.
 Prüfen: prüfen, dass nichts verloren oder beschädigt ist. Es liest jede Datei
 neu und vergleicht sie mit dem, was der Index kennt; so findet es Dateien, die
 auf dem Laufwerk unbemerkt beschädigt wurden. Langsam, also hin und wieder
@@ -197,7 +207,8 @@ verschieben.
 Ansicht
 Foto anklicken. ⓘ öffnet das Infofeld: Datum (als geschätzt markiert, wenn es
 nicht der Aufnahmetag ist), Kamera, Größe, Tags, Personen und Knöpfe, um den
-Ordner zu öffnen oder den Pfad zu kopieren.
+Ordner zu öffnen oder den Pfad zu kopieren. Ganz unten zeigen die GPS-Daten,
+wo das Foto aufgenommen wurde (siehe „Orte und Karten“).
 
 Favoriten
 Das ♥ in der oberen Leiste der Ansicht oder die Taste f markiert das Foto als
@@ -233,7 +244,20 @@ Mehrere gewählte werden zu Chips, die das Ergebnis eingrenzen; × entfernt
 einen, Alle entfernen beginnt neu. Deine Favoriten findest du mit dem ♥-Knopf
 neben Typ, oder tippe favorit (deutsch) bzw. favorite (englisch) und wähle ♥
 Favoriten; das lässt sich mit allem anderen kombinieren, z. B. Favoriten einer
-Person oder eines Jahres.
+Person oder eines Jahres. Bei eingeschalteten Karten (siehe „Orte und Karten“)
+bieten die Vorschläge auch deine Orte an.
+
+Typ bietet Fotos (Standbilder ohne Screenshots), Videos, Live Photos und
+Screenshots; hake beliebige an, ohne Haken wird alles gezeigt. Um Screenshots
+aus der Zeitleiste zu nehmen, hake Fotos, Videos und Live Photos an, aber
+nicht Screenshots; um nur Screenshots zu sehen, hake nur Screenshots an.
+Shoebox erkennt einen Screenshot an der Datei (ein PNG ohne Kameradaten, ein
+Name wie Screenshot oder Bildschirmfoto, die Größe eines Handy- oder
+Computerbildschirms) und am Bild selbst (große einfarbige Flächen). Es kann
+sich in beide Richtungen irren: Im Info-Fenster eines Fotos ist Screenshot ein
+Auswahlfeld, das mit der Schätzung von Shoebox beginnt; wähle Ja oder Nein zum
+Korrigieren, Zurück zu automatisch kehrt zur Schätzung zurück. Deine Wahl wird
+in der Bibliothek gemerkt; die Fotodatei wird nie verändert.
 
 Auswählen
 ☑ drücken, dann Fotos anklicken (mit Umschalt für einen Bereich; am iPad
@@ -260,17 +284,18 @@ Papierkorb.]
 
 [Screenshot: In einen neuen Ereignisordner verschieben.]
 
-Import, Duplikate und Papierkorb
---------------------------------
+Fotos hinzufügen, Duplikate und Papierkorb
+------------------------------------------
 
-Importieren
-⤒ drücken (oder Dateien aufs Fenster ziehen). Jahr, Monat und Ereignisnamen
-wählen: shoebox legt den Ereignisordner JJJJ-MM Ereignis an, die Dateien
-behalten ihre Daten, und Dateien, die schon in der Bibliothek sind, werden
-übersprungen. In den Einstellungen wählst du, wie neue Ereignisordner heißen:
-4 oder 2 Ziffern für das Jahr, Bindestrich oder Punkt zwischen Jahr und Monat,
-und Leerzeichen, _, ., - oder nichts vor dem Namen, zum Beispiel
-JJ.MM_Ereignis. Vorhandene Ordner werden nicht umbenannt, und alle diese
+Fotos hinzufügen
+Die Fotos im Finder oder Explorer aufs Laufwerk kopieren oder verschieben
+(dabei bleiben ihre Daten erhalten), am besten in einen Ordner namens JJJJ-MM
+Ereignis, und Scannen drücken. Findet der Scan neue Dateien, die das Laufwerk
+schon hatte, markiert der Launcher sie mit schon auf dem Laufwerk und bietet
+Die neuen Kopien löschen an (in den Papierkorb oder endgültig). Das ältere
+Original bleibt und bekommt den Ordnernamen der gelöschten Kopie als Tag. In
+den Einstellungen wählst du, wie Ereignisordner in Vorschlägen heißen (zum
+Beispiel JJ.MM_Ereignis); vorhandene Ordner werden nicht umbenannt, und alle
 Formen werden erkannt.
 
 Duplikate
@@ -299,9 +324,12 @@ Bestätigung kommen alle anderen in den Papierkorb.
 
 Papierkorb
 Nichts wird sofort gelöscht. Gelöschte Fotos warten in .shoebox/trash auf dem
-Laufwerk: Zurücklegen oder Endgültig löschen.
+Laufwerk: Zurücklegen oder Endgültig löschen. Das Legen in den Papierkorb ist
+standardmäßig aus: Schalte es einmal in den Einstellungen ein (In den
+Papierkorb legen erlauben).
 
-[Screenshot: Der Import-Dialog.]
+[Screenshot: Nach einem Scan: neue Kopien von Dateien, die das Laufwerk schon
+hatte.]
 
 [Screenshot: Die Papierkorb-Seite.]
 
@@ -322,8 +350,8 @@ Gesichter.
 Benennen
 Unter Unbenannt zeigt shoebox Karten mit ähnlichen Gesichtern. Einmal einen
 Namen eintippen, und die ganze Karte ist benannt; später Vorschläge bestätigen
-(✓) oder ablehnen (✗). Personen gruppieren, zwei Karten einer Person
-zusammenführen, Fremde mit Ignorieren markieren.
+(✓) oder ablehnen (✗). Die nächsten beiden Seiten zeigen jeden Schritt, mit
+Gruppen und den Knöpfen für Fremde und Fehlfunde.
 
 In der Ansicht
 Das Infofeld nennt, wer auf dem Foto ist, und zeichnet um jedes Gesicht oder
@@ -335,7 +363,7 @@ Namen funktionieren im Suchfeld wie Tags, ebenso Arten wie „alle Katzen“.
 Kombiniere eine Person mit einem Tag, einem Ordner oder einer weiteren Person.
 
 Neue Fotos
-Die Erkennung startet nach einem Import noch nicht von selbst. Foto-App
+Die Erkennung startet nach einem Scan noch nicht von selbst. Foto-App
 schließen und Erkennen erneut ausführen: Es werden nur die neuen Fotos
 angesehen.
 
@@ -345,6 +373,144 @@ angesehen.
 sie sind.]
 
 Die Beispielbilder sind gezeichnete Comics, keine echten Fotos.
+
+Gesichter taggen, Schritt für Schritt
+-------------------------------------
+
+Nach dem Erkennen wartet jedes Gesicht auf einen Namen. Du musst nicht alle
+benennen.
+
+1. Unbenannt öffnen
+   In der Seitenleiste Gesichter und dann Unbenannt öffnen. Jede Karte enthält
+   Gesichter, die sich ähneln, die größte zuerst. Katzen und Hunde haben
+   eigene Karten; das Menü über den Karten wählt Personen, Haustiere oder
+   beides.
+
+2. Eine Karte benennen
+   Den Namen einmal eintippen und Benennen drücken: Die ganze Karte ist
+   benannt. Beim Tippen erscheinen Personen, die es schon gibt; sonst + Neue
+   Person wählen. Danach schlägt shoebox weitere Gesichter vor (Sieht aus wie
+   Mia): mit ✓ bestätigen oder mit ✗ ablehnen.
+
+3. Fremde und Fehlfunde
+   Ignorieren ist für Fremde und für Gesichter auf Postern, Bildschirmen und
+   Bildern: Niemand muss sie benennen. Kein Gesicht (bei Haustieren Kein
+   Haustier) ist für Fehlfunde, die gar kein Gesicht sind. Nichts wird
+   gelöscht und kein Foto angefasst; shoebox merkt sich die Entscheidung nur
+   in seiner eigenen Datenbank.
+
+4. Nur einige Gesichter einer Karte
+   Auswählen lässt dich die Gesichter selbst ankreuzen. Die Knöpfe gelten dann
+   nur für diese: 2 benennen, 2 ignorieren, 2 kein Gesicht. Praktisch, wenn
+   eine Karte zwei Personen mischt.
+
+[Screenshot: Unbenannt: eine Karte für jede Gruppe ähnlicher Gesichter, mit
+Ignorieren und Kein Gesicht.]
+
+[Screenshot: Auswählen: zwei Gesichter einer Karte angekreuzt.]
+
+Mehrere Gesichter in einem Foto, und Gruppen
+--------------------------------------------
+
+Gesichter in der Ansicht ankreuzen. Personen in Gruppen wie Familie, Freunde
+und Kollegen sortieren.
+
+In einem Foto
+Ein Foto und sein Infofeld (ⓘ) öffnen. Unter Personen hat jedes Gesicht sein
+Bild und einen Namen oder + Name. Auswählen macht die Liste zu einer
+Checkliste: mehrere Gesichter ankreuzen (Alle ohne Namen kreuzt jedes Gesicht
+an, das niemand benannt hat), dann Ignorieren oder Kein Gesicht für alle auf
+einmal. + Gesicht oder Haustier hinzufügen zeichnet einen Rahmen um ein
+übersehenes Gesicht.
+
+Gruppen
+Gesichter zeigt die Personen nach Gruppen. Neue Gruppe … legt eine an; Gruppen
+… benennt Gruppen um, ordnet sie und löscht sie. Eine Person ist höchstens in
+einer Gruppe, und das Löschen einer Gruppe löscht niemanden.
+
+Personen in Gruppen legen
+Bei einer Person auf ⋯ klicken und In Gruppe verschieben … wählen, oder die
+Person in der Seitenleiste auf eine Gruppe ziehen. Haustiere funktionieren
+genauso: Eine Gruppe Haustiere kann den Hund und die Katze enthalten.
+
+Korrekturen
+Im selben ⋯-Menü steht Zusammenführen mit … für zwei Karten derselben Person.
+Auf der Seite einer Person listet Gesichter prüfen Bestätigt, Vorgeschlagen,
+Vielleicht und Nicht sie, und ein versehentlich markiertes Gesicht kommt mit ↺
+zurück. Kalibrierung (Gesichts- und Haustier-Prüfung) zeigt, was die Erkennung
+gefunden hat: kleine Gesichter, Werte und Fehlfunde.
+
+[Screenshot: Zwei Passanten in einem Foto angekreuzt: 2 ignorieren oder 2 kein
+Gesicht.]
+
+[Screenshot: Gesichter: Personen nach Gruppen, die Haustiere in ihrer eigenen
+Gruppe.]
+
+[Screenshot: Gruppen …: umbenennen, ordnen, löschen.]
+
+[Screenshot: In Gruppe verschieben … im ⋯-Menü einer Person.]
+
+Orte und Karten
+---------------
+
+Optional: wo deine Fotos aufgenommen wurden, auf einer Karte. Aus, bis du es
+einschaltest.
+
+Karten einschalten
+Öffne die Einstellungen und setze den Haken bei Karten anzeigen
+(OpenStreetMap). Die Karten werden in deinem Browser aus OpenStreetMap
+gezeichnet; das ist die einzige Stelle, an der shoebox das Internet braucht:
+OpenStreetMap sieht, welche Kartenausschnitte du ansiehst, nie deine Fotos
+oder deren Namen. shoebox speichert keine Kartenbilder auf dem Laufwerk (dein
+Browser behält vielleicht welche in seinem eigenen Cache). Ohne Haken wird nie
+etwas aus dem Internet geladen.
+
+In den Infos eines Fotos
+Hat die Datei GPS-Daten, zeigt GPS-Daten im Infofeld die Position und, bei
+eingeschalteten Karten, eine kleine quadratische Karte mit einer Markierung,
+unten am Rand des Infofelds festgehalten. Ohne Internet steht dort stattdessen
+Offline. Ein Foto ohne GPS-Daten zeigt gar keine Karte, nur die Überschrift
+mit dem Knopf Ort festlegen….
+
+Einem Foto einen Ort geben
+Ort festlegen… (gleich rechts neben der Überschrift GPS-Daten) öffnet einen
+Dialog mit einer Karte und zwei Feldern, Breitengrad und Längengrad. Beides
+ist immer da und hängt zusammen: Klicke auf die Karte, um die Markierung zu
+setzen, oder tippe die Zahlen ein (Punkt oder Komma, Breitengrad −90 bis 90,
+Längengrad −180 bis 180, alles andere wird abgelehnt). Bei ausgeschalteten
+Karten funktionieren nur die Felder. Der Ort wird nur in shoebox gespeichert:
+Die Fotodatei bleibt unverändert, und er bleibt beim Foto, wenn du es
+verschiebst. Einen selbst festgelegten Ort kannst du wieder ändern oder
+entfernen; ein Ort, der in der Datei selbst steht, wird nie geändert.
+
+Die Seite „Orte“
+Bei eingeschalteten Karten erscheint Orte in der Seitenleiste unter den
+Ordnern. Sie öffnet eine Weltkarte mit einer Markierung für jedes Foto mit
+Ort; dicht beieinander liegende werden zu einer Zahl zusammengefasst und
+teilen sich beim Hineinzoomen auf. Klicke eine Markierung oder eine Gruppe an,
+dann teilt sich der Bildschirm: links die Karte, rechts die Fotos von dort,
+wie in der Zeitleiste. Ein Klick auf ein Foto öffnet es; der Pfeil oben in der
+Liste klappt sie ein.
+
+Orte (Bereiche)
+Ein Ort ist ein benannter Bereich, etwa „Zuhause“ oder „Insel XY“. Drücke
+Neuer Ort, klicke zwei gegenüberliegende Ecken auf der Karte an und gib einen
+Namen ein: Jedes Foto mit einem Ort innerhalb des Bereichs gehört dazu, jetzt
+und später. Die Orte stehen mit ihrer Fotozahl unter Orte in der Seitenleiste;
+ein Klick zeigt ihre Fotos. Du kannst auch nach dem Namen eines Orts suchen.
+Ist die Suche leer, öffnet die Auswahl den Ort auf der Karte, wie ein Klick in
+der Seitenleiste (ein Typ-Filter fällt dabei weg, wie bei jedem Klick in der
+Seitenleiste). Hat die Suche schon Chips (Ordner, Tag, Person, Haustier,
+Favoriten ♥), kommt der Ort als Chip 📍 dazu und du bleibst in der Zeitleiste:
+Alle Chips müssen passen, „Zuhause“ + „Anna“ zeigt also Annas Fotos von zu
+Hause. Ein zweiter Ort ersetzt den ersten. Das 🗺 am Chip zeigt den Ort auf der
+Karte, und ein auf der Karte gewählter Ort geht mit, wenn du einen weiteren
+Chip hinzufügst. In der Liste rechts kannst du einen Ort Umbenennen, den
+Bereich neu zeichnen oder ihn löschen; es verschwindet nur der Ort, nie ein
+Foto oder dessen Ort.
+
+Orte und die von dir festgelegten Aufnahmeorte stehen zusammen mit deinen Tags
+und Personen in userdata.json neben dem Index auf dem Laufwerk.
 
 Laufwerke, Backups und das iPad
 -------------------------------
@@ -382,8 +548,9 @@ Die Grundregel ist einfach: shoebox liest deine Originale und schreibt nie
 etwas hinein.
 
 - Nur lesen
-   Metadaten, Vorschaubilder und Tags liegen im Index auf dem Laufwerk, nie in
-   einem Foto. Aufnahme- und Erstellungsdatum ändern sich nie.
+   Metadaten, Vorschaubilder, Tags und von dir festgelegte Aufnahmeorte liegen
+   im Index auf dem Laufwerk, nie in einem Foto. Aufnahme- und
+   Erstellungsdatum ändern sich nie.
 
 - Bewacht
    Jeder Scan wird kontrolliert: Größe, Daten und ein vollständiger Hash davor
@@ -391,12 +558,16 @@ etwas hinein.
 
 - Nur auf deinen Befehl
    Originale ändern sich nur durch deine Aktionen: verschieben, umbenennen,
-   Papierkorb, importieren. Immer ein Umbenennen, nie ein Kopieren, und nur
-   wenn die Datei noch zum Index passt.
+   Papierkorb. Immer ein Umbenennen, nie ein Kopieren, und nur wenn die Datei
+   noch zum Index passt. Das Einzige, was shoebox sonst entfernt, ist eine
+   neue Kopie einer Datei, die das Laufwerk schon hatte, und nur, wenn du nach
+   einem Scan den Knopf drückst.
 
 - Lokal
    Keine Cloud, kein Konto. Standardmäßig kann sich nur dieser Computer
-   verbinden; andere Geräte brauchen --lan und eine PIN.
+   verbinden; andere Geräte brauchen --lan und eine PIN. Die einzige Ausnahme
+   sind die optionalen Karten (Einstellungen, standardmäßig aus): Dein Browser
+   lädt dann Kartenbilder von OpenStreetMap.
 
 Wenn etwas komisch aussieht
 ---------------------------
@@ -416,4 +587,12 @@ PIN.
 Ein Laufwerk steht auf offline. Wieder anstecken; shoebox findet es beim
 Neuladen.
 
-shoebox ist Open Source · github.com/svenfritsch/shoebox
+Eine Karte ist leer oder sagt Offline. Karten brauchen das Internet.
+Verbindung prüfen und das Foto noch einmal öffnen; alles andere funktioniert
+wie zuvor.
+
+shoebox · © 2026 Sven Fritsch · zur privaten Nutzung, die Bedingungen stehen
+in LICENSE.txt neben dem Programm im Download
+
+Die Bibliotheken in shoebox und ihre Lizenzen stehen in
+THIRD-PARTY-LICENSES.txt, daneben.

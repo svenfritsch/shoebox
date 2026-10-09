@@ -781,6 +781,16 @@ fn follow_content(conn: &Connection, old: &str, new: &str, quarters: i32) -> Res
             conn.execute("DELETE FROM taken_overrides WHERE key = ?1", [old])?;
         }
     }
+    if !same && has_table("geo_overrides")? {
+        conn.execute(
+            "INSERT OR REPLACE INTO geo_overrides (key, lat, lon, at)
+             SELECT ?2, lat, lon, at FROM geo_overrides WHERE key = ?1",
+            params![old, new],
+        )?;
+        if !still_used {
+            conn.execute("DELETE FROM geo_overrides WHERE key = ?1", [old])?;
+        }
+    }
     if !same && !still_used && has_table("people")? {
         let covers: Vec<(i64, String)> = conn
             .prepare("SELECT id, cover_box FROM people WHERE cover_key = ?1 AND cover_box IS NOT NULL")?

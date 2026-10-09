@@ -37,11 +37,38 @@ current status and next step. Update its status table when a phase moves.
 - Moving to the trash from the photo view and the timeline selection is off by
   default: the library setting `allow_trash` (Settings, "Allow move to trash")
   shows the trash icon and the selection button.
+- Maps (phase 10) are an opt-in setting (`maps`, off by default). The browser
+  loads the tiles; shoebox never fetches or stores one. A position the user
+  gives a photo lives in `library.db` (`geo_overrides`) only, never in the file.
+- Licences: `LICENSE.txt` (all rights reserved, private use) and the generated
+  `THIRD-PARTY-LICENSES.txt` go into the release archive. After a change to
+  `Cargo.lock`, `scripts/build-deps.sh` or `core/web/vendor/` run
+  `python3 scripts/third-party-licenses.py`. Do not call shoebox "open source"
+  in texts. Open items before giving it to others: see "Before giving shoebox
+  to others" in docs/plan.md.
 - UI text is never hard-coded: `tr()`/`trn()`/`data-i18n` with a key in both
   `core/i18n/en.json` and `de.json` (see docs/phase8.md; `core/tests/i18n.rs`
   checks it).
 - Paths may contain spaces and decomposed Unicode: quote everything, compare
   NFC-normalised.
+- **The guide is part of every change.** `docs/guide/shoebox-en.html` and
+  `shoebox-de.html` (kept in step) are what users read about the app. A change
+  that adds, removes or alters something a person can see or do (the photo app,
+  the launcher, a button, a setting, what a command does, the safety rules
+  above) updates both files in the same pull request, and removing a feature
+  removes it from the guide. Before finishing, grep both files for the old
+  behaviour and its UI names (`grep -n -i '<word>' docs/guide/shoebox-*.html`)
+  and read the guide's pages that touch it: the feature cards, the "at a
+  glance" legend (its numbered dots sit at fixed positions on `ui-overview`,
+  one dot per legend item, in the order of the screen), the typical session,
+  the launcher tasks, the sections on the feature, the FAQ and "Your photos are
+  safe". If the screen changed visibly, regenerate the screenshots
+  (`docs/guide/README.md`) and check that the dots still sit on the right
+  controls; the sample screenshots must not use a word that is a feature now
+  (the tag "Favorites" is the heart). Then run `python3 docs/guide/html2txt.py`
+  and commit the `.txt` files. Say in the pull request what changed in the
+  guide, or that it is not affected. Look at `main` first: a pull request
+  stacked on a branch that is already merged never reaches `main`.
 
 ## Build and test
 

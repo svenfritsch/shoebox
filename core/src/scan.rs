@@ -283,12 +283,14 @@ struct Rec {
     missing: bool,
     /// Reading its metadata failed last time.
     meta_failed: bool,
+    /// Indexed before positions were read (schema 10).
+    geo_pending: bool,
 }
 
 fn load_records(conn: &Connection) -> Result<HashMap<String, Rec>> {
     let mut stmt = conn.prepare(
         "SELECT id, path, path_nfc, name, size, mtime_ns, created_ns, quick_hash, full_hash,
-                missing_since IS NOT NULL, meta_error IS NOT NULL FROM files",
+                missing_since IS NOT NULL, meta_error IS NOT NULL, geo_done = 0 FROM files",
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
@@ -305,6 +307,7 @@ fn load_records(conn: &Connection) -> Result<HashMap<String, Rec>> {
                 full_hash: r.get(8)?,
                 missing: r.get(9)?,
                 meta_failed: r.get(10)?,
+                geo_pending: r.get(11)?,
             },
         ))
     })?;
@@ -427,7 +430,7 @@ fn index(conn: &Connection, root: &Path, walked: &Walked, job_id: i64, stats: &m
             if !moved[i] {
                 stats.unchanged += 1;
             }
-            if rec.meta_failed {
+            if rec.meta_failed || rec.geo_pending {
                 // Maybe this shoebox can read it (e.g. a JPEG called `.HEIC`).
                 reread_metadata(conn, &mut parser, &path, f, rec.id)?;
             }
@@ -526,8 +529,8 @@ pub(crate) fn insert_file(conn: &Connection, f: &Found, folder_id: i64, info: &F
     let m = &info.meta;
     conn.execute(
         "INSERT INTO files (folder_id, path, path_nfc, name, kind, size, mtime_ns, created_ns, quick_hash,
-                            taken, taken_offset, width, height, duration_ms, camera, meta_error, added_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+                            taken, taken_offset, width, height, duration_ms, camera, meta_error, added_at, lat, lon, geo_done)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, 1)",
         params![
             folder_id,
             f.rel.raw,
@@ -546,6 +549,8 @@ pub(crate) fn insert_file(conn: &Connection, f: &Found, folder_id: i64, info: &F
             m.camera,
             info.meta_error,
             db::now(),
+            m.lat,
+            m.lon,
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -558,7 +563,7 @@ pub(crate) fn update_file(conn: &Connection, id: i64, f: &Found, info: &FileInfo
     conn.execute(
         "UPDATE files SET kind = ?2, size = ?3, mtime_ns = ?4, created_ns = ?5, quick_hash = ?6, full_hash = NULL,
                 taken = ?7, taken_offset = ?8, width = ?9, height = ?10, duration_ms = ?11, camera = ?12,
-                meta_error = ?13, phash = NULL, verified_at = NULL
+                meta_error = ?13, phash = NULL, shot_pixels = NULL, verified_at = NULL, lat = ?14, lon = ?15, geo_done = 1
          WHERE id = ?1",
         params![
             id,
@@ -574,6 +579,8 @@ pub(crate) fn update_file(conn: &Connection, id: i64, f: &Found, info: &FileInfo
             m.duration_ms.map(|d| d as i64),
             m.camera,
             info.meta_error,
+            m.lat,
+            m.lon,
         ],
     )?;
     Ok(())
@@ -588,9 +595,9 @@ fn reread_metadata(conn: &Connection, parser: &mut MediaParser, path: &Path, f: 
     }
     conn.execute(
         "UPDATE files SET taken = ?2, taken_offset = ?3, width = ?4, height = ?5, duration_ms = ?6, camera = ?7,
-                meta_error = NULL
+                meta_error = NULL, lat = ?8, lon = ?9, geo_done = 1
          WHERE id = ?1",
-        params![id, m.taken, m.taken_offset, m.width, m.height, m.duration_ms.map(|d| d as i64), m.camera],
+        params![id, m.taken, m.taken_offset, m.width, m.height, m.duration_ms.map(|d| d as i64), m.camera, m.lat, m.lon],
     )?;
     Ok(())
 }

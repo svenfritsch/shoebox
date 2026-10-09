@@ -179,11 +179,14 @@ jobs:
           mkdir -p release
           # never ship a guide whose text copy is stale or whose images are missing
           python3 docs/guide/html2txt.py --check
+          # the notices for the libraries in the binary must match Cargo.lock and the vendored web libraries
+          python3 scripts/third-party-licenses.py --check
           for os in macos; do
             pkg="$RUNNER_TEMP/shoebox-$os"
             mkdir -p "$pkg/recognizer"
             cp artifacts/shoebox-$os/shoebox-$os "$pkg/"
             chmod +x "$pkg/shoebox-$os"
+            cp LICENSE.txt THIRD-PARTY-LICENSES.txt "$pkg/"
             cp "scripts/launchers/Start shoebox.command" "$pkg/"
             chmod +x "$pkg/Start shoebox.command"
             cp recognizer/README.md recognizer/install.sh recognizer/fetch-models.sh recognizer/recognizer.py "$pkg/recognizer/"
