@@ -400,8 +400,9 @@ was missed.
 
 Groups
 Faces shows people by group. New group… makes one; Groups… renames, reorders
-and deletes groups. A person is in one group at most, and deleting a group
-deletes nobody.
+and deletes groups; to reorder, drag a row by the dotted handle on its left
+(or focus the handle and press Alt+↑/↓). A person is in one group at most, and
+deleting a group deletes nobody.
 
 Put people into groups
 Use ⋯ on a person, then Move to group…, or drag the person onto a group in the
@@ -417,7 +418,7 @@ shows what recognition found: small faces, scores and false finds.
 
 [Screenshot: Faces: people by group, with the pets in their own group.]
 
-[Screenshot: Groups…: rename, reorder, delete.]
+[Screenshot: Groups…: rename, delete, drag to reorder.]
 
 [Screenshot: Move to group… from a person’s ⋯ menu.]
 

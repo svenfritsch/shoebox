@@ -425,8 +425,10 @@ einmal. + Gesicht oder Haustier hinzufügen zeichnet einen Rahmen um ein
 
 Gruppen
 Gesichter zeigt die Personen nach Gruppen. Neue Gruppe … legt eine an; Gruppen
-… benennt Gruppen um, ordnet sie und löscht sie. Eine Person ist höchstens in
-einer Gruppe, und das Löschen einer Gruppe löscht niemanden.
+… benennt Gruppen um, ordnet sie und löscht sie; zum Ordnen ziehst du eine
+Zeile am Punktegriff links (oder fokussierst den Griff und drückst Alt+↑/↓).
+Eine Person ist höchstens in einer Gruppe, und das Löschen einer Gruppe löscht
+niemanden.
 
 Personen in Gruppen legen
 Bei einer Person auf ⋯ klicken und In Gruppe verschieben … wählen, oder die
@@ -446,7 +448,7 @@ Gesicht.]
 [Screenshot: Gesichter: Personen nach Gruppen, die Haustiere in ihrer eigenen
 Gruppe.]
 
-[Screenshot: Gruppen …: umbenennen, ordnen, löschen.]
+[Screenshot: Gruppen …: umbenennen, löschen, zum Ordnen ziehen.]
 
 [Screenshot: In Gruppe verschieben … im ⋯-Menü einer Person.]
 
