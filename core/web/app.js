@@ -2646,24 +2646,34 @@ function tagInput() {
 }
 
 // After a change: refresh the open info panel and the sidebar.
-// "Screenshot": automatic (the guess) or the user's own yes / no, kept by
-// content in the library, never in the file.
+// "Screenshot": a drop-down (Yes / No) that starts on shoebox's guess. Picking
+// an answer is the user's own decision, kept by content in the library (never
+// in the file); "Back to automatic" returns to the guess.
 function infoScreenshot(row, info) {
   if (info.kind === 'video' || info.kind === 'raw') return;
+  var box = el('div', 'shot-pick');
   var pick = el('select');
-  [['', tr(info.screenshot_mark == null ? (info.screenshot ? 'shot.auto_yes' : 'shot.auto_no') : 'shot.auto')],
-   ['1', tr('shot.yes')], ['0', tr('shot.no')]].forEach(function (o) {
+  [['1', tr('shot.yes')], ['0', tr('shot.no')]].forEach(function (o) {
     var opt = el('option', '', o[1]);
     opt.value = o[0];
     pick.appendChild(opt);
   });
-  pick.value = info.screenshot_mark == null ? '' : info.screenshot_mark ? '1' : '0';
+  var marked = info.screenshot_mark != null;
+  pick.value = info.screenshot ? '1' : '0';
   pick.title = tr('shot.hint');
-  pick.onchange = function () {
-    var value = pick.value === '' ? null : pick.value === '1';
+  var set = function (value) {
     post(LIBAPI + '/screenshots', { ids: [info.id], value: value }).then(function () { screenshotsChanged(info.id); }).catch(failed);
   };
-  row(tr('shot.label'), pick);
+  pick.onchange = function () { set(pick.value === '1'); };
+  box.appendChild(pick);
+  box.appendChild(el('span', 'note', ' ' + tr(marked ? 'shot.yours' : 'shot.guess')));
+  if (marked) {
+    var back = el('button', 'link', tr('shot.back'));
+    back.onclick = function () { set(null); };
+    box.appendChild(document.createTextNode(' '));
+    box.appendChild(back);
+  }
+  row(tr('shot.label'), box);
 }
 
 function screenshotsChanged(id) {

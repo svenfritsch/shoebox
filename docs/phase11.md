@@ -75,8 +75,10 @@ their own or left out of the timeline.
   not shot, `Screenshot` = still and shot. `serve.rs`: `type=screenshot`,
   `POST /api/screenshots {ids, value: true|false|null}`, `screenshot` and
   `screenshot_mark` in `/api/files/{id}`.
-- UI: Type drop-down entry, "Screenshot" row (Automatic / Yes / No) in the
-  info panel. Not built: the selection-bar button for many photos, the
+- UI: Type drop-down entry (the entry stays called Photos; a small ⓘ with the
+  tooltip "Stills without screenshots"), "Screenshot" row in the info panel:
+  a Yes / No drop-down that starts on shoebox's guess (marked "shoebox's
+  guess" or "your choice"), with "Back to automatic" once the user decided. Not built: the selection-bar button for many photos, the
   Calibration "Screenshot check".
 - Tests: unit tests in `screenshots.rs` and `db.rs` (v10 re-run);
   `screenshots_are_a_type_of_their_own` and the changed Photos counts in
