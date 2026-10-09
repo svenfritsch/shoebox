@@ -619,7 +619,8 @@ function folderNode(f, depth) {
   toggle.onclick = function () { expand(!ul || ul.hidden); };
   name.onclick = function () {
     expand(true);
-    setFilter({ folder: f.id, tags: [], people: [], types: state.filter.types, fav: state.filter.fav, q: state.filter.q });
+    // Opening a folder replaces the search: its chip is the only one left.
+    setFilter({ folder: f.id, tags: [], people: [], pets: [], types: state.filter.types, fav: false, q: '' });
   };
   return li;
 }
