@@ -132,6 +132,10 @@ pub struct Query {
     pub pets: Vec<String>,
     /// Only favorites (photos with a heart).
     pub fav: bool,
+    /// Only photos taken inside this area of the map (phase 10) ...
+    pub area: Option<crate::geo::Area>,
+    /// ... or inside the area of this place.
+    pub place: Option<i64>,
 }
 
 impl Snapshot {
@@ -409,6 +413,17 @@ impl Snapshot {
             words.push((word, ids));
         }
         let fav = if q.fav { Some(favorites()) } else { None };
+        let mut located: Option<HashSet<i64>> = None;
+        for area in q.area.into_iter().chain(match q.place {
+            Some(id) => Some(crate::geo::place(conn, id)?.ok_or(crate::geo::NoSuchPlace)?.area),
+            None => None,
+        }) {
+            let ids = crate::geo::files_in(conn, &area)?;
+            located = Some(match located {
+                Some(have) => have.intersection(&ids).copied().collect(),
+                None => ids,
+            });
+        }
         let mut pet: Option<HashSet<i64>> = None;
         for species in &q.pets {
             let ids = files_of_pets(species)?;
@@ -433,6 +448,7 @@ impl Snapshot {
             .filter(|it| pet.as_ref().is_none_or(|p| p.contains(&it.id)))
             .filter(|it| folders.as_ref().is_none_or(|f| f.contains(&it.folder_id)))
             .filter(|it| fav.as_ref().is_none_or(|f| f.contains(&it.id)))
+            .filter(|it| located.as_ref().is_none_or(|l| l.contains(&it.id)))
             .filter(|it| tagged.as_ref().is_none_or(|t| t.contains(&it.id)))
             .filter(|it| words.iter().all(|(w, ids)| ids.contains(&it.id) || it.path_lower.contains(w.as_str())))
             .collect())

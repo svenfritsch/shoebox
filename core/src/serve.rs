@@ -829,6 +829,13 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/tags/selection", post(tags_selection))
         .route("/api/favorites", post(favorites_set))
         .route("/api/screenshots", post(screenshots_set))
+        .route("/api/maps", get(maps_get).post(maps_set))
+        .route("/api/geo/points", get(geo_points))
+        .route("/api/files/{id}/position", post(position_set))
+        .route("/api/places", get(places_list).post(places_create))
+        .route("/api/places/{id}/rename", post(places_rename))
+        .route("/api/places/{id}/area", post(places_redraw))
+        .route("/api/places/{id}/delete", post(places_delete))
         .route("/api/faces", get(faces_api::list))
         .route("/api/faces/stats", get(faces_api::stats))
         .route("/api/faces/{id}/crop", get(faces_api::crop))
@@ -885,6 +892,9 @@ enum ApiError {
 
 impl From<anyhow::Error> for ApiError {
     fn from(e: anyhow::Error) -> Self {
+        if e.is::<crate::geo::NoSuchPlace>() {
+            return ApiError::BadRequest(format!("{e}"));
+        }
         ApiError::Internal(e)
     }
 }
@@ -1307,6 +1317,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
                 pets: pet_terms.clone(),
                 types: types.clone(),
                 fav,
+                ..Default::default()
             };
             let hearts = own_tags::favorite_ids(&conn)?;
             for it in snapshot.query(&conn, &query)? {
@@ -1645,7 +1656,17 @@ fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
         types: types_of(pairs)?,
         pets: pets_of(pairs)?,
         fav: fav_of(pairs),
+        area: area_of(pairs)?,
+        place: param(pairs, "place").filter(|v| !v.is_empty()).map(number).transpose()?,
     })
+}
+
+/// `area=south,west,north,east`: only photos taken inside that rectangle.
+fn area_of(pairs: &Pairs) -> ApiResult<Option<crate::geo::Area>> {
+    let Some(v) = param(pairs, "area").filter(|v| !v.is_empty()) else { return Ok(None) };
+    let n: Vec<f64> = v.split(',').map(|p| p.trim().parse::<f64>()).collect::<Result<_, _>>().map_err(|_| ApiError::BadRequest("area is south,west,north,east".into()))?;
+    let [south, west, north, east] = n[..] else { return Err(ApiError::BadRequest("area is south,west,north,east".into())) };
+    crate::geo::Area { south, west, north, east }.checked().map(Some).map_err(|e| ApiError::BadRequest(format!("{e:#}")))
 }
 
 /// `fav=1`: only favorites.
@@ -1679,7 +1700,13 @@ async fn tags(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiRes
         let own = param(&pairs, "own").is_some_and(|o| o != "0");
         let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(50);
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
-        let all = if filter.folder.is_none() && filter.tags.is_empty() && filter.people.is_empty() && filter.pets.is_empty() {
+        let all = if filter.folder.is_none()
+            && filter.tags.is_empty()
+            && filter.people.is_empty()
+            && filter.pets.is_empty()
+            && filter.place.is_none()
+            && filter.area.is_none()
+        {
             browse::all_tags(&conn)?
         } else {
             let snapshot = app.snapshot(&conn)?;
@@ -1722,6 +1749,11 @@ async fn timeline(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> Ap
     let query = filter_of(&pairs)?;
     blocking(&app, move |app| {
         let conn = app.conn.lock().unwrap();
+        if let Some(place) = query.place
+            && crate::geo::place(&conn, place)?.is_none()
+        {
+            return Err(ApiError::BadRequest("no such place".into()));
+        }
         let snapshot = app.snapshot(&conn)?;
         let items = snapshot.query(&conn, &query)?;
         let tags = browse::tag_names(&conn, &query.tags)?;
@@ -1786,6 +1818,8 @@ struct FileInfo {
     /// The user's own decision: `true` is one, `false` is not, `null` leaves
     /// it to the score.
     screenshot_mark: Option<bool>,
+    /// Where it was taken (in the file, or given by the user).
+    position: Option<crate::geo::Position>,
 }
 
 async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Json<FileInfo>> {
@@ -1819,6 +1853,7 @@ async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiRe
             view_turn,
             screenshot: item.is_some_and(|it| it.shot),
             screenshot_mark,
+            position: crate::geo::position_of(&conn, id)?,
         }))
     })
     .await
@@ -2179,6 +2214,133 @@ async fn allow_trash_set(State(app): State<Arc<App>>, Json(req): Json<AllowTrash
     .map(|allow| Json(serde_json::json!({ "allow": allow })))
 }
 
+// ---------------------------------------------------------------- maps (phase 10)
+
+async fn maps_get(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
+    blocking(&app, |app| {
+        let conn = app.conn.lock().unwrap();
+        Ok(Json(serde_json::json!({ "on": db::setting(&conn, crate::geo::MAPS_KEY)?.as_deref() == Some("1") })))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct MapsRequest {
+    on: bool,
+}
+
+async fn maps_set(State(app): State<Arc<App>>, Json(req): Json<MapsRequest>) -> ApiResult<Json<serde_json::Value>> {
+    change(&app, move |_, conn| {
+        db::set_setting(conn, crate::geo::MAPS_KEY, req.on.then_some("1"))?;
+        Ok(req.on)
+    })
+    .await
+    .map(|on| Json(serde_json::json!({ "on": on })))
+}
+
+/// Every shown photo with a position, in columns like the timeline.
+#[derive(Serialize)]
+struct GeoPoints {
+    ids: Vec<i64>,
+    lats: Vec<f64>,
+    lons: Vec<f64>,
+}
+
+async fn geo_points(State(app): State<Arc<App>>) -> ApiResult<Json<GeoPoints>> {
+    blocking(&app, |app| {
+        let conn = app.conn.lock().unwrap();
+        let snapshot = app.snapshot(&conn)?;
+        let shown: HashSet<i64> = snapshot.items.iter().map(|it| it.id).collect();
+        let mut out = GeoPoints { ids: Vec::new(), lats: Vec::new(), lons: Vec::new() };
+        for (id, lat, lon) in crate::geo::positions(&conn)? {
+            if shown.contains(&id) {
+                out.ids.push(id);
+                out.lats.push(lat);
+                out.lons.push(lon);
+            }
+        }
+        Ok(Json(out))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct PositionRequest {
+    lat: Option<f64>,
+    lon: Option<f64>,
+    /// Forget the position the user gave.
+    #[serde(default)]
+    clear: bool,
+}
+
+async fn position_set(State(app): State<Arc<App>>, Path(id): Path<i64>, Json(req): Json<PositionRequest>) -> ApiResult<Json<serde_json::Value>> {
+    change(&app, move |_, conn| {
+        if req.clear {
+            crate::geo::clear_position(conn, id)?;
+        } else {
+            let (Some(lat), Some(lon)) = (req.lat, req.lon) else { bail!("latitude and longitude are needed") };
+            crate::geo::set_position(conn, id, lat, lon)?;
+        }
+        Ok(crate::geo::position_of(conn, id)?)
+    })
+    .await
+    .map(|position| Json(serde_json::json!({ "position": position })))
+}
+
+/// The places with the number of shown photos inside each.
+#[derive(Serialize)]
+struct PlaceRow {
+    #[serde(flatten)]
+    place: crate::geo::Place,
+    count: usize,
+}
+
+async fn places_list(State(app): State<Arc<App>>) -> ApiResult<Json<Vec<PlaceRow>>> {
+    blocking(&app, |app| {
+        let conn = app.conn.lock().unwrap();
+        let snapshot = app.snapshot(&conn)?;
+        let shown: HashSet<i64> = snapshot.items.iter().map(|it| it.id).collect();
+        let points = crate::geo::positions(&conn)?;
+        let rows = crate::geo::places(&conn)?
+            .into_iter()
+            .map(|place| {
+                let count = points.iter().filter(|(id, lat, lon)| shown.contains(id) && place.area.contains(*lat, *lon)).count();
+                PlaceRow { place, count }
+            })
+            .collect();
+        Ok(Json(rows))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct PlaceRequest {
+    name: String,
+    #[serde(flatten)]
+    area: crate::geo::Area,
+}
+
+async fn places_create(State(app): State<Arc<App>>, Json(req): Json<PlaceRequest>) -> ApiResult<Json<crate::geo::Place>> {
+    change(&app, move |_, conn| crate::geo::create_place(conn, &req.name, req.area)).await.map(Json)
+}
+
+#[derive(Deserialize)]
+struct NameRequest {
+    name: String,
+}
+
+async fn places_rename(State(app): State<Arc<App>>, Path(id): Path<i64>, Json(req): Json<NameRequest>) -> ApiResult<Json<crate::geo::Place>> {
+    change(&app, move |_, conn| crate::geo::rename_place(conn, id, &req.name)).await.map(Json)
+}
+
+async fn places_redraw(State(app): State<Arc<App>>, Path(id): Path<i64>, Json(area): Json<crate::geo::Area>) -> ApiResult<Json<crate::geo::Place>> {
+    change(&app, move |_, conn| crate::geo::redraw_place(conn, id, area)).await.map(Json)
+}
+
+async fn places_delete(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Json<serde_json::Value>> {
+    change(&app, move |_, conn| crate::geo::delete_place(conn, id)).await.map(|_| Json(serde_json::json!({ "deleted": true })))
+}
+
 #[derive(Deserialize)]
 struct CopyFoldersRequest {
     folders: Vec<String>,
@@ -2347,7 +2509,7 @@ async fn asset(uri: Uri) -> Response {
         (
             header::CONTENT_SECURITY_POLICY,
             HeaderValue::from_static(
-                "default-src 'self'; img-src 'self' data: blob:; media-src 'self'; style-src 'self' 'unsafe-inline'",
+                "default-src 'self'; img-src 'self' data: blob: https://tile.openstreetmap.org; media-src 'self'; style-src 'self' 'unsafe-inline'",
             ),
         ),
     ];

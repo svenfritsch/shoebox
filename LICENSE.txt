@@ -1,0 +1,72 @@
+shoebox
+Copyright (c) 2026 Sven Fritsch. All rights reserved.
+Alle Rechte vorbehalten.
+
+------------------------------------------------------------------------
+ENGLISH
+------------------------------------------------------------------------
+
+1. What you may do
+   You may use shoebox free of charge for private, non-commercial
+   purposes on your own devices. You may read source code that is visible
+   to you, but no other rights in it are granted.
+
+2. What you may not do without my written permission
+   - pass shoebox or parts of it on to others (apart from a backup copy
+     for yourself), publish it, sell, rent or lend it, or offer it as a
+     service;
+   - change it or build something from it for others;
+   - use it commercially.
+
+3. Third-party components
+   shoebox contains software by others (listed in
+   THIRD-PARTY-LICENSES.txt). This licence does not apply to them. They
+   come under their own licences, and the rights those give you stay as
+   they are, including the right to replace the LGPL libraries libheif and
+   libde265 with a version of your own.
+
+4. No warranty
+   shoebox is provided "as is", without warranty of any kind. As far as
+   the law allows, I am not liable for damage, including lost or changed
+   files. Keep backups of your photos. Liability that cannot be excluded
+   by law (for example for intent or injury to life, body or health)
+   remains unaffected.
+
+5. Your photos
+   shoebox does not collect or send your data. Your photos and everything
+   shoebox stores about them stay on your drive.
+
+------------------------------------------------------------------------
+DEUTSCH
+------------------------------------------------------------------------
+
+1. Was du darfst
+   Du darfst shoebox kostenlos für private, nicht kommerzielle Zwecke auf
+   deinen eigenen Geräten benutzen. Quelltext, den du einsehen kannst,
+   darfst du lesen; weitere Rechte daran werden nicht eingeräumt.
+
+2. Was du ohne meine schriftliche Erlaubnis nicht darfst
+   - shoebox oder Teile davon an andere weitergeben (außer einer
+     Sicherungskopie für dich selbst), veröffentlichen, verkaufen,
+     vermieten, verleihen oder als Dienst anbieten;
+   - es verändern oder daraus etwas für andere bauen;
+   - es kommerziell nutzen.
+
+3. Software von Dritten
+   shoebox enthält Software anderer (aufgelistet in
+   THIRD-PARTY-LICENSES.txt). Diese Lizenz gilt für sie nicht. Sie stehen
+   unter ihren eigenen Lizenzen, und die Rechte, die diese dir geben,
+   bleiben unberührt, auch das Recht, die LGPL-Bibliotheken libheif und
+   libde265 durch eine eigene Version zu ersetzen.
+
+4. Keine Gewährleistung
+   shoebox wird "wie besehen" zur Verfügung gestellt, ohne Gewähr jeder
+   Art. Soweit das Gesetz es erlaubt, hafte ich nicht für Schäden,
+   auch nicht für verlorene oder veränderte Dateien. Sichere deine Fotos.
+   Eine Haftung, die sich gesetzlich nicht ausschließen lässt (etwa bei
+   Vorsatz oder bei Verletzung von Leben, Körper oder Gesundheit), bleibt
+   unberührt.
+
+5. Deine Fotos
+   shoebox sammelt und sendet keine Daten von dir. Deine Fotos und alles,
+   was shoebox darüber speichert, bleiben auf deinem Laufwerk.

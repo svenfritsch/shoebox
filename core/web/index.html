@@ -57,6 +57,10 @@
     </div>
     <h3 id="folders-section" class="side-head"><button class="caret" data-section="folders-section" data-body="tree" data-i18n-aria-label="side.toggle_folders" aria-label="Show or hide folders" aria-expanded="true"></button><span data-i18n="side.folders">Folders</span></h3>
     <ul id="tree" class="tree"></ul>
+    <div id="locations-section" class="side-tags side-locations" hidden>
+      <h3><button class="caret" data-section="locations-section" data-body="place-list" data-i18n-aria-label="side.toggle_locations" aria-label="Show or hide locations" aria-expanded="true"></button><button id="nav-locations" class="link" data-i18n="side.locations">Locations</button></h3>
+      <ul id="place-list" class="tree"></ul>
+    </div>
     <footer id="status" class="status"></footer>
   </nav>
 
@@ -116,5 +120,6 @@
 </div>
 
 <script src="app.js"></script>
+<script src="geo.js"></script>
 </body>
 </html>

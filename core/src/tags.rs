@@ -272,6 +272,9 @@ pub struct UserData {
     /// Groups, people and face decisions (version 2).
     #[serde(flatten)]
     pub people: crate::people::UserPeople,
+    /// Positions the user gave and named places on the map (version 5).
+    #[serde(flatten)]
+    pub geo: crate::geo::UserGeo,
 }
 
 #[derive(Debug, Serialize)]
@@ -392,13 +395,14 @@ pub fn user_data(conn: &Connection) -> Result<UserData> {
     own_tags.sort_by_key(|t| t.name.to_lowercase());
     Ok(UserData {
         shoebox: env!("CARGO_PKG_VERSION"),
-        version: 4,
+        version: 5,
         written_at: db::now(),
         own_tags,
         taken_overrides: taken_overrides(conn)?,
         view_turns: view_turns(conn)?,
         shot_marks: shot_marks(conn)?,
         people: crate::people::user_data(conn)?,
+        geo: crate::geo::user_data(conn)?,
     })
 }
 

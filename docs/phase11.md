@@ -67,7 +67,7 @@ their own or left out of the timeline.
   neighbouring pixels with exactly the same colour, 0.40 to 0.80 mapped to 0
   to 100, measured on the stored JPEG thumbnail so a backfill agrees with a
   fresh thumbnail), `THRESHOLD = 60`.
-- `library.db` v10: `files.shot_pixels` (filled with the thumbnail and
+- `library.db` v11: `files.shot_pixels` (filled with the thumbnail and
   backfilled from stored thumbnails or a twin by `thumbs::fill_shot_pixels`;
   reset when a file changes) and `shot_marks(key = quick_hash, is_shot)`.
   The marks are part of `userdata.json` (`shot_marks`).
@@ -80,7 +80,7 @@ their own or left out of the timeline.
   a Yes / No drop-down that starts on shoebox's guess (marked "shoebox's
   guess" or "your choice"), with "Back to automatic" once the user decided. Not built: the selection-bar button for many photos, the
   Calibration "Screenshot check".
-- Tests: unit tests in `screenshots.rs` and `db.rs` (v10 re-run);
+- Tests: unit tests in `screenshots.rs` and `db.rs` (v11 re-run);
   `screenshots_are_a_type_of_their_own` and the changed Photos counts in
   `timeline_order_filters_and_search` (`core/tests/serve.rs`), with a guard
   snapshot of the originals.
