@@ -121,6 +121,7 @@
     <symbol id="i-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></symbol>
     <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
     <symbol id="i-bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3L5 14h6l-1 7 8-11h-6l1-7z"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6-5.6-6-10.5a6 6 0 0 1 12 0C18 15.4 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.2"/></symbol>
     <symbol id="logo" viewBox="0 0 64 64"><rect x="6" y="22" width="52" height="34" rx="4" fill="#b07d4f"/><rect x="2" y="12" width="60" height="14" rx="4" fill="#d9a066"/><rect x="10" y="30" width="44" height="3" rx="1.5" fill="#fff" opacity=".35"/></symbol>
   </svg>
 
@@ -158,6 +159,7 @@
       <li><a href="#people">Personen und Haustiere</a></li>
       <li><a href="#faces">Gesichter taggen, Schritt für Schritt</a></li>
       <li><a href="#groups">Mehrere Gesichter in einem Foto, und Gruppen</a></li>
+      <li><a href="#locations">Orte und Karten</a></li>
       <li><a href="#drives">Laufwerke, Backups und das iPad</a></li>
       <li><a href="#safety">Deine Fotos sind sicher</a></li>
       <li><a href="#faq">Wenn etwas komisch aussieht</a></li>
@@ -215,6 +217,11 @@
           <h3>Mehrere Laufwerke</h3>
           <p>Die Fotos mehrerer Laufwerke in einer gemeinsamen Zeitleiste durchstöbern, auch wenn sie auf verschiedenen Platten liegen. Backups werden erkannt und geprüft.</p>
         </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-pin"/></svg></div>
+          <h3>Orte</h3>
+          <p>Optionale Karten, standardmäßig aus: eine Karte in den Infos von Fotos mit GPS-Daten, eine Weltkarte aller deiner Fotos und benannte Orte wie „Zuhause“, die ihre Fotos von selbst sammeln.</p>
+        </li>
       </ul>
       <figure>
         <img src="assets/de/multitag-search.jpg" alt="" loading="lazy">
@@ -270,7 +277,7 @@
         </li>
         <li>
           <h3>Ordner</h3>
-          <p>Deine Ordner mit Anzahl. Tags, Gesichter und Laufwerke erscheinen hier, sobald es sie gibt.</p>
+          <p>Deine Ordner mit Anzahl. Tags, Gesichter und Laufwerke erscheinen hier, sobald es sie gibt, und Orte, wenn Karten eingeschaltet sind.</p>
         </li>
         <li>
           <h3>Zeitleiste</h3>
@@ -355,7 +362,7 @@
           </div>
           <div>
             <h3>Ansicht</h3>
-            <p>Foto anklicken. <b>ⓘ</b> öffnet das Infofeld: Datum (als <b>geschätzt</b> markiert, wenn es nicht der Aufnahmetag ist), Kamera, Größe, Tags, Personen und Knöpfe, um den Ordner zu öffnen oder den Pfad zu kopieren.</p>
+            <p>Foto anklicken. <b>ⓘ</b> öffnet das Infofeld: Datum (als <b>geschätzt</b> markiert, wenn es nicht der Aufnahmetag ist), Kamera, Größe, Tags, Personen und Knöpfe, um den Ordner zu öffnen oder den Pfad zu kopieren. Ganz unten zeigen die <b>GPS-Daten</b>, wo das Foto aufgenommen wurde (siehe „Orte und Karten“).</p>
           </div>
           <div>
             <h3>Favoriten</h3>
@@ -601,6 +608,38 @@
       </div>
     </section>
 
+    <section id="locations">
+      <h2>Orte und Karten</h2>
+      <p class="sub">Optional: wo deine Fotos aufgenommen wurden, auf einer Karte. Aus, bis du es einschaltest.</p>
+      <div class="cols">
+        <div class="items">
+          <div>
+            <h3>Karten einschalten</h3>
+            <p>Öffne die <b>Einstellungen</b> und setze den Haken bei <b>Karten anzeigen (OpenStreetMap)</b>. Die Karten werden in deinem Browser aus OpenStreetMap gezeichnet; das ist die einzige Stelle, an der shoebox das Internet braucht: OpenStreetMap sieht, welche Kartenausschnitte du ansiehst, nie deine Fotos oder deren Namen. shoebox speichert keine Kartenbilder auf dem Laufwerk (dein Browser behält vielleicht welche in seinem eigenen Cache). Ohne Haken wird nie etwas aus dem Internet geladen.</p>
+          </div>
+          <div>
+            <h3>In den Infos eines Fotos</h3>
+            <p>Hat die Datei GPS-Daten, zeigt <b>GPS-Daten</b> im Infofeld die Position und, bei eingeschalteten Karten, eine kleine quadratische Karte mit einer Markierung, unten am Rand des Infofelds festgehalten. Ohne Internet steht dort stattdessen <b>Offline</b>. Ein Foto ohne GPS-Daten zeigt gar keine Karte, nur die Überschrift mit dem Knopf <b>Ort festlegen…</b>.</p>
+          </div>
+          <div>
+            <h3>Einem Foto einen Ort geben</h3>
+            <p><b>Ort festlegen…</b> (gleich rechts neben der Überschrift <b>GPS-Daten</b>) öffnet einen Dialog mit einer Karte und zwei Feldern, Breitengrad und Längengrad. Beides ist immer da und hängt zusammen: Klicke auf die Karte, um die Markierung zu setzen, oder tippe die Zahlen ein (Punkt oder Komma, Breitengrad −90 bis 90, Längengrad −180 bis 180, alles andere wird abgelehnt). Bei ausgeschalteten Karten funktionieren nur die Felder. Der Ort wird nur in shoebox gespeichert: Die Fotodatei bleibt unverändert, und er bleibt beim Foto, wenn du es verschiebst. Einen selbst festgelegten Ort kannst du wieder ändern oder entfernen; ein Ort, der in der Datei selbst steht, wird nie geändert.</p>
+          </div>
+          <div>
+            <h3>Die Seite „Orte“</h3>
+            <p>Bei eingeschalteten Karten erscheint <b>Orte</b> in der Seitenleiste unter den Ordnern. Sie öffnet eine Weltkarte mit einer Markierung für jedes Foto mit Ort; dicht beieinander liegende werden zu einer Zahl zusammengefasst und teilen sich beim Hineinzoomen auf. Klicke eine Markierung oder eine Gruppe an, dann teilt sich der Bildschirm: links die Karte, rechts die Fotos von dort, wie in der Zeitleiste. Ein Klick auf ein Foto öffnet es; der Pfeil oben in der Liste klappt sie ein.</p>
+          </div>
+          <div>
+            <h3>Orte (Bereiche)</h3>
+            <p>Ein Ort ist ein benannter Bereich, etwa „Zuhause“ oder „Insel XY“. Drücke <b>Neuer Ort</b>, klicke zwei gegenüberliegende Ecken auf der Karte an und gib einen Namen ein: Jedes Foto mit einem Ort innerhalb des Bereichs gehört dazu, jetzt und später. Die Orte stehen mit ihrer Fotozahl unter <b>Orte</b> in der Seitenleiste; ein Klick zeigt ihre Fotos. In der Liste rechts kannst du einen Ort <b>Umbenennen</b>, den <b>Bereich neu zeichnen</b> oder ihn löschen; es verschwindet nur der Ort, nie ein Foto oder dessen Ort.</p>
+          </div>
+        </div>
+        <div>
+          <p class="note">Orte und die von dir festgelegten Aufnahmeorte stehen zusammen mit deinen Tags und Personen in <code>userdata.json</code> neben dem Index auf dem Laufwerk.</p>
+        </div>
+      </div>
+    </section>
+
     <section id="drives">
       <h2>Laufwerke, Backups und das iPad</h2>
       <div class="cols">
@@ -649,7 +688,7 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg></div>
           <h3>Nur lesen</h3>
-          <p>Metadaten, Vorschaubilder und Tags liegen im Index auf dem Laufwerk, nie in einem Foto. Aufnahme- und Erstellungsdatum ändern sich nie.</p>
+          <p>Metadaten, Vorschaubilder, Tags und von dir festgelegte Aufnahmeorte liegen im Index auf dem Laufwerk, nie in einem Foto. Aufnahme- und Erstellungsdatum ändern sich nie.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg></div>
@@ -664,7 +703,7 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-globe"/></svg></div>
           <h3>Lokal</h3>
-          <p>Keine Cloud, kein Konto. Standardmäßig kann sich nur dieser Computer verbinden; andere Geräte brauchen <code>--lan</code> und eine PIN.</p>
+          <p>Keine Cloud, kein Konto. Standardmäßig kann sich nur dieser Computer verbinden; andere Geräte brauchen <code>--lan</code> und eine PIN. Die einzige Ausnahme sind die optionalen Karten (Einstellungen, standardmäßig aus): Dein Browser lädt dann Kartenbilder von OpenStreetMap.</p>
         </li>
       </ul>
     </section>
@@ -677,6 +716,7 @@
         <p><b>Ein Video hat keine Vorschau.</b> <code>ffmpeg</code> hinzufügen (siehe „Gut zu wissen“) und die Foto-App neu starten.</p>
         <p><b>Das iPad verbindet sich nicht.</b> Selbes WLAN? Mit <code>--lan</code> gestartet? PIN aus dem Terminal eingeben. Nach einem Neustart von shoebox fragt es wieder nach der PIN.</p>
         <p><b>Ein Laufwerk steht auf offline.</b> Wieder anstecken; shoebox findet es beim Neuladen.</p>
+        <p><b>Eine Karte ist leer oder sagt Offline.</b> Karten brauchen das Internet. Verbindung prüfen und das Foto noch einmal öffnen; alles andere funktioniert wie zuvor.</p>
       </div>
     </section>
   </main>

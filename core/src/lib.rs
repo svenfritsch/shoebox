@@ -13,6 +13,7 @@ pub mod duplicates;
 pub mod faces;
 pub mod fingerprint;
 pub mod fsinfo;
+pub mod geo;
 pub mod launcher;
 pub mod library;
 pub mod media;

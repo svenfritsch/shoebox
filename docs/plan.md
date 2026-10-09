@@ -14,7 +14,8 @@ progress. Update the status section when a phase moves.
   date must never change. Moving within the drive uses `rename`, which keeps
   all timestamps. Every scan path is covered by the *guard* (see below).
 - **Local only.** No cloud services; everything runs on the machine the drive
-  is plugged into.
+  is plugged into. The one optional exception: with the Maps setting on (off by
+  default, phase 10) the browser loads OpenStreetMap tiles; shoebox stores none.
 - **Portable, few dependencies.** One binary per platform on the drive. Must
   run on an older Intel MacBook with an older macOS.
 - **Web UI**, so an iPad on the same network can browse the library.
@@ -274,6 +275,15 @@ rot) and shows "last backup N days ago, M files new since".
 | 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | **In progress**: library id, launcher (cancel, saved folders, start scripts) and the multi-drive core (hub, offline, backup roles, common timeline, cross-drive duplicates and people) built; backup verification (`shoebox backup`, launcher button, All drives page) built; real-hardware checks and Linux/Windows packaging open |
 | 7 | Pets: cats and dogs found (`shoebox recognize --pets`, launcher button "Recognize pets"), named, grouped and searched like people, also by kind ("all cats", "Katze", "Hund"); pets the detector missed can be drawn by hand; Settings → Calibration with the Face check and the new Pet check | **Built except the real-hardware run and DINOv2** (see [phase7.md](phase7.md)) |
 | 8 | UI translation, German and English, JSON message files (design and steps in [phase8.md](phase8.md)) | **Built, check open**: loader, key test, launcher and the whole photo app; the real-hardware check, a native read-through of the German texts and the CI run are open |
+| 10 | Locations: GPS positions from files, map in the photo info (Leaflet, OpenStreetMap, opt-in setting), Locations page with clustered pins, named places drawn on the map, positions set by hand (design in [phase10.md](phase10.md)) | **Built, check open**: scan reads GPS, schema v10, API, UI, guide; real-hardware check and the CI run are open |
+
+### Phase 10: locations
+
+Positions from the file's GPS data, a map in the photo info, a Locations page
+with clustered pins and named rectangular places, positions set by hand for
+photos without one (in `library.db` only). Maps (Leaflet, OpenStreetMap tiles
+loaded by the browser) are an opt-in setting. Design, API and open checks in
+[phase10.md](phase10.md).
 
 ### Phase 0 details
 

@@ -37,6 +37,9 @@ current status and next step. Update its status table when a phase moves.
 - Moving to the trash from the photo view and the timeline selection is off by
   default: the library setting `allow_trash` (Settings, "Allow move to trash")
   shows the trash icon and the selection button.
+- Maps (phase 10) are an opt-in setting (`maps`, off by default). The browser
+  loads the tiles; shoebox never fetches or stores one. A position the user
+  gives a photo lives in `library.db` (`geo_overrides`) only, never in the file.
 - UI text is never hard-coded: `tr()`/`trn()`/`data-i18n` with a key in both
   `core/i18n/en.json` and `de.json` (see docs/phase8.md; `core/tests/i18n.rs`
   checks it).

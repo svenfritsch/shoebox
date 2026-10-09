@@ -114,7 +114,7 @@ $('login-form').addEventListener('submit', function (ev) {
 // ------------------------------------------------------------------ filters (in the URL hash)
 
 var TYPES = ['photo', 'video', 'live'];
-var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person', 'drives', 'settings', 'pets'];
+var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person', 'drives', 'settings', 'pets', 'locations'];
 // Pet search terms (`pet=` in the URL and the API): a species or any pet.
 var PET_TERMS = {
   cat: { icon: '🐱', get label() { return tr('pet.term.cat'); } },
@@ -182,6 +182,9 @@ function applyFilter() {
   $('nav-drives').classList.toggle('active', view === 'drives');
   markFacesSection();
   updateSections();
+  document.body.classList.toggle('geo-view', view === 'locations');
+  if (view !== 'locations') geoLeave();
+  renderLocationsSection();
   if (view) {
     endSelection();
     $('empty').hidden = true;
@@ -662,6 +665,7 @@ function sectionHasActive(id) {
   var f = state.filter;
   if (id === 'folders-section') return !f.view && f.folder != null;
   if (id === 'tags-section') return !f.view && f.tags.length > 0;
+  if (id === 'locations-section') return f.view === 'locations';
   return f.view === 'people' || f.view === 'unnamed' || f.view === 'person' || (!f.view && f.people.length > 0);
 }
 
@@ -1061,6 +1065,7 @@ function openLightbox(i) {
 }
 
 function closeLightbox() {
+  geoCleanup();
   stopDrawing();
   stopMedia();
   $('stage').textContent = '';
@@ -1231,6 +1236,7 @@ function renderPanelAll(info) {
 function renderPanel() {
   var info = lb.details, panel = $('lb-panel');
   panel.textContent = '';
+  geoCleanup();
   if (!info) return;
   if (isAll()) { renderPanelAll(info); return; }
   var dl = el('dl');
@@ -1278,6 +1284,7 @@ function renderPanel() {
   move.onclick = function () { moveDialog([info.id], function () { closeLightbox(); }); };
   actions.appendChild(move);
   panel.appendChild(actions);
+  panel.appendChild(infoGeo(info));
 }
 
 // Moving to the trash is off until it is allowed in the settings (originals
@@ -1339,7 +1346,7 @@ $('lb-info').onclick = function () {
   var p = $('lb-panel');
   p.hidden = !p.hidden;
   if (!p.hidden) renderPanel();
-  else drawFaces();
+  else { geoCleanup(); drawFaces(); }
 };
 $('lb-live').onclick = function () {
   var d = state.data, id = d.ids[state.open], video = state.live[id];
@@ -1458,6 +1465,7 @@ function reloadAll() {
   loadFolders();
   loadOwnTags();
   loadPeople();
+  if (geo.on) loadPlaces();
   // The unnamed clusters and a person's faces change their cards in place
   // after each action; loading them again would lose the place and what is
   // typed in other cards.
@@ -1474,6 +1482,7 @@ function loadView(view) {
   else if (view === 'unnamed') loadUnnamed();
   else if (view === 'person') loadPersonPage();
   else if (view === 'drives') loadDrivesPage();
+  else if (view === 'locations') loadLocations();
   else loadTrash();
 }
 
@@ -3069,6 +3078,7 @@ function loadSettings() {
   sec.appendChild(cards);
   page.appendChild(sec);
   page.appendChild(allowTrashSection());
+  page.appendChild(mapsSection());
   page.appendChild(eventPatternSection());
   page.appendChild(copyFoldersSection());
 }
@@ -5131,7 +5141,7 @@ I18n.ready.then(function () {
       applyFilter();
       return;
     }
-    return Promise.all([loadFolders(), loadInfo(), loadOwnTags(), loadPeople()]).then(function () {
+    return Promise.all([loadFolders(), loadInfo(), loadOwnTags(), loadPeople(), loadGeo()]).then(function () {
       applyFilter();
       setInterval(loadInfo, 20000);
     });
