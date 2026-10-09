@@ -113,7 +113,7 @@ $('login-form').addEventListener('submit', function (ev) {
 
 // ------------------------------------------------------------------ filters (in the URL hash)
 
-var TYPES = ['photo', 'video', 'live'];
+var TYPES = ['photo', 'video', 'live', 'screenshot'];
 var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person', 'drives', 'settings', 'pets', 'locations'];
 // Pet search terms (`pet=` in the URL and the API): a species or any pet.
 var PET_TERMS = {
@@ -273,7 +273,8 @@ state.personSpecies = {}; // id -> cat, dog or pet, for people who are pets
 
 // ------------------------------------------------------------------ type filter
 
-// A check box drop-down: Photos, Videos (stand-alone only) and Live Photos.
+// A check box drop-down: Photos (not screenshots), Videos (stand-alone only),
+// Live Photos and Screenshots.
 // Any ticked type matches; it combines with the rest of the search.
 var typeBoxes = Array.prototype.slice.call($('types-menu').querySelectorAll('input'));
 function typeLabel(t) { return tr(t === 'live' ? 'types.live_short' : 'types.' + t); }
@@ -1288,6 +1289,7 @@ function renderPanel() {
   else row(tr('info.size'), formatBytes(info.size));
   if (info.duration_ms) row(tr('info.length'), tr('info.seconds', { n: Math.round(info.duration_ms / 1000) }));
   row(tr('info.camera'), info.camera);
+  infoScreenshot(row, info);
   infoTags(row, info);
   if (info.linked && info.linked.length) {
     var versions = el('div');
@@ -2673,6 +2675,47 @@ function tagInput() {
 }
 
 // After a change: refresh the open info panel and the sidebar.
+// "Screenshot": a drop-down (Yes / No) that starts on shoebox's guess. Picking
+// an answer is the user's own decision, kept by content in the library (never
+// in the file); "Back to automatic" returns to the guess.
+function infoScreenshot(row, info) {
+  if (info.kind === 'video' || info.kind === 'raw') return;
+  var box = el('div', 'shot-pick');
+  var pick = el('select');
+  [['1', tr('shot.yes')], ['0', tr('shot.no')]].forEach(function (o) {
+    var opt = el('option', '', o[1]);
+    opt.value = o[0];
+    pick.appendChild(opt);
+  });
+  var marked = info.screenshot_mark != null;
+  pick.value = info.screenshot ? '1' : '0';
+  pick.title = tr('shot.hint');
+  var set = function (value) {
+    post(LIBAPI + '/screenshots', { ids: [info.id], value: value }).then(function () { screenshotsChanged(info.id); }).catch(failed);
+  };
+  pick.onchange = function () { set(pick.value === '1'); };
+  box.appendChild(pick);
+  box.appendChild(el('span', 'note', ' ' + tr(marked ? 'shot.yours' : 'shot.guess')));
+  if (marked) {
+    var back = el('button', 'link', tr('shot.back'));
+    back.onclick = function () { set(null); };
+    box.appendChild(document.createTextNode(' '));
+    box.appendChild(back);
+  }
+  row(tr('shot.label'), box);
+}
+
+function screenshotsChanged(id) {
+  // The Type filter may now show other photos (the open viewer keeps its photos until it closes).
+  if (!state.filter.view && state.filter.types.length) loadTimeline(false);
+  if (!lb.details || lb.details.id !== id) return;
+  api(LIBAPI + '/files/' + id).then(function (info) {
+    if (!lb.details || lb.details.id !== id) return;
+    lb.details = info;
+    renderPanel();
+  }).catch(function () {});
+}
+
 function tagsChanged(id) {
   loadOwnTags();
   // A bulk change can change what a tag filter or search shows (the open

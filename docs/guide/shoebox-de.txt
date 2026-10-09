@@ -32,8 +32,8 @@ Eine Seite im Browser, eine Zeitleiste von allem auf dem Laufwerk.
 
 - Suchen & Filtern
    Tippe eine Person, ein Haustier, einen Tag oder Ordner. Kombiniere
-   Schlagwörter für eine komplexere Suche. Filter nach Fotos, Videos oder Live
-   Photos, oder zeige nur deine Favoriten ♥.
+   Schlagwörter für eine komplexere Suche. Filter nach Fotos, Videos, Live
+   Photos oder Screenshots, oder zeige nur deine Favoriten ♥.
 
 - Tags
    Eigene Tags für viele Fotos auf einmal. Auch Ordner zählen als Tags. Im
@@ -89,7 +89,10 @@ Alles ist auf einer Seite. So findest du dich zurecht.
    wenn du favorit ins Suchfeld tippst.
 
 4. Typ
-   Nur Fotos, Videos oder Live Photos zeigen.
+   Hake an, was gezeigt werden soll; ohne Haken wird alles gezeigt. Fotos:
+   Standbilder ohne Screenshots (fahre über das ⓘ). Videos: eigenständige
+   Videos. Live Photos: Fotos mit einem kurzen Clip. Screenshots: Bilder von
+   einem Handy- oder Computerbildschirm.
 
 5. Jahr
    Direkt zu einem Jahr springen.
@@ -226,6 +229,18 @@ neben Typ, oder tippe favorit (deutsch) bzw. favorite (englisch) und wähle ♥
 Favoriten; das lässt sich mit allem anderen kombinieren, z. B. Favoriten einer
 Person oder eines Jahres. Bei eingeschalteten Karten (siehe „Orte und Karten“)
 bieten die Vorschläge auch deine Orte an.
+
+Typ bietet Fotos (Standbilder ohne Screenshots), Videos, Live Photos und
+Screenshots; hake beliebige an, ohne Haken wird alles gezeigt. Um Screenshots
+aus der Zeitleiste zu nehmen, hake Fotos, Videos und Live Photos an, aber
+nicht Screenshots; um nur Screenshots zu sehen, hake nur Screenshots an.
+Shoebox erkennt einen Screenshot an der Datei (ein PNG ohne Kameradaten, ein
+Name wie Screenshot oder Bildschirmfoto, die Größe eines Handy- oder
+Computerbildschirms) und am Bild selbst (große einfarbige Flächen). Es kann
+sich in beide Richtungen irren: Im Info-Fenster eines Fotos ist Screenshot ein
+Auswahlfeld, das mit der Schätzung von Shoebox beginnt; wähle Ja oder Nein zum
+Korrigieren, Zurück zu automatisch kehrt zur Schätzung zurück. Deine Wahl wird
+in der Bibliothek gemerkt; die Fotodatei wird nie verändert.
 
 Auswählen
 ☑ drücken, dann Fotos anklicken (mit Umschalt für einen Bereich; am iPad

@@ -563,7 +563,7 @@ pub(crate) fn update_file(conn: &Connection, id: i64, f: &Found, info: &FileInfo
     conn.execute(
         "UPDATE files SET kind = ?2, size = ?3, mtime_ns = ?4, created_ns = ?5, quick_hash = ?6, full_hash = NULL,
                 taken = ?7, taken_offset = ?8, width = ?9, height = ?10, duration_ms = ?11, camera = ?12,
-                meta_error = ?13, phash = NULL, verified_at = NULL, lat = ?14, lon = ?15, geo_done = 1
+                meta_error = ?13, phash = NULL, shot_pixels = NULL, verified_at = NULL, lat = ?14, lon = ?15, geo_done = 1
          WHERE id = ?1",
         params![
             id,

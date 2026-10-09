@@ -27,6 +27,7 @@ pub mod recognize;
 pub mod report;
 pub mod reveal;
 pub mod scan;
+pub mod screenshots;
 pub mod serve;
 pub mod tags;
 pub mod thumbs;
