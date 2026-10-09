@@ -415,16 +415,20 @@ $('arrivals-go').onclick = function () {
   });
 };
 
-// After a verify that found files gone: forget their records (`scan::forget_missing_records`).
+// After a scan or verify that found files gone: forget their records (`scan::forget_missing_records`).
 var forgetJob = null;
+function goneCount(kind, res) {
+  if (!res) return 0;
+  if (kind === 'scan') return res.missing || 0;
+  return kind === 'verify' ? res.missing.length + (res.relocated || 0) : 0;
+}
 function showForget(job) {
-  var hit = job.kind === 'verify' && !job.running
-    ? job.results.filter(function (r) { return r.result && (r.result.missing.length + (r.result.relocated || 0)) > 0; }) : [];
+  var hit = !job.running ? job.results.filter(function (r) { return goneCount(job.kind, r.result) > 0; }) : [];
   var box = $('forget-box');
   box.hidden = !hit.length;
   if (box.hidden) return;
   forgetJob = { roots: hit.map(function (r) { return r.root; }) };
-  forgetJob.n = hit.reduce(function (n, r) { return n + r.result.missing.length + (r.result.relocated || 0); }, 0);
+  forgetJob.n = hit.reduce(function (n, r) { return n + goneCount(job.kind, r.result); }, 0);
   $('forget-text').textContent = tr('launcher.forget.found', { n: forgetJob.n });
 }
 $('forget-go').onclick = function () {

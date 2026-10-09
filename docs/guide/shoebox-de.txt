@@ -155,8 +155,9 @@ verschobenes Foto hat im Index seinen neuen Platz und besteht die Prüfung. Ein
 Foto, dessen Pfad weg ist, dessen Inhalt aber anderswo auf dem Laufwerk noch
 liegt (eine gelöschte Kopie), steht als „umgezogen“ in der Liste, nicht als
 Fehler. Nur Inhalt, der nirgends mehr auf dem Laufwerk liegt, zählt als
-fehlend. Fehlen Dateien, erscheint nach der Prüfung ein Knopf, der ihre
-Einträge vergisst (nur der Index ändert sich, kein Foto wird angefasst).
+fehlend. Fehlen Dateien, erscheint nach der Prüfung (und nach einem Scan) ein
+Knopf, der ihre Einträge vergisst: sie werden aus dem shoebox-Index, seiner
+Datenbank auf dem Laufwerk, entfernt. Keine Fotodatei wird angefasst.
 Erkennen: Gesichter finden (mit „Haustiere erkennen“ auch Katzen und Hunde)
 Liegende Gesichter erkennen: auch liegende Gesichter finden (langsamer)
 Haustiere erkennen: Katzen und Hunde finden; sie erscheinen bei den Gesichtern

@@ -625,7 +625,7 @@
   "launcher.forget.found": "{n} files are gone from the drive, as far as the index knows.",
   "launcher.forget.button": "Forget the missing files",
   "launcher.forget.confirm": "Forget the records of these {n} files that are gone from the drive? Only the index changes, no photo file is touched. If a photo turns up again later, a scan will index it as a new file.",
-  "launcher.forget.hint": "Only the index changes; no photo file is touched. Photos that are still on the drive under another path stay.",
+  "launcher.forget.hint": "Forgetting removes these files from the shoebox index (its database on the drive). Your photo files are not touched: only shoebox's memory of them goes, including tags and faces saved for them. If a photo turns up again later, a scan adds it as a new file. Photos that are still on the drive under another path stay in the index.",
   "launcher.sum.forgotten": "{n} forgotten",
   "launcher.kind.recognize_pets": "Recognize pets",
   "launcher.kind.recognize_pets.desc": "find cats and dogs; they show up among the faces",

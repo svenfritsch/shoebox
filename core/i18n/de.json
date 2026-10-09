@@ -625,7 +625,7 @@
   "launcher.forget.found": "{n} Dateien sind laut Index nicht mehr auf dem Laufwerk.",
   "launcher.forget.button": "Die fehlenden Dateien vergessen",
   "launcher.forget.confirm": "Die Einträge dieser {n} Dateien vergessen, die auf dem Laufwerk nicht mehr da sind? Nur der Index ändert sich, keine Fotodatei wird angefasst. Taucht ein Foto später wieder auf, nimmt ein Scan es als neue Datei auf.",
-  "launcher.forget.hint": "Nur der Index ändert sich, keine Fotodatei wird angefasst. Fotos, die noch unter einem anderen Pfad auf dem Laufwerk liegen, bleiben.",
+  "launcher.forget.hint": "Vergessen entfernt diese Dateien aus dem shoebox-Index (seiner Datenbank auf dem Laufwerk). Deine Fotodateien werden nicht angefasst: nur shoeboxes Erinnerung daran verschwindet, auch gespeicherte Tags und Gesichter. Taucht ein Foto später wieder auf, nimmt ein Scan es als neue Datei auf. Fotos, die noch unter einem anderen Pfad auf dem Laufwerk liegen, bleiben im Index.",
   "launcher.sum.forgotten": "{n} vergessen",
   "launcher.kind.recognize_pets": "Haustiere erkennen",
   "launcher.kind.recognize_pets.desc": "Katzen und Hunde finden; sie erscheinen bei den Gesichtern",
