@@ -398,7 +398,8 @@ fn screenshots_are_a_type_of_their_own() {
     let photos = ids(&timeline("?type=photo"));
     assert!(photos.contains(&scan) && photos.contains(&camera_free_jpeg));
     assert!(shots.iter().all(|s| !photos.contains(s)));
-    assert_eq!(ids(&timeline("?type=photo&type=screenshot")).len(), ids(&timeline("")).len());
+    // (with the fixtures there are stand-alone videos too, which are neither)
+    assert_eq!(ids(&timeline("?type=photo&type=screenshot&type=video")).len(), ids(&timeline("")).len());
     let info = get(addr, &format!("/api/files/{phone}")).json();
     assert_eq!((info["screenshot"].as_bool(), info["screenshot_mark"].is_null()), (Some(true), true));
 
