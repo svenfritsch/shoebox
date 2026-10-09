@@ -3616,7 +3616,7 @@ function personField(done, opts) {
     } else if (opts.allowNew && text && !exact) {
       var it = { who: { name: text }, label: text };
       var sp = kind();
-      var b = el('button', 'item new', tr(sp ? 'people.new_' + (PET_ICON[sp] ? sp : 'pet') : 'people.new_person', { name: text }));
+      var b = el('button', 'item new', tr(sp ? 'people.new.' + (PET_ICON[sp] ? sp : 'pet') : 'people.new_person', { name: text }));
       b.type = 'button';
       b.onmousedown = function (ev) { ev.preventDefault(); };
       b.onclick = function () { pick(it); };
