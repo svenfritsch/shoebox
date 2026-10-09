@@ -3751,22 +3751,60 @@ function groupsDialog() {
       var row = el('div', 'grow-row');
       row.appendChild(el('span', 'gname', g.name));
       row.appendChild(el('span', 'gcount', trn('count.people', g.people)));
-      var btn = function (label, title, run, disabled) {
+      var btn = function (label, title, run) {
         var b = el('button', 'btn quiet small', label);
         b.title = title;
         b.setAttribute('aria-label', title);
-        b.disabled = !!disabled;
         b.onclick = run;
         row.appendChild(b);
       };
-      var move = function (d) {
+      // Put group k at index `to` and save the new order.
+      var moveTo = function (to, refocus) {
+        if (to === k || to < 0 || to >= people.groups.length) return;
         var ids = people.groups.map(function (x) { return x.id; });
         ids.splice(k, 1);
-        ids.splice(k + d, 0, g.id);
-        post(LIBAPI + '/groups/reorder', { ids: ids }).then(function (gs) { people.groups = gs; render(); peopleChanged(); }).catch(failed);
+        ids.splice(to, 0, g.id);
+        post(LIBAPI + '/groups/reorder', { ids: ids }).then(function (gs) {
+          people.groups = gs; render(); peopleChanged();
+          if (refocus) { var h = list.querySelectorAll('.grip')[to]; if (h) h.focus(); }
+        }).catch(failed);
       };
-      btn('↑', tr('people.move_up'), function () { move(-1); }, k === 0);
-      btn('↓', tr('people.move_down'), function () { move(1); }, k === people.groups.length - 1);
+      var grip = el('span', 'grip', '\u283F');
+      grip.tabIndex = 0;
+      grip.setAttribute('role', 'button');
+      grip.title = tr('people.drag_handle');
+      grip.setAttribute('aria-label', tr('people.drag_handle'));
+      grip.onkeydown = function (e) {
+        if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+        e.preventDefault();
+        moveTo(k + (e.key === 'ArrowUp' ? -1 : 1), true);
+      };
+      // Pointer events cover mouse, pen and touch with one code path.
+      grip.onpointerdown = function (e) {
+        if (e.button) return;
+        e.preventDefault();
+        grip.setPointerCapture(e.pointerId);
+        row.classList.add('dragging');
+        var rows = Array.prototype.slice.call(list.children);
+        var target = k;
+        var mark = function (ev) {
+          var hit = document.elementFromPoint(ev.clientX, ev.clientY);
+          var r = hit && hit.closest ? hit.closest('.grow-row') : null;
+          var i = rows.indexOf(r);
+          if (i >= 0) target = i;
+          rows.forEach(function (x, j) { x.classList.toggle('over', j === target && j !== k); });
+        };
+        grip.onpointermove = mark;
+        var end = function (ev) {
+          grip.onpointermove = grip.onpointerup = grip.onpointercancel = null;
+          row.classList.remove('dragging');
+          rows.forEach(function (x) { x.classList.remove('over'); });
+          if (ev.type === 'pointerup') moveTo(target);
+        };
+        grip.onpointerup = end;
+        grip.onpointercancel = end;
+      };
+      row.insertBefore(grip, row.firstChild);
       btn(tr('people.rename'), tr('people.rename'), function () {
         nameDialog(tr('people.rename_group'), g.name, tr('people.rename'), function (name) {
           return post(LIBAPI + '/groups/' + g.id + '/rename', { name: name }).then(function () {
