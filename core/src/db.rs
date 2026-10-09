@@ -15,7 +15,7 @@ pub const FILE: &str = "library.db";
 const BACKUP_SUFFIX: &str = ".bak";
 
 /// Bump when the schema changes and add a step to `migrate`.
-const SCHEMA_VERSION: i32 = 9;
+const SCHEMA_VERSION: i32 = 10;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -280,6 +280,36 @@ CREATE TABLE IF NOT EXISTS removed_copies (
 CREATE INDEX IF NOT EXISTS removed_copies_hash ON removed_copies(full_hash);
 ";
 
+/// Phase 10: where photos were taken. `files.lat/lon` come from the file
+/// (EXIF GPS, video location; read by the scan, `geo_done` says it has been
+/// read: files indexed before this version are read once more by the next
+/// scan). `geo_overrides` is a position the user gave a photo without one,
+/// keyed by content like `taken_overrides`; never written into the photo.
+/// `places` are named rectangles; the photos inside are found by a query.
+const SCHEMA_V10: &str = "
+CREATE INDEX IF NOT EXISTS files_geo ON files(lat, lon);
+CREATE TABLE IF NOT EXISTS geo_overrides (
+    key TEXT PRIMARY KEY,   -- files.quick_hash
+    lat REAL NOT NULL,
+    lon REAL NOT NULL,
+    at  INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS places (
+    id       INTEGER PRIMARY KEY,
+    name     TEXT NOT NULL UNIQUE,
+    south    REAL NOT NULL,
+    west     REAL NOT NULL,
+    north    REAL NOT NULL,
+    east     REAL NOT NULL,
+    position INTEGER NOT NULL
+);
+";
+
+/// `files.lat` / `files.lon` as the user sees them: the file's own position,
+/// else one the user gave. For queries on `files` without an alias.
+pub const LAT: &str = "coalesce(files.lat, (SELECT o.lat FROM geo_overrides o WHERE o.key = files.quick_hash))";
+pub const LON: &str = "coalesce(files.lon, (SELECT o.lon FROM geo_overrides o WHERE o.key = files.quick_hash))";
+
 fn migrate(conn: &Connection) -> Result<()> {
     let version: i32 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
     if version > SCHEMA_VERSION {
@@ -345,6 +375,20 @@ fn migrate(conn: &Connection) -> Result<()> {
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V9)?;
         tx.pragma_update(None, "user_version", 9)?;
+        tx.commit()?;
+    }
+    if version < 10 {
+        let tx = conn.unchecked_transaction()?;
+        // A re-run (the tests lower user_version) must not add them twice.
+        if !has_column(&tx, "main", "files", "lat")? {
+            tx.execute_batch(
+                "ALTER TABLE files ADD COLUMN lat REAL;
+                 ALTER TABLE files ADD COLUMN lon REAL;
+                 ALTER TABLE files ADD COLUMN geo_done INTEGER NOT NULL DEFAULT 0;",
+            )?;
+        }
+        tx.execute_batch(SCHEMA_V10)?;
+        tx.pragma_update(None, "user_version", 10)?;
         tx.commit()?;
     }
     Ok(())

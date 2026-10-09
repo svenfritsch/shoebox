@@ -65,6 +65,11 @@ Eine Seite im Browser, eine Zeitleiste von allem auf dem Laufwerk.
    auch wenn sie auf verschiedenen Platten liegen. Backups werden erkannt und
    geprüft.
 
+- Orte
+   Optionale Karten, standardmäßig aus: eine Karte in den Infos von Fotos mit
+   GPS-Daten, eine Weltkarte aller deiner Fotos und benannte Orte wie
+   „Zuhause“, die ihre Fotos von selbst sammeln.
+
 [Screenshot: Suche mit zwei Chips: eine Person und ein Tag.]
 
 Die Oberfläche im Überblick
@@ -97,7 +102,7 @@ Alles ist auf einer Seite. So findest du dich zurecht.
 
 8. Ordner
    Deine Ordner mit Anzahl. Tags, Gesichter und Laufwerke erscheinen hier,
-   sobald es sie gibt.
+   sobald es sie gibt, und Orte, wenn Karten eingeschaltet sind.
 
 9. Zeitleiste
    Monate mit Anzahl. Ein Klick auf ein Foto öffnet die Ansicht.
@@ -182,7 +187,8 @@ verschieben.
 Ansicht
 Foto anklicken. ⓘ öffnet das Infofeld: Datum (als geschätzt markiert, wenn es
 nicht der Aufnahmetag ist), Kamera, Größe, Tags, Personen und Knöpfe, um den
-Ordner zu öffnen oder den Pfad zu kopieren.
+Ordner zu öffnen oder den Pfad zu kopieren. Ganz unten zeigen die GPS-Daten,
+wo das Foto aufgenommen wurde (siehe „Orte und Karten“).
 
 Favoriten
 Das ♥ in der oberen Leiste der Ansicht oder die Taste f markiert das Foto als
@@ -218,7 +224,8 @@ Mehrere gewählte werden zu Chips, die das Ergebnis eingrenzen; × entfernt
 einen, Alle entfernen beginnt neu. Deine Favoriten findest du mit dem ♥-Knopf
 neben Typ, oder tippe favorit (deutsch) bzw. favorite (englisch) und wähle ♥
 Favoriten; das lässt sich mit allem anderen kombinieren, z. B. Favoriten einer
-Person oder eines Jahres.
+Person oder eines Jahres. Bei eingeschalteten Karten (siehe „Orte und Karten“)
+bieten die Vorschläge auch deine Orte an.
 
 Auswählen
 ☑ drücken, dann Fotos anklicken (mit Umschalt für einen Bereich; am iPad
@@ -411,6 +418,68 @@ Gruppe.]
 
 [Screenshot: In Gruppe verschieben … im ⋯-Menü einer Person.]
 
+Orte und Karten
+---------------
+
+Optional: wo deine Fotos aufgenommen wurden, auf einer Karte. Aus, bis du es
+einschaltest.
+
+Karten einschalten
+Öffne die Einstellungen und setze den Haken bei Karten anzeigen
+(OpenStreetMap). Die Karten werden in deinem Browser aus OpenStreetMap
+gezeichnet; das ist die einzige Stelle, an der shoebox das Internet braucht:
+OpenStreetMap sieht, welche Kartenausschnitte du ansiehst, nie deine Fotos
+oder deren Namen. shoebox speichert keine Kartenbilder auf dem Laufwerk (dein
+Browser behält vielleicht welche in seinem eigenen Cache). Ohne Haken wird nie
+etwas aus dem Internet geladen.
+
+In den Infos eines Fotos
+Hat die Datei GPS-Daten, zeigt GPS-Daten im Infofeld die Position und, bei
+eingeschalteten Karten, eine kleine quadratische Karte mit einer Markierung,
+unten am Rand des Infofelds festgehalten. Ohne Internet steht dort stattdessen
+Offline. Ein Foto ohne GPS-Daten zeigt gar keine Karte, nur die Überschrift
+mit dem Knopf Ort festlegen….
+
+Einem Foto einen Ort geben
+Ort festlegen… (gleich rechts neben der Überschrift GPS-Daten) öffnet einen
+Dialog mit einer Karte und zwei Feldern, Breitengrad und Längengrad. Beides
+ist immer da und hängt zusammen: Klicke auf die Karte, um die Markierung zu
+setzen, oder tippe die Zahlen ein (Punkt oder Komma, Breitengrad −90 bis 90,
+Längengrad −180 bis 180, alles andere wird abgelehnt). Bei ausgeschalteten
+Karten funktionieren nur die Felder. Der Ort wird nur in shoebox gespeichert:
+Die Fotodatei bleibt unverändert, und er bleibt beim Foto, wenn du es
+verschiebst. Einen selbst festgelegten Ort kannst du wieder ändern oder
+entfernen; ein Ort, der in der Datei selbst steht, wird nie geändert.
+
+Die Seite „Orte“
+Bei eingeschalteten Karten erscheint Orte in der Seitenleiste unter den
+Ordnern. Sie öffnet eine Weltkarte mit einer Markierung für jedes Foto mit
+Ort; dicht beieinander liegende werden zu einer Zahl zusammengefasst und
+teilen sich beim Hineinzoomen auf. Klicke eine Markierung oder eine Gruppe an,
+dann teilt sich der Bildschirm: links die Karte, rechts die Fotos von dort,
+wie in der Zeitleiste. Ein Klick auf ein Foto öffnet es; der Pfeil oben in der
+Liste klappt sie ein.
+
+Orte (Bereiche)
+Ein Ort ist ein benannter Bereich, etwa „Zuhause“ oder „Insel XY“. Drücke
+Neuer Ort, klicke zwei gegenüberliegende Ecken auf der Karte an und gib einen
+Namen ein: Jedes Foto mit einem Ort innerhalb des Bereichs gehört dazu, jetzt
+und später. Die Orte stehen mit ihrer Fotozahl unter Orte in der Seitenleiste;
+ein Klick zeigt ihre Fotos. Du kannst auch nach dem Namen eines Orts suchen.
+Ist die Suche leer, öffnet die Auswahl den Ort auf der Karte, wie ein Klick in
+der Seitenleiste (ein Typ-Filter fällt dabei weg, wie bei jedem Klick in der
+Seitenleiste). Hat die Suche schon Chips (Ordner, Tag, Person, Haustier,
+Favoriten ♥), kommt der Ort als Chip 📍 dazu und du bleibst in der Zeitleiste:
+Alle Chips müssen passen, „Zuhause“ + „Anna“ zeigt also Annas Fotos von zu
+Hause. Ein zweiter Ort ersetzt den ersten. Das 🗺 am Chip zeigt den Ort auf der
+Karte, und ein auf der Karte gewählter Ort geht mit, wenn du einen weiteren
+Chip hinzufügst. In der Liste rechts kannst du einen Ort Umbenennen, den
+Bereich neu zeichnen oder ihn löschen; es verschwindet nur der Ort, nie ein
+Foto oder dessen Ort.
+
+Orte und die von dir festgelegten Aufnahmeorte stehen zusammen mit deinen Tags
+und Personen in userdata.json neben dem Index auf dem Laufwerk.
+
 Laufwerke, Backups und das iPad
 -------------------------------
 
@@ -447,8 +516,9 @@ Die Grundregel ist einfach: shoebox liest deine Originale und schreibt nie
 etwas hinein.
 
 - Nur lesen
-   Metadaten, Vorschaubilder und Tags liegen im Index auf dem Laufwerk, nie in
-   einem Foto. Aufnahme- und Erstellungsdatum ändern sich nie.
+   Metadaten, Vorschaubilder, Tags und von dir festgelegte Aufnahmeorte liegen
+   im Index auf dem Laufwerk, nie in einem Foto. Aufnahme- und
+   Erstellungsdatum ändern sich nie.
 
 - Bewacht
    Jeder Scan wird kontrolliert: Größe, Daten und ein vollständiger Hash davor
@@ -463,7 +533,9 @@ etwas hinein.
 
 - Lokal
    Keine Cloud, kein Konto. Standardmäßig kann sich nur dieser Computer
-   verbinden; andere Geräte brauchen --lan und eine PIN.
+   verbinden; andere Geräte brauchen --lan und eine PIN. Die einzige Ausnahme
+   sind die optionalen Karten (Einstellungen, standardmäßig aus): Dein Browser
+   lädt dann Kartenbilder von OpenStreetMap.
 
 Wenn etwas komisch aussieht
 ---------------------------
@@ -483,4 +555,12 @@ PIN.
 Ein Laufwerk steht auf offline. Wieder anstecken; shoebox findet es beim
 Neuladen.
 
-shoebox ist Open Source · github.com/svenfritsch/shoebox
+Eine Karte ist leer oder sagt Offline. Karten brauchen das Internet.
+Verbindung prüfen und das Foto noch einmal öffnen; alles andere funktioniert
+wie zuvor.
+
+shoebox · © 2026 Sven Fritsch · zur privaten Nutzung, die Bedingungen stehen
+in LICENSE.txt neben dem Programm im Download
+
+Die Bibliotheken in shoebox und ihre Lizenzen stehen in
+THIRD-PARTY-LICENSES.txt, daneben.

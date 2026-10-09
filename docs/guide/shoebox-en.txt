@@ -64,6 +64,11 @@ One page in your browser, a timeline of everything on the drive.
    Browse the photos of several drives in one common timeline, even when they
    sit on different disks. Backups are recognised and checked.
 
+- Locations
+   Optional maps, off by default: a map in the info of photos with GPS data, a
+   world map of all your photos, and named places like “Home” that collect
+   their photos by themselves.
+
 [Screenshot: Search with two chips: a person and a tag.]
 
 The screen at a glance
@@ -95,7 +100,7 @@ Everything is on one page. Here is where things are.
 
 8. Folders
    Your folders, with counts. Tags, Faces and Drives appear here when you have
-   them.
+   them, and so does Locations when maps are on.
 
 9. Timeline
    Months with counts. Click a photo to open the viewer.
@@ -177,7 +182,8 @@ photos. Rename or move a folder from its chip.
 Viewer
 Click a photo. ⓘ opens the info panel: date (marked estimated when it is not
 the day the photo was taken), camera, size, tags, people, and buttons to open
-the folder or copy the path.
+the folder or copy the path. At the bottom, GPS data shows where the photo was
+taken (see “Locations and maps”).
 
 Favorites
 The ♥ in the top bar of the viewer, or the key f, marks the photo as a
@@ -210,7 +216,8 @@ Type in the search box: suggestions appear for tags, people and folders. Pick
 several and they become chips that narrow the result; × removes one, Clear all
 starts over. To find your favorites press the ♥ button next to Type, or type
 favorite (English) or favorit (German) and pick ♥ Favorites; it combines with
-everything else, e.g. favorites of one person or one year.
+everything else, e.g. favorites of one person or one year. With maps on (see
+“Locations and maps”) the suggestions also offer your places.
 
 Select
 Press ☑, then click photos (Shift-click for a range; on the iPad just tap).
@@ -384,6 +391,62 @@ shows what recognition found: small faces, scores and false finds.
 
 [Screenshot: Move to group… from a person’s ⋯ menu.]
 
+Locations and maps
+------------------
+
+Optional: where your photos were taken, on a map. Off until you turn it on.
+
+Turn maps on
+Open Settings and tick Show maps (OpenStreetMap). The maps are drawn in your
+browser from OpenStreetMap, so this is the one place where shoebox needs the
+internet: OpenStreetMap sees which parts of the map you look at, never your
+photos or their names. shoebox saves no map pictures on the drive (your
+browser may keep some in its own cache). With the box unticked nothing is ever
+loaded from the internet.
+
+In a photo’s info
+Where the file has GPS data, GPS data in the info panel shows the position
+and, with maps on, a small square map with a pin on it, fixed to the bottom of
+the panel. Without internet the map says Offline instead. A photo without GPS
+data shows no map at all, only the heading with a Set location… button.
+
+Give a photo a location
+Set location… (right next to the heading GPS data) opens a dialog with a map
+and two fields, latitude and longitude, which are always both there and follow
+each other: click the map to place the pin, or type the numbers (a point or a
+comma both work; latitude −90 to 90, longitude −180 to 180, anything else is
+refused). With maps off, only the fields work. The location is saved in
+shoebox only: the photo file is not changed, and it stays with the photo if
+you move it. A location you gave can be changed or removed again; a location
+that is in the file itself is never changed.
+
+The Locations page
+With maps on, Locations appears in the sidebar below Folders. It opens a world
+map with a pin for every photo that has a location; pins close together are
+grouped into a number and split apart as you zoom in. Click a pin or a group
+and the screen splits: the map on the left, the photos from there on the
+right, like the timeline. Click a photo to view it; the arrow at the top of
+the list folds it away.
+
+Places
+A place is a named area, like “Home” or “Island XY”. Press New place, click
+two opposite corners on the map and give it a name: every photo with a
+location inside the area belongs to it, now and later. Places are listed under
+Locations in the sidebar with their number of photos; click one to see its
+photos. You can also search for a place by name. If the search is empty,
+picking a place opens it on the map, like a click in the sidebar (a Type
+filter is dropped then, as on every click in the sidebar). If the search
+already has chips (a folder, tag, person, pet, favorites ♥), the place joins
+them as a chip 📍 and you stay in the timeline: all chips must match, so “Home”
++ “Anna” shows Anna’s photos taken at home. A second place replaces the first.
+The 🗺 on the chip shows the place on the map, and a place chosen on the map
+goes along when you add another chip. In the list on the right you can Rename
+a place, Draw area again or delete it; only the place goes, never a photo or
+its location.
+
+Places and the locations you set are written to userdata.json next to the
+index on the drive, together with your tags and people.
+
 Drives, backups and the iPad
 ----------------------------
 
@@ -420,8 +483,9 @@ The design rule is simple: shoebox reads your originals and never writes
 anything into them.
 
 - Read-only
-   Metadata, thumbnails and tags are kept in the index on the drive, never
-   inside a photo. Capture dates and created dates never change.
+   Metadata, thumbnails, tags and locations you set are kept in the index on
+   the drive, never inside a photo. Capture dates and created dates never
+   change.
 
 - Guarded
    Every scan is checked: size, dates and a full hash before and after. Any
@@ -435,7 +499,9 @@ anything into them.
 
 - Local
    No cloud, no account. By default only this computer can connect; other
-   devices need --lan and a PIN.
+   devices need --lan and a PIN. The one exception is the optional maps
+   (Settings, off by default): your browser then loads map pictures from
+   OpenStreetMap.
 
 If something looks off
 ----------------------
@@ -454,4 +520,11 @@ in Terminal. Restarting shoebox asks for the PIN again.
 A drive shows as offline. Plug it in again; shoebox picks it up when you
 reload.
 
-shoebox is open source · github.com/svenfritsch/shoebox
+A map is empty or says Offline. Maps need the internet. Check the connection
+and open the photo again; without it everything else works as before.
+
+shoebox · © 2026 Sven Fritsch · for private use, the terms are in LICENSE.txt
+next to the program in the download
+
+The libraries inside shoebox and their licences are listed in
+THIRD-PARTY-LICENSES.txt, next to it.
