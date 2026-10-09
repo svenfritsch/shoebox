@@ -3533,12 +3533,15 @@ function markFacesSection() {
 
 // ---- a field that names someone
 
-// The species all these faces share ('cat', 'dog'), 'pet' for a mix of pets,
-// '' unless every one is a pet.
+// The species to name these faces: the one most of them have ('cat', 'dog';
+// the first on a tie), 'pet' if all are drawn pets of no species, '' unless
+// every one is a pet. A stray dog among six cats is a wrong find.
 function facesSpecies(faces) {
   if (!faces.length || !faces.every(function (f) { return f.species; })) return '';
-  var first = faces[0].species;
-  return faces.every(function (f) { return f.species === first; }) ? first : 'pet';
+  var n = { cat: 0, dog: 0 };
+  faces.forEach(function (f) { if (f.species in n) n[f.species]++; });
+  if (!n.cat && !n.dog) return 'pet';
+  return n.dog > n.cat ? 'dog' : 'cat';
 }
 
 // A text field offering people by group while typing (the autocomplete
