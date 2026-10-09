@@ -559,7 +559,8 @@ Eine Karte ist leer oder sagt Offline. Karten brauchen das Internet.
 Verbindung prüfen und das Foto noch einmal öffnen; alles andere funktioniert
 wie zuvor.
 
-shoebox ist Open Source · github.com/svenfritsch/shoebox
+shoebox · © 2026 Sven Fritsch · zur privaten Nutzung, die Bedingungen stehen
+in LICENSE.txt neben dem Programm im Download
 
 Die Bibliotheken in shoebox und ihre Lizenzen stehen in
-THIRD-PARTY-LICENSES.txt, neben dem Programm im Download.
+THIRD-PARTY-LICENSES.txt, daneben.

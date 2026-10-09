@@ -74,7 +74,7 @@ def main():
     out = []
     w = out.append
     w("THIRD-PARTY LICENSES\n====================\n")
-    w("shoebox (source: github.com/svenfritsch/shoebox) contains and uses\n"
+    w("shoebox (c) Sven Fritsch, see LICENSE.txt, contains and uses\n"
       "the software below, each under its own licence. Where a crate offers a choice of\n"
       "licences (\"MIT OR Apache-2.0\"), you may use it under either; the texts that\n"
       "the authors ship are reproduced in part 3.\n")
@@ -91,10 +91,9 @@ def main():
       f"libde265 {versions['LIBDE265']} (https://github.com/strukturag/libde265) read HEIC photos.\n"
       "Both are licensed under the GNU Lesser General Public License, version 3 (text below).\n"
       "They are built from the unmodified upstream source releases by scripts/build-deps.sh and\n"
-      "linked statically. As the LGPL requires, you can replace them with another version:\n"
-      "the complete source of shoebox and that script are at github.com/svenfritsch/shoebox;\n"
-      "change the versions in the script and run scripts/build.sh to get a binary with your own\n"
-      "build of the libraries.\n"
+      "linked statically. As the LGPL (section 4(d)) requires, you can replace them with a\n"
+      "version of your own: on request, the author provides what is needed to link shoebox\n"
+      "again with a modified version of these libraries.\n"
       "Copyright (c) 2013-2026 Struktur AG and Dirk Farin and the other contributors of the projects.\n\n")
     w(LGPL.read_text().strip() + "\n")
     w("\n3. Rust crates (linked into the binary)\n" + "-" * 40 + "\n")

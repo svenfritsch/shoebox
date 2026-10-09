@@ -523,7 +523,8 @@ reload.
 A map is empty or says Offline. Maps need the internet. Check the connection
 and open the photo again; without it everything else works as before.
 
-shoebox is open source · github.com/svenfritsch/shoebox
+shoebox · © 2026 Sven Fritsch · for private use, the terms are in LICENSE.txt
+next to the program in the download
 
 The libraries inside shoebox and their licences are listed in
-THIRD-PARTY-LICENSES.txt, next to the program in the download.
+THIRD-PARTY-LICENSES.txt, next to it.

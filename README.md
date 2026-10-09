@@ -28,6 +28,12 @@ every release: open `guide/shoebox-en.html` or `guide/shoebox-de.html` in a
 browser (`shoebox-en.txt` / `shoebox-de.txt` hold the same text). Sources and
 how to edit them: [docs/guide/](docs/guide/README.md).
 
+## License
+
+shoebox is not open source (yet): `LICENSE.txt` (English and German) allows
+private, non-commercial use and keeps all other rights with the author. It sits
+next to the program in every release archive.
+
 ## Third-party licenses
 
 `THIRD-PARTY-LICENSES.txt` lists the libraries inside the binary (Rust crates,

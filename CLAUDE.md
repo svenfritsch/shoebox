@@ -40,6 +40,12 @@ current status and next step. Update its status table when a phase moves.
 - Maps (phase 10) are an opt-in setting (`maps`, off by default). The browser
   loads the tiles; shoebox never fetches or stores one. A position the user
   gives a photo lives in `library.db` (`geo_overrides`) only, never in the file.
+- Licences: `LICENSE.txt` (all rights reserved, private use) and the generated
+  `THIRD-PARTY-LICENSES.txt` go into the release archive. After a change to
+  `Cargo.lock`, `scripts/build-deps.sh` or `core/web/vendor/` run
+  `python3 scripts/third-party-licenses.py`. Do not call shoebox "open source"
+  in texts. Open items before giving it to others: see "Before giving shoebox
+  to others" in docs/plan.md.
 - UI text is never hard-coded: `tr()`/`trn()`/`data-i18n` with a key in both
   `core/i18n/en.json` and `de.json` (see docs/phase8.md; `core/tests/i18n.rs`
   checks it).

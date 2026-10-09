@@ -186,7 +186,7 @@ jobs:
             mkdir -p "$pkg/recognizer"
             cp artifacts/shoebox-$os/shoebox-$os "$pkg/"
             chmod +x "$pkg/shoebox-$os"
-            cp THIRD-PARTY-LICENSES.txt "$pkg/"
+            cp LICENSE.txt THIRD-PARTY-LICENSES.txt "$pkg/"
             cp "scripts/launchers/Start shoebox.command" "$pkg/"
             chmod +x "$pkg/Start shoebox.command"
             cp recognizer/README.md recognizer/install.sh recognizer/fetch-models.sh recognizer/recognizer.py "$pkg/recognizer/"
