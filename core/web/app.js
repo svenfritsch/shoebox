@@ -3400,7 +3400,7 @@ function zoomFace(face) {
     img.style.top = (-y0 / side * 100) + '%';
     box.classList.add('ready');
   };
-  img.src = '/api/files/' + face.file + '/thumb?v=' + face.version;
+  img.src = LIBAPI + '/files/' + face.file + '/thumb?v=' + face.version;
   inner.appendChild(img);
   box.appendChild(inner);
   return box;
