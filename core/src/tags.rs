@@ -267,6 +267,8 @@ pub struct UserData {
     pub taken_overrides: Vec<TakenOverride>,
     /// Photos shown turned in shoebox only (version 4).
     pub view_turns: Vec<ViewTurn>,
+    /// Screenshot decisions (phase 11), by content.
+    pub shot_marks: Vec<ShotMark>,
     /// Groups, people and face decisions (version 2).
     #[serde(flatten)]
     pub people: crate::people::UserPeople,
@@ -299,6 +301,25 @@ pub struct ViewTurn {
     /// Quarter turns clockwise.
     pub quarters: i32,
     pub files: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ShotMark {
+    pub quick_hash: String,
+    pub is_shot: bool,
+    pub files: Vec<String>,
+}
+
+fn shot_marks(conn: &Connection) -> Result<Vec<ShotMark>> {
+    let mut out: Vec<ShotMark> = conn
+        .prepare("SELECT key, is_shot FROM shot_marks ORDER BY key")?
+        .query_map([], |r| Ok(ShotMark { quick_hash: r.get(0)?, is_shot: r.get::<_, i64>(1)? != 0, files: Vec::new() }))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut stmt = conn.prepare("SELECT path_nfc FROM files WHERE quick_hash = ?1 AND missing_since IS NULL ORDER BY path_nfc")?;
+    for m in &mut out {
+        m.files = stmt.query_map([&m.quick_hash], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+    }
+    Ok(out)
 }
 
 fn view_turns(conn: &Connection) -> Result<Vec<ViewTurn>> {
@@ -376,6 +397,7 @@ pub fn user_data(conn: &Connection) -> Result<UserData> {
         own_tags,
         taken_overrides: taken_overrides(conn)?,
         view_turns: view_turns(conn)?,
+        shot_marks: shot_marks(conn)?,
         people: crate::people::user_data(conn)?,
     })
 }

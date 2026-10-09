@@ -828,6 +828,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/tags/remove", post(tags_remove))
         .route("/api/tags/selection", post(tags_selection))
         .route("/api/favorites", post(favorites_set))
+        .route("/api/screenshots", post(screenshots_set))
         .route("/api/faces", get(faces_api::list))
         .route("/api/faces/stats", get(faces_api::stats))
         .route("/api/faces/{id}/crop", get(faces_api::crop))
@@ -1622,7 +1623,7 @@ fn param<'a>(pairs: &'a Pairs, key: &str) -> Option<&'a str> {
     pairs.iter().rev().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
 }
 
-/// `type=photo|video|live`, several allowed (any of them matches).
+/// `type=photo|video|live|screenshot`, several allowed (any of them matches).
 fn types_of(pairs: &Pairs) -> ApiResult<Vec<browse::MediaType>> {
     pairs
         .iter()
@@ -1780,6 +1781,11 @@ struct FileInfo {
     /// PNG; the file itself is as it was). Face boxes are in the file's
     /// orientation.
     view_turn: i32,
+    /// Counts as a screenshot (the decision below, else the score).
+    screenshot: bool,
+    /// The user's own decision: `true` is one, `false` is not, `null` leaves
+    /// it to the score.
+    screenshot_mark: Option<bool>,
 }
 
 async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Json<FileInfo>> {
@@ -1794,6 +1800,10 @@ async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiRe
             Some(key) => db::view_turn(&conn, key)?,
             None => 0,
         };
+        let screenshot_mark = match &key {
+            Some(key) => db::shot_mark(&conn, key)?,
+            None => None,
+        };
         let faces = match key {
             Some(key) => people::file_faces(&conn, &key)?,
             None => people::FileFaces { faces: None, lost: Vec::new() },
@@ -1807,6 +1817,8 @@ async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiRe
             faces: faces.faces,
             faces_lost: faces.lost,
             view_turn,
+            screenshot: item.is_some_and(|it| it.shot),
+            screenshot_mark,
         }))
     })
     .await
@@ -2269,6 +2281,27 @@ async fn tags_remove(State(app): State<Arc<App>>, Json(req): Json<TagRequest>) -
 struct FavoriteRequest {
     ids: Vec<i64>,
     on: bool,
+}
+
+#[derive(Deserialize)]
+struct ScreenshotRequest {
+    ids: Vec<i64>,
+    /// `true`: these are screenshots; `false`: they are not; `null`: leave it
+    /// to the score again.
+    value: Option<bool>,
+}
+
+#[derive(Serialize)]
+struct ScreenshotChanged {
+    changed: u64,
+}
+
+/// The user's own decision whether pictures are screenshots (by content, in
+/// `library.db`; the files are not touched).
+async fn screenshots_set(State(app): State<Arc<App>>, Json(req): Json<ScreenshotRequest>) -> ApiResult<Json<ScreenshotChanged>> {
+    change(&app, move |_, conn| db::set_shot_marks(conn, &req.ids, req.value))
+        .await
+        .map(|changed| Json(ScreenshotChanged { changed }))
 }
 
 /// The heart: the own tag `favorite` on or off (see `tags::FAVORITE`).

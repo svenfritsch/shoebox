@@ -53,6 +53,8 @@ pub struct Item {
     pub path_lower: String,
     /// The video of a Live Photo.
     pub live: Option<i64>,
+    /// A screenshot: the user's decision, else the score (`screenshots.rs`).
+    pub shot: bool,
 }
 
 impl Item {
@@ -80,14 +82,16 @@ pub struct Snapshot {
     children: HashMap<i64, Vec<i64>>,
 }
 
-/// What the type filter offers. Photos are all stills (a Live Photo's still
-/// included), Videos only stand-alone videos (the motion part of a Live Photo
-/// is folded into its still, never listed), Live the stills that have one.
+/// What the type filter offers. Photos are the stills that are not
+/// screenshots (a Live Photo's still included), Screenshots the stills that
+/// are, Videos only stand-alone videos (the motion part of a Live Photo is
+/// folded into its still, never listed), Live the stills that have one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaType {
     Photo,
     Video,
     Live,
+    Screenshot,
 }
 
 impl MediaType {
@@ -96,13 +100,15 @@ impl MediaType {
             "photo" => Some(MediaType::Photo),
             "video" => Some(MediaType::Video),
             "live" => Some(MediaType::Live),
+            "screenshot" => Some(MediaType::Screenshot),
             _ => None,
         }
     }
 
     pub fn matches(self, it: &Item) -> bool {
         match self {
-            MediaType::Photo => it.kind != Kind::Video,
+            MediaType::Photo => it.kind != Kind::Video && !it.shot,
+            MediaType::Screenshot => it.kind != Kind::Video && it.shot,
             MediaType::Video => it.kind == Kind::Video,
             MediaType::Live => it.live.is_some(),
         }
@@ -183,12 +189,15 @@ impl Snapshot {
             duration_ms: Option<i64>,
             quick_hash: String,
             turn: i32,
+            shot: bool,
         }
         let mut rows = Vec::new();
         {
             let mut stmt = conn.prepare(&format!(
                 "SELECT id, kind, folder_id, name, path_nfc, {}, mtime_ns, created_ns, duration_ms, quick_hash,
-                        coalesce((SELECT quarters FROM view_turns v WHERE v.key = files.quick_hash), 0)
+                        coalesce((SELECT quarters FROM view_turns v WHERE v.key = files.quick_hash), 0),
+                        (SELECT is_shot FROM shot_marks m WHERE m.key = files.quick_hash),
+                        width, height, camera, shot_pixels
                  FROM files WHERE missing_since IS NULL AND kind != 'raw'",
                 db::TAKEN
             ))?;
@@ -209,6 +218,15 @@ impl Snapshot {
                     duration_ms: r.get(8)?,
                     quick_hash: r.get(9)?,
                     turn: r.get(10)?,
+                    shot: match r.get::<_, Option<i64>>(11)? {
+                        Some(mark) => mark != 0,
+                        None => {
+                            let pixels = r.get::<_, Option<i64>>(15)?.map(|p| p.clamp(0, 100) as u8);
+                            let size = |i| r.get::<_, Option<i64>>(i).ok().flatten().map(|v| v as u32);
+                            crate::screenshots::score(&name, kind, size(12), size(13), r.get::<_, Option<String>>(14)?.as_deref(), pixels)
+                                >= crate::screenshots::THRESHOLD
+                        }
+                    },
                 });
             }
         }
@@ -256,6 +274,7 @@ impl Snapshot {
                     version: db::version_of(&r.quick_hash, r.turn),
                     path_lower: r.path_lower.clone(),
                     live: live.get(&r.id).copied(),
+                    shot: r.shot,
                 }
             })
             .collect();

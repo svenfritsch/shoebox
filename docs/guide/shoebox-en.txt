@@ -32,8 +32,8 @@ One page in your browser, a timeline of everything on the drive.
 
 - Search & filter
    Type a person, pet, tag or folder. Combine keywords for a more complex
-   search. Filter by photos, videos or Live Photos, or show only your
-   favorites ♥.
+   search. Filter by photos, videos, Live Photos or screenshots, or show only
+   your favorites ♥.
 
 - Tags
    Your own tags on many photos at once. Folders count as tags too. Stored in
@@ -82,7 +82,7 @@ Everything is on one page. Here is where things are.
    search box.
 
 4. Type
-   Show only photos, videos or Live Photos.
+   Show only photos, videos, Live Photos or screenshots.
 
 5. Year
    Jump straight to a year.
@@ -211,6 +211,17 @@ several and they become chips that narrow the result; × removes one, Clear all
 starts over. To find your favorites press the ♥ button next to Type, or type
 favorite (English) or favorit (German) and pick ♥ Favorites; it combines with
 everything else, e.g. favorites of one person or one year.
+
+Type offers Photos, Videos, Live Photos and Screenshots; tick any of them.
+Nothing ticked shows everything. Photos means the pictures that are not
+screenshots, so to leave screenshots out of the timeline tick Photos, Videos
+and Live Photos but not Screenshots; to see only screenshots tick just
+Screenshots. Shoebox recognises a screenshot from the file (a PNG without
+camera data, a name like Screenshot or Bildschirmfoto, the size of a phone or
+computer screen) and from the picture itself (large areas of one colour). It
+can be wrong in both directions: in the photo’s info panel, Screenshot lets
+you say Yes or No yourself. Your choice is kept in the library; the photo file
+is never changed.
 
 Select
 Press ☑, then click photos (Shift-click for a range; on the iPad just tap).

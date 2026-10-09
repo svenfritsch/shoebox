@@ -345,13 +345,87 @@ fn timeline_order_filters_and_search() {
     let photos = timeline("?type=photo");
     assert!(!kinds_of(&photos).contains('v') && !ids(&photos).is_empty());
     assert!(kinds_of(&timeline("?type=video")).chars().all(|c| c == 'v'));
-    assert_eq!(ids(&timeline("?type=photo&type=video")).len(), all_ids.len());
+    // (the fixture "Familie/Screenshot.png" is a screenshot: PNG, no camera, named so)
+    assert_eq!(ids(&timeline("?type=photo&type=video&type=screenshot")).len(), all_ids.len());
+    assert!(!ids(&photos).contains(&screenshot) && ids(&timeline("?type=screenshot")).contains(&screenshot));
     // It combines with the other filters (and).
     let in_familie_photos = ids(&timeline(&format!("?folder={}&type=photo", folder_id("Familie"))));
-    assert_eq!(in_familie_photos.len(), 2);
+    assert_eq!(in_familie_photos.len(), 1); // the screenshot is not a photo
     assert!(ids(&timeline(&format!("?folder={}&type=video", folder_id("Familie")))).is_empty());
     assert_eq!(get(addr, "/api/timeline?type=raw").status, 400);
     server.stop().unwrap();
+}
+
+/// Phase 11: the Type filter's Screenshots entry, the user's own decision,
+/// and "Photos" meaning the stills that are not screenshots.
+#[test]
+fn screenshots_are_a_type_of_their_own() {
+    let lib = Library::new("screenshots");
+    // A phone screen: a display size, no camera, mostly flat colour, no name.
+    image::RgbImage::from_fn(1170, 2532, |x, y| {
+        if y < 200 || (y / 90) % 3 == 0 && x > 100 && x < 900 && (x / 6) % 5 != 0 { image::Rgb([20, 20, 30]) } else { image::Rgb([250, 250, 252]) }
+    })
+    .save(lib.path("Handy/IMG_7001.PNG"))
+    .unwrap();
+    // A forwarded JPEG that kept only its name.
+    image::RgbImage::from_pixel(600, 400, image::Rgb([240, 240, 240]))
+        .save(lib.path("Handy/Bildschirmfoto 2024-03-02 um 10.11.12.jpg"))
+        .unwrap();
+    // A noisy PNG (a scan, an export) of the same size is not.
+    let mut seed = 7u32;
+    image::RgbImage::from_fn(1170, 2532, |_, _| {
+        seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+        image::Rgb([(seed >> 24) as u8, (seed >> 16) as u8, (seed >> 8) as u8])
+    })
+    .save(lib.path("Handy/scan.png"))
+    .unwrap();
+    let before = lib.snapshot();
+    lib.scan_opts(false, true, false);
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let timeline = |q: &str| get(addr, &format!("/api/timeline{q}")).json();
+    let id = |p: &str| id_of(&lib, p);
+    let (phone, named, scan, fixture, camera_free_jpeg) =
+        (id("Handy/IMG_7001.PNG"), id("Handy/Bildschirmfoto 2024-03-02 um 10.11.12.jpg"), id("Handy/scan.png"), id("Familie/Screenshot.png"), id("Familie/Weihnachten/DSC_2001.jpg"));
+
+    let shots = ids(&timeline("?type=screenshot"));
+    for s in [phone, named, fixture] {
+        assert!(shots.contains(&s), "{s} should be a screenshot");
+    }
+    assert!(!shots.contains(&scan) && !shots.contains(&camera_free_jpeg));
+    // Photos are the stills that are not screenshots; together they are everything.
+    let photos = ids(&timeline("?type=photo"));
+    assert!(photos.contains(&scan) && photos.contains(&camera_free_jpeg));
+    assert!(shots.iter().all(|s| !photos.contains(s)));
+    assert_eq!(ids(&timeline("?type=photo&type=screenshot")).len(), ids(&timeline("")).len());
+    let info = get(addr, &format!("/api/files/{phone}")).json();
+    assert_eq!((info["screenshot"].as_bool(), info["screenshot_mark"].is_null()), (Some(true), true));
+
+    // The user's decision wins, both ways, and "null" gives it back to the score.
+    let set = |ids: &[i64], value: serde_json::Value| {
+        let r = post(addr, "/api/screenshots", &serde_json::json!({ "ids": ids, "value": value }));
+        assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+        r.json()["changed"].as_u64().unwrap()
+    };
+    assert_eq!(set(&[scan], serde_json::json!(true)), 1);
+    assert_eq!(set(&[phone], serde_json::json!(false)), 1);
+    let shots = ids(&timeline("?type=screenshot"));
+    assert!(shots.contains(&scan) && !shots.contains(&phone));
+    let info = get(addr, &format!("/api/files/{scan}")).json();
+    assert_eq!((info["screenshot"].as_bool(), info["screenshot_mark"].as_bool()), (Some(true), Some(true)));
+    assert_eq!(lib.count("SELECT count(*) FROM shot_marks"), 2);
+    let data = shoebox::tags::user_data(&lib.db()).unwrap();
+    assert_eq!(data.shot_marks.len(), 2);
+    assert_eq!(set(&[scan, phone], serde_json::Value::Null), 2);
+    assert_eq!(lib.count("SELECT count(*) FROM shot_marks"), 0);
+    assert!(ids(&timeline("?type=screenshot")).contains(&phone));
+    // Videos are never screenshots, and it combines with the other filters.
+    assert!(ids(&timeline("?type=screenshot&type=video")).len() >= ids(&timeline("?type=screenshot")).len());
+    let folder: i64 = lib.db().query_row("SELECT id FROM folders WHERE path_nfc = 'Handy'", [], |r| r.get(0)).unwrap();
+    assert_eq!(ids(&timeline(&format!("?folder={folder}&type=photo"))), vec![scan]);
+    server.stop().unwrap();
+    // Nothing was written to an original.
+    assert_eq!(lib.snapshot(), before);
 }
 
 #[test]

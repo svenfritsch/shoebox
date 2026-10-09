@@ -15,7 +15,7 @@ pub const FILE: &str = "library.db";
 const BACKUP_SUFFIX: &str = ".bak";
 
 /// Bump when the schema changes and add a step to `migrate`.
-const SCHEMA_VERSION: i32 = 9;
+const SCHEMA_VERSION: i32 = 10;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -258,6 +258,39 @@ pub fn view_turn(conn: &Connection, quick_hash: &str) -> Result<i32> {
         .unwrap_or(0))
 }
 
+/// The user's decision for the content with this quick hash: `Some(true)` is a
+/// screenshot, `Some(false)` is not, `None` leaves it to the score.
+pub fn shot_mark(conn: &Connection, quick_hash: &str) -> Result<Option<bool>> {
+    Ok(conn
+        .query_row("SELECT is_shot FROM shot_marks WHERE key = ?1", [quick_hash], |r| r.get::<_, i64>(0))
+        .optional()?
+        .map(|v| v != 0))
+}
+
+/// Remember (or, with `None`, forget) the user's decision for these files'
+/// content. Returns how many contents were changed.
+pub fn set_shot_marks(conn: &Connection, ids: &[i64], value: Option<bool>) -> Result<u64> {
+    let tx = conn.unchecked_transaction()?;
+    let mut n = 0;
+    for id in ids {
+        let Some(key): Option<String> =
+            tx.query_row("SELECT quick_hash FROM files WHERE id = ?1", [id], |r| r.get(0)).optional()?
+        else {
+            continue;
+        };
+        n += match value {
+            Some(v) => tx.execute(
+                "INSERT INTO shot_marks (key, is_shot, at) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(key) DO UPDATE SET is_shot = ?2, at = ?3 WHERE is_shot != ?2",
+                params![key, v as i64, now()],
+            )?,
+            None => tx.execute("DELETE FROM shot_marks WHERE key = ?1", [&key])?,
+        } as u64;
+    }
+    tx.commit()?;
+    Ok(n)
+}
+
 /// What the web page puts on picture addresses (`?v=`) so a changed picture is
 /// fetched again: 7 characters of the quick hash and the view turn.
 pub fn version_of(quick_hash: &str, turn: i32) -> String {
@@ -278,6 +311,17 @@ CREATE TABLE IF NOT EXISTS removed_copies (
     removed_at INTEGER NOT NULL      -- Unix seconds
 );
 CREATE INDEX IF NOT EXISTS removed_copies_hash ON removed_copies(full_hash);
+";
+
+/// v10 (phase 11): how flat the thumbnail is (0 to 100, `screenshots.rs`; NULL
+/// until it is looked at) and the user's own decision whether a picture is a
+/// screenshot, by content like `view_turns`. Nothing is written to a file.
+const SCHEMA_V10: &str = "
+CREATE TABLE IF NOT EXISTS shot_marks (
+    key     TEXT PRIMARY KEY,   -- files.quick_hash
+    is_shot INTEGER NOT NULL,   -- 1: is a screenshot, 0: is not
+    at      INTEGER NOT NULL
+);
 ";
 
 fn migrate(conn: &Connection) -> Result<()> {
@@ -345,6 +389,16 @@ fn migrate(conn: &Connection) -> Result<()> {
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V9)?;
         tx.pragma_update(None, "user_version", 9)?;
+        tx.commit()?;
+    }
+    if version < 10 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V10)?;
+        // A re-run (the tests lower user_version) must not add it twice.
+        if !has_column(&tx, "main", "files", "shot_pixels")? {
+            tx.execute_batch("ALTER TABLE files ADD COLUMN shot_pixels INTEGER;")?;
+        }
+        tx.pragma_update(None, "user_version", 10)?;
         tx.commit()?;
     }
     Ok(())

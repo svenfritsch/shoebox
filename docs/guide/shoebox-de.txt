@@ -32,8 +32,8 @@ Eine Seite im Browser, eine Zeitleiste von allem auf dem Laufwerk.
 
 - Suchen & Filtern
    Tippe eine Person, ein Haustier, einen Tag oder Ordner. Kombiniere
-   Schlagwörter für eine komplexere Suche. Filter nach Fotos, Videos oder Live
-   Photos, oder zeige nur deine Favoriten ♥.
+   Schlagwörter für eine komplexere Suche. Filter nach Fotos, Videos, Live
+   Photos oder Screenshots, oder zeige nur deine Favoriten ♥.
 
 - Tags
    Eigene Tags für viele Fotos auf einmal. Auch Ordner zählen als Tags. Im
@@ -84,7 +84,7 @@ Alles ist auf einer Seite. So findest du dich zurecht.
    wenn du favorit ins Suchfeld tippst.
 
 4. Typ
-   Nur Fotos, Videos oder Live Photos zeigen.
+   Nur Fotos, Videos, Live Photos oder Screenshots zeigen.
 
 5. Jahr
    Direkt zu einem Jahr springen.
@@ -219,6 +219,17 @@ einen, Alle entfernen beginnt neu. Deine Favoriten findest du mit dem ♥-Knopf
 neben Typ, oder tippe favorit (deutsch) bzw. favorite (englisch) und wähle ♥
 Favoriten; das lässt sich mit allem anderen kombinieren, z. B. Favoriten einer
 Person oder eines Jahres.
+
+Typ bietet Fotos, Videos, Live Photos und Screenshots; hake beliebige an. Ohne
+Haken wird alles gezeigt. Fotos sind die Bilder, die keine Screenshots sind:
+Um Screenshots aus der Zeitleiste zu nehmen, hake Fotos, Videos und Live
+Photos an, aber nicht Screenshots; um nur Screenshots zu sehen, hake nur
+Screenshots an. Shoebox erkennt einen Screenshot an der Datei (ein PNG ohne
+Kameradaten, ein Name wie Screenshot oder Bildschirmfoto, die Größe eines
+Handy- oder Computerbildschirms) und am Bild selbst (große einfarbige
+Flächen). Es kann sich in beide Richtungen irren: Im Info-Fenster eines Fotos
+kannst du bei Screenshot selbst Ja oder Nein sagen. Deine Wahl wird in der
+Bibliothek gemerkt; die Fotodatei wird nie verändert.
 
 Auswählen
 ☑ drücken, dann Fotos anklicken (mit Umschalt für einen Bereich; am iPad
