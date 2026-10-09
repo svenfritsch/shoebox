@@ -1345,9 +1345,15 @@ pub fn decide(conn: &Connection, faces: &[i64], action: &Action) -> Result<Decid
     Ok(Decided { faces: changed, person, cluster: None })
 }
 
-/// Add a face drawn by hand on a photo (a `pet` if the user says it is one):
-/// always confirmed, with a person. Returns its id (`manual` in the API).
-pub fn add_manual(conn: &Connection, file: i64, b: [f64; 4], who: &Who, pet: bool) -> Result<i64> {
+/// Add a face drawn by hand on a photo (a pet of the given species, `cat` or
+/// `dog`, or `pet` for one of no species, if the user says it is one): always
+/// confirmed, with a person. Returns its id (`manual` in the API).
+pub fn add_manual(conn: &Connection, file: i64, b: [f64; 4], who: &Who, species: Option<&str>) -> Result<i64> {
+    if let Some(s) = species {
+        if !crate::pets::is_species(s) && s != crate::pets::PET {
+            bail!("the species is cat or dog, not {s:?}");
+        }
+    }
     let ok = b.iter().all(|v| v.is_finite()) && b[0] >= 0.0 && b[1] >= 0.0 && b[2] > 0.0 && b[3] > 0.0;
     if !ok || b[0] + b[2] > 1.0 + 1e-9 || b[1] + b[3] > 1.0 + 1e-9 {
         bail!("the box must lie inside the picture (fractions of its width and height)");
@@ -1361,7 +1367,7 @@ pub fn add_manual(conn: &Connection, file: i64, b: [f64; 4], who: &Who, pet: boo
     tx.execute(
         "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at, species)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'confirmed', 1, ?7, ?8)",
-        params![key, b[0], b[1], b[2], b[3], person, db::now(), pet.then_some(crate::pets::PET)],
+        params![key, b[0], b[1], b[2], b[3], person, db::now(), species],
     )?;
     let id = tx.last_insert_rowid();
     tx.commit()?;

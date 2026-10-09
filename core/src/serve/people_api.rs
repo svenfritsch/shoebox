@@ -480,7 +480,10 @@ pub(super) struct ManualRequest {
     /// x, y, w, h as fractions of the upright picture.
     #[serde(rename = "box")]
     b: [f64; 4],
-    /// A pet (a cat or a dog) rather than a person's face.
+    /// `cat` or `dog` for a pet rather than a person's face.
+    #[serde(default)]
+    species: Option<String>,
+    /// A pet of no species (older clients): the same as `species: "pet"`.
     #[serde(default)]
     pet: bool,
     #[serde(flatten)]
@@ -489,7 +492,8 @@ pub(super) struct ManualRequest {
 
 /// A face or pet drawn by hand (missed by the detector), with who it is.
 pub(super) async fn manual(State(app): State<Arc<App>>, Json(req): Json<ManualRequest>) -> ApiResult<Json<serde_json::Value>> {
-    let added = people_change(&app, move |conn| people::add_manual(conn, req.file, req.b, &req.who, req.pet)).await;
+    let species = req.species.clone().or_else(|| req.pet.then(|| crate::pets::PET.to_string()));
+    let added = people_change(&app, move |conn| people::add_manual(conn, req.file, req.b, &req.who, species.as_deref())).await;
     app.request_embed();
     added.map(|id| Json(serde_json::json!({ "manual": id })))
 }

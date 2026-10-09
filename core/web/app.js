@@ -3533,10 +3533,30 @@ function markFacesSection() {
 
 // ---- a field that names someone
 
+// The species to name these faces: the one most of them have ('cat', 'dog';
+// the first on a tie), 'pet' if all are drawn pets of no species, '' unless
+// every one is a pet. A stray dog among six cats is a wrong find.
+function facesSpecies(faces) {
+  if (!faces.length || !faces.every(function (f) { return f.species; })) return '';
+  var n = { cat: 0, dog: 0 };
+  faces.forEach(function (f) { if (f.species in n) n[f.species]++; });
+  if (!n.cat && !n.dog) return 'pet';
+  return n.dog > n.cat ? 'dog' : 'cat';
+}
+
+// Whether a person (or pet) of `p.species` is one `species` asks for: ''
+// people only, 'cat' or 'dog' those (and pets of no species), 'pet' any pet.
+function kindOf(p, species) {
+  if (!species) return !p.species;
+  if (!p.species) return false;
+  return species === 'pet' || p.species === 'pet' || p.species === species;
+}
+
 // A text field offering people by group while typing (the autocomplete
 // that makes naming quick); picking one calls done({person_id} or {name},
 // label). opts: allowNew (offer a new person of the typed name), except
-// (ids to leave out), placeholder.
+// (ids to leave out), placeholder, species (a species, or a function giving
+// it when the list is drawn: the new one is then a "cat", "dog" or "pet").
 function personField(done, opts) {
   opts = opts || {};
   var wrap = el('div', 'pfield');
@@ -3552,6 +3572,9 @@ function personField(done, opts) {
   wrap.appendChild(input);
   wrap.appendChild(list);
   var items = [], at = -1;
+  // Only the kind of face being named is offered: people for faces, cats for
+  // a cat, dogs for a dog.
+  var kind = function () { return typeof opts.species === 'function' ? opts.species() : opts.species || ''; };
   var pick = function (it) {
     list.hidden = true;
     input.value = it.label;
@@ -3560,6 +3583,9 @@ function personField(done, opts) {
   var mark = function () {
     Array.prototype.forEach.call(list.querySelectorAll('.item'), function (b, k) { b.classList.toggle('at', k === at); });
   };
+  var isTaken = function (text) {
+    return people.list.some(function (p) { return fold(p.name) === fold(text) && !(opts.except && opts.except.indexOf(p.id) >= 0); });
+  };
   var render = function () {
     var text = input.value.trim(), low = fold(text), exact = null;
     list.textContent = '';
@@ -3567,7 +3593,7 @@ function personField(done, opts) {
     at = -1;
     groupedPeople().forEach(function (s) {
       var ps = s.people.filter(function (p) {
-        return (!low || fold(p.name).indexOf(low) >= 0) && !(opts.except && opts.except.indexOf(p.id) >= 0);
+        return kindOf(p, kind()) && (!low || fold(p.name).indexOf(low) >= 0) && !(opts.except && opts.except.indexOf(p.id) >= 0);
       });
       if (!ps.length) return;
       list.appendChild(el('div', 'head', s.name));
@@ -3584,9 +3610,13 @@ function personField(done, opts) {
         list.appendChild(b);
       });
     });
-    if (opts.allowNew && text && !exact) {
+    if (opts.allowNew && text && !exact && isTaken(text)) {
+      // A name is one person's, whatever the kind: not offered again as new.
+      list.appendChild(el('div', 'head', tr('people.name_taken', { name: text })));
+    } else if (opts.allowNew && text && !exact) {
       var it = { who: { name: text }, label: text };
-      var b = el('button', 'item new', tr('people.new_person', { name: text }));
+      var sp = kind();
+      var b = el('button', 'item new', tr(sp ? 'people.new.' + (PET_ICON[sp] ? sp : 'pet') : 'people.new_person', { name: text }));
       b.type = 'button';
       b.onmousedown = function (ev) { ev.preventDefault(); };
       b.onclick = function () { pick(it); };
@@ -3594,7 +3624,7 @@ function personField(done, opts) {
       list.appendChild(b);
     }
     wrap.exact = exact;
-    list.hidden = !items.length || document.activeElement !== input;
+    list.hidden = !list.childNodes.length || document.activeElement !== input;
   };
   input.addEventListener('focus', render);
   input.addEventListener('input', render);
@@ -3612,7 +3642,7 @@ function personField(done, opts) {
       var text = input.value.trim();
       if (at >= 0) pick(items[at]);
       else if (wrap.exact) pick(wrap.exact);
-      else if (text && opts.allowNew) pick({ who: { name: text }, label: text });
+      else if (text && opts.allowNew && !isTaken(text)) pick({ who: { name: text }, label: text });
     } else if (ev.key === 'Escape') {
       if (!list.hidden) { list.hidden = true; return; }
       if (opts.onEscape) opts.onEscape();
@@ -3625,8 +3655,9 @@ function personField(done, opts) {
     var text = input.value.trim();
     if (!text) return null;
     if (wrap.exact) return wrap.exact.who;
-    var hit = people.list.filter(function (p) { return fold(p.name) === fold(text); })[0];
+    var hit = people.list.filter(function (p) { return fold(p.name) === fold(text) && kindOf(p, kind()); })[0];
     if (hit) return { person_id: hit.id };
+    if (isTaken(text)) return null;
     return opts.allowNew ? { name: text } : null;
   };
   return wrap;
@@ -3716,7 +3747,7 @@ function mergeDialog(p) {
   var body = el('div');
   body.appendChild(el('p', '', tr('people.merge_text', { name: p.name })));
   var into = null;
-  var field = personField(function (who) { into = who.person_id; }, { except: [p.id], placeholder: tr('people.merge_placeholder') });
+  var field = personField(function (who) { into = who.person_id; }, { except: [p.id], species: p.species || '', placeholder: tr('people.merge_placeholder') });
   body.appendChild(field);
   body.appendChild(el('p', 'hint', tr('people.merge_hint', { name: p.name })));
   var error = el('p', 'error');
@@ -4237,7 +4268,8 @@ function updatePersonPick() {
 // a new person.
 function nameFacesDialog(faces, done) {
   var body = el('div');
-  body.appendChild(el('p', '', faces.length === 1 ? tr('person.who_one') : tr('person.who_many', { n: faces.length })));
+  var kind = facesSpecies(faces);
+  body.appendChild(el('p', '', faces.length === 1 ? tr(kind ? 'person.who_one_pet' : 'person.who_one') : tr(kind ? 'person.who_many_pet' : 'person.who_many', { n: faces.length })));
   var save = function (who) {
     var ids = faces.map(function (x) { return x.id; }).filter(function (x) { return x != null; });
     var drawn = faces.filter(function (x) { return x.id == null && x.manual != null; });
@@ -4251,12 +4283,12 @@ function nameFacesDialog(faces, done) {
       })).then(function () { return r; });
     }).then(function (r) {
       closeModal();
-      toast(tr('person.named', { count: trn('count.faces', faces.length), name: r.person ? r.person.name : who.name || state.personNames[who.person_id] || '' }));
+      toast(tr('person.named', { count: kind ? animalCount(kind, faces.length) : trn('count.faces', faces.length), name: r.person ? r.person.name : who.name || state.personNames[who.person_id] || '' }));
       peopleChanged();
       if (done) done();
     }).catch(failed);
   };
-  var field = personField(function (who) { save(who); }, { allowNew: true, placeholder: tr('people.name_placeholder') });
+  var field = personField(function (who) { save(who); }, { allowNew: true, placeholder: tr('people.name_placeholder'), species: facesSpecies(faces) });
   body.appendChild(field);
   openModal(tr('person.name'), body, [{ label: tr('app.cancel'), cls: 'quiet' }, {
     label: tr('person.name'), onclick: function () {
@@ -4333,7 +4365,7 @@ function singlesSection() {
   bar.hidden = true;
   var count = el('span');
   bar.appendChild(count);
-  var field = personField(function () { name(); }, { allowNew: true, placeholder: tr('unnamed.who') });
+  var field = personField(function () { name(); }, { allowNew: true, placeholder: tr('unnamed.who'), species: function () { return facesSpecies(picked()); } });
   bar.appendChild(field);
   var nameBtn = el('button', 'btn', tr('person.name'));
   var ignore = el('button', 'btn quiet', tr('unnamed.ignore'));
@@ -4418,7 +4450,7 @@ function singlesSection() {
       : post(LIBAPI + '/faces/' + action, { faces: ids });
     request.then(function (r) {
       bar.classList.remove('busy');
-      var n = trn('count.faces', ids.length);
+      var n = pets ? animalCount(facesSpecies(chosen), ids.length) : trn('count.faces', ids.length);
       toast(action === 'assign' ? tr('person.named', { count: n, name: r.person ? r.person.name : who.name || '' })
         : action === 'ignore' ? tr('unnamed.ignored', { count: n }) : tr(pets ? 'facecheck.marked_pet' : 'facecheck.marked', { count: n }));
       var gone = {};
@@ -4533,7 +4565,7 @@ function clusterCard(c) {
   var suggestion = el('div', 'csugg');
   card.appendChild(suggestion);
   var row = el('div', 'crow');
-  var field = personField(function (who) { act('name', who); }, { allowNew: true, placeholder: tr('unnamed.who') });
+  var field = personField(function (who) { act('name', who); }, { allowNew: true, placeholder: tr('unnamed.who'), species: facesSpecies(c.faces) });
   row.appendChild(field);
   var nameBtn = el('button', 'btn', tr('person.name'));
   nameBtn.onclick = function () {
@@ -4643,7 +4675,7 @@ function clusterCard(c) {
     card.classList.add('busy');
     post(LIBAPI + '/clusters/' + c.id + '/' + action, body).then(function (r) {
       card.classList.remove('busy');
-      var n = trn('count.faces', r.faces);
+      var n = petCard ? animalCount(facesSpecies(c.faces), r.faces) : trn('count.faces', r.faces);
       toast(action === 'name' ? tr('person.named', { count: n, name: r.person.name })
         : action === 'ignore' ? tr('unnamed.ignored', { count: n }) : tr(petCard ? 'facecheck.marked_pet' : 'facecheck.marked', { count: n }));
       un.unnamed -= r.faces;
@@ -4824,7 +4856,7 @@ function infoFace(info, f, k, pick) {
     add.onclick = function () {
       var field = personField(function (person) {
         send('assign', Object.assign({ faces: ids }, person));
-      }, { allowNew: true, placeholder: tr('unnamed.who'), onEscape: function () { field.replaceWith(add); } });
+      }, { allowNew: true, placeholder: tr('unnamed.who'), species: f.species, onEscape: function () { field.replaceWith(add); } });
       add.replaceWith(field);
       field.input.focus();
     };
@@ -4950,32 +4982,39 @@ function stopDrawing() {
 function nameDrawnFace(info, frac) {
   var body = el('div');
   body.appendChild(el('p', '', tr('unnamed.who')));
-  // A cat or a dog the detector missed: a pet is embedded as a whole, a face by its eyes, nose and mouth.
-  var petBox = el('input');
-  petBox.type = 'checkbox';
-  petBox.id = 'draw-pet';
+  // What was drawn: a person's face, or a cat or a dog the detector missed (a
+  // pet is embedded as a whole, a face by its eyes, nose and mouth). Whoever
+  // draws a pet knows which one it is, and nothing changes it later.
+  var kind = '';
+  var kinds = el('div', 'kinds');
+  var field, hint;
+  var update = function () {
+    Array.prototype.forEach.call(kinds.children, function (b) { b.classList.toggle('on', b.dataset.kind === kind); });
+    hint.textContent = tr(kind ? 'draw.note_pet' : 'draw.note');
+    field.input.value = '';
+    field.input.dispatchEvent(new Event('input'));
+  };
+  [['', '🧑', 'draw.kind.person'], ['cat', PET_ICON.cat, 'draw.kind.cat'], ['dog', PET_ICON.dog, 'draw.kind.dog']].forEach(function (k) {
+    var b = el('button', '', k[1] + ' ' + tr(k[2]));
+    b.type = 'button';
+    b.dataset.kind = k[0];
+    b.onclick = function () { kind = k[0]; update(); field.input.focus(); };
+    kinds.appendChild(b);
+  });
   var save = function (who) {
-    var pet = petBox.checked;
-    post(LIBAPI + '/faces/manual', Object.assign({ file: info.id, box: frac, pet: pet || undefined }, who)).then(function () {
+    post(LIBAPI + '/faces/manual', Object.assign({ file: info.id, box: frac, species: kind || undefined }, who)).then(function () {
       closeModal();
       stopDrawing();
-      toast(tr(pet ? 'draw.added_pet' : 'draw.added'));
+      toast(tr(kind ? 'draw.added_pet' : 'draw.added'));
       infoFacesChanged(info.id);
     }).catch(failed);
   };
-  var field = personField(function (who) { save(who); }, { allowNew: true, placeholder: tr('people.name_placeholder') });
+  field = personField(function (who) { save(who); }, { allowNew: true, placeholder: tr('people.name_placeholder'), species: function () { return kind; } });
+  body.appendChild(kinds);
   body.appendChild(field);
-  var petRow = el('label', 'check');
-  petRow.appendChild(petBox);
-  petRow.appendChild(document.createTextNode(' ' + tr('draw.is_pet')));
-  body.appendChild(petRow);
-  var hint = el('p', 'hint');
-  var hintText = function () {
-    hint.textContent = tr(petBox.checked ? 'draw.note_pet' : 'draw.note');
-  };
-  petBox.onchange = hintText;
-  hintText();
+  hint = el('p', 'hint');
   body.appendChild(hint);
+  update();
   openModal(tr('draw.title'), body, [
     { label: tr('draw.again'), cls: 'quiet', onclick: function () { var r = lb.drawing && lb.drawing.layer.querySelector('.draw-box'); if (r) r.hidden = true; } },
     { label: tr('app.cancel'), cls: 'quiet', onclick: function () { stopDrawing(); } },

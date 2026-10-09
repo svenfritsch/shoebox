@@ -366,7 +366,9 @@ all.
 
 2. Name a card
    Type the name once and press Name: the whole card is named. Start typing to
-   pick a person you already have, or choose + New person. After that shoebox
+   pick a person you already have (on a card of pets only cats and dogs are
+   offered, and the other way round), or choose + New person (on a card of
+   pets it reads + New cat, + New dog or + New pet). After that shoebox
    suggests more faces of them (Looks like Mia): confirm with ✓ or reject with
    ✗.
 
@@ -395,8 +397,11 @@ In a photo
 Open a photo and its info panel (ⓘ). Under People every face has its picture
 and a name, or + Name. Select turns the list into a checklist: tick several
 faces (All unnamed ticks every face nobody has named), then Ignore or Not a
-face for all of them at once. + Add face or pet draws a box around a face that
-was missed.
+face for all of them at once. + Add face or pet draws a box around a face or
+pet that was missed. Say what it is first, Person, Cat or Dog, then name it:
+the list offers only names of that kind (no people when you name a cat), and +
+New person, + New cat or + New dog adds a new one. The kind of a drawn pet
+cannot be changed later; delete the box and draw it again.
 
 Groups
 Faces shows people by group. New group… makes one; Groups… renames, reorders

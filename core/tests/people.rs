@@ -1187,8 +1187,16 @@ fn a_pet_drawn_by_hand() {
     // A decision about a pet never lands on the person's face of the same photo.
     assert!(face_of_person(addr, &lib, "Pets/spooky.png")["state"].is_null());
 
+    // A pet drawn as a cat keeps that species; an unknown one is refused.
+    let body = json!({ "file": missed, "box": [0.6, 0.1, 0.2, 0.4], "person_id": spooky, "species": "cat" });
+    let m3 = ok(addr, "/api/faces/manual", &body)["manual"].as_i64().unwrap();
+    let faces = faces_of(addr, &lib, "Pets/missed.png");
+    assert_eq!(faces.iter().find(|f| f["manual"].as_i64() == Some(m3)).unwrap()["species"], "cat");
+    let body = json!({ "file": missed, "box": [0.6, 0.6, 0.2, 0.3], "person_id": spooky, "species": "horse" });
+    assert_eq!(post(addr, "/api/faces/manual", &body).status, 400);
+
     // A drawn pet can be deleted like a drawn face.
-    assert_eq!(ok(addr, "/api/faces/undo", &json!({ "manual": [m, m2] }))["faces"], 2);
+    assert_eq!(ok(addr, "/api/faces/undo", &json!({ "manual": [m, m2, m3] }))["faces"], 3);
     assert_eq!(faces_of(addr, &lib, "Pets/missed.png").len(), 0);
     assert_eq!(lib.snapshot(), before, "nothing here may change an original");
     server.stop().unwrap();

@@ -671,3 +671,12 @@ body.geo-view #page { padding: 0; height: 100%; }
   .geo-side { width: auto; height: 45%; border-left: 0; border-top: 1px solid var(--line); }
   .geo-tab { top: auto; bottom: 0; right: 10px; transform: none; width: 56px; height: 24px; border: 1px solid var(--line); border-bottom: 0; border-radius: 10px 10px 0 0; }
 }
+
+/* "Add face or pet": what was drawn */
+.dialog .kinds { display: flex; margin: 0 0 12px; }
+.dialog .kinds button { flex: 1; padding: 7px 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font-size: 14px; }
+.dialog .kinds button:first-child { border-radius: 8px 0 0 8px; }
+.dialog .kinds button:last-child { border-radius: 0 8px 8px 0; }
+.dialog .kinds button + button { border-left: 0; }
+.dialog .kinds button.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.dialog .pfield + .hint { margin-top: 12px; }
