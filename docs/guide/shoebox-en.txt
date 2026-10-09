@@ -366,9 +366,9 @@ all.
 
 2. Name a card
    Type the name once and press Name: the whole card is named. Start typing to
-   pick a person you already have, or choose + New person. After that shoebox
-   suggests more faces of them (Looks like Mia): confirm with ✓ or reject with
-   ✗.
+   pick a person you already have, or choose + New person (on a card of pets
+   it reads + New cat, + New dog or + New pet). After that shoebox suggests
+   more faces of them (Looks like Mia): confirm with ✓ or reject with ✗.
 
 3. Strangers and false finds
    Ignore is for strangers, and for faces on posters, screens and pictures:

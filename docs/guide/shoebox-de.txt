@@ -389,7 +389,8 @@ benennen.
 2. Eine Karte benennen
    Den Namen einmal eintippen und Benennen drücken: Die ganze Karte ist
    benannt. Beim Tippen erscheinen Personen, die es schon gibt; sonst + Neue
-   Person wählen. Danach schlägt shoebox weitere Gesichter vor (Sieht aus wie
+   Person wählen (bei Tieren steht dort + Neue Katze, + Neuer Hund oder +
+   Neues Tier). Danach schlägt shoebox weitere Gesichter vor (Sieht aus wie
    Mia): mit ✓ bestätigen oder mit ✗ ablehnen.
 
 3. Fremde und Fehlfunde
