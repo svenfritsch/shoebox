@@ -280,9 +280,14 @@ Mehrere Computer und Systeme
   oder AMD-Prozessor, sonst nichts, was vorher installiert sein müsste.
 
 Gut zu wissen
-- Videos bekommen Vorschaubilder, wenn ein statisches ffmpeg neben dem
-  Programm liegt (ffmpeg im selben Ordner wie shoebox). Ohne holt sich der
-  Browser ein Bild.
+- Für Video-Vorschauen braucht shoebox ffmpeg, ein kostenloses Werkzeug, das
+  ein Bild aus einem Video holt. shoebox sucht es im selben Ordner wie das
+  Programm shoebox (die Datei heißt ffmpeg, unter Windows ffmpeg.exe) und dann
+  im PATH deines Computers, zum Beispiel nach brew install ffmpeg. Alles
+  andere funktioniert auch ohne. Ohne ffmpeg speichert ein Scan keine Vorschau
+  für Videos, und dein Browser holt sich beim Blättern ein Bild; diese Bilder
+  werden nicht gespeichert. Nachdem du ffmpeg hinzugefügt hast, führe Scannen
+  aus, damit die Vorschauen gespeichert werden, oder starte die Foto-App neu.
 - shoebox legt alles in einem versteckten Ordner .shoebox oben auf dem
   Laufwerk ab: die Bibliothek library.db (Index, Tags, Namen, Entscheidungen)
   mit ihrer Sicherungskopie library.db.bak, die Vorschauen thumbs.db,
@@ -740,8 +745,8 @@ Das Raster ist leer. Erst in der Zentrale Scannen, dann die Foto-App starten.
 Neue Fotos fehlen. Noch einmal scannen. Das geht schnell: nur neue und
 geänderte Dateien werden gelesen.
 
-Ein Video hat keine Vorschau. ffmpeg hinzufügen (siehe „Gut zu wissen“) und
-die Foto-App neu starten.
+Ein Video hat keine Vorschau. ffmpeg hinzufügen (siehe „Gut zu wissen“), dann
+Scannen ausführen oder die Foto-App neu starten.
 
 Das iPad verbindet sich nicht. Selbes WLAN? Mit --lan gestartet? PIN aus dem
 Terminal eingeben. Nach einem Neustart von shoebox fragt es wieder nach der

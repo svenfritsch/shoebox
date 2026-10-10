@@ -395,7 +395,7 @@
       <div class="panel">
         <h3>Good to know</h3>
         <ul>
-          <li>Videos get preview images if you put a static <b>ffmpeg</b> next to the program (<code>ffmpeg</code> in the same folder as <b>shoebox</b>). Without it, the browser grabs a frame instead.</li>
+          <li>Video previews need <b>ffmpeg</b>, a free tool that picks one frame out of a video. shoebox looks for it in the same folder as the <b>shoebox</b> program (the file is called <code>ffmpeg</code>, or <code>ffmpeg.exe</code> on Windows) and then on your computer’s <code>PATH</code>, for example after <code>brew install ffmpeg</code>. Everything else works without it. Without ffmpeg a scan stores no preview for videos, and your browser grabs a frame while you browse; those frames are not stored. After you add ffmpeg, run <b>Scan</b> to store the previews, or restart the photo app.</li>
           <li>shoebox keeps everything in a hidden <code>.shoebox</code> folder at the top of the drive: the library <code>library.db</code> (index, tags, names, decisions) with its backup copy <code>library.db.bak</code>, the previews <code>thumbs.db</code>, <code>recognition.db</code> if you use recognition and the <code>trash</code>. That is why the drive can move to another computer. On a Mac the folder is hidden: press <b>Cmd + Shift + .</b> in Finder to see it.</li>
           <li>Closing the Terminal window stops shoebox.</li>
         </ul>
@@ -781,7 +781,7 @@
       <div class="panel faq">
         <p><b>The grid is empty.</b> Run <b>Scan</b> in the Control Panel first, then start the photo app.</p>
         <p><b>New photos are missing.</b> Scan again. It is quick: only new and changed files are read.</p>
-        <p><b>A video has no preview.</b> Add <code>ffmpeg</code> (see “Good to know”) and restart the photo app.</p>
+        <p><b>A video has no preview.</b> Add <code>ffmpeg</code> (see “Good to know”), then run <b>Scan</b> or restart the photo app.</p>
         <p><b>The iPad cannot connect.</b> Same Wi-Fi? Started with <code>--lan</code>? Enter the PIN printed in Terminal. Restarting shoebox asks for the PIN again.</p>
         <p><b>A drive shows as offline.</b> Plug it in again; shoebox picks it up when you reload.</p>
         <p><b>A map is empty or says Offline.</b> Maps need the internet. Check the connection and open the photo again; without it everything else works as before.</p>

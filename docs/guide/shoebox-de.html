@@ -395,7 +395,7 @@
       <div class="panel">
         <h3>Gut zu wissen</h3>
         <ul>
-          <li>Videos bekommen Vorschaubilder, wenn ein statisches <b>ffmpeg</b> neben dem Programm liegt (<code>ffmpeg</code> im selben Ordner wie <b>shoebox</b>). Ohne holt sich der Browser ein Bild.</li>
+          <li>Für Video-Vorschauen braucht shoebox <b>ffmpeg</b>, ein kostenloses Werkzeug, das ein Bild aus einem Video holt. shoebox sucht es im selben Ordner wie das Programm <b>shoebox</b> (die Datei heißt <code>ffmpeg</code>, unter Windows <code>ffmpeg.exe</code>) und dann im <code>PATH</code> deines Computers, zum Beispiel nach <code>brew install ffmpeg</code>. Alles andere funktioniert auch ohne. Ohne ffmpeg speichert ein Scan keine Vorschau für Videos, und dein Browser holt sich beim Blättern ein Bild; diese Bilder werden nicht gespeichert. Nachdem du ffmpeg hinzugefügt hast, führe <b>Scannen</b> aus, damit die Vorschauen gespeichert werden, oder starte die Foto-App neu.</li>
           <li>shoebox legt alles in einem versteckten Ordner <code>.shoebox</code> oben auf dem Laufwerk ab: die Bibliothek <code>library.db</code> (Index, Tags, Namen, Entscheidungen) mit ihrer Sicherungskopie <code>library.db.bak</code>, die Vorschauen <code>thumbs.db</code>, <code>recognition.db</code>, wenn du die Erkennung nutzt und den <code>trash</code>. Deshalb kann das Laufwerk an einen anderen Computer umziehen. Auf dem Mac ist der Ordner versteckt: Im Finder <b>Cmd + Umschalt + .</b> drücken, um ihn zu sehen.</li>
           <li>Schließt du das Terminal-Fenster, beendet das shoebox.</li>
         </ul>
@@ -781,7 +781,7 @@
       <div class="panel faq">
         <p><b>Das Raster ist leer.</b> Erst in der Zentrale <b>Scannen</b>, dann die Foto-App starten.</p>
         <p><b>Neue Fotos fehlen.</b> Noch einmal scannen. Das geht schnell: nur neue und geänderte Dateien werden gelesen.</p>
-        <p><b>Ein Video hat keine Vorschau.</b> <code>ffmpeg</code> hinzufügen (siehe „Gut zu wissen“) und die Foto-App neu starten.</p>
+        <p><b>Ein Video hat keine Vorschau.</b> <code>ffmpeg</code> hinzufügen (siehe „Gut zu wissen“), dann <b>Scannen</b> ausführen oder die Foto-App neu starten.</p>
         <p><b>Das iPad verbindet sich nicht.</b> Selbes WLAN? Mit <code>--lan</code> gestartet? PIN aus dem Terminal eingeben. Nach einem Neustart von shoebox fragt es wieder nach der PIN.</p>
         <p><b>Ein Laufwerk steht auf offline.</b> Wieder anstecken; shoebox findet es beim Neuladen.</p>
         <p><b>Eine Karte ist leer oder sagt Offline.</b> Karten brauchen das Internet. Verbindung prüfen und das Foto noch einmal öffnen; alles andere funktioniert wie zuvor.</p>
