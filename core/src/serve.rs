@@ -2467,7 +2467,7 @@ async fn dates_check(State(app): State<Arc<App>>, Json(req): Json<DatesCheckRequ
 async fn dates_suggest(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<dates::Row>>> {
     blocking(&app, move |app| {
         let conn = app.conn.lock().unwrap();
-        let filter = browse::Query { text: None, dates: Vec::new(), ..filter_of(&pairs)? };
+        let filter = browse::Query { text: None, ..filter_of(&pairs)? };
         let snapshot = app.snapshot(&conn)?;
         let all: Vec<(i32, Option<u32>, Option<u32>)> = snapshot.query(&conn, &filter)?.iter().map(|it| it.date_parts()).collect();
         let prefix = param(&pairs, "prefix").is_some_and(|v| !v.is_empty() && v != "0");

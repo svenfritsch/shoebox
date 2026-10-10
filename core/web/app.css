@@ -742,3 +742,29 @@ body.geo-view #page { padding: 0; height: 100%; }
   content: "✓"; position: absolute; left: 6px; top: 6px; width: 22px; height: 22px; border-radius: 50%;
   background: var(--accent); color: #fff; font-size: 14px; display: flex; align-items: center; justify-content: center;
 }
+
+/* estimated capture dates (phase 12) */
+.cell .est {
+  position: absolute; left: 6px; bottom: 6px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; line-height: 1;
+  color: #fff; background: rgba(0,0,0,.5); cursor: help;
+}
+.lb-panel .datecell { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.lb-panel .datecell .v { flex: 1; min-width: 0; }
+.lb-panel .estimated.mine { background: #e0a46d; color: #2a1608; cursor: default; }
+.lb-panel .datecell .pen {
+  flex: none; width: 28px; height: 28px; margin: -4px -4px 0 0; padding: 0; border-radius: 8px; background: transparent; color: #bdbdc2;
+  display: flex; align-items: center; justify-content: center;
+}
+.lb-panel .datecell .pen:hover, .lb-panel .datecell .pen:focus-visible { background: rgba(255,255,255,.14); color: #fff; }
+.dates-dialog .dates-fields { display: grid; grid-template-columns: 1fr 1.5fr 1fr; gap: 8px; margin-bottom: 8px; }
+.dates-dialog .dates-fields label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.dates-dialog .dates-fields input, .dates-dialog .dates-fields select { width: 100%; font-size: 15px; }
+.dates-dialog input.bad { border-color: #c63b2f; }
+.dates-dialog .error { min-height: 18px; margin: 0 0 6px; }
+.dates-dialog .small { margin-bottom: 10px; }
+.dates-preview { background: var(--panel); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+.dates-shown { font-size: 18px; font-weight: 700; }
+.actions .dates-remove { margin-right: auto; }
+.toast .toast-undo { margin-left: 10px; background: transparent; border: 1px solid currentColor; border-radius: 8px; color: inherit; padding: 1px 9px; font: inherit; cursor: pointer; }
+.suggest .hint { padding: 7px 12px 9px; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line); }
