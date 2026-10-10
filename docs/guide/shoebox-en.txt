@@ -315,8 +315,10 @@ the trash.
 
 Trash
 Nothing is deleted right away. Trashed photos wait in .shoebox/trash on the
-drive: Put back or Delete for good. Moving photos to the trash is off by
-default: switch it on once in Settings (Allow move to trash).
+drive. Click photos to select them (Shift-click selects a range), or use
+Select all; the bar at the bottom then has Put back and Delete for good.
+Deleting for good asks first. Moving photos to the trash is off by default:
+switch it on once in Settings (Allow move to trash).
 
 [Screenshot: After a scan: new copies of files the drive already had.]
 

@@ -333,9 +333,11 @@ Bestätigung kommen alle anderen in den Papierkorb.
 
 Papierkorb
 Nichts wird sofort gelöscht. Gelöschte Fotos warten in .shoebox/trash auf dem
-Laufwerk: Zurücklegen oder Endgültig löschen. Das Legen in den Papierkorb ist
-standardmäßig aus: Schalte es einmal in den Einstellungen ein (In den
-Papierkorb legen erlauben).
+Laufwerk. Klicke Fotos an, um sie auszuwählen (Umschalt-Klick wählt einen
+Bereich), oder nimm Alle auswählen; die Leiste unten bietet dann Zurücklegen
+und Endgültig löschen. Endgültig löschen fragt vorher nach. Das Legen in den
+Papierkorb ist standardmäßig aus: Schalte es einmal in den Einstellungen ein
+(In den Papierkorb legen erlauben).
 
 [Screenshot: Nach einem Scan: neue Kopien von Dateien, die das Laufwerk schon
 hatte.]

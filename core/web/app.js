@@ -2581,19 +2581,39 @@ function loadTrash() {
     page.appendChild(el('p', 'sub', batches.length
       ? tr('trash.page_sub', { count: trn('count.photos', batches.length) })
       : tr('trash.empty')));
-    if (batches.length) {
-      var bar = el('div', 'toolbar');
-      var empty = el('button', 'btn danger', tr('trash.empty_btn'));
-      empty.onclick = function () { emptyTrash(null, batches.length); };
-      bar.appendChild(empty);
-      page.appendChild(bar);
-    }
+    // Click a photo to select it (Shift-click: from the last one clicked); the
+    // bar at the bottom puts the selection back or deletes it for good.
+    var picked = {}, anchor = null, cardOf = {};
+    var bar = el('div', 'dup-bar');
+    bar.hidden = !batches.length;
+    var drawBar = function () {
+      var n = batches.filter(function (b) { return picked[b]; }).length;
+      bar.textContent = '';
+      bar.appendChild(el('span', n ? '' : 'meta', n ? tr('trash.selected', { count: trn('count.photos', n) }) : tr('trash.hint')));
+      var all = el('button', 'btn quiet', tr('trash.select_all', { count: I18n.number(batches.length) }));
+      all.disabled = n === batches.length;
+      all.onclick = function () { batches.forEach(function (b) { picked[b] = true; cardOf[b].classList.add('sel'); }); drawBar(); };
+      bar.appendChild(all);
+      var clear = el('button', 'btn quiet', tr('dups.clear'));
+      clear.disabled = !n;
+      clear.onclick = function () { picked = {}; batches.forEach(function (b) { cardOf[b].classList.remove('sel'); }); drawBar(); };
+      bar.appendChild(clear);
+      var back = el('button', 'btn quiet', tr('trash.put_back'));
+      back.disabled = !n;
+      back.onclick = function () { putBack(batches.filter(function (b) { return picked[b]; }), byBatch); };
+      bar.appendChild(back);
+      var del = el('button', 'btn danger', tr('trash.delete_for_good'));
+      del.disabled = !n;
+      del.onclick = function () { deleteBatches(batches.filter(function (b) { return picked[b]; }), batches.length); };
+      bar.appendChild(del);
+    };
     var cards = el('div', 'cards');
     cards.style.flexWrap = 'wrap';
     batches.forEach(function (b) {
       var files = byBatch[b];
       var first = files.filter(function (f) { return f.kind; })[0] || files[0];
-      var card = el('div', 'card');
+      var card = el('div', 'card pick');
+      cardOf[b] = card;
       var thumb = el('div', 'thumb');
       var img = el('img');
       img.alt = '';
@@ -2606,30 +2626,60 @@ function loadTrash() {
       card.appendChild(el('div', 'meta', folder));
       var extra = files.length > 1 ? tr('trash.with', { names: files.slice(1).map(function (f) { return f.path.split('/').pop(); }).join(', ') }) : '';
       card.appendChild(el('div', 'meta', tr('trash.deleted', { date: I18n.date(new Date(first.deleted_at * 1000)), extra: extra })));
-      var restore = el('button', 'btn quiet', tr('trash.put_back'));
-      restore.onclick = function () {
-        restore.disabled = true;
-        post(LIBAPI + '/trash/' + b + '/restore').then(function () { toast(tr('trash.put_back_done', { path: first.path })); changed(); })
-          .catch(function (e) { restore.disabled = false; failed(e); });
+      card.onclick = function (ev) {
+        var span = ev.shiftKey && anchor !== null ? pickSpan(batches, function (x) { return x; }, anchor, b) : null;
+        var on = !picked[b];
+        (span || [b]).forEach(function (x) {
+          if (on) picked[x] = true; else delete picked[x];
+          cardOf[x].classList.toggle('sel', !!picked[x]);
+        });
+        anchor = b;
+        drawBar();
       };
-      card.appendChild(restore);
-      var del = el('button', 'btn danger', tr('trash.delete_for_good'));
-      del.onclick = function () { emptyTrash(b, 1); };
-      card.appendChild(del);
+      card.onmousedown = function (ev) { if (ev.shiftKey) ev.preventDefault(); };
       cards.appendChild(card);
     });
     page.appendChild(cards);
+    page.appendChild(bar);
+    drawBar();
   }).catch(failed);
 }
 
-function emptyTrash(batch, n) {
+// Puts the batches back, one after the other; says how many worked.
+function putBack(list, byBatch) {
+  var done = 0, first = null;
+  var next = function (i) {
+    if (i >= list.length) return Promise.resolve();
+    return post(LIBAPI + '/trash/' + list[i] + '/restore').then(function () {
+      if (!first) first = byBatch[list[i]][0].path;
+      done++;
+      return next(i + 1);
+    });
+  };
+  next(0).then(function () {
+    toast(done === 1 ? tr('trash.put_back_done', { path: first }) : tr('trash.put_back_many', { count: trn('count.photos', done) }));
+    changed();
+  }).catch(function (e) { failed(e); changed(); });
+}
+
+// Asks, then deletes the batches for good; everything at once when all are chosen.
+function deleteBatches(list, total) {
+  deleteForGood(list.length === total ? [null] : list, list.length);
+}
+
+function deleteForGood(batches, n) {
   openModal(tr('trash.delete_for_good'), tr('trash.delete_text', { count: trn('count.photos', n) }), [
     { label: tr('app.cancel'), cls: 'quiet' },
     { label: tr('trash.delete_btn'), cls: 'danger', onclick: function () {
-      post(LIBAPI + '/trash/empty', { batch: batch }).then(function (r) {
-        toast(tr('trash.deleted_toast', { count: trn('count.files', r.deleted) }));
+      var deleted = 0;
+      var next = function (i) {
+        if (i >= batches.length) return Promise.resolve();
+        return post(LIBAPI + '/trash/empty', { batch: batches[i] }).then(function (r) { deleted += r.deleted; return next(i + 1); });
+      };
+      next(0).then(function () {
+        toast(tr('trash.deleted_toast', { count: trn('count.files', deleted) }));
         changed();
-      }).catch(failed);
+      }).catch(function (e) { failed(e); changed(); });
     } },
   ]);
 }

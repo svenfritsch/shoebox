@@ -59,8 +59,10 @@ ours). The records go, with their tags and duplicate decisions; the `trash`
 table keeps the original path, size, mtime and hashes. *Put back* renames
 the batch back (refused if one of the names is taken by now) and indexes the
 files again (new ids; the full hash is reused if size and mtime are
-unchanged). *Delete for good* / *Empty trash* deletes the files, after a
-confirmation. Thumbnails of trashed files are kept until then.
+unchanged). *Delete for good* deletes the files, after a confirmation. The trash page
+selects like the timeline (click, Shift-click, *Select all*); the bar at the
+bottom has *Put back* and *Delete for good* (there is no separate *Empty
+trash* button: *Select all* does the same). Thumbnails of trashed files are kept until then.
 
 ## Import (removed)
 
