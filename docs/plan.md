@@ -585,7 +585,7 @@ worker, guard tests) is reused.
 | Topic | Decision | Why / alternatives rejected |
 |---|---|---|
 | Where | A task `text` of `recognizer.py` (protocol 3, additive), loaded only with `--text`, like `--pets` | Reuses the supervised worker and the "optional, app works without it" rule. A second binary or an OCR crate in the core would add a dependency and break the split "ML in the optional worker, state in the core" |
-| Engine | **PP-OCR (PaddleOCR) detection + recognition ONNX models**, run by onnxruntime if installed, else OpenCV's own runner (`cv2.dnn`, which also has `TextDetectionModel_DB` / `TextRecognitionModel`), exactly the runtime rule of the pets | Runs on the old Intel Mac (macOS 12, OpenCV 4.10) and on Linux with the same code, good on scene text *and* documents, small (about 15–25 MB of models), no extra Python packages. Rejected: **Tesseract** (extra native lib and language data per OS, weak on street signs and photos), **Apple Vision** (macOS only, no Linux/Windows, two code paths), **EasyOCR / PaddlePaddle** (PyTorch or Paddle runtime, hundreds of MB, will not run on the old Mac), **a cloud API** (violates "local only") |
+| Engine | **PP-OCR (PaddleOCR) detection + recognition**, the PP-OCRv4 ONNX models that ship inside the pip package **`rapidocr-onnxruntime`** (Apache-2.0), run by **onnxruntime**. The worker's `text` task is a thin wrapper around it; the add-on installer (`install.sh --text`) installs the package into the shared runtime, with `--no-deps` plus its pure dependencies (`onnxruntime`, `pyclipper`, `shapely`, `pyyaml`, `six`, `tqdm`), so it does **not** add a second OpenCV next to the `opencv-python-headless` of the Faces add-on (two `cv2` packages break each other) | Same code as the spike, nothing to download or checksum separately (models are in the wheel, and the wheel's hash can be pinned in the installer), small, Apache-2.0. See "Fallbacks if the engine does not run on a computer" below for the old Intel Mac. Rejected: **Tesseract**, **Apple Vision**, **EasyOCR / PaddlePaddle**, **a cloud API** (reasons as before) |
 | Languages | Latin script with German and English first: a recognizer model whose dictionary has ä ö ü ß and accents (PaddleOCR's `latin` model), not the English-only OpenCV-zoo CRNN (36 characters, no umlauts). Model id stored with each result; adding a script later means a second model id and a redo, never a mix | **To verify in step 1:** the exact model file, its licence (Apache-2.0 expected), the ONNX export, and that OpenCV 4.10 loads it. If it does not, fall back to onnxruntime only for this task and say so in `install.sh` |
 | Which photos | Images only (not RAW, no video in v1; a video's poster frame could be added later). Skip a photo cheaply: the detector runs first at 960 px, and the recogniser only runs on the boxes it found. A photo with no box stores "looked, no text" and is never redone | Most family photos have no text; detection alone is far cheaper than recognition, so the first pass over 100k photos is dominated by detection |
 | Orientation | v1: upright text only, plus the sideways/upside-down case through the existing `--rotated` idea as an option later (`text --rotated`, reusing the same rotation plumbing as faces). EXIF orientation is already applied by the core | Keeps the first pass fast; a document photographed 90° off is a known gap, listed under Open |
@@ -719,6 +719,43 @@ term does (`files_of_people`: matching quick hashes, mapped to file ids by
 the same hash-to-ids lookup), and is intersected with the other sets. It is
 evaluated only when a text chip is present; typing in the box never queries
 the text index (the suggestion row needs no lookup).
+
+#### Fallbacks if the engine does not run on a computer
+
+The old Intel MacBook (macOS 12) is the machine that decides. What was
+checked from the build session (Linux server; nothing was run on a Mac):
+
+| Question | Result |
+|---|---|
+| Does the package have wheels for macOS 12 Intel with the Python 3.12 that `install.sh` uses? | **Yes.** Resolving `rapidocr-onnxruntime` for `macosx_12_0_x86_64`, cp312, picks `onnxruntime 1.19.2` (a `macosx_11_0_universal2` wheel; 1.20 and later need macOS 13, so pip falls back to 1.19.2 by itself, no pin needed), `opencv-python 4.10.0.84` (`macosx_12_0_x86_64`), and wheels for `numpy`, `pillow`, `pyclipper`, `shapely` and `pyyaml` (`macosx_10_13_x86_64`) |
+| Can OpenCV's own runner (`cv2.dnn`) replace onnxruntime as the engine? | **Not on the old Mac.** With the same PP-OCRv4 files, the detector runs under OpenCV 4.10 (the version the old Mac is limited to), but the recogniser fails there at every input width (`Reshape ... srcTotal == dstTotal`); it runs under OpenCV 5.0. The plan's earlier "OpenCV runner as the second runtime" is therefore dropped for this model; it stays an option only on computers with a newer OpenCV |
+| Does it run on the old Mac for real? | **Unknown until tried on it.** The spike script (`recognizer/text_spike.py`) is the test: `pip install rapidocr-onnxruntime` and run it |
+
+The ladder, in order, with what the user sees at each step:
+
+1. **Normal:** `install.sh --text` installs the package and onnxruntime; the
+   Add-ons list shows **Text: installed**; **Recognize text** is available.
+2. **Install or import fails on this computer** (no wheel, a Python/onnxruntime
+   mismatch, a blocked download): `install.sh --text` stops with one plain
+   sentence and the Add-ons list shows **Text: not available on this computer**
+   with the reason, never a stack trace. The rest of the app, including
+   Faces and Pets, is untouched. Searching text that was read elsewhere works
+   as usual.
+3. **Read the text on another computer.** `recognition.db` lives on the
+   drive, so the text can be read by **any computer** where the add-on works
+   (a newer Mac, a PC, Linux): plug the drive in there, run **Recognize text**,
+   and the old Mac then searches and shows all of it. This is the supported
+   fallback and needs no extra code: it is how drives and caches already work
+   (`recognition.db` is keyed by content, not by computer), plus a line in the
+   guide.
+4. **A different, lighter model for the old Mac** (only if step 1 fails there
+   and reading elsewhere is not enough): an older PP-OCR generation with a
+   CRNN-style recogniser, which OpenCV 4.10 can run (the OpenCV model zoo's
+   own text recogniser is of that kind), so no onnxruntime is needed. It would
+   be a second, separately named model (the model id is stored, nothing is
+   mixed) and probably reads less well. The model files and checksums could not
+   be fetched from the build session (blocked), so this step is **not
+   verified**; it is evaluated on the Mac with the spike script only if needed.
 
 #### Text in the viewer, and keeping unwanted text out of the index
 
