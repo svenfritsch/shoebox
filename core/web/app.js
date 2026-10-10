@@ -4526,11 +4526,11 @@ function updatePersonPick() {
 function nameFacesDialog(faces, done) {
   var body = el('div');
   var kind = facesSpecies(faces);
-  // "Which cat is this?" for a cat, "dog" for a dog, "pet" for any other.
-  var which = kind ? (kind === 'cat' || kind === 'dog' ? kind : 'pet') : '';
-  var one = which ? 'person.who_one_' + which : 'person.who_one';
-  var many = which ? 'person.who_many_' + which : 'person.who_many';
-  body.appendChild(el('p', '', faces.length === 1 ? tr(one) : tr(many, { n: faces.length })));
+  // "Which cat is this?" for a cat, "dog" for a dog, "pet" for any other: the
+  // same question for one face or many, since they are all one animal.
+  var question = !kind ? (faces.length === 1 ? tr('person.who_one') : tr('person.who_many', { n: faces.length }))
+    : kind === 'cat' ? tr('person.who_cat') : kind === 'dog' ? tr('person.who_dog') : tr('person.who_pet');
+  body.appendChild(el('p', '', question));
   var save = function (who) {
     var ids = faces.map(function (x) { return x.id; }).filter(function (x) { return x != null; });
     var drawn = faces.filter(function (x) { return x.id == null && x.manual != null; });
