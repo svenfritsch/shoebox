@@ -518,6 +518,8 @@ all.
 4. Only some faces of a card
    Select lets you tick the faces yourself. The buttons then work on those
    only: Name 2, Ignore 2, 2 not a face. Use it when a card mixes two people.
+   While it is on, the button reads Done selecting; press it to stop
+   selecting.
 
 [Screenshot: Unnamed: a card for every group of similar faces, with Ignore and
 Not a face.]

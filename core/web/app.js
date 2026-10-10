@@ -4905,6 +4905,8 @@ function clusterCard(c) {
     var pets = c.faces.length > 0 && c.faces.every(function (f) { return f.species; });
     count.textContent = trn(pets ? 'count.pets' : 'count.faces', c.size) + (card.picking ? ' · ' + (n ? tr('unnamed.selected', { n: n }) : tr('unnamed.tap')) : '');
     pick.classList.toggle('active', card.picking);
+    pick.textContent = tr(card.picking ? 'unnamed.select_done' : 'facecheck.select');
+    pick.title = tr(card.picking ? 'unnamed.select_done_hint' : 'unnamed.select_hint');
     card.classList.toggle('picking', card.picking);
     card.classList.toggle('open', expanded || card.picking);
     close.hidden = !(expanded || card.picking);

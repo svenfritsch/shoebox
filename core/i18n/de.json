@@ -499,6 +499,8 @@
   "unnamed.ignore_hint": "Fremde oder Gesichter auf Bildern, Postern und Bildschirmen: niemand muss sie benennen",
   "unnamed.notface_hint": "Fehlfunde: gar kein Gesicht",
   "unnamed.select_hint": "Nur einige Gesichter dieser Karte benennen, ignorieren oder markieren",
+  "unnamed.select_done": "Auswahl beenden",
+  "unnamed.select_done_hint": "Auswählen beenden und die Auswahl aufheben",
   "unnamed.selected": "{n} ausgewählt",
   "unnamed.tap": "Gesichter antippen zum Auswählen",
   "unnamed.name_n": "{n} benennen",
