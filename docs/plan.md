@@ -45,10 +45,8 @@ progress. Update the status section when a phase moves.
 /Volumes/<drive>/
   <library>/                     ← user's folders; read-only for shoebox
   .shoebox/
-    bin/shoebox-macos            ← universal (x86_64 10.13+, arm64 11+)
-    bin/shoebox-linux
-    bin/shoebox.exe              ← later
-    bin/ffmpeg                   ← optional, static, for video posters
+    bin/shoebox-macos            ← older layout (the release now ships the folder below)
+    bin/ffmpeg                   ← optional, static, for video posters (or next to the program)
     library.db                   ← SQLite index (+ rotating backup copy)
     thumbs.db                    ← preview BLOBs keyed by quick hash, face crops only for undecided faces and people's pictures
     recognition.db               ← faces (boxes + embeddings) keyed by quick hash
@@ -58,6 +56,59 @@ progress. Update the status section when a phase moves.
       models/                    ← ONNX: YuNet, SFace, pet detector, CLIP
   Start shoebox.command          ← launcher scripts per OS
 ```
+
+### The shoebox folder and the add-ons (Control Panel)
+
+The release is one folder per system (`shoebox-macos/`): the program
+`shoebox`, `Start shoebox.command`, `recognizer/` (installer, `recognizer.py`,
+later its `runtime/` and `models/`) and `guide/`. Two ways to use it, both
+supported by the same lookup:
+
+- **On the drive**: the whole folder is copied to the drive's top folder
+  (`/Volumes/X/shoebox-macos/`); other systems get their own folder beside it
+  (`shoebox-windows/`). Add-ons then live in `shoebox-macos/recognizer/` on the
+  drive and travel with it. `.shoebox/` is made by the first scan, never by hand.
+- **On the computer**: the folder stays where the user put it; add-ons live in
+  its `recognizer/` and serve every drive; drives are added by path.
+
+Add-ons are installed from the Control Panel (step 1, "Add-ons"; job
+`install_addons` runs `recognizer/install.sh --faces/--pets/--text`) into
+`recognizer/` **next to the program** (`recognize::program_dir`). They are
+independent: Faces (~40 MB), Pets (~140 MB), later Text; the Python/OpenCV
+runtime (~200 MB) is shared and shown in the list. `POST /api/addons` reports
+what is installed for the computer and for each ticked drive
+(`recognize::installed`, by looking for files, never by starting the worker),
+and the Control Panel greys out Recognize / Recognize lying down (need Faces)
+and Recognize pets (needs Pets) with the reason. Lookup order
+(`recognize::worker_dirs`): the drive's `.shoebox/recognizer/`, then
+`recognizer/` next to the program, then `<program dir>/../recognizer`
+(`.shoebox/bin/..`); `find_worker_for` takes the first folder that has the
+models the run needs, so a partial install on a drive does not hide a complete
+one next to the program. The worker starts without face models when started
+with `--pets` (hello lists only the pet tasks); the core then skips the face
+passes.
+
+**What this means for phase 9 (text in photos)** — the text add-on follows the
+same pattern, so the phase 9 PR must:
+
+1. add `--text` to `recognizer/install.sh` and `fetch-models.sh` (checksummed
+   PP-OCR detector and Latin recogniser; the spike in build step 1 decides the
+   files and sizes) and show its size in the Add-ons list (`index.html`,
+   `launcher.addon.text` and `.desc` in `en.json`/`de.json`, state pill);
+2. extend `recognize::installed` / `Installed` with `text` (model files present)
+   and `find_worker_for` with a text flag, `JobRequest.text`, the
+   `install_addons` argument and `ADDON_OF['recognize_text'] = 'text'` in
+   `launcher.js`, so "Recognize text" is grey where the add-on is missing;
+3. let the worker start with only the text models: like pets, the hello lists
+   the tasks that are installed, and `Worker::start` accepts any non-empty set;
+   a text-only run must skip the face passes (`recognize()` already bails on a
+   missing face model; the text pass must not call it), and `embed_drawn` only
+   counts the kinds the worker can do;
+4. mention it in the guide (both languages): the Add-ons paragraph and the
+   sizes line in "Get started", the launcher task list and the People/Text
+   section; regenerate the Control Panel screenshot;
+5. keep the manifest-free rule: availability is decided from the files, so a
+   model dropped in by hand (like DINOv2) counts.
 
 ### Responsibilities
 
@@ -272,7 +323,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 5e | Lean `thumbs.db`: face crops only for faces without a decision and for each person's picture; right-click "Use as … picture" on a person's photos | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5f | "Type" check box drop-down (Photos, Videos, Live Photos) next to the search box | **Done except the real-hardware run** (see "Phase 5f details") |
 | 5g | Favorites: a heart in the viewer's top bar and in the top right corner of each timeline photo; a heart button next to the type filter and "♥ Favorites" as a search suggestion | **Done except the real-hardware run** (see "Favorites" below) |
-| 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | **In progress**: library id, launcher (cancel, saved folders, start scripts) and the multi-drive core (hub, offline, backup roles, common timeline, cross-drive duplicates and people) built; backup verification (`shoebox backup`, launcher button, All drives page) built; real-hardware checks and Linux/Windows packaging open |
+| 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | **In progress**: library id, launcher (cancel, saved folders, start scripts) and the multi-drive core (hub, offline, backup roles, common timeline, cross-drive duplicates and people) built; backup verification (`shoebox backup`, launcher button, All drives page) built; add-ons (launcher step 1: install Faces / Pets into `recognizer/` next to the program, which is on the drive when shoebox was copied there; Recognize buttons grey where the add-on is missing; a phase 9 text add-on follows the same pattern); real-hardware checks and Linux/Windows packaging open |
 | 7 | Pets: cats and dogs found (`shoebox recognize --pets`, launcher button "Recognize pets"), named, grouped and searched like people, also by kind ("all cats", "Katze", "Hund"); pets the detector missed can be drawn by hand; Settings → Calibration with the Face check and the new Pet check | **Built except the real-hardware run and DINOv2** (see [phase7.md](phase7.md)) |
 | 8 | UI translation, German and English, JSON message files (design and steps in [phase8.md](phase8.md)) | **Built, check open**: loader, key test, launcher and the whole photo app; the real-hardware check, a native read-through of the German texts and the CI run are open |
 | 10 | Locations: GPS positions from files, map in the photo info (Leaflet, OpenStreetMap, opt-in setting), Locations page with clustered pins, named places drawn on the map, positions set by hand (design in [phase10.md](phase10.md)) | **Built, check open**: scan reads GPS, schema v10, API, UI, guide; real-hardware check and the CI run are open |

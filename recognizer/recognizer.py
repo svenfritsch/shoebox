@@ -495,11 +495,15 @@ def main():
         cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_ERROR)
     except AttributeError:
         pass
-    faces = Faces(cv2, np)
-    tasks = {"faces": faces, "embed": Embed(faces, cv2, np)}
+    want_pets = "--pets" in sys.argv[1:]
+    # The add-ons are independent: with the pet models alone (no face models
+    # installed) the worker does pets and says nothing of faces.
+    have_faces = all(os.path.isfile(os.path.join(models_dir(), m)) for m in (DETECTOR, EMBEDDER))
+    faces = Faces(cv2, np) if have_faces or not want_pets else None
+    tasks = {"faces": faces, "embed": Embed(faces, cv2, np)} if faces else {}
     # The pet models are big and the drive may be slow: only loaded when
     # the core asks for pets (`recognizer.py --pets`).
-    pets = Pets(cv2, np) if "--pets" in sys.argv[1:] else None
+    pets = Pets(cv2, np) if want_pets else None
     if pets is not None:
         tasks["pets"] = pets
         tasks["embed-pets"] = EmbedPets(pets)
@@ -509,11 +513,11 @@ def main():
         "version": VERSION,
         # Drawn faces are embedded with the same models, so they compare with
         # detected ones.
-        "tasks": {
-            "faces": {"model": FACES_MODEL, "dim": FACES_DIM},
-            "embed": {"model": FACES_MODEL, "dim": FACES_DIM},
-        },
+        "tasks": {},
     }
+    if faces is not None:
+        hello["tasks"]["faces"] = {"model": FACES_MODEL, "dim": FACES_DIM}
+        hello["tasks"]["embed"] = {"model": FACES_MODEL, "dim": FACES_DIM}
     if pets is not None:
         hello["tasks"]["pets"] = {"model": pets.model, "dim": pets.dim}
         # Pets drawn by hand are embedded with the same models, so they compare

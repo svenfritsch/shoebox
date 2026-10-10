@@ -2,12 +2,25 @@
 # Download the ONNX models the recognizer needs (OpenCV model zoo, Apache 2.0)
 # and check their SHA-256.
 #
-#   recognizer/fetch-models.sh [dir]   (default: recognizer/models)
+#   recognizer/fetch-models.sh [--faces] [--pets] [dir]   (default dir: recognizer/models)
 #
-# The two pet models (~140 MB) are fetched too; SHOEBOX_NO_PETS=1 skips
-# them.
+# --faces fetches the face models (~40 MB), --pets the two pet models
+# (~140 MB). Without either, both; SHOEBOX_NO_PETS=1 leaves out the pets.
 set -eu
-DIR=${1:-$(dirname "$0")/models}
+FACES= PETS=
+DIR=
+for arg in "$@"; do
+    case "$arg" in
+        --faces) FACES=1 ;;
+        --pets) PETS=1 ;;
+        *) DIR=$arg ;;
+    esac
+done
+if [ -z "$FACES$PETS" ]; then
+    FACES=1
+    [ -n "${SHOEBOX_NO_PETS:-}" ] || PETS=1
+fi
+DIR=${DIR:-$(dirname "$0")/models}
 BASE=https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models
 mkdir -p "$DIR"
 
@@ -27,12 +40,14 @@ fetch() {
     echo "fetched $name"
 }
 
-fetch face_detection_yunet_2023mar.onnx face_detection_yunet \
-    8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4
-fetch face_recognition_sface_2021dec.onnx face_recognition_sface \
-    0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79
+if [ -n "$FACES" ]; then
+    fetch face_detection_yunet_2023mar.onnx face_detection_yunet \
+        8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4
+    fetch face_recognition_sface_2021dec.onnx face_recognition_sface \
+        0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79
+fi
 
-if [ -z "${SHOEBOX_NO_PETS:-}" ]; then
+if [ -n "$PETS" ]; then
     # YOLOX-S (COCO: finds cats and dogs) and PP-ResNet50 (its pooled feature
     # describes a pet's box). DINOv2-small describes individuals better
     # but is not on a host this script can checksum; see recognizer/README.md.

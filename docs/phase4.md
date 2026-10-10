@@ -17,11 +17,16 @@ recognizer/install.sh /Volumes/Fotos     # the library root, scanned before
 ```
 
 Without a path everything goes into the `recognizer/` folder that holds
-`install.sh` (the downloaded folder; the release archive has a double-click
-`Install face recognition.command` for people who do not use the terminal), so
-one copy of the models serves every drive and none is written to a drive.
-`find_worker` looks in the drive's `.shoebox/recognizer/` first, then in
-`recognizer/` next to the shoebox binary. With a path, this puts a standalone Python (python-build-standalone 3.12), OpenCV, numpy,
+`install.sh`, next to the shoebox program: the downloaded folder on the
+computer, or the drive's top folder when shoebox was copied there. One copy of
+the models then serves every drive. `--pets` adds the cat and dog models; the
+face models are always installed. The launcher's step 1, **Add-ons**, runs this
+script (job `install_addons`, `POST /api/addons` reports what is installed for
+the computer and for each ticked drive, and greys out Recognize / Recognize
+pets where the add-on is missing). `find_worker_for` looks in the drive's
+`.shoebox/recognizer/` first, then in `recognizer/` next to the shoebox binary,
+and for `--pets` takes the first folder that has the pet models, so a drive
+with only the faces does not hide a complete install. With a path, this puts a standalone Python (python-build-standalone 3.12), OpenCV, numpy,
 `recognizer.py` and the models into `/Volumes/Fotos/.shoebox/recognizer/`
 (~330 MB on Linux), with the runtime under `runtime/<os>-<arch>/`. Nothing is
 installed on the computer. Run it once **on each kind of computer** that will

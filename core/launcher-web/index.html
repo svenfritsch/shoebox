@@ -18,6 +18,26 @@
     <p class="sub" data-i18n="launcher.sub">Your photo library on this drive. Nothing is copied or changed in your photos.</p>
   </header>
 
+  <section class="card" id="addons-card">
+    <h2 data-i18n="launcher.step0">1 · Add-ons</h2>
+    <p class="hint" data-i18n="launcher.addons.intro">Scanning and the photo app work out of the box. Recognizing people and pets needs add-ons, which are downloaded once for this shoebox.</p>
+    <ul id="addon-list" class="addons">
+      <li>
+        <label><input type="checkbox" checked disabled> <b data-i18n="launcher.addon.runtime">Python and OpenCV</b> <span data-i18n="launcher.addon.runtime.desc">the program that runs the recognition; needed by all add-ons, downloaded once (about 200 MB)</span></label>
+      </li>
+      <li>
+        <label><input type="checkbox" id="addon-faces" checked> <b data-i18n="launcher.addon.faces">Faces</b> <span data-i18n="launcher.addon.faces.desc">find and name the people in your photos (about 40 MB)</span></label>
+        <span id="addon-faces-state" class="pill"></span>
+      </li>
+      <li>
+        <label><input type="checkbox" id="addon-pets"> <b data-i18n="launcher.addon.pets">Pets</b> <span data-i18n="launcher.addon.pets.desc">also find cats and dogs (another 140 MB)</span></label>
+        <span id="addon-pets-state" class="pill"></span>
+      </li>
+    </ul>
+    <button id="addons-install" class="primary" data-i18n="launcher.addons.install">Install the selected add-ons</button>
+    <p id="addons-hint" class="hint"></p>
+  </section>
+
   <fieldset id="controls">
   <section class="card">
     <h2 data-i18n="launcher.step1">1 · Where are your photos?</h2>
@@ -46,6 +66,7 @@
       <button data-kind="backup"><b data-i18n="launcher.kind.backup">Backup check</b><span data-i18n="launcher.kind.backup.desc">is the 2nd folder a complete copy of the 1st?</span></button>
     </div>
     <p id="backup-hint" class="hint"></p>
+    <p id="addon-need" class="hint"></p>
     <div class="options">
       <label><input type="checkbox" id="opt-quick"> <span data-i18n="launcher.opt.quick">Quick (Scan: skip full hashes · Verify: size and date only)</span></label>
       <label><input type="checkbox" id="opt-deep"> <span data-i18n="launcher.opt.deep">Backup check: also re-read the backup drive (finds bit rot; slow)</span></label>

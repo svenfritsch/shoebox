@@ -56,12 +56,13 @@ PATH):
      has native arm64 builds.
    - Linux: [johnvansickle.com/ffmpeg](https://johnvansickle.com/ffmpeg/)
      (`ffmpeg-release-amd64-static.tar.xz`).
-2. Copy the `ffmpeg` binary to `.shoebox/bin/ffmpeg` on the drive, next to
-   `shoebox-macos` / `shoebox-linux`. The name must be exactly `ffmpeg`.
+2. Copy the `ffmpeg` binary next to the shoebox program (the unpacked
+   `shoebox-macos/` folder, or `.shoebox/bin/` next to `shoebox-macos` /
+   `shoebox-linux` in the older layout). The name must be exactly `ffmpeg`.
 3. On macOS, in Terminal:
 
    ```sh
-   cd "/Volumes/<drive>/.shoebox/bin"
+   cd "<the folder you put ffmpeg in>"
    xattr -d com.apple.quarantine ffmpeg   # only if downloaded via a browser
    chmod +x ffmpeg
    ./ffmpeg -version                      # must print a version, not an error

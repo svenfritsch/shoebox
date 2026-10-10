@@ -352,7 +352,7 @@ fn workers_that_do_not_start_are_reported() {
 #[test]
 fn single_faces_through_the_worker() {
     let mut worker = recognize::Worker::start(fake(&[]), quick()).unwrap();
-    assert_eq!(worker.faces_model().dim, 128);
+    assert_eq!(worker.faces_model().unwrap().dim, 128);
     let jpeg = |rgb: [u8; 3]| {
         let mut out = Vec::new();
         image::RgbImage::from_pixel(80, 40, image::Rgb(rgb))
@@ -471,6 +471,28 @@ fn a_model_change_redoes_only_its_own_pass() {
     assert_eq!((a.looked, a.pending), (3, 1));
 }
 
+/// The add-ons stand alone: with only the pet models installed the worker
+/// has no faces, finds cats and dogs, and the face passes say what is missing.
+#[test]
+fn pets_work_without_the_face_models() {
+    let lib = empty("recog-pets-only");
+    solid(&lib, "Pets/cat.jpg", CAT);
+    lib.scan_opts(true, false, false);
+    let conn = conn(&lib);
+    let mut worker = recognize::Worker::start(fake(&["--pets", "--no-faces"]), quick()).unwrap();
+    assert!(worker.faces_model().is_none());
+    assert_eq!(worker.pets_model().map(|a| a.model.as_str()), Some("fake-pets-1"));
+    let e = format!("{:#}", recognize::recognize(&conn, &lib.root, &mut worker, None, false).unwrap_err());
+    assert!(e.contains("Faces add-on is not installed"), "{e}");
+    let stats = recognize::recognize_pets(&conn, &lib.root, &mut worker, None, false).unwrap();
+    assert_eq!((stats.looked, stats.faces), (1, 1), "{:?}", stats.errors);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species = 'cat'"), 1);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NULL"), 0);
+    worker.stop();
+    // A worker with neither add-on is refused.
+    assert!(recognize::Worker::start(fake(&["--no-faces"]), quick()).is_err());
+}
+
 #[test]
 fn the_pets_task_needs_a_worker_started_for_it() {
     // Without --pets the hello has no pets and the core refuses to ask.
@@ -489,7 +511,7 @@ fn the_pets_task_needs_a_worker_started_for_it() {
     let mut worker = recognize::Worker::start(fake(&["--pets"]), quick()).unwrap();
     let info = worker.pets_model().unwrap().clone();
     assert_eq!((info.model.as_str(), info.dim), ("fake-pets-1", 64));
-    assert_eq!(worker.faces_model().dim, 128, "faces keep their own model");
+    assert_eq!(worker.faces_model().unwrap().dim, 128, "faces keep their own model");
     let cat = worker.pets(&jpeg(CAT)).unwrap().unwrap();
     let dog = worker.pets(&jpeg(DOG)).unwrap().unwrap();
     assert_eq!((cat.width, cat.height, cat.faces.len()), (80, 40, 1));
