@@ -188,7 +188,7 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-drive"/></svg></div>
           <h3>Liegt auf deinem Laufwerk und bleibt klein</h3>
-          <p>Alles, was shoebox braucht, liegt in einem versteckten Ordner <code>.shoebox</code> neben deinen Fotos: die Bibliothek <code>library.db</code>, die Vorschauen <code>thumbs.db</code>, der Papierkorb und das Programm. Das Laufwerk an einen anderen Computer stecken, und alles ist dabei. shoebox fügt nur hinzu, was eine Foto-App zum Laufen braucht: unter 1 GB bei 80 GB Fotos (etwa 1 %), gemessen an einer echten Bibliothek mit 31 GB, einschließlich der Daten der Gesichtserkennung.</p>
+          <p>Alles, was shoebox über deine Fotos speichert, liegt in einem versteckten Ordner <code>.shoebox</code> neben deinen Fotos: die Bibliothek <code>library.db</code>, die Vorschauen <code>thumbs.db</code> und der Papierkorb. Das Laufwerk an einen anderen Computer stecken, und alles ist dabei. shoebox fügt nur hinzu, was eine Foto-App zum Laufen braucht: unter 1 GB bei 80 GB Fotos (etwa 1 %), gemessen an einer echten Bibliothek mit 31 GB, einschließlich der Daten der Gesichtserkennung.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-dup"/></svg></div>
@@ -334,42 +334,44 @@
       </ol>
       <div class="panel">
         <h3>Ein typischer Ablauf</h3>
-        <p>Laufwerk anstecken und <b>Start shoebox</b> doppelklicken. <b>Scannen</b> (geht schnell, wenn sich wenig geändert hat) und die Foto-App öffnen. Für die Fotos eines Ereignisses den Ordner im Finder aufs Laufwerk kopieren (benannt wie <b>2025-08 Urlaub</b>) und erneut <b>scannen</b>: Waren einzelne Dateien schon auf dem Laufwerk, bietet der Launcher an, die neuen Kopien zu löschen. Dann taggen und sortieren. Ab und zu die <b>Duplikate</b> ansehen und nach jedem Backup die <b>Backup-Prüfung</b> laufen lassen.</p>
+        <p>Laufwerk anstecken und <b>Start shoebox</b> doppelklicken. <b>Scannen</b> (geht schnell, wenn sich wenig geändert hat) und die Foto-App öffnen. Für die Fotos eines Ereignisses den Ordner im Finder aufs Laufwerk kopieren (benannt wie <b>2025-08 Urlaub</b>) und erneut <b>scannen</b>: Waren einzelne Dateien schon auf dem Laufwerk, bietet die Zentrale an, die neuen Kopien zu löschen. Dann taggen und sortieren. Ab und zu die <b>Duplikate</b> ansehen und nach jedem Backup die <b>Backup-Prüfung</b> laufen lassen.</p>
       </div>
     </section>
 
     <section id="start">
       <h2>In drei Schritten loslegen</h2>
-      <p class="sub">macOS, Intel (ab 10.13) und Apple Silicon. Nichts zu installieren.</p>
+      <p class="sub">macOS, Intel (ab 10.13) und Apple Silicon. Zum Ansehen und Scannen ist nichts zu installieren; Gesichter- und Haustiererkennung sind Erweiterungen, die du in der Zentrale installierst.</p>
       <div class="cols">
         <div>
           <ol class="steps">
             <li>
-              <h3>Aufs Laufwerk legen</h3>
-              <p><b>shoebox-macos.tar.gz</b> aus dem Release entpacken. <b>shoebox-macos</b> und <b>Start shoebox.command</b> in den obersten Ordner deines Foto-Laufwerks kopieren (neben deine Fotoordner). Optional: den Ordner <b>recognizer</b> für Gesichter. Das Archiv enthält auch dieses Handbuch im Ordner <b>guide</b>.</p>
+              <h3>Entpacken und festlegen, wo es liegt</h3>
+              <p><b>shoebox-macos.tar.gz</b> aus dem Release entpacken (im Finder doppelklicken). Du bekommst einen Ordner <b>shoebox-macos</b> (der Name sagt, für welches System er ist) mit dem Programm <b>shoebox</b>, <b>Start shoebox.command</b>, dem Ordner <b>recognizer</b> (dem Installer für die Erweiterungen) und diesem Handbuch im Ordner <b>guide</b>. Diese Dateien zusammenlassen; keine einzelnen Dateien herausziehen. Dann einen von zwei Wegen wählen:</p>
+              <p><b>Auf dem Laufwerk</b> (am besten, wenn du das Laufwerk zu anderen Computern mitnimmst): den ganzen Ordner <b>shoebox-macos</b> in den obersten Ordner deines Foto-Laufwerks kopieren, neben deine Fotoordner, sodass es <code>/Volumes/MeinLaufwerk/shoebox-macos/</code> gibt. Einen Ordner <b>.shoebox</b> nicht selbst anlegen: shoebox erstellt ihn beim ersten Scan auf dem Laufwerk. Erweiterungen, die du später installierst, liegen in <code>shoebox-macos/recognizer</code> auf dem Laufwerk und reisen mit. Andere Systeme bekommen einen eigenen Ordner daneben (zum Beispiel <b>shoebox-windows</b>, sobald veröffentlicht), jeweils mit eigenen Erweiterungen; gestartet wird aus dem Ordner des Systems, an dem du sitzt.</p>
+              <p><b>Auf deinem Computer</b>: den ganzen entpackten Ordner <b>shoebox-macos</b> an einen Ort verschieben, an dem er bleiben soll (zum Beispiel Dokumente, nicht Downloads), und seine Dateien zusammenlassen. Von dort öffnest du ihn für jedes Laufwerk, das du ansteckst; Erweiterungen werden einmal in seinen Ordner <b>recognizer</b> installiert und für alle Laufwerke genutzt. Der Bibliotheks-Index (ein versteckter Ordner <b>.shoebox</b>) liegt in beiden Fällen auf dem jeweiligen Laufwerk.</p>
             </li>
             <li>
-              <h3>Starter öffnen</h3>
-              <p><b>Start shoebox.command</b> doppelklicken. Ein Terminal-Fenster öffnet sich (offen lassen) und der Starter erscheint im Browser. Fragt macOS nach, die Datei per Rechtsklick mit <b>Öffnen</b> starten.</p>
+              <h3>Zentrale öffnen</h3>
+              <p><b>Start shoebox.command</b> doppelklicken (auf dem Laufwerk oder im Ordner auf deinem Computer). Ein Terminal-Fenster öffnet sich (offen lassen) und die Zentrale erscheint im Browser. Fragt macOS nach, die Datei per Rechtsklick mit <b>Öffnen</b> starten.</p>
             </li>
             <li>
-              <h3>Scannen, dann öffnen</h3>
-              <p>Laufwerk hinzufügen (anklicken oder <code>/Volumes/MeinLaufwerk</code> tippen), <b>Scannen</b> drücken, dann <b>Foto-App starten</b>. Der erste Scan liest jede Datei einmal und dauert bei großen Laufwerken eine Weile; später werden nur Änderungen angesehen. Nach dem Scan listen die Reiter <b>Verschoben</b>, <b>Geändert</b>, <b>Fehlend</b> und <b>Schon auf dem Laufwerk</b> (jeweils mit Anzahl) genau auf, um welche Dateien es geht; bei neuen Dateien, die du schon hattest, steht die ältere Kopie gleich daneben.</p>
+              <h3>Erweiterungen, scannen, dann öffnen</h3>
+              <p>Nur wenn Personen und Haustiere erkannt werden sollen: in Schritt 1, <b>Erweiterungen</b>, ankreuzen, was du willst (<b>Gesichter</b>, <b>Haustiere</b> oder beides; jedes geht ohne das andere), und <b>Ausgewählte Erweiterungen installieren</b> drücken. Die Zentrale listet, was geladen wird: das Programm Python und OpenCV (etwa 200 MB, einmal für alle Erweiterungen), Gesichter (etwa 40 MB) und Haustiere (etwa 140 MB). Internet nötig, einige Minuten. Erweiterungen lassen sich später ergänzen; ein Computer anderer Art (Intel oder Apple Silicon) braucht sie einmal auf diesem Computer. Python und OpenCV wird immer mit der ersten Erweiterung installiert (sein Kästchen ist angekreuzt und lässt sich nicht abwählen). Solange eine Erweiterung fehlt, bleibt ihr Erkennen-Knopf grau und sagt warum. Ein Klick auf die Überschrift <b>Erweiterungen</b> klappt den Schritt zu; er bleibt zu, sobald alles installiert ist. Dann Laufwerk hinzufügen (anklicken oder <code>/Volumes/MeinLaufwerk</code> tippen), <b>Scannen</b> drücken, dann <b>Foto-App starten</b>. Der erste Scan liest jede Datei einmal und dauert bei großen Laufwerken eine Weile; später werden nur Änderungen angesehen. Nach dem Scan listen die Reiter <b>Verschoben</b>, <b>Geändert</b>, <b>Fehlend</b> und <b>Schon auf dem Laufwerk</b> (jeweils mit Anzahl) genau auf, um welche Dateien es geht; bei neuen Dateien, die du schon hattest, steht die ältere Kopie gleich daneben.</p>
             </li>
           </ol>
           <div class="panel">
-            <h3>Aufgaben im Starter</h3>
+            <h3>Aufgaben in der Zentrale</h3>
             <dl>
                 <dt>Scannen</dt>
                 <dd>neue, verschobene und geänderte Fotos finden. Schnell: es schaut nur auf das, was sich seit dem letzten Scan geändert hat, und die Reiter zeigen, was dieser Scan geändert hat. Nach dem Verschieben, Umbenennen oder Hinzufügen von Fotos ausführen. Es listet auch neue Kopien von Dateien, die das Laufwerk schon hatte.</dd>
                 <dt>Prüfen</dt>
                 <dd>prüfen, dass nichts verloren oder beschädigt ist. Es liest jede Datei neu und vergleicht sie mit dem, was der Index kennt; so findet es Dateien, die auf dem Laufwerk unbemerkt beschädigt wurden. Langsam, also hin und wieder ausführen (alle paar Monate oder bevor man sich auf ein Backup verlässt), nicht nach jedem Verschieben. Verschiebungen sind nicht seine Sache: ein verschobenes Foto hat im Index seinen neuen Platz und besteht die Prüfung. Ein Foto, dessen Pfad weg ist, dessen Inhalt aber anderswo auf dem Laufwerk noch liegt (eine gelöschte Kopie), steht als „umgezogen“ in der Liste, nicht als Fehler. Nur Inhalt, der nirgends mehr auf dem Laufwerk liegt, zählt als fehlend. Fehlen Dateien, erscheint nach der Prüfung (und nach einem Scan) ein Knopf, der ihre Einträge vergisst: sie werden aus dem shoebox-Index, seiner Datenbank auf dem Laufwerk, entfernt. Keine Fotodatei wird angefasst.</dd>
-                <dt>Erkennen</dt>
-                <dd>Gesichter finden (mit „Haustiere erkennen“ auch Katzen und Hunde)</dd>
-                <dt>Liegende Gesichter erkennen</dt>
-                <dd>auch liegende Gesichter finden (langsamer)</dd>
+                <dt>Gesichter erkennen</dt>
+                <dd>die Gesichter in deinen Fotos finden (mit „Haustiere erkennen“ auch Katzen und Hunde). Braucht die Erweiterung „Gesichter“.</dd>
+                <dt>Gedrehte Gesichter</dt>
+                <dd>auch Gesichter finden, die auf der Seite liegen, zum Beispiel liegende Personen (langsamer). Braucht die Erweiterung „Gesichter“.</dd>
                 <dt>Haustiere erkennen</dt>
-                <dd>Katzen und Hunde finden; sie erscheinen bei den Gesichtern</dd>
+                <dd>Katzen und Hunde finden; sie erscheinen bei den Gesichtern. Braucht die Erweiterung „Haustiere“, nicht die für Gesichter.</dd>
                 <dt>Gesichts-Statistik</dt>
                 <dd>wie die Erkennung gelaufen ist</dd>
                 <dt>Backup-Prüfung</dt>
@@ -379,14 +381,22 @@
         </div>
         <figure class="narrow">
           <img src="assets/de/launcher-overview.jpg" alt="" loading="lazy">
-          <figcaption>Der Starter: 1 Laufwerk oder Ordner wählen, 2 Aufgabe wählen, 3 Foto-App öffnen.</figcaption>
+          <figcaption>Die Zentrale: 1 Erweiterungen installieren, 2 Laufwerk oder Ordner wählen, 3 Aufgabe wählen, 4 Foto-App öffnen.</figcaption>
         </figure>
+      </div>
+      <div class="panel">
+        <h3>Mehrere Computer und Systeme</h3>
+        <ul>
+          <li><b>Wo die Erweiterungen gesucht werden:</b> zuerst im Ordner <b>recognizer</b> neben dem gestarteten shoebox-Programm, zuletzt im eigenen versteckten <code>.shoebox/recognizer</code> des Laufwerks (nur, wenn der Programmordner nichts hat). Ein shoebox-Ordner auf deinem Computer wird also für jedes Laufwerk benutzt, auch wenn ein Laufwerk selbst Modelle enthält.</li>
+          <li><b>Modelle und Python sind zweierlei.</b> Die Modelle (Gesichter, Haustiere) sind auf jedem Computer gleich. <b>Python und OpenCV</b> gibt es je Computerart: Intel-Mac, Apple-Silicon-Mac, Linux, Windows. Nimmst du ein Laufwerk mit <b>shoebox-macos</b> von einem Intel-MacBook zu einem neueren mit, zeigt Schritt 1 dort bei <b>Python und OpenCV</b> <b>nötig</b>, deine Erweiterungen sagen <b>Modelle da, braucht Python für diesen Computer</b>, und die Erkennen-Knöpfe sind grau. Dort einmal <b>Ausgewählte Erweiterungen installieren</b> drücken: Es wird nur das fehlende Python geladen, die Modelle bleiben. Beide Arten liegen dann nebeneinander im selben Ordner <b>recognizer</b>, und jeder Computer nutzt seine eigene.</li>
+          <li><b>Mac und Windows auf einem Laufwerk:</b> beide Ordner in den obersten Ordner des Laufwerks kopieren: <code>shoebox-macos</code> und <code>shoebox-windows</code>. Jeder hat seinen eigenen Ordner <b>recognizer</b>; Modelle, die du im einen installierst, gelten also nicht im anderen. Gestartet wird aus dem Ordner des Systems, an dem du sitzt. Beide nutzen denselben versteckten Index <code>.shoebox</code> auf dem Laufwerk. Die Erweiterungen lassen sich auch unter Windows mit demselben Knopf installieren: Dafür braucht es Windows 10 oder 11 auf einem 64-Bit-Intel- oder AMD-Prozessor, sonst nichts, was vorher installiert sein müsste.</li>
+        </ul>
       </div>
       <div class="panel">
         <h3>Gut zu wissen</h3>
         <ul>
-          <li>Videos bekommen Vorschaubilder, wenn ein statisches <b>ffmpeg</b> neben dem Programm liegt (<code>.shoebox/bin/ffmpeg</code>). Ohne holt sich der Browser ein Bild.</li>
-          <li>shoebox legt alles in einem versteckten Ordner <code>.shoebox</code> oben auf dem Laufwerk ab: die Bibliothek <code>library.db</code> (Index, Tags, Namen, Entscheidungen) mit ihrer Sicherungskopie <code>library.db.bak</code>, die Vorschauen <code>thumbs.db</code>, <code>recognition.db</code>, wenn du die Erkennung nutzt, den <code>trash</code> und das Programm in <code>bin</code>. Deshalb kann das Laufwerk an einen anderen Computer umziehen. Auf dem Mac ist der Ordner versteckt: Im Finder <b>Cmd + Umschalt + .</b> drücken, um ihn zu sehen.</li>
+          <li>Videos bekommen Vorschaubilder, wenn ein statisches <b>ffmpeg</b> neben dem Programm liegt (<code>ffmpeg</code> im selben Ordner wie <b>shoebox</b>). Ohne holt sich der Browser ein Bild.</li>
+          <li>shoebox legt alles in einem versteckten Ordner <code>.shoebox</code> oben auf dem Laufwerk ab: die Bibliothek <code>library.db</code> (Index, Tags, Namen, Entscheidungen) mit ihrer Sicherungskopie <code>library.db.bak</code>, die Vorschauen <code>thumbs.db</code>, <code>recognition.db</code>, wenn du die Erkennung nutzt und den <code>trash</code>. Deshalb kann das Laufwerk an einen anderen Computer umziehen. Auf dem Mac ist der Ordner versteckt: Im Finder <b>Cmd + Umschalt + .</b> drücken, um ihn zu sehen.</li>
           <li>Schließt du das Terminal-Fenster, beendet das shoebox.</li>
         </ul>
         <p class="note">Die App spricht Deutsch und Englisch: Die Sprache wählst du unten in der Seitenleiste.</p>
@@ -400,7 +410,7 @@
         <div class="items">
           <div>
             <h3>Zeitleiste</h3>
-            <p>Fotos sind nach Aufnahmedatum gruppiert, neueste zuerst. Das Menü <b>Jahr</b> springt; die Monatsüberschrift zeigt, wo du bist. Ein Foto ohne Aufnahmedatum nimmt den Monat aus dem Namen seines Ereignisordners (<code>2020-07</code>, <code>2020.07</code>, <code>20-07</code> oder <code>20.07</code>), sonst das frühere von Erstellungs- und Änderungsdatum der Datei; das Infofeld markiert das Datum dann als <b>geschätzt</b>.</p>
+            <p>Fotos sind nach Aufnahmedatum gruppiert, neueste zuerst. Das Menü <b>Jahr</b> springt; der Monat neben dem Laufwerksnamen in der oberen Leiste zeigt, wo du bist. Auf einer anderen Seite (Duplikate, Papierkorb, Einstellungen, Gesichter, …) steht dort stattdessen der Name dieser Seite. Ein Foto ohne Aufnahmedatum nimmt den Monat aus dem Namen seines Ereignisordners (<code>2020-07</code>, <code>2020.07</code>, <code>20-07</code> oder <code>20.07</code>), sonst das frühere von Erstellungs- und Änderungsdatum der Datei; das Infofeld markiert das Datum dann als <b>geschätzt</b>.</p>
           </div>
           <div>
             <h3>Ordner</h3>
@@ -497,11 +507,11 @@
         <div class="items">
           <div>
             <h3>Neue Fotos einlesen</h3>
-            <p>shoebox importiert keine Fotos. Die Fotos im Finder oder Explorer aufs Laufwerk kopieren oder verschieben (dabei bleiben ihre Daten erhalten), am besten in einen Ordner namens <b>JJJJ-MM Ereignis</b>, und <b>Scannen</b> drücken. Findet der Scan neue Dateien, die das Laufwerk schon hatte, markiert der Launcher sie mit <i>schon auf dem Laufwerk</i> und bietet <b>Die neuen Kopien löschen</b> an (in den Papierkorb oder endgültig). Das ältere Original bleibt und bekommt den Ordnernamen der gelöschten Kopie als Tag. In den <b>Einstellungen</b> wählst du, wie Ereignisordner in Vorschlägen heißen (zum Beispiel <code>JJ.MM_Ereignis</code>); vorhandene Ordner werden nicht umbenannt, und alle Formen werden erkannt.</p>
+            <p>shoebox importiert keine Fotos. Die Fotos im Finder oder Explorer aufs Laufwerk kopieren oder verschieben (dabei bleiben ihre Daten erhalten), am besten in einen Ordner namens <b>JJJJ-MM Ereignis</b>, und <b>Scannen</b> drücken. Findet der Scan neue Dateien, die das Laufwerk schon hatte, markiert die Zentrale sie mit <i>schon auf dem Laufwerk</i> und bietet <b>Die neuen Kopien löschen</b> an (in den Papierkorb oder endgültig). Das ältere Original bleibt und bekommt den Ordnernamen der gelöschten Kopie als Tag. In den <b>Einstellungen</b> wählst du, wie Ereignisordner in Vorschlägen heißen (zum Beispiel <code>JJ.MM_Ereignis</code>); vorhandene Ordner werden nicht umbenannt, und alle Formen werden erkannt.</p>
           </div>
           <div>
             <h3>Duplikate</h3>
-            <p><b>Duplikate</b> zeigt vier Arten: identisch, dasselbe Foto in anderer Größe, Original und bearbeitet sowie Ähnliche. Hake <b>diese Kopie löschen</b> bei dem an, was weg soll; die beste Datei bleibt, und von jedem Duplikat bleibt immer mindestens eine Datei. Tags und Aufnahmedatum einer entfernten Kopie gehen auf die übrige über.</p>
+            <p><b>Duplikate</b> zeigt vier Arten: identisch, dasselbe Foto in anderer Größe, Original und bearbeitet sowie Ähnliche. Hake <b>diese Kopie löschen</b> bei dem an, was weg soll; die beste Datei bleibt, und von jedem Duplikat bleibt immer mindestens eine Datei. Tags und Aufnahmedatum einer entfernten Kopie gehen auf die übrige über. Bei mehr als einem Laufwerk zeigt der Reiter <b>Über Laufwerke hinweg</b> (in <b>Alle Laufwerke</b> und unter <b>Laufwerke verwalten</b>) Fotos, die auf mehreren Laufwerken liegen: ein Bild, eine Zeile pro Kopie mit Name des Datenträgers und Ordner. Hake die Kopien an, die weg sollen, oder wähle ein Laufwerk und <b>Alle markieren</b>, um jede Kopie darauf anzukreuzen; die letzte Kopie eines Fotos lässt sich nie ankreuzen. <b>In den Papierkorb</b> fragt vorher nach und legt jede Kopie in den Papierkorb ihres eigenen Laufwerks.</p>
             <div class="subs">
               <h4>Schnellaktionen</h4>
               <p><b>Kopien im selben Ordner entfernen</b> und <b>Kopien geringerer Qualität entfernen</b> räumen die eindeutigen Fälle in einem Zug auf.</p>
@@ -520,7 +530,7 @@
           </div>
           <div>
             <h3>Papierkorb</h3>
-            <p>Nichts wird sofort gelöscht. Gelöschte Fotos warten in <code>.shoebox/trash</code> auf dem Laufwerk: <b>Zurücklegen</b> oder <b>Endgültig löschen</b>. Das Legen in den Papierkorb in der Zeitleiste und in der Fotoansicht ist standardmäßig aus: Schalte es einmal in den <b>Einstellungen</b> ein (<i>In den Papierkorb legen erlauben</i>). Das Löschen von Kopien bei den <b>Duplikaten</b> und mit <b>Die neuen Kopien löschen</b> funktioniert in jedem Fall und geht ebenfalls in den Papierkorb.</p>
+            <p>Nichts wird sofort gelöscht. Gelöschte Fotos warten in <code>.shoebox/trash</code> auf dem Laufwerk. Klicke Fotos an, um sie auszuwählen (Umschalt-Klick wählt einen Bereich), oder nimm <b>Alle auswählen</b>; die Leiste unten bietet dann <b>Zurücklegen</b> und <b>Endgültig löschen</b>. Endgültig löschen fragt vorher nach. Das Legen in den Papierkorb in der Zeitleiste und in der Fotoansicht ist standardmäßig aus: Schalte es einmal in den <b>Einstellungen</b> ein (<i>In den Papierkorb legen erlauben</i>). Das Löschen von Kopien bei den <b>Duplikaten</b> und mit <b>Die neuen Kopien löschen</b> funktioniert in jedem Fall und geht ebenfalls in den Papierkorb.</p>
           </div>
         </div>
         <div>
@@ -547,7 +557,7 @@
         <div class="items">
           <div>
             <h3>Finden</h3>
-            <p>Einmal den Recognizer installieren (<code>recognizer/install.sh /Volumes/MeinLaufwerk</code>). Dann im Starter <b>Erkennen</b> (und <b>Haustiere erkennen</b>) ausführen. In der Seitenleiste erscheint der Bereich <b>Gesichter</b>.</p>
+            <p>Die Erweiterungen einmal installieren: in der Zentrale in Schritt 1 <b>Erweiterungen</b> ankreuzen, was du brauchst (<b>Gesichter</b>, und <b>Haustiere</b> für Katzen und Hunde), und <b>Ausgewählte Erweiterungen installieren</b> drücken. Sie liegen im Ordner <code>recognizer</code> neben dem shoebox-Programm: auf dem Laufwerk, wenn shoebox dort liegt, sonst auf deinem Computer für alle Laufwerke. Dann in der Zentrale <b>Gesichter erkennen</b> (und <b>Haustiere erkennen</b>) ausführen. In der Seitenleiste erscheint der Bereich <b>Gesichter</b>.</p>
           </div>
           <div>
             <h3>Benennen</h3>
@@ -563,7 +573,7 @@
           </div>
           <div>
             <h3>Neue Fotos</h3>
-            <p>Die Erkennung startet nach einem Scan noch nicht von selbst. Im Launcher einfach erneut <b>Erkennen</b> anklicken; die Foto-App kann offen bleiben. Die Gesichtserkennung läuft nur auf den neuen Fotos.</p>
+            <p>Die Erkennung startet nach einem Scan noch nicht von selbst. In der Zentrale einfach erneut <b>Gesichter erkennen</b> anklicken; die Foto-App kann offen bleiben. Die Gesichtserkennung läuft nur auf den neuen Fotos.</p>
           </div>
         </div>
         <div>
@@ -669,7 +679,7 @@
         <div class="items">
           <div>
             <h3>Karten einschalten</h3>
-            <p>Öffne die <b>Einstellungen</b> und setze den Haken bei <b>Karten anzeigen (OpenStreetMap)</b>. Die Karten werden in deinem Browser aus OpenStreetMap gezeichnet; das ist die einzige Stelle, an der shoebox das Internet braucht: OpenStreetMap sieht, welche Kartenausschnitte du ansiehst, nie deine Fotos oder deren Namen. shoebox speichert keine Kartenbilder auf dem Laufwerk (dein Browser behält vielleicht welche in seinem eigenen Cache). Ohne Haken wird nie etwas aus dem Internet geladen.</p>
+            <p>Öffne die <b>Einstellungen</b> und setze den Haken bei <b>Karten anzeigen (OpenStreetMap)</b>. Die Karten werden in deinem Browser aus OpenStreetMap gezeichnet; das ist die einzige Stelle, an der shoebox das Internet braucht: OpenStreetMap sieht, welche Kartenausschnitte du ansiehst, nie deine Fotos oder deren Namen. shoebox speichert keine Kartenbilder auf dem Laufwerk (dein Browser behält vielleicht welche in seinem eigenen Cache). Ohne Haken wird nie etwas aus dem Internet geladen. Die Einstellung gilt für alle Laufwerke: Du setzt sie einmal, und sie bleibt an, wenn du das Laufwerk wechselst. Dein Browser merkt sie sich; ein anderer Browser startet mit ausgeschalteten Karten.</p>
           </div>
           <div>
             <h3>In den Infos eines Fotos</h3>
@@ -701,7 +711,11 @@
           <div class="items">
             <div>
               <h3>Mehrere Laufwerke</h3>
-              <p>shoebox mit mehr als einem Laufwerk starten, und jedes erscheint in der Seitenleiste. <b>Alle Laufwerke</b> zeigt eine gemeinsame Zeitleiste über alle, dazu Backups, Fotos auf mehreren Laufwerken und Personen laufwerksübergreifend. Ein abgestecktes Laufwerk steht als offline da.</p>
+              <p>shoebox mit mehr als einem Laufwerk starten, und jedes erscheint in der Seitenleiste. <b>Alle Laufwerke</b> zeigt eine gemeinsame Zeitleiste über alle. Sie ist zum Ansehen da: Favoriten zeigen ein ♥ (ausgegraut, nicht anklickbar), und die Infoleiste zeigt Tags, Favorit und Personen, ohne dass sich dort etwas ändern lässt (<b>Rahmen anzeigen</b> und das Zeigen auf eine Person, um ihr Gesicht zu sehen, funktionieren weiterhin). <b>In … öffnen</b> in der Leiste führt zum eigenen Laufwerk des Fotos, um Tags, Personen oder Favoriten zu ändern. <b>Laufwerke verwalten</b>, neben Duplikate, Papierkorb und Einstellungen, öffnet eine Seite, die nicht vom angesehenen Laufwerk abhängt: deine Laufwerke als Karten und darunter zwei Reiter, <b>Personen über Laufwerke hinweg</b> und <b>Duplikate über Laufwerke hinweg</b>. Ein abgestecktes Laufwerk steht als offline da. Das Laufwerk, das du gerade ansiehst, ist in der Akzentfarbe ausgefüllt, ebenso die Seite darunter (Alle Fotos, Duplikate, Papierkorb, Einstellungen); so siehst du immer, welcher Papierkorb von welchem Laufwerk offen ist.</p>
+            </div>
+            <div>
+              <h3>Original- und Backup-Laufwerke</h3>
+              <p>Auf der Seite Laufwerke verwalten ist jedes Laufwerk eine Karte mit dem Namen der Festplatte und dem Ordner darauf (zum Beispiel <i>Extreme SSD · /Photos</i>). Mit dem Menü in der Karte sagst du, was das Laufwerk ist: <b>Original-Laufwerk</b> oder <b>Backup-Laufwerk</b>. shoebox schlägt ein Backup vor, wenn fast alles auf einem Laufwerk auch auf einem anderen ist, bis du dich entscheidest. Ein Backup hat einen blauen Rahmen, steht direkt hinter seinem Original und trägt <b>Backup von …</b> und <b>Nicht in der gemeinsamen Zeitleiste</b>. Es zeigt, wie viel vom Original auf dem Backup ist, und zwei Listen: Dateien, die <b>noch nicht auf dem Backup</b> sind, und Dateien <b>nur auf dem Backup</b>. Das Ordner-Symbol neben einer Datei zeigt sie im Finder (unter Windows im Explorer). Die Leiste unten in einer Karte sagt, wann das Laufwerk zuletzt gescannt wurde und wann zuletzt neue Dateien darauf angekommen sind (beim Backup: <b>Letztes Backup</b>); zeig auf ein Datum für die genaue Uhrzeit.</p>
             </div>
             <div>
               <h3>Backup-Prüfung</h3>
@@ -765,7 +779,7 @@
     <section id="faq">
       <h2>Wenn etwas komisch aussieht</h2>
       <div class="panel faq">
-        <p><b>Das Raster ist leer.</b> Erst im Starter <b>Scannen</b>, dann die Foto-App starten.</p>
+        <p><b>Das Raster ist leer.</b> Erst in der Zentrale <b>Scannen</b>, dann die Foto-App starten.</p>
         <p><b>Neue Fotos fehlen.</b> Noch einmal scannen. Das geht schnell: nur neue und geänderte Dateien werden gelesen.</p>
         <p><b>Ein Video hat keine Vorschau.</b> <code>ffmpeg</code> hinzufügen (siehe „Gut zu wissen“) und die Foto-App neu starten.</p>
         <p><b>Das iPad verbindet sich nicht.</b> Selbes WLAN? Mit <code>--lan</code> gestartet? PIN aus dem Terminal eingeben. Nach einem Neustart von shoebox fragt es wieder nach der PIN.</p>
@@ -776,7 +790,7 @@
   </main>
 
   <footer>
-    <p>shoebox · © 2026 Sven Fritsch · zur privaten Nutzung, die Bedingungen stehen in <code>LICENSE.txt</code> neben dem Programm im Download</p>
+    <p>shoebox · © 2026 Tesselina Späth · zur privaten Nutzung, die Bedingungen stehen in <code>LICENSE.txt</code> neben dem Programm im Download</p>
     <p>Die Bibliotheken in shoebox und ihre Lizenzen stehen in <code>THIRD-PARTY-LICENSES.txt</code>, daneben.</p>
   </footer>
 </body>

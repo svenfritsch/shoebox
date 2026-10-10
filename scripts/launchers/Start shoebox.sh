@@ -1,13 +1,13 @@
 #!/bin/sh
 # Linux: run this file (right-click > "Run as a Program", or from a terminal).
-# Put it in the drive's top folder, next to .shoebox/.
+# Keep it next to the program "shoebox" (the downloaded folder).
 here=$(cd "$(dirname "$0")" && pwd)
 bin=
-for candidate in "$here/.shoebox/bin/shoebox-linux" "$here/shoebox-linux"; do
+for candidate in "$here/shoebox" "$here/.shoebox/bin/shoebox-linux" "$here/shoebox-linux"; do
     [ -f "$candidate" ] && bin=$candidate && break
 done
 if [ -z "$bin" ]; then
-    echo "shoebox-linux was not found next to this file or in .shoebox/bin/."
+    echo "The program shoebox was not found next to this file."
     printf 'Press Return to close. '; read -r _; exit 1
 fi
 chmod +x "$bin" 2>/dev/null

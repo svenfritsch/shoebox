@@ -135,6 +135,17 @@ Built:
   page (roles with confirm buttons, duplicates across drives, people across
   drives), an offline page for the selected drive that opens it again when it
   comes back. Tests: `core/tests/multi.rs`, `core/tests/serve.rs`.
+- Manage drives page: every drive is a card (same height, a status strip on
+  top, the role menu in the name row, the disk name and folder from
+  `volume.rs`, a footer with "Scanned" and "New files" / "Last backup"). A
+  backup follows its original, has a blue outline and shows a progress bar
+  plus the lists "not on the backup yet" / "only on the backup", each file with
+  a "show in Finder" button (`POST /api/all/reveal`: drive and path, only a
+  file in that drive's index, only from this computer). Below: tabs for people
+  and duplicates across drives. The disk name comes from the path
+  (`/Volumes/<name>`, `/media/<user>/<name>`, `/run/media/…`, `/mnt/<name>`) and,
+  on Windows, from the volume label (`GetVolumeInformationW`; not tested in CI,
+  which does not build Windows yet).
 - Common timeline ("All drives" in the drive list, `GET /api/all/timeline`):
   one list, newest first, over the drives that are online and not backups
   (nor suspected ones). Filters name things instead of numbering them
@@ -142,9 +153,11 @@ Built:
   that lacks one of the names has no match. An item's id is
   `drive * 2^40 + id` and the drive is its position in the `libs` the server
   sends along; `/api/all/tags` and `/api/all/people` feed the search
-  suggestions. It is for looking: no selecting, importing or trash; the info
-  panel shows the drive and a button that opens the photo's own drive for
-  tags, faces and moving. Searching for a person who exists on two drives
+  suggestions. It is for looking: no selecting, importing or trash; hearts show
+  only on favorites (disabled buttons, no outline heart to click); the info
+  panel shows the drive, the favorite, tags and people read-only (no
+  add/remove, no face editing; Show boxes and hovering a person still work) and a button that opens the photo's own
+  drive for changing them and moving. Searching for a person who exists on two drives
   gives the photos of both in one timeline (`core/tests/multi.rs`).
 - Duplicates screen: with several drives it has two tabs, "On this drive"
   (the existing groups and decisions) and "Across drives" (same content on

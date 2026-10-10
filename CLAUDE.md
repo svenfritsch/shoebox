@@ -37,7 +37,8 @@ current status and next step. Update its status table when a phase moves.
 - Moving to the trash from the photo view and the timeline selection is off by
   default: the library setting `allow_trash` (Settings, "Allow move to trash")
   shows the trash icon and the selection button.
-- Maps (phase 10) are an opt-in setting (`maps`, off by default). The browser
+- Maps (phase 10) are an opt-in setting (off by default, one for the whole application: kept by the
+  browser as `shoebox-maps`, not per drive). The browser
   loads the tiles; shoebox never fetches or stores one. A position the user
   gives a photo lives in `library.db` (`geo_overrides`) only, never in the file.
 - Licences: `LICENSE.txt` (all rights reserved, private use) and the generated

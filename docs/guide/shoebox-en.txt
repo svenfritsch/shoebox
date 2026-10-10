@@ -35,10 +35,10 @@ Five things that make it different from other photo managers.
    it, or turn a JPEG (two bytes).
 
 - Lives on your drive, and stays small
-   Everything shoebox needs sits in one hidden .shoebox folder next to your
-   photos: the library library.db, the previews thumbs.db, the trash and the
-   program. Plug the drive into another computer and it all comes along. It
-   adds only what a photo app needs to run: under 1 GB for 80 GB of photos
+   Everything shoebox stores about your photos sits in one hidden .shoebox
+   folder next to your photos: the library library.db, the previews thumbs.db
+   and the trash. Plug the drive into another computer and it all comes along.
+   It adds only what a photo app needs to run: under 1 GB for 80 GB of photos
    (about 1 %), measured on a real library of 31 GB, including the face
    recognition data.
 
@@ -154,35 +154,66 @@ A typical session
 Plug in the drive and double-click Start shoebox. Scan (quick when little has
 changed) and open the photo app. To add the photos of an event, copy their
 folder onto the drive in Finder (named like 2025-08 Holiday) and Scan again:
-if some files were on the drive already, the launcher offers to delete the new
-copies. Then tag and sort. Look at Duplicates now and then, and run the Backup
-check after every backup.
+if some files were on the drive already, the Control Panel offers to delete
+the new copies. Then tag and sort. Look at Duplicates now and then, and run
+the Backup check after every backup.
 
 Get started in three steps
 --------------------------
 
-macOS, Intel (10.13 or newer) and Apple Silicon. Nothing to install.
+macOS, Intel (10.13 or newer) and Apple Silicon. Nothing to install to browse
+and scan; face and pet recognition are add-ons you install from the Control
+Panel.
 
-1. Put it on the drive
-   Unpack shoebox-macos.tar.gz from the release. Copy shoebox-macos and Start
-   shoebox.command to the top folder of your photo drive (next to your photo
-   folders). Optional: the recognizer folder for faces. The archive also holds
-   this guide in the folder guide.
+1. Unpack it and choose where it lives
+   Unpack shoebox-macos.tar.gz from the release (double-click it in Finder).
+   You get one folder, shoebox-macos (the name says which system it is for),
+   with the program shoebox, Start shoebox.command, the folder recognizer (the
+   add-ons installer) and this guide in guide. Keep these files together;
+   never pull single files out of the folder. Then pick one of two ways:
 
-2. Start the launcher
-   Double-click Start shoebox.command. A Terminal window opens (leave it open)
-   and the launcher appears in your browser. If macOS asks, right-click the
-   file and choose Open.
+   On the drive (best if you take the drive to other computers): copy the
+   whole folder shoebox-macos into the top folder of your photo drive, next to
+   your photo folders, so you have /Volumes/MyDrive/shoebox-macos/. Do not
+   create a .shoebox folder yourself: shoebox makes it on the drive at the
+   first scan. Add-ons you install later are stored in
+   shoebox-macos/recognizer on the drive and travel with it. Other systems get
+   their own folder next to it (for example shoebox-windows, when it is
+   published), each with its own add-ons; start shoebox from the folder of the
+   system you are on.
 
-3. Scan, then open
-   Add your drive (click it, or type /Volumes/MyDrive), press Scan, then Start
-   photo app. The first scan reads every file once and takes a while on a big
-   drive; later scans only look at what changed. When it finishes, the tabs
-   Moved, Changed, Missing and Already on the drive (each with its count) list
-   exactly which files they mean; for new files you already had, the tab shows
-   the older copy right next to each one.
+   On your computer: move the whole unpacked folder shoebox-macos somewhere
+   you will keep it (Documents, for example, not Downloads) and leave its
+   files together. Open it from there whichever drives you plug in; add-ons
+   are installed once into its recognizer folder and used for every drive. The
+   library index (a hidden .shoebox folder) is on each drive in both ways.
 
-Launcher tasks
+2. Start the Control Panel
+   Double-click Start shoebox.command (on the drive, or in the folder on your
+   computer). A Terminal window opens (leave it open) and the Control Panel
+   appears in your browser. If macOS asks, right-click the file and choose
+   Open.
+
+3. Add-ons, scan, then open
+   Only if you want people and pets recognized: in step 1, Add-ons, tick what
+   you want (Faces, Pets, or both; each works without the other) and press
+   Install the selected add-ons. The Control Panel lists what is downloaded:
+   the Python and OpenCV program (about 200 MB, once, for all add-ons), Faces
+   (about 40 MB) and Pets (about 140 MB). Internet needed, a few minutes.
+   Add-ons can be added later, and a computer of another kind (Intel or Apple
+   Silicon) needs them installed once on that computer. Python and OpenCV is
+   always installed with the first add-on (its box is ticked and cannot be
+   unticked). Until an add-on is installed, its recognize button stays grey
+   and says why. Click the heading Add-ons to fold the step away; it stays
+   folded once everything is installed. Then add your drive (click it, or type
+   /Volumes/MyDrive), press Scan, then Start photo app. The first scan reads
+   every file once and takes a while on a big drive; later scans only look at
+   what changed. When it finishes, the tabs Moved, Changed, Missing and
+   Already on the drive (each with its count) list exactly which files they
+   mean; for new files you already had, the tab shows the older copy right
+   next to each one.
+
+Control Panel tasks
 Scan: find new, moved and changed photos. Fast: it only looks at what changed
 since the last scan, and the tabs list what this scan changed. Run it after
 you move, rename or add photos. It also lists new copies of files the drive
@@ -198,24 +229,51 @@ content that is nowhere on the drive any more counts as missing. If files are
 gone, a button appears after the check (and after a scan) that forgets their
 records: they are removed from the shoebox index, its database on the drive.
 No photo file is touched.
-Recognize: find faces (and, with Recognize pets, cats and dogs)
-Recognize lying down: also find faces lying down (slower)
-Recognize pets: find cats and dogs; they show up among the faces
+Recognize faces: find the faces in your photos (and, with Recognize pets, cats
+and dogs). Needs the Faces add-on.
+Rotated faces: also find faces turned on their side, for example people lying
+down (slower). Needs the Faces add-on.
+Recognize pets: find cats and dogs; they show up among the faces. Needs the
+Pets add-on, not the Faces one.
 Face stats: how recognition went
 Backup check: is the 2nd folder a complete copy of the 1st?
 
-[Screenshot: The launcher: 1 choose the drive or folder, 2 pick a task, 3 open
-the photo app.]
+[Screenshot: The Control Panel: 1 install add-ons, 2 choose the drive or
+folder, 3 pick a task, 4 open the photo app.]
+
+Several computers and systems
+- Where the add-ons are looked for: first in the recognizer folder next to the
+  shoebox program you started, last in the drive's own hidden
+  .shoebox/recognizer (only used when the program folder has nothing). So a
+  shoebox folder on your computer is used for every drive, even if a drive
+  holds models too.
+- Models and Python are different things. The models (Faces, Pets) are the
+  same on every computer. Python and OpenCV is built for one kind of computer:
+  Intel Mac, Apple Silicon Mac, Linux, Windows. If you take a drive with
+  shoebox-macos from an Intel MacBook to a newer one, step 1 shows Python and
+  OpenCV: required on the newer one, your add-ons say models found, needs
+  Python for this computer, and the recognize buttons are grey. Press Install
+  the selected add-ons once there: only the missing Python is downloaded, the
+  models are kept. Both kinds then live side by side in the same recognizer
+  folder, and each computer uses its own.
+- Mac and Windows on one drive: copy both folders to the drive's top folder:
+  shoebox-macos and shoebox-windows. Each has its own recognizer folder, so
+  models you install in one are not shared with the other. Start shoebox from
+  the folder of the system you are on. Both use the same hidden .shoebox index
+  on the drive. The add-ons install on Windows too, with the same button: it
+  needs Windows 10 or 11 on a 64-bit Intel or AMD processor and nothing else
+  to be installed first.
 
 Good to know
 - Videos get preview images if you put a static ffmpeg next to the program
-  (.shoebox/bin/ffmpeg). Without it, the browser grabs a frame instead.
+  (ffmpeg in the same folder as shoebox). Without it, the browser grabs a
+  frame instead.
 - shoebox keeps everything in a hidden .shoebox folder at the top of the
   drive: the library library.db (index, tags, names, decisions) with its
   backup copy library.db.bak, the previews thumbs.db, recognition.db if you
-  use recognition, the trash and the program in bin. That is why the drive can
-  move to another computer. On a Mac the folder is hidden: press Cmd + Shift +
-  . in Finder to see it.
+  use recognition and the trash. That is why the drive can move to another
+  computer. On a Mac the folder is hidden: press Cmd + Shift + . in Finder to
+  see it.
 - Closing the Terminal window stops shoebox.
 
 The app speaks English and German: pick the language at the bottom of the
@@ -228,10 +286,12 @@ Scroll through the timeline, jump by year, open a photo.
 
 Timeline
 Photos are grouped by capture date, newest first. The Year menu jumps; the
-month heading shows where you are. A photo without a capture date takes the
-month in the name of its event folder (2020-07, 2020.07, 20-07 or 20.07), or
-else the earlier of the file’s created and modified dates; the info panel then
-marks the date as estimated.
+month next to the drive name in the top bar shows where you are. On another
+page (Duplicates, Trash, Settings, Faces, …) it shows the name of that page
+instead. A photo without a capture date takes the month in the name of its
+event folder (2020-07, 2020.07, 20-07 or 20.07), or else the earlier of the
+file’s created and modified dates; the info panel then marks the date as
+estimated.
 
 Folders
 The sidebar mirrors the folders on your drive. Click one to see only its
@@ -318,8 +378,8 @@ Scanning new photos
 shoebox does not import photos. Copy or move the photos onto the drive in
 Finder or File Explorer, which keeps their dates, ideally into a folder named
 YYYY-MM Event, and press Scan. If the scan finds new files the drive already
-had, the launcher marks them already on the drive and offers Delete the new
-copies (to the trash, or for good). The older original stays and gets the
+had, the Control Panel marks them already on the drive and offers Delete the
+new copies (to the trash, or for good). The older original stays and gets the
 deleted copy’s folder name as a tag. Settings sets how event folders are named
 in suggestions (for example YY.MM_Event); existing folders are not renamed and
 all forms are recognised.
@@ -328,7 +388,12 @@ Duplicates
 Duplicates lists four kinds: identical, same photo in another size, original
 and edited, and look-alikes. Tick delete this copy on what you want gone; the
 best file stays, and at least one file of every duplicate always remains. Tags
-and capture dates of a removed copy carry over.
+and capture dates of a removed copy carry over. With more than one drive, the
+tab Across drives (in All drives and under Manage drives) lists photos that
+are on several drives: one picture, one row per copy with the disk name and
+folder. Tick the copies to remove, or pick a drive and Mark all to tick every
+copy on it; the last copy of a photo can never be ticked. Move to trash asks
+first and puts each copy in the trash of its own drive.
 
 Quick actions
 Clear Same Folder Copies and Clear Lower Quality Copies clean up the clear-cut
@@ -353,10 +418,12 @@ Quality Copies leave these photos alone.
 
 Trash
 Nothing is deleted right away. Trashed photos wait in .shoebox/trash on the
-drive: Put back or Delete for good. Moving photos to the trash from the
-timeline or the photo view is off by default: switch it on once in Settings
-(Allow move to trash). Deleting copies on the Duplicates screen and with
-Delete the new copies works either way and also goes to the trash.
+drive. Click photos to select them (Shift-click selects a range), or use
+Select all; the bar at the bottom then has Put back and Delete for good.
+Deleting for good asks first. Moving photos to the trash from the timeline or
+the photo view is off by default: switch it on once in Settings (Allow move to
+trash). Deleting copies on the Duplicates screen and with Delete the new
+copies works either way and also goes to the trash.
 
 [Screenshot: After a scan: new copies of files the drive already had.]
 
@@ -370,9 +437,12 @@ People and pets
 Optional: shoebox finds faces, cats and dogs; you give them names.
 
 Find them
-Install the recognizer once (recognizer/install.sh /Volumes/MyDrive). Then run
-Recognize (and Recognize pets) in the launcher. A Faces section appears in the
-sidebar.
+Install the add-ons once: in the Control Panel, step 1 Add-ons, tick what you
+need (Faces, and Pets for cats and dogs) and press Install the selected
+add-ons. They are stored in the recognizer folder next to the shoebox program:
+on the drive if shoebox lives on the drive, otherwise on your computer for
+every drive. Then run Recognize faces (and Recognize pets) in the Control
+Panel. A Faces section appears in the sidebar.
 
 Name them
 Under Unnamed, shoebox shows cards of similar faces. Type a name once and the
@@ -390,9 +460,9 @@ Names work in the search box like tags, and so do kinds such as “all cats”.
 Combine a person with a tag, a folder or another person.
 
 New photos
-Recognition does not start by itself after a scan. Click Recognize in the
-launcher again; the photo app can stay open. Face recognition only runs on the
-new photos.
+Recognition does not start by itself after a scan. Click Recognize faces in
+the Control Panel again; the photo app can stay open. Face recognition only
+runs on the new photos.
 
 [Screenshot: Unnamed cards: one name for every face on a card.]
 
@@ -486,7 +556,9 @@ browser from OpenStreetMap, so this is the one place where shoebox needs the
 internet: OpenStreetMap sees which parts of the map you look at, never your
 photos or their names. shoebox saves no map pictures on the drive (your
 browser may keep some in its own cache). With the box unticked nothing is ever
-loaded from the internet.
+loaded from the internet. The setting is the same for all your drives: you
+tick it once, and it stays on when you switch to another drive. It is
+remembered by your browser, so another browser starts with maps off.
 
 In a photo’s info
 Where the file has GPS data, GPS data in the info panel shows the position
@@ -536,9 +608,31 @@ Drives, backups and the iPad
 
 Several drives
 Start shoebox with more than one drive and each one appears in the sidebar.
-All drives gives you one common timeline across all of them, and shows
-backups, photos that exist on more than one drive, and people across drives. A
-drive that is unplugged is shown as offline.
+All drives gives you one common timeline across all of them. It is for
+looking: photos that are favorites show a ♥ (greyed out, you cannot click it),
+and the info panel shows tags, favorite and people, but none of it can be
+changed there (Show boxes and pointing at a person to see their face still
+work). Open in … in the panel takes you to the photo's own drive to change
+tags, people or favorites. Manage drives, next to Duplicates, Trash and
+Settings, opens a page that does not depend on the drive you are looking at:
+your drives as cards, and two tabs below them, People across drives and
+Duplicates across drives. A drive that is unplugged is shown as offline. The
+drive you are looking at is filled in with the accent colour, and so is the
+page you have open under it (All photos, Duplicates, Trash, Settings), so you
+can always see which drive's trash you are in.
+
+Original and backup drives
+On the Manage drives page every drive is a card with its disk name and the
+folder on it (for example Extreme SSD · /Photos). Say what each drive is with
+the menu in the card: Original drive or Backup drive. shoebox suggests a
+backup when almost everything on a drive is on another one, until you decide.
+A backup has a blue outline, sits right after its original and says Backup of
+… and Not in common timeline. It shows how much of the original is on the
+backup, and two lists: files not on the backup yet and files only on the
+backup. The folder icon next to a file shows it in Finder (Explorer on
+Windows). The bar at the bottom of a card says when the drive was last scanned
+and when new files last arrived on it (on a backup: Last backup); point at a
+date for the exact time.
 
 Backup check
 Choose the original first and the backup second. shoebox compares the two
@@ -590,7 +684,8 @@ anything into them.
 If something looks off
 ----------------------
 
-The grid is empty. Run Scan in the launcher first, then start the photo app.
+The grid is empty. Run Scan in the Control Panel first, then start the photo
+app.
 
 New photos are missing. Scan again. It is quick: only new and changed files
 are read.
@@ -607,8 +702,8 @@ reload.
 A map is empty or says Offline. Maps need the internet. Check the connection
 and open the photo again; without it everything else works as before.
 
-shoebox · © 2026 Sven Fritsch · for private use, the terms are in LICENSE.txt
-next to the program in the download
+shoebox · © 2026 Tesselina Späth · for private use, the terms are in
+LICENSE.txt next to the program in the download
 
 The libraries inside shoebox and their licences are listed in
 THIRD-PARTY-LICENSES.txt, next to it.

@@ -284,11 +284,19 @@ impl WorkerCommand {
 }
 
 /// The worker to use: `explicit` (`--recognizer`) or `$SHOEBOX_RECOGNIZER`
-/// if given, else `recognizer/recognizer.py` in the library's `.shoebox/` or
-/// next to the folder of the shoebox binary (`.shoebox/bin/../recognizer`).
-/// A `.py` is run with the standalone Python in `recognizer/runtime/<os>-<arch>/`
-/// when there is one, else with `python3` from `PATH`.
+/// if given, else the first of the folders from [`worker_dirs`] that holds a
+/// `recognizer.py`, the models the run needs (the pet models with `pets`, else
+/// the face models) and the standalone Python for this computer; failing
+/// that, the first with the models (it then runs with `python3` from `PATH`),
+/// else the first with a `recognizer.py`. A folder that has only the faces
+/// does not hide an install of the pets, and one installed on another kind of
+/// Mac (no `runtime/<os>-<arch>/` here) does not hide a complete one.
 pub fn find_worker(root: &Path, explicit: Option<&Path>) -> Option<WorkerCommand> {
+    find_worker_for(root, explicit, false)
+}
+
+/// [`find_worker`] for a run that needs the pet models when `pets` is set.
+pub fn find_worker_for(root: &Path, explicit: Option<&Path>, pets: bool) -> Option<WorkerCommand> {
     let explicit = explicit
         .map(Path::to_path_buf)
         .or_else(|| std::env::var_os("SHOEBOX_RECOGNIZER").filter(|v| !v.is_empty()).map(PathBuf::from));
@@ -299,26 +307,202 @@ pub fn find_worker(root: &Path, explicit: Option<&Path>) -> Option<WorkerCommand
         }
         return Some(WorkerCommand { program, args: Vec::new() });
     }
-    let mut dirs = vec![root.join(db::DIR).join("recognizer")];
+    let dirs: Vec<PathBuf> = worker_dirs(Some(root)).into_iter().filter(|d| d.join("recognizer.py").is_file()).collect();
+    let models = |d: &PathBuf| if pets { has_pets(d) } else { has_faces(d) };
+    let dir = dirs
+        .iter()
+        .find(|d| models(d) && bundled_python(d).is_some())
+        .or_else(|| dirs.iter().find(|d| models(d)))
+        .or(dirs.first())?;
+    Some(WorkerCommand { program: python(dir)?, args: vec![dir.join("recognizer.py").into_os_string()] })
+}
+
+/// Where an installed recognizer is looked for, best first: `recognizer/` next
+/// to the shoebox program (the downloaded folder, on the computer or on a
+/// drive), then the drive's own `.shoebox/recognizer/` (made by
+/// `install.sh <drive>` or `install.ps1 -Root <drive>`; a program in the older `.shoebox/bin/` layout lands
+/// here too). The drive's only serves when nothing is installed next to the
+/// program, so a program folder on the computer is used for every drive.
+pub fn worker_dirs(root: Option<&Path>) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
     if let Some(bin) = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)) {
-        dirs.push(bin.join("..").join("recognizer"));
+        dirs.push(bin.join("recognizer"));
     }
-    dirs.into_iter().find_map(|dir| {
-        let script = dir.join("recognizer.py");
-        script.is_file().then(|| Some(WorkerCommand { program: python(&dir)?, args: vec![script.into_os_string()] }))?
-    })
+    dirs.extend(root.map(|r| r.join(db::DIR).join("recognizer")));
+    dirs
+}
+
+const FACE_MODELS: [&str; 2] = ["face_detection_yunet_2023mar.onnx", "face_recognition_sface_2021dec.onnx"];
+const PET_DETECTOR: &str = "object_detection_yolox_2022nov.onnx";
+const PET_EMBEDDERS: [&str; 2] = ["dinov2_small.onnx", "image_classification_ppresnet50_2022jan.onnx"];
+
+fn has_faces(dir: &Path) -> bool {
+    FACE_MODELS.iter().all(|m| dir.join("models").join(m).is_file())
+}
+
+fn has_pets(dir: &Path) -> bool {
+    dir.join("models").join(PET_DETECTOR).is_file() && PET_EMBEDDERS.iter().any(|m| dir.join("models").join(m).is_file())
+}
+
+/// What can be recognized for a library: the add-ons found by
+/// [`worker_dirs`]. Nothing is started; the files are looked at.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct Installed {
+    /// The standalone Python and OpenCV for this kind of computer.
+    pub runtime: bool,
+    /// Models are there (for a runtime that may be missing on this computer).
+    pub models: bool,
+    /// … which ones, whether or not the runtime for this computer is there.
+    pub faces_models: bool,
+    pub pets_models: bool,
+    pub faces: bool,
+    pub pets: bool,
+    /// The folder the best install is in (the one `recognize` would use).
+    pub dir: Option<PathBuf>,
+}
+
+pub fn installed(root: Option<&Path>) -> Installed {
+    let dirs: Vec<PathBuf> = worker_dirs(root).into_iter().filter(|d| d.join("recognizer.py").is_file()).collect();
+    // Only a folder with the Python for this computer counts as installed:
+    // the models work everywhere, the runtime is per kind of computer.
+    let ready: Vec<&PathBuf> = dirs.iter().filter(|d| bundled_python(d).is_some()).collect();
+    Installed {
+        runtime: !ready.is_empty(),
+        models: dirs.iter().any(|d| has_faces(d) || has_pets(d)),
+        faces_models: dirs.iter().any(|d| has_faces(d)),
+        pets_models: dirs.iter().any(|d| has_pets(d)),
+        faces: ready.iter().any(|d| has_faces(d)),
+        pets: ready.iter().any(|d| has_pets(d)),
+        dir: ready.first().map(|d| (*d).clone()),
+    }
+}
+
+/// The installer script of this system: `install.sh` (macOS, Linux) or
+/// `install.ps1` (Windows, run by PowerShell, which every Windows 10 and 11 has).
+const INSTALLER: &str = if cfg!(windows) { "install.ps1" } else { "install.sh" };
+
+/// The folder the installer fills when it is given no path: `recognizer/` next
+/// to the shoebox program, if that is where the downloaded folder keeps it.
+pub fn program_dir() -> Option<PathBuf> {
+    let bin = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    let dir = bin.join("recognizer");
+    dir.join(INSTALLER).is_file().then_some(dir)
+}
+
+/// The standalone Python of this kind of computer in `<dir>/runtime/<os>-<arch>/`.
+fn bundled_python(dir: &Path) -> Option<PathBuf> {
+    let runtime = dir.join("runtime").join(format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH));
+    let bundled = if cfg!(windows) { runtime.join("python.exe") } else { runtime.join("bin").join("python3") };
+    bundled.is_file().then_some(bundled)
 }
 
 /// The standalone Python shipped in `<dir>/runtime/<os>-<arch>/`, else `python3`
 /// from `PATH`.
 fn python(dir: &Path) -> Option<PathBuf> {
-    let runtime = dir.join("runtime").join(format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH));
-    let bundled = if cfg!(windows) { runtime.join("python.exe") } else { runtime.join("bin").join("python3") };
-    if bundled.is_file() {
+    if let Some(bundled) = bundled_python(dir) {
         return Some(bundled);
     }
     let name = if cfg!(windows) { "python.exe" } else { "python3" };
     std::env::split_paths(&std::env::var_os("PATH")?).map(|d| d.join(name)).find(|p| p.is_file())
+}
+
+/// The command that runs the installer script `script` for the add-ons asked
+/// for, with its errors on the same stream as its output (the script itself
+/// prints its errors to stdout on Windows).
+fn installer_command(script: &Path, faces: bool, pets: bool) -> Command {
+    let mut cmd;
+    if cfg!(windows) {
+        // Bypass: the policy "scripts are disabled" is the default on some
+        // editions and the downloaded script carries a web mark.
+        cmd = Command::new("powershell.exe");
+        cmd.args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"]).arg(script);
+        if faces {
+            cmd.arg("-Faces");
+        }
+        if pets {
+            cmd.arg("-Pets");
+        }
+        // No black console window on top of the Control Panel.
+        #[cfg(windows)]
+        std::os::windows::process::CommandExt::creation_flags(&mut cmd, 0x0800_0000); // CREATE_NO_WINDOW
+    } else {
+        cmd = Command::new("sh");
+        cmd.arg("-c").arg("exec sh \"$0\" \"$@\" 2>&1").arg(script);
+        if faces {
+            cmd.arg("--faces");
+        }
+        if pets {
+            cmd.arg("--pets");
+        }
+    }
+    cmd
+}
+
+/// Stop the installer and what it started (tar, pip). On Windows killing the
+/// shell alone would leave those running.
+fn stop_installer(child: &mut std::process::Child) {
+    if cfg!(windows) {
+        let _ = Command::new("taskkill").args(["/PID", &child.id().to_string(), "/T", "/F"]).stdout(Stdio::null()).stderr(Stdio::null()).status();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// Run the installer (`install.sh`, or `install.ps1` on Windows) from `dir`
+/// (see [`program_dir`]) to fill `dir` with the runtime and the models of the
+/// add-ons asked for: `faces` and/or `pets`. Its output goes to the report line
+/// by line; "Cancel" stops it. Needs the internet.
+pub fn install(dir: &Path, faces: bool, pets: bool) -> Result<Installed> {
+    let script = dir.join(INSTALLER);
+    if !script.is_file() {
+        bail!("{} is missing", script.display());
+    }
+    let mut cmd = installer_command(&script, faces, pets);
+    cmd.env("SHOEBOX_QUIET", "1").stdin(Stdio::null()).stdout(Stdio::piped());
+    let mut child = cmd.spawn().with_context(|| format!("cannot run {}", script.display()))?;
+    let mut out = child.stdout.take().expect("piped");
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    std::thread::spawn(move || {
+        let mut buf = [0u8; 4096];
+        while let Ok(n @ 1..) = std::io::Read::read(&mut out, &mut buf) {
+            if tx.send(buf[..n].to_vec()).is_err() {
+                break;
+            }
+        }
+    });
+    let mut pending = Vec::new();
+    let emit = |pending: &mut Vec<u8>| {
+        let text = String::from_utf8_lossy(pending).trim().to_string();
+        pending.clear();
+        if !text.is_empty() {
+            say!("{text}");
+        }
+    };
+    loop {
+        match rx.recv_timeout(POLL) {
+            Ok(chunk) => {
+                for b in chunk {
+                    if b == b'\n' || b == b'\r' {
+                        emit(&mut pending);
+                    } else {
+                        pending.push(b);
+                    }
+                }
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => break,
+        }
+        if crate::report::cancelled() {
+            stop_installer(&mut child);
+            return Err(Interrupted.into());
+        }
+    }
+    emit(&mut pending);
+    let status = child.wait()?;
+    if !status.success() {
+        bail!("the installation failed ({status}); check the internet connection and try again");
+    }
+    Ok(installed(None))
 }
 
 // ---------------------------------------------------------------- the worker
@@ -588,7 +772,8 @@ pub struct Worker {
     cmd: WorkerCommand,
     timeouts: Timeouts,
     process: Option<Process>,
-    faces: TaskInfo,
+    /// Absent when only the pet models are installed.
+    faces: Option<TaskInfo>,
     /// Cats and dogs, if the worker was started with them (`--pets`).
     pets: Option<TaskInfo>,
     /// The worker can embed boxes drawn by hand, comparably to its faces.
@@ -607,15 +792,18 @@ impl Worker {
     /// speaks another protocol or cannot find faces.
     pub fn start(cmd: WorkerCommand, timeouts: Timeouts) -> Result<Worker> {
         let (process, hello) = launch(&cmd, &timeouts)?;
-        let faces = hello.tasks.get(FACES).cloned().ok_or_else(|| anyhow!("the recognizer cannot find faces"))?;
-        if faces.dim == 0 || faces.model.is_empty() {
+        let faces = hello.tasks.get(FACES).cloned();
+        if faces.as_ref().is_some_and(|f| f.dim == 0 || f.model.is_empty()) {
             bail!("the recognizer reports no face model");
         }
-        let embed = hello.tasks.get(EMBED).is_some_and(|e| e.model == faces.model && e.dim == faces.dim);
+        let embed = faces.as_ref().is_some_and(|f| hello.tasks.get(EMBED).is_some_and(|e| e.model == f.model && e.dim == f.dim));
         let pets = hello.tasks.get(PETS).filter(|a| a.dim > 0 && !a.model.is_empty()).cloned();
         let embed_pets = pets
             .as_ref()
             .is_some_and(|a| hello.tasks.get(EMBED_PETS).is_some_and(|e| e.model == a.model && e.dim == a.dim));
+        if faces.is_none() && pets.is_none() {
+            bail!("the recognizer cannot find faces");
+        }
         Ok(Worker {
             cmd,
             timeouts,
@@ -631,9 +819,9 @@ impl Worker {
         })
     }
 
-    /// Model and embedding size for faces.
-    pub fn faces_model(&self) -> &TaskInfo {
-        &self.faces
+    /// Model and embedding size for faces, if the face models are installed.
+    pub fn faces_model(&self) -> Option<&TaskInfo> {
+        self.faces.as_ref()
     }
 
     /// Model and embedding size for pets, if the worker does them.
@@ -672,7 +860,7 @@ impl Worker {
         let request = serde_json::json!({ "tasks": [EMBED], "image": BASE64.encode(image), "boxes": boxes });
         Ok(self.ask(request)?.and_then(|reply| {
             let raw = reply.embed.clone();
-            self.parse_embedded(&reply, raw, boxes.len(), self.faces.dim).map_err(Failure::Refused)
+            self.parse_embedded(&reply, raw, boxes.len(), self.faces.as_ref().map_or(0, |f| f.dim)).map_err(Failure::Refused)
         }))
     }
 
@@ -734,8 +922,9 @@ impl Worker {
     fn ask(&mut self, mut request: serde_json::Value) -> Result<Result<Reply, Failure>> {
         if self.process.is_none() {
             let (process, hello) = launch(&self.cmd, &self.timeouts).context("restarting the recognizer")?;
-            match hello.tasks.get(FACES) {
-                Some(t) if t.model == self.faces.model && t.dim == self.faces.dim => {}
+            match (hello.tasks.get(FACES), &self.faces) {
+                (None, None) => {}
+                (Some(t), Some(f)) if t.model == f.model && t.dim == f.dim => {}
                 _ => bail!("the recognizer came back with another face model"),
             }
             if let Some(a) = &self.pets {
@@ -806,7 +995,7 @@ impl Worker {
             if !(f.bbox.iter().all(|v| v.is_finite()) && f.score.is_finite() && w > 0.0 && h > 0.0) {
                 return Err("reply with an invalid face box".into());
             }
-            let emb = self.decode_emb(&f.emb, self.faces.dim)?;
+            let emb = self.decode_emb(&f.emb, self.faces.as_ref().map_or(0, |f| f.dim))?;
             // Boxes may reach past the edge of the picture; keep the part inside.
             let (x0, y0) = ((x / fw).clamp(0.0, 1.0), (y / fh).clamp(0.0, 1.0));
             let (x1, y1) = (((x + w) / fw).clamp(0.0, 1.0), ((y + h) / fh).clamp(0.0, 1.0));
@@ -1050,9 +1239,10 @@ pub fn run(opts: &Options) -> Result<Stats> {
     if !db_path.is_file() {
         bail!("no index at {} (run `shoebox scan` first)", db_path.display());
     }
-    let cmd = find_worker(&root, opts.recognizer.as_deref()).ok_or_else(|| {
+    let cmd = find_worker_for(&root, opts.recognizer.as_deref(), opts.pets).ok_or_else(|| {
         anyhow!(
-            "face recognition is not installed: no {} found (see recognizer/README.md)",
+            "face recognition is not installed: no {} found, nor a recognizer/ folder next to shoebox \
+             (install the Faces add-on in the Control Panel, step 1, or see recognizer/README.md)",
             root.join(db::DIR).join("recognizer").join("recognizer.py").display()
         )
     })?;
@@ -1075,11 +1265,10 @@ pub fn run(opts: &Options) -> Result<Stats> {
     say!("Starting the recognizer ({})…", cmd.program.display());
     let cmd = if opts.pets { cmd.with_pets() } else { cmd };
     let mut worker = Worker::start(cmd, opts.timeouts)?;
-    say!(
-        "Recognizer {} ready: faces with {}.",
-        worker.version().unwrap_or("(unknown version)"),
-        worker.faces_model().model
-    );
+    match worker.faces_model() {
+        Some(f) => say!("Recognizer {} ready: faces with {}.", worker.version().unwrap_or("(unknown version)"), f.model),
+        None => say!("Recognizer {} ready: no face models installed, so only cats and dogs.", worker.version().unwrap_or("(unknown version)")),
+    }
     if opts.pets {
         match worker.pets_model() {
             Some(a) => say!("Cats and dogs with {}.", a.model),
@@ -1087,13 +1276,22 @@ pub fn run(opts: &Options) -> Result<Stats> {
                 worker.stop();
                 bail!(
                     "the recognizer cannot find pets: its models are missing or it is too old \
-                     (run recognizer/fetch-models.sh, or recognizer/install.sh again; see recognizer/README.md)"
+                     (run recognizer/fetch-models.sh (fetch-models.ps1 on Windows), or the installer in recognizer/ again; see recognizer/README.md)"
                 );
             }
         }
     }
-    let result = recognize(&conn, &root, &mut worker, opts.limit, opts.retry_failed).and_then(|mut stats| {
-        if opts.rotated {
+    if worker.faces_model().is_none() && !opts.pets {
+        worker.stop();
+        bail!("the Faces add-on is not installed (install it in the Control Panel, step 1, or run the installer in recognizer/)");
+    }
+    let first = if worker.faces_model().is_some() {
+        recognize(&conn, &root, &mut worker, opts.limit, opts.retry_failed)
+    } else {
+        Ok(Stats::default())
+    };
+    let result = first.and_then(|mut stats| {
+        if opts.rotated && worker.faces_model().is_some() {
             let rotated = recognize_rotated(&conn, &root, &mut worker, opts.limit, opts.retry_failed)?;
             stats.rotated = Some(Box::new(rotated));
         }
@@ -1139,7 +1337,9 @@ pub fn recognize(
     limit: Option<usize>,
     retry_failed: bool,
 ) -> Result<Stats> {
-    let model = worker.faces_model().model.clone();
+    let Some(model) = worker.faces_model().map(|f| f.model.clone()) else {
+        bail!("the Faces add-on is not installed");
+    };
     let pending = pending(conn, &not_looked_sql(FACES), &model, retry_failed)?;
     let stats = run_pass(conn, root, worker, Pass::Upright, pending, limit)?;
 
@@ -1196,7 +1396,9 @@ pub fn recognize_rotated(
     limit: Option<usize>,
     retry_failed: bool,
 ) -> Result<Stats> {
-    let model = worker.faces_model().model.clone();
+    let Some(model) = worker.faces_model().map(|f| f.model.clone()) else {
+        bail!("the Faces add-on is not installed");
+    };
     let pending = pending(
         conn,
         &format!(
@@ -1242,7 +1444,7 @@ fn run_pass(
 ) -> Result<Stats> {
     let model = match pass {
         Pass::Pets => worker.pets_model().map(|a| a.model.clone()).unwrap_or_default(),
-        _ => worker.faces_model().model.clone(),
+        _ => worker.faces_model().map(|f| f.model.clone()).unwrap_or_default(),
     };
     let mut stats = Stats { model, ..Stats::default() };
     if let Some(limit) = limit.filter(|&l| l < pending.len()) {
@@ -1439,7 +1641,7 @@ pub fn embed_drawn(
     retry_failed: bool,
     stop: &dyn Fn() -> bool,
 ) -> Result<DrawnStats> {
-    let faces_model = worker.faces_model().model.clone();
+    let faces_model = worker.faces_model().map(|f| f.model.clone()).unwrap_or_default();
     let pets_model = worker.pets_model().filter(|_| worker.can_embed_pets()).map(|a| a.model.clone());
     conn.execute(
         "DELETE FROM recog.drawn WHERE NOT EXISTS (SELECT 1 FROM face_decisions d WHERE d.manual = 1
@@ -1454,7 +1656,7 @@ pub fn embed_drawn(
              FROM face_decisions d
              JOIN files f ON f.quick_hash = d.key AND f.missing_since IS NULL AND f.kind IN ({KINDS})
              LEFT JOIN recog.drawn e ON e.key = d.key AND e.x = d.x AND e.y = d.y AND e.w = d.w AND e.h = d.h
-             WHERE d.manual = 1 AND (d.species IS NULL OR ?3 IS NOT NULL)
+             WHERE d.manual = 1 AND (d.species IS NULL OR ?3 IS NOT NULL) AND (d.species IS NOT NULL OR ?1 != '')
                AND (e.key IS NULL OR e.model != CASE WHEN d.species IS NULL THEN ?1 ELSE ?3 END
                     OR (?2 AND e.error IS NOT NULL))
              ORDER BY d.key, f.path_nfc"
@@ -1839,6 +2041,22 @@ pub fn overview(conn: &Connection) -> Result<Overview> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn installer_command_names_the_add_ons() {
+        let args = |c: &Command| c.get_args().map(|a| a.to_string_lossy().into_owned()).collect::<Vec<_>>();
+        let cmd = installer_command(Path::new("/a b/recognizer/install"), true, false);
+        let args = args(&cmd);
+        if cfg!(windows) {
+            assert_eq!(cmd.get_program(), "powershell.exe");
+            assert!(args.contains(&"-Faces".to_string()) && !args.contains(&"-Pets".to_string()));
+            assert!(args.contains(&"Bypass".to_string()));
+        } else {
+            assert_eq!(cmd.get_program(), "sh");
+            assert!(args.contains(&"--faces".to_string()) && !args.contains(&"--pets".to_string()));
+        }
+        assert!(args.iter().any(|a| a.ends_with("install")), "the script path is one argument, spaces and all");
+    }
 
     #[test]
     fn replies_are_matched_by_id() {

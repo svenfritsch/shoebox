@@ -21,6 +21,7 @@ var geo = {
   side: true,
 };
 try { geo.side = localStorage.getItem('geoSide') !== '0'; } catch (e) { /* ignore */ }
+geo.on = readMapsSetting(); // also on the screens that load no library (All drives, Settings)
 
 var TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 var OSM_ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
@@ -68,7 +69,14 @@ function newMap(box, opts) {
   label.hidden = true;
   box.appendChild(label);
   var ok = 0, bad = 0;
-  var layer = L.tileLayer(TILES, { maxZoom: 19, attribution: OSM_ATTRIBUTION });
+  var layer = L.tileLayer(TILES, {
+    maxZoom: 19,
+    attribution: OSM_ATTRIBUTION,
+    // The OSM tile servers answer a request without a Referer with an "Access
+    // blocked" tile (403, still a PNG, so no error shows). The pages are served
+    // with Referrer-Policy: no-referrer; for tiles only send the origin.
+    referrerPolicy: 'origin',
+  });
   layer.on('loading', function () { ok = 0; bad = 0; });
   layer.on('tileload', function () { ok++; label.hidden = true; });
   layer.on('tileerror', function () { bad++; });
@@ -103,11 +111,19 @@ function parseCoord(text, limit) {
 
 // ------------------------------------------------------------------ setting
 
+// The Maps setting belongs to the application, not to a drive: the browser
+// keeps it, so it is the same whichever drive is shown.
+function readMapsSetting() {
+  try { return localStorage.getItem('shoebox-maps') === '1'; } catch (e) { return false; }
+}
+
+function writeMapsSetting(on) {
+  try { localStorage.setItem('shoebox-maps', on ? '1' : '0'); } catch (e) { /* ignore */ }
+}
+
 function loadGeo() {
-  return api(LIBAPI + '/maps').then(function (r) {
-    geo.on = !!r.on;
-    return loadPlaces(); // also with maps off: a place in the search keeps its name
-  }).catch(function () {});
+  geo.on = readMapsSetting();
+  return loadPlaces().catch(function () {}); // also with maps off: a place in the search keeps its name
 }
 
 function mapsSection() {
@@ -118,12 +134,10 @@ function mapsSection() {
   box.type = 'checkbox';
   box.checked = geo.on;
   box.onchange = function () {
-    var want = box.checked;
-    post(LIBAPI + '/maps', { on: want }).then(function (r) {
-      geo.on = !!r.on;
-      if (geo.on) loadPlaces(); else renderLocationsSection();
-      toast(tr('settings.maps_saved'));
-    }).catch(function (e) { box.checked = geo.on; failed(e); });
+    geo.on = box.checked;
+    writeMapsSetting(geo.on);
+    if (geo.on) loadPlaces(); else renderLocationsSection();
+    toast(tr('settings.maps_saved'));
   };
   label.appendChild(box);
   label.appendChild(document.createTextNode(' ' + tr('settings.maps_label')));

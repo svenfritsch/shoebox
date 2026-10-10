@@ -106,10 +106,115 @@ function renderChips() {
 function updateButtons() {
   var n = tickedPaths().length;
   document.querySelectorAll('.actions button').forEach(function (b) {
-    b.disabled = n === 0 || (b.dataset.kind === 'backup' && n !== 2);
+    b.disabled = n === 0 || (b.dataset.kind === 'backup' && n !== 2) || addonMissing(b.dataset.kind).length > 0;
   });
   $('backup-hint').textContent = n === 0 ? tr('launcher.need_ticked') : n !== 2 ? tr('launcher.backup_need_two') : '';
+  loadAddons();
 }
+
+// ---------------------------------------------------------------- add-ons
+
+// What the recognition buttons need: faces (Recognize, lying down) or pets.
+var ADDON_OF = { recognize: 'faces', recognize_rotated: 'faces', recognize_pets: 'pets' };
+var addons = null;       // /api/addons: what is installed, for this computer and each ticked folder
+
+// The ticked folders where the add-on the button needs is missing.
+function addonMissing(kind) {
+  var need = ADDON_OF[kind];
+  if (!need || !addons) return [];
+  return addons.roots.filter(function (r) { return !r[need]; }).map(function (r) { return driveName(r.root); });
+}
+
+function loadAddons() {
+  return api('/api/addons', { roots: tickedPaths() }).then(function (a) {
+    addons = a;
+    renderAddons();
+    foldWhenComplete();
+  }).catch(function () {});
+}
+
+function renderAddons() {
+  if (!addons) return;
+  var state = function (id, on) {
+    var s = $(id); s.textContent = tr(on ? 'launcher.addon.installed' : 'launcher.addon.missing'); s.className = 'pill' + (on ? ' ok' : '');
+  };
+  // Never optional: until it is installed the pill says it is required.
+  var rt = $('addon-runtime-state');
+  rt.textContent = tr(addons.runtime ? 'launcher.addon.installed' : 'launcher.addon.required');
+  rt.className = 'pill' + (addons.runtime ? ' ok' : ' req');
+  // Ready, or the models are on the drive but this kind of computer lacks its Python, or missing.
+  var addonState = function (id, ready, models) {
+    var s = $(id);
+    s.textContent = tr(ready ? 'launcher.addon.installed' : models ? 'launcher.addon.needs_runtime' : 'launcher.addon.missing');
+    s.className = 'pill' + (ready ? ' ok' : '');
+  };
+  addonState('addon-faces-state', addons.faces, addons.faces_models);
+  addonState('addon-pets-state', addons.pets, addons.pets_models);
+  // Each add-on stands alone; an installed one is ticked and cannot be ticked off.
+  ['faces', 'pets'].forEach(function (k) {
+    var box = $('addon-' + k);
+    box.checked = box.checked || addons[k];
+    box.disabled = busy || serving || addons[k];
+  });
+  $('addons-install').disabled = busy || serving || !addons.installable || wantedAddons().length === 0;
+  $('addons-hint').textContent = !addons.installable ? tr('launcher.addons.not_installable')
+    : addons.models && !addons.runtime ? tr('launcher.addons.runtime_missing', { dir: addons.dir })
+    : addons.faces && addons.pets ? tr('launcher.addons.all_installed', { dir: addons.dir })
+    : tr('launcher.addons.where', { dir: addons.dir });
+  // The folded card still says where things stand.
+  var word = function (ready, models) { return tr(ready ? 'launcher.addon.installed' : models ? 'launcher.addon.needs_runtime' : 'launcher.addon.missing'); };
+  $('addons-summary').textContent = [
+    tr('launcher.addon.faces') + ': ' + word(addons.faces, addons.faces_models),
+    tr('launcher.addon.pets') + ': ' + word(addons.pets, addons.pets_models),
+  ].join(' · ');
+  // Why a recognition button is grey.
+  var why = [];
+  if (addonMissing('recognize').length) why.push(tr('launcher.addons.need_faces'));
+  if (addonMissing('recognize_pets').length) why.push(tr('launcher.addons.need_pets'));
+  $('addon-need').textContent = why.join(' ');
+  document.querySelectorAll('.actions button').forEach(function (b) {
+    if (addonMissing(b.dataset.kind).length) b.disabled = true;
+  });
+}
+
+// The add-ons ticked that are not installed yet.
+function wantedAddons() {
+  return ['faces', 'pets'].filter(function (k) { return $('addon-' + k).checked && !(addons && addons[k]); });
+}
+$('addon-faces').onchange = $('addon-pets').onchange = renderAddons;
+// The runtime is installed with the first add-on: its box is ticked and cannot be changed.
+$('addon-runtime').checked = true;
+$('addon-runtime').onclick = function (ev) { ev.preventDefault(); };
+
+// Fold the card: only the heading stays. The choice is remembered; until then
+// it is open while something is missing and folded once everything is there.
+var detailsChosen = false;
+try { var saved = localStorage.getItem('shoebox.addons.open'); if (saved !== null) { detailsChosen = true; $('addons-details').open = saved === '1'; } } catch (e) {}
+$('addons-details').addEventListener('toggle', function () {
+  if (settingDefault) return;
+  detailsChosen = true;
+  try { localStorage.setItem('shoebox.addons.open', $('addons-details').open ? '1' : '0'); } catch (e) {}
+});
+var settingDefault = false;
+function foldWhenComplete() {
+  if (detailsChosen || !addons) return;
+  settingDefault = true;
+  $('addons-details').open = !(addons.runtime && addons.faces && addons.pets);
+  setTimeout(function () { settingDefault = false; }, 0);
+}
+
+$('addons-install').onclick = function () {
+  var want = wantedAddons();
+  api('/api/job', { kind: 'install_addons', faces: want.indexOf('faces') >= 0, pets: want.indexOf('pets') >= 0 }).then(function () {
+    $('progress-card').hidden = false;
+    $('progress-card').scrollIntoView({ behavior: 'smooth' });
+    poll();
+  }).catch(function (e) {
+    $('progress-card').hidden = false;
+    $('job-title').textContent = tr('launcher.not_started', { name: kindName('install_addons') });
+    $('job-error').hidden = false; $('job-error').textContent = e.message;
+  });
+};
 
 $('root').addEventListener('keydown', function (ev) {
   if (ev.key === 'Enter') {
@@ -211,8 +316,9 @@ var BESIDE_APP = ['recognize', 'recognize_pets', 'recognize_rotated', 'faces_sta
 function applyLocks() {
   $('controls').disabled = busy || serving;
   document.querySelectorAll('.actions button').forEach(function (b) {
-    b.disabled = busy || (serving && BESIDE_APP.indexOf(b.dataset.kind) < 0);
+    b.disabled = busy || (serving && BESIDE_APP.indexOf(b.dataset.kind) < 0) || addonMissing(b.dataset.kind).length > 0;
   });
+  renderAddons();
   $('opt-quick').disabled = $('opt-deep').disabled = busy || serving;
   $('start-app').disabled = busy && BESIDE_APP.indexOf(runningKind) < 0;
 }
@@ -222,6 +328,7 @@ function pill(text, cls) {
 }
 
 var reloadedFor = 0;
+var addonsFor = 0;
 var lastJob = null;
 function render(job) {
   if (!job.id) return;
@@ -230,6 +337,7 @@ function render(job) {
   showArrivals(job);
   showForget(job);
   if (job.kind === 'backup' && !job.running && reloadedFor !== job.id) { reloadedFor = job.id; loadConfig(); }
+  if (job.kind === 'install_addons' && !job.running && addonsFor !== job.id) { addonsFor = job.id; loadAddons(); }
   $('progress-card').hidden = false;
   var name = kindName(job.kind);
   busy = job.running;
