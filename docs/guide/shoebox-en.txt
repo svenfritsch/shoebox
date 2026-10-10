@@ -38,9 +38,9 @@ Five things that make it different from other photo managers.
    Everything shoebox needs sits in one hidden .shoebox folder next to your
    photos: the library library.db, the previews thumbs.db, the trash and the
    program. Plug the drive into another computer and it all comes along. It
-   adds only what a photo app needs to run: about 1 GB for 80 GB of photos
-   (roughly 1–2 %), measured on 12-megapixel JPEGs. Optional face recognition
-   adds more.
+   adds only what a photo app needs to run: under 1 GB for 80 GB of photos
+   (about 1 %), measured on a real library of 31 GB, including the face
+   recognition data.
 
 - Duplicates across drives
    Finds identical, resized, edited and look-alike photos, also across several

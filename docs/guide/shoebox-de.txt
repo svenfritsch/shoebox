@@ -40,8 +40,9 @@ Fünf Dinge, die shoebox von anderen Foto-Verwaltungen unterscheiden.
    neben deinen Fotos: die Bibliothek library.db, die Vorschauen thumbs.db,
    der Papierkorb und das Programm. Das Laufwerk an einen anderen Computer
    stecken, und alles ist dabei. shoebox fügt nur hinzu, was eine Foto-App zum
-   Laufen braucht: etwa 1 GB bei 80 GB Fotos (grob 1–2 %), gemessen mit JPEGs
-   zu 12 Megapixeln. Die optionale Gesichtserkennung braucht mehr.
+   Laufen braucht: unter 1 GB bei 80 GB Fotos (etwa 1 %), gemessen an einer
+   echten Bibliothek mit 31 GB, einschließlich der Daten der
+   Gesichtserkennung.
 
 - Duplikate über Laufwerke hinweg
    Findet identische, verkleinerte, bearbeitete und ähnliche Fotos, auch über
