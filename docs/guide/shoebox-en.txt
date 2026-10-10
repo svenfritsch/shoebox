@@ -289,7 +289,12 @@ Duplicates
 Duplicates lists four kinds: identical, same photo in another size, original
 and edited, and look-alikes. Tick delete this copy on what you want gone; the
 best file stays and at least one per group always does. Tags and capture dates
-of a removed copy carry over.
+of a removed copy carry over. With more than one drive, the tab Across drives
+(in All drives and under Manage drives) lists photos that are on several
+drives: one picture, one row per copy with the disk name and folder. Tick the
+copies to remove, or pick a drive and Mark all to tick every copy on it; the
+last copy of a photo can never be ticked. Move to trash asks first and puts
+each copy in the trash of its own drive.
 
 Shortcuts
 Clear Same Folder Copies and Clear Lower Quality Copies clean up the clear-cut
