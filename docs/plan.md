@@ -760,7 +760,7 @@ searches, because the text index is not touched unless a text chip is
 present. Across several drives the query runs per drive in parallel and the
 results are merged by the common timeline.
 
-*Reading time (the real cost).* OCR is heavier than faces. Detection runs on
+*Reading time (the real cost; the spike rounds below measured it and revised this paragraph upwards).* OCR is heavier than faces. Detection runs on
 every photo, recognition only on photos where the detector found text.
 Guesses: old Intel MacBook (OpenCV runner) about 0.5 s detection per photo
 plus ~1 s more for the 15 % with text, so 50,000 photos take **~8–10 hours**;
@@ -933,12 +933,36 @@ a cancelled run continues with the best candidates.
          saved as files, so only the 10 above are measured. By eye its big
          print is plain and its small print (nutrition and test seals) is the
          kind that was lost at 1600 px elsewhere.
-     - **Still open after rounds 1 and 2:** none of the 10 photos is a true
-       no-text photo, so the **false-positive rate on ordinary photos is still
-       unmeasured** (gravel and a bike gave 0 lines, nothing more). Send ~6
-       photos with no text on purpose: people, a landscape, food, a night
-       photo, a brick wall, a forest. A sideways document, a license plate and
-       a shop sign would cover the remaining cases.
+     - **Round 3, five photos with no text on purpose** (a cat on a blanket
+       with crochet, a restaurant terrace with a sea view, a forest path, a
+       jellyfish on sand, beach huts on dunes): **0 lines at every threshold,
+       0 of 5 photos with false text.** That is the result that matters most
+       for trust in the search: plants, sand, textured wool, fences and a
+       table setting produced nothing. (The beach huts have small door
+       numbers; they were not read, which is fine.) Five photos is a small
+       sample; a false line is still possible on signs-like textures, which
+       is why the filter below stays.
+     - **Speed on photos without text is slower than assumed:** 0.52–1.66 s,
+       median 0.70 s, mean 0.84 s (the first photo carried a one-time cost),
+       not the 0.2–0.5 s of the crops. Revised estimate on this server with
+       15 % text photos: 0.85 × 0.70 s + 0.15 × 1.5 s ≈ 0.82 s on average,
+       so **50,000 photos take about 11 hours here**, and more on the old
+       Mac (unmeasured). The earlier "8 hours" and "1.5–2 h on a modern
+       machine" are too low; treat **half a day on a good machine and one to
+       two days on the old Intel Mac** as the working assumption until it is
+       measured there. It stays a resumable background job, in the read order
+       above. Two cheap savings to try in the build, both measurable with the
+       same script: send 1280 px instead of 1600 px for the detection step
+       (the recogniser still gets the full-resolution crops), and run the
+       detector alone first on a small copy and skip the recogniser when it
+       finds no box (the recogniser, not the detector, is what the no-text
+       photos should not pay for; this is how the pass is already designed,
+       but the timing above is for the whole engine, so the detector-only
+       share is still to be split out).
+     - **Still open:** the old-Mac timing, a sideways document, a license
+       plate and one more dark or night photo. The tofu package and a monitor
+       with a tiny "NTSC HD 720P" label were pasted while a run was going and
+       were not measured.
    - *Where it runs:* on the old Intel MacBook (the case that decides whether
      the first run is bearable) and once on a modern machine; the same folder
      both times. The two `text_spike_report.txt` files are pasted back into
