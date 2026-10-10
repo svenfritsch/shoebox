@@ -268,7 +268,9 @@ Good to know
 - Video previews need ffmpeg, a free tool that picks one frame out of a video.
   shoebox looks for it in the same folder as the shoebox program (the file is
   called ffmpeg, or ffmpeg.exe on Windows) and then on your computer’s PATH,
-  for example after brew install ffmpeg. Everything else works without it.
+  for example after brew install ffmpeg. Or download a static build from
+  ffmpeg.org/download and put the single ffmpeg file next to the program; it
+  is optional and usually takes 50–100 MB. Everything else works without it.
   Without ffmpeg a scan stores no preview for videos, and your browser grabs a
   frame while you browse; those frames are not stored. After you add ffmpeg,
   run Scan to store the previews, or restart the photo app.
