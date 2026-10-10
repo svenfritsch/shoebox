@@ -71,6 +71,7 @@ use crate::organize;
 use crate::people;
 use crate::recognize;
 use crate::reveal;
+use crate::volume;
 use crate::scan;
 use crate::tags as own_tags;
 use crate::thumbs::{self, Source};
@@ -757,6 +758,7 @@ fn hub_router(hub: Arc<Hub>) -> Router {
         .route("/api/all/drives", get(all_drives))
         .route("/api/all/role", post(all_set_role))
         .route("/api/all/backups", get(all_backups))
+        .route("/api/all/reveal", post(all_reveal))
         // Not a route with parameters: those would leak into the `Path`
         // extractors of the library's own routes.
         .fallback(fallback)
@@ -1189,7 +1191,20 @@ async fn overview(hub: &Arc<Hub>) -> ApiResult<Overview> {
 async fn all_duplicates(State(hub): State<Arc<Hub>>, Query(q): Query<LimitQuery>) -> ApiResult<Json<multi::CrossDuplicates>> {
     let o = overview(&hub).await?;
     let limit = q.limit.unwrap_or(500).min(5000);
-    let result = tokio::task::spawn_blocking(move || multi::cross_duplicates(&o.drives, &o.roles, limit))
+    let result = tokio::task::spawn_blocking(move || {
+        let mut result = multi::cross_duplicates(&o.drives, &o.roles, limit)?;
+        // The disk name tells two folders of the same name apart.
+        let mut volumes: std::collections::HashMap<String, Option<String>> = std::collections::HashMap::new();
+        for g in &mut result.groups {
+            for f in &mut g.files {
+                let v = volumes.entry(f.library.clone()).or_insert_with(|| {
+                    o.apps.iter().find(|a| library_id(&a.name) == f.library).and_then(|a| volume::placement(&a.root)).map(|p| p.volume)
+                });
+                f.volume = v.clone();
+            }
+        }
+        Ok::<_, anyhow::Error>(result)
+    })
         .await
         .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
     Ok(Json(result))
@@ -1204,34 +1219,53 @@ struct DriveState {
     suggested_backup_of: Option<String>,
     /// Takes part in the common timeline and the duplicates across drives.
     shown_in_all: bool,
+    /// The disk the library folder is on and the folder on it (see `volume.rs`).
+    volume: Option<String>,
+    folder: Option<String>,
+    #[serde(flatten)]
+    facts: multi::DriveFacts,
 }
 
 /// Every drive with its role and, where undecided, what its contents suggest.
 async fn all_drives(State(hub): State<Arc<Hub>>) -> ApiResult<Json<Vec<DriveState>>> {
     let o = overview(&hub).await?;
-    let (eligible, _) = multi::eligibility(&o.drives, &o.roles);
-    let list = hub
-        .slots
-        .iter()
-        .map(|s| match o.roles.iter().position(|r| r.library == s.id) {
-            Some(i) => DriveState {
-                library: s.id.clone(),
-                name: s.name.clone(),
-                online: true,
-                role: o.roles[i].role,
-                suggested_backup_of: o.roles[i].suggested_backup_of.clone(),
-                shown_in_all: eligible.contains(&i),
-            },
-            None => DriveState {
-                library: s.id.clone(),
-                name: s.name.clone(),
-                online: false,
-                role: multi::Role::Unknown,
-                suggested_backup_of: None,
-                shown_in_all: false,
-            },
-        })
-        .collect();
+    let list = tokio::task::spawn_blocking(move || -> ApiResult<Vec<DriveState>> {
+        let (eligible, _) = multi::eligibility(&o.drives, &o.roles);
+        hub.slots
+            .iter()
+            .map(|s| {
+                let Some(i) = o.roles.iter().position(|r| r.library == s.id) else {
+                    return Ok(DriveState {
+                        library: s.id.clone(),
+                        name: s.name.clone(),
+                        online: false,
+                        role: multi::Role::Unknown,
+                        suggested_backup_of: None,
+                        shown_in_all: false,
+                        volume: None,
+                        folder: None,
+                        facts: multi::DriveFacts::default(),
+                    });
+                };
+                let app = o.apps.iter().find(|a| library_id(&a.name) == s.id).ok_or(ApiError::NotFound)?;
+                let place = volume::placement(&app.root);
+                let facts = multi::drive_facts(&app.conn.lock().unwrap())?;
+                Ok(DriveState {
+                    library: s.id.clone(),
+                    name: s.name.clone(),
+                    online: true,
+                    role: o.roles[i].role,
+                    suggested_backup_of: o.roles[i].suggested_backup_of.clone(),
+                    shown_in_all: eligible.contains(&i),
+                    volume: place.as_ref().map(|p| p.volume.clone()),
+                    folder: place.map(|p| p.folder),
+                    facts,
+                })
+            })
+            .collect()
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
     Ok(Json(list))
 }
 
@@ -1403,6 +1437,8 @@ async fn all_tags(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> Ap
 #[derive(Serialize)]
 struct BackupState {
     library: String,
+    /// The drive it copies (its id), for the "not on the backup yet" files.
+    primary_library: Option<String>,
     #[serde(flatten)]
     report: Option<multi::BackupReport>,
     /// Why there is no report: the drive it copies is not there, or none matches.
@@ -1423,11 +1459,13 @@ async fn all_backups(State(hub): State<Arc<Hub>>, Query(q): Query<LimitQuery>) -
             match multi::primary_of(&o.drives, i)? {
                 Some(p) => out.push(BackupState {
                     library: d.id.clone(),
+                    primary_library: Some(o.drives[p].id.clone()),
                     report: Some(multi::backup_report(&o.drives[p].db, &o.drives[p].name, &d.db, &d.name, limit)?),
                     note: None,
                 }),
                 None => out.push(BackupState {
                     library: d.id.clone(),
+                    primary_library: None,
                     report: None,
                     note: Some("No drive that is there holds what this backup holds (is the original drive plugged in?)".into()),
                 }),
@@ -1985,6 +2023,47 @@ async fn reveal_file(
     blocking(&app, move |app| {
         let src = app.source(&app.conn.lock().unwrap(), id)?.ok_or(ApiError::NotFound)?;
         (app.reveal)(&src.path).map_err(ApiError::Internal)?;
+        Ok(Json(serde_json::json!({ "ok": true, "app": reveal::app_name() })))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct AllRevealRequest {
+    library: String,
+    /// As in the index of that drive (relative to its folder).
+    path: String,
+}
+
+/// "Show in Finder" for a file named by drive and path, as the lists of the
+/// backup check give them. Only a file that is in that drive's index and still
+/// there is shown; the request never supplies a path to open.
+async fn all_reveal(
+    State(hub): State<Arc<Hub>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(req): Json<AllRevealRequest>,
+) -> ApiResult<Json<serde_json::Value>> {
+    if !is_local(peer.ip(), host(&headers)) {
+        return Err(ApiError::Forbidden("only this computer can open its file manager"));
+    }
+    let apps = online_apps(&hub).await;
+    let app = apps.into_iter().find(|a| library_id(&a.name) == req.library).ok_or(ApiError::NotFound)?;
+    blocking(&app, move |app| {
+        if !FsPath::new(&req.path).components().all(|c| matches!(c, Component::Normal(_))) {
+            return Err(ApiError::NotFound);
+        }
+        let known: Option<i64> = app
+            .conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT 1 FROM files WHERE path = ?1 AND missing_since IS NULL", [&req.path], |r| r.get(0))
+            .optional()?;
+        let path = app.root.join(&req.path);
+        if known.is_none() || path.symlink_metadata().is_err() {
+            return Err(ApiError::NotFound);
+        }
+        (app.reveal)(&path).map_err(ApiError::Internal)?;
         Ok(Json(serde_json::json!({ "ok": true, "app": reveal::app_name() })))
     })
     .await

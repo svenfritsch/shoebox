@@ -368,6 +368,13 @@ Duplikate zeigt vier Arten: identisch, dasselbe Foto in anderer Größe,
 Original und bearbeitet sowie Ähnliche. Hake diese Kopie löschen bei dem an,
 was weg soll; die beste Datei bleibt, und pro Gruppe bleibt immer mindestens
 eine. Tags und Aufnahmedatum einer entfernten Kopie gehen auf die übrige über.
+Bei mehr als einem Laufwerk zeigt der Reiter Über Laufwerke hinweg (in Alle
+Laufwerke und unter Laufwerke verwalten) Fotos, die auf mehreren Laufwerken
+liegen: ein Bild, eine Zeile pro Kopie mit Name des Datenträgers und Ordner.
+Hake die Kopien an, die weg sollen, oder wähle ein Laufwerk und Alle
+markieren, um jede Kopie darauf anzukreuzen; die letzte Kopie eines Fotos
+lässt sich nie ankreuzen. In den Papierkorb fragt vorher nach und legt jede
+Kopie in den Papierkorb ihres eigenen Laufwerks.
 
 Abkürzungen
 Kopien im selben Ordner entfernen und Kopien geringerer Qualität entfernen
@@ -595,12 +602,27 @@ Mehrere Laufwerke
 shoebox mit mehr als einem Laufwerk starten, und jedes erscheint in der
 Seitenleiste. Alle Laufwerke zeigt eine gemeinsame Zeitleiste über alle.
 Laufwerke verwalten, neben Duplikate, Papierkorb und Einstellungen, öffnet
-eine Seite, die nicht vom angesehenen Laufwerk abhängt: Backups, Fotos auf
-mehreren Laufwerken und Personen laufwerksübergreifend. Ein abgestecktes
-Laufwerk steht als offline da. Das Laufwerk, das du gerade ansiehst, ist in
-der Akzentfarbe ausgefüllt, ebenso die Seite darunter (Alle Fotos, Duplikate,
-Papierkorb, Einstellungen); so siehst du immer, welcher Papierkorb von welchem
-Laufwerk offen ist.
+eine Seite, die nicht vom angesehenen Laufwerk abhängt: deine Laufwerke als
+Karten und darunter zwei Reiter, Personen über Laufwerke hinweg und Duplikate
+über Laufwerke hinweg. Ein abgestecktes Laufwerk steht als offline da. Das
+Laufwerk, das du gerade ansiehst, ist in der Akzentfarbe ausgefüllt, ebenso
+die Seite darunter (Alle Fotos, Duplikate, Papierkorb, Einstellungen); so
+siehst du immer, welcher Papierkorb von welchem Laufwerk offen ist.
+
+Original- und Backup-Laufwerke
+Auf der Seite Laufwerke verwalten ist jedes Laufwerk eine Karte mit dem Namen
+der Festplatte und dem Ordner darauf (zum Beispiel Extreme SSD · /Photos). Mit
+dem Menü in der Karte sagst du, was das Laufwerk ist: Original-Laufwerk oder
+Backup-Laufwerk. shoebox schlägt ein Backup vor, wenn fast alles auf einem
+Laufwerk auch auf einem anderen ist, bis du dich entscheidest. Ein Backup hat
+einen blauen Rahmen, steht direkt hinter seinem Original und trägt Backup von
+… und Nicht in der gemeinsamen Zeitleiste. Es zeigt, wie viel vom Original auf
+dem Backup ist, und zwei Listen: Dateien, die noch nicht auf dem Backup sind,
+und Dateien nur auf dem Backup. Das Ordner-Symbol neben einer Datei zeigt sie
+im Finder (unter Windows im Explorer). Die Leiste unten in einer Karte sagt,
+wann das Laufwerk zuletzt gescannt wurde und wann zuletzt neue Dateien darauf
+angekommen sind (beim Backup: Letztes Backup); zeig auf ein Datum für die
+genaue Uhrzeit.
 
 Backup-Prüfung
 Erst das Original wählen, dann das Backup. shoebox vergleicht die beiden

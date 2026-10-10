@@ -344,7 +344,12 @@ Duplicates
 Duplicates lists four kinds: identical, same photo in another size, original
 and edited, and look-alikes. Tick delete this copy on what you want gone; the
 best file stays and at least one per group always does. Tags and capture dates
-of a removed copy carry over.
+of a removed copy carry over. With more than one drive, the tab Across drives
+(in All drives and under Manage drives) lists photos that are on several
+drives: one picture, one row per copy with the disk name and folder. Tick the
+copies to remove, or pick a drive and Mark all to tick every copy on it; the
+last copy of a photo can never be ticked. Move to trash asks first and puts
+each copy in the trash of its own drive.
 
 Shortcuts
 Clear Same Folder Copies and Clear Lower Quality Copies clean up the clear-cut
@@ -550,11 +555,24 @@ Several drives
 Start shoebox with more than one drive and each one appears in the sidebar.
 All drives gives you one common timeline across all of them. Manage drives,
 next to Duplicates, Trash and Settings, opens a page that does not depend on
-the drive you are looking at: backups, photos that exist on more than one
-drive, and people across drives. A drive that is unplugged is shown as
-offline. The drive you are looking at is filled in with the accent colour, and
-so is the page you have open under it (All photos, Duplicates, Trash,
-Settings), so you can always see which drive's trash you are in.
+the drive you are looking at: your drives as cards, and two tabs below them,
+People across drives and Duplicates across drives. A drive that is unplugged
+is shown as offline. The drive you are looking at is filled in with the accent
+colour, and so is the page you have open under it (All photos, Duplicates,
+Trash, Settings), so you can always see which drive's trash you are in.
+
+Original and backup drives
+On the Manage drives page every drive is a card with its disk name and the
+folder on it (for example Extreme SSD · /Photos). Say what each drive is with
+the menu in the card: Original drive or Backup drive. shoebox suggests a
+backup when almost everything on a drive is on another one, until you decide.
+A backup has a blue outline, sits right after its original and says Backup of
+… and Not in common timeline. It shows how much of the original is on the
+backup, and two lists: files not on the backup yet and files only on the
+backup. The folder icon next to a file shows it in Finder (Explorer on
+Windows). The bar at the bottom of a card says when the drive was last scanned
+and when new files last arrived on it (on a backup: Last backup); point at a
+date for the exact time.
 
 Backup check
 Choose the original first and the backup second. shoebox compares the two

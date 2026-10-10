@@ -32,3 +32,4 @@ pub mod serve;
 pub mod tags;
 pub mod thumbs;
 pub mod verify;
+pub mod volume;
