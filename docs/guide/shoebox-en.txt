@@ -95,8 +95,9 @@ One page in your browser, a timeline of everything on the drive.
 
 - Search & filter
    Type a person, pet, tag or folder. Combine keywords for a more complex
-   search. Filter by photos, videos, Live Photos or screenshots, or show only
-   your favorites ♥.
+   search. Find words inside photos with text: and in file names with name:.
+   Filter by photos, videos, Live Photos or screenshots, or show only your
+   favorites ♥.
 
 - People & pets
    Optional recognition groups faces, cats and dogs. You name them; shoebox
@@ -226,13 +227,12 @@ Control Panel.
    Cancel and start it again later: it continues where it stopped, and it
    reads screenshots and photos without camera data first, because that is
    where most text is. The words are kept on the drive, in the hidden .shoebox
-   folder, next to the faces. Searching for them in the photo app comes in the
-   next version and is not in this one yet. If the label next to Text does not
-   turn to installed, or the Control Panel says Text cannot run on this
-   computer (possible on a very old Mac), everything else you ticked is
-   installed anyway: plug the drive into a newer computer, install Text there
-   and press Recognize text. The words are saved on the drive, so every
-   computer has them afterwards.
+   folder, next to the faces. To search them, see “Find and organise”. If the
+   label next to Text does not turn to installed, or the Control Panel says
+   Text cannot run on this computer (possible on a very old Mac), everything
+   else you ticked is installed anyway: plug the drive into a newer computer,
+   install Text there and press Recognize text. The words are saved on the
+   drive, so every computer has them afterwards.
 
 Control Panel tasks
 Scan: find new, moved and changed photos. Fast: it only looks at what changed
@@ -361,6 +361,16 @@ photo (it appears when you point at a photo; hearted photos always show it).
 Click it again to take it off. Under the hood a favorite is just your own tag
 favorite, kept in the index like any tag, never in the photo.
 
+Recognized text in the viewer
+On a photo that has recognized text, a scanner button appears in the top bar
+next to the ♥, dimmed; photos without text do not show it. Press it, or the
+key t: the lines are outlined on the photo and a section Recognized text opens
+in the info panel, a list that scrolls when there are many lines, with Copy
+all at the right end of its header. Pressing the button again removes the
+outlines and folds the list. A click on the header only folds or unfolds the
+list. The ✕ beside a line hides it from the search (for text you do not want
+found); Show again brings it back.
+
 Rotate
 r turns left, Shift+R right. For JPEGs this changes only the two bytes of the
 rotation flag; for other formats the turn exists in shoebox only.
@@ -399,6 +409,25 @@ directions: in the photo’s info panel, Screenshot is a drop-down that starts
 on shoebox’s guess; pick Yes or No to correct it, and Back to automatic
 returns to the guess. Your choice is kept in the library; the photo file is
 never changed.
+
+Words in photos and file names
+After Recognize text has run (see “Get started in three steps”), the search
+box also finds the words in your photos: a letter, a screenshot, a street
+sign. Type the word and pick the group Recognized text in the suggestions, or
+type text: first (text:Rechnung) to look only there. It becomes a chip with a
+scanner icon. To look only at file names, type name: first (name:IMG_20); that
+chip has a page icon. Case, accents and ß do not matter (strasse finds
+Straße), and a search with several words needs all of them in the same photo.
+Both kinds of chip combine with every other chip, e.g. the text Rechnung in
+one year or of one person, and they work in All drives. The photos shown carry
+a strip with the line that matched.
+
+Only lines the program is sure of count: reading is not perfect, and tiny
+print is left out on purpose. Settings → Calibration → Text check shows what
+counts and what is left out, with the part of the photo cut out next to each
+line, and two sliders (Confidence at least, Height at least) move the limits;
+Back to the defaults resets them. While photos still have to be read, the
+status line says text: N to read.
 
 Select
 Press ☑, then click photos (Shift-click for a range; on the iPad just tap).
@@ -751,6 +780,13 @@ anything into them.
    devices need --lan and a PIN. The one exception is the optional maps
    (Settings, off by default): your browser then loads map pictures from
    OpenStreetMap.
+
+- Text you can forget
+   Words read from your photos are kept on the drive, in
+   .shoebox/recognition.db, never in a photo. Settings → Recognized text →
+   Delete all recognized text removes every one of them (lines you hid stay
+   hidden); Recognize text reads them again. shoebox text stats in a terminal
+   shows how many photos were read and how many lines are kept.
 
 If something looks off
 ----------------------

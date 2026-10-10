@@ -250,7 +250,7 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg></div>
           <h3>Search & filter</h3>
-          <p>Type a person, pet, tag or folder. Combine keywords for a more complex search. Filter by photos, videos, Live Photos or screenshots, or show only your favorites ♥.</p>
+          <p>Type a person, pet, tag or folder. Combine keywords for a more complex search. Find words inside photos with <code>text:</code> and in file names with <code>name:</code>. Filter by photos, videos, Live Photos or screenshots, or show only your favorites ♥.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-people"/></svg></div>
@@ -357,7 +357,7 @@
             <li>
               <h3>Add-ons, scan, then open</h3>
               <p>Only if you want people, pets or the words in your photos recognized: in step 1, <b>Add-ons</b>, tick what you want (<b>Faces</b>, <b>Pets</b>, <b>Text</b>, or any mix; each works without the others) and press <b>Install the selected add-ons</b>. The Control Panel lists what is downloaded: the Python and OpenCV program (about 200 MB, once, for all add-ons), Faces (about 40 MB), Pets (about 140 MB) and Text (about 100 MB). Internet needed, a few minutes. Add-ons can be added later, and a computer of another kind (Intel or Apple Silicon) needs them installed once on that computer. Python and OpenCV is always installed with the first add-on (its box is ticked and cannot be unticked). Until an add-on is installed, its recognize button stays grey and says why. Click the heading <b>Add-ons</b> to fold the step away; it stays folded once everything is installed. Then add your drive (click it, or type <code>/Volumes/MyDrive</code>), press <b>Scan</b>, then <b>Start photo app</b>. The first scan reads every file once and takes a while on a big drive; later scans only look at what changed. When it finishes, the tabs <b>Moved</b>, <b>Changed</b>, <b>Missing</b> and <b>Already on the drive</b> (each with its count) list exactly which files they mean; for new files you already had, the tab shows the older copy right next to each one.</p>
-              <p><b>Text</b> (reading the words in your photos: documents, screenshots, street signs, menus) goes like this: tick <b>Text</b> in step 1, press <b>Install the selected add-ons</b> and wait until the label next to <b>Text</b> says <b>installed</b> (a few minutes, internet needed). Then tick your drive and press <b>Recognize text</b> in step 3. It reads German and English letters and ignores everything else, and it only reads: no photo is changed. It is slow, about a second per photo on a recent computer, so a library of 50,000 photos takes half a day, on an older Mac a day or two. Start it in the evening. You can press <b>Cancel</b> and start it again later: it continues where it stopped, and it reads screenshots and photos without camera data first, because that is where most text is. The words are kept on the drive, in the hidden <code>.shoebox</code> folder, next to the faces. Searching for them in the photo app comes in the next version and is not in this one yet. If the label next to <b>Text</b> does not turn to <b>installed</b>, or the Control Panel says Text cannot run on this computer (possible on a very old Mac), everything else you ticked is installed anyway: plug the drive into a newer computer, install <b>Text</b> there and press <b>Recognize text</b>. The words are saved on the drive, so every computer has them afterwards.</p>
+              <p><b>Text</b> (reading the words in your photos: documents, screenshots, street signs, menus) goes like this: tick <b>Text</b> in step 1, press <b>Install the selected add-ons</b> and wait until the label next to <b>Text</b> says <b>installed</b> (a few minutes, internet needed). Then tick your drive and press <b>Recognize text</b> in step 3. It reads German and English letters and ignores everything else, and it only reads: no photo is changed. It is slow, about a second per photo on a recent computer, so a library of 50,000 photos takes half a day, on an older Mac a day or two. Start it in the evening. You can press <b>Cancel</b> and start it again later: it continues where it stopped, and it reads screenshots and photos without camera data first, because that is where most text is. The words are kept on the drive, in the hidden <code>.shoebox</code> folder, next to the faces. To search them, see “Find and organise”. If the label next to <b>Text</b> does not turn to <b>installed</b>, or the Control Panel says Text cannot run on this computer (possible on a very old Mac), everything else you ticked is installed anyway: plug the drive into a newer computer, install <b>Text</b> there and press <b>Recognize text</b>. The words are saved on the drive, so every computer has them afterwards.</p>
             </li>
           </ol>
           <div class="panel">
@@ -429,6 +429,10 @@
             <p>The <b>♥</b> in the top bar of the viewer, or the key <b>f</b>, marks the photo as a favorite. In the timeline the same heart sits in the top right corner of each photo (it appears when you point at a photo; hearted photos always show it). Click it again to take it off. Under the hood a favorite is just your own tag <i>favorite</i>, kept in the index like any tag, never in the photo.</p>
           </div>
           <div>
+            <h3>Recognized text in the viewer</h3>
+            <p>On a photo that has recognized text, a scanner button appears in the top bar next to the ♥, dimmed; photos without text do not show it. Press it, or the key <b>t</b>: the lines are outlined on the photo and a section <b>Recognized text</b> opens in the info panel, a list that scrolls when there are many lines, with <b>Copy all</b> at the right end of its header. Pressing the button again removes the outlines and folds the list. A click on the header only folds or unfolds the list. The ✕ beside a line hides it from the search (for text you do not want found); <b>Show again</b> brings it back.</p>
+          </div>
+          <div>
             <h3>Rotate</h3>
             <p><b>r</b> turns left, <b>Shift+R</b> right. For JPEGs this changes only the two bytes of the rotation flag; for other formats the turn exists in shoebox only.</p>
           </div>
@@ -468,6 +472,11 @@
             <h3>Search</h3>
             <p>Type in the search box: suggestions appear for tags, people and folders. Pick several and they become chips that narrow the result; × removes one, <b>Clear all</b> starts over. To find your favorites press the <b>♥</b> button next to <b>Type</b>, or type <i>favorite</i> (English) or <i>favorit</i> (German) and pick <b>♥ Favorites</b>; it combines with everything else, e.g. favorites of one person or one year. With maps on (see “Locations and maps”) the suggestions also offer your <b>places</b>.</p>
             <p><b>Type</b> offers <b>Photos</b> (still pictures without screenshots), <b>Videos</b>, <b>Live Photos</b> and <b>Screenshots</b>; tick any of them, and nothing ticked shows everything. To leave screenshots out of the timeline, tick Photos, Videos and Live Photos but not Screenshots; to see only screenshots, tick just <b>Screenshots</b>. Shoebox recognises a screenshot from the file (a PNG without camera data, a name like <i>Screenshot</i> or <i>Bildschirmfoto</i>, the size of a phone or computer screen) and from the picture itself (large areas of one colour). It can be wrong in both directions: in the photo’s info panel, <b>Screenshot</b> is a drop-down that starts on shoebox’s guess; pick <i>Yes</i> or <i>No</i> to correct it, and <i>Back to automatic</i> returns to the guess. Your choice is kept in the library; the photo file is never changed.</p>
+          </div>
+          <div>
+            <h3>Words in photos and file names</h3>
+            <p>After <b>Recognize text</b> has run (see “Get started in three steps”), the search box also finds the words <i>in</i> your photos: a letter, a screenshot, a street sign. Type the word and pick the group <b>Recognized text</b> in the suggestions, or type <code>text:</code> first (<code>text:Rechnung</code>) to look only there. It becomes a chip with a scanner icon. To look only at file names, type <code>name:</code> first (<code>name:IMG_20</code>); that chip has a page icon. Case, accents and ß do not matter (<i>strasse</i> finds <i>Straße</i>), and a search with several words needs all of them in the same photo. Both kinds of chip combine with every other chip, e.g. the text <i>Rechnung</i> in one year or of one person, and they work in <b>All drives</b>. The photos shown carry a strip with the line that matched.</p>
+            <p>Only lines the program is sure of count: reading is not perfect, and tiny print is left out on purpose. <b>Settings → Calibration → Text check</b> shows what counts and what is left out, with the part of the photo cut out next to each line, and two sliders (<b>Confidence at least</b>, <b>Height at least</b>) move the limits; <b>Back to the defaults</b> resets them. While photos still have to be read, the status line says <b>text: N to read</b>.</p>
           </div>
           <div>
             <h3>Select</h3>
@@ -777,6 +786,11 @@
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-globe"/></svg></div>
           <h3>Local</h3>
           <p>No cloud, no account. By default only this computer can connect; other devices need <code>--lan</code> and a PIN. The one exception is the optional maps (Settings, off by default): your browser then loads map pictures from OpenStreetMap.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg></div>
+          <h3>Text you can forget</h3>
+          <p>Words read from your photos are kept on the drive, in <code>.shoebox/recognition.db</code>, never in a photo. <b>Settings → Recognized text → Delete all recognized text</b> removes every one of them (lines you hid stay hidden); <b>Recognize text</b> reads them again. <code>shoebox text stats</code> in a terminal shows how many photos were read and how many lines are kept.</p>
         </li>
       </ul>
     </section>

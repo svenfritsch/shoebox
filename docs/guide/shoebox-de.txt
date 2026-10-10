@@ -98,8 +98,9 @@ Eine Seite im Browser, eine Zeitleiste von allem auf dem Laufwerk.
 
 - Suchen & Filtern
    Tippe eine Person, ein Haustier, einen Tag oder Ordner. Kombiniere
-   Schlagwörter für eine komplexere Suche. Filter nach Fotos, Videos, Live
-   Photos oder Screenshots, oder zeige nur deine Favoriten ♥.
+   Schlagwörter für eine komplexere Suche. Mit text: findest du Wörter in
+   Fotos, mit name: in Dateinamen. Filter nach Fotos, Videos, Live Photos oder
+   Screenshots, oder zeige nur deine Favoriten ♥.
 
 - Personen & Haustiere
    Optionale Erkennung gruppiert Gesichter, Katzen und Hunde. Du vergibst
@@ -239,14 +240,13 @@ die du in der Zentrale installierst.
    starten. Du kannst Abbrechen drücken und später neu starten: Es macht dort
    weiter, wo es aufgehört hat, und liest zuerst Bildschirmfotos und Fotos
    ohne Kameradaten, weil dort die meisten Texte stehen. Die Wörter bleiben
-   auf dem Laufwerk, im versteckten Ordner .shoebox, neben den Gesichtern.
-   Danach zu suchen kommt mit der nächsten Version und ist in dieser noch
-   nicht möglich. Wenn das Schild neben Text nicht auf installiert springt
-   oder die Zentrale sagt, Text laufe auf diesem Computer nicht (bei einem
-   sehr alten Mac möglich), ist alles andere, was du angekreuzt hast, trotzdem
-   installiert: das Laufwerk an einen neueren Computer stecken, dort Text
-   installieren und Text erkennen drücken. Die Wörter werden auf dem Laufwerk
-   gespeichert, danach hat sie jeder Computer.
+   auf dem Laufwerk, im versteckten Ordner .shoebox, neben den Gesichtern. Wie
+   du sie suchst, steht unter „Finden und ordnen“. Wenn das Schild neben Text
+   nicht auf installiert springt oder die Zentrale sagt, Text laufe auf diesem
+   Computer nicht (bei einem sehr alten Mac möglich), ist alles andere, was du
+   angekreuzt hast, trotzdem installiert: das Laufwerk an einen neueren
+   Computer stecken, dort Text installieren und Text erkennen drücken. Die
+   Wörter werden auf dem Laufwerk gespeichert, danach hat sie jeder Computer.
 
 Aufgaben in der Zentrale
 Scannen: neue, verschobene und geänderte Fotos finden. Schnell: es schaut nur
@@ -384,6 +384,17 @@ erscheint, wenn du mit der Maus darüberfährst; Favoriten zeigen es immer).
 Noch einmal klicken nimmt es wieder weg. Intern ist ein Favorit einfach dein
 eigener Tag favorite, im Index gespeichert wie jeder Tag, nie im Foto.
 
+Erkannter Text in der Ansicht
+Bei einem Foto mit erkanntem Text erscheint in der oberen Leiste neben dem ♥
+ein Scanner-Knopf, abgedunkelt; Fotos ohne Text zeigen ihn nicht. Drück ihn
+oder die Taste t: Die Zeilen werden auf dem Foto umrandet, und im Infofeld
+öffnet sich der Abschnitt Erkannter Text, eine Liste, die scrollt, wenn es
+viele Zeilen sind, mit Alles kopieren am rechten Ende der Kopfzeile. Drückst
+du den Knopf erneut, verschwinden die Umrandungen und die Liste klappt zu. Ein
+Klick auf die Kopfzeile klappt nur die Liste auf oder zu. Das ✕ neben einer
+Zeile nimmt sie aus der Suche (für Text, der nicht gefunden werden soll);
+Wieder zeigen holt sie zurück.
+
 Drehen
 r dreht nach links, Umschalt+R nach rechts. Bei JPEGs ändern sich nur die zwei
 Bytes der Drehmarke; bei anderen Formaten gilt die Drehung nur in shoebox.
@@ -425,6 +436,27 @@ sich in beide Richtungen irren: Im Info-Fenster eines Fotos ist Screenshot ein
 Auswahlfeld, das mit der Schätzung von Shoebox beginnt; wähle Ja oder Nein zum
 Korrigieren, Zurück zu automatisch kehrt zur Schätzung zurück. Deine Wahl wird
 in der Bibliothek gemerkt; die Fotodatei wird nie verändert.
+
+Wörter in Fotos und Dateinamen
+Nachdem Text erkennen gelaufen ist (siehe „In drei Schritten loslegen“),
+findet das Suchfeld auch die Wörter in deinen Fotos: einen Brief, ein
+Bildschirmfoto, ein Straßenschild. Tippe das Wort und wähle in den Vorschlägen
+die Gruppe Erkannter Text, oder tippe zuerst text: (text:Rechnung), um nur
+dort zu suchen. Es wird ein Chip mit Scanner-Symbol. Nur Dateinamen suchst du
+mit name: davor (name:IMG_20); dieser Chip hat ein Seiten-Symbol. Groß- und
+Kleinschreibung, Akzente und ß spielen keine Rolle (strasse findet Straße);
+bei mehreren Wörtern müssen alle im selben Foto stehen. Beide Chip-Arten
+lassen sich mit allen anderen Chips verbinden, zum Beispiel der Text Rechnung
+in einem Jahr oder von einer Person, und sie funktionieren in Alle Laufwerke.
+Die gezeigten Fotos tragen einen Streifen mit der Zeile, die gepasst hat.
+
+Es zählen nur Zeilen, bei denen sich das Programm sicher ist: Lesen ist nicht
+perfekt, und winzige Schrift wird mit Absicht weggelassen. Die Text-Prüfung
+(Einstellungen → Kalibrierung → Text-Prüfung) zeigt, was zählt und was
+weggelassen wird, mit dem ausgeschnittenen Teil des Fotos neben jeder Zeile,
+und zwei Regler (Sicherheit mindestens, Höhe mindestens) verschieben die
+Grenzen; Zurück zu den Standardwerten setzt sie zurück. Solange noch Fotos zu
+lesen sind, steht in der Statuszeile Text: N noch zu lesen.
 
 Auswählen
 ☑ drücken, dann Fotos anklicken (mit Umschalt für einen Bereich; am iPad
@@ -810,6 +842,14 @@ etwas hinein.
    verbinden; andere Geräte brauchen --lan und eine PIN. Die einzige Ausnahme
    sind die optionalen Karten (Einstellungen, standardmäßig aus): Dein Browser
    lädt dann Kartenbilder von OpenStreetMap.
+
+- Text, den du vergessen kannst
+   Die aus deinen Fotos gelesenen Wörter liegen auf dem Laufwerk in
+   .shoebox/recognition.db, nie in einem Foto. Einstellungen → Erkannter Text
+   → Gesamten erkannten Text löschen entfernt alle (ausgeblendete Zeilen
+   bleiben ausgeblendet); Text erkennen liest sie erneut. shoebox text stats
+   im Terminal zeigt, wie viele Fotos gelesen wurden und wie viele Zeilen
+   gespeichert sind.
 
 Wenn etwas komisch aussieht
 ---------------------------
