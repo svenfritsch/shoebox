@@ -530,13 +530,13 @@ shoebox mit mehr als einem Laufwerk starten, und jedes erscheint in der
 Seitenleiste. Alle Laufwerke zeigt eine gemeinsame Zeitleiste über alle. Sie
 ist zum Ansehen da: Favoriten zeigen ein ♥ (ausgegraut, nicht anklickbar), und
 die Infoleiste zeigt Tags, Favorit und Personen, ohne dass sich dort etwas
-ändern lässt (Rahmen zeigen und das Zeigen auf eine Person, um ihr Gesicht zu
-sehen, funktionieren weiterhin). In … öffnen in der Leiste führt zum eigenen
-Laufwerk des Fotos, um Tags, Personen oder Favoriten zu ändern. Laufwerke
-verwalten, neben Duplikate, Papierkorb und Einstellungen, öffnet eine Seite,
-die nicht vom angesehenen Laufwerk abhängt: deine Laufwerke als Karten und
-darunter zwei Reiter, Personen über Laufwerke hinweg und Duplikate über
-Laufwerke hinweg. Ein abgestecktes Laufwerk steht als offline da. Das
+ändern lässt (Rahmen anzeigen und das Zeigen auf eine Person, um ihr Gesicht
+zu sehen, funktionieren weiterhin). In … öffnen in der Leiste führt zum
+eigenen Laufwerk des Fotos, um Tags, Personen oder Favoriten zu ändern.
+Laufwerke verwalten, neben Duplikate, Papierkorb und Einstellungen, öffnet
+eine Seite, die nicht vom angesehenen Laufwerk abhängt: deine Laufwerke als
+Karten und darunter zwei Reiter, Personen über Laufwerke hinweg und Duplikate
+über Laufwerke hinweg. Ein abgestecktes Laufwerk steht als offline da. Das
 Laufwerk, das du gerade ansiehst, ist in der Akzentfarbe ausgefüllt, ebenso
 die Seite darunter (Alle Fotos, Duplikate, Papierkorb, Einstellungen); so
 siehst du immer, welcher Papierkorb von welchem Laufwerk offen ist.
