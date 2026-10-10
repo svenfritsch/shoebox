@@ -21,7 +21,7 @@ date must be settable on **every** photo, and it must win.
 | "Needs a date" | A sidebar entry (`nodate=1`) with a count: photos with **no capture date in the file** (date source folder, created or modified) **and no estimate**. It is the worklist for WhatsApp and scan folders. |
 | Duplicate clean-up | It compares real dates only (file plus carried over); the estimate is carried separately: the surviving copy takes it only if it has none. A JPEG turned in the file gets a new quick hash, so `organize::rotate` moves the estimate to the new key (like `taken_overrides`). Trash keeps it (content key). A file edited elsewhere has a new content key and starts without an estimate, like a turn does. |
 | Backup of user data | `userdata.json` version 6 adds `date_estimates` (with the files they belong to). |
-| Scope | One library at a time (ids are per drive), as with favorites and positions. The common timeline shows the dates and the "~" but has no pencil. |
+| Scope | One library at a time (ids are per drive), as with favorites and positions. The common timeline shows the dates, the "~" and filters by `date=` / `nodate=`, but has no pencil, no "Date" suggestions and no "Needs a date" entry. |
 
 ## Wording
 
@@ -134,13 +134,21 @@ hash of every original unchanged, `X-Shoebox` header needed for changes).
 
 | Slice | Scope | State |
 |---|---|---|
-| 1 | Table, date order, API, info panel (pencil, dialog, EXIF row), "~", year-only group, carry-over, userdata, guide | see plan.md |
-| 2 | "Set date…" for a selection, Undo, "Needs a date" | see plan.md |
-| 3 | Date search: group, `date:`/`datum:`, chips | see plan.md |
+| 1 | Table, date order, API, info panel (pencil, dialog, EXIF row), "~", year-only group, carry-over (rotate, duplicate clean-up), userdata v6, guide | **Built**, tests in `core/tests/dates.rs`; real-hardware check open |
+| 2 | "Set date…" for a selection, Undo, "Needs a date" | **Built** |
+| 3 | Date search: group, `date:` / `datum:`, chips | **Built** |
+
+How it was built: `core/src/dates.rs` (rules, table, typed-date parser, suggestions),
+`browse.rs` (date order, `Query.dates` / `needs_date`), `serve.rs` (routes,
+`est`, `needs_date`), `core/web/dates.js` (info row, dialog, Undo, Date group),
+the hooks in `app.js` (filter in the URL hash as `date=` / `nodate=`, chips,
+suggestions, cells). The search box does not apply the typed `date:` text as a
+text filter; Enter on a typed `date:` picks the first row.
 
 ## Not done / ideas
 
 - [ ] Real-hardware check (iPad: the drop-downs, the pencil target size, the dialog on a phone-sized screen).
-- [ ] A hint with the dates of the neighbours in the same folder in the dialog.
+- [ ] A hint with the dates of the neighbours in the same folder in the dialog (today only the folder's own month is offered, as "Folder: June 2025").
+- [ ] "Date" suggestions, "Needs a date" and "Set date…" on the "All drives" page.
 - [ ] A free-text note with the date ("from the back of the print: Ostern"), searchable.
 - [ ] Dates of the common timeline cannot be changed there (ids are per drive), as for tags and favorites.

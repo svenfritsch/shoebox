@@ -133,13 +133,18 @@ pub fn apply_in(conn: &Connection, items: &[(i64, Option<Estimate>)]) -> Result<
             e.checked(today)?;
         }
     }
-    let mut out = Changed::default();
-    for &(id, new) in items {
+    // What each photo has now is read before anything is written, so Undo puts
+    // back the right dates even when copies of one content are in the same batch.
+    let mut rows: Vec<(i64, String, bool, Option<Estimate>)> = Vec::new();
+    for &(id, _) in items {
         let (key, has_exif): (String, bool) = conn
             .query_row("SELECT quick_hash, taken IS NOT NULL FROM files WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?)))
             .optional()?
             .ok_or_else(|| anyhow!("no such file"))?;
-        let before = get(conn, id)?;
+        rows.push((id, key, has_exif, get(conn, id)?));
+    }
+    let mut out = Changed::default();
+    for (&(_, new), (id, key, has_exif, before)) in items.iter().zip(rows) {
         out.previous.push(Previous { id, estimate: before });
         out.with_exif += has_exif as usize;
         if before == new {
@@ -493,8 +498,8 @@ mod tests {
         let year = e(1987, None, None).sort_key();
         assert_eq!(year, "1987-00-00T00:00:00");
         assert!(day > month && month > year);
-        assert!(year > "1986-12-31T23:59:59".to_string(), "a year sorts after the previous year");
-        assert!(year < "1987-01-01T00:00:00".to_string(), "below January of its own year");
+        assert!(year.as_str() > "1986-12-31T23:59:59", "a year sorts after the previous year");
+        assert!(year.as_str() < "1987-01-01T00:00:00", "below January of its own year");
     }
 
     #[test]

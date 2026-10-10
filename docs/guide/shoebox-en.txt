@@ -89,12 +89,14 @@ One page in your browser, a timeline of everything on the drive.
 
 - Timeline
    All photos and videos by month, with a year jump, folder tree and a viewer
-   with full-size info.
+   with full-size info. Give a scan or a forwarded picture a date of your own
+   (a year, a month or a day) and it lands in the right place; the file is
+   never changed.
 
 - Search & filter
-   Type a person, pet, tag or folder. Combine keywords for a more complex
-   search. Filter by photos, videos, Live Photos or screenshots, or show only
-   your favorites ♥.
+   Type a person, pet, tag, folder or a date such as June 1987. Combine
+   keywords for a more complex search. Filter by photos, videos, Live Photos
+   or screenshots, or show only your favorites ♥.
 
 - People & pets
    Optional recognition groups faces, cats and dogs. You name them; shoebox
@@ -116,7 +118,7 @@ Everything is on one page. Here is where things are.
    ☰ shows or hides the sidebar on narrow screens.
 
 2. Search box
-   People, pets, tags and folders; pick several to combine them.
+   People, pets, tags, folders and dates; pick several to combine them.
 
 3. Favorites ♥
    Show only the photos you have hearted. Also found by typing favorite in the
@@ -135,7 +137,8 @@ Everything is on one page. Here is where things are.
    Pick photos to move, tag or trash.
 
 7. Quick links
-   All photos · Duplicates · Trash · Settings.
+   All photos · Needs a date (only when some photos have none) · Duplicates ·
+   Trash · Settings.
 
 8. Folders
    Your folders, with counts. Tags, Faces and Drives appear here when you have
@@ -302,13 +305,13 @@ Browse and view
 Scroll through the timeline, jump by year, open a photo.
 
 Timeline
-Photos are grouped by capture date, newest first. The Year menu jumps; the
-month next to the drive name in the top bar shows where you are. On another
-page (Duplicates, Trash, Settings, Faces, …) it shows the name of that page
-instead. A photo without a capture date takes the month in the name of its
-event folder (2020-07, 2020.07, 20-07 or 20.07), or else the earlier of the
-file’s created and modified dates; the info panel then marks the date as
-estimated.
+Photos are grouped by date, newest first. The Year menu jumps; the month next
+to the drive name in the top bar shows where you are. On another page
+(Duplicates, Trash, Settings, Faces, …) it shows the name of that page
+instead. A small ~ in the corner of a photo means its date is a guess; point
+at it to see which kind (set by you, the name of the event folder, or the
+file’s created or modified date). Which date a photo is placed by is explained
+in “Dates and searching by date”.
 
 Folders
 The sidebar mirrors the folders on your drive. Click one to see only its
@@ -319,9 +322,10 @@ stays open.
 
 Viewer
 Click a photo. ⓘ opens the info panel: date (marked estimated when it is not
-the day the photo was taken), camera, size, tags, people, and buttons to open
-the folder or copy the path. At the bottom, GPS data shows where the photo was
-taken (see “Locations and maps”).
+the day the photo was taken, or manual when you set it yourself; the pencil
+next to it sets or changes your date), camera, size, tags, people, and buttons
+to open the folder or copy the path. At the bottom, GPS data shows where the
+photo was taken (see “Locations and maps”).
 
 Favorites
 The ♥ in the top bar of the viewer, or the key f, marks the photo as a
@@ -355,7 +359,9 @@ several and they become chips that narrow the result; × removes one, Clear all
 starts over. To find your favorites press the ♥ button next to Type, or type
 favorite (English) or favorit (German) and pick ♥ Favorites; it combines with
 everything else, e.g. favorites of one person or one year. With maps on (see
-“Locations and maps”) the suggestions also offer your places.
+“Locations and maps”) the suggestions also offer your places. A year or a
+month with a year, such as 1987 or June 1987, offers a row under Date at the
+end of the list (see “Dates and searching by date”).
 
 Type offers Photos (still pictures without screenshots), Videos, Live Photos
 and Screenshots; tick any of them, and nothing ticked shows everything. To
@@ -379,6 +385,10 @@ Tag
 Add tag… puts your own tag on the selection. Tags live in shoebox’s index,
 never in the photo files.
 
+Date
+Set date… gives the selection a date of your own, for example a whole folder
+of scans at once. See “Dates and searching by date”.
+
 Move
 Move… asks for a folder. New folders are created, nothing is ever overwritten,
 and RAW, Live Photo and sidecar files move along. The photos’ own tags always
@@ -392,6 +402,81 @@ folder tags always follow the new folder.
 [Screenshot: Adding a tag.]
 
 [Screenshot: Moving into a new event folder.]
+
+Dates and searching by date
+---------------------------
+
+Where a photo sits on the timeline, how to give it a date of your own, and how
+to find photos by date.
+
+Which date counts
+The timeline, its month groups, the Year menu and the search all use one date
+per photo: the first of these that exists.
+
+1. The date you gave the photo (a year, a month or a day), if you did. It wins
+   even over a capture date in the file.
+2. The capture date in the file (EXIF; for a video, the date in the video).
+3. The month in the name of the event folder (2020-07, 2020.07, 20-07 or
+   20.07), shown as the 1st of that month.
+4. The earlier of the file’s created and modified date (a copy gets a new
+   created date but keeps the old modified date).
+
+Only a capture date in the file is the day the photo was taken. Every other
+date is marked estimated in the info panel; a date you gave says manual.
+Nothing is ever written into a photo: your dates live in shoebox’s index on
+the drive.
+
+Give a photo a date
+Open a photo, press ⓘ and then the pencil at the right end of the Date row
+(Set date, or Change when you gave it one). Year is required; Month and Day
+can stay on Not sure. The day list follows the month (February has 28 or 29
+days) and stays grey until a month is chosen. A date in the future is refused.
+Below the fields a preview says where the photo will sit. Save keeps it;
+Remove estimate (only there when you gave a date) takes it away again.
+
+This works on every photo, also on one with a capture date in its file: a
+scan, or a photo you took of an old print, carries the day it was made. The
+file’s own date is not lost; the info panel then shows it in a row called
+EXIF, and removing your date brings it back as the date.
+
+Many photos at once
+Press ☑, pick the photos (a whole month or all photos of a folder work too)
+and press Set date…. If some of them already have a capture date in their
+file, the dialog says how many; yours is used for them on the timeline. A
+message with Undo appears afterwards.
+
+Needs a date
+When some photos have neither a capture date in their file nor a date of
+yours, Needs a date appears next to All photos, with the number. It lists
+them, so you can work through scans and forwarded pictures; a photo leaves the
+list as soon as you give it a date.
+
+Where a photo lands
+A day puts the photo on that day. With only a month it sits in that month’s
+group, after the photos with an exact day. With only a year it gets a group of
+its own, named by the year, below January of that year. A small ~ on the photo
+shows that its date is a guess; point at it to see which kind.
+
+Search by date
+Type a year (1987), a month and a year (June 1987, juni 1987, 6/1987, 1987-06)
+or a day (14.6.1987, 14 June 1987; numbers with a dot or slash are day, month,
+year) and pick the row under Date, the last group of the list. It becomes a
+chip with a calendar and combines with the other chips, for example a person
+and a year.
+
+A month on its own never offers a date, so June keeps finding tags and people
+called June. For that, type date: and the month, for example date:june (or
+datum:): the list then shows only dates and lists that month in every year of
+your library. date: followed by a year lists the year and its months.
+
+A photo is found when its date lies completely inside what you typed. A photo
+that only knows its year is found by 1987 but not by June 1987, because it may
+not be from June; a photo dated by its event folder knows its month, not its
+day. The suggestions count the photos of one drive at a time.
+
+[Screenshot: Giving a photo a date: June 1987.]
+
+[Screenshot: Typing date:jul lists July of every year.]
 
 Scanning, duplicates and trash
 ------------------------------
@@ -700,9 +785,10 @@ The design rule is simple: shoebox reads your originals and never writes
 anything into them.
 
 - Read-only
-   Metadata, thumbnails, tags and locations you set are kept in the index on
-   the drive (.shoebox/library.db), never inside a photo. Capture dates and
-   created dates never change.
+   Metadata, thumbnails, tags, locations and dates you set are kept in the
+   index on the drive (.shoebox/library.db), never inside a photo. Capture
+   dates and created dates never change: a date you give a photo lives in
+   shoebox only, and the file’s own date stays as it was.
 
 - Guarded
    Every scan is checked: size, dates and a full hash before and after. Any
@@ -737,6 +823,12 @@ in Terminal. Restarting shoebox asks for the PIN again.
 
 A drive shows as offline. Plug it in again; shoebox picks it up when you
 reload.
+
+A photo is in the wrong place on the timeline. Its date comes from the file,
+the name of its event folder or the file’s dates, and a scan or a picture sent
+through a messenger often has the wrong one. Open the info panel and press the
+pencil next to the date to give it your own; see “Dates and searching by
+date”.
 
 A map is empty or says Offline. Maps need the internet. Check the connection
 and open the photo again; without it everything else works as before.

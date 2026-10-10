@@ -129,6 +129,7 @@
     <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
     <symbol id="i-bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3L5 14h6l-1 7 8-11h-6l1-7z"/></symbol>
     <symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6-5.6-6-10.5a6 6 0 0 1 12 0C18 15.4 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.2"/></symbol>
+    <symbol id="i-cal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></symbol>
     <symbol id="logo" viewBox="0 0 64 64"><rect x="6" y="22" width="52" height="34" rx="4" fill="#b07d4f"/><rect x="2" y="12" width="60" height="14" rx="4" fill="#d9a066"/><rect x="10" y="30" width="44" height="3" rx="1.5" fill="#fff" opacity=".35"/></symbol>
   </svg>
 
@@ -163,6 +164,7 @@
       <li><a href="#start">Get started in three steps</a></li>
       <li><a href="#browse">Browse and view</a></li>
       <li><a href="#find">Find and organise</a></li>
+      <li><a href="#dates">Dates and searching by date</a></li>
       <li><a href="#scanning">Scanning, duplicates and trash</a></li>
       <li><a href="#people">People and pets</a></li>
       <li><a href="#faces">Tag faces, step by step</a></li>
@@ -245,12 +247,12 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-grid"/></svg></div>
           <h3>Timeline</h3>
-          <p>All photos and videos by month, with a year jump, folder tree and a viewer with full-size info.</p>
+          <p>All photos and videos by month, with a year jump, folder tree and a viewer with full-size info. Give a scan or a forwarded picture a date of your own (a year, a month or a day) and it lands in the right place; the file is never changed.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg></div>
           <h3>Search & filter</h3>
-          <p>Type a person, pet, tag or folder. Combine keywords for a more complex search. Filter by photos, videos, Live Photos or screenshots, or show only your favorites ♥.</p>
+          <p>Type a person, pet, tag, folder or a date such as <i>June 1987</i>. Combine keywords for a more complex search. Filter by photos, videos, Live Photos or screenshots, or show only your favorites ♥.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-people"/></svg></div>
@@ -293,7 +295,7 @@
         </li>
         <li>
           <h3>Search box</h3>
-          <p>People, pets, tags and folders; pick several to combine them.</p>
+          <p>People, pets, tags, folders and dates; pick several to combine them.</p>
         </li>
         <li>
           <h3>Favorites ♥</h3>
@@ -313,7 +315,7 @@
         </li>
         <li>
           <h3>Quick links</h3>
-          <p>All photos · Duplicates · Trash · Settings.</p>
+          <p>All photos · Needs a date (only when some photos have none) · Duplicates · Trash · Settings.</p>
         </li>
         <li>
           <h3>Folders</h3>
@@ -410,7 +412,7 @@
         <div class="items">
           <div>
             <h3>Timeline</h3>
-            <p>Photos are grouped by capture date, newest first. The <b>Year</b> menu jumps; the month next to the drive name in the top bar shows where you are. On another page (Duplicates, Trash, Settings, Faces, …) it shows the name of that page instead. A photo without a capture date takes the month in the name of its event folder (<code>2020-07</code>, <code>2020.07</code>, <code>20-07</code> or <code>20.07</code>), or else the earlier of the file’s created and modified dates; the info panel then marks the date as <b>estimated</b>.</p>
+            <p>Photos are grouped by date, newest first. The <b>Year</b> menu jumps; the month next to the drive name in the top bar shows where you are. On another page (Duplicates, Trash, Settings, Faces, …) it shows the name of that page instead. A small <b>~</b> in the corner of a photo means its date is a guess; point at it to see which kind (set by you, the name of the event folder, or the file’s created or modified date). Which date a photo is placed by is explained in “Dates and searching by date”.</p>
           </div>
           <div>
             <h3>Folders</h3>
@@ -418,7 +420,7 @@
           </div>
           <div>
             <h3>Viewer</h3>
-            <p>Click a photo. <b>ⓘ</b> opens the info panel: date (marked <b>estimated</b> when it is not the day the photo was taken), camera, size, tags, people, and buttons to open the folder or copy the path. At the bottom, <b>GPS data</b> shows where the photo was taken (see “Locations and maps”).</p>
+            <p>Click a photo. <b>ⓘ</b> opens the info panel: date (marked <b>estimated</b> when it is not the day the photo was taken, or <b>manual</b> when you set it yourself; the pencil next to it sets or changes your date), camera, size, tags, people, and buttons to open the folder or copy the path. At the bottom, <b>GPS data</b> shows where the photo was taken (see “Locations and maps”).</p>
           </div>
           <div>
             <h3>Favorites</h3>
@@ -462,7 +464,7 @@
         <div class="items">
           <div>
             <h3>Search</h3>
-            <p>Type in the search box: suggestions appear for tags, people and folders. Pick several and they become chips that narrow the result; × removes one, <b>Clear all</b> starts over. To find your favorites press the <b>♥</b> button next to <b>Type</b>, or type <i>favorite</i> (English) or <i>favorit</i> (German) and pick <b>♥ Favorites</b>; it combines with everything else, e.g. favorites of one person or one year. With maps on (see “Locations and maps”) the suggestions also offer your <b>places</b>.</p>
+            <p>Type in the search box: suggestions appear for tags, people and folders. Pick several and they become chips that narrow the result; × removes one, <b>Clear all</b> starts over. To find your favorites press the <b>♥</b> button next to <b>Type</b>, or type <i>favorite</i> (English) or <i>favorit</i> (German) and pick <b>♥ Favorites</b>; it combines with everything else, e.g. favorites of one person or one year. With maps on (see “Locations and maps”) the suggestions also offer your <b>places</b>. A year or a month with a year, such as <i>1987</i> or <i>June 1987</i>, offers a row under <b>Date</b> at the end of the list (see “Dates and searching by date”).</p>
             <p><b>Type</b> offers <b>Photos</b> (still pictures without screenshots), <b>Videos</b>, <b>Live Photos</b> and <b>Screenshots</b>; tick any of them, and nothing ticked shows everything. To leave screenshots out of the timeline, tick Photos, Videos and Live Photos but not Screenshots; to see only screenshots, tick just <b>Screenshots</b>. Shoebox recognises a screenshot from the file (a PNG without camera data, a name like <i>Screenshot</i> or <i>Bildschirmfoto</i>, the size of a phone or computer screen) and from the picture itself (large areas of one colour). It can be wrong in both directions: in the photo’s info panel, <b>Screenshot</b> is a drop-down that starts on shoebox’s guess; pick <i>Yes</i> or <i>No</i> to correct it, and <i>Back to automatic</i> returns to the guess. Your choice is kept in the library; the photo file is never changed.</p>
           </div>
           <div>
@@ -472,6 +474,10 @@
           <div>
             <h3>Tag</h3>
             <p><b>Add tag…</b> puts your own tag on the selection. Tags live in shoebox’s index, never in the photo files.</p>
+          </div>
+          <div>
+            <h3>Date</h3>
+            <p><b>Set date…</b> gives the selection a date of your own, for example a whole folder of scans at once. See “Dates and searching by date”.</p>
           </div>
           <div>
             <h3>Move</h3>
@@ -498,6 +504,59 @@
           <img src="assets/en/move-dialog.jpg" alt="" loading="lazy">
           <figcaption>Moving into a new event folder.</figcaption>
         </figure>
+      </div>
+    </section>
+
+    <section id="dates">
+      <h2>Dates and searching by date</h2>
+      <p class="sub">Where a photo sits on the timeline, how to give it a date of your own, and how to find photos by date.</p>
+      <div class="cols">
+        <div class="items">
+          <div>
+            <h3>Which date counts</h3>
+            <p>The timeline, its month groups, the <b>Year</b> menu and the search all use one date per photo: the first of these that exists.</p>
+            <ol>
+              <li><b>The date you gave the photo</b> (a year, a month or a day), if you did. It wins even over a capture date in the file.</li>
+              <li><b>The capture date in the file</b> (EXIF; for a video, the date in the video).</li>
+              <li><b>The month in the name of the event folder</b> (<code>2020-07</code>, <code>2020.07</code>, <code>20-07</code> or <code>20.07</code>), shown as the 1st of that month.</li>
+              <li><b>The earlier of the file’s created and modified date</b> (a copy gets a new created date but keeps the old modified date).</li>
+            </ol>
+            <p>Only a capture date in the file is the day the photo was taken. Every other date is marked <b>estimated</b> in the info panel; a date you gave says <b>manual</b>. Nothing is ever written into a photo: your dates live in shoebox’s index on the drive.</p>
+          </div>
+          <div>
+            <h3>Give a photo a date</h3>
+            <p>Open a photo, press <b>ⓘ</b> and then the pencil at the right end of the <b>Date</b> row (<b>Set date</b>, or <b>Change</b> when you gave it one). <b>Year</b> is required; <b>Month</b> and <b>Day</b> can stay on <b>Not sure</b>. The day list follows the month (February has 28 or 29 days) and stays grey until a month is chosen. A date in the future is refused. Below the fields a preview says where the photo will sit. <b>Save</b> keeps it; <b>Remove estimate</b> (only there when you gave a date) takes it away again.</p>
+            <p>This works on every photo, also on one with a capture date in its file: a scan, or a photo you took of an old print, carries the day it was made. The file’s own date is not lost; the info panel then shows it in a row called <b>EXIF</b>, and removing your date brings it back as the date.</p>
+          </div>
+          <div>
+            <h3>Many photos at once</h3>
+            <p>Press <b>☑</b>, pick the photos (a whole month or all photos of a folder work too) and press <b>Set date…</b>. If some of them already have a capture date in their file, the dialog says how many; yours is used for them on the timeline. A message with <b>Undo</b> appears afterwards.</p>
+          </div>
+          <div>
+            <h3>Needs a date</h3>
+            <p>When some photos have neither a capture date in their file nor a date of yours, <b>Needs a date</b> appears next to <b>All photos</b>, with the number. It lists them, so you can work through scans and forwarded pictures; a photo leaves the list as soon as you give it a date.</p>
+          </div>
+          <div>
+            <h3>Where a photo lands</h3>
+            <p>A day puts the photo on that day. With only a month it sits in that month’s group, after the photos with an exact day. With only a year it gets a group of its own, named by the year, below January of that year. A small <b>~</b> on the photo shows that its date is a guess; point at it to see which kind.</p>
+          </div>
+          <div>
+            <h3>Search by date</h3>
+            <p>Type a year (<i>1987</i>), a month and a year (<i>June 1987</i>, <i>juni 1987</i>, <i>6/1987</i>, <i>1987-06</i>) or a day (<i>14.6.1987</i>, <i>14 June 1987</i>; numbers with a dot or slash are day, month, year) and pick the row under <b>Date</b>, the last group of the list. It becomes a chip with a calendar and combines with the other chips, for example a person and a year.</p>
+            <p>A month on its own never offers a date, so <i>June</i> keeps finding tags and people called June. For that, type <b>date:</b> and the month, for example <i>date:june</i> (or <i>datum:</i>): the list then shows only dates and lists that month in every year of your library. <i>date:</i> followed by a year lists the year and its months.</p>
+            <p>A photo is found when its date lies completely inside what you typed. A photo that only knows its year is found by <i>1987</i> but not by <i>June 1987</i>, because it may not be from June; a photo dated by its event folder knows its month, not its day. The suggestions count the photos of one drive at a time.</p>
+          </div>
+        </div>
+        <div>
+          <figure>
+            <img src="assets/en/dates-dialog.jpg" alt="" loading="lazy">
+            <figcaption>Giving a photo a date: June 1987.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/en/dates-search.jpg" alt="" loading="lazy">
+            <figcaption>Typing <i>date:jul</i> lists July of every year.</figcaption>
+          </figure>
+        </div>
       </div>
     </section>
 
@@ -757,7 +816,7 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg></div>
           <h3>Read-only</h3>
-          <p>Metadata, thumbnails, tags and locations you set are kept in the index on the drive (<code>.shoebox/library.db</code>), never inside a photo. Capture dates and created dates never change.</p>
+          <p>Metadata, thumbnails, tags, locations and dates you set are kept in the index on the drive (<code>.shoebox/library.db</code>), never inside a photo. Capture dates and created dates never change: a date you give a photo lives in shoebox only, and the file’s own date stays as it was.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg></div>
@@ -785,6 +844,7 @@
         <p><b>A video has no preview.</b> Add <code>ffmpeg</code> (see “Good to know”), then run <b>Scan</b> or restart the photo app.</p>
         <p><b>The iPad cannot connect.</b> Same Wi-Fi? Started with <code>--lan</code>? Enter the PIN printed in Terminal. Restarting shoebox asks for the PIN again.</p>
         <p><b>A drive shows as offline.</b> Plug it in again; shoebox picks it up when you reload.</p>
+        <p><b>A photo is in the wrong place on the timeline.</b> Its date comes from the file, the name of its event folder or the file’s dates, and a scan or a picture sent through a messenger often has the wrong one. Open the info panel and press the pencil next to the date to give it your own; see “Dates and searching by date”.</p>
         <p><b>A map is empty or says Offline.</b> Maps need the internet. Check the connection and open the photo again; without it everything else works as before.</p>
       </div>
     </section>

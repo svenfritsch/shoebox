@@ -50,6 +50,11 @@ await shot('ui-overview');
 await p.locator('.cell').nth(6).click(); await wait(800);
 await p.keyboard.press('i'); await wait(800);
 await shot('viewer-info');
+// The pencil next to the date opens the dialog for a date of your own.
+await p.locator('.lb-panel .pen').click(); await wait(400);
+await p.fill('.dates-dialog input', '1987'); await p.selectOption('.dates-dialog select >> nth=0', '6'); await wait(300);
+await shot('dates-dialog');
+await p.keyboard.press('Escape'); await wait(300);
 await p.keyboard.press('Escape'); await wait(300);
 
 // Duplicates, from a clean state; tall so the whole page is in the shot.
@@ -167,6 +172,10 @@ await p.keyboard.press('ArrowDown'); await p.keyboard.press('Enter'); await wait
 await p.keyboard.press('Escape'); await p.locator('#title').click(); await wait(800);
 await shot('multitag-search');
 await p.click('#all'); await wait(500);
+// Search by date: `date:` and a month lists it in every year.
+await p.fill('#search', de ? 'datum:jul' : 'date:jul'); await wait(900);
+await shot('dates-search');
+await p.fill('#search', ''); await p.keyboard.press('Escape'); await wait(300);
 
 // Trash: trash a photo, show the page.
 await p.click('#all'); await wait(600);

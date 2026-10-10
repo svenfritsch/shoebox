@@ -129,6 +129,7 @@
     <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
     <symbol id="i-bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3L5 14h6l-1 7 8-11h-6l1-7z"/></symbol>
     <symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6-5.6-6-10.5a6 6 0 0 1 12 0C18 15.4 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.2"/></symbol>
+    <symbol id="i-cal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></symbol>
     <symbol id="logo" viewBox="0 0 64 64"><rect x="6" y="22" width="52" height="34" rx="4" fill="#b07d4f"/><rect x="2" y="12" width="60" height="14" rx="4" fill="#d9a066"/><rect x="10" y="30" width="44" height="3" rx="1.5" fill="#fff" opacity=".35"/></symbol>
   </svg>
 
@@ -163,6 +164,7 @@
       <li><a href="#start">In drei Schritten loslegen</a></li>
       <li><a href="#browse">Stöbern und ansehen</a></li>
       <li><a href="#find">Finden und ordnen</a></li>
+      <li><a href="#dates">Datum und Suche nach Datum</a></li>
       <li><a href="#scanning">Einlesen, Duplikate und Papierkorb</a></li>
       <li><a href="#people">Personen und Haustiere</a></li>
       <li><a href="#faces">Gesichter taggen, Schritt für Schritt</a></li>
@@ -245,12 +247,12 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-grid"/></svg></div>
           <h3>Zeitleiste</h3>
-          <p>Alle Fotos und Videos nach Monat, mit Jahressprung, Ordnerbaum und einer Ansicht mit Infos zum Foto.</p>
+          <p>Alle Fotos und Videos nach Monat, mit Jahressprung, Ordnerbaum und einer Ansicht mit Infos zum Foto. Gib einem Scan oder einem weitergeleiteten Bild ein eigenes Datum (ein Jahr, einen Monat oder einen Tag), und es landet an der richtigen Stelle; die Datei bleibt unverändert.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg></div>
           <h3>Suchen & Filtern</h3>
-          <p>Tippe eine Person, ein Haustier, einen Tag oder Ordner. Kombiniere Schlagwörter für eine komplexere Suche. Filter nach Fotos, Videos, Live Photos oder Screenshots, oder zeige nur deine Favoriten ♥.</p>
+          <p>Tippe eine Person, ein Haustier, einen Tag, einen Ordner oder ein Datum wie <i>Juni 1987</i>. Kombiniere Schlagwörter für eine komplexere Suche. Filter nach Fotos, Videos, Live Photos oder Screenshots, oder zeige nur deine Favoriten ♥.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-people"/></svg></div>
@@ -293,7 +295,7 @@
         </li>
         <li>
           <h3>Suchfeld</h3>
-          <p>Personen, Haustiere, Tags und Ordner; mehrere wählen, um sie zu kombinieren.</p>
+          <p>Personen, Haustiere, Tags, Ordner und Datum; mehrere wählen, um sie zu kombinieren.</p>
         </li>
         <li>
           <h3>Favoriten ♥</h3>
@@ -313,7 +315,7 @@
         </li>
         <li>
           <h3>Schnellzugriff</h3>
-          <p>Alle Fotos · Duplikate · Papierkorb · Einstellungen.</p>
+          <p>Alle Fotos · Datum fehlt (nur wenn bei manchen Fotos eines fehlt) · Duplikate · Papierkorb · Einstellungen.</p>
         </li>
         <li>
           <h3>Ordner</h3>
@@ -410,7 +412,7 @@
         <div class="items">
           <div>
             <h3>Zeitleiste</h3>
-            <p>Fotos sind nach Aufnahmedatum gruppiert, neueste zuerst. Das Menü <b>Jahr</b> springt; der Monat neben dem Laufwerksnamen in der oberen Leiste zeigt, wo du bist. Auf einer anderen Seite (Duplikate, Papierkorb, Einstellungen, Gesichter, …) steht dort stattdessen der Name dieser Seite. Ein Foto ohne Aufnahmedatum nimmt den Monat aus dem Namen seines Ereignisordners (<code>2020-07</code>, <code>2020.07</code>, <code>20-07</code> oder <code>20.07</code>), sonst das frühere von Erstellungs- und Änderungsdatum der Datei; das Infofeld markiert das Datum dann als <b>geschätzt</b>.</p>
+            <p>Fotos sind nach Datum gruppiert, neueste zuerst. Das Menü <b>Jahr</b> springt; der Monat neben dem Laufwerksnamen in der oberen Leiste zeigt, wo du bist. Auf einer anderen Seite (Duplikate, Papierkorb, Einstellungen, Gesichter, …) steht dort stattdessen der Name dieser Seite. Eine kleine <b>~</b> in der Ecke eines Fotos bedeutet, dass sein Datum geschätzt ist; zeige darauf, um die Art zu sehen (von dir gesetzt, aus dem Namen des Ereignisordners oder aus dem Erstellungs- bzw. Änderungsdatum der Datei). Nach welchem Datum ein Foto einsortiert wird, steht unter „Datum und Suche nach Datum“.</p>
           </div>
           <div>
             <h3>Ordner</h3>
@@ -418,7 +420,7 @@
           </div>
           <div>
             <h3>Ansicht</h3>
-            <p>Foto anklicken. <b>ⓘ</b> öffnet das Infofeld: Datum (als <b>geschätzt</b> markiert, wenn es nicht der Aufnahmetag ist), Kamera, Größe, Tags, Personen und Knöpfe, um den Ordner zu öffnen oder den Pfad zu kopieren. Ganz unten zeigen die <b>GPS-Daten</b>, wo das Foto aufgenommen wurde (siehe „Orte und Karten“).</p>
+            <p>Foto anklicken. <b>ⓘ</b> öffnet das Infofeld: Datum (als <b>geschätzt</b> markiert, wenn es nicht der Aufnahmetag ist, oder als <b>manuell</b>, wenn du es selbst gesetzt hast; der Stift daneben setzt oder ändert dein Datum), Kamera, Größe, Tags, Personen und Knöpfe, um den Ordner zu öffnen oder den Pfad zu kopieren. Ganz unten zeigen die <b>GPS-Daten</b>, wo das Foto aufgenommen wurde (siehe „Orte und Karten“).</p>
           </div>
           <div>
             <h3>Favoriten</h3>
@@ -462,7 +464,7 @@
         <div class="items">
           <div>
             <h3>Suchen</h3>
-            <p>Tippe ins Suchfeld: Vorschläge erscheinen für Tags, Personen und Ordner. Mehrere gewählte werden zu Chips, die das Ergebnis eingrenzen; × entfernt einen, <b>Alle entfernen</b> beginnt neu. Deine Favoriten findest du mit dem <b>♥</b>-Knopf neben <b>Typ</b>, oder tippe <i>favorit</i> (deutsch) bzw. <i>favorite</i> (englisch) und wähle <b>♥ Favoriten</b>; das lässt sich mit allem anderen kombinieren, z. B. Favoriten einer Person oder eines Jahres. Bei eingeschalteten Karten (siehe „Orte und Karten“) bieten die Vorschläge auch deine <b>Orte</b> an.</p>
+            <p>Tippe ins Suchfeld: Vorschläge erscheinen für Tags, Personen und Ordner. Mehrere gewählte werden zu Chips, die das Ergebnis eingrenzen; × entfernt einen, <b>Alle entfernen</b> beginnt neu. Deine Favoriten findest du mit dem <b>♥</b>-Knopf neben <b>Typ</b>, oder tippe <i>favorit</i> (deutsch) bzw. <i>favorite</i> (englisch) und wähle <b>♥ Favoriten</b>; das lässt sich mit allem anderen kombinieren, z. B. Favoriten einer Person oder eines Jahres. Bei eingeschalteten Karten (siehe „Orte und Karten“) bieten die Vorschläge auch deine <b>Orte</b> an. Ein Jahr oder ein Monat mit Jahr, etwa <i>1987</i> oder <i>Juni 1987</i>, bietet am Ende der Liste eine Zeile unter <b>Datum</b> an (siehe „Datum und Suche nach Datum“).</p>
             <p><b>Typ</b> bietet <b>Fotos</b> (Standbilder ohne Screenshots), <b>Videos</b>, <b>Live Photos</b> und <b>Screenshots</b>; hake beliebige an, ohne Haken wird alles gezeigt. Um Screenshots aus der Zeitleiste zu nehmen, hake Fotos, Videos und Live Photos an, aber nicht Screenshots; um nur Screenshots zu sehen, hake nur <b>Screenshots</b> an. Shoebox erkennt einen Screenshot an der Datei (ein PNG ohne Kameradaten, ein Name wie <i>Screenshot</i> oder <i>Bildschirmfoto</i>, die Größe eines Handy- oder Computerbildschirms) und am Bild selbst (große einfarbige Flächen). Es kann sich in beide Richtungen irren: Im Info-Fenster eines Fotos ist <b>Screenshot</b> ein Auswahlfeld, das mit der Schätzung von Shoebox beginnt; wähle <i>Ja</i> oder <i>Nein</i> zum Korrigieren, <i>Zurück zu automatisch</i> kehrt zur Schätzung zurück. Deine Wahl wird in der Bibliothek gemerkt; die Fotodatei wird nie verändert.</p>
           </div>
           <div>
@@ -472,6 +474,10 @@
           <div>
             <h3>Taggen</h3>
             <p><b>Tag hinzufügen …</b> gibt der Auswahl deinen eigenen Tag. Tags leben im Index von shoebox, nie in den Fotodateien.</p>
+          </div>
+          <div>
+            <h3>Datum</h3>
+            <p><b>Datum setzen …</b> gibt der Auswahl ein eigenes Datum, zum Beispiel einem ganzen Ordner voller Scans auf einmal. Siehe „Datum und Suche nach Datum“.</p>
           </div>
           <div>
             <h3>Verschieben</h3>
@@ -498,6 +504,59 @@
           <img src="assets/de/move-dialog.jpg" alt="" loading="lazy">
           <figcaption>In einen neuen Ereignisordner verschieben.</figcaption>
         </figure>
+      </div>
+    </section>
+
+    <section id="dates">
+      <h2>Datum und Suche nach Datum</h2>
+      <p class="sub">Wo ein Foto in der Zeitleiste steht, wie du ihm ein eigenes Datum gibst und wie du Fotos nach Datum findest.</p>
+      <div class="cols">
+        <div class="items">
+          <div>
+            <h3>Welches Datum zählt</h3>
+            <p>Die Zeitleiste, ihre Monatsgruppen, das Menü <b>Jahr</b> und die Suche benutzen ein Datum pro Foto: das erste der folgenden, das es gibt.</p>
+            <ol>
+              <li><b>Das Datum, das du dem Foto gegeben hast</b> (ein Jahr, ein Monat oder ein Tag), falls du eines gesetzt hast. Es gilt sogar vor einem Aufnahmedatum in der Datei.</li>
+              <li><b>Das Aufnahmedatum in der Datei</b> (EXIF; bei einem Video das Datum im Video).</li>
+              <li><b>Der Monat im Namen des Ereignisordners</b> (<code>2020-07</code>, <code>2020.07</code>, <code>20-07</code> oder <code>20.07</code>), angezeigt als der 1. dieses Monats.</li>
+              <li><b>Das frühere von Erstellungs- und Änderungsdatum der Datei</b> (eine Kopie bekommt ein neues Erstellungsdatum, behält aber das alte Änderungsdatum).</li>
+            </ol>
+            <p>Nur ein Aufnahmedatum in der Datei ist der Tag, an dem das Foto aufgenommen wurde. Jedes andere Datum ist im Infofeld als <b>geschätzt</b> markiert; ein von dir gesetztes zeigt <b>manuell</b>. In ein Foto wird nie etwas geschrieben: deine Daten liegen im Index von shoebox auf dem Laufwerk.</p>
+          </div>
+          <div>
+            <h3>Einem Foto ein Datum geben</h3>
+            <p>Foto öffnen, <b>ⓘ</b> drücken und dann den Stift am rechten Ende der Zeile <b>Datum</b> (<b>Datum setzen</b>, oder <b>Ändern</b>, wenn du schon eines gesetzt hast). <b>Jahr</b> ist nötig; <b>Monat</b> und <b>Tag</b> können auf <b>Unbekannt</b> bleiben. Die Tagesliste richtet sich nach dem Monat (der Februar hat 28 oder 29 Tage) und bleibt grau, bis ein Monat gewählt ist. Ein Datum in der Zukunft wird abgelehnt. Unter den Feldern zeigt eine Vorschau, wo das Foto stehen wird. <b>Speichern</b> behält es; <b>Schätzung entfernen</b> (nur da, wenn du ein Datum gesetzt hast) nimmt es wieder weg.</p>
+            <p>Das geht bei jedem Foto, auch bei einem mit Aufnahmedatum in der Datei: ein Scan oder ein Foto, das du von einem alten Abzug gemacht hast, trägt den Tag, an dem es entstand. Das Datum der Datei geht nicht verloren; das Infofeld zeigt es dann in einer Zeile <b>EXIF</b>, und wenn du dein Datum entfernst, gilt es wieder.</p>
+          </div>
+          <div>
+            <h3>Viele Fotos auf einmal</h3>
+            <p><b>☑</b> drücken, die Fotos wählen (ein ganzer Monat oder alle Fotos eines Ordners gehen auch) und <b>Datum setzen …</b> drücken. Haben einige schon ein Aufnahmedatum in der Datei, sagt der Dialog, wie viele; für sie gilt auf der Zeitleiste dein Datum. Danach erscheint eine Meldung mit <b>Rückgängig</b>.</p>
+          </div>
+          <div>
+            <h3>Datum fehlt</h3>
+            <p>Haben manche Fotos weder ein Aufnahmedatum in der Datei noch ein Datum von dir, erscheint neben <b>Alle Fotos</b> der Eintrag <b>Datum fehlt</b> mit der Anzahl. Er listet sie auf, damit du Scans und weitergeleitete Bilder abarbeiten kannst; ein Foto verlässt die Liste, sobald es ein Datum hat.</p>
+          </div>
+          <div>
+            <h3>Wo ein Foto landet</h3>
+            <p>Ein Tag setzt das Foto auf diesen Tag. Mit nur einem Monat steht es in der Gruppe dieses Monats, nach den Fotos mit genauem Tag. Mit nur einem Jahr bekommt es eine eigene Gruppe, nach dem Jahr benannt, unter dem Januar dieses Jahres. Eine kleine <b>~</b> am Foto zeigt, dass sein Datum geschätzt ist; zeige darauf, um die Art zu sehen.</p>
+          </div>
+          <div>
+            <h3>Nach Datum suchen</h3>
+            <p>Tippe ein Jahr (<i>1987</i>), einen Monat und ein Jahr (<i>Juni 1987</i>, <i>june 1987</i>, <i>6/1987</i>, <i>1987-06</i>) oder einen Tag (<i>14.6.1987</i>, <i>14 Juni 1987</i>; Zahlen mit Punkt oder Schrägstrich sind Tag, Monat, Jahr) und wähle die Zeile unter <b>Datum</b>, der letzten Gruppe der Liste. Sie wird zu einem Chip mit Kalender und lässt sich mit den anderen Chips kombinieren, zum Beispiel eine Person und ein Jahr.</p>
+            <p>Ein Monat allein bietet nie ein Datum an, damit <i>Juni</i> weiter Tags und Personen namens Juni findet. Dafür tippst du <b>datum:</b> und den Monat, zum Beispiel <i>datum:juni</i> (auch <i>date:</i> geht): Die Liste zeigt dann nur Daten und führt diesen Monat in jedem Jahr deiner Bibliothek auf. <i>datum:</i> mit einem Jahr führt das Jahr und seine Monate auf.</p>
+            <p>Ein Foto wird gefunden, wenn sein Datum ganz in dem liegt, was du getippt hast. Ein Foto, das nur sein Jahr kennt, wird von <i>1987</i> gefunden, aber nicht von <i>Juni 1987</i>, denn es muss nicht aus dem Juni sein; ein Foto, das sein Datum aus dem Ereignisordner hat, kennt seinen Monat, nicht seinen Tag. Die Vorschläge zählen die Fotos jeweils eines Laufwerks.</p>
+          </div>
+        </div>
+        <div>
+          <figure>
+            <img src="assets/de/dates-dialog.jpg" alt="" loading="lazy">
+            <figcaption>Einem Foto ein Datum geben: Juni 1987.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/de/dates-search.jpg" alt="" loading="lazy">
+            <figcaption>Mit <i>datum:jul</i> erscheint der Juli jedes Jahres.</figcaption>
+          </figure>
+        </div>
       </div>
     </section>
 
@@ -757,7 +816,7 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg></div>
           <h3>Nur lesen</h3>
-          <p>Metadaten, Vorschaubilder, Tags und von dir festgelegte Aufnahmeorte liegen im Index auf dem Laufwerk (<code>.shoebox/library.db</code>), nie in einem Foto. Aufnahme- und Erstellungsdatum ändern sich nie.</p>
+          <p>Metadaten, Vorschaubilder, Tags und von dir festgelegte Aufnahmeorte und Daten liegen im Index auf dem Laufwerk (<code>.shoebox/library.db</code>), nie in einem Foto. Aufnahme- und Erstellungsdatum ändern sich nie: ein Datum, das du einem Foto gibst, lebt nur in shoebox, und das Datum der Datei bleibt, wie es war.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg></div>
@@ -785,6 +844,7 @@
         <p><b>Ein Video hat keine Vorschau.</b> <code>ffmpeg</code> hinzufügen (siehe „Gut zu wissen“), dann <b>Scannen</b> ausführen oder die Foto-App neu starten.</p>
         <p><b>Das iPad verbindet sich nicht.</b> Selbes WLAN? Mit <code>--lan</code> gestartet? PIN aus dem Terminal eingeben. Nach einem Neustart von shoebox fragt es wieder nach der PIN.</p>
         <p><b>Ein Laufwerk steht auf offline.</b> Wieder anstecken; shoebox findet es beim Neuladen.</p>
+        <p><b>Ein Foto steht an der falschen Stelle der Zeitleiste.</b> Sein Datum kommt aus der Datei, dem Namen seines Ereignisordners oder den Dateidaten, und bei einem Scan oder einem über einen Messenger geschickten Bild stimmt es oft nicht. Öffne das Infofeld und drücke den Stift neben dem Datum, um ein eigenes zu setzen; siehe „Datum und Suche nach Datum“.</p>
         <p><b>Eine Karte ist leer oder sagt Offline.</b> Karten brauchen das Internet. Verbindung prüfen und das Foto noch einmal öffnen; alles andere funktioniert wie zuvor.</p>
       </div>
     </section>

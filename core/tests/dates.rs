@@ -239,6 +239,14 @@ fn copies_share_a_date_and_undo_puts_back_what_was_there() {
     assert_eq!(prev[1], json!({ "id": b, "estimate": null }));
     assert_eq!(details(addr, b)["estimate"]["month"], 5);
 
+    // Two copies of one content in the same batch: Undo still restores what each had.
+    let r = set(addr, &[a, copy], json!({ "year": 1999 }));
+    assert_eq!(r.json()["previous"][0]["estimate"]["year"], 1990);
+    assert_eq!(r.json()["previous"][1]["estimate"]["year"], 1990, "read before anything was written");
+    let r = post(addr, "/api/files/dates", &json!({ "restore": r.json()["previous"] }));
+    assert_eq!(r.status, 200);
+    assert_eq!(details(addr, copy)["estimate"]["year"], 1990);
+
     // Undo: the earlier dates come back, a photo that had none has none again.
     let r = post(addr, "/api/files/dates", &json!({ "restore": prev }));
     assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
