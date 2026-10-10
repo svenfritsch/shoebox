@@ -28,6 +28,7 @@ use crate::db::{self, Job};
 use crate::fingerprint;
 use crate::media;
 use crate::phash;
+use crate::screenshots;
 use crate::scan::{Batch, Progress};
 
 pub const FILE: &str = "thumbs.db";
@@ -114,6 +115,8 @@ pub struct Rendered {
     pub height: u32,
     /// Images only; video posters are not compared.
     pub phash: Option<u64>,
+    /// Images only: how flat the picture is (`screenshots::pixel_score`).
+    pub shot_pixels: Option<u8>,
 }
 
 /// What thumbnailing needs to know about a file.
@@ -140,7 +143,7 @@ pub fn render(lib_heif: &LibHeif, ffmpeg: Option<&Path>, src: &Source) -> Result
                 .ok()
                 .and_then(|r| r.into_dimensions().ok())
                 .ok_or("ffmpeg returned no image")?;
-            Ok(Rendered { jpeg, width, height, phash: None })
+            Ok(Rendered { jpeg, width, height, phash: None, shot_pixels: None })
         }
         kind => {
             let img = media::decode_image(lib_heif, kind, &src.path, EDGE).map_err(|e| format!("{e:#}"))?;
@@ -164,11 +167,18 @@ pub(crate) fn shrink(img: DynamicImage, edge: u32) -> DynamicImage {
 }
 
 fn encode(img: &DynamicImage, quality: u8, with_phash: bool) -> Result<Rendered> {
+    let jpeg = media::encode_jpeg(img, quality)?;
+    // Measured on the stored JPEG, so a backfill from stored thumbnails agrees.
+    let shot_pixels = with_phash
+        .then(|| image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg).ok())
+        .flatten()
+        .map(|back| screenshots::pixel_score(&back));
     Ok(Rendered {
-        jpeg: media::encode_jpeg(img, quality)?,
+        jpeg,
         width: img.width(),
         height: img.height(),
         phash: with_phash.then(|| phash::of(img)),
+        shot_pixels,
     })
 }
 
@@ -182,6 +192,12 @@ pub fn store(conn: &Connection, key: &str, result: &Result<Rendered, String>) ->
                  VALUES (?1, ?2, ?3, ?4, NULL, ?5)",
                 params![key, r.width, r.height, r.jpeg, db::now()],
             )?;
+            if let Some(p) = r.shot_pixels {
+                conn.execute(
+                    "UPDATE files SET shot_pixels = ?2 WHERE quick_hash = ?1 AND kind IN ('jpeg', 'png', 'heic')",
+                    params![key, p],
+                )?;
+            }
             if let Some(h) = r.phash {
                 conn.execute(
                     "UPDATE files SET phash = ?2 WHERE quick_hash = ?1 AND kind != 'video'",
@@ -357,6 +373,7 @@ pub fn generate(conn: &Connection, root: &Path) -> Result<Stats> {
     }
 
     stats.phash_from_existing = fill_phash(conn)?;
+    fill_shot_pixels(conn)?;
     // Files in the trash keep theirs until the trash is emptied.
     let gone = "key NOT IN (SELECT quick_hash FROM files)
                 AND key NOT IN (SELECT quick_hash FROM trash WHERE quick_hash IS NOT NULL)";
@@ -395,6 +412,37 @@ fn fill_phash(conn: &Connection) -> Result<u64> {
     }
     tx.commit()?;
     Ok(n)
+}
+
+/// Images that have a thumbnail but no flatness yet (made before phase 11, or
+/// a copy that showed up later): taken over from a twin, else measured on the
+/// stored thumbnail. The originals are not opened.
+fn fill_shot_pixels(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute(
+        "UPDATE files SET shot_pixels = (SELECT g.shot_pixels FROM files g WHERE g.quick_hash = files.quick_hash
+                                         AND g.shot_pixels IS NOT NULL LIMIT 1)
+         WHERE shot_pixels IS NULL AND kind IN ('jpeg', 'png', 'heic')
+           AND EXISTS (SELECT 1 FROM files g WHERE g.quick_hash = files.quick_hash AND g.shot_pixels IS NOT NULL)",
+        [],
+    )?;
+    let rows: Vec<(String, Vec<u8>)> = tx
+        .prepare(
+            "SELECT DISTINCT f.quick_hash, t.jpeg FROM files f JOIN thumbs.thumbs t ON t.key = f.quick_hash
+             WHERE f.shot_pixels IS NULL AND f.kind IN ('jpeg', 'png', 'heic') AND t.jpeg IS NOT NULL",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    for (key, jpeg) in rows {
+        if let Ok(img) = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg) {
+            tx.execute(
+                "UPDATE files SET shot_pixels = ?2 WHERE quick_hash = ?1 AND shot_pixels IS NULL",
+                params![key, screenshots::pixel_score(&img)],
+            )?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
 }
 
 #[cfg(test)]

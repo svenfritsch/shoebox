@@ -59,6 +59,28 @@ read; a file that changes in between is skipped and reported, and picked up
 by the next scan. After the index pass and after hashing, the database is
 copied to `library.db.bak` (via a temp file and rename).
 
+## Scan and verify compared
+
+| | scan | verify |
+|---|---|---|
+| Question | what changed on the drive since last time? | is what the index remembers still true, byte for byte? |
+| Reads | `stat` of every file; content only of new or changed files | every file in full (`--quick`: only size and date) |
+| Cost | seconds to minutes | as long as copying the whole library |
+| Changes the index | yes: adds, moves, marks missing | only `verified_at` |
+| Result | one-off: the Moved, Changed, Missing tabs list what *this* run did | the same every time until something changes |
+
+A move is reported by the scan once. The record is repointed to the new path
+(same id), so the next scan finds nothing to do and verify has nothing to say:
+it checks the record at its new path. Verify only sees a gone path when the scan
+did not follow it, namely when no record could take it over, e.g. the
+destination already had its own record of identical content (a duplicate was
+deleted or merged). The old record then stays, marked `missing_since`, until
+`--forget-missing`, and verify meets it on every run. If another present file
+has the same full hash, verify reports it as `relocated` (not a failure; the
+content is safe); only content with no other copy is `missing` and fails.
+Damage (content differs although size and date match) is only ever found by
+verify, because a scan trusts a matching size and date.
+
 ## Index
 
 Schema in `core/src/db.rs` (`PRAGMA user_version` = 1):

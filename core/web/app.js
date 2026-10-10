@@ -113,8 +113,8 @@ $('login-form').addEventListener('submit', function (ev) {
 
 // ------------------------------------------------------------------ filters (in the URL hash)
 
-var TYPES = ['photo', 'video', 'live'];
-var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person', 'drives', 'settings', 'pets'];
+var TYPES = ['photo', 'video', 'live', 'screenshot'];
+var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person', 'drives', 'settings', 'pets', 'locations'];
 // Pet search terms (`pet=` in the URL and the API): a species or any pet.
 var PET_TERMS = {
   cat: { icon: '🐱', get label() { return tr('pet.term.cat'); } },
@@ -123,7 +123,7 @@ var PET_TERMS = {
 };
 
 function readHash() {
-  var f = { folder: null, tags: [], people: [], pets: [], types: [], fav: false, q: '', view: null, id: null, tab: null };
+  var f = { folder: null, tags: [], people: [], pets: [], types: [], fav: false, place: null, dates: [], nodate: false, q: '', view: null, id: null, tab: null };
   location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
     var i = kv.indexOf('=');
     if (i < 0) return;
@@ -137,6 +137,10 @@ function readHash() {
     // A kind of pet (all cats, all dogs, any pet): the same on every drive.
     if (k === 'pet' && PET_TERMS[v] && f.pets.indexOf(v) < 0) f.pets.push(v);
     if (k === 'fav') f.fav = v === '1';
+    if (k === 'place') f.place = parseInt(v, 10) || null;
+    // Photos dated inside a year, month or day (several: all must match), and those that need a date.
+    if (k === 'date' && /^\d{4}(-\d{2}(-\d{2})?)?$/.test(v) && f.dates.indexOf(v) < 0) f.dates.push(v);
+    if (k === 'nodate') f.nodate = v === '1';
     if (k === 'q') f.q = v;
     if (k === 'view' && VIEWS.indexOf(v) >= 0) f.view = v;
     if (k === 'id') f.id = parseInt(v, 10) || null;
@@ -144,6 +148,7 @@ function readHash() {
   });
   // Over all drives only these pages exist (the others belong to one drive).
   if (isAll() && f.view && f.view !== 'duplicates' && f.view !== 'drives') f.view = null;
+  if (isAll()) f.place = null; // places belong to one drive
   return f;
 }
 
@@ -151,7 +156,7 @@ function readHash() {
 // folder, any number of tags and people (`tag`, `person` repeated in the
 // URL) and free text.
 function setFilter(f) {
-  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], type: f.types || [], fav: f.fav ? 1 : null, q: f.q }).replace(/^\?/, '');
+  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], type: f.types || [], fav: f.fav ? 1 : null, place: f.place, date: f.dates || [], nodate: f.nodate ? 1 : null, q: f.q }).replace(/^\?/, '');
   if (h === location.hash.replace(/^#/, '')) { applyFilter(); return; }
   location.hash = h; // triggers hashchange -> applyFilter
 }
@@ -159,7 +164,9 @@ function setFilter(f) {
 // The current filter with some terms changed.
 function withFilter(changes) {
   var f = state.filter;
-  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), pets: f.pets.slice(), types: f.types.slice(), fav: f.fav, q: f.q }, changes);
+  // A place picked on the Locations page goes with the search to the timeline.
+  var place = f.view === 'locations' ? f.id : f.place;
+  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), pets: f.pets.slice(), types: f.types.slice(), fav: f.fav, place: place, dates: f.dates.slice(), nodate: f.nodate, q: f.q }, changes);
 }
 
 function showView(view, id, tab) { setFilter({ view: view, id: id, tab: tab, folder: null, tags: [], people: [], q: '' }); }
@@ -176,12 +183,20 @@ function applyFilter() {
   var view = state.filter.view;
   $('page').hidden = !view;
   $('sizer').hidden = !!view;
+  $('current-month').textContent = view && VIEW_LABELS[view] ? tr(VIEW_LABELS[view]) : '';
+  var f = state.filter;
+  $('all').classList.toggle('active', !view && !f.folder && !f.tags.length && !f.people.length && !f.pets.length && !f.place && !f.fav && !f.dates.length && !f.nodate && !f.q);
+  $('nav-nodate').classList.toggle('active', !view && f.nodate);
+  if (isAll()) $('nav-nodate').hidden = true;
   $('nav-dups').classList.toggle('active', view === 'duplicates');
   $('nav-trash').classList.toggle('active', view === 'trash');
   $('nav-settings').classList.toggle('active', view === 'settings' || view === 'faces' || view === 'pets');
   $('nav-drives').classList.toggle('active', view === 'drives');
   markFacesSection();
   updateSections();
+  document.body.classList.toggle('geo-view', view === 'locations');
+  if (view !== 'locations') geoLeave();
+  renderLocationsSection();
   if (view) {
     endSelection();
     $('empty').hidden = true;
@@ -234,6 +249,19 @@ function renderChips() {
     });
   });
   if (f.fav) add('♥ ' + tr('fav.label'), function () { setFilter(withFilter({ fav: false })); });
+  if (f.place) {
+    var spot = placeOf(f.place);
+    add('📍 ' + (spot ? spot.name : '…'), function () { setFilter(withFilter({ place: null })); });
+    var onMap = el('button', 'edit', '🗺');
+    onMap.title = tr('chip.show_on_map');
+    onMap.onclick = function () { showView('locations', f.place); };
+    box.lastChild.insertBefore(onMap, box.lastChild.lastChild);
+  }
+  f.dates.forEach(function (term) {
+    add('📅 ' + dateTermLabel(term), function () { setFilter(withFilter({ dates: f.dates.filter(function (t) { return t !== term; }) })); });
+    box.lastChild.title = tr('dates.chip_hint', { date: dateTermLabel(term) });
+  });
+  if (f.nodate) add('📅 ' + tr('side.needs_date'), function () { setFilter(withFilter({ nodate: false })); });
   if (f.q) add('“' + f.q + '”', function () { setFilter(withFilter({ q: '' })); });
   var terms = box.children.length;
   if (terms) {
@@ -246,7 +274,7 @@ function renderChips() {
   if (terms >= 2) {
     var clear = el('button', 'chip clear', tr('chip.clear_all'));
     clear.title = tr('chip.clear_all_hint');
-    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], pets: [], fav: false, q: '' }); };
+    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], pets: [], fav: false, place: null, q: '' }); };
     box.appendChild(clear);
   }
   personHead(box, f);
@@ -258,7 +286,8 @@ state.personSpecies = {}; // id -> cat, dog or pet, for people who are pets
 
 // ------------------------------------------------------------------ type filter
 
-// A check box drop-down: Photos, Videos (stand-alone only) and Live Photos.
+// A check box drop-down: Photos (not screenshots), Videos (stand-alone only),
+// Live Photos and Screenshots.
 // Any ticked type matches; it combines with the rest of the search.
 var typeBoxes = Array.prototype.slice.call($('types-menu').querySelectorAll('input'));
 function typeLabel(t) { return tr(t === 'live' ? 'types.live_short' : 'types.' + t); }
@@ -322,14 +351,15 @@ function setFavorite(ids, on) {
   }).catch(failed);
 }
 
-function heartButton(id, cls) {
+function heartButton(id, cls, readonly) {
   var b = el('button', cls), on = !!state.favs[id];
   b.type = 'button';
   b.innerHTML = on ? HEART_ON : HEART_OFF;
   b.classList.toggle('on', on);
-  b.title = tr(on ? 'fav.remove' : 'fav.add');
+  b.title = tr(readonly ? 'fav.readonly' : on ? 'fav.remove' : 'fav.add');
   b.setAttribute('aria-label', b.title);
   b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  if (readonly) b.disabled = true; // the common timeline only shows hearts
   return b;
 }
 
@@ -340,7 +370,7 @@ function paintHearts() {
     var id = d.ids[parseInt(b.parentNode.dataset.index, 10)], on = !!state.favs[id];
     b.innerHTML = on ? HEART_ON : HEART_OFF;
     b.classList.toggle('on', on);
-    b.title = tr(on ? 'fav.remove' : 'fav.add');
+    b.title = tr(isAll() ? 'fav.readonly' : on ? 'fav.remove' : 'fav.add');
     b.setAttribute('aria-label', b.title);
     b.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
@@ -353,8 +383,10 @@ function markLightboxHeart() {
   var on = !!state.favs[d.ids[i]];
   b.innerHTML = on ? HEART_ON : HEART_OFF;
   b.classList.toggle('on', on);
-  b.title = tr(on ? 'fav.remove_hint' : 'fav.add_hint');
-  b.setAttribute('aria-label', tr(on ? 'fav.remove' : 'fav.add'));
+  b.title = tr(isAll() ? 'fav.readonly' : on ? 'fav.remove_hint' : 'fav.add_hint');
+  b.setAttribute('aria-label', isAll() ? b.title : tr(on ? 'fav.remove' : 'fav.add'));
+  b.disabled = isAll();
+  if (isAll()) b.hidden = !on; // the common timeline shows a heart only on favorites
   b.setAttribute('aria-pressed', on ? 'true' : 'false');
 }
 
@@ -377,6 +409,10 @@ var sugg = { items: [], at: -1, seq: 0 };
 $('search').addEventListener('input', function () {
   clearTimeout(searchTimer);
   var v = this.value;
+  // On the Locations page typing looks for a place; the text only becomes a search with Enter.
+  if (state.filter.view === 'locations' && geo.on) { suggest(v); return; }
+  // `date:` looks for a date; what follows is not a text search.
+  if (DATE_PREFIX.test(v)) { suggest(v); return; }
   searchTimer = setTimeout(function () { setFilter(withFilter({ q: v.trim() })); }, 300);
   suggest(v);
 });
@@ -393,6 +429,7 @@ $('search').addEventListener('keydown', function (ev) {
   } else if (ev.key === 'Enter') {
     ev.preventDefault();
     if (open && sugg.at >= 0) { pickSuggest(sugg.items[sugg.at]); return; }
+    if (DATE_PREFIX.test(this.value)) { if (sugg.items.length) pickSuggest(sugg.items[0]); return; }
     clearTimeout(searchTimer);
     closeSuggest();
     setFilter(withFilter({ q: this.value.trim() }));
@@ -402,6 +439,9 @@ $('search').addEventListener('keydown', function (ev) {
     // Like a token field: the last chip goes.
     var f = state.filter;
     if (f.fav) setFilter(withFilter({ fav: false }));
+    else if (f.place) setFilter(withFilter({ place: null }));
+    else if (f.nodate) setFilter(withFilter({ nodate: false }));
+    else if (f.dates.length) setFilter(withFilter({ dates: f.dates.slice(0, -1) }));
     else if (f.pets.length) setFilter(withFilter({ pets: f.pets.slice(0, -1) }));
     else if (f.people.length) setFilter(withFilter({ people: f.people.slice(0, -1) }));
     else if (f.tags.length) setFilter(withFilter({ tags: f.tags.slice(0, -1) }));
@@ -421,14 +461,28 @@ function favSuggestion(needle, f) {
 
 function suggest(text) {
   var seq = ++sugg.seq, f = state.filter;
+  // On the Locations page the search finds places: picking one shows it.
+  if (f.view === 'locations' && geo.on) { showSuggest(placeSuggestions(text.trim(), f)); return; }
   if (f.view) { closeSuggest(); return; }
+  // `date:` (or `datum:`): only dates, a month alone lists it in every year.
+  var typed = DATE_PREFIX.exec(text);
+  if (typed) {
+    if (isAll()) { closeSuggest(); return; }
+    var after = typed[1].trim();
+    suggestDates(after, true, datesWithin(f)).then(function (rows) {
+      if (seq !== sugg.seq) return;
+      showSuggest(dateItems(rows), after && rows.length ? '' : tr('dates.hint_prefix'));
+    });
+    return;
+  }
   if (isAll()) { suggestAll(text, seq); return; }
   var needle = text.trim();
-  var within = { q: needle, tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, folder: f.folder };
+  var within = { q: needle, tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place };
   Promise.all([
     api(LIBAPI + '/tags' + query(Object.assign({ limit: 8 }, within))),
     api(LIBAPI + '/people/search' + query(Object.assign({ limit: 6 }, within))).catch(function () { return []; }),
     api(LIBAPI + '/pets/search' + query(within)).catch(function () { return []; }),
+    suggestDates(needle, false, datesWithin(f)),
   ]).then(function (r) {
     if (seq !== sugg.seq) return;
     var items = favSuggestion(needle, f);
@@ -443,12 +497,15 @@ function suggest(text) {
       state.tagNames[t.id] = t.name;
       items.push({ kind: 'tag', id: t.id, label: t.name, count: t.count, folderTag: t.kind === 'folder' });
     });
+    items = items.concat(placeSuggestions(needle, f));
     if (needle && !f.folder) {
       var low = needle.toLowerCase();
       state.folders.filter(function (fo) { return fo.path && fo.count && fo.name.toLowerCase().indexOf(low) >= 0; })
         .slice(0, 4)
         .forEach(function (fo) { items.push({ kind: 'folder', id: fo.id, label: fo.path, count: fo.count }); });
     }
+    // Last: a year, a month with a year or a day, when that is what was typed.
+    items = items.concat(dateItems(r[3]));
     showSuggest(items);
   }).catch(function () {});
 }
@@ -480,7 +537,7 @@ function suggestAll(text, seq) {
   }).catch(function () {});
 }
 
-function showSuggest(items) {
+function showSuggest(items, hint) {
   var box = $('suggest');
   box.textContent = '';
   sugg.items = items;
@@ -488,10 +545,10 @@ function showSuggest(items) {
   var last = null;
   items.forEach(function (it, i) {
     if (it.kind !== last) {
-      var f = state.filter, narrowed = !isAll() && (f.tags.length || f.people.length || f.pets.length || f.folder);
+      var f = state.filter, narrowed = !isAll() && (f.tags.length || f.people.length || f.pets.length || f.folder || f.place);
       var head = it.kind === 'fav' ? tr('fav.label') : it.kind === 'tag' ? tr(narrowed ? 'search.tags_here' : 'search.tags')
         : it.kind === 'person' ? tr(narrowed ? 'search.faces_here' : 'side.faces')
-          : it.kind === 'pet' ? tr(narrowed ? 'search.pets_here' : 'search.pets') : tr('search.folders');
+          : it.kind === 'pet' ? tr(narrowed ? 'search.pets_here' : 'search.pets') : it.kind === 'place' ? tr('search.places') : it.kind === 'date' ? tr('search.dates') : tr('search.folders');
       box.appendChild(el('div', 'head', head));
       last = it.kind;
     }
@@ -503,7 +560,7 @@ function showSuggest(items) {
     if (it.kind === 'person') label.appendChild(avatar(it.person, 'tiny'));
     label.appendChild(document.createTextNode((it.kind === 'fav' ? '♥ ' : it.kind === 'pet' ? PET_TERMS[it.id].icon + ' '
       : it.kind === 'person' ? (petIcon(it.person && it.person.species) ? petIcon(it.person.species) + ' ' : '')
-        : ({ folder: '📁 ' }[it.kind] || '# ')) + it.label));
+        : ({ folder: '📁 ', place: '📍 ', date: '📅 ' }[it.kind] || '# ')) + it.label));
     b.appendChild(label);
     b.appendChild(el('span', 'count', I18n.number(it.count)));
     b.onmousedown = function (ev) { ev.preventDefault(); }; // keep the focus in the box
@@ -511,7 +568,8 @@ function showSuggest(items) {
     b.dataset.i = i;
     box.appendChild(b);
   });
-  box.hidden = !items.length || document.activeElement !== $('search');
+  if (hint) box.appendChild(el('div', 'hint', hint));
+  box.hidden = (!items.length && !hint) || document.activeElement !== $('search');
 }
 
 function markSuggest() {
@@ -530,6 +588,8 @@ function pickSuggest(it) {
   else if (it.kind === 'tag') setFilter(withFilter({ tags: f.tags.indexOf(it.id) < 0 ? f.tags.concat([it.id]) : f.tags, q: '' }));
   else if (it.kind === 'person') setFilter(withFilter({ people: f.people.indexOf(it.id) < 0 ? f.people.concat([it.id]) : f.people, q: '' }));
   else if (it.kind === 'pet') setFilter(withFilter({ pets: f.pets.indexOf(it.id) < 0 ? f.pets.concat([it.id]) : f.pets, q: '' }));
+  else if (it.kind === 'date') setFilter(withFilter({ dates: f.dates.indexOf(it.id) < 0 ? f.dates.concat([it.id]) : f.dates, q: '' }));
+  else if (it.kind === 'place') pickPlace(it.id);
   else setFilter(withFilter({ folder: it.id, q: '' }));
 }
 
@@ -619,7 +679,8 @@ function folderNode(f, depth) {
   toggle.onclick = function () { expand(!ul || ul.hidden); };
   name.onclick = function () {
     expand(true);
-    setFilter({ folder: f.id, tags: [], people: [], types: state.filter.types, fav: state.filter.fav, q: state.filter.q });
+    // Opening a folder replaces the search: its chip is the only one left.
+    setFilter({ folder: f.id, tags: [], people: [], pets: [], types: state.filter.types, fav: false, q: '' });
   };
   return li;
 }
@@ -644,6 +705,7 @@ function markActiveFolder() {
 }
 
 $('all').onclick = function () { setFilter({ folder: null, tags: [], people: [], q: '' }); };
+$('nav-nodate').onclick = function () { setFilter({ folder: null, tags: [], people: [], q: '', nodate: true }); };
 $('nav-dups').onclick = function () { showView('duplicates'); };
 $('nav-trash').onclick = function () { showView('trash'); };
 $('nav-drives').onclick = function () { showView('drives'); };
@@ -662,7 +724,24 @@ function sectionHasActive(id) {
   var f = state.filter;
   if (id === 'folders-section') return !f.view && f.folder != null;
   if (id === 'tags-section') return !f.view && f.tags.length > 0;
+  if (id === 'locations-section') return f.view === 'locations';
   return f.view === 'people' || f.view === 'unnamed' || f.view === 'person' || (!f.view && f.people.length > 0);
+}
+
+// A section holding the current selection cannot be folded (a safeguard).
+function toggleSection(id) {
+  if (sectionHasActive(id)) return;
+  sectionClosed[id] = !sectionClosed[id];
+  try { localStorage.setItem('sectionClosed', JSON.stringify(sectionClosed)); } catch (e) { /* ignore */ }
+  updateSections();
+}
+
+// Faces and Locations: the title opens its page and unfolds the section.
+function openSection(id) {
+  if (!sectionClosed[id]) return;
+  sectionClosed[id] = false;
+  try { localStorage.setItem('sectionClosed', JSON.stringify(sectionClosed)); } catch (e) { /* ignore */ }
+  updateSections();
 }
 
 function updateSections() {
@@ -678,11 +757,12 @@ function updateSections() {
 }
 
 Array.prototype.forEach.call(document.querySelectorAll('.caret'), function (c) {
-  c.onclick = function () {
-    sectionClosed[c.dataset.section] = !sectionClosed[c.dataset.section];
-    try { localStorage.setItem('sectionClosed', JSON.stringify(sectionClosed)); } catch (e) { /* ignore */ }
-    updateSections();
-  };
+  c.onclick = function () { toggleSection(c.dataset.section); };
+});
+Array.prototype.forEach.call(document.querySelectorAll('.side-tags h3 > span, #folders-section > span'), function (s) {
+  var id = s.parentNode.querySelector('.caret').dataset.section;
+  s.style.cursor = 'pointer';
+  s.onclick = function () { toggleSection(id); };
 });
 
 function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
@@ -692,8 +772,8 @@ function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
 function loadTimeline(resetScroll) {
   var seq = ++state.loadSeq;
   var f = state.filter;
-  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, q: f.q })
-    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, q: f.q });
+  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null, q: f.q })
+    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null, q: f.q });
   return api(url).then(function (data) {
     if (seq !== state.loadSeq) return;
     if (isAll()) allTimelineLoaded(data);
@@ -702,7 +782,12 @@ function loadTimeline(resetScroll) {
     data.tags.forEach(function (t) { state.tagNames[t.id] = t.name; });
     data.people.forEach(function (p) { state.personNames[p.id] = p.name; });
     if (unnamed) renderChips(); // a link with tags this page has not seen yet
+    // A date change moves photos: the open one is found again by its id.
+    var openId = state.open >= 0 && state.data && state.data.ids ? state.data.ids[state.open] : null;
     state.data = data;
+    if (openId != null) { var again = data.ids.indexOf(openId); if (again >= 0) state.open = again; }
+    state.est = {};
+    (data.est || []).forEach(function (e) { state.est[e[0]] = e[1]; });
     state.favs = {};
     (data.favs || []).forEach(function (id) { state.favs[id] = true; });
     state.live = {};
@@ -789,8 +874,15 @@ function render() {
   // The month at the top of the viewport.
   var r = rowAt(Math.max(0, top));
   for (; r >= 0; r--) if (state.rows[r].type === 'h') break;
-  $('current-month').textContent = r >= 0 ? state.rows[r].label : '';
+  if (!state.filter.view) $('current-month').textContent = r >= 0 ? state.rows[r].label : '';
 }
+
+// The page that is open, shown next to the drive name instead of a month.
+var VIEW_LABELS = {
+  duplicates: 'side.duplicates', trash: 'side.trash', settings: 'side.settings', drives: 'side.manage_drives',
+  faces: 'side.faces', pets: 'side.faces', people: 'side.faces', unnamed: 'side.faces', person: 'side.faces',
+  locations: 'side.locations',
+};
 
 function thumbUrl(i) {
   var d = state.data;
@@ -836,7 +928,9 @@ function buildRow(row) {
     var badge = KIND_BADGE[kind] || '';
     if (state.live[d.ids[i]]) badge = 'LIVE';
     if (badge) a.appendChild(el('span', 'badge', badge));
+    if (state.est && state.est[d.ids[i]]) a.appendChild(estimateMark(state.est[d.ids[i]]));
     if (!isAll()) a.appendChild(heartButton(d.ids[i], 'fav'));
+    else if (state.favs[d.ids[i]]) a.appendChild(heartButton(d.ids[i], 'fav', true));
     e.appendChild(a);
   }
   return e;
@@ -960,7 +1054,7 @@ $('sizer').addEventListener('click', function (ev) {
   ev.preventDefault();
   var i = parseInt(a.dataset.index, 10);
   // The heart in the corner: heart or un-heart, nothing else.
-  if (ev.target.closest('.fav')) { var fid = state.data.ids[i]; setFavorite([fid], !state.favs[fid]); return; }
+  if (ev.target.closest('.fav')) { if (isAll()) return; var fid = state.data.ids[i]; setFavorite([fid], !state.favs[fid]); return; }
   // Shift-click: everything between the last clicked photo and this one.
   if (ev.shiftKey && state.selecting && state.anchor != null) selectRange(state.anchor, i, true);
   else if (state.selecting || ev.shiftKey) {
@@ -1061,6 +1155,7 @@ function openLightbox(i) {
 }
 
 function closeLightbox() {
+  geoCleanup();
   stopDrawing();
   stopMedia();
   $('stage').textContent = '';
@@ -1102,7 +1197,7 @@ function showItem() {
   $('lb-next').hidden = i >= d.count - 1;
   $('lb-download').href = fileBase(id) + '/original?download=1';
   $('lb-live').hidden = !state.live[id];
-  $('lb-fav').hidden = isAll();
+  $('lb-fav').hidden = false;
   markLightboxHeart();
   applyAllowTrash();
   var rot = $('lb-rotate');
@@ -1153,9 +1248,10 @@ function drawFaces() {
   var stage = $('stage');
   stage.querySelectorAll('.face-box').forEach(function (b) { b.remove(); });
   var info = lb.details, img = stage.querySelector('img');
-  if (isAll()) return;
   if ($('lb-panel').hidden || !info || !info.faces || !img || img.hidden) return;
-  if (info.id !== state.data.ids[state.open]) return;
+  // In the common timeline the item's id carries the drive; the details have the drive's own id.
+  var openId = state.data.ids[state.open];
+  if (info.id !== (isAll() ? openId % SPAN : openId)) return;
   var r = img.getBoundingClientRect(), s = stage.getBoundingClientRect();
   info.faces.forEach(function (f, k) {
     var hot = lb.hover === k;
@@ -1193,6 +1289,7 @@ function viewUrl(i) {
 }
 
 function formatDate(info) {
+  if (info.estimate) return formatEstimate(info.estimate);
   var s = info.taken || info.sort_date;
   if (!s) return '';
   var p = s.split(/[-T:]/).map(Number);
@@ -1211,26 +1308,78 @@ function formatBytes(n) {
 // and a way into its own drive for everything else (tags, faces, moving).
 function renderPanelAll(info) {
   var panel = $('lb-panel');
-  var lib = drives.allLibs[Math.floor(state.data.ids[state.open] / SPAN)];
+  var id = state.data.ids[state.open];
+  var lib = drives.allLibs[Math.floor(id / SPAN)];
   var dl = el('dl');
-  var row = function (label, value) { if (value) { dl.appendChild(el('dt', '', label)); dl.appendChild(el('dd', '', value)); } };
+  var row = function (label, value) {
+    if (!value) return;
+    dl.appendChild(el('dt', '', label));
+    var dd = el('dd');
+    if (value instanceof Node) dd.appendChild(value); else dd.textContent = value;
+    dl.appendChild(dd);
+  };
   row(tr('info.date'), formatDate(info));
-  row(tr('info.drive'), lib.name);
+  var driveName = lib.volume || lib.name;
+  row(tr('info.drive'), driveName);
   row(tr('info.path'), info.path);
   row(tr('info.size'), (info.width && info.height ? info.width + ' × ' + info.height + ' · ' : '') + formatBytes(info.size));
   row(tr('info.camera'), info.camera);
+  // Everything below is only shown: tags, favorites and people are changed on the photo's own drive.
+  if (state.favs[id]) {
+    var heart = el('span', 'heart');
+    heart.innerHTML = HEART_ON;
+    heart.title = tr('fav.readonly');
+    row(tr('info.favorite'), heart);
+  }
+  var tags = el('div', 'tags readonly');
+  (info.tags || []).forEach(function (t) {
+    if (t.source === 'user' && isFavTag(t.name)) return;
+    tags.appendChild(el('span', t.source === 'folder' ? 'folder' : 'own', (t.source === 'folder' ? '📁 ' : '') + t.name));
+  });
+  if (tags.children.length) row(tr('info.tags'), tags);
+  var faces = el('div', 'pfaces readonly');
+  (info.faces || []).forEach(function (f, k) {
+    if (!f.person || f.state === 'ignored') return;
+    var name = f.state === 'confirmed' ? f.person.name : tr(f.state === 'maybe' ? 'info.guess_maybe' : 'info.guess', { name: f.person.name });
+    var line = el('div', 'pface', name + (f.species ? ' ' + petIcon(f.species) : ''));
+    // As in the drive's own panel: pointing at (or tapping) a face shows its box.
+    line.title = tr('info.show_where');
+    line.onclick = function () { lb.hover = lb.hover === k ? null : k; drawFaces(); };
+    line.addEventListener('mouseenter', function () { lb.hover = k; drawFaces(); });
+    line.addEventListener('mouseleave', function () { if (lb.hover === k) { lb.hover = null; drawFaces(); } });
+    faces.appendChild(line);
+  });
+  if ((info.faces || []).length) {
+    var show = el('button', '', tr(lb.showFaces ? 'info.hide_boxes' : 'info.show_boxes'));
+    show.onclick = function () { lb.showFaces = !lb.showFaces; renderPanel(); };
+    var tools = el('div', 'ptools');
+    tools.appendChild(show);
+    faces.appendChild(tools);
+    row(tr('info.people'), faces);
+  }
   panel.appendChild(dl);
   var actions = el('div', 'actions');
-  var open = el('button', 'btn quiet', tr('info.open_in', { name: lib.name }));
+  var open = el('button', 'btn quiet', tr('info.open_in', { name: driveName }));
   open.title = tr('info.open_in_hint');
   open.onclick = function () { switchLibrary(lib.id, 'folder=' + info.folder_id); };
   actions.appendChild(open);
+  if (state.reveal) {
+    var reveal = el('button', 'btn quiet', state.reveal);
+    reveal.onclick = function () { revealOn(lib.id, info.path); };
+    actions.appendChild(reveal);
+  }
+  var copy = el('button', 'btn quiet', tr('reveal.copy_path'));
+  copy.title = info.path;
+  copy.onclick = function () { copyPath(info.path); };
+  actions.appendChild(copy);
   panel.appendChild(actions);
+  drawFaces();
 }
 
 function renderPanel() {
   var info = lb.details, panel = $('lb-panel');
   panel.textContent = '';
+  geoCleanup();
   if (!info) return;
   if (isAll()) { renderPanelAll(info); return; }
   var dl = el('dl');
@@ -1242,15 +1391,7 @@ function renderPanel() {
     dl.appendChild(dd);
     return dd;
   };
-  var date = row(tr('info.date'), formatDate(info) + (info.taken_offset ? ' (UTC' + info.taken_offset + ')' : ''));
-  if (date && info.date_source !== 'file') {
-    // Not the day the photo was taken: say so next to the date; which
-    // fallback was used is in the tooltip.
-    var badge = el('span', 'estimated', tr('info.estimated'));
-    badge.title = tr('info.estimated_hint') + '\n' + tr(info.date_source === 'created' ? 'info.no_date_created'
-      : info.date_source === 'folder' ? 'info.no_date_folder' : 'info.no_date_file');
-    date.appendChild(badge);
-  }
+  infoDate(row, info);
   row(tr('info.name'), info.name);
   var folder = info.path.indexOf('/') >= 0 ? info.path.slice(0, info.path.lastIndexOf('/')) : '';
   if (folder) {
@@ -1262,6 +1403,7 @@ function renderPanel() {
   else row(tr('info.size'), formatBytes(info.size));
   if (info.duration_ms) row(tr('info.length'), tr('info.seconds', { n: Math.round(info.duration_ms / 1000) }));
   row(tr('info.camera'), info.camera);
+  infoScreenshot(row, info);
   infoTags(row, info);
   if (info.linked && info.linked.length) {
     var versions = el('div');
@@ -1278,6 +1420,7 @@ function renderPanel() {
   move.onclick = function () { moveDialog([info.id], function () { closeLightbox(); }); };
   actions.appendChild(move);
   panel.appendChild(actions);
+  panel.appendChild(infoGeo(info));
 }
 
 // Moving to the trash is off until it is allowed in the settings (originals
@@ -1339,7 +1482,7 @@ $('lb-info').onclick = function () {
   var p = $('lb-panel');
   p.hidden = !p.hidden;
   if (!p.hidden) renderPanel();
-  else drawFaces();
+  else { geoCleanup(); drawFaces(); }
 };
 $('lb-live').onclick = function () {
   var d = state.data, id = d.ids[state.open], video = state.live[id];
@@ -1424,6 +1567,9 @@ function loadInfo() {
     $('nav-trash').textContent = info.trash ? tr('side.trash_n', { n: info.trash }) : tr('side.trash');
     trashCount = info.trash || 0;
     applyAllowTrash();
+    dates.needs = info.needs_date || 0;
+    $('nav-nodate').textContent = dates.needs ? tr('side.needs_date_n', { n: dates.needs }) : tr('side.needs_date');
+    $('nav-nodate').hidden = isAll() || (!dates.needs && !(state.filter && state.filter.nodate));
     if (info.thumbs_done < info.thumbs_total) {
       parts.push(tr('status.thumbs', { pct: Math.floor(100 * info.thumbs_done / info.thumbs_total) }));
     }
@@ -1458,6 +1604,7 @@ function reloadAll() {
   loadFolders();
   loadOwnTags();
   loadPeople();
+  loadPlaces();
   // The unnamed clusters and a person's faces change their cards in place
   // after each action; loading them again would lose the place and what is
   // typed in other cards.
@@ -1474,6 +1621,7 @@ function loadView(view) {
   else if (view === 'unnamed') loadUnnamed();
   else if (view === 'person') loadPersonPage();
   else if (view === 'drives') loadDrivesPage();
+  else if (view === 'locations') loadLocations();
   else loadTrash();
 }
 
@@ -1518,7 +1666,13 @@ function closeModal() {
   if (closeModal.onclose) { var f = closeModal.onclose; closeModal.onclose = null; f(); }
 }
 
-$('modal').addEventListener('click', function (ev) { if (ev.target === this) closeModal(); });
+// A click outside the dialog closes it, but only one that also began there: a
+// press inside can end outside when the dialog changes size meanwhile (the
+// name list under a field folds away when the field loses focus).
+var modalPressed = false;
+$('modal').addEventListener('mousedown', function (ev) { modalPressed = ev.target === this; });
+$('modal').addEventListener('touchstart', function (ev) { modalPressed = ev.target === this; }, { passive: true });
+$('modal').addEventListener('click', function (ev) { if (ev.target === this && modalPressed) closeModal(); modalPressed = false; });
 
 // Shows what did not work, if anything.
 function report(title, lines) {
@@ -1586,12 +1740,21 @@ function updateSelbar() {
   Array.prototype.forEach.call(document.querySelectorAll('.sec .pick'), function (b) {
     b.textContent = tr(state.data && allSelected(parseInt(b.dataset.start, 10), parseInt(b.dataset.end, 10)) ? 'grid.deselect' : 'grid.select_all');
   });
-  $('sel-move').disabled = $('sel-trash').disabled = $('sel-tag').disabled = $('sel-untag').disabled = !n;
+  var total = state.data && state.data.ids ? state.data.ids.length : 0;
+  $('sel-all').textContent = tr(total && n >= total ? 'sel.none' : 'sel.all');
+  $('sel-all').disabled = !total;
+  $('sel-move').disabled = $('sel-trash').disabled = $('sel-tag').disabled = $('sel-untag').disabled = $('sel-date').disabled = !n;
 }
 
 $('select').onclick = function () {
   if (state.filter.view) setFilter({ folder: null, tags: [], people: [], q: '' });
   if (state.selecting) endSelection(); else startSelection();
+};
+// Every photo of the timeline as it is shown now (all months, e.g. all photos
+// of a tag), or none again when everything is selected already.
+$('sel-all').onclick = function () {
+  var total = state.data.ids.length;
+  selectRange(0, total - 1, selectedIds().length < total);
 };
 $('sel-done').onclick = endSelection;
 $('sel-move').onclick = function () { moveDialog(selectedIds(), endSelection); };
@@ -1738,71 +1901,222 @@ function loadDuplicatesAcross() {
   page.textContent = '';
   page.appendChild(el('h2', '', tr('dups.title')));
   addDupTabs(page);
+  return renderDuplicatesAcross(page, function () { return state.filter.view === 'duplicates'; }, false);
+}
+
+// The copies on different drives, into `page`; `alive` says whether it is still
+// the page on screen when the answer arrives. Inside "Manage drives" (`embedded`)
+// the link back to the drive roles is left out: they are right above.
+// Same content, so one picture per photo and one row per copy; ticked copies
+// (key `drive:id`) go to the trash of their own drive, one copy per photo stays.
+var crossState = { groups: [], marked: {}, syncs: [], reload: null, bar: null, pick: null };
+
+function crossKey(f) { return f.library + ':' + f.id; }
+
+// The disk name where it is known, else the library's name; two drives that
+// would read the same get the library name added.
+function crossLabels(groups) {
+  var seen = {}, label = {};
+  groups.forEach(function (g) { g.files.forEach(function (f) { seen[f.library] = f; }); });
+  var count = {};
+  Object.keys(seen).forEach(function (lib) { var n = seen[lib].volume || seen[lib].name; count[n] = (count[n] || 0) + 1; });
+  Object.keys(seen).forEach(function (lib) {
+    var f = seen[lib], n = f.volume || f.name;
+    label[lib] = count[n] > 1 && f.volume ? f.volume + ' · ' + f.name : n;
+  });
+  return label;
+}
+
+function renderDuplicatesAcross(page, alive, embedded) {
   var sub = el('p', 'sub', tr('dups.looking'));
   page.appendChild(sub);
+  crossState.reload = embedded
+    ? function () { page.textContent = ''; return renderDuplicatesAcross(page, alive, true); }
+    : loadDuplicatesAcross;
   return api('/api/all/duplicates?limit=200').then(function (r) {
-    if (state.filter.view !== 'duplicates') return;
+    if (!alive()) return;
     sub.textContent = r.total_groups
       ? tr('dups.across.some', { count: trn('count.photos_exist', r.total_groups), drives: r.compared.join(', ') })
       : r.compared.length > 1 ? tr('dups.across.none_in', { drives: r.compared.join(', ') }) : tr('dups.across.none');
     r.excluded.forEach(function (x) {
       var b = el('div', 'banner');
       b.appendChild(document.createTextNode(tr('dups.excluded', { name: x.name, reason: x.reason })));
-      var go = el('button', 'link', tr('dups.decide'));
-      go.onclick = function () { showView('drives'); };
-      b.appendChild(go);
+      if (!embedded) {
+        var go = el('button', 'link', tr('dups.decide'));
+        go.onclick = function () { showView('drives'); };
+        b.appendChild(go);
+      }
       page.appendChild(b);
     });
-    r.groups.forEach(function (g) { page.appendChild(crossGroupNode(g)); });
+    crossState.groups = r.groups;
+    crossState.marked = {};
+    crossState.syncs = [];
+    var labels = crossLabels(r.groups);
+    r.groups.forEach(function (g) { page.appendChild(crossGroupNode(g, labels)); });
     if (r.total_groups > r.groups.length) page.appendChild(el('p', 'sub', tr('dups.first_of', { shown: r.groups.length, total: r.total_groups })));
+    var bar = el('div', 'dup-bar');
+    bar.hidden = !r.groups.length;
+    page.appendChild(bar);
+    crossState.bar = bar;
+    updateCrossBar(labels);
   }).catch(failed);
 }
 
-function crossGroupNode(g) {
-  var box = el('div', 'group');
-  var head = el('div', 'group-head');
-  head.appendChild(el('span', 'label', tr('dups.same_on', { count: trn('count.drives', new Set(g.files.map(function (f) { return f.library; })).size) })));
-  box.appendChild(head);
-  var cards = el('div', 'cards');
-  g.files.forEach(function (f) {
-    var base = '/api/lib/' + f.library + '/files/' + f.id;
-    var card = el('div', 'card');
-    var a = el('a', 'thumb');
-    a.href = base + (f.kind === 'video' ? '/original' : '/view') + '?v=' + f.version;
-    a.target = '_blank';
-    a.rel = 'noopener';
-    var img = el('img');
-    img.alt = '';
-    img.loading = 'lazy';
-    img.src = base + '/thumb?v=' + f.version;
-    a.appendChild(img);
-    card.appendChild(a);
-    card.appendChild(el('div', 'name', f.name));
-    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : tr('dups.top_level');
-    var fb = el('button', 'folder', folder);
-    fb.title = tr('dups.show_in', { name: f.name });
-    fb.onclick = function () { switchLibrary(f.library, 'q=' + encodeURIComponent(f.path.split('/').pop())); };
-    card.appendChild(fb);
-    card.appendChild(el('div', 'meta', f.path.split('/').pop() + ' · ' + formatBytes(g.size)));
-    var trash = el('button', 'btn danger', tr('sel.trash'));
-    trash.onclick = function () {
-      openModal(tr('sel.trash'), trn('dups.cross_trash', g.files.length - 1, { name: f.name, path: f.path }), [
-        { label: tr('app.cancel'), cls: 'quiet' },
-        { label: tr('sel.trash'), cls: 'danger', onclick: function (btn) {
-          btn.disabled = true;
-          post('/api/lib/' + f.library + '/trash', { ids: [f.id] }).then(function (r) {
-            closeModal();
-            toast(tr('dups.cross_trashed', { count: trn('count.files', r.files.length + r.sidecars), name: f.name }));
-            loadDuplicatesAcross();
-          }).catch(function (e) { closeModal(); failed(e); });
-          return false;
-        } },
-      ]);
-    };
-    card.appendChild(trash);
-    cards.appendChild(card);
+function crossMarkedCount() {
+  var n = 0;
+  crossState.groups.forEach(function (g) { g.files.forEach(function (f) { if (crossState.marked[crossKey(f)]) n++; }); });
+  return n;
+}
+
+// Ticks every copy on drive `lib`, but never the last copy of a photo.
+function crossMarkDrive(lib) {
+  crossState.groups.forEach(function (g) {
+    var open = g.files.filter(function (f) { return !crossState.marked[crossKey(f)]; }).length;
+    g.files.forEach(function (f) {
+      if (f.library !== lib || crossState.marked[crossKey(f)] || open <= 1) return;
+      crossState.marked[crossKey(f)] = true;
+      open--;
+    });
   });
-  box.appendChild(cards);
+  crossState.syncs.forEach(function (sync) { sync(); });
+}
+
+// "N marked", "Mark all copies on [drive]", Clear, Move to trash.
+function updateCrossBar(labels) {
+  var bar = crossState.bar;
+  if (!bar) return;
+  bar.textContent = '';
+  var n = crossMarkedCount();
+  bar.appendChild(el('span', '', tr('dups.marked', { count: trn('count.copies', n) })));
+  bar.appendChild(el('span', 'meta', tr('dups.cross.mark_on')));
+  var pick = el('select');
+  Object.keys(labels).forEach(function (lib) {
+    var o = el('option', '', labels[lib]);
+    o.value = lib;
+    pick.appendChild(o);
+  });
+  if (crossState.pick && labels[crossState.pick]) pick.value = crossState.pick;
+  pick.onchange = function () { crossState.pick = pick.value; };
+  bar.appendChild(pick);
+  var mark = el('button', 'btn quiet', tr('dups.cross.mark'));
+  mark.title = tr('dups.cross.mark_hint');
+  mark.onclick = function () { crossState.pick = pick.value; crossMarkDrive(pick.value); };
+  bar.appendChild(mark);
+  var clear = el('button', 'btn quiet', tr('dups.clear'));
+  clear.title = tr('dups.clear_hint');
+  clear.disabled = n === 0;
+  clear.onclick = function () { crossState.marked = {}; crossState.syncs.forEach(function (sync) { sync(); }); };
+  bar.appendChild(clear);
+  var del = el('button', 'btn danger', tr('sel.trash'));
+  del.disabled = n === 0;
+  del.onclick = trashCrossMarked;
+  bar.appendChild(del);
+}
+
+// One request per drive; each file goes to the trash of the drive it is on,
+// and only if it is still in that drive's index.
+function trashCrossMarked() {
+  var perDrive = {}, total = 0;
+  crossState.groups.forEach(function (g) {
+    var keep = g.files.filter(function (f) { return !crossState.marked[crossKey(f)]; }).length;
+    if (!keep) return;
+    g.files.forEach(function (f) {
+      if (!crossState.marked[crossKey(f)]) return;
+      (perDrive[f.library] = perDrive[f.library] || []).push(f.id);
+      total++;
+    });
+  });
+  if (!total) return;
+  var libs = Object.keys(perDrive);
+  openModal(tr('sel.trash'), tr('dups.cross.delete_text', { count: trn('count.copies', total) }), [
+    { label: tr('app.cancel'), cls: 'quiet' },
+    { label: tr('sel.trash'), cls: 'danger', focus: true, onclick: function (btn) {
+      btn.disabled = true;
+      var done = 0, skipped = [];
+      var send = function (i) {
+        if (i >= libs.length) return Promise.resolve();
+        return post('/api/lib/' + libs[i] + '/trash', { ids: perDrive[libs[i]] }).then(function (r) {
+          done += r.files.length + r.sidecars;
+          (r.skipped || []).forEach(function (x) { skipped.push(x); });
+          return send(i + 1);
+        });
+      };
+      send(0).then(function () {
+        closeModal();
+        toast(tr('dups.cross.done', { count: trn('count.files', done) }));
+        report(tr('trash.skipped'), skipped);
+        crossState.reload();
+      }).catch(function (e) { closeModal(); failed(e); crossState.reload(); });
+      return false;
+    } },
+  ]);
+}
+
+function crossGroupNode(g, labels) {
+  var box = el('div', 'group cross');
+  var first = g.files[0];
+  var base = '/api/lib/' + first.library + '/files/' + first.id;
+  var a = el('a', 'thumb');
+  a.href = base + (first.kind === 'video' ? '/original' : '/view') + '?v=' + first.version;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  var img = el('img');
+  img.alt = '';
+  img.loading = 'lazy';
+  img.src = base + '/thumb?v=' + first.version;
+  a.appendChild(img);
+  box.appendChild(a);
+  var main = el('div', 'main');
+  var baseName = function (f) { return f.path.split('/').pop(); };
+  var sameName = g.files.every(function (f) { return baseName(f) === baseName(first); });
+  main.appendChild(el('div', 'name', baseName(first)));
+  main.appendChild(el('div', 'meta', tr('dups.same_on', { count: trn('count.drives', new Set(g.files.map(function (f) { return f.library; })).size) }) + ' · ' + formatBytes(g.size)));
+  var boxes = [], rows = [];
+  // At least one copy stays: the last unticked box is disabled.
+  var refresh = function () {
+    var open = boxes.filter(function (b) { return !b.checked; });
+    boxes.forEach(function (b) { b.disabled = !b.checked && open.length === 1; });
+  };
+  g.files.forEach(function (f) {
+    var row = el('div', 'copy-row');
+    var cb = el('input');
+    cb.type = 'checkbox';
+    cb.title = tr('dups.delete_copy');
+    var state = el('span', 'state');
+    var sync = function () {
+      cb.checked = !!crossState.marked[crossKey(f)];
+      row.classList.toggle('marked', cb.checked);
+      state.textContent = tr(cb.checked ? 'dups.cross.goes' : 'dups.cross.stays');
+      refresh();
+      updateCrossBar(labels);
+    };
+    cb.onchange = function () {
+      if (cb.checked) crossState.marked[crossKey(f)] = true; else delete crossState.marked[crossKey(f)];
+      sync();
+    };
+    boxes.push(cb);
+    rows.push(sync);
+    row.appendChild(cb);
+    var where = el('div', 'where');
+    var disk = el('span', 'disk', labels[f.library]);
+    where.appendChild(disk);
+    if (f.volume) where.appendChild(el('span', 'meta', ' · ' + tr('dups.cross.folder', { name: f.name })));
+    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : tr('dups.top_level');
+    var fb = el('button', 'folder', folder + (sameName ? '' : ' / ' + baseName(f)));
+    fb.title = tr('dups.show_in', { name: f.name });
+    fb.onclick = function () { switchLibrary(f.library, 'q=' + encodeURIComponent(baseName(f))); };
+    var line = el('div');
+    line.appendChild(fb);
+    where.appendChild(line);
+    row.appendChild(where);
+    row.appendChild(state);
+    main.appendChild(row);
+    cb.checked = false;
+    row.classList.remove('marked');
+    state.textContent = tr('dups.cross.stays');
+  });
+  crossState.syncs.push(function () { rows.forEach(function (sync) { sync(); }); });
+  box.appendChild(main);
   return box;
 }
 
@@ -2389,19 +2703,39 @@ function loadTrash() {
     page.appendChild(el('p', 'sub', batches.length
       ? tr('trash.page_sub', { count: trn('count.photos', batches.length) })
       : tr('trash.empty')));
-    if (batches.length) {
-      var bar = el('div', 'toolbar');
-      var empty = el('button', 'btn danger', tr('trash.empty_btn'));
-      empty.onclick = function () { emptyTrash(null, batches.length); };
-      bar.appendChild(empty);
-      page.appendChild(bar);
-    }
+    // Click a photo to select it (Shift-click: from the last one clicked); the
+    // bar at the bottom puts the selection back or deletes it for good.
+    var picked = {}, anchor = null, cardOf = {};
+    var bar = el('div', 'dup-bar');
+    bar.hidden = !batches.length;
+    var drawBar = function () {
+      var n = batches.filter(function (b) { return picked[b]; }).length;
+      bar.textContent = '';
+      bar.appendChild(el('span', n ? '' : 'meta', n ? tr('trash.selected', { count: trn('count.photos', n) }) : tr('trash.hint')));
+      var all = el('button', 'btn quiet', tr('trash.select_all', { count: I18n.number(batches.length) }));
+      all.disabled = n === batches.length;
+      all.onclick = function () { batches.forEach(function (b) { picked[b] = true; cardOf[b].classList.add('sel'); }); drawBar(); };
+      bar.appendChild(all);
+      var clear = el('button', 'btn quiet', tr('dups.clear'));
+      clear.disabled = !n;
+      clear.onclick = function () { picked = {}; batches.forEach(function (b) { cardOf[b].classList.remove('sel'); }); drawBar(); };
+      bar.appendChild(clear);
+      var back = el('button', 'btn quiet', tr('trash.put_back'));
+      back.disabled = !n;
+      back.onclick = function () { putBack(batches.filter(function (b) { return picked[b]; }), byBatch); };
+      bar.appendChild(back);
+      var del = el('button', 'btn danger', tr('trash.delete_for_good'));
+      del.disabled = !n;
+      del.onclick = function () { deleteBatches(batches.filter(function (b) { return picked[b]; }), batches.length); };
+      bar.appendChild(del);
+    };
     var cards = el('div', 'cards');
     cards.style.flexWrap = 'wrap';
     batches.forEach(function (b) {
       var files = byBatch[b];
       var first = files.filter(function (f) { return f.kind; })[0] || files[0];
-      var card = el('div', 'card');
+      var card = el('div', 'card pick');
+      cardOf[b] = card;
       var thumb = el('div', 'thumb');
       var img = el('img');
       img.alt = '';
@@ -2414,30 +2748,60 @@ function loadTrash() {
       card.appendChild(el('div', 'meta', folder));
       var extra = files.length > 1 ? tr('trash.with', { names: files.slice(1).map(function (f) { return f.path.split('/').pop(); }).join(', ') }) : '';
       card.appendChild(el('div', 'meta', tr('trash.deleted', { date: I18n.date(new Date(first.deleted_at * 1000)), extra: extra })));
-      var restore = el('button', 'btn quiet', tr('trash.put_back'));
-      restore.onclick = function () {
-        restore.disabled = true;
-        post(LIBAPI + '/trash/' + b + '/restore').then(function () { toast(tr('trash.put_back_done', { path: first.path })); changed(); })
-          .catch(function (e) { restore.disabled = false; failed(e); });
+      card.onclick = function (ev) {
+        var span = ev.shiftKey && anchor !== null ? pickSpan(batches, function (x) { return x; }, anchor, b) : null;
+        var on = !picked[b];
+        (span || [b]).forEach(function (x) {
+          if (on) picked[x] = true; else delete picked[x];
+          cardOf[x].classList.toggle('sel', !!picked[x]);
+        });
+        anchor = b;
+        drawBar();
       };
-      card.appendChild(restore);
-      var del = el('button', 'btn danger', tr('trash.delete_for_good'));
-      del.onclick = function () { emptyTrash(b, 1); };
-      card.appendChild(del);
+      card.onmousedown = function (ev) { if (ev.shiftKey) ev.preventDefault(); };
       cards.appendChild(card);
     });
     page.appendChild(cards);
+    page.appendChild(bar);
+    drawBar();
   }).catch(failed);
 }
 
-function emptyTrash(batch, n) {
+// Puts the batches back, one after the other; says how many worked.
+function putBack(list, byBatch) {
+  var done = 0, first = null;
+  var next = function (i) {
+    if (i >= list.length) return Promise.resolve();
+    return post(LIBAPI + '/trash/' + list[i] + '/restore').then(function () {
+      if (!first) first = byBatch[list[i]][0].path;
+      done++;
+      return next(i + 1);
+    });
+  };
+  next(0).then(function () {
+    toast(done === 1 ? tr('trash.put_back_done', { path: first }) : tr('trash.put_back_many', { count: trn('count.photos', done) }));
+    changed();
+  }).catch(function (e) { failed(e); changed(); });
+}
+
+// Asks, then deletes the batches for good; everything at once when all are chosen.
+function deleteBatches(list, total) {
+  deleteForGood(list.length === total ? [null] : list, list.length);
+}
+
+function deleteForGood(batches, n) {
   openModal(tr('trash.delete_for_good'), tr('trash.delete_text', { count: trn('count.photos', n) }), [
     { label: tr('app.cancel'), cls: 'quiet' },
     { label: tr('trash.delete_btn'), cls: 'danger', onclick: function () {
-      post(LIBAPI + '/trash/empty', { batch: batch }).then(function (r) {
-        toast(tr('trash.deleted_toast', { count: trn('count.files', r.deleted) }));
+      var deleted = 0;
+      var next = function (i) {
+        if (i >= batches.length) return Promise.resolve();
+        return post(LIBAPI + '/trash/empty', { batch: batches[i] }).then(function (r) { deleted += r.deleted; return next(i + 1); });
+      };
+      next(0).then(function () {
+        toast(tr('trash.deleted_toast', { count: trn('count.files', deleted) }));
         changed();
-      }).catch(failed);
+      }).catch(function (e) { failed(e); changed(); });
     } },
   ]);
 }
@@ -2644,6 +3008,47 @@ function tagInput() {
 }
 
 // After a change: refresh the open info panel and the sidebar.
+// "Screenshot": a drop-down (Yes / No) that starts on shoebox's guess. Picking
+// an answer is the user's own decision, kept by content in the library (never
+// in the file); "Back to automatic" returns to the guess.
+function infoScreenshot(row, info) {
+  if (info.kind === 'video' || info.kind === 'raw') return;
+  var box = el('div', 'shot-pick');
+  var pick = el('select');
+  [['1', tr('shot.yes')], ['0', tr('shot.no')]].forEach(function (o) {
+    var opt = el('option', '', o[1]);
+    opt.value = o[0];
+    pick.appendChild(opt);
+  });
+  var marked = info.screenshot_mark != null;
+  pick.value = info.screenshot ? '1' : '0';
+  pick.title = tr('shot.hint');
+  var set = function (value) {
+    post(LIBAPI + '/screenshots', { ids: [info.id], value: value }).then(function () { screenshotsChanged(info.id); }).catch(failed);
+  };
+  pick.onchange = function () { set(pick.value === '1'); };
+  box.appendChild(pick);
+  box.appendChild(el('span', 'note', ' ' + tr(marked ? 'shot.yours' : 'shot.guess')));
+  if (marked) {
+    var back = el('button', 'link', tr('shot.back'));
+    back.onclick = function () { set(null); };
+    box.appendChild(document.createTextNode(' '));
+    box.appendChild(back);
+  }
+  row(tr('shot.label'), box);
+}
+
+function screenshotsChanged(id) {
+  // The Type filter may now show other photos (the open viewer keeps its photos until it closes).
+  if (!state.filter.view && state.filter.types.length) loadTimeline(false);
+  if (!lb.details || lb.details.id !== id) return;
+  api(LIBAPI + '/files/' + id).then(function (info) {
+    if (!lb.details || lb.details.id !== id) return;
+    lb.details = info;
+    renderPanel();
+  }).catch(function () {});
+}
+
 function tagsChanged(id) {
   loadOwnTags();
   // A bulk change can change what a tag filter or search shows (the open
@@ -3022,17 +3427,33 @@ function similarFaces(face) {
 
 // Open one photo in the viewer from the page, and come back to it when the
 // viewer closes.
-function openFacePhoto(face) {
+// `siblings` (optional): the faces shown with it, e.g. in a cluster card; the
+// arrow keys then step through their photos (once per photo).
+function openFacePhoto(face, siblings) {
   var saved = state.data;
-  var letter = { jpeg: 'j', png: 'p', heic: 'h' }[face.kind] || 'j';
-  state.data = { count: 1, ids: [face.file], kinds: letter, days: [0], versions: (face.version + '00000000').slice(0, 8), live: [] };
+  var list = [], seen = {}, at = 0;
+  (siblings || [face]).forEach(function (f) {
+    if (f.file == null || seen[f.file]) return;
+    seen[f.file] = true;
+    list.push(f);
+  });
+  list.forEach(function (f, k) { if (f.file === face.file) at = k; });
+  if (!list.length) list = [face];
+  state.data = {
+    count: list.length,
+    ids: list.map(function (f) { return f.file; }),
+    kinds: list.map(function (f) { return { jpeg: 'j', png: 'p', heic: 'h' }[f.kind] || 'j'; }).join(''),
+    days: list.map(function () { return 0; }),
+    versions: list.map(function (f) { return ((f.version || '') + '00000000').slice(0, 8); }).join(''),
+    live: [],
+  };
   // Back to the thumbnail it was opened from (keyboard: Tab, Space, Space).
   var from = document.activeElement;
   lb.restore = function () {
     state.data = saved;
     if (from && from.isConnected && from.focus) from.focus();
   };
-  openLightbox(0);
+  openLightbox(at);
 }
 
 // ------------------------------------------------------------------ settings
@@ -3069,6 +3490,7 @@ function loadSettings() {
   sec.appendChild(cards);
   page.appendChild(sec);
   page.appendChild(allowTrashSection());
+  page.appendChild(mapsSection());
   page.appendChild(eventPatternSection());
   page.appendChild(copyFoldersSection());
 }
@@ -3327,7 +3749,7 @@ function zoomFace(face) {
     img.style.top = (-y0 / side * 100) + '%';
     box.classList.add('ready');
   };
-  img.src = '/api/files/' + face.file + '/thumb?v=' + face.version;
+  img.src = LIBAPI + '/files/' + face.file + '/thumb?v=' + face.version;
   inner.appendChild(img);
   box.appendChild(inner);
   return box;
@@ -3392,7 +3814,7 @@ function setGroup(p, groupId) {
 
 // ---- sidebar
 
-$('nav-people').onclick = function () { showView('people'); };
+$('nav-people').onclick = function () { openSection('faces-section'); showView('people'); };
 
 function renderFacesSection() {
   var info = people.info;
@@ -3460,10 +3882,50 @@ function markFacesSection() {
 
 // ---- a field that names someone
 
+// The species to name these faces: the one most of them have ('cat', 'dog';
+// the first on a tie), 'pet' if all are drawn pets of no species, '' unless
+// every one is a pet. A stray dog among six cats is a wrong find.
+function facesSpecies(faces) {
+  if (!faces.length || !faces.every(function (f) { return f.species; })) return '';
+  var n = { cat: 0, dog: 0 };
+  faces.forEach(function (f) { if (f.species in n) n[f.species]++; });
+  if (!n.cat && !n.dog) return 'pet';
+  return n.dog > n.cat ? 'dog' : 'cat';
+}
+
+// What to change the detected pets `faces` to when they are all one species
+// the detector may have got wrong ('cat' or 'dog'): the other one, else ''.
+function otherSpecies(faces) {
+  var s = faces.length ? faces[0].species : '';
+  if (s !== 'cat' && s !== 'dog') return '';
+  if (!faces.every(function (f) { return f.id != null && f.species === s; })) return '';
+  return s === 'cat' ? 'dog' : 'cat';
+}
+
+function makeSpeciesLabel(to) { return tr(to === 'dog' ? 'pet.make.dog' : 'pet.make.cat'); }
+
+// Say a cat is a dog or the other way round: the faces keep their decisions
+// and take the new species' names in the name proposals.
+function setSpecies(ids, to) {
+  return post(LIBAPI + '/faces/species', { faces: ids, species: to }).then(function (r) {
+    toast(tr('pet.changed', { count: animalCount(to, r.faces) }));
+    return r;
+  });
+}
+
+// Whether a person (or pet) of `p.species` is one `species` asks for: ''
+// people only, 'cat' or 'dog' those (and pets of no species), 'pet' any pet.
+function kindOf(p, species) {
+  if (!species) return !p.species;
+  if (!p.species) return false;
+  return species === 'pet' || p.species === 'pet' || p.species === species;
+}
+
 // A text field offering people by group while typing (the autocomplete
 // that makes naming quick); picking one calls done({person_id} or {name},
 // label). opts: allowNew (offer a new person of the typed name), except
-// (ids to leave out), placeholder.
+// (ids to leave out), placeholder, species (a species, or a function giving
+// it when the list is drawn: the new one is then a "cat", "dog" or "pet").
 function personField(done, opts) {
   opts = opts || {};
   var wrap = el('div', 'pfield');
@@ -3479,6 +3941,9 @@ function personField(done, opts) {
   wrap.appendChild(input);
   wrap.appendChild(list);
   var items = [], at = -1;
+  // Only the kind of face being named is offered: people for faces, cats for
+  // a cat, dogs for a dog.
+  var kind = function () { return typeof opts.species === 'function' ? opts.species() : opts.species || ''; };
   var pick = function (it) {
     list.hidden = true;
     input.value = it.label;
@@ -3487,6 +3952,9 @@ function personField(done, opts) {
   var mark = function () {
     Array.prototype.forEach.call(list.querySelectorAll('.item'), function (b, k) { b.classList.toggle('at', k === at); });
   };
+  var isTaken = function (text) {
+    return people.list.some(function (p) { return fold(p.name) === fold(text) && !(opts.except && opts.except.indexOf(p.id) >= 0); });
+  };
   var render = function () {
     var text = input.value.trim(), low = fold(text), exact = null;
     list.textContent = '';
@@ -3494,7 +3962,7 @@ function personField(done, opts) {
     at = -1;
     groupedPeople().forEach(function (s) {
       var ps = s.people.filter(function (p) {
-        return (!low || fold(p.name).indexOf(low) >= 0) && !(opts.except && opts.except.indexOf(p.id) >= 0);
+        return kindOf(p, kind()) && (!low || fold(p.name).indexOf(low) >= 0) && !(opts.except && opts.except.indexOf(p.id) >= 0);
       });
       if (!ps.length) return;
       list.appendChild(el('div', 'head', s.name));
@@ -3511,9 +3979,13 @@ function personField(done, opts) {
         list.appendChild(b);
       });
     });
-    if (opts.allowNew && text && !exact) {
+    if (opts.allowNew && text && !exact && isTaken(text)) {
+      // A name is one person's, whatever the kind: not offered again as new.
+      list.appendChild(el('div', 'head', tr('people.name_taken', { name: text })));
+    } else if (opts.allowNew && text && !exact) {
       var it = { who: { name: text }, label: text };
-      var b = el('button', 'item new', tr('people.new_person', { name: text }));
+      var sp = kind();
+      var b = el('button', 'item new', tr(sp ? 'people.new.' + (PET_ICON[sp] ? sp : 'pet') : 'people.new_person', { name: text }));
       b.type = 'button';
       b.onmousedown = function (ev) { ev.preventDefault(); };
       b.onclick = function () { pick(it); };
@@ -3521,7 +3993,7 @@ function personField(done, opts) {
       list.appendChild(b);
     }
     wrap.exact = exact;
-    list.hidden = !items.length || document.activeElement !== input;
+    list.hidden = !list.childNodes.length || document.activeElement !== input;
   };
   input.addEventListener('focus', render);
   input.addEventListener('input', render);
@@ -3539,7 +4011,7 @@ function personField(done, opts) {
       var text = input.value.trim();
       if (at >= 0) pick(items[at]);
       else if (wrap.exact) pick(wrap.exact);
-      else if (text && opts.allowNew) pick({ who: { name: text }, label: text });
+      else if (text && opts.allowNew && !isTaken(text)) pick({ who: { name: text }, label: text });
     } else if (ev.key === 'Escape') {
       if (!list.hidden) { list.hidden = true; return; }
       if (opts.onEscape) opts.onEscape();
@@ -3552,8 +4024,9 @@ function personField(done, opts) {
     var text = input.value.trim();
     if (!text) return null;
     if (wrap.exact) return wrap.exact.who;
-    var hit = people.list.filter(function (p) { return fold(p.name) === fold(text); })[0];
+    var hit = people.list.filter(function (p) { return fold(p.name) === fold(text) && kindOf(p, kind()); })[0];
     if (hit) return { person_id: hit.id };
+    if (isTaken(text)) return null;
     return opts.allowNew ? { name: text } : null;
   };
   return wrap;
@@ -3643,7 +4116,7 @@ function mergeDialog(p) {
   var body = el('div');
   body.appendChild(el('p', '', tr('people.merge_text', { name: p.name })));
   var into = null;
-  var field = personField(function (who) { into = who.person_id; }, { except: [p.id], placeholder: tr('people.merge_placeholder') });
+  var field = personField(function (who) { into = who.person_id; }, { except: [p.id], species: p.species || '', placeholder: tr('people.merge_placeholder') });
   body.appendChild(field);
   body.appendChild(el('p', 'hint', tr('people.merge_hint', { name: p.name })));
   var error = el('p', 'error');
@@ -3678,22 +4151,60 @@ function groupsDialog() {
       var row = el('div', 'grow-row');
       row.appendChild(el('span', 'gname', g.name));
       row.appendChild(el('span', 'gcount', trn('count.people', g.people)));
-      var btn = function (label, title, run, disabled) {
+      var btn = function (label, title, run) {
         var b = el('button', 'btn quiet small', label);
         b.title = title;
         b.setAttribute('aria-label', title);
-        b.disabled = !!disabled;
         b.onclick = run;
         row.appendChild(b);
       };
-      var move = function (d) {
+      // Put group k at index `to` and save the new order.
+      var moveTo = function (to, refocus) {
+        if (to === k || to < 0 || to >= people.groups.length) return;
         var ids = people.groups.map(function (x) { return x.id; });
         ids.splice(k, 1);
-        ids.splice(k + d, 0, g.id);
-        post(LIBAPI + '/groups/reorder', { ids: ids }).then(function (gs) { people.groups = gs; render(); peopleChanged(); }).catch(failed);
+        ids.splice(to, 0, g.id);
+        post(LIBAPI + '/groups/reorder', { ids: ids }).then(function (gs) {
+          people.groups = gs; render(); peopleChanged();
+          if (refocus) { var h = list.querySelectorAll('.grip')[to]; if (h) h.focus(); }
+        }).catch(failed);
       };
-      btn('↑', tr('people.move_up'), function () { move(-1); }, k === 0);
-      btn('↓', tr('people.move_down'), function () { move(1); }, k === people.groups.length - 1);
+      var grip = el('span', 'grip', '\u283F');
+      grip.tabIndex = 0;
+      grip.setAttribute('role', 'button');
+      grip.title = tr('people.drag_handle');
+      grip.setAttribute('aria-label', tr('people.drag_handle'));
+      grip.onkeydown = function (e) {
+        if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+        e.preventDefault();
+        moveTo(k + (e.key === 'ArrowUp' ? -1 : 1), true);
+      };
+      // Pointer events cover mouse, pen and touch with one code path.
+      grip.onpointerdown = function (e) {
+        if (e.button) return;
+        e.preventDefault();
+        grip.setPointerCapture(e.pointerId);
+        row.classList.add('dragging');
+        var rows = Array.prototype.slice.call(list.children);
+        var target = k;
+        var mark = function (ev) {
+          var hit = document.elementFromPoint(ev.clientX, ev.clientY);
+          var r = hit && hit.closest ? hit.closest('.grow-row') : null;
+          var i = rows.indexOf(r);
+          if (i >= 0) target = i;
+          rows.forEach(function (x, j) { x.classList.toggle('over', j === target && j !== k); });
+        };
+        grip.onpointermove = mark;
+        var end = function (ev) {
+          grip.onpointermove = grip.onpointerup = grip.onpointercancel = null;
+          row.classList.remove('dragging');
+          rows.forEach(function (x) { x.classList.remove('over'); });
+          if (ev.type === 'pointerup') moveTo(target);
+        };
+        grip.onpointerup = end;
+        grip.onpointercancel = end;
+      };
+      row.insertBefore(grip, row.firstChild);
       btn(tr('people.rename'), tr('people.rename'), function () {
         nameDialog(tr('people.rename_group'), g.name, tr('people.rename'), function (name) {
           return post(LIBAPI + '/groups/' + g.id + '/rename', { name: name }).then(function () {
@@ -3980,7 +4491,8 @@ function personFaceCard(face, tab) {
       updatePersonPick();
       return;
     }
-    if (face.file != null) openFacePhoto(face);
+    // Suggested and maybe: the arrow keys step through the faces to check.
+    if (face.file != null) openFacePhoto(face, tab === 'suggested' || tab === 'maybe' ? pp.faces : null);
   };
   card.appendChild(a);
   var caption = face.similarity != null ? tr('person.alike', { pct: Math.round(face.similarity * 100) }) : Math.round(face.px) + ' px';
@@ -4126,7 +4638,12 @@ function updatePersonPick() {
 // a new person.
 function nameFacesDialog(faces, done) {
   var body = el('div');
-  body.appendChild(el('p', '', faces.length === 1 ? tr('person.who_one') : tr('person.who_many', { n: faces.length })));
+  var kind = facesSpecies(faces);
+  // "Which cat is this?" for a cat, "dog" for a dog, "pet" for any other: the
+  // same question for one face or many, since they are all one animal.
+  var question = !kind ? (faces.length === 1 ? tr('person.who_one') : tr('person.who_many', { n: faces.length }))
+    : kind === 'cat' ? tr('person.who_cat') : kind === 'dog' ? tr('person.who_dog') : tr('person.who_pet');
+  body.appendChild(el('p', '', question));
   var save = function (who) {
     var ids = faces.map(function (x) { return x.id; }).filter(function (x) { return x != null; });
     var drawn = faces.filter(function (x) { return x.id == null && x.manual != null; });
@@ -4140,12 +4657,12 @@ function nameFacesDialog(faces, done) {
       })).then(function () { return r; });
     }).then(function (r) {
       closeModal();
-      toast(tr('person.named', { count: trn('count.faces', faces.length), name: r.person ? r.person.name : who.name || state.personNames[who.person_id] || '' }));
+      toast(tr('person.named', { count: kind ? animalCount(kind, faces.length) : trn('count.faces', faces.length), name: r.person ? r.person.name : who.name || state.personNames[who.person_id] || '' }));
       peopleChanged();
       if (done) done();
     }).catch(failed);
   };
-  var field = personField(function (who) { save(who); }, { allowNew: true, placeholder: tr('people.name_placeholder') });
+  var field = personField(function (who) { save(who); }, { allowNew: true, placeholder: tr('people.name_placeholder'), species: facesSpecies(faces) });
   body.appendChild(field);
   openModal(tr('person.name'), body, [{ label: tr('app.cancel'), cls: 'quiet' }, {
     label: tr('person.name'), onclick: function () {
@@ -4222,14 +4739,15 @@ function singlesSection() {
   bar.hidden = true;
   var count = el('span');
   bar.appendChild(count);
-  var field = personField(function () { name(); }, { allowNew: true, placeholder: tr('unnamed.who') });
+  var field = personField(function () { name(); }, { allowNew: true, placeholder: tr('unnamed.who'), species: function () { return facesSpecies(picked()); } });
   bar.appendChild(field);
   var nameBtn = el('button', 'btn', tr('person.name'));
   var ignore = el('button', 'btn quiet', tr('unnamed.ignore'));
   ignore.title = tr('unnamed.ignore_hint');
   var notFace = el('button', 'btn quiet', tr('facecheck.not_face'));
+  var change = el('button', 'btn quiet');
   var done = el('button', 'btn quiet', tr('unnamed.clear'));
-  [nameBtn, ignore, notFace, done].forEach(function (b) { bar.appendChild(b); });
+  [nameBtn, ignore, notFace, change, done].forEach(function (b) { bar.appendChild(b); });
 
   var picked = function () { return st.faces.filter(function (f) { return st.picked[f.id]; }); };
   var update = function () {
@@ -4242,6 +4760,9 @@ function singlesSection() {
     notFace.title = tr(pets ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint');
     bar.hidden = !n;
     nameBtn.disabled = ignore.disabled = notFace.disabled = !n;
+    var to = otherSpecies(chosen);
+    change.hidden = !to;
+    if (to) change.textContent = makeSpeciesLabel(to);
     more.hidden = st.shown >= st.total;
   };
   var tile = function (face) {
@@ -4307,7 +4828,7 @@ function singlesSection() {
       : post(LIBAPI + '/faces/' + action, { faces: ids });
     request.then(function (r) {
       bar.classList.remove('busy');
-      var n = trn('count.faces', ids.length);
+      var n = pets ? animalCount(facesSpecies(chosen), ids.length) : trn('count.faces', ids.length);
       toast(action === 'assign' ? tr('person.named', { count: n, name: r.person ? r.person.name : who.name || '' })
         : action === 'ignore' ? tr('unnamed.ignored', { count: n }) : tr(pets ? 'facecheck.marked_pet' : 'facecheck.marked', { count: n }));
       var gone = {};
@@ -4320,6 +4841,16 @@ function singlesSection() {
       update();
       peopleChanged();
     }).catch(function (e) { bar.classList.remove('busy'); failed(e); loadUnnamed(); });
+  };
+  change.onclick = function () {
+    var chosen = picked(), to = otherSpecies(chosen);
+    if (!to) return;
+    bar.classList.add('busy');
+    setSpecies(chosen.map(function (f) { return f.id; }), to).then(function () {
+      bar.classList.remove('busy');
+      peopleChanged();
+      loadUnnamed();
+    }).catch(function (e) { bar.classList.remove('busy'); failed(e); });
   };
   var name = function () {
     var who = field.value();
@@ -4401,7 +4932,7 @@ function clusterCard(c) {
           update();
           return;
         }
-        openFacePhoto(face);
+        openFacePhoto(face, faces);
       };
       grid.appendChild(f);
     });
@@ -4422,7 +4953,7 @@ function clusterCard(c) {
   var suggestion = el('div', 'csugg');
   card.appendChild(suggestion);
   var row = el('div', 'crow');
-  var field = personField(function (who) { act('name', who); }, { allowNew: true, placeholder: tr('unnamed.who') });
+  var field = personField(function (who) { act('name', who); }, { allowNew: true, placeholder: tr('unnamed.who'), species: facesSpecies(c.faces) });
   row.appendChild(field);
   var nameBtn = el('button', 'btn', tr('person.name'));
   nameBtn.onclick = function () {
@@ -4468,8 +4999,20 @@ function clusterCard(c) {
     update();
     card.scrollIntoView({ block: 'nearest' });
   };
+  var change = el('button', 'btn quiet');
+  change.onclick = function () {
+    var chosen = faces.filter(function (f) { return card.picked[f.id]; }), to = otherSpecies(chosen);
+    if (!to) return;
+    card.classList.add('busy');
+    setSpecies(chosen.map(function (f) { return f.id; }), to).then(function () {
+      card.classList.remove('busy');
+      peopleChanged();
+      loadUnnamed();
+    }).catch(function (e) { card.classList.remove('busy'); stale(e); });
+  };
   tools.appendChild(ignore);
   tools.appendChild(notFace);
+  tools.appendChild(change);
   tools.appendChild(pick);
   card.appendChild(tools);
 
@@ -4479,6 +5022,8 @@ function clusterCard(c) {
     var pets = c.faces.length > 0 && c.faces.every(function (f) { return f.species; });
     count.textContent = trn(pets ? 'count.pets' : 'count.faces', c.size) + (card.picking ? ' · ' + (n ? tr('unnamed.selected', { n: n }) : tr('unnamed.tap')) : '');
     pick.classList.toggle('active', card.picking);
+    pick.textContent = tr(card.picking ? 'unnamed.select_done' : 'facecheck.select');
+    pick.title = tr(card.picking ? 'unnamed.select_done_hint' : 'unnamed.select_hint');
     card.classList.toggle('picking', card.picking);
     card.classList.toggle('open', expanded || card.picking);
     close.hidden = !(expanded || card.picking);
@@ -4487,6 +5032,9 @@ function clusterCard(c) {
     ignore.textContent = some ? tr('unnamed.ignore_n', { n: n }) : tr('unnamed.ignore');
     notFace.textContent = some ? tr(petCard ? 'unnamed.notface_n_pet' : 'unnamed.notface_n', { n: n }) : tr(petCard ? 'pet.not_a.pet' : 'facecheck.not_face');
     nameBtn.disabled = ignore.disabled = notFace.disabled = card.picking && !n;
+    var to = card.picking ? otherSpecies(faces.filter(function (f) { return card.picked[f.id]; })) : '';
+    change.hidden = !to;
+    if (to) change.textContent = makeSpeciesLabel(to);
     suggestion.textContent = '';
     if (c.suggestion && !card.picking) {
       var s = c.suggestion;
@@ -4532,7 +5080,7 @@ function clusterCard(c) {
     card.classList.add('busy');
     post(LIBAPI + '/clusters/' + c.id + '/' + action, body).then(function (r) {
       card.classList.remove('busy');
-      var n = trn('count.faces', r.faces);
+      var n = petCard ? animalCount(facesSpecies(c.faces), r.faces) : trn('count.faces', r.faces);
       toast(action === 'name' ? tr('person.named', { count: n, name: r.person.name })
         : action === 'ignore' ? tr('unnamed.ignored', { count: n }) : tr(petCard ? 'facecheck.marked_pet' : 'facecheck.marked', { count: n }));
       un.unnamed -= r.faces;
@@ -4648,7 +5196,21 @@ function infoPickBar(info, pickable, pick) {
   ignore.onclick = function () { act('ignore'); };
   notFace.onclick = function () { act('not-face'); };
   cancel.onclick = function () { pick.on = false; pick.ids = {}; renderPanel(); };
-  [ignore, notFace, cancel].forEach(function (b) { row.appendChild(b); });
+  [ignore, notFace].forEach(function (b) { row.appendChild(b); });
+  var to = otherSpecies(chosen);
+  if (to) {
+    var change = el('button', 'btn quiet', makeSpeciesLabel(to));
+    change.onclick = function () {
+      bar.classList.add('busy');
+      setSpecies(chosen.map(function (f) { return f.id; }), to).then(function () {
+        pick.on = false;
+        pick.ids = {};
+        infoFacesChanged(info.id);
+      }).catch(function (e) { bar.classList.remove('busy'); failed(e); });
+    };
+    row.appendChild(change);
+  }
+  row.appendChild(cancel);
   bar.appendChild(row);
   return bar;
 }
@@ -4713,7 +5275,7 @@ function infoFace(info, f, k, pick) {
     add.onclick = function () {
       var field = personField(function (person) {
         send('assign', Object.assign({ faces: ids }, person));
-      }, { allowNew: true, placeholder: tr('unnamed.who'), onEscape: function () { field.replaceWith(add); } });
+      }, { allowNew: true, placeholder: tr('unnamed.who'), species: f.species, onEscape: function () { field.replaceWith(add); } });
       add.replaceWith(field);
       field.input.focus();
     };
@@ -4743,6 +5305,9 @@ function infoFace(info, f, k, pick) {
         items.push({ label: tr('info.maybe_after_all', { name: n }), run: function () { send('unreject', { faces: ids, person_id: pid }); } });
       });
     }
+    // A named pet is the species their person is; only the others need saying.
+    var to = f.state === 'confirmed' ? '' : otherSpecies([f]);
+    if (to) items.push({ label: makeSpeciesLabel(to), run: function () { setSpecies(ids, to).then(changed).catch(failed); } });
     items.push({ label: tr(f.species ? 'pet.not_a.pet' : 'facecheck.not_face'), run: function () { send('not-face', { faces: ids }); } });
     return items;
   }, tr('person.more_face')));
@@ -4839,32 +5404,39 @@ function stopDrawing() {
 function nameDrawnFace(info, frac) {
   var body = el('div');
   body.appendChild(el('p', '', tr('unnamed.who')));
-  // A cat or a dog the detector missed: a pet is embedded as a whole, a face by its eyes, nose and mouth.
-  var petBox = el('input');
-  petBox.type = 'checkbox';
-  petBox.id = 'draw-pet';
+  // What was drawn: a person's face, or a cat or a dog the detector missed (a
+  // pet is embedded as a whole, a face by its eyes, nose and mouth). Whoever
+  // draws a pet knows which one it is, and nothing changes it later.
+  var kind = '';
+  var kinds = el('div', 'kinds');
+  var field, hint;
+  var update = function () {
+    Array.prototype.forEach.call(kinds.children, function (b) { b.classList.toggle('on', b.dataset.kind === kind); });
+    hint.textContent = tr(kind ? 'draw.note_pet' : 'draw.note');
+    field.input.value = '';
+    field.input.dispatchEvent(new Event('input'));
+  };
+  [['', '🧑', 'draw.kind.person'], ['cat', PET_ICON.cat, 'draw.kind.cat'], ['dog', PET_ICON.dog, 'draw.kind.dog']].forEach(function (k) {
+    var b = el('button', '', k[1] + ' ' + tr(k[2]));
+    b.type = 'button';
+    b.dataset.kind = k[0];
+    b.onclick = function () { kind = k[0]; update(); field.input.focus(); };
+    kinds.appendChild(b);
+  });
   var save = function (who) {
-    var pet = petBox.checked;
-    post(LIBAPI + '/faces/manual', Object.assign({ file: info.id, box: frac, pet: pet || undefined }, who)).then(function () {
+    post(LIBAPI + '/faces/manual', Object.assign({ file: info.id, box: frac, species: kind || undefined }, who)).then(function () {
       closeModal();
       stopDrawing();
-      toast(tr(pet ? 'draw.added_pet' : 'draw.added'));
+      toast(tr(kind ? 'draw.added_pet' : 'draw.added'));
       infoFacesChanged(info.id);
     }).catch(failed);
   };
-  var field = personField(function (who) { save(who); }, { allowNew: true, placeholder: tr('people.name_placeholder') });
+  field = personField(function (who) { save(who); }, { allowNew: true, placeholder: tr('people.name_placeholder'), species: function () { return kind; } });
+  body.appendChild(kinds);
   body.appendChild(field);
-  var petRow = el('label', 'check');
-  petRow.appendChild(petBox);
-  petRow.appendChild(document.createTextNode(' ' + tr('draw.is_pet')));
-  body.appendChild(petRow);
-  var hint = el('p', 'hint');
-  var hintText = function () {
-    hint.textContent = tr(petBox.checked ? 'draw.note_pet' : 'draw.note');
-  };
-  petBox.onchange = hintText;
-  hintText();
+  hint = el('p', 'hint');
   body.appendChild(hint);
+  update();
   openModal(tr('draw.title'), body, [
     { label: tr('draw.again'), cls: 'quiet', onclick: function () { var r = lb.drawing && lb.drawing.layer.querySelector('.draw-box'); if (r) r.hidden = true; } },
     { label: tr('app.cancel'), cls: 'quiet', onclick: function () { stopDrawing(); } },
@@ -4950,83 +5522,161 @@ function showOffline() {
   }, 4000);
 }
 
+var drivesTab = 'people';
+
+// Groups of drives: an original followed by its backups (the confirmed ones, or
+// an undecided drive that looks like a copy of it), so a backup always sits
+// next to the drive it copies.
+function driveOrder(list, backups) {
+  var primaryOf = {};
+  backups.forEach(function (b) { if (b.primary) primaryOf[b.library] = b.primary; });
+  list.forEach(function (d) { if (!primaryOf[d.library] && d.suggested_backup_of) primaryOf[d.library] = d.suggested_backup_of; });
+  var names = list.map(function (d) { return d.name; });
+  var isCopy = function (d) { return primaryOf[d.library] && names.indexOf(primaryOf[d.library]) >= 0 && primaryOf[d.library] !== d.name; };
+  var out = [];
+  list.forEach(function (d) {
+    if (isCopy(d)) return;
+    out.push([d].concat(list.filter(function (c) { return isCopy(c) && primaryOf[c.library] === d.name; })));
+  });
+  return out;
+}
+
+// A Unix time for a drive card: "today, 14:05", "4 days ago, 7:30", and from a
+// week on the date ("21 Sep 2026, 19:12"). The title has the exact date.
+function whenOf(t) {
+  var d = new Date(t * 1000), now = new Date();
+  var midnight = function (x) { return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(); };
+  var days = Math.round((midnight(now) - midnight(d)) / 86400000);
+  var time = d.toLocaleTimeString(I18n.lang, { hour: 'numeric', minute: '2-digit', hourCycle: 'h23' });
+  var text = days <= 0 ? tr('time.today_at', { time: time })
+    : days <= 7 ? trn('time.days_ago_at', days, { time: time })
+    : I18n.date(d, { day: 'numeric', month: 'short', year: 'numeric' }) + ', ' + time;
+  var span = el('b', '', text);
+  span.title = d.toLocaleString(I18n.lang, { dateStyle: 'full', timeStyle: 'short', hourCycle: 'h23' });
+  return span;
+}
+
+// One footer cell: "Scanned today, 14:05" with an optional (i) hint after the date.
+function footCell(label, t, hint) {
+  var c = el('span', 'cell', label + ' ');
+  if (!t) { c.appendChild(el('b', '', tr('time.never'))); return c; }
+  c.appendChild(whenOf(t));
+  if (hint) { var i = el('i', 'info', 'i'); i.title = hint; c.appendChild(i); }
+  return c;
+}
+
 function loadDrivesPage() {
   var page = $('page');
   page.textContent = '';
-  page.appendChild(el('h2', '', tr('drives.all')));
+  page.appendChild(el('h2', '', tr('side.manage_drives')));
   page.appendChild(el('p', 'sub', tr('drives.page_sub')));
-  var drivesBox = el('div'), peopleBox = el('div');
-  page.appendChild(drivesBox);
-  page.appendChild(el('h2', '', tr('drives.people_across')));
-  page.appendChild(peopleBox);
+  var cards = el('div', 'drive-cards'), tabs = el('div', 'tabs'), tabBox = el('div');
+  page.appendChild(cards);
+  page.appendChild(tabs);
+  page.appendChild(tabBox);
   var role = function (d, value, of) {
     post('/api/all/role', { library: d.library, role: value, of: of || null }).then(function () { toast(tr('drives.role_toast', { name: d.name, role: tr('drives.role.' + value) })); loadDrivesPage(); refreshDrives(); }).catch(failed);
   };
-  api('/api/all/drives').then(function (list) {
-    var shown = list.filter(function (d) { return d.shown_in_all; }).length;
-    var tools = el('div', 'toolbar');
-    var allBtn = el('button', 'btn', tr('drives.photos_all'));
-    allBtn.title = tr('drives.timeline_hint', { count: trn('count.drives', shown) });
-    allBtn.onclick = function () { switchLibrary('all', ''); };
-    var dups = el('button', 'btn quiet', tr('drives.dups_across'));
-    dups.onclick = function () { dupTab = 'across'; showView('duplicates'); };
-    tools.appendChild(allBtn);
-    tools.appendChild(dups);
-    drivesBox.appendChild(tools);
-    list.forEach(function (d) {
-      var card = el('div', 'drive-card' + (d.online ? '' : ' offline'));
-      card.appendChild(el('span', 'title', d.name));
-      card.appendChild(el('span', 'pill' + (d.online ? ' on' : ''), tr(d.online ? 'drives.online' : 'drives.offline')));
-      if (d.online && !d.shown_in_all) card.appendChild(el('span', 'pill', tr('drives.not_in_common')));
-      if (d.online) {
-        var wrap = el('span', 'role');
-        wrap.appendChild(el('span', 'sub', tr('drives.this_is')));
-        var sel = el('select');
-        [['unknown', tr('drives.role.unknown')], ['separate', tr('drives.role.separate')], ['backup', tr('drives.role.backup')]].forEach(function (o) {
-          var opt = el('option', '', o[1]); opt.value = o[0]; if (d.role === o[0]) opt.selected = true; sel.appendChild(opt);
-        });
-        sel.onchange = function () { role(d, sel.value); };
-        wrap.appendChild(sel);
-        card.appendChild(wrap);
-      }
-      drivesBox.appendChild(card);
-      if (d.online && d.role === 'backup') {
-        var slot = el('div', 'backup-status');
-        slot.dataset.library = d.library;
-        slot.appendChild(el('p', 'sub', tr('drives.comparing')));
-        drivesBox.appendChild(slot);
-      }
-      if (d.online && d.role === 'unknown' && d.suggested_backup_of) {
-        var b = el('div', 'banner warn');
-        b.appendChild(el('div', '', tr('drives.looks_backup', { name: d.name, other: d.suggested_backup_of })));
-        var row = el('div', 'row');
-        var yes = el('button', 'btn', tr('drives.yes_backup')); yes.onclick = function () { role(d, 'backup'); };
-        var no = el('button', 'btn quiet', tr('drives.no_backup')); no.onclick = function () { role(d, 'separate'); };
-        row.appendChild(yes); row.appendChild(no);
-        b.appendChild(row);
-        drivesBox.appendChild(b);
-      }
+  Promise.all([api('/api/all/drives'), api('/api/all/backups')]).then(function (res) {
+    var list = res[0], backups = res[1];
+    var primaryOf = {};
+    backups.forEach(function (b) { if (b.primary) primaryOf[b.library] = b.primary; });
+    driveOrder(list, backups).forEach(function (group) {
+      var box = el('div', 'drive-group');
+      cards.appendChild(box);
+      group.forEach(function (d) {
+        var of = primaryOf[d.library] || d.suggested_backup_of;
+        var kind = !d.online ? 'off' : d.role === 'backup' ? 'bk' : d.role === 'unknown' ? 'undecided' : 'orig';
+        var card = el('div', 'drive-card ' + kind);
+        // The same row on every card says what the drive is.
+        var strip = el('div', 'strip');
+        strip.appendChild(el('span', '', kind === 'off' ? tr('drives.offline') : kind === 'bk' ? (of ? tr('drives.strip_backup', { primary: of }) : tr('drives.role.backup')) : tr('drives.role.' + d.role)));
+        if (d.online && !d.shown_in_all) strip.appendChild(el('span', 'r', tr('drives.not_in_timeline')));
+        card.appendChild(strip);
+        var body = el('div', 'body');
+        var top = el('div', 'top');
+        var name = el('div', 'name');
+        name.appendChild(el('span', '', d.name));
+        name.appendChild(el('span', 'on', d.online ? '● ' + tr('drives.online') : ''));
+        top.appendChild(name);
+        if (d.online) {
+          var sel = el('select');
+          sel.title = tr('drives.role_hint');
+          [['unknown', tr('drives.role.unknown')], ['separate', tr('drives.role.separate')], ['backup', tr('drives.role.backup')]].forEach(function (o) {
+            var opt = el('option', '', o[1]); opt.value = o[0]; if (d.role === o[0]) opt.selected = true; sel.appendChild(opt);
+          });
+          sel.onchange = function () { role(d, sel.value); };
+          top.appendChild(sel);
+        }
+        body.appendChild(top);
+        // The disk the folder is on: the folder's own name says little when the
+        // drive holds more than photos.
+        if (d.volume) {
+          var where = el('div', 'where');
+          where.appendChild(el('span', 'ico', '💾'));
+          where.appendChild(el('b', '', d.volume));
+          where.appendChild(el('span', '', ' · ' + d.folder));
+          body.appendChild(where);
+        }
+        if (d.online && d.role === 'backup') {
+          var slot = el('div', 'backup-status');
+          renderBackup(slot, backups.filter(function (x) { return x.library === d.library; })[0], d);
+          body.appendChild(slot);
+        } else if (d.online) {
+          body.appendChild(el('div', 'sub', trn('count.files', d.files)));
+        }
+        if (d.online && d.role === 'unknown' && d.suggested_backup_of) {
+          var bn = el('div', 'banner warn');
+          bn.appendChild(el('div', '', tr('drives.looks_backup', { name: d.name, other: d.suggested_backup_of })));
+          var row = el('div', 'row');
+          var yes = el('button', 'btn', tr('drives.yes_backup')); yes.onclick = function () { role(d, 'backup'); };
+          var no = el('button', 'btn quiet', tr('drives.no_backup')); no.onclick = function () { role(d, 'separate'); };
+          row.appendChild(yes); row.appendChild(no);
+          bn.appendChild(row);
+          body.appendChild(bn);
+        }
+        card.appendChild(body);
+        if (d.online) {
+          var foot = el('div', 'foot');
+          foot.appendChild(footCell(tr('drives.scanned'), d.last_scan));
+          foot.appendChild(footCell(tr(d.role === 'backup' ? 'drives.last_backup' : 'drives.new_files'), d.last_new_files, tr('drives.new_files_hint')));
+          card.appendChild(foot);
+        }
+        box.appendChild(card);
+      });
     });
   }).catch(failed);
-  api('/api/all/backups').then(function (list) {
-    Array.prototype.forEach.call(drivesBox.querySelectorAll('.backup-status'), function (slot) { renderBackup(slot, list.filter(function (b) { return b.library === slot.dataset.library; })[0]); });
-  }).catch(failed);
-  api('/api/all/people').then(function (r) {
-    if (r.offline.length) peopleBox.appendChild(el('p', 'sub', tr('drives.people_offline', { names: r.offline.join(', ') })));
-    if (!r.people.length) peopleBox.appendChild(el('p', 'sub', tr('drives.nobody')));
-    var grid = el('div', 'people-grid');
-    r.people.forEach(function (p) {
-      var c = el('div', 'person-merged');
-      c.appendChild(el('div', 'n', p.name));
-      c.appendChild(el('div', 'sub', trn('count.photos', p.photos) + (p.group ? ' · ' + p.group : '')));
-      p.libraries.forEach(function (l) { c.appendChild(el('span', 'pill', l.name + ' · ' + l.faces)); });
-      var show = el('button', 'btn quiet', tr('drives.photos_everywhere'));
-      show.onclick = function () { switchLibrary('all', 'person=' + encodeURIComponent(p.name)); };
-      c.appendChild(show);
-      grid.appendChild(c);
+
+  var show = function () {
+    tabs.textContent = '';
+    [['people', tr('drives.people_across')], ['dups', tr('drives.dups_across')]].forEach(function (t) {
+      var b = el('button', drivesTab === t[0] ? 'on' : '', t[1]);
+      b.onclick = function () { drivesTab = t[0]; show(); };
+      tabs.appendChild(b);
     });
-    peopleBox.appendChild(grid);
-  }).catch(failed);
+    tabBox.textContent = '';
+    var mine = tabBox, tab = drivesTab;
+    var alive = function () { return mine.parentNode && drivesTab === tab; };
+    if (tab === 'dups') return renderDuplicatesAcross(tabBox, alive, true);
+    api('/api/all/people').then(function (r) {
+      if (!alive()) return;
+      if (r.offline.length) tabBox.appendChild(el('p', 'sub', tr('drives.people_offline', { names: r.offline.join(', ') })));
+      if (!r.people.length) tabBox.appendChild(el('p', 'sub', tr('drives.nobody')));
+      var grid = el('div', 'people-grid');
+      r.people.forEach(function (p) {
+        var c = el('div', 'person-merged');
+        c.appendChild(el('div', 'n', p.name));
+        c.appendChild(el('div', 'sub', trn('count.photos', p.photos) + (p.group ? ' · ' + p.group : '')));
+        p.libraries.forEach(function (l) { c.appendChild(el('span', 'pill', l.name + ' · ' + l.faces)); });
+        var go = el('button', 'btn quiet', tr('drives.photos_everywhere'));
+        go.onclick = function () { switchLibrary('all', 'person=' + encodeURIComponent(p.name)); };
+        c.appendChild(go);
+        grid.appendChild(c);
+      });
+      tabBox.appendChild(grid);
+    }).catch(failed);
+  };
+  show();
 }
 
 // The common timeline came in: which drives its ids refer to, and what is left out.
@@ -5043,42 +5693,75 @@ function allTimelineLoaded(data) {
   $('status').textContent = tr('drives.status', { photos: trn('count.photos', data.count), drives: trn('count.drives', data.libs.length) });
 }
 
-// How long ago a Unix time was, for "last backup".
-function daysAgo(t) {
-  if (!t) return tr('time.never');
-  var d = Math.floor((Date.now() / 1000 - t) / 86400);
-  return d <= 0 ? tr('time.today') : trn('time.days_ago', d);
+// "Show in Finder" for a file on one of the drives (named by drive and path).
+function revealOn(library, path) {
+  post('/api/all/reveal', { library: library, path: path }).then(function (r) {
+    toast(tr('reveal.shown', { app: r.app === 'file manager' ? tr('reveal.file_manager') : r.app }));
+  }).catch(failed);
 }
 
 // A backup drive against the drive it copies, from the two indexes (nothing is
-// read from the photos): what is new since the last backup, what differs, what
-// only the backup has. Bit rot on the backup itself is found by "Backup check"
-// with re-reading in the launcher (`shoebox backup … --deep`).
-function renderBackup(slot, b) {
+// read from the photos): how much of it is on the backup, what is new since the
+// last backup, what differs, what only the backup has. Bit rot on the backup
+// itself is found by "Backup check" with re-reading in the launcher
+// (`shoebox backup … --deep`).
+function renderBackup(slot, b, d) {
   slot.textContent = '';
   if (!b || !b.primary) {
     slot.appendChild(el('p', 'sub', (b && b.note) || tr('drives.backup_none')));
     return;
   }
-  var box = el('div', 'banner' + (b.up_to_date ? '' : ' warn'));
-  box.appendChild(el('div', '', (b.up_to_date ? '✓ ' : '! ') + (b.up_to_date
-    ? tr('drives.backup_all', { backup: b.backup, primary: b.primary, files: trn('count.files', b.compared) })
-    : tr('drives.backup_some', { backup: b.backup, primary: b.primary, files: trn('count.files', b.missing), different: b.different ? tr('drives.backup_diff', { n: b.different }) : '' }))));
-  box.appendChild(el('div', 'sub', tr('drives.backup_last', { last: daysAgo(b.backup_last_new_files), scan: daysAgo(b.backup_last_scan) })
-    + (b.unhashed ? tr('drives.backup_unhashed', { files: trn('count.files', b.unhashed), primary: b.primary }) : '')
-    + (b.extra ? tr('drives.backup_extra', { files: trn('count.files', b.extra), primary: b.primary }) : '')));
-  var lists = [[tr('drives.list_missing'), b.missing, b.missing_files], [tr('drives.list_different'), b.different, b.different_files], [tr('drives.list_extra'), b.extra, b.extra_files]];
+  if (b.compared) {
+    var pct = b.covered >= b.compared ? 100 : Math.floor(b.covered * 100 / b.compared);
+    var prog = el('div', 'prog');
+    var t = el('div', 't');
+    var lead = el('span');
+    lead.appendChild(el('b', '', I18n.number(b.covered)));
+    lead.appendChild(document.createTextNode(' ' + tr('drives.bar_of', { total: I18n.number(b.compared) })));
+    t.appendChild(lead);
+    t.appendChild(el('b', '', pct + ' %'));
+    prog.appendChild(t);
+    var bar = el('div', 'bar');
+    var fill = el('i');
+    fill.style.width = pct + '%';
+    bar.appendChild(fill);
+    prog.appendChild(bar);
+    slot.appendChild(prog);
+  }
+  if (b.unhashed) slot.appendChild(el('div', 'sub', tr('drives.backup_unhashed', { files: trn('count.files', b.unhashed), primary: b.primary }).trim()));
+  var lists = [
+    [b.missing, 'drives.sum_missing', b.missing_files, b.primary_library, 'warn'],
+    [b.different, 'drives.sum_different', b.different_files, b.primary_library, 'warn'],
+    [b.extra, 'drives.sum_extra', b.extra_files, d.library, '']
+  ];
+  var wrap = el('div', 'lists');
   lists.forEach(function (l) {
-    if (!l[1]) return;
+    if (!l[0]) return;
     var det = el('details');
-    det.appendChild(el('summary', '', l[0] + ' (' + I18n.number(l[1]) + ')'));
-    var ul = el('ul', 'pathlist');
-    l[2].forEach(function (f) { ul.appendChild(el('li', '', f.path)); });
-    if (l[1] > l[2].length) ul.appendChild(el('li', 'sub', tr('drives.more', { n: l[1] - l[2].length })));
+    var sum = el('summary');
+    sum.appendChild(el('b', l[4], I18n.number(l[0])));
+    sum.appendChild(document.createTextNode(' ' + tr(l[1])));
+    if (l[1] === 'drives.sum_extra') sum.appendChild(el('span', 'sub', ' ' + tr('drives.sum_extra_hint', { primary: b.primary })));
+    det.appendChild(sum);
+    var ul = el('ul', 'files');
+    l[2].forEach(function (f) {
+      var li = el('li');
+      li.appendChild(el('span', 'path', f.path));
+      li.appendChild(el('span', 'size', formatBytes(f.size)));
+      if (state.reveal && l[3]) {
+        var go = el('button', 'btn quiet reveal', '📂');
+        go.title = state.reveal;
+        go.setAttribute('aria-label', state.reveal);
+        go.onclick = function () { revealOn(l[3], f.path); };
+        li.appendChild(go);
+      }
+      ul.appendChild(li);
+    });
+    if (l[0] > l[2].length) ul.appendChild(el('li', 'more', tr('drives.more', { n: l[0] - l[2].length })));
     det.appendChild(ul);
-    box.appendChild(det);
+    wrap.appendChild(det);
   });
-  slot.appendChild(box);
+  slot.appendChild(wrap);
 }
 
 function refreshDrives() {
@@ -5129,9 +5812,11 @@ I18n.ready.then(function () {
       $('title').textContent = tr('drives.all');
       document.title = tr('drives.all') + ' · shoebox';
       applyFilter();
+      // Only for the label of the "show in the file manager" button.
+      api(LIBAPI + '/info').then(function (i) { state.reveal = revealLabel(i.reveal); }).catch(function () {});
       return;
     }
-    return Promise.all([loadFolders(), loadInfo(), loadOwnTags(), loadPeople()]).then(function () {
+    return Promise.all([loadFolders(), loadInfo(), loadOwnTags(), loadPeople(), loadGeo()]).then(function () {
       applyFilter();
       setInterval(loadInfo, 20000);
     });

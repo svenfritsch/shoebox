@@ -207,6 +207,10 @@ pub fn roles(drives: &[Drive]) -> Result<Vec<DriveRole>> {
 pub struct DuplicateFile {
     pub library: String,
     pub name: String,
+    /// The disk the drive's folder is on (filled in by the server, which knows
+    /// the folders); two drives can have folders of the same name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume: Option<String>,
     pub id: i64,
     pub path: String,
     /// `jpeg`, `png`, `heic`, `raw` or `video`, and the first characters of
@@ -309,6 +313,7 @@ pub fn cross_duplicates(drives: &[Drive], roles: &[DriveRole], limit: usize) -> 
                 .map(|(d, id, path, kind, version)| DuplicateFile {
                     library: eligible[d].id.clone(),
                     name: eligible[d].name.clone(),
+                    volume: None,
                     id,
                     path,
                     kind,
@@ -387,6 +392,23 @@ pub fn merge_people(per_drive: &[(String, String, Vec<crate::people::Person>, Ve
 }
 
 // ---------------------------------------------------------------- backups
+
+/// What a drive's card says about its index: how many files, when it was last
+/// scanned and when new files last arrived (Unix seconds).
+#[derive(Debug, Clone, Serialize, Default, PartialEq)]
+pub struct DriveFacts {
+    pub files: u64,
+    pub last_scan: Option<i64>,
+    pub last_new_files: Option<i64>,
+}
+
+pub fn drive_facts(conn: &Connection) -> Result<DriveFacts> {
+    Ok(DriveFacts {
+        files: conn.query_row("SELECT count(*) FROM main.files WHERE missing_since IS NULL", [], |r| r.get::<_, i64>(0))? as u64,
+        last_scan: conn.query_row("SELECT max(finished_at) FROM main.jobs WHERE kind = 'scan' AND state = 'done'", [], |r| r.get(0))?,
+        last_new_files: conn.query_row("SELECT max(added_at) FROM main.files", [], |r| r.get(0))?,
+    })
+}
 
 /// A file that is not (correctly) on the backup, or only on the backup.
 #[derive(Debug, Clone, Serialize, PartialEq)]

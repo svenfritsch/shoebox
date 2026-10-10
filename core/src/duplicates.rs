@@ -926,13 +926,15 @@ pub fn remove_copies(
         heir: i64,
         names: Vec<String>,
         date: Option<Date>,
+        position: Option<crate::geo::Position>,
+        estimate: Option<crate::dates::Estimate>,
     }
     let mut carries = Vec::new();
     for g in &gone {
         let Some(h) = heir(g, &keep) else { bail!("{} is not a duplicate of a file that stays", g.path) };
         let mut names = tag_names(conn, g.id, "folder")?;
         names.extend(tag_names(conn, g.id, "user")?);
-        carries.push(Carry { path: g.path.clone(), heir: h.id, names, date: date_of(conn, g.id)?.0 });
+        carries.push(Carry { path: g.path.clone(), heir: h.id, names, date: date_of(conn, g.id)?.0, position: crate::geo::position_of(conn, g.id)?, estimate: crate::dates::get(conn, g.id)? });
     }
     let merge_for = |heir: i64, done: &dyn Fn(&Carry) -> bool| -> Result<Merge> {
         let own = date_of(conn, heir)?.0;
@@ -975,6 +977,18 @@ pub fn remove_copies(
     }
     for c in carries.iter().filter(|c| went(c)) {
         out.tags_added += carry_names(&tx, c.heir, &c.names)?;
+        // A place the removed copy knew and the survivor does not.
+        if let Some(p) = c.position
+            && crate::geo::position_of(&tx, c.heir)?.is_none()
+        {
+            crate::geo::set_position(&tx, c.heir, p.lat, p.lon)?;
+        }
+        // A date of the user's the removed copy had and the survivor does not.
+        if let Some(e) = c.estimate
+            && crate::dates::get(&tx, c.heir)?.is_none()
+        {
+            crate::dates::apply_in(&tx, &[(c.heir, Some(e))])?;
+        }
     }
     for &h in &heirs {
         if let Merge::Set(d) = merge_for(h, &went)? {

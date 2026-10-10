@@ -424,6 +424,8 @@ pub(super) struct FacesRequest {
     person_id: Option<i64>,
     /// Assign: the person, or a name.
     name: Option<String>,
+    /// Species: `cat` or `dog`.
+    species: Option<String>,
 }
 
 async fn on_faces(app: Arc<App>, req: FacesRequest, action: Action) -> ApiResult<Json<people::Decided>> {
@@ -463,6 +465,14 @@ pub(super) async fn not_face(State(app): State<Arc<App>>, Json(req): Json<FacesR
     on_faces(app, req, Action::NotFace).await
 }
 
+/// These pets are a cat, or a dog, whatever the detector took them for.
+pub(super) async fn species(State(app): State<Arc<App>>, Json(req): Json<FacesRequest>) -> ApiResult<Json<serde_json::Value>> {
+    let species = req.species.clone().ok_or_else(|| ApiError::BadRequest("species is missing".into()))?;
+    people_change(&app, move |conn| people::set_species(conn, &req.faces, &species))
+        .await
+        .map(|n| Json(serde_json::json!({ "faces": n })))
+}
+
 /// Forget that faces are not this person (undo rejections, nothing else).
 pub(super) async fn unreject(State(app): State<Arc<App>>, Json(req): Json<FacesRequest>) -> ApiResult<Json<people::Decided>> {
     let person = req.person_id.ok_or_else(|| ApiError::BadRequest("person_id is missing".into()))?;
@@ -480,7 +490,10 @@ pub(super) struct ManualRequest {
     /// x, y, w, h as fractions of the upright picture.
     #[serde(rename = "box")]
     b: [f64; 4],
-    /// A pet (a cat or a dog) rather than a person's face.
+    /// `cat` or `dog` for a pet rather than a person's face.
+    #[serde(default)]
+    species: Option<String>,
+    /// A pet of no species (older clients): the same as `species: "pet"`.
     #[serde(default)]
     pet: bool,
     #[serde(flatten)]
@@ -489,7 +502,8 @@ pub(super) struct ManualRequest {
 
 /// A face or pet drawn by hand (missed by the detector), with who it is.
 pub(super) async fn manual(State(app): State<Arc<App>>, Json(req): Json<ManualRequest>) -> ApiResult<Json<serde_json::Value>> {
-    let added = people_change(&app, move |conn| people::add_manual(conn, req.file, req.b, &req.who, req.pet)).await;
+    let species = req.species.clone().or_else(|| req.pet.then(|| crate::pets::PET.to_string()));
+    let added = people_change(&app, move |conn| people::add_manual(conn, req.file, req.b, &req.who, species.as_deref())).await;
     app.request_embed();
     added.map(|id| Json(serde_json::json!({ "manual": id })))
 }

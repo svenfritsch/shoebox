@@ -18,6 +18,29 @@
     <p class="sub" data-i18n="launcher.sub">Your photo library on this drive. Nothing is copied or changed in your photos.</p>
   </header>
 
+  <section class="card" id="addons-card">
+    <details id="addons-details" open>
+      <summary><h2 data-i18n="launcher.step0">1 · Add-ons</h2><span id="addons-summary" class="summary-line"></span></summary>
+      <p class="hint" data-i18n="launcher.addons.intro">Scanning and the photo app work out of the box. Recognizing people and pets needs add-ons, which are downloaded once (internet needed).</p>
+      <ul id="addon-list" class="addons">
+        <li>
+          <label><input type="checkbox" id="addon-runtime" checked disabled aria-disabled="true"> <b data-i18n="launcher.addon.runtime">Python and OpenCV</b> <span data-i18n="launcher.addon.runtime.desc">needed by every add-on, always installed with the first one (about 200 MB per kind of computer)</span></label>
+          <span id="addon-runtime-state" class="pill"></span>
+        </li>
+        <li>
+          <label><input type="checkbox" id="addon-faces" checked> <b data-i18n="launcher.addon.faces">Faces</b> <span data-i18n="launcher.addon.faces.desc">find and name the people in your photos (about 40 MB)</span></label>
+          <span id="addon-faces-state" class="pill"></span>
+        </li>
+        <li>
+          <label><input type="checkbox" id="addon-pets"> <b data-i18n="launcher.addon.pets">Pets</b> <span data-i18n="launcher.addon.pets.desc">find cats and dogs; works without Faces (about 140 MB)</span></label>
+          <span id="addon-pets-state" class="pill"></span>
+        </li>
+      </ul>
+      <button id="addons-install" class="primary" data-i18n="launcher.addons.install">Install the selected add-ons</button>
+      <p id="addons-hint" class="hint"></p>
+    </details>
+  </section>
+
   <fieldset id="controls">
   <section class="card">
     <h2 data-i18n="launcher.step1">1 · Where are your photos?</h2>
@@ -40,14 +63,15 @@
       <button data-kind="scan"><b data-i18n="launcher.kind.scan">Scan</b><span data-i18n="launcher.kind.scan.desc">find new, moved and changed photos</span></button>
       <button data-kind="verify"><b data-i18n="launcher.kind.verify">Verify</b><span data-i18n="launcher.kind.verify.desc">check that nothing was lost or damaged</span></button>
       <button data-kind="recognize"><b data-i18n="launcher.kind.recognize">Recognize</b><span data-i18n="launcher.kind.recognize.desc">find the faces in your photos</span></button>
+      <button data-kind="recognize_rotated"><b data-i18n="launcher.kind.recognize_rotated">Recognize lying down</b><span data-i18n="launcher.kind.recognize_rotated.desc">also find faces lying down in the photos (slower)</span></button>
       <button data-kind="recognize_pets"><b data-i18n="launcher.kind.recognize_pets">Recognize pets</b><span data-i18n="launcher.kind.recognize_pets.desc">find cats and dogs; they show up among the faces</span></button>
       <button data-kind="faces_stats"><b data-i18n="launcher.kind.faces_stats">Face stats</b><span data-i18n="launcher.kind.faces_stats.desc">how recognition went</span></button>
       <button data-kind="backup"><b data-i18n="launcher.kind.backup">Backup check</b><span data-i18n="launcher.kind.backup.desc">is the 2nd folder a complete copy of the 1st?</span></button>
     </div>
     <p id="backup-hint" class="hint"></p>
+    <p id="addon-need" class="hint"></p>
     <div class="options">
       <label><input type="checkbox" id="opt-quick"> <span data-i18n="launcher.opt.quick">Quick (Scan: skip full hashes · Verify: size and date only)</span></label>
-      <label><input type="checkbox" id="opt-rotated"> <span data-i18n="launcher.opt.rotated">Recognize: also look for faces lying down (slower)</span></label>
       <label><input type="checkbox" id="opt-deep"> <span data-i18n="launcher.opt.deep">Backup check: also re-read the backup drive (finds bit rot; slow)</span></label>
     </div>
   </section>
@@ -70,6 +94,11 @@
       <p class="hint" data-i18n="launcher.arrivals.tags_hint">The folder names of the deleted copies are saved as tags on the older originals.</p>
       <label><input type="checkbox" id="arrivals-forever"> <span data-i18n="launcher.arrivals.forever">Delete for good (skip the trash folder)</span></label>
       <button id="arrivals-go" class="primary" data-i18n="launcher.arrivals.button">Delete the new copies</button>
+    </div>
+    <div id="forget-box" class="cleanup" hidden>
+      <p id="forget-text"></p>
+      <p class="hint" data-i18n="launcher.forget.hint">Only the index changes; no photo file is touched. Photos that are still on the drive under another path stay.</p>
+      <button id="forget-go" class="primary" data-i18n="launcher.forget.button">Forget the missing files</button>
     </div>
     <p id="job-error" class="error" hidden></p>
     <div id="tabs" class="tabs" role="tablist" hidden></div>

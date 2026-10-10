@@ -1,9 +1,19 @@
 #!/bin/sh
-# Install the recognizer into a library's .shoebox/ folder, with a standalone
-# Python (python-build-standalone), OpenCV, numpy and the models, so
-# `shoebox recognize` finds it without anything installed on the computer.
+# Install the recognizer with a standalone Python (python-build-standalone),
+# OpenCV, numpy and the models, so `shoebox recognize` finds it without
+# anything installed on the computer.
 #
-#   recognizer/install.sh <library-root>
+#   recognizer/install.sh [--pets] [library-root]
+#
+# Without a library root it installs into the folder that holds this script
+# (next to the shoebox program; every drive you recognize then uses it). With
+# one, into <library-root>/.shoebox/recognizer/ (travels with that drive; it only
+# serves when nothing is installed next to the program).
+#
+# The add-ons are independent: --faces (face models, ~40 MB) and --pets (cat and
+# dog models, ~140 MB); either or both, on top of the Python and OpenCV runtime
+# (~200 MB). Without either, a terminal is asked; the Control Panel passes the
+# choice. Run it again later to add the other.
 #
 # Run it on each kind of computer that will run recognition (Intel Mac,
 # Apple Silicon Mac, Linux): the runtime goes to runtime/<os>-<arch>/, and pip
@@ -13,9 +23,32 @@
 # copied with symlinks resolved, as exFAT has none.
 set -eu
 
-ROOT=${1:?usage: install.sh <library-root>}
 HERE=$(cd "$(dirname "$0")" && pwd)
-DEST="$ROOT/.shoebox/recognizer"
+PETS=
+FACES=
+ROOT=
+for arg in "$@"; do
+    case "$arg" in
+        --pets) PETS=1 ;;
+        --faces) FACES=1 ;;
+        *) ROOT=$arg ;;
+    esac
+done
+if [ -z "$FACES$PETS" ] && [ -t 0 ]; then
+    printf 'Find faces (people)? About 40 MB. [Y/n] '
+    read -r answer || answer=
+    case "$answer" in [nN]*) ;; *) FACES=1 ;; esac
+    printf 'Find cats and dogs? About 140 MB. [y/N] '
+    read -r answer || answer=
+    case "$answer" in [yYjJ]*) PETS=1 ;; esac
+fi
+[ -n "$FACES$PETS" ] || { echo "nothing to install: use --faces and/or --pets" >&2; exit 1; }
+if [ -n "$ROOT" ]; then
+    DEST="$ROOT/.shoebox/recognizer"
+    [ -d "$ROOT/.shoebox" ] || { echo "$ROOT has no .shoebox folder (run shoebox scan first)" >&2; exit 1; }
+else
+    DEST=$HERE
+fi
 PBS_TAG=20251014
 PY=3.12.12
 
@@ -33,8 +66,6 @@ esac
 PLATFORM=$os-$arch
 URL="https://github.com/astral-sh/python-build-standalone/releases/download/$PBS_TAG/cpython-$PY+$PBS_TAG-$arch-$vendor-install_only_stripped.tar.gz"
 
-[ -d "$ROOT/.shoebox" ] || { echo "$ROOT has no .shoebox folder (run shoebox scan first)" >&2; exit 1; }
-
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
@@ -47,7 +78,9 @@ echo "OpenCV and numpy…"
 # Ready-made wheels only: pip then takes the newest release built for this
 # macOS (OpenCV 4.11+ needs macOS 13 on Intel, so macOS 12 gets 4.10) instead
 # of compiling OpenCV from source, which takes hours and usually fails.
-"$PYTHON" -m pip install --no-cache-dir --disable-pip-version-check --progress-bar on \
+PROGRESS=on
+[ -z "${SHOEBOX_QUIET:-}" ] || PROGRESS=off
+"$PYTHON" -m pip install --no-cache-dir --disable-pip-version-check --progress-bar "$PROGRESS" \
     --only-binary :all: opencv-python-headless numpy
 "$PYTHON" -c 'import cv2, numpy; print("  OpenCV", cv2.__version__, "numpy", numpy.__version__)'
 
@@ -61,8 +94,6 @@ else
     echo "  none for this system; OpenCV runs the pet models instead"
 fi
 
-echo "Models…"
-"$HERE/fetch-models.sh" "$TMP/models"
 
 echo "Copying to ${DEST}…"
 mkdir -p "$DEST/runtime"
@@ -78,14 +109,22 @@ rm -rf "$P/include" "$P/share" "$P/lib/pkgconfig" "$P"/lib/tcl* "$P"/lib/tk* "$P
     "$P/lib/python3.12/idlelib" "$P/lib/python3.12/tkinter" "$P/lib/python3.12/turtledemo" \
     "$P/lib/python3.12/ensurepip" "$P/lib/python3.12/lib-dynload/_tkinter"*
 cp -RL "$TMP/python" "$DEST/runtime/$PLATFORM"
+# The models are the same on every kind of computer, so they go straight into
+# the folder: ones that are there already (checksum) are not downloaded again,
+# e.g. when a second kind of Mac only needs its own Python.
+echo "Models…"
 mkdir -p "$DEST/models"
-cp "$TMP/models/"*.onnx "$DEST/models/"
-cp "$HERE/recognizer.py" "$DEST/recognizer.py"
+"$HERE/fetch-models.sh" ${FACES:+--faces} ${PETS:+--pets} "$DEST/models"
+[ "$DEST" = "$HERE" ] || cp "$HERE/recognizer.py" "$DEST/recognizer.py"
 
 echo "Checking…"
-HELLO=$(printf '' | "$DEST/runtime/$PLATFORM/bin/python3" "$DEST/recognizer.py" 2>/dev/null | head -n 1)
+HELLO=$(printf '' | "$DEST/runtime/$PLATFORM/bin/python3" "$DEST/recognizer.py" ${PETS:+--pets} 2>/dev/null | head -n 1)
 case "$HELLO" in
     *shoebox-recognizer*) echo "  $HELLO" ;;
     *) echo "the recognizer did not start" >&2; exit 1 ;;
 esac
-echo "Done. Run: shoebox recognize \"$ROOT\""
+if [ -n "$ROOT" ]; then
+    echo "Done. Run: shoebox recognize \"$ROOT\""
+else
+    echo "Done. Run Recognize in the shoebox launcher for any drive."
+fi

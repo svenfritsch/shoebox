@@ -81,6 +81,15 @@ fn guard_commands_run_from_the_launcher_leave_originals_untouched() {
     assert_eq!(broken["failures"][0]["path"], "Familie/Weihnachten/DSC_2001.jpg");
     assert_eq!(broken["result"]["missing"].as_array().unwrap().len(), 1);
 
+    // Scan marks it missing; "Forget missing" drops its record, then verify is clean.
+    let rescan = run_job(addr, json!({ "kind": "scan", "root": root }));
+    assert_eq!(rescan["result"]["missing"], 1, "{rescan}");
+    let forgot = run_job(addr, json!({ "kind": "forget_missing", "root": root }));
+    assert_eq!(forgot["ok"], true, "{forgot}");
+    assert_eq!(forgot["result"]["forgotten"], 1);
+    let after = run_job(addr, json!({ "kind": "verify", "root": root }));
+    assert_eq!(after["ok"], true, "{after}");
+
     // Face stats before any recognition: a result, not an error.
     let faces = run_job(addr, json!({ "kind": "faces_stats", "root": root }));
     assert_eq!(faces["ok"], true, "{faces}");

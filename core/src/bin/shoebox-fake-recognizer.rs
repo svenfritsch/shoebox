@@ -92,9 +92,13 @@ fn main() {
     let protocol: u32 = arg("--protocol").and_then(|p| p.parse().ok()).unwrap_or(2);
     let crash_once = arg("--crash-once");
     let mut out = std::io::stdout().lock();
-    let mut tasks = json!({ "faces": { "model": "fake-1", "dim": DIM } });
-    if !args.iter().any(|a| a == "--no-embed") {
-        tasks["embed"] = json!({ "model": "fake-1", "dim": DIM });
+    let mut tasks = json!({});
+    // `--no-faces`: only the pet models are installed.
+    if !args.iter().any(|a| a == "--no-faces") {
+        tasks["faces"] = json!({ "model": "fake-1", "dim": DIM });
+        if !args.iter().any(|a| a == "--no-embed") {
+            tasks["embed"] = json!({ "model": "fake-1", "dim": DIM });
+        }
     }
     let pets = args.iter().any(|a| a == "--pets");
     if pets {

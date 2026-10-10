@@ -635,7 +635,7 @@ fn user_data_backup_has_people_groups_and_decisions() {
     server.stop().unwrap();
 
     let data: Value = serde_json::from_slice(&std::fs::read(lib.path(".shoebox/userdata.json")).unwrap()).unwrap();
-    assert_eq!(data["version"], 4);
+    assert_eq!(data["version"], 6);
     assert_eq!(data["view_turns"], json!([]));
     assert_eq!(data["groups"], json!([{ "name": "Familie", "position": 1 }]));
     assert_eq!(data["people"][0]["name"], "Anna");
@@ -1187,8 +1187,16 @@ fn a_pet_drawn_by_hand() {
     // A decision about a pet never lands on the person's face of the same photo.
     assert!(face_of_person(addr, &lib, "Pets/spooky.png")["state"].is_null());
 
+    // A pet drawn as a cat keeps that species; an unknown one is refused.
+    let body = json!({ "file": missed, "box": [0.6, 0.1, 0.2, 0.4], "person_id": spooky, "species": "cat" });
+    let m3 = ok(addr, "/api/faces/manual", &body)["manual"].as_i64().unwrap();
+    let faces = faces_of(addr, &lib, "Pets/missed.png");
+    assert_eq!(faces.iter().find(|f| f["manual"].as_i64() == Some(m3)).unwrap()["species"], "cat");
+    let body = json!({ "file": missed, "box": [0.6, 0.6, 0.2, 0.3], "person_id": spooky, "species": "horse" });
+    assert_eq!(post(addr, "/api/faces/manual", &body).status, 400);
+
     // A drawn pet can be deleted like a drawn face.
-    assert_eq!(ok(addr, "/api/faces/undo", &json!({ "manual": [m, m2] }))["faces"], 2);
+    assert_eq!(ok(addr, "/api/faces/undo", &json!({ "manual": [m, m2, m3] }))["faces"], 3);
     assert_eq!(faces_of(addr, &lib, "Pets/missed.png").len(), 0);
     assert_eq!(lib.snapshot(), before, "nothing here may change an original");
     server.stop().unwrap();
@@ -1484,6 +1492,57 @@ fn a_named_pets_species_follows_the_person() {
     assert_eq!(found("dog"), want(&["Layka/a.png", "Layka/b.png", "Layka/c.png", "Layka/cat.png"]));
     assert_eq!(found("cat"), want(&["Other/cat.png"]), "Layka is no cat");
     assert_eq!(found("pet").len(), 5);
+    server.stop().unwrap();
+    assert_eq!(lib.snapshot(), before, "originals untouched");
+}
+
+/// A cat the detector took for a dog: the user says which it is. The box,
+/// the pet search and a person made from it all follow, decisions made before
+/// stay with the pet, and it is kept across a restart.
+#[test]
+fn a_pets_species_can_be_corrected() {
+    let lib = empty("people-pets-correct");
+    plain(&lib, "Fotos/katze.png", SPOOKY, 1); // reads as a cat; this one is a dog
+    plain(&lib, "Fotos/echt.png", SPOOKY, 2);
+    plain(&lib, "Fotos/hund.png", REX, 1);
+    lib.scan_opts(true, false, false);
+    let stats = recognize::run(&recognize::Options { pets: true, ..options(&lib) }).unwrap();
+    assert_eq!(stats.failed, 0, "{:?}", stats.errors);
+    let before = lib.snapshot();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    wait_for_clusters(addr);
+    let pet = |rel: &str| pet_of(addr, &lib, rel);
+    let found = |term: &str| sorted(ids(&get(addr, &format!("/api/timeline?pet={term}")).json()));
+    let want = |rels: &[&str]| sorted(rels.iter().map(|r| id_of(&lib, r)).collect());
+    assert_eq!(pet("Fotos/katze.png")["species"], "cat");
+
+    // Confirmed while it was a "cat", then corrected: the decision follows.
+    let id = pet("Fotos/katze.png")["id"].as_i64().unwrap();
+    ok(addr, "/api/faces/assign", &json!({ "faces": [id], "name": "Rex" }));
+    let done = ok(addr, "/api/faces/species", &json!({ "faces": [id], "species": "dog" }));
+    assert_eq!(done["faces"], 1);
+    let after = pet("Fotos/katze.png");
+    assert_eq!((after["species"].as_str(), after["state"].as_str(), after["person"]["name"].as_str()), (Some("dog"), Some("confirmed"), Some("Rex")));
+    assert_eq!(found("dog"), want(&["Fotos/katze.png", "Fotos/hund.png"]));
+    assert_eq!(found("cat"), want(&["Fotos/echt.png"]));
+    // Saying it again, or about a person's face, changes nothing.
+    assert_eq!(ok(addr, "/api/faces/species", &json!({ "faces": [id], "species": "dog" }))["faces"], 0);
+    let person_face = face_of_person(addr, &lib, "Fotos/katze.png")["id"].as_i64().unwrap();
+    assert_eq!(ok(addr, "/api/faces/species", &json!({ "faces": [person_face], "species": "cat" }))["faces"], 0);
+
+    // Not a species; nothing said.
+    for body in [json!({ "faces": [id], "species": "horse" }), json!({ "faces": [id] })] {
+        let r = post(addr, "/api/faces/species", &body);
+        assert_eq!(r.status, 400, "{body}");
+    }
+
+    // It is kept in the library, not in the server.
+    server.stop().unwrap();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    wait_for_clusters(addr);
+    assert_eq!(pet_of(addr, &lib, "Fotos/katze.png")["species"], "dog");
     server.stop().unwrap();
     assert_eq!(lib.snapshot(), before, "originals untouched");
 }

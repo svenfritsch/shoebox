@@ -147,9 +147,10 @@ the pets found and failed.
 | Env | `SHOEBOX_PET_BACKEND`, `SHOEBOX_PET_EMBEDDER`, `SHOEBOX_NO_PETS` (fetch), `SHOEBOX_TEST_PET` (tests) |
 | Worker | tasks `pets` and `embed-pets` (only with `--pets`), hello `tasks.pets`, `tasks.embed-pets`; protocol number unchanged |
 | `recognition.db` | v5: `faces.species`; tasks `pets` in `looked`, kind `pets` in `jobs` |
-| `library.db` | v7: `face_decisions.species`. **An older shoebox cannot open an upgraded library** |
-| `userdata.json` | decisions carry `species` (omitted for people's faces) |
+| `library.db` | v7: `face_decisions.species`; v12: `face_species` (what the user says a detected cat or dog is). **An older shoebox cannot open an upgraded library** |
+| `userdata.json` | decisions carry `species` (omitted for people's faces); `pet_species` lists the corrections (omitted when empty) |
 | `POST /api/faces/manual` | `pet: true` |
+| `POST /api/faces/species` | `{ faces, species: cat\|dog }` → `{ faces }` (pets changed) |
 | `GET /api/clusters` | `kind=faces\|pets` |
 | `GET /api/faces`, `/api/faces/stats` | `kind=pets`; items and `kind` in the stats |
 | `GET /api/pets/search` | new, the pet terms with counts |
@@ -293,8 +294,17 @@ On the drive (Intel MacBook and/or a modern Mac):
   person found.
 - **Pet cards say "Not a pet" / "Kein Haustier"** (cluster card, person
   page, toasts, info panel menu). It marks a false find (no pet at all); it
-  does not say which species. To say "that is a cat", name it with a cat's
-  name.
+  does not say which species. To say "that is a cat" (the detector took it
+  for a dog, so only dog names were offered), use "It's a cat, not a dog" /
+  "It's a dog, not a cat" (`pet.make.*`): `⋯` of an unconfirmed pet in the info
+  panel, and the selection bars of the info panel, the single faces and the
+  cluster cards (all picked faces one species). `POST /api/faces/species`
+  (`faces`, `species`) writes `library.db` `face_species` (v12: content key,
+  box, species; matched by IoU like decisions, so it survives a new detection
+  pass and a turn). `Matched::load` applies it to `Detected.species`, so the
+  name list, icons, clusters' kind and the pet search follow; decisions already
+  made about the pet get the new species (`face_decisions.species`) and stay
+  attached. Faces drawn by hand keep their kind.
 - **Species follows the person** (`people::person_species`): once a face is
   confirmed, its box, the info panel, the person and the pet search all use
   the person's species (majority of confirmed faces), so a dog taken for a

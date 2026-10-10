@@ -6,7 +6,7 @@ const { chromium } = createRequire(import.meta.url)('playwright'); // honours NO
 const [mode, lang, out, url, libPath] = process.argv.slice(2);
 const b = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
 const ctx = await b.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 2 });
-await ctx.addInitScript((l) => { try { localStorage.setItem('shoebox.lang', l); } catch (e) {} }, lang);
+await ctx.addInitScript((l) => { try { localStorage.setItem('shoebox.lang', l); localStorage.setItem('shoebox.addons.open', '1'); } catch (e) {} }, lang);
 const p = await ctx.newPage();
 const de = lang === 'de';
 // Not 'Favorites': that word is the heart feature now.
@@ -23,6 +23,8 @@ if (mode === 'launcher') {
   await p.evaluate(() => { var c = document.querySelectorAll('#drive-chips > *'); ['Photos', 'Backup'].forEach((n, i) => { if (c[i]) c[i].textContent = n; }); for (var i = 2; i < c.length; i++) c[i].remove(); });
   await p.click('button[data-kind=scan]');
   await p.waitForSelector('#summary:not(:empty)', { timeout: 60000 }); await wait(1500);
+  // Show shoebox on the drive (the folder it was copied to) instead of this machine's path.
+  await p.evaluate((lib) => { var h = document.getElementById('addons-hint'); h.textContent = h.textContent.replace(/\/\S*recognizer/, lib + '/shoebox-macos/recognizer'); }, libPath);
   await shot('launcher-overview', { fullPage: true });
   // A photo copied onto the drive by hand, then a second scan: the scan lists
   // it as already there and offers to delete the new copy.
@@ -48,6 +50,11 @@ await shot('ui-overview');
 await p.locator('.cell').nth(6).click(); await wait(800);
 await p.keyboard.press('i'); await wait(800);
 await shot('viewer-info');
+// The pencil next to the date opens the dialog for a date of your own.
+await p.locator('.lb-panel .pen').click(); await wait(400);
+await p.fill('.dates-dialog input', '1987'); await p.selectOption('.dates-dialog select >> nth=0', '6'); await wait(300);
+await shot('dates-dialog');
+await p.keyboard.press('Escape'); await wait(300);
 await p.keyboard.press('Escape'); await wait(300);
 
 // Duplicates, from a clean state; tall so the whole page is in the shot.
@@ -165,6 +172,10 @@ await p.keyboard.press('ArrowDown'); await p.keyboard.press('Enter'); await wait
 await p.keyboard.press('Escape'); await p.locator('#title').click(); await wait(800);
 await shot('multitag-search');
 await p.click('#all'); await wait(500);
+// Search by date: `date:` and a month lists it in every year.
+await p.fill('#search', de ? 'datum:jul' : 'date:jul'); await wait(900);
+await shot('dates-search');
+await p.fill('#search', ''); await p.keyboard.press('Escape'); await wait(300);
 
 // Trash: trash a photo, show the page.
 await p.click('#all'); await wait(600);

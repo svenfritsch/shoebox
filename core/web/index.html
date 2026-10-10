@@ -23,9 +23,10 @@
   <div id="types" class="types">
     <button id="types-btn" type="button" class="types-btn" aria-haspopup="true" aria-expanded="false" data-i18n-title="types.hint" title="Show only some types"><span data-i18n="types.label">Type</span> ▾</button>
     <div id="types-menu" class="types-menu" hidden>
-      <label><input type="checkbox" value="photo"> 🖼 <span data-i18n="types.photo">Photos</span></label>
+      <label><input type="checkbox" value="photo"> 🖼 <span data-i18n="types.photo">Photos</span> <span class="tip" data-i18n-title="types.photo_hint" title="Stills without screenshots">ⓘ</span></label>
       <label><input type="checkbox" value="video"> 🎞 <span data-i18n="types.video">Videos</span></label>
       <label><input type="checkbox" value="live"> ◉ <span data-i18n="types.live">Live Photos</span></label>
+      <label><input type="checkbox" value="screenshot"> ▭ <span data-i18n="types.screenshot">Screenshots</span></label>
     </div>
   </div>
   <select id="years" data-i18n-title="app.jump_year" data-i18n-aria-label="app.jump_year" title="Jump to year" aria-label="Jump to year"></select>
@@ -38,12 +39,13 @@
     <div id="drives-box" class="drives-box" hidden>
       <h3 class="side-head" data-i18n="side.drives">Drives</h3>
       <ul id="drive-list" class="drive-list"></ul>
-      <button id="nav-drives" class="link" data-i18n="side.all_drives">All drives: backups, duplicates, people</button>
     </div>
     <div class="sidebar-head">
       <button id="all" class="link" data-i18n="side.all_photos">All photos</button>
+      <button id="nav-nodate" class="link" data-i18n="side.needs_date" hidden>Needs a date</button>
       <button id="nav-dups" class="link" data-i18n="side.duplicates">Duplicates</button>
       <button id="nav-trash" class="link" data-i18n="side.trash">Trash</button>
+      <button id="nav-drives" class="link" data-i18n="side.manage_drives" hidden>Manage drives</button>
       <button id="nav-settings" class="link" data-i18n="side.settings">Settings</button>
     </div>
     <div id="faces-section" class="side-tags side-faces" hidden>
@@ -56,6 +58,10 @@
     </div>
     <h3 id="folders-section" class="side-head"><button class="caret" data-section="folders-section" data-body="tree" data-i18n-aria-label="side.toggle_folders" aria-label="Show or hide folders" aria-expanded="true"></button><span data-i18n="side.folders">Folders</span></h3>
     <ul id="tree" class="tree"></ul>
+    <div id="locations-section" class="side-tags side-locations" hidden>
+      <h3><button class="caret" data-section="locations-section" data-body="place-list" data-i18n-aria-label="side.toggle_locations" aria-label="Show or hide locations" aria-expanded="true"></button><button id="nav-locations" class="link" data-i18n="side.locations">Locations</button></h3>
+      <ul id="place-list" class="tree"></ul>
+    </div>
     <footer id="status" class="status"></footer>
   </nav>
 
@@ -69,9 +75,11 @@
 
 <div id="selbar" class="selbar" hidden>
   <span id="sel-count"></span>
+  <button id="sel-all" class="btn quiet" data-i18n="sel.all">Select all</button>
   <button id="sel-move" class="btn" data-i18n="sel.move">Move…</button>
   <button id="sel-tag" class="btn" data-i18n="sel.tag">Add tag…</button>
   <button id="sel-untag" class="btn" data-i18n="sel.untag">Remove tag…</button>
+  <button id="sel-date" class="btn" data-i18n="sel.date">Set date…</button>
   <button id="sel-trash" class="btn" data-i18n="sel.trash">Move to trash</button>
   <button id="sel-done" class="btn quiet" data-i18n="sel.done">Done</button>
 </div>
@@ -115,5 +123,7 @@
 </div>
 
 <script src="app.js"></script>
+<script src="dates.js"></script>
+<script src="geo.js"></script>
 </body>
 </html>

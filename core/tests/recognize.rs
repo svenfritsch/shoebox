@@ -352,7 +352,7 @@ fn workers_that_do_not_start_are_reported() {
 #[test]
 fn single_faces_through_the_worker() {
     let mut worker = recognize::Worker::start(fake(&[]), quick()).unwrap();
-    assert_eq!(worker.faces_model().dim, 128);
+    assert_eq!(worker.faces_model().unwrap().dim, 128);
     let jpeg = |rgb: [u8; 3]| {
         let mut out = Vec::new();
         image::RgbImage::from_pixel(80, 40, image::Rgb(rgb))
@@ -471,6 +471,28 @@ fn a_model_change_redoes_only_its_own_pass() {
     assert_eq!((a.looked, a.pending), (3, 1));
 }
 
+/// The add-ons stand alone: with only the pet models installed the worker
+/// has no faces, finds cats and dogs, and the face passes say what is missing.
+#[test]
+fn pets_work_without_the_face_models() {
+    let lib = empty("recog-pets-only");
+    solid(&lib, "Pets/cat.jpg", CAT);
+    lib.scan_opts(true, false, false);
+    let conn = conn(&lib);
+    let mut worker = recognize::Worker::start(fake(&["--pets", "--no-faces"]), quick()).unwrap();
+    assert!(worker.faces_model().is_none());
+    assert_eq!(worker.pets_model().map(|a| a.model.as_str()), Some("fake-pets-1"));
+    let e = format!("{:#}", recognize::recognize(&conn, &lib.root, &mut worker, None, false).unwrap_err());
+    assert!(e.contains("Faces add-on is not installed"), "{e}");
+    let stats = recognize::recognize_pets(&conn, &lib.root, &mut worker, None, false).unwrap();
+    assert_eq!((stats.looked, stats.faces), (1, 1), "{:?}", stats.errors);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species = 'cat'"), 1);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces WHERE species IS NULL"), 0);
+    worker.stop();
+    // A worker with neither add-on is refused.
+    assert!(recognize::Worker::start(fake(&["--no-faces"]), quick()).is_err());
+}
+
 #[test]
 fn the_pets_task_needs_a_worker_started_for_it() {
     // Without --pets the hello has no pets and the core refuses to ask.
@@ -489,7 +511,7 @@ fn the_pets_task_needs_a_worker_started_for_it() {
     let mut worker = recognize::Worker::start(fake(&["--pets"]), quick()).unwrap();
     let info = worker.pets_model().unwrap().clone();
     assert_eq!((info.model.as_str(), info.dim), ("fake-pets-1", 64));
-    assert_eq!(worker.faces_model().dim, 128, "faces keep their own model");
+    assert_eq!(worker.faces_model().unwrap().dim, 128, "faces keep their own model");
     let cat = worker.pets(&jpeg(CAT)).unwrap().unwrap();
     let dog = worker.pets(&jpeg(DOG)).unwrap().unwrap();
     assert_eq!((cat.width, cat.height, cat.faces.len()), (80, 40, 1));
@@ -629,8 +651,8 @@ fn real_recognizer_runs_under_the_guard() {
             .unwrap();
         let file = id_of(&lib, "Familie/face.jpg");
         let who = shoebox::people::Who { person_id: None, name: Some("Face".into()) };
-        shoebox::people::add_manual(&c, file, [x - 0.05 * w, y + 0.03 * h, w * 1.1, h], &who, false).unwrap();
-        shoebox::people::add_manual(&c, file, [0.0, 0.0, 0.08, 0.08], &who, false).unwrap();
+        shoebox::people::add_manual(&c, file, [x - 0.05 * w, y + 0.03 * h, w * 1.1, h], &who, None).unwrap();
+        shoebox::people::add_manual(&c, file, [0.0, 0.0, 0.08, 0.08], &who, None).unwrap();
         drop(c);
         let stats = recognize::run(&opts).unwrap();
         assert_eq!(lib.snapshot(), before);
@@ -934,4 +956,30 @@ fn pets_check_page_and_stats_under_the_guard() {
     assert_eq!(near[0]["file"], id_of(&lib, "Pets/same.png"));
     assert!((near[0]["similarity"].as_f64().unwrap() - 1.0).abs() < 1e-3);
     assert_eq!(lib.snapshot(), before, "the pets check changed an original");
+}
+
+/// fetch-models.sh and fetch-models.ps1 carry the same models and checksums,
+/// and install.ps1 pins the Python archive of the release install.sh uses.
+#[test]
+fn windows_installer_matches_the_shell_one() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../recognizer");
+    let read = |name: &str| std::fs::read_to_string(dir.join(name)).unwrap();
+    let (sh, ps1) = (read("fetch-models.sh"), read("fetch-models.ps1"));
+    let hashes = |text: &str| {
+        let mut found: Vec<String> = text
+            .split(|c: char| !c.is_ascii_hexdigit())
+            .filter(|w| w.len() == 64)
+            .map(str::to_ascii_lowercase)
+            .collect();
+        found.sort();
+        found
+    };
+    assert_eq!(hashes(&sh).len(), 4);
+    assert_eq!(hashes(&sh), hashes(&ps1), "the checksums differ");
+    for name in ["face_detection_yunet_2023mar.onnx", "face_recognition_sface_2021dec.onnx", "object_detection_yolox_2022nov.onnx", "image_classification_ppresnet50_2022jan.onnx"] {
+        assert!(sh.contains(name) && ps1.contains(name), "{name}");
+    }
+    let (install_sh, install_ps1) = (read("install.sh"), read("install.ps1"));
+    assert!(install_sh.contains("PBS_TAG=20251014") && install_ps1.contains("$PbsTag = '20251014'"));
+    assert!(install_sh.contains("PY=3.12.12") && install_ps1.contains("$Py = '3.12.12'"));
 }

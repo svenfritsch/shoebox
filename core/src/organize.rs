@@ -761,14 +761,35 @@ fn follow_content(conn: &Connection, old: &str, new: &str, quarters: i32) -> Res
                 conn.execute("UPDATE face_decisions SET x = ?2, y = ?3, w = ?4, h = ?5 WHERE id = ?1", params![row, x, y, w, h])?;
             } else {
                 conn.execute(
-                    "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at)
-                     SELECT ?2, ?3, ?4, ?5, ?6, person_id, decision, manual, at FROM face_decisions WHERE id = ?1",
+                    "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at, species)
+                     SELECT ?2, ?3, ?4, ?5, ?6, person_id, decision, manual, at, species FROM face_decisions WHERE id = ?1",
                     params![row, new, x, y, w, h],
                 )?;
             }
         }
         if !same && !still_used {
             conn.execute("DELETE FROM face_decisions WHERE key = ?1 AND id NOT IN (SELECT id FROM face_decisions WHERE key = ?2)", params![old, new])?;
+        }
+    }
+    if has_table("face_species")? {
+        let rows: Vec<(i64, [f64; 4])> = conn
+            .prepare("SELECT id, x, y, w, h FROM face_species WHERE key = ?1")?
+            .query_map([old], |r| Ok((r.get(0)?, [r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?])))?
+            .collect::<rusqlite::Result<_>>()?;
+        for (row, b) in rows {
+            let [x, y, w, h] = turn_box(b, quarters);
+            if same {
+                conn.execute("UPDATE face_species SET x = ?2, y = ?3, w = ?4, h = ?5 WHERE id = ?1", params![row, x, y, w, h])?;
+            } else {
+                conn.execute(
+                    "INSERT INTO face_species (key, x, y, w, h, species, at)
+                     SELECT ?2, ?3, ?4, ?5, ?6, species, at FROM face_species WHERE id = ?1",
+                    params![row, new, x, y, w, h],
+                )?;
+            }
+        }
+        if !same && !still_used {
+            conn.execute("DELETE FROM face_species WHERE key = ?1", [old])?;
         }
     }
     if !same && has_table("taken_overrides")? {
@@ -779,6 +800,26 @@ fn follow_content(conn: &Connection, old: &str, new: &str, quarters: i32) -> Res
         )?;
         if !still_used {
             conn.execute("DELETE FROM taken_overrides WHERE key = ?1", [old])?;
+        }
+    }
+    if !same && has_table("date_estimates")? {
+        conn.execute(
+            "INSERT OR REPLACE INTO date_estimates (key, year, month, day, at)
+             SELECT ?2, year, month, day, at FROM date_estimates WHERE key = ?1",
+            params![old, new],
+        )?;
+        if !still_used {
+            conn.execute("DELETE FROM date_estimates WHERE key = ?1", [old])?;
+        }
+    }
+    if !same && has_table("geo_overrides")? {
+        conn.execute(
+            "INSERT OR REPLACE INTO geo_overrides (key, lat, lon, at)
+             SELECT ?2, lat, lon, at FROM geo_overrides WHERE key = ?1",
+            params![old, new],
+        )?;
+        if !still_used {
+            conn.execute("DELETE FROM geo_overrides WHERE key = ?1", [old])?;
         }
     }
     if !same && !still_used && has_table("people")? {

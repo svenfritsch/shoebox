@@ -37,6 +37,20 @@ current status and next step. Update its status table when a phase moves.
 - Moving to the trash from the photo view and the timeline selection is off by
   default: the library setting `allow_trash` (Settings, "Allow move to trash")
   shows the trash icon and the selection button.
+- Maps (phase 10) are an opt-in setting (off by default, one for the whole application: kept by the
+  browser as `shoebox-maps`, not per drive). The browser
+  loads the tiles; shoebox never fetches or stores one. A position the user
+  gives a photo lives in `library.db` (`geo_overrides`) only, never in the file.
+- Estimated dates (phase 12): a date the user gives a photo (`date_estimates`,
+  year, month or day) lives in `library.db` only, never in the file, and wins on
+  the timeline over the capture date in the file; the file's date is shown in the
+  info panel row "EXIF" and returns when the estimate is removed.
+- Licences: `LICENSE.txt` (all rights reserved, private use) and the generated
+  `THIRD-PARTY-LICENSES.txt` go into the release archive. After a change to
+  `Cargo.lock`, `scripts/build-deps.sh` or `core/web/vendor/` run
+  `python3 scripts/third-party-licenses.py`. Do not call shoebox "open source"
+  in texts. Open items before giving it to others: see "Before giving shoebox
+  to others" in docs/plan.md.
 - UI text is never hard-coded: `tr()`/`trn()`/`data-i18n` with a key in both
   `core/i18n/en.json` and `de.json` (see docs/phase8.md; `core/tests/i18n.rs`
   checks it).

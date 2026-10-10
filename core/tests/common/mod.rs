@@ -303,6 +303,11 @@ pub fn start_with(lib: &Library, pin: Option<&str>, reveal: Option<serve::Reveal
 
 /// One server for several libraries (the first is the main one).
 pub fn start_many(libs: &[&Library], extra_missing: &[&Path]) -> serve::Server {
+    start_many_with(libs, extra_missing, None)
+}
+
+/// Like `start_many`, with what "Show in Finder" runs (`None`: the real command).
+pub fn start_many_with(libs: &[&Library], extra_missing: &[&Path], reveal: Option<serve::RevealFn>) -> serve::Server {
     serve::start(
         &serve::Options {
             root: libs[0].root.clone(),
@@ -311,7 +316,7 @@ pub fn start_many(libs: &[&Library], extra_missing: &[&Path]) -> serve::Server {
             port: 0,
             lan: false,
             pin: None,
-            reveal: None,
+            reveal,
             recognizer: Some(env!("CARGO_BIN_EXE_shoebox-fake-recognizer").into()),
         },
         false,

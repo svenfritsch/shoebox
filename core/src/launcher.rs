@@ -447,8 +447,9 @@ fn now_secs() -> u64 {
 #[derive(Deserialize, Clone)]
 struct JobRequest {
     /// `scan`, `scan_cleanup` (remove the copies the last scan found), `verify`,
+    /// `forget_missing` (drop the records of files that are gone),
     /// `recognize`, `recognize_pets` (the same, then cats and dogs too),
-    /// `faces_stats`, `backup` or `backup_cleanup`.
+    /// `recognize_rotated` (also faces lying down), `faces_stats`, `backup` or `backup_cleanup`.
     kind: String,
     /// One folder, or several in `roots`: they are processed one after the other.
     #[serde(default)]
@@ -472,6 +473,11 @@ struct JobRequest {
     /// instead of moving into the trash.
     #[serde(default)]
     forever: bool,
+    /// `install_addons`: the face models and/or the cat and dog models.
+    #[serde(default)]
+    faces: bool,
+    #[serde(default)]
+    pets: bool,
 }
 
 /// Run one command and return its result as JSON plus whether it was clean.
@@ -518,19 +524,32 @@ fn run_command(req: &JobRequest, roots: Vec<PathBuf>) -> Result<(serde_json::Val
             let clean = r.is_clean();
             (serde_json::to_value(&r)?, clean)
         }
-        "recognize" | "recognize_pets" => {
+        "forget_missing" => {
+            let n = scan::forget_missing_records(&root)?;
+            (serde_json::json!({ "forgotten": n }), true)
+        }
+        "recognize" | "recognize_pets" | "recognize_rotated" => {
             let stats = recognize::run(&recognize::Options {
                 root,
                 db: None,
                 recognizer: None,
                 limit: req.limit,
                 retry_failed: req.retry_failed,
-                rotated: req.rotated,
+                rotated: req.rotated || req.kind == "recognize_rotated",
                 pets: req.kind == "recognize_pets",
                 timeouts: recognize::Timeouts::default(),
             })?;
             let clean = stats.errors.is_empty() && stats.pets.as_ref().is_none_or(|a| a.errors.is_empty());
             (serde_json::to_value(&stats)?, clean)
+        }
+        "install_addons" => {
+            // `root` is the recognizer folder next to the program (see `start_job`).
+            if !req.faces && !req.pets {
+                anyhow::bail!("choose at least one add-on to install");
+            }
+            let found = recognize::install(&root, req.faces, req.pets)?;
+            let clean = (found.faces || !req.faces) && (found.pets || !req.pets);
+            (serde_json::to_value(&found)?, clean)
         }
         "faces_stats" => {
             let stats = faces::print_stats(&root, None)?;
@@ -541,7 +560,12 @@ fn run_command(req: &JobRequest, roots: Vec<PathBuf>) -> Result<(serde_json::Val
 }
 
 /// The folders of a request: `roots` plus `root`, each an existing folder.
+/// Installing add-ons works on no drive: its one folder is `recognizer/` next
+/// to the program.
 fn request_roots(req: &JobRequest) -> Result<Vec<PathBuf>, ApiError> {
+    if req.kind == "install_addons" {
+        return recognize::program_dir().map(|d| vec![d]).ok_or_else(|| ApiError::BadRequest("the recognizer folder is not next to the shoebox program".into()));
+    }
     let mut all: Vec<&str> = req.roots.iter().map(String::as_str).collect();
     if !req.root.trim().is_empty() {
         all.push(&req.root);
@@ -572,11 +596,11 @@ fn short_name(root: &Path) -> String {
 /// recognition job is running, and a moved or changed original is skipped by
 /// the guard. Scan, verify and backup checks stay locked out.
 fn runs_beside_app(kind: &str) -> bool {
-    matches!(kind, "recognize" | "recognize_pets" | "faces_stats")
+    matches!(kind, "recognize" | "recognize_pets" | "recognize_rotated" | "faces_stats")
 }
 
 fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
-    if !matches!(req.kind.as_str(), "scan" | "verify" | "recognize" | "recognize_pets" | "faces_stats" | "backup" | "backup_cleanup" | "scan_cleanup") {
+    if !matches!(req.kind.as_str(), "scan" | "forget_missing" | "verify" | "recognize" | "recognize_pets" | "recognize_rotated" | "faces_stats" | "backup" | "backup_cleanup" | "scan_cleanup" | "install_addons") {
         return Err(ApiError::BadRequest(format!("unknown command {:?}", req.kind)));
     }
     if !runs_beside_app(&req.kind) && shared.app.lock().unwrap().is_some() {
@@ -696,6 +720,7 @@ async fn job_cancel(State(shared): State<Arc<Shared>>) -> Json<serde_json::Value
 fn router(shared: Arc<Shared>) -> Router {
     Router::new()
         .route("/api/drives", get(drives))
+        .route("/api/addons", post(addons))
         .route("/api/job", get(job_state).post(job_start))
         .route("/api/app", get(app_state).post(app_start))
         .route("/api/app/stop", post(app_stop))
@@ -789,6 +814,8 @@ async fn app_start(State(shared): State<Arc<Shared>>, Json(req): Json<AppRequest
             rotated: false,
             deep: false,
             forever: false,
+            faces: false,
+            pets: false,
         };
         let roots = request_roots(&jobless)?;
         let mut app = shared.app.lock().unwrap();
@@ -912,6 +939,38 @@ pub fn detect_drives() -> Vec<Drive> {
             path: p.display().to_string(),
         })
         .collect()
+}
+
+/// Which add-ons (faces, pets) can be used, for this computer and for each
+/// drive in `roots`; and whether they can be installed from here.
+#[derive(Deserialize, Default)]
+struct AddonsRequest {
+    #[serde(default)]
+    roots: Vec<String>,
+}
+
+async fn addons(Json(req): Json<AddonsRequest>) -> Json<serde_json::Value> {
+    let program = recognize::installed(None);
+    let roots: Vec<serde_json::Value> = req
+        .roots
+        .iter()
+        .map(|r| {
+            let found = recognize::installed(Some(Path::new(r)));
+            serde_json::json!({ "root": r, "faces": found.faces, "pets": found.pets })
+        })
+        .collect();
+    let dir = recognize::program_dir();
+    Json(serde_json::json!({
+        "installable": dir.is_some(),
+        "dir": dir,
+        "runtime": program.runtime,
+        "models": program.models,
+        "faces_models": program.faces_models,
+        "pets_models": program.pets_models,
+        "faces": program.faces,
+        "pets": program.pets,
+        "roots": roots,
+    }))
 }
 
 async fn drives() -> Json<Vec<Drive>> {
