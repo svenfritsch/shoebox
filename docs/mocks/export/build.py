@@ -29,7 +29,7 @@ body { overflow: hidden; }
 .cell .tick { position: absolute; left: 8px; top: 8px; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 13px; text-align: center; line-height: 22px; }
 .cell .tagbadge { position: absolute; right: 8px; bottom: 8px; background: rgba(0,0,0,.6); color: #fff; font-size: 11px; padding: 1px 7px; border-radius: 99px; }
 .btn.export { background: var(--accent); }
-.filters .btn { padding: 3px 12px; font-size: 13px; border-radius: 99px; }
+.filters .btn { padding: 4px 14px; }
 .filters .spacer { flex: 1; }
 .dialog.wide { width: min(560px, 100%); }
 .dialog .row { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
@@ -76,6 +76,13 @@ body { overflow: hidden; }
 .callout { position: absolute; z-index: 9; font: 600 13px -apple-system, sans-serif; color: #fff; background: var(--accent); border-radius: 99px; padding: 2px 10px; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); top: 70px; bottom: auto; }
 .set-h { margin-top: 0; }
+.lightbox .toast { left: 330px; }
+.lightbox .stage { right: 340px; }
+.lb-panel { display: flex; }
+.lb-panel dl { margin-top: 8px; }
+.iconbox { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); vertical-align: middle; }
+.kbd { border: 1px solid var(--line); border-radius: 5px; padding: 0 6px; font-size: 12px; background: var(--panel); }
+.dialog input[type=text].req { border-color: var(--accent); }
 .tree .nm { flex: 1; }
 .tree .ct { color: var(--muted); font-size: 12px; }
 </style>
@@ -151,94 +158,103 @@ def opts(heic=2, raw=3, vid=1, prefix=True):
 def place(path, btn="Choose…"):
     return '<div class="row"><label class="lbl">Save in</label><div class="path">%s</div><button class="btn quiet">%s</button></div>' % (path, btn)
 
+
+def export_dialog(photos, videos, size, parent, name, heic, raw, exists=None, button="Export", disabled=False):
+    """ONE dialog for both entry points. From a tag the name is pre-filled with the tag name;
+    from a selection it is empty and required."""
+    chips = '<div class="sum"><span>%d photos</span>%s<span>%s</span></div>' % (photos, '<span>%d video%s</span>' % (videos, "" if videos == 1 else "s") if videos else "", size)
+    if name:
+        field = '<input type="text" value="%s" style="flex:1">' % name
+        result = 'Creates <b>%s/%s/</b>' % (parent, name)
+    else:
+        field = '<input type="text" class="req" placeholder="Name of the new folder (required)" style="flex:1">'
+        result = 'The new folder is created inside the folder above.'
+    number = '<br>Files are numbered in capture order, like <b>001_IMG_3457.jpg</b>. Change this in <b>Settings → Export</b>.'
+    inner = chips + place(parent) + '<div class="row"><label class="lbl">Folder name</label>%s</div>' % field
+    if exists:
+        inner += '<div class="note info"><b>This folder already exists</b> with %d photos.<br>Photos that are already there (same name without the number, same size) are skipped. <b>%d new</b> photos are added. The numbers of all files are updated to the new order.</div>' % exists
+        inner += '<div class="result" style="margin-top:10px">%s</div>' % number[4:]
+    else:
+        inner += '<div class="result">%s%s</div>' % (result, number)
+    inner += opts(heic=heic, raw=raw, vid=videos)
+    ok = '<button class="btn"%s>%s</button>' % (" disabled" if disabled else "", button)
+    return dialog("Export %d photos%s" % (photos, " and %d video%s" % (videos, "" if videos == 1 else "s") if videos else ""), inner, BTN_C + ok)
+
 def mock_files():
     M = {}
+    SEL = (3, 4, 5, 6, 7)
     # 01 selection bar
-    M["01-selection-bar"] = shell(grid(sel=(3, 4, 5, 6, 7)), selbar="", select_on=True).replace("</body>", selbar("5 photos") + "</body>")
-    # 02 export dialog from a selection
-    inner = ('<div class="sum"><span>4 photos</span><span>1 video</span><span>38.2 MB</span></div>'
-             + place("/Users/anna/Downloads")
-             + '<div class="row"><label class="lbl">Folder name</label><input type="text" class="grow" value="Export 2026-10-10" style="flex:1"></div>'
-             + '<div class="result">Creates <b>/Users/anna/Downloads/Export 2026-10-10/</b><br>Files are numbered in capture order: <b>001_IMG_3457.jpg</b> (Settings → Export).</div>'
-             + opts(heic=2, raw=3, vid=1))
-    M["02-export-dialog-selection"] = shell(grid(sel=(3, 4, 5, 6, 7)), select_on=True, modal=dialog("Export 5 files", inner, BTN_C + '<button class="btn">Export</button>')).replace("</body>", selbar("5 photos") + "</body>")
+    M["01-selection-bar"] = shell(grid(sel=SEL), select_on=True).replace("</body>", selbar("5 photos") + "</body>")
+    # 02 export dialog from a selection: the name is required
+    M["02-export-dialog-selection"] = shell(grid(sel=SEL), select_on=True,
+        modal=export_dialog(4, 1, "38.2 MB", "/Users/anna/Downloads", "", heic=2, raw=3, disabled=True)).replace("</body>", selbar("5 photos") + "</body>")
     # 03 folder picker, macOS and Windows
     def picker(system):
         if system == "mac":
-            places = [("Downloads", "", True), ("Desktop", "", False), ("Documents", "", False), ("Pictures", "", False), ("anna (home)", "", False)]
-            drives = [("USB-STICK", "29 GB free", False), ("Backup", "412 GB free", False)]
+            places = [("Downloads", True), ("Desktop", False), ("Documents", False), ("Pictures", False), ("anna (home)", False)]
+            drives = [("USB-STICK", "29 GB free", False), ("Holiday backup", "shoebox", True), ("Photos", "shoebox", True)]
             crumbs = "<b>/</b> Users › anna › <b>Downloads</b>"
-            lst = [("📁 Anna wedding", ""), ("📁 invoices", ""), ("📁 print-march", "42 photos"), ("📁 Tickets", "")]
-            drv_off = ("Photos", "the photo drive")
-            ex = "Mac"
         else:
-            places = [("Downloads", "", True), ("Desktop", "", False), ("Documents", "", False), ("Pictures", "", False), ("Anna (home)", "", False)]
-            drives = [("USB-STICK (E:)", "29 GB free", False), ("Backup (F:)", "412 GB free", False)]
+            places = [("Downloads", True), ("Desktop", False), ("Documents", False), ("Pictures", False), ("Anna (home)", False)]
+            drives = [("USB-STICK (E:)", "29 GB free", False), ("Holiday backup (F:)", "shoebox", True), ("Photos (D:)", "shoebox", True)]
             crumbs = "<b>This PC</b> › C: › Users › Anna › <b>Downloads</b>"
-            lst = [("📁 Anna wedding", ""), ("📁 invoices", ""), ("📁 print-march", "42 photos"), ("📁 Tickets", "")]
-            drv_off = ("Photos (D:)", "the photo drive")
-        nav = '<h4>Places</h4>' + "".join('<div class="%s">%s</div>' % ("on" if p[2] else "", p[0]) for p in places)
-        nav += '<h4>Drives</h4>' + "".join('<div>%s<small>%s</small></div>' % (d[0], d[1]) for d in drives)
-        nav += '<div class="off">%s<small>photo drive</small></div>' % drv_off[0]
-        ul = "".join('<li class="%s"><span>%s</span><small>%s</small></li>' % ("sel" if "print-march" in n else "", n, s) for n, s in lst)
-        body = ('<header><h2>Choose where to save</h2><p class="hint" style="margin:4px 0 0">Shoebox saves into a new folder inside the one you pick. Nothing on the photo drive can be chosen: the next scan would find the copies.</p></header>'
+        lst = [("📁 Anna wedding", ""), ("📁 invoices", ""), ("📁 print-march", "42 photos"), ("📁 Tickets", "")]
+        nav = '<h4>Places</h4>' + "".join('<div class="%s">%s</div>' % ("on" if p[1] else "", p[0]) for p in places)
+        nav += '<h4>Drives</h4>' + "".join('<div class="%s">%s<small>%s</small></div>' % ("off" if d[2] else "", d[0], d[1]) for d in drives)
+        ul = "".join('<li><span>%s</span><small>%s</small></li>' % (n, c) for n, c in lst)
+        body = ('<header><h2>Choose where to save</h2><p class="hint" style="margin:4px 0 0">Drives with a shoebox library are greyed out: copies saved there would be found by the next scan.</p></header>'
                 '<div class="pk"><nav>%s</nav><div class="main"><div class="crumbs">%s</div><ul>%s</ul></div></div>'
-                '<div class="foot"><button class="btn quiet">New folder…</button><span class="grow">Selected: Downloads</span><button class="btn quiet">Cancel</button><button class="btn">Choose this folder</button></div>') % (nav, crumbs, ul)
-        return ('<div class="modal"><div class="dialog picker" role="dialog">%s</div></div>' % body)
-    inner_bg = ('<div class="sum"><span>4 photos</span></div>' + place("/Users/anna/Downloads"))
-    M["03a-folder-picker-mac"] = shell(grid(sel=(3, 4, 5, 6, 7)), select_on=True, modal=picker("mac")).replace("</body>", selbar("5 photos") + "</body>")
-    M["03b-folder-picker-windows"] = shell(grid(sel=(3, 4, 5, 6, 7)), select_on=True, modal=picker("win")).replace("</body>", selbar("5 photos") + "</body>")
-    # 04 tag chip with the Export button
+                '<div class="foot"><span class="grow">Selected: Downloads</span><button class="btn quiet">Cancel</button><button class="btn">Choose this folder</button></div>') % (nav, crumbs, ul)
+        return '<div class="modal"><div class="dialog picker" role="dialog">%s</div></div>' % body
+    M["03a-folder-picker-mac"] = shell(grid(sel=SEL), select_on=True, modal=picker("mac")).replace("</body>", selbar("5 photos") + "</body>")
+    M["03b-folder-picker-windows"] = shell(grid(sel=SEL), select_on=True, modal=picker("win")).replace("</body>", selbar("5 photos") + "</body>")
+    # 04 tag chip with the Export button (a normal button, plain label)
     chips = ('<div class="filters"><span class="chip">#&nbsp;print-march <button>✕</button></span><span class="spacer"></span>'
-             '<button class="btn export">Export these 42 photos…</button></div>')
+             '<button class="btn" title="Export the 42 photos with this tag">Export…</button></div>')
     tagged = ('<div class="sech">March 2026<span class="n">20</span></div><div class="mgrid">%s</div>'
               '<div class="sech">July 2025<span class="n">22</span></div><div class="mgrid">%s</div>') % (
         "".join(tile(i) for i in (0, 1, 2, 3, 4)), "".join(tile(i) for i in (5, 6, 7, 8, 9)))
-    M["04-tag-active-export-button"] = shell(tagged, chips=chips, title="Photos")
-    # 05 dialog from a tag
-    inner = ('<div class="sum"><span>40 photos</span><span>2 videos</span><span>312 MB</span></div>'
-             + place("/Users/anna/Downloads")
-             + '<div class="row"><label class="lbl">Folder name</label><input type="text" value="print-march" style="flex:1"></div>'
-             + '<div class="result">Creates <b>/Users/anna/Downloads/print-march/</b></div>'
-             + opts(heic=5, raw=0, vid=0).replace("Convert HEIC", "Convert HEIC"))
-    M["05-export-dialog-tag"] = shell(tagged, chips=chips, modal=dialog("Export “print-march”", inner, BTN_C + '<button class="btn">Export</button>'))
+    M["04-tag-active-export-button"] = shell(tagged, chips=chips)
+    # 05 the same dialog, name pre-filled with the tag
+    M["05-export-dialog-tag"] = shell(tagged, chips=chips,
+        modal=export_dialog(40, 2, "312 MB", "/Users/anna/Downloads", "print-march", heic=5, raw=0))
     # 06 the folder already exists
-    inner = ('<div class="sum"><span>42 photos</span><span>312 MB</span></div>'
-             + place("/Users/anna/Downloads")
-             + '<div class="row"><label class="lbl">Folder name</label><input type="text" value="print-march" style="flex:1"></div>'
-             + '<div class="note info"><b>This folder already exists</b> with 30 photos.<br>Photos that are already there (same name, number ignored) are skipped. <b>12 new</b> photos are added. The numbers of all files are updated to the new order.</div>'
-             + opts(heic=5, raw=0, vid=0))
-    M["06-export-dialog-folder-exists"] = shell(tagged, chips=chips, modal=dialog("Export “print-march”", inner, BTN_C + '<button class="btn">Add 12 photos</button>'))
+    M["06-export-dialog-folder-exists"] = shell(tagged, chips=chips,
+        modal=export_dialog(40, 2, "312 MB", "/Users/anna/Downloads", "print-march", heic=5, raw=0, exists=(30, 12), button="Add 12 photos"))
     # 07 progress
     inner = ('<p style="margin:0">Copying <b>17</b> of 42 · IMG_2231.heic → <b>018_IMG_2231.jpg</b></p><div class="bar-progress"><i style="width:40%"></i></div>'
-             '<p class="hint" style="margin:0">Every original is read and checked before and after, so this takes a little longer than a plain copy. Your photos are not changed.</p>')
-    M["07-export-progress"] = shell(tagged, chips=chips, modal=dialog("Exporting “print-march”…", inner, '<button class="btn quiet">Stop</button>'))
+             '<p class="hint" style="margin:0">Every original is read and checked before and after, so this takes a little longer than a plain copy. Your photos are not changed. Files already copied stay in the folder if you stop.</p>')
+    M["07-export-progress"] = shell(tagged, chips=chips, modal=dialog("Exporting…", inner, '<button class="btn quiet">Stop</button>'))
     # 08 done
     inner = ('<div class="note good"><b>42 files are in /Users/anna/Downloads/print-march</b><br>Checked against the originals: all identical. The originals on the drive were not changed.</div>'
              '<p class="hint" style="margin:10px 0 0">5 HEIC photos were converted to JPEG · 12 were new · 30 were already there.</p>')
     M["08-export-done"] = shell(tagged, chips=chips, modal=dialog("Export finished", inner, '<button class="btn quiet">Close</button><button class="btn">Show in Finder</button>'))
     # 09 settings
+    bm = '<span class="iconbox">%s</span>' % coll(False)
+    badge = '<span style="background:var(--accent);color:#fff;border-radius:99px;font-size:11px;padding:1px 8px;vertical-align:middle">new</span>'
     settings = ('<div class="page"><h2>Settings</h2>'
         '<section class="settings-section"><h3>Moving to the trash</h3><label class="check-row"><input type="checkbox"> Allow move to trash</label><p class="hint">Off by default, so shoebox never touches your originals.</p></section>'
-        '<section class="settings-section"><h3>Collection <span style="background:var(--accent);color:#fff;border-radius:99px;font-size:11px;padding:1px 8px;vertical-align:middle">new</span></h3>'
-        '<p class="hint" style="margin-top:0">A quick way to gather photos for something: a print order, an album, a video for a birthday. Type a tag name here and a bookmark button appears in the photo view. One click tags the photo, another click removes the tag. Then search for the tag and use <b>Export</b> to get all of them in one folder. Leave it empty to hide the button.</p>'
-        '<input type="text" value="print-march" placeholder="e.g. album-italy" style="padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel)"> <span class="hint">42 photos have this tag</span></section>'
-        '<section class="settings-section"><h3>Export <span style="background:var(--accent);color:#fff;border-radius:99px;font-size:11px;padding:1px 8px;vertical-align:middle">new</span></h3>'
+        '<section class="settings-section"><h3>Collection %s</h3>'
+        '<p class="hint" style="margin-top:0">A quick way to gather photos for something: a print order, an album, a video for a birthday. Type a tag name here and this button %s appears in the photo view (shortcut <span class="kbd">C</span>). One click tags the photo with it, another click removes the tag. Then search for the tag and use <b>Export…</b> to get all of them in one folder. Leave it empty to hide the button.</p>'
+        '<div style="display:flex;gap:10px;align-items:center">%s<input type="text" value="print-march" placeholder="e.g. album-italy" style="padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel)"> <span class="hint">42 photos have this tag</span></div></section>'
+        '<section class="settings-section"><h3>Export %s</h3>'
         '<label class="check-row"><input type="checkbox" checked> Number exported files</label>'
         '<p class="hint">Puts the order of the photos in front of the name: <b>001_IMG_3457.jpg</b>, <b>002_IMG_3501.jpg</b>… The numbers follow the capture date, so a layout program or a print shop sees the same order as the timeline. Off: files keep their name only.</p></section>'
-        '<section class="settings-section"><h3>Maps</h3><label class="check-row"><input type="checkbox"> Show maps (OpenStreetMap)</label></section></div>')
-    M["09-settings"] = shell(settings, title="Photos")
-    # 10 lightbox
+        '<section class="settings-section"><h3>Maps</h3><label class="check-row"><input type="checkbox"> Show maps (OpenStreetMap)</label></section></div>') % (badge, bm, bm, badge)
+    M["09-settings"] = shell(settings)
+    # 10 photo view with the info panel open: the bookmark and the tag go together
     def lightbox(on, toast):
         t = ('<div class="toast">%s</div>' % toast) if toast else ""
+        own = '<span class="own"><button>print-march</button><button class="x">✕</button></span>' if on else ""
+        panel = ('<aside class="lb-panel"><dl><dt>Date</dt><dd>Jul 14, 2025, 3:12 PM</dd><dt>Drive</dt><dd>Photos</dd><dt>Path</dt><dd>/2025-07 Beach/IMG_3457.jpg</dd>'
+                 '<dt>Size</dt><dd>1600 × 1067 · 133.1 KB</dd><dt>Camera</dt><dd>Sample Camera</dd>'
+                 '<dt>Tags</dt><dd><div class="tags"><button>📁 2025-07 Beach</button>%s<button class="add">+ Tag</button></div></dd></dl></aside>') % own
         return ('<div class="lightbox"><div class="stage"><img src="img/p00.jpg" style="max-width:100%%;max-height:100%%"></div>'
                 '<div class="lb-bar"><button class="icon">✕</button><span class="lb-title">Jul 14, 2025, 3:12 PM · IMG_3457.jpg</span>'
                 '<button class="icon fav-lb">%s</button>'
-                '<button class="icon coll%s" title="Add to collection “print-march”">%s</button>'
+                '<button class="icon coll%s" title="Add to collection “print-march” (c)">%s</button>'
                 '<button class="icon">↺</button><button class="icon">⤓</button><button class="icon">ⓘ</button></div>'
-                '<button class="nav prev">‹</button><button class="nav next">›</button>%s'
-                '</div>') % (
-                    HEART, " on" if on else "", coll(on), t)
+                '<button class="nav prev">‹</button>%s%s</div>') % (HEART, " on" if on else "", coll(on), panel, t)
     for name, on, toast in (("10a-photo-view-collection-off", False, None), ("10b-photo-view-collection-on", True, "Added to “print-march” · 43 photos")):
         M[name] = ("<!doctype html><html><head><meta charset='utf-8'><title>mock</title><link rel='stylesheet' href='../../../core/web/app.css'>%s</head><body>%s</body></html>"
                    % (CSS, lightbox(on, toast)))

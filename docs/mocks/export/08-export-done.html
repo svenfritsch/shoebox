@@ -10,7 +10,7 @@ body { overflow: hidden; }
 .cell .tick { position: absolute; left: 8px; top: 8px; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 13px; text-align: center; line-height: 22px; }
 .cell .tagbadge { position: absolute; right: 8px; bottom: 8px; background: rgba(0,0,0,.6); color: #fff; font-size: 11px; padding: 1px 7px; border-radius: 99px; }
 .btn.export { background: var(--accent); }
-.filters .btn { padding: 3px 12px; font-size: 13px; border-radius: 99px; }
+.filters .btn { padding: 4px 14px; }
 .filters .spacer { flex: 1; }
 .dialog.wide { width: min(560px, 100%); }
 .dialog .row { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
@@ -57,6 +57,13 @@ body { overflow: hidden; }
 .callout { position: absolute; z-index: 9; font: 600 13px -apple-system, sans-serif; color: #fff; background: var(--accent); border-radius: 99px; padding: 2px 10px; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); top: 70px; bottom: auto; }
 .set-h { margin-top: 0; }
+.lightbox .toast { left: 330px; }
+.lightbox .stage { right: 340px; }
+.lb-panel { display: flex; }
+.lb-panel dl { margin-top: 8px; }
+.iconbox { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); vertical-align: middle; }
+.kbd { border: 1px solid var(--line); border-radius: 5px; padding: 0 6px; font-size: 12px; background: var(--panel); }
+.dialog input[type=text].req { border-color: var(--accent); }
 .tree .nm { flex: 1; }
 .tree .ct { color: var(--muted); font-size: 12px; }
 </style>
@@ -78,5 +85,5 @@ body { overflow: hidden; }
     <ul class="tree"><li><div class="row"><span class="nm">2024-06 Summer trip</span><span class="ct">6</span></div></li><li><div class="row"><span class="nm">2025-05 Garden party</span><span class="ct">3</span></div></li><li><div class="row"><span class="nm">2025-07 Beach</span><span class="ct">3</span></div></li><li><div class="row"><span class="nm">Family</span><span class="ct">3</span></div></li></ul>
     <footer class="status">1,240 photos · 31 videos · last scan 10/9/2026</footer>
   </nav>
-  <main class="scroller"><div class="filters"><span class="chip">#&nbsp;print-march <button>✕</button></span><span class="spacer"></span><button class="btn export">Export these 42 photos…</button></div><div class="sech">March 2026<span class="n">20</span></div><div class="mgrid"><a class="cell"><div class="ph"><img class="ok" src="img/p00.jpg"></div></a><a class="cell"><div class="ph"><img class="ok" src="img/p01.jpg"></div></a><a class="cell"><div class="ph"><img class="ok" src="img/p02.jpg"></div></a><a class="cell"><div class="ph"><img class="ok" src="img/p03.jpg"></div></a><a class="cell"><div class="ph"><img class="ok" src="img/p04.jpg"></div></a></div><div class="sech">July 2025<span class="n">22</span></div><div class="mgrid"><a class="cell"><div class="ph"><img class="ok" src="img/p05.jpg"></div></a><a class="cell"><div class="ph"><img class="ok" src="img/p06.jpg"></div></a><a class="cell"><div class="ph"><img class="ok" src="img/p07.jpg"></div></a><a class="cell"><div class="ph"><img class="ok" src="img/p08.jpg"></div></a><a class="cell"><div class="ph"><img class="ok" src="img/p09.jpg"></div></a></div></main>
+  <main class="scroller"><div class="filters"><span class="chip">#&nbsp;print-march <button>✕</button></span><span class="spacer"></span><button class="btn" title="Export the 42 photos with this tag">Export…</button></div><div class="sech">March 2026<span class="n">20</span></div><div class="mgrid"><a class="cell"><div class="ph"><img class="ok" src="img/p00.jpg"></div></a><a class="cell"><div class="ph"><img class="ok" src="img/p01.jpg"></div></a><a class="cell"><div class="ph"><img class="ok" src="img/p02.jpg"></div></a><a class="cell"><div class="ph"><img class="ok" src="img/p03.jpg"></div></a><a class="cell"><div class="ph"><img class="ok" src="img/p04.jpg"></div></a></div><div class="sech">July 2025<span class="n">22</span></div><div class="mgrid"><a class="cell"><div class="ph"><img class="ok" src="img/p05.jpg"></div></a><a class="cell"><div class="ph"><img class="ok" src="img/p06.jpg"></div></a><a class="cell"><div class="ph"><img class="ok" src="img/p07.jpg"></div></a><a class="cell"><div class="ph"><img class="ok" src="img/p08.jpg"></div></a><a class="cell"><div class="ph"><img class="ok" src="img/p09.jpg"></div></a></div></main>
 </div><div class="modal"><div class="dialog wide" role="dialog"><h2>Export finished</h2><div class="note good"><b>42 files are in /Users/anna/Downloads/print-march</b><br>Checked against the originals: all identical. The originals on the drive were not changed.</div><p class="hint" style="margin:10px 0 0">5 HEIC photos were converted to JPEG · 12 were new · 30 were already there.</p><div class="actions"><button class="btn quiet">Close</button><button class="btn">Show in Finder</button></div></div></div></body></html>
