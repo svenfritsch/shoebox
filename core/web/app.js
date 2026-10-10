@@ -696,6 +696,22 @@ function sectionHasActive(id) {
   return f.view === 'people' || f.view === 'unnamed' || f.view === 'person' || (!f.view && f.people.length > 0);
 }
 
+// A section holding the current selection cannot be folded (a safeguard).
+function toggleSection(id) {
+  if (sectionHasActive(id)) return;
+  sectionClosed[id] = !sectionClosed[id];
+  try { localStorage.setItem('sectionClosed', JSON.stringify(sectionClosed)); } catch (e) { /* ignore */ }
+  updateSections();
+}
+
+// Faces and Locations: the title opens its page and unfolds the section.
+function openSection(id) {
+  if (!sectionClosed[id]) return;
+  sectionClosed[id] = false;
+  try { localStorage.setItem('sectionClosed', JSON.stringify(sectionClosed)); } catch (e) { /* ignore */ }
+  updateSections();
+}
+
 function updateSections() {
   Array.prototype.forEach.call(document.querySelectorAll('.caret'), function (c) {
     var id = c.dataset.section;
@@ -709,11 +725,12 @@ function updateSections() {
 }
 
 Array.prototype.forEach.call(document.querySelectorAll('.caret'), function (c) {
-  c.onclick = function () {
-    sectionClosed[c.dataset.section] = !sectionClosed[c.dataset.section];
-    try { localStorage.setItem('sectionClosed', JSON.stringify(sectionClosed)); } catch (e) { /* ignore */ }
-    updateSections();
-  };
+  c.onclick = function () { toggleSection(c.dataset.section); };
+});
+Array.prototype.forEach.call(document.querySelectorAll('.side-tags h3 > span, #folders-section > span'), function (s) {
+  var id = s.parentNode.querySelector('.caret').dataset.section;
+  s.style.cursor = 'pointer';
+  s.onclick = function () { toggleSection(id); };
 });
 
 function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
@@ -3754,7 +3771,7 @@ function setGroup(p, groupId) {
 
 // ---- sidebar
 
-$('nav-people').onclick = function () { showView('people'); };
+$('nav-people').onclick = function () { openSection('faces-section'); showView('people'); };
 
 function renderFacesSection() {
   var info = people.info;

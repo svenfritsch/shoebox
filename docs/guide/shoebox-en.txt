@@ -312,7 +312,10 @@ estimated.
 
 Folders
 The sidebar mirrors the folders on your drive. Click one to see only its
-photos. Rename or move a folder from its chip.
+photos. Rename or move a folder from its chip. The sections Faces, Tags,
+Folders and Locations fold with their arrow or by clicking the title (Faces
+and Locations also open their page). A section that holds your current choice
+stays open.
 
 Viewer
 Click a photo. ⓘ opens the info panel: date (marked estimated when it is not
