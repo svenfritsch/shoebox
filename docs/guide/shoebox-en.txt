@@ -490,13 +490,17 @@ Drives, backups and the iPad
 
 Several drives
 Start shoebox with more than one drive and each one appears in the sidebar.
-All drives gives you one common timeline across all of them. Manage drives,
-next to Duplicates, Trash and Settings, opens a page that does not depend on
-the drive you are looking at: your drives as cards, and two tabs below them,
-People across drives and Duplicates across drives. A drive that is unplugged
-is shown as offline. The drive you are looking at is filled in with the accent
-colour, and so is the page you have open under it (All photos, Duplicates,
-Trash, Settings), so you can always see which drive's trash you are in.
+All drives gives you one common timeline across all of them. It is for
+looking: photos that are favorites show a ♥ (greyed out, you cannot click it),
+and the info panel shows tags, favorite and people, but none of it can be
+changed there. Open in … in the panel takes you to the photo's own drive to
+change tags, people or favorites. Manage drives, next to Duplicates, Trash and
+Settings, opens a page that does not depend on the drive you are looking at:
+your drives as cards, and two tabs below them, People across drives and
+Duplicates across drives. A drive that is unplugged is shown as offline. The
+drive you are looking at is filled in with the accent colour, and so is the
+page you have open under it (All photos, Duplicates, Trash, Settings), so you
+can always see which drive's trash you are in.
 
 Original and backup drives
 On the Manage drives page every drive is a card with its disk name and the

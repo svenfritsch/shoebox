@@ -641,6 +641,8 @@
   "fav.remove": "Aus Favoriten entfernen",
   "fav.add_hint": "Zu Favoriten hinzufügen (f)",
   "fav.remove_hint": "Aus Favoriten entfernen (f)",
+  "fav.readonly": "Favorit (änderbar nur auf dem Laufwerk des Fotos)",
+  "info.favorite": "Favorit",
   "fav.filter_hint": "Nur Favoriten zeigen",
   "types.hint": "Nur einige Typen zeigen",
   "types.label": "Typ",

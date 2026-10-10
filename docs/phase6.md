@@ -153,9 +153,11 @@ Built:
   that lacks one of the names has no match. An item's id is
   `drive * 2^40 + id` and the drive is its position in the `libs` the server
   sends along; `/api/all/tags` and `/api/all/people` feed the search
-  suggestions. It is for looking: no selecting, importing or trash; the info
-  panel shows the drive and a button that opens the photo's own drive for
-  tags, faces and moving. Searching for a person who exists on two drives
+  suggestions. It is for looking: no selecting, importing or trash; hearts show
+  only on favorites (disabled buttons, no outline heart to click); the info
+  panel shows the drive, the favorite, tags and people read-only (no
+  add/remove, no face editing) and a button that opens the photo's own
+  drive for changing them and moving. Searching for a person who exists on two drives
   gives the photos of both in one timeline (`core/tests/multi.rs`).
 - Duplicates screen: with several drives it has two tabs, "On this drive"
   (the existing groups and decisions) and "Across drives" (same content on

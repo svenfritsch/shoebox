@@ -341,14 +341,15 @@ function setFavorite(ids, on) {
   }).catch(failed);
 }
 
-function heartButton(id, cls) {
+function heartButton(id, cls, readonly) {
   var b = el('button', cls), on = !!state.favs[id];
   b.type = 'button';
   b.innerHTML = on ? HEART_ON : HEART_OFF;
   b.classList.toggle('on', on);
-  b.title = tr(on ? 'fav.remove' : 'fav.add');
+  b.title = tr(readonly ? 'fav.readonly' : on ? 'fav.remove' : 'fav.add');
   b.setAttribute('aria-label', b.title);
   b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  if (readonly) b.disabled = true; // the common timeline only shows hearts
   return b;
 }
 
@@ -359,7 +360,7 @@ function paintHearts() {
     var id = d.ids[parseInt(b.parentNode.dataset.index, 10)], on = !!state.favs[id];
     b.innerHTML = on ? HEART_ON : HEART_OFF;
     b.classList.toggle('on', on);
-    b.title = tr(on ? 'fav.remove' : 'fav.add');
+    b.title = tr(isAll() ? 'fav.readonly' : on ? 'fav.remove' : 'fav.add');
     b.setAttribute('aria-label', b.title);
     b.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
@@ -372,8 +373,10 @@ function markLightboxHeart() {
   var on = !!state.favs[d.ids[i]];
   b.innerHTML = on ? HEART_ON : HEART_OFF;
   b.classList.toggle('on', on);
-  b.title = tr(on ? 'fav.remove_hint' : 'fav.add_hint');
-  b.setAttribute('aria-label', tr(on ? 'fav.remove' : 'fav.add'));
+  b.title = tr(isAll() ? 'fav.readonly' : on ? 'fav.remove_hint' : 'fav.add_hint');
+  b.setAttribute('aria-label', isAll() ? b.title : tr(on ? 'fav.remove' : 'fav.add'));
+  b.disabled = isAll();
+  if (isAll()) b.hidden = !on; // the common timeline shows a heart only on favorites
   b.setAttribute('aria-pressed', on ? 'true' : 'false');
 }
 
@@ -872,6 +875,7 @@ function buildRow(row) {
     if (state.live[d.ids[i]]) badge = 'LIVE';
     if (badge) a.appendChild(el('span', 'badge', badge));
     if (!isAll()) a.appendChild(heartButton(d.ids[i], 'fav'));
+    else if (state.favs[d.ids[i]]) a.appendChild(heartButton(d.ids[i], 'fav', true));
     e.appendChild(a);
   }
   return e;
@@ -995,7 +999,7 @@ $('sizer').addEventListener('click', function (ev) {
   ev.preventDefault();
   var i = parseInt(a.dataset.index, 10);
   // The heart in the corner: heart or un-heart, nothing else.
-  if (ev.target.closest('.fav')) { var fid = state.data.ids[i]; setFavorite([fid], !state.favs[fid]); return; }
+  if (ev.target.closest('.fav')) { if (isAll()) return; var fid = state.data.ids[i]; setFavorite([fid], !state.favs[fid]); return; }
   // Shift-click: everything between the last clicked photo and this one.
   if (ev.shiftKey && state.selecting && state.anchor != null) selectRange(state.anchor, i, true);
   else if (state.selecting || ev.shiftKey) {
@@ -1138,7 +1142,7 @@ function showItem() {
   $('lb-next').hidden = i >= d.count - 1;
   $('lb-download').href = fileBase(id) + '/original?download=1';
   $('lb-live').hidden = !state.live[id];
-  $('lb-fav').hidden = isAll();
+  $('lb-fav').hidden = false;
   markLightboxHeart();
   applyAllowTrash();
   var rot = $('lb-rotate');
@@ -1247,14 +1251,41 @@ function formatBytes(n) {
 // and a way into its own drive for everything else (tags, faces, moving).
 function renderPanelAll(info) {
   var panel = $('lb-panel');
-  var lib = drives.allLibs[Math.floor(state.data.ids[state.open] / SPAN)];
+  var id = state.data.ids[state.open];
+  var lib = drives.allLibs[Math.floor(id / SPAN)];
   var dl = el('dl');
-  var row = function (label, value) { if (value) { dl.appendChild(el('dt', '', label)); dl.appendChild(el('dd', '', value)); } };
+  var row = function (label, value) {
+    if (!value) return;
+    dl.appendChild(el('dt', '', label));
+    var dd = el('dd');
+    if (value instanceof Node) dd.appendChild(value); else dd.textContent = value;
+    dl.appendChild(dd);
+  };
   row(tr('info.date'), formatDate(info));
   row(tr('info.drive'), lib.name);
   row(tr('info.path'), info.path);
   row(tr('info.size'), (info.width && info.height ? info.width + ' × ' + info.height + ' · ' : '') + formatBytes(info.size));
   row(tr('info.camera'), info.camera);
+  // Everything below is only shown: tags, favorites and people are changed on the photo's own drive.
+  if (state.favs[id]) {
+    var heart = el('span', 'heart');
+    heart.innerHTML = HEART_ON;
+    heart.title = tr('fav.readonly');
+    row(tr('info.favorite'), heart);
+  }
+  var tags = el('div', 'tags readonly');
+  (info.tags || []).forEach(function (t) {
+    if (t.source === 'user' && isFavTag(t.name)) return;
+    tags.appendChild(el('span', t.source === 'folder' ? 'folder' : 'own', (t.source === 'folder' ? '📁 ' : '') + t.name));
+  });
+  if (tags.children.length) row(tr('info.tags'), tags);
+  var faces = el('div', 'pfaces readonly');
+  (info.faces || []).forEach(function (f) {
+    if (!f.person || f.state === 'ignored') return;
+    var name = f.state === 'confirmed' ? f.person.name : tr(f.state === 'maybe' ? 'info.guess_maybe' : 'info.guess', { name: f.person.name });
+    faces.appendChild(el('div', 'pface', name + (f.species ? ' ' + petIcon(f.species) : '')));
+  });
+  if (faces.children.length) row(tr('info.people'), faces);
   panel.appendChild(dl);
   var actions = el('div', 'actions');
   var open = el('button', 'btn quiet', tr('info.open_in', { name: lib.name }));
