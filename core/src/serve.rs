@@ -1191,7 +1191,20 @@ async fn overview(hub: &Arc<Hub>) -> ApiResult<Overview> {
 async fn all_duplicates(State(hub): State<Arc<Hub>>, Query(q): Query<LimitQuery>) -> ApiResult<Json<multi::CrossDuplicates>> {
     let o = overview(&hub).await?;
     let limit = q.limit.unwrap_or(500).min(5000);
-    let result = tokio::task::spawn_blocking(move || multi::cross_duplicates(&o.drives, &o.roles, limit))
+    let result = tokio::task::spawn_blocking(move || {
+        let mut result = multi::cross_duplicates(&o.drives, &o.roles, limit)?;
+        // The disk name tells two folders of the same name apart.
+        let mut volumes: std::collections::HashMap<String, Option<String>> = std::collections::HashMap::new();
+        for g in &mut result.groups {
+            for f in &mut g.files {
+                let v = volumes.entry(f.library.clone()).or_insert_with(|| {
+                    o.apps.iter().find(|a| library_id(&a.name) == f.library).and_then(|a| volume::placement(&a.root)).map(|p| p.volume)
+                });
+                f.volume = v.clone();
+            }
+        }
+        Ok::<_, anyhow::Error>(result)
+    })
         .await
         .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
     Ok(Json(result))

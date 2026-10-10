@@ -709,3 +709,21 @@ body.geo-view #page { padding: 0; height: 100%; }
 .dialog .kinds button + button { border-left: 0; }
 .dialog .kinds button.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 .dialog .pfield + .hint { margin-top: 12px; }
+
+/* Duplicates across drives: one picture, one row per copy */
+.group.cross { display: flex; gap: 16px; }
+.group.cross > .thumb { flex: none; width: 200px; height: 150px; background: var(--cell-bg); border-radius: 8px; overflow: hidden; }
+.group.cross > .thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.group.cross .main { flex: 1; min-width: 0; }
+.group.cross .name { font-weight: 600; word-break: break-all; }
+.group.cross .meta { color: var(--muted); font-size: 13px; }
+.copy-row { display: flex; align-items: center; gap: 12px; border: 1px solid var(--line); border-radius: 9px; padding: 8px 12px; margin-top: 6px; background: var(--bg); }
+.copy-row.marked { border-color: var(--danger, #c0392b); background: rgba(192, 57, 43, 0.08); }
+.copy-row input { width: 18px; height: 18px; flex: none; }
+.copy-row .where { flex: 1; min-width: 0; font-size: 13px; }
+.copy-row .disk { font-weight: 700; }
+.copy-row .folder { background: none; border: 0; padding: 0; color: var(--accent); text-align: left; font-size: 13px; word-break: break-all; }
+.copy-row .state { font-size: 12px; font-weight: 600; white-space: nowrap; color: #3a9d63; }
+.copy-row.marked .state { color: #c63b2f; }
+.dup-bar select { background: var(--line); color: var(--fg); border: 0; border-radius: 9px; padding: 6px 10px; }
+@media (max-width: 700px) { .group.cross { flex-direction: column; } .group.cross > .thumb { width: 100%; } }

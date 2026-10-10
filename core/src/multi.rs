@@ -207,6 +207,10 @@ pub fn roles(drives: &[Drive]) -> Result<Vec<DriveRole>> {
 pub struct DuplicateFile {
     pub library: String,
     pub name: String,
+    /// The disk the drive's folder is on (filled in by the server, which knows
+    /// the folders); two drives can have folders of the same name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume: Option<String>,
     pub id: i64,
     pub path: String,
     /// `jpeg`, `png`, `heic`, `raw` or `video`, and the first characters of
@@ -309,6 +313,7 @@ pub fn cross_duplicates(drives: &[Drive], roles: &[DriveRole], limit: usize) -> 
                 .map(|(d, id, path, kind, version)| DuplicateFile {
                     library: eligible[d].id.clone(),
                     name: eligible[d].name.clone(),
+                    volume: None,
                     id,
                     path,
                     kind,

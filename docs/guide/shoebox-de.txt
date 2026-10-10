@@ -305,6 +305,13 @@ Duplikate zeigt vier Arten: identisch, dasselbe Foto in anderer Größe,
 Original und bearbeitet sowie Ähnliche. Hake diese Kopie löschen bei dem an,
 was weg soll; die beste Datei bleibt, und pro Gruppe bleibt immer mindestens
 eine. Tags und Aufnahmedatum einer entfernten Kopie gehen auf die übrige über.
+Bei mehr als einem Laufwerk zeigt der Reiter Über Laufwerke hinweg (in Alle
+Laufwerke und unter Laufwerke verwalten) Fotos, die auf mehreren Laufwerken
+liegen: ein Bild, eine Zeile pro Kopie mit Name des Datenträgers und Ordner.
+Hake die Kopien an, die weg sollen, oder wähle ein Laufwerk und Alle
+markieren, um jede Kopie darauf anzukreuzen; die letzte Kopie eines Fotos
+lässt sich nie ankreuzen. In den Papierkorb fragt vorher nach und legt jede
+Kopie in den Papierkorb ihres eigenen Laufwerks.
 
 Abkürzungen
 Kopien im selben Ordner entfernen und Kopien geringerer Qualität entfernen

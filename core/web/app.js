@@ -1785,9 +1785,32 @@ function loadDuplicatesAcross() {
 // The copies on different drives, into `page`; `alive` says whether it is still
 // the page on screen when the answer arrives. Inside "Manage drives" (`embedded`)
 // the link back to the drive roles is left out: they are right above.
+// Same content, so one picture per photo and one row per copy; ticked copies
+// (key `drive:id`) go to the trash of their own drive, one copy per photo stays.
+var crossState = { groups: [], marked: {}, syncs: [], reload: null, bar: null, pick: null };
+
+function crossKey(f) { return f.library + ':' + f.id; }
+
+// The disk name where it is known, else the library's name; two drives that
+// would read the same get the library name added.
+function crossLabels(groups) {
+  var seen = {}, label = {};
+  groups.forEach(function (g) { g.files.forEach(function (f) { seen[f.library] = f; }); });
+  var count = {};
+  Object.keys(seen).forEach(function (lib) { var n = seen[lib].volume || seen[lib].name; count[n] = (count[n] || 0) + 1; });
+  Object.keys(seen).forEach(function (lib) {
+    var f = seen[lib], n = f.volume || f.name;
+    label[lib] = count[n] > 1 && f.volume ? f.volume + ' · ' + f.name : n;
+  });
+  return label;
+}
+
 function renderDuplicatesAcross(page, alive, embedded) {
   var sub = el('p', 'sub', tr('dups.looking'));
   page.appendChild(sub);
+  crossState.reload = embedded
+    ? function () { page.textContent = ''; return renderDuplicatesAcross(page, alive, true); }
+    : loadDuplicatesAcross;
   return api('/api/all/duplicates?limit=200').then(function (r) {
     if (!alive()) return;
     sub.textContent = r.total_groups
@@ -1803,56 +1826,175 @@ function renderDuplicatesAcross(page, alive, embedded) {
       }
       page.appendChild(b);
     });
-    r.groups.forEach(function (g) { page.appendChild(crossGroupNode(g)); });
+    crossState.groups = r.groups;
+    crossState.marked = {};
+    crossState.syncs = [];
+    var labels = crossLabels(r.groups);
+    r.groups.forEach(function (g) { page.appendChild(crossGroupNode(g, labels)); });
     if (r.total_groups > r.groups.length) page.appendChild(el('p', 'sub', tr('dups.first_of', { shown: r.groups.length, total: r.total_groups })));
+    var bar = el('div', 'dup-bar');
+    bar.hidden = !r.groups.length;
+    page.appendChild(bar);
+    crossState.bar = bar;
+    updateCrossBar(labels);
   }).catch(failed);
 }
 
-function crossGroupNode(g) {
-  var box = el('div', 'group');
-  var head = el('div', 'group-head');
-  head.appendChild(el('span', 'label', tr('dups.same_on', { count: trn('count.drives', new Set(g.files.map(function (f) { return f.library; })).size) })));
-  box.appendChild(head);
-  var cards = el('div', 'cards');
-  g.files.forEach(function (f) {
-    var base = '/api/lib/' + f.library + '/files/' + f.id;
-    var card = el('div', 'card');
-    var a = el('a', 'thumb');
-    a.href = base + (f.kind === 'video' ? '/original' : '/view') + '?v=' + f.version;
-    a.target = '_blank';
-    a.rel = 'noopener';
-    var img = el('img');
-    img.alt = '';
-    img.loading = 'lazy';
-    img.src = base + '/thumb?v=' + f.version;
-    a.appendChild(img);
-    card.appendChild(a);
-    card.appendChild(el('div', 'name', f.name));
-    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : tr('dups.top_level');
-    var fb = el('button', 'folder', folder);
-    fb.title = tr('dups.show_in', { name: f.name });
-    fb.onclick = function () { switchLibrary(f.library, 'q=' + encodeURIComponent(f.path.split('/').pop())); };
-    card.appendChild(fb);
-    card.appendChild(el('div', 'meta', f.path.split('/').pop() + ' · ' + formatBytes(g.size)));
-    var trash = el('button', 'btn danger', tr('sel.trash'));
-    trash.onclick = function () {
-      openModal(tr('sel.trash'), trn('dups.cross_trash', g.files.length - 1, { name: f.name, path: f.path }), [
-        { label: tr('app.cancel'), cls: 'quiet' },
-        { label: tr('sel.trash'), cls: 'danger', onclick: function (btn) {
-          btn.disabled = true;
-          post('/api/lib/' + f.library + '/trash', { ids: [f.id] }).then(function (r) {
-            closeModal();
-            toast(tr('dups.cross_trashed', { count: trn('count.files', r.files.length + r.sidecars), name: f.name }));
-            loadDuplicatesAcross();
-          }).catch(function (e) { closeModal(); failed(e); });
-          return false;
-        } },
-      ]);
-    };
-    card.appendChild(trash);
-    cards.appendChild(card);
+function crossMarkedCount() {
+  var n = 0;
+  crossState.groups.forEach(function (g) { g.files.forEach(function (f) { if (crossState.marked[crossKey(f)]) n++; }); });
+  return n;
+}
+
+// Ticks every copy on drive `lib`, but never the last copy of a photo.
+function crossMarkDrive(lib) {
+  crossState.groups.forEach(function (g) {
+    var open = g.files.filter(function (f) { return !crossState.marked[crossKey(f)]; }).length;
+    g.files.forEach(function (f) {
+      if (f.library !== lib || crossState.marked[crossKey(f)] || open <= 1) return;
+      crossState.marked[crossKey(f)] = true;
+      open--;
+    });
   });
-  box.appendChild(cards);
+  crossState.syncs.forEach(function (sync) { sync(); });
+}
+
+// "N marked", "Mark all copies on [drive]", Clear, Move to trash.
+function updateCrossBar(labels) {
+  var bar = crossState.bar;
+  if (!bar) return;
+  bar.textContent = '';
+  var n = crossMarkedCount();
+  bar.appendChild(el('span', '', tr('dups.marked', { count: trn('count.copies', n) })));
+  bar.appendChild(el('span', 'meta', tr('dups.cross.mark_on')));
+  var pick = el('select');
+  Object.keys(labels).forEach(function (lib) {
+    var o = el('option', '', labels[lib]);
+    o.value = lib;
+    pick.appendChild(o);
+  });
+  if (crossState.pick && labels[crossState.pick]) pick.value = crossState.pick;
+  pick.onchange = function () { crossState.pick = pick.value; };
+  bar.appendChild(pick);
+  var mark = el('button', 'btn quiet', tr('dups.cross.mark'));
+  mark.title = tr('dups.cross.mark_hint');
+  mark.onclick = function () { crossState.pick = pick.value; crossMarkDrive(pick.value); };
+  bar.appendChild(mark);
+  var clear = el('button', 'btn quiet', tr('dups.clear'));
+  clear.title = tr('dups.clear_hint');
+  clear.disabled = n === 0;
+  clear.onclick = function () { crossState.marked = {}; crossState.syncs.forEach(function (sync) { sync(); }); };
+  bar.appendChild(clear);
+  var del = el('button', 'btn danger', tr('sel.trash'));
+  del.disabled = n === 0;
+  del.onclick = trashCrossMarked;
+  bar.appendChild(del);
+}
+
+// One request per drive; each file goes to the trash of the drive it is on,
+// and only if it is still in that drive's index.
+function trashCrossMarked() {
+  var perDrive = {}, total = 0;
+  crossState.groups.forEach(function (g) {
+    var keep = g.files.filter(function (f) { return !crossState.marked[crossKey(f)]; }).length;
+    if (!keep) return;
+    g.files.forEach(function (f) {
+      if (!crossState.marked[crossKey(f)]) return;
+      (perDrive[f.library] = perDrive[f.library] || []).push(f.id);
+      total++;
+    });
+  });
+  if (!total) return;
+  var libs = Object.keys(perDrive);
+  openModal(tr('sel.trash'), tr('dups.cross.delete_text', { count: trn('count.copies', total) }), [
+    { label: tr('app.cancel'), cls: 'quiet' },
+    { label: tr('sel.trash'), cls: 'danger', focus: true, onclick: function (btn) {
+      btn.disabled = true;
+      var done = 0, skipped = [];
+      var send = function (i) {
+        if (i >= libs.length) return Promise.resolve();
+        return post('/api/lib/' + libs[i] + '/trash', { ids: perDrive[libs[i]] }).then(function (r) {
+          done += r.files.length + r.sidecars;
+          (r.skipped || []).forEach(function (x) { skipped.push(x); });
+          return send(i + 1);
+        });
+      };
+      send(0).then(function () {
+        closeModal();
+        toast(tr('dups.cross.done', { count: trn('count.files', done) }));
+        report(tr('trash.skipped'), skipped);
+        crossState.reload();
+      }).catch(function (e) { closeModal(); failed(e); crossState.reload(); });
+      return false;
+    } },
+  ]);
+}
+
+function crossGroupNode(g, labels) {
+  var box = el('div', 'group cross');
+  var first = g.files[0];
+  var base = '/api/lib/' + first.library + '/files/' + first.id;
+  var a = el('a', 'thumb');
+  a.href = base + (first.kind === 'video' ? '/original' : '/view') + '?v=' + first.version;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  var img = el('img');
+  img.alt = '';
+  img.loading = 'lazy';
+  img.src = base + '/thumb?v=' + first.version;
+  a.appendChild(img);
+  box.appendChild(a);
+  var main = el('div', 'main');
+  var baseName = function (f) { return f.path.split('/').pop(); };
+  var sameName = g.files.every(function (f) { return baseName(f) === baseName(first); });
+  main.appendChild(el('div', 'name', baseName(first)));
+  main.appendChild(el('div', 'meta', tr('dups.same_on', { count: trn('count.drives', new Set(g.files.map(function (f) { return f.library; })).size) }) + ' · ' + formatBytes(g.size)));
+  var boxes = [], rows = [];
+  // At least one copy stays: the last unticked box is disabled.
+  var refresh = function () {
+    var open = boxes.filter(function (b) { return !b.checked; });
+    boxes.forEach(function (b) { b.disabled = !b.checked && open.length === 1; });
+  };
+  g.files.forEach(function (f) {
+    var row = el('div', 'copy-row');
+    var cb = el('input');
+    cb.type = 'checkbox';
+    cb.title = tr('dups.delete_copy');
+    var state = el('span', 'state');
+    var sync = function () {
+      cb.checked = !!crossState.marked[crossKey(f)];
+      row.classList.toggle('marked', cb.checked);
+      state.textContent = tr(cb.checked ? 'dups.cross.goes' : 'dups.cross.stays');
+      refresh();
+      updateCrossBar(labels);
+    };
+    cb.onchange = function () {
+      if (cb.checked) crossState.marked[crossKey(f)] = true; else delete crossState.marked[crossKey(f)];
+      sync();
+    };
+    boxes.push(cb);
+    rows.push(sync);
+    row.appendChild(cb);
+    var where = el('div', 'where');
+    var disk = el('span', 'disk', labels[f.library]);
+    where.appendChild(disk);
+    if (f.volume) where.appendChild(el('span', 'meta', ' · ' + tr('dups.cross.folder', { name: f.name })));
+    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : tr('dups.top_level');
+    var fb = el('button', 'folder', folder + (sameName ? '' : ' / ' + baseName(f)));
+    fb.title = tr('dups.show_in', { name: f.name });
+    fb.onclick = function () { switchLibrary(f.library, 'q=' + encodeURIComponent(baseName(f))); };
+    var line = el('div');
+    line.appendChild(fb);
+    where.appendChild(line);
+    row.appendChild(where);
+    row.appendChild(state);
+    main.appendChild(row);
+    cb.checked = false;
+    row.classList.remove('marked');
+    state.textContent = tr('dups.cross.stays');
+  });
+  crossState.syncs.push(function () { rows.forEach(function (sync) { sync(); }); });
+  box.appendChild(main);
   return box;
 }
 
