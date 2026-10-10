@@ -822,7 +822,7 @@ function render() {
 
 // The page that is open, shown next to the drive name instead of a month.
 var VIEW_LABELS = {
-  duplicates: 'side.duplicates', trash: 'side.trash', settings: 'side.settings', drives: 'drives.all',
+  duplicates: 'side.duplicates', trash: 'side.trash', settings: 'side.settings', drives: 'side.manage_drives',
   faces: 'side.faces', pets: 'side.faces', people: 'side.faces', unnamed: 'side.faces', person: 'side.faces',
   locations: 'side.locations',
 };
@@ -5113,7 +5113,7 @@ function showOffline() {
 function loadDrivesPage() {
   var page = $('page');
   page.textContent = '';
-  page.appendChild(el('h2', '', tr('drives.all')));
+  page.appendChild(el('h2', '', tr('side.manage_drives')));
   page.appendChild(el('p', 'sub', tr('drives.page_sub')));
   var drivesBox = el('div'), peopleBox = el('div');
   page.appendChild(drivesBox);

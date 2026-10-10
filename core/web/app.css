@@ -85,8 +85,8 @@ button { cursor: pointer; }
 .tree .name:hover { background: var(--line); }
 .tree .name.active { background: var(--accent); color: #fff; }
 .tree .count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-.sidebar-head .link, .drives-box > .link { border-radius: 6px; padding: 3px 8px; }
-.sidebar-head .link.active, .drives-box > .link.active { background: var(--accent); color: var(--bg); font-weight: 600; }
+.sidebar-head .link { border-radius: 6px; padding: 3px 8px; }
+.sidebar-head .link.active { background: var(--accent); color: var(--bg); font-weight: 600; }
 .status { margin-top: auto; font-size: 12px; color: var(--muted); padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
 
 .scroller { flex: 1; overflow-y: auto; position: relative; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
@@ -501,7 +501,6 @@ body.selecting .sec .pick { display: inline; }
 .drive-list li.offline button { color: var(--muted); }
 .drive-list .tag { margin-left: auto; font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; }
 .drive-list .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.drives-box > .link { font-size: 13px; padding: 4px 8px; color: var(--accent); }
 .banner { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 12px 14px; margin: 0 0 14px; }
 .banner.warn { border-color: #d9a066; }
 .banner .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }

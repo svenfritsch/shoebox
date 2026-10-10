@@ -108,7 +108,7 @@
   "app.jump_year": "Jump to year",
   "app.select": "Select photos",
   "side.drives": "Drives",
-  "side.all_drives": "All drives: backups, duplicates, people",
+  "side.manage_drives": "Manage drives",
   "side.all_photos": "All photos",
   "side.duplicates": "Duplicates",
   "side.trash": "Trash",
