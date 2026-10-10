@@ -188,10 +188,12 @@ Scroll through the timeline, jump by year, open a photo.
 
 Timeline
 Photos are grouped by capture date, newest first. The Year menu jumps; the
-month heading shows where you are. A photo without a capture date takes the
-month in the name of its event folder (2020-07, 2020.07, 20-07 or 20.07), or
-else the earlier of the file’s created and modified dates; the info panel then
-marks the date as estimated.
+month next to the drive name in the top bar shows where you are. On another
+page (Duplicates, Trash, Settings, Faces, …) it shows the name of that page
+instead. A photo without a capture date takes the month in the name of its
+event folder (2020-07, 2020.07, 20-07 or 20.07), or else the earlier of the
+file’s created and modified dates; the info panel then marks the date as
+estimated.
 
 Folders
 The sidebar mirrors the folders on your drive. Click one to see only its
@@ -488,9 +490,13 @@ Drives, backups and the iPad
 
 Several drives
 Start shoebox with more than one drive and each one appears in the sidebar.
-All drives gives you one common timeline across all of them, and shows
-backups, photos that exist on more than one drive, and people across drives. A
-drive that is unplugged is shown as offline.
+All drives gives you one common timeline across all of them. Manage drives,
+next to Duplicates, Trash and Settings, opens a page that does not depend on
+the drive you are looking at: backups, photos that exist on more than one
+drive, and people across drives. A drive that is unplugged is shown as
+offline. The drive you are looking at is filled in with the accent colour, and
+so is the page you have open under it (All photos, Duplicates, Trash,
+Settings), so you can always see which drive's trash you are in.
 
 Backup check
 Choose the original first and the backup second. shoebox compares the two

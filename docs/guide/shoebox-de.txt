@@ -194,10 +194,12 @@ Durch die Zeitleiste scrollen, nach Jahr springen, ein Foto öffnen.
 
 Zeitleiste
 Fotos sind nach Aufnahmedatum gruppiert, neueste zuerst. Das Menü Jahr
-springt; die Monatsüberschrift zeigt, wo du bist. Ein Foto ohne Aufnahmedatum
-nimmt den Monat aus dem Namen seines Ereignisordners (2020-07, 2020.07, 20-07
-oder 20.07), sonst das frühere von Erstellungs- und Änderungsdatum der Datei;
-das Infofeld markiert das Datum dann als geschätzt.
+springt; der Monat neben dem Laufwerksnamen in der oberen Leiste zeigt, wo du
+bist. Auf einer anderen Seite (Duplikate, Papierkorb, Einstellungen,
+Gesichter, …) steht dort stattdessen der Name dieser Seite. Ein Foto ohne
+Aufnahmedatum nimmt den Monat aus dem Namen seines Ereignisordners (2020-07,
+2020.07, 20-07 oder 20.07), sonst das frühere von Erstellungs- und
+Änderungsdatum der Datei; das Infofeld markiert das Datum dann als geschätzt.
 
 Ordner
 Die Seitenleiste spiegelt die Ordner deines Laufwerks. Ein Klick zeigt nur
@@ -525,9 +527,14 @@ Laufwerke, Backups und das iPad
 
 Mehrere Laufwerke
 shoebox mit mehr als einem Laufwerk starten, und jedes erscheint in der
-Seitenleiste. Alle Laufwerke zeigt eine gemeinsame Zeitleiste über alle, dazu
-Backups, Fotos auf mehreren Laufwerken und Personen laufwerksübergreifend. Ein
-abgestecktes Laufwerk steht als offline da.
+Seitenleiste. Alle Laufwerke zeigt eine gemeinsame Zeitleiste über alle.
+Laufwerke verwalten, neben Duplikate, Papierkorb und Einstellungen, öffnet
+eine Seite, die nicht vom angesehenen Laufwerk abhängt: Backups, Fotos auf
+mehreren Laufwerken und Personen laufwerksübergreifend. Ein abgestecktes
+Laufwerk steht als offline da. Das Laufwerk, das du gerade ansiehst, ist in
+der Akzentfarbe ausgefüllt, ebenso die Seite darunter (Alle Fotos, Duplikate,
+Papierkorb, Einstellungen); so siehst du immer, welcher Papierkorb von welchem
+Laufwerk offen ist.
 
 Backup-Prüfung
 Erst das Original wählen, dann das Backup. shoebox vergleicht die beiden
