@@ -156,7 +156,7 @@ Built:
   suggestions. It is for looking: no selecting, importing or trash; hearts show
   only on favorites (disabled buttons, no outline heart to click); the info
   panel shows the drive, the favorite, tags and people read-only (no
-  add/remove, no face editing) and a button that opens the photo's own
+  add/remove, no face editing; Show boxes and hovering a person still work) and a button that opens the photo's own
   drive for changing them and moving. Searching for a person who exists on two drives
   gives the photos of both in one timeline (`core/tests/multi.rs`).
 - Duplicates screen: with several drives it has two tabs, "On this drive"

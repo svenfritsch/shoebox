@@ -1193,9 +1193,10 @@ function drawFaces() {
   var stage = $('stage');
   stage.querySelectorAll('.face-box').forEach(function (b) { b.remove(); });
   var info = lb.details, img = stage.querySelector('img');
-  if (isAll()) return;
   if ($('lb-panel').hidden || !info || !info.faces || !img || img.hidden) return;
-  if (info.id !== state.data.ids[state.open]) return;
+  // In the common timeline the item's id carries the drive; the details have the drive's own id.
+  var openId = state.data.ids[state.open];
+  if (info.id !== (isAll() ? openId % SPAN : openId)) return;
   var r = img.getBoundingClientRect(), s = stage.getBoundingClientRect();
   info.faces.forEach(function (f, k) {
     var hot = lb.hover === k;
@@ -1280,12 +1281,25 @@ function renderPanelAll(info) {
   });
   if (tags.children.length) row(tr('info.tags'), tags);
   var faces = el('div', 'pfaces readonly');
-  (info.faces || []).forEach(function (f) {
+  (info.faces || []).forEach(function (f, k) {
     if (!f.person || f.state === 'ignored') return;
     var name = f.state === 'confirmed' ? f.person.name : tr(f.state === 'maybe' ? 'info.guess_maybe' : 'info.guess', { name: f.person.name });
-    faces.appendChild(el('div', 'pface', name + (f.species ? ' ' + petIcon(f.species) : '')));
+    var line = el('div', 'pface', name + (f.species ? ' ' + petIcon(f.species) : ''));
+    // As in the drive's own panel: pointing at (or tapping) a face shows its box.
+    line.title = tr('info.show_where');
+    line.onclick = function () { lb.hover = lb.hover === k ? null : k; drawFaces(); };
+    line.addEventListener('mouseenter', function () { lb.hover = k; drawFaces(); });
+    line.addEventListener('mouseleave', function () { if (lb.hover === k) { lb.hover = null; drawFaces(); } });
+    faces.appendChild(line);
   });
-  if (faces.children.length) row(tr('info.people'), faces);
+  if ((info.faces || []).length) {
+    var show = el('button', '', tr(lb.showFaces ? 'info.hide_boxes' : 'info.show_boxes'));
+    show.onclick = function () { lb.showFaces = !lb.showFaces; renderPanel(); };
+    var tools = el('div', 'ptools');
+    tools.appendChild(show);
+    faces.appendChild(tools);
+    row(tr('info.people'), faces);
+  }
   panel.appendChild(dl);
   var actions = el('div', 'actions');
   var open = el('button', 'btn quiet', tr('info.open_in', { name: lib.name }));
@@ -1293,6 +1307,7 @@ function renderPanelAll(info) {
   open.onclick = function () { switchLibrary(lib.id, 'folder=' + info.folder_id); };
   actions.appendChild(open);
   panel.appendChild(actions);
+  drawFaces();
 }
 
 function renderPanel() {

@@ -272,7 +272,7 @@ body.selecting #select { color: var(--accent); }
 .side-tags h3 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 10px 8px 0 4px; }
 .side-tags .tree { flex: none; padding-bottom: 4px; }
 .lb-panel .tags.readonly span { background: rgba(255,255,255,.12); color: #eee; border-radius: 99px; padding: 2px 10px; font-size: 13px; }
-.lb-panel .pfaces.readonly .pface { padding: 2px 0; }
+.lb-panel .pfaces.readonly .pface { padding: 2px 0; cursor: pointer; }
 .lb-panel .tags .own { display: inline-flex; align-items: center; background: rgba(255,255,255,.12); border-radius: 99px; }
 .lb-panel .tags .own button { background: none; padding-right: 4px; }
 .lb-panel .tags .own button.x { padding: 2px 8px 2px 2px; color: #aaa; }
