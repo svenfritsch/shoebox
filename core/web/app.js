@@ -180,6 +180,7 @@ function applyFilter() {
   var view = state.filter.view;
   $('page').hidden = !view;
   $('sizer').hidden = !!view;
+  $('current-month').textContent = view && VIEW_LABELS[view] ? tr(VIEW_LABELS[view]) : '';
   var f = state.filter;
   $('all').classList.toggle('active', !view && !f.folder && !f.tags.length && !f.people.length && !f.pets.length && !f.place && !f.fav && !f.q);
   $('nav-dups').classList.toggle('active', view === 'duplicates');
@@ -816,8 +817,15 @@ function render() {
   // The month at the top of the viewport.
   var r = rowAt(Math.max(0, top));
   for (; r >= 0; r--) if (state.rows[r].type === 'h') break;
-  $('current-month').textContent = r >= 0 ? state.rows[r].label : '';
+  if (!state.filter.view) $('current-month').textContent = r >= 0 ? state.rows[r].label : '';
 }
+
+// The page that is open, shown next to the drive name instead of a month.
+var VIEW_LABELS = {
+  duplicates: 'side.duplicates', trash: 'side.trash', settings: 'side.settings', drives: 'drives.all',
+  faces: 'side.faces', pets: 'side.faces', people: 'side.faces', unnamed: 'side.faces', person: 'side.faces',
+  locations: 'side.locations',
+};
 
 function thumbUrl(i) {
   var d = state.data;
