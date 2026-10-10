@@ -223,7 +223,9 @@ Several computers and systems
   shoebox-macos and shoebox-windows. Each has its own recognizer folder, so
   models you install in one are not shared with the other. Start shoebox from
   the folder of the system you are on. Both use the same hidden .shoebox index
-  on the drive. Add-ons are not available on Windows yet.
+  on the drive. The add-ons install on Windows too, with the same button: it
+  needs Windows 10 or 11 on a 64-bit Intel or AMD processor and nothing else
+  to be installed first.
 
 Good to know
 - Videos get preview images if you put a static ffmpeg next to the program

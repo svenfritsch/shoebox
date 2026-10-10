@@ -959,7 +959,7 @@ async fn addons(Json(req): Json<AddonsRequest>) -> Json<serde_json::Value> {
             serde_json::json!({ "root": r, "faces": found.faces, "pets": found.pets })
         })
         .collect();
-    let dir = recognize::program_dir().filter(|_| cfg!(unix));
+    let dir = recognize::program_dir();
     Json(serde_json::json!({
         "installable": dir.is_some(),
         "dir": dir,

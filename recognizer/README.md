@@ -22,6 +22,14 @@ boxes and embeddings out. It never touches the database or an original.
   are kept, only that computer's Python is added. People who do not use the
   terminal press **Install the selected add-ons** in the Control Panel (step 1,
   Add-ons), which runs this script.
+- `install.ps1 [-Faces] [-Pets] [-Root library-root]` and `fetch-models.ps1`:
+  the same for Windows 10/11 on x86-64, in PowerShell (no extra tools: it uses
+  `Invoke-WebRequest`, `Get-FileHash` and the system's `tar.exe`). The Control
+  Panel runs `powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1`.
+  The Python archive and the models are checked against SHA-256 sums; the
+  runtime goes to `runtime\windows-x86_64\` (`python.exe`). If OpenCV does not
+  start, the Microsoft Visual C++ Redistributable (x64) is missing.
+  `core/tests/recognize.rs` keeps the model sums of the two fetch scripts equal.
 - `test_recognizer.py`: protocol tests
   (`python3 -m unittest -v recognizer/test_recognizer.py`; set
   `SHOEBOX_TEST_FACE` to a photo with a face, `SHOEBOX_TEST_PET` to a

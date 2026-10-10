@@ -237,7 +237,9 @@ Mehrere Computer und Systeme
   eigenen Ordner recognizer; Modelle, die du im einen installierst, gelten
   also nicht im anderen. Gestartet wird aus dem Ordner des Systems, an dem du
   sitzt. Beide nutzen denselben versteckten Index .shoebox auf dem Laufwerk.
-  Erweiterungen gibt es für Windows noch nicht.
+  Die Erweiterungen lassen sich auch unter Windows mit demselben Knopf
+  installieren: Dafür braucht es Windows 10 oder 11 auf einem 64-Bit-Intel-
+  oder AMD-Prozessor, sonst nichts, was vorher installiert sein müsste.
 
 Gut zu wissen
 - Videos bekommen Vorschaubilder, wenn ein statisches ffmpeg neben dem

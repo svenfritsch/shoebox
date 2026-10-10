@@ -44,7 +44,8 @@ for them: `recognizer/` next to the program first, the drive's own
 `.shoebox/recognizer/` last. The models are the same on every computer; Python
 and OpenCV is per kind (`recognizer/runtime/<os>-<arch>/`), so a drive moved
 to another kind of Mac needs one more install there (the models are kept).
-Terminal users: `recognizer/install.sh [--faces] [--pets] [library-root]`
+Terminal users: `recognizer/install.sh [--faces] [--pets] [library-root]`, on
+Windows `recognizer\install.ps1 [-Faces] [-Pets] [-Root library-root]`
 ([recognizer/README.md](recognizer/README.md)).
 
 ## Guide

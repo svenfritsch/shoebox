@@ -762,7 +762,7 @@
   "launcher.kind.install_addons": "Erweiterungen installieren",
   "launcher.addon.runtime": "Python und OpenCV",
   "launcher.addon.runtime.desc": "jede Erweiterung braucht es, es wird immer mit der ersten installiert (etwa 200 MB pro Computerart)",
-  "launcher.addons.runtime_missing": "Die Modelle sind da, aber dieser Computer (Intel oder Apple Silicon) hat in {dir} noch kein Python und OpenCV. Noch einmal installieren; die Modelle werden nicht doppelt geladen.",
+  "launcher.addons.runtime_missing": "Die Modelle sind da, aber diese Art Computer hat in {dir} noch kein Python und OpenCV. Noch einmal installieren; die Modelle werden nicht doppelt geladen.",
   "launcher.addon.required": "nötig",
   "launcher.addon.needs_runtime": "Modelle da, braucht Python für diesen Computer"
 }
