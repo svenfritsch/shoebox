@@ -85,6 +85,8 @@ button { cursor: pointer; }
 .tree .name:hover { background: var(--line); }
 .tree .name.active { background: var(--accent); color: #fff; }
 .tree .count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.sidebar-head .link, .drives-box > .link { border-radius: 6px; padding: 3px 8px; }
+.sidebar-head .link.active, .drives-box > .link.active { background: var(--accent); color: #fff; font-weight: 600; }
 .status { margin-top: auto; font-size: 12px; color: var(--muted); padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
 
 .scroller { flex: 1; overflow-y: auto; position: relative; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
@@ -491,7 +493,9 @@ body.selecting .sec .pick { display: inline; }
 .drive-list li { margin: 0; }
 .drive-list button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 6px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--fg); font: inherit; cursor: pointer; }
 .drive-list button:hover { background: var(--panel); }
-.drive-list li.current button { background: var(--panel); font-weight: 600; }
+.drive-list li.current button { background: var(--accent); color: #fff; font-weight: 700; }
+.drive-list li.current .tag { color: #fff; border-color: rgba(255,255,255,.6); }
+.drive-list li.current .dot { box-shadow: 0 0 0 2px #fff; }
 .drive-list .dot { width: 9px; height: 9px; border-radius: 50%; background: #3a9b5c; flex: none; }
 .drive-list li.offline .dot { background: transparent; border: 2px solid var(--muted); }
 .drive-list li.offline button { color: var(--muted); }
@@ -529,7 +533,6 @@ body.selecting .sec .pick { display: inline; }
 .xcopy .path { font-size: 12px; color: var(--muted); word-break: break-all; }
 .xcopy .btns { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
 .xcopy .btns .btn { padding: 3px 10px; font-size: 12px; }
-.drive-list li.all-entry button { font-weight: 600; }
 .dialog.compare { width: min(96vw, 1200px); max-width: none; }
 .compare-strip { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
 .compare-col { flex: 1 1 550px; min-width: min(550px, 100%); box-sizing: border-box; display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; }

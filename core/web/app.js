@@ -180,6 +180,8 @@ function applyFilter() {
   var view = state.filter.view;
   $('page').hidden = !view;
   $('sizer').hidden = !!view;
+  var f = state.filter;
+  $('all').classList.toggle('active', !view && !f.folder && !f.tags.length && !f.people.length && !f.pets.length && !f.place && !f.fav && !f.q);
   $('nav-dups').classList.toggle('active', view === 'duplicates');
   $('nav-trash').classList.toggle('active', view === 'trash');
   $('nav-settings').classList.toggle('active', view === 'settings' || view === 'faces' || view === 'pets');

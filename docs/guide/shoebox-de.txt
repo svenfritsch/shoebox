@@ -527,7 +527,10 @@ Mehrere Laufwerke
 shoebox mit mehr als einem Laufwerk starten, und jedes erscheint in der
 Seitenleiste. Alle Laufwerke zeigt eine gemeinsame Zeitleiste über alle, dazu
 Backups, Fotos auf mehreren Laufwerken und Personen laufwerksübergreifend. Ein
-abgestecktes Laufwerk steht als offline da.
+abgestecktes Laufwerk steht als offline da. Das Laufwerk, das du gerade
+ansiehst, ist in der Akzentfarbe ausgefüllt, ebenso die Seite darunter (Alle
+Fotos, Duplikate, Papierkorb, Einstellungen); so siehst du immer, welcher
+Papierkorb von welchem Laufwerk offen ist.
 
 Backup-Prüfung
 Erst das Original wählen, dann das Backup. shoebox vergleicht die beiden
