@@ -552,8 +552,8 @@ benennen.
 4. Nur einige Gesichter einer Karte
    Auswählen lässt dich die Gesichter selbst ankreuzen. Die Knöpfe gelten dann
    nur für diese: 2 benennen, 2 ignorieren, 2 kein Gesicht. Praktisch, wenn
-   eine Karte zwei Personen mischt. Solange es an ist, heißt der Knopf Auswahl
-   beenden; damit beendest du das Auswählen.
+   eine Karte zwei Personen mischt. Solange es an ist, heißt der Knopf
+   Aufheben; damit beendest du das Auswählen und hebst die Auswahl auf.
 
 [Screenshot: Unbenannt: eine Karte für jede Gruppe ähnlicher Gesichter, mit
 Ignorieren und Kein Gesicht.]
