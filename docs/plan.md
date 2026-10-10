@@ -30,7 +30,7 @@ progress. Update the status section when a phase moves.
 | Thumbnails | **Not** written into EXIF of originals (would change hashes and mtimes). Stored as BLOBs in `.shoebox/thumbs.db` (exFAT's 128 KB clusters would waste ~5× space with one file per thumbnail) |
 | HEIC | libheif + libde265 built from source as static, decoder-only libs (`scripts/build-deps.sh`). LGPL: fine for personal use, check before distributing |
 | RAW | Indexed (hash, dates, duplicates, backup checks) but hidden in the UI; paired with JPEG/HEIC of the same stem and moved together |
-| Video | Yes. Metadata via `nom-exif`; poster frame via a static `ffmpeg` next to the binary; playback streams the original (HTTP range requests), no transcoding |
+| Video | Yes. Metadata via `nom-exif`; poster frame via a static `ffmpeg` next to the binary or on `PATH`; playback streams the original (HTTP range requests), no transcoding |
 | Drive format | exFAT |
 | Scale | ~100,000 files, 150 GB today, up to 1 TB |
 | Repo | `core/` (Rust), `recognizer/` (Python), `scripts/`, `docker/`, `docs/` |
@@ -46,7 +46,6 @@ progress. Update the status section when a phase moves.
   <library>/                     ← user's folders; read-only for shoebox
   .shoebox/
     bin/shoebox-macos            ← older layout (the release now ships the folder below)
-    bin/ffmpeg                   ← optional, static, for video posters (or next to the program)
     library.db                   ← SQLite index (+ rotating backup copy)
     thumbs.db                    ← preview BLOBs keyed by quick hash, face crops only for undecided faces and people's pictures
     recognition.db               ← faces (boxes + embeddings) keyed by quick hash

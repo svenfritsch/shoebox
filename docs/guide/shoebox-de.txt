@@ -12,7 +12,7 @@ deinen Fotos liegt. Es indexiert sie, zeigt sie im Browser in einer schnellen
 Zeitleiste und hilft beim Verschlagworten, Sortieren und Aufräumen von
 Duplikaten, ohne sie je zu kopieren oder ihre Metadaten anzufassen.
 
-- Originale bleiben unberührt
+- Laufwerksstruktur bleibt unberührt
 - Liegt auf deinem Laufwerk
 - Privat: keine Cloud, kein Konto
 - Auch am iPad nutzbar
@@ -21,10 +21,74 @@ Duplikaten, ohne sie je zu kopieren oder ihre Metadaten anzufassen.
 [Screenshot: Die Zeitleiste: Monate, Ordner, Suche, Typfilter und
 Jahressprung.]
 
+Was shoebox besonders macht
+---------------------------
+
+Fünf Dinge, die shoebox von anderen Foto-Verwaltungen unterscheiden.
+
+- Deine Fotos bleiben deine
+   shoebox hat keinen Import und keine eigene Bibliothek, in die deine Fotos
+   eingesperrt werden. Deine Ordner bleiben genau so, wie du sie angelegt
+   hast. Es liest deine Dateien und schreibt nichts hinein: Tags, Daten und
+   Orte stehen in seinem eigenen Index. Vor und nach jedem Lesen prüft ein
+   Wächter Größe, Daten und einen vollen Hash und bricht bei jeder Abweichung
+   ab. Eine Datei ändert sich nur, wenn du sie verschiebst, umbenennst oder in
+   den Papierkorb legst oder ein JPEG drehst (zwei Bytes).
+
+- Liegt auf deinem Laufwerk und bleibt klein
+   Alles, was shoebox über deine Fotos speichert, liegt in einem versteckten
+   Ordner .shoebox neben deinen Fotos: die Bibliothek library.db, die
+   Vorschauen thumbs.db und der Papierkorb. Das Laufwerk an einen anderen
+   Computer stecken, und alles ist dabei. shoebox fügt nur hinzu, was eine
+   Foto-App zum Laufen braucht: unter 1 GB bei 80 GB Fotos (etwa 1 %),
+   gemessen an einer echten Bibliothek mit 31 GB, einschließlich der Daten der
+   Gesichtserkennung.
+
+- Duplikate über Laufwerke hinweg
+   Findet identische, verkleinerte, bearbeitete und ähnliche Fotos, auch über
+   mehrere Laufwerke, und prüft ein Backup gegen das Original. Die beste Kopie
+   bleibt immer, den Rest entscheidest du.
+
+- Gemacht für den Datei-Manager
+   Du ordnest im Finder oder Explorer, und ein schneller Scan übernimmt die
+   Änderungen. Ordner zählen als Tags, und wenn du Fotos in shoebox
+   verschiebst, wandern RAW-, Live-Photo- und Sidecar-Dateien mit.
+
+- Lokale Erkennung, optionale Karten
+   Gesichter, Katzen und Hunde werden auf deinem eigenen Computer erkannt, und
+   Karten sind aus, bis du sie einschaltest. Keine Cloud, kein Konto.
+
 Was shoebox kann
 ----------------
 
 Eine Seite im Browser, eine Zeitleiste von allem auf dem Laufwerk.
+
+- Einlesen
+   Mit Scannen liest shoebox deine Fotos in seine Datenbank ein und sammelt
+   die Metadaten, die eine Foto-App braucht, etwa Datum, Größe und Orte.
+   Außerdem findet es Duplikate auf dem Laufwerk und vergleicht Backups und
+   andere Laufwerke mit diesem Index.
+
+- Duplikate
+   Findet identische, verkleinerte, bearbeitete und ähnliche Fotos. Du prüfst;
+   die beste Kopie bleibt immer.
+
+- Mehrere Laufwerke
+   Die Fotos mehrerer Laufwerke in einer gemeinsamen Zeitleiste durchstöbern,
+   auch wenn sie auf verschiedenen Platten liegen. Backups werden erkannt und
+   geprüft.
+
+- Sicherer Papierkorb
+   Gelöschte Fotos landen in einem Papierkorb auf dem Laufwerk. Zurücklegen
+   oder endgültig löschen.
+
+- Verschieben & ordnen
+   Fotos in einen Ordner verschieben (wird bei Bedarf angelegt). RAW-,
+   Live-Photo- und Sidecar-Dateien wandern mit.
+
+- Tags
+   Eigene Tags für viele Fotos auf einmal. Auch Ordner zählen als Tags. Im
+   Index gespeichert, nie in den Fotos.
 
 - Zeitleiste
    Alle Fotos und Videos nach Monat, mit Jahressprung, Ordnerbaum und einer
@@ -35,35 +99,9 @@ Eine Seite im Browser, eine Zeitleiste von allem auf dem Laufwerk.
    Schlagwörter für eine komplexere Suche. Filter nach Fotos, Videos, Live
    Photos oder Screenshots, oder zeige nur deine Favoriten ♥.
 
-- Tags
-   Eigene Tags für viele Fotos auf einmal. Auch Ordner zählen als Tags. Im
-   Index gespeichert, nie in den Fotos.
-
-- Verschieben & ordnen
-   Fotos in einen Ordner verschieben (wird bei Bedarf angelegt). RAW-,
-   Live-Photo- und Sidecar-Dateien wandern mit.
-
-- Fotos hinzufügen
-   Die Fotos eines Ereignisses im Finder oder Explorer aufs Laufwerk kopieren
-   (die Daten bleiben erhalten) und scannen. Kopien von Dateien, die das
-   Laufwerk schon hatte, werden aufgelistet und lassen sich löschen.
-
-- Duplikate
-   Findet identische, verkleinerte, bearbeitete und ähnliche Fotos. Du prüfst;
-   die beste Kopie bleibt immer.
-
-- Sicherer Papierkorb
-   Gelöschte Fotos landen in einem Papierkorb auf dem Laufwerk. Zurücklegen
-   oder endgültig löschen.
-
 - Personen & Haustiere
    Optionale Erkennung gruppiert Gesichter, Katzen und Hunde. Du vergibst
    Namen, shoebox schlägt den Rest vor.
-
-- Mehrere Laufwerke
-   Die Fotos mehrerer Laufwerke in einer gemeinsamen Zeitleiste durchstöbern,
-   auch wenn sie auf verschiedenen Platten liegen. Backups werden erkannt und
-   geprüft.
 
 - Orte
    Optionale Karten, standardmäßig aus: eine Karte in den Infos von Fotos mit
@@ -242,11 +280,34 @@ Mehrere Computer und Systeme
   oder AMD-Prozessor, sonst nichts, was vorher installiert sein müsste.
 
 Gut zu wissen
-- Videos bekommen Vorschaubilder, wenn ein statisches ffmpeg neben dem
-  Programm liegt (ffmpeg im selben Ordner wie shoebox). Ohne holt sich der
-  Browser ein Bild.
-- shoebox legt Index und Vorschaubilder im versteckten Ordner .shoebox auf dem
-  Laufwerk ab. Das Laufwerk kann also an einen anderen Computer umziehen.
+- Für Video-Vorschauen braucht shoebox ffmpeg, ein kostenloses Werkzeug, das
+  ein Bild aus einem Video holt. shoebox sucht es im selben Ordner wie das
+  Programm shoebox (die Datei heißt ffmpeg, unter Windows ffmpeg.exe) und dann
+  im PATH deines Computers, zum Beispiel nach brew install ffmpeg. Oder lade
+  einen statischen Build (eine einzelne Datei) von ffmpeg.org/download
+  herunter und lege ihn neben das Programm; das ist optional und braucht meist
+  50–100 MB. Welche Datei du nimmst:
+   - Mac: am einfachsten brew install ffmpeg. Oder den Link macOS auf der
+     Seite öffnen, einen statischen Build laden, entpacken und die Datei
+     ffmpeg neben shoebox legen. Verweigert macOS das Öffnen, einmal mit
+     Rechtsklick Öffnen wählen.
+   - Windows: den Link Windows auf der Seite öffnen und das Zip release
+     essentials laden. Öffnen, in den Ordner bin gehen und ffmpeg.exe (nur
+     diese Datei) neben shoebox.exe kopieren.
+   - Linux: sudo apt install ffmpeg oder das Gleiche in deiner Distribution.
+
+   Alles andere funktioniert auch ohne ffmpeg. Ohne speichert ein Scan keine
+   Vorschau für Videos, und dein Browser holt sich beim Blättern ein Bild;
+   diese Bilder werden nicht gespeichert. Nachdem du ffmpeg hinzugefügt hast,
+   führe Scannen aus, damit die Vorschauen gespeichert werden, oder starte die
+   Foto-App neu.
+
+- shoebox legt alles in einem versteckten Ordner .shoebox oben auf dem
+  Laufwerk ab: die Bibliothek library.db (Index, Tags, Namen, Entscheidungen)
+  mit ihrer Sicherungskopie library.db.bak, die Vorschauen thumbs.db,
+  recognition.db, wenn du die Erkennung nutzt und den trash. Deshalb kann das
+  Laufwerk an einen anderen Computer umziehen. Auf dem Mac ist der Ordner
+  versteckt: Im Finder Cmd + Umschalt + . drücken, um ihn zu sehen.
 - Schließt du das Terminal-Fenster, beendet das shoebox.
 
 Die App spricht Deutsch und Englisch: Die Sprache wählst du unten in der
@@ -351,58 +412,64 @@ Papierkorb.]
 
 [Screenshot: In einen neuen Ereignisordner verschieben.]
 
-Fotos hinzufügen, Duplikate und Papierkorb
-------------------------------------------
+Einlesen, Duplikate und Papierkorb
+----------------------------------
 
-Fotos hinzufügen
-Die Fotos im Finder oder Explorer aufs Laufwerk kopieren oder verschieben
-(dabei bleiben ihre Daten erhalten), am besten in einen Ordner namens JJJJ-MM
-Ereignis, und Scannen drücken. Findet der Scan neue Dateien, die das Laufwerk
-schon hatte, markiert die Zentrale sie mit schon auf dem Laufwerk und bietet
-Die neuen Kopien löschen an (in den Papierkorb oder endgültig). Das ältere
-Original bleibt und bekommt den Ordnernamen der gelöschten Kopie als Tag. In
-den Einstellungen wählst du, wie Ereignisordner in Vorschlägen heißen (zum
-Beispiel JJ.MM_Ereignis); vorhandene Ordner werden nicht umbenannt, und alle
-Formen werden erkannt.
+Neue Fotos einlesen
+shoebox importiert keine Fotos. Die Fotos im Finder oder Explorer aufs
+Laufwerk kopieren oder verschieben (dabei bleiben ihre Daten erhalten), am
+besten in einen Ordner namens JJJJ-MM Ereignis, und Scannen drücken. Findet
+der Scan neue Dateien, die das Laufwerk schon hatte, markiert die Zentrale sie
+mit schon auf dem Laufwerk und bietet Die neuen Kopien löschen an (in den
+Papierkorb oder endgültig). Das ältere Original bleibt und bekommt den
+Ordnernamen der gelöschten Kopie als Tag. In den Einstellungen wählst du, wie
+Ereignisordner in Vorschlägen heißen (zum Beispiel JJ.MM_Ereignis); vorhandene
+Ordner werden nicht umbenannt, und alle Formen werden erkannt.
 
 Duplikate
 Duplikate zeigt vier Arten: identisch, dasselbe Foto in anderer Größe,
 Original und bearbeitet sowie Ähnliche. Hake diese Kopie löschen bei dem an,
-was weg soll; die beste Datei bleibt, und pro Gruppe bleibt immer mindestens
-eine. Tags und Aufnahmedatum einer entfernten Kopie gehen auf die übrige über.
-Bei mehr als einem Laufwerk zeigt der Reiter Über Laufwerke hinweg (in Alle
-Laufwerke und unter Laufwerke verwalten) Fotos, die auf mehreren Laufwerken
-liegen: ein Bild, eine Zeile pro Kopie mit Name des Datenträgers und Ordner.
-Hake die Kopien an, die weg sollen, oder wähle ein Laufwerk und Alle
-markieren, um jede Kopie darauf anzukreuzen; die letzte Kopie eines Fotos
-lässt sich nie ankreuzen. In den Papierkorb fragt vorher nach und legt jede
-Kopie in den Papierkorb ihres eigenen Laufwerks.
+was weg soll; die beste Datei bleibt, und von jedem Duplikat bleibt immer
+mindestens eine Datei. Tags und Aufnahmedatum einer entfernten Kopie gehen auf
+die übrige über. Bei mehr als einem Laufwerk zeigt der Reiter Über Laufwerke
+hinweg (in Alle Laufwerke und unter Laufwerke verwalten) Fotos, die auf
+mehreren Laufwerken liegen: ein Bild, eine Zeile pro Kopie mit Name des
+Datenträgers und Ordner. Hake die Kopien an, die weg sollen, oder wähle ein
+Laufwerk und Alle markieren, um jede Kopie darauf anzukreuzen; die letzte
+Kopie eines Fotos lässt sich nie ankreuzen. In den Papierkorb fragt vorher
+nach und legt jede Kopie in den Papierkorb ihres eigenen Laufwerks.
 
-Abkürzungen
+Schnellaktionen
 Kopien im selben Ordner entfernen und Kopien geringerer Qualität entfernen
 räumen die eindeutigen Fälle in einem Zug auf.
 
-Was tun mit einer Gruppe
-Jede Gruppe hat oben rechts bis zu zwei Schaltflächen. Alle behalten heißt:
-Diese Dateien bleiben, und sie gehören zusammen. Verschiedene Fotos (nur bei
-ähnlichen Fotos) heißt: Das sind getrennte Aufnahmen, keine Kopien
-voneinander. In beiden Fällen wird nichts gelöscht und kein Foto verändert;
-shoebox macht sich nur eine Notiz in seiner eigenen Datenbank auf dem Laufwerk
-und zeigt die Gruppe nie wieder an. Die Notiz bleibt erhalten, wenn du Fotos
-verschiebst oder umbenennst. Alle behalten zeigt die übrigen außerdem als
-Versionen im Infobereich jedes Fotos an. Entschiedene Fotos lassen auch Kopien
-im selben Ordner entfernen und Kopien geringerer Qualität entfernen in Ruhe.
-Zum Löschen hakst du stattdessen diese Kopie löschen an, oder du öffnest ein
-ähnliches Foto, vergleichst alle groß und wählst Dieses behalten: nach der
-Bestätigung kommen alle anderen in den Papierkorb.
+Was du bei Duplikaten tun kannst
+Aktion: Bedeutung
+Alle behalten: Nichts wird gelöscht. Diese Dateien gehören zusammen; sie
+erscheinen als Versionen bei jedem Foto. Schaltfläche oben rechts.
+Verschiedene Fotos: Nichts wird gelöscht. Ähnliche Fotos sind getrennte
+Aufnahmen, keine Kopien. Schaltfläche oben rechts.
+Diese Kopie löschen: Die Kopie kommt in den Papierkorb. Bei jeder Kopie
+anhaken, die weg soll; die beste Datei bleibt.
+Dieses behalten: Alle anderen kommen in den Papierkorb. Nur bei ähnlichen
+Fotos: Foto öffnen, vergleichen, wählen, bestätigen.
+
+Alle behalten und Verschiedene Fotos sind interne Notizen: shoebox speichert
+sie in seiner eigenen Datenbank in .shoebox auf dem Laufwerk, nie in den
+Fotos. Diese Funde zeigt dir shoebox auf dem Bildschirm Duplikate nicht mehr
+an. Die Notizen bleiben erhalten, wenn du Fotos verschiebst oder umbenennst,
+und Kopien im selben Ordner entfernen und Kopien geringerer Qualität entfernen
+lassen diese Fotos in Ruhe.
 
 Papierkorb
 Nichts wird sofort gelöscht. Gelöschte Fotos warten in .shoebox/trash auf dem
 Laufwerk. Klicke Fotos an, um sie auszuwählen (Umschalt-Klick wählt einen
 Bereich), oder nimm Alle auswählen; die Leiste unten bietet dann Zurücklegen
 und Endgültig löschen. Endgültig löschen fragt vorher nach. Das Legen in den
-Papierkorb ist standardmäßig aus: Schalte es einmal in den Einstellungen ein
-(In den Papierkorb legen erlauben).
+Papierkorb in der Zeitleiste und in der Fotoansicht ist standardmäßig aus:
+Schalte es einmal in den Einstellungen ein (In den Papierkorb legen erlauben).
+Das Löschen von Kopien bei den Duplikaten und mit Die neuen Kopien löschen
+funktioniert in jedem Fall und geht ebenfalls in den Papierkorb.
 
 [Screenshot: Nach einem Scan: neue Kopien von Dateien, die das Laufwerk schon
 hatte.]
@@ -422,9 +489,9 @@ Die Erweiterungen einmal installieren: in der Zentrale in Schritt 1
 Erweiterungen ankreuzen, was du brauchst (Gesichter, und Haustiere für Katzen
 und Hunde), und Ausgewählte Erweiterungen installieren drücken. Sie liegen im
 Ordner recognizer neben dem shoebox-Programm: auf dem Laufwerk, wenn shoebox
-dort liegt, sonst auf deinem Computer für alle Laufwerke. Dann die Foto-App
-schließen und in der Zentrale Gesichter erkennen (und Haustiere erkennen)
-ausführen. In der Seitenleiste erscheint der Bereich Gesichter.
+dort liegt, sonst auf deinem Computer für alle Laufwerke. Dann in der Zentrale
+Gesichter erkennen (und Haustiere erkennen) ausführen. In der Seitenleiste
+erscheint der Bereich Gesichter.
 
 Benennen
 Unter Unbenannt zeigt shoebox Karten mit ähnlichen Gesichtern. Einmal einen
@@ -442,9 +509,9 @@ Namen funktionieren im Suchfeld wie Tags, ebenso Arten wie „alle Katzen“.
 Kombiniere eine Person mit einem Tag, einem Ordner oder einer weiteren Person.
 
 Neue Fotos
-Die Erkennung startet nach einem Scan noch nicht von selbst. Foto-App
-schließen und Gesichter erkennen erneut ausführen: Es werden nur die neuen
-Fotos angesehen.
+Die Erkennung startet nach einem Scan noch nicht von selbst. In der Zentrale
+einfach erneut Gesichter erkennen anklicken; die Foto-App kann offen bleiben.
+Die Gesichtserkennung läuft nur auf den neuen Fotos.
 
 [Screenshot: Unbenannt: ein Name für alle Gesichter einer Karte.]
 
@@ -461,9 +528,9 @@ benennen.
 
 1. Unbenannt öffnen
    In der Seitenleiste Gesichter und dann Unbenannt öffnen. Jede Karte enthält
-   Gesichter, die sich ähneln, die größte zuerst. Katzen und Hunde haben
-   eigene Karten; das Menü über den Karten wählt Personen, Haustiere oder
-   beides.
+   Gesichter, die sich ähneln, die Karte mit den meisten Treffern zuerst.
+   Katzen und Hunde haben eigene Karten; das Menü über den Karten wählt
+   Personen, Haustiere oder beides.
 
 2. Eine Karte benennen
    Den Namen einmal eintippen und Benennen drücken: Die ganze Karte ist
@@ -667,8 +734,8 @@ etwas hinein.
 
 - Nur lesen
    Metadaten, Vorschaubilder, Tags und von dir festgelegte Aufnahmeorte liegen
-   im Index auf dem Laufwerk, nie in einem Foto. Aufnahme- und
-   Erstellungsdatum ändern sich nie.
+   im Index auf dem Laufwerk (.shoebox/library.db), nie in einem Foto.
+   Aufnahme- und Erstellungsdatum ändern sich nie.
 
 - Bewacht
    Jeder Scan wird kontrolliert: Größe, Daten und ein vollständiger Hash davor
@@ -695,8 +762,8 @@ Das Raster ist leer. Erst in der Zentrale Scannen, dann die Foto-App starten.
 Neue Fotos fehlen. Noch einmal scannen. Das geht schnell: nur neue und
 geänderte Dateien werden gelesen.
 
-Ein Video hat keine Vorschau. ffmpeg hinzufügen (siehe „Gut zu wissen“) und
-die Foto-App neu starten.
+Ein Video hat keine Vorschau. ffmpeg hinzufügen (siehe „Gut zu wissen“), dann
+Scannen ausführen oder die Foto-App neu starten.
 
 Das iPad verbindet sich nicht. Selbes WLAN? Mit --lan gestartet? PIN aus dem
 Terminal eingeben. Nach einem Neustart von shoebox fragt es wieder nach der

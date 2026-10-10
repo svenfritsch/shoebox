@@ -28,7 +28,7 @@
     body { margin: 0; background: var(--bg); color: var(--ink);
            font: 1rem/1.55 system-ui, -apple-system, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif }
     main, header, footer, nav { max-width: 60rem; margin: 0 auto; padding: 0 1.25rem }
-    h1, h2, h3, p, ul, ol, dl, figure { margin: 0 }
+    h1, h2, h3, h4, p, ul, ol, dl, figure { margin: 0 }
     h1 { font-size: clamp(2rem, 6vw, 2.8rem); line-height: 1.08; letter-spacing: -.02em; color: var(--hero-ink) }
     h2 { font-size: 1.6rem; line-height: 1.15; letter-spacing: -.015em; margin-bottom: .3rem }
     h3 { font-size: 1.02rem; margin-bottom: .1rem }
@@ -79,6 +79,13 @@
     .panel ul { padding-left: 1.2rem } .panel li { margin-bottom: .45rem }
     .panel p + p { margin-top: .5rem }
     .items > div { margin-bottom: 1rem } .items h3 { color: var(--brown) }
+    .subs { border-left: .2rem solid var(--line); padding-left: .9rem; margin-top: .8rem }
+    .subs h4 { color: var(--brown); text-transform: uppercase; letter-spacing: .06em; font-size: .78rem; margin: .8rem 0 .3rem }
+    .subs h4:first-child { margin-top: 0 }
+    .subs table { border-collapse: collapse; width: 100%; font-size: .92rem; margin: .4rem 0 .6rem }
+    .subs th, .subs td { text-align: left; vertical-align: top; padding: .4rem .6rem; border-bottom: 1px solid var(--line) }
+    .subs th { color: var(--muted); font-size: .8rem; font-weight: 650 }
+    .subs td:first-child { white-space: nowrap; font-weight: 650 }
     .steps, .legend { list-style: none; padding: 0; counter-reset: n }
     .steps > li, .legend > li { counter-increment: n; display: grid; grid-template-columns: 2rem 1fr; gap: 0 .9rem; margin-bottom: 1rem; align-content: start }
     .steps > li::before, .legend > li::before { content: counter(n); grid-row: 1 / span 2; width: 2rem; height: 2rem; margin-top: .1rem }
@@ -137,7 +144,7 @@
       <h1>Deine Fotobibliothek, auf dem Laufwerk.</h1>
       <p class="lede">shoebox ist ein kleines Programm, das auf deinem externen Laufwerk neben deinen Fotos liegt. Es indexiert sie, zeigt sie im Browser in einer schnellen Zeitleiste und hilft beim Verschlagworten, Sortieren und Aufräumen von Duplikaten, ohne sie je zu kopieren oder ihre Metadaten anzufassen.</p>
       <ul class="badges">
-        <li><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><span>Originale bleiben unberührt</span></li>
+        <li><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><span>Laufwerksstruktur bleibt unberührt</span></li>
         <li><svg class="ic" aria-hidden="true"><use href="#i-drive"/></svg><span>Liegt auf deinem Laufwerk</span></li>
         <li><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg><span>Privat: keine Cloud, kein Konto</span></li>
         <li><svg class="ic" aria-hidden="true"><use href="#i-tablet"/></svg><span>Auch am iPad nutzbar</span></li>
@@ -150,12 +157,13 @@
     </figure>
     <nav aria-label="Inhalt" data-txt="skip">
       <ul>
+      <li><a href="#why">Was shoebox besonders macht</a></li>
       <li><a href="#features">Was shoebox kann</a></li>
       <li><a href="#glance">Die Oberfläche im Überblick</a></li>
       <li><a href="#start">In drei Schritten loslegen</a></li>
       <li><a href="#browse">Stöbern und ansehen</a></li>
       <li><a href="#find">Finden und ordnen</a></li>
-      <li><a href="#adding-photos">Fotos hinzufügen, Duplikate und Papierkorb</a></li>
+      <li><a href="#scanning">Einlesen, Duplikate und Papierkorb</a></li>
       <li><a href="#people">Personen und Haustiere</a></li>
       <li><a href="#faces">Gesichter taggen, Schritt für Schritt</a></li>
       <li><a href="#groups">Mehrere Gesichter in einem Foto, und Gruppen</a></li>
@@ -168,10 +176,72 @@
   </header>
 
   <main>
+    <section id="why">
+      <h2>Was shoebox besonders macht</h2>
+      <p class="sub">Fünf Dinge, die shoebox von anderen Foto-Verwaltungen unterscheiden.</p>
+      <ul class="cards">
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg></div>
+          <h3>Deine Fotos bleiben deine</h3>
+          <p>shoebox hat keinen Import und keine eigene Bibliothek, in die deine Fotos eingesperrt werden. Deine Ordner bleiben genau so, wie du sie angelegt hast. Es liest deine Dateien und schreibt nichts hinein: Tags, Daten und Orte stehen in seinem eigenen Index. Vor und nach jedem Lesen prüft ein Wächter Größe, Daten und einen vollen Hash und bricht bei jeder Abweichung ab. Eine Datei ändert sich nur, wenn du sie verschiebst, umbenennst oder in den Papierkorb legst oder ein JPEG drehst (zwei Bytes).</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-drive"/></svg></div>
+          <h3>Liegt auf deinem Laufwerk und bleibt klein</h3>
+          <p>Alles, was shoebox über deine Fotos speichert, liegt in einem versteckten Ordner <code>.shoebox</code> neben deinen Fotos: die Bibliothek <code>library.db</code>, die Vorschauen <code>thumbs.db</code> und der Papierkorb. Das Laufwerk an einen anderen Computer stecken, und alles ist dabei. shoebox fügt nur hinzu, was eine Foto-App zum Laufen braucht: unter 1 GB bei 80 GB Fotos (etwa 1 %), gemessen an einer echten Bibliothek mit 31 GB, einschließlich der Daten der Gesichtserkennung.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-dup"/></svg></div>
+          <h3>Duplikate über Laufwerke hinweg</h3>
+          <p>Findet identische, verkleinerte, bearbeitete und ähnliche Fotos, auch über mehrere Laufwerke, und prüft ein Backup gegen das Original. Die beste Kopie bleibt immer, den Rest entscheidest du.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-move"/></svg></div>
+          <h3>Gemacht für den Datei-Manager</h3>
+          <p>Du ordnest im Finder oder Explorer, und ein schneller Scan übernimmt die Änderungen. Ordner zählen als Tags, und wenn du Fotos in shoebox verschiebst, wandern RAW-, Live-Photo- und Sidecar-Dateien mit.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-people"/></svg></div>
+          <h3>Lokale Erkennung, optionale Karten</h3>
+          <p>Gesichter, Katzen und Hunde werden auf deinem eigenen Computer erkannt, und Karten sind aus, bis du sie einschaltest. Keine Cloud, kein Konto.</p>
+        </li>
+      </ul>
+    </section>
+
     <section id="features">
       <h2>Was shoebox kann</h2>
       <p class="sub">Eine Seite im Browser, eine Zeitleiste von allem auf dem Laufwerk.</p>
       <ul class="cards">
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-add"/></svg></div>
+          <h3>Einlesen</h3>
+          <p>Mit <b>Scannen</b> liest shoebox deine Fotos in seine Datenbank ein und sammelt die Metadaten, die eine Foto-App braucht, etwa Datum, Größe und Orte. Außerdem findet es Duplikate auf dem Laufwerk und vergleicht Backups und andere Laufwerke mit diesem Index.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-dup"/></svg></div>
+          <h3>Duplikate</h3>
+          <p>Findet identische, verkleinerte, bearbeitete und ähnliche Fotos. Du prüfst; die beste Kopie bleibt immer.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-drive"/></svg></div>
+          <h3>Mehrere Laufwerke</h3>
+          <p>Die Fotos mehrerer Laufwerke in einer gemeinsamen Zeitleiste durchstöbern, auch wenn sie auf verschiedenen Platten liegen. Backups werden erkannt und geprüft.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg></div>
+          <h3>Sicherer Papierkorb</h3>
+          <p>Gelöschte Fotos landen in einem Papierkorb auf dem Laufwerk. Zurücklegen oder endgültig löschen.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-move"/></svg></div>
+          <h3>Verschieben & ordnen</h3>
+          <p>Fotos in einen Ordner verschieben (wird bei Bedarf angelegt). RAW-, Live-Photo- und Sidecar-Dateien wandern mit.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-tag"/></svg></div>
+          <h3>Tags</h3>
+          <p>Eigene Tags für viele Fotos auf einmal. Auch Ordner zählen als Tags. Im Index gespeichert, nie in den Fotos.</p>
+        </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-grid"/></svg></div>
           <h3>Zeitleiste</h3>
@@ -183,39 +253,9 @@
           <p>Tippe eine Person, ein Haustier, einen Tag oder Ordner. Kombiniere Schlagwörter für eine komplexere Suche. Filter nach Fotos, Videos, Live Photos oder Screenshots, oder zeige nur deine Favoriten ♥.</p>
         </li>
         <li>
-          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-tag"/></svg></div>
-          <h3>Tags</h3>
-          <p>Eigene Tags für viele Fotos auf einmal. Auch Ordner zählen als Tags. Im Index gespeichert, nie in den Fotos.</p>
-        </li>
-        <li>
-          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-move"/></svg></div>
-          <h3>Verschieben & ordnen</h3>
-          <p>Fotos in einen Ordner verschieben (wird bei Bedarf angelegt). RAW-, Live-Photo- und Sidecar-Dateien wandern mit.</p>
-        </li>
-        <li>
-          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-add"/></svg></div>
-          <h3>Fotos hinzufügen</h3>
-          <p>Die Fotos eines Ereignisses im Finder oder Explorer aufs Laufwerk kopieren (die Daten bleiben erhalten) und scannen. Kopien von Dateien, die das Laufwerk schon hatte, werden aufgelistet und lassen sich löschen.</p>
-        </li>
-        <li>
-          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-dup"/></svg></div>
-          <h3>Duplikate</h3>
-          <p>Findet identische, verkleinerte, bearbeitete und ähnliche Fotos. Du prüfst; die beste Kopie bleibt immer.</p>
-        </li>
-        <li>
-          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg></div>
-          <h3>Sicherer Papierkorb</h3>
-          <p>Gelöschte Fotos landen in einem Papierkorb auf dem Laufwerk. Zurücklegen oder endgültig löschen.</p>
-        </li>
-        <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-people"/></svg></div>
           <h3>Personen & Haustiere</h3>
           <p>Optionale Erkennung gruppiert Gesichter, Katzen und Hunde. Du vergibst Namen, shoebox schlägt den Rest vor.</p>
-        </li>
-        <li>
-          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-drive"/></svg></div>
-          <h3>Mehrere Laufwerke</h3>
-          <p>Die Fotos mehrerer Laufwerke in einer gemeinsamen Zeitleiste durchstöbern, auch wenn sie auf verschiedenen Platten liegen. Backups werden erkannt und geprüft.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-pin"/></svg></div>
@@ -355,8 +395,8 @@
       <div class="panel">
         <h3>Gut zu wissen</h3>
         <ul>
-          <li>Videos bekommen Vorschaubilder, wenn ein statisches <b>ffmpeg</b> neben dem Programm liegt (<code>ffmpeg</code> im selben Ordner wie <b>shoebox</b>). Ohne holt sich der Browser ein Bild.</li>
-          <li>shoebox legt Index und Vorschaubilder im versteckten Ordner <code>.shoebox</code> auf dem Laufwerk ab. Das Laufwerk kann also an einen anderen Computer umziehen.</li>
+          <li>Für Video-Vorschauen braucht shoebox <b>ffmpeg</b>, ein kostenloses Werkzeug, das ein Bild aus einem Video holt. shoebox sucht es im selben Ordner wie das Programm <b>shoebox</b> (die Datei heißt <code>ffmpeg</code>, unter Windows <code>ffmpeg.exe</code>) und dann im <code>PATH</code> deines Computers, zum Beispiel nach <code>brew install ffmpeg</code>. Oder lade einen statischen Build (eine einzelne Datei) von <a href="https://ffmpeg.org/download.html">ffmpeg.org/download</a> herunter und lege ihn neben das Programm; das ist optional und braucht meist 50–100 MB. Welche Datei du nimmst:<ul><li><b>Mac:</b> am einfachsten <code>brew install ffmpeg</code>. Oder den Link <i>macOS</i> auf der Seite öffnen, einen statischen Build laden, entpacken und die Datei <code>ffmpeg</code> neben <b>shoebox</b> legen. Verweigert macOS das Öffnen, einmal mit Rechtsklick <b>Öffnen</b> wählen.</li><li><b>Windows:</b> den Link <i>Windows</i> auf der Seite öffnen und das Zip <i>release essentials</i> laden. Öffnen, in den Ordner <code>bin</code> gehen und <code>ffmpeg.exe</code> (nur diese Datei) neben <code>shoebox.exe</code> kopieren.</li><li><b>Linux:</b> <code>sudo apt install ffmpeg</code> oder das Gleiche in deiner Distribution.</li></ul>Alles andere funktioniert auch ohne ffmpeg. Ohne speichert ein Scan keine Vorschau für Videos, und dein Browser holt sich beim Blättern ein Bild; diese Bilder werden nicht gespeichert. Nachdem du ffmpeg hinzugefügt hast, führe <b>Scannen</b> aus, damit die Vorschauen gespeichert werden, oder starte die Foto-App neu.</li>
+          <li>shoebox legt alles in einem versteckten Ordner <code>.shoebox</code> oben auf dem Laufwerk ab: die Bibliothek <code>library.db</code> (Index, Tags, Namen, Entscheidungen) mit ihrer Sicherungskopie <code>library.db.bak</code>, die Vorschauen <code>thumbs.db</code>, <code>recognition.db</code>, wenn du die Erkennung nutzt und den <code>trash</code>. Deshalb kann das Laufwerk an einen anderen Computer umziehen. Auf dem Mac ist der Ordner versteckt: Im Finder <b>Cmd + Umschalt + .</b> drücken, um ihn zu sehen.</li>
           <li>Schließt du das Terminal-Fenster, beendet das shoebox.</li>
         </ul>
         <p class="note">Die App spricht Deutsch und Englisch: Die Sprache wählst du unten in der Seitenleiste.</p>
@@ -461,29 +501,36 @@
       </div>
     </section>
 
-    <section id="adding-photos">
-      <h2>Fotos hinzufügen, Duplikate und Papierkorb</h2>
+    <section id="scanning">
+      <h2>Einlesen, Duplikate und Papierkorb</h2>
       <div class="cols">
         <div class="items">
           <div>
-            <h3>Fotos hinzufügen</h3>
-            <p>Die Fotos im Finder oder Explorer aufs Laufwerk kopieren oder verschieben (dabei bleiben ihre Daten erhalten), am besten in einen Ordner namens <b>JJJJ-MM Ereignis</b>, und <b>Scannen</b> drücken. Findet der Scan neue Dateien, die das Laufwerk schon hatte, markiert die Zentrale sie mit <i>schon auf dem Laufwerk</i> und bietet <b>Die neuen Kopien löschen</b> an (in den Papierkorb oder endgültig). Das ältere Original bleibt und bekommt den Ordnernamen der gelöschten Kopie als Tag. In den <b>Einstellungen</b> wählst du, wie Ereignisordner in Vorschlägen heißen (zum Beispiel <code>JJ.MM_Ereignis</code>); vorhandene Ordner werden nicht umbenannt, und alle Formen werden erkannt.</p>
+            <h3>Neue Fotos einlesen</h3>
+            <p>shoebox importiert keine Fotos. Die Fotos im Finder oder Explorer aufs Laufwerk kopieren oder verschieben (dabei bleiben ihre Daten erhalten), am besten in einen Ordner namens <b>JJJJ-MM Ereignis</b>, und <b>Scannen</b> drücken. Findet der Scan neue Dateien, die das Laufwerk schon hatte, markiert die Zentrale sie mit <i>schon auf dem Laufwerk</i> und bietet <b>Die neuen Kopien löschen</b> an (in den Papierkorb oder endgültig). Das ältere Original bleibt und bekommt den Ordnernamen der gelöschten Kopie als Tag. In den <b>Einstellungen</b> wählst du, wie Ereignisordner in Vorschlägen heißen (zum Beispiel <code>JJ.MM_Ereignis</code>); vorhandene Ordner werden nicht umbenannt, und alle Formen werden erkannt.</p>
           </div>
           <div>
             <h3>Duplikate</h3>
-            <p><b>Duplikate</b> zeigt vier Arten: identisch, dasselbe Foto in anderer Größe, Original und bearbeitet sowie Ähnliche. Hake <b>diese Kopie löschen</b> bei dem an, was weg soll; die beste Datei bleibt, und pro Gruppe bleibt immer mindestens eine. Tags und Aufnahmedatum einer entfernten Kopie gehen auf die übrige über. Bei mehr als einem Laufwerk zeigt der Reiter <b>Über Laufwerke hinweg</b> (in <b>Alle Laufwerke</b> und unter <b>Laufwerke verwalten</b>) Fotos, die auf mehreren Laufwerken liegen: ein Bild, eine Zeile pro Kopie mit Name des Datenträgers und Ordner. Hake die Kopien an, die weg sollen, oder wähle ein Laufwerk und <b>Alle markieren</b>, um jede Kopie darauf anzukreuzen; die letzte Kopie eines Fotos lässt sich nie ankreuzen. <b>In den Papierkorb</b> fragt vorher nach und legt jede Kopie in den Papierkorb ihres eigenen Laufwerks.</p>
-          </div>
-          <div>
-            <h3>Abkürzungen</h3>
-            <p><b>Kopien im selben Ordner entfernen</b> und <b>Kopien geringerer Qualität entfernen</b> räumen die eindeutigen Fälle in einem Zug auf.</p>
-          </div>
-          <div>
-            <h3>Was tun mit einer Gruppe</h3>
-            <p>Jede Gruppe hat oben rechts bis zu zwei Schaltflächen. <b>Alle behalten</b> heißt: Diese Dateien bleiben, und sie gehören zusammen. <b>Verschiedene Fotos</b> (nur bei ähnlichen Fotos) heißt: Das sind getrennte Aufnahmen, keine Kopien voneinander. In beiden Fällen wird nichts gelöscht und kein Foto verändert; shoebox macht sich nur eine Notiz in seiner eigenen Datenbank auf dem Laufwerk und zeigt die Gruppe nie wieder an. Die Notiz bleibt erhalten, wenn du Fotos verschiebst oder umbenennst. <b>Alle behalten</b> zeigt die übrigen außerdem als <b>Versionen</b> im Infobereich jedes Fotos an. Entschiedene Fotos lassen auch <b>Kopien im selben Ordner entfernen</b> und <b>Kopien geringerer Qualität entfernen</b> in Ruhe. Zum Löschen hakst du stattdessen <b>diese Kopie löschen</b> an, oder du öffnest ein ähnliches Foto, vergleichst alle groß und wählst <b>Dieses behalten</b>: nach der Bestätigung kommen alle anderen in den Papierkorb.</p>
+            <p><b>Duplikate</b> zeigt vier Arten: identisch, dasselbe Foto in anderer Größe, Original und bearbeitet sowie Ähnliche. Hake <b>diese Kopie löschen</b> bei dem an, was weg soll; die beste Datei bleibt, und von jedem Duplikat bleibt immer mindestens eine Datei. Tags und Aufnahmedatum einer entfernten Kopie gehen auf die übrige über. Bei mehr als einem Laufwerk zeigt der Reiter <b>Über Laufwerke hinweg</b> (in <b>Alle Laufwerke</b> und unter <b>Laufwerke verwalten</b>) Fotos, die auf mehreren Laufwerken liegen: ein Bild, eine Zeile pro Kopie mit Name des Datenträgers und Ordner. Hake die Kopien an, die weg sollen, oder wähle ein Laufwerk und <b>Alle markieren</b>, um jede Kopie darauf anzukreuzen; die letzte Kopie eines Fotos lässt sich nie ankreuzen. <b>In den Papierkorb</b> fragt vorher nach und legt jede Kopie in den Papierkorb ihres eigenen Laufwerks.</p>
+            <div class="subs">
+              <h4>Schnellaktionen</h4>
+              <p><b>Kopien im selben Ordner entfernen</b> und <b>Kopien geringerer Qualität entfernen</b> räumen die eindeutigen Fälle in einem Zug auf.</p>
+              <h4>Was du bei Duplikaten tun kannst</h4>
+              <table>
+                <thead><tr><th>Aktion</th><th>Bedeutung</th></tr></thead>
+                <tbody>
+                  <tr><td>Alle behalten</td><td><b>Nichts wird gelöscht.</b> Diese Dateien gehören zusammen; sie erscheinen als <b>Versionen</b> bei jedem Foto. Schaltfläche oben rechts.</td></tr>
+                  <tr><td>Verschiedene Fotos</td><td><b>Nichts wird gelöscht.</b> Ähnliche Fotos sind getrennte Aufnahmen, keine Kopien. Schaltfläche oben rechts.</td></tr>
+                  <tr><td>Diese Kopie löschen</td><td><b>Die Kopie kommt in den Papierkorb.</b> Bei jeder Kopie anhaken, die weg soll; die beste Datei bleibt.</td></tr>
+                  <tr><td>Dieses behalten</td><td><b>Alle anderen kommen in den Papierkorb.</b> Nur bei ähnlichen Fotos: Foto öffnen, vergleichen, wählen, bestätigen.</td></tr>
+                </tbody>
+              </table>
+              <p class="note"><b>Alle behalten</b> und <b>Verschiedene Fotos</b> sind interne Notizen: shoebox speichert sie in seiner eigenen Datenbank in <code>.shoebox</code> auf dem Laufwerk, nie in den Fotos. Diese Funde zeigt dir shoebox auf dem Bildschirm <b>Duplikate</b> nicht mehr an. Die Notizen bleiben erhalten, wenn du Fotos verschiebst oder umbenennst, und <b>Kopien im selben Ordner entfernen</b> und <b>Kopien geringerer Qualität entfernen</b> lassen diese Fotos in Ruhe.</p>
+            </div>
           </div>
           <div>
             <h3>Papierkorb</h3>
-            <p>Nichts wird sofort gelöscht. Gelöschte Fotos warten in <code>.shoebox/trash</code> auf dem Laufwerk. Klicke Fotos an, um sie auszuwählen (Umschalt-Klick wählt einen Bereich), oder nimm <b>Alle auswählen</b>; die Leiste unten bietet dann <b>Zurücklegen</b> und <b>Endgültig löschen</b>. Endgültig löschen fragt vorher nach. Das Legen in den Papierkorb ist standardmäßig aus: Schalte es einmal in den <b>Einstellungen</b> ein (<i>In den Papierkorb legen erlauben</i>).</p>
+            <p>Nichts wird sofort gelöscht. Gelöschte Fotos warten in <code>.shoebox/trash</code> auf dem Laufwerk. Klicke Fotos an, um sie auszuwählen (Umschalt-Klick wählt einen Bereich), oder nimm <b>Alle auswählen</b>; die Leiste unten bietet dann <b>Zurücklegen</b> und <b>Endgültig löschen</b>. Endgültig löschen fragt vorher nach. Das Legen in den Papierkorb in der Zeitleiste und in der Fotoansicht ist standardmäßig aus: Schalte es einmal in den <b>Einstellungen</b> ein (<i>In den Papierkorb legen erlauben</i>). Das Löschen von Kopien bei den <b>Duplikaten</b> und mit <b>Die neuen Kopien löschen</b> funktioniert in jedem Fall und geht ebenfalls in den Papierkorb.</p>
           </div>
         </div>
         <div>
@@ -510,7 +557,7 @@
         <div class="items">
           <div>
             <h3>Finden</h3>
-            <p>Die Erweiterungen einmal installieren: in der Zentrale in Schritt 1 <b>Erweiterungen</b> ankreuzen, was du brauchst (<b>Gesichter</b>, und <b>Haustiere</b> für Katzen und Hunde), und <b>Ausgewählte Erweiterungen installieren</b> drücken. Sie liegen im Ordner <code>recognizer</code> neben dem shoebox-Programm: auf dem Laufwerk, wenn shoebox dort liegt, sonst auf deinem Computer für alle Laufwerke. Dann die Foto-App schließen und in der Zentrale <b>Gesichter erkennen</b> (und <b>Haustiere erkennen</b>) ausführen. In der Seitenleiste erscheint der Bereich <b>Gesichter</b>.</p>
+            <p>Die Erweiterungen einmal installieren: in der Zentrale in Schritt 1 <b>Erweiterungen</b> ankreuzen, was du brauchst (<b>Gesichter</b>, und <b>Haustiere</b> für Katzen und Hunde), und <b>Ausgewählte Erweiterungen installieren</b> drücken. Sie liegen im Ordner <code>recognizer</code> neben dem shoebox-Programm: auf dem Laufwerk, wenn shoebox dort liegt, sonst auf deinem Computer für alle Laufwerke. Dann in der Zentrale <b>Gesichter erkennen</b> (und <b>Haustiere erkennen</b>) ausführen. In der Seitenleiste erscheint der Bereich <b>Gesichter</b>.</p>
           </div>
           <div>
             <h3>Benennen</h3>
@@ -526,7 +573,7 @@
           </div>
           <div>
             <h3>Neue Fotos</h3>
-            <p>Die Erkennung startet nach einem Scan noch nicht von selbst. Foto-App schließen und <b>Gesichter erkennen</b> erneut ausführen: Es werden nur die neuen Fotos angesehen.</p>
+            <p>Die Erkennung startet nach einem Scan noch nicht von selbst. In der Zentrale einfach erneut <b>Gesichter erkennen</b> anklicken; die Foto-App kann offen bleiben. Die Gesichtserkennung läuft nur auf den neuen Fotos.</p>
           </div>
         </div>
         <div>
@@ -551,7 +598,7 @@
         <ol class="steps">
           <li>
             <h3>Unbenannt öffnen</h3>
-            <p>In der Seitenleiste <b>Gesichter</b> und dann <b>Unbenannt</b> öffnen. Jede Karte enthält Gesichter, die sich ähneln, die größte zuerst. Katzen und Hunde haben eigene Karten; das Menü über den Karten wählt <i>Personen</i>, <i>Haustiere</i> oder beides.</p>
+            <p>In der Seitenleiste <b>Gesichter</b> und dann <b>Unbenannt</b> öffnen. Jede Karte enthält Gesichter, die sich ähneln, die Karte mit den meisten Treffern zuerst. Katzen und Hunde haben eigene Karten; das Menü über den Karten wählt <i>Personen</i>, <i>Haustiere</i> oder beides.</p>
           </li>
           <li>
             <h3>Eine Karte benennen</h3>
@@ -709,7 +756,7 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg></div>
           <h3>Nur lesen</h3>
-          <p>Metadaten, Vorschaubilder, Tags und von dir festgelegte Aufnahmeorte liegen im Index auf dem Laufwerk, nie in einem Foto. Aufnahme- und Erstellungsdatum ändern sich nie.</p>
+          <p>Metadaten, Vorschaubilder, Tags und von dir festgelegte Aufnahmeorte liegen im Index auf dem Laufwerk (<code>.shoebox/library.db</code>), nie in einem Foto. Aufnahme- und Erstellungsdatum ändern sich nie.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg></div>
@@ -734,7 +781,7 @@
       <div class="panel faq">
         <p><b>Das Raster ist leer.</b> Erst in der Zentrale <b>Scannen</b>, dann die Foto-App starten.</p>
         <p><b>Neue Fotos fehlen.</b> Noch einmal scannen. Das geht schnell: nur neue und geänderte Dateien werden gelesen.</p>
-        <p><b>Ein Video hat keine Vorschau.</b> <code>ffmpeg</code> hinzufügen (siehe „Gut zu wissen“) und die Foto-App neu starten.</p>
+        <p><b>Ein Video hat keine Vorschau.</b> <code>ffmpeg</code> hinzufügen (siehe „Gut zu wissen“), dann <b>Scannen</b> ausführen oder die Foto-App neu starten.</p>
         <p><b>Das iPad verbindet sich nicht.</b> Selbes WLAN? Mit <code>--lan</code> gestartet? PIN aus dem Terminal eingeben. Nach einem Neustart von shoebox fragt es wieder nach der PIN.</p>
         <p><b>Ein Laufwerk steht auf offline.</b> Wieder anstecken; shoebox findet es beim Neuladen.</p>
         <p><b>Eine Karte ist leer oder sagt Offline.</b> Karten brauchen das Internet. Verbindung prüfen und das Foto noch einmal öffnen; alles andere funktioniert wie zuvor.</p>

@@ -18,7 +18,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LANGS = ("en", "de")
 WIDTH = 78
 SKIP = {"svg", "style", "script", "head"}
-BLOCK = {"h1", "h2", "h3", "p", "li", "dt", "dd", "figcaption", "div", "section", "header",
+BLOCK = {"h1", "h2", "h3", "h4", "p", "tr", "li", "dt", "dd", "figcaption", "div", "section", "header",
          "footer", "main", "nav", "ul", "ol", "dl", "figure", "aside"}
 VOID = {"img", "br", "meta", "link", "hr", "use", "input"}
 
@@ -56,6 +56,8 @@ class Text(HTMLParser):
             return
         if tag in BLOCK:
             self.flush()
+        if tag in ("td", "th") and "".join(self.buf).strip():
+            self.buf.append("\0")       # cell separator: a row reads "first: second"
         if tag in ("ul", "ol"):
             self.lists.append([tag, 0])
         if tag == "li" and self.lists:
@@ -90,6 +92,9 @@ class Text(HTMLParser):
     def flush(self, tag=None):
         text = re.sub(r"\s+", " ", "".join(self.buf)).strip()
         self.buf = []
+        text = text.replace(" \0 ", ": ").replace("\0 ", ": ").replace(" \0", ": ").replace("\0", ": ")
+        if tag == "tr":
+            tag = "kv"
         if not text:
             return
         in_fig = any(t == "figure" for t, _ in self.stack)
@@ -104,7 +109,7 @@ class Text(HTMLParser):
         indent = "   " * max(depth - 1, 0) if depth else ""
         first = self.pending or ""
         self.pending = None
-        kind = {"h1": "h1", "h2": "h2", "h3": "h3", "kv": "kv"}.get(tag or "", "p")
+        kind = {"h1": "h1", "h2": "h2", "h3": "h3", "h4": "h3", "kv": "kv"}.get(tag or "", "p")
         self.out.append((kind, text, (indent, first, depth)))
 
     def render(self):

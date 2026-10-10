@@ -12,7 +12,7 @@ photos. It indexes them, shows them in a fast timeline in your browser, and
 helps you tag, sort and de-duplicate, without ever copying them or touching
 their metadata.
 
-- Originals stay untouched
+- Drive structure stays untouched
 - Lives on your drive
 - Private: no cloud, no account
 - Browse from the iPad too
@@ -21,10 +21,71 @@ their metadata.
 [Screenshot: The timeline: months, folders, search, type filter and year
 jump.]
 
+What sets shoebox apart
+-----------------------
+
+Five things that make it different from other photo managers.
+
+- Your photos stay yours
+   shoebox has no import and no library of its own that your photos get locked
+   into. Your folders stay exactly as you made them. It reads your files and
+   writes nothing into them: tags, dates and places live in its own index.
+   Before and after every read, a guard checks size, dates and a full hash and
+   stops on any difference. A file changes only when you move, rename or trash
+   it, or turn a JPEG (two bytes).
+
+- Lives on your drive, and stays small
+   Everything shoebox stores about your photos sits in one hidden .shoebox
+   folder next to your photos: the library library.db, the previews thumbs.db
+   and the trash. Plug the drive into another computer and it all comes along.
+   It adds only what a photo app needs to run: under 1 GB for 80 GB of photos
+   (about 1 %), measured on a real library of 31 GB, including the face
+   recognition data.
+
+- Duplicates across drives
+   Finds identical, resized, edited and look-alike photos, also across several
+   drives, and checks a backup against the original. The best copy always
+   stays, and you decide the rest.
+
+- Made for the file manager
+   You organise in Finder or File Explorer and a quick scan picks the changes
+   up. Folders count as tags, and moving photos in shoebox moves the RAW, Live
+   Photo and sidecar files along.
+
+- Local recognition, optional maps
+   Faces, cats and dogs are recognised on your own computer, and maps are off
+   until you switch them on. No cloud, no account.
+
 What shoebox can do
 -------------------
 
 One page in your browser, a timeline of everything on the drive.
+
+- Scan
+   With Scan, shoebox indexes your photos into its database and collects the
+   metadata a photo app needs, such as dates, sizes and places. It also finds
+   duplicates on the disk and compares backups and other drives with this
+   index.
+
+- Duplicates
+   Finds identical, resized, edited and look-alike photos. You review; the
+   best copy always stays.
+
+- Several drives
+   Browse the photos of several drives in one common timeline, even when they
+   sit on different disks. Backups are recognised and checked.
+
+- Safe trash
+   Deleted photos go to a trash on the drive. Put them back, or delete them
+   for good.
+
+- Move & organise
+   Move photos to a folder (created if needed). RAW, Live Photo and sidecar
+   files travel along.
+
+- Tags
+   Your own tags on many photos at once. Folders count as tags too. Stored in
+   the index, never in the photos.
 
 - Timeline
    All photos and videos by month, with a year jump, folder tree and a viewer
@@ -35,34 +96,9 @@ One page in your browser, a timeline of everything on the drive.
    search. Filter by photos, videos, Live Photos or screenshots, or show only
    your favorites ♥.
 
-- Tags
-   Your own tags on many photos at once. Folders count as tags too. Stored in
-   the index, never in the photos.
-
-- Move & organise
-   Move photos to a folder (created if needed). RAW, Live Photo and sidecar
-   files travel along.
-
-- Adding photos
-   Copy the photos of an event onto the drive in Finder or File Explorer
-   (dates are kept) and Scan. Copies of files the drive already had are
-   listed, and you can delete them.
-
-- Duplicates
-   Finds identical, resized, edited and look-alike photos. You review; the
-   best copy always stays.
-
-- Safe trash
-   Deleted photos go to a trash on the drive. Put them back, or delete them
-   for good.
-
 - People & pets
    Optional recognition groups faces, cats and dogs. You name them; shoebox
    suggests the rest.
-
-- Several drives
-   Browse the photos of several drives in one common timeline, even when they
-   sit on different disks. Backups are recognised and checked.
 
 - Locations
    Optional maps, off by default: a map in the info of photos with GPS data, a
@@ -126,7 +162,8 @@ Get started in three steps
 --------------------------
 
 macOS, Intel (10.13 or newer) and Apple Silicon. Nothing to install to browse
-and scan; face and pet recognition are add-ons you install from the launcher.
+and scan; face and pet recognition are add-ons you install from the Control
+Panel.
 
 1. Unpack it and choose where it lives
    Unpack shoebox-macos.tar.gz from the release (double-click it in Finder).
@@ -228,11 +265,32 @@ Several computers and systems
   to be installed first.
 
 Good to know
-- Videos get preview images if you put a static ffmpeg next to the program
-  (ffmpeg in the same folder as shoebox). Without it, the browser grabs a
-  frame instead.
-- shoebox keeps its index and thumbnails in a hidden .shoebox folder on the
-  drive, so the drive can move to another computer.
+- Video previews need ffmpeg, a free tool that picks one frame out of a video.
+  shoebox looks for it in the same folder as the shoebox program (the file is
+  called ffmpeg, or ffmpeg.exe on Windows) and then on your computer’s PATH,
+  for example after brew install ffmpeg. Or download a static build (one
+  single file) from ffmpeg.org/download and put it next to the program; it is
+  optional and usually takes 50–100 MB. Which file to take:
+   - Mac: easiest is brew install ffmpeg. Or open the page’s macOS link,
+     download a static build, unzip it and put the file ffmpeg next to
+     shoebox. If macOS refuses to open it, right-click it once and choose
+     Open.
+   - Windows: open the page’s Windows link and download the release essentials
+     zip. Open it, go into its bin folder and copy ffmpeg.exe (only that file)
+     next to shoebox.exe.
+   - Linux: sudo apt install ffmpeg, or the equivalent of your distribution.
+
+   Everything else works without ffmpeg. Without it a scan stores no preview
+   for videos, and your browser grabs a frame while you browse; those frames
+   are not stored. After you add ffmpeg, run Scan to store the previews, or
+   restart the photo app.
+
+- shoebox keeps everything in a hidden .shoebox folder at the top of the
+  drive: the library library.db (index, tags, names, decisions) with its
+  backup copy library.db.bak, the previews thumbs.db, recognition.db if you
+  use recognition and the trash. That is why the drive can move to another
+  computer. On a Mac the folder is hidden: press Cmd + Shift + . in Finder to
+  see it.
 - Closing the Terminal window stops shoebox.
 
 The app speaks English and German: pick the language at the bottom of the
@@ -330,52 +388,59 @@ folder tags always follow the new folder.
 
 [Screenshot: Moving into a new event folder.]
 
-Adding photos, duplicates and trash
------------------------------------
+Scanning, duplicates and trash
+------------------------------
 
-Adding photos
-Copy or move the photos onto the drive in Finder or File Explorer, which keeps
-their dates, ideally into a folder named YYYY-MM Event, and press Scan. If the
-scan finds new files the drive already had, the Control Panel marks them
-already on the drive and offers Delete the new copies (to the trash, or for
-good). The older original stays and gets the deleted copy’s folder name as a
-tag. Settings sets how event folders are named in suggestions (for example
-YY.MM_Event); existing folders are not renamed and all forms are recognised.
+Scanning new photos
+shoebox does not import photos. Copy or move the photos onto the drive in
+Finder or File Explorer, which keeps their dates, ideally into a folder named
+YYYY-MM Event, and press Scan. If the scan finds new files the drive already
+had, the Control Panel marks them already on the drive and offers Delete the
+new copies (to the trash, or for good). The older original stays and gets the
+deleted copy’s folder name as a tag. Settings sets how event folders are named
+in suggestions (for example YY.MM_Event); existing folders are not renamed and
+all forms are recognised.
 
 Duplicates
 Duplicates lists four kinds: identical, same photo in another size, original
 and edited, and look-alikes. Tick delete this copy on what you want gone; the
-best file stays and at least one per group always does. Tags and capture dates
-of a removed copy carry over. With more than one drive, the tab Across drives
-(in All drives and under Manage drives) lists photos that are on several
-drives: one picture, one row per copy with the disk name and folder. Tick the
-copies to remove, or pick a drive and Mark all to tick every copy on it; the
-last copy of a photo can never be ticked. Move to trash asks first and puts
-each copy in the trash of its own drive.
+best file stays, and at least one file of every duplicate always remains. Tags
+and capture dates of a removed copy carry over. With more than one drive, the
+tab Across drives (in All drives and under Manage drives) lists photos that
+are on several drives: one picture, one row per copy with the disk name and
+folder. Tick the copies to remove, or pick a drive and Mark all to tick every
+copy on it; the last copy of a photo can never be ticked. Move to trash asks
+first and puts each copy in the trash of its own drive.
 
-Shortcuts
+Quick actions
 Clear Same Folder Copies and Clear Lower Quality Copies clean up the clear-cut
 cases in one go.
 
-What to do with a group
-Every group has up to two buttons at its top right. Keep all means: these
-files stay, and they belong together. Different photos (only on groups of
-look-alikes) means: these are separate shots, not copies of each other. Either
-way nothing is deleted and no photo is touched; shoebox only makes a note in
-its own database on the drive, so it never offers this group again. The note
-follows the photos if you move or rename them. Keep all also lists the others
-as Versions in the info panel of each photo. Photos you have decided about are
-also left alone by Clear Same Folder Copies and Clear Lower Quality Copies. To
-delete instead, tick delete this copy, or open a look-alike photo, compare
-them large and press Keep this one: after you confirm, all the others go to
-the trash.
+What you can do with duplicates
+Action: What it means
+Keep all: Nothing is deleted. These files belong together; they show as
+Versions on each photo. Button at the top right.
+Different photos: Nothing is deleted. Look-alikes are separate shots, not
+copies. Button at the top right.
+Delete this copy: Copy goes to the trash. Tick it on every copy you want gone;
+the best file stays.
+Keep this one: All others go to the trash. Look-alikes only: open a photo,
+compare, press it, confirm.
+
+Keep all and Different photos are internal notes: shoebox saves them in its
+own database in .shoebox on the drive, never in the photos. Those finds are
+not shown to you on the Duplicates screen again. The notes follow the photos
+if you move or rename them, and Clear Same Folder Copies and Clear Lower
+Quality Copies leave these photos alone.
 
 Trash
 Nothing is deleted right away. Trashed photos wait in .shoebox/trash on the
 drive. Click photos to select them (Shift-click selects a range), or use
 Select all; the bar at the bottom then has Put back and Delete for good.
-Deleting for good asks first. Moving photos to the trash is off by default:
-switch it on once in Settings (Allow move to trash).
+Deleting for good asks first. Moving photos to the trash from the timeline or
+the photo view is off by default: switch it on once in Settings (Allow move to
+trash). Deleting copies on the Duplicates screen and with Delete the new
+copies works either way and also goes to the trash.
 
 [Screenshot: After a scan: new copies of files the drive already had.]
 
@@ -393,8 +458,8 @@ Install the add-ons once: in the Control Panel, step 1 Add-ons, tick what you
 need (Faces, and Pets for cats and dogs) and press Install the selected
 add-ons. They are stored in the recognizer folder next to the shoebox program:
 on the drive if shoebox lives on the drive, otherwise on your computer for
-every drive. Then close the photo app and run Recognize faces (and Recognize
-pets) in the Control Panel. A Faces section appears in the sidebar.
+every drive. Then run Recognize faces (and Recognize pets) in the Control
+Panel. A Faces section appears in the sidebar.
 
 Name them
 Under Unnamed, shoebox shows cards of similar faces. Type a name once and the
@@ -412,8 +477,9 @@ Names work in the search box like tags, and so do kinds such as “all cats”.
 Combine a person with a tag, a folder or another person.
 
 New photos
-Recognition does not start by itself after a scan yet. Close the photo app and
-run Recognize faces again: it only looks at the new photos.
+Recognition does not start by itself after a scan. Click Recognize faces in
+the Control Panel again; the photo app can stay open. Face recognition only
+runs on the new photos.
 
 [Screenshot: Unnamed cards: one name for every face on a card.]
 
@@ -430,8 +496,8 @@ all.
 
 1. Open Unnamed
    In the sidebar, open Faces and then Unnamed. Each card holds faces that
-   look alike, the biggest card first. Cats and dogs have cards of their own;
-   the menu above the cards chooses People, Pets or both.
+   look alike, the card with the most matches first. Cats and dogs have cards
+   of their own; the menu above the cards chooses People, Pets or both.
 
 2. Name a card
    Type the name once and press Name: the whole card is named. Start typing to
@@ -615,8 +681,8 @@ anything into them.
 
 - Read-only
    Metadata, thumbnails, tags and locations you set are kept in the index on
-   the drive, never inside a photo. Capture dates and created dates never
-   change.
+   the drive (.shoebox/library.db), never inside a photo. Capture dates and
+   created dates never change.
 
 - Guarded
    Every scan is checked: size, dates and a full hash before and after. Any
@@ -643,8 +709,8 @@ app.
 New photos are missing. Scan again. It is quick: only new and changed files
 are read.
 
-A video has no preview. Add ffmpeg (see “Good to know”) and restart the photo
-app.
+A video has no preview. Add ffmpeg (see “Good to know”), then run Scan or
+restart the photo app.
 
 The iPad cannot connect. Same Wi-Fi? Started with --lan? Enter the PIN printed
 in Terminal. Restarting shoebox asks for the PIN again.
