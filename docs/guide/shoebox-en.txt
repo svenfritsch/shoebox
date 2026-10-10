@@ -368,7 +368,9 @@ never changed.
 
 Select
 Press ☑, then click photos (Shift-click for a range; on the iPad just tap).
-“Select all” on a month heading takes the whole month.
+“Select all” on a month heading takes the whole month; Select all in the bar
+at the bottom takes every photo shown, across all months (for example all
+photos of a tag, to remove that tag from them at once).
 
 Tag
 Add tag… puts your own tag on the selection. Tags live in shoebox’s index,

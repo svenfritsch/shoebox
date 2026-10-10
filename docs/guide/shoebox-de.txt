@@ -390,7 +390,9 @@ in der Bibliothek gemerkt; die Fotodatei wird nie verändert.
 Auswählen
 ☑ drücken, dann Fotos anklicken (mit Umschalt für einen Bereich; am iPad
 einfach tippen). „Alle auswählen“ an einer Monatsüberschrift nimmt den ganzen
-Monat.
+Monat; Alle auswählen in der Leiste unten nimmt alle gezeigten Fotos über alle
+Monate (zum Beispiel alle Fotos eines Tags, um den Tag auf einmal zu
+entfernen).
 
 Taggen
 Tag hinzufügen … gibt der Auswahl deinen eigenen Tag. Tags leben im Index von

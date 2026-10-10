@@ -1683,12 +1683,21 @@ function updateSelbar() {
   Array.prototype.forEach.call(document.querySelectorAll('.sec .pick'), function (b) {
     b.textContent = tr(state.data && allSelected(parseInt(b.dataset.start, 10), parseInt(b.dataset.end, 10)) ? 'grid.deselect' : 'grid.select_all');
   });
+  var total = state.data && state.data.ids ? state.data.ids.length : 0;
+  $('sel-all').textContent = tr(total && n >= total ? 'sel.none' : 'sel.all');
+  $('sel-all').disabled = !total;
   $('sel-move').disabled = $('sel-trash').disabled = $('sel-tag').disabled = $('sel-untag').disabled = !n;
 }
 
 $('select').onclick = function () {
   if (state.filter.view) setFilter({ folder: null, tags: [], people: [], q: '' });
   if (state.selecting) endSelection(); else startSelection();
+};
+// Every photo of the timeline as it is shown now (all months, e.g. all photos
+// of a tag), or none again when everything is selected already.
+$('sel-all').onclick = function () {
+  var total = state.data.ids.length;
+  selectRange(0, total - 1, selectedIds().length < total);
 };
 $('sel-done').onclick = endSelection;
 $('sel-move').onclick = function () { moveDialog(selectedIds(), endSelection); };
