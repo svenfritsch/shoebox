@@ -959,10 +959,25 @@ a cancelled run continues with the best candidates.
        photos should not pay for; this is how the pass is already designed,
        but the timing above is for the whole engine, so the detector-only
        share is still to be split out).
+     - **Round 4, the two photos that were lost in the chat: a tofu package
+       and a monitor on a wall.** The package (colourful, curved print, small
+       seals) gave **15 of 16 words**: even the small test-seal text was read
+       ("sehr gut", "Ausgabe01/2025", "OKO-TEST", "360 g"), with a few letters
+       wrong ("Naturlond", "Naburland", "gerauchert", "14sehrg"). The one miss
+       is exactly such a wrong letter. Consequence: a search for "naturland"
+       finds the photo through the correctly read big logo, but a search for a
+       word read wrongly everywhere misses; **tolerant matching** (a line
+       counts when most of the query's trigrams are found, say 70 %) is a
+       cheap later improvement, not needed for v1. The monitor photo (wall
+       and noise, one tiny green label) gave the label **read correctly**
+       ("NTSC", "HD720P", 0.96 and 0.99), the model name on the bezel
+       ("B226W", 0.85) and **no false text on the wall or the noise**.
+     - **Totals so far:** 12 photos with text, **70 of 77 expected words
+       (91 %)**; 5 photos without text and one near-empty one, **no false
+       text**; speed 0.5–2.6 s per photo on this server; storage ~3 KB per
+       text-heavy photo.
      - **Still open:** the old-Mac timing, a sideways document, a license
-       plate and one more dark or night photo. The tofu package and a monitor
-       with a tiny "NTSC HD 720P" label were pasted while a run was going and
-       were not measured.
+       plate and a dark night photo. None of them changes the design.
    - *Where it runs:* on the old Intel MacBook (the case that decides whether
      the first run is bearable) and once on a modern machine; the same folder
      both times. The two `text_spike_report.txt` files are pasted back into
