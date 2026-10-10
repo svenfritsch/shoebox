@@ -84,8 +84,9 @@ One page in your browser, a timeline of everything on the drive.
    files travel along.
 
 - Tags
-   Your own tags on many photos at once. Folders count as tags too. Stored in
-   the index, never in the photos.
+   Your own tags on many photos at once. The Tags list in the sidebar shows
+   only your own tags; folders are browsed under Folders (a search finds them
+   like tags). Stored in the index, never in the photos.
 
 - Timeline
    All photos and videos by month, with a year jump, folder tree and a viewer
