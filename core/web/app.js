@@ -1197,10 +1197,13 @@ $('years').addEventListener('change', function () {
 
 // ------------------------------------------------------------------ lightbox
 
-var lb = { video: null, details: null, showFaces: false, hover: null, drawing: null };
+var lb = { video: null, details: null, showFaces: false, hover: null, drawing: null, showText: false, textOpen: false, hoverLine: null, textBox: null };
 
 function openLightbox(i) {
   state.open = i;
+  // Opened from a text search: the words found are outlined and listed at once.
+  lb.showText = lb.textOpen = state.filter.texts.length > 0;
+  lb.hoverLine = null;
   $('lightbox').hidden = false;
   showItem();
 }
@@ -1256,7 +1259,9 @@ function showItem() {
   rot.disabled = kind !== 'j' && kind !== 'h' && kind !== 'p';
   rot.title = tr(rot.disabled ? 'lb.rotate_raw' : kind === 'j' ? 'lb.rotate_hint' : 'lb.rotate_view_hint');
   $('lb-title').textContent = '';
+  $('lb-text').hidden = true; // until the photo's details say it has text
   lb.hover = null;
+  lb.hoverLine = null;
   stopDrawing();
 
   if (kind === 'v') {
@@ -1273,7 +1278,7 @@ function showItem() {
     img.alt = '';
     // No thumbnail placeholder: swapping it for the full image looked like a
     // zoom animation when stepping through photos with the arrow keys.
-    img.onload = drawFaces;
+    img.onload = function () { drawFaces(); drawText(); };
     img.src = viewUrl(i);
     stage.appendChild(img);
     // Warm up the neighbours.
@@ -1288,6 +1293,8 @@ function showItem() {
     $('lb-title').textContent = formatDate(info) + ' · ' + info.name;
     if (!$('lb-panel').hidden) renderPanel();
     drawFaces();
+    syncTextButton();
+    drawText();
   }).catch(function () {});
 }
 
@@ -1321,6 +1328,178 @@ function drawFaces() {
   });
 }
 window.addEventListener('resize', drawFaces);
+
+
+// ---------------------------------------------------------- text in the photo (phase 9)
+
+// The words of the search's text terms, folded like the server folds the
+// lines (lower case, no accents, ß as ss, only letters and digits).
+function foldMap(s) {
+  var out = '', map = [];
+  for (var i = 0; i < s.length; i++) {
+    var c = s[i];
+    var f = c === 'ß' ? 'ss' : c.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    f = f.replace(/[^\p{L}\p{N}]/gu, ' ');
+    for (var j = 0; j < f.length; j++) { out += f[j]; map.push(i); }
+  }
+  return { text: out, map: map };
+}
+function searchWords() {
+  var words = [];
+  state.filter.texts.forEach(function (t) { foldMap(t).text.split(' ').forEach(function (w) { if (w) words.push(w); }); });
+  return words;
+}
+// Does this line hold a word of the text search? (Its folded text, as the server stored it.)
+function lineHit(line) {
+  var words = searchWords();
+  return words.length > 0 && words.some(function (w) { return (line.norm || '').indexOf(w) >= 0; });
+}
+// The line's text as nodes, the words of the search marked.
+function markedText(text) {
+  var words = searchWords(), box = document.createDocumentFragment();
+  if (!words.length) { box.appendChild(document.createTextNode(text)); return box; }
+  var folded = foldMap(text), ranges = [];
+  words.forEach(function (w) {
+    for (var at = folded.text.indexOf(w); at >= 0; at = folded.text.indexOf(w, at + w.length)) {
+      ranges.push([folded.map[at], folded.map[at + w.length - 1] + 1]);
+    }
+  });
+  ranges.sort(function (a, b) { return a[0] - b[0]; });
+  var pos = 0;
+  ranges.forEach(function (r) {
+    if (r[1] <= pos) return;
+    var from = Math.max(r[0], pos);
+    if (from > pos) box.appendChild(document.createTextNode(text.slice(pos, from)));
+    box.appendChild(el('mark', '', text.slice(from, r[1])));
+    pos = r[1];
+  });
+  if (pos < text.length) box.appendChild(document.createTextNode(text.slice(pos)));
+  return box;
+}
+
+// The top-bar button: only on photos that have text, dim until it is switched on.
+function syncTextButton() {
+  var b = $('lb-text'), info = lb.details;
+  var has = !!(info && info.text && info.text.length);
+  b.hidden = !has;
+  b.classList.toggle('on', has && lb.showText);
+  b.setAttribute('aria-pressed', has && lb.showText ? 'true' : 'false');
+}
+
+// Switch the outlines on the photo and the list in the panel together.
+function toggleText() {
+  var info = lb.details;
+  if (!info || !info.text || !info.text.length) return;
+  lb.showText = !lb.showText;
+  lb.textOpen = lb.showText;
+  if (lb.showText && $('lb-panel').hidden) { $('lb-panel').hidden = false; renderPanel(); }
+  else if (lb.textBox) fillText(lb.textBox, info);
+  lb.hoverLine = null;
+  syncTextButton();
+  drawText();
+}
+$('lb-text').appendChild(icon('scan'));
+$('lb-text').onclick = toggleText;
+
+// Boxes around the lines of text (fractions of the picture as the file has it, like the faces').
+// While a text search is open only the lines that hold its words, thick and yellow;
+// a line the pointer is on in the list is outlined either way. Hidden lines are not drawn.
+function drawText() {
+  var stage = $('stage');
+  stage.querySelectorAll('.text-box').forEach(function (b) { b.remove(); });
+  var info = lb.details, img = stage.querySelector('img');
+  if (!lb.showText || !info || !info.text || !img || img.hidden) return;
+  var openId = state.data.ids[state.open];
+  if (info.id !== (isAll() ? openId % SPAN : openId)) return;
+  var r = img.getBoundingClientRect(), s = stage.getBoundingClientRect();
+  var searching = searchWords().length > 0;
+  info.text.forEach(function (l, k) {
+    if (l.hidden) return;
+    var hit = searching && lineHit(l), hot = lb.hoverLine === k;
+    if (searching && !hit && !hot) return;
+    var f = turnedBox(l, info.view_turn || 0);
+    var b = el('div', 'text-box' + (hit ? ' hit' : '') + (hot ? ' hot' : ''));
+    b.style.left = (r.left - s.left + f.x * r.width) + 'px';
+    b.style.top = (r.top - s.top + f.y * r.height) + 'px';
+    b.style.width = (f.w * r.width) + 'px';
+    b.style.height = (f.h * r.height) + 'px';
+    b.title = l.text;
+    // A click on a box finds its line in the list.
+    b.onclick = function (ev) {
+      ev.stopPropagation();
+      lb.hoverLine = k;
+      lb.textOpen = true;
+      if (lb.textBox) fillText(lb.textBox, info);
+      var row = lb.textBox && lb.textBox.querySelector('[data-line="' + k + '"]');
+      if (row) row.scrollIntoView({ block: 'nearest' });
+      drawText();
+    };
+    stage.appendChild(b);
+  });
+}
+window.addEventListener('resize', drawText);
+
+// The foldable "Recognized text" block of the info panel (folded until the
+// button or the heading opens it).
+function infoText(info) {
+  if (!info.text || !info.text.length) { lb.textBox = null; return null; }
+  var box = el('div', 'txt-sec');
+  lb.textBox = box;
+  fillText(box, info);
+  return box;
+}
+
+function fillText(box, info) {
+  box.textContent = '';
+  var lines = info.text, shown = lines.filter(function (l) { return !l.hidden; });
+  var head = el('div', 'txt-head');
+  head.appendChild(el('span', 'chev', lb.textOpen ? '▾' : '▸'));
+  head.appendChild(el('span', 'txt-title', tr('text.title')));
+  head.appendChild(el('span', 'txt-count', String(shown.length)));
+  var copy = el('button', 'txt-copy');
+  copy.type = 'button';
+  copy.appendChild(icon('copy'));
+  copy.appendChild(document.createTextNode(tr('text.copy_all')));
+  copy.onclick = function (ev) {
+    ev.stopPropagation();
+    copyText(shown.map(function (l) { return l.text; }).join('\n')).then(function (ok) {
+      toast(ok ? tr('text.copied', { n: shown.length }) : tr('text.copy_failed'));
+    });
+  };
+  head.appendChild(copy);
+  head.onclick = function () { lb.textOpen = !lb.textOpen; fillText(box, info); };
+  box.appendChild(head);
+  if (!lb.textOpen) return;
+  var list = el('div', 'txt-list');
+  lines.forEach(function (l, k) {
+    var row = el('div', 'txt-line' + (lineHit(l) && !l.hidden ? ' hit' : '') + (l.hidden ? ' gone' : ''));
+    row.dataset.line = k;
+    var t = el('span', 'tt');
+    t.appendChild(markedText(l.text));
+    row.appendChild(t);
+    // Only a drive's own photo app decides what finds a photo (the common timeline only looks).
+    if (!isAll()) {
+      var x = el('button', 'x', l.hidden ? '↺' : '✕');
+      x.type = 'button';
+      x.title = tr(l.hidden ? 'text.show_again' : 'text.hide');
+      x.onclick = function (ev) {
+        ev.stopPropagation();
+        var id = info.id, hidden = !l.hidden;
+        post(LIBAPI + '/files/' + id + '/text-hidden', { norm: l.norm, hidden: hidden }).then(function () {
+          l.hidden = hidden;
+          if (lb.details === info) { fillText(box, info); drawText(); }
+        }).catch(function (e) { toast(e.message); });
+      };
+      row.appendChild(x);
+    }
+    row.addEventListener('mouseenter', function () { lb.hoverLine = k; drawText(); });
+    row.addEventListener('mouseleave', function () { if (lb.hoverLine === k) { lb.hoverLine = null; drawText(); } });
+    list.appendChild(row);
+  });
+  box.appendChild(list);
+  var gone = lines.length - shown.length;
+  if (gone) box.appendChild(el('div', 'txt-note', tr('text.hidden_note', { n: gone })));
+}
 
 // A face's box (fractions of the picture as the file has it) for a picture
 // that shoebox shows turned by `q` quarter turns clockwise.
@@ -1408,6 +1587,8 @@ function renderPanelAll(info) {
     row(tr('info.people'), faces);
   }
   panel.appendChild(dl);
+  var text = infoText(info);
+  if (text) panel.appendChild(text);
   var actions = el('div', 'actions');
   var open = el('button', 'btn quiet', tr('info.open_in', { name: driveName }));
   open.title = tr('info.open_in_hint');
@@ -1470,7 +1651,10 @@ function renderPanel() {
   }
   infoFaces(row, info);
   panel.appendChild(dl);
+  var text = infoText(info);
+  if (text) panel.appendChild(text);
   drawFaces();
+  drawText();
 
   var actions = el('div', 'actions');
   infoReveal(actions, info);
@@ -1588,6 +1772,7 @@ document.addEventListener('keydown', function (ev) {
   else if (ev.key === 'ArrowLeft') step(-1);
   else if (ev.key === 'ArrowRight') step(1);
   else if (ev.key === 'i') $('lb-info').onclick();
+  else if ((ev.key === 't' || ev.key === 'T') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) toggleText();
   else if ((ev.key === 'f' || ev.key === 'F') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) toggleFavoriteOpen();
   else if ((ev.key === 'r' || ev.key === 'R') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) rotateOpen(ev.shiftKey ? 1 : -1);
 });
