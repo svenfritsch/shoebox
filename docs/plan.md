@@ -720,6 +720,68 @@ the same hash-to-ids lookup), and is intersected with the other sets. It is
 evaluated only when a text chip is present; typing in the box never queries
 the text index (the suggestion row needs no lookup).
 
+#### Text in the viewer, and keeping unwanted text out of the index
+
+Mock-ups with four of the owner's photos (a road sign, a shopping list, a
+package, a flyer opened from a text search) were made in a chat session and
+are **not** committed (they show private photos); the design they show:
+
+- **Where:** the info panel gets a block **Recognized text** (document scanner
+  icon) under the people block, in the same style. Two buttons: **Show text**
+  (a toggle like "Show boxes" for faces: outlines every line on the photo in
+  the accent colour, the same overlay as the face boxes) and **Copy all** (all
+  lines, one per row, to the clipboard). Below them the list of lines as read,
+  top to bottom; hovering a line outlines its box on the photo and clicking
+  a box scrolls to its line. A small note shows the line count and the day
+  it was read.
+- **Opened from a text search:** when the viewer is opened from a `text:`
+  chip, the matching words are marked in the list (yellow) and their boxes
+  are outlined thick and yellow while the other lines stay quiet; **Show text**
+  is off by default otherwise, on in this case.
+- **Hide a line:** every line has a ✕ ("Not text I want"). A hidden line is
+  struck through (↺ brings it back) and **leaves the search index for that
+  photo**. It is the user's decision, so it lives in `library.db` like face
+  decisions (keyed by content and box, survives moves and re-reads, included
+  in the user data backup), never in the file; the recognition cache can be
+  deleted and rebuilt without losing it. A note under the list says how many
+  lines are hidden.
+- Only lines at or above the confidence and size limits below are stored, so
+  the list shows what the search can find; nothing is ever written to the photo.
+- Keyboard: `t` toggles the overlay in the viewer (free in the current
+  shortcut list; check on build). The text is selectable in the panel; there is
+  no selecting text on the picture itself.
+
+**"Deutsche" on the shopping-list photo (a question from the owner: should
+such text be in the index?).** In the test the word was read (0.99) and, with
+the limits planned so far, **it would have been indexed**: it is part of an
+envelope that lies at the top edge of the photo. It is not small: its box is
+5.4 % of the picture height, as tall as the handwritten list words (4.6–5.7 %),
+so a size limit cannot drop it. What distinguishes it is that it is cut off by
+the edge and tilted, and that it is not what the photo is about. Measured box
+heights (percent of the photo's height, long edge 1600 px) of lines that are
+wanted: handwritten words 4.6–5.7, headings 3–7, body text 1.7–2.6, the tiny
+seal text on a package 1.1–1.5, a road sign's small print 0.6–1.2 (read at
+0.82–0.93, partly wrong). Decisions:
+
+1. **Minimum size, default 1.0 % of the photo's height**, adjustable on the
+   Text check page (slider with the lines near the limit shown as crops, like
+   the Pet check). It removes the unreliable smallest lines (the 0.6 % "inas"
+   of a small sign, specks and icons) and nothing in these ten photos that the
+   owner would want; going to 1.5 % would also drop the package's test-seal
+   print, which is why it is a setting.
+2. **Lines cut by the edge are dropped by default** when their box touches the
+   photo's border and their score is below 0.97, as partly visible neighbours
+   ("Deutsche" at the top edge) are rarely what a person searches for. To be
+   verified on build against the 12 photos (does it drop "Deutsche" and
+   nothing wanted?); if it also drops wanted text (a sign cut by the frame),
+   the rule is removed and only decision 3 stays.
+3. **Hide a line** in the viewer (above): the decision for everything the
+   rules cannot know. A hidden line is remembered, so one click settles "I do
+   not want this word to find this photo" for good.
+4. A word the owner never wants indexed anywhere (a brand name on every
+   package) can be **ignored globally** later: Settings, Recognized text, a
+   list of ignored words, applied at search time. Not in v1.
+
 #### What it costs: space, search speed, reading time
 
 These are **estimates for planning, not measurements**; step 1 (the spike)
