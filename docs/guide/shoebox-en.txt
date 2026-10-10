@@ -563,14 +563,16 @@ All drives gives you one common timeline across all of them. It is for
 looking: photos that are favorites show a ♥ (greyed out, you cannot click it),
 and the info panel shows tags, favorite and people, but none of it can be
 changed there (Show boxes and pointing at a person to see their face still
-work). Open in … in the panel takes you to the photo's own drive to change
-tags, people or favorites. Manage drives, next to Duplicates, Trash and
-Settings, opens a page that does not depend on the drive you are looking at:
-your drives as cards, and two tabs below them, People across drives and
-Duplicates across drives. A drive that is unplugged is shown as offline. The
-drive you are looking at is filled in with the accent colour, and so is the
-page you have open under it (All photos, Duplicates, Trash, Settings), so you
-can always see which drive's trash you are in.
+work). The panel names the drive the photo is on (its disk name, as in Manage
+drives) and has Show in Finder (Show in Explorer on Windows) and Copy path;
+Open in <drive>'s timeline switches to that drive's own timeline, at the
+photo's folder, to change tags, people or favorites. Manage drives, next to
+Duplicates, Trash and Settings, opens a page that does not depend on the drive
+you are looking at: your drives as cards, and two tabs below them, People
+across drives and Duplicates across drives. A drive that is unplugged is shown
+as offline. The drive you are looking at is filled in with the accent colour,
+and so is the page you have open under it (All photos, Duplicates, Trash,
+Settings), so you can always see which drive's trash you are in.
 
 Original and backup drives
 On the Manage drives page every drive is a card with its disk name and the

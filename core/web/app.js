@@ -1263,7 +1263,8 @@ function renderPanelAll(info) {
     dl.appendChild(dd);
   };
   row(tr('info.date'), formatDate(info));
-  row(tr('info.drive'), lib.name);
+  var driveName = lib.volume || lib.name;
+  row(tr('info.drive'), driveName);
   row(tr('info.path'), info.path);
   row(tr('info.size'), (info.width && info.height ? info.width + ' × ' + info.height + ' · ' : '') + formatBytes(info.size));
   row(tr('info.camera'), info.camera);
@@ -1302,10 +1303,19 @@ function renderPanelAll(info) {
   }
   panel.appendChild(dl);
   var actions = el('div', 'actions');
-  var open = el('button', 'btn quiet', tr('info.open_in', { name: lib.name }));
+  var open = el('button', 'btn quiet', tr('info.open_in', { name: driveName }));
   open.title = tr('info.open_in_hint');
   open.onclick = function () { switchLibrary(lib.id, 'folder=' + info.folder_id); };
   actions.appendChild(open);
+  if (state.reveal) {
+    var reveal = el('button', 'btn quiet', state.reveal);
+    reveal.onclick = function () { revealOn(lib.id, info.path); };
+    actions.appendChild(reveal);
+  }
+  var copy = el('button', 'btn quiet', tr('reveal.copy_path'));
+  copy.title = info.path;
+  copy.onclick = function () { copyPath(info.path); };
+  actions.appendChild(copy);
   panel.appendChild(actions);
   drawFaces();
 }
@@ -5647,6 +5657,8 @@ I18n.ready.then(function () {
       $('title').textContent = tr('drives.all');
       document.title = tr('drives.all') + ' · shoebox';
       applyFilter();
+      // Only for the label of the "show in the file manager" button.
+      api(LIBAPI + '/info').then(function (i) { state.reveal = revealLabel(i.reveal); }).catch(function () {});
       return;
     }
     return Promise.all([loadFolders(), loadInfo(), loadOwnTags(), loadPeople(), loadGeo()]).then(function () {

@@ -611,8 +611,11 @@ Seitenleiste. Alle Laufwerke zeigt eine gemeinsame Zeitleiste über alle. Sie
 ist zum Ansehen da: Favoriten zeigen ein ♥ (ausgegraut, nicht anklickbar), und
 die Infoleiste zeigt Tags, Favorit und Personen, ohne dass sich dort etwas
 ändern lässt (Rahmen anzeigen und das Zeigen auf eine Person, um ihr Gesicht
-zu sehen, funktionieren weiterhin). In … öffnen in der Leiste führt zum
-eigenen Laufwerk des Fotos, um Tags, Personen oder Favoriten zu ändern.
+zu sehen, funktionieren weiterhin). Die Leiste nennt das Laufwerk, auf dem das
+Foto liegt (den Namen des Datenträgers, wie in Laufwerke verwalten), und
+bietet Im Finder zeigen (unter Windows Im Explorer zeigen) und Pfad kopieren;
+In der Zeitleiste von <Laufwerk> öffnen wechselt zur eigenen Zeitleiste dieses
+Laufwerks, im Ordner des Fotos, um Tags, Personen oder Favoriten zu ändern.
 Laufwerke verwalten, neben Duplikate, Papierkorb und Einstellungen, öffnet
 eine Seite, die nicht vom angesehenen Laufwerk abhängt: deine Laufwerke als
 Karten und darunter zwei Reiter, Personen über Laufwerke hinweg und Duplikate
