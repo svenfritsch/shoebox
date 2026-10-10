@@ -23,6 +23,8 @@ if (mode === 'launcher') {
   await p.evaluate(() => { var c = document.querySelectorAll('#drive-chips > *'); ['Photos', 'Backup'].forEach((n, i) => { if (c[i]) c[i].textContent = n; }); for (var i = 2; i < c.length; i++) c[i].remove(); });
   await p.click('button[data-kind=scan]');
   await p.waitForSelector('#summary:not(:empty)', { timeout: 60000 }); await wait(1500);
+  // Show shoebox on the drive (the folder it was copied to) instead of this machine's path.
+  await p.evaluate((lib) => { var h = document.getElementById('addons-hint'); h.textContent = h.textContent.replace(/\/\S*recognizer/, lib + '/shoebox-macos/recognizer'); }, libPath);
   await shot('launcher-overview', { fullPage: true });
   // A photo copied onto the drive by hand, then a second scan: the scan lists
   // it as already there and offers to delete the new copy.
