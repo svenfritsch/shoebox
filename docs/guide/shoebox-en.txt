@@ -295,23 +295,21 @@ Quick actions
 Clear Same Folder Copies and Clear Lower Quality Copies clean up the clear-cut
 cases in one go.
 
-What to do with a group
-Action: What it does
-Keep all: These files stay, and they belong together. The others are also
-listed as Versions in the info panel of each photo.
-Different photos: Only on groups of look-alikes: these are separate shots, not
-copies of each other.
-Delete this copy: Tick it on each copy you want gone. The best file always
-stays.
-Keep this one: Open a look-alike photo, compare them large and press it: after
-you confirm, all the others go to the trash.
+What you can do with duplicates
+Action: What it means
+Keep all: Nothing is deleted. These files belong together; they show as
+Versions on each photo. Button at the top right.
+Different photos: Nothing is deleted. Look-alikes are separate shots, not
+copies. Button at the top right.
+Delete this copy: Copy goes to the trash. Tick it on every copy you want gone;
+the best file stays.
+Keep this one: All others go to the trash. Look-alikes only: open a photo,
+compare, press it, confirm.
 
-Keep all and Different photos sit at the top right of a group. Either way
-nothing is deleted and no photo is touched; shoebox only makes a note in its
-own database on the drive, so it never offers this group again. The note
-follows the photos if you move or rename them. Photos you have decided about
-are also left alone by Clear Same Folder Copies and Clear Lower Quality
-Copies.
+Keep all and Different photos are only a note in shoebox’s own database on the
+drive, never in the photos. The note follows the photos if you move or rename
+them, and Clear Same Folder Copies and Clear Lower Quality Copies leave these
+photos alone.
 
 Trash
 Nothing is deleted right away. Trashed photos wait in .shoebox/trash on the

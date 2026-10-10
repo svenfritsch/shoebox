@@ -309,23 +309,21 @@ Schnellaktionen
 Kopien im selben Ordner entfernen und Kopien geringerer Qualität entfernen
 räumen die eindeutigen Fälle in einem Zug auf.
 
-Was tun mit einer Gruppe
-Aktion: Was sie macht
-Alle behalten: Diese Dateien bleiben, und sie gehören zusammen. Die übrigen
-zeigt shoebox außerdem als Versionen im Infobereich jedes Fotos an.
-Verschiedene Fotos: Nur bei ähnlichen Fotos: Das sind getrennte Aufnahmen,
-keine Kopien voneinander.
-Diese Kopie löschen: Bei jeder Kopie anhaken, die weg soll. Die beste Datei
-bleibt immer.
-Dieses behalten: Ein ähnliches Foto öffnen, alle groß vergleichen und
-auswählen: nach der Bestätigung kommen alle anderen in den Papierkorb.
+Was du bei Duplikaten tun kannst
+Aktion: Bedeutung
+Alle behalten: Nichts wird gelöscht. Diese Dateien gehören zusammen; sie
+erscheinen als Versionen bei jedem Foto. Schaltfläche oben rechts.
+Verschiedene Fotos: Nichts wird gelöscht. Ähnliche Fotos sind getrennte
+Aufnahmen, keine Kopien. Schaltfläche oben rechts.
+Diese Kopie löschen: Die Kopie kommt in den Papierkorb. Bei jeder Kopie
+anhaken, die weg soll; die beste Datei bleibt.
+Dieses behalten: Alle anderen kommen in den Papierkorb. Nur bei ähnlichen
+Fotos: Foto öffnen, vergleichen, wählen, bestätigen.
 
-Alle behalten und Verschiedene Fotos stehen oben rechts an einer Gruppe. In
-beiden Fällen wird nichts gelöscht und kein Foto verändert; shoebox macht sich
-nur eine Notiz in seiner eigenen Datenbank auf dem Laufwerk und zeigt die
-Gruppe nie wieder an. Die Notiz bleibt erhalten, wenn du Fotos verschiebst
-oder umbenennst. Entschiedene Fotos lassen auch Kopien im selben Ordner
-entfernen und Kopien geringerer Qualität entfernen in Ruhe.
+Alle behalten und Verschiedene Fotos sind nur eine Notiz in shoeboxes eigener
+Datenbank auf dem Laufwerk, nie in den Fotos. Die Notiz bleibt erhalten, wenn
+du Fotos verschiebst oder umbenennst, und Kopien im selben Ordner entfernen
+und Kopien geringerer Qualität entfernen lassen diese Fotos in Ruhe.
 
 Papierkorb
 Nichts wird sofort gelöscht. Gelöschte Fotos warten in .shoebox/trash auf dem
