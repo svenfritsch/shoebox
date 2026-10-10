@@ -1286,6 +1286,8 @@ struct AllTimeline {
 struct LibraryRef {
     id: String,
     name: String,
+    /// The disk the drive is on, as the drive cards show it.
+    volume: Option<String>,
 }
 
 /// One timeline over the drives that are there and not backups. Filters name
@@ -1307,7 +1309,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
     let types = types_of(&pairs)?;
     let pet_terms = pets_of(&pairs)?;
     let fav = fav_of(&pairs);
-    let libs: Vec<LibraryRef> = apps.iter().map(|a| LibraryRef { id: library_id(&a.name), name: a.name.clone() }).collect();
+    let libs: Vec<LibraryRef> = apps.iter().map(|a| LibraryRef { id: library_id(&a.name), name: a.name.clone(), volume: volume::placement(&a.root).map(|p| p.volume) }).collect();
 
     let timeline = tokio::task::spawn_blocking(move || -> ApiResult<Timeline> {
         struct Row {
