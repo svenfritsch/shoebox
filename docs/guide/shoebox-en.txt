@@ -40,7 +40,9 @@ Five things that make it different from other photo managers.
    and the trash. Plug the drive into another computer and it all comes along.
    It adds only what a photo app needs to run: under 1 GB for 80 GB of photos
    (about 1 %), measured on a real library of 31 GB, including the face
-   recognition data.
+   recognition data. Reading the words in your photos adds a few tens of
+   megabytes (about 25 MB for 100 GB of photos, estimated; a drive full of
+   scanned documents needs more).
 
 - Duplicates across drives
    Finds identical, resized, edited and look-alike photos, also across several
@@ -162,8 +164,8 @@ Get started in three steps
 --------------------------
 
 macOS, Intel (10.13 or newer) and Apple Silicon. Nothing to install to browse
-and scan; face and pet recognition are add-ons you install from the Control
-Panel.
+and scan; face, pet and text recognition are add-ons you install from the
+Control Panel.
 
 1. Unpack it and choose where it lives
    Unpack shoebox-macos.tar.gz from the release (double-click it in Finder).
@@ -195,23 +197,42 @@ Panel.
    Open.
 
 3. Add-ons, scan, then open
-   Only if you want people and pets recognized: in step 1, Add-ons, tick what
-   you want (Faces, Pets, or both; each works without the other) and press
-   Install the selected add-ons. The Control Panel lists what is downloaded:
-   the Python and OpenCV program (about 200 MB, once, for all add-ons), Faces
-   (about 40 MB) and Pets (about 140 MB). Internet needed, a few minutes.
-   Add-ons can be added later, and a computer of another kind (Intel or Apple
-   Silicon) needs them installed once on that computer. Python and OpenCV is
-   always installed with the first add-on (its box is ticked and cannot be
-   unticked). Until an add-on is installed, its recognize button stays grey
-   and says why. Click the heading Add-ons to fold the step away; it stays
-   folded once everything is installed. Then add your drive (click it, or type
-   /Volumes/MyDrive), press Scan, then Start photo app. The first scan reads
-   every file once and takes a while on a big drive; later scans only look at
-   what changed. When it finishes, the tabs Moved, Changed, Missing and
-   Already on the drive (each with its count) list exactly which files they
-   mean; for new files you already had, the tab shows the older copy right
-   next to each one.
+   Only if you want people, pets or the words in your photos recognized: in
+   step 1, Add-ons, tick what you want (Faces, Pets, Text, or any mix; each
+   works without the others) and press Install the selected add-ons. The
+   Control Panel lists what is downloaded: the Python and OpenCV program
+   (about 200 MB, once, for all add-ons), Faces (about 40 MB), Pets (about 140
+   MB) and Text (about 100 MB). Internet needed, a few minutes. Add-ons can be
+   added later, and a computer of another kind (Intel or Apple Silicon) needs
+   them installed once on that computer. Python and OpenCV is always installed
+   with the first add-on (its box is ticked and cannot be unticked). Until an
+   add-on is installed, its recognize button stays grey and says why. Click
+   the heading Add-ons to fold the step away; it stays folded once everything
+   is installed. Then add your drive (click it, or type /Volumes/MyDrive),
+   press Scan, then Start photo app. The first scan reads every file once and
+   takes a while on a big drive; later scans only look at what changed. When
+   it finishes, the tabs Moved, Changed, Missing and Already on the drive
+   (each with its count) list exactly which files they mean; for new files you
+   already had, the tab shows the older copy right next to each one.
+
+   Text (reading the words in your photos: documents, screenshots, street
+   signs, menus) goes like this: tick Text in step 1, press Install the
+   selected add-ons and wait until the label next to Text says installed (a
+   few minutes, internet needed). Then tick your drive and press Recognize
+   text in step 3. It reads German and English letters and ignores everything
+   else, and it only reads: no photo is changed. It is slow, about a second
+   per photo on a recent computer, so a library of 50,000 photos takes half a
+   day, on an older Mac a day or two. Start it in the evening. You can press
+   Cancel and start it again later: it continues where it stopped, and it
+   reads screenshots and photos without camera data first, because that is
+   where most text is. The words are kept on the drive, in the hidden .shoebox
+   folder, next to the faces. Searching for them in the photo app comes in the
+   next version and is not in this one yet. If the label next to Text does not
+   turn to installed, or the Control Panel says Text cannot run on this
+   computer (possible on a very old Mac), everything else you ticked is
+   installed anyway: plug the drive into a newer computer, install Text there
+   and press Recognize text. The words are saved on the drive, so every
+   computer has them afterwards.
 
 Control Panel tasks
 Scan: find new, moved and changed photos. Fast: it only looks at what changed
@@ -235,6 +256,9 @@ Rotated faces: also find faces turned on their side, for example people lying
 down (slower). Needs the Faces add-on.
 Recognize pets: find cats and dogs; they show up among the faces. Needs the
 Pets add-on, not the Faces one.
+Recognize text: read the words in your photos (documents, screenshots, signs,
+menus). Needs the Text add-on, not the Faces one. It only reads; no photo is
+changed. Slow: you can cancel it and it continues where it stopped.
 Face stats: how recognition went
 Backup check: is the 2nd folder a complete copy of the 1st?
 
@@ -247,15 +271,22 @@ Several computers and systems
   .shoebox/recognizer (only used when the program folder has nothing). So a
   shoebox folder on your computer is used for every drive, even if a drive
   holds models too.
-- Models and Python are different things. The models (Faces, Pets) are the
-  same on every computer. Python and OpenCV is built for one kind of computer:
-  Intel Mac, Apple Silicon Mac, Linux, Windows. If you take a drive with
-  shoebox-macos from an Intel MacBook to a newer one, step 1 shows Python and
-  OpenCV: required on the newer one, your add-ons say models found, needs
+- Models and Python are different things. The models (Faces, Pets, Text) are
+  the same on every computer. Python and OpenCV is built for one kind of
+  computer: Intel Mac, Apple Silicon Mac, Linux, Windows. If you take a drive
+  with shoebox-macos from an Intel MacBook to a newer one, step 1 shows Python
+  and OpenCV: required on the newer one, your add-ons say models found, needs
   Python for this computer, and the recognize buttons are grey. Press Install
   the selected add-ons once there: only the missing Python is downloaded, the
   models are kept. Both kinds then live side by side in the same recognizer
   folder, and each computer uses its own.
+- Text is read by one computer and used by all. The words are saved on the
+  drive (in .shoebox/recognition.db), not on the computer. If Recognize text
+  is too slow on an old Mac, or the Text add-on cannot run there at all, press
+  it on a newer computer with the same drive plugged in; the old one then has
+  everything. The Text add-on installs two programs into the Python of the
+  recognizer folder (onnxruntime and rapidocr), so it is installed once on
+  each kind of computer, like Python and OpenCV; its models are kept.
 - Mac and Windows on one drive: copy both folders to the drive's top folder:
   shoebox-macos and shoebox-windows. Each has its own recognizer folder, so
   models you install in one are not shared with the other. Start shoebox from
@@ -687,7 +718,8 @@ Swipe in the viewer, tap to select.
 Command line (optional)
 shoebox scan <folder>: index new, moved and changed files
 shoebox verify <folder>: re-read files and compare with the index
-shoebox recognize <folder> [--pets]: find faces (and pets)
+shoebox recognize <folder> [--pets] [--text]: find faces (and pets, and with
+--text read the words in the photos; --text-only reads only the words)
 shoebox backup <original> <backup>: is the backup complete?
 shoebox serve <folder> [--lan] [--pin …]: open the photo app
 

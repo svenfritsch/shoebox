@@ -42,7 +42,9 @@ Fünf Dinge, die shoebox von anderen Foto-Verwaltungen unterscheiden.
    Computer stecken, und alles ist dabei. shoebox fügt nur hinzu, was eine
    Foto-App zum Laufen braucht: unter 1 GB bei 80 GB Fotos (etwa 1 %),
    gemessen an einer echten Bibliothek mit 31 GB, einschließlich der Daten der
-   Gesichtserkennung.
+   Gesichtserkennung. Das Lesen der Wörter in deinen Fotos kommt mit einigen
+   Dutzend Megabyte dazu (etwa 25 MB bei 100 GB Fotos, geschätzt; ein Laufwerk
+   voller gescannter Dokumente braucht mehr).
 
 - Duplikate über Laufwerke hinweg
    Findet identische, verkleinerte, bearbeitete und ähnliche Fotos, auch über
@@ -167,8 +169,8 @@ In drei Schritten loslegen
 --------------------------
 
 macOS, Intel (ab 10.13) und Apple Silicon. Zum Ansehen und Scannen ist nichts
-zu installieren; Gesichter- und Haustiererkennung sind Erweiterungen, die du
-in der Zentrale installierst.
+zu installieren; Gesichter-, Haustier- und Texterkennung sind Erweiterungen,
+die du in der Zentrale installierst.
 
 1. Entpacken und festlegen, wo es liegt
    shoebox-macos.tar.gz aus dem Release entpacken (im Finder doppelklicken).
@@ -204,16 +206,17 @@ in der Zentrale installierst.
    mit Öffnen starten.
 
 3. Erweiterungen, scannen, dann öffnen
-   Nur wenn Personen und Haustiere erkannt werden sollen: in Schritt 1,
-   Erweiterungen, ankreuzen, was du willst (Gesichter, Haustiere oder beides;
-   jedes geht ohne das andere), und Ausgewählte Erweiterungen installieren
-   drücken. Die Zentrale listet, was geladen wird: das Programm Python und
-   OpenCV (etwa 200 MB, einmal für alle Erweiterungen), Gesichter (etwa 40 MB)
-   und Haustiere (etwa 140 MB). Internet nötig, einige Minuten. Erweiterungen
-   lassen sich später ergänzen; ein Computer anderer Art (Intel oder Apple
-   Silicon) braucht sie einmal auf diesem Computer. Python und OpenCV wird
-   immer mit der ersten Erweiterung installiert (sein Kästchen ist angekreuzt
-   und lässt sich nicht abwählen). Solange eine Erweiterung fehlt, bleibt ihr
+   Nur wenn Personen, Haustiere oder die Wörter in deinen Fotos erkannt werden
+   sollen: in Schritt 1, Erweiterungen, ankreuzen, was du willst (Gesichter,
+   Haustiere, Text oder beliebig gemischt; jedes geht ohne die anderen), und
+   Ausgewählte Erweiterungen installieren drücken. Die Zentrale listet, was
+   geladen wird: das Programm Python und OpenCV (etwa 200 MB, einmal für alle
+   Erweiterungen), Gesichter (etwa 40 MB), Haustiere (etwa 140 MB) und Text
+   (etwa 100 MB). Internet nötig, einige Minuten. Erweiterungen lassen sich
+   später ergänzen; ein Computer anderer Art (Intel oder Apple Silicon)
+   braucht sie einmal auf diesem Computer. Python und OpenCV wird immer mit
+   der ersten Erweiterung installiert (sein Kästchen ist angekreuzt und lässt
+   sich nicht abwählen). Solange eine Erweiterung fehlt, bleibt ihr
    Erkennen-Knopf grau und sagt warum. Ein Klick auf die Überschrift
    Erweiterungen klappt den Schritt zu; er bleibt zu, sobald alles installiert
    ist. Dann Laufwerk hinzufügen (anklicken oder /Volumes/MeinLaufwerk
@@ -223,6 +226,27 @@ in der Zentrale installierst.
    Fehlend und Schon auf dem Laufwerk (jeweils mit Anzahl) genau auf, um
    welche Dateien es geht; bei neuen Dateien, die du schon hattest, steht die
    ältere Kopie gleich daneben.
+
+   Text (die Wörter in deinen Fotos lesen: Dokumente, Bildschirmfotos,
+   Straßenschilder, Speisekarten) geht so: in Schritt 1 Text ankreuzen,
+   Ausgewählte Erweiterungen installieren drücken und warten, bis das Schild
+   neben Text installiert sagt (einige Minuten, Internet nötig). Dann dein
+   Laufwerk ankreuzen und in Schritt 3 Text erkennen drücken. Es liest
+   deutsche und englische Buchstaben und lässt alles andere weg, und es liest
+   nur: kein Foto wird verändert. Es ist langsam, etwa eine Sekunde pro Foto
+   auf einem neueren Computer; eine Bibliothek mit 50.000 Fotos braucht also
+   einen halben Tag, auf einem älteren Mac ein bis zwei Tage. Am besten abends
+   starten. Du kannst Abbrechen drücken und später neu starten: Es macht dort
+   weiter, wo es aufgehört hat, und liest zuerst Bildschirmfotos und Fotos
+   ohne Kameradaten, weil dort die meisten Texte stehen. Die Wörter bleiben
+   auf dem Laufwerk, im versteckten Ordner .shoebox, neben den Gesichtern.
+   Danach zu suchen kommt mit der nächsten Version und ist in dieser noch
+   nicht möglich. Wenn das Schild neben Text nicht auf installiert springt
+   oder die Zentrale sagt, Text laufe auf diesem Computer nicht (bei einem
+   sehr alten Mac möglich), ist alles andere, was du angekreuzt hast, trotzdem
+   installiert: das Laufwerk an einen neueren Computer stecken, dort Text
+   installieren und Text erkennen drücken. Die Wörter werden auf dem Laufwerk
+   gespeichert, danach hat sie jeder Computer.
 
 Aufgaben in der Zentrale
 Scannen: neue, verschobene und geänderte Fotos finden. Schnell: es schaut nur
@@ -248,6 +272,10 @@ Gedrehte Gesichter: auch Gesichter finden, die auf der Seite liegen, zum
 Beispiel liegende Personen (langsamer). Braucht die Erweiterung „Gesichter“.
 Haustiere erkennen: Katzen und Hunde finden; sie erscheinen bei den
 Gesichtern. Braucht die Erweiterung „Haustiere“, nicht die für Gesichter.
+Text erkennen: die Wörter in deinen Fotos lesen (Dokumente, Bildschirmfotos,
+Schilder, Speisekarten). Braucht die Erweiterung „Text“, nicht die für
+Gesichter. Es liest nur; kein Foto wird verändert. Langsam: man kann
+abbrechen, und es macht dort weiter, wo es aufgehört hat.
 Gesichts-Statistik: wie die Erkennung gelaufen ist
 Backup-Prüfung: ist der 2. Ordner eine vollständige Kopie des 1.?
 
@@ -260,8 +288,8 @@ Mehrere Computer und Systeme
   .shoebox/recognizer des Laufwerks (nur, wenn der Programmordner nichts hat).
   Ein shoebox-Ordner auf deinem Computer wird also für jedes Laufwerk benutzt,
   auch wenn ein Laufwerk selbst Modelle enthält.
-- Modelle und Python sind zweierlei. Die Modelle (Gesichter, Haustiere) sind
-  auf jedem Computer gleich. Python und OpenCV gibt es je Computerart:
+- Modelle und Python sind zweierlei. Die Modelle (Gesichter, Haustiere, Text)
+  sind auf jedem Computer gleich. Python und OpenCV gibt es je Computerart:
   Intel-Mac, Apple-Silicon-Mac, Linux, Windows. Nimmst du ein Laufwerk mit
   shoebox-macos von einem Intel-MacBook zu einem neueren mit, zeigt Schritt 1
   dort bei Python und OpenCV nötig, deine Erweiterungen sagen Modelle da,
@@ -270,6 +298,14 @@ Mehrere Computer und Systeme
   fehlende Python geladen, die Modelle bleiben. Beide Arten liegen dann
   nebeneinander im selben Ordner recognizer, und jeder Computer nutzt seine
   eigene.
+- Text liest ein Computer, nutzen können ihn alle. Die Wörter werden auf dem
+  Laufwerk gespeichert (in .shoebox/recognition.db), nicht auf dem Computer.
+  Ist Text erkennen auf einem alten Mac zu langsam oder läuft die Erweiterung
+  „Text“ dort gar nicht, drückst du es auf einem neueren Computer mit dem
+  eingesteckten Laufwerk; der alte hat danach alles. Die Erweiterung „Text“
+  installiert zwei Programme in das Python des Ordners recognizer (onnxruntime
+  und rapidocr), wird also wie Python und OpenCV einmal je Computerart
+  installiert; ihre Modelle bleiben erhalten.
 - Mac und Windows auf einem Laufwerk: beide Ordner in den obersten Ordner des
   Laufwerks kopieren: shoebox-macos und shoebox-windows. Jeder hat seinen
   eigenen Ordner recognizer; Modelle, die du im einen installierst, gelten
@@ -739,7 +775,9 @@ eingeben. In der Ansicht wischen, zum Auswählen tippen.
 Kommandozeile (optional)
 shoebox scan <Ordner>: neue, verschobene und geänderte Dateien indexieren
 shoebox verify <Ordner>: Dateien neu lesen und mit dem Index vergleichen
-shoebox recognize <Ordner> [--pets]: Gesichter (und Haustiere) finden
+shoebox recognize <Ordner> [--pets] [--text]: Gesichter (und Haustiere, und
+mit --text die Wörter in den Fotos lesen; --text-only liest nur die Wörter)
+finden
 shoebox backup <Original> <Backup>: ist das Backup vollständig?
 shoebox serve <Ordner> [--lan] [--pin …]: die Foto-App öffnen
 
