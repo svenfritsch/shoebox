@@ -131,6 +131,40 @@ it is an unknown task. `shoebox recognize --pets` starts it that way.
   so the core uses far stricter thresholds than for faces
   (`core/src/pets.rs`).
 
+### `text`: words in the picture
+
+An optional task (still protocol 2: a core that does not ask never sees it).
+The worker only loads the text models when it is started with `--text`;
+without the flag the hello has no `text` and a request for it is an unknown
+task. With the text models alone (no face models installed) the worker does
+text and says nothing of faces, like with `--pets` alone.
+
+```json
+→ {"id": 46, "tasks": ["text"], "image": "<base64 JPEG>"}
+← {"id": 46, "width": 1600, "height": 1200,
+   "text": [{"bbox": [x, y, w, h], "score": 0.97, "text": "Rechnung Nr. 2024-0412"}]}
+```
+
+- The hello lists `"text": {"model": "ppocr-v4-ch-en", "dim": 0}`. `model` is
+  stored with every result, so a different model redoes the text, never mixes
+  it; `dim` is 0 (there is no embedding).
+- One entry per **line** of text, top to bottom, then left to right; `bbox`
+  is the axis-aligned box around the line in pixels of the image sent (tilted
+  text gets its enclosing box), clamped to the picture; `score` is the
+  recogniser's confidence (0 to 1).
+- The worker reports **every** line it read, including junk, symbols and
+  characters of other scripts: the **core** filters (confidence, size, only
+  German and English characters, `ß` for the `β` the model prints), so the
+  rules live in one place and a change needs no new run of the models.
+- Engine: PP-OCRv4 (detection, angle classifier, recognition) from the
+  `rapidocr-onnxruntime` package on onnxruntime. The three model files
+  (`ch_PP-OCRv4_det_infer.onnx`, `ch_PP-OCRv4_rec_infer.onnx`,
+  `ch_ppocr_mobile_v2.0_cls_infer.onnx`) are in the models folder (copied there
+  by `install.sh --text`); the package must be importable by the worker's
+  Python. Missing files or package end the worker with a message on stderr.
+- The model reads Latin text well but prints `ä ö ü` without their marks and
+  `ß` as `β` or `B` (`docs/plan.md`, phase 9, spike results).
+
 ### `embed-pets`: pets drawn by hand
 
 With `--pets` the worker also does `embed-pets`, the counterpart of `embed` for a

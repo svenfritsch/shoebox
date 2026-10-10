@@ -348,7 +348,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | **In progress**: library id, launcher (cancel, saved folders, start scripts) and the multi-drive core (hub, offline, backup roles, common timeline, cross-drive duplicates and people) built; backup verification (`shoebox backup`, launcher button, All drives page) built; add-ons (launcher step 1: install Faces / Pets into `recognizer/` next to the program, which is on the drive when shoebox was copied there; Recognize buttons grey where the add-on is missing; a phase 9 text add-on follows the same pattern); real-hardware checks and Linux/Windows packaging open |
 | 7 | Pets: cats and dogs found (`shoebox recognize --pets`, launcher button "Recognize pets"), named, grouped and searched like people, also by kind ("all cats", "Katze", "Hund"); pets the detector missed can be drawn by hand; Settings → Calibration with the Face check and the new Pet check | **Built except the real-hardware run and DINOv2** (see [phase7.md](phase7.md)) |
 | 8 | UI translation, German and English, JSON message files (design and steps in [phase8.md](phase8.md)) | **Built, check open**: loader, key test, launcher and the whole photo app; the real-hardware check, a native read-through of the German texts and the CI run are open |
-| 9 | Text in photos (OCR): documents, screenshots, street signs, shop fronts found by the words in them. A new task of the recognizer worker, results in `recognition.db` with an FTS5 index, a search term in the UI | **Planned** (design below, no code yet) |
+| 9 | Text in photos (OCR): documents, screenshots, street signs, shop fronts found by the words in them. A new task of the recognizer worker, results in `recognition.db` with an FTS5 index, a search term in the UI | **In progress** (branch `claude/phase9-text-search`): design and spike done (see "Phase 9 details"); the worker task `text`, `install.sh --text` and the protocol text are built and tested on Linux; the Rust core (storage, pass, search), the Control Panel button, the viewer and the guide are open; Windows installer and a run on the old Intel Mac are open |
 | 10 | Locations: GPS positions from files, map in the photo info (Leaflet, OpenStreetMap, opt-in setting), Locations page with clustered pins, named places drawn on the map, positions set by hand (design in [phase10.md](phase10.md)) | **Built, check open**: scan reads GPS, schema v10, API, UI, guide; real-hardware check and the CI run are open |
 | 11 | Screenshots: a fourth entry in the Type drop-down, found from metadata and a pixel check (no new model); "Photos" then means stills that are not screenshots (design in [phase11.md](phase11.md)) | **Built with test pictures; threshold and real-hardware run open** (see [phase11.md](phase11.md)) |
 
@@ -836,7 +836,10 @@ also read Chinese characters; the core filters them out before anything is
 stored: characters outside an allow-list are removed from a line; the list is
 the Basic Latin letters and digits, the German umlauts and ß (ÄÖÜäöüß), spaces
 and ordinary punctuation and symbols (`. , ; : ! ? ' " „ " " ‘ ’ « » ( ) [ ] / \ | @ # & % * + = ~ ^ _ - – — · •`
-and `€ § ° ² ³ µ $ £`). A line left with **fewer than two letters or digits** is
+and `€ § ° ² ³ µ $ £`). The model prints `ß` as **`β`** (a Greek beta, seen in a real run of the
+installed add-on) or as a capital `B`; the core maps `β` to `ß` before the filter
+(otherwise the filter would remove it and "Straße" would become "Strae"), and
+the capital-B repair of the index applies on top. A line left with **fewer than two letters or digits** is
 dropped, so "田" and "门田" disappear and "11:33" stays. Other accented
 Latin letters (é, ñ, ç) are not in the list and are removed from a line that
 has them ("FOR SOMIÉ" is kept as "FOR SOMI"; the spike showed such letters
@@ -1114,12 +1117,19 @@ a cancelled run continues with the best candidates.
      decide: accept a long first run (as for faces; the order of the pass
      already puts the likely text first) or skip photos the cheap detector
      scores low.
-2. **Protocol 3** ([protocol.md](protocol.md)): hello lists `text` with its
-   model id; request task `text`; reply key `text: [{bbox, score, text}]`.
-   Additive: a protocol 2 worker is refused with the usual "update the
-   recognizer" message, as in earlier bumps. The fake worker returns
+2. **Worker task and protocol** ([protocol.md](protocol.md)), **built**: hello lists
+   `text` with its model id (`dim` 0); request task `text`; reply key `text:
+   [{bbox, score, text}]`. **Still protocol 2**, additive like `pets`: a core
+   that does not ask never sees it, and a core that asks checks the hello (no
+   bump, so an old Faces worker keeps working). `recognizer.py --text`,
+   `install.sh --text` (installs rapidocr and onnxruntime into the shared runtime
+   and copies the three model files into `models/`, so "installed" is decided
+   from files), tests in `test_recognizer.py` (plumbing without models, and the
+   real worker when `rapidocr-onnxruntime` and the models are there); the
+   installer was run on Linux end to end and read a test letter. `install.ps1`
+   (Windows) is not done. The fake worker returns
    deterministic lines (derived from the file hash), so the core is testable
-   without Python.
+   without Python (open).
 3. **Core storage and pass** (`core/src/text.rs`): `recognition.db` v6,
    normalisation (one function, used for both index and query, with unit
    tests for ß, umlauts, NFD input), `shoebox recognize --text`, pruning of

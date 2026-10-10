@@ -44,6 +44,13 @@ try:
 except ImportError:
     onnx = None
 
+try:
+    import rapidocr_onnxruntime  # noqa: F401
+    HAVE_RAPIDOCR = True
+except ImportError:
+    HAVE_RAPIDOCR = False
+HAVE_TEXT_MODELS = all(os.path.isfile(os.path.join(MODELS, f)) for f in recognizer.TEXT_FILES)
+
 
 @unittest.skipUnless(cv2 is not None and HAVE_MODELS, "needs opencv, numpy and recognizer/fetch-models.sh")
 class Protocol(unittest.TestCase):
@@ -310,6 +317,98 @@ class EmbedderPlumbing(unittest.TestCase):
             first = seen[0][2]
             for backend, output, v in seen:
                 self.assertTrue(np.allclose(v, first, atol=1e-4), (backend, output))
+
+
+@unittest.skipUnless(cv2 is not None, "needs opencv and numpy")
+class TextPlumbing(unittest.TestCase):
+    """The task `text` without models: what the worker makes of an engine's result."""
+
+    def run_text(self, result, shape=(100, 200, 3)):
+        text = recognizer.Text(cv2, np, engine=lambda img: (result, [0, 0, 0]))
+        return text(np.zeros(shape, np.uint8), {})
+
+    def test_lines_are_boxes_sorted_top_to_bottom(self):
+        quad = lambda x0, y0, x1, y1: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+        lines = self.run_text([
+            [quad(10, 60, 90, 80), "second", "0.9"],
+            [quad(12, 10, 150, 30), "first", 0.95],
+        ])
+        self.assertEqual([l["text"] for l in lines], ["first", "second"])
+        self.assertEqual(lines[0]["bbox"], [12.0, 10.0, 138.0, 20.0])
+        self.assertEqual(lines[1]["score"], 0.9)
+
+    def test_nothing_found_is_an_empty_list(self):
+        self.assertEqual(self.run_text(None), [])
+        self.assertEqual(self.run_text([]), [])
+
+    def test_boxes_are_clamped_and_empty_lines_dropped(self):
+        quad = lambda x0, y0, x1, y1: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+        lines = self.run_text([
+            [quad(-5, -5, 50, 20), "edge", 0.8],
+            [quad(10, 10, 60, 30), "   ", 0.9],
+            [quad(300, 10, 400, 30), "outside", 0.9],
+        ])
+        self.assertEqual([l["text"] for l in lines], ["edge"])
+        self.assertEqual(lines[0]["bbox"], [0.0, 0.0, 50.0, 20.0])
+
+    def test_tilted_text_gets_its_enclosing_box(self):
+        lines = self.run_text([[[[20, 40], [100, 20], [105, 40], [25, 60]], "tilted", 0.9]])
+        self.assertEqual(lines[0]["bbox"], [20.0, 20.0, 85.0, 40.0])
+
+
+@unittest.skipUnless(cv2 is not None and HAVE_RAPIDOCR and HAVE_TEXT_MODELS,
+                     "needs opencv, rapidocr-onnxruntime and the text models in the models folder")
+class TextTask(unittest.TestCase):
+    """The task `text`, only there when the worker is started with --text."""
+
+    def start(self, *args):
+        proc = subprocess.Popen(
+            [sys.executable, os.path.join(HERE, "recognizer.py"), *args],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+        )
+        self.addCleanup(lambda: (proc.stdin.close(), proc.wait(timeout=10), proc.stdout.close()))
+        return proc, json.loads(proc.stdout.readline())
+
+    def ask(self, proc, req):
+        proc.stdin.write(json.dumps(req) + "\n")
+        proc.stdin.flush()
+        return json.loads(proc.stdout.readline())
+
+    def jpeg(self, img):
+        ok, data = cv2.imencode(".jpg", img)
+        self.assertTrue(ok)
+        return base64.b64encode(data.tobytes()).decode()
+
+    def test_text_is_loaded_only_when_asked_for(self):
+        if HAVE_MODELS:  # a worker without flags is the faces worker, which needs the face models
+            _, hello = self.start()
+            self.assertNotIn("text", hello["tasks"])
+        proc, hello = self.start("--text")
+        self.assertEqual(hello["tasks"]["text"], {"model": recognizer.TEXT_MODEL, "dim": 0})
+        # With the text models alone the worker does not pretend to do faces.
+        if not HAVE_MODELS:
+            self.assertNotIn("faces", hello["tasks"])
+        reply = self.ask(proc, {"id": 1, "tasks": ["text"], "image": self.jpeg(np.full((240, 320, 3), 255, np.uint8))})
+        self.assertEqual(reply, {"id": 1, "width": 320, "height": 240, "text": []})
+
+    def test_text_without_the_flag_is_an_unknown_task(self):
+        if not HAVE_MODELS:
+            self.skipTest("a worker without flags needs the face models")
+        proc, _ = self.start()
+        reply = self.ask(proc, {"id": 1, "tasks": ["text"], "image": self.jpeg(np.zeros((8, 8, 3), np.uint8))})
+        self.assertIn("unknown task", reply["error"])
+
+    def test_a_printed_word_is_read(self):
+        img = np.full((200, 700, 3), 255, np.uint8)
+        cv2.putText(img, "Rechnung 2024", (30, 120), cv2.FONT_HERSHEY_SIMPLEX, 2.2, (20, 20, 20), 4, cv2.LINE_AA)
+        proc, _ = self.start("--text")
+        reply = self.ask(proc, {"id": 2, "tasks": ["text"], "image": self.jpeg(img)})
+        lines = reply["text"]
+        self.assertTrue(lines, reply)
+        self.assertIn("rechnung", " ".join(l["text"] for l in lines).lower())
+        x, y, w, h = lines[0]["bbox"]
+        self.assertTrue(0 <= x < 700 and 0 <= y < 200 and w > 100 and h > 20, lines[0])
+        self.assertGreater(lines[0]["score"], 0.5)
 
 
 if __name__ == "__main__":
