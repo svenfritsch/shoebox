@@ -21,7 +21,7 @@
   <section class="card" id="addons-card">
     <details id="addons-details" open>
       <summary><h2 data-i18n="launcher.step0">1 · Add-ons</h2><span id="addons-summary" class="summary-line"></span></summary>
-      <p class="hint" data-i18n="launcher.addons.intro">Scanning and the photo app work out of the box. Recognizing people and pets needs add-ons, which are downloaded once (internet needed).</p>
+      <p class="hint" data-i18n="launcher.addons.intro">Scanning and the photo app work out of the box. Recognizing people and pets, and reading the words in your photos, needs add-ons, which are downloaded once (internet needed).</p>
       <ul id="addon-list" class="addons">
         <li>
           <label><input type="checkbox" id="addon-runtime" checked disabled aria-disabled="true"> <b data-i18n="launcher.addon.runtime">Python and OpenCV</b> <span data-i18n="launcher.addon.runtime.desc">needed by every add-on, always installed with the first one (about 200 MB per kind of computer)</span></label>
@@ -34,6 +34,10 @@
         <li>
           <label><input type="checkbox" id="addon-pets"> <b data-i18n="launcher.addon.pets">Pets</b> <span data-i18n="launcher.addon.pets.desc">find cats and dogs; works without Faces (about 140 MB)</span></label>
           <span id="addon-pets-state" class="pill"></span>
+        </li>
+        <li>
+          <label><input type="checkbox" id="addon-text"> <b data-i18n="launcher.addon.text">Text</b> <span data-i18n="launcher.addon.text.desc">read the words in your photos: documents, screenshots, signs (about 100 MB)</span></label>
+          <span id="addon-text-state" class="pill"></span>
         </li>
       </ul>
       <button id="addons-install" class="primary" data-i18n="launcher.addons.install">Install the selected add-ons</button>
@@ -65,6 +69,7 @@
       <button data-kind="recognize"><b data-i18n="launcher.kind.recognize">Recognize</b><span data-i18n="launcher.kind.recognize.desc">find the faces in your photos</span></button>
       <button data-kind="recognize_rotated"><b data-i18n="launcher.kind.recognize_rotated">Recognize lying down</b><span data-i18n="launcher.kind.recognize_rotated.desc">also find faces lying down in the photos (slower)</span></button>
       <button data-kind="recognize_pets"><b data-i18n="launcher.kind.recognize_pets">Recognize pets</b><span data-i18n="launcher.kind.recognize_pets.desc">find cats and dogs; they show up among the faces</span></button>
+      <button data-kind="recognize_text"><b data-i18n="launcher.kind.recognize_text">Recognize text</b><span data-i18n="launcher.kind.recognize_text.desc">read the words in your photos, so you can search for them</span></button>
       <button data-kind="faces_stats"><b data-i18n="launcher.kind.faces_stats">Face stats</b><span data-i18n="launcher.kind.faces_stats.desc">how recognition went</span></button>
       <button data-kind="backup"><b data-i18n="launcher.kind.backup">Backup check</b><span data-i18n="launcher.kind.backup.desc">is the 2nd folder a complete copy of the 1st?</span></button>
     </div>

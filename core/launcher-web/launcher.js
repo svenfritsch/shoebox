@@ -114,8 +114,8 @@ function updateButtons() {
 
 // ---------------------------------------------------------------- add-ons
 
-// What the recognition buttons need: faces (Recognize, lying down) or pets.
-var ADDON_OF = { recognize: 'faces', recognize_rotated: 'faces', recognize_pets: 'pets' };
+// What the recognition buttons need: faces (Recognize, lying down), pets or text.
+var ADDON_OF = { recognize: 'faces', recognize_rotated: 'faces', recognize_pets: 'pets', recognize_text: 'text' };
 var addons = null;       // /api/addons: what is installed, for this computer and each ticked folder
 
 // The ticked folders where the add-on the button needs is missing.
@@ -150,8 +150,9 @@ function renderAddons() {
   };
   addonState('addon-faces-state', addons.faces, addons.faces_models);
   addonState('addon-pets-state', addons.pets, addons.pets_models);
+  addonState('addon-text-state', addons.text, addons.text_models);
   // Each add-on stands alone; an installed one is ticked and cannot be ticked off.
-  ['faces', 'pets'].forEach(function (k) {
+  ['faces', 'pets', 'text'].forEach(function (k) {
     var box = $('addon-' + k);
     box.checked = box.checked || addons[k];
     box.disabled = busy || serving || addons[k];
@@ -159,18 +160,20 @@ function renderAddons() {
   $('addons-install').disabled = busy || serving || !addons.installable || wantedAddons().length === 0;
   $('addons-hint').textContent = !addons.installable ? tr('launcher.addons.not_installable')
     : addons.models && !addons.runtime ? tr('launcher.addons.runtime_missing', { dir: addons.dir })
-    : addons.faces && addons.pets ? tr('launcher.addons.all_installed', { dir: addons.dir })
+    : addons.faces && addons.pets && addons.text ? tr('launcher.addons.all_installed', { dir: addons.dir })
     : tr('launcher.addons.where', { dir: addons.dir });
   // The folded card still says where things stand.
   var word = function (ready, models) { return tr(ready ? 'launcher.addon.installed' : models ? 'launcher.addon.needs_runtime' : 'launcher.addon.missing'); };
   $('addons-summary').textContent = [
     tr('launcher.addon.faces') + ': ' + word(addons.faces, addons.faces_models),
     tr('launcher.addon.pets') + ': ' + word(addons.pets, addons.pets_models),
+    tr('launcher.addon.text') + ': ' + word(addons.text, addons.text_models),
   ].join(' · ');
   // Why a recognition button is grey.
   var why = [];
   if (addonMissing('recognize').length) why.push(tr('launcher.addons.need_faces'));
   if (addonMissing('recognize_pets').length) why.push(tr('launcher.addons.need_pets'));
+  if (addonMissing('recognize_text').length) why.push(tr('launcher.addons.need_text'));
   $('addon-need').textContent = why.join(' ');
   document.querySelectorAll('.actions button').forEach(function (b) {
     if (addonMissing(b.dataset.kind).length) b.disabled = true;
@@ -179,9 +182,9 @@ function renderAddons() {
 
 // The add-ons ticked that are not installed yet.
 function wantedAddons() {
-  return ['faces', 'pets'].filter(function (k) { return $('addon-' + k).checked && !(addons && addons[k]); });
+  return ['faces', 'pets', 'text'].filter(function (k) { return $('addon-' + k).checked && !(addons && addons[k]); });
 }
-$('addon-faces').onchange = $('addon-pets').onchange = renderAddons;
+$('addon-faces').onchange = $('addon-pets').onchange = $('addon-text').onchange = renderAddons;
 // The runtime is installed with the first add-on: its box is ticked and cannot be changed.
 $('addon-runtime').checked = true;
 $('addon-runtime').onclick = function (ev) { ev.preventDefault(); };
@@ -199,13 +202,13 @@ var settingDefault = false;
 function foldWhenComplete() {
   if (detailsChosen || !addons) return;
   settingDefault = true;
-  $('addons-details').open = !(addons.runtime && addons.faces && addons.pets);
+  $('addons-details').open = !(addons.runtime && addons.faces && addons.pets && addons.text);
   setTimeout(function () { settingDefault = false; }, 0);
 }
 
 $('addons-install').onclick = function () {
   var want = wantedAddons();
-  api('/api/job', { kind: 'install_addons', faces: want.indexOf('faces') >= 0, pets: want.indexOf('pets') >= 0 }).then(function () {
+  api('/api/job', { kind: 'install_addons', faces: want.indexOf('faces') >= 0, pets: want.indexOf('pets') >= 0, text: want.indexOf('text') >= 0 }).then(function () {
     $('progress-card').hidden = false;
     $('progress-card').scrollIntoView({ behavior: 'smooth' });
     poll();
@@ -311,7 +314,7 @@ function poll() {
 // the photo app runs; only Cancel (command) or Stop (app) stay usable. The
 // recognition buttons are the exception while the photo app runs, and the
 // photo app can be started while recognition runs.
-var BESIDE_APP = ['recognize', 'recognize_pets', 'recognize_rotated', 'faces_stats'];
+var BESIDE_APP = ['recognize', 'recognize_pets', 'recognize_rotated', 'recognize_text', 'faces_stats'];
 
 function applyLocks() {
   $('controls').disabled = busy || serving;
@@ -585,6 +588,7 @@ function summaryOf(kind, r) {
   } else if ((kind === 'recognize' || kind === 'recognize_rotated') && r.faces !== undefined) out.push(tr('launcher.sum.faces', { n: r.faces }));
   else if (kind === 'forget_missing') out.push(tr('launcher.sum.forgotten', { n: r.forgotten }));
   else if (kind === 'recognize_pets' && r.pets) out.push(tr('launcher.sum.pets', { n: r.pets.faces }), tr('launcher.failed', { n: r.pets.failed }));
+  else if (kind === 'recognize_text' && r.text) out.push(tr('launcher.sum.text', { n: r.text.faces }), tr('launcher.failed', { n: r.text.failed }));
   else if (kind === 'faces_stats') out.push(r === null ? tr('launcher.sum.no_faces') : tr('launcher.sum.faces', { n: r.faces }));
   return out;
 }
