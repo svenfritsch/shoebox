@@ -1,5 +1,5 @@
 shoebox
-Copyright (c) 2026 Sven Fritsch. All rights reserved.
+Copyright (c) 2026 Tesselina Späth. All rights reserved.
 Alle Rechte vorbehalten.
 
 ------------------------------------------------------------------------

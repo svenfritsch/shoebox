@@ -74,7 +74,7 @@ def main():
     out = []
     w = out.append
     w("THIRD-PARTY LICENSES\n====================\n")
-    w("shoebox (c) Sven Fritsch, see LICENSE.txt, contains and uses\n"
+    w("shoebox (c) Tesselina Späth, see LICENSE.txt, contains and uses\n"
       "the software below, each under its own licence. Where a crate offers a choice of\n"
       "licences (\"MIT OR Apache-2.0\"), you may use it under either; the texts that\n"
       "the authors ship are reproduced in part 3.\n")

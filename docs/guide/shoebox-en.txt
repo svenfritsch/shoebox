@@ -559,7 +559,7 @@ reload.
 A map is empty or says Offline. Maps need the internet. Check the connection
 and open the photo again; without it everything else works as before.
 
-shoebox · © 2026 Sven Fritsch · for private use, the terms are in LICENSE.txt
+shoebox · © 2026 Tesselina Späth · for private use, the terms are in LICENSE.txt
 next to the program in the download
 
 The libraries inside shoebox and their licences are listed in
