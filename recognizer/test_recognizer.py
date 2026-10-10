@@ -45,6 +45,18 @@ except ImportError:
     onnx = None
 
 
+class Boxes(unittest.TestCase):
+    def test_inside_is_the_share_of_the_first_box_in_the_second(self):
+        # The two frames of the same cat in a screenshot: IoU under PET_NMS, but
+        # most of the smaller one lies in the bigger one.
+        outer, inner = (67, 64, 323, 1043), (82, 527, 263, 656)
+        self.assertLess(recognizer.iou(outer, inner), recognizer.PET_NMS)
+        self.assertGreaterEqual(recognizer.inside(inner, outer), recognizer.PET_INSIDE)
+        # Two pets side by side are not one.
+        self.assertEqual(recognizer.inside((0, 0, 100, 100), (100, 0, 100, 100)), 0.0)
+        self.assertEqual(recognizer.inside((0, 0, 0, 0), (0, 0, 10, 10)), 0.0)
+
+
 @unittest.skipUnless(cv2 is not None and HAVE_MODELS, "needs opencv, numpy and recognizer/fetch-models.sh")
 class Protocol(unittest.TestCase):
     def setUp(self):

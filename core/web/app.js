@@ -5268,7 +5268,7 @@ function infoFace(info, f, k, pick) {
     who.appendChild(yes);
     who.appendChild(no);
   } else if (f.state === 'ignored') {
-    who.appendChild(el('span', 'note', tr('info.stranger')));
+    who.appendChild(el('span', 'note', tr(f.species ? 'info.stranger_pet' : 'info.stranger')));
   }
   if (f.state !== 'confirmed') {
     var add = el('button', 'add', tr(f.state === 'suggested' || f.state === 'maybe' ? 'info.other_person' : 'info.plus_name'));
@@ -5297,7 +5297,7 @@ function infoFace(info, f, k, pick) {
         post(LIBAPI + '/people/' + f.person.id + '/cover', { face: f.id }).then(function () { toast(tr('menu.picture_changed')); peopleChanged(); }).catch(failed);
       } });
     }
-    if (f.state !== 'ignored') items.push({ label: tr('info.ignore_stranger'), run: function () { send('ignore', { faces: ids }); } });
+    if (f.state !== 'ignored') items.push({ label: tr(f.species ? 'info.ignore_stranger_pet' : 'info.ignore_stranger'), run: function () { send('ignore', { faces: ids }); } });
     if (f.state) items.push({ label: tr('info.forget'), run: function () { send('undo', { faces: ids }); } });
     if (f.rejected && f.rejected.length) {
       f.rejected.forEach(function (pid) {

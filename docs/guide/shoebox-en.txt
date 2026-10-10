@@ -602,7 +602,10 @@ all.
 3. Strangers and false finds
    Ignore is for strangers, and for faces on posters, screens and pictures:
    nobody needs to name them. Not a face (for pets Not a pet) is for false
-   finds that are no face at all. Nothing is deleted and no photo is touched;
+   finds that are no face at all. Shoebox only finds cats and dogs, so an
+   animal of another kind (a goat, say) is a false find: use Not a pet. A cat
+   or dog that belongs to someone else is a stranger: Ignore (the ⋯ menu says
+   Ignore (someone else's pet)). Nothing is deleted and no photo is touched;
    shoebox only notes the decision in its own database.
 
    Sometimes the detector takes a cat for a dog, or the other way round, and

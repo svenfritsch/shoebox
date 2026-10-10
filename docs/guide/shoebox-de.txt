@@ -643,9 +643,12 @@ benennen.
 3. Fremde und Fehlfunde
    Ignorieren ist für Fremde und für Gesichter auf Postern, Bildschirmen und
    Bildern: Niemand muss sie benennen. Kein Gesicht (bei Haustieren Kein
-   Haustier) ist für Fehlfunde, die gar kein Gesicht sind. Nichts wird
-   gelöscht und kein Foto angefasst; shoebox merkt sich die Entscheidung nur
-   in seiner eigenen Datenbank.
+   Haustier) ist für Fehlfunde, die gar kein Gesicht sind. shoebox findet nur
+   Katzen und Hunde; ein Tier anderer Art (etwa eine Ziege) ist ein Fehlfund:
+   Kein Haustier. Eine Katze oder ein Hund, der jemand anderem gehört, ist ein
+   Fremder: Ignorieren (im Menü ⋯ steht Ignorieren (Fremdes Haustier)). Nichts
+   wird gelöscht und kein Foto angefasst; shoebox merkt sich die Entscheidung
+   nur in seiner eigenen Datenbank.
 
    Manchmal hält die Erkennung eine Katze für einen Hund oder umgekehrt, und
    dann werden nur Namen der falschen Art angeboten. Das Tier oder die Tiere
