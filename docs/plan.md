@@ -612,7 +612,7 @@ picture is a second, separate kind of term:
 |---|---|---|
 | Looks at | folder names, file name, tags, people, pets | words an OCR pass read in the picture |
 | Typed | plain words: `winter` | `text:winter`, or the last suggestion row "In the text of photos: winter" |
-| Chip | plain chip | chip with a "T" icon and the label "Text: winter", own colour |
+| Chip | plain chip (`name:` chips: draft page icon) | chip with the document scanner icon (tooltip "Recognized text: winter"), own colour |
 | API | `q=winter` | `text=winter` (repeatable, AND) |
 | Computed from | `files`, `tags`, `people` | `recognition.db` (`text_fts`) |
 | Before the Text add-on is installed or read | works | the suggestion row shows greyed with "Read the text of your photos first (Control Panel)" |
@@ -623,15 +623,38 @@ folders and tags (today's rows), people and pets, then the one text row, so
 nobody gets OCR hits by accident. A hit by text shows the matching line under
 the thumbnail; a hit by name shows nothing extra, as today.
 
+**Words and icons (decided with the mock-ups).** The old group name "In the
+text of photos" was too long. Options that were weighed for the group
+heading, the chip tooltip and the Control Panel button, with the German
+counterpart:
+
+| EN | DE | Verdict |
+|---|---|---|
+| Recognized text | Erkannter Text | **chosen** for the group heading and the chip tooltip: short, says it is machine-read, matches "Recognize faces / pets" in the Control Panel |
+| Text in photos | Text in Fotos | plain and clear; second choice, if "recognized" reads too technical |
+| Scanned text | Gescannter Text | rejected: sounds like paper scanners and the Scan button (the library scan) |
+| Text | Text | rejected as a heading: collides with search "text" in general and with the Type menu |
+| Read text | Gelesener Text | rejected: ambiguous (read = already seen?) |
+
+Buttons and add-on: **Recognize text** / **Text erkennen** (like Recognize
+pets), add-on **Text** / **Text**. Icons (own line drawings, 24 px, drawn with
+`currentColor`; added to the icon set in `index.html`): the **document
+scanner** (corner brackets around a page with lines) for everything that means
+text read from a picture: the suggestion group and row, the chip, the viewer's
+"Text in this photo" block, the Control Panel button; the **draft page** (a
+page with a folded corner) for file names: the `name:` group, row and chip.
+The rows carry no counts that need a query on every keystroke except what
+"File names" already shows.
+
 **Typed shortcuts and the file-name search.** Two prefixes switch the box to
 one kind of search and keep the suggestion list short (no tags, people or pets
 mixed in):
 
 | Typed | Suggestion list shows | Chip | API |
 |---|---|---|---|
-| `name:IMG_62` | one group "File names": the row "File names containing “IMG_62”" with its photo count | grey **NAME** badge: `NAME IMG_62 ✕` | `name=IMG_62` |
-| `text:Rechnung` | one group "In the text of photos": the row "Photos with “Rechnung” in the text" | accent **T** badge: `T Rechnung ✕` | `text=Rechnung` |
-| plain `Rechn` | today's groups (tags, folders, faces, pets) and, last, "In the text of photos" | as today | `q=` |
+| `name:IMG_62` | one group "File names": the row `[page] “IMG_62”` with its photo count | "draft" page icon (grey): `[page] IMG_62 ✕` | `name=IMG_62` |
+| `text:Rechnung` | one group "Recognized text": the row `[scanner] “Rechnung”` | "document scanner" icon (accent colour): `[scanner] Rechnung ✕` | `text=Rechnung` |
+| plain `Rechn` | today's groups (tags, folders, faces, pets) and, last, "Recognized text" | as today | `q=` |
 
 - `name:` matches the **file name only** (the last path segment, NFC,
   case- and diacritic-insensitive substring), not folders, tags or people. It
@@ -658,7 +681,7 @@ will differ in detail):
   [docs/mocks/search-text-prefix.png](mocks/search-text-prefix.png)
 - `name:` typed, one group only:
   [docs/mocks/search-name-prefix.png](mocks/search-name-prefix.png)
-- three chips in one search (tag, text, name) with the matching line under
+- three chips in one search (tag, text, name; the chips use the icons above) with the matching line under
   each hit: [docs/mocks/search-text-chips.png](mocks/search-text-chips.png)
 
 **Guide.** The guide describes what the app does today, so the text below is
@@ -674,7 +697,7 @@ list, the Add-ons paragraph and the FAQ checked as listed there, and the
 > people in the list. Type* `text:` *and a word (*`text:Rechnung`*) to find
 > photos that contain that word in the picture itself: documents, screenshots,
 > street signs. This needs the Text add-on and a run of* Recognize text *in the
-> Control Panel. Both shortcuts become chips (a grey* NAME *or an orange* T*) and
+> Control Panel. Both shortcuts become chips (a grey page icon or an orange scanner icon) and
 > combine with every other chip, for example a folder and* `text:Rechnung`*.*
 >
 > DE, Abschnitt „Suche“: *Einfache Wörter durchsuchen Dateinamen, Ordner, Tags,
@@ -684,7 +707,7 @@ list, the Add-ons paragraph and the FAQ checked as listed there, and the
 > (*`text:Rechnung`*) findest du Fotos, auf denen dieses Wort selbst zu lesen ist:
 > Dokumente, Bildschirmfotos, Straßenschilder. Dafür braucht es das
 > Text-Add-on und einen Lauf von* Text erkennen *in der Schaltzentrale. Beide
-> Kürzel werden zu Chips (ein grauer* NAME *oder ein oranges* T*) und lassen sich
+> Kürzel werden zu Chips (ein graues Seitensymbol oder ein orangefarbenes Scannersymbol) und lassen sich
 > mit jedem anderen Chip kombinieren, zum Beispiel mit einem Ordner und*
 > `text:Rechnung`*.*
 
@@ -774,25 +797,68 @@ a cancelled run continues with the best candidates.
      documents and letters incl. one sideways, ~8 screenshots, ~8 street
      signs, shop fronts and menus, a few with German umlauts and ß, one
      handwritten note as a known "should not work") and ~30 without (people,
-     landscapes, foliage and brick walls, which tempt false text). An
-     `expected.txt` next to them lists, per file, one or two words that are
-     really readable; that is all the ground truth needed. Fewer is fine
-     (20+20 already shows the picture); more files are not needed.
-   - *The script:* `recognizer/text_spike.py <folder> [--runner onnx|opencv]`
-     (new, throw-away, not part of the app) loads PP-OCR detector and Latin
-     recogniser, runs each picture, and prints one line per file (time for
-     detection, time for recognition, number of lines, the text) and a
-     summary: seconds per photo, share of pictures with text, hits and misses
-     against `expected.txt`, lines found in the no-text pictures (false
-     positives) at several confidence thresholds, and the size of the models
-     and of the rows it would store. It reads files read-only (the guard
-     rules apply: it decodes a copy, writes only its report next to the
-     script).
+     landscapes, foliage and brick walls, which tempt false text). 20 + 20 is
+     enough for a first look. HEIC works if `pillow-heif` is installed, else
+     convert the copies to JPEG.
+   - *`expected.txt`:* the only "ground truth", one line per photo, the file
+     name, a colon, then one to three words that are really readable in that
+     photo, separated by commas:
+
+     ```
+     # lines starting with # are ignored
+     letter-stadtwerke.jpg: Rechnung, Stadtwerke
+     street-sign.jpg: Hauptstraße
+     menu.jpg: Schnitzel, Pommes
+     ```
+
+     A photo that is **not listed, or has nothing after the colon**, counts as
+     "no readable text", and any text found in it is reported as false text.
+     So only the ~30 photos with text need a line; `--make-template` writes
+     the file with every file name already in it, so only the words are typed.
+     Spell the words as they appear (umlauts and case do not matter when
+     matching: Müller finds "muller"; ß counts as "ss"). Choose words that are
+     big and clear, not the smallest print: the test asks "does it read what a
+     person reads", not "does it read everything".
+   - *The script:* [`recognizer/text_spike.py`](../recognizer/text_spike.py)
+     (throw-away, not part of the app, **already in the repository on the
+     branch of this PR; no merge is needed**, and nothing in the app calls it).
+     It uses the `rapidocr-onnxruntime` pip package, which carries PP-OCRv4
+     detection and recognition models and runs on onnxruntime, so the spike
+     needs no model downloads and no change to the core. It decodes each copy
+     as the core would (EXIF orientation, longest edge 1600 px), prints one
+     entry per file (time, lines, the text) and a summary: seconds per photo
+     and a 50,000-photo estimate, share of expected words found per
+     confidence threshold (0.5 to 0.9), photos without text that still show
+     text, the words missed, and the size of the rows it would store. The
+     report is written to the current directory (`text_spike_report.txt`);
+     the photo folder is only read.
+   - *Run it (Mac or Linux):*
+
+     ```sh
+     git fetch origin claude/dazzling-gauss-gureoh
+     git show FETCH_HEAD:recognizer/text_spike.py > text_spike.py   # or: git checkout of the branch
+     python3 -m venv spike-venv
+     spike-venv/bin/pip install rapidocr-onnxruntime pillow
+     spike-venv/bin/python text_spike.py ~/spike-photos --make-template
+     # edit ~/spike-photos/expected.txt
+     spike-venv/bin/python text_spike.py ~/spike-photos
+     ```
+
+     On the old Intel Mac `pip` may need an older onnxruntime that still has a
+     macOS 12 x86_64 wheel; the script prints the versions it ran with.
+   - *First finding (test pictures made on Linux, not your photos):* the
+     models bundled with that package are the Chinese+English PP-OCRv4 ones.
+     They read Latin text well (0.95+ confidence on clean rendered text,
+     ~0.3–0.8 s per photo on a server CPU) but **drop the German marks**:
+     "Müller" came back as "Muller", "München" as "Munchen", and "Hauptstraße"
+     as "HauptstraBe". Folding handles ä/ö/ü (the index folds them anyway), but
+     ß becomes "B", so "strasse" would not find it. The Latin recogniser model
+     (step 2 of the decisions) is therefore needed, or ß needs a fix-up rule;
+     the spike on your photos shows how often it matters.
    - *Where it runs:* on the old Intel MacBook (the case that decides whether
      the first run is bearable) and once on a modern machine; the same folder
-     both times. Output is pasted back as a text file; no photo has to be
-     sent anywhere. If you would rather not run anything, the 60 photos
-     alone are enough for a first look in a session that has them.
+     both times. The two `text_spike_report.txt` files are pasted back into
+     the chat; no photo has to be sent anywhere.
    - *Decides:* PP-OCR version, whether OpenCV 4.10 on macOS 12 runs the
      models without onnxruntime, default confidence threshold, whether a
      rotated pass is needed in v1, and the real seconds per photo. If the old
