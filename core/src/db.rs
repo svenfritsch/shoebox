@@ -15,7 +15,7 @@ pub const FILE: &str = "library.db";
 const BACKUP_SUFFIX: &str = ".bak";
 
 /// Bump when the schema changes and add a step to `migrate`.
-const SCHEMA_VERSION: i32 = 11;
+const SCHEMA_VERSION: i32 = 12;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -232,6 +232,21 @@ const SCHEMA_V7: &str = "
 ALTER TABLE face_decisions ADD COLUMN species TEXT;
 ";
 
+/// Which kind of pet the user says a detected cat or dog is, when the
+/// detector took it for the other. Keyed by content and box like
+/// `face_decisions`: a detected pet takes over the entry whose box overlaps
+/// its own best (IoU >= 0.5) and counts as that species from then on.
+const SCHEMA_V12: &str = "
+CREATE TABLE IF NOT EXISTS face_species (
+    id      INTEGER PRIMARY KEY,
+    key     TEXT NOT NULL,        -- files.quick_hash
+    x REAL NOT NULL, y REAL NOT NULL, w REAL NOT NULL, h REAL NOT NULL,
+    species TEXT NOT NULL,        -- cat or dog
+    at      INTEGER NOT NULL      -- Unix seconds
+);
+CREATE INDEX IF NOT EXISTS face_species_key ON face_species(key);
+";
+
 /// Whether `table` of `schema` has a column.
 pub fn has_column(conn: &Connection, schema: &str, table: &str, column: &str) -> Result<bool> {
     let mut stmt = conn.prepare(&format!("SELECT name FROM pragma_table_info('{table}', '{schema}')"))?;
@@ -443,6 +458,12 @@ fn migrate(conn: &Connection) -> Result<()> {
             tx.execute_batch("ALTER TABLE files ADD COLUMN shot_pixels INTEGER;")?;
         }
         tx.pragma_update(None, "user_version", 11)?;
+        tx.commit()?;
+    }
+    if version < 12 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V12)?;
+        tx.pragma_update(None, "user_version", 12)?;
         tx.commit()?;
     }
     Ok(())

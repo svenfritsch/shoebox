@@ -1615,7 +1615,13 @@ function closeModal() {
   if (closeModal.onclose) { var f = closeModal.onclose; closeModal.onclose = null; f(); }
 }
 
-$('modal').addEventListener('click', function (ev) { if (ev.target === this) closeModal(); });
+// A click outside the dialog closes it, but only one that also began there: a
+// press inside can end outside when the dialog changes size meanwhile (the
+// name list under a field folds away when the field loses focus).
+var modalPressed = false;
+$('modal').addEventListener('mousedown', function (ev) { modalPressed = ev.target === this; });
+$('modal').addEventListener('touchstart', function (ev) { modalPressed = ev.target === this; }, { passive: true });
+$('modal').addEventListener('click', function (ev) { if (ev.target === this && modalPressed) closeModal(); modalPressed = false; });
 
 // Shows what did not work, if anything.
 function report(title, lines) {
@@ -3827,6 +3833,26 @@ function facesSpecies(faces) {
   return n.dog > n.cat ? 'dog' : 'cat';
 }
 
+// What to change the detected pets `faces` to when they are all one species
+// the detector may have got wrong ('cat' or 'dog'): the other one, else ''.
+function otherSpecies(faces) {
+  var s = faces.length ? faces[0].species : '';
+  if (s !== 'cat' && s !== 'dog') return '';
+  if (!faces.every(function (f) { return f.id != null && f.species === s; })) return '';
+  return s === 'cat' ? 'dog' : 'cat';
+}
+
+function makeSpeciesLabel(to) { return tr(to === 'dog' ? 'pet.make.dog' : 'pet.make.cat'); }
+
+// Say a cat is a dog or the other way round: the faces keep their decisions
+// and take the new species' names in the name proposals.
+function setSpecies(ids, to) {
+  return post(LIBAPI + '/faces/species', { faces: ids, species: to }).then(function (r) {
+    toast(tr('pet.changed', { count: animalCount(to, r.faces) }));
+    return r;
+  });
+}
+
 // Whether a person (or pet) of `p.species` is one `species` asks for: ''
 // people only, 'cat' or 'dog' those (and pets of no species), 'pet' any pet.
 function kindOf(p, species) {
@@ -4659,8 +4685,9 @@ function singlesSection() {
   var ignore = el('button', 'btn quiet', tr('unnamed.ignore'));
   ignore.title = tr('unnamed.ignore_hint');
   var notFace = el('button', 'btn quiet', tr('facecheck.not_face'));
+  var change = el('button', 'btn quiet');
   var done = el('button', 'btn quiet', tr('unnamed.clear'));
-  [nameBtn, ignore, notFace, done].forEach(function (b) { bar.appendChild(b); });
+  [nameBtn, ignore, notFace, change, done].forEach(function (b) { bar.appendChild(b); });
 
   var picked = function () { return st.faces.filter(function (f) { return st.picked[f.id]; }); };
   var update = function () {
@@ -4673,6 +4700,9 @@ function singlesSection() {
     notFace.title = tr(pets ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint');
     bar.hidden = !n;
     nameBtn.disabled = ignore.disabled = notFace.disabled = !n;
+    var to = otherSpecies(chosen);
+    change.hidden = !to;
+    if (to) change.textContent = makeSpeciesLabel(to);
     more.hidden = st.shown >= st.total;
   };
   var tile = function (face) {
@@ -4751,6 +4781,16 @@ function singlesSection() {
       update();
       peopleChanged();
     }).catch(function (e) { bar.classList.remove('busy'); failed(e); loadUnnamed(); });
+  };
+  change.onclick = function () {
+    var chosen = picked(), to = otherSpecies(chosen);
+    if (!to) return;
+    bar.classList.add('busy');
+    setSpecies(chosen.map(function (f) { return f.id; }), to).then(function () {
+      bar.classList.remove('busy');
+      peopleChanged();
+      loadUnnamed();
+    }).catch(function (e) { bar.classList.remove('busy'); failed(e); });
   };
   var name = function () {
     var who = field.value();
@@ -4899,8 +4939,20 @@ function clusterCard(c) {
     update();
     card.scrollIntoView({ block: 'nearest' });
   };
+  var change = el('button', 'btn quiet');
+  change.onclick = function () {
+    var chosen = faces.filter(function (f) { return card.picked[f.id]; }), to = otherSpecies(chosen);
+    if (!to) return;
+    card.classList.add('busy');
+    setSpecies(chosen.map(function (f) { return f.id; }), to).then(function () {
+      card.classList.remove('busy');
+      peopleChanged();
+      loadUnnamed();
+    }).catch(function (e) { card.classList.remove('busy'); stale(e); });
+  };
   tools.appendChild(ignore);
   tools.appendChild(notFace);
+  tools.appendChild(change);
   tools.appendChild(pick);
   card.appendChild(tools);
 
@@ -4920,6 +4972,9 @@ function clusterCard(c) {
     ignore.textContent = some ? tr('unnamed.ignore_n', { n: n }) : tr('unnamed.ignore');
     notFace.textContent = some ? tr(petCard ? 'unnamed.notface_n_pet' : 'unnamed.notface_n', { n: n }) : tr(petCard ? 'pet.not_a.pet' : 'facecheck.not_face');
     nameBtn.disabled = ignore.disabled = notFace.disabled = card.picking && !n;
+    var to = card.picking ? otherSpecies(faces.filter(function (f) { return card.picked[f.id]; })) : '';
+    change.hidden = !to;
+    if (to) change.textContent = makeSpeciesLabel(to);
     suggestion.textContent = '';
     if (c.suggestion && !card.picking) {
       var s = c.suggestion;
@@ -5081,7 +5136,21 @@ function infoPickBar(info, pickable, pick) {
   ignore.onclick = function () { act('ignore'); };
   notFace.onclick = function () { act('not-face'); };
   cancel.onclick = function () { pick.on = false; pick.ids = {}; renderPanel(); };
-  [ignore, notFace, cancel].forEach(function (b) { row.appendChild(b); });
+  [ignore, notFace].forEach(function (b) { row.appendChild(b); });
+  var to = otherSpecies(chosen);
+  if (to) {
+    var change = el('button', 'btn quiet', makeSpeciesLabel(to));
+    change.onclick = function () {
+      bar.classList.add('busy');
+      setSpecies(chosen.map(function (f) { return f.id; }), to).then(function () {
+        pick.on = false;
+        pick.ids = {};
+        infoFacesChanged(info.id);
+      }).catch(function (e) { bar.classList.remove('busy'); failed(e); });
+    };
+    row.appendChild(change);
+  }
+  row.appendChild(cancel);
   bar.appendChild(row);
   return bar;
 }
@@ -5176,6 +5245,9 @@ function infoFace(info, f, k, pick) {
         items.push({ label: tr('info.maybe_after_all', { name: n }), run: function () { send('unreject', { faces: ids, person_id: pid }); } });
       });
     }
+    // A named pet is the species their person is; only the others need saying.
+    var to = f.state === 'confirmed' ? '' : otherSpecies([f]);
+    if (to) items.push({ label: makeSpeciesLabel(to), run: function () { setSpecies(ids, to).then(changed).catch(failed); } });
     items.push({ label: tr(f.species ? 'pet.not_a.pet' : 'facecheck.not_face'), run: function () { send('not-face', { faces: ids }); } });
     return items;
   }, tr('person.more_face')));

@@ -549,6 +549,13 @@ benennen.
    gelöscht und kein Foto angefasst; shoebox merkt sich die Entscheidung nur
    in seiner eigenen Datenbank.
 
+   Manchmal hält die Erkennung eine Katze für einen Hund oder umgekehrt, und
+   dann werden nur Namen der falschen Art angeboten. Das Tier oder die Tiere
+   ankreuzen (Auswählen) und Ist eine Katze, kein Hund (oder Ist ein Hund,
+   keine Katze) drücken, oder denselben Eintrag unter ⋯ am Tier im Infofeld
+   eines Fotos wählen. Das Tier behält die bisherigen Entscheidungen und ist
+   ab dann in der Namensliste, am Symbol und in der Suche eine Katze.
+
 4. Nur einige Gesichter einer Karte
    Auswählen lässt dich die Gesichter selbst ankreuzen. Die Knöpfe gelten dann
    nur für diese: 2 benennen, 2 ignorieren, 2 kein Gesicht. Praktisch, wenn
@@ -575,8 +582,10 @@ einmal. + Gesicht oder Haustier hinzufügen zeichnet einen Rahmen um ein
 übersehenes Gesicht oder Tier. Zuerst sagen, was es ist, Person, Katze oder
 Hund, dann benennen: Die Liste zeigt nur Namen dieser Art (keine Personen,
 wenn du eine Katze benennst), und + Neue Person, + Neue Katze oder + Neuer
-Hund legt eine neue an. Die Art eines gezeichneten Tiers lässt sich später
-nicht ändern; den Rahmen löschen und neu zeichnen.
+Hund legt eine neue an. Die Art eines selbst gezeichneten Tiers lässt sich
+später nicht ändern; den Rahmen löschen und neu zeichnen. Bei einem Tier, das
+die Erkennung gefunden hat, bietet ⋯ Ist eine Katze, kein Hund (oder
+umgekehrt) an, wenn sie es für das falsche gehalten hat.
 
 Gruppen
 Gesichter zeigt die Personen nach Gruppen. Neue Gruppe … legt eine an; Gruppen

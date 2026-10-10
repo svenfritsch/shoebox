@@ -212,45 +212,45 @@ pub fn attach(conn: &Connection, db_path: &Path) -> Result<()> {
     if version > SCHEMA_VERSION {
         bail!("{FILE} has schema version {version}; this shoebox only knows {SCHEMA_VERSION} (update shoebox)");
     }
+    if version == SCHEMA_VERSION {
+        return Ok(());
+    }
+    // The steps run in one transaction that takes the write lock first (a
+    // deferred one that reads and then writes fails with "database is locked"
+    // at once, without waiting, when another process does the same): a
+    // recognition run and the photo app may both open a new recognition.db at
+    // the same moment. The version is read again under the lock, so the loser
+    // finds the steps done.
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
+    let version: i32 = tx.pragma_query_value(Some("recog"), "user_version", |r| r.get(0))?;
     if version < 1 {
-        let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V1)?;
         tx.pragma_update(Some("recog"), "user_version", 1)?;
-        tx.commit()?;
     }
     if version < 2 {
-        let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V2)?;
         tx.pragma_update(Some("recog"), "user_version", 2)?;
-        tx.commit()?;
     }
     if version < 3 {
-        let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V3)?;
         tx.pragma_update(Some("recog"), "user_version", 3)?;
-        tx.commit()?;
     }
     if version < 4 {
-        let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V4)?;
         tx.pragma_update(Some("recog"), "user_version", 4)?;
-        tx.commit()?;
     }
     if version < 5 {
-        let tx = conn.unchecked_transaction()?;
         // A re-run (the tests lower user_version) must not add the column twice.
         if !db::has_column(&tx, "recog", "faces", "species")? {
             tx.execute_batch(SCHEMA_V5)?;
         }
         tx.pragma_update(Some("recog"), "user_version", 5)?;
-        tx.commit()?;
     }
     if version < 6 {
-        let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V6)?;
         tx.pragma_update(Some("recog"), "user_version", 6)?;
-        tx.commit()?;
     }
+    tx.commit()?;
     Ok(())
 }
 
