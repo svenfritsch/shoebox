@@ -41,6 +41,10 @@ current status and next step. Update its status table when a phase moves.
   browser as `shoebox-maps`, not per drive). The browser
   loads the tiles; shoebox never fetches or stores one. A position the user
   gives a photo lives in `library.db` (`geo_overrides`) only, never in the file.
+- Estimated dates (phase 12): a date the user gives a photo (`date_estimates`,
+  year, month or day) lives in `library.db` only, never in the file, and wins on
+  the timeline over the capture date in the file; the file's date is shown in the
+  info panel row "EXIF" and returns when the estimate is removed.
 - Licences: `LICENSE.txt` (all rights reserved, private use) and the generated
   `THIRD-PARTY-LICENSES.txt` go into the release archive. After a change to
   `Cargo.lock`, `scripts/build-deps.sh` or `core/web/vendor/` run
