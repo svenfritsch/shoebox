@@ -726,18 +726,30 @@ Mock-ups with four of the owner's photos (a road sign, a shopping list, a
 package, a flyer opened from a text search) were made in a chat session and
 are **not** committed (they show private photos); the design they show:
 
-- **Where:** the info panel gets a block **Recognized text** (document scanner
-  icon) under the people block, in the same style. Two buttons: **Show text**
-  (a toggle like "Show boxes" for faces: outlines every line on the photo in
-  the accent colour, the same overlay as the face boxes) and **Copy all** (all
-  lines, one per row, to the clipboard). Below them the list of lines as read,
-  top to bottom; hovering a line outlines its box on the photo and clicking
-  a box scrolls to its line. A small note shows the line count and the day
-  it was read.
+- **Top bar button (the switch):** a **Recognized text** button (document
+  scanner icon) sits in the viewer's top bar right next to the heart. It
+  exists **only on photos that have recognized text** (after the filters
+  below); on others there is no button and no section. Off, it is dimmed
+  (about half opacity); on, it is lit in the accent colour with a soft
+  background. Clicking it **switches two things together**: the text is
+  outlined on the photo (the same overlay as the face boxes) **and** the
+  panel's Recognized text section unfolds (the info panel opens if it was
+  closed). Clicking it again removes the outlines and folds the section.
+  Key `t` does the same (free in the current shortcut list; check on build).
+- **Section in the info panel:** a foldable row, **folded by default**:
+  `▸ Recognized text  27 ........ [Copy all]`: arrow, name, line count, and the
+  **Copy all** button at the right end of the header (copies all lines, one per
+  row). Clicking the row (arrow or name) opens or folds only the list; the
+  outlines on the photo stay as they are, so the list can be read without the
+  outlines and the outlines shown without the list. Unfolded, the list has a
+  **maximum height (about 300 px) and scrolls** when there are many lines. A
+  line: the text as read; hovering outlines its box on the photo and clicking a
+  box scrolls to its line.
 - **Opened from a text search:** when the viewer is opened from a `text:`
-  chip, the matching words are marked in the list (yellow) and their boxes
-  are outlined thick and yellow while the other lines stay quiet; **Show text**
-  is off by default otherwise, on in this case.
+  chip, the top-bar button is **on** and the section unfolded: the matching
+  words are marked in the list (yellow) and only their boxes are outlined,
+  thick and yellow, while the other lines stay quiet. Opened any other way,
+  the button is off and the section folded.
 - **Hide a line:** every line has a ✕ ("Not text I want"). A hidden line is
   struck through (↺ brings it back) and **leaves the search index for that
   photo**. It is the user's decision, so it lives in `library.db` like face
@@ -747,9 +759,8 @@ are **not** committed (they show private photos); the design they show:
   lines are hidden.
 - Only lines at or above the confidence and size limits below are stored, so
   the list shows what the search can find; nothing is ever written to the photo.
-- Keyboard: `t` toggles the overlay in the viewer (free in the current
-  shortcut list; check on build). The text is selectable in the panel; there is
-  no selecting text on the picture itself.
+- The text is selectable in the panel; there is no selecting text on the
+  picture itself.
 
 **"Deutsche" on the shopping-list photo (a question from the owner: should
 such text be in the index?).** In the test the word was read (0.99) and, with
@@ -781,6 +792,21 @@ seal text on a package 1.1–1.5, a road sign's small print 0.6–1.2 (read at
 4. A word the owner never wants indexed anywhere (a brand name on every
    package) can be **ignored globally** later: Settings, Recognized text, a
    list of ignored words, applied at search time. Not in v1.
+
+**Only German and English characters are kept (decided after the first mock-ups
+showed two lines of CJK symbols from a flyer's icons).** The engine's models
+also read Chinese characters; the core filters them out before anything is
+stored: characters outside an allow-list are removed from a line; the list is
+the Basic Latin letters and digits, the German umlauts and ß (ÄÖÜäöüß), spaces
+and ordinary punctuation and symbols (`. , ; : ! ? ' " „ " " ‘ ’ « » ( ) [ ] / \ | @ # & % * + = ~ ^ _ - – — · •`
+and `€ § ° ² ³ µ $ £`). A line left with **fewer than two letters or digits** is
+dropped, so "田" and "门田" disappear and "11:33" stays. Other accented
+Latin letters (é, ñ, ç) are not in the list and are removed from a line that
+has them ("FOR SOMIÉ" is kept as "FOR SOMI"; the spike showed such letters
+mostly come back without their accent anyway). One function in `text.rs`
+applies it to what the worker returns, with unit tests; the worker may also
+filter, but the core's rule is the one that counts. Widening the list later
+(French, Italian) is one line and a re-filter, no re-read.
 
 #### What it costs: space, search speed, reading time
 
