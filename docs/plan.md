@@ -351,6 +351,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 9 | Text in photos (OCR): documents, screenshots, street signs, shop fronts found by the words in them. A new task of the recognizer worker, results in `recognition.db` with an FTS5 index, a search term in the UI | **Planned** (design below, no code yet) |
 | 10 | Locations: GPS positions from files, map in the photo info (Leaflet, OpenStreetMap, opt-in setting), Locations page with clustered pins, named places drawn on the map, positions set by hand (design in [phase10.md](phase10.md)) | **Built, check open**: scan reads GPS, schema v10, API, UI, guide; real-hardware check and the CI run are open |
 | 11 | Screenshots: a fourth entry in the Type drop-down, found from metadata and a pixel check (no new model); "Photos" then means stills that are not screenshots (design in [phase11.md](phase11.md)) | **Built with test pictures; threshold and real-hardware run open** (see [phase11.md](phase11.md)) |
+| 12 | Export: collect photos with a tag (Settings → Collection, bookmark button, shortcut C) or a selection and copy them into a new numbered folder (`001_IMG_3457.jpg`), optionally RAW partners and HEIC as JPEG, with a folder picker; re-export adds only what is new (design and mock-ups in [phase12.md](phase12.md)) | **Planned** (design and mock-ups, no code yet) |
 
 ### Phase 10: locations
 

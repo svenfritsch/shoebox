@@ -76,6 +76,9 @@ body { overflow: hidden; }
 .callout { position: absolute; z-index: 9; font: 600 13px -apple-system, sans-serif; color: #fff; background: var(--accent); border-radius: 99px; padding: 2px 10px; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); top: 70px; bottom: auto; }
 .set-h { margin-top: 0; }
+.tip { position: absolute; z-index: 30; top: 48px; left: 600px; background: #2b2b2d; color: #eee; font-size: 13px; padding: 4px 9px; border-radius: 6px; border: 1px solid #444; white-space: nowrap; }
+.lb-bar .coll { outline: 0; }
+.lb-bar .hov { background: rgba(255,255,255,.18); border-radius: 6px; }
 .lightbox .toast { left: 330px; }
 .lightbox .stage { right: 340px; }
 .lb-panel { display: flex; }
@@ -200,9 +203,9 @@ def mock_files():
             crumbs = "<b>This PC</b> › C: › Users › Anna › <b>Downloads</b>"
         lst = [("📁 Anna wedding", ""), ("📁 invoices", ""), ("📁 print-march", "42 photos"), ("📁 Tickets", "")]
         nav = '<h4>Places</h4>' + "".join('<div class="%s">%s</div>' % ("on" if p[1] else "", p[0]) for p in places)
-        nav += '<h4>Drives</h4>' + "".join('<div class="%s">%s<small>%s</small></div>' % ("off" if d[2] else "", d[0], d[1]) for d in drives)
+        nav += '<h4>Drives</h4>' + "".join('<div>%s<small>%s</small></div>' % (d[0], d[1]) for d in drives)
         ul = "".join('<li><span>%s</span><small>%s</small></li>' % (n, c) for n, c in lst)
-        body = ('<header><h2>Choose where to save</h2><p class="hint" style="margin:4px 0 0">Drives with a shoebox library are greyed out: copies saved there would be found by the next scan.</p></header>'
+        body = ('<header><h2>Choose where to save</h2><p class="hint" style="margin:4px 0 0">Drives marked “shoebox” have their own library: you can save there, but its next scan will find the copies.</p></header>'
                 '<div class="pk"><nav>%s</nav><div class="main"><div class="crumbs">%s</div><ul>%s</ul></div></div>'
                 '<div class="foot"><span class="grow">Selected: Downloads</span><button class="btn quiet">Cancel</button><button class="btn">Choose this folder</button></div>') % (nav, crumbs, ul)
         return '<div class="modal"><div class="dialog picker" role="dialog">%s</div></div>' % body
@@ -243,7 +246,7 @@ def mock_files():
         '<section class="settings-section"><h3>Maps</h3><label class="check-row"><input type="checkbox"> Show maps (OpenStreetMap)</label></section></div>') % (badge, bm, bm, badge)
     M["09-settings"] = shell(settings)
     # 10 photo view with the info panel open: the bookmark and the tag go together
-    def lightbox(on, toast):
+    def lightbox(on, toast, tip=None, hidden=False):
         t = ('<div class="toast">%s</div>' % toast) if toast else ""
         own = '<span class="own"><button>print-march</button><button class="x">✕</button></span>' if on else ""
         panel = ('<aside class="lb-panel"><dl><dt>Date</dt><dd>Jul 14, 2025, 3:12 PM</dd><dt>Drive</dt><dd>Photos</dd><dt>Path</dt><dd>/2025-07 Beach/IMG_3457.jpg</dd>'
@@ -252,12 +255,21 @@ def mock_files():
         return ('<div class="lightbox"><div class="stage"><img src="img/p00.jpg" style="max-width:100%%;max-height:100%%"></div>'
                 '<div class="lb-bar"><button class="icon">✕</button><span class="lb-title">Jul 14, 2025, 3:12 PM · IMG_3457.jpg</span>'
                 '<button class="icon fav-lb">%s</button>'
-                '<button class="icon coll%s" title="Add to collection “print-march” (c)">%s</button>'
+                '%s'
                 '<button class="icon">↺</button><button class="icon">⤓</button><button class="icon">ⓘ</button></div>'
-                '<button class="nav prev">‹</button>%s%s</div>') % (HEART, " on" if on else "", coll(on), panel, t)
-    for name, on, toast in (("10a-photo-view-collection-off", False, None), ("10b-photo-view-collection-on", True, "Added to “print-march” · 43 photos")):
+                '<button class="nav prev">‹</button>%s%s%s</div>') % (HEART, ("" if hidden else '<button class="icon coll%s%s">%s</button>' % (" on" if on else "", " hov" if tip else "", coll(on))), panel, t, ('<span class="tip">%s</span>' % tip) if tip else "")
+    for name, args in (("10a-photo-view-hover-off", dict(on=False, toast=None, tip="Add tag “print-march” (C)")),
+                       ("10b-photo-view-after-click", dict(on=True, toast="Added to “print-march” · 43 photos")),
+                       ("10c-photo-view-hover-on", dict(on=True, toast=None, tip="Remove tag “print-march” (C)")),
+                       ("10d-photo-view-no-collection-set", dict(on=False, toast=None, hidden=True))):
         M[name] = ("<!doctype html><html><head><meta charset='utf-8'><title>mock</title><link rel='stylesheet' href='../../../core/web/app.css'>%s</head><body>%s</body></html>"
-                   % (CSS, lightbox(on, toast)))
+                   % (CSS, lightbox(**args)))
+    # 09b: the Collection setting is empty -> no button in the photo view
+    M["09b-settings-collection-empty"] = M["09-settings"].replace('value="print-march" placeholder', 'value="" placeholder').replace('<span class="hint">42 photos have this tag</span>', '<span class="hint">Empty: no button in the photo view</span>')
+    # 11 warning when the destination is another shoebox drive
+    warn = ('<p style="margin:0 0 8px">“Holiday backup” has its own shoebox library.</p>'
+            '<p class="hint" style="margin:0">The 42 photos saved there will be found by the next scan of that drive and added to it as new photos, without their tags, people or favorites. If you meant to hand photos to someone else who uses shoebox, that is fine.</p>')
+    M["11-warning-other-shoebox-drive"] = shell(tagged, chips=chips, modal=dialog("Save to another shoebox drive?", warn, BTN_C + '<button class="btn">Export anyway</button>'))
     return M
 
 if __name__ == "__main__":

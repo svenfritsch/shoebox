@@ -1,4 +1,5 @@
-<!doctype html><html><head><meta charset='utf-8'><title>mock</title><link rel='stylesheet' href='../../../core/web/app.css'>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>mock</title>
+<link rel="stylesheet" href="../../../core/web/app.css">
 <style>
 body { overflow: hidden; }
 .mgrid { display: flex; flex-wrap: wrap; padding: 2px; }
@@ -56,6 +57,9 @@ body { overflow: hidden; }
 .callout { position: absolute; z-index: 9; font: 600 13px -apple-system, sans-serif; color: #fff; background: var(--accent); border-radius: 99px; padding: 2px 10px; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); top: 70px; bottom: auto; }
 .set-h { margin-top: 0; }
+.tip { position: absolute; z-index: 30; top: 48px; left: 600px; background: #2b2b2d; color: #eee; font-size: 13px; padding: 4px 9px; border-radius: 6px; border: 1px solid #444; white-space: nowrap; }
+.lb-bar .coll { outline: 0; }
+.lb-bar .hov { background: rgba(255,255,255,.18); border-radius: 6px; }
 .lightbox .toast { left: 330px; }
 .lightbox .stage { right: 340px; }
 .lb-panel { display: flex; }
@@ -66,4 +70,23 @@ body { overflow: hidden; }
 .tree .nm { flex: 1; }
 .tree .ct { color: var(--muted); font-size: 12px; }
 </style>
-</head><body><div class="lightbox"><div class="stage"><img src="img/p00.jpg" style="max-width:100%;max-height:100%"></div><div class="lb-bar"><button class="icon">✕</button><span class="lb-title">Jul 14, 2025, 3:12 PM · IMG_3457.jpg</span><button class="icon fav-lb"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7.5-4.6-9.6-9.2C1 8.6 2.8 5 6.2 5c2 0 3.4 1.1 4.3 2.6h3C14.4 6.100 15.800 5 17.800 5c3.400 0 5.200 3.600 3.800 6.800C19.500 16.400 12 21 12 21z" transform="translate(0 0)"/></svg></button><button class="icon coll" title="Add to collection “print-march” (c)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6 3h12v18l-6-4.500L6 21z"/><path d="M12 8v6M9 11h6"/></svg></button><button class="icon">↺</button><button class="icon">⤓</button><button class="icon">ⓘ</button></div><button class="nav prev">‹</button><aside class="lb-panel"><dl><dt>Date</dt><dd>Jul 14, 2025, 3:12 PM</dd><dt>Drive</dt><dd>Photos</dd><dt>Path</dt><dd>/2025-07 Beach/IMG_3457.jpg</dd><dt>Size</dt><dd>1600 × 1067 · 133.1 KB</dd><dt>Camera</dt><dd>Sample Camera</dd><dt>Tags</dt><dd><div class="tags"><button>📁 2025-07 Beach</button><button class="add">+ Tag</button></div></dd></dl></aside></div></body></html>
+</head><body class="">
+<header class="bar">
+  <button class="icon">☰</button><h1>Photos</h1><span class="month">July 2025</span>
+  <div class="search"><input type="search" placeholder="Search people, pets, tags, folders" value=""></div>
+  <button class="fav-btn">♡</button>
+  <div class="types"><button class="types-btn">Type ▾</button></div>
+  <select><option>Year</option></select>
+  <button class="icon" style="">☑︎</button>
+  <select class="lang-pick"><option>English</option></select>
+</header>
+<div class="layout">
+  <nav class="sidebar">
+    <div class="sidebar-head"><button class="link">All photos</button> <button class="link">Duplicates</button> <button class="link">Trash</button> <button class="link">Settings</button></div>
+    <div class="side-tags"><h3><span>Tags</span></h3><ul class="tree"><li><div class="row"><span class="tw"></span><span class="nm"># Highlights</span><span class="ct">3</span></div></li><li><div class="row"><span class="tw"></span><span class="nm"># print-march</span><span class="ct">42</span></div></li><li><div class="row"><span class="tw"></span><span class="nm"># album-italy</span><span class="ct">17</span></div></li></ul></div>
+    <h3 class="side-head"><span>Folders</span></h3>
+    <ul class="tree"><li><div class="row"><span class="nm">2024-06 Summer trip</span><span class="ct">6</span></div></li><li><div class="row"><span class="nm">2025-05 Garden party</span><span class="ct">3</span></div></li><li><div class="row"><span class="nm">2025-07 Beach</span><span class="ct">3</span></div></li><li><div class="row"><span class="nm">Family</span><span class="ct">3</span></div></li></ul>
+    <footer class="status">1,240 photos · 31 videos · last scan 10/9/2026</footer>
+  </nav>
+  <main class="scroller"><div class="page"><h2>Settings</h2><section class="settings-section"><h3>Moving to the trash</h3><label class="check-row"><input type="checkbox"> Allow move to trash</label><p class="hint">Off by default, so shoebox never touches your originals.</p></section><section class="settings-section"><h3>Collection <span style="background:var(--accent);color:#fff;border-radius:99px;font-size:11px;padding:1px 8px;vertical-align:middle">new</span></h3><p class="hint" style="margin-top:0">A quick way to gather photos for something: a print order, an album, a video for a birthday. Type a tag name here and this button <span class="iconbox"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6 3h12v18l-6-4.500L6 21z"/><path d="M12 8v6M9 11h6"/></svg></span> appears in the photo view (shortcut <span class="kbd">C</span>). One click tags the photo with it, another click removes the tag. Then search for the tag and use <b>Export…</b> to get all of them in one folder. Leave it empty to hide the button.</p><div style="display:flex;gap:10px;align-items:center"><span class="iconbox"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6 3h12v18l-6-4.500L6 21z"/><path d="M12 8v6M9 11h6"/></svg></span><input type="text" value="" placeholder="e.g. album-italy" style="padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel)"> <span class="hint">Empty: no button in the photo view</span></div></section><section class="settings-section"><h3>Export <span style="background:var(--accent);color:#fff;border-radius:99px;font-size:11px;padding:1px 8px;vertical-align:middle">new</span></h3><label class="check-row"><input type="checkbox" checked> Number exported files</label><p class="hint">Puts the order of the photos in front of the name: <b>001_IMG_3457.jpg</b>, <b>002_IMG_3501.jpg</b>… The numbers follow the capture date, so a layout program or a print shop sees the same order as the timeline. Off: files keep their name only.</p></section><section class="settings-section"><h3>Maps</h3><label class="check-row"><input type="checkbox"> Show maps (OpenStreetMap)</label></section></div></main>
+</div></body></html>
