@@ -118,35 +118,65 @@ A typical session
 Plug in the drive and double-click Start shoebox. Scan (quick when little has
 changed) and open the photo app. To add the photos of an event, copy their
 folder onto the drive in Finder (named like 2025-08 Holiday) and Scan again:
-if some files were on the drive already, the launcher offers to delete the new
-copies. Then tag and sort. Look at Duplicates now and then, and run the Backup
-check after every backup.
+if some files were on the drive already, the Control Panel offers to delete
+the new copies. Then tag and sort. Look at Duplicates now and then, and run
+the Backup check after every backup.
 
 Get started in three steps
 --------------------------
 
-macOS, Intel (10.13 or newer) and Apple Silicon. Nothing to install.
+macOS, Intel (10.13 or newer) and Apple Silicon. Nothing to install to browse
+and scan; face and pet recognition are add-ons you install from the launcher.
 
-1. Put it on the drive
-   Unpack shoebox-macos.tar.gz from the release. Copy shoebox-macos and Start
-   shoebox.command to the top folder of your photo drive (next to your photo
-   folders). Optional: the recognizer folder for faces. The archive also holds
-   this guide in the folder guide.
+1. Unpack it and choose where it lives
+   Unpack shoebox-macos.tar.gz from the release (double-click it in Finder).
+   You get one folder, shoebox-macos (the name says which system it is for),
+   with the program shoebox, Start shoebox.command, the folder recognizer (the
+   add-ons installer) and this guide in guide. Keep these files together;
+   never pull single files out of the folder. Then pick one of two ways:
 
-2. Start the launcher
-   Double-click Start shoebox.command. A Terminal window opens (leave it open)
-   and the launcher appears in your browser. If macOS asks, right-click the
-   file and choose Open.
+   On the drive (best if you take the drive to other computers): copy the
+   whole folder shoebox-macos into the top folder of your photo drive, next to
+   your photo folders, so you have /Volumes/MyDrive/shoebox-macos/. Do not
+   create a .shoebox folder yourself: shoebox makes it on the drive at the
+   first scan. Add-ons you install later are stored in
+   shoebox-macos/recognizer on the drive and travel with it. Other systems get
+   their own folder next to it (for example shoebox-windows, when it is
+   published), each with its own add-ons; start shoebox from the folder of the
+   system you are on.
 
-3. Scan, then open
-   Add your drive (click it, or type /Volumes/MyDrive), press Scan, then Start
-   photo app. The first scan reads every file once and takes a while on a big
-   drive; later scans only look at what changed. When it finishes, the tabs
-   Moved, Changed, Missing and Already on the drive (each with its count) list
-   exactly which files they mean; for new files you already had, the tab shows
-   the older copy right next to each one.
+   On your computer: move the whole unpacked folder shoebox-macos somewhere
+   you will keep it (Documents, for example, not Downloads) and leave its
+   files together. Open it from there whichever drives you plug in; add-ons
+   are installed once into its recognizer folder and used for every drive. The
+   library index (a hidden .shoebox folder) is on each drive in both ways.
 
-Launcher tasks
+2. Start the Control Panel
+   Double-click Start shoebox.command (on the drive, or in the folder on your
+   computer). A Terminal window opens (leave it open) and the Control Panel
+   appears in your browser. If macOS asks, right-click the file and choose
+   Open.
+
+3. Add-ons, scan, then open
+   Only if you want people and pets recognized: in step 1, Add-ons, tick what
+   you want (Faces, Pets, or both; each works without the other) and press
+   Install the selected add-ons. The Control Panel lists what is downloaded:
+   the Python and OpenCV program (about 200 MB, once, for all add-ons), Faces
+   (about 40 MB) and Pets (about 140 MB). Internet needed, a few minutes.
+   Add-ons can be added later, and a computer of another kind (Intel or Apple
+   Silicon) needs them installed once on that computer. Python and OpenCV is
+   always installed with the first add-on (its box is ticked and cannot be
+   unticked). Until an add-on is installed, its recognize button stays grey
+   and says why. Click the heading Add-ons to fold the step away; it stays
+   folded once everything is installed. Then add your drive (click it, or type
+   /Volumes/MyDrive), press Scan, then Start photo app. The first scan reads
+   every file once and takes a while on a big drive; later scans only look at
+   what changed. When it finishes, the tabs Moved, Changed, Missing and
+   Already on the drive (each with its count) list exactly which files they
+   mean; for new files you already had, the tab shows the older copy right
+   next to each one.
+
+Control Panel tasks
 Scan: find new, moved and changed photos. Fast: it only looks at what changed
 since the last scan, and the tabs list what this scan changed. Run it after
 you move, rename or add photos. It also lists new copies of files the drive
@@ -162,18 +192,45 @@ content that is nowhere on the drive any more counts as missing. If files are
 gone, a button appears after the check (and after a scan) that forgets their
 records: they are removed from the shoebox index, its database on the drive.
 No photo file is touched.
-Recognize: find faces (and, with Recognize pets, cats and dogs)
-Recognize lying down: also find faces lying down (slower)
-Recognize pets: find cats and dogs; they show up among the faces
+Recognize faces: find the faces in your photos (and, with Recognize pets, cats
+and dogs). Needs the Faces add-on.
+Rotated faces: also find faces turned on their side, for example people lying
+down (slower). Needs the Faces add-on.
+Recognize pets: find cats and dogs; they show up among the faces. Needs the
+Pets add-on, not the Faces one.
 Face stats: how recognition went
 Backup check: is the 2nd folder a complete copy of the 1st?
 
-[Screenshot: The launcher: 1 choose the drive or folder, 2 pick a task, 3 open
-the photo app.]
+[Screenshot: The Control Panel: 1 install add-ons, 2 choose the drive or
+folder, 3 pick a task, 4 open the photo app.]
+
+Several computers and systems
+- Where the add-ons are looked for: first in the recognizer folder next to the
+  shoebox program you started, last in the drive's own hidden
+  .shoebox/recognizer (only used when the program folder has nothing). So a
+  shoebox folder on your computer is used for every drive, even if a drive
+  holds models too.
+- Models and Python are different things. The models (Faces, Pets) are the
+  same on every computer. Python and OpenCV is built for one kind of computer:
+  Intel Mac, Apple Silicon Mac, Linux, Windows. If you take a drive with
+  shoebox-macos from an Intel MacBook to a newer one, step 1 shows Python and
+  OpenCV: required on the newer one, your add-ons say models found, needs
+  Python for this computer, and the recognize buttons are grey. Press Install
+  the selected add-ons once there: only the missing Python is downloaded, the
+  models are kept. Both kinds then live side by side in the same recognizer
+  folder, and each computer uses its own.
+- Mac and Windows on one drive: copy both folders to the drive's top folder:
+  shoebox-macos and shoebox-windows. Each has its own recognizer folder, so
+  models you install in one are not shared with the other. Start shoebox from
+  the folder of the system you are on. Both use the same hidden .shoebox index
+  on the drive. The add-ons install on Windows too, with the same button: it
+  needs Windows 10 or 11 on a 64-bit Intel or AMD processor and nothing else
+  to be installed first.
 
 Good to know
 - Videos get preview images if you put a static ffmpeg next to the program
-  (.shoebox/bin/ffmpeg). Without it, the browser grabs a frame instead.
+  (ffmpeg in the same folder as shoebox). Without it, the browser grabs a
+  frame instead.
 - shoebox keeps its index and thumbnails in a hidden .shoebox folder on the
   drive, so the drive can move to another computer.
 - Closing the Terminal window stops shoebox.
@@ -279,10 +336,10 @@ Adding photos, duplicates and trash
 Adding photos
 Copy or move the photos onto the drive in Finder or File Explorer, which keeps
 their dates, ideally into a folder named YYYY-MM Event, and press Scan. If the
-scan finds new files the drive already had, the launcher marks them already on
-the drive and offers Delete the new copies (to the trash, or for good). The
-older original stays and gets the deleted copy’s folder name as a tag.
-Settings sets how event folders are named in suggestions (for example
+scan finds new files the drive already had, the Control Panel marks them
+already on the drive and offers Delete the new copies (to the trash, or for
+good). The older original stays and gets the deleted copy’s folder name as a
+tag. Settings sets how event folders are named in suggestions (for example
 YY.MM_Event); existing folders are not renamed and all forms are recognised.
 
 Duplicates
@@ -332,9 +389,12 @@ People and pets
 Optional: shoebox finds faces, cats and dogs; you give them names.
 
 Find them
-Install the recognizer once (recognizer/install.sh /Volumes/MyDrive). Then
-close the photo app and run Recognize (and Recognize pets) in the launcher. A
-Faces section appears in the sidebar.
+Install the add-ons once: in the Control Panel, step 1 Add-ons, tick what you
+need (Faces, and Pets for cats and dogs) and press Install the selected
+add-ons. They are stored in the recognizer folder next to the shoebox program:
+on the drive if shoebox lives on the drive, otherwise on your computer for
+every drive. Then close the photo app and run Recognize faces (and Recognize
+pets) in the Control Panel. A Faces section appears in the sidebar.
 
 Name them
 Under Unnamed, shoebox shows cards of similar faces. Type a name once and the
@@ -353,7 +413,7 @@ Combine a person with a tag, a folder or another person.
 
 New photos
 Recognition does not start by itself after a scan yet. Close the photo app and
-run Recognize again: it only looks at the new photos.
+run Recognize faces again: it only looks at the new photos.
 
 [Screenshot: Unnamed cards: one name for every face on a card.]
 
@@ -570,7 +630,8 @@ anything into them.
 If something looks off
 ----------------------
 
-The grid is empty. Run Scan in the launcher first, then start the photo app.
+The grid is empty. Run Scan in the Control Panel first, then start the photo
+app.
 
 New photos are missing. Scan again. It is quick: only new and changed files
 are read.

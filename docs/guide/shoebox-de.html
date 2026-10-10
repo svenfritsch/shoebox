@@ -294,42 +294,44 @@
       </ol>
       <div class="panel">
         <h3>Ein typischer Ablauf</h3>
-        <p>Laufwerk anstecken und <b>Start shoebox</b> doppelklicken. <b>Scannen</b> (geht schnell, wenn sich wenig geändert hat) und die Foto-App öffnen. Für die Fotos eines Ereignisses den Ordner im Finder aufs Laufwerk kopieren (benannt wie <b>2025-08 Urlaub</b>) und erneut <b>scannen</b>: Waren einzelne Dateien schon auf dem Laufwerk, bietet der Launcher an, die neuen Kopien zu löschen. Dann taggen und sortieren. Ab und zu die <b>Duplikate</b> ansehen und nach jedem Backup die <b>Backup-Prüfung</b> laufen lassen.</p>
+        <p>Laufwerk anstecken und <b>Start shoebox</b> doppelklicken. <b>Scannen</b> (geht schnell, wenn sich wenig geändert hat) und die Foto-App öffnen. Für die Fotos eines Ereignisses den Ordner im Finder aufs Laufwerk kopieren (benannt wie <b>2025-08 Urlaub</b>) und erneut <b>scannen</b>: Waren einzelne Dateien schon auf dem Laufwerk, bietet die Zentrale an, die neuen Kopien zu löschen. Dann taggen und sortieren. Ab und zu die <b>Duplikate</b> ansehen und nach jedem Backup die <b>Backup-Prüfung</b> laufen lassen.</p>
       </div>
     </section>
 
     <section id="start">
       <h2>In drei Schritten loslegen</h2>
-      <p class="sub">macOS, Intel (ab 10.13) und Apple Silicon. Nichts zu installieren.</p>
+      <p class="sub">macOS, Intel (ab 10.13) und Apple Silicon. Zum Ansehen und Scannen ist nichts zu installieren; Gesichter- und Haustiererkennung sind Erweiterungen, die du in der Zentrale installierst.</p>
       <div class="cols">
         <div>
           <ol class="steps">
             <li>
-              <h3>Aufs Laufwerk legen</h3>
-              <p><b>shoebox-macos.tar.gz</b> aus dem Release entpacken. <b>shoebox-macos</b> und <b>Start shoebox.command</b> in den obersten Ordner deines Foto-Laufwerks kopieren (neben deine Fotoordner). Optional: den Ordner <b>recognizer</b> für Gesichter. Das Archiv enthält auch dieses Handbuch im Ordner <b>guide</b>.</p>
+              <h3>Entpacken und festlegen, wo es liegt</h3>
+              <p><b>shoebox-macos.tar.gz</b> aus dem Release entpacken (im Finder doppelklicken). Du bekommst einen Ordner <b>shoebox-macos</b> (der Name sagt, für welches System er ist) mit dem Programm <b>shoebox</b>, <b>Start shoebox.command</b>, dem Ordner <b>recognizer</b> (dem Installer für die Erweiterungen) und diesem Handbuch im Ordner <b>guide</b>. Diese Dateien zusammenlassen; keine einzelnen Dateien herausziehen. Dann einen von zwei Wegen wählen:</p>
+              <p><b>Auf dem Laufwerk</b> (am besten, wenn du das Laufwerk zu anderen Computern mitnimmst): den ganzen Ordner <b>shoebox-macos</b> in den obersten Ordner deines Foto-Laufwerks kopieren, neben deine Fotoordner, sodass es <code>/Volumes/MeinLaufwerk/shoebox-macos/</code> gibt. Einen Ordner <b>.shoebox</b> nicht selbst anlegen: shoebox erstellt ihn beim ersten Scan auf dem Laufwerk. Erweiterungen, die du später installierst, liegen in <code>shoebox-macos/recognizer</code> auf dem Laufwerk und reisen mit. Andere Systeme bekommen einen eigenen Ordner daneben (zum Beispiel <b>shoebox-windows</b>, sobald veröffentlicht), jeweils mit eigenen Erweiterungen; gestartet wird aus dem Ordner des Systems, an dem du sitzt.</p>
+              <p><b>Auf deinem Computer</b>: den ganzen entpackten Ordner <b>shoebox-macos</b> an einen Ort verschieben, an dem er bleiben soll (zum Beispiel Dokumente, nicht Downloads), und seine Dateien zusammenlassen. Von dort öffnest du ihn für jedes Laufwerk, das du ansteckst; Erweiterungen werden einmal in seinen Ordner <b>recognizer</b> installiert und für alle Laufwerke genutzt. Der Bibliotheks-Index (ein versteckter Ordner <b>.shoebox</b>) liegt in beiden Fällen auf dem jeweiligen Laufwerk.</p>
             </li>
             <li>
-              <h3>Starter öffnen</h3>
-              <p><b>Start shoebox.command</b> doppelklicken. Ein Terminal-Fenster öffnet sich (offen lassen) und der Starter erscheint im Browser. Fragt macOS nach, die Datei per Rechtsklick mit <b>Öffnen</b> starten.</p>
+              <h3>Zentrale öffnen</h3>
+              <p><b>Start shoebox.command</b> doppelklicken (auf dem Laufwerk oder im Ordner auf deinem Computer). Ein Terminal-Fenster öffnet sich (offen lassen) und die Zentrale erscheint im Browser. Fragt macOS nach, die Datei per Rechtsklick mit <b>Öffnen</b> starten.</p>
             </li>
             <li>
-              <h3>Scannen, dann öffnen</h3>
-              <p>Laufwerk hinzufügen (anklicken oder <code>/Volumes/MeinLaufwerk</code> tippen), <b>Scannen</b> drücken, dann <b>Foto-App starten</b>. Der erste Scan liest jede Datei einmal und dauert bei großen Laufwerken eine Weile; später werden nur Änderungen angesehen. Nach dem Scan listen die Reiter <b>Verschoben</b>, <b>Geändert</b>, <b>Fehlend</b> und <b>Schon auf dem Laufwerk</b> (jeweils mit Anzahl) genau auf, um welche Dateien es geht; bei neuen Dateien, die du schon hattest, steht die ältere Kopie gleich daneben.</p>
+              <h3>Erweiterungen, scannen, dann öffnen</h3>
+              <p>Nur wenn Personen und Haustiere erkannt werden sollen: in Schritt 1, <b>Erweiterungen</b>, ankreuzen, was du willst (<b>Gesichter</b>, <b>Haustiere</b> oder beides; jedes geht ohne das andere), und <b>Ausgewählte Erweiterungen installieren</b> drücken. Die Zentrale listet, was geladen wird: das Programm Python und OpenCV (etwa 200 MB, einmal für alle Erweiterungen), Gesichter (etwa 40 MB) und Haustiere (etwa 140 MB). Internet nötig, einige Minuten. Erweiterungen lassen sich später ergänzen; ein Computer anderer Art (Intel oder Apple Silicon) braucht sie einmal auf diesem Computer. Python und OpenCV wird immer mit der ersten Erweiterung installiert (sein Kästchen ist angekreuzt und lässt sich nicht abwählen). Solange eine Erweiterung fehlt, bleibt ihr Erkennen-Knopf grau und sagt warum. Ein Klick auf die Überschrift <b>Erweiterungen</b> klappt den Schritt zu; er bleibt zu, sobald alles installiert ist. Dann Laufwerk hinzufügen (anklicken oder <code>/Volumes/MeinLaufwerk</code> tippen), <b>Scannen</b> drücken, dann <b>Foto-App starten</b>. Der erste Scan liest jede Datei einmal und dauert bei großen Laufwerken eine Weile; später werden nur Änderungen angesehen. Nach dem Scan listen die Reiter <b>Verschoben</b>, <b>Geändert</b>, <b>Fehlend</b> und <b>Schon auf dem Laufwerk</b> (jeweils mit Anzahl) genau auf, um welche Dateien es geht; bei neuen Dateien, die du schon hattest, steht die ältere Kopie gleich daneben.</p>
             </li>
           </ol>
           <div class="panel">
-            <h3>Aufgaben im Starter</h3>
+            <h3>Aufgaben in der Zentrale</h3>
             <dl>
                 <dt>Scannen</dt>
                 <dd>neue, verschobene und geänderte Fotos finden. Schnell: es schaut nur auf das, was sich seit dem letzten Scan geändert hat, und die Reiter zeigen, was dieser Scan geändert hat. Nach dem Verschieben, Umbenennen oder Hinzufügen von Fotos ausführen. Es listet auch neue Kopien von Dateien, die das Laufwerk schon hatte.</dd>
                 <dt>Prüfen</dt>
                 <dd>prüfen, dass nichts verloren oder beschädigt ist. Es liest jede Datei neu und vergleicht sie mit dem, was der Index kennt; so findet es Dateien, die auf dem Laufwerk unbemerkt beschädigt wurden. Langsam, also hin und wieder ausführen (alle paar Monate oder bevor man sich auf ein Backup verlässt), nicht nach jedem Verschieben. Verschiebungen sind nicht seine Sache: ein verschobenes Foto hat im Index seinen neuen Platz und besteht die Prüfung. Ein Foto, dessen Pfad weg ist, dessen Inhalt aber anderswo auf dem Laufwerk noch liegt (eine gelöschte Kopie), steht als „umgezogen“ in der Liste, nicht als Fehler. Nur Inhalt, der nirgends mehr auf dem Laufwerk liegt, zählt als fehlend. Fehlen Dateien, erscheint nach der Prüfung (und nach einem Scan) ein Knopf, der ihre Einträge vergisst: sie werden aus dem shoebox-Index, seiner Datenbank auf dem Laufwerk, entfernt. Keine Fotodatei wird angefasst.</dd>
-                <dt>Erkennen</dt>
-                <dd>Gesichter finden (mit „Haustiere erkennen“ auch Katzen und Hunde)</dd>
-                <dt>Liegende Gesichter erkennen</dt>
-                <dd>auch liegende Gesichter finden (langsamer)</dd>
+                <dt>Gesichter erkennen</dt>
+                <dd>die Gesichter in deinen Fotos finden (mit „Haustiere erkennen“ auch Katzen und Hunde). Braucht die Erweiterung „Gesichter“.</dd>
+                <dt>Gedrehte Gesichter</dt>
+                <dd>auch Gesichter finden, die auf der Seite liegen, zum Beispiel liegende Personen (langsamer). Braucht die Erweiterung „Gesichter“.</dd>
                 <dt>Haustiere erkennen</dt>
-                <dd>Katzen und Hunde finden; sie erscheinen bei den Gesichtern</dd>
+                <dd>Katzen und Hunde finden; sie erscheinen bei den Gesichtern. Braucht die Erweiterung „Haustiere“, nicht die für Gesichter.</dd>
                 <dt>Gesichts-Statistik</dt>
                 <dd>wie die Erkennung gelaufen ist</dd>
                 <dt>Backup-Prüfung</dt>
@@ -339,13 +341,21 @@
         </div>
         <figure class="narrow">
           <img src="assets/de/launcher-overview.jpg" alt="" loading="lazy">
-          <figcaption>Der Starter: 1 Laufwerk oder Ordner wählen, 2 Aufgabe wählen, 3 Foto-App öffnen.</figcaption>
+          <figcaption>Die Zentrale: 1 Erweiterungen installieren, 2 Laufwerk oder Ordner wählen, 3 Aufgabe wählen, 4 Foto-App öffnen.</figcaption>
         </figure>
+      </div>
+      <div class="panel">
+        <h3>Mehrere Computer und Systeme</h3>
+        <ul>
+          <li><b>Wo die Erweiterungen gesucht werden:</b> zuerst im Ordner <b>recognizer</b> neben dem gestarteten shoebox-Programm, zuletzt im eigenen versteckten <code>.shoebox/recognizer</code> des Laufwerks (nur, wenn der Programmordner nichts hat). Ein shoebox-Ordner auf deinem Computer wird also für jedes Laufwerk benutzt, auch wenn ein Laufwerk selbst Modelle enthält.</li>
+          <li><b>Modelle und Python sind zweierlei.</b> Die Modelle (Gesichter, Haustiere) sind auf jedem Computer gleich. <b>Python und OpenCV</b> gibt es je Computerart: Intel-Mac, Apple-Silicon-Mac, Linux, Windows. Nimmst du ein Laufwerk mit <b>shoebox-macos</b> von einem Intel-MacBook zu einem neueren mit, zeigt Schritt 1 dort bei <b>Python und OpenCV</b> <b>nötig</b>, deine Erweiterungen sagen <b>Modelle da, braucht Python für diesen Computer</b>, und die Erkennen-Knöpfe sind grau. Dort einmal <b>Ausgewählte Erweiterungen installieren</b> drücken: Es wird nur das fehlende Python geladen, die Modelle bleiben. Beide Arten liegen dann nebeneinander im selben Ordner <b>recognizer</b>, und jeder Computer nutzt seine eigene.</li>
+          <li><b>Mac und Windows auf einem Laufwerk:</b> beide Ordner in den obersten Ordner des Laufwerks kopieren: <code>shoebox-macos</code> und <code>shoebox-windows</code>. Jeder hat seinen eigenen Ordner <b>recognizer</b>; Modelle, die du im einen installierst, gelten also nicht im anderen. Gestartet wird aus dem Ordner des Systems, an dem du sitzt. Beide nutzen denselben versteckten Index <code>.shoebox</code> auf dem Laufwerk. Die Erweiterungen lassen sich auch unter Windows mit demselben Knopf installieren: Dafür braucht es Windows 10 oder 11 auf einem 64-Bit-Intel- oder AMD-Prozessor, sonst nichts, was vorher installiert sein müsste.</li>
+        </ul>
       </div>
       <div class="panel">
         <h3>Gut zu wissen</h3>
         <ul>
-          <li>Videos bekommen Vorschaubilder, wenn ein statisches <b>ffmpeg</b> neben dem Programm liegt (<code>.shoebox/bin/ffmpeg</code>). Ohne holt sich der Browser ein Bild.</li>
+          <li>Videos bekommen Vorschaubilder, wenn ein statisches <b>ffmpeg</b> neben dem Programm liegt (<code>ffmpeg</code> im selben Ordner wie <b>shoebox</b>). Ohne holt sich der Browser ein Bild.</li>
           <li>shoebox legt Index und Vorschaubilder im versteckten Ordner <code>.shoebox</code> auf dem Laufwerk ab. Das Laufwerk kann also an einen anderen Computer umziehen.</li>
           <li>Schließt du das Terminal-Fenster, beendet das shoebox.</li>
         </ul>
@@ -457,7 +467,7 @@
         <div class="items">
           <div>
             <h3>Fotos hinzufügen</h3>
-            <p>Die Fotos im Finder oder Explorer aufs Laufwerk kopieren oder verschieben (dabei bleiben ihre Daten erhalten), am besten in einen Ordner namens <b>JJJJ-MM Ereignis</b>, und <b>Scannen</b> drücken. Findet der Scan neue Dateien, die das Laufwerk schon hatte, markiert der Launcher sie mit <i>schon auf dem Laufwerk</i> und bietet <b>Die neuen Kopien löschen</b> an (in den Papierkorb oder endgültig). Das ältere Original bleibt und bekommt den Ordnernamen der gelöschten Kopie als Tag. In den <b>Einstellungen</b> wählst du, wie Ereignisordner in Vorschlägen heißen (zum Beispiel <code>JJ.MM_Ereignis</code>); vorhandene Ordner werden nicht umbenannt, und alle Formen werden erkannt.</p>
+            <p>Die Fotos im Finder oder Explorer aufs Laufwerk kopieren oder verschieben (dabei bleiben ihre Daten erhalten), am besten in einen Ordner namens <b>JJJJ-MM Ereignis</b>, und <b>Scannen</b> drücken. Findet der Scan neue Dateien, die das Laufwerk schon hatte, markiert die Zentrale sie mit <i>schon auf dem Laufwerk</i> und bietet <b>Die neuen Kopien löschen</b> an (in den Papierkorb oder endgültig). Das ältere Original bleibt und bekommt den Ordnernamen der gelöschten Kopie als Tag. In den <b>Einstellungen</b> wählst du, wie Ereignisordner in Vorschlägen heißen (zum Beispiel <code>JJ.MM_Ereignis</code>); vorhandene Ordner werden nicht umbenannt, und alle Formen werden erkannt.</p>
           </div>
           <div>
             <h3>Duplikate</h3>
@@ -500,7 +510,7 @@
         <div class="items">
           <div>
             <h3>Finden</h3>
-            <p>Einmal den Recognizer installieren (<code>recognizer/install.sh /Volumes/MeinLaufwerk</code>). Dann die Foto-App schließen und im Starter <b>Erkennen</b> (und <b>Haustiere erkennen</b>) ausführen. In der Seitenleiste erscheint der Bereich <b>Gesichter</b>.</p>
+            <p>Die Erweiterungen einmal installieren: in der Zentrale in Schritt 1 <b>Erweiterungen</b> ankreuzen, was du brauchst (<b>Gesichter</b>, und <b>Haustiere</b> für Katzen und Hunde), und <b>Ausgewählte Erweiterungen installieren</b> drücken. Sie liegen im Ordner <code>recognizer</code> neben dem shoebox-Programm: auf dem Laufwerk, wenn shoebox dort liegt, sonst auf deinem Computer für alle Laufwerke. Dann die Foto-App schließen und in der Zentrale <b>Gesichter erkennen</b> (und <b>Haustiere erkennen</b>) ausführen. In der Seitenleiste erscheint der Bereich <b>Gesichter</b>.</p>
           </div>
           <div>
             <h3>Benennen</h3>
@@ -516,7 +526,7 @@
           </div>
           <div>
             <h3>Neue Fotos</h3>
-            <p>Die Erkennung startet nach einem Scan noch nicht von selbst. Foto-App schließen und <b>Erkennen</b> erneut ausführen: Es werden nur die neuen Fotos angesehen.</p>
+            <p>Die Erkennung startet nach einem Scan noch nicht von selbst. Foto-App schließen und <b>Gesichter erkennen</b> erneut ausführen: Es werden nur die neuen Fotos angesehen.</p>
           </div>
         </div>
         <div>
@@ -722,7 +732,7 @@
     <section id="faq">
       <h2>Wenn etwas komisch aussieht</h2>
       <div class="panel faq">
-        <p><b>Das Raster ist leer.</b> Erst im Starter <b>Scannen</b>, dann die Foto-App starten.</p>
+        <p><b>Das Raster ist leer.</b> Erst in der Zentrale <b>Scannen</b>, dann die Foto-App starten.</p>
         <p><b>Neue Fotos fehlen.</b> Noch einmal scannen. Das geht schnell: nur neue und geänderte Dateien werden gelesen.</p>
         <p><b>Ein Video hat keine Vorschau.</b> <code>ffmpeg</code> hinzufügen (siehe „Gut zu wissen“) und die Foto-App neu starten.</p>
         <p><b>Das iPad verbindet sich nicht.</b> Selbes WLAN? Mit <code>--lan</code> gestartet? PIN aus dem Terminal eingeben. Nach einem Neustart von shoebox fragt es wieder nach der PIN.</p>

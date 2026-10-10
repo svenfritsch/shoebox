@@ -184,8 +184,9 @@ jobs:
           for os in macos; do
             pkg="$RUNNER_TEMP/shoebox-$os"
             mkdir -p "$pkg/recognizer"
-            cp artifacts/shoebox-$os/shoebox-$os "$pkg/"
-            chmod +x "$pkg/shoebox-$os"
+            # inside its own folder per system the program is just "shoebox"
+            cp artifacts/shoebox-$os/shoebox-$os "$pkg/shoebox"
+            chmod +x "$pkg/shoebox"
             cp LICENSE.txt THIRD-PARTY-LICENSES.txt "$pkg/"
             cp "scripts/launchers/Start shoebox.command" "$pkg/"
             chmod +x "$pkg/Start shoebox.command"
