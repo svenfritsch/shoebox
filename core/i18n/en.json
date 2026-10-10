@@ -649,6 +649,8 @@
   "fav.remove": "Remove from favorites",
   "fav.add_hint": "Add to favorites (f)",
   "fav.remove_hint": "Remove from favorites (f)",
+  "fav.readonly": "Favorite (change it on the photo's own drive)",
+  "info.favorite": "Favorite",
   "fav.filter_hint": "Show only favorites",
   "types.hint": "Show only some types",
   "types.label": "Type",

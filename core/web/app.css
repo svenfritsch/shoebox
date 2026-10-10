@@ -271,6 +271,8 @@ body.selecting #select { color: var(--accent); }
 /* Own tags (5b): sidebar section, info panel chips, selection bar. */
 .side-tags h3 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 10px 8px 0 4px; }
 .side-tags .tree { flex: none; padding-bottom: 4px; }
+.lb-panel .tags.readonly span { background: rgba(255,255,255,.12); color: #eee; border-radius: 99px; padding: 2px 10px; font-size: 13px; }
+.lb-panel .pfaces.readonly .pface { padding: 2px 0; cursor: pointer; }
 .lb-panel .tags .own { display: inline-flex; align-items: center; background: rgba(255,255,255,.12); border-radius: 99px; }
 .lb-panel .tags .own button { background: none; padding-right: 4px; }
 .lb-panel .tags .own button.x { padding: 2px 8px 2px 2px; color: #aaa; }
@@ -641,6 +643,10 @@ body.selecting .sec .pick { display: inline; }
 .cell:hover .fav { background: rgba(0,0,0,.35); }
 @media (hover: none) { .cell .fav:not(.on) { opacity: .75; background: rgba(0,0,0,.35); } }
 .lb-bar .fav-lb.on { color: #ff4d6a; }
+/* The common timeline only shows hearts (disabled, never a click target). */
+.cell .fav:disabled, .lb-bar .fav-lb:disabled { cursor: default; }
+.cell:hover .fav:disabled { background: transparent; }
+.lb-bar .fav-lb:disabled { opacity: 1; }
 .heart { color: #e0405a; }
 
 /* ---- locations (phase 10) */
