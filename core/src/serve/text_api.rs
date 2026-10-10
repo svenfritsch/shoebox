@@ -4,11 +4,14 @@
 use std::sync::Arc;
 
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
+use axum::response::Response;
+use libheif_rs::LibHeif;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 
-use super::{ApiResult, App, blocking, change};
+use super::{ApiError, ApiResult, App, IMMUTABLE, blocking, change, jpeg};
+use crate::classify::Kind;
 use crate::text;
 
 #[derive(Deserialize)]
@@ -75,3 +78,47 @@ pub(super) async fn delete_all(State(app): State<Arc<App>>) -> ApiResult<Json<De
     change(&app, move |_, conn| Ok(Deleted { lines: text::delete_all(conn)? })).await.map(Json)
 }
 
+
+#[derive(Serialize)]
+pub(super) struct Check {
+    limits: text::Limits,
+    lines: Vec<text::CheckLine>,
+}
+
+/// The Text check page: the limits, and the lines near them (what moving a
+/// limit would take in or leave out), nearest first.
+pub(super) async fn check(State(app): State<Arc<App>>) -> ApiResult<Json<Check>> {
+    blocking(&app, move |app| {
+        let conn = app.conn.lock().unwrap();
+        Ok(Json(Check { limits: text::limits(&conn), lines: text::check_lines(&conn, 60)? }))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+pub(super) struct CropQuery {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+}
+
+/// A crop of one line of text, cut from the original under the guard (a
+/// photo is read for it, nothing is stored).
+pub(super) async fn crop(State(app): State<Arc<App>>, Path(id): Path<i64>, Query(q): Query<CropQuery>) -> ApiResult<Response> {
+    let valid = [q.x, q.y, q.w, q.h].iter().all(|v| v.is_finite()) && q.w > 0.0 && q.h > 0.0 && q.x >= 0.0 && q.y >= 0.0 && q.x + q.w <= 1.001 && q.y + q.h <= 1.001;
+    if !valid {
+        return Err(ApiError::BadRequest("the box is x, y, w, h as fractions of the picture".into()));
+    }
+    let src = blocking(&app, move |app| {
+        let conn = app.conn.lock().unwrap();
+        app.source(&conn, id)?.filter(|s| s.kind != Kind::Video && s.kind != Kind::Raw).ok_or(ApiError::NotFound)
+    })
+    .await?;
+    let _permit = app.renders.acquire().await.map_err(|e| ApiError::Internal(e.into()))?;
+    let made = blocking(&app, move |_| Ok(text::render_crop(&LibHeif::new(), &src, [q.x, q.y, q.w, q.h]))).await?;
+    match made {
+        Ok(bytes) => Ok(jpeg(bytes, IMMUTABLE)),
+        Err(_) => Err(ApiError::NotFound),
+    }
+}

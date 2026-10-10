@@ -116,7 +116,7 @@ $('login-form').addEventListener('submit', function (ev) {
 // ------------------------------------------------------------------ filters (in the URL hash)
 
 var TYPES = ['photo', 'video', 'live', 'screenshot'];
-var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person', 'drives', 'settings', 'pets', 'locations'];
+var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person', 'drives', 'settings', 'pets', 'locations', 'text'];
 // Pet search terms (`pet=` in the URL and the API): a species or any pet.
 var PET_TERMS = {
   cat: { icon: '🐱', get label() { return tr('pet.term.cat'); } },
@@ -211,7 +211,7 @@ function applyFilter() {
   $('all').classList.toggle('active', !view && !f.folder && !f.tags.length && !f.people.length && !f.pets.length && !f.texts.length && !f.names.length && !f.place && !f.fav && !f.q);
   $('nav-dups').classList.toggle('active', view === 'duplicates');
   $('nav-trash').classList.toggle('active', view === 'trash');
-  $('nav-settings').classList.toggle('active', view === 'settings' || view === 'faces' || view === 'pets');
+  $('nav-settings').classList.toggle('active', view === 'settings' || view === 'faces' || view === 'pets' || view === 'text');
   $('nav-drives').classList.toggle('active', view === 'drives');
   markFacesSection();
   updateSections();
@@ -931,7 +931,7 @@ function render() {
 var VIEW_LABELS = {
   duplicates: 'side.duplicates', trash: 'side.trash', settings: 'side.settings', drives: 'side.manage_drives',
   faces: 'side.faces', pets: 'side.faces', people: 'side.faces', unnamed: 'side.faces', person: 'side.faces',
-  locations: 'side.locations',
+  locations: 'side.locations', text: 'side.text_check',
 };
 
 function thumbUrl(i) {
@@ -1864,6 +1864,7 @@ function loadView(view) {
   else if (view === 'person') loadPersonPage();
   else if (view === 'drives') loadDrivesPage();
   else if (view === 'locations') loadLocations();
+  else if (view === 'text') loadTextCheck();
   else loadTrash();
 }
 
@@ -3713,6 +3714,7 @@ function loadSettings() {
   [
     ['faces', tr('side.face_check'), tr('settings.faces_desc')],
     ['pets', tr('side.pet_check'), tr('settings.pets_desc')],
+    ['text', tr('side.text_check'), tr('settings.text_desc')],
   ].forEach(function (c) {
     var card = el('button', 'settings-card');
     card.type = 'button';
@@ -3722,6 +3724,14 @@ function loadSettings() {
     card.appendChild(line);
     card.onclick = function () { showView(c[0]); };
     cards.appendChild(card);
+    if (c[0] === 'text') {
+      api(LIBAPI + '/text/stats').then(function (s) {
+        line.textContent = s.read
+          ? tr('textcheck.summary_short', { lines: s.lines, photos: trn('count.photos', s.with_text), read: s.read })
+          : tr('settings.not_yet_text');
+      }).catch(function () { line.textContent = ''; });
+      return;
+    }
     api(LIBAPI + '/faces/stats' + query({ kind: c[0] === 'pets' ? 'pets' : null })).then(function (s) {
       line.textContent = s.faces
         ? tr('facecheck.faces_in', { faces: trn(c[0] === 'pets' ? 'count.pets' : 'count.faces', s.faces), photos: trn('count.photos', s.looked - s.failed) })
@@ -3731,10 +3741,132 @@ function loadSettings() {
   });
   sec.appendChild(cards);
   page.appendChild(sec);
+  page.appendChild(textSection());
   page.appendChild(allowTrashSection());
   page.appendChild(mapsSection());
   page.appendChild(eventPatternSection());
   page.appendChild(copyFoldersSection());
+}
+
+// Settings: the words read in the photos live on the drive (`recognition.db`);
+// this forgets them all. Photos are read again by the next "Recognize text".
+function textSection() {
+  var sec = el('section', 'settings-section');
+  sec.appendChild(el('h3', '', tr('settings.text')));
+  sec.appendChild(el('p', 'hint', tr('settings.text_hint')));
+  var line = el('p', 'sub', '');
+  sec.appendChild(line);
+  var del = el('button', 'btn quiet', tr('settings.text_delete'));
+  del.type = 'button';
+  del.disabled = true;
+  api(LIBAPI + '/text/stats').then(function (s) {
+    line.textContent = s.stored ? tr('settings.text_stored', { lines: s.stored, photos: trn('count.photos', s.read) }) : tr('settings.not_yet_text');
+    del.disabled = !s.stored && !s.read;
+  }).catch(function () {});
+  del.onclick = function () {
+    openModal(tr('settings.text_delete'), tr('settings.text_delete_confirm'), [
+      { label: tr('app.cancel'), cls: 'quiet', focus: true },
+      { label: tr('settings.text_delete'), cls: 'danger', onclick: function () {
+        post(LIBAPI + '/text/delete-all', {}).then(function (r) {
+          toast(tr('settings.text_deleted', { n: r.lines }));
+          changed();
+          if (state.filter.view === 'settings') loadSettings();
+        }).catch(failed);
+      } },
+    ]);
+  };
+  sec.appendChild(del);
+  return sec;
+}
+
+// The Text check (view `text`): which lines of the recognized text count for
+// the search and the viewer, and the lines near the limits, with a crop of
+// each, so the limits can be judged on the real photos.
+function loadTextCheck() {
+  var page = $('page');
+  page.textContent = '';
+  page.appendChild(el('h2', '', tr('side.text_check')));
+  page.appendChild(el('p', 'hint', tr('textcheck.hint')));
+  var body = el('div', 'textcheck');
+  page.appendChild(body);
+  Promise.all([api(LIBAPI + '/text/stats'), api(LIBAPI + '/text/check')]).then(function (r) {
+    if (state.filter.view !== 'text') return;
+    renderTextCheck(body, r[0], r[1]);
+  }).catch(function (e) { body.textContent = e.message; });
+}
+
+function renderTextCheck(body, s, check) {
+  body.textContent = '';
+  if (!s.read && !s.stored) {
+    body.appendChild(el('p', 'sub', tr('textcheck.none')));
+    return;
+  }
+  var summary = el('p', 'sub tc-summary');
+  body.appendChild(summary);
+  var lim = check.limits;
+  var controls = el('div', 'tc-controls');
+  var sliders = {};
+  var slider = function (key, label, min, max, step, value, fmt) {
+    var row = el('label', 'tc-slider');
+    row.appendChild(el('span', 'tc-label', label));
+    var input = el('input');
+    input.type = 'range'; input.min = min; input.max = max; input.step = step; input.value = value;
+    var out = el('span', 'tc-value', fmt(value));
+    input.oninput = function () { out.textContent = fmt(input.value); };
+    input.onchange = apply;
+    row.appendChild(input);
+    row.appendChild(out);
+    sliders[key] = { input: input, out: out, fmt: fmt };
+    return row;
+  };
+  // The controls stay where they are while the numbers and the lines below are fetched again.
+  var apply = function () {
+    post(LIBAPI + '/text/limits', { min_score: sliders.score.input.value / 100, min_height: sliders.height.input.value / 1000 })
+      .then(function () { refresh(); changed(); }).catch(failed);
+  };
+  controls.appendChild(slider('score', tr('textcheck.score'), 50, 100, 1, Math.round(lim.min_score * 100), function (v) { return (v / 100).toFixed(2); }));
+  controls.appendChild(slider('height', tr('textcheck.height'), 4, 80, 1, Math.round(lim.min_height * 1000), function (v) { return (v / 10).toFixed(1) + ' %'; }));
+  var reset = el('button', 'btn quiet', tr('textcheck.reset'));
+  reset.type = 'button';
+  reset.onclick = function () {
+    post(LIBAPI + '/text/limits', {}).then(function (l) {
+      sliders.score.input.value = Math.round(l.min_score * 100); sliders.score.out.textContent = sliders.score.fmt(sliders.score.input.value);
+      sliders.height.input.value = Math.round(l.min_height * 1000); sliders.height.out.textContent = sliders.height.fmt(sliders.height.input.value);
+      refresh(); changed();
+    }).catch(failed);
+  };
+  controls.appendChild(reset);
+  body.appendChild(controls);
+  body.appendChild(el('p', 'hint', tr('textcheck.limits_hint')));
+  var dyn = el('div', 'tc-dyn');
+  body.appendChild(dyn);
+  var fill = function (s, check) {
+    summary.textContent = tr('textcheck.summary', { lines: s.lines, photos: trn('count.photos', s.with_text), read: s.read, stored: s.stored });
+    dyn.textContent = '';
+    if (!check.lines.length) { dyn.appendChild(el('p', 'sub', tr('textcheck.nothing_near'))); return; }
+    var grid = el('div', 'tc-grid');
+    check.lines.forEach(function (l) {
+      var card = el('div', 'tc-card' + (l.shown ? ' in' : ' out'));
+      var img = el('img');
+      img.loading = 'lazy';
+      img.alt = '';
+      img.src = LIBAPI + '/files/' + l.id + '/text-crop' + query({ x: l.x, y: l.y, w: l.w, h: l.h });
+      card.appendChild(img);
+      card.appendChild(el('div', 'tc-text', l.text));
+      var meta = el('div', 'tc-meta');
+      meta.appendChild(el('span', '', l.score.toFixed(2) + ' · ' + (l.h * 100).toFixed(1) + ' %'));
+      meta.appendChild(el('span', 'pill ' + (l.shown ? 'ok' : ''), tr(l.shown ? 'textcheck.counts' : 'textcheck.left_out')));
+      card.appendChild(meta);
+      grid.appendChild(card);
+    });
+    dyn.appendChild(grid);
+  };
+  var refresh = function () {
+    Promise.all([api(LIBAPI + '/text/stats'), api(LIBAPI + '/text/check')]).then(function (r) {
+      if (state.filter.view === 'text') fill(r[0], r[1]);
+    }).catch(function (e) { dyn.textContent = e.message; });
+  };
+  fill(s, check);
 }
 
 // Settings: whether photos can be moved to the trash from the photo view and

@@ -219,3 +219,52 @@ fn the_summary_and_forgetting_all_text() {
     assert_eq!(hits(server.addr, "text=rechnung").len(), 2);
     server.stop().unwrap();
 }
+
+#[test]
+fn the_text_check_lists_lines_near_the_limits_and_cuts_their_crops_under_the_guard() {
+    let lib = library("text-check");
+    let before = lib.snapshot();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let check = get(addr, "/api/text/check").json();
+    assert_eq!(check["limits"]["min_score"], 0.7);
+    // Only the faint line (0.60) is near the limit of 0.7; the sure lines are not.
+    let lines = check["lines"].as_array().unwrap();
+    assert_eq!(lines.len(), 2, "{check}");
+    assert!(lines.iter().all(|l| l["text"] == "faint" && l["shown"] == false));
+    // Hidden lines are not offered.
+    let scan = id_of(&lib, "Docs/scan-2024.jpg");
+    post(addr, &format!("/api/files/{scan}/text-hidden"), &json!({ "norm": "faint", "hidden": true }));
+    assert_eq!(get(addr, "/api/text/check").json()["lines"].as_array().unwrap().len(), 1);
+    // Lower the limit: the line now counts, and the check says so.
+    post(addr, "/api/text/limits", &json!({ "min_score": 0.55, "min_height": 0.01 }));
+    assert!(get(addr, "/api/text/check").json()["lines"].as_array().unwrap().iter().all(|l| l["shown"] == true));
+
+    // A crop of a line, cut from the original and not stored.
+    let foto = id_of(&lib, "Docs/Foto 1.jpg");
+    let crop = get(addr, &format!("/api/files/{foto}/text-crop?x=0.1&y=0.1&w=0.5&h=0.08"));
+    assert_eq!(crop.status, 200);
+    assert_eq!(crop.header("content-type"), Some("image/jpeg"));
+    assert!(crop.body.len() > 100);
+    assert_eq!(get(addr, &format!("/api/files/{foto}/text-crop?x=0.1&y=0.1&w=0&h=0.08")).status, 400);
+    assert_eq!(get(addr, &format!("/api/files/{foto}/text-crop?x=0.9&y=0.1&w=0.5&h=0.08")).status, 400);
+    assert_eq!(get(addr, "/api/files/999999/text-crop?x=0.1&y=0.1&w=0.5&h=0.08").status, 404);
+    server.stop().unwrap();
+    assert_eq!(lib.snapshot(), before, "cutting a crop changed an original");
+}
+
+#[test]
+fn text_stats_are_printed_and_a_library_without_text_says_so() {
+    let lib = library("text-cli-stats");
+    let stats = shoebox::text::print_stats(&lib.root, None).unwrap().expect("text was read");
+    assert_eq!((stats.read, stats.with_text, stats.lines, stats.stored, stats.total), (3, 2, 4, 6, 3));
+    assert_eq!(stats.model.as_deref(), Some("fake-text-1"));
+    let words = shoebox::text::format_stats(&stats);
+    assert!(words.contains("Text read in 3 of 3 photos with fake-text-1"), "{words}");
+    assert!(words.contains("confidence of 0.70 and a height of 1.0 %"), "{words}");
+    // No recognition.db at all: nothing read yet, not an error.
+    let none = empty("text-cli-none");
+    solid(&none, "a.jpg", [200, 190, 180]);
+    none.scan_opts(true, false, false);
+    assert!(shoebox::text::print_stats(&none.root, None).unwrap().is_none());
+}

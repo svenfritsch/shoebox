@@ -135,6 +135,11 @@ enum Command {
         #[command(subcommand)]
         command: FacesCommand,
     },
+    /// The words read in the photos by `shoebox recognize --text`.
+    Text {
+        #[command(subcommand)]
+        command: TextCommand,
+    },
     /// Browse the library in a web browser. Only reads originals; missing
     /// thumbnails are made as they are viewed.
     Serve {
@@ -181,6 +186,23 @@ enum FacesCommand {
     },
 }
 
+#[derive(Subcommand)]
+enum TextCommand {
+    /// How reading the text went: photos read, with text, lines stored and
+    /// shown, lines you hid, the limits. Only reads.
+    Stats {
+        /// Library root.
+        root: PathBuf,
+        /// Database to use instead of `<root>/.shoebox/library.db`.
+        #[arg(long)]
+        db: Option<PathBuf>,
+        /// Print the result as JSON on standard output (the usual text goes to
+        /// standard error).
+        #[arg(long)]
+        json: bool,
+    },
+}
+
 fn json_out<T: serde::Serialize>(json: bool, value: &T) {
     if json {
         println!("{}", serde_json::to_string_pretty(value).unwrap_or_default());
@@ -200,6 +222,7 @@ fn main() -> ExitCode {
             | Command::Recognize { json: true, .. }
             | Command::Backup { json: true, .. }
             | Command::Faces { command: FacesCommand::Stats { json: true, .. } }
+            | Command::Text { command: TextCommand::Stats { json: true, .. } }
     ) {
         report::text_to_stderr(true);
     }
@@ -254,6 +277,10 @@ fn main() -> ExitCode {
                 true
             })
         }
+        Command::Text { command: TextCommand::Stats { root, db, json } } => shoebox::text::print_stats(&root, db.as_deref()).map(|stats| {
+            json_out(json, &stats);
+            true
+        }),
         Command::Serve { root, more, db, port, lan, pin, recognizer } => {
             serve::run(&serve::Options { root, more_roots: more, db, port, lan, pin, reveal: None, recognizer }).map(|_| true)
         }

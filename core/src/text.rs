@@ -13,6 +13,9 @@ use unicode_normalization::char::is_combining_mark;
 use unicode_normalization::UnicodeNormalization;
 
 use crate::db;
+use crate::fingerprint;
+use crate::media;
+use crate::thumbs::{self, Source};
 
 /// Lines the recogniser is less sure of than this are not even stored: they
 /// are noise. What the search and the viewer show is decided by the limits
@@ -338,12 +341,111 @@ pub fn stats(conn: &Connection) -> Result<Stats> {
         )?,
         lines: one("SELECT count(*) FROM recog.text_lines WHERE score >= ?1 AND h >= ?2", &[&limits.min_score, &limits.min_height])?,
         stored: one("SELECT count(*) FROM recog.text_lines", &[])?,
-        hidden: one("SELECT count(*) FROM text_hidden", &[])?,
+        hidden: if crate::people::table_exists(conn, "main", "text_hidden")? { one("SELECT count(*) FROM text_hidden", &[])? } else { 0 },
         total: one(&format!("SELECT count(DISTINCT quick_hash) FROM files WHERE missing_since IS NULL AND kind IN ({kinds})"), &[])?,
         model: conn
             .query_row("SELECT model FROM recog.looked WHERE task = 'text' ORDER BY done_at DESC LIMIT 1", [], |r| r.get(0))
             .optional()?,
         limits: Some(limits),
+    })
+}
+
+/// `shoebox text stats`: what has been read, in words.
+pub fn format_stats(s: &Stats) -> String {
+    let Some(l) = s.limits else { return "No text read yet: run `shoebox recognize --text-only` first.".into() };
+    if s.read == 0 && s.stored == 0 {
+        return "No text read yet: run `shoebox recognize --text-only` first.".into();
+    }
+    let mut out = format!(
+        "Text read in {} of {} photos with {}.\n  {} photos have text a search finds ({} lines)\n  {} lines stored in all, {} hidden by you\n  A line counts from a confidence of {:.2} and a height of {:.1} % of the photo",
+        s.read,
+        s.total,
+        s.model.as_deref().unwrap_or("an unknown model"),
+        s.with_text,
+        s.lines,
+        s.stored,
+        s.hidden,
+        l.min_score,
+        l.min_height * 100.0
+    );
+    if s.read < s.total {
+        out.push_str(&format!("\n  {} photos still to read", s.total - s.read));
+    }
+    out
+}
+
+/// `shoebox text stats`. Only reads.
+pub fn print_stats(root: &std::path::Path, db: Option<&std::path::Path>) -> Result<Option<Stats>> {
+    let Some(conn) = crate::faces::open_readonly(root, db)? else {
+        crate::say!("No text read yet: run `shoebox recognize --text-only` first.");
+        return Ok(None);
+    };
+    let stats = stats(&conn)?;
+    crate::say!("{}", format_stats(&stats));
+    Ok(Some(stats))
+}
+
+/// A line close to the limits, for the Text check page.
+#[derive(Debug, Clone, Serialize)]
+pub struct CheckLine {
+    /// A present photo with this content.
+    pub id: i64,
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+    pub score: f64,
+    pub text: String,
+    /// The limits let it count.
+    pub shown: bool,
+}
+
+/// Lines near the limits (a little above and a little below), the nearest
+/// first, at most `n`: what moving a limit would take in or leave out.
+pub fn check_lines(conn: &Connection, n: usize) -> Result<Vec<CheckLine>> {
+    if !ready(conn) {
+        return Ok(Vec::new());
+    }
+    let l = limits(conn);
+    let mut stmt = conn.prepare(
+        "SELECT (SELECT min(f.id) FROM files f WHERE f.quick_hash = t.key AND f.missing_since IS NULL) AS fid,
+                t.x, t.y, t.w, t.h, t.score, t.text
+         FROM recog.text_lines t
+         WHERE (t.score BETWEEN ?1 - 0.2 AND ?1 + 0.12 OR t.h BETWEEN ?2 * 0.5 AND ?2 * 1.6)
+           AND NOT EXISTS (SELECT 1 FROM main.text_hidden h WHERE h.key = t.key AND h.norm = t.text_norm)
+         ORDER BY max(abs(t.score - ?1) / 0.1, abs(t.h - ?2) / (?2 * 0.5)), t.key, t.y",
+    )?;
+    let mut out = Vec::new();
+    let mut rows = stmt.query(params![l.min_score, l.min_height])?;
+    while let Some(r) = rows.next()? {
+        let Some(id) = r.get::<_, Option<i64>>(0)? else { continue };
+        let (score, h): (f64, f64) = (r.get(5)?, r.get(4)?);
+        out.push(CheckLine { id, x: r.get(1)?, y: r.get(2)?, w: r.get(3)?, h, score, text: r.get(6)?, shown: score >= l.min_score && h >= l.min_height });
+        if out.len() >= n {
+            break;
+        }
+    }
+    Ok(out)
+}
+
+/// The widest side of a line's crop.
+const CROP_EDGE: u32 = 640;
+const CROP_QUALITY: u8 = 82;
+
+/// A crop of one line of text (its box with some room) from the photo, made
+/// under the guard and never stored.
+pub fn render_crop(lib_heif: &libheif_rs::LibHeif, src: &Source, b: [f64; 4]) -> Result<Vec<u8>, String> {
+    fingerprint::read_unchanged(&src.path, src.size, src.mtime_ns, || {
+        let img = media::decode_image(lib_heif, src.kind, &src.path, crate::recognize::EDGE).map_err(|e| format!("{e:#}"))?;
+        let img = thumbs::shrink(img, crate::recognize::EDGE);
+        let (iw, ih) = (img.width() as f64, img.height() as f64);
+        let [x, y, w, h] = b;
+        let (mx, my) = (w * 0.04 + 0.004, h * 0.35);
+        let (x0, y0) = (((x - mx) * iw).max(0.0), ((y - my) * ih).max(0.0));
+        let (x1, y1) = (((x + w + mx) * iw).min(iw), ((y + h + my) * ih).min(ih));
+        let (cw, ch) = (((x1 - x0).round() as u32).max(1), ((y1 - y0).round() as u32).max(1));
+        let crop = img.crop_imm(x0.round() as u32, y0.round() as u32, cw.min(img.width()), ch.min(img.height()));
+        media::encode_jpeg(&thumbs::shrink(crop, CROP_EDGE), CROP_QUALITY).map_err(|e| format!("{e:#}"))
     })
 }
 

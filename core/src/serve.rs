@@ -839,6 +839,8 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/text/stats", get(text_api::stats))
         .route("/api/text/limits", get(text_api::limits_get).post(text_api::limits_set))
         .route("/api/text/delete-all", post(text_api::delete_all))
+        .route("/api/text/check", get(text_api::check))
+        .route("/api/files/{id}/text-crop", get(text_api::crop))
         .route("/api/places", get(places_list).post(places_create))
         .route("/api/places/{id}/rename", post(places_rename))
         .route("/api/places/{id}/area", post(places_redraw))
