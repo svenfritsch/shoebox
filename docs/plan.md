@@ -898,12 +898,47 @@ a cancelled run continues with the best candidates.
        each at ≥ 0.7, about 2 KB per photo; if only 15 % of 50,000 photos look
        like that, 7,500 × 2 KB is **~15 MB** of rows plus the index, in line
        with the ~25 MB estimate above (all 50,000 like these would be ~110 MB).
-     - **Still open after round 1:** 7 of the 12 photos have not arrived, and
-       none of the 5 is a true no-text photo; send ~7 more, mostly without
-       text (people, landscapes, food, a wall, a night photo), for the
-       false-positive rate; one sideways document, one screenshot of a phone
-       and one photo with a license plate or shop sign would cover the
-       remaining cases.
+     - **Round 2 (5 more photos, same machine): a handwritten shopping list,
+       a flyer with chalk-style headings, a photo of a computer screen with
+       moiré, a book cover, a phone screenshot of a train app.** Words found
+       **32 of 36 (89 %)**; both rounds together **53 of 59 (90 %)** over 10
+       photos. Details that change the plan:
+       - Neat **handwriting works**: all four list words read at 0.90–0.99
+         (round 1 had written it off as "should not work"). Decorative
+         chalk/script headings partly fail ("Geben Sie einem Kind Halt" came
+         back as "Half", "Ihnen" as "Mhnen"); the body text of the same flyer
+         was read at 0.94–0.99.
+       - The **phone screenshot** was read perfectly (scores 0.95–1.00, 27
+         lines), the **moiré screen photo** and the **book cover** nearly so
+         (cover: all 7 words; the sideways publisher name on the spine was
+         not read, as expected without a rotated pass). Small print and
+         browser tab titles are read too.
+       - **ß again, now with a rule to test:** "Haunstetterstraße" came back
+         "HaunstetterstraBe", "Neusäß" "NeusaB", "Größe" "GroBe", "großen"
+         "groBen". The repair rule (a capital B directly after a lower-case
+         letter becomes ß before folding) would fix all of them. It breaks
+         "eBay" (→ "eßay"), so the index keeps **both** forms: the text as
+         read, folded, and the repaired text, folded; a search for either
+         "strasse" or "strabe" finds the line.
+       - **Icons become junk lines:** "X" (0.58), "口" (0.74), "田" (0.98),
+         "pun" (0.82), "O", "=" . The quality filter therefore cannot be the
+         score alone: **drop lines with fewer than two letters or digits**
+         ("11:33" stays), and lines that are one non-Latin symbol.
+       - **Speed:** 1.06–2.49 s per photo (mean 1.58 s), 10 photos 1.5 s on
+         average, all of them text-heavy; same conclusion as round 1.
+       - **Storage:** 18 lines and ~300 characters per photo, ~3 KB each; the
+         estimate holds (7,500 text photos ≈ 22 MB).
+       - A sixth photo (a tofu package) was pasted while the run was going and
+         has **not** been run: images pasted in the middle of a turn are not
+         saved as files, so only the 10 above are measured. By eye its big
+         print is plain and its small print (nutrition and test seals) is the
+         kind that was lost at 1600 px elsewhere.
+     - **Still open after rounds 1 and 2:** none of the 10 photos is a true
+       no-text photo, so the **false-positive rate on ordinary photos is still
+       unmeasured** (gravel and a bike gave 0 lines, nothing more). Send ~6
+       photos with no text on purpose: people, a landscape, food, a night
+       photo, a brick wall, a forest. A sideways document, a license plate and
+       a shop sign would cover the remaining cases.
    - *Where it runs:* on the old Intel MacBook (the case that decides whether
      the first run is bearable) and once on a modern machine; the same folder
      both times. The two `text_spike_report.txt` files are pasted back into
