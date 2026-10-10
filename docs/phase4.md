@@ -23,10 +23,14 @@ the models then serves every drive. `--pets` adds the cat and dog models; the
 face models are always installed. The launcher's step 1, **Add-ons**, runs this
 script (job `install_addons`, `POST /api/addons` reports what is installed for
 the computer and for each ticked drive, and greys out Recognize / Recognize
-pets where the add-on is missing). `find_worker_for` looks in the drive's
-`.shoebox/recognizer/` first, then in `recognizer/` next to the shoebox binary,
-and for `--pets` takes the first folder that has the pet models, so a drive
-with only the faces does not hide a complete install. With a path, this puts a standalone Python (python-build-standalone 3.12), OpenCV, numpy,
+pets where the add-on is missing). `find_worker_for` looks in `recognizer/` next
+to the shoebox binary first, then `<binary dir>/../recognizer`, and the drive's
+`.shoebox/recognizer/` last, and takes the first folder that has the models the
+run needs (pet models for `--pets`, else the face models) and the Python for
+this computer (`runtime/<os>-<arch>/`). The models are the same everywhere; the
+runtime is per kind of computer, so a drive installed on another kind of Mac
+does not count as installed there, and `install.sh` there downloads only its
+runtime (models already present are kept). With a path, this puts a standalone Python (python-build-standalone 3.12), OpenCV, numpy,
 `recognizer.py` and the models into `/Volumes/Fotos/.shoebox/recognizer/`
 (~330 MB on Linux), with the runtime under `runtime/<os>-<arch>/`. Nothing is
 installed on the computer. Run it once **on each kind of computer** that will

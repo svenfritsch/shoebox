@@ -129,6 +129,7 @@ function loadAddons() {
   return api('/api/addons', { roots: tickedPaths() }).then(function (a) {
     addons = a;
     renderAddons();
+    foldWhenComplete();
   }).catch(function () {});
 }
 
@@ -137,6 +138,10 @@ function renderAddons() {
   var state = function (id, on) {
     var s = $(id); s.textContent = tr(on ? 'launcher.addon.installed' : 'launcher.addon.missing'); s.className = 'pill' + (on ? ' ok' : '');
   };
+  // Never optional: until it is installed the pill says it is required.
+  var rt = $('addon-runtime-state');
+  rt.textContent = tr(addons.runtime ? 'launcher.addon.installed' : 'launcher.addon.required');
+  rt.className = 'pill' + (addons.runtime ? ' ok' : ' req');
   state('addon-faces-state', addons.faces);
   state('addon-pets-state', addons.pets);
   // Each add-on stands alone; an installed one is ticked and cannot be ticked off.
@@ -147,8 +152,14 @@ function renderAddons() {
   });
   $('addons-install').disabled = busy || serving || !addons.installable || wantedAddons().length === 0;
   $('addons-hint').textContent = !addons.installable ? tr('launcher.addons.not_installable')
+    : addons.models && !addons.runtime ? tr('launcher.addons.runtime_missing', { dir: addons.dir })
     : addons.faces && addons.pets ? tr('launcher.addons.all_installed', { dir: addons.dir })
     : tr('launcher.addons.where', { dir: addons.dir });
+  // The folded card still says where things stand.
+  $('addons-summary').textContent = [
+    tr('launcher.addon.faces') + ': ' + tr(addons.faces ? 'launcher.addon.installed' : 'launcher.addon.missing'),
+    tr('launcher.addon.pets') + ': ' + tr(addons.pets ? 'launcher.addon.installed' : 'launcher.addon.missing'),
+  ].join(' · ');
   // Why a recognition button is grey.
   var why = [];
   var noFaces = addonMissing('recognize'), noPets = addonMissing('recognize_pets');
@@ -165,6 +176,26 @@ function wantedAddons() {
   return ['faces', 'pets'].filter(function (k) { return $('addon-' + k).checked && !(addons && addons[k]); });
 }
 $('addon-faces').onchange = $('addon-pets').onchange = renderAddons;
+// The runtime is installed with the first add-on: its box is ticked and cannot be changed.
+$('addon-runtime').checked = true;
+$('addon-runtime').onclick = function (ev) { ev.preventDefault(); };
+
+// Fold the card: only the heading stays. The choice is remembered; until then
+// it is open while something is missing and folded once everything is there.
+var detailsChosen = false;
+try { var saved = localStorage.getItem('shoebox.addons.open'); if (saved !== null) { detailsChosen = true; $('addons-details').open = saved === '1'; } } catch (e) {}
+$('addons-details').addEventListener('toggle', function () {
+  if (settingDefault) return;
+  detailsChosen = true;
+  try { localStorage.setItem('shoebox.addons.open', $('addons-details').open ? '1' : '0'); } catch (e) {}
+});
+var settingDefault = false;
+function foldWhenComplete() {
+  if (detailsChosen || !addons) return;
+  settingDefault = true;
+  $('addons-details').open = !(addons.runtime && addons.faces && addons.pets);
+  setTimeout(function () { settingDefault = false; }, 0);
+}
 
 $('addons-install').onclick = function () {
   var want = wantedAddons();

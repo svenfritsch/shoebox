@@ -164,14 +164,17 @@ and scan; face and pet recognition are add-ons you install from the launcher.
    the Python and OpenCV program (about 200 MB, once, for all add-ons), Faces
    (about 40 MB) and Pets (about 140 MB). Internet needed, a few minutes.
    Add-ons can be added later, and a computer of another kind (Intel or Apple
-   Silicon) needs them installed once on that computer. Until an add-on is
-   installed, its Recognize button stays grey and says why. Then add your
-   drive (click it, or type /Volumes/MyDrive), press Scan, then Start photo
-   app. The first scan reads every file once and takes a while on a big drive;
-   later scans only look at what changed. When it finishes, the tabs Moved,
-   Changed, Missing and Already on the drive (each with its count) list
-   exactly which files they mean; for new files you already had, the tab shows
-   the older copy right next to each one.
+   Silicon) needs them installed once on that computer. Python and OpenCV is
+   always installed with the first add-on (its box is ticked and cannot be
+   unticked). Until an add-on is installed, its recognize button stays grey
+   and says why. Click the heading Add-ons to fold the step away; it stays
+   folded once everything is installed. Then add your drive (click it, or type
+   /Volumes/MyDrive), press Scan, then Start photo app. The first scan reads
+   every file once and takes a while on a big drive; later scans only look at
+   what changed. When it finishes, the tabs Moved, Changed, Missing and
+   Already on the drive (each with its count) list exactly which files they
+   mean; for new files you already had, the tab shows the older copy right
+   next to each one.
 
 Control Panel tasks
 Scan: find new, moved and changed photos. Fast: it only looks at what changed
@@ -189,14 +192,37 @@ content that is nowhere on the drive any more counts as missing. If files are
 gone, a button appears after the check (and after a scan) that forgets their
 records: they are removed from the shoebox index, its database on the drive.
 No photo file is touched.
-Recognize: find faces (and, with Recognize pets, cats and dogs)
-Recognize lying down: also find faces lying down (slower)
-Recognize pets: find cats and dogs; they show up among the faces
+Recognize faces: find the faces in your photos (and, with Recognize pets, cats
+and dogs). Needs the Faces add-on.
+Recognize horizontal faces: also find faces lying on their side or upside down
+(slower). Needs the Faces add-on.
+Recognize pets: find cats and dogs; they show up among the faces. Needs the
+Pets add-on, not the Faces one.
 Face stats: how recognition went
 Backup check: is the 2nd folder a complete copy of the 1st?
 
 [Screenshot: The Control Panel: 1 install add-ons, 2 choose the drive or
 folder, 3 pick a task, 4 open the photo app.]
+
+Several computers and systems
+- Where the add-ons are looked for: first in the recognizer folder next to the
+  shoebox program you started, last in the drive's own hidden
+  .shoebox/recognizer (only used when the program folder has nothing). So a
+  shoebox folder on your computer is used for every drive, even if a drive
+  holds models too.
+- Models and Python are different things. The models (Faces, Pets) are the
+  same on every computer. Python and OpenCV is built for one kind of computer:
+  Intel Mac, Apple Silicon Mac, Linux, Windows. If you take a drive with
+  shoebox-macos from an Intel MacBook to a newer one, step 1 shows Python and
+  OpenCV: not installed on the newer one and the recognize buttons are grey.
+  Press Install the selected add-ons once there: only the missing Python is
+  downloaded, the models are kept. Both kinds then live side by side in the
+  same recognizer folder, and each computer uses its own.
+- Mac and Windows on one drive: copy both folders to the drive's top folder:
+  shoebox-macos and shoebox-windows. Each has its own recognizer folder, so
+  models you install in one are not shared with the other. Start shoebox from
+  the folder of the system you are on. Both use the same hidden .shoebox index
+  on the drive. Add-ons are not available on Windows yet.
 
 Good to know
 - Videos get preview images if you put a static ffmpeg next to the program
@@ -357,8 +383,8 @@ Install the add-ons once: in the Control Panel, step 1 Add-ons, tick what you
 need (Faces, and Pets for cats and dogs) and press Install the selected
 add-ons. They are stored in the recognizer folder next to the shoebox program:
 on the drive if shoebox lives on the drive, otherwise on your computer for
-every drive. Then close the photo app and run Recognize (and Recognize pets)
-in the launcher. A Faces section appears in the sidebar.
+every drive. Then close the photo app and run Recognize faces (and Recognize
+pets) in the Control Panel. A Faces section appears in the sidebar.
 
 Name them
 Under Unnamed, shoebox shows cards of similar faces. Type a name once and the
@@ -377,7 +403,7 @@ Combine a person with a tag, a folder or another person.
 
 New photos
 Recognition does not start by itself after a scan yet. Close the photo app and
-run Recognize again: it only looks at the new photos.
+run Recognize faces again: it only looks at the new photos.
 
 [Screenshot: Unnamed cards: one name for every face on a card.]
 

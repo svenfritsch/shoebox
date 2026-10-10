@@ -6,7 +6,7 @@ const { chromium } = createRequire(import.meta.url)('playwright'); // honours NO
 const [mode, lang, out, url, libPath] = process.argv.slice(2);
 const b = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
 const ctx = await b.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 2 });
-await ctx.addInitScript((l) => { try { localStorage.setItem('shoebox.lang', l); } catch (e) {} }, lang);
+await ctx.addInitScript((l) => { try { localStorage.setItem('shoebox.lang', l); localStorage.setItem('shoebox.addons.open', '1'); } catch (e) {} }, lang);
 const p = await ctx.newPage();
 const de = lang === 'de';
 // Not 'Favorites': that word is the heart feature now.

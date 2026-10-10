@@ -19,23 +19,26 @@
   </header>
 
   <section class="card" id="addons-card">
-    <h2 data-i18n="launcher.step0">1 · Add-ons</h2>
-    <p class="hint" data-i18n="launcher.addons.intro">Scanning and the photo app work out of the box. Recognizing people and pets needs add-ons, which are downloaded once for this shoebox.</p>
-    <ul id="addon-list" class="addons">
-      <li>
-        <label><input type="checkbox" checked disabled> <b data-i18n="launcher.addon.runtime">Python and OpenCV</b> <span data-i18n="launcher.addon.runtime.desc">the program that runs the recognition; needed by all add-ons, downloaded once (about 200 MB)</span></label>
-      </li>
-      <li>
-        <label><input type="checkbox" id="addon-faces" checked> <b data-i18n="launcher.addon.faces">Faces</b> <span data-i18n="launcher.addon.faces.desc">find and name the people in your photos (about 40 MB)</span></label>
-        <span id="addon-faces-state" class="pill"></span>
-      </li>
-      <li>
-        <label><input type="checkbox" id="addon-pets"> <b data-i18n="launcher.addon.pets">Pets</b> <span data-i18n="launcher.addon.pets.desc">also find cats and dogs (another 140 MB)</span></label>
-        <span id="addon-pets-state" class="pill"></span>
-      </li>
-    </ul>
-    <button id="addons-install" class="primary" data-i18n="launcher.addons.install">Install the selected add-ons</button>
-    <p id="addons-hint" class="hint"></p>
+    <details id="addons-details" open>
+      <summary><h2 data-i18n="launcher.step0">1 · Add-ons</h2><span id="addons-summary" class="summary-line"></span></summary>
+      <p class="hint" data-i18n="launcher.addons.intro">Scanning and the photo app work out of the box. Recognizing people and pets needs add-ons, which are downloaded once (internet needed).</p>
+      <ul id="addon-list" class="addons">
+        <li>
+          <label><input type="checkbox" id="addon-runtime" checked disabled aria-disabled="true"> <b data-i18n="launcher.addon.runtime">Python and OpenCV</b> <span data-i18n="launcher.addon.runtime.desc">needed by every add-on, always installed with the first one (about 200 MB per kind of computer)</span></label>
+          <span id="addon-runtime-state" class="pill"></span>
+        </li>
+        <li>
+          <label><input type="checkbox" id="addon-faces" checked> <b data-i18n="launcher.addon.faces">Faces</b> <span data-i18n="launcher.addon.faces.desc">find and name the people in your photos (about 40 MB)</span></label>
+          <span id="addon-faces-state" class="pill"></span>
+        </li>
+        <li>
+          <label><input type="checkbox" id="addon-pets"> <b data-i18n="launcher.addon.pets">Pets</b> <span data-i18n="launcher.addon.pets.desc">find cats and dogs; works without Faces (about 140 MB)</span></label>
+          <span id="addon-pets-state" class="pill"></span>
+        </li>
+      </ul>
+      <button id="addons-install" class="primary" data-i18n="launcher.addons.install">Install the selected add-ons</button>
+      <p id="addons-hint" class="hint"></p>
+    </details>
   </section>
 
   <fieldset id="controls">

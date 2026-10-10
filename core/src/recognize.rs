@@ -285,11 +285,12 @@ impl WorkerCommand {
 
 /// The worker to use: `explicit` (`--recognizer`) or `$SHOEBOX_RECOGNIZER`
 /// if given, else the first of the folders from [`worker_dirs`] that holds a
-/// `recognizer.py` and the models the run needs (the pet models with `pets`,
-/// else the face models: a drive that has only the faces does not hide an
-/// install of the pets next to the program, and the other way round). A `.py`
-/// is run with the standalone Python in `<dir>/runtime/<os>-<arch>/` when
-/// there is one, else with `python3` from `PATH`.
+/// `recognizer.py`, the models the run needs (the pet models with `pets`, else
+/// the face models) and the standalone Python for this computer; failing
+/// that, the first with the models (it then runs with `python3` from `PATH`),
+/// else the first with a `recognizer.py`. A folder that has only the faces
+/// does not hide an install of the pets, and one installed on another kind of
+/// Mac (no `runtime/<os>-<arch>/` here) does not hide a complete one.
 pub fn find_worker(root: &Path, explicit: Option<&Path>) -> Option<WorkerCommand> {
     find_worker_for(root, explicit, false)
 }
@@ -307,20 +308,28 @@ pub fn find_worker_for(root: &Path, explicit: Option<&Path>, pets: bool) -> Opti
         return Some(WorkerCommand { program, args: Vec::new() });
     }
     let dirs: Vec<PathBuf> = worker_dirs(Some(root)).into_iter().filter(|d| d.join("recognizer.py").is_file()).collect();
-    let dir = dirs.iter().find(|d| if pets { has_pets(d) } else { has_faces(d) }).or(dirs.first())?;
+    let models = |d: &PathBuf| if pets { has_pets(d) } else { has_faces(d) };
+    let dir = dirs
+        .iter()
+        .find(|d| models(d) && bundled_python(d).is_some())
+        .or_else(|| dirs.iter().find(|d| models(d)))
+        .or(dirs.first())?;
     Some(WorkerCommand { program: python(dir)?, args: vec![dir.join("recognizer.py").into_os_string()] })
 }
 
-/// Where an installed recognizer is looked for, best first: the drive's
-/// `.shoebox/recognizer/` (it travels with the drive), `recognizer/` next to
-/// the shoebox program (the downloaded folder, or a drive's top folder) and
-/// next to the folder of the program (`.shoebox/bin/../recognizer`).
+/// Where an installed recognizer is looked for, best first: `recognizer/` next
+/// to the shoebox program (the downloaded folder, on the computer or on a
+/// drive), then next to the folder of the program (`.shoebox/bin/../recognizer`),
+/// and last the drive's own `.shoebox/recognizer/` (made by `install.sh <drive>`;
+/// it only serves when nothing is installed next to the program, so a program
+/// folder on the computer is the one used for every drive).
 pub fn worker_dirs(root: Option<&Path>) -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = root.map(|r| r.join(db::DIR).join("recognizer")).into_iter().collect();
+    let mut dirs: Vec<PathBuf> = Vec::new();
     if let Some(bin) = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)) {
         dirs.push(bin.join("recognizer"));
         dirs.push(bin.join("..").join("recognizer"));
     }
+    dirs.extend(root.map(|r| r.join(db::DIR).join("recognizer")));
     dirs
 }
 
@@ -340,6 +349,10 @@ fn has_pets(dir: &Path) -> bool {
 /// [`worker_dirs`]. Nothing is started; the files are looked at.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Installed {
+    /// The standalone Python and OpenCV for this kind of computer.
+    pub runtime: bool,
+    /// Models are there (for a runtime that may be missing on this computer).
+    pub models: bool,
     pub faces: bool,
     pub pets: bool,
     /// The folder the best install is in (the one `recognize` would use).
@@ -347,12 +360,16 @@ pub struct Installed {
 }
 
 pub fn installed(root: Option<&Path>) -> Installed {
-    let ready: Vec<PathBuf> =
-        worker_dirs(root).into_iter().filter(|d| d.join("recognizer.py").is_file() && python(d).is_some()).collect();
+    let dirs: Vec<PathBuf> = worker_dirs(root).into_iter().filter(|d| d.join("recognizer.py").is_file()).collect();
+    // Only a folder with the Python for this computer counts as installed:
+    // the models work everywhere, the runtime is per kind of computer.
+    let ready: Vec<&PathBuf> = dirs.iter().filter(|d| bundled_python(d).is_some()).collect();
     Installed {
+        runtime: !ready.is_empty(),
+        models: dirs.iter().any(|d| has_faces(d) || has_pets(d)),
         faces: ready.iter().any(|d| has_faces(d)),
         pets: ready.iter().any(|d| has_pets(d)),
-        dir: ready.first().cloned(),
+        dir: ready.first().map(|d| (*d).clone()),
     }
 }
 
@@ -364,12 +381,17 @@ pub fn program_dir() -> Option<PathBuf> {
     dir.join("install.sh").is_file().then_some(dir)
 }
 
+/// The standalone Python of this kind of computer in `<dir>/runtime/<os>-<arch>/`.
+fn bundled_python(dir: &Path) -> Option<PathBuf> {
+    let runtime = dir.join("runtime").join(format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH));
+    let bundled = if cfg!(windows) { runtime.join("python.exe") } else { runtime.join("bin").join("python3") };
+    bundled.is_file().then_some(bundled)
+}
+
 /// The standalone Python shipped in `<dir>/runtime/<os>-<arch>/`, else `python3`
 /// from `PATH`.
 fn python(dir: &Path) -> Option<PathBuf> {
-    let runtime = dir.join("runtime").join(format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH));
-    let bundled = if cfg!(windows) { runtime.join("python.exe") } else { runtime.join("bin").join("python3") };
-    if bundled.is_file() {
+    if let Some(bundled) = bundled_python(dir) {
         return Some(bundled);
     }
     let name = if cfg!(windows) { "python.exe" } else { "python3" };

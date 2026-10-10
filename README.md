@@ -20,6 +20,33 @@ detection with `shoebox recognize`) done except the runs on real hardware.
 Plan and status: [docs/plan.md](docs/plan.md); usage per phase in `docs/`
 ([recognizer](docs/phase4.md)).
 
+## Install and set up
+
+Unpack `shoebox-macos.tar.gz` (one folder, `shoebox-macos/`: the program
+`shoebox`, `Start shoebox.command`, `recognizer/`, `guide/`; keep the files
+together). Then one of two ways:
+
+- **On the drive.** Copy the whole `shoebox-macos` folder into the top folder
+  of the photo drive (`/Volumes/MyDrive/shoebox-macos/`, next to the photo
+  folders) and double-click `Start shoebox.command` in it. Do not create
+  `.shoebox` yourself; the first scan makes it. Add-ons go into
+  `shoebox-macos/recognizer/` on the drive and travel with it. Other systems
+  get their own folder beside it (`shoebox-windows/`, each with its own add-ons).
+- **On the computer.** Move the whole unpacked folder somewhere permanent
+  (Documents, not Downloads), double-click `Start shoebox.command`, and add
+  the drives by path in the Control Panel. Add-ons go into its `recognizer/`
+  and serve every drive.
+
+The Control Panel's step 1, **Add-ons**, installs Faces (~40 MB) and/or Pets
+(~140 MB), independent of each other, on top of Python and OpenCV (~200 MB per
+kind of computer, always installed with the first add-on). Where shoebox looks
+for them: `recognizer/` next to the program first, the drive's own
+`.shoebox/recognizer/` last. The models are the same on every computer; Python
+and OpenCV is per kind (`recognizer/runtime/<os>-<arch>/`), so a drive moved
+to another kind of Mac needs one more install there (the models are kept).
+Terminal users: `recognizer/install.sh [--faces] [--pets] [library-root]`
+([recognizer/README.md](recognizer/README.md)).
+
 ## Guide
 
 A landing page and handbook as plain HTML and text, one per language (English

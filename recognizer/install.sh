@@ -7,8 +7,8 @@
 #
 # Without a library root it installs into the folder that holds this script
 # (next to the shoebox program; every drive you recognize then uses it). With
-# one, into <library-root>/.shoebox/recognizer/ (travels with that drive; it
-# wins over the one next to the program).
+# one, into <library-root>/.shoebox/recognizer/ (travels with that drive; it only
+# serves when nothing is installed next to the program).
 #
 # The add-ons are independent: --faces (face models, ~40 MB) and --pets (cat and
 # dog models, ~140 MB); either or both, on top of the Python and OpenCV runtime
@@ -94,8 +94,6 @@ else
     echo "  none for this system; OpenCV runs the pet models instead"
 fi
 
-echo "Models…"
-"$HERE/fetch-models.sh" ${FACES:+--faces} ${PETS:+--pets} "$TMP/models"
 
 echo "Copying to ${DEST}…"
 mkdir -p "$DEST/runtime"
@@ -111,8 +109,12 @@ rm -rf "$P/include" "$P/share" "$P/lib/pkgconfig" "$P"/lib/tcl* "$P"/lib/tk* "$P
     "$P/lib/python3.12/idlelib" "$P/lib/python3.12/tkinter" "$P/lib/python3.12/turtledemo" \
     "$P/lib/python3.12/ensurepip" "$P/lib/python3.12/lib-dynload/_tkinter"*
 cp -RL "$TMP/python" "$DEST/runtime/$PLATFORM"
+# The models are the same on every kind of computer, so they go straight into
+# the folder: ones that are there already (checksum) are not downloaded again,
+# e.g. when a second kind of Mac only needs its own Python.
+echo "Models…"
 mkdir -p "$DEST/models"
-cp "$TMP/models/"*.onnx "$DEST/models/"
+"$HERE/fetch-models.sh" ${FACES:+--faces} ${PETS:+--pets} "$DEST/models"
 [ "$DEST" = "$HERE" ] || cp "$HERE/recognizer.py" "$DEST/recognizer.py"
 
 echo "Checking…"

@@ -316,7 +316,7 @@
             </li>
             <li>
               <h3>Erweiterungen, scannen, dann öffnen</h3>
-              <p>Nur wenn Personen und Haustiere erkannt werden sollen: in Schritt 1, <b>Erweiterungen</b>, ankreuzen, was du willst (<b>Gesichter</b>, <b>Haustiere</b> oder beides; jedes geht ohne das andere), und <b>Ausgewählte Erweiterungen installieren</b> drücken. Die Zentrale listet, was geladen wird: das Programm Python und OpenCV (etwa 200 MB, einmal für alle Erweiterungen), Gesichter (etwa 40 MB) und Haustiere (etwa 140 MB). Internet nötig, einige Minuten. Erweiterungen lassen sich später ergänzen; ein Computer anderer Art (Intel oder Apple Silicon) braucht sie einmal auf diesem Computer. Solange eine Erweiterung fehlt, bleibt ihr <b>Erkennen</b>-Knopf grau und sagt warum. Dann Laufwerk hinzufügen (anklicken oder <code>/Volumes/MeinLaufwerk</code> tippen), <b>Scannen</b> drücken, dann <b>Foto-App starten</b>. Der erste Scan liest jede Datei einmal und dauert bei großen Laufwerken eine Weile; später werden nur Änderungen angesehen. Nach dem Scan listen die Reiter <b>Verschoben</b>, <b>Geändert</b>, <b>Fehlend</b> und <b>Schon auf dem Laufwerk</b> (jeweils mit Anzahl) genau auf, um welche Dateien es geht; bei neuen Dateien, die du schon hattest, steht die ältere Kopie gleich daneben.</p>
+              <p>Nur wenn Personen und Haustiere erkannt werden sollen: in Schritt 1, <b>Erweiterungen</b>, ankreuzen, was du willst (<b>Gesichter</b>, <b>Haustiere</b> oder beides; jedes geht ohne das andere), und <b>Ausgewählte Erweiterungen installieren</b> drücken. Die Zentrale listet, was geladen wird: das Programm Python und OpenCV (etwa 200 MB, einmal für alle Erweiterungen), Gesichter (etwa 40 MB) und Haustiere (etwa 140 MB). Internet nötig, einige Minuten. Erweiterungen lassen sich später ergänzen; ein Computer anderer Art (Intel oder Apple Silicon) braucht sie einmal auf diesem Computer. Python und OpenCV wird immer mit der ersten Erweiterung installiert (sein Kästchen ist angekreuzt und lässt sich nicht abwählen). Solange eine Erweiterung fehlt, bleibt ihr Erkennen-Knopf grau und sagt warum. Ein Klick auf die Überschrift <b>Erweiterungen</b> klappt den Schritt zu; er bleibt zu, sobald alles installiert ist. Dann Laufwerk hinzufügen (anklicken oder <code>/Volumes/MeinLaufwerk</code> tippen), <b>Scannen</b> drücken, dann <b>Foto-App starten</b>. Der erste Scan liest jede Datei einmal und dauert bei großen Laufwerken eine Weile; später werden nur Änderungen angesehen. Nach dem Scan listen die Reiter <b>Verschoben</b>, <b>Geändert</b>, <b>Fehlend</b> und <b>Schon auf dem Laufwerk</b> (jeweils mit Anzahl) genau auf, um welche Dateien es geht; bei neuen Dateien, die du schon hattest, steht die ältere Kopie gleich daneben.</p>
             </li>
           </ol>
           <div class="panel">
@@ -326,12 +326,12 @@
                 <dd>neue, verschobene und geänderte Fotos finden. Schnell: es schaut nur auf das, was sich seit dem letzten Scan geändert hat, und die Reiter zeigen, was dieser Scan geändert hat. Nach dem Verschieben, Umbenennen oder Hinzufügen von Fotos ausführen. Es listet auch neue Kopien von Dateien, die das Laufwerk schon hatte.</dd>
                 <dt>Prüfen</dt>
                 <dd>prüfen, dass nichts verloren oder beschädigt ist. Es liest jede Datei neu und vergleicht sie mit dem, was der Index kennt; so findet es Dateien, die auf dem Laufwerk unbemerkt beschädigt wurden. Langsam, also hin und wieder ausführen (alle paar Monate oder bevor man sich auf ein Backup verlässt), nicht nach jedem Verschieben. Verschiebungen sind nicht seine Sache: ein verschobenes Foto hat im Index seinen neuen Platz und besteht die Prüfung. Ein Foto, dessen Pfad weg ist, dessen Inhalt aber anderswo auf dem Laufwerk noch liegt (eine gelöschte Kopie), steht als „umgezogen“ in der Liste, nicht als Fehler. Nur Inhalt, der nirgends mehr auf dem Laufwerk liegt, zählt als fehlend. Fehlen Dateien, erscheint nach der Prüfung (und nach einem Scan) ein Knopf, der ihre Einträge vergisst: sie werden aus dem shoebox-Index, seiner Datenbank auf dem Laufwerk, entfernt. Keine Fotodatei wird angefasst.</dd>
-                <dt>Erkennen</dt>
-                <dd>Gesichter finden (mit „Haustiere erkennen“ auch Katzen und Hunde)</dd>
-                <dt>Liegende Gesichter erkennen</dt>
-                <dd>auch liegende Gesichter finden (langsamer)</dd>
+                <dt>Gesichter erkennen</dt>
+                <dd>die Gesichter in deinen Fotos finden (mit „Haustiere erkennen“ auch Katzen und Hunde). Braucht die Erweiterung „Gesichter“.</dd>
+                <dt>Horizontale Gesichter erkennen</dt>
+                <dd>auch Gesichter finden, die auf der Seite liegen oder auf dem Kopf stehen (langsamer). Braucht die Erweiterung „Gesichter“.</dd>
                 <dt>Haustiere erkennen</dt>
-                <dd>Katzen und Hunde finden; sie erscheinen bei den Gesichtern</dd>
+                <dd>Katzen und Hunde finden; sie erscheinen bei den Gesichtern. Braucht die Erweiterung „Haustiere“, nicht die für Gesichter.</dd>
                 <dt>Gesichts-Statistik</dt>
                 <dd>wie die Erkennung gelaufen ist</dd>
                 <dt>Backup-Prüfung</dt>
@@ -343,6 +343,14 @@
           <img src="assets/de/launcher-overview.jpg" alt="" loading="lazy">
           <figcaption>Die Zentrale: 1 Erweiterungen installieren, 2 Laufwerk oder Ordner wählen, 3 Aufgabe wählen, 4 Foto-App öffnen.</figcaption>
         </figure>
+      </div>
+      <div class="panel">
+        <h3>Mehrere Computer und Systeme</h3>
+        <ul>
+          <li><b>Wo die Erweiterungen gesucht werden:</b> zuerst im Ordner <b>recognizer</b> neben dem gestarteten shoebox-Programm, zuletzt im eigenen versteckten <code>.shoebox/recognizer</code> des Laufwerks (nur, wenn der Programmordner nichts hat). Ein shoebox-Ordner auf deinem Computer wird also für jedes Laufwerk benutzt, auch wenn ein Laufwerk selbst Modelle enthält.</li>
+          <li><b>Modelle und Python sind zweierlei.</b> Die Modelle (Gesichter, Haustiere) sind auf jedem Computer gleich. <b>Python und OpenCV</b> gibt es je Computerart: Intel-Mac, Apple-Silicon-Mac, Linux, Windows. Nimmst du ein Laufwerk mit <b>shoebox-macos</b> von einem Intel-MacBook zu einem neueren mit, zeigt Schritt 1 dort <b>Python und OpenCV: nicht installiert</b>, und die Erkennen-Knöpfe sind grau. Dort einmal <b>Ausgewählte Erweiterungen installieren</b> drücken: Es wird nur das fehlende Python geladen, die Modelle bleiben. Beide Arten liegen dann nebeneinander im selben Ordner <b>recognizer</b>, und jeder Computer nutzt seine eigene.</li>
+          <li><b>Mac und Windows auf einem Laufwerk:</b> beide Ordner in den obersten Ordner des Laufwerks kopieren: <code>shoebox-macos</code> und <code>shoebox-windows</code>. Jeder hat seinen eigenen Ordner <b>recognizer</b>; Modelle, die du im einen installierst, gelten also nicht im anderen. Gestartet wird aus dem Ordner des Systems, an dem du sitzt. Beide nutzen denselben versteckten Index <code>.shoebox</code> auf dem Laufwerk. Erweiterungen gibt es für Windows noch nicht.</li>
+        </ul>
       </div>
       <div class="panel">
         <h3>Gut zu wissen</h3>
@@ -502,7 +510,7 @@
         <div class="items">
           <div>
             <h3>Finden</h3>
-            <p>Die Erweiterungen einmal installieren: in der Zentrale in Schritt 1 <b>Erweiterungen</b> ankreuzen, was du brauchst (<b>Gesichter</b>, und <b>Haustiere</b> für Katzen und Hunde), und <b>Ausgewählte Erweiterungen installieren</b> drücken. Sie liegen im Ordner <code>recognizer</code> neben dem shoebox-Programm: auf dem Laufwerk, wenn shoebox dort liegt, sonst auf deinem Computer für alle Laufwerke. Dann die Foto-App schließen und in der Zentrale <b>Erkennen</b> (und <b>Haustiere erkennen</b>) ausführen. In der Seitenleiste erscheint der Bereich <b>Gesichter</b>.</p>
+            <p>Die Erweiterungen einmal installieren: in der Zentrale in Schritt 1 <b>Erweiterungen</b> ankreuzen, was du brauchst (<b>Gesichter</b>, und <b>Haustiere</b> für Katzen und Hunde), und <b>Ausgewählte Erweiterungen installieren</b> drücken. Sie liegen im Ordner <code>recognizer</code> neben dem shoebox-Programm: auf dem Laufwerk, wenn shoebox dort liegt, sonst auf deinem Computer für alle Laufwerke. Dann die Foto-App schließen und in der Zentrale <b>Gesichter erkennen</b> (und <b>Haustiere erkennen</b>) ausführen. In der Seitenleiste erscheint der Bereich <b>Gesichter</b>.</p>
           </div>
           <div>
             <h3>Benennen</h3>
@@ -518,7 +526,7 @@
           </div>
           <div>
             <h3>Neue Fotos</h3>
-            <p>Die Erkennung startet nach einem Scan noch nicht von selbst. Foto-App schließen und <b>Erkennen</b> erneut ausführen: Es werden nur die neuen Fotos angesehen.</p>
+            <p>Die Erkennung startet nach einem Scan noch nicht von selbst. Foto-App schließen und <b>Gesichter erkennen</b> erneut ausführen: Es werden nur die neuen Fotos angesehen.</p>
           </div>
         </div>
         <div>

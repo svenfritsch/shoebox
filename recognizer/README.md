@@ -11,15 +11,17 @@ boxes and embeddings out. It never touches the database or an original.
 - `fetch-models.sh [dir]`: download the ONNX models (checksummed) into
   `models/`; `SHOEBOX_NO_PETS=1` leaves out the two pet models
   (~140 MB).
-- `install.sh [--pets] [library-root]`: standalone Python, OpenCV, numpy and
-  the models; the face models always, `--pets` adds the cat and dog models
-  (asked in a terminal when neither is given). Without a path they go into
-  this folder (next to the shoebox program), and every drive you recognize
-  uses them; with a path into `<root>/.shoebox/recognizer/`, which travels
-  with that drive and wins. `shoebox recognize` looks in the drive first,
-  then here. Run it on each kind of computer that will run recognition.
-  People who do not use the terminal press **Install the selected add-ons**
-  in the launcher (step 1, Add-ons), which runs this script.
+- `install.sh [--faces] [--pets] [library-root]`: standalone Python, OpenCV,
+  numpy and the models of the add-ons asked for (Faces ~40 MB, Pets ~140 MB,
+  independent; both are asked in a terminal when neither flag is given). The
+  runtime (~200 MB) is always installed. Without a path everything goes into
+  this folder (next to the shoebox program) and every drive you recognize uses
+  it; with a path into `<root>/.shoebox/recognizer/`, which travels with that
+  drive. `shoebox recognize` looks next to the program first and in the drive
+  last. Run it on each kind of computer that will run recognition: the models
+  are kept, only that computer's Python is added. People who do not use the
+  terminal press **Install the selected add-ons** in the Control Panel (step 1,
+  Add-ons), which runs this script.
 - `test_recognizer.py`: protocol tests
   (`python3 -m unittest -v recognizer/test_recognizer.py`; set
   `SHOEBOX_TEST_FACE` to a photo with a face, `SHOEBOX_TEST_PET` to a

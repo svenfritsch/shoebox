@@ -13,7 +13,7 @@
   "launcher.step2": "3 · Was soll shoebox tun?",
   "launcher.kind.scan": "Scannen",
   "launcher.kind.verify": "Prüfen",
-  "launcher.kind.recognize": "Erkennen",
+  "launcher.kind.recognize": "Gesichter erkennen",
   "launcher.kind.faces_stats": "Gesichts-Statistik",
   "launcher.kind.backup": "Backup-Prüfung",
   "launcher.kind.scan.desc": "neue, verschobene und geänderte Fotos finden",
@@ -626,8 +626,8 @@
   "draw.kind.cat": "Katze",
   "draw.kind.dog": "Hund",
   "draw.note_pet": "Der Rahmen wird im Index von shoebox gespeichert und nie in das Foto geschrieben. Das ganze Haustier im Rahmen wird für Vorschläge gelernt.",
-  "launcher.kind.recognize_rotated": "Liegende Gesichter erkennen",
-  "launcher.kind.recognize_rotated.desc": "auch liegende Gesichter in den Fotos finden (langsamer)",
+  "launcher.kind.recognize_rotated": "Horizontale Gesichter erkennen",
+  "launcher.kind.recognize_rotated.desc": "auch Gesichter finden, die auf der Seite liegen oder auf dem Kopf stehen (langsamer)",
   "launcher.kind.forget_missing": "Fehlende vergessen",
   "launcher.forget.found": "{n} Dateien sind laut Index nicht mehr auf dem Laufwerk.",
   "launcher.forget.button": "Die fehlenden Dateien vergessen",
@@ -753,9 +753,11 @@
   "launcher.addons.where": "Sie werden in {dir} installiert und für alle Laufwerke genutzt.",
   "launcher.addons.all_installed": "Installiert in {dir}.",
   "launcher.addons.not_installable": "Der Ordner „recognizer“ liegt nicht neben dem shoebox-Programm. Lege den Ordner „recognizer“ aus dem Download daneben (siehe Anleitung) und lade diese Seite neu.",
-  "launcher.addons.need_faces": "Erkennen braucht die Erweiterung „Gesichter“ für: {drives}.",
+  "launcher.addons.need_faces": "Gesichter erkennen braucht die Erweiterung „Gesichter“ für: {drives}.",
   "launcher.addons.need_pets": "Haustiere erkennen braucht die Erweiterung „Haustiere“ für: {drives}.",
   "launcher.kind.install_addons": "Erweiterungen installieren",
   "launcher.addon.runtime": "Python und OpenCV",
-  "launcher.addon.runtime.desc": "das Programm, das die Erkennung ausführt; alle Erweiterungen brauchen es, es wird einmal geladen (etwa 200 MB)"
+  "launcher.addon.runtime.desc": "jede Erweiterung braucht es, es wird immer mit der ersten installiert (etwa 200 MB pro Computerart)",
+  "launcher.addons.runtime_missing": "Die Modelle sind da, aber dieser Computer (Intel oder Apple Silicon) hat in {dir} noch kein Python und OpenCV. Noch einmal installieren; die Modelle werden nicht doppelt geladen.",
+  "launcher.addon.required": "nötig"
 }
