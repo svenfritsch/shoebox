@@ -347,6 +347,35 @@ pub fn stats(conn: &Connection) -> Result<Stats> {
     })
 }
 
+/// How far the text pass is, for the status line and the search box.
+#[derive(Debug, Clone, Copy, Default, Serialize)]
+pub struct Progress {
+    /// Photos (contents) the text pass has been through.
+    pub done: u64,
+    pub total: u64,
+    /// Lines the limits show: 0 means a text search has nothing to find.
+    pub lines: u64,
+}
+
+pub fn progress(conn: &Connection) -> Result<Progress> {
+    if !ready(conn) {
+        return Ok(Progress::default());
+    }
+    let limits = limits(conn);
+    let kinds = crate::recognize::KINDS;
+    let (total, done): (i64, i64) = conn.query_row(
+        &format!(
+            "SELECT count(*), count(l.key) FROM
+               (SELECT DISTINCT quick_hash FROM files WHERE missing_since IS NULL AND kind IN ({kinds})) f
+             LEFT JOIN recog.looked l ON l.key = f.quick_hash AND l.task = 'text' AND l.error IS NULL"
+        ),
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    let lines: i64 = conn.query_row("SELECT count(*) FROM recog.text_lines WHERE score >= ?1 AND h >= ?2", params![limits.min_score, limits.min_height], |r| r.get(0))?;
+    Ok(Progress { done: done as u64, total: total as u64, lines: lines as u64 })
+}
+
 /// Forget everything that was read (the lines and the memory of having read
 /// each photo); the user's hidden lines stay, they are decisions. A photo
 /// that is read again gets its lines back.

@@ -24,6 +24,8 @@ var state = {
   data: null,        // timeline columns from /api/timeline
   favs: {},          // still id -> true, for the loaded timeline (empty on pages that open before it)
   live: {},          // still id -> video id
+  snips: {},         // id -> the line a text search found in it (shown over its thumbnail)
+  textLines: 0,      // lines of recognized text the search can find (0: a text search finds nothing)
   folders: [],
   folderById: {},
   rows: [],          // layout rows: {top, h, type: 'h'|'r', ...}
@@ -122,8 +124,30 @@ var PET_TERMS = {
   pet: { icon: '🐾', get label() { return tr('pet.term.pet'); } },
 };
 
+// Line icons of the text search: the document scanner for words read in
+// pictures, the page for file names (drawn with the text colour).
+var ICONS = {
+  scan: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><rect x="7" y="6.5" width="10" height="11" rx="2"/><path d="M9.5 10h5M9.5 12.5h5M9.5 15h5"/></svg>',
+  draft: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M14 3v5h5"/></svg>',
+  copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
+};
+function icon(name, cls) {
+  var s = document.createElement('span');
+  s.className = 'ic' + (cls ? ' ' + cls : '');
+  s.innerHTML = ICONS[name];
+  return s;
+}
+
+// The search box's two shortcuts: `text:` (words read in pictures) and
+// `name:` (file names only).
+var PREFIX = /^\s*(text|name):\s*/i;
+function prefixOf(v) {
+  var m = PREFIX.exec(v);
+  return m ? { kind: m[1].toLowerCase(), term: v.slice(m[0].length).trim() } : null;
+}
+
 function readHash() {
-  var f = { folder: null, tags: [], people: [], pets: [], types: [], fav: false, place: null, q: '', view: null, id: null, tab: null };
+  var f = { folder: null, tags: [], people: [], pets: [], texts: [], names: [], types: [], fav: false, place: null, q: '', view: null, id: null, tab: null };
   location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
     var i = kv.indexOf('=');
     if (i < 0) return;
@@ -136,6 +160,8 @@ function readHash() {
     if (k === 'type' && TYPES.indexOf(v) >= 0 && f.types.indexOf(v) < 0) f.types.push(v);
     // A kind of pet (all cats, all dogs, any pet): the same on every drive.
     if (k === 'pet' && PET_TERMS[v] && f.pets.indexOf(v) < 0) f.pets.push(v);
+    if (k === 'text' && v.trim() && f.texts.indexOf(v) < 0) f.texts.push(v);
+    if (k === 'name' && v.trim() && f.names.indexOf(v) < 0) f.names.push(v);
     if (k === 'fav') f.fav = v === '1';
     if (k === 'place') f.place = parseInt(v, 10) || null;
     if (k === 'q') f.q = v;
@@ -153,7 +179,7 @@ function readHash() {
 // folder, any number of tags and people (`tag`, `person` repeated in the
 // URL) and free text.
 function setFilter(f) {
-  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], type: f.types || [], fav: f.fav ? 1 : null, place: f.place, q: f.q }).replace(/^\?/, '');
+  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], text: f.texts || [], name: f.names || [], type: f.types || [], fav: f.fav ? 1 : null, place: f.place, q: f.q }).replace(/^\?/, '');
   if (h === location.hash.replace(/^#/, '')) { applyFilter(); return; }
   location.hash = h; // triggers hashchange -> applyFilter
 }
@@ -163,7 +189,7 @@ function withFilter(changes) {
   var f = state.filter;
   // A place picked on the Locations page goes with the search to the timeline.
   var place = f.view === 'locations' ? f.id : f.place;
-  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), pets: f.pets.slice(), types: f.types.slice(), fav: f.fav, place: place, q: f.q }, changes);
+  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), pets: f.pets.slice(), texts: f.texts.slice(), names: f.names.slice(), types: f.types.slice(), fav: f.fav, place: place, q: f.q }, changes);
 }
 
 function showView(view, id, tab) { setFilter({ view: view, id: id, tab: tab, folder: null, tags: [], people: [], q: '' }); }
@@ -182,7 +208,7 @@ function applyFilter() {
   $('sizer').hidden = !!view;
   $('current-month').textContent = view && VIEW_LABELS[view] ? tr(VIEW_LABELS[view]) : '';
   var f = state.filter;
-  $('all').classList.toggle('active', !view && !f.folder && !f.tags.length && !f.people.length && !f.pets.length && !f.place && !f.fav && !f.q);
+  $('all').classList.toggle('active', !view && !f.folder && !f.tags.length && !f.people.length && !f.pets.length && !f.texts.length && !f.names.length && !f.place && !f.fav && !f.q);
   $('nav-dups').classList.toggle('active', view === 'duplicates');
   $('nav-trash').classList.toggle('active', view === 'trash');
   $('nav-settings').classList.toggle('active', view === 'settings' || view === 'faces' || view === 'pets');
@@ -210,8 +236,11 @@ function renderChips() {
   var box = $('filters');
   box.textContent = '';
   var f = state.filter;
-  var add = function (label, clear) {
-    var c = el('span', 'chip', label);
+  var add = function (label, clear, ic, title) {
+    var c = el('span', 'chip' + (ic ? ' ' + (ic === 'scan' ? 'text' : 'name') : ''), '');
+    if (ic) c.appendChild(icon(ic));
+    c.appendChild(document.createTextNode(label));
+    if (title) c.title = title;
     var x = el('button', '', '✕');
     x.title = tr('chip.remove');
     x.onclick = clear;
@@ -252,6 +281,12 @@ function renderChips() {
     onMap.onclick = function () { showView('locations', f.place); };
     box.lastChild.insertBefore(onMap, box.lastChild.lastChild);
   }
+  f.names.forEach(function (term) {
+    add(term, function () { setFilter(withFilter({ names: f.names.filter(function (n) { return n !== term; }) })); }, 'draft', tr('chip.name_hint', { term: term }));
+  });
+  f.texts.forEach(function (term) {
+    add(term, function () { setFilter(withFilter({ texts: f.texts.filter(function (n) { return n !== term; }) })); }, 'scan', tr('chip.text_hint', { term: term }));
+  });
   if (f.q) add('“' + f.q + '”', function () { setFilter(withFilter({ q: '' })); });
   var terms = box.children.length;
   if (terms) {
@@ -264,7 +299,7 @@ function renderChips() {
   if (terms >= 2) {
     var clear = el('button', 'chip clear', tr('chip.clear_all'));
     clear.title = tr('chip.clear_all_hint');
-    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], pets: [], fav: false, place: null, q: '' }); };
+    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], pets: [], texts: [], names: [], fav: false, place: null, q: '' }); };
     box.appendChild(clear);
   }
   personHead(box, f);
@@ -401,7 +436,8 @@ $('search').addEventListener('input', function () {
   var v = this.value;
   // On the Locations page typing looks for a place; the text only becomes a search with Enter.
   if (state.filter.view === 'locations' && geo.on) { suggest(v); return; }
-  searchTimer = setTimeout(function () { setFilter(withFilter({ q: v.trim() })); }, 300);
+  // `text:` and `name:` are a term of their own: nothing is searched until Enter or a pick.
+  if (!prefixOf(v)) searchTimer = setTimeout(function () { setFilter(withFilter({ q: v.trim() })); }, 300);
   suggest(v);
 });
 $('search').addEventListener('focus', function () { suggest(this.value); });
@@ -419,13 +455,21 @@ $('search').addEventListener('keydown', function (ev) {
     if (open && sugg.at >= 0) { pickSuggest(sugg.items[sugg.at]); return; }
     clearTimeout(searchTimer);
     closeSuggest();
+    var pre = prefixOf(this.value);
+    if (pre) {
+      // The shortcut becomes a chip; with nothing after it there is nothing to add yet.
+      if (pre.term) { this.value = ''; addTerm(pre.kind, pre.term); }
+      return;
+    }
     setFilter(withFilter({ q: this.value.trim() }));
   } else if (ev.key === 'Escape') {
     closeSuggest();
   } else if (ev.key === 'Backspace' && this.value === '') {
     // Like a token field: the last chip goes.
     var f = state.filter;
-    if (f.fav) setFilter(withFilter({ fav: false }));
+    if (f.texts.length) setFilter(withFilter({ texts: f.texts.slice(0, -1) }));
+    else if (f.names.length) setFilter(withFilter({ names: f.names.slice(0, -1) }));
+    else if (f.fav) setFilter(withFilter({ fav: false }));
     else if (f.place) setFilter(withFilter({ place: null }));
     else if (f.pets.length) setFilter(withFilter({ pets: f.pets.slice(0, -1) }));
     else if (f.people.length) setFilter(withFilter({ people: f.people.slice(0, -1) }));
@@ -449,9 +493,11 @@ function suggest(text) {
   // On the Locations page the search finds places: picking one shows it.
   if (f.view === 'locations' && geo.on) { showSuggest(placeSuggestions(text.trim(), f)); return; }
   if (f.view) { closeSuggest(); return; }
+  var pre = prefixOf(text);
+  if (pre) { showSuggest(pre.term ? [{ kind: pre.kind, id: pre.term, label: pre.term, prefixed: true, hint: pre.kind === 'text' ? tr('search.text_prefixed_hint') : tr('search.name_prefixed_hint') }] : [], pre.term ? null : (pre.kind === 'text' ? tr('search.prefix_empty_text') : tr('search.prefix_empty_name'))); return; }
   if (isAll()) { suggestAll(text, seq); return; }
   var needle = text.trim();
-  var within = { q: needle, tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place };
+  var within = { q: needle, tag: f.tags, person: f.people, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place };
   Promise.all([
     api(LIBAPI + '/tags' + query(Object.assign({ limit: 8 }, within))),
     api(LIBAPI + '/people/search' + query(Object.assign({ limit: 6 }, within))).catch(function () { return []; }),
@@ -477,6 +523,7 @@ function suggest(text) {
         .slice(0, 4)
         .forEach(function (fo) { items.push({ kind: 'folder', id: fo.id, label: fo.path, count: fo.count }); });
     }
+    items = items.concat(textItems(needle));
     showSuggest(items);
   }).catch(function () {});
 }
@@ -504,42 +551,76 @@ function suggestAll(text, seq) {
     r[0].filter(function (t) { return f.tags.indexOf(t.name) < 0 && !isFavTag(t.name); }).forEach(function (t) {
       items.push({ kind: 'tag', id: t.name, label: t.name, count: t.count, folderTag: t.kind === 'folder' });
     });
+    items = items.concat(textItems(needle));
+    items = items.concat(textItems(needle));
     showSuggest(items);
   }).catch(function () {});
 }
 
-function showSuggest(items) {
+// The last row of a plain search: look for the same word in the text of photos.
+// Greyed until something has been read (the Text add-on, then "Recognize text").
+function textItems(needle) {
+  if (needle.length < 2) return [];
+  return [{ kind: 'text', id: needle, label: needle, hint: tr('search.text_hint', { term: needle }), off: !isAll() && !state.textLines }];
+}
+
+// Add a text or name term to the search as a chip.
+function addTerm(kind, term) {
+  var f = state.filter, key = kind === 'text' ? 'texts' : 'names', ch = { q: '' };
+  ch[key] = f[key].indexOf(term) < 0 ? f[key].concat([term]) : f[key];
+  setFilter(withFilter(ch));
+}
+
+// How many photos a text or name suggestion would show, beside it.
+function fillCount(it, i, seq) {
+  var f = state.filter;
+  var p = { tag: f.tags, person: f.people, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place };
+  p[it.kind] = (it.kind === 'text' ? f.texts : f.names).concat([it.id]);
+  api(LIBAPI + '/count' + query(p)).then(function (r) {
+    if (seq !== sugg.seq) return;
+    var c = $('suggest').querySelector('[data-i="' + i + '"] .count');
+    if (c) c.textContent = I18n.number(r.count);
+  }).catch(function () {});
+}
+
+function showSuggest(items, hint) {
   var box = $('suggest');
   box.textContent = '';
   sugg.items = items;
   sugg.at = -1;
+  var seq = sugg.seq;
   var last = null;
   items.forEach(function (it, i) {
     if (it.kind !== last) {
-      var f = state.filter, narrowed = !isAll() && (f.tags.length || f.people.length || f.pets.length || f.folder || f.place);
+      var f = state.filter, narrowed = !isAll() && (f.tags.length || f.people.length || f.pets.length || f.texts.length || f.names.length || f.folder || f.place);
       var head = it.kind === 'fav' ? tr('fav.label') : it.kind === 'tag' ? tr(narrowed ? 'search.tags_here' : 'search.tags')
         : it.kind === 'person' ? tr(narrowed ? 'search.faces_here' : 'side.faces')
-          : it.kind === 'pet' ? tr(narrowed ? 'search.pets_here' : 'search.pets') : it.kind === 'place' ? tr('search.places') : tr('search.folders');
+          : it.kind === 'pet' ? tr(narrowed ? 'search.pets_here' : 'search.pets') : it.kind === 'place' ? tr('search.places')
+            : it.kind === 'text' ? tr('search.text') : it.kind === 'name' ? tr('search.names') : tr('search.folders');
       box.appendChild(el('div', 'head', head));
       last = it.kind;
     }
-    var b = el('button', 'item');
+    var b = el('button', 'item' + (it.off ? ' off' : ''));
     b.type = 'button';
     b.setAttribute('role', 'option');
     // People as in the sidebar: their picture, and the dog or cat for a pet.
     var label = el('span', 'label');
     if (it.kind === 'person') label.appendChild(avatar(it.person, 'tiny'));
-    label.appendChild(document.createTextNode((it.kind === 'fav' ? '♥ ' : it.kind === 'pet' ? PET_TERMS[it.id].icon + ' '
+    if (it.kind === 'text' || it.kind === 'name') label.appendChild(icon(it.kind === 'text' ? 'scan' : 'draft'));
+    label.appendChild(document.createTextNode((it.kind === 'text' || it.kind === 'name' ? '“' : it.kind === 'fav' ? '♥ ' : it.kind === 'pet' ? PET_TERMS[it.id].icon + ' '
       : it.kind === 'person' ? (petIcon(it.person && it.person.species) ? petIcon(it.person.species) + ' ' : '')
-        : ({ folder: '📁 ', place: '📍 ' }[it.kind] || '# ')) + it.label));
+        : ({ folder: '📁 ', place: '📍 ' }[it.kind] || '# ')) + it.label + (it.kind === 'text' || it.kind === 'name' ? '”' : '')));
     b.appendChild(label);
-    b.appendChild(el('span', 'count', I18n.number(it.count)));
+    b.appendChild(el('span', 'count', it.count === undefined ? '' : I18n.number(it.count)));
     b.onmousedown = function (ev) { ev.preventDefault(); }; // keep the focus in the box
     b.onclick = function () { pickSuggest(it); };
     b.dataset.i = i;
     box.appendChild(b);
+    if (it.hint) box.appendChild(el('div', 'hint', it.hint));
+    if ((it.kind === 'text' || it.kind === 'name') && !it.off && !isAll()) fillCount(it, i, seq);
   });
-  box.hidden = !items.length || document.activeElement !== $('search');
+  if (hint) box.appendChild(el('div', 'hint', hint));
+  box.hidden = !(items.length || hint) || document.activeElement !== $('search');
 }
 
 function markSuggest() {
@@ -559,7 +640,10 @@ function pickSuggest(it) {
   else if (it.kind === 'person') setFilter(withFilter({ people: f.people.indexOf(it.id) < 0 ? f.people.concat([it.id]) : f.people, q: '' }));
   else if (it.kind === 'pet') setFilter(withFilter({ pets: f.pets.indexOf(it.id) < 0 ? f.pets.concat([it.id]) : f.pets, q: '' }));
   else if (it.kind === 'place') pickPlace(it.id);
-  else setFilter(withFilter({ folder: it.id, q: '' }));
+  else if (it.kind === 'text' || it.kind === 'name') {
+    if (it.off) { toast(tr('search.text_unread')); return; }
+    addTerm(it.kind, it.id);
+  } else setFilter(withFilter({ folder: it.id, q: '' }));
 }
 
 // Suggestions for the tag fields (info panel, "Add tag…"): every tag.
@@ -740,8 +824,8 @@ function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
 function loadTimeline(resetScroll) {
   var seq = ++state.loadSeq;
   var f = state.filter;
-  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, q: f.q })
-    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, place: f.place, q: f.q });
+  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, q: f.q })
+    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, place: f.place, q: f.q });
   return api(url).then(function (data) {
     if (seq !== state.loadSeq) return;
     if (isAll()) allTimelineLoaded(data);
@@ -755,6 +839,9 @@ function loadTimeline(resetScroll) {
     (data.favs || []).forEach(function (id) { state.favs[id] = true; });
     state.live = {};
     data.live.forEach(function (p) { state.live[p[0]] = p[1]; });
+    // What a text search found in each photo, shown over its thumbnail.
+    state.snips = {};
+    (data.snips || []).forEach(function (p) { state.snips[p[0]] = p[1]; });
     var scroller = $('scroller');
     var keep = resetScroll ? 0 : scroller.scrollTop;
     relayout();
@@ -891,6 +978,8 @@ function buildRow(row) {
     var badge = KIND_BADGE[kind] || '';
     if (state.live[d.ids[i]]) badge = 'LIVE';
     if (badge) a.appendChild(el('span', 'badge', badge));
+    var snip = state.snips && state.snips[d.ids[i]];
+    if (snip) { var sn = el('span', 'snip', snip); sn.title = snip; a.appendChild(sn); }
     if (!isAll()) a.appendChild(heartButton(d.ids[i], 'fav'));
     else if (state.favs[d.ids[i]]) a.appendChild(heartButton(d.ids[i], 'fav', true));
     e.appendChild(a);
@@ -1547,6 +1636,8 @@ function loadInfo() {
     if (f.running) parts.push(tr('status.finding_faces', { pct: Math.floor(100 * f.done / Math.max(f.total, 1)) }));
     else if (f.done && f.done < f.total) parts.push(tr('status.faces_todo', { count: trn('count.photos', f.total - f.done) }));
     if (!f.running && f.pets_done && f.pets_done < f.total) parts.push(tr('status.pets_todo', { count: trn('count.photos', f.total - f.pets_done) }));
+    state.textLines = info.text ? info.text.lines : 0;
+    if (info.text && info.text.done && info.text.done < info.text.total) parts.push(tr('status.text_todo', { count: trn('count.photos', info.text.total - info.text.done) }));
     if (c.embedding) parts.push(tr('status.learning'));
     if (c.running && c.total) parts.push(tr('status.grouping_pct', { pct: Math.floor(100 * c.done / Math.max(c.total, 1)) }));
     else if (c.running || c.stale) parts.push(tr('status.grouping'));

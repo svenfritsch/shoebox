@@ -806,6 +806,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/folders", get(folders))
         .route("/api/tags", get(tags))
         .route("/api/timeline", get(timeline))
+        .route("/api/count", get(count))
         .route("/api/files/{id}", get(file_details))
         .route("/api/files/{id}/thumb", get(thumb))
         .route("/api/files/{id}/view", get(view))
@@ -1599,6 +1600,9 @@ struct Info {
     faces: recognize::Overview,
     /// Clusters and suggestions (5c-2).
     clusters: ClustersInfo,
+    /// The words read in photos (phase 9): how far, and whether a text search
+    /// has anything to find.
+    text: crate::text::Progress,
     /// Text of the "show in the file manager" button ("Show in Finder", …),
     /// only for requests from this computer; `null` for other devices.
     reveal: Option<&'static str>,
@@ -1673,6 +1677,7 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
             trash: trash as u64,
             faces,
             clusters,
+            text: crate::text::progress(&conn)?,
             reveal,
         }))
     })
@@ -1780,6 +1785,8 @@ async fn tags(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiRes
             && filter.tags.is_empty()
             && filter.people.is_empty()
             && filter.pets.is_empty()
+            && filter.in_text.is_empty()
+            && filter.names.is_empty()
             && filter.place.is_none()
             && filter.area.is_none()
         {
@@ -1876,6 +1883,19 @@ async fn timeline(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> Ap
             }
         }
         Ok(Json(t))
+    })
+    .await
+}
+
+/// How many photos a filter shows, without the list: for the number beside a
+/// suggestion of the search box.
+async fn count(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<serde_json::Value>> {
+    let query = filter_of(&pairs)?;
+    blocking(&app, move |app| {
+        let conn = app.conn.lock().unwrap();
+        let snapshot = app.snapshot(&conn)?;
+        let n = snapshot.query(&conn, &query)?.len();
+        Ok(Json(serde_json::json!({ "count": n })))
     })
     .await
 }
