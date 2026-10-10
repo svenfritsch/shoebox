@@ -831,7 +831,6 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/tags/selection", post(tags_selection))
         .route("/api/favorites", post(favorites_set))
         .route("/api/screenshots", post(screenshots_set))
-        .route("/api/maps", get(maps_get).post(maps_set))
         .route("/api/geo/points", get(geo_points))
         .route("/api/files/{id}/position", post(position_set))
         .route("/api/places", get(places_list).post(places_create))
@@ -2295,27 +2294,7 @@ async fn allow_trash_set(State(app): State<Arc<App>>, Json(req): Json<AllowTrash
 
 // ---------------------------------------------------------------- maps (phase 10)
 
-async fn maps_get(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
-    blocking(&app, |app| {
-        let conn = app.conn.lock().unwrap();
-        Ok(Json(serde_json::json!({ "on": db::setting(&conn, crate::geo::MAPS_KEY)?.as_deref() == Some("1") })))
-    })
-    .await
-}
-
-#[derive(Deserialize)]
-struct MapsRequest {
-    on: bool,
-}
-
-async fn maps_set(State(app): State<Arc<App>>, Json(req): Json<MapsRequest>) -> ApiResult<Json<serde_json::Value>> {
-    change(&app, move |_, conn| {
-        db::set_setting(conn, crate::geo::MAPS_KEY, req.on.then_some("1"))?;
-        Ok(req.on)
-    })
-    .await
-    .map(|on| Json(serde_json::json!({ "on": on })))
-}
+// The Maps setting is the browser's (one for all drives), not an endpoint.
 
 /// Every shown photo with a position, in columns like the timeline.
 #[derive(Serialize)]
