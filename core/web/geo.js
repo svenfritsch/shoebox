@@ -769,7 +769,7 @@ function deletePlace(p) {
   ]);
 }
 
-$('nav-locations').onclick = function () { showView('locations'); };
+$('nav-locations').onclick = function () { openSection('locations-section'); showView('locations'); };
 
 // ------------------------------------------------------------------ places in the search
 

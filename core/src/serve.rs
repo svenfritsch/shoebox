@@ -846,6 +846,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/faces/assign", post(people_api::assign))
         .route("/api/faces/ignore", post(people_api::ignore))
         .route("/api/faces/not-face", post(people_api::not_face))
+        .route("/api/faces/species", post(people_api::species))
         .route("/api/faces/undo", post(people_api::undo))
         .route("/api/faces/manual", post(people_api::manual))
         .route("/api/faces/unreject", post(people_api::unreject))

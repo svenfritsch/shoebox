@@ -312,7 +312,10 @@ estimated.
 
 Folders
 The sidebar mirrors the folders on your drive. Click one to see only its
-photos. Rename or move a folder from its chip.
+photos. Rename or move a folder from its chip. The sections Faces, Tags,
+Folders and Locations fold with their arrow or by clicking the title (Faces
+and Locations also open their page). A section that holds your current choice
+stays open.
 
 Viewer
 Click a photo. ⓘ opens the info panel: date (marked estimated when it is not
@@ -515,6 +518,13 @@ all.
    finds that are no face at all. Nothing is deleted and no photo is touched;
    shoebox only notes the decision in its own database.
 
+   Sometimes the detector takes a cat for a dog, or the other way round, and
+   then only names of the wrong kind are offered. Tick the pet or pets
+   (Select) and press It's a cat, not a dog (or It's a dog, not a cat), or
+   choose the same entry from ⋯ on the pet in a photo's info panel. The pet
+   keeps the decisions already made about it and is a cat from then on in the
+   name list, the icon and the search.
+
 4. Only some faces of a card
    Select lets you tick the faces yourself. The buttons then work on those
    only: Name 2, Ignore 2, 2 not a face. Use it when a card mixes two people.
@@ -539,8 +549,10 @@ faces (All unnamed ticks every face nobody has named), then Ignore or Not a
 face for all of them at once. + Add face or pet draws a box around a face or
 pet that was missed. Say what it is first, Person, Cat or Dog, then name it:
 the list offers only names of that kind (no people when you name a cat), and +
-New person, + New cat or + New dog adds a new one. The kind of a drawn pet
-cannot be changed later; delete the box and draw it again.
+New person, + New cat or + New dog adds a new one. The kind of a pet you drew
+yourself cannot be changed later; delete the box and draw it again. For a pet
+the detector found, ⋯ offers It's a cat, not a dog (or the other way round)
+when it took it for the wrong one.
 
 Groups
 Faces shows people by group. New group… makes one; Groups… renames, reorders
