@@ -70,7 +70,7 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Find the faces (and with --pets the cats and dogs) in every photo (with the optional recognizer, see
+    /// Find the faces (and with --pets the cats and dogs, with --text the words) in every photo (with the optional recognizer, see
     /// docs/protocol.md). Only reads originals; resumes where it stopped.
     Recognize {
         /// Library root (scanned before with `shoebox scan`).
@@ -97,6 +97,14 @@ enum Command {
         /// models; resumes like the others). They show up among the faces.
         #[arg(long)]
         pets: bool,
+        /// Then read the words in the photos too (their own pass, with the text
+        /// models; resumes like the others). Screenshots first, then photos
+        /// without camera data, then the rest.
+        #[arg(long)]
+        text: bool,
+        /// Only read the words in the photos: no faces, no cats and dogs.
+        #[arg(long)]
+        text_only: bool,
         /// Print the result as JSON on standard output (the usual text goes to
         /// standard error).
         #[arg(long)]
@@ -215,7 +223,7 @@ fn main() -> ExitCode {
                 r.is_clean()
             })
         }
-        Command::Recognize { root, db, recognizer, limit, retry_failed, rotated, pets, json } => {
+        Command::Recognize { root, db, recognizer, limit, retry_failed, rotated, pets, text, text_only, json } => {
             recognize::run(&recognize::Options {
                 root,
                 db,
@@ -224,6 +232,8 @@ fn main() -> ExitCode {
                 retry_failed,
                 rotated,
                 pets,
+                text: text || text_only,
+                text_only,
                 timeouts: recognize::Timeouts::default(),
             })
             .map(|stats| {

@@ -137,7 +137,9 @@ An optional task (still protocol 2: a core that does not ask never sees it).
 The worker only loads the text models when it is started with `--text`;
 without the flag the hello has no `text` and a request for it is an unknown
 task. With the text models alone (no face models installed) the worker does
-text and says nothing of faces, like with `--pets` alone.
+text and says nothing of faces, like with `--pets` alone; `--no-faces` leaves the
+face models out even where they are installed (a run that only reads text starts
+faster that way).
 
 ```json
 → {"id": 46, "tasks": ["text"], "image": "<base64 JPEG>"}

@@ -32,6 +32,8 @@ fn options(lib: &Library) -> recognize::Options {
         retry_failed: false,
         rotated: false,
         pets: false,
+        text: false,
+        text_only: false,
         timeouts: quick(),
     }
 }
@@ -982,4 +984,153 @@ fn windows_installer_matches_the_shell_one() {
     let (install_sh, install_ps1) = (read("install.sh"), read("install.ps1"));
     assert!(install_sh.contains("PBS_TAG=20251014") && install_ps1.contains("$PbsTag = '20251014'"));
     assert!(install_sh.contains("PY=3.12.12") && install_ps1.contains("$Py = '3.12.12'"));
+}
+
+// ---------------------------------------------------------------- text (phase 9)
+
+fn text_options(lib: &Library) -> recognize::Options {
+    recognize::Options { text: true, text_only: true, ..options(lib) }
+}
+
+fn lines(lib: &Library) -> Vec<(String, String)> {
+    let conn = conn(lib);
+    let mut stmt = conn.prepare("SELECT text, text_norm FROM recog.text_lines ORDER BY key, y").unwrap();
+    stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().map(Result::unwrap).collect()
+}
+
+/// The text pass keeps the lines `text::keep` leaves (the fake worker reports
+/// five, two are good), stores the folded text for the search, leaves faces
+/// and originals alone, and does not read a photo twice.
+#[test]
+fn the_text_pass_reads_filters_and_stores_lines_under_the_guard() {
+    let lib = empty("recog-text");
+    solid(&lib, "Docs/a.jpg", [200, 190, 180]);
+    solid(&lib, "Docs/b.jpg", [120, 130, 140]);
+    lib.scan_opts(true, false, false);
+    let before = lib.snapshot();
+
+    let stats = recognize::run(&text_options(&lib)).unwrap();
+    assert_eq!(lib.snapshot(), before, "the text pass changed an original");
+    let t = stats.text.as_ref().expect("the text pass ran");
+    assert_eq!((t.looked, t.faces, t.failed), (2, 4, 0), "{:?}", t.errors);
+    assert_eq!(t.model, "fake-text-1");
+    // A run that only reads text leaves faces alone, and does not cluster.
+    assert_eq!((stats.looked, stats.faces), (0, 0));
+    assert!(stats.clusters.is_none());
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces"), 0);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.looked WHERE task = 'faces'"), 0);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.looked WHERE task = 'text' AND found = 2 AND model = 'fake-text-1'"), 2);
+
+    // Kept: the two good lines per photo; "tiny", "unsure" and the CJK line are not.
+    let stored = lines(&lib);
+    assert_eq!(stored.len(), 4);
+    for (text, norm) in &stored[..2] {
+        assert!(matches!(text.as_str(), "Rechnung Nr. 2024" | "Straße 12"), "{text}");
+        assert_eq!(norm, if text.starts_with("Rechnung") { "rechnung nr 2024" } else { "strasse 12" });
+    }
+    assert!(!stored.iter().any(|(t, _)| t == "tiny" || t == "unsure" || t == "田"));
+    // Boxes are fractions of the picture.
+    let (x, y, w, h): (f64, f64, f64, f64) = conn(&lib)
+        .query_row("SELECT x, y, w, h FROM recog.text_lines WHERE text = 'Rechnung Nr. 2024' LIMIT 1", [], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })
+        .unwrap();
+    assert!((x - 0.1).abs() < 1e-9 && (y - 0.1).abs() < 1e-9 && (w - 0.5).abs() < 1e-9 && (h - 0.08).abs() < 1e-9, "{x} {y} {w} {h}");
+
+    // Nothing left to read the second time; the lines stay.
+    let again = recognize::run(&text_options(&lib)).unwrap();
+    assert_eq!(again.text.unwrap().looked, 0);
+    assert_eq!(lines(&lib).len(), 4);
+    assert!(lib.verify(false).is_clean());
+}
+
+/// Where text is likely is read first: a screenshot before other pictures,
+/// whatever their dates, and the rank is the order of a `--limit`ed run.
+#[test]
+fn the_text_pass_reads_screenshots_first() {
+    let lib = empty("recog-text-order");
+    solid(&lib, "Photos/plain.jpg", [200, 190, 180]);
+    solid(&lib, "Photos/Screenshot 2026-01-01 at 10.00.00.png", [120, 130, 140]);
+    lib.scan_opts(true, false, false);
+    let stats = recognize::run(&recognize::Options { limit: Some(1), ..text_options(&lib) }).unwrap();
+    let t = stats.text.unwrap();
+    assert_eq!((t.looked, t.pending), (1, 1));
+    let first: String = conn(&lib)
+        .query_row(
+            "SELECT f.path_nfc FROM files f JOIN recog.looked l ON l.key = f.quick_hash WHERE l.task = 'text'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(first.contains("Screenshot"), "{first}");
+    // The next run reads the other one.
+    let rest = recognize::run(&text_options(&lib)).unwrap().text.unwrap();
+    assert_eq!((rest.looked, rest.pending), (1, 0));
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.looked WHERE task = 'text'"), 2);
+}
+
+/// `--text` on top of the face pass does both with one worker; the text rows
+/// are the pass's own: a model change redoes only them.
+#[test]
+fn text_and_faces_in_one_run_and_a_model_change_redoes_only_text() {
+    let lib = empty("recog-text-both");
+    solid(&lib, "Docs/a.jpg", [200, 190, 180]);
+    lib.scan_opts(true, false, false);
+    let opts = recognize::Options { text: true, text_only: false, ..options(&lib) };
+    let stats = recognize::run(&opts).unwrap();
+    assert_eq!((stats.looked, stats.faces), (1, 1));
+    assert_eq!(stats.text.as_ref().unwrap().looked, 1);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces"), 1);
+
+    conn(&lib).execute("UPDATE recog.looked SET model = 'old' WHERE task = 'text'", []).unwrap();
+    let redo = recognize::run(&opts).unwrap();
+    assert_eq!((redo.looked, redo.text.unwrap().looked), (0, 1));
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.looked WHERE model = 'old'"), 0);
+    assert_eq!(lines(&lib).len(), 2, "the old lines were replaced, not added to");
+}
+
+/// Lines of a photo that is gone go with it; a picture the worker refuses is
+/// stored as failed and tried again with `retry_failed`.
+#[test]
+fn text_rows_are_pruned_and_failures_are_remembered() {
+    let lib = empty("recog-text-prune");
+    solid(&lib, "Docs/a.jpg", [200, 190, 180]);
+    solid(&lib, "Docs/b.jpg", [120, 130, 140]);
+    solid(&lib, "Docs/green.jpg", [0, 255, 0]); // the fake refuses it
+    lib.scan_opts(true, false, false);
+    let stats = recognize::run(&text_options(&lib)).unwrap();
+    let t = stats.text.unwrap();
+    assert_eq!((t.looked, t.failed), (2, 1), "{:?}", t.errors);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.looked WHERE task = 'text' AND error IS NOT NULL"), 1);
+    let again = recognize::run(&text_options(&lib)).unwrap().text.unwrap();
+    assert_eq!((again.looked, again.failed), (0, 0), "a failure is not tried again by itself");
+    let retry = recognize::run(&recognize::Options { retry_failed: true, ..text_options(&lib) }).unwrap().text.unwrap();
+    assert_eq!(retry.failed, 1);
+
+    // Forget a.jpg's record: its lines are pruned by the next text run.
+    conn(&lib).execute("DELETE FROM files WHERE path_nfc = 'Docs/a.jpg'", []).unwrap();
+    let pruned = recognize::run(&text_options(&lib)).unwrap().text.unwrap();
+    assert_eq!(pruned.pruned, 1);
+    assert_eq!(lines(&lib).len(), 2);
+}
+
+#[test]
+fn the_text_task_needs_a_worker_started_for_it() {
+    let lib = empty("recog-text-flag");
+    solid(&lib, "Docs/a.jpg", [200, 190, 180]);
+    lib.scan_opts(true, false, false);
+    let conn = conn(&lib);
+    // Without --text the hello has no text task and the core refuses to ask.
+    let mut worker = recognize::Worker::start(fake(&[]), quick()).unwrap();
+    assert!(worker.text_model().is_none());
+    let e = format!("{:#}", recognize::recognize_text(&conn, &lib.root, &mut worker, None, false).unwrap_err());
+    assert!(e.contains("not started for text"), "{e}");
+    worker.stop();
+    // Text alone is a worker of its own: no faces, no pets.
+    let mut worker = recognize::Worker::start(fake(&["--text", "--no-faces"]), quick()).unwrap();
+    assert!(worker.faces_model().is_none() && worker.pets_model().is_none());
+    assert_eq!(worker.text_model().map(|a| a.model.as_str()), Some("fake-text-1"));
+    let stats = recognize::recognize_text(&conn, &lib.root, &mut worker, None, false).unwrap();
+    assert_eq!((stats.looked, stats.faces), (1, 2), "{:?}", stats.errors);
+    worker.stop();
 }

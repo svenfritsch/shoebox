@@ -553,7 +553,7 @@ impl App {
         if pending.total() == 0 {
             return Ok(());
         }
-        let Some(cmd) = recognize::find_worker_for(&self.root, self.recognizer.as_deref(), pending.pets > 0) else {
+        let Some(cmd) = recognize::find_worker_for(&self.root, self.recognizer.as_deref(), pending.pets > 0, false) else {
             println!("{} faces and pets drawn by hand wait for the recognizer (not installed).", pending.total());
             return Ok(());
         };

@@ -7,6 +7,7 @@ pixels in, boxes and embeddings out. Never opens the library or the database.
     python3 recognizer.py            # what shoebox runs
     python3 recognizer.py --pets  # also loads the cat and dog models
     python3 recognizer.py --text  # also loads the text (OCR) models
+    python3 recognizer.py --text --no-faces  # only the text models, not the face models
     echo '{"id": 1, "tasks": ["faces"], "path": "photo.jpg"}' | python3 recognizer.py
     echo '{"id": 2, "tasks": ["embed"], "path": "photo.jpg", "boxes": [[100, 80, 60, 70]]}' | python3 recognizer.py
 
@@ -560,7 +561,9 @@ def main():
     # The add-ons are independent: with the pet or text models alone (no face
     # models installed) the worker does those and says nothing of faces.
     have_faces = all(os.path.isfile(os.path.join(models_dir(), m)) for m in (DETECTOR, EMBEDDER))
-    faces = Faces(cv2, np) if have_faces or not (want_pets or want_text) else None
+    # `--no-faces`: a run that only reads text does not load the face models.
+    no_faces = "--no-faces" in sys.argv[1:]
+    faces = None if no_faces else (Faces(cv2, np) if have_faces or not (want_pets or want_text) else None)
     tasks = {"faces": faces, "embed": Embed(faces, cv2, np)} if faces else {}
     # The pet models are big and the drive may be slow: only loaded when
     # the core asks for pets (`recognizer.py --pets`).

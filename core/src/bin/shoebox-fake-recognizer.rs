@@ -39,6 +39,19 @@
 //! face. So grey 147 (0.575) is close enough to suggest but not to cluster,
 //! 115 (0.45) only "maybe", 64 (0.25) nothing.
 //!
+//! With `--text` the hello also lists the task `text` (model `fake-text-1`,
+//! `dim` 0) and a picture "contains" five lines of text, whatever its colour
+//! (dark pictures, all channels < 16: none; pure green: an error reply). The
+//! worker reports lines the core must filter out, so that can be tested:
+//!
+//! | Line | Score | Height of the box | Kept by the core |
+//! |---|---|---|---|
+//! | `Rechnung Nr. 2024` | 0.97 | 8 % | yes |
+//! | `Straβe 12` (a Greek beta, as the real model prints ß) | 0.90 | 6 % | yes, as `Straße 12` |
+//! | `tiny` | 0.95 | 0.4 % | no (too small) |
+//! | `unsure` | 0.40 | 6 % | no (score) |
+//! | `田` | 0.99 | 6 % | no (not German or English) |
+//!
 //! The `embed` task (protocol 2, faces drawn by hand) embeds each box from
 //! the mean colour of the picture inside it, like a plain picture of that
 //! colour (so a box drawn on a plain picture of a person is that person).
@@ -100,6 +113,10 @@ fn main() {
             tasks["embed"] = json!({ "model": "fake-1", "dim": DIM });
         }
     }
+    let text = args.iter().any(|a| a == "--text");
+    if text {
+        tasks["text"] = json!({ "model": "fake-text-1", "dim": 0 });
+    }
     let pets = args.iter().any(|a| a == "--pets");
     if pets {
         tasks["pets"] = json!({ "model": "fake-pets-1", "dim": PET_DIM });
@@ -129,6 +146,12 @@ fn main() {
         }
         if req["tasks"].as_array().is_some_and(|t| t.iter().any(|t| t == "embed-pets")) {
             let reply = if pets { embed_pets(&req) } else { json!({ "id": id, "error": "unknown task: embed-pets" }) };
+            writeln!(out, "{reply}").unwrap();
+            out.flush().unwrap();
+            continue;
+        }
+        if req["tasks"].as_array().is_some_and(|t| t.iter().any(|t| t == "text")) {
+            let reply = if text { text_reply(&req) } else { json!({ "id": id, "error": "unknown task: text" }) };
             writeln!(out, "{reply}").unwrap();
             out.flush().unwrap();
             continue;
@@ -340,6 +363,36 @@ fn embed_pets(req: &Value) -> Value {
         Ok(json!({ "id": id, "width": w, "height": h, "embed-pets": out }))
     })();
     result.unwrap_or_else(|e| json!({ "id": id, "error": e }))
+}
+
+/// The `text` task: the same five lines in every picture (see the table at
+/// the top), none in a dark one.
+fn text_reply(req: &Value) -> Value {
+    let id = &req["id"];
+    let (w, h, [r, g, b], _) = match picture(req) {
+        Ok(p) => p,
+        Err(e) => return json!({ "id": id, "error": e }),
+    };
+    if r < 16.0 && g < 16.0 && b < 16.0 {
+        return json!({ "id": id, "width": w, "height": h, "text": [] });
+    }
+    if pure(g, r, b) {
+        return json!({ "id": id, "error": "fake: cannot handle green" });
+    }
+    let (fw, fh) = (w as f64, h as f64);
+    let line = |text: &str, score: f64, y: f64, height: f64| {
+        json!({ "bbox": [0.1 * fw, y * fh, 0.5 * fw, height * fh], "score": score, "text": text })
+    };
+    json!({
+        "id": id, "width": w, "height": h,
+        "text": [
+            line("Rechnung Nr. 2024", 0.97, 0.10, 0.08),
+            line("Stra\u{3b2}e 12", 0.90, 0.25, 0.06),
+            line("tiny", 0.95, 0.40, 0.004),
+            line("unsure", 0.40, 0.50, 0.06),
+            line("\u{7530}", 0.99, 0.65, 0.06),
+        ],
+    })
 }
 
 /// The `pets` task: one pet in the middle, described by colour.

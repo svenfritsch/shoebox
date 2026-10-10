@@ -385,9 +385,12 @@ class TextTask(unittest.TestCase):
             self.assertNotIn("text", hello["tasks"])
         proc, hello = self.start("--text")
         self.assertEqual(hello["tasks"]["text"], {"model": recognizer.TEXT_MODEL, "dim": 0})
-        # With the text models alone the worker does not pretend to do faces.
+        # With the text models alone the worker does not pretend to do faces,
+        # and --no-faces leaves them out where they are installed.
         if not HAVE_MODELS:
             self.assertNotIn("faces", hello["tasks"])
+        _, hello = self.start("--text", "--no-faces")
+        self.assertEqual(list(hello["tasks"]), ["text"])
         reply = self.ask(proc, {"id": 1, "tasks": ["text"], "image": self.jpeg(np.full((240, 320, 3), 255, np.uint8))})
         self.assertEqual(reply, {"id": 1, "width": 320, "height": 240, "text": []})
 

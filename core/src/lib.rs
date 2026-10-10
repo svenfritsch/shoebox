@@ -30,6 +30,7 @@ pub mod scan;
 pub mod screenshots;
 pub mod serve;
 pub mod tags;
+pub mod text;
 pub mod thumbs;
 pub mod verify;
 pub mod volume;

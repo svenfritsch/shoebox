@@ -36,6 +36,8 @@ fn options(lib: &Library) -> recognize::Options {
         retry_failed: false,
         rotated: false,
         pets: false,
+        text: false,
+        text_only: false,
         timeouts: recognize::Timeouts {
             start: Duration::from_secs(10),
             reply: Duration::from_secs(2),

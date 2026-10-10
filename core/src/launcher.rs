@@ -449,7 +449,8 @@ struct JobRequest {
     /// `scan`, `scan_cleanup` (remove the copies the last scan found), `verify`,
     /// `forget_missing` (drop the records of files that are gone),
     /// `recognize`, `recognize_pets` (the same, then cats and dogs too),
-    /// `recognize_rotated` (also faces lying down), `faces_stats`, `backup` or `backup_cleanup`.
+    /// `recognize_rotated` (also faces lying down), `recognize_text` (only
+    /// the words in the photos), `faces_stats`, `backup` or `backup_cleanup`.
     kind: String,
     /// One folder, or several in `roots`: they are processed one after the other.
     #[serde(default)]
@@ -478,6 +479,9 @@ struct JobRequest {
     faces: bool,
     #[serde(default)]
     pets: bool,
+    /// … and the Text add-on (PP-OCR, the words in photos).
+    #[serde(default)]
+    text: bool,
 }
 
 /// Run one command and return its result as JSON plus whether it was clean.
@@ -528,7 +532,7 @@ fn run_command(req: &JobRequest, roots: Vec<PathBuf>) -> Result<(serde_json::Val
             let n = scan::forget_missing_records(&root)?;
             (serde_json::json!({ "forgotten": n }), true)
         }
-        "recognize" | "recognize_pets" | "recognize_rotated" => {
+        "recognize" | "recognize_pets" | "recognize_rotated" | "recognize_text" => {
             let stats = recognize::run(&recognize::Options {
                 root,
                 db: None,
@@ -537,18 +541,22 @@ fn run_command(req: &JobRequest, roots: Vec<PathBuf>) -> Result<(serde_json::Val
                 retry_failed: req.retry_failed,
                 rotated: req.rotated || req.kind == "recognize_rotated",
                 pets: req.kind == "recognize_pets",
+                text: req.kind == "recognize_text",
+                text_only: req.kind == "recognize_text",
                 timeouts: recognize::Timeouts::default(),
             })?;
-            let clean = stats.errors.is_empty() && stats.pets.as_ref().is_none_or(|a| a.errors.is_empty());
+            let clean = stats.errors.is_empty()
+                && stats.pets.as_ref().is_none_or(|a| a.errors.is_empty())
+                && stats.text.as_ref().is_none_or(|a| a.errors.is_empty());
             (serde_json::to_value(&stats)?, clean)
         }
         "install_addons" => {
             // `root` is the recognizer folder next to the program (see `start_job`).
-            if !req.faces && !req.pets {
+            if !req.faces && !req.pets && !req.text {
                 anyhow::bail!("choose at least one add-on to install");
             }
-            let found = recognize::install(&root, req.faces, req.pets)?;
-            let clean = (found.faces || !req.faces) && (found.pets || !req.pets);
+            let found = recognize::install(&root, req.faces, req.pets, req.text)?;
+            let clean = (found.faces || !req.faces) && (found.pets || !req.pets) && (found.text || !req.text);
             (serde_json::to_value(&found)?, clean)
         }
         "faces_stats" => {
@@ -596,11 +604,11 @@ fn short_name(root: &Path) -> String {
 /// recognition job is running, and a moved or changed original is skipped by
 /// the guard. Scan, verify and backup checks stay locked out.
 fn runs_beside_app(kind: &str) -> bool {
-    matches!(kind, "recognize" | "recognize_pets" | "recognize_rotated" | "faces_stats")
+    matches!(kind, "recognize" | "recognize_pets" | "recognize_rotated" | "recognize_text" | "faces_stats")
 }
 
 fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
-    if !matches!(req.kind.as_str(), "scan" | "forget_missing" | "verify" | "recognize" | "recognize_pets" | "recognize_rotated" | "faces_stats" | "backup" | "backup_cleanup" | "scan_cleanup" | "install_addons") {
+    if !matches!(req.kind.as_str(), "scan" | "forget_missing" | "verify" | "recognize" | "recognize_pets" | "recognize_rotated" | "recognize_text" | "faces_stats" | "backup" | "backup_cleanup" | "scan_cleanup" | "install_addons") {
         return Err(ApiError::BadRequest(format!("unknown command {:?}", req.kind)));
     }
     if !runs_beside_app(&req.kind) && shared.app.lock().unwrap().is_some() {
@@ -816,6 +824,7 @@ async fn app_start(State(shared): State<Arc<Shared>>, Json(req): Json<AppRequest
             forever: false,
             faces: false,
             pets: false,
+            text: false,
         };
         let roots = request_roots(&jobless)?;
         let mut app = shared.app.lock().unwrap();
@@ -941,7 +950,7 @@ pub fn detect_drives() -> Vec<Drive> {
         .collect()
 }
 
-/// Which add-ons (faces, pets) can be used, for this computer and for each
+/// Which add-ons (faces, pets, text) can be used, for this computer and for each
 /// drive in `roots`; and whether they can be installed from here.
 #[derive(Deserialize, Default)]
 struct AddonsRequest {
@@ -956,7 +965,7 @@ async fn addons(Json(req): Json<AddonsRequest>) -> Json<serde_json::Value> {
         .iter()
         .map(|r| {
             let found = recognize::installed(Some(Path::new(r)));
-            serde_json::json!({ "root": r, "faces": found.faces, "pets": found.pets })
+            serde_json::json!({ "root": r, "faces": found.faces, "pets": found.pets, "text": found.text })
         })
         .collect();
     let dir = recognize::program_dir();
@@ -967,8 +976,10 @@ async fn addons(Json(req): Json<AddonsRequest>) -> Json<serde_json::Value> {
         "models": program.models,
         "faces_models": program.faces_models,
         "pets_models": program.pets_models,
+        "text_models": program.text_models,
         "faces": program.faces,
         "pets": program.pets,
+        "text": program.text,
         "roots": roots,
     }))
 }

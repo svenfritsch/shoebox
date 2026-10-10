@@ -207,6 +207,8 @@ fn recognize_all(lib: &Library) {
         retry_failed: false,
         rotated: false,
         pets: false,
+        text: false,
+        text_only: false,
         timeouts: Default::default(),
     })
     .unwrap();
@@ -312,6 +314,8 @@ fn pet_terms_work_over_the_drives() {
             retry_failed: false,
             rotated: false,
             pets: true,
+            text: false,
+            text_only: false,
             timeouts: Default::default(),
         })
         .unwrap();

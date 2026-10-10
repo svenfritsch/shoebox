@@ -106,7 +106,8 @@ fi
 # the pure dependencies by name keep pip from adding a second OpenCV
 # (opencv-python) next to opencv-python-headless: two cv2 packages break each
 # other. A failure here must not spoil the other add-ons: it is reported at the
-# end, and the Control Panel shows Text as not available on this computer.
+# end (exit status 3, which the Control Panel knows), and Text shows as not
+# available on this computer.
 TEXT_FAILED=
 TEXT_ARG=
 if [ -n "$TEXT" ]; then
@@ -165,7 +166,7 @@ case "$HELLO" in
 esac
 if [ -n "$TEXT_FAILED" ]; then
     echo "Done, except Text: it is not available on this computer. Text read on another computer still works here." >&2
-    exit 1
+    exit 3
 fi
 if [ -n "$ROOT" ]; then
     echo "Done. Run: shoebox recognize \"$ROOT\""

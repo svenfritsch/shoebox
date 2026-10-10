@@ -81,6 +81,9 @@ pub const EMBED: &str = "embed";
 pub const PETS: &str = "pets";
 /// The embedding of a pet's box drawn by hand (with `--pets`).
 pub const EMBED_PETS: &str = "embed-pets";
+/// The words in a picture (an optional task of protocol 2, `--text`): its
+/// own pass, model and rows (`text.rs`, phase 9).
+pub const TEXT: &str = "text";
 /// A face from the turned copies is kept only if it overlaps every face of
 /// the upright pass (and every one kept before it) less than this.
 pub const ROTATED_MAX_IOU: f64 = 0.3;
@@ -93,7 +96,7 @@ const POLL: Duration = Duration::from_millis(200);
 /// A `running` job that has not reported progress for this long is dead.
 const JOB_ALIVE_SECS: i64 = 120;
 
-const SCHEMA_VERSION: i32 = 6;
+const SCHEMA_VERSION: i32 = 7;
 const SCHEMA_V1: &str = "
 CREATE TABLE recog.jobs (
     id          INTEGER PRIMARY KEY,
@@ -194,6 +197,22 @@ CREATE TABLE IF NOT EXISTS recog.bodies (
 CREATE INDEX IF NOT EXISTS recog.bodies_key ON bodies (key);
 ";
 
+/// v7 (phase 9): the lines of text read in a photo, as kept by `text::keep`
+/// (boxes are fractions) and in the folded form the search looks at.
+const SCHEMA_V7: &str = "
+CREATE TABLE IF NOT EXISTS recog.text_lines (
+    key       TEXT NOT NULL,
+    x         REAL NOT NULL,
+    y         REAL NOT NULL,
+    w         REAL NOT NULL,
+    h         REAL NOT NULL,
+    score     REAL NOT NULL,
+    text      TEXT NOT NULL,
+    text_norm TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS recog.text_lines_key ON text_lines (key);
+";
+
 /// Location of `recognition.db` for a library database.
 pub fn path_for(db_path: &Path) -> PathBuf {
     db_path.with_file_name(FILE)
@@ -250,6 +269,10 @@ pub fn attach(conn: &Connection, db_path: &Path) -> Result<()> {
         tx.execute_batch(SCHEMA_V6)?;
         tx.pragma_update(Some("recog"), "user_version", 6)?;
     }
+    if version < 7 {
+        tx.execute_batch(SCHEMA_V7)?;
+        tx.pragma_update(Some("recog"), "user_version", 7)?;
+    }
     tx.commit()?;
     Ok(())
 }
@@ -258,7 +281,7 @@ pub fn attach(conn: &Connection, db_path: &Path) -> Result<()> {
 /// clustering after it has a job of its own (`clusters::running`).
 pub fn running(conn: &Connection) -> Result<bool> {
     let n: i64 = conn.query_row(
-        "SELECT count(*) FROM recog.jobs WHERE state = 'running' AND updated_at > ?1 AND kind IN ('faces', 'faces-rot', 'pets')",
+        "SELECT count(*) FROM recog.jobs WHERE state = 'running' AND updated_at > ?1 AND kind IN ('faces', 'faces-rot', 'pets', 'text')",
         [db::now() - JOB_ALIVE_SECS],
         |r| r.get(0),
     )?;
@@ -281,6 +304,21 @@ impl WorkerCommand {
         cmd.args.push("--pets".into());
         cmd
     }
+
+    /// The same worker, asked to load the text models too.
+    pub fn with_text(&self) -> WorkerCommand {
+        let mut cmd = self.clone();
+        cmd.args.push("--text".into());
+        cmd
+    }
+
+    /// The same worker, asked not to load its face models (a run that only
+    /// reads text).
+    pub fn without_faces(&self) -> WorkerCommand {
+        let mut cmd = self.clone();
+        cmd.args.push("--no-faces".into());
+        cmd
+    }
 }
 
 /// The worker to use: `explicit` (`--recognizer`) or `$SHOEBOX_RECOGNIZER`
@@ -292,11 +330,12 @@ impl WorkerCommand {
 /// does not hide an install of the pets, and one installed on another kind of
 /// Mac (no `runtime/<os>-<arch>/` here) does not hide a complete one.
 pub fn find_worker(root: &Path, explicit: Option<&Path>) -> Option<WorkerCommand> {
-    find_worker_for(root, explicit, false)
+    find_worker_for(root, explicit, false, false)
 }
 
-/// [`find_worker`] for a run that needs the pet models when `pets` is set.
-pub fn find_worker_for(root: &Path, explicit: Option<&Path>, pets: bool) -> Option<WorkerCommand> {
+/// [`find_worker`] for a run that needs the pet models when `pets` is set and
+/// the text models when `text` is set (the face models only when neither is).
+pub fn find_worker_for(root: &Path, explicit: Option<&Path>, pets: bool, text: bool) -> Option<WorkerCommand> {
     let explicit = explicit
         .map(Path::to_path_buf)
         .or_else(|| std::env::var_os("SHOEBOX_RECOGNIZER").filter(|v| !v.is_empty()).map(PathBuf::from));
@@ -308,7 +347,16 @@ pub fn find_worker_for(root: &Path, explicit: Option<&Path>, pets: bool) -> Opti
         return Some(WorkerCommand { program, args: Vec::new() });
     }
     let dirs: Vec<PathBuf> = worker_dirs(Some(root)).into_iter().filter(|d| d.join("recognizer.py").is_file()).collect();
-    let models = |d: &PathBuf| if pets { has_pets(d) } else { has_faces(d) };
+    let models = |d: &PathBuf| {
+        let base = if pets {
+            has_pets(d)
+        } else if text {
+            true
+        } else {
+            has_faces(d)
+        };
+        base && (!text || has_text(d))
+    };
     let dir = dirs
         .iter()
         .find(|d| models(d) && bundled_python(d).is_some())
@@ -335,6 +383,8 @@ pub fn worker_dirs(root: Option<&Path>) -> Vec<PathBuf> {
 const FACE_MODELS: [&str; 2] = ["face_detection_yunet_2023mar.onnx", "face_recognition_sface_2021dec.onnx"];
 const PET_DETECTOR: &str = "object_detection_yolox_2022nov.onnx";
 const PET_EMBEDDERS: [&str; 2] = ["dinov2_small.onnx", "image_classification_ppresnet50_2022jan.onnx"];
+/// PP-OCRv4 from the rapidocr package: detector, angle classifier, recogniser.
+const TEXT_MODELS: [&str; 3] = ["ch_PP-OCRv4_det_infer.onnx", "ch_PP-OCRv4_rec_infer.onnx", "ch_ppocr_mobile_v2.0_cls_infer.onnx"];
 
 fn has_faces(dir: &Path) -> bool {
     FACE_MODELS.iter().all(|m| dir.join("models").join(m).is_file())
@@ -342,6 +392,10 @@ fn has_faces(dir: &Path) -> bool {
 
 fn has_pets(dir: &Path) -> bool {
     dir.join("models").join(PET_DETECTOR).is_file() && PET_EMBEDDERS.iter().any(|m| dir.join("models").join(m).is_file())
+}
+
+fn has_text(dir: &Path) -> bool {
+    TEXT_MODELS.iter().all(|m| dir.join("models").join(m).is_file())
 }
 
 /// What can be recognized for a library: the add-ons found by
@@ -355,8 +409,10 @@ pub struct Installed {
     /// … which ones, whether or not the runtime for this computer is there.
     pub faces_models: bool,
     pub pets_models: bool,
+    pub text_models: bool,
     pub faces: bool,
     pub pets: bool,
+    pub text: bool,
     /// The folder the best install is in (the one `recognize` would use).
     pub dir: Option<PathBuf>,
 }
@@ -368,11 +424,13 @@ pub fn installed(root: Option<&Path>) -> Installed {
     let ready: Vec<&PathBuf> = dirs.iter().filter(|d| bundled_python(d).is_some()).collect();
     Installed {
         runtime: !ready.is_empty(),
-        models: dirs.iter().any(|d| has_faces(d) || has_pets(d)),
+        models: dirs.iter().any(|d| has_faces(d) || has_pets(d) || has_text(d)),
         faces_models: dirs.iter().any(|d| has_faces(d)),
         pets_models: dirs.iter().any(|d| has_pets(d)),
+        text_models: dirs.iter().any(|d| has_text(d)),
         faces: ready.iter().any(|d| has_faces(d)),
         pets: ready.iter().any(|d| has_pets(d)),
+        text: ready.iter().any(|d| has_text(d)),
         dir: ready.first().map(|d| (*d).clone()),
     }
 }
@@ -409,7 +467,7 @@ fn python(dir: &Path) -> Option<PathBuf> {
 /// The command that runs the installer script `script` for the add-ons asked
 /// for, with its errors on the same stream as its output (the script itself
 /// prints its errors to stdout on Windows).
-fn installer_command(script: &Path, faces: bool, pets: bool) -> Command {
+fn installer_command(script: &Path, faces: bool, pets: bool, text: bool) -> Command {
     let mut cmd;
     if cfg!(windows) {
         // Bypass: the policy "scripts are disabled" is the default on some
@@ -422,6 +480,9 @@ fn installer_command(script: &Path, faces: bool, pets: bool) -> Command {
         if pets {
             cmd.arg("-Pets");
         }
+        if text {
+            cmd.arg("-Text");
+        }
         // No black console window on top of the Control Panel.
         #[cfg(windows)]
         std::os::windows::process::CommandExt::creation_flags(&mut cmd, 0x0800_0000); // CREATE_NO_WINDOW
@@ -433,6 +494,9 @@ fn installer_command(script: &Path, faces: bool, pets: bool) -> Command {
         }
         if pets {
             cmd.arg("--pets");
+        }
+        if text {
+            cmd.arg("--text");
         }
     }
     cmd
@@ -450,14 +514,14 @@ fn stop_installer(child: &mut std::process::Child) {
 
 /// Run the installer (`install.sh`, or `install.ps1` on Windows) from `dir`
 /// (see [`program_dir`]) to fill `dir` with the runtime and the models of the
-/// add-ons asked for: `faces` and/or `pets`. Its output goes to the report line
+/// add-ons asked for: `faces`, `pets` and/or `text`. Its output goes to the report line
 /// by line; "Cancel" stops it. Needs the internet.
-pub fn install(dir: &Path, faces: bool, pets: bool) -> Result<Installed> {
+pub fn install(dir: &Path, faces: bool, pets: bool, text: bool) -> Result<Installed> {
     let script = dir.join(INSTALLER);
     if !script.is_file() {
         bail!("{} is missing", script.display());
     }
-    let mut cmd = installer_command(&script, faces, pets);
+    let mut cmd = installer_command(&script, faces, pets, text);
     cmd.env("SHOEBOX_QUIET", "1").stdin(Stdio::null()).stdout(Stdio::piped());
     let mut child = cmd.spawn().with_context(|| format!("cannot run {}", script.display()))?;
     let mut out = child.stdout.take().expect("piped");
@@ -499,6 +563,14 @@ pub fn install(dir: &Path, faces: bool, pets: bool) -> Result<Installed> {
     }
     emit(&mut pending);
     let status = child.wait()?;
+    // 3: everything was installed except Text, which this computer cannot run.
+    if status.code() == Some(3) {
+        bail!(
+            "the Text add-on cannot run on this computer (there is no onnxruntime or rapidocr build for it); \
+             everything else you chose was installed. The text of the photos can be read on another computer \
+             with the same drive: it is kept on the drive and searched here"
+        );
+    }
     if !status.success() {
         bail!("the installation failed ({status}); check the internet connection and try again");
     }
@@ -549,9 +621,18 @@ struct Reply {
     #[serde(rename = "embed-pets")]
     embed_pets: Option<Vec<RawEmbedded>>,
     pets: Option<Vec<RawPet>>,
+    text: Option<Vec<RawText>>,
     /// People the pets pass saw, in pixels (`[x, y, w, h]`).
     people: Option<Vec<[f64; 4]>>,
     error: Option<String>,
+}
+
+/// A line of text as the worker reports it (pixels of the picture it saw).
+#[derive(Debug, Clone, Deserialize)]
+struct RawText {
+    bbox: [f64; 4],
+    score: f64,
+    text: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -615,6 +696,8 @@ pub struct Found {
     pub faces: Vec<Face>,
     /// People seen by the pets pass (fractions); empty otherwise.
     pub people: Vec<[f64; 4]>,
+    /// The lines of text the text pass kept (`text::keep`); empty otherwise.
+    pub text: Vec<crate::text::Line>,
 }
 
 /// Why a picture got no result.
@@ -776,6 +859,8 @@ pub struct Worker {
     faces: Option<TaskInfo>,
     /// Cats and dogs, if the worker was started with them (`--pets`).
     pets: Option<TaskInfo>,
+    /// The words in pictures, if the worker was started with them (`--text`).
+    text: Option<TaskInfo>,
     /// The worker can embed boxes drawn by hand, comparably to its faces.
     embed: bool,
     /// … and boxes drawn around pets, comparably to its pets.
@@ -801,7 +886,8 @@ impl Worker {
         let embed_pets = pets
             .as_ref()
             .is_some_and(|a| hello.tasks.get(EMBED_PETS).is_some_and(|e| e.model == a.model && e.dim == a.dim));
-        if faces.is_none() && pets.is_none() {
+        let text = hello.tasks.get(TEXT).filter(|a| !a.model.is_empty()).cloned();
+        if faces.is_none() && pets.is_none() && text.is_none() {
             bail!("the recognizer cannot find faces");
         }
         Ok(Worker {
@@ -810,6 +896,7 @@ impl Worker {
             process: Some(process),
             faces,
             pets,
+            text,
             embed,
             embed_pets,
             version: hello.version,
@@ -827,6 +914,11 @@ impl Worker {
     /// Model and embedding size for pets, if the worker does them.
     pub fn pets_model(&self) -> Option<&TaskInfo> {
         self.pets.as_ref()
+    }
+
+    /// Model for the words in pictures, if the worker does them.
+    pub fn text_model(&self) -> Option<&TaskInfo> {
+        self.text.as_ref()
     }
 
     pub fn version(&self) -> Option<&str> {
@@ -849,6 +941,16 @@ impl Worker {
         }
         let request = serde_json::json!({ "tasks": [PETS], "image": BASE64.encode(image) });
         Ok(self.ask(request)?.and_then(|reply| self.parse_pets(reply).map_err(Failure::Refused)))
+    }
+
+    /// Read the text in a picture. The lines of the result are the ones
+    /// `text::keep` leaves. The outer error as for `faces`.
+    pub fn text(&mut self, image: &[u8]) -> Result<Result<Found, Failure>> {
+        if self.text.is_none() {
+            return Ok(Err(Failure::Refused("the recognizer was not started for text".into())));
+        }
+        let request = serde_json::json!({ "tasks": [TEXT], "image": BASE64.encode(image) });
+        Ok(self.ask(request)?.and_then(|reply| self.parse_text(reply).map_err(Failure::Refused)))
     }
 
     /// Embeddings of boxes in a picture (`[x, y, w, h]` in its pixels), in
@@ -1016,7 +1118,29 @@ impl Worker {
                 emb,
             });
         }
-        Ok(Found { width, height, faces, people: Vec::new() })
+        Ok(Found { width, height, faces, people: Vec::new(), text: Vec::new() })
+    }
+
+    fn parse_text(&self, reply: Reply) -> Result<Found, String> {
+        let (width, height) = match (reply.width, reply.height) {
+            (Some(w), Some(h)) if w > 0 && h > 0 => (w, h),
+            _ => return Err("reply without the picture's size".into()),
+        };
+        let raw = reply.text.ok_or("reply without text")?;
+        let (fw, fh) = (width as f64, height as f64);
+        let mut text = Vec::with_capacity(raw.len());
+        for t in raw {
+            let [x, y, w, h] = t.bbox;
+            if !(t.bbox.iter().all(|v| v.is_finite()) && t.score.is_finite() && w > 0.0 && h > 0.0) {
+                return Err("reply with an invalid text box".into());
+            }
+            let (x0, y0) = ((x / fw).clamp(0.0, 1.0), (y / fh).clamp(0.0, 1.0));
+            let (x1, y1) = (((x + w) / fw).clamp(0.0, 1.0), ((y + h) / fh).clamp(0.0, 1.0));
+            // The worker reports every line it read; what is kept is decided here.
+            let line = crate::text::Line { x: x0, y: y0, w: x1 - x0, h: y1 - y0, score: t.score, text: t.text };
+            text.extend(crate::text::keep(line));
+        }
+        Ok(Found { width, height, faces: Vec::new(), people: Vec::new(), text })
     }
 
     fn parse_pets(&self, reply: Reply) -> Result<Found, String> {
@@ -1063,7 +1187,7 @@ impl Worker {
                 emb,
             });
         }
-        Ok(Found { width, height, faces, people })
+        Ok(Found { width, height, faces, people, text: Vec::new() })
     }
 
     /// Close the worker's stdin and wait for it to exit (kill it after the
@@ -1130,6 +1254,7 @@ fn parse_reply(line: &str, id: u64) -> Option<Reply> {
             embed: None,
             embed_pets: None,
             pets: None,
+            text: None,
             people: None,
             error: Some(format!("bad reply: {e}")),
         }),
@@ -1161,6 +1286,12 @@ pub struct Options {
     /// Then look for cats and dogs too (`pets.rs`): their own pass, with
     /// the worker started with the pet models.
     pub pets: bool,
+    /// Then read the words in the photos (`text.rs`): their own pass, with
+    /// the worker started with the text models.
+    pub text: bool,
+    /// With `text`: read only the text, leave faces and cats and dogs alone
+    /// (the worker is started without its face models, which is quicker).
+    pub text_only: bool,
     pub timeouts: Timeouts,
 }
 
@@ -1187,6 +1318,9 @@ pub struct Stats {
     /// The pets pass (`--pets`), if it ran; its `faces` are the cats
     /// and dogs found.
     pub pets: Option<Box<Stats>>,
+    /// The text pass (`--text`), if it ran; its `faces` are the lines of text
+    /// kept.
+    pub text: Option<Box<Stats>>,
     /// Faces drawn by hand that got their embedding in this run.
     pub drawn: Option<DrawnStats>,
     /// The clustering after the run.
@@ -1210,6 +1344,8 @@ enum Pass {
     Rotated,
     /// Cats and dogs, upright, with the pet models.
     Pets,
+    /// The words in the picture, upright, with the text models.
+    Text,
 }
 
 impl Pass {
@@ -1218,13 +1354,14 @@ impl Pass {
             Pass::Upright => FACES,
             Pass::Rotated => FACES_ROT,
             Pass::Pets => PETS,
+            Pass::Text => TEXT,
         }
     }
 
     /// How far (clockwise) the copies sent to the worker are turned.
     fn rolls(self) -> &'static [u16] {
         match self {
-            Pass::Upright | Pass::Pets => &[0],
+            Pass::Upright | Pass::Pets | Pass::Text => &[0],
             Pass::Rotated => &[90, 270],
         }
     }
@@ -1239,7 +1376,7 @@ pub fn run(opts: &Options) -> Result<Stats> {
     if !db_path.is_file() {
         bail!("no index at {} (run `shoebox scan` first)", db_path.display());
     }
-    let cmd = find_worker_for(&root, opts.recognizer.as_deref(), opts.pets).ok_or_else(|| {
+    let cmd = find_worker_for(&root, opts.recognizer.as_deref(), opts.pets && !opts.text_only, opts.text).ok_or_else(|| {
         anyhow!(
             "face recognition is not installed: no {} found, nor a recognizer/ folder next to shoebox \
              (install the Faces add-on in the Control Panel, step 1, or see recognizer/README.md)",
@@ -1257,17 +1394,32 @@ pub fn run(opts: &Options) -> Result<Stats> {
     }
     conn.execute(
         "UPDATE recog.jobs SET state = 'interrupted', finished_at = updated_at
-         WHERE state = 'running' AND kind IN ('faces', 'faces-rot', 'pets')",
+         WHERE state = 'running' AND kind IN ('faces', 'faces-rot', 'pets', 'text')",
         [],
     )?;
 
     catch_interrupts();
     say!("Starting the recognizer ({})…", cmd.program.display());
     let cmd = if opts.pets { cmd.with_pets() } else { cmd };
+    let cmd = if opts.text { cmd.with_text() } else { cmd };
+    let cmd = if opts.text && opts.text_only { cmd.without_faces() } else { cmd };
     let mut worker = Worker::start(cmd, opts.timeouts)?;
     match worker.faces_model() {
         Some(f) => say!("Recognizer {} ready: faces with {}.", worker.version().unwrap_or("(unknown version)"), f.model),
+        None if opts.text && !opts.pets => say!("Recognizer {} ready: no face models installed, so only text.", worker.version().unwrap_or("(unknown version)")),
         None => say!("Recognizer {} ready: no face models installed, so only cats and dogs.", worker.version().unwrap_or("(unknown version)")),
+    }
+    if opts.text {
+        match worker.text_model() {
+            Some(a) => say!("Text with {}.", a.model),
+            None => {
+                worker.stop();
+                bail!(
+                    "the recognizer cannot read text: its models are missing or it is too old \
+                     (install the Text add-on in the Control Panel, step 1, or run recognizer/install.sh --text; see recognizer/README.md)"
+                );
+            }
+        }
     }
     if opts.pets {
         match worker.pets_model() {
@@ -1281,7 +1433,7 @@ pub fn run(opts: &Options) -> Result<Stats> {
             }
         }
     }
-    if worker.faces_model().is_none() && !opts.pets {
+    if worker.faces_model().is_none() && !opts.pets && !opts.text {
         worker.stop();
         bail!("the Faces add-on is not installed (install it in the Control Panel, step 1, or run the installer in recognizer/)");
     }
@@ -1299,6 +1451,10 @@ pub fn run(opts: &Options) -> Result<Stats> {
             let pets = recognize_pets(&conn, &root, &mut worker, opts.limit, opts.retry_failed)?;
             stats.pets = Some(Box::new(pets));
         }
+        if opts.text {
+            let text = recognize_text(&conn, &root, &mut worker, opts.limit, opts.retry_failed)?;
+            stats.text = Some(Box::new(text));
+        }
         let drawn = embed_drawn(&conn, &root, &mut worker, opts.retry_failed, &interrupted)?;
         if drawn.embedded + drawn.failed > 0 {
             say!(
@@ -1309,9 +1465,14 @@ pub fn run(opts: &Options) -> Result<Stats> {
         stats.drawn = Some(drawn);
         Ok(stats)
     });
+    let people = worker.faces_model().is_some() || opts.pets;
     worker.stop();
-    // Clusters and suggestions from scratch, with what was found now.
+    // Clusters and suggestions from scratch, with what was found now (a run
+    // that only read text found no faces and leaves them alone).
     let result = result.and_then(|mut stats| {
+        if !people {
+            return Ok(stats);
+        }
         if crate::clusters::running(&conn)? {
             say!("Clusters: `shoebox serve` is grouping the faces right now; it takes the new ones too.");
         } else {
@@ -1351,6 +1512,7 @@ pub fn recognize(
     forget_neighbours(conn, &format!("key {gone}"), [])?;
     conn.execute(&format!("DELETE FROM recog.faces WHERE key {gone}"), [])?;
     conn.execute(&format!("DELETE FROM recog.bodies WHERE key {gone}"), [])?;
+    conn.execute(&format!("DELETE FROM recog.text_lines WHERE key {gone}"), [])?;
     Ok(Stats { pruned, ..stats })
 }
 
@@ -1383,6 +1545,74 @@ pub fn recognize_pets(
     };
     let pending = pending(conn, &not_looked_sql(PETS), &model, retry_failed)?;
     run_pass(conn, root, worker, Pass::Pets, pending, limit)
+}
+
+/// The text pass: every photo whose words have not been read with the
+/// worker's text model, in the order where text most likely is (screenshots,
+/// then photos without camera data, then the rest, each newest first), at
+/// most `limit`. Needs a worker started for text. Resumable like
+/// `recognize`; `conn` must have `recog` attached.
+pub fn recognize_text(
+    conn: &Connection,
+    root: &Path,
+    worker: &mut Worker,
+    limit: Option<usize>,
+    retry_failed: bool,
+) -> Result<Stats> {
+    let Some(model) = worker.text_model().map(|a| a.model.clone()) else {
+        bail!("the recognizer was not started for text");
+    };
+    let pending = text_pending(conn, &model, retry_failed)?;
+    let stats = run_pass(conn, root, worker, Pass::Text, pending, limit)?;
+    // Trashed files keep theirs until the trash is emptied.
+    let gone = "NOT IN (SELECT quick_hash FROM files)
+                AND key NOT IN (SELECT quick_hash FROM trash WHERE quick_hash IS NOT NULL)";
+    let pruned = conn.execute(&format!("DELETE FROM recog.looked WHERE key {gone} AND task = '{TEXT}'"), [])? as u64;
+    conn.execute(&format!("DELETE FROM recog.text_lines WHERE key {gone}"), [])?;
+    Ok(Stats { pruned, ..stats })
+}
+
+/// Where text is likely, best first: 0 a screenshot (the user's decision, else
+/// the score of `screenshots.rs`), 1 a photo without camera data (scans,
+/// exports, forwarded pictures), 2 the rest.
+fn text_rank(shot_mark: Option<bool>, name: &str, kind: Kind, size: (Option<u32>, Option<u32>), camera: Option<&str>, pixels: Option<u8>) -> u8 {
+    let shot = shot_mark.unwrap_or_else(|| crate::screenshots::score(name, kind, size.0, size.1, camera, pixels) >= crate::screenshots::THRESHOLD);
+    if shot {
+        0
+    } else if camera.is_none_or(|c| c.trim().is_empty()) {
+        1
+    } else {
+        2
+    }
+}
+
+/// The pictures the text pass still has to read, in the order of
+/// [`text_rank`], each rank newest first.
+fn text_pending(conn: &Connection, model: &str, retry_failed: bool) -> Result<Vec<Pending>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT f.quick_hash, f.path, f.kind, f.size, f.mtime_ns, f.name, f.width, f.height, f.camera, f.shot_pixels, m.is_shot
+         FROM files f
+         LEFT JOIN recog.looked l ON l.key = f.quick_hash AND l.task = '{TEXT}'
+         LEFT JOIN shot_marks m ON m.key = f.quick_hash
+         WHERE f.missing_since IS NULL AND f.kind IN ({KINDS})
+           AND (l.key IS NULL OR l.model != ?1 OR (?2 AND l.error IS NOT NULL))
+         GROUP BY f.quick_hash
+         ORDER BY max(coalesce(f.taken, '')) DESC, min(f.path_nfc)"
+    ))?;
+    let mut ranked: Vec<(u8, Pending)> = Vec::new();
+    let mut rows = stmt.query(params![model, retry_failed])?;
+    while let Some(r) = rows.next()? {
+        let Some(kind) = Kind::parse(&r.get::<_, String>(2)?) else { continue };
+        let name: String = r.get(5)?;
+        let size = (r.get::<_, Option<u32>>(6)?, r.get::<_, Option<u32>>(7)?);
+        let camera: Option<String> = r.get(8)?;
+        let pixels: Option<u8> = r.get::<_, Option<i64>>(9)?.map(|v| v.clamp(0, 100) as u8);
+        let mark: Option<bool> = r.get::<_, Option<i64>>(10)?.map(|v| v != 0);
+        let rank = text_rank(mark, &name, kind, size, camera.as_deref(), pixels);
+        ranked.push((rank, Pending { key: r.get(0)?, rel: r.get(1)?, kind, size: r.get::<_, i64>(3)? as u64, mtime_ns: r.get(4)? }));
+    }
+    ranked.sort_by_key(|(rank, _)| *rank); // stable: newest first within a rank
+    Ok(ranked.into_iter().map(|(_, p)| p).collect())
 }
 
 /// The rotated pass: every photo the upright pass looked at (with the same
@@ -1444,6 +1674,7 @@ fn run_pass(
 ) -> Result<Stats> {
     let model = match pass {
         Pass::Pets => worker.pets_model().map(|a| a.model.clone()).unwrap_or_default(),
+        Pass::Text => worker.text_model().map(|a| a.model.clone()).unwrap_or_default(),
         _ => worker.faces_model().map(|f| f.model.clone()).unwrap_or_default(),
     };
     let mut stats = Stats { model, ..Stats::default() };
@@ -1458,6 +1689,7 @@ fn run_pass(
         Pass::Upright => say!("Faces: {} pictures to look at…", pending.len()),
         Pass::Rotated => say!("Faces, turned 90° and 270°: {} pictures to look at…", pending.len()),
         Pass::Pets => say!("Cats and dogs: {} pictures to look at…", pending.len()),
+        Pass::Text => say!("Text: {} pictures to read…", pending.len()),
     }
     let job = Job::start_in(conn, "recog.jobs", pass.task())?;
     let result = look_at(conn, root, worker, pass, pending, &job, &mut stats);
@@ -1542,6 +1774,7 @@ fn look_at(
                     Pass::Upright => store(conn, &p.key, &stats.model, &outcome)?,
                     Pass::Rotated => store_rotated(conn, &p.key, &stats.model, &outcome)?,
                     Pass::Pets => store_pets(conn, &p.key, &stats.model, &outcome)?,
+                    Pass::Text => store_text(conn, &p.key, &stats.model, &outcome)?,
                 };
                 if outcome.is_ok() {
                     stats.looked += 1;
@@ -1572,6 +1805,7 @@ fn look_at(
         Pass::Upright => "faces",
         Pass::Rotated => "faces added",
         Pass::Pets => "pets",
+        Pass::Text => "lines of text",
     };
     say!(
         "Looked at {} pictures in {:.0}s: {} {what}, {} failed, {} skipped.",
@@ -1596,7 +1830,11 @@ fn look_at(
 fn ask_all(worker: &mut Worker, pass: Pass, prepared: Prepared) -> Result<Result<Found, Failure>> {
     let mut all: Option<Found> = None;
     for (roll, jpeg) in prepared.copies {
-        let ask = |w: &mut Worker| if pass == Pass::Pets { w.pets(&jpeg) } else { w.faces(&jpeg) };
+        let ask = |w: &mut Worker| match pass {
+            Pass::Pets => w.pets(&jpeg),
+            Pass::Text => w.text(&jpeg),
+            _ => w.faces(&jpeg),
+        };
         let found = match ask(worker)? {
             Err(Failure::Crashed(_)) => ask(worker)?,
             other => other,
@@ -1610,7 +1848,7 @@ fn ask_all(worker: &mut Worker, pass: Pass, prepared: Prepared) -> Result<Result
         let faces = found.faces.into_iter().map(|f| unrotate(f, roll));
         match &mut all {
             Some(a) => a.faces.extend(faces),
-            None => all = Some(Found { width, height, faces: faces.collect(), people }),
+            None => all = Some(Found { width, height, faces: faces.collect(), people, text: found.text }),
         }
     }
     Ok(all.ok_or_else(|| Failure::Refused("nothing to look at".into())))
@@ -1899,7 +2137,7 @@ fn store_rotated(conn: &Connection, key: &str, model: &str, outcome: &Result<Fou
             added.push(f.clone());
         }
     }
-    let added_found = Found { width: found.width, height: found.height, faces: added, people: Vec::new() };
+    let added_found = Found { width: found.width, height: found.height, faces: added, people: Vec::new(), text: Vec::new() };
     store_looked(conn, key, FACES_ROT, model, &Ok(added_found.clone()))?;
     insert_faces(conn, key, model, &added_found.faces)
 }
@@ -1923,6 +2161,25 @@ fn store_pets(conn: &Connection, key: &str, model: &str, outcome: &Result<Found,
     }
 }
 
+/// Replace the lines stored for a content with a new result of the text pass;
+/// returns the number of lines stored. Faces and pets are not touched.
+fn store_text(conn: &Connection, key: &str, model: &str, outcome: &Result<Found, Failure>) -> Result<usize> {
+    conn.execute("DELETE FROM recog.text_lines WHERE key = ?1", [key])?;
+    store_looked_n(conn, key, TEXT, model, outcome, outcome.as_ref().map_or(0, |f| f.text.len()))?;
+    match outcome {
+        Ok(found) => {
+            let mut insert = conn.prepare_cached(
+                "INSERT INTO recog.text_lines (key, x, y, w, h, score, text, text_norm) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            )?;
+            for l in &found.text {
+                insert.execute(params![key, l.x, l.y, l.w, l.h, l.score, l.text, crate::text::index_form(&l.text)])?;
+            }
+            Ok(found.text.len())
+        }
+        Err(_) => Ok(0),
+    }
+}
+
 /// Drop the neighbour lists of faces about to be deleted: a new face can get
 /// the id of a deleted one, and must not inherit its list.
 fn forget_neighbours(conn: &Connection, faces_where: &str, params: impl rusqlite::Params) -> Result<()> {
@@ -1934,11 +2191,16 @@ fn forget_neighbours(conn: &Connection, faces_where: &str, params: impl rusqlite
 }
 
 fn store_looked(conn: &Connection, key: &str, task: &str, model: &str, outcome: &Result<Found, Failure>) -> Result<()> {
+    store_looked_n(conn, key, task, model, outcome, outcome.as_ref().map_or(0, |f| f.faces.len()))
+}
+
+/// [`store_looked`] with the number found given (lines of text are not faces).
+fn store_looked_n(conn: &Connection, key: &str, task: &str, model: &str, outcome: &Result<Found, Failure>, found_n: usize) -> Result<()> {
     match outcome {
         Ok(found) => conn.execute(
             "INSERT OR REPLACE INTO recog.looked (key, task, model, width, height, found, error, done_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7)",
-            params![key, task, model, found.width, found.height, found.faces.len() as i64, db::now()],
+            params![key, task, model, found.width, found.height, found_n as i64, db::now()],
         )?,
         Err(f) => conn.execute(
             "INSERT OR REPLACE INTO recog.looked (key, task, model, error, done_at) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -2042,19 +2304,27 @@ pub fn overview(conn: &Connection) -> Result<Overview> {
 mod tests {
     use super::*;
 
+    fn args_of(c: &Command) -> Vec<String> {
+        c.get_args().map(|a| a.to_string_lossy().into_owned()).collect()
+    }
+
     #[test]
     fn installer_command_names_the_add_ons() {
         let args = |c: &Command| c.get_args().map(|a| a.to_string_lossy().into_owned()).collect::<Vec<_>>();
-        let cmd = installer_command(Path::new("/a b/recognizer/install"), true, false);
+        let cmd = installer_command(Path::new("/a b/recognizer/install"), true, false, false);
         let args = args(&cmd);
         if cfg!(windows) {
             assert_eq!(cmd.get_program(), "powershell.exe");
-            assert!(args.contains(&"-Faces".to_string()) && !args.contains(&"-Pets".to_string()));
+            assert!(args.contains(&"-Faces".to_string()) && !args.contains(&"-Pets".to_string()) && !args.contains(&"-Text".to_string()));
             assert!(args.contains(&"Bypass".to_string()));
         } else {
             assert_eq!(cmd.get_program(), "sh");
-            assert!(args.contains(&"--faces".to_string()) && !args.contains(&"--pets".to_string()));
+            assert!(args.contains(&"--faces".to_string()) && !args.contains(&"--pets".to_string()) && !args.contains(&"--text".to_string()));
         }
+        // The Text add-on is passed on, alone or with the others.
+        let text_only = args_of(&installer_command(Path::new("/x/install"), false, false, true));
+        assert!(text_only.contains(&(if cfg!(windows) { "-Text" } else { "--text" }).to_string()), "{text_only:?}");
+        assert!(!text_only.contains(&"--faces".to_string()) && !text_only.contains(&"-Faces".to_string()));
         assert!(args.iter().any(|a| a.ends_with("install")), "the script path is one argument, spaces and all");
     }
 

@@ -279,6 +279,41 @@ fn recognize_pets_runs_the_pets_pass_under_the_guard() {
 }
 
 #[test]
+fn recognize_text_reads_only_the_words_under_the_guard() {
+    let _turn = serial();
+    let lib = Library::new("launcher-text");
+    image::RgbImage::from_pixel(64, 64, image::Rgb([200, 190, 180])).save(lib.path("letter.png")).unwrap();
+    image::RgbImage::from_pixel(64, 64, image::Rgb([120, 130, 140])).save(lib.path("menu.png")).unwrap();
+    lib.scan_opts(true, false, false);
+    let before = lib.snapshot();
+    unsafe { std::env::set_var("SHOEBOX_RECOGNIZER", env!("CARGO_BIN_EXE_shoebox-fake-recognizer")) };
+    let launcher = start_launcher();
+    let root = lib.root.display().to_string();
+
+    let text = run_job(launcher.addr, json!({ "kind": "recognize_text", "root": root }));
+    assert_eq!(text["ok"], true, "{text}");
+    let photos = lib.count("SELECT count(DISTINCT quick_hash) FROM files WHERE missing_since IS NULL AND kind IN ('jpeg', 'png', 'heic')");
+    assert!(photos >= 8, "{photos}");
+    // The fake reports five lines per picture, two of them are kept.
+    assert_eq!(text["result"]["text"]["looked"], photos, "{text}");
+    assert_eq!(text["result"]["text"]["faces"], photos * 2, "{text}");
+    assert_eq!(text["result"]["text"]["model"], "fake-text-1");
+    // Only the words: no faces, no pets, no clusters.
+    assert_eq!(text["result"]["looked"], 0, "{text}");
+    assert_eq!(text["result"]["faces"], 0);
+    assert!(text["result"]["pets"].is_null() && text["result"]["clusters"].is_null(), "{text}");
+    assert_eq!(lib.snapshot(), before, "reading the text changed an original");
+
+    // The Text add-on is part of what the Control Panel asks about.
+    let addons = lpost(launcher.addr, "/api/addons", &json!({ "roots": [root] }));
+    assert_eq!(addons.status, 200);
+    let a = addons.json();
+    assert!(a["text"].is_boolean() && a["text_models"].is_boolean(), "{a}");
+    assert!(a["roots"][0]["text"].is_boolean(), "{a}");
+    launcher.stop().unwrap();
+}
+
+#[test]
 fn recognition_runs_while_the_photo_app_is_open() {
     let _turn = serial();
     let lib = Library::new("launcher-beside-app");

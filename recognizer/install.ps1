@@ -2,15 +2,16 @@
 # OpenCV, numpy and the models on Windows, so `shoebox recognize` finds it
 # without anything installed on the computer. The Windows twin of install.sh.
 #
-#   install.ps1 [-Faces] [-Pets] [-Root library-root]
+#   install.ps1 [-Faces] [-Pets] [-Text] [-Root library-root]
 #
 # Without -Root it installs into the folder that holds this script (next to
 # shoebox.exe; every drive you recognize then uses it). With one, into
 # <library-root>\.shoebox\recognizer\ (travels with that drive).
 #
-# -Faces (face models, ~40 MB) and -Pets (cat and dog models, ~140 MB) are
-# independent; either or both, on top of the Python and OpenCV runtime
-# (~200 MB). Without either, you are asked. The Control Panel passes the choice.
+# -Faces (face models, ~40 MB), -Pets (cat and dog models, ~140 MB) and -Text
+# (read the words in photos: the rapidocr package with onnxruntime and its
+# models, ~100 MB) are independent; any of them, on top of the Python and
+# OpenCV runtime (~200 MB). Without any, you are asked. The Control Panel passes the choice.
 # Run it again later to add the other.
 #
 # Start it from a command prompt as
@@ -19,6 +20,7 @@
 param(
     [switch]$Faces,
     [switch]$Pets,
+    [switch]$Text,
     [string]$Root
 )
 $ErrorActionPreference = 'Stop'
@@ -53,13 +55,15 @@ function Invoke-Native {
 }
 
 try {
-    if (-not $Faces -and -not $Pets -and [Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
+    if (-not $Faces -and -not $Pets -and -not $Text -and [Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
         $answer = Read-Host 'Find faces (people)? About 40 MB. [Y/n]'
         if ($answer -notmatch '^[nN]') { $Faces = $true }
         $answer = Read-Host 'Find cats and dogs? About 140 MB. [y/N]'
         if ($answer -match '^[yYjJ]') { $Pets = $true }
+        $answer = Read-Host 'Read the words in photos (text)? About 100 MB. [y/N]'
+        if ($answer -match '^[yYjJ]') { $Text = $true }
     }
-    if (-not $Faces -and -not $Pets) { Fail 'nothing to install: use -Faces and/or -Pets' }
+    if (-not $Faces -and -not $Pets -and -not $Text) { Fail 'nothing to install: use -Faces, -Pets and/or -Text' }
 
     if ($Root) {
         if (-not (Test-Path -LiteralPath (Join-Path $Root '.shoebox') -PathType Container)) {
@@ -121,6 +125,32 @@ try {
             Write-Host '  none for this system; OpenCV runs the pet models instead'
         }
 
+        # The Text add-on: PP-OCR through the rapidocr-onnxruntime package, which
+        # carries its three model files. onnxruntime is required for it. --no-deps
+        # and the pure dependencies by name keep pip from adding a second OpenCV
+        # (opencv-python) next to opencv-python-headless. A failure here must not
+        # spoil the other add-ons: it is reported at the end.
+        $textFailed = $false
+        $textArg = $null
+        $textModels = $null
+        if ($Text) {
+            Write-Host 'Text recognition (rapidocr, onnxruntime)...'
+            $pipBase = @('-m', 'pip', 'install', '--no-cache-dir', '--disable-pip-version-check', '--progress-bar', 'off', '--only-binary', ':all:')
+            $code = Invoke-Native $python ($pipBase + @('onnxruntime', 'pyclipper', 'shapely', 'pyyaml', 'six', 'tqdm', 'pillow'))
+            if ($code -eq 0) { $code = Invoke-Native $python ($pipBase + @('--no-deps', 'rapidocr-onnxruntime')) }
+            if ($code -eq 0) { $code = Invoke-Native $python @('-c', 'import onnxruntime, rapidocr_onnxruntime; print("  rapidocr, onnxruntime", onnxruntime.__version__)') }
+            if ($code -eq 0) {
+                $previous = $ErrorActionPreference
+                $ErrorActionPreference = 'Continue'
+                $textModels = (& $python -c 'import os, rapidocr_onnxruntime as r; print(os.path.join(os.path.dirname(r.__file__), "models"))' 2>$null | Select-Object -First 1)
+                $ErrorActionPreference = $previous
+                $textArg = '--text'
+            } else {
+                $textFailed = $true
+                Write-Host 'Text: this computer cannot run it (no onnxruntime or rapidocr build for this system).'
+            }
+        }
+
         Write-Host "Copying to $Dest..."
         # Only what running recognizer.py needs. Python for Windows has no
         # symlinks, so a plain copy is fine on NTFS and exFAT. Scripts\ holds
@@ -148,13 +178,22 @@ try {
         $fetch = @{ Dir = $modelsDir }
         if ($Faces) { $fetch.Faces = $true }
         if ($Pets) { $fetch.Pets = $true }
-        & (Join-Path $Here 'fetch-models.ps1') @fetch
+        if ($Faces -or $Pets) { & (Join-Path $Here 'fetch-models.ps1') @fetch }
+        # The text models come out of the rapidocr package, into the models
+        # folder, so that "installed" is decided from files like the other add-ons.
+        if ($Text -and -not $textFailed) {
+            foreach ($f in 'ch_PP-OCRv4_det_infer.onnx', 'ch_PP-OCRv4_rec_infer.onnx', 'ch_ppocr_mobile_v2.0_cls_infer.onnx') {
+                Copy-Item -LiteralPath (Join-Path $textModels $f) -Destination (Join-Path $modelsDir $f) -Force
+                Write-Host "copied $f"
+            }
+        }
         if ($Dest -ne $Here) { Copy-Item -LiteralPath (Join-Path $Here 'recognizer.py') -Destination (Join-Path $Dest 'recognizer.py') -Force }
 
         Write-Host 'Checking...'
         $bundled = Join-Path $target 'python.exe'
         $workerArgs = @((Join-Path $Dest 'recognizer.py'))
         if ($Pets) { $workerArgs += '--pets' }
+        if ($textArg) { $workerArgs += $textArg }
         $previous = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
         $hello = '' | & $bundled @workerArgs 2>$null | Select-Object -First 1
@@ -163,6 +202,10 @@ try {
         Write-Host "  $hello"
     } finally {
         Remove-Item -LiteralPath $Tmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if ($textFailed) {
+        Write-Host 'Done, except Text: it is not available on this computer. Text read on another computer still works here.'
+        exit 3
     }
     if ($Root) {
         Write-Host "Done. Run: shoebox recognize `"$Root`""
