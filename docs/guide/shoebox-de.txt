@@ -284,13 +284,24 @@ Gut zu wissen
   ein Bild aus einem Video holt. shoebox sucht es im selben Ordner wie das
   Programm shoebox (die Datei heißt ffmpeg, unter Windows ffmpeg.exe) und dann
   im PATH deines Computers, zum Beispiel nach brew install ffmpeg. Oder lade
-  einen statischen Build von ffmpeg.org/download herunter und lege die
-  einzelne Datei ffmpeg neben das Programm; das ist optional und braucht meist
-  50–100 MB. Alles andere funktioniert auch ohne. Ohne ffmpeg speichert ein
-  Scan keine Vorschau für Videos, und dein Browser holt sich beim Blättern ein
-  Bild; diese Bilder werden nicht gespeichert. Nachdem du ffmpeg hinzugefügt
-  hast, führe Scannen aus, damit die Vorschauen gespeichert werden, oder
-  starte die Foto-App neu.
+  einen statischen Build (eine einzelne Datei) von ffmpeg.org/download
+  herunter und lege ihn neben das Programm; das ist optional und braucht meist
+  50–100 MB. Welche Datei du nimmst:
+   - Mac: am einfachsten brew install ffmpeg. Oder den Link macOS auf der
+     Seite öffnen, einen statischen Build laden, entpacken und die Datei
+     ffmpeg neben shoebox legen. Verweigert macOS das Öffnen, einmal mit
+     Rechtsklick Öffnen wählen.
+   - Windows: den Link Windows auf der Seite öffnen und das Zip release
+     essentials laden. Öffnen, in den Ordner bin gehen und ffmpeg.exe (nur
+     diese Datei) neben shoebox.exe kopieren.
+   - Linux: sudo apt install ffmpeg oder das Gleiche in deiner Distribution.
+
+   Alles andere funktioniert auch ohne ffmpeg. Ohne speichert ein Scan keine
+   Vorschau für Videos, und dein Browser holt sich beim Blättern ein Bild;
+   diese Bilder werden nicht gespeichert. Nachdem du ffmpeg hinzugefügt hast,
+   führe Scannen aus, damit die Vorschauen gespeichert werden, oder starte die
+   Foto-App neu.
+
 - shoebox legt alles in einem versteckten Ordner .shoebox oben auf dem
   Laufwerk ab: die Bibliothek library.db (Index, Tags, Namen, Entscheidungen)
   mit ihrer Sicherungskopie library.db.bak, die Vorschauen thumbs.db,
