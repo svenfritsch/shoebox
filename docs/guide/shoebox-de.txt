@@ -599,8 +599,8 @@ Eine Karte ist leer oder sagt Offline. Karten brauchen das Internet.
 Verbindung prüfen und das Foto noch einmal öffnen; alles andere funktioniert
 wie zuvor.
 
-shoebox · © 2026 Tesselina Späth · zur privaten Nutzung, die Bedingungen stehen
-in LICENSE.txt neben dem Programm im Download
+shoebox · © 2026 Tesselina Späth · zur privaten Nutzung, die Bedingungen
+stehen in LICENSE.txt neben dem Programm im Download
 
 Die Bibliotheken in shoebox und ihre Lizenzen stehen in
 THIRD-PARTY-LICENSES.txt, daneben.

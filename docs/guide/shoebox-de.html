@@ -3,1881 +3,734 @@
      refresh shoebox-de.txt. Keep shoebox-en.html and shoebox-de.html in step; UI
      names come from core/i18n/en.json and de.json. See docs/guide/README.md. -->
 <html lang="de">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>shoebox: deine Fotobibliothek auf dem Laufwerk</title>
-    <style>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>shoebox: deine Fotobibliothek auf dem Laufwerk</title>
+  <style>
+    :root {
+      --brown: #a0602c; --ink: #2a2420; --muted: #6f655c; --bg: #faf8f5; --card: #fff;
+      --soft: #f1ece5; --line: #e4dcd1; --code: #6b3d17; --iconbg: #f6e6d0;
+      --green: #3f7a3a; --greenbg: #e5efe1;
+      --hero: linear-gradient(165deg, #fff3e2 0%, #f6dfbf 45%, #e3b583 100%);
+      --hero-ink: #3a2512; --hero-sub: #4a3622; --badge: rgba(255, 255, 255, .7);
+    }
+    @media (prefers-color-scheme: dark) {
       :root {
-        --brown: #a0602c;
-        --ink: #2a2420;
-        --muted: #6f655c;
-        --bg: #faf8f5;
-        --card: #fff;
-        --soft: #f1ece5;
-        --line: #e4dcd1;
-        --code: #6b3d17;
-        --iconbg: #f6e6d0;
-        --green: #3f7a3a;
-        --greenbg: #e5efe1;
-        --hero: linear-gradient(165deg, #fff3e2 0%, #f6dfbf 45%, #e3b583 100%);
-        --hero-ink: #3a2512;
-        --hero-sub: #4a3622;
-        --badge: rgba(255, 255, 255, 0.7);
+        --brown: #e0a066; --ink: #efe8e0; --muted: #b3a89d; --bg: #1d1916; --card: #26211d;
+        --soft: #322b25; --line: #3d352e; --code: #e9b98a; --iconbg: #3a2e22;
+        --green: #8cc884; --greenbg: #27382a;
+        --hero: linear-gradient(165deg, #3a2a1a 0%, #2d2118 60%, #26211d 100%);
+        --hero-ink: #fbe9d2; --hero-sub: #e5d3bd; --badge: rgba(255, 255, 255, .08);
       }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --brown: #e0a066;
-          --ink: #efe8e0;
-          --muted: #b3a89d;
-          --bg: #1d1916;
-          --card: #26211d;
-          --soft: #322b25;
-          --line: #3d352e;
-          --code: #e9b98a;
-          --iconbg: #3a2e22;
-          --green: #8cc884;
-          --greenbg: #27382a;
-          --hero: linear-gradient(
-            165deg,
-            #3a2a1a 0%,
-            #2d2118 60%,
-            #26211d 100%
-          );
-          --hero-ink: #fbe9d2;
-          --hero-sub: #e5d3bd;
-          --badge: rgba(255, 255, 255, 0.08);
-        }
-      }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        background: var(--bg);
-        color: var(--ink);
-        font:
-          1rem/1.55 system-ui,
-          -apple-system,
-          'Segoe UI',
-          Inter,
-          Roboto,
-          'Helvetica Neue',
-          Arial,
-          sans-serif;
-      }
-      main,
-      header,
-      footer,
-      nav {
-        max-width: 60rem;
-        margin: 0 auto;
-        padding: 0 1.25rem;
-      }
-      h1,
-      h2,
-      h3,
-      p,
-      ul,
-      ol,
-      dl,
-      figure {
-        margin: 0;
-      }
-      h1 {
-        font-size: clamp(2rem, 6vw, 2.8rem);
-        line-height: 1.08;
-        letter-spacing: -0.02em;
-        color: var(--hero-ink);
-      }
-      h2 {
-        font-size: 1.6rem;
-        line-height: 1.15;
-        letter-spacing: -0.015em;
-        margin-bottom: 0.3rem;
-      }
-      h3 {
-        font-size: 1.02rem;
-        margin-bottom: 0.1rem;
-      }
-      section {
-        margin-top: 3.2rem;
-        scroll-margin-top: 1rem;
-      }
-      a {
-        color: var(--brown);
-      }
-      b {
-        font-weight: 650;
-      }
-      code {
-        font:
-          0.86em ui-monospace,
-          'SF Mono',
-          Menlo,
-          'DejaVu Sans Mono',
-          monospace;
-        background: var(--soft);
-        color: var(--code);
-        padding: 0.05em 0.35em;
-        border-radius: 0.25rem;
-      }
-      .sub {
-        color: var(--muted);
-        margin-bottom: 1.2rem;
-      }
-      .ic {
-        width: 1.4rem;
-        height: 1.4rem;
-        flex: none;
-      }
+    }
+    * { box-sizing: border-box }
+    body { margin: 0; background: var(--bg); color: var(--ink);
+           font: 1rem/1.55 system-ui, -apple-system, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif }
+    main, header, footer, nav { max-width: 60rem; margin: 0 auto; padding: 0 1.25rem }
+    h1, h2, h3, p, ul, ol, dl, figure { margin: 0 }
+    h1 { font-size: clamp(2rem, 6vw, 2.8rem); line-height: 1.08; letter-spacing: -.02em; color: var(--hero-ink) }
+    h2 { font-size: 1.6rem; line-height: 1.15; letter-spacing: -.015em; margin-bottom: .3rem }
+    h3 { font-size: 1.02rem; margin-bottom: .1rem }
+    section { margin-top: 3.2rem; scroll-margin-top: 1rem }
+    a { color: var(--brown) }
+    b { font-weight: 650 }
+    code { font: .86em ui-monospace, "SF Mono", Menlo, "DejaVu Sans Mono", monospace; background: var(--soft);
+           color: var(--code); padding: .05em .35em; border-radius: .25rem }
+    .sub { color: var(--muted); margin-bottom: 1.2rem }
+    .ic { width: 1.4rem; height: 1.4rem; flex: none }
 
-      /* cover */
-      .hero {
-        background: var(--hero);
-        border-radius: 1rem;
-        padding: 1.5rem 1.5rem 1.8rem;
-        margin-top: 1.25rem;
-      }
-      .hero-top {
-        display: flex;
-        justify-content: space-between;
-        gap: 1rem;
-        flex-wrap: wrap;
-        align-items: center;
-      }
-      .brand {
-        display: flex;
-        align-items: center;
-        gap: 0.7rem;
-        font-weight: 700;
-        font-size: 1.3rem;
-        color: var(--hero-ink);
-      }
-      .brand svg {
-        width: 2.6rem;
-        height: 2.6rem;
-      }
-      .meta {
-        font-size: 0.85rem;
-        color: var(--hero-sub);
-        text-align: right;
-      }
-      .hero h1 {
-        margin-top: 2rem;
-        max-width: 36rem;
-      }
-      .lede {
-        font-size: 1.1rem;
-        line-height: 1.5;
-        max-width: 40rem;
-        margin-top: 1rem;
-        color: var(--hero-sub);
-      }
-      .badges {
-        list-style: none;
-        padding: 0;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.6rem;
-        margin-top: 1.3rem;
-      }
-      .badges li {
-        display: flex;
-        align-items: center;
-        gap: 0.45rem;
-        background: var(--badge);
-        color: var(--hero-ink);
-        border: 1px solid rgba(160, 96, 44, 0.25);
-        padding: 0.35rem 0.8rem 0.35rem 0.55rem;
-        border-radius: 99rem;
-        font-weight: 600;
-        font-size: 0.85rem;
-      }
-      .badges .ic {
-        color: var(--brown);
-        width: 1.15rem;
-        height: 1.15rem;
-      }
-      nav ul {
-        list-style: none;
-        padding: 0;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.4rem 1.1rem;
-        margin-top: 1.4rem;
-        font-size: 0.92rem;
-      }
+    /* cover */
+    .hero { background: var(--hero); border-radius: 1rem; padding: 1.5rem 1.5rem 1.8rem; margin-top: 1.25rem }
+    .hero-top { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; align-items: center }
+    .brand { display: flex; align-items: center; gap: .7rem; font-weight: 700; font-size: 1.3rem; color: var(--hero-ink) }
+    .brand svg { width: 2.6rem; height: 2.6rem }
+    .meta { font-size: .85rem; color: var(--hero-sub); text-align: right }
+    .hero h1 { margin-top: 2rem; max-width: 36rem }
+    .lede { font-size: 1.1rem; line-height: 1.5; max-width: 40rem; margin-top: 1rem; color: var(--hero-sub) }
+    .badges { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: .6rem; margin-top: 1.3rem }
+    .badges li { display: flex; align-items: center; gap: .45rem; background: var(--badge); color: var(--hero-ink);
+                 border: 1px solid rgba(160, 96, 44, .25); padding: .35rem .8rem .35rem .55rem; border-radius: 99rem;
+                 font-weight: 600; font-size: .85rem }
+    .badges .ic { color: var(--brown); width: 1.15rem; height: 1.15rem }
+    nav ul { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: .4rem 1.1rem; margin-top: 1.4rem; font-size: .92rem }
 
-      /* screenshots */
-      figure {
-        margin: 1rem 0;
-      }
-      figure img {
-        display: block;
-        width: 100%;
-        height: auto;
-        border: 1px solid var(--line);
-        border-radius: 0.6rem;
-        box-shadow: 0 0.2rem 1rem rgba(60, 35, 10, 0.16);
-      }
-      figure.narrow {
-        max-width: 24rem;
-      }
-      figcaption {
-        color: var(--muted);
-        font-size: 0.85rem;
-        margin-top: 0.4rem;
-      }
-      .shotwrap {
-        position: relative;
-      }
-      .dot,
-      .legend > li::before {
-        background: var(--brown);
-        color: #fff;
-        font-weight: 700;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-      .dot {
-        position: absolute;
-        transform: translate(-50%, -50%);
-        width: clamp(0.9rem, 2.4vw, 1.5rem);
-        height: clamp(0.9rem, 2.4vw, 1.5rem);
-        font-size: clamp(0.5rem, 1.3vw, 0.78rem);
-        box-shadow:
-          0 0 0 0.12rem #fff,
-          0 0.1rem 0.4rem rgba(0, 0, 0, 0.35);
-      }
+    /* screenshots */
+    figure { margin: 1rem 0 }
+    figure img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: .6rem;
+                 box-shadow: 0 .2rem 1rem rgba(60, 35, 10, .16) }
+    figure.narrow { max-width: 24rem }
+    figcaption { color: var(--muted); font-size: .85rem; margin-top: .4rem }
+    .shotwrap { position: relative }
+    .dot, .legend > li::before { background: var(--brown); color: #fff; font-weight: 700; border-radius: 50%;
+                                  display: flex; align-items: center; justify-content: center }
+    .dot { position: absolute; transform: translate(-50%, -50%); width: clamp(.9rem, 2.4vw, 1.5rem); height: clamp(.9rem, 2.4vw, 1.5rem);
+           font-size: clamp(.5rem, 1.3vw, .78rem); box-shadow: 0 0 0 .12rem #fff, 0 .1rem .4rem rgba(0, 0, 0, .35) }
 
-      /* blocks */
-      .cards {
-        list-style: none;
-        padding: 0;
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-        gap: 1rem;
-      }
-      .cards > li,
-      .panel {
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: 0.8rem;
-        padding: 1.1rem 1.2rem;
-      }
-      .cards .ic-box {
-        width: 2.4rem;
-        height: 2.4rem;
-        border-radius: 0.6rem;
-        background: var(--iconbg);
-        color: var(--brown);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin-bottom: 0.7rem;
-      }
-      .cards p {
-        color: var(--muted);
-        font-size: 0.92rem;
-        line-height: 1.45;
-      }
-      .cards.safe .ic-box {
-        background: var(--greenbg);
-        color: var(--green);
-      }
-      .panel {
-        margin-top: 1.4rem;
-      }
-      .panel h3 {
-        color: var(--brown);
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        font-size: 0.78rem;
-        margin-bottom: 0.5rem;
-      }
-      .panel ul {
-        padding-left: 1.2rem;
-      }
-      .panel li {
-        margin-bottom: 0.45rem;
-      }
-      .panel p + p {
-        margin-top: 0.5rem;
-      }
-      .items > div {
-        margin-bottom: 1rem;
-      }
-      .items h3 {
-        color: var(--brown);
-      }
-      .steps,
-      .legend {
-        list-style: none;
-        padding: 0;
-        counter-reset: n;
-      }
-      .steps > li,
-      .legend > li {
-        counter-increment: n;
-        display: grid;
-        grid-template-columns: 2rem 1fr;
-        gap: 0 0.9rem;
-        margin-bottom: 1rem;
-        align-content: start;
-      }
-      .steps > li::before,
-      .legend > li::before {
-        content: counter(n);
-        grid-row: 1 / span 2;
-        width: 2rem;
-        height: 2rem;
-        margin-top: 0.1rem;
-      }
-      .steps > li::before {
-        background: var(--brown);
-        color: #fff;
-        font-weight: 700;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-      .legend {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
-        gap: 0.2rem 2rem;
-        margin-top: 1.2rem;
-      }
-      .legend > li::before {
-        width: 1.5rem;
-        height: 1.5rem;
-        font-size: 0.78rem;
-      }
-      .legend > li {
-        grid-template-columns: 1.5rem 1fr;
-        color: var(--muted);
-        font-size: 0.92rem;
-      }
-      .legend h3 {
-        color: var(--ink);
-        font-size: 0.95rem;
-      }
-      dl {
-        display: grid;
-        grid-template-columns: max-content 1fr;
-        gap: 0.35rem 1rem;
-      }
-      dt {
-        font-weight: 650;
-      }
-      dd {
-        margin: 0;
-      }
-      dl.cli {
-        grid-template-columns: 1fr;
-      }
-      dl.cli dd {
-        color: var(--muted);
-        margin-bottom: 0.5rem;
-      }
-      .faq p + p {
-        margin-top: 0.7rem;
-      }
-      .faq b {
-        color: var(--brown);
-      }
-      .note {
-        color: var(--muted);
-        font-size: 0.85rem;
-      }
-      @media (min-width: 50rem) {
-        .cols {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 2rem;
-          align-items: start;
-        }
-        .cols.wide-left {
-          grid-template-columns: 1.15fr 0.85fr;
-        }
-      }
-      footer {
-        text-align: center;
-        color: var(--muted);
-        margin: 4rem auto 2rem;
-      }
-      @media print {
-        body {
-          background: #fff;
-        }
-        nav {
-          display: none;
-        }
-        figure,
-        li,
-        .panel,
-        .items > div {
-          break-inside: avoid;
-        }
-        .hero {
-          print-color-adjust: exact;
-          -webkit-print-color-adjust: exact;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <svg
-      width="0"
-      height="0"
-      style="position: absolute"
-      aria-hidden="true"
-      data-txt="skip"
-    >
-      <symbol
-        id="i-grid"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.7"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <rect x="3" y="3" width="7" height="7" rx="1.5" />
-        <rect x="14" y="3" width="7" height="7" rx="1.5" />
-        <rect x="3" y="14" width="7" height="7" rx="1.5" />
-        <rect x="14" y="14" width="7" height="7" rx="1.5" />
-      </symbol>
-      <symbol
-        id="i-search"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.7"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <circle cx="11" cy="11" r="6.5" />
-        <path d="M16 16l5 5" />
-      </symbol>
-      <symbol
-        id="i-tag"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.7"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <path d="M3 12V4h8l10 10-8 8L3 12z" />
-        <circle cx="7.5" cy="8.5" r="1.2" />
-      </symbol>
-      <symbol
-        id="i-move"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.7"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <path
-          d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"
-        />
-        <path d="M9 13h7m-3-3l3 3-3 3" />
-      </symbol>
-      <symbol
-        id="i-add"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.7"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <path d="M12 4v11m-4-4l4 4 4-4" />
-        <path d="M4 19h16" />
-      </symbol>
-      <symbol
-        id="i-dup"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.7"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <rect x="8" y="8" width="12" height="12" rx="2" />
-        <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
-      </symbol>
-      <symbol
-        id="i-trash"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.7"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6" />
-      </symbol>
-      <symbol
-        id="i-people"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.7"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <circle cx="9" cy="8" r="3.2" />
-        <path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6" />
-        <circle cx="17" cy="9" r="2.4" />
-        <path d="M17 14c2.5 0 4.5 2 4.5 5" />
-      </symbol>
-      <symbol
-        id="i-drive"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.7"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <rect x="3" y="7" width="18" height="10" rx="2" />
-        <circle cx="17" cy="12" r="1" />
-        <path d="M6 12h6" />
-      </symbol>
-      <symbol
-        id="i-shield"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.7"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6l8-3z" />
-        <path d="M9 12l2 2 4-4" />
-      </symbol>
-      <symbol
-        id="i-tablet"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.7"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <rect x="5" y="3" width="14" height="18" rx="2" />
-        <path d="M11 18h2" />
-      </symbol>
-      <symbol
-        id="i-globe"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.7"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <circle cx="12" cy="12" r="9" />
-        <path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" />
-      </symbol>
-      <symbol
-        id="i-lock"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.7"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <rect x="5" y="11" width="14" height="9" rx="2" />
-        <path d="M8 11V8a4 4 0 0 1 8 0v3" />
-      </symbol>
-      <symbol
-        id="i-bolt"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.7"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <path d="M13 3L5 14h6l-1 7 8-11h-6l1-7z" />
-      </symbol>
-      <symbol
-        id="i-pin"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.7"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <path d="M12 21s-6-5.6-6-10.5a6 6 0 0 1 12 0C18 15.4 12 21 12 21z" />
-        <circle cx="12" cy="10.5" r="2.2" />
-      </symbol>
-      <symbol id="logo" viewBox="0 0 64 64">
-        <rect x="6" y="22" width="52" height="34" rx="4" fill="#b07d4f" />
-        <rect x="2" y="12" width="60" height="14" rx="4" fill="#d9a066" />
-        <rect
-          x="10"
-          y="30"
-          width="44"
-          height="3"
-          rx="1.5"
-          fill="#fff"
-          opacity=".35"
-        />
-      </symbol>
-    </svg>
+    /* blocks */
+    .cards { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1rem }
+    .cards > li, .panel { background: var(--card); border: 1px solid var(--line); border-radius: .8rem; padding: 1.1rem 1.2rem }
+    .cards .ic-box { width: 2.4rem; height: 2.4rem; border-radius: .6rem; background: var(--iconbg); color: var(--brown);
+                     display: flex; align-items: center; justify-content: center; margin-bottom: .7rem }
+    .cards p { color: var(--muted); font-size: .92rem; line-height: 1.45 }
+    .cards.safe .ic-box { background: var(--greenbg); color: var(--green) }
+    .panel { margin-top: 1.4rem }
+    .panel h3 { color: var(--brown); text-transform: uppercase; letter-spacing: .06em; font-size: .78rem; margin-bottom: .5rem }
+    .panel ul { padding-left: 1.2rem } .panel li { margin-bottom: .45rem }
+    .panel p + p { margin-top: .5rem }
+    .items > div { margin-bottom: 1rem } .items h3 { color: var(--brown) }
+    .steps, .legend { list-style: none; padding: 0; counter-reset: n }
+    .steps > li, .legend > li { counter-increment: n; display: grid; grid-template-columns: 2rem 1fr; gap: 0 .9rem; margin-bottom: 1rem; align-content: start }
+    .steps > li::before, .legend > li::before { content: counter(n); grid-row: 1 / span 2; width: 2rem; height: 2rem; margin-top: .1rem }
+    .steps > li::before { background: var(--brown); color: #fff; font-weight: 700; border-radius: 50%;
+                          display: flex; align-items: center; justify-content: center }
+    .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: .2rem 2rem; margin-top: 1.2rem }
+    .legend > li::before { width: 1.5rem; height: 1.5rem; font-size: .78rem }
+    .legend > li { grid-template-columns: 1.5rem 1fr; color: var(--muted); font-size: .92rem }
+    .legend h3 { color: var(--ink); font-size: .95rem }
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: .35rem 1rem }
+    dt { font-weight: 650 } dd { margin: 0 }
+    dl.cli { grid-template-columns: 1fr } dl.cli dd { color: var(--muted); margin-bottom: .5rem }
+    .faq p + p { margin-top: .7rem } .faq b { color: var(--brown) }
+    .note { color: var(--muted); font-size: .85rem }
+    @media (min-width: 50rem) {
+      .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; align-items: start }
+      .cols.wide-left { grid-template-columns: 1.15fr .85fr }
+    }
+    footer { text-align: center; color: var(--muted); margin: 4rem auto 2rem }
+    @media print {
+      body { background: #fff } nav { display: none }
+      figure, li, .panel, .items > div { break-inside: avoid }
+      .hero { print-color-adjust: exact; -webkit-print-color-adjust: exact }
+    }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" data-txt="skip">
+    <symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l5 5"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12V4h8l10 10-8 8L3 12z"/><circle cx="7.5" cy="8.5" r="1.2"/></symbol>
+    <symbol id="i-move" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/><path d="M9 13h7m-3-3l3 3-3 3"/></symbol>
+    <symbol id="i-add" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m-4-4l4 4 4-4"/><path d="M4 19h16"/></symbol>
+    <symbol id="i-dup" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-people" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><circle cx="17" cy="9" r="2.4"/><path d="M17 14c2.5 0 4.5 2 4.5 5"/></symbol>
+    <symbol id="i-drive" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="2"/><circle cx="17" cy="12" r="1"/><path d="M6 12h6"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></symbol>
+    <symbol id="i-tablet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M11 18h2"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3L5 14h6l-1 7 8-11h-6l1-7z"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6-5.6-6-10.5a6 6 0 0 1 12 0C18 15.4 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.2"/></symbol>
+    <symbol id="logo" viewBox="0 0 64 64"><rect x="6" y="22" width="52" height="34" rx="4" fill="#b07d4f"/><rect x="2" y="12" width="60" height="14" rx="4" fill="#d9a066"/><rect x="10" y="30" width="44" height="3" rx="1.5" fill="#fff" opacity=".35"/></symbol>
+  </svg>
 
-    <header>
-      <div class="hero">
-        <div class="hero-top">
-          <div class="brand">
-            <svg aria-hidden="true"><use href="#logo" /></svg> shoebox
-          </div>
-          <div class="meta">
-            <p>Handbuch · Deutsch</p>
-            <p>
-              English version:
-              <a href="shoebox-en.html" hreflang="en">shoebox-en.html</a>
-            </p>
-          </div>
+  <header>
+    <div class="hero">
+      <div class="hero-top">
+        <div class="brand"><svg aria-hidden="true"><use href="#logo"/></svg> shoebox</div>
+        <div class="meta">
+          <p>Handbuch · Deutsch</p>
+          <p>English version: <a href="shoebox-en.html" hreflang="en">shoebox-en.html</a></p>
         </div>
-        <h1>Deine Fotobibliothek, auf dem Laufwerk.</h1>
-        <p class="lede">
-          shoebox ist ein kleines Programm, das auf deinem externen Laufwerk
-          neben deinen Fotos liegt. Es indexiert sie, zeigt sie im Browser in
-          einer schnellen Zeitleiste und hilft beim Verschlagworten, Sortieren
-          und Aufräumen von Duplikaten, ohne sie je zu kopieren oder ihre
-          Metadaten anzufassen.
-        </p>
-        <ul class="badges">
-          <li>
-            <svg class="ic" aria-hidden="true"><use href="#i-shield" /></svg
-            ><span>Originale bleiben unberührt</span>
-          </li>
-          <li>
-            <svg class="ic" aria-hidden="true"><use href="#i-drive" /></svg
-            ><span>Liegt auf deinem Laufwerk</span>
-          </li>
-          <li>
-            <svg class="ic" aria-hidden="true"><use href="#i-lock" /></svg
-            ><span>Privat: keine Cloud, kein Konto</span>
-          </li>
-          <li>
-            <svg class="ic" aria-hidden="true"><use href="#i-tablet" /></svg
-            ><span>Auch am iPad nutzbar</span>
-          </li>
-          <li>
-            <svg class="ic" aria-hidden="true"><use href="#i-globe" /></svg
-            ><span>macOS heute · Linux &amp; Windows folgen</span>
-          </li>
-        </ul>
       </div>
+      <h1>Deine Fotobibliothek, auf dem Laufwerk.</h1>
+      <p class="lede">shoebox ist ein kleines Programm, das auf deinem externen Laufwerk neben deinen Fotos liegt. Es indexiert sie, zeigt sie im Browser in einer schnellen Zeitleiste und hilft beim Verschlagworten, Sortieren und Aufräumen von Duplikaten, ohne sie je zu kopieren oder ihre Metadaten anzufassen.</p>
+      <ul class="badges">
+        <li><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><span>Originale bleiben unberührt</span></li>
+        <li><svg class="ic" aria-hidden="true"><use href="#i-drive"/></svg><span>Liegt auf deinem Laufwerk</span></li>
+        <li><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg><span>Privat: keine Cloud, kein Konto</span></li>
+        <li><svg class="ic" aria-hidden="true"><use href="#i-tablet"/></svg><span>Auch am iPad nutzbar</span></li>
+        <li><svg class="ic" aria-hidden="true"><use href="#i-globe"/></svg><span>macOS heute · Linux &amp; Windows folgen</span></li>
+      </ul>
+    </div>
+    <figure>
+      <img src="assets/de/ui-overview.jpg" alt="" loading="lazy">
+      <figcaption>Die Zeitleiste: Monate, Ordner, Suche, Typfilter und Jahressprung.</figcaption>
+    </figure>
+    <nav aria-label="Inhalt" data-txt="skip">
+      <ul>
+      <li><a href="#features">Was shoebox kann</a></li>
+      <li><a href="#glance">Die Oberfläche im Überblick</a></li>
+      <li><a href="#start">In drei Schritten loslegen</a></li>
+      <li><a href="#browse">Stöbern und ansehen</a></li>
+      <li><a href="#find">Finden und ordnen</a></li>
+      <li><a href="#adding-photos">Fotos hinzufügen, Duplikate und Papierkorb</a></li>
+      <li><a href="#people">Personen und Haustiere</a></li>
+      <li><a href="#faces">Gesichter taggen, Schritt für Schritt</a></li>
+      <li><a href="#groups">Mehrere Gesichter in einem Foto, und Gruppen</a></li>
+      <li><a href="#locations">Orte und Karten</a></li>
+      <li><a href="#drives">Laufwerke, Backups und das iPad</a></li>
+      <li><a href="#safety">Deine Fotos sind sicher</a></li>
+      <li><a href="#faq">Wenn etwas komisch aussieht</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    <section id="features">
+      <h2>Was shoebox kann</h2>
+      <p class="sub">Eine Seite im Browser, eine Zeitleiste von allem auf dem Laufwerk.</p>
+      <ul class="cards">
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-grid"/></svg></div>
+          <h3>Zeitleiste</h3>
+          <p>Alle Fotos und Videos nach Monat, mit Jahressprung, Ordnerbaum und einer Ansicht mit Infos zum Foto.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg></div>
+          <h3>Suchen & Filtern</h3>
+          <p>Tippe eine Person, ein Haustier, einen Tag oder Ordner. Kombiniere Schlagwörter für eine komplexere Suche. Filter nach Fotos, Videos, Live Photos oder Screenshots, oder zeige nur deine Favoriten ♥.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-tag"/></svg></div>
+          <h3>Tags</h3>
+          <p>Eigene Tags für viele Fotos auf einmal. Auch Ordner zählen als Tags. Im Index gespeichert, nie in den Fotos.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-move"/></svg></div>
+          <h3>Verschieben & ordnen</h3>
+          <p>Fotos in einen Ordner verschieben (wird bei Bedarf angelegt). RAW-, Live-Photo- und Sidecar-Dateien wandern mit.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-add"/></svg></div>
+          <h3>Fotos hinzufügen</h3>
+          <p>Die Fotos eines Ereignisses im Finder oder Explorer aufs Laufwerk kopieren (die Daten bleiben erhalten) und scannen. Kopien von Dateien, die das Laufwerk schon hatte, werden aufgelistet und lassen sich löschen.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-dup"/></svg></div>
+          <h3>Duplikate</h3>
+          <p>Findet identische, verkleinerte, bearbeitete und ähnliche Fotos. Du prüfst; die beste Kopie bleibt immer.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg></div>
+          <h3>Sicherer Papierkorb</h3>
+          <p>Gelöschte Fotos landen in einem Papierkorb auf dem Laufwerk. Zurücklegen oder endgültig löschen.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-people"/></svg></div>
+          <h3>Personen & Haustiere</h3>
+          <p>Optionale Erkennung gruppiert Gesichter, Katzen und Hunde. Du vergibst Namen, shoebox schlägt den Rest vor.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-drive"/></svg></div>
+          <h3>Mehrere Laufwerke</h3>
+          <p>Die Fotos mehrerer Laufwerke in einer gemeinsamen Zeitleiste durchstöbern, auch wenn sie auf verschiedenen Platten liegen. Backups werden erkannt und geprüft.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-pin"/></svg></div>
+          <h3>Orte</h3>
+          <p>Optionale Karten, standardmäßig aus: eine Karte in den Infos von Fotos mit GPS-Daten, eine Weltkarte aller deiner Fotos und benannte Orte wie „Zuhause“, die ihre Fotos von selbst sammeln.</p>
+        </li>
+      </ul>
       <figure>
-        <img src="assets/de/ui-overview.jpg" alt="" loading="lazy" />
-        <figcaption>
-          Die Zeitleiste: Monate, Ordner, Suche, Typfilter und Jahressprung.
-        </figcaption>
+        <img src="assets/de/multitag-search.jpg" alt="" loading="lazy">
+        <figcaption>Suche mit zwei Chips: eine Person und ein Tag.</figcaption>
       </figure>
-      <nav aria-label="Inhalt" data-txt="skip">
-        <ul>
-          <li><a href="#features">Was shoebox kann</a></li>
-          <li><a href="#glance">Die Oberfläche im Überblick</a></li>
-          <li><a href="#start">In drei Schritten loslegen</a></li>
-          <li><a href="#browse">Stöbern und ansehen</a></li>
-          <li><a href="#find">Finden und ordnen</a></li>
-          <li>
-            <a href="#adding-photos"
-              >Fotos hinzufügen, Duplikate und Papierkorb</a
-            >
-          </li>
-          <li><a href="#people">Personen und Haustiere</a></li>
-          <li><a href="#faces">Gesichter taggen, Schritt für Schritt</a></li>
-          <li>
-            <a href="#groups">Mehrere Gesichter in einem Foto, und Gruppen</a>
-          </li>
-          <li><a href="#locations">Orte und Karten</a></li>
-          <li><a href="#drives">Laufwerke, Backups und das iPad</a></li>
-          <li><a href="#safety">Deine Fotos sind sicher</a></li>
-          <li><a href="#faq">Wenn etwas komisch aussieht</a></li>
-        </ul>
-      </nav>
-    </header>
+    </section>
 
-    <main>
-      <section id="features">
-        <h2>Was shoebox kann</h2>
-        <p class="sub">
-          Eine Seite im Browser, eine Zeitleiste von allem auf dem Laufwerk.
-        </p>
-        <ul class="cards">
-          <li>
-            <div class="ic-box">
-              <svg class="ic" aria-hidden="true"><use href="#i-grid" /></svg>
-            </div>
-            <h3>Zeitleiste</h3>
-            <p>
-              Alle Fotos und Videos nach Monat, mit Jahressprung, Ordnerbaum und
-              einer Ansicht mit Infos zum Foto.
-            </p>
-          </li>
-          <li>
-            <div class="ic-box">
-              <svg class="ic" aria-hidden="true"><use href="#i-search" /></svg>
-            </div>
-            <h3>Suchen & Filtern</h3>
-            <p>
-              Tippe eine Person, ein Haustier, einen Tag oder Ordner. Kombiniere
-              Schlagwörter für eine komplexere Suche. Filter nach Fotos, Videos,
-              Live Photos oder Screenshots, oder zeige nur deine Favoriten ♥.
-            </p>
-          </li>
-          <li>
-            <div class="ic-box">
-              <svg class="ic" aria-hidden="true"><use href="#i-tag" /></svg>
-            </div>
-            <h3>Tags</h3>
-            <p>
-              Eigene Tags für viele Fotos auf einmal. Auch Ordner zählen als
-              Tags. Im Index gespeichert, nie in den Fotos.
-            </p>
-          </li>
-          <li>
-            <div class="ic-box">
-              <svg class="ic" aria-hidden="true"><use href="#i-move" /></svg>
-            </div>
-            <h3>Verschieben & ordnen</h3>
-            <p>
-              Fotos in einen Ordner verschieben (wird bei Bedarf angelegt).
-              RAW-, Live-Photo- und Sidecar-Dateien wandern mit.
-            </p>
-          </li>
-          <li>
-            <div class="ic-box">
-              <svg class="ic" aria-hidden="true"><use href="#i-add" /></svg>
-            </div>
-            <h3>Fotos hinzufügen</h3>
-            <p>
-              Die Fotos eines Ereignisses im Finder oder Explorer aufs Laufwerk
-              kopieren (die Daten bleiben erhalten) und scannen. Kopien von
-              Dateien, die das Laufwerk schon hatte, werden aufgelistet und
-              lassen sich löschen.
-            </p>
-          </li>
-          <li>
-            <div class="ic-box">
-              <svg class="ic" aria-hidden="true"><use href="#i-dup" /></svg>
-            </div>
-            <h3>Duplikate</h3>
-            <p>
-              Findet identische, verkleinerte, bearbeitete und ähnliche Fotos.
-              Du prüfst; die beste Kopie bleibt immer.
-            </p>
-          </li>
-          <li>
-            <div class="ic-box">
-              <svg class="ic" aria-hidden="true"><use href="#i-trash" /></svg>
-            </div>
-            <h3>Sicherer Papierkorb</h3>
-            <p>
-              Gelöschte Fotos landen in einem Papierkorb auf dem Laufwerk.
-              Zurücklegen oder endgültig löschen.
-            </p>
-          </li>
-          <li>
-            <div class="ic-box">
-              <svg class="ic" aria-hidden="true"><use href="#i-people" /></svg>
-            </div>
-            <h3>Personen & Haustiere</h3>
-            <p>
-              Optionale Erkennung gruppiert Gesichter, Katzen und Hunde. Du
-              vergibst Namen, shoebox schlägt den Rest vor.
-            </p>
-          </li>
-          <li>
-            <div class="ic-box">
-              <svg class="ic" aria-hidden="true"><use href="#i-drive" /></svg>
-            </div>
-            <h3>Mehrere Laufwerke</h3>
-            <p>
-              Die Fotos mehrerer Laufwerke in einer gemeinsamen Zeitleiste
-              durchstöbern, auch wenn sie auf verschiedenen Platten liegen.
-              Backups werden erkannt und geprüft.
-            </p>
-          </li>
-          <li>
-            <div class="ic-box">
-              <svg class="ic" aria-hidden="true"><use href="#i-pin" /></svg>
-            </div>
-            <h3>Orte</h3>
-            <p>
-              Optionale Karten, standardmäßig aus: eine Karte in den Infos von
-              Fotos mit GPS-Daten, eine Weltkarte aller deiner Fotos und
-              benannte Orte wie „Zuhause“, die ihre Fotos von selbst sammeln.
-            </p>
-          </li>
-        </ul>
-        <figure>
-          <img src="assets/de/multitag-search.jpg" alt="" loading="lazy" />
-          <figcaption>
-            Suche mit zwei Chips: eine Person und ein Tag.
-          </figcaption>
-        </figure>
-      </section>
+    <section id="glance">
+      <h2>Die Oberfläche im Überblick</h2>
+      <p class="sub">Alles ist auf einer Seite. So findest du dich zurecht.</p>
+      <div class="shotwrap">
+        <img src="assets/de/ui-overview.jpg" alt="" loading="lazy" style="display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:.6rem;box-shadow:0 .2rem 1rem rgba(60,35,10,.16)">
+        <span class="dot" style="left:5.0%;top:8.9%" data-txt="skip">1</span>
+        <span class="dot" style="left:55.5%;top:7.8%" data-txt="skip">2</span>
+        <span class="dot" style="left:73.8%;top:7.8%" data-txt="skip">3</span>
+        <span class="dot" style="left:78.8%;top:7.8%" data-txt="skip">4</span>
+        <span class="dot" style="left:85.2%;top:7.8%" data-txt="skip">5</span>
+        <span class="dot" style="left:90.0%;top:7.8%" data-txt="skip">6</span>
+        <span class="dot" style="left:20.6%;top:11.6%" data-txt="skip">7</span>
+        <span class="dot" style="left:20.6%;top:26%" data-txt="skip">8</span>
+        <span class="dot" style="left:58%;top:33%" data-txt="skip">9</span>
+        <span class="dot" style="left:95.2%;top:7.8%" data-txt="skip">10</span>
+        <span class="dot" style="left:13.0%;top:93.0%" data-txt="skip">11</span>
+      </div>
+      <ol class="legend">
+        <li>
+          <h3>Ordner-Menü</h3>
+          <p>☰ blendet die Seitenleiste auf schmalen Bildschirmen ein oder aus.</p>
+        </li>
+        <li>
+          <h3>Suchfeld</h3>
+          <p>Personen, Haustiere, Tags und Ordner; mehrere wählen, um sie zu kombinieren.</p>
+        </li>
+        <li>
+          <h3>Favoriten ♥</h3>
+          <p>Nur die Fotos zeigen, die du mit einem Herz markiert hast. Auch zu finden, wenn du <i>favorit</i> ins Suchfeld tippst.</p>
+        </li>
+        <li>
+          <h3>Typ</h3>
+          <p>Hake an, was gezeigt werden soll; ohne Haken wird alles gezeigt. <b>Fotos</b>: Standbilder ohne Screenshots (fahre über das ⓘ). <b>Videos</b>: eigenständige Videos. <b>Live Photos</b>: Fotos mit einem kurzen Clip. <b>Screenshots</b>: Bilder von einem Handy- oder Computerbildschirm.</p>
+        </li>
+        <li>
+          <h3>Jahr</h3>
+          <p>Direkt zu einem Jahr springen.</p>
+        </li>
+        <li>
+          <h3>Auswählen ☑</h3>
+          <p>Fotos zum Verschieben, Taggen oder in den Papierkorb wählen.</p>
+        </li>
+        <li>
+          <h3>Schnellzugriff</h3>
+          <p>Alle Fotos · Duplikate · Papierkorb · Einstellungen.</p>
+        </li>
+        <li>
+          <h3>Ordner</h3>
+          <p>Deine Ordner mit Anzahl. Tags, Gesichter und Laufwerke erscheinen hier, sobald es sie gibt, und Orte, wenn Karten eingeschaltet sind.</p>
+        </li>
+        <li>
+          <h3>Zeitleiste</h3>
+          <p>Monate mit Anzahl. Ein Klick auf ein Foto öffnet die Ansicht.</p>
+        </li>
+        <li>
+          <h3>Sprache</h3>
+          <p>Zwischen Deutsch und Englisch wechseln.</p>
+        </li>
+        <li>
+          <h3>Status</h3>
+          <p>Scan-, Vorschau- und Laufwerksstatus unten in der Seitenleiste.</p>
+        </li>
+      </ol>
+      <div class="panel">
+        <h3>Ein typischer Ablauf</h3>
+        <p>Laufwerk anstecken und <b>Start shoebox</b> doppelklicken. <b>Scannen</b> (geht schnell, wenn sich wenig geändert hat) und die Foto-App öffnen. Für die Fotos eines Ereignisses den Ordner im Finder aufs Laufwerk kopieren (benannt wie <b>2025-08 Urlaub</b>) und erneut <b>scannen</b>: Waren einzelne Dateien schon auf dem Laufwerk, bietet der Launcher an, die neuen Kopien zu löschen. Dann taggen und sortieren. Ab und zu die <b>Duplikate</b> ansehen und nach jedem Backup die <b>Backup-Prüfung</b> laufen lassen.</p>
+      </div>
+    </section>
 
-      <section id="glance">
-        <h2>Die Oberfläche im Überblick</h2>
-        <p class="sub">
-          Alles ist auf einer Seite. So findest du dich zurecht.
-        </p>
-        <div class="shotwrap">
-          <img
-            src="assets/de/ui-overview.jpg"
-            alt=""
-            loading="lazy"
-            style="
-              display: block;
-              width: 100%;
-              height: auto;
-              border: 1px solid var(--line);
-              border-radius: 0.6rem;
-              box-shadow: 0 0.2rem 1rem rgba(60, 35, 10, 0.16);
-            "
-          />
-          <span class="dot" style="left: 5%; top: 8.9%" data-txt="skip">1</span>
-          <span class="dot" style="left: 55.5%; top: 7.8%" data-txt="skip"
-            >2</span
-          >
-          <span class="dot" style="left: 73.8%; top: 7.8%" data-txt="skip"
-            >3</span
-          >
-          <span class="dot" style="left: 78.8%; top: 7.8%" data-txt="skip"
-            >4</span
-          >
-          <span class="dot" style="left: 85.2%; top: 7.8%" data-txt="skip"
-            >5</span
-          >
-          <span class="dot" style="left: 90%; top: 7.8%" data-txt="skip"
-            >6</span
-          >
-          <span class="dot" style="left: 20.6%; top: 11.6%" data-txt="skip"
-            >7</span
-          >
-          <span class="dot" style="left: 20.6%; top: 26%" data-txt="skip"
-            >8</span
-          >
-          <span class="dot" style="left: 58%; top: 33%" data-txt="skip">9</span>
-          <span class="dot" style="left: 95.2%; top: 7.8%" data-txt="skip"
-            >10</span
-          >
-          <span class="dot" style="left: 13%; top: 93%" data-txt="skip"
-            >11</span
-          >
-        </div>
-        <ol class="legend">
-          <li>
-            <h3>Ordner-Menü</h3>
-            <p>
-              ☰ blendet die Seitenleiste auf schmalen Bildschirmen ein oder
-              aus.
-            </p>
-          </li>
-          <li>
-            <h3>Suchfeld</h3>
-            <p>
-              Personen, Haustiere, Tags und Ordner; mehrere wählen, um sie zu
-              kombinieren.
-            </p>
-          </li>
-          <li>
-            <h3>Favoriten ♥</h3>
-            <p>
-              Nur die Fotos zeigen, die du mit einem Herz markiert hast. Auch zu
-              finden, wenn du <i>favorit</i> ins Suchfeld tippst.
-            </p>
-          </li>
-          <li>
-            <h3>Typ</h3>
-            <p>
-              Hake an, was gezeigt werden soll; ohne Haken wird alles gezeigt.
-              <b>Fotos</b>: Standbilder ohne Screenshots (fahre über das ⓘ).
-              <b>Videos</b>: eigenständige Videos. <b>Live Photos</b>: Fotos mit
-              einem kurzen Clip. <b>Screenshots</b>: Bilder von einem Handy-
-              oder Computerbildschirm.
-            </p>
-          </li>
-          <li>
-            <h3>Jahr</h3>
-            <p>Direkt zu einem Jahr springen.</p>
-          </li>
-          <li>
-            <h3>Auswählen ☑</h3>
-            <p>Fotos zum Verschieben, Taggen oder in den Papierkorb wählen.</p>
-          </li>
-          <li>
-            <h3>Schnellzugriff</h3>
-            <p>Alle Fotos · Duplikate · Papierkorb · Einstellungen.</p>
-          </li>
-          <li>
-            <h3>Ordner</h3>
-            <p>
-              Deine Ordner mit Anzahl. Tags, Gesichter und Laufwerke erscheinen
-              hier, sobald es sie gibt, und Orte, wenn Karten eingeschaltet
-              sind.
-            </p>
-          </li>
-          <li>
-            <h3>Zeitleiste</h3>
-            <p>Monate mit Anzahl. Ein Klick auf ein Foto öffnet die Ansicht.</p>
-          </li>
-          <li>
-            <h3>Sprache</h3>
-            <p>Zwischen Deutsch und Englisch wechseln.</p>
-          </li>
-          <li>
-            <h3>Status</h3>
-            <p>
-              Scan-, Vorschau- und Laufwerksstatus unten in der Seitenleiste.
-            </p>
-          </li>
-        </ol>
-        <div class="panel">
-          <h3>Ein typischer Ablauf</h3>
-          <p>
-            Laufwerk anstecken und <b>Start shoebox</b> doppelklicken.
-            <b>Scannen</b> (geht schnell, wenn sich wenig geändert hat) und die
-            Foto-App öffnen. Für die Fotos eines Ereignisses den Ordner im
-            Finder aufs Laufwerk kopieren (benannt wie <b>2025-08 Urlaub</b>)
-            und erneut <b>scannen</b>: Waren einzelne Dateien schon auf dem
-            Laufwerk, bietet der Launcher an, die neuen Kopien zu löschen. Dann
-            taggen und sortieren. Ab und zu die <b>Duplikate</b> ansehen und
-            nach jedem Backup die <b>Backup-Prüfung</b> laufen lassen.
-          </p>
-        </div>
-      </section>
-
-      <section id="start">
-        <h2>In drei Schritten loslegen</h2>
-        <p class="sub">
-          macOS, Intel (ab 10.13) und Apple Silicon. Nichts zu installieren.
-        </p>
-        <div class="cols">
-          <div>
-            <ol class="steps">
-              <li>
-                <h3>Aufs Laufwerk legen</h3>
-                <p>
-                  <b>shoebox-macos.tar.gz</b> aus dem Release entpacken.
-                  <b>shoebox-macos</b> und <b>Start shoebox.command</b> in den
-                  obersten Ordner deines Foto-Laufwerks kopieren (neben deine
-                  Fotoordner). Optional: den Ordner <b>recognizer</b> für
-                  Gesichter. Das Archiv enthält auch dieses Handbuch im Ordner
-                  <b>guide</b>.
-                </p>
-              </li>
-              <li>
-                <h3>Starter öffnen</h3>
-                <p>
-                  <b>Start shoebox.command</b> doppelklicken. Ein
-                  Terminal-Fenster öffnet sich (offen lassen) und der Starter
-                  erscheint im Browser. Fragt macOS nach, die Datei per
-                  Rechtsklick mit <b>Öffnen</b> starten.
-                </p>
-              </li>
-              <li>
-                <h3>Scannen, dann öffnen</h3>
-                <p>
-                  Laufwerk hinzufügen (anklicken oder
-                  <code>/Volumes/MeinLaufwerk</code> tippen),
-                  <b>Scannen</b> drücken, dann <b>Foto-App starten</b>. Der
-                  erste Scan liest jede Datei einmal und dauert bei großen
-                  Laufwerken eine Weile; später werden nur Änderungen angesehen.
-                  Nach dem Scan listen die Reiter <b>Verschoben</b>,
-                  <b>Geändert</b>, <b>Fehlend</b> und
-                  <b>Schon auf dem Laufwerk</b> (jeweils mit Anzahl) genau auf,
-                  um welche Dateien es geht; bei neuen Dateien, die du schon
-                  hattest, steht die ältere Kopie gleich daneben.
-                </p>
-              </li>
-            </ol>
-            <div class="panel">
-              <h3>Aufgaben im Starter</h3>
-              <dl>
+    <section id="start">
+      <h2>In drei Schritten loslegen</h2>
+      <p class="sub">macOS, Intel (ab 10.13) und Apple Silicon. Nichts zu installieren.</p>
+      <div class="cols">
+        <div>
+          <ol class="steps">
+            <li>
+              <h3>Aufs Laufwerk legen</h3>
+              <p><b>shoebox-macos.tar.gz</b> aus dem Release entpacken. <b>shoebox-macos</b> und <b>Start shoebox.command</b> in den obersten Ordner deines Foto-Laufwerks kopieren (neben deine Fotoordner). Optional: den Ordner <b>recognizer</b> für Gesichter. Das Archiv enthält auch dieses Handbuch im Ordner <b>guide</b>.</p>
+            </li>
+            <li>
+              <h3>Starter öffnen</h3>
+              <p><b>Start shoebox.command</b> doppelklicken. Ein Terminal-Fenster öffnet sich (offen lassen) und der Starter erscheint im Browser. Fragt macOS nach, die Datei per Rechtsklick mit <b>Öffnen</b> starten.</p>
+            </li>
+            <li>
+              <h3>Scannen, dann öffnen</h3>
+              <p>Laufwerk hinzufügen (anklicken oder <code>/Volumes/MeinLaufwerk</code> tippen), <b>Scannen</b> drücken, dann <b>Foto-App starten</b>. Der erste Scan liest jede Datei einmal und dauert bei großen Laufwerken eine Weile; später werden nur Änderungen angesehen. Nach dem Scan listen die Reiter <b>Verschoben</b>, <b>Geändert</b>, <b>Fehlend</b> und <b>Schon auf dem Laufwerk</b> (jeweils mit Anzahl) genau auf, um welche Dateien es geht; bei neuen Dateien, die du schon hattest, steht die ältere Kopie gleich daneben.</p>
+            </li>
+          </ol>
+          <div class="panel">
+            <h3>Aufgaben im Starter</h3>
+            <dl>
                 <dt>Scannen</dt>
-                <dd>
-                  neue, verschobene und geänderte Fotos finden. Schnell: es
-                  schaut nur auf das, was sich seit dem letzten Scan geändert
-                  hat, und die Reiter zeigen, was dieser Scan geändert hat. Nach
-                  dem Verschieben, Umbenennen oder Hinzufügen von Fotos
-                  ausführen. Es listet auch neue Kopien von Dateien, die das
-                  Laufwerk schon hatte.
-                </dd>
+                <dd>neue, verschobene und geänderte Fotos finden. Schnell: es schaut nur auf das, was sich seit dem letzten Scan geändert hat, und die Reiter zeigen, was dieser Scan geändert hat. Nach dem Verschieben, Umbenennen oder Hinzufügen von Fotos ausführen. Es listet auch neue Kopien von Dateien, die das Laufwerk schon hatte.</dd>
                 <dt>Prüfen</dt>
-                <dd>
-                  prüfen, dass nichts verloren oder beschädigt ist. Es liest
-                  jede Datei neu und vergleicht sie mit dem, was der Index
-                  kennt; so findet es Dateien, die auf dem Laufwerk unbemerkt
-                  beschädigt wurden. Langsam, also hin und wieder ausführen
-                  (alle paar Monate oder bevor man sich auf ein Backup
-                  verlässt), nicht nach jedem Verschieben. Verschiebungen sind
-                  nicht seine Sache: ein verschobenes Foto hat im Index seinen
-                  neuen Platz und besteht die Prüfung. Ein Foto, dessen Pfad weg
-                  ist, dessen Inhalt aber anderswo auf dem Laufwerk noch liegt
-                  (eine gelöschte Kopie), steht als „umgezogen“ in der Liste,
-                  nicht als Fehler. Nur Inhalt, der nirgends mehr auf dem
-                  Laufwerk liegt, zählt als fehlend. Fehlen Dateien, erscheint
-                  nach der Prüfung (und nach einem Scan) ein Knopf, der ihre
-                  Einträge vergisst: sie werden aus dem shoebox-Index, seiner
-                  Datenbank auf dem Laufwerk, entfernt. Keine Fotodatei wird
-                  angefasst.
-                </dd>
+                <dd>prüfen, dass nichts verloren oder beschädigt ist. Es liest jede Datei neu und vergleicht sie mit dem, was der Index kennt; so findet es Dateien, die auf dem Laufwerk unbemerkt beschädigt wurden. Langsam, also hin und wieder ausführen (alle paar Monate oder bevor man sich auf ein Backup verlässt), nicht nach jedem Verschieben. Verschiebungen sind nicht seine Sache: ein verschobenes Foto hat im Index seinen neuen Platz und besteht die Prüfung. Ein Foto, dessen Pfad weg ist, dessen Inhalt aber anderswo auf dem Laufwerk noch liegt (eine gelöschte Kopie), steht als „umgezogen“ in der Liste, nicht als Fehler. Nur Inhalt, der nirgends mehr auf dem Laufwerk liegt, zählt als fehlend. Fehlen Dateien, erscheint nach der Prüfung (und nach einem Scan) ein Knopf, der ihre Einträge vergisst: sie werden aus dem shoebox-Index, seiner Datenbank auf dem Laufwerk, entfernt. Keine Fotodatei wird angefasst.</dd>
                 <dt>Erkennen</dt>
-                <dd>
-                  Gesichter finden (mit „Haustiere erkennen“ auch Katzen und
-                  Hunde)
-                </dd>
+                <dd>Gesichter finden (mit „Haustiere erkennen“ auch Katzen und Hunde)</dd>
                 <dt>Liegende Gesichter erkennen</dt>
                 <dd>auch liegende Gesichter finden (langsamer)</dd>
                 <dt>Haustiere erkennen</dt>
-                <dd>
-                  Katzen und Hunde finden; sie erscheinen bei den Gesichtern
-                </dd>
+                <dd>Katzen und Hunde finden; sie erscheinen bei den Gesichtern</dd>
                 <dt>Gesichts-Statistik</dt>
                 <dd>wie die Erkennung gelaufen ist</dd>
                 <dt>Backup-Prüfung</dt>
                 <dd>ist der 2. Ordner eine vollständige Kopie des 1.?</dd>
-              </dl>
-            </div>
-          </div>
-          <figure class="narrow">
-            <img src="assets/de/launcher-overview.jpg" alt="" loading="lazy" />
-            <figcaption>
-              Der Starter: 1 Laufwerk oder Ordner wählen, 2 Aufgabe wählen, 3
-              Foto-App öffnen.
-            </figcaption>
-          </figure>
-        </div>
-        <div class="panel">
-          <h3>Gut zu wissen</h3>
-          <ul>
-            <li>
-              Videos bekommen Vorschaubilder, wenn ein statisches
-              <b>ffmpeg</b> neben dem Programm liegt
-              (<code>.shoebox/bin/ffmpeg</code>). Ohne holt sich der Browser ein
-              Bild.
-            </li>
-            <li>
-              shoebox legt Index und Vorschaubilder im versteckten Ordner
-              <code>.shoebox</code> auf dem Laufwerk ab. Das Laufwerk kann also
-              an einen anderen Computer umziehen.
-            </li>
-            <li>Schließt du das Terminal-Fenster, beendet das shoebox.</li>
-          </ul>
-          <p class="note">
-            Die App spricht Deutsch und Englisch: Die Sprache wählst du unten in
-            der Seitenleiste.
-          </p>
-        </div>
-      </section>
-
-      <section id="browse">
-        <h2>Stöbern und ansehen</h2>
-        <p class="sub">
-          Durch die Zeitleiste scrollen, nach Jahr springen, ein Foto öffnen.
-        </p>
-        <div class="cols">
-          <div class="items">
-            <div>
-              <h3>Zeitleiste</h3>
-              <p>
-                Fotos sind nach Aufnahmedatum gruppiert, neueste zuerst. Das
-                Menü <b>Jahr</b> springt; die Monatsüberschrift zeigt, wo du
-                bist. Ein Foto ohne Aufnahmedatum nimmt den Monat aus dem Namen
-                seines Ereignisordners (<code>2020-07</code>,
-                <code>2020.07</code>, <code>20-07</code> oder
-                <code>20.07</code>), sonst das frühere von Erstellungs- und
-                Änderungsdatum der Datei; das Infofeld markiert das Datum dann
-                als <b>geschätzt</b>.
-              </p>
-            </div>
-            <div>
-              <h3>Ordner</h3>
-              <p>
-                Die Seitenleiste spiegelt die Ordner deines Laufwerks. Ein Klick
-                zeigt nur dessen Fotos. Einen Ordner kannst du über seinen Chip
-                umbenennen oder verschieben.
-              </p>
-            </div>
-            <div>
-              <h3>Ansicht</h3>
-              <p>
-                Foto anklicken. <b>ⓘ</b> öffnet das Infofeld: Datum (als
-                <b>geschätzt</b> markiert, wenn es nicht der Aufnahmetag ist),
-                Kamera, Größe, Tags, Personen und Knöpfe, um den Ordner zu
-                öffnen oder den Pfad zu kopieren. Ganz unten zeigen die
-                <b>GPS-Daten</b>, wo das Foto aufgenommen wurde (siehe „Orte und
-                Karten“).
-              </p>
-            </div>
-            <div>
-              <h3>Favoriten</h3>
-              <p>
-                Das <b>♥</b> in der oberen Leiste der Ansicht oder die Taste
-                <b>f</b> markiert das Foto als Favorit. In der Zeitleiste sitzt
-                dasselbe Herz oben rechts in jedem Foto (es erscheint, wenn du
-                mit der Maus darüberfährst; Favoriten zeigen es immer). Noch
-                einmal klicken nimmt es wieder weg. Intern ist ein Favorit
-                einfach dein eigener Tag <i>favorite</i>, im Index gespeichert
-                wie jeder Tag, nie im Foto.
-              </p>
-            </div>
-            <div>
-              <h3>Drehen</h3>
-              <p>
-                <b>r</b> dreht nach links, <b>Umschalt+R</b> nach rechts. Bei
-                JPEGs ändern sich nur die zwei Bytes der Drehmarke; bei anderen
-                Formaten gilt die Drehung nur in shoebox.
-              </p>
-            </div>
-          </div>
-          <div>
-            <figure>
-              <img src="assets/de/viewer-info.jpg" alt="" loading="lazy" />
-              <figcaption>Die Ansicht mit Infofeld.</figcaption>
-            </figure>
-            <div class="panel">
-              <h3>Tastatur in der Ansicht</h3>
-              <dl>
-                <dt>← →</dt>
-                <dd>vorheriges / nächstes</dd>
-                <dt>i</dt>
-                <dd>Infofeld ein- / ausblenden</dd>
-                <dt>Leertaste</dt>
-                <dd>
-                  Ansicht öffnen / schließen (bei einem per Pfeiltasten
-                  gewählten Foto)
-                </dd>
-                <dt>f</dt>
-                <dd>zu Favoriten hinzufügen / entfernen</dd>
-                <dt>r · Umschalt+R</dt>
-                <dd>nach links / rechts drehen</dd>
-                <dt>Esc</dt>
-                <dd>Ansicht schließen</dd>
-              </dl>
-            </div>
+            </dl>
           </div>
         </div>
-      </section>
-
-      <section id="find">
-        <h2>Finden und ordnen</h2>
-        <p class="sub">
-          Suchen, auswählen, taggen und verschieben: alles geht für viele Fotos
-          auf einmal.
-        </p>
-        <div class="cols">
-          <div class="items">
-            <div>
-              <h3>Suchen</h3>
-              <p>
-                Tippe ins Suchfeld: Vorschläge erscheinen für Tags, Personen und
-                Ordner. Mehrere gewählte werden zu Chips, die das Ergebnis
-                eingrenzen; × entfernt einen, <b>Alle entfernen</b> beginnt neu.
-                Deine Favoriten findest du mit dem <b>♥</b>-Knopf neben
-                <b>Typ</b>, oder tippe <i>favorit</i> (deutsch) bzw.
-                <i>favorite</i> (englisch) und wähle <b>♥ Favoriten</b>; das
-                lässt sich mit allem anderen kombinieren, z. B. Favoriten einer
-                Person oder eines Jahres. Bei eingeschalteten Karten (siehe
-                „Orte und Karten“) bieten die Vorschläge auch deine
-                <b>Orte</b> an.
-              </p>
-              <p>
-                <b>Typ</b> bietet <b>Fotos</b> (Standbilder ohne Screenshots),
-                <b>Videos</b>, <b>Live Photos</b> und <b>Screenshots</b>; hake
-                beliebige an, ohne Haken wird alles gezeigt. Um Screenshots aus
-                der Zeitleiste zu nehmen, hake Fotos, Videos und Live Photos an,
-                aber nicht Screenshots; um nur Screenshots zu sehen, hake nur
-                <b>Screenshots</b> an. Shoebox erkennt einen Screenshot an der
-                Datei (ein PNG ohne Kameradaten, ein Name wie
-                <i>Screenshot</i> oder <i>Bildschirmfoto</i>, die Größe eines
-                Handy- oder Computerbildschirms) und am Bild selbst (große
-                einfarbige Flächen). Es kann sich in beide Richtungen irren: Im
-                Info-Fenster eines Fotos ist <b>Screenshot</b> ein Auswahlfeld,
-                das mit der Schätzung von Shoebox beginnt; wähle <i>Ja</i> oder
-                <i>Nein</i> zum Korrigieren, <i>Zurück zu automatisch</i> kehrt
-                zur Schätzung zurück. Deine Wahl wird in der Bibliothek gemerkt;
-                die Fotodatei wird nie verändert.
-              </p>
-            </div>
-            <div>
-              <h3>Auswählen</h3>
-              <p>
-                <b>☑</b> drücken, dann Fotos anklicken (mit Umschalt für einen
-                Bereich; am iPad einfach tippen). „Alle auswählen“ an einer
-                Monatsüberschrift nimmt den ganzen Monat.
-              </p>
-            </div>
-            <div>
-              <h3>Taggen</h3>
-              <p>
-                <b>Tag hinzufügen …</b> gibt der Auswahl deinen eigenen Tag.
-                Tags leben im Index von shoebox, nie in den Fotodateien.
-              </p>
-            </div>
-            <div>
-              <h3>Verschieben</h3>
-              <p>
-                <b>Verschieben …</b> fragt nach einem Ordner. Neue Ordner werden
-                angelegt, nichts wird überschrieben, RAW-, Live-Photo- und
-                Sidecar-Dateien wandern mit. Die eigenen Tags der Fotos gehen
-                immer mit. „Ordnertags behalten“ behält zusätzlich die Tags des
-                alten Ordners als eigene Tags; Ordner-Tags folgen immer dem
-                neuen Ordner.
-              </p>
-            </div>
-          </div>
-          <div>
-            <figure>
-              <img
-                src="assets/de/search-suggestions.jpg"
-                alt=""
-                loading="lazy"
-              />
-              <figcaption>Vorschläge beim Tippen.</figcaption>
-            </figure>
-            <figure>
-              <img src="assets/de/select-photos.jpg" alt="" loading="lazy" />
-              <figcaption>
-                Drei Fotos ausgewählt; die Leiste bietet Verschieben, Tag und
-                Papierkorb.
-              </figcaption>
-            </figure>
-          </div>
-        </div>
-        <div class="cols">
-          <figure>
-            <img src="assets/de/add-tag.jpg" alt="" loading="lazy" />
-            <figcaption>Tag hinzufügen.</figcaption>
-          </figure>
-          <figure>
-            <img src="assets/de/move-dialog.jpg" alt="" loading="lazy" />
-            <figcaption>In einen neuen Ereignisordner verschieben.</figcaption>
-          </figure>
-        </div>
-      </section>
-
-      <section id="adding-photos">
-        <h2>Fotos hinzufügen, Duplikate und Papierkorb</h2>
-        <div class="cols">
-          <div class="items">
-            <div>
-              <h3>Fotos hinzufügen</h3>
-              <p>
-                Die Fotos im Finder oder Explorer aufs Laufwerk kopieren oder
-                verschieben (dabei bleiben ihre Daten erhalten), am besten in
-                einen Ordner namens <b>JJJJ-MM Ereignis</b>, und
-                <b>Scannen</b> drücken. Findet der Scan neue Dateien, die das
-                Laufwerk schon hatte, markiert der Launcher sie mit
-                <i>schon auf dem Laufwerk</i> und bietet
-                <b>Die neuen Kopien löschen</b> an (in den Papierkorb oder
-                endgültig). Das ältere Original bleibt und bekommt den
-                Ordnernamen der gelöschten Kopie als Tag. In den
-                <b>Einstellungen</b> wählst du, wie Ereignisordner in
-                Vorschlägen heißen (zum Beispiel <code>JJ.MM_Ereignis</code>);
-                vorhandene Ordner werden nicht umbenannt, und alle Formen werden
-                erkannt.
-              </p>
-            </div>
-            <div>
-              <h3>Duplikate</h3>
-              <p>
-                <b>Duplikate</b> zeigt vier Arten: identisch, dasselbe Foto in
-                anderer Größe, Original und bearbeitet sowie Ähnliche. Hake
-                <b>diese Kopie löschen</b> bei dem an, was weg soll; die beste
-                Datei bleibt, und pro Gruppe bleibt immer mindestens eine. Tags
-                und Aufnahmedatum einer entfernten Kopie gehen auf die übrige
-                über.
-              </p>
-            </div>
-            <div>
-              <h3>Abkürzungen</h3>
-              <p>
-                <b>Kopien im selben Ordner entfernen</b> und
-                <b>Kopien geringerer Qualität entfernen</b> räumen die
-                eindeutigen Fälle in einem Zug auf.
-              </p>
-            </div>
-            <div>
-              <h3>Was tun mit einer Gruppe</h3>
-              <p>
-                Jede Gruppe hat oben rechts bis zu zwei Schaltflächen.
-                <b>Alle behalten</b> heißt: Diese Dateien bleiben, und sie
-                gehören zusammen. <b>Verschiedene Fotos</b> (nur bei ähnlichen
-                Fotos) heißt: Das sind getrennte Aufnahmen, keine Kopien
-                voneinander. In beiden Fällen wird nichts gelöscht und kein Foto
-                verändert; shoebox macht sich nur eine Notiz in seiner eigenen
-                Datenbank auf dem Laufwerk und zeigt die Gruppe nie wieder an.
-                Die Notiz bleibt erhalten, wenn du Fotos verschiebst oder
-                umbenennst. <b>Alle behalten</b> zeigt die übrigen außerdem als
-                <b>Versionen</b> im Infobereich jedes Fotos an. Entschiedene
-                Fotos lassen auch <b>Kopien im selben Ordner entfernen</b> und
-                <b>Kopien geringerer Qualität entfernen</b> in Ruhe. Zum Löschen
-                hakst du stattdessen <b>diese Kopie löschen</b> an, oder du
-                öffnest ein ähnliches Foto, vergleichst alle groß und wählst
-                <b>Dieses behalten</b>: nach der Bestätigung kommen alle anderen
-                in den Papierkorb.
-              </p>
-            </div>
-            <div>
-              <h3>Papierkorb</h3>
-              <p>
-                Nichts wird sofort gelöscht. Gelöschte Fotos warten in
-                <code>.shoebox/trash</code> auf dem Laufwerk:
-                <b>Zurücklegen</b> oder <b>Endgültig löschen</b>. Das Legen in
-                den Papierkorb ist standardmäßig aus: Schalte es einmal in den
-                <b>Einstellungen</b> ein (<i>In den Papierkorb legen erlauben</i
-                >).
-              </p>
-            </div>
-          </div>
-          <div>
-            <figure>
-              <img src="assets/de/scan-copies.jpg" alt="" loading="lazy" />
-              <figcaption>
-                Nach einem Scan: neue Kopien von Dateien, die das Laufwerk schon
-                hatte.
-              </figcaption>
-            </figure>
-            <figure>
-              <img src="assets/de/trash.jpg" alt="" loading="lazy" />
-              <figcaption>Die Papierkorb-Seite.</figcaption>
-            </figure>
-          </div>
-        </div>
-        <figure>
-          <img src="assets/de/duplicates.jpg" alt="" loading="lazy" />
-          <figcaption>
-            Duplikate: eine vorgewählte Messenger-Kopie neben ihrem Original.
-          </figcaption>
+        <figure class="narrow">
+          <img src="assets/de/launcher-overview.jpg" alt="" loading="lazy">
+          <figcaption>Der Starter: 1 Laufwerk oder Ordner wählen, 2 Aufgabe wählen, 3 Foto-App öffnen.</figcaption>
         </figure>
-      </section>
+      </div>
+      <div class="panel">
+        <h3>Gut zu wissen</h3>
+        <ul>
+          <li>Videos bekommen Vorschaubilder, wenn ein statisches <b>ffmpeg</b> neben dem Programm liegt (<code>.shoebox/bin/ffmpeg</code>). Ohne holt sich der Browser ein Bild.</li>
+          <li>shoebox legt Index und Vorschaubilder im versteckten Ordner <code>.shoebox</code> auf dem Laufwerk ab. Das Laufwerk kann also an einen anderen Computer umziehen.</li>
+          <li>Schließt du das Terminal-Fenster, beendet das shoebox.</li>
+        </ul>
+        <p class="note">Die App spricht Deutsch und Englisch: Die Sprache wählst du unten in der Seitenleiste.</p>
+      </div>
+    </section>
 
-      <section id="people">
-        <h2>Personen und Haustiere</h2>
-        <p class="sub">
-          Optional: shoebox findet Gesichter, Katzen und Hunde; du vergibst die
-          Namen.
-        </p>
-        <div class="cols">
-          <div class="items">
-            <div>
-              <h3>Finden</h3>
-              <p>
-                Einmal den Recognizer installieren (<code
-                  >recognizer/install.sh /Volumes/MeinLaufwerk</code
-                >). Dann die Foto-App schließen und im Starter
-                <b>Erkennen</b> (und <b>Haustiere erkennen</b>) ausführen. In
-                der Seitenleiste erscheint der Bereich <b>Gesichter</b>.
-              </p>
-            </div>
-            <div>
-              <h3>Benennen</h3>
-              <p>
-                Unter <b>Unbenannt</b> zeigt shoebox Karten mit ähnlichen
-                Gesichtern. Einmal einen Namen eintippen, und die ganze Karte
-                ist benannt; später Vorschläge bestätigen (✓) oder ablehnen (✗).
-                Die nächsten beiden Seiten zeigen jeden Schritt, mit Gruppen und
-                den Knöpfen für Fremde und Fehlfunde.
-              </p>
-            </div>
-            <div>
-              <h3>In der Ansicht</h3>
-              <p>
-                Das Infofeld nennt, wer auf dem Foto ist, und zeichnet um jedes
-                Gesicht oder Tier einen Rahmen. Ein Klick auf einen Namen zeigt
-                alle Fotos der Person; ein übersehenes Gesicht oder Tier kannst
-                du mit einem Rahmen markieren.
-              </p>
-            </div>
-            <div>
-              <h3>Suchen</h3>
-              <p>
-                Namen funktionieren im Suchfeld wie Tags, ebenso Arten wie „alle
-                Katzen“. Kombiniere eine Person mit einem Tag, einem Ordner oder
-                einer weiteren Person.
-              </p>
-            </div>
-            <div>
-              <h3>Neue Fotos</h3>
-              <p>
-                Die Erkennung startet nach einem Scan noch nicht von selbst.
-                Foto-App schließen und <b>Erkennen</b> erneut ausführen: Es
-                werden nur die neuen Fotos angesehen.
-              </p>
-            </div>
+    <section id="browse">
+      <h2>Stöbern und ansehen</h2>
+      <p class="sub">Durch die Zeitleiste scrollen, nach Jahr springen, ein Foto öffnen.</p>
+      <div class="cols">
+        <div class="items">
+          <div>
+            <h3>Zeitleiste</h3>
+            <p>Fotos sind nach Aufnahmedatum gruppiert, neueste zuerst. Das Menü <b>Jahr</b> springt; die Monatsüberschrift zeigt, wo du bist. Ein Foto ohne Aufnahmedatum nimmt den Monat aus dem Namen seines Ereignisordners (<code>2020-07</code>, <code>2020.07</code>, <code>20-07</code> oder <code>20.07</code>), sonst das frühere von Erstellungs- und Änderungsdatum der Datei; das Infofeld markiert das Datum dann als <b>geschätzt</b>.</p>
           </div>
           <div>
-            <figure>
-              <img src="assets/de/people-unnamed.jpg" alt="" loading="lazy" />
-              <figcaption>
-                Unbenannt: ein Name für alle Gesichter einer Karte.
-              </figcaption>
-            </figure>
-            <figure>
-              <img src="assets/de/viewer-people.jpg" alt="" loading="lazy" />
-              <figcaption>
-                Das Infofeld nennt das Mädchen und die Katze; Rahmen zeigen, wo
-                sie sind.
-              </figcaption>
-            </figure>
-            <p class="note">
-              Die Beispielbilder sind gezeichnete Comics, keine echten Fotos.
-            </p>
+            <h3>Ordner</h3>
+            <p>Die Seitenleiste spiegelt die Ordner deines Laufwerks. Ein Klick zeigt nur dessen Fotos. Einen Ordner kannst du über seinen Chip umbenennen oder verschieben.</p>
+          </div>
+          <div>
+            <h3>Ansicht</h3>
+            <p>Foto anklicken. <b>ⓘ</b> öffnet das Infofeld: Datum (als <b>geschätzt</b> markiert, wenn es nicht der Aufnahmetag ist), Kamera, Größe, Tags, Personen und Knöpfe, um den Ordner zu öffnen oder den Pfad zu kopieren. Ganz unten zeigen die <b>GPS-Daten</b>, wo das Foto aufgenommen wurde (siehe „Orte und Karten“).</p>
+          </div>
+          <div>
+            <h3>Favoriten</h3>
+            <p>Das <b>♥</b> in der oberen Leiste der Ansicht oder die Taste <b>f</b> markiert das Foto als Favorit. In der Zeitleiste sitzt dasselbe Herz oben rechts in jedem Foto (es erscheint, wenn du mit der Maus darüberfährst; Favoriten zeigen es immer). Noch einmal klicken nimmt es wieder weg. Intern ist ein Favorit einfach dein eigener Tag <i>favorite</i>, im Index gespeichert wie jeder Tag, nie im Foto.</p>
+          </div>
+          <div>
+            <h3>Drehen</h3>
+            <p><b>r</b> dreht nach links, <b>Umschalt+R</b> nach rechts. Bei JPEGs ändern sich nur die zwei Bytes der Drehmarke; bei anderen Formaten gilt die Drehung nur in shoebox.</p>
           </div>
         </div>
-      </section>
-
-      <section id="faces">
-        <h2>Gesichter taggen, Schritt für Schritt</h2>
-        <p class="sub">
-          Nach dem Erkennen wartet jedes Gesicht auf einen Namen. Du musst nicht
-          alle benennen.
-        </p>
-        <div class="cols">
-          <div>
-            <ol class="steps">
-              <li>
-                <h3>Unbenannt öffnen</h3>
-                <p>
-                  In der Seitenleiste <b>Gesichter</b> und dann
-                  <b>Unbenannt</b> öffnen. Jede Karte enthält Gesichter, die
-                  sich ähneln, die größte zuerst. Katzen und Hunde haben eigene
-                  Karten; das Menü über den Karten wählt <i>Personen</i>,
-                  <i>Haustiere</i> oder beides.
-                </p>
-              </li>
-              <li>
-                <h3>Eine Karte benennen</h3>
-                <p>
-                  Den Namen einmal eintippen und <b>Benennen</b> drücken: Die
-                  ganze Karte ist benannt. Beim Tippen erscheinen Personen, die
-                  es schon gibt (bei Tieren nur Katzen und Hunde, und
-                  umgekehrt); sonst <b>+ Neue Person</b> wählen (bei Tieren
-                  steht dort <b>+ Neue Katze</b>, <b>+ Neuer Hund</b> oder
-                  <b>+ Neues Tier</b>). Danach schlägt shoebox weitere Gesichter
-                  vor (<i>Sieht aus wie Mia</i>): mit ✓ bestätigen oder mit ✗
-                  ablehnen.
-                </p>
-              </li>
-              <li>
-                <h3>Fremde und Fehlfunde</h3>
-                <p>
-                  <b>Ignorieren</b> ist für Fremde und für Gesichter auf
-                  Postern, Bildschirmen und Bildern: Niemand muss sie benennen.
-                  <b>Kein Gesicht</b> (bei Haustieren <b>Kein Haustier</b>) ist
-                  für Fehlfunde, die gar kein Gesicht sind. Nichts wird gelöscht
-                  und kein Foto angefasst; shoebox merkt sich die Entscheidung
-                  nur in seiner eigenen Datenbank.
-                </p>
-              </li>
-              <li>
-                <h3>Nur einige Gesichter einer Karte</h3>
-                <p>
-                  <b>Auswählen</b> lässt dich die Gesichter selbst ankreuzen.
-                  Die Knöpfe gelten dann nur für diese: <b>2 benennen</b>,
-                  <b>2 ignorieren</b>, <b>2 kein Gesicht</b>. Praktisch, wenn
-                  eine Karte zwei Personen mischt.
-                </p>
-              </li>
-            </ol>
-          </div>
-          <div>
-            <figure>
-              <img src="assets/de/people-unnamed.jpg" alt="" loading="lazy" />
-              <figcaption>
-                Unbenannt: eine Karte für jede Gruppe ähnlicher Gesichter, mit
-                Ignorieren und Kein Gesicht.
-              </figcaption>
-            </figure>
-            <figure>
-              <img src="assets/de/faces-select.jpg" alt="" loading="lazy" />
-              <figcaption>
-                Auswählen: zwei Gesichter einer Karte angekreuzt.
-              </figcaption>
-            </figure>
+        <div>
+          <figure>
+            <img src="assets/de/viewer-info.jpg" alt="" loading="lazy">
+            <figcaption>Die Ansicht mit Infofeld.</figcaption>
+          </figure>
+          <div class="panel">
+            <h3>Tastatur in der Ansicht</h3>
+            <dl>
+              <dt>← →</dt>
+              <dd>vorheriges / nächstes</dd>
+              <dt>i</dt>
+              <dd>Infofeld ein- / ausblenden</dd>
+              <dt>Leertaste</dt>
+              <dd>Ansicht öffnen / schließen (bei einem per Pfeiltasten gewählten Foto)</dd>
+              <dt>f</dt>
+              <dd>zu Favoriten hinzufügen / entfernen</dd>
+              <dt>r · Umschalt+R</dt>
+              <dd>nach links / rechts drehen</dd>
+              <dt>Esc</dt>
+              <dd>Ansicht schließen</dd>
+            </dl>
           </div>
         </div>
-      </section>
+      </div>
+    </section>
 
-      <section id="groups">
-        <h2>Mehrere Gesichter in einem Foto, und Gruppen</h2>
-        <p class="sub">
-          Gesichter in der Ansicht ankreuzen. Personen in Gruppen wie Familie,
-          Freunde und Kollegen sortieren.
-        </p>
-        <div class="cols">
+    <section id="find">
+      <h2>Finden und ordnen</h2>
+      <p class="sub">Suchen, auswählen, taggen und verschieben: alles geht für viele Fotos auf einmal.</p>
+      <div class="cols">
+        <div class="items">
           <div>
-            <div class="items">
-              <div>
-                <h3>In einem Foto</h3>
-                <p>
-                  Ein Foto und sein Infofeld (ⓘ) öffnen. Unter
-                  <b>Personen</b> hat jedes Gesicht sein Bild und einen Namen
-                  oder <b>+ Name</b>. <b>Auswählen</b> macht die Liste zu einer
-                  Checkliste: mehrere Gesichter ankreuzen (<b
-                    >Alle ohne Namen</b
-                  >
-                  kreuzt jedes Gesicht an, das niemand benannt hat), dann
-                  <b>Ignorieren</b> oder <b>Kein Gesicht</b> für alle auf
-                  einmal. <b>+ Gesicht oder Haustier hinzufügen</b> zeichnet
-                  einen Rahmen um ein übersehenes Gesicht oder Tier. Zuerst
-                  sagen, was es ist, <b>Person</b>, <b>Katze</b> oder
-                  <b>Hund</b>, dann benennen: Die Liste zeigt nur Namen dieser
-                  Art (keine Personen, wenn du eine Katze benennst), und
-                  <b>+ Neue Person</b>, <b>+ Neue Katze</b> oder
-                  <b>+ Neuer Hund</b> legt eine neue an. Die Art eines
-                  gezeichneten Tiers lässt sich später nicht ändern; den Rahmen
-                  löschen und neu zeichnen.
-                </p>
-              </div>
-              <div>
-                <h3>Gruppen</h3>
-                <p>
-                  <b>Gesichter</b> zeigt die Personen nach Gruppen.
-                  <b>Neue Gruppe …</b> legt eine an; <b>Gruppen …</b> benennt
-                  Gruppen um, ordnet sie und löscht sie; zum Ordnen ziehst du
-                  eine Zeile am Punktegriff links (oder fokussierst den Griff
-                  und drückst Alt+↑/↓). Eine Person ist höchstens in einer
-                  Gruppe, und das Löschen einer Gruppe löscht niemanden.
-                </p>
-              </div>
-              <div>
-                <h3>Personen in Gruppen legen</h3>
-                <p>
-                  Bei einer Person auf <b>⋯</b> klicken und
-                  <b>In Gruppe verschieben …</b> wählen, oder die Person in der
-                  Seitenleiste auf eine Gruppe ziehen. Haustiere funktionieren
-                  genauso: Eine Gruppe <i>Haustiere</i> kann den Hund und die
-                  Katze enthalten.
-                </p>
-              </div>
-              <div>
-                <h3>Korrekturen</h3>
-                <p>
-                  Im selben <b>⋯</b>-Menü steht <b>Zusammenführen mit …</b> für
-                  zwei Karten derselben Person. Auf der Seite einer Person
-                  listet <b>Gesichter prüfen</b> Bestätigt, Vorgeschlagen,
-                  Vielleicht und Nicht sie, und ein versehentlich markiertes
-                  Gesicht kommt mit ↺ zurück. <b>Kalibrierung</b> (Gesichts- und
-                  Haustier-Prüfung) zeigt, was die Erkennung gefunden hat:
-                  kleine Gesichter, Werte und Fehlfunde.
-                </p>
-              </div>
-            </div>
+            <h3>Suchen</h3>
+            <p>Tippe ins Suchfeld: Vorschläge erscheinen für Tags, Personen und Ordner. Mehrere gewählte werden zu Chips, die das Ergebnis eingrenzen; × entfernt einen, <b>Alle entfernen</b> beginnt neu. Deine Favoriten findest du mit dem <b>♥</b>-Knopf neben <b>Typ</b>, oder tippe <i>favorit</i> (deutsch) bzw. <i>favorite</i> (englisch) und wähle <b>♥ Favoriten</b>; das lässt sich mit allem anderen kombinieren, z. B. Favoriten einer Person oder eines Jahres. Bei eingeschalteten Karten (siehe „Orte und Karten“) bieten die Vorschläge auch deine <b>Orte</b> an.</p>
+            <p><b>Typ</b> bietet <b>Fotos</b> (Standbilder ohne Screenshots), <b>Videos</b>, <b>Live Photos</b> und <b>Screenshots</b>; hake beliebige an, ohne Haken wird alles gezeigt. Um Screenshots aus der Zeitleiste zu nehmen, hake Fotos, Videos und Live Photos an, aber nicht Screenshots; um nur Screenshots zu sehen, hake nur <b>Screenshots</b> an. Shoebox erkennt einen Screenshot an der Datei (ein PNG ohne Kameradaten, ein Name wie <i>Screenshot</i> oder <i>Bildschirmfoto</i>, die Größe eines Handy- oder Computerbildschirms) und am Bild selbst (große einfarbige Flächen). Es kann sich in beide Richtungen irren: Im Info-Fenster eines Fotos ist <b>Screenshot</b> ein Auswahlfeld, das mit der Schätzung von Shoebox beginnt; wähle <i>Ja</i> oder <i>Nein</i> zum Korrigieren, <i>Zurück zu automatisch</i> kehrt zur Schätzung zurück. Deine Wahl wird in der Bibliothek gemerkt; die Fotodatei wird nie verändert.</p>
           </div>
           <div>
-            <figure>
-              <img src="assets/de/info-select.jpg" alt="" loading="lazy" />
-              <figcaption>
-                Zwei Passanten in einem Foto angekreuzt: 2 ignorieren oder 2
-                kein Gesicht.
-              </figcaption>
-            </figure>
-            <figure>
-              <img src="assets/de/people-overview.jpg" alt="" loading="lazy" />
-              <figcaption>
-                Gesichter: Personen nach Gruppen, die Haustiere in ihrer eigenen
-                Gruppe.
-              </figcaption>
-            </figure>
-            <figure>
-              <img src="assets/de/groups-dialog.jpg" alt="" loading="lazy" />
-              <figcaption>
-                Gruppen …: umbenennen, löschen, zum Ordnen ziehen.
-              </figcaption>
-            </figure>
-            <figure>
-              <img src="assets/de/move-to-group.jpg" alt="" loading="lazy" />
-              <figcaption>
-                In Gruppe verschieben … im ⋯-Menü einer Person.
-              </figcaption>
-            </figure>
+            <h3>Auswählen</h3>
+            <p><b>☑</b> drücken, dann Fotos anklicken (mit Umschalt für einen Bereich; am iPad einfach tippen). „Alle auswählen“ an einer Monatsüberschrift nimmt den ganzen Monat.</p>
+          </div>
+          <div>
+            <h3>Taggen</h3>
+            <p><b>Tag hinzufügen …</b> gibt der Auswahl deinen eigenen Tag. Tags leben im Index von shoebox, nie in den Fotodateien.</p>
+          </div>
+          <div>
+            <h3>Verschieben</h3>
+            <p><b>Verschieben …</b> fragt nach einem Ordner. Neue Ordner werden angelegt, nichts wird überschrieben, RAW-, Live-Photo- und Sidecar-Dateien wandern mit. Die eigenen Tags der Fotos gehen immer mit. „Ordnertags behalten“ behält zusätzlich die Tags des alten Ordners als eigene Tags; Ordner-Tags folgen immer dem neuen Ordner.</p>
           </div>
         </div>
-      </section>
-
-      <section id="locations">
-        <h2>Orte und Karten</h2>
-        <p class="sub">
-          Optional: wo deine Fotos aufgenommen wurden, auf einer Karte. Aus, bis
-          du es einschaltest.
-        </p>
-        <div class="cols">
-          <div class="items">
-            <div>
-              <h3>Karten einschalten</h3>
-              <p>
-                Öffne die <b>Einstellungen</b> und setze den Haken bei
-                <b>Karten anzeigen (OpenStreetMap)</b>. Die Karten werden in
-                deinem Browser aus OpenStreetMap gezeichnet; das ist die einzige
-                Stelle, an der shoebox das Internet braucht: OpenStreetMap
-                sieht, welche Kartenausschnitte du ansiehst, nie deine Fotos
-                oder deren Namen. shoebox speichert keine Kartenbilder auf dem
-                Laufwerk (dein Browser behält vielleicht welche in seinem
-                eigenen Cache). Ohne Haken wird nie etwas aus dem Internet
-                geladen.
-              </p>
-            </div>
-            <div>
-              <h3>In den Infos eines Fotos</h3>
-              <p>
-                Hat die Datei GPS-Daten, zeigt <b>GPS-Daten</b> im Infofeld die
-                Position und, bei eingeschalteten Karten, eine kleine
-                quadratische Karte mit einer Markierung, unten am Rand des
-                Infofelds festgehalten. Ohne Internet steht dort stattdessen
-                <b>Offline</b>. Ein Foto ohne GPS-Daten zeigt gar keine Karte,
-                nur die Überschrift mit dem Knopf <b>Ort festlegen…</b>.
-              </p>
-            </div>
-            <div>
-              <h3>Einem Foto einen Ort geben</h3>
-              <p>
-                <b>Ort festlegen…</b> (gleich rechts neben der Überschrift
-                <b>GPS-Daten</b>) öffnet einen Dialog mit einer Karte und zwei
-                Feldern, Breitengrad und Längengrad. Beides ist immer da und
-                hängt zusammen: Klicke auf die Karte, um die Markierung zu
-                setzen, oder tippe die Zahlen ein (Punkt oder Komma, Breitengrad
-                −90 bis 90, Längengrad −180 bis 180, alles andere wird
-                abgelehnt). Bei ausgeschalteten Karten funktionieren nur die
-                Felder. Der Ort wird nur in shoebox gespeichert: Die Fotodatei
-                bleibt unverändert, und er bleibt beim Foto, wenn du es
-                verschiebst. Einen selbst festgelegten Ort kannst du wieder
-                ändern oder entfernen; ein Ort, der in der Datei selbst steht,
-                wird nie geändert.
-              </p>
-            </div>
-            <div>
-              <h3>Die Seite „Orte“</h3>
-              <p>
-                Bei eingeschalteten Karten erscheint <b>Orte</b> in der
-                Seitenleiste unter den Ordnern. Sie öffnet eine Weltkarte mit
-                einer Markierung für jedes Foto mit Ort; dicht beieinander
-                liegende werden zu einer Zahl zusammengefasst und teilen sich
-                beim Hineinzoomen auf. Klicke eine Markierung oder eine Gruppe
-                an, dann teilt sich der Bildschirm: links die Karte, rechts die
-                Fotos von dort, wie in der Zeitleiste. Ein Klick auf ein Foto
-                öffnet es; der Pfeil oben in der Liste klappt sie ein.
-              </p>
-            </div>
-            <div>
-              <h3>Orte (Bereiche)</h3>
-              <p>
-                Ein Ort ist ein benannter Bereich, etwa „Zuhause“ oder „Insel
-                XY“. Drücke <b>Neuer Ort</b>, klicke zwei gegenüberliegende
-                Ecken auf der Karte an und gib einen Namen ein: Jedes Foto mit
-                einem Ort innerhalb des Bereichs gehört dazu, jetzt und später.
-                Die Orte stehen mit ihrer Fotozahl unter <b>Orte</b> in der
-                Seitenleiste; ein Klick zeigt ihre Fotos. Du kannst auch nach
-                dem Namen eines Orts suchen. Ist die Suche leer, öffnet die
-                Auswahl den Ort auf der Karte, wie ein Klick in der Seitenleiste
-                (ein <b>Typ</b>-Filter fällt dabei weg, wie bei jedem Klick in
-                der Seitenleiste). Hat die Suche schon Chips (Ordner, Tag,
-                Person, Haustier, Favoriten ♥), kommt der Ort als Chip
-                <b>📍</b> dazu und du bleibst in der Zeitleiste: Alle Chips
-                müssen passen, „Zuhause“ + „Anna“ zeigt also Annas Fotos von zu
-                Hause. Ein zweiter Ort ersetzt den ersten. Das <b>🗺</b> am Chip
-                zeigt den Ort auf der Karte, und ein auf der Karte gewählter Ort
-                geht mit, wenn du einen weiteren Chip hinzufügst. In der Liste
-                rechts kannst du einen Ort <b>Umbenennen</b>, den
-                <b>Bereich neu zeichnen</b> oder ihn löschen; es verschwindet
-                nur der Ort, nie ein Foto oder dessen Ort.
-              </p>
-            </div>
-          </div>
-          <div>
-            <p class="note">
-              Orte und die von dir festgelegten Aufnahmeorte stehen zusammen mit
-              deinen Tags und Personen in <code>userdata.json</code> neben dem
-              Index auf dem Laufwerk.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <section id="drives">
-        <h2>Laufwerke, Backups und das iPad</h2>
-        <div class="cols">
-          <div>
-            <div class="items">
-              <div>
-                <h3>Mehrere Laufwerke</h3>
-                <p>
-                  shoebox mit mehr als einem Laufwerk starten, und jedes
-                  erscheint in der Seitenleiste. <b>Alle Laufwerke</b> zeigt
-                  eine gemeinsame Zeitleiste über alle, dazu Backups, Fotos auf
-                  mehreren Laufwerken und Personen laufwerksübergreifend. Ein
-                  abgestecktes Laufwerk steht als offline da.
-                </p>
-              </div>
-              <div>
-                <h3>Backup-Prüfung</h3>
-                <p>
-                  Erst das Original wählen, dann das Backup. shoebox vergleicht
-                  die beiden Indizes (kein Foto wird gelesen) und listet, was
-                  noch nicht auf dem Backup ist, was abweicht und was nur auf
-                  dem Backup liegt. <i>Auch das Backup neu lesen</i> findet
-                  Bitfäule.
-                </p>
-              </div>
-              <div>
-                <h3>iPad & andere Geräte</h3>
-                <p>
-                  Im Terminal:
-                  <code>shoebox serve /Volumes/MeinLaufwerk --lan</code>. Es
-                  zeigt eine Adresse und eine PIN; die Adresse in Safari im
-                  selben WLAN öffnen und die PIN einmal eingeben. In der Ansicht
-                  wischen, zum Auswählen tippen.
-                </p>
-              </div>
-            </div>
-            <div class="panel">
-              <h3>Kommandozeile (optional)</h3>
-              <dl class="cli">
-                <dt><code>shoebox scan &lt;Ordner&gt;</code></dt>
-                <dd>neue, verschobene und geänderte Dateien indexieren</dd>
-                <dt><code>shoebox verify &lt;Ordner&gt;</code></dt>
-                <dd>Dateien neu lesen und mit dem Index vergleichen</dd>
-                <dt><code>shoebox recognize &lt;Ordner&gt; [--pets]</code></dt>
-                <dd>Gesichter (und Haustiere) finden</dd>
-                <dt>
-                  <code>shoebox backup &lt;Original&gt; &lt;Backup&gt;</code>
-                </dt>
-                <dd>ist das Backup vollständig?</dd>
-                <dt>
-                  <code>shoebox serve &lt;Ordner&gt; [--lan] [--pin …]</code>
-                </dt>
-                <dd>die Foto-App öffnen</dd>
-              </dl>
-            </div>
-          </div>
-          <figure class="narrow">
-            <img src="assets/de/ipad.jpg" alt="" loading="lazy" />
-            <figcaption>
-              Am iPad funktioniert dieselbe Seite per Touch.
-            </figcaption>
+        <div>
+          <figure>
+            <img src="assets/de/search-suggestions.jpg" alt="" loading="lazy">
+            <figcaption>Vorschläge beim Tippen.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/de/select-photos.jpg" alt="" loading="lazy">
+            <figcaption>Drei Fotos ausgewählt; die Leiste bietet Verschieben, Tag und Papierkorb.</figcaption>
           </figure>
         </div>
-      </section>
+      </div>
+      <div class="cols">
+        <figure>
+          <img src="assets/de/add-tag.jpg" alt="" loading="lazy">
+          <figcaption>Tag hinzufügen.</figcaption>
+        </figure>
+        <figure>
+          <img src="assets/de/move-dialog.jpg" alt="" loading="lazy">
+          <figcaption>In einen neuen Ereignisordner verschieben.</figcaption>
+        </figure>
+      </div>
+    </section>
 
-      <section id="safety">
-        <h2>Deine Fotos sind sicher</h2>
-        <p class="sub">
-          Die Grundregel ist einfach: shoebox liest deine Originale und schreibt
-          nie etwas hinein.
-        </p>
-        <ul class="cards safe">
-          <li>
-            <div class="ic-box">
-              <svg class="ic" aria-hidden="true"><use href="#i-lock" /></svg>
-            </div>
-            <h3>Nur lesen</h3>
-            <p>
-              Metadaten, Vorschaubilder, Tags und von dir festgelegte
-              Aufnahmeorte liegen im Index auf dem Laufwerk, nie in einem Foto.
-              Aufnahme- und Erstellungsdatum ändern sich nie.
-            </p>
-          </li>
-          <li>
-            <div class="ic-box">
-              <svg class="ic" aria-hidden="true"><use href="#i-shield" /></svg>
-            </div>
-            <h3>Bewacht</h3>
-            <p>
-              Jeder Scan wird kontrolliert: Größe, Daten und ein vollständiger
-              Hash davor und danach. Jeder Unterschied ist ein Fehler.
-            </p>
-          </li>
-          <li>
-            <div class="ic-box">
-              <svg class="ic" aria-hidden="true"><use href="#i-bolt" /></svg>
-            </div>
-            <h3>Nur auf deinen Befehl</h3>
-            <p>
-              Originale ändern sich nur durch deine Aktionen: verschieben,
-              umbenennen, Papierkorb. Immer ein Umbenennen, nie ein Kopieren,
-              und nur wenn die Datei noch zum Index passt. Das Einzige, was
-              shoebox sonst entfernt, ist eine neue Kopie einer Datei, die das
-              Laufwerk schon hatte, und nur, wenn du nach einem Scan den Knopf
-              drückst.
-            </p>
-          </li>
-          <li>
-            <div class="ic-box">
-              <svg class="ic" aria-hidden="true"><use href="#i-globe" /></svg>
-            </div>
-            <h3>Lokal</h3>
-            <p>
-              Keine Cloud, kein Konto. Standardmäßig kann sich nur dieser
-              Computer verbinden; andere Geräte brauchen <code>--lan</code> und
-              eine PIN. Die einzige Ausnahme sind die optionalen Karten
-              (Einstellungen, standardmäßig aus): Dein Browser lädt dann
-              Kartenbilder von OpenStreetMap.
-            </p>
-          </li>
-        </ul>
-      </section>
-
-      <section id="faq">
-        <h2>Wenn etwas komisch aussieht</h2>
-        <div class="panel faq">
-          <p>
-            <b>Das Raster ist leer.</b> Erst im Starter <b>Scannen</b>, dann die
-            Foto-App starten.
-          </p>
-          <p>
-            <b>Neue Fotos fehlen.</b> Noch einmal scannen. Das geht schnell: nur
-            neue und geänderte Dateien werden gelesen.
-          </p>
-          <p>
-            <b>Ein Video hat keine Vorschau.</b> <code>ffmpeg</code> hinzufügen
-            (siehe „Gut zu wissen“) und die Foto-App neu starten.
-          </p>
-          <p>
-            <b>Das iPad verbindet sich nicht.</b> Selbes WLAN? Mit
-            <code>--lan</code> gestartet? PIN aus dem Terminal eingeben. Nach
-            einem Neustart von shoebox fragt es wieder nach der PIN.
-          </p>
-          <p>
-            <b>Ein Laufwerk steht auf offline.</b> Wieder anstecken; shoebox
-            findet es beim Neuladen.
-          </p>
-          <p>
-            <b>Eine Karte ist leer oder sagt Offline.</b> Karten brauchen das
-            Internet. Verbindung prüfen und das Foto noch einmal öffnen; alles
-            andere funktioniert wie zuvor.
-          </p>
+    <section id="adding-photos">
+      <h2>Fotos hinzufügen, Duplikate und Papierkorb</h2>
+      <div class="cols">
+        <div class="items">
+          <div>
+            <h3>Fotos hinzufügen</h3>
+            <p>Die Fotos im Finder oder Explorer aufs Laufwerk kopieren oder verschieben (dabei bleiben ihre Daten erhalten), am besten in einen Ordner namens <b>JJJJ-MM Ereignis</b>, und <b>Scannen</b> drücken. Findet der Scan neue Dateien, die das Laufwerk schon hatte, markiert der Launcher sie mit <i>schon auf dem Laufwerk</i> und bietet <b>Die neuen Kopien löschen</b> an (in den Papierkorb oder endgültig). Das ältere Original bleibt und bekommt den Ordnernamen der gelöschten Kopie als Tag. In den <b>Einstellungen</b> wählst du, wie Ereignisordner in Vorschlägen heißen (zum Beispiel <code>JJ.MM_Ereignis</code>); vorhandene Ordner werden nicht umbenannt, und alle Formen werden erkannt.</p>
+          </div>
+          <div>
+            <h3>Duplikate</h3>
+            <p><b>Duplikate</b> zeigt vier Arten: identisch, dasselbe Foto in anderer Größe, Original und bearbeitet sowie Ähnliche. Hake <b>diese Kopie löschen</b> bei dem an, was weg soll; die beste Datei bleibt, und pro Gruppe bleibt immer mindestens eine. Tags und Aufnahmedatum einer entfernten Kopie gehen auf die übrige über.</p>
+          </div>
+          <div>
+            <h3>Abkürzungen</h3>
+            <p><b>Kopien im selben Ordner entfernen</b> und <b>Kopien geringerer Qualität entfernen</b> räumen die eindeutigen Fälle in einem Zug auf.</p>
+          </div>
+          <div>
+            <h3>Was tun mit einer Gruppe</h3>
+            <p>Jede Gruppe hat oben rechts bis zu zwei Schaltflächen. <b>Alle behalten</b> heißt: Diese Dateien bleiben, und sie gehören zusammen. <b>Verschiedene Fotos</b> (nur bei ähnlichen Fotos) heißt: Das sind getrennte Aufnahmen, keine Kopien voneinander. In beiden Fällen wird nichts gelöscht und kein Foto verändert; shoebox macht sich nur eine Notiz in seiner eigenen Datenbank auf dem Laufwerk und zeigt die Gruppe nie wieder an. Die Notiz bleibt erhalten, wenn du Fotos verschiebst oder umbenennst. <b>Alle behalten</b> zeigt die übrigen außerdem als <b>Versionen</b> im Infobereich jedes Fotos an. Entschiedene Fotos lassen auch <b>Kopien im selben Ordner entfernen</b> und <b>Kopien geringerer Qualität entfernen</b> in Ruhe. Zum Löschen hakst du stattdessen <b>diese Kopie löschen</b> an, oder du öffnest ein ähnliches Foto, vergleichst alle groß und wählst <b>Dieses behalten</b>: nach der Bestätigung kommen alle anderen in den Papierkorb.</p>
+          </div>
+          <div>
+            <h3>Papierkorb</h3>
+            <p>Nichts wird sofort gelöscht. Gelöschte Fotos warten in <code>.shoebox/trash</code> auf dem Laufwerk: <b>Zurücklegen</b> oder <b>Endgültig löschen</b>. Das Legen in den Papierkorb ist standardmäßig aus: Schalte es einmal in den <b>Einstellungen</b> ein (<i>In den Papierkorb legen erlauben</i>).</p>
+          </div>
         </div>
-      </section>
-    </main>
+        <div>
+          <figure>
+            <img src="assets/de/scan-copies.jpg" alt="" loading="lazy">
+            <figcaption>Nach einem Scan: neue Kopien von Dateien, die das Laufwerk schon hatte.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/de/trash.jpg" alt="" loading="lazy">
+            <figcaption>Die Papierkorb-Seite.</figcaption>
+          </figure>
+        </div>
+      </div>
+      <figure>
+        <img src="assets/de/duplicates.jpg" alt="" loading="lazy">
+        <figcaption>Duplikate: eine vorgewählte Messenger-Kopie neben ihrem Original.</figcaption>
+      </figure>
+    </section>
 
-    <footer>
-      <p>
-        shoebox · © 2026 Tesselina Späth · zur privaten Nutzung, die Bedingungen
-        stehen in <code>LICENSE.txt</code> neben dem Programm im Download
-      </p>
-      <p>
-        Die Bibliotheken in shoebox und ihre Lizenzen stehen in
-        <code>THIRD-PARTY-LICENSES.txt</code>, daneben.
-      </p>
-    </footer>
-  </body>
+    <section id="people">
+      <h2>Personen und Haustiere</h2>
+      <p class="sub">Optional: shoebox findet Gesichter, Katzen und Hunde; du vergibst die Namen.</p>
+      <div class="cols">
+        <div class="items">
+          <div>
+            <h3>Finden</h3>
+            <p>Einmal den Recognizer installieren (<code>recognizer/install.sh /Volumes/MeinLaufwerk</code>). Dann die Foto-App schließen und im Starter <b>Erkennen</b> (und <b>Haustiere erkennen</b>) ausführen. In der Seitenleiste erscheint der Bereich <b>Gesichter</b>.</p>
+          </div>
+          <div>
+            <h3>Benennen</h3>
+            <p>Unter <b>Unbenannt</b> zeigt shoebox Karten mit ähnlichen Gesichtern. Einmal einen Namen eintippen, und die ganze Karte ist benannt; später Vorschläge bestätigen (✓) oder ablehnen (✗). Die nächsten beiden Seiten zeigen jeden Schritt, mit Gruppen und den Knöpfen für Fremde und Fehlfunde.</p>
+          </div>
+          <div>
+            <h3>In der Ansicht</h3>
+            <p>Das Infofeld nennt, wer auf dem Foto ist, und zeichnet um jedes Gesicht oder Tier einen Rahmen. Ein Klick auf einen Namen zeigt alle Fotos der Person; ein übersehenes Gesicht oder Tier kannst du mit einem Rahmen markieren.</p>
+          </div>
+          <div>
+            <h3>Suchen</h3>
+            <p>Namen funktionieren im Suchfeld wie Tags, ebenso Arten wie „alle Katzen“. Kombiniere eine Person mit einem Tag, einem Ordner oder einer weiteren Person.</p>
+          </div>
+          <div>
+            <h3>Neue Fotos</h3>
+            <p>Die Erkennung startet nach einem Scan noch nicht von selbst. Foto-App schließen und <b>Erkennen</b> erneut ausführen: Es werden nur die neuen Fotos angesehen.</p>
+          </div>
+        </div>
+        <div>
+          <figure>
+            <img src="assets/de/people-unnamed.jpg" alt="" loading="lazy">
+            <figcaption>Unbenannt: ein Name für alle Gesichter einer Karte.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/de/viewer-people.jpg" alt="" loading="lazy">
+            <figcaption>Das Infofeld nennt das Mädchen und die Katze; Rahmen zeigen, wo sie sind.</figcaption>
+          </figure>
+          <p class="note">Die Beispielbilder sind gezeichnete Comics, keine echten Fotos.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="faces">
+      <h2>Gesichter taggen, Schritt für Schritt</h2>
+      <p class="sub">Nach dem Erkennen wartet jedes Gesicht auf einen Namen. Du musst nicht alle benennen.</p>
+      <div class="cols">
+        <div>
+        <ol class="steps">
+          <li>
+            <h3>Unbenannt öffnen</h3>
+            <p>In der Seitenleiste <b>Gesichter</b> und dann <b>Unbenannt</b> öffnen. Jede Karte enthält Gesichter, die sich ähneln, die größte zuerst. Katzen und Hunde haben eigene Karten; das Menü über den Karten wählt <i>Personen</i>, <i>Haustiere</i> oder beides.</p>
+          </li>
+          <li>
+            <h3>Eine Karte benennen</h3>
+            <p>Den Namen einmal eintippen und <b>Benennen</b> drücken: Die ganze Karte ist benannt. Beim Tippen erscheinen Personen, die es schon gibt (bei Tieren nur Katzen und Hunde, und umgekehrt); sonst <b>+ Neue Person</b> wählen (bei Tieren steht dort <b>+ Neue Katze</b>, <b>+ Neuer Hund</b> oder <b>+ Neues Tier</b>). Danach schlägt shoebox weitere Gesichter vor (<i>Sieht aus wie Mia</i>): mit ✓ bestätigen oder mit ✗ ablehnen.</p>
+          </li>
+          <li>
+            <h3>Fremde und Fehlfunde</h3>
+            <p><b>Ignorieren</b> ist für Fremde und für Gesichter auf Postern, Bildschirmen und Bildern: Niemand muss sie benennen. <b>Kein Gesicht</b> (bei Haustieren <b>Kein Haustier</b>) ist für Fehlfunde, die gar kein Gesicht sind. Nichts wird gelöscht und kein Foto angefasst; shoebox merkt sich die Entscheidung nur in seiner eigenen Datenbank.</p>
+          </li>
+          <li>
+            <h3>Nur einige Gesichter einer Karte</h3>
+            <p><b>Auswählen</b> lässt dich die Gesichter selbst ankreuzen. Die Knöpfe gelten dann nur für diese: <b>2 benennen</b>, <b>2 ignorieren</b>, <b>2 kein Gesicht</b>. Praktisch, wenn eine Karte zwei Personen mischt.</p>
+          </li>
+        </ol>
+        </div>
+        <div>
+          <figure>
+            <img src="assets/de/people-unnamed.jpg" alt="" loading="lazy">
+            <figcaption>Unbenannt: eine Karte für jede Gruppe ähnlicher Gesichter, mit Ignorieren und Kein Gesicht.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/de/faces-select.jpg" alt="" loading="lazy">
+            <figcaption>Auswählen: zwei Gesichter einer Karte angekreuzt.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section id="groups">
+      <h2>Mehrere Gesichter in einem Foto, und Gruppen</h2>
+      <p class="sub">Gesichter in der Ansicht ankreuzen. Personen in Gruppen wie Familie, Freunde und Kollegen sortieren.</p>
+      <div class="cols">
+        <div>
+        <div class="items">
+          <div>
+            <h3>In einem Foto</h3>
+            <p>Ein Foto und sein Infofeld (ⓘ) öffnen. Unter <b>Personen</b> hat jedes Gesicht sein Bild und einen Namen oder <b>+ Name</b>. <b>Auswählen</b> macht die Liste zu einer Checkliste: mehrere Gesichter ankreuzen (<b>Alle ohne Namen</b> kreuzt jedes Gesicht an, das niemand benannt hat), dann <b>Ignorieren</b> oder <b>Kein Gesicht</b> für alle auf einmal. <b>+ Gesicht oder Haustier hinzufügen</b> zeichnet einen Rahmen um ein übersehenes Gesicht oder Tier. Zuerst sagen, was es ist, <b>Person</b>, <b>Katze</b> oder <b>Hund</b>, dann benennen: Die Liste zeigt nur Namen dieser Art (keine Personen, wenn du eine Katze benennst), und <b>+ Neue Person</b>, <b>+ Neue Katze</b> oder <b>+ Neuer Hund</b> legt eine neue an. Die Art eines gezeichneten Tiers lässt sich später nicht ändern; den Rahmen löschen und neu zeichnen.</p>
+          </div>
+          <div>
+            <h3>Gruppen</h3>
+            <p><b>Gesichter</b> zeigt die Personen nach Gruppen. <b>Neue Gruppe …</b> legt eine an; <b>Gruppen …</b> benennt Gruppen um, ordnet sie und löscht sie; zum Ordnen ziehst du eine Zeile am Punktegriff links (oder fokussierst den Griff und drückst Alt+↑/↓). Eine Person ist höchstens in einer Gruppe, und das Löschen einer Gruppe löscht niemanden.</p>
+          </div>
+          <div>
+            <h3>Personen in Gruppen legen</h3>
+            <p>Bei einer Person auf <b>⋯</b> klicken und <b>In Gruppe verschieben …</b> wählen, oder die Person in der Seitenleiste auf eine Gruppe ziehen. Haustiere funktionieren genauso: Eine Gruppe <i>Haustiere</i> kann den Hund und die Katze enthalten.</p>
+          </div>
+          <div>
+            <h3>Korrekturen</h3>
+            <p>Im selben <b>⋯</b>-Menü steht <b>Zusammenführen mit …</b> für zwei Karten derselben Person. Auf der Seite einer Person listet <b>Gesichter prüfen</b> Bestätigt, Vorgeschlagen, Vielleicht und Nicht sie, und ein versehentlich markiertes Gesicht kommt mit ↺ zurück. <b>Kalibrierung</b> (Gesichts- und Haustier-Prüfung) zeigt, was die Erkennung gefunden hat: kleine Gesichter, Werte und Fehlfunde.</p>
+          </div>
+        </div>
+        </div>
+        <div>
+          <figure>
+            <img src="assets/de/info-select.jpg" alt="" loading="lazy">
+            <figcaption>Zwei Passanten in einem Foto angekreuzt: 2 ignorieren oder 2 kein Gesicht.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/de/people-overview.jpg" alt="" loading="lazy">
+            <figcaption>Gesichter: Personen nach Gruppen, die Haustiere in ihrer eigenen Gruppe.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/de/groups-dialog.jpg" alt="" loading="lazy">
+            <figcaption>Gruppen …: umbenennen, löschen, zum Ordnen ziehen.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/de/move-to-group.jpg" alt="" loading="lazy">
+            <figcaption>In Gruppe verschieben … im ⋯-Menü einer Person.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section id="locations">
+      <h2>Orte und Karten</h2>
+      <p class="sub">Optional: wo deine Fotos aufgenommen wurden, auf einer Karte. Aus, bis du es einschaltest.</p>
+      <div class="cols">
+        <div class="items">
+          <div>
+            <h3>Karten einschalten</h3>
+            <p>Öffne die <b>Einstellungen</b> und setze den Haken bei <b>Karten anzeigen (OpenStreetMap)</b>. Die Karten werden in deinem Browser aus OpenStreetMap gezeichnet; das ist die einzige Stelle, an der shoebox das Internet braucht: OpenStreetMap sieht, welche Kartenausschnitte du ansiehst, nie deine Fotos oder deren Namen. shoebox speichert keine Kartenbilder auf dem Laufwerk (dein Browser behält vielleicht welche in seinem eigenen Cache). Ohne Haken wird nie etwas aus dem Internet geladen.</p>
+          </div>
+          <div>
+            <h3>In den Infos eines Fotos</h3>
+            <p>Hat die Datei GPS-Daten, zeigt <b>GPS-Daten</b> im Infofeld die Position und, bei eingeschalteten Karten, eine kleine quadratische Karte mit einer Markierung, unten am Rand des Infofelds festgehalten. Ohne Internet steht dort stattdessen <b>Offline</b>. Ein Foto ohne GPS-Daten zeigt gar keine Karte, nur die Überschrift mit dem Knopf <b>Ort festlegen…</b>.</p>
+          </div>
+          <div>
+            <h3>Einem Foto einen Ort geben</h3>
+            <p><b>Ort festlegen…</b> (gleich rechts neben der Überschrift <b>GPS-Daten</b>) öffnet einen Dialog mit einer Karte und zwei Feldern, Breitengrad und Längengrad. Beides ist immer da und hängt zusammen: Klicke auf die Karte, um die Markierung zu setzen, oder tippe die Zahlen ein (Punkt oder Komma, Breitengrad −90 bis 90, Längengrad −180 bis 180, alles andere wird abgelehnt). Bei ausgeschalteten Karten funktionieren nur die Felder. Der Ort wird nur in shoebox gespeichert: Die Fotodatei bleibt unverändert, und er bleibt beim Foto, wenn du es verschiebst. Einen selbst festgelegten Ort kannst du wieder ändern oder entfernen; ein Ort, der in der Datei selbst steht, wird nie geändert.</p>
+          </div>
+          <div>
+            <h3>Die Seite „Orte“</h3>
+            <p>Bei eingeschalteten Karten erscheint <b>Orte</b> in der Seitenleiste unter den Ordnern. Sie öffnet eine Weltkarte mit einer Markierung für jedes Foto mit Ort; dicht beieinander liegende werden zu einer Zahl zusammengefasst und teilen sich beim Hineinzoomen auf. Klicke eine Markierung oder eine Gruppe an, dann teilt sich der Bildschirm: links die Karte, rechts die Fotos von dort, wie in der Zeitleiste. Ein Klick auf ein Foto öffnet es; der Pfeil oben in der Liste klappt sie ein.</p>
+          </div>
+          <div>
+            <h3>Orte (Bereiche)</h3>
+            <p>Ein Ort ist ein benannter Bereich, etwa „Zuhause“ oder „Insel XY“. Drücke <b>Neuer Ort</b>, klicke zwei gegenüberliegende Ecken auf der Karte an und gib einen Namen ein: Jedes Foto mit einem Ort innerhalb des Bereichs gehört dazu, jetzt und später. Die Orte stehen mit ihrer Fotozahl unter <b>Orte</b> in der Seitenleiste; ein Klick zeigt ihre Fotos. Du kannst auch nach dem Namen eines Orts suchen. Ist die Suche leer, öffnet die Auswahl den Ort auf der Karte, wie ein Klick in der Seitenleiste (ein <b>Typ</b>-Filter fällt dabei weg, wie bei jedem Klick in der Seitenleiste). Hat die Suche schon Chips (Ordner, Tag, Person, Haustier, Favoriten ♥), kommt der Ort als Chip <b>📍</b> dazu und du bleibst in der Zeitleiste: Alle Chips müssen passen, „Zuhause“ + „Anna“ zeigt also Annas Fotos von zu Hause. Ein zweiter Ort ersetzt den ersten. Das <b>🗺</b> am Chip zeigt den Ort auf der Karte, und ein auf der Karte gewählter Ort geht mit, wenn du einen weiteren Chip hinzufügst. In der Liste rechts kannst du einen Ort <b>Umbenennen</b>, den <b>Bereich neu zeichnen</b> oder ihn löschen; es verschwindet nur der Ort, nie ein Foto oder dessen Ort.</p>
+          </div>
+        </div>
+        <div>
+          <p class="note">Orte und die von dir festgelegten Aufnahmeorte stehen zusammen mit deinen Tags und Personen in <code>userdata.json</code> neben dem Index auf dem Laufwerk.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="drives">
+      <h2>Laufwerke, Backups und das iPad</h2>
+      <div class="cols">
+        <div>
+          <div class="items">
+            <div>
+              <h3>Mehrere Laufwerke</h3>
+              <p>shoebox mit mehr als einem Laufwerk starten, und jedes erscheint in der Seitenleiste. <b>Alle Laufwerke</b> zeigt eine gemeinsame Zeitleiste über alle, dazu Backups, Fotos auf mehreren Laufwerken und Personen laufwerksübergreifend. Ein abgestecktes Laufwerk steht als offline da.</p>
+            </div>
+            <div>
+              <h3>Backup-Prüfung</h3>
+              <p>Erst das Original wählen, dann das Backup. shoebox vergleicht die beiden Indizes (kein Foto wird gelesen) und listet, was noch nicht auf dem Backup ist, was abweicht und was nur auf dem Backup liegt. <i>Auch das Backup neu lesen</i> findet Bitfäule.</p>
+            </div>
+            <div>
+              <h3>iPad & andere Geräte</h3>
+              <p>Im Terminal: <code>shoebox serve /Volumes/MeinLaufwerk --lan</code>. Es zeigt eine Adresse und eine PIN; die Adresse in Safari im selben WLAN öffnen und die PIN einmal eingeben. In der Ansicht wischen, zum Auswählen tippen.</p>
+            </div>
+          </div>
+          <div class="panel">
+            <h3>Kommandozeile (optional)</h3>
+            <dl class="cli">
+              <dt><code>shoebox scan &lt;Ordner&gt;</code></dt>
+              <dd>neue, verschobene und geänderte Dateien indexieren</dd>
+              <dt><code>shoebox verify &lt;Ordner&gt;</code></dt>
+              <dd>Dateien neu lesen und mit dem Index vergleichen</dd>
+              <dt><code>shoebox recognize &lt;Ordner&gt; [--pets]</code></dt>
+              <dd>Gesichter (und Haustiere) finden</dd>
+              <dt><code>shoebox backup &lt;Original&gt; &lt;Backup&gt;</code></dt>
+              <dd>ist das Backup vollständig?</dd>
+              <dt><code>shoebox serve &lt;Ordner&gt; [--lan] [--pin …]</code></dt>
+              <dd>die Foto-App öffnen</dd>
+            </dl>
+          </div>
+        </div>
+        <figure class="narrow">
+          <img src="assets/de/ipad.jpg" alt="" loading="lazy">
+          <figcaption>Am iPad funktioniert dieselbe Seite per Touch.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="safety">
+      <h2>Deine Fotos sind sicher</h2>
+      <p class="sub">Die Grundregel ist einfach: shoebox liest deine Originale und schreibt nie etwas hinein.</p>
+      <ul class="cards safe">
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg></div>
+          <h3>Nur lesen</h3>
+          <p>Metadaten, Vorschaubilder, Tags und von dir festgelegte Aufnahmeorte liegen im Index auf dem Laufwerk, nie in einem Foto. Aufnahme- und Erstellungsdatum ändern sich nie.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg></div>
+          <h3>Bewacht</h3>
+          <p>Jeder Scan wird kontrolliert: Größe, Daten und ein vollständiger Hash davor und danach. Jeder Unterschied ist ein Fehler.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-bolt"/></svg></div>
+          <h3>Nur auf deinen Befehl</h3>
+          <p>Originale ändern sich nur durch deine Aktionen: verschieben, umbenennen, Papierkorb. Immer ein Umbenennen, nie ein Kopieren, und nur wenn die Datei noch zum Index passt. Das Einzige, was shoebox sonst entfernt, ist eine neue Kopie einer Datei, die das Laufwerk schon hatte, und nur, wenn du nach einem Scan den Knopf drückst.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-globe"/></svg></div>
+          <h3>Lokal</h3>
+          <p>Keine Cloud, kein Konto. Standardmäßig kann sich nur dieser Computer verbinden; andere Geräte brauchen <code>--lan</code> und eine PIN. Die einzige Ausnahme sind die optionalen Karten (Einstellungen, standardmäßig aus): Dein Browser lädt dann Kartenbilder von OpenStreetMap.</p>
+        </li>
+      </ul>
+    </section>
+
+    <section id="faq">
+      <h2>Wenn etwas komisch aussieht</h2>
+      <div class="panel faq">
+        <p><b>Das Raster ist leer.</b> Erst im Starter <b>Scannen</b>, dann die Foto-App starten.</p>
+        <p><b>Neue Fotos fehlen.</b> Noch einmal scannen. Das geht schnell: nur neue und geänderte Dateien werden gelesen.</p>
+        <p><b>Ein Video hat keine Vorschau.</b> <code>ffmpeg</code> hinzufügen (siehe „Gut zu wissen“) und die Foto-App neu starten.</p>
+        <p><b>Das iPad verbindet sich nicht.</b> Selbes WLAN? Mit <code>--lan</code> gestartet? PIN aus dem Terminal eingeben. Nach einem Neustart von shoebox fragt es wieder nach der PIN.</p>
+        <p><b>Ein Laufwerk steht auf offline.</b> Wieder anstecken; shoebox findet es beim Neuladen.</p>
+        <p><b>Eine Karte ist leer oder sagt Offline.</b> Karten brauchen das Internet. Verbindung prüfen und das Foto noch einmal öffnen; alles andere funktioniert wie zuvor.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>shoebox · © 2026 Tesselina Späth · zur privaten Nutzung, die Bedingungen stehen in <code>LICENSE.txt</code> neben dem Programm im Download</p>
+    <p>Die Bibliotheken in shoebox und ihre Lizenzen stehen in <code>THIRD-PARTY-LICENSES.txt</code>, daneben.</p>
+  </footer>
+</body>
 </html>
