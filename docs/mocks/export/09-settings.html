@@ -1,0 +1,82 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>mock</title>
+<link rel="stylesheet" href="../../../core/web/app.css">
+<style>
+body { overflow: hidden; }
+.mgrid { display: flex; flex-wrap: wrap; padding: 2px; }
+.mgrid .cell { width: 168px; height: 168px; }
+.mgrid .cell img { opacity: 1; }
+.sech { padding: 12px 14px 4px; font-weight: 600; font-size: 16px; display: flex; align-items: baseline; }
+.sech .n { margin-left: 8px; color: var(--muted); font-weight: 400; font-size: 13px; }
+.cell .tick { position: absolute; left: 8px; top: 8px; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 13px; text-align: center; line-height: 22px; }
+.cell .tagbadge { position: absolute; right: 8px; bottom: 8px; background: rgba(0,0,0,.6); color: #fff; font-size: 11px; padding: 1px 7px; border-radius: 99px; }
+.btn.export { background: var(--accent); }
+.filters .btn { padding: 3px 12px; font-size: 13px; border-radius: 99px; }
+.filters .spacer { flex: 1; }
+.dialog.wide { width: min(560px, 100%); }
+.dialog .row { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
+.dialog .row label.lbl { width: 92px; color: var(--muted); font-size: 13px; flex: none; }
+.dialog .path { flex: 1; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-ligatures: none; }
+.dialog .result { margin: 2px 0 12px; padding: 8px 10px; border-radius: 8px; background: var(--panel); font-size: 13px; color: var(--muted); }
+.dialog .result b { color: var(--fg); font-weight: 600; }
+.dialog .sum { display: flex; gap: 14px; margin: 0 0 12px; flex-wrap: wrap; }
+.dialog .sum span { background: var(--panel); border: 1px solid var(--line); border-radius: 99px; padding: 2px 10px; font-size: 13px; }
+.dialog .opt { margin: 8px 0 0; }
+.dialog .opt .hint { margin: 0 0 0 24px; }
+.dialog .check { margin: 8px 0 0; }
+.dialog .note { margin: 10px 0 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); font-size: 13px; }
+.dialog .note.good { border-color: #2f8a3b; }
+.dialog .note.info { border-color: var(--accent); }
+.bar-progress { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; margin: 10px 0 6px; }
+.bar-progress i { display: block; height: 100%; background: var(--accent); }
+.picker { padding: 0; width: min(640px, 100%); }
+.picker header { padding: 16px 20px 10px; }
+.picker h2 { margin: 0; }
+.pk { display: flex; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); height: 330px; }
+.pk nav { width: 190px; flex: none; background: var(--panel); border-right: 1px solid var(--line); overflow: hidden; padding: 8px 0; font-size: 14px; }
+.pk nav h4 { margin: 8px 14px 3px; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.pk nav div { padding: 5px 14px; display: flex; gap: 8px; align-items: baseline; }
+.pk nav div small { margin-left: auto; color: var(--muted); font-size: 11px; }
+.pk nav div.on { background: var(--accent); color: #fff; }
+.pk nav div.on small { color: #fff; }
+.pk nav div.off { color: var(--muted); }
+.pk .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.pk .crumbs { padding: 9px 14px; font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; }
+.pk .crumbs b { color: var(--fg); font-weight: 600; }
+.pk ul { list-style: none; margin: 0; padding: 4px 0; flex: 1; overflow: hidden; font-size: 14px; }
+.pk li { padding: 5px 14px; display: flex; gap: 8px; align-items: baseline; }
+.pk li.sel { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.pk li small { margin-left: auto; color: var(--muted); font-size: 12px; }
+.pk li .nope { color: var(--muted); font-size: 12px; }
+.picker .foot { display: flex; align-items: center; gap: 8px; padding: 12px 20px; }
+.picker .foot .grow { flex: 1; color: var(--muted); font-size: 13px; }
+.lightbox { display: block; }
+.lb-bar .icon { background: none; border: 0; color: #fff; font-size: 20px; padding: 4px 6px; }
+.lb-bar .icon svg { display: block; }
+.lb-bar .coll.on { color: #6ee7a0; }
+.lb-bar .fav-lb { color: #fff; }
+.callout { position: absolute; z-index: 9; font: 600 13px -apple-system, sans-serif; color: #fff; background: var(--accent); border-radius: 99px; padding: 2px 10px; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); top: 70px; bottom: auto; }
+.set-h { margin-top: 0; }
+.tree .nm { flex: 1; }
+.tree .ct { color: var(--muted); font-size: 12px; }
+</style>
+</head><body class="">
+<header class="bar">
+  <button class="icon">☰</button><h1>Photos</h1><span class="month">July 2025</span>
+  <div class="search"><input type="search" placeholder="Search people, pets, tags, folders" value=""></div>
+  <button class="fav-btn">♡</button>
+  <div class="types"><button class="types-btn">Type ▾</button></div>
+  <select><option>Year</option></select>
+  <button class="icon" style="">☑︎</button>
+  <select class="lang-pick"><option>English</option></select>
+</header>
+<div class="layout">
+  <nav class="sidebar">
+    <div class="sidebar-head"><button class="link">All photos</button> <button class="link">Duplicates</button> <button class="link">Trash</button> <button class="link">Settings</button></div>
+    <div class="side-tags"><h3><span>Tags</span></h3><ul class="tree"><li><div class="row"><span class="tw"></span><span class="nm"># Highlights</span><span class="ct">3</span></div></li><li><div class="row"><span class="tw"></span><span class="nm"># print-march</span><span class="ct">42</span></div></li><li><div class="row"><span class="tw"></span><span class="nm"># album-italy</span><span class="ct">17</span></div></li></ul></div>
+    <h3 class="side-head"><span>Folders</span></h3>
+    <ul class="tree"><li><div class="row"><span class="nm">2024-06 Summer trip</span><span class="ct">6</span></div></li><li><div class="row"><span class="nm">2025-05 Garden party</span><span class="ct">3</span></div></li><li><div class="row"><span class="nm">2025-07 Beach</span><span class="ct">3</span></div></li><li><div class="row"><span class="nm">Family</span><span class="ct">3</span></div></li></ul>
+    <footer class="status">1,240 photos · 31 videos · last scan 10/9/2026</footer>
+  </nav>
+  <main class="scroller"><div class="page"><h2>Settings</h2><section class="settings-section"><h3>Moving to the trash</h3><label class="check-row"><input type="checkbox"> Allow move to trash</label><p class="hint">Off by default, so shoebox never touches your originals.</p></section><section class="settings-section"><h3>Collection <span style="background:var(--accent);color:#fff;border-radius:99px;font-size:11px;padding:1px 8px;vertical-align:middle">new</span></h3><p class="hint" style="margin-top:0">A quick way to gather photos for something: a print order, an album, a video for a birthday. Type a tag name here and a bookmark button appears in the photo view. One click tags the photo, another click removes the tag. Then search for the tag and use <b>Export</b> to get all of them in one folder. Leave it empty to hide the button.</p><input type="text" value="print-march" placeholder="e.g. album-italy" style="padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel)"> <span class="hint">42 photos have this tag</span></section><section class="settings-section"><h3>Export <span style="background:var(--accent);color:#fff;border-radius:99px;font-size:11px;padding:1px 8px;vertical-align:middle">new</span></h3><label class="check-row"><input type="checkbox" checked> Number exported files</label><p class="hint">Puts the order of the photos in front of the name: <b>001_IMG_3457.jpg</b>, <b>002_IMG_3501.jpg</b>… The numbers follow the capture date, so a layout program or a print shop sees the same order as the timeline. Off: files keep their name only.</p></section><section class="settings-section"><h3>Maps</h3><label class="check-row"><input type="checkbox"> Show maps (OpenStreetMap)</label></section></div></main>
+</div></body></html>

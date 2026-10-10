@@ -1,0 +1,82 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>mock</title>
+<link rel="stylesheet" href="../../../core/web/app.css">
+<style>
+body { overflow: hidden; }
+.mgrid { display: flex; flex-wrap: wrap; padding: 2px; }
+.mgrid .cell { width: 168px; height: 168px; }
+.mgrid .cell img { opacity: 1; }
+.sech { padding: 12px 14px 4px; font-weight: 600; font-size: 16px; display: flex; align-items: baseline; }
+.sech .n { margin-left: 8px; color: var(--muted); font-weight: 400; font-size: 13px; }
+.cell .tick { position: absolute; left: 8px; top: 8px; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 13px; text-align: center; line-height: 22px; }
+.cell .tagbadge { position: absolute; right: 8px; bottom: 8px; background: rgba(0,0,0,.6); color: #fff; font-size: 11px; padding: 1px 7px; border-radius: 99px; }
+.btn.export { background: var(--accent); }
+.filters .btn { padding: 3px 12px; font-size: 13px; border-radius: 99px; }
+.filters .spacer { flex: 1; }
+.dialog.wide { width: min(560px, 100%); }
+.dialog .row { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
+.dialog .row label.lbl { width: 92px; color: var(--muted); font-size: 13px; flex: none; }
+.dialog .path { flex: 1; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-ligatures: none; }
+.dialog .result { margin: 2px 0 12px; padding: 8px 10px; border-radius: 8px; background: var(--panel); font-size: 13px; color: var(--muted); }
+.dialog .result b { color: var(--fg); font-weight: 600; }
+.dialog .sum { display: flex; gap: 14px; margin: 0 0 12px; flex-wrap: wrap; }
+.dialog .sum span { background: var(--panel); border: 1px solid var(--line); border-radius: 99px; padding: 2px 10px; font-size: 13px; }
+.dialog .opt { margin: 8px 0 0; }
+.dialog .opt .hint { margin: 0 0 0 24px; }
+.dialog .check { margin: 8px 0 0; }
+.dialog .note { margin: 10px 0 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); font-size: 13px; }
+.dialog .note.good { border-color: #2f8a3b; }
+.dialog .note.info { border-color: var(--accent); }
+.bar-progress { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; margin: 10px 0 6px; }
+.bar-progress i { display: block; height: 100%; background: var(--accent); }
+.picker { padding: 0; width: min(640px, 100%); }
+.picker header { padding: 16px 20px 10px; }
+.picker h2 { margin: 0; }
+.pk { display: flex; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); height: 330px; }
+.pk nav { width: 190px; flex: none; background: var(--panel); border-right: 1px solid var(--line); overflow: hidden; padding: 8px 0; font-size: 14px; }
+.pk nav h4 { margin: 8px 14px 3px; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.pk nav div { padding: 5px 14px; display: flex; gap: 8px; align-items: baseline; }
+.pk nav div small { margin-left: auto; color: var(--muted); font-size: 11px; }
+.pk nav div.on { background: var(--accent); color: #fff; }
+.pk nav div.on small { color: #fff; }
+.pk nav div.off { color: var(--muted); }
+.pk .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.pk .crumbs { padding: 9px 14px; font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; }
+.pk .crumbs b { color: var(--fg); font-weight: 600; }
+.pk ul { list-style: none; margin: 0; padding: 4px 0; flex: 1; overflow: hidden; font-size: 14px; }
+.pk li { padding: 5px 14px; display: flex; gap: 8px; align-items: baseline; }
+.pk li.sel { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.pk li small { margin-left: auto; color: var(--muted); font-size: 12px; }
+.pk li .nope { color: var(--muted); font-size: 12px; }
+.picker .foot { display: flex; align-items: center; gap: 8px; padding: 12px 20px; }
+.picker .foot .grow { flex: 1; color: var(--muted); font-size: 13px; }
+.lightbox { display: block; }
+.lb-bar .icon { background: none; border: 0; color: #fff; font-size: 20px; padding: 4px 6px; }
+.lb-bar .icon svg { display: block; }
+.lb-bar .coll.on { color: #6ee7a0; }
+.lb-bar .fav-lb { color: #fff; }
+.callout { position: absolute; z-index: 9; font: 600 13px -apple-system, sans-serif; color: #fff; background: var(--accent); border-radius: 99px; padding: 2px 10px; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); top: 70px; bottom: auto; }
+.set-h { margin-top: 0; }
+.tree .nm { flex: 1; }
+.tree .ct { color: var(--muted); font-size: 12px; }
+</style>
+</head><body class="selecting">
+<header class="bar">
+  <button class="icon">☰</button><h1>Photos</h1><span class="month">July 2025</span>
+  <div class="search"><input type="search" placeholder="Search people, pets, tags, folders" value=""></div>
+  <button class="fav-btn">♡</button>
+  <div class="types"><button class="types-btn">Type ▾</button></div>
+  <select><option>Year</option></select>
+  <button class="icon" style="color:var(--accent)">☑︎</button>
+  <select class="lang-pick"><option>English</option></select>
+</header>
+<div class="layout">
+  <nav class="sidebar">
+    <div class="sidebar-head"><button class="link">All photos</button> <button class="link">Duplicates</button> <button class="link">Trash</button> <button class="link">Settings</button></div>
+    <div class="side-tags"><h3><span>Tags</span></h3><ul class="tree"><li><div class="row"><span class="tw"></span><span class="nm"># Highlights</span><span class="ct">3</span></div></li><li><div class="row"><span class="tw"></span><span class="nm"># print-march</span><span class="ct">42</span></div></li><li><div class="row"><span class="tw"></span><span class="nm"># album-italy</span><span class="ct">17</span></div></li></ul></div>
+    <h3 class="side-head"><span>Folders</span></h3>
+    <ul class="tree"><li><div class="row"><span class="nm">2024-06 Summer trip</span><span class="ct">6</span></div></li><li><div class="row"><span class="nm">2025-05 Garden party</span><span class="ct">3</span></div></li><li><div class="row"><span class="nm">2025-07 Beach</span><span class="ct">3</span></div></li><li><div class="row"><span class="nm">Family</span><span class="ct">3</span></div></li></ul>
+    <footer class="status">1,240 photos · 31 videos · last scan 10/9/2026</footer>
+  </nav>
+  <main class="scroller"><div class="sech">July 2025<span class="n">3</span></div><div class="mgrid"><a class="cell"><div class="ph"><img class="ok" src="img/p00.jpg"></div></a><a class="cell"><div class="ph"><img class="ok" src="img/p01.jpg"></div></a><a class="cell"><div class="ph"><img class="ok" src="img/p02.jpg"></div></a></div><div class="sech">May 2025<span class="n">5</span></div><div class="mgrid"><a class="cell sel"><div class="ph"><img class="ok" src="img/p03.jpg"></div><span class="tick">✓</span></a><a class="cell sel"><div class="ph"><img class="ok" src="img/p04.jpg"></div><span class="tick">✓</span></a><a class="cell sel"><div class="ph"><img class="ok" src="img/p05.jpg"></div><span class="tick">✓</span></a><a class="cell sel"><div class="ph"><img class="ok" src="img/p06.jpg"></div><span class="tick">✓</span></a><a class="cell sel"><div class="ph"><img class="ok" src="img/p07.jpg"></div><span class="tick">✓</span></a></div><div class="sech">March 2025<span class="n">3</span></div><div class="mgrid"><a class="cell"><div class="ph"><img class="ok" src="img/p08.jpg"></div></a><a class="cell"><div class="ph"><img class="ok" src="img/p09.jpg"></div></a><a class="cell"><div class="ph"><img class="ok" src="img/p10.jpg"></div></a></div></main>
+</div><div class="modal"><div class="dialog picker" role="dialog"><header><h2>Choose where to save</h2><p class="hint" style="margin:4px 0 0">Shoebox saves into a new folder inside the one you pick. Nothing on the photo drive can be chosen: the next scan would find the copies.</p></header><div class="pk"><nav><h4>Places</h4><div class="on">Downloads</div><div class="">Desktop</div><div class="">Documents</div><div class="">Pictures</div><div class="">anna (home)</div><h4>Drives</h4><div>USB-STICK<small>29 GB free</small></div><div>Backup<small>412 GB free</small></div><div class="off">Photos<small>photo drive</small></div></nav><div class="main"><div class="crumbs"><b>/</b> Users › anna › <b>Downloads</b></div><ul><li class=""><span>📁 Anna wedding</span><small></small></li><li class=""><span>📁 invoices</span><small></small></li><li class="sel"><span>📁 print-march</span><small>42 photos</small></li><li class=""><span>📁 Tickets</span><small></small></li></ul></div></div><div class="foot"><button class="btn quiet">New folder…</button><span class="grow">Selected: Downloads</span><button class="btn quiet">Cancel</button><button class="btn">Choose this folder</button></div></div></div><div class="selbar"><span>5 photos</span><button class="btn">Move…</button><button class="btn">Add tag…</button><button class="btn">Remove tag…</button><button class="btn export">Export…</button><button class="btn quiet">Done</button></div></body></html>
