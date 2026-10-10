@@ -320,7 +320,7 @@ pub fn find_worker_for(root: &Path, explicit: Option<&Path>, pets: bool) -> Opti
 /// Where an installed recognizer is looked for, best first: `recognizer/` next
 /// to the shoebox program (the downloaded folder, on the computer or on a
 /// drive), then the drive's own `.shoebox/recognizer/` (made by
-/// `install.sh <drive>`; a program in the older `.shoebox/bin/` layout lands
+/// `install.sh <drive>` or `install.ps1 -Root <drive>`; a program in the older `.shoebox/bin/` layout lands
 /// here too). The drive's only serves when nothing is installed next to the
 /// program, so a program folder on the computer is used for every drive.
 pub fn worker_dirs(root: Option<&Path>) -> Vec<PathBuf> {
@@ -377,12 +377,16 @@ pub fn installed(root: Option<&Path>) -> Installed {
     }
 }
 
-/// The folder `install.sh` fills when it is given no path: `recognizer/` next
+/// The installer script of this system: `install.sh` (macOS, Linux) or
+/// `install.ps1` (Windows, run by PowerShell, which every Windows 10 and 11 has).
+const INSTALLER: &str = if cfg!(windows) { "install.ps1" } else { "install.sh" };
+
+/// The folder the installer fills when it is given no path: `recognizer/` next
 /// to the shoebox program, if that is where the downloaded folder keeps it.
 pub fn program_dir() -> Option<PathBuf> {
     let bin = std::env::current_exe().ok()?.parent()?.to_path_buf();
     let dir = bin.join("recognizer");
-    dir.join("install.sh").is_file().then_some(dir)
+    dir.join(INSTALLER).is_file().then_some(dir)
 }
 
 /// The standalone Python of this kind of computer in `<dir>/runtime/<os>-<arch>/`.
@@ -402,24 +406,58 @@ fn python(dir: &Path) -> Option<PathBuf> {
     std::env::split_paths(&std::env::var_os("PATH")?).map(|d| d.join(name)).find(|p| p.is_file())
 }
 
-/// Run `install.sh` from `dir` (see [`program_dir`]) to fill `dir` with the
-/// runtime and the models of the add-ons asked for: `faces` and/or `pets`.
-/// Its output goes to the report line by line; "Cancel" stops it. Needs the
-/// internet.
+/// The command that runs the installer script `script` for the add-ons asked
+/// for, with its errors on the same stream as its output (the script itself
+/// prints its errors to stdout on Windows).
+fn installer_command(script: &Path, faces: bool, pets: bool) -> Command {
+    let mut cmd;
+    if cfg!(windows) {
+        // Bypass: the policy "scripts are disabled" is the default on some
+        // editions and the downloaded script carries a web mark.
+        cmd = Command::new("powershell.exe");
+        cmd.args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"]).arg(script);
+        if faces {
+            cmd.arg("-Faces");
+        }
+        if pets {
+            cmd.arg("-Pets");
+        }
+        // No black console window on top of the Control Panel.
+        #[cfg(windows)]
+        std::os::windows::process::CommandExt::creation_flags(&mut cmd, 0x0800_0000); // CREATE_NO_WINDOW
+    } else {
+        cmd = Command::new("sh");
+        cmd.arg("-c").arg("exec sh \"$0\" \"$@\" 2>&1").arg(script);
+        if faces {
+            cmd.arg("--faces");
+        }
+        if pets {
+            cmd.arg("--pets");
+        }
+    }
+    cmd
+}
+
+/// Stop the installer and what it started (tar, pip). On Windows killing the
+/// shell alone would leave those running.
+fn stop_installer(child: &mut std::process::Child) {
+    if cfg!(windows) {
+        let _ = Command::new("taskkill").args(["/PID", &child.id().to_string(), "/T", "/F"]).stdout(Stdio::null()).stderr(Stdio::null()).status();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// Run the installer (`install.sh`, or `install.ps1` on Windows) from `dir`
+/// (see [`program_dir`]) to fill `dir` with the runtime and the models of the
+/// add-ons asked for: `faces` and/or `pets`. Its output goes to the report line
+/// by line; "Cancel" stops it. Needs the internet.
 pub fn install(dir: &Path, faces: bool, pets: bool) -> Result<Installed> {
-    let script = dir.join("install.sh");
+    let script = dir.join(INSTALLER);
     if !script.is_file() {
         bail!("{} is missing", script.display());
     }
-    let mut cmd = Command::new("sh");
-    // One stream for the script's output and its errors.
-    cmd.arg("-c").arg("exec sh \"$0\" \"$@\" 2>&1").arg(&script);
-    if faces {
-        cmd.arg("--faces");
-    }
-    if pets {
-        cmd.arg("--pets");
-    }
+    let mut cmd = installer_command(&script, faces, pets);
     cmd.env("SHOEBOX_QUIET", "1").stdin(Stdio::null()).stdout(Stdio::piped());
     let mut child = cmd.spawn().with_context(|| format!("cannot run {}", script.display()))?;
     let mut out = child.stdout.take().expect("piped");
@@ -455,8 +493,7 @@ pub fn install(dir: &Path, faces: bool, pets: bool) -> Result<Installed> {
             Err(RecvTimeoutError::Disconnected) => break,
         }
         if crate::report::cancelled() {
-            let _ = child.kill();
-            let _ = child.wait();
+            stop_installer(&mut child);
             return Err(Interrupted.into());
         }
     }
@@ -1239,14 +1276,14 @@ pub fn run(opts: &Options) -> Result<Stats> {
                 worker.stop();
                 bail!(
                     "the recognizer cannot find pets: its models are missing or it is too old \
-                     (run recognizer/fetch-models.sh, or recognizer/install.sh again; see recognizer/README.md)"
+                     (run recognizer/fetch-models.sh (fetch-models.ps1 on Windows), or the installer in recognizer/ again; see recognizer/README.md)"
                 );
             }
         }
     }
     if worker.faces_model().is_none() && !opts.pets {
         worker.stop();
-        bail!("the Faces add-on is not installed (install it in the Control Panel, step 1, or run recognizer/install.sh)");
+        bail!("the Faces add-on is not installed (install it in the Control Panel, step 1, or run the installer in recognizer/)");
     }
     let first = if worker.faces_model().is_some() {
         recognize(&conn, &root, &mut worker, opts.limit, opts.retry_failed)
@@ -2004,6 +2041,22 @@ pub fn overview(conn: &Connection) -> Result<Overview> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn installer_command_names_the_add_ons() {
+        let args = |c: &Command| c.get_args().map(|a| a.to_string_lossy().into_owned()).collect::<Vec<_>>();
+        let cmd = installer_command(Path::new("/a b/recognizer/install"), true, false);
+        let args = args(&cmd);
+        if cfg!(windows) {
+            assert_eq!(cmd.get_program(), "powershell.exe");
+            assert!(args.contains(&"-Faces".to_string()) && !args.contains(&"-Pets".to_string()));
+            assert!(args.contains(&"Bypass".to_string()));
+        } else {
+            assert_eq!(cmd.get_program(), "sh");
+            assert!(args.contains(&"--faces".to_string()) && !args.contains(&"--pets".to_string()));
+        }
+        assert!(args.iter().any(|a| a.ends_with("install")), "the script path is one argument, spaces and all");
+    }
 
     #[test]
     fn replies_are_matched_by_id() {

@@ -957,3 +957,29 @@ fn pets_check_page_and_stats_under_the_guard() {
     assert!((near[0]["similarity"].as_f64().unwrap() - 1.0).abs() < 1e-3);
     assert_eq!(lib.snapshot(), before, "the pets check changed an original");
 }
+
+/// fetch-models.sh and fetch-models.ps1 carry the same models and checksums,
+/// and install.ps1 pins the Python archive of the release install.sh uses.
+#[test]
+fn windows_installer_matches_the_shell_one() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../recognizer");
+    let read = |name: &str| std::fs::read_to_string(dir.join(name)).unwrap();
+    let (sh, ps1) = (read("fetch-models.sh"), read("fetch-models.ps1"));
+    let hashes = |text: &str| {
+        let mut found: Vec<String> = text
+            .split(|c: char| !c.is_ascii_hexdigit())
+            .filter(|w| w.len() == 64)
+            .map(str::to_ascii_lowercase)
+            .collect();
+        found.sort();
+        found
+    };
+    assert_eq!(hashes(&sh).len(), 4);
+    assert_eq!(hashes(&sh), hashes(&ps1), "the checksums differ");
+    for name in ["face_detection_yunet_2023mar.onnx", "face_recognition_sface_2021dec.onnx", "object_detection_yolox_2022nov.onnx", "image_classification_ppresnet50_2022jan.onnx"] {
+        assert!(sh.contains(name) && ps1.contains(name), "{name}");
+    }
+    let (install_sh, install_ps1) = (read("install.sh"), read("install.ps1"));
+    assert!(install_sh.contains("PBS_TAG=20251014") && install_ps1.contains("$PbsTag = '20251014'"));
+    assert!(install_sh.contains("PY=3.12.12") && install_ps1.contains("$Py = '3.12.12'"));
+}

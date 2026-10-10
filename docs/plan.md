@@ -72,7 +72,7 @@ supported by the same lookup:
   its `recognizer/` and serve every drive; drives are added by path.
 
 Add-ons are installed from the Control Panel (step 1, "Add-ons"; job
-`install_addons` runs `recognizer/install.sh --faces/--pets/--text`) into
+`install_addons` runs `recognizer/install.sh --faces/--pets/--text`, on Windows `install.ps1`) into
 `recognizer/` **next to the program** (`recognize::program_dir`). They are
 independent: Faces (~40 MB), Pets (~140 MB), later Text; the Python/OpenCV
 runtime (~200 MB) is shared and shown in the list. `POST /api/addons` reports
@@ -90,6 +90,26 @@ there adds only its runtime next to the existing one (`install.sh` skips models
 that are present). The worker starts without face models when started
 with `--pets` (hello lists only the pet tasks); the core then skips the face
 passes.
+
+**Windows installer (decision).** Windows runs `recognizer/install.ps1` and
+`fetch-models.ps1` through `powershell.exe -NoProfile -ExecutionPolicy Bypass
+-File` (`recognize::installer_command`; same job, same flags as `-Faces`/`-Pets`).
+Chosen over doing download, checksum and unpacking in Rust because it adds no
+crate (an HTTPS client, gzip, tar, sha2 would each enter `THIRD-PARTY-LICENSES.txt`
+and the static build), PowerShell 5.1 and `tar.exe` ship with Windows 10 1803+,
+and one script per OS mirrors `install.sh` line by line. The cost is that the
+logic exists twice; `core/tests/recognize.rs` keeps the model checksums and the
+Python version in step. Runtime: python-build-standalone `x86_64-pc-windows-msvc`
+(archive checked against a pinned SHA-256) into `runtime/windows-x86_64/` with
+`python.exe` at its top (no symlinks there, so a plain copy works on exFAT/NTFS);
+only x86-64 (OpenCV has no ARM Windows wheel). Cancel kills the whole process tree
+(`taskkill /T`). Status: reviewed, **not run on Windows**; the Rust side and the
+checksum test run on Linux. Windows packaging (`shoebox-windows/` with
+`shoebox.exe`, `Start shoebox.bat`, `recognizer/`) still waits for a Windows build
+in CI: `scripts/build-deps.sh` (libheif and libde265 via cmake, sh) and
+`scripts/build.sh` are POSIX-only, there is no `windows-latest` job, and the
+release job packs macOS only. Once such a job exists, copy `*.ps1` along with
+`*.sh` in the release step.
 
 **What this means for phase 9 (text in photos)** — the text add-on follows the
 same pattern, so the phase 9 PR must:
