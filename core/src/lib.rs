@@ -8,6 +8,7 @@ pub mod backup;
 pub mod browse;
 pub mod classify;
 pub mod clusters;
+pub mod dates;
 pub mod db;
 pub mod duplicates;
 pub mod faces;

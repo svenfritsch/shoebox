@@ -15,7 +15,7 @@ pub const FILE: &str = "library.db";
 const BACKUP_SUFFIX: &str = ".bak";
 
 /// Bump when the schema changes and add a step to `migrate`.
-const SCHEMA_VERSION: i32 = 12;
+const SCHEMA_VERSION: i32 = 13;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -369,6 +369,19 @@ CREATE TABLE IF NOT EXISTS shot_marks (
 );
 ";
 
+/// v13 (phase 12): a date the user gave a photo (year, month or day), by content
+/// like `taken_overrides`. It wins on the timeline over the capture date in the
+/// file, which stays in `files.taken`. Nothing is written to a file.
+const SCHEMA_V13: &str = "
+CREATE TABLE IF NOT EXISTS date_estimates (
+    key   TEXT PRIMARY KEY,   -- files.quick_hash
+    year  INTEGER NOT NULL,
+    month INTEGER,            -- NULL: only the year is known
+    day   INTEGER,            -- NULL: month or year only; only with a month
+    at    INTEGER NOT NULL
+);
+";
+
 fn migrate(conn: &Connection) -> Result<()> {
     let version: i32 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
     if version > SCHEMA_VERSION {
@@ -464,6 +477,12 @@ fn migrate(conn: &Connection) -> Result<()> {
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V12)?;
         tx.pragma_update(None, "user_version", 12)?;
+        tx.commit()?;
+    }
+    if version < 13 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V13)?;
+        tx.pragma_update(None, "user_version", 13)?;
         tx.commit()?;
     }
     Ok(())

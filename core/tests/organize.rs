@@ -352,6 +352,7 @@ fn rotate_changes_only_the_orientation_bytes_and_keeps_the_users_data() {
     lib.db()
         .execute("INSERT INTO taken_overrides (key, taken, taken_offset, at) VALUES (?1, '2001-02-03T04:05:06', NULL, 0)", [&key])
         .unwrap();
+    lib.db().execute("INSERT INTO date_estimates (key, year, month, day, at) VALUES (?1, 1987, 6, NULL, 0)", [&key]).unwrap();
     lib.db()
         .execute(
             "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at) VALUES (?1, 0.1, 0.2, 0.3, 0.1, NULL, 'ignored', 0, 0)",
@@ -395,6 +396,10 @@ fn rotate_changes_only_the_orientation_bytes_and_keeps_the_users_data() {
     assert_eq!(r.json()["version"], format!("{}0", &new_key[..7]));
     let taken: String = lib.db().query_row("SELECT taken FROM taken_overrides WHERE key = ?1", [&new_key], |r| r.get(0)).unwrap();
     assert_eq!(taken, "2001-02-03T04:05:06");
+    // ... and so did the date the user gave it.
+    let est: (i64, i64) = lib.db().query_row("SELECT year, month FROM date_estimates WHERE key = ?1", [&new_key], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    assert_eq!(est, (1987, 6));
+    assert_eq!(lib.count("SELECT count(*) FROM date_estimates"), 1, "moved, not copied");
     let (x, y, w, h): (f64, f64, f64, f64) = lib
         .db()
         .query_row("SELECT x, y, w, h FROM face_decisions WHERE key = ?1", [&new_key], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
