@@ -167,7 +167,7 @@
   "info.path": "Path",
   "info.size": "Size",
   "info.camera": "Camera",
-  "info.open_in": "Open in {name}",
+  "info.open_in": "Open in {name}'s timeline",
   "info.open_in_hint": "Tags, faces, moving and the rest are done in the photo's own drive",
   "info.name": "Name",
   "info.folder": "Folder",

@@ -167,7 +167,7 @@
   "info.path": "Pfad",
   "info.size": "Größe",
   "info.camera": "Kamera",
-  "info.open_in": "In {name} öffnen",
+  "info.open_in": "In der Zeitleiste von {name} öffnen",
   "info.open_in_hint": "Tags, Gesichter, Verschieben und alles Weitere erledigst du im eigenen Laufwerk des Fotos",
   "info.name": "Name",
   "info.folder": "Ordner",
