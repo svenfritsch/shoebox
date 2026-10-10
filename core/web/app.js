@@ -688,20 +688,34 @@ $('menu').onclick = function () {
 var sectionClosed = {};
 try { sectionClosed = JSON.parse(localStorage.getItem('sectionClosed') || '{}') || {}; } catch (e) { sectionClosed = {}; }
 
-function sectionHasActive(id) {
+// The view a section's title leads to (none for Tags and Folders).
+function sectionViewActive(id) {
   var f = state.filter;
-  if (id === 'folders-section') return !f.view && f.folder != null;
-  if (id === 'tags-section') return !f.view && f.tags.length > 0;
   if (id === 'locations-section') return f.view === 'locations';
-  return f.view === 'people' || f.view === 'unnamed' || f.view === 'person' || (!f.view && f.people.length > 0);
+  if (id === 'faces-section') return f.view === 'people' || f.view === 'unnamed' || f.view === 'person';
+  return false;
+}
+
+function toggleSection(id) {
+  sectionClosed[id] = !sectionClosed[id];
+  try { localStorage.setItem('sectionClosed', JSON.stringify(sectionClosed)); } catch (e) { /* ignore */ }
+  updateSections();
+}
+
+// A title (and its caret) opens its section; on a title whose screen is
+// already showing, it closes the section again and stays on that screen.
+function sectionTitleClick(id, show) {
+  if (show && !sectionViewActive(id)) {
+    if (sectionClosed[id]) toggleSection(id);
+    show();
+  } else toggleSection(id);
 }
 
 function updateSections() {
   Array.prototype.forEach.call(document.querySelectorAll('.caret'), function (c) {
     var id = c.dataset.section;
-    var locked = sectionHasActive(id);
-    var open = locked || !sectionClosed[id];
-    c.disabled = locked;
+    var open = !sectionClosed[id];
+    c.disabled = false;
     setArrow(c, open);
     c.setAttribute('aria-expanded', String(open));
     $(c.dataset.body).hidden = !open;
@@ -709,11 +723,12 @@ function updateSections() {
 }
 
 Array.prototype.forEach.call(document.querySelectorAll('.caret'), function (c) {
-  c.onclick = function () {
-    sectionClosed[c.dataset.section] = !sectionClosed[c.dataset.section];
-    try { localStorage.setItem('sectionClosed', JSON.stringify(sectionClosed)); } catch (e) { /* ignore */ }
-    updateSections();
-  };
+  c.onclick = function () { toggleSection(c.dataset.section); };
+});
+Array.prototype.forEach.call(document.querySelectorAll('.side-tags h3 > span, #folders-section > span'), function (s) {
+  var id = s.parentNode.querySelector('.caret').dataset.section;
+  s.style.cursor = 'pointer';
+  s.onclick = function () { toggleSection(id); };
 });
 
 function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
@@ -3732,7 +3747,7 @@ function setGroup(p, groupId) {
 
 // ---- sidebar
 
-$('nav-people').onclick = function () { showView('people'); };
+$('nav-people').onclick = function () { sectionTitleClick('faces-section', function () { showView('people'); }); };
 
 function renderFacesSection() {
   var info = people.info;
