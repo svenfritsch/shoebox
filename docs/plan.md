@@ -596,7 +596,7 @@ worker, guard tests) is reused.
 | Search term | Two clearly separate kinds of search (see "Search: names versus text" below). Plain words keep meaning file name, folder, tag, person and pet, exactly as today; **text in the picture** is its own chip (`text:winter`, or the suggestion row "In the text of photos"), ANDed with everything else ("Rechnung" in text + folder "2023") | A plain word matching OCR would drown tag results in photos that merely contain the word. Same mechanism as the pet term (`pet=cat`), so term parsing, chips and AND logic are reused; the API gets `text=` |
 | Results | Normal timeline grid. Each cell hit by text shows the matching line as a small caption under the thumbnail; in the viewer the matching boxes are outlined (same overlay as face boxes, own colour) and the info panel has a "Text in this photo" block listing the lines with a copy button. Selecting text itself on the image is not built | Reuses the viewer overlay and the info panel hot spots listed in phase 5 |
 | Multi-drive | Each drive keeps its own `recognition.db`; a text search fans out over all online libraries and merges by the common timeline, like tags | Consistent with phase 6. An offline drive's photos are simply missing from the results |
-| Launcher / CLI | `shoebox recognize --text` (resumable, newest first, `--limit`, `--retry-failed`, a model change redoes it) and a **"Recognize text" button** in the Control Panel next to Recognize / Recognize pets, with the same progress bar and per-file results, a Cancel that keeps what was read, and the same grey-out with a reason when the Text add-on is missing. The add-on, `--text` in the installers and the job plumbing follow the checklist under "What this means for phase 9" above. `shoebox text stats` prints photos read, with text, lines and the model | Same shape as `--pets`. Resumable and partial results are usable at once: the search works on whatever has been read so far and the status line says "Text read for 12,400 of 50,000 photos" |
+| Launcher / CLI | `shoebox recognize --text` (resumable, in the order above, `--limit`, `--retry-failed`, a model change redoes it) and a **"Recognize text" button** in the Control Panel next to Recognize / Recognize pets, with the same progress bar and per-file results, a Cancel that keeps what was read, and the same grey-out with a reason when the Text add-on is missing. The add-on, `--text` in the installers and the job plumbing follow the checklist under "What this means for phase 9" above. `shoebox text stats` prints photos read, with text, lines and the model | Same shape as `--pets`. Resumable and partial results are usable at once: the search works on whatever has been read so far and the status line says "Text read for 12,400 of 50,000 photos" |
 | Privacy | Photos of documents contain names, addresses and numbers. The index is a plain SQLite file on the user's own drive, never leaves the machine, and is covered by the "local only" principle; the settings page gets a "Delete all recognised text" button | Stated explicitly because text search makes sensitive content easy to find for anyone who can open the web UI (LAN PIN applies) |
 | Not in scope | Handwriting, translation, tables/layout analysis, PDF files, searching text in video, "find similar documents", semantic search ("photos of receipts" without a word in them). Document *classification* is a CLIP job and belongs to that later phase | Keep the first slice small and shippable |
 
@@ -622,6 +622,74 @@ and favorites). The suggestion list shows the groups in this order: names,
 folders and tags (today's rows), people and pets, then the one text row, so
 nobody gets OCR hits by accident. A hit by text shows the matching line under
 the thumbnail; a hit by name shows nothing extra, as today.
+
+**Typed shortcuts and the file-name search.** Two prefixes switch the box to
+one kind of search and keep the suggestion list short (no tags, people or pets
+mixed in):
+
+| Typed | Suggestion list shows | Chip | API |
+|---|---|---|---|
+| `name:IMG_62` | one group "File names": the row "File names containing “IMG_62”" with its photo count | grey **NAME** badge: `NAME IMG_62 ✕` | `name=IMG_62` |
+| `text:Rechnung` | one group "In the text of photos": the row "Photos with “Rechnung” in the text" | accent **T** badge: `T Rechnung ✕` | `text=Rechnung` |
+| plain `Rechn` | today's groups (tags, folders, faces, pets) and, last, "In the text of photos" | as today | `q=` |
+
+- `name:` matches the **file name only** (the last path segment, NFC,
+  case- and diacritic-insensitive substring), not folders, tags or people. It
+  is for "I know roughly what the file is called" (`name:IMG_6620`,
+  `name:scan`), where today a plain word also drags in every tag and person.
+  Folders stay reachable as folder suggestions or by plain words.
+- Prefixes are case-insensitive, work in both UI languages and are the same in
+  English and German (keyboard shortcuts, like `text:`/`name:` in a mail
+  client), but every label around them is translated (`tr()`, both JSON files).
+- Several chips of any kind combine with AND, including several text chips
+  (`text:Rechnung` + `text:Stadtwerke`) and several name chips; the same term
+  twice is one chip. A text chip next to a tag, folder, person, pet, place or
+  favorites chip narrows that result like any other chip. So yes: `text:Rechnung`
+  becomes a chip in the multi-chip search.
+- Enter on a typed prefix adds the chip; Escape and ✕ remove it. A prefix with
+  nothing after it shows a one-line hint instead of a list.
+
+Mock-ups (static HTML rendered with the app's own stylesheet; the real UI
+will differ in detail):
+
+- plain word, with the new last group and the shortcut hint:
+  [docs/mocks/search-text-dropdown.png](mocks/search-text-dropdown.png)
+- `text:` typed, one group only:
+  [docs/mocks/search-text-prefix.png](mocks/search-text-prefix.png)
+- `name:` typed, one group only:
+  [docs/mocks/search-name-prefix.png](mocks/search-name-prefix.png)
+- three chips in one search (tag, text, name) with the matching line under
+  each hit: [docs/mocks/search-text-chips.png](mocks/search-text-chips.png)
+
+**Guide.** The guide describes what the app does today, so the text below is
+**not** in `docs/guide/` yet: it goes into both guide files in the same pull
+request that builds the search (`CLAUDE.md`: the guide is part of every
+change), with the "at a glance" legend, the Search section, the launcher task
+list, the Add-ons paragraph and the FAQ checked as listed there, and the
+`shoebox-*.txt` files regenerated.
+
+> EN, section "Search": *Plain words search file names, folders, tags, people
+> and pets. Two shortcuts search one thing only. Type* `name:` *and part of a
+> file name (*`name:IMG_62`*) to search file names only, without tags and
+> people in the list. Type* `text:` *and a word (*`text:Rechnung`*) to find
+> photos that contain that word in the picture itself: documents, screenshots,
+> street signs. This needs the Text add-on and a run of* Recognize text *in the
+> Control Panel. Both shortcuts become chips (a grey* NAME *or an orange* T*) and
+> combine with every other chip, for example a folder and* `text:Rechnung`*.*
+>
+> DE, Abschnitt „Suche“: *Einfache Wörter durchsuchen Dateinamen, Ordner, Tags,
+> Personen und Haustiere. Zwei Kürzel suchen nur eines: Mit* `name:` *und einem
+> Teil des Dateinamens (*`name:IMG_62`*) suchst du nur in Dateinamen, ohne dass
+> Tags und Personen in der Liste auftauchen. Mit* `text:` *und einem Wort
+> (*`text:Rechnung`*) findest du Fotos, auf denen dieses Wort selbst zu lesen ist:
+> Dokumente, Bildschirmfotos, Straßenschilder. Dafür braucht es das
+> Text-Add-on und einen Lauf von* Text erkennen *in der Schaltzentrale. Beide
+> Kürzel werden zu Chips (ein grauer* NAME *oder ein oranges* T*) und lassen sich
+> mit jedem anderen Chip kombinieren, zum Beispiel mit einem Ordner und*
+> `text:Rechnung`*.*
+
+(The exact German button name is taken from `de.json` when the key exists; the
+text above is a draft.)
 
 How it runs: the text term becomes a set of photo ids, the way the people
 term does (`files_of_people`: matching quick hashes, mapped to file ids by
@@ -676,22 +744,62 @@ plus ~1 s more for the 15 % with text, so 50,000 photos take **~8–10 hours**;
 a modern Mac or PC with onnxruntime about 0.1 s, so **~1.5–2 hours**. The
 faces pass is the comparison: the plan's 4–5 h per 100,000 photos on the old
 Mac, i.e. 2–2.5 h for this drive, so expect text to take 3–4× as long as
-faces there. It is a background job, resumable, newest first, and the search
-works on what has been read so far. If the spike confirms the old Mac is that
-slow, add an order that helps early: photos the screenshot score (phase 11)
-rates as screenshots or that have no camera data come first, because that is
-where most text is.
+faces there. It is a background job, resumable, and the search works on what
+has been read so far.
+
+**Order of the pass (decided, applies to every run, not only a slow one).**
+Text is read where text most likely is, so the first hours already fill the
+search with useful hits:
+
+1. screenshots first (the phase 11 score: the user's decision, else
+   `screenshots.rs`, the same test as the Type filter), highest score first;
+2. then photos without camera data (no `camera`, no GPS, no exposure data):
+   scans, exports, forwarded pictures;
+3. then everything else, newest first (as faces and pets).
+
+The order is a single `ORDER BY` in the pass's selection, plus a rank column
+computed from data already in `files`; it never changes what is read, only
+when. Resuming keeps the order (unread photos are picked in the same rank), so
+a cancelled run continues with the best candidates.
 
 #### Build order (each step is its own commit, mergeable alone)
 
-1. **Spike on real data, no core changes.** Add `text` to `recognizer.py`
-   behind `--text`, with `fetch-models.sh` entries (checksummed) for the
-   detector and the Latin recogniser. Try it by hand on 30 photos from the
-   drive (documents, screenshots, signs, and 30 that have no text) and on the
-   old Intel Mac. Decide model, thresholds and speed from numbers, and write
-   them into this section. If the old Mac needs more than about 1.5 s per
-   photo, say so here and decide: accept a long first run (as for faces), or
-   skip photos the cheap detector scores low.
+1. **Spike on real data, no core changes.** Goal: pick the models and the
+   thresholds from numbers, and replace the estimates under "What it costs".
+   It runs on **your computers with your photos** (the cloud session this
+   plan was written in cannot see the drive); what the repository ships for it
+   is a script, and what comes back is a small report.
+   - *Photos to provide:* about 60 pictures in one folder, copied from the
+     drive (copies, never the originals): ~30 with text (several photographed
+     documents and letters incl. one sideways, ~8 screenshots, ~8 street
+     signs, shop fronts and menus, a few with German umlauts and ß, one
+     handwritten note as a known "should not work") and ~30 without (people,
+     landscapes, foliage and brick walls, which tempt false text). An
+     `expected.txt` next to them lists, per file, one or two words that are
+     really readable; that is all the ground truth needed. Fewer is fine
+     (20+20 already shows the picture); more files are not needed.
+   - *The script:* `recognizer/text_spike.py <folder> [--runner onnx|opencv]`
+     (new, throw-away, not part of the app) loads PP-OCR detector and Latin
+     recogniser, runs each picture, and prints one line per file (time for
+     detection, time for recognition, number of lines, the text) and a
+     summary: seconds per photo, share of pictures with text, hits and misses
+     against `expected.txt`, lines found in the no-text pictures (false
+     positives) at several confidence thresholds, and the size of the models
+     and of the rows it would store. It reads files read-only (the guard
+     rules apply: it decodes a copy, writes only its report next to the
+     script).
+   - *Where it runs:* on the old Intel MacBook (the case that decides whether
+     the first run is bearable) and once on a modern machine; the same folder
+     both times. Output is pasted back as a text file; no photo has to be
+     sent anywhere. If you would rather not run anything, the 60 photos
+     alone are enough for a first look in a session that has them.
+   - *Decides:* PP-OCR version, whether OpenCV 4.10 on macOS 12 runs the
+     models without onnxruntime, default confidence threshold, whether a
+     rotated pass is needed in v1, and the real seconds per photo. If the old
+     Mac needs more than about 1.5 s per photo on average, say so here and
+     decide: accept a long first run (as for faces; the order of the pass
+     already puts the likely text first) or skip photos the cheap detector
+     scores low.
 2. **Protocol 3** ([protocol.md](protocol.md)): hello lists `text` with its
    model id; request task `text`; reply key `text: [{bbox, score, text}]`.
    Additive: a protocol 2 worker is refused with the usual "update the
