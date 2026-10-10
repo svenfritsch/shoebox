@@ -1779,19 +1779,28 @@ function loadDuplicatesAcross() {
   page.textContent = '';
   page.appendChild(el('h2', '', tr('dups.title')));
   addDupTabs(page);
+  return renderDuplicatesAcross(page, function () { return state.filter.view === 'duplicates'; }, false);
+}
+
+// The copies on different drives, into `page`; `alive` says whether it is still
+// the page on screen when the answer arrives. Inside "Manage drives" (`embedded`)
+// the link back to the drive roles is left out: they are right above.
+function renderDuplicatesAcross(page, alive, embedded) {
   var sub = el('p', 'sub', tr('dups.looking'));
   page.appendChild(sub);
   return api('/api/all/duplicates?limit=200').then(function (r) {
-    if (state.filter.view !== 'duplicates') return;
+    if (!alive()) return;
     sub.textContent = r.total_groups
       ? tr('dups.across.some', { count: trn('count.photos_exist', r.total_groups), drives: r.compared.join(', ') })
       : r.compared.length > 1 ? tr('dups.across.none_in', { drives: r.compared.join(', ') }) : tr('dups.across.none');
     r.excluded.forEach(function (x) {
       var b = el('div', 'banner');
       b.appendChild(document.createTextNode(tr('dups.excluded', { name: x.name, reason: x.reason })));
-      var go = el('button', 'link', tr('dups.decide'));
-      go.onclick = function () { showView('drives'); };
-      b.appendChild(go);
+      if (!embedded) {
+        var go = el('button', 'link', tr('dups.decide'));
+        go.onclick = function () { showView('drives'); };
+        b.appendChild(go);
+      }
       page.appendChild(b);
     });
     r.groups.forEach(function (g) { page.appendChild(crossGroupNode(g)); });
@@ -5110,83 +5119,161 @@ function showOffline() {
   }, 4000);
 }
 
+var drivesTab = 'people';
+
+// Groups of drives: an original followed by its backups (the confirmed ones, or
+// an undecided drive that looks like a copy of it), so a backup always sits
+// next to the drive it copies.
+function driveOrder(list, backups) {
+  var primaryOf = {};
+  backups.forEach(function (b) { if (b.primary) primaryOf[b.library] = b.primary; });
+  list.forEach(function (d) { if (!primaryOf[d.library] && d.suggested_backup_of) primaryOf[d.library] = d.suggested_backup_of; });
+  var names = list.map(function (d) { return d.name; });
+  var isCopy = function (d) { return primaryOf[d.library] && names.indexOf(primaryOf[d.library]) >= 0 && primaryOf[d.library] !== d.name; };
+  var out = [];
+  list.forEach(function (d) {
+    if (isCopy(d)) return;
+    out.push([d].concat(list.filter(function (c) { return isCopy(c) && primaryOf[c.library] === d.name; })));
+  });
+  return out;
+}
+
+// A Unix time for a drive card: "today, 14:05", "4 days ago, 7:30", and from a
+// week on the date ("21 Sep 2026, 19:12"). The title has the exact date.
+function whenOf(t) {
+  var d = new Date(t * 1000), now = new Date();
+  var midnight = function (x) { return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(); };
+  var days = Math.round((midnight(now) - midnight(d)) / 86400000);
+  var time = d.toLocaleTimeString(I18n.lang, { hour: 'numeric', minute: '2-digit', hourCycle: 'h23' });
+  var text = days <= 0 ? tr('time.today_at', { time: time })
+    : days <= 7 ? trn('time.days_ago_at', days, { time: time })
+    : I18n.date(d, { day: 'numeric', month: 'short', year: 'numeric' }) + ', ' + time;
+  var span = el('b', '', text);
+  span.title = d.toLocaleString(I18n.lang, { dateStyle: 'full', timeStyle: 'short', hourCycle: 'h23' });
+  return span;
+}
+
+// One footer cell: "Scanned today, 14:05" with an optional (i) hint after the date.
+function footCell(label, t, hint) {
+  var c = el('span', 'cell', label + ' ');
+  if (!t) { c.appendChild(el('b', '', tr('time.never'))); return c; }
+  c.appendChild(whenOf(t));
+  if (hint) { var i = el('i', 'info', 'i'); i.title = hint; c.appendChild(i); }
+  return c;
+}
+
 function loadDrivesPage() {
   var page = $('page');
   page.textContent = '';
   page.appendChild(el('h2', '', tr('side.manage_drives')));
   page.appendChild(el('p', 'sub', tr('drives.page_sub')));
-  var drivesBox = el('div'), peopleBox = el('div');
-  page.appendChild(drivesBox);
-  page.appendChild(el('h2', '', tr('drives.people_across')));
-  page.appendChild(peopleBox);
+  var cards = el('div', 'drive-cards'), tabs = el('div', 'tabs'), tabBox = el('div');
+  page.appendChild(cards);
+  page.appendChild(tabs);
+  page.appendChild(tabBox);
   var role = function (d, value, of) {
     post('/api/all/role', { library: d.library, role: value, of: of || null }).then(function () { toast(tr('drives.role_toast', { name: d.name, role: tr('drives.role.' + value) })); loadDrivesPage(); refreshDrives(); }).catch(failed);
   };
-  api('/api/all/drives').then(function (list) {
-    var shown = list.filter(function (d) { return d.shown_in_all; }).length;
-    var tools = el('div', 'toolbar');
-    var allBtn = el('button', 'btn', tr('drives.photos_all'));
-    allBtn.title = tr('drives.timeline_hint', { count: trn('count.drives', shown) });
-    allBtn.onclick = function () { switchLibrary('all', ''); };
-    var dups = el('button', 'btn quiet', tr('drives.dups_across'));
-    dups.onclick = function () { dupTab = 'across'; showView('duplicates'); };
-    tools.appendChild(allBtn);
-    tools.appendChild(dups);
-    drivesBox.appendChild(tools);
-    list.forEach(function (d) {
-      var card = el('div', 'drive-card' + (d.online ? '' : ' offline'));
-      card.appendChild(el('span', 'title', d.name));
-      card.appendChild(el('span', 'pill' + (d.online ? ' on' : ''), tr(d.online ? 'drives.online' : 'drives.offline')));
-      if (d.online && !d.shown_in_all) card.appendChild(el('span', 'pill', tr('drives.not_in_common')));
-      if (d.online) {
-        var wrap = el('span', 'role');
-        wrap.appendChild(el('span', 'sub', tr('drives.this_is')));
-        var sel = el('select');
-        [['unknown', tr('drives.role.unknown')], ['separate', tr('drives.role.separate')], ['backup', tr('drives.role.backup')]].forEach(function (o) {
-          var opt = el('option', '', o[1]); opt.value = o[0]; if (d.role === o[0]) opt.selected = true; sel.appendChild(opt);
-        });
-        sel.onchange = function () { role(d, sel.value); };
-        wrap.appendChild(sel);
-        card.appendChild(wrap);
-      }
-      drivesBox.appendChild(card);
-      if (d.online && d.role === 'backup') {
-        var slot = el('div', 'backup-status');
-        slot.dataset.library = d.library;
-        slot.appendChild(el('p', 'sub', tr('drives.comparing')));
-        drivesBox.appendChild(slot);
-      }
-      if (d.online && d.role === 'unknown' && d.suggested_backup_of) {
-        var b = el('div', 'banner warn');
-        b.appendChild(el('div', '', tr('drives.looks_backup', { name: d.name, other: d.suggested_backup_of })));
-        var row = el('div', 'row');
-        var yes = el('button', 'btn', tr('drives.yes_backup')); yes.onclick = function () { role(d, 'backup'); };
-        var no = el('button', 'btn quiet', tr('drives.no_backup')); no.onclick = function () { role(d, 'separate'); };
-        row.appendChild(yes); row.appendChild(no);
-        b.appendChild(row);
-        drivesBox.appendChild(b);
-      }
+  Promise.all([api('/api/all/drives'), api('/api/all/backups')]).then(function (res) {
+    var list = res[0], backups = res[1];
+    var primaryOf = {};
+    backups.forEach(function (b) { if (b.primary) primaryOf[b.library] = b.primary; });
+    driveOrder(list, backups).forEach(function (group) {
+      var box = el('div', 'drive-group');
+      cards.appendChild(box);
+      group.forEach(function (d) {
+        var of = primaryOf[d.library] || d.suggested_backup_of;
+        var kind = !d.online ? 'off' : d.role === 'backup' ? 'bk' : d.role === 'unknown' ? 'undecided' : 'orig';
+        var card = el('div', 'drive-card ' + kind);
+        // The same row on every card says what the drive is.
+        var strip = el('div', 'strip');
+        strip.appendChild(el('span', '', kind === 'off' ? tr('drives.offline') : kind === 'bk' ? (of ? tr('drives.strip_backup', { primary: of }) : tr('drives.role.backup')) : tr('drives.role.' + d.role)));
+        if (d.online && !d.shown_in_all) strip.appendChild(el('span', 'r', tr('drives.not_in_timeline')));
+        card.appendChild(strip);
+        var body = el('div', 'body');
+        var top = el('div', 'top');
+        var name = el('div', 'name');
+        name.appendChild(el('span', '', d.name));
+        name.appendChild(el('span', 'on', d.online ? '● ' + tr('drives.online') : ''));
+        top.appendChild(name);
+        if (d.online) {
+          var sel = el('select');
+          sel.title = tr('drives.role_hint');
+          [['unknown', tr('drives.role.unknown')], ['separate', tr('drives.role.separate')], ['backup', tr('drives.role.backup')]].forEach(function (o) {
+            var opt = el('option', '', o[1]); opt.value = o[0]; if (d.role === o[0]) opt.selected = true; sel.appendChild(opt);
+          });
+          sel.onchange = function () { role(d, sel.value); };
+          top.appendChild(sel);
+        }
+        body.appendChild(top);
+        // The disk the folder is on: the folder's own name says little when the
+        // drive holds more than photos.
+        if (d.volume) {
+          var where = el('div', 'where');
+          where.appendChild(el('span', 'ico', '💾'));
+          where.appendChild(el('b', '', d.volume));
+          where.appendChild(el('span', '', ' · ' + d.folder));
+          body.appendChild(where);
+        }
+        if (d.online && d.role === 'backup') {
+          var slot = el('div', 'backup-status');
+          renderBackup(slot, backups.filter(function (x) { return x.library === d.library; })[0], d);
+          body.appendChild(slot);
+        } else if (d.online) {
+          body.appendChild(el('div', 'sub', trn('count.files', d.files)));
+        }
+        if (d.online && d.role === 'unknown' && d.suggested_backup_of) {
+          var bn = el('div', 'banner warn');
+          bn.appendChild(el('div', '', tr('drives.looks_backup', { name: d.name, other: d.suggested_backup_of })));
+          var row = el('div', 'row');
+          var yes = el('button', 'btn', tr('drives.yes_backup')); yes.onclick = function () { role(d, 'backup'); };
+          var no = el('button', 'btn quiet', tr('drives.no_backup')); no.onclick = function () { role(d, 'separate'); };
+          row.appendChild(yes); row.appendChild(no);
+          bn.appendChild(row);
+          body.appendChild(bn);
+        }
+        card.appendChild(body);
+        if (d.online) {
+          var foot = el('div', 'foot');
+          foot.appendChild(footCell(tr('drives.scanned'), d.last_scan));
+          foot.appendChild(footCell(tr(d.role === 'backup' ? 'drives.last_backup' : 'drives.new_files'), d.last_new_files, tr('drives.new_files_hint')));
+          card.appendChild(foot);
+        }
+        box.appendChild(card);
+      });
     });
   }).catch(failed);
-  api('/api/all/backups').then(function (list) {
-    Array.prototype.forEach.call(drivesBox.querySelectorAll('.backup-status'), function (slot) { renderBackup(slot, list.filter(function (b) { return b.library === slot.dataset.library; })[0]); });
-  }).catch(failed);
-  api('/api/all/people').then(function (r) {
-    if (r.offline.length) peopleBox.appendChild(el('p', 'sub', tr('drives.people_offline', { names: r.offline.join(', ') })));
-    if (!r.people.length) peopleBox.appendChild(el('p', 'sub', tr('drives.nobody')));
-    var grid = el('div', 'people-grid');
-    r.people.forEach(function (p) {
-      var c = el('div', 'person-merged');
-      c.appendChild(el('div', 'n', p.name));
-      c.appendChild(el('div', 'sub', trn('count.photos', p.photos) + (p.group ? ' · ' + p.group : '')));
-      p.libraries.forEach(function (l) { c.appendChild(el('span', 'pill', l.name + ' · ' + l.faces)); });
-      var show = el('button', 'btn quiet', tr('drives.photos_everywhere'));
-      show.onclick = function () { switchLibrary('all', 'person=' + encodeURIComponent(p.name)); };
-      c.appendChild(show);
-      grid.appendChild(c);
+
+  var show = function () {
+    tabs.textContent = '';
+    [['people', tr('drives.people_across')], ['dups', tr('drives.dups_across')]].forEach(function (t) {
+      var b = el('button', drivesTab === t[0] ? 'on' : '', t[1]);
+      b.onclick = function () { drivesTab = t[0]; show(); };
+      tabs.appendChild(b);
     });
-    peopleBox.appendChild(grid);
-  }).catch(failed);
+    tabBox.textContent = '';
+    var mine = tabBox, tab = drivesTab;
+    var alive = function () { return mine.parentNode && drivesTab === tab; };
+    if (tab === 'dups') return renderDuplicatesAcross(tabBox, alive, true);
+    api('/api/all/people').then(function (r) {
+      if (!alive()) return;
+      if (r.offline.length) tabBox.appendChild(el('p', 'sub', tr('drives.people_offline', { names: r.offline.join(', ') })));
+      if (!r.people.length) tabBox.appendChild(el('p', 'sub', tr('drives.nobody')));
+      var grid = el('div', 'people-grid');
+      r.people.forEach(function (p) {
+        var c = el('div', 'person-merged');
+        c.appendChild(el('div', 'n', p.name));
+        c.appendChild(el('div', 'sub', trn('count.photos', p.photos) + (p.group ? ' · ' + p.group : '')));
+        p.libraries.forEach(function (l) { c.appendChild(el('span', 'pill', l.name + ' · ' + l.faces)); });
+        var go = el('button', 'btn quiet', tr('drives.photos_everywhere'));
+        go.onclick = function () { switchLibrary('all', 'person=' + encodeURIComponent(p.name)); };
+        c.appendChild(go);
+        grid.appendChild(c);
+      });
+      tabBox.appendChild(grid);
+    }).catch(failed);
+  };
+  show();
 }
 
 // The common timeline came in: which drives its ids refer to, and what is left out.
@@ -5203,42 +5290,75 @@ function allTimelineLoaded(data) {
   $('status').textContent = tr('drives.status', { photos: trn('count.photos', data.count), drives: trn('count.drives', data.libs.length) });
 }
 
-// How long ago a Unix time was, for "last backup".
-function daysAgo(t) {
-  if (!t) return tr('time.never');
-  var d = Math.floor((Date.now() / 1000 - t) / 86400);
-  return d <= 0 ? tr('time.today') : trn('time.days_ago', d);
+// "Show in Finder" for a file on one of the drives (named by drive and path).
+function revealOn(library, path) {
+  post('/api/all/reveal', { library: library, path: path }).then(function (r) {
+    toast(tr('reveal.shown', { app: r.app === 'file manager' ? tr('reveal.file_manager') : r.app }));
+  }).catch(failed);
 }
 
 // A backup drive against the drive it copies, from the two indexes (nothing is
-// read from the photos): what is new since the last backup, what differs, what
-// only the backup has. Bit rot on the backup itself is found by "Backup check"
-// with re-reading in the launcher (`shoebox backup … --deep`).
-function renderBackup(slot, b) {
+// read from the photos): how much of it is on the backup, what is new since the
+// last backup, what differs, what only the backup has. Bit rot on the backup
+// itself is found by "Backup check" with re-reading in the launcher
+// (`shoebox backup … --deep`).
+function renderBackup(slot, b, d) {
   slot.textContent = '';
   if (!b || !b.primary) {
     slot.appendChild(el('p', 'sub', (b && b.note) || tr('drives.backup_none')));
     return;
   }
-  var box = el('div', 'banner' + (b.up_to_date ? '' : ' warn'));
-  box.appendChild(el('div', '', (b.up_to_date ? '✓ ' : '! ') + (b.up_to_date
-    ? tr('drives.backup_all', { backup: b.backup, primary: b.primary, files: trn('count.files', b.compared) })
-    : tr('drives.backup_some', { backup: b.backup, primary: b.primary, files: trn('count.files', b.missing), different: b.different ? tr('drives.backup_diff', { n: b.different }) : '' }))));
-  box.appendChild(el('div', 'sub', tr('drives.backup_last', { last: daysAgo(b.backup_last_new_files), scan: daysAgo(b.backup_last_scan) })
-    + (b.unhashed ? tr('drives.backup_unhashed', { files: trn('count.files', b.unhashed), primary: b.primary }) : '')
-    + (b.extra ? tr('drives.backup_extra', { files: trn('count.files', b.extra), primary: b.primary }) : '')));
-  var lists = [[tr('drives.list_missing'), b.missing, b.missing_files], [tr('drives.list_different'), b.different, b.different_files], [tr('drives.list_extra'), b.extra, b.extra_files]];
+  if (b.compared) {
+    var pct = b.covered >= b.compared ? 100 : Math.floor(b.covered * 100 / b.compared);
+    var prog = el('div', 'prog');
+    var t = el('div', 't');
+    var lead = el('span');
+    lead.appendChild(el('b', '', I18n.number(b.covered)));
+    lead.appendChild(document.createTextNode(' ' + tr('drives.bar_of', { total: I18n.number(b.compared) })));
+    t.appendChild(lead);
+    t.appendChild(el('b', '', pct + ' %'));
+    prog.appendChild(t);
+    var bar = el('div', 'bar');
+    var fill = el('i');
+    fill.style.width = pct + '%';
+    bar.appendChild(fill);
+    prog.appendChild(bar);
+    slot.appendChild(prog);
+  }
+  if (b.unhashed) slot.appendChild(el('div', 'sub', tr('drives.backup_unhashed', { files: trn('count.files', b.unhashed), primary: b.primary }).trim()));
+  var lists = [
+    [b.missing, 'drives.sum_missing', b.missing_files, b.primary_library, 'warn'],
+    [b.different, 'drives.sum_different', b.different_files, b.primary_library, 'warn'],
+    [b.extra, 'drives.sum_extra', b.extra_files, d.library, '']
+  ];
+  var wrap = el('div', 'lists');
   lists.forEach(function (l) {
-    if (!l[1]) return;
+    if (!l[0]) return;
     var det = el('details');
-    det.appendChild(el('summary', '', l[0] + ' (' + I18n.number(l[1]) + ')'));
-    var ul = el('ul', 'pathlist');
-    l[2].forEach(function (f) { ul.appendChild(el('li', '', f.path)); });
-    if (l[1] > l[2].length) ul.appendChild(el('li', 'sub', tr('drives.more', { n: l[1] - l[2].length })));
+    var sum = el('summary');
+    sum.appendChild(el('b', l[4], I18n.number(l[0])));
+    sum.appendChild(document.createTextNode(' ' + tr(l[1])));
+    if (l[1] === 'drives.sum_extra') sum.appendChild(el('span', 'sub', ' ' + tr('drives.sum_extra_hint', { primary: b.primary })));
+    det.appendChild(sum);
+    var ul = el('ul', 'files');
+    l[2].forEach(function (f) {
+      var li = el('li');
+      li.appendChild(el('span', 'path', f.path));
+      li.appendChild(el('span', 'size', formatBytes(f.size)));
+      if (state.reveal && l[3]) {
+        var go = el('button', 'btn quiet reveal', '📂');
+        go.title = state.reveal;
+        go.setAttribute('aria-label', state.reveal);
+        go.onclick = function () { revealOn(l[3], f.path); };
+        li.appendChild(go);
+      }
+      ul.appendChild(li);
+    });
+    if (l[0] > l[2].length) ul.appendChild(el('li', 'more', tr('drives.more', { n: l[0] - l[2].length })));
     det.appendChild(ul);
-    box.appendChild(det);
+    wrap.appendChild(det);
   });
-  slot.appendChild(box);
+  slot.appendChild(wrap);
 }
 
 function refreshDrives() {
