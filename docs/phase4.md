@@ -24,8 +24,7 @@ face models are always installed. The launcher's step 1, **Add-ons**, runs this
 script (job `install_addons`, `POST /api/addons` reports what is installed for
 the computer and for each ticked drive, and greys out Recognize / Recognize
 pets where the add-on is missing). `find_worker_for` looks in `recognizer/` next
-to the shoebox binary first, then `<binary dir>/../recognizer`, and the drive's
-`.shoebox/recognizer/` last, and takes the first folder that has the models the
+to the shoebox binary first and the drive's `.shoebox/recognizer/` last, and takes the first folder that has the models the
 run needs (pet models for `--pets`, else the face models) and the Python for
 this computer (`runtime/<os>-<arch>/`). The models are the same everywhere; the
 runtime is per kind of computer, so a drive installed on another kind of Mac

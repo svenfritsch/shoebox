@@ -142,8 +142,14 @@ function renderAddons() {
   var rt = $('addon-runtime-state');
   rt.textContent = tr(addons.runtime ? 'launcher.addon.installed' : 'launcher.addon.required');
   rt.className = 'pill' + (addons.runtime ? ' ok' : ' req');
-  state('addon-faces-state', addons.faces);
-  state('addon-pets-state', addons.pets);
+  // Ready, or the models are on the drive but this kind of computer lacks its Python, or missing.
+  var addonState = function (id, ready, models) {
+    var s = $(id);
+    s.textContent = tr(ready ? 'launcher.addon.installed' : models ? 'launcher.addon.needs_runtime' : 'launcher.addon.missing');
+    s.className = 'pill' + (ready ? ' ok' : '');
+  };
+  addonState('addon-faces-state', addons.faces, addons.faces_models);
+  addonState('addon-pets-state', addons.pets, addons.pets_models);
   // Each add-on stands alone; an installed one is ticked and cannot be ticked off.
   ['faces', 'pets'].forEach(function (k) {
     var box = $('addon-' + k);
@@ -156,15 +162,15 @@ function renderAddons() {
     : addons.faces && addons.pets ? tr('launcher.addons.all_installed', { dir: addons.dir })
     : tr('launcher.addons.where', { dir: addons.dir });
   // The folded card still says where things stand.
+  var word = function (ready, models) { return tr(ready ? 'launcher.addon.installed' : models ? 'launcher.addon.needs_runtime' : 'launcher.addon.missing'); };
   $('addons-summary').textContent = [
-    tr('launcher.addon.faces') + ': ' + tr(addons.faces ? 'launcher.addon.installed' : 'launcher.addon.missing'),
-    tr('launcher.addon.pets') + ': ' + tr(addons.pets ? 'launcher.addon.installed' : 'launcher.addon.missing'),
+    tr('launcher.addon.faces') + ': ' + word(addons.faces, addons.faces_models),
+    tr('launcher.addon.pets') + ': ' + word(addons.pets, addons.pets_models),
   ].join(' · ');
   // Why a recognition button is grey.
   var why = [];
-  var noFaces = addonMissing('recognize'), noPets = addonMissing('recognize_pets');
-  if (noFaces.length) why.push(tr('launcher.addons.need_faces', { drives: noFaces.join(', ') }));
-  if (noPets.length) why.push(tr('launcher.addons.need_pets', { drives: noPets.join(', ') }));
+  if (addonMissing('recognize').length) why.push(tr('launcher.addons.need_faces'));
+  if (addonMissing('recognize_pets').length) why.push(tr('launcher.addons.need_pets'));
   $('addon-need').textContent = why.join(' ');
   document.querySelectorAll('.actions button').forEach(function (b) {
     if (addonMissing(b.dataset.kind).length) b.disabled = true;

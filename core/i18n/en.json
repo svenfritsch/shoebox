@@ -626,8 +626,8 @@
   "draw.kind.cat": "Cat",
   "draw.kind.dog": "Dog",
   "draw.note_pet": "The box is kept in shoebox’s index, never written into the photo. The whole pet in the box is learned for suggestions.",
-  "launcher.kind.recognize_rotated": "Recognize horizontal faces",
-  "launcher.kind.recognize_rotated.desc": "also find faces lying on their side or upside down (slower)",
+  "launcher.kind.recognize_rotated": "Rotated faces",
+  "launcher.kind.recognize_rotated.desc": "also find faces turned on their side, for example people lying down (slower)",
   "launcher.kind.forget_missing": "Forget missing",
   "launcher.forget.found": "{n} files are gone from the drive, as far as the index knows.",
   "launcher.forget.button": "Forget the missing files",
@@ -753,11 +753,12 @@
   "launcher.addons.where": "They are installed in {dir} and used for every drive.",
   "launcher.addons.all_installed": "Installed in {dir}.",
   "launcher.addons.not_installable": "The recognizer folder is not next to the shoebox program. Put the folder “recognizer” from the download next to it (see the guide), then reload this page.",
-  "launcher.addons.need_faces": "Recognize faces needs the Faces add-on for: {drives}.",
-  "launcher.addons.need_pets": "Recognize pets needs the Pets add-on for: {drives}.",
+  "launcher.addons.need_faces": "Recognize faces needs the Faces add-on.",
+  "launcher.addons.need_pets": "Recognize pets needs the Pets add-on.",
   "launcher.kind.install_addons": "Install add-ons",
   "launcher.addon.runtime": "Python and OpenCV",
   "launcher.addon.runtime.desc": "needed by every add-on, always installed with the first one (about 200 MB per kind of computer)",
   "launcher.addons.runtime_missing": "The models are there, but this computer (Intel or Apple Silicon) has no Python and OpenCV in {dir} yet. Install again; the models are not downloaded twice.",
-  "launcher.addon.required": "required"
+  "launcher.addon.required": "required",
+  "launcher.addon.needs_runtime": "models found, needs Python for this computer"
 }

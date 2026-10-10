@@ -206,9 +206,8 @@ Knopf, der ihre Einträge vergisst: sie werden aus dem shoebox-Index, seiner
 Datenbank auf dem Laufwerk, entfernt. Keine Fotodatei wird angefasst.
 Gesichter erkennen: die Gesichter in deinen Fotos finden (mit „Haustiere
 erkennen“ auch Katzen und Hunde). Braucht die Erweiterung „Gesichter“.
-Horizontale Gesichter erkennen: auch Gesichter finden, die auf der Seite
-liegen oder auf dem Kopf stehen (langsamer). Braucht die Erweiterung
-„Gesichter“.
+Gedrehte Gesichter: auch Gesichter finden, die auf der Seite liegen, zum
+Beispiel liegende Personen (langsamer). Braucht die Erweiterung „Gesichter“.
 Haustiere erkennen: Katzen und Hunde finden; sie erscheinen bei den
 Gesichtern. Braucht die Erweiterung „Haustiere“, nicht die für Gesichter.
 Gesichts-Statistik: wie die Erkennung gelaufen ist
@@ -227,11 +226,12 @@ Mehrere Computer und Systeme
   auf jedem Computer gleich. Python und OpenCV gibt es je Computerart:
   Intel-Mac, Apple-Silicon-Mac, Linux, Windows. Nimmst du ein Laufwerk mit
   shoebox-macos von einem Intel-MacBook zu einem neueren mit, zeigt Schritt 1
-  dort Python und OpenCV: nicht installiert, und die Erkennen-Knöpfe sind
-  grau. Dort einmal Ausgewählte Erweiterungen installieren drücken: Es wird
-  nur das fehlende Python geladen, die Modelle bleiben. Beide Arten liegen
-  dann nebeneinander im selben Ordner recognizer, und jeder Computer nutzt
-  seine eigene.
+  dort bei Python und OpenCV nötig, deine Erweiterungen sagen Modelle da,
+  braucht Python für diesen Computer, und die Erkennen-Knöpfe sind grau. Dort
+  einmal Ausgewählte Erweiterungen installieren drücken: Es wird nur das
+  fehlende Python geladen, die Modelle bleiben. Beide Arten liegen dann
+  nebeneinander im selben Ordner recognizer, und jeder Computer nutzt seine
+  eigene.
 - Mac und Windows auf einem Laufwerk: beide Ordner in den obersten Ordner des
   Laufwerks kopieren: shoebox-macos und shoebox-windows. Jeder hat seinen
   eigenen Ordner recognizer; Modelle, die du im einen installierst, gelten

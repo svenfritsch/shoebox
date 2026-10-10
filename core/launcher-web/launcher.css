@@ -96,8 +96,11 @@ header { position: relative; }
 .addons span:not(.pill) { color: var(--muted); font-size: 14px; }
 #addons-details > summary { cursor: pointer; display: flex; align-items: baseline; gap: 12px; list-style: none; }
 #addons-details > summary::-webkit-details-marker { display: none; }
-#addons-details > summary::before { content: "▸"; color: var(--muted); }
-#addons-details[open] > summary::before { content: "▾"; }
+/* a thin chevron at the right edge, so the headings stay aligned on the left */
+#addons-details > summary { align-items: center; }
+#addons-details > summary::after { content: ""; flex: none; margin-left: auto; width: 9px; height: 9px;
+  border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); transition: transform .15s; }
+#addons-details[open] > summary::after { transform: rotate(45deg); }
 #addons-details > summary h2 { margin: 0; }
 .summary-line { color: var(--muted); font-size: 14px; }
 .addons input:disabled + b, .addons input:disabled { opacity: 1; }

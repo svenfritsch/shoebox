@@ -80,12 +80,12 @@ what is installed for the computer and for each ticked drive
 (`recognize::installed`, by looking for files, never by starting the worker),
 and the Control Panel greys out Recognize / Recognize lying down (need Faces)
 and Recognize pets (needs Pets) with the reason. Lookup order
-(`recognize::worker_dirs`): `recognizer/` next to the program, then
-`<program dir>/../recognizer` (`.shoebox/bin/..`), last the drive's
-`.shoebox/recognizer/`; `find_worker_for` takes the first folder that has the
+(`recognize::worker_dirs`): `recognizer/` next to the program, then the drive's
+`.shoebox/recognizer/` (made by `install.sh <drive>`; the older
+`.shoebox/bin/` layout lands here too); `find_worker_for` takes the first folder that has the
 models the run needs and the Python for this computer. The models are the
 same everywhere; the runtime is per `<os>-<arch>` (`recognizer/runtime/`), so
-another kind of Mac shows "Python and OpenCV: not installed", and installing
+another kind of Mac shows "Python and OpenCV: required" and the add-ons "models found, needs Python for this computer", and installing
 there adds only its runtime next to the existing one (`install.sh` skips models
 that are present). The worker starts without face models when started
 with `--pets` (hello lists only the pet tasks); the core then skips the face

@@ -328,8 +328,8 @@
                 <dd>check that nothing was lost or damaged. It re-reads every file and compares it with what the index remembers, which finds files that were silently damaged on the drive. Slow, so run it now and then (every few months, or before you rely on a backup), not after every move. Moves are not its business: a moved photo has its new place in the index and passes. A photo whose path is gone but whose content is still on the drive elsewhere (a duplicate you deleted) is listed as "relocated", not as a failure. Only content that is nowhere on the drive any more counts as missing. If files are gone, a button appears after the check (and after a scan) that forgets their records: they are removed from the shoebox index, its database on the drive. No photo file is touched.</dd>
                 <dt>Recognize faces</dt>
                 <dd>find the faces in your photos (and, with Recognize pets, cats and dogs). Needs the Faces add-on.</dd>
-                <dt>Recognize horizontal faces</dt>
-                <dd>also find faces lying on their side or upside down (slower). Needs the Faces add-on.</dd>
+                <dt>Rotated faces</dt>
+                <dd>also find faces turned on their side, for example people lying down (slower). Needs the Faces add-on.</dd>
                 <dt>Recognize pets</dt>
                 <dd>find cats and dogs; they show up among the faces. Needs the Pets add-on, not the Faces one.</dd>
                 <dt>Face stats</dt>
@@ -348,7 +348,7 @@
         <h3>Several computers and systems</h3>
         <ul>
           <li><b>Where the add-ons are looked for:</b> first in the <b>recognizer</b> folder next to the shoebox program you started, last in the drive's own hidden <code>.shoebox/recognizer</code> (only used when the program folder has nothing). So a shoebox folder on your computer is used for every drive, even if a drive holds models too.</li>
-          <li><b>Models and Python are different things.</b> The models (Faces, Pets) are the same on every computer. <b>Python and OpenCV</b> is built for one kind of computer: Intel Mac, Apple Silicon Mac, Linux, Windows. If you take a drive with <b>shoebox-macos</b> from an Intel MacBook to a newer one, step 1 shows <b>Python and OpenCV: not installed</b> on the newer one and the recognize buttons are grey. Press <b>Install the selected add-ons</b> once there: only the missing Python is downloaded, the models are kept. Both kinds then live side by side in the same <b>recognizer</b> folder, and each computer uses its own.</li>
+          <li><b>Models and Python are different things.</b> The models (Faces, Pets) are the same on every computer. <b>Python and OpenCV</b> is built for one kind of computer: Intel Mac, Apple Silicon Mac, Linux, Windows. If you take a drive with <b>shoebox-macos</b> from an Intel MacBook to a newer one, step 1 shows <b>Python and OpenCV: required</b> on the newer one, your add-ons say <b>models found, needs Python for this computer</b>, and the recognize buttons are grey. Press <b>Install the selected add-ons</b> once there: only the missing Python is downloaded, the models are kept. Both kinds then live side by side in the same <b>recognizer</b> folder, and each computer uses its own.</li>
           <li><b>Mac and Windows on one drive:</b> copy both folders to the drive's top folder: <code>shoebox-macos</code> and <code>shoebox-windows</code>. Each has its own <b>recognizer</b> folder, so models you install in one are not shared with the other. Start shoebox from the folder of the system you are on. Both use the same hidden <code>.shoebox</code> index on the drive. Add-ons are not available on Windows yet.</li>
         </ul>
       </div>

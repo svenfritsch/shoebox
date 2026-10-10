@@ -319,15 +319,14 @@ pub fn find_worker_for(root: &Path, explicit: Option<&Path>, pets: bool) -> Opti
 
 /// Where an installed recognizer is looked for, best first: `recognizer/` next
 /// to the shoebox program (the downloaded folder, on the computer or on a
-/// drive), then next to the folder of the program (`.shoebox/bin/../recognizer`),
-/// and last the drive's own `.shoebox/recognizer/` (made by `install.sh <drive>`;
-/// it only serves when nothing is installed next to the program, so a program
-/// folder on the computer is the one used for every drive).
+/// drive), then the drive's own `.shoebox/recognizer/` (made by
+/// `install.sh <drive>`; a program in the older `.shoebox/bin/` layout lands
+/// here too). The drive's only serves when nothing is installed next to the
+/// program, so a program folder on the computer is used for every drive.
 pub fn worker_dirs(root: Option<&Path>) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     if let Some(bin) = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)) {
         dirs.push(bin.join("recognizer"));
-        dirs.push(bin.join("..").join("recognizer"));
     }
     dirs.extend(root.map(|r| r.join(db::DIR).join("recognizer")));
     dirs
@@ -353,6 +352,9 @@ pub struct Installed {
     pub runtime: bool,
     /// Models are there (for a runtime that may be missing on this computer).
     pub models: bool,
+    /// … which ones, whether or not the runtime for this computer is there.
+    pub faces_models: bool,
+    pub pets_models: bool,
     pub faces: bool,
     pub pets: bool,
     /// The folder the best install is in (the one `recognize` would use).
@@ -367,6 +369,8 @@ pub fn installed(root: Option<&Path>) -> Installed {
     Installed {
         runtime: !ready.is_empty(),
         models: dirs.iter().any(|d| has_faces(d) || has_pets(d)),
+        faces_models: dirs.iter().any(|d| has_faces(d)),
+        pets_models: dirs.iter().any(|d| has_pets(d)),
         faces: ready.iter().any(|d| has_faces(d)),
         pets: ready.iter().any(|d| has_pets(d)),
         dir: ready.first().map(|d| (*d).clone()),

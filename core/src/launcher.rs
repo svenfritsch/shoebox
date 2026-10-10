@@ -965,6 +965,8 @@ async fn addons(Json(req): Json<AddonsRequest>) -> Json<serde_json::Value> {
         "dir": dir,
         "runtime": program.runtime,
         "models": program.models,
+        "faces_models": program.faces_models,
+        "pets_models": program.pets_models,
         "faces": program.faces,
         "pets": program.pets,
         "roots": roots,

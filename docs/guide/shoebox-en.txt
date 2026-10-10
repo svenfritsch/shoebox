@@ -194,8 +194,8 @@ records: they are removed from the shoebox index, its database on the drive.
 No photo file is touched.
 Recognize faces: find the faces in your photos (and, with Recognize pets, cats
 and dogs). Needs the Faces add-on.
-Recognize horizontal faces: also find faces lying on their side or upside down
-(slower). Needs the Faces add-on.
+Rotated faces: also find faces turned on their side, for example people lying
+down (slower). Needs the Faces add-on.
 Recognize pets: find cats and dogs; they show up among the faces. Needs the
 Pets add-on, not the Faces one.
 Face stats: how recognition went
@@ -214,10 +214,11 @@ Several computers and systems
   same on every computer. Python and OpenCV is built for one kind of computer:
   Intel Mac, Apple Silicon Mac, Linux, Windows. If you take a drive with
   shoebox-macos from an Intel MacBook to a newer one, step 1 shows Python and
-  OpenCV: not installed on the newer one and the recognize buttons are grey.
-  Press Install the selected add-ons once there: only the missing Python is
-  downloaded, the models are kept. Both kinds then live side by side in the
-  same recognizer folder, and each computer uses its own.
+  OpenCV: required on the newer one, your add-ons say models found, needs
+  Python for this computer, and the recognize buttons are grey. Press Install
+  the selected add-ons once there: only the missing Python is downloaded, the
+  models are kept. Both kinds then live side by side in the same recognizer
+  folder, and each computer uses its own.
 - Mac and Windows on one drive: copy both folders to the drive's top folder:
   shoebox-macos and shoebox-windows. Each has its own recognizer folder, so
   models you install in one are not shared with the other. Start shoebox from
