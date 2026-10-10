@@ -173,9 +173,15 @@ fn date_terms_find_what_lies_inside_them() {
     assert_eq!(found("date=1987-06"), sorted(vec![month, day, exif]));
     assert_eq!(found("date=1987-06-14"), sorted(vec![day, exif]));
     assert!(found("date=1987-07").is_empty() && found("date=1986").is_empty());
-    // A date from an event folder is a month, never an exact day.
-    assert_eq!(found("date=2020-07"), sorted(vec![folder]));
-    assert!(found("date=2020-07-01").is_empty());
+    // A date from an event folder is a month, never an exact day: a photo with a
+    // capture date on the 1st of that month is found by the day, the folder's is not.
+    // (Other photos of the month, such as the test fixtures, may be there too.)
+    let first = id_of(&lib, "2019-08 Urlaub Österreich/IMG_0100.JPG");
+    set_taken(&lib, first, Some("2020-07-01T09:00:00"));
+    let july = found("date=2020-07");
+    assert!(july.contains(&folder) && july.contains(&first), "{july:?}");
+    let first_day = found("date=2020-07-01");
+    assert!(first_day.contains(&first) && !first_day.contains(&folder), "{first_day:?}");
     // Terms combine (AND), and with the other filters.
     assert_eq!(found("date=1987&date=1987-06"), sorted(vec![month, day, exif]));
     assert_eq!(found("date=1987&date=2020"), Vec::<i64>::new());
