@@ -124,6 +124,8 @@
   "sel.untag": "Remove tag…",
   "sel.trash": "Move to trash",
   "sel.done": "Done",
+  "sel.all": "Select all",
+  "sel.none": "Deselect all",
   "lb.close_hint": "Close (Esc)",
   "lb.close": "Close",
   "lb.download": "Download original",

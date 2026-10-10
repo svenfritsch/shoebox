@@ -124,6 +124,8 @@
   "sel.untag": "Tag entfernen …",
   "sel.trash": "In den Papierkorb",
   "sel.done": "Fertig",
+  "sel.all": "Alle auswählen",
+  "sel.none": "Alle abwählen",
   "lb.close_hint": "Schließen (Esc)",
   "lb.close": "Schließen",
   "lb.download": "Original herunterladen",
