@@ -1,7 +1,7 @@
 THIRD-PARTY LICENSES
 ====================
 
-shoebox (c) Sven Fritsch, see LICENSE.txt, contains and uses
+shoebox (c) Tesselina Späth, see LICENSE.txt, contains and uses
 the software below, each under its own licence. Where a crate offers a choice of
 licences ("MIT OR Apache-2.0"), you may use it under either; the texts that
 the authors ship are reproduced in part 3.
