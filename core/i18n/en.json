@@ -500,6 +500,8 @@
   "unnamed.ignore_hint": "Strangers, or faces in pictures, posters and screens: nobody needs to name them",
   "unnamed.notface_hint": "False finds: no face at all",
   "unnamed.select_hint": "Name, ignore or mark only some faces of this card",
+  "unnamed.select_done": "Clear",
+  "unnamed.select_done_hint": "Stop selecting and clear the selection",
   "unnamed.selected": "{n} selected",
   "unnamed.tap": "tap faces to select",
   "unnamed.name_n": "Name {n}",

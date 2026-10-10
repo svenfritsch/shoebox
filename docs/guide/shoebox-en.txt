@@ -497,7 +497,9 @@ all.
 1. Open Unnamed
    In the sidebar, open Faces and then Unnamed. Each card holds faces that
    look alike, the card with the most matches first. Cats and dogs have cards
-   of their own; the menu above the cards chooses People, Pets or both.
+   of their own; the menu above the cards chooses People, Pets or both. Click
+   a face to see its photo; the left and right arrow keys step through the
+   photos on that card, and Space or Esc closes the viewer.
 
 2. Name a card
    Type the name once and press Name: the whole card is named. Start typing to
@@ -516,6 +518,8 @@ all.
 4. Only some faces of a card
    Select lets you tick the faces yourself. The buttons then work on those
    only: Name 2, Ignore 2, 2 not a face. Use it when a card mixes two people.
+   While it is on, the button reads Clear; press it to stop selecting and
+   clear the selection.
 
 [Screenshot: Unnamed: a card for every group of similar faces, with Ignore and
 Not a face.]
@@ -551,8 +555,10 @@ sidebar. Pets work the same way: a group Pets can hold the dog and the cat.
 Corrections
 The same ⋯ menu has Merge into… for two cards of one person. On a person’s
 page, Review faces lists Confirmed, Suggested, Maybe and Not them, and a face
-marked by mistake can go back with ↺. Calibration (Face check, Pet check)
-shows what recognition found: small faces, scores and false finds.
+marked by mistake can go back with ↺. In Suggested and Maybe, click a face to
+see its photo; the arrow keys then step through the faces still to check.
+Calibration (Face check, Pet check) shows what recognition found: small faces,
+scores and false finds.
 
 [Screenshot: Two passers-by ticked in a photo: Ignore 2 or 2 not a face.]
 
