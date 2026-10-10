@@ -28,7 +28,7 @@
     body { margin: 0; background: var(--bg); color: var(--ink);
            font: 1rem/1.55 system-ui, -apple-system, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif }
     main, header, footer, nav { max-width: 60rem; margin: 0 auto; padding: 0 1.25rem }
-    h1, h2, h3, p, ul, ol, dl, figure { margin: 0 }
+    h1, h2, h3, h4, p, ul, ol, dl, figure { margin: 0 }
     h1 { font-size: clamp(2rem, 6vw, 2.8rem); line-height: 1.08; letter-spacing: -.02em; color: var(--hero-ink) }
     h2 { font-size: 1.6rem; line-height: 1.15; letter-spacing: -.015em; margin-bottom: .3rem }
     h3 { font-size: 1.02rem; margin-bottom: .1rem }
@@ -79,6 +79,13 @@
     .panel ul { padding-left: 1.2rem } .panel li { margin-bottom: .45rem }
     .panel p + p { margin-top: .5rem }
     .items > div { margin-bottom: 1rem } .items h3 { color: var(--brown) }
+    .subs { border-left: .2rem solid var(--line); padding-left: .9rem; margin-top: .8rem }
+    .subs h4 { color: var(--brown); text-transform: uppercase; letter-spacing: .06em; font-size: .78rem; margin: .8rem 0 .3rem }
+    .subs h4:first-child { margin-top: 0 }
+    .subs table { border-collapse: collapse; width: 100%; font-size: .92rem; margin: .4rem 0 .6rem }
+    .subs th, .subs td { text-align: left; vertical-align: top; padding: .4rem .6rem; border-bottom: 1px solid var(--line) }
+    .subs th { color: var(--muted); font-size: .8rem; font-weight: 650 }
+    .subs td:first-child { white-space: nowrap; font-weight: 650 }
     .steps, .legend { list-style: none; padding: 0; counter-reset: n }
     .steps > li, .legend > li { counter-increment: n; display: grid; grid-template-columns: 2rem 1fr; gap: 0 .9rem; margin-bottom: 1rem; align-content: start }
     .steps > li::before, .legend > li::before { content: counter(n); grid-row: 1 / span 2; width: 2rem; height: 2rem; margin-top: .1rem }
@@ -137,7 +144,7 @@
       <h1>Deine Fotobibliothek, auf dem Laufwerk.</h1>
       <p class="lede">shoebox ist ein kleines Programm, das auf deinem externen Laufwerk neben deinen Fotos liegt. Es indexiert sie, zeigt sie im Browser in einer schnellen Zeitleiste und hilft beim Verschlagworten, Sortieren und Aufräumen von Duplikaten, ohne sie je zu kopieren oder ihre Metadaten anzufassen.</p>
       <ul class="badges">
-        <li><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><span>Originale bleiben unberührt</span></li>
+        <li><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><span>Laufwerksstruktur bleibt unberührt</span></li>
         <li><svg class="ic" aria-hidden="true"><use href="#i-drive"/></svg><span>Liegt auf deinem Laufwerk</span></li>
         <li><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg><span>Privat: keine Cloud, kein Konto</span></li>
         <li><svg class="ic" aria-hidden="true"><use href="#i-tablet"/></svg><span>Auch am iPad nutzbar</span></li>
@@ -155,7 +162,7 @@
       <li><a href="#start">In drei Schritten loslegen</a></li>
       <li><a href="#browse">Stöbern und ansehen</a></li>
       <li><a href="#find">Finden und ordnen</a></li>
-      <li><a href="#adding-photos">Fotos hinzufügen, Duplikate und Papierkorb</a></li>
+      <li><a href="#scanning">Einlesen, Duplikate und Papierkorb</a></li>
       <li><a href="#people">Personen und Haustiere</a></li>
       <li><a href="#faces">Gesichter taggen, Schritt für Schritt</a></li>
       <li><a href="#groups">Mehrere Gesichter in einem Foto, und Gruppen</a></li>
@@ -173,6 +180,36 @@
       <p class="sub">Eine Seite im Browser, eine Zeitleiste von allem auf dem Laufwerk.</p>
       <ul class="cards">
         <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-add"/></svg></div>
+          <h3>Einlesen</h3>
+          <p>Mit <b>Scannen</b> liest shoebox deine Fotos in seine Datenbank ein und sammelt die Metadaten, die eine Foto-App braucht, etwa Datum, Größe und Orte. Außerdem findet es Duplikate auf dem Laufwerk und vergleicht Backups und andere Laufwerke mit diesem Index.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-dup"/></svg></div>
+          <h3>Duplikate</h3>
+          <p>Findet identische, verkleinerte, bearbeitete und ähnliche Fotos. Du prüfst; die beste Kopie bleibt immer.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-drive"/></svg></div>
+          <h3>Mehrere Laufwerke</h3>
+          <p>Die Fotos mehrerer Laufwerke in einer gemeinsamen Zeitleiste durchstöbern, auch wenn sie auf verschiedenen Platten liegen. Backups werden erkannt und geprüft.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg></div>
+          <h3>Sicherer Papierkorb</h3>
+          <p>Gelöschte Fotos landen in einem Papierkorb auf dem Laufwerk. Zurücklegen oder endgültig löschen.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-move"/></svg></div>
+          <h3>Verschieben & ordnen</h3>
+          <p>Fotos in einen Ordner verschieben (wird bei Bedarf angelegt). RAW-, Live-Photo- und Sidecar-Dateien wandern mit.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-tag"/></svg></div>
+          <h3>Tags</h3>
+          <p>Eigene Tags für viele Fotos auf einmal. Auch Ordner zählen als Tags. Im Index gespeichert, nie in den Fotos.</p>
+        </li>
+        <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-grid"/></svg></div>
           <h3>Zeitleiste</h3>
           <p>Alle Fotos und Videos nach Monat, mit Jahressprung, Ordnerbaum und einer Ansicht mit Infos zum Foto.</p>
@@ -183,39 +220,9 @@
           <p>Tippe eine Person, ein Haustier, einen Tag oder Ordner. Kombiniere Schlagwörter für eine komplexere Suche. Filter nach Fotos, Videos, Live Photos oder Screenshots, oder zeige nur deine Favoriten ♥.</p>
         </li>
         <li>
-          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-tag"/></svg></div>
-          <h3>Tags</h3>
-          <p>Eigene Tags für viele Fotos auf einmal. Auch Ordner zählen als Tags. Im Index gespeichert, nie in den Fotos.</p>
-        </li>
-        <li>
-          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-move"/></svg></div>
-          <h3>Verschieben & ordnen</h3>
-          <p>Fotos in einen Ordner verschieben (wird bei Bedarf angelegt). RAW-, Live-Photo- und Sidecar-Dateien wandern mit.</p>
-        </li>
-        <li>
-          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-add"/></svg></div>
-          <h3>Fotos hinzufügen</h3>
-          <p>Die Fotos eines Ereignisses im Finder oder Explorer aufs Laufwerk kopieren (die Daten bleiben erhalten) und scannen. Kopien von Dateien, die das Laufwerk schon hatte, werden aufgelistet und lassen sich löschen.</p>
-        </li>
-        <li>
-          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-dup"/></svg></div>
-          <h3>Duplikate</h3>
-          <p>Findet identische, verkleinerte, bearbeitete und ähnliche Fotos. Du prüfst; die beste Kopie bleibt immer.</p>
-        </li>
-        <li>
-          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg></div>
-          <h3>Sicherer Papierkorb</h3>
-          <p>Gelöschte Fotos landen in einem Papierkorb auf dem Laufwerk. Zurücklegen oder endgültig löschen.</p>
-        </li>
-        <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-people"/></svg></div>
           <h3>Personen & Haustiere</h3>
           <p>Optionale Erkennung gruppiert Gesichter, Katzen und Hunde. Du vergibst Namen, shoebox schlägt den Rest vor.</p>
-        </li>
-        <li>
-          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-drive"/></svg></div>
-          <h3>Mehrere Laufwerke</h3>
-          <p>Die Fotos mehrerer Laufwerke in einer gemeinsamen Zeitleiste durchstöbern, auch wenn sie auf verschiedenen Platten liegen. Backups werden erkannt und geprüft.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-pin"/></svg></div>
@@ -451,29 +458,36 @@
       </div>
     </section>
 
-    <section id="adding-photos">
-      <h2>Fotos hinzufügen, Duplikate und Papierkorb</h2>
+    <section id="scanning">
+      <h2>Einlesen, Duplikate und Papierkorb</h2>
       <div class="cols">
         <div class="items">
           <div>
-            <h3>Fotos hinzufügen</h3>
-            <p>Die Fotos im Finder oder Explorer aufs Laufwerk kopieren oder verschieben (dabei bleiben ihre Daten erhalten), am besten in einen Ordner namens <b>JJJJ-MM Ereignis</b>, und <b>Scannen</b> drücken. Findet der Scan neue Dateien, die das Laufwerk schon hatte, markiert der Launcher sie mit <i>schon auf dem Laufwerk</i> und bietet <b>Die neuen Kopien löschen</b> an (in den Papierkorb oder endgültig). Das ältere Original bleibt und bekommt den Ordnernamen der gelöschten Kopie als Tag. In den <b>Einstellungen</b> wählst du, wie Ereignisordner in Vorschlägen heißen (zum Beispiel <code>JJ.MM_Ereignis</code>); vorhandene Ordner werden nicht umbenannt, und alle Formen werden erkannt.</p>
+            <h3>Neue Fotos einlesen</h3>
+            <p>shoebox importiert keine Fotos. Die Fotos im Finder oder Explorer aufs Laufwerk kopieren oder verschieben (dabei bleiben ihre Daten erhalten), am besten in einen Ordner namens <b>JJJJ-MM Ereignis</b>, und <b>Scannen</b> drücken. Findet der Scan neue Dateien, die das Laufwerk schon hatte, markiert der Launcher sie mit <i>schon auf dem Laufwerk</i> und bietet <b>Die neuen Kopien löschen</b> an (in den Papierkorb oder endgültig). Das ältere Original bleibt und bekommt den Ordnernamen der gelöschten Kopie als Tag. In den <b>Einstellungen</b> wählst du, wie Ereignisordner in Vorschlägen heißen (zum Beispiel <code>JJ.MM_Ereignis</code>); vorhandene Ordner werden nicht umbenannt, und alle Formen werden erkannt.</p>
           </div>
           <div>
             <h3>Duplikate</h3>
             <p><b>Duplikate</b> zeigt vier Arten: identisch, dasselbe Foto in anderer Größe, Original und bearbeitet sowie Ähnliche. Hake <b>diese Kopie löschen</b> bei dem an, was weg soll; die beste Datei bleibt, und pro Gruppe bleibt immer mindestens eine. Tags und Aufnahmedatum einer entfernten Kopie gehen auf die übrige über.</p>
-          </div>
-          <div>
-            <h3>Abkürzungen</h3>
-            <p><b>Kopien im selben Ordner entfernen</b> und <b>Kopien geringerer Qualität entfernen</b> räumen die eindeutigen Fälle in einem Zug auf.</p>
-          </div>
-          <div>
-            <h3>Was tun mit einer Gruppe</h3>
-            <p>Jede Gruppe hat oben rechts bis zu zwei Schaltflächen. <b>Alle behalten</b> heißt: Diese Dateien bleiben, und sie gehören zusammen. <b>Verschiedene Fotos</b> (nur bei ähnlichen Fotos) heißt: Das sind getrennte Aufnahmen, keine Kopien voneinander. In beiden Fällen wird nichts gelöscht und kein Foto verändert; shoebox macht sich nur eine Notiz in seiner eigenen Datenbank auf dem Laufwerk und zeigt die Gruppe nie wieder an. Die Notiz bleibt erhalten, wenn du Fotos verschiebst oder umbenennst. <b>Alle behalten</b> zeigt die übrigen außerdem als <b>Versionen</b> im Infobereich jedes Fotos an. Entschiedene Fotos lassen auch <b>Kopien im selben Ordner entfernen</b> und <b>Kopien geringerer Qualität entfernen</b> in Ruhe. Zum Löschen hakst du stattdessen <b>diese Kopie löschen</b> an, oder du öffnest ein ähnliches Foto, vergleichst alle groß und wählst <b>Dieses behalten</b>: nach der Bestätigung kommen alle anderen in den Papierkorb.</p>
+            <div class="subs">
+              <h4>Schnellaktionen</h4>
+              <p><b>Kopien im selben Ordner entfernen</b> und <b>Kopien geringerer Qualität entfernen</b> räumen die eindeutigen Fälle in einem Zug auf.</p>
+              <h4>Was tun mit einer Gruppe</h4>
+              <table>
+                <thead><tr><th>Aktion</th><th>Was sie macht</th></tr></thead>
+                <tbody>
+                  <tr><td>Alle behalten</td><td>Diese Dateien bleiben, und sie gehören zusammen. Die übrigen zeigt shoebox außerdem als <b>Versionen</b> im Infobereich jedes Fotos an.</td></tr>
+                  <tr><td>Verschiedene Fotos</td><td>Nur bei ähnlichen Fotos: Das sind getrennte Aufnahmen, keine Kopien voneinander.</td></tr>
+                  <tr><td>Diese Kopie löschen</td><td>Bei jeder Kopie anhaken, die weg soll. Die beste Datei bleibt immer.</td></tr>
+                  <tr><td>Dieses behalten</td><td>Ein ähnliches Foto öffnen, alle groß vergleichen und auswählen: nach der Bestätigung kommen alle anderen in den Papierkorb.</td></tr>
+                </tbody>
+              </table>
+              <p><b>Alle behalten</b> und <b>Verschiedene Fotos</b> stehen oben rechts an einer Gruppe. In beiden Fällen wird nichts gelöscht und kein Foto verändert; shoebox macht sich nur eine Notiz in seiner eigenen Datenbank auf dem Laufwerk und zeigt die Gruppe nie wieder an. Die Notiz bleibt erhalten, wenn du Fotos verschiebst oder umbenennst. Entschiedene Fotos lassen auch <b>Kopien im selben Ordner entfernen</b> und <b>Kopien geringerer Qualität entfernen</b> in Ruhe.</p>
+            </div>
           </div>
           <div>
             <h3>Papierkorb</h3>
-            <p>Nichts wird sofort gelöscht. Gelöschte Fotos warten in <code>.shoebox/trash</code> auf dem Laufwerk: <b>Zurücklegen</b> oder <b>Endgültig löschen</b>. Das Legen in den Papierkorb ist standardmäßig aus: Schalte es einmal in den <b>Einstellungen</b> ein (<i>In den Papierkorb legen erlauben</i>).</p>
+            <p>Nichts wird sofort gelöscht. Gelöschte Fotos warten in <code>.shoebox/trash</code> auf dem Laufwerk: <b>Zurücklegen</b> oder <b>Endgültig löschen</b>. Das Legen in den Papierkorb in der Zeitleiste und in der Fotoansicht ist standardmäßig aus: Schalte es einmal in den <b>Einstellungen</b> ein (<i>In den Papierkorb legen erlauben</i>). Das Löschen von Kopien bei den <b>Duplikaten</b> und mit <b>Die neuen Kopien löschen</b> funktioniert in jedem Fall und geht ebenfalls in den Papierkorb.</p>
           </div>
         </div>
         <div>
@@ -500,7 +514,7 @@
         <div class="items">
           <div>
             <h3>Finden</h3>
-            <p>Einmal den Recognizer installieren (<code>recognizer/install.sh /Volumes/MeinLaufwerk</code>). Dann die Foto-App schließen und im Starter <b>Erkennen</b> (und <b>Haustiere erkennen</b>) ausführen. In der Seitenleiste erscheint der Bereich <b>Gesichter</b>.</p>
+            <p>Einmal den Recognizer installieren (<code>recognizer/install.sh /Volumes/MeinLaufwerk</code>). Dann im Starter <b>Erkennen</b> (und <b>Haustiere erkennen</b>) ausführen. In der Seitenleiste erscheint der Bereich <b>Gesichter</b>.</p>
           </div>
           <div>
             <h3>Benennen</h3>
@@ -516,7 +530,7 @@
           </div>
           <div>
             <h3>Neue Fotos</h3>
-            <p>Die Erkennung startet nach einem Scan noch nicht von selbst. Foto-App schließen und <b>Erkennen</b> erneut ausführen: Es werden nur die neuen Fotos angesehen.</p>
+            <p>Die Erkennung startet nach einem Scan noch nicht von selbst. Im Launcher einfach erneut <b>Erkennen</b> anklicken; die Foto-App kann offen bleiben. Die Gesichtserkennung läuft nur auf den neuen Fotos.</p>
           </div>
         </div>
         <div>
@@ -541,7 +555,7 @@
         <ol class="steps">
           <li>
             <h3>Unbenannt öffnen</h3>
-            <p>In der Seitenleiste <b>Gesichter</b> und dann <b>Unbenannt</b> öffnen. Jede Karte enthält Gesichter, die sich ähneln, die größte zuerst. Katzen und Hunde haben eigene Karten; das Menü über den Karten wählt <i>Personen</i>, <i>Haustiere</i> oder beides.</p>
+            <p>In der Seitenleiste <b>Gesichter</b> und dann <b>Unbenannt</b> öffnen. Jede Karte enthält Gesichter, die sich ähneln, die Karte mit den meisten Treffern zuerst. Katzen und Hunde haben eigene Karten; das Menü über den Karten wählt <i>Personen</i>, <i>Haustiere</i> oder beides.</p>
           </li>
           <li>
             <h3>Eine Karte benennen</h3>

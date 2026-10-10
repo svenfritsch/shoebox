@@ -28,7 +28,7 @@
     body { margin: 0; background: var(--bg); color: var(--ink);
            font: 1rem/1.55 system-ui, -apple-system, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif }
     main, header, footer, nav { max-width: 60rem; margin: 0 auto; padding: 0 1.25rem }
-    h1, h2, h3, p, ul, ol, dl, figure { margin: 0 }
+    h1, h2, h3, h4, p, ul, ol, dl, figure { margin: 0 }
     h1 { font-size: clamp(2rem, 6vw, 2.8rem); line-height: 1.08; letter-spacing: -.02em; color: var(--hero-ink) }
     h2 { font-size: 1.6rem; line-height: 1.15; letter-spacing: -.015em; margin-bottom: .3rem }
     h3 { font-size: 1.02rem; margin-bottom: .1rem }
@@ -79,6 +79,13 @@
     .panel ul { padding-left: 1.2rem } .panel li { margin-bottom: .45rem }
     .panel p + p { margin-top: .5rem }
     .items > div { margin-bottom: 1rem } .items h3 { color: var(--brown) }
+    .subs { border-left: .2rem solid var(--line); padding-left: .9rem; margin-top: .8rem }
+    .subs h4 { color: var(--brown); text-transform: uppercase; letter-spacing: .06em; font-size: .78rem; margin: .8rem 0 .3rem }
+    .subs h4:first-child { margin-top: 0 }
+    .subs table { border-collapse: collapse; width: 100%; font-size: .92rem; margin: .4rem 0 .6rem }
+    .subs th, .subs td { text-align: left; vertical-align: top; padding: .4rem .6rem; border-bottom: 1px solid var(--line) }
+    .subs th { color: var(--muted); font-size: .8rem; font-weight: 650 }
+    .subs td:first-child { white-space: nowrap; font-weight: 650 }
     .steps, .legend { list-style: none; padding: 0; counter-reset: n }
     .steps > li, .legend > li { counter-increment: n; display: grid; grid-template-columns: 2rem 1fr; gap: 0 .9rem; margin-bottom: 1rem; align-content: start }
     .steps > li::before, .legend > li::before { content: counter(n); grid-row: 1 / span 2; width: 2rem; height: 2rem; margin-top: .1rem }
@@ -137,7 +144,7 @@
       <h1>Your photo library, on the drive.</h1>
       <p class="lede">shoebox is a small program that lives on your external drive next to your photos. It indexes them, shows them in a fast timeline in your browser, and helps you tag, sort and de-duplicate, without ever copying them or touching their metadata.</p>
       <ul class="badges">
-        <li><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><span>Originals stay untouched</span></li>
+        <li><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><span>Drive structure stays untouched</span></li>
         <li><svg class="ic" aria-hidden="true"><use href="#i-drive"/></svg><span>Lives on your drive</span></li>
         <li><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg><span>Private: no cloud, no account</span></li>
         <li><svg class="ic" aria-hidden="true"><use href="#i-tablet"/></svg><span>Browse from the iPad too</span></li>
@@ -155,7 +162,7 @@
       <li><a href="#start">Get started in three steps</a></li>
       <li><a href="#browse">Browse and view</a></li>
       <li><a href="#find">Find and organise</a></li>
-      <li><a href="#adding-photos">Adding photos, duplicates and trash</a></li>
+      <li><a href="#scanning">Scanning, duplicates and trash</a></li>
       <li><a href="#people">People and pets</a></li>
       <li><a href="#faces">Tag faces, step by step</a></li>
       <li><a href="#groups">Several faces in a photo, and groups</a></li>
@@ -173,6 +180,36 @@
       <p class="sub">One page in your browser, a timeline of everything on the drive.</p>
       <ul class="cards">
         <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-add"/></svg></div>
+          <h3>Scan</h3>
+          <p>With <b>Scan</b>, shoebox indexes your photos into its database and collects the metadata a photo app needs, such as dates, sizes and places. It also finds duplicates on the disk and compares backups and other drives with this index.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-dup"/></svg></div>
+          <h3>Duplicates</h3>
+          <p>Finds identical, resized, edited and look-alike photos. You review; the best copy always stays.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-drive"/></svg></div>
+          <h3>Several drives</h3>
+          <p>Browse the photos of several drives in one common timeline, even when they sit on different disks. Backups are recognised and checked.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg></div>
+          <h3>Safe trash</h3>
+          <p>Deleted photos go to a trash on the drive. Put them back, or delete them for good.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-move"/></svg></div>
+          <h3>Move & organise</h3>
+          <p>Move photos to a folder (created if needed). RAW, Live Photo and sidecar files travel along.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-tag"/></svg></div>
+          <h3>Tags</h3>
+          <p>Your own tags on many photos at once. Folders count as tags too. Stored in the index, never in the photos.</p>
+        </li>
+        <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-grid"/></svg></div>
           <h3>Timeline</h3>
           <p>All photos and videos by month, with a year jump, folder tree and a viewer with full-size info.</p>
@@ -183,39 +220,9 @@
           <p>Type a person, pet, tag or folder. Combine keywords for a more complex search. Filter by photos, videos, Live Photos or screenshots, or show only your favorites ♥.</p>
         </li>
         <li>
-          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-tag"/></svg></div>
-          <h3>Tags</h3>
-          <p>Your own tags on many photos at once. Folders count as tags too. Stored in the index, never in the photos.</p>
-        </li>
-        <li>
-          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-move"/></svg></div>
-          <h3>Move & organise</h3>
-          <p>Move photos to a folder (created if needed). RAW, Live Photo and sidecar files travel along.</p>
-        </li>
-        <li>
-          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-add"/></svg></div>
-          <h3>Adding photos</h3>
-          <p>Copy the photos of an event onto the drive in Finder or File Explorer (dates are kept) and Scan. Copies of files the drive already had are listed, and you can delete them.</p>
-        </li>
-        <li>
-          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-dup"/></svg></div>
-          <h3>Duplicates</h3>
-          <p>Finds identical, resized, edited and look-alike photos. You review; the best copy always stays.</p>
-        </li>
-        <li>
-          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg></div>
-          <h3>Safe trash</h3>
-          <p>Deleted photos go to a trash on the drive. Put them back, or delete them for good.</p>
-        </li>
-        <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-people"/></svg></div>
           <h3>People & pets</h3>
           <p>Optional recognition groups faces, cats and dogs. You name them; shoebox suggests the rest.</p>
-        </li>
-        <li>
-          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-drive"/></svg></div>
-          <h3>Several drives</h3>
-          <p>Browse the photos of several drives in one common timeline, even when they sit on different disks. Backups are recognised and checked.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-pin"/></svg></div>
@@ -451,29 +458,36 @@
       </div>
     </section>
 
-    <section id="adding-photos">
-      <h2>Adding photos, duplicates and trash</h2>
+    <section id="scanning">
+      <h2>Scanning, duplicates and trash</h2>
       <div class="cols">
         <div class="items">
           <div>
-            <h3>Adding photos</h3>
-            <p>Copy or move the photos onto the drive in Finder or File Explorer, which keeps their dates, ideally into a folder named <b>YYYY-MM Event</b>, and press <b>Scan</b>. If the scan finds new files the drive already had, the launcher marks them <i>already on the drive</i> and offers <b>Delete the new copies</b> (to the trash, or for good). The older original stays and gets the deleted copy’s folder name as a tag. <b>Settings</b> sets how event folders are named in suggestions (for example <code>YY.MM_Event</code>); existing folders are not renamed and all forms are recognised.</p>
+            <h3>Scanning new photos</h3>
+            <p>shoebox does not import photos. Copy or move the photos onto the drive in Finder or File Explorer, which keeps their dates, ideally into a folder named <b>YYYY-MM Event</b>, and press <b>Scan</b>. If the scan finds new files the drive already had, the launcher marks them <i>already on the drive</i> and offers <b>Delete the new copies</b> (to the trash, or for good). The older original stays and gets the deleted copy’s folder name as a tag. <b>Settings</b> sets how event folders are named in suggestions (for example <code>YY.MM_Event</code>); existing folders are not renamed and all forms are recognised.</p>
           </div>
           <div>
             <h3>Duplicates</h3>
             <p><b>Duplicates</b> lists four kinds: identical, same photo in another size, original and edited, and look-alikes. Tick <b>delete this copy</b> on what you want gone; the best file stays and at least one per group always does. Tags and capture dates of a removed copy carry over.</p>
-          </div>
-          <div>
-            <h3>Shortcuts</h3>
-            <p><b>Clear Same Folder Copies</b> and <b>Clear Lower Quality Copies</b> clean up the clear-cut cases in one go.</p>
-          </div>
-          <div>
-            <h3>What to do with a group</h3>
-            <p>Every group has up to two buttons at its top right. <b>Keep all</b> means: these files stay, and they belong together. <b>Different photos</b> (only on groups of look-alikes) means: these are separate shots, not copies of each other. Either way nothing is deleted and no photo is touched; shoebox only makes a note in its own database on the drive, so it never offers this group again. The note follows the photos if you move or rename them. <b>Keep all</b> also lists the others as <b>Versions</b> in the info panel of each photo. Photos you have decided about are also left alone by <b>Clear Same Folder Copies</b> and <b>Clear Lower Quality Copies</b>. To delete instead, tick <b>delete this copy</b>, or open a look-alike photo, compare them large and press <b>Keep this one</b>: after you confirm, all the others go to the trash.</p>
+            <div class="subs">
+              <h4>Quick actions</h4>
+              <p><b>Clear Same Folder Copies</b> and <b>Clear Lower Quality Copies</b> clean up the clear-cut cases in one go.</p>
+              <h4>What to do with a group</h4>
+              <table>
+                <thead><tr><th>Action</th><th>What it does</th></tr></thead>
+                <tbody>
+                  <tr><td>Keep all</td><td>These files stay, and they belong together. The others are also listed as <b>Versions</b> in the info panel of each photo.</td></tr>
+                  <tr><td>Different photos</td><td>Only on groups of look-alikes: these are separate shots, not copies of each other.</td></tr>
+                  <tr><td>Delete this copy</td><td>Tick it on each copy you want gone. The best file always stays.</td></tr>
+                  <tr><td>Keep this one</td><td>Open a look-alike photo, compare them large and press it: after you confirm, all the others go to the trash.</td></tr>
+                </tbody>
+              </table>
+              <p><b>Keep all</b> and <b>Different photos</b> sit at the top right of a group. Either way nothing is deleted and no photo is touched; shoebox only makes a note in its own database on the drive, so it never offers this group again. The note follows the photos if you move or rename them. Photos you have decided about are also left alone by <b>Clear Same Folder Copies</b> and <b>Clear Lower Quality Copies</b>.</p>
+            </div>
           </div>
           <div>
             <h3>Trash</h3>
-            <p>Nothing is deleted right away. Trashed photos wait in <code>.shoebox/trash</code> on the drive: <b>Put back</b> or <b>Delete for good</b>. Moving photos to the trash is off by default: switch it on once in <b>Settings</b> (<i>Allow move to trash</i>).</p>
+            <p>Nothing is deleted right away. Trashed photos wait in <code>.shoebox/trash</code> on the drive: <b>Put back</b> or <b>Delete for good</b>. Moving photos to the trash from the timeline or the photo view is off by default: switch it on once in <b>Settings</b> (<i>Allow move to trash</i>). Deleting copies on the <b>Duplicates</b> screen and with <b>Delete the new copies</b> works either way and also goes to the trash.</p>
           </div>
         </div>
         <div>
@@ -500,7 +514,7 @@
         <div class="items">
           <div>
             <h3>Find them</h3>
-            <p>Install the recognizer once (<code>recognizer/install.sh /Volumes/MyDrive</code>). Then close the photo app and run <b>Recognize</b> (and <b>Recognize pets</b>) in the launcher. A <b>Faces</b> section appears in the sidebar.</p>
+            <p>Install the recognizer once (<code>recognizer/install.sh /Volumes/MyDrive</code>). Then run <b>Recognize</b> (and <b>Recognize pets</b>) in the launcher. A <b>Faces</b> section appears in the sidebar.</p>
           </div>
           <div>
             <h3>Name them</h3>
@@ -516,7 +530,7 @@
           </div>
           <div>
             <h3>New photos</h3>
-            <p>Recognition does not start by itself after a scan yet. Close the photo app and run <b>Recognize</b> again: it only looks at the new photos.</p>
+            <p>Recognition does not start by itself after a scan. Click <b>Recognize</b> in the launcher again; the photo app can stay open. Face recognition only runs on the new photos.</p>
           </div>
         </div>
         <div>
@@ -541,7 +555,7 @@
         <ol class="steps">
           <li>
             <h3>Open Unnamed</h3>
-            <p>In the sidebar, open <b>Faces</b> and then <b>Unnamed</b>. Each card holds faces that look alike, the biggest card first. Cats and dogs have cards of their own; the menu above the cards chooses <i>People</i>, <i>Pets</i> or both.</p>
+            <p>In the sidebar, open <b>Faces</b> and then <b>Unnamed</b>. Each card holds faces that look alike, the card with the most matches first. Cats and dogs have cards of their own; the menu above the cards chooses <i>People</i>, <i>Pets</i> or both.</p>
           </li>
           <li>
             <h3>Name a card</h3>

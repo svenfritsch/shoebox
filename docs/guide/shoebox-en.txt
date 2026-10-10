@@ -12,7 +12,7 @@ photos. It indexes them, shows them in a fast timeline in your browser, and
 helps you tag, sort and de-duplicate, without ever copying them or touching
 their metadata.
 
-- Originals stay untouched
+- Drive structure stays untouched
 - Lives on your drive
 - Private: no cloud, no account
 - Browse from the iPad too
@@ -26,6 +26,32 @@ What shoebox can do
 
 One page in your browser, a timeline of everything on the drive.
 
+- Scan
+   With Scan, shoebox indexes your photos into its database and collects the
+   metadata a photo app needs, such as dates, sizes and places. It also finds
+   duplicates on the disk and compares backups and other drives with this
+   index.
+
+- Duplicates
+   Finds identical, resized, edited and look-alike photos. You review; the
+   best copy always stays.
+
+- Several drives
+   Browse the photos of several drives in one common timeline, even when they
+   sit on different disks. Backups are recognised and checked.
+
+- Safe trash
+   Deleted photos go to a trash on the drive. Put them back, or delete them
+   for good.
+
+- Move & organise
+   Move photos to a folder (created if needed). RAW, Live Photo and sidecar
+   files travel along.
+
+- Tags
+   Your own tags on many photos at once. Folders count as tags too. Stored in
+   the index, never in the photos.
+
 - Timeline
    All photos and videos by month, with a year jump, folder tree and a viewer
    with full-size info.
@@ -35,34 +61,9 @@ One page in your browser, a timeline of everything on the drive.
    search. Filter by photos, videos, Live Photos or screenshots, or show only
    your favorites ♥.
 
-- Tags
-   Your own tags on many photos at once. Folders count as tags too. Stored in
-   the index, never in the photos.
-
-- Move & organise
-   Move photos to a folder (created if needed). RAW, Live Photo and sidecar
-   files travel along.
-
-- Adding photos
-   Copy the photos of an event onto the drive in Finder or File Explorer
-   (dates are kept) and Scan. Copies of files the drive already had are
-   listed, and you can delete them.
-
-- Duplicates
-   Finds identical, resized, edited and look-alike photos. You review; the
-   best copy always stays.
-
-- Safe trash
-   Deleted photos go to a trash on the drive. Put them back, or delete them
-   for good.
-
 - People & pets
    Optional recognition groups faces, cats and dogs. You name them; shoebox
    suggests the rest.
-
-- Several drives
-   Browse the photos of several drives in one common timeline, even when they
-   sit on different disks. Backups are recognised and checked.
 
 - Locations
    Optional maps, off by default: a map in the info of photos with GPS data, a
@@ -271,17 +272,18 @@ folder tags always follow the new folder.
 
 [Screenshot: Moving into a new event folder.]
 
-Adding photos, duplicates and trash
------------------------------------
+Scanning, duplicates and trash
+------------------------------
 
-Adding photos
-Copy or move the photos onto the drive in Finder or File Explorer, which keeps
-their dates, ideally into a folder named YYYY-MM Event, and press Scan. If the
-scan finds new files the drive already had, the launcher marks them already on
-the drive and offers Delete the new copies (to the trash, or for good). The
-older original stays and gets the deleted copy’s folder name as a tag.
-Settings sets how event folders are named in suggestions (for example
-YY.MM_Event); existing folders are not renamed and all forms are recognised.
+Scanning new photos
+shoebox does not import photos. Copy or move the photos onto the drive in
+Finder or File Explorer, which keeps their dates, ideally into a folder named
+YYYY-MM Event, and press Scan. If the scan finds new files the drive already
+had, the launcher marks them already on the drive and offers Delete the new
+copies (to the trash, or for good). The older original stays and gets the
+deleted copy’s folder name as a tag. Settings sets how event folders are named
+in suggestions (for example YY.MM_Event); existing folders are not renamed and
+all forms are recognised.
 
 Duplicates
 Duplicates lists four kinds: identical, same photo in another size, original
@@ -289,27 +291,34 @@ and edited, and look-alikes. Tick delete this copy on what you want gone; the
 best file stays and at least one per group always does. Tags and capture dates
 of a removed copy carry over.
 
-Shortcuts
+Quick actions
 Clear Same Folder Copies and Clear Lower Quality Copies clean up the clear-cut
 cases in one go.
 
 What to do with a group
-Every group has up to two buttons at its top right. Keep all means: these
-files stay, and they belong together. Different photos (only on groups of
-look-alikes) means: these are separate shots, not copies of each other. Either
-way nothing is deleted and no photo is touched; shoebox only makes a note in
-its own database on the drive, so it never offers this group again. The note
-follows the photos if you move or rename them. Keep all also lists the others
-as Versions in the info panel of each photo. Photos you have decided about are
-also left alone by Clear Same Folder Copies and Clear Lower Quality Copies. To
-delete instead, tick delete this copy, or open a look-alike photo, compare
-them large and press Keep this one: after you confirm, all the others go to
-the trash.
+Action: What it does
+Keep all: These files stay, and they belong together. The others are also
+listed as Versions in the info panel of each photo.
+Different photos: Only on groups of look-alikes: these are separate shots, not
+copies of each other.
+Delete this copy: Tick it on each copy you want gone. The best file always
+stays.
+Keep this one: Open a look-alike photo, compare them large and press it: after
+you confirm, all the others go to the trash.
+
+Keep all and Different photos sit at the top right of a group. Either way
+nothing is deleted and no photo is touched; shoebox only makes a note in its
+own database on the drive, so it never offers this group again. The note
+follows the photos if you move or rename them. Photos you have decided about
+are also left alone by Clear Same Folder Copies and Clear Lower Quality
+Copies.
 
 Trash
 Nothing is deleted right away. Trashed photos wait in .shoebox/trash on the
-drive: Put back or Delete for good. Moving photos to the trash is off by
-default: switch it on once in Settings (Allow move to trash).
+drive: Put back or Delete for good. Moving photos to the trash from the
+timeline or the photo view is off by default: switch it on once in Settings
+(Allow move to trash). Deleting copies on the Duplicates screen and with
+Delete the new copies works either way and also goes to the trash.
 
 [Screenshot: After a scan: new copies of files the drive already had.]
 
@@ -323,9 +332,9 @@ People and pets
 Optional: shoebox finds faces, cats and dogs; you give them names.
 
 Find them
-Install the recognizer once (recognizer/install.sh /Volumes/MyDrive). Then
-close the photo app and run Recognize (and Recognize pets) in the launcher. A
-Faces section appears in the sidebar.
+Install the recognizer once (recognizer/install.sh /Volumes/MyDrive). Then run
+Recognize (and Recognize pets) in the launcher. A Faces section appears in the
+sidebar.
 
 Name them
 Under Unnamed, shoebox shows cards of similar faces. Type a name once and the
@@ -343,8 +352,9 @@ Names work in the search box like tags, and so do kinds such as “all cats”.
 Combine a person with a tag, a folder or another person.
 
 New photos
-Recognition does not start by itself after a scan yet. Close the photo app and
-run Recognize again: it only looks at the new photos.
+Recognition does not start by itself after a scan. Click Recognize in the
+launcher again; the photo app can stay open. Face recognition only runs on the
+new photos.
 
 [Screenshot: Unnamed cards: one name for every face on a card.]
 
@@ -361,8 +371,8 @@ all.
 
 1. Open Unnamed
    In the sidebar, open Faces and then Unnamed. Each card holds faces that
-   look alike, the biggest card first. Cats and dogs have cards of their own;
-   the menu above the cards chooses People, Pets or both.
+   look alike, the card with the most matches first. Cats and dogs have cards
+   of their own; the menu above the cards chooses People, Pets or both.
 
 2. Name a card
    Type the name once and press Name: the whole card is named. Start typing to
