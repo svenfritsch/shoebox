@@ -846,15 +846,64 @@ a cancelled run continues with the best candidates.
 
      On the old Intel Mac `pip` may need an older onnxruntime that still has a
      macOS 12 x86_64 wheel; the script prints the versions it ran with.
-   - *First finding (test pictures made on Linux, not your photos):* the
-     models bundled with that package are the Chinese+English PP-OCRv4 ones.
-     They read Latin text well (0.95+ confidence on clean rendered text,
-     ~0.3–0.8 s per photo on a server CPU) but **drop the German marks**:
-     "Müller" came back as "Muller", "München" as "Munchen", and "Hauptstraße"
-     as "HauptstraBe". Folding handles ä/ö/ü (the index folds them anyway), but
-     ß becomes "B", so "strasse" would not find it. The Latin recogniser model
-     (step 2 of the decisions) is therefore needed, or ß needs a fix-up rule;
-     the spike on your photos shows how often it matters.
+   - *Results, round 1 (run in the chat session on a Linux server CPU, not
+     the old Mac; 5 real photos pasted by the owner: a party invitation, a
+     mountain-pass road sign with bikes, a museum wall label, two photos of a
+     projected video with subtitles and a web page, all containing text; plus
+     4 crops of the pass photo as stand-ins for "no text"; chat images may be
+     recompressed, so read the rates as a lower bound).* Engine: PP-OCRv4
+     (Chinese+English models from `rapidocr-onnxruntime`), longest edge 1600 px.
+     - **Words found: 21 of 23 (91 %)** at every threshold from 0.5 to 0.9,
+       and most lines score 0.93–0.99, so the threshold barely matters on
+       clear text; 0.7 is a safe default. The two misses: the decorative
+       script heading "Geburtstag" (read as "gelurtsta", 0.77) and a word
+       with ß (below). Ordinary script ("Ich freue mich sehr auf euch!") came
+       back nearly right; the handwriting-like display font did not.
+     - **German marks are dropped, as feared:** ä ö ü come back as a o u
+       ("MÖCHTE" → "MOCHTE", "spüren" → "spuren", "Besucher*innen" fine) and ß
+       as "B" ("ausschlieBlich"). Folding in the index makes ä/ö/ü harmless
+       (a search for "möchte" and "mochte" both find it). ß needs either the
+       Latin recogniser or a small repair: a capital B between two lower-case
+       letters inside a word is read as ß before folding ("ausschlieBlich" →
+       "ausschließlich" → "ausschliesslich"). Decision: try the Latin model
+       first (step 2 of the decisions), keep the repair rule as the fallback.
+     - **Word gaps are lost in wide, small or condensed type:**
+       "ASKTHESPIDERTODAYCLICKHERETOREQUESTACONSULTATION", "Arewehere?",
+       "BESONDERENTAG GERNE", "undPartnerkommen!". Two consequences, both now
+       decisions: (1) the **trigram index stays** (substring search finds
+       "spider" inside the glued line; a word tokenizer would not); (2) a
+       query of several words is split and each word must be found
+       (AND), never searched as one phrase: "check out" must still find
+       "checkout" or "check out" whichever way it was read.
+     - **Small text in a wide photo is lost at 1600 px:** the small road sign
+       "Struttura Territoriale Lombardia" (and an engraved "SVIZZERA" on the
+       stone) were not read in the whole photo, but the sign alone was read
+       with 0.9+ when cropped. Big text (the road signs, subtitles, labels)
+       is reliable. Not a v1 problem; a later option is a second pass on
+       crops of the regions the detector found at low confidence, or a
+       larger send size for photos the first pass rates as text-rich.
+     - **No false text on real texture:** gravel and a bike with sticker-covered
+       poles: 0 lines. (The other two "no-text" crops still contained a small
+       sign and graffiti and were read correctly, so they are not true
+       negatives; real no-text photos are still needed, see below.)
+     - **Speed (this server):** 0.8–2.6 s per photo on these text-heavy photos
+       (mean 1.5 s; the invitation with 25 lines took 2.6 s), 0.2–0.5 s for
+       crops without text. With the assumed 15 % text photos that is about
+       0.55 s per photo on average, so 50,000 photos take **about 8 hours on
+       this server**; the old Mac will be slower, unmeasured. The earlier
+       estimate (8–10 h old Mac, 1.5–2 h modern) looks **optimistic for the
+       old Mac**; keep the read order (screenshots and no-camera photos first)
+       and the partial-results behaviour, which matter more now.
+     - **Storage:** these text-heavy photos give 12 lines and ~240 characters
+       each at ≥ 0.7, about 2 KB per photo; if only 15 % of 50,000 photos look
+       like that, 7,500 × 2 KB is **~15 MB** of rows plus the index, in line
+       with the ~25 MB estimate above (all 50,000 like these would be ~110 MB).
+     - **Still open after round 1:** 7 of the 12 photos have not arrived, and
+       none of the 5 is a true no-text photo; send ~7 more, mostly without
+       text (people, landscapes, food, a wall, a night photo), for the
+       false-positive rate; one sideways document, one screenshot of a phone
+       and one photo with a license plate or shop sign would cover the
+       remaining cases.
    - *Where it runs:* on the old Intel MacBook (the case that decides whether
      the first run is bearable) and once on a modern machine; the same folder
      both times. The two `text_spike_report.txt` files are pasted back into
