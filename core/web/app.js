@@ -688,34 +688,36 @@ $('menu').onclick = function () {
 var sectionClosed = {};
 try { sectionClosed = JSON.parse(localStorage.getItem('sectionClosed') || '{}') || {}; } catch (e) { sectionClosed = {}; }
 
-// The view a section's title leads to (none for Tags and Folders).
-function sectionViewActive(id) {
+function sectionHasActive(id) {
   var f = state.filter;
+  if (id === 'folders-section') return !f.view && f.folder != null;
+  if (id === 'tags-section') return !f.view && f.tags.length > 0;
   if (id === 'locations-section') return f.view === 'locations';
-  if (id === 'faces-section') return f.view === 'people' || f.view === 'unnamed' || f.view === 'person';
-  return false;
+  return f.view === 'people' || f.view === 'unnamed' || f.view === 'person' || (!f.view && f.people.length > 0);
 }
 
+// A section holding the current selection cannot be folded (a safeguard).
 function toggleSection(id) {
+  if (sectionHasActive(id)) return;
   sectionClosed[id] = !sectionClosed[id];
   try { localStorage.setItem('sectionClosed', JSON.stringify(sectionClosed)); } catch (e) { /* ignore */ }
   updateSections();
 }
 
-// A title (and its caret) opens its section; on a title whose screen is
-// already showing, it closes the section again and stays on that screen.
-function sectionTitleClick(id, show) {
-  if (show && !sectionViewActive(id)) {
-    if (sectionClosed[id]) toggleSection(id);
-    show();
-  } else toggleSection(id);
+// Faces and Locations: the title opens its page and unfolds the section.
+function openSection(id) {
+  if (!sectionClosed[id]) return;
+  sectionClosed[id] = false;
+  try { localStorage.setItem('sectionClosed', JSON.stringify(sectionClosed)); } catch (e) { /* ignore */ }
+  updateSections();
 }
 
 function updateSections() {
   Array.prototype.forEach.call(document.querySelectorAll('.caret'), function (c) {
     var id = c.dataset.section;
-    var open = !sectionClosed[id];
-    c.disabled = false;
+    var locked = sectionHasActive(id);
+    var open = locked || !sectionClosed[id];
+    c.disabled = locked;
     setArrow(c, open);
     c.setAttribute('aria-expanded', String(open));
     $(c.dataset.body).hidden = !open;
@@ -3747,7 +3749,7 @@ function setGroup(p, groupId) {
 
 // ---- sidebar
 
-$('nav-people').onclick = function () { sectionTitleClick('faces-section', function () { showView('people'); }); };
+$('nav-people').onclick = function () { openSection('faces-section'); showView('people'); };
 
 function renderFacesSection() {
   var info = people.info;

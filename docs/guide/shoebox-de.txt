@@ -331,9 +331,9 @@ Ordner
 Die Seitenleiste spiegelt die Ordner deines Laufwerks. Ein Klick zeigt nur
 dessen Fotos. Einen Ordner kannst du über seinen Chip umbenennen oder
 verschieben. Die Bereiche Gesichter, Tags, Ordner und Orte klappst du mit dem
-Pfeil oder per Klick auf den Titel zu und auf; ein Klick auf Gesichter oder
-Orte öffnet zuerst diese Seite, ein weiterer Klick klappt den Bereich ein, und
-du bleibst auf der Seite.
+Pfeil oder per Klick auf den Titel zu und auf (Gesichter und Orte öffnen dabei
+auch ihre Seite). Ein Bereich, der deine aktuelle Auswahl enthält, bleibt
+offen.
 
 Ansicht
 Foto anklicken. ⓘ öffnet das Infofeld: Datum (als geschätzt markiert, wenn es
