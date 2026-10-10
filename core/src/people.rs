@@ -191,6 +191,9 @@ impl Matched {
                 });
             }
         }
+        // A cat the detector took for a dog (or the other way round) is the
+        // species the user said, for every use below.
+        apply_species_overrides(conn, key, &mut faces)?;
         let decisions = if table_exists(conn, "main", "face_decisions")? { load_decisions(conn, key)? } else { Vec::new() };
         let mut m = Matched::new(faces, decisions);
         // Before v6 nobody saw people: no face is taken for a pet's.
@@ -274,6 +277,51 @@ impl Matched {
     fn rows_of(&self, i: usize) -> Vec<usize> {
         (0..self.decisions.len()).filter(|&d| self.face_of[d] == Some(i)).collect()
     }
+}
+
+/// A row of `face_species`: the species the user gave a detected pet.
+#[derive(Debug, Clone)]
+pub struct SpeciesRow {
+    pub id: i64,
+    pub key: String,
+    pub b: [f64; 4],
+    pub species: String,
+    pub at: i64,
+}
+
+fn load_species(conn: &Connection, key: Option<&str>) -> Result<Vec<SpeciesRow>> {
+    // A library.db before v12 (read-only use) has none.
+    if !table_exists(conn, "main", "face_species")? {
+        return Ok(Vec::new());
+    }
+    let mut stmt = conn.prepare("SELECT id, key, x, y, w, h, species, at FROM face_species WHERE ?1 IS NULL OR key = ?1 ORDER BY id")?;
+    let rows = stmt
+        .query_map([key], |r| Ok(SpeciesRow { id: r.get(0)?, key: r.get(1)?, b: [r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?], species: r.get(6)?, at: r.get(7)? }))?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(rows)
+}
+
+/// The best overlapping pet of the entry's content (not a person's face).
+fn pet_for(faces: &[Detected], key: &str, b: [f64; 4]) -> Option<usize> {
+    (0..faces.len())
+        .filter(|&i| faces[i].key == key && faces[i].species.is_some())
+        .map(|i| (i, recognize::iou(faces[i].b, b)))
+        .filter(|&(_, iou)| iou >= MATCH_IOU)
+        .max_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(i, _)| i)
+}
+
+fn apply_species_overrides(conn: &Connection, key: Option<&str>, faces: &mut [Detected]) -> Result<()> {
+    // Oldest first, so the newest entry for a pet wins.
+    for row in load_species(conn, key)? {
+        if !crate::pets::is_species(&row.species) {
+            continue;
+        }
+        if let Some(i) = pet_for(faces, &row.key, row.b) {
+            faces[i].species = Some(row.species);
+        }
+    }
+    Ok(())
 }
 
 fn load_decisions(conn: &Connection, key: Option<&str>) -> Result<Vec<DecisionRow>> {
@@ -1345,6 +1393,47 @@ pub fn decide(conn: &Connection, faces: &[i64], action: &Action) -> Result<Decid
     Ok(Decided { faces: changed, person, cluster: None })
 }
 
+/// Say what kind of pet detected faces (`recog.faces` ids; people's faces and
+/// unknown ids are skipped) are, `cat` or `dog`, when the detector got it
+/// wrong. Decisions already made about the pets follow, so a confirmed pet
+/// stays confirmed. Returns how many pets changed.
+pub fn set_species(conn: &Connection, faces: &[i64], species: &str) -> Result<u64> {
+    if !crate::pets::is_species(species) {
+        bail!("the species is cat or dog, not {species:?}");
+    }
+    let tx = conn.unchecked_transaction()?;
+    let v = View::load(&tx)?;
+    let by_id: HashMap<i64, usize> = v.m.faces.iter().enumerate().map(|(i, f)| (f.id, i)).collect();
+    let overrides = load_species(&tx, None)?;
+    let mut seen = HashSet::new();
+    let mut changed = 0;
+    for id in faces {
+        let Some(&i) = by_id.get(id) else { continue };
+        let f = &v.m.faces[i];
+        if f.species.is_none() || f.species.as_deref() == Some(species) || !seen.insert(i) {
+            continue;
+        }
+        // Replace what was said about this pet before.
+        for o in overrides.iter().filter(|o| o.key == f.key && recognize::iou(o.b, f.b) >= MATCH_IOU) {
+            tx.execute("DELETE FROM face_species WHERE id = ?1", [o.id])?;
+        }
+        tx.execute(
+            "INSERT INTO face_species (key, x, y, w, h, species, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![f.key, f.b[0], f.b[1], f.b[2], f.b[3], species, db::now()],
+        )?;
+        // Decisions about it (made while it was the other species) stay about it.
+        for d in v.m.rows_of(i) {
+            let row = &v.m.decisions[d];
+            if row.species.as_deref().is_some_and(crate::pets::is_species) {
+                tx.execute("UPDATE face_decisions SET species = ?2 WHERE id = ?1", params![row.id, species])?;
+            }
+        }
+        changed += 1;
+    }
+    tx.commit()?;
+    Ok(changed)
+}
+
 /// Add a face drawn by hand on a photo (a pet of the given species, `cat` or
 /// `dog`, or `pet` for one of no species, if the user says it is one): always
 /// confirmed, with a person. Returns its id (`manual` in the API).
@@ -1769,6 +1858,19 @@ pub struct UserPeople {
     pub groups: Vec<UserGroup>,
     pub people: Vec<UserPerson>,
     pub face_decisions: Vec<UserDecision>,
+    /// What the user said a cat or dog the detector mistook is.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub pet_species: Vec<UserPetSpecies>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UserPetSpecies {
+    /// `quick_hash` of the content.
+    pub key: String,
+    #[serde(rename = "box")]
+    pub b: [f64; 4],
+    pub species: String,
+    pub at: i64,
 }
 
 /// People, groups and decisions for `userdata.json`.
@@ -1823,7 +1925,11 @@ pub fn user_data(conn: &Connection) -> Result<UserPeople> {
             species: d.species,
         })
         .collect();
-    Ok(UserPeople { groups, people, face_decisions })
+    let pet_species = load_species(conn, None)?
+        .into_iter()
+        .map(|r| UserPetSpecies { key: r.key, b: r.b, species: r.species, at: r.at })
+        .collect();
+    Ok(UserPeople { groups, people, face_decisions, pet_species })
 }
 
 #[cfg(test)]

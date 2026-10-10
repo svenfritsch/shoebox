@@ -424,6 +424,8 @@ pub(super) struct FacesRequest {
     person_id: Option<i64>,
     /// Assign: the person, or a name.
     name: Option<String>,
+    /// Species: `cat` or `dog`.
+    species: Option<String>,
 }
 
 async fn on_faces(app: Arc<App>, req: FacesRequest, action: Action) -> ApiResult<Json<people::Decided>> {
@@ -461,6 +463,14 @@ pub(super) async fn ignore(State(app): State<Arc<App>>, Json(req): Json<FacesReq
 
 pub(super) async fn not_face(State(app): State<Arc<App>>, Json(req): Json<FacesRequest>) -> ApiResult<Json<people::Decided>> {
     on_faces(app, req, Action::NotFace).await
+}
+
+/// These pets are a cat, or a dog, whatever the detector took them for.
+pub(super) async fn species(State(app): State<Arc<App>>, Json(req): Json<FacesRequest>) -> ApiResult<Json<serde_json::Value>> {
+    let species = req.species.clone().ok_or_else(|| ApiError::BadRequest("species is missing".into()))?;
+    people_change(&app, move |conn| people::set_species(conn, &req.faces, &species))
+        .await
+        .map(|n| Json(serde_json::json!({ "faces": n })))
 }
 
 /// Forget that faces are not this person (undo rejections, nothing else).
