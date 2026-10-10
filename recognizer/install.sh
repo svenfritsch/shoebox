@@ -1,9 +1,14 @@
 #!/bin/sh
-# Install the recognizer into a library's .shoebox/ folder, with a standalone
-# Python (python-build-standalone), OpenCV, numpy and the models, so
-# `shoebox recognize` finds it without anything installed on the computer.
+# Install the recognizer with a standalone Python (python-build-standalone),
+# OpenCV, numpy and the models, so `shoebox recognize` finds it without
+# anything installed on the computer.
 #
-#   recognizer/install.sh <library-root>
+#   recognizer/install.sh                 into the folder that holds this script
+#                                         (next to the shoebox program; every
+#                                         drive you recognize then uses it)
+#   recognizer/install.sh <library-root>  into <library-root>/.shoebox/recognizer/
+#                                         (travels with that drive; it wins over
+#                                         the one next to the program)
 #
 # Run it on each kind of computer that will run recognition (Intel Mac,
 # Apple Silicon Mac, Linux): the runtime goes to runtime/<os>-<arch>/, and pip
@@ -13,9 +18,15 @@
 # copied with symlinks resolved, as exFAT has none.
 set -eu
 
-ROOT=${1:?usage: install.sh <library-root>}
 HERE=$(cd "$(dirname "$0")" && pwd)
-DEST="$ROOT/.shoebox/recognizer"
+if [ $# -ge 1 ]; then
+    ROOT=$1
+    DEST="$ROOT/.shoebox/recognizer"
+    [ -d "$ROOT/.shoebox" ] || { echo "$ROOT has no .shoebox folder (run shoebox scan first)" >&2; exit 1; }
+else
+    ROOT=
+    DEST=$HERE
+fi
 PBS_TAG=20251014
 PY=3.12.12
 
@@ -32,8 +43,6 @@ esac
 # Must match Rust's std::env::consts::{OS, ARCH} (see core/src/recognize.rs).
 PLATFORM=$os-$arch
 URL="https://github.com/astral-sh/python-build-standalone/releases/download/$PBS_TAG/cpython-$PY+$PBS_TAG-$arch-$vendor-install_only_stripped.tar.gz"
-
-[ -d "$ROOT/.shoebox" ] || { echo "$ROOT has no .shoebox folder (run shoebox scan first)" >&2; exit 1; }
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
@@ -80,7 +89,7 @@ rm -rf "$P/include" "$P/share" "$P/lib/pkgconfig" "$P"/lib/tcl* "$P"/lib/tk* "$P
 cp -RL "$TMP/python" "$DEST/runtime/$PLATFORM"
 mkdir -p "$DEST/models"
 cp "$TMP/models/"*.onnx "$DEST/models/"
-cp "$HERE/recognizer.py" "$DEST/recognizer.py"
+[ "$DEST" = "$HERE" ] || cp "$HERE/recognizer.py" "$DEST/recognizer.py"
 
 echo "Checking…"
 HELLO=$(printf '' | "$DEST/runtime/$PLATFORM/bin/python3" "$DEST/recognizer.py" 2>/dev/null | head -n 1)
@@ -88,4 +97,8 @@ case "$HELLO" in
     *shoebox-recognizer*) echo "  $HELLO" ;;
     *) echo "the recognizer did not start" >&2; exit 1 ;;
 esac
-echo "Done. Run: shoebox recognize \"$ROOT\""
+if [ -n "$ROOT" ]; then
+    echo "Done. Run: shoebox recognize \"$ROOT\""
+else
+    echo "Done. Run Recognize in the shoebox launcher for any drive."
+fi

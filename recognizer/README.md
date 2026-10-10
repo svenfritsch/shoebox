@@ -11,10 +11,14 @@ boxes and embeddings out. It never touches the database or an original.
 - `fetch-models.sh [dir]`: download the ONNX models (checksummed) into
   `models/`; `SHOEBOX_NO_PETS=1` leaves out the two pet models
   (~140 MB).
-- `install.sh <library-root>`: standalone Python, OpenCV, numpy, the worker
-  and the models into `<root>/.shoebox/recognizer/`, where `shoebox
-  recognize` finds them. Run it on each kind of computer that will run
-  recognition.
+- `install.sh [library-root]`: standalone Python, OpenCV, numpy and the
+  models. Without a path they go into this folder (next to the shoebox
+  program), and every drive you recognize uses them; with a path into
+  `<root>/.shoebox/recognizer/`, which travels with that drive and wins.
+  `shoebox recognize` looks in the drive first, then here. Run it on each
+  kind of computer that will run recognition. In the downloaded folder,
+  double-click `Install face recognition.command` instead of using the
+  terminal.
 - `test_recognizer.py`: protocol tests
   (`python3 -m unittest -v recognizer/test_recognizer.py`; set
   `SHOEBOX_TEST_FACE` to a photo with a face, `SHOEBOX_TEST_PET` to a

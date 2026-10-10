@@ -12,10 +12,16 @@ SFace to embed), started and supervised by the Rust core. The protocol is in
 ## Installing the recognizer on the drive
 
 ```sh
+recognizer/install.sh                    # next to the shoebox program, for every drive
 recognizer/install.sh /Volumes/Fotos     # the library root, scanned before
 ```
 
-This puts a standalone Python (python-build-standalone 3.12), OpenCV, numpy,
+Without a path everything goes into the `recognizer/` folder that holds
+`install.sh` (the downloaded folder; the release archive has a double-click
+`Install face recognition.command` for people who do not use the terminal), so
+one copy of the models serves every drive and none is written to a drive.
+`find_worker` looks in the drive's `.shoebox/recognizer/` first, then in
+`recognizer/` next to the shoebox binary. With a path, this puts a standalone Python (python-build-standalone 3.12), OpenCV, numpy,
 `recognizer.py` and the models into `/Volumes/Fotos/.shoebox/recognizer/`
 (~330 MB on Linux), with the runtime under `runtime/<os>-<arch>/`. Nothing is
 installed on the computer. Run it once **on each kind of computer** that will

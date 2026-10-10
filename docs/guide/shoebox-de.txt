@@ -344,10 +344,13 @@ Personen und Haustiere
 Optional: shoebox findet Gesichter, Katzen und Hunde; du vergibst die Namen.
 
 Finden
-Einmal den Recognizer installieren (recognizer/install.sh
-/Volumes/MeinLaufwerk). Dann die Foto-App schließen und im Starter Erkennen
-(und Haustiere erkennen) ausführen. In der Seitenleiste erscheint der Bereich
-Gesichter.
+Den Recognizer einmal pro Computer installieren: im shoebox-Ordner Install
+face recognition doppelklicken (lädt etwa 330 MB in den dortigen Ordner
+recognizer; jedes Laufwerk, das Sie mit diesem shoebox öffnen, nutzt ihn).
+Soll er stattdessen auf einem Laufwerk liegen, im Terminal
+recognizer/install.sh /Volumes/MeinLaufwerk ausführen. Dann die Foto-App
+schließen und im Starter Erkennen (und Haustiere erkennen) ausführen. In der
+Seitenleiste erscheint der Bereich Gesichter.
 
 Benennen
 Unter Unbenannt zeigt shoebox Karten mit ähnlichen Gesichtern. Einmal einen

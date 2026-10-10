@@ -325,9 +325,12 @@ People and pets
 Optional: shoebox finds faces, cats and dogs; you give them names.
 
 Find them
-Install the recognizer once (recognizer/install.sh /Volumes/MyDrive). Then
-close the photo app and run Recognize (and Recognize pets) in the launcher. A
-Faces section appears in the sidebar.
+Install the recognizer once per computer: double-click Install face
+recognition in the shoebox folder (it downloads about 330 MB into the
+recognizer folder there, and every drive you open with this shoebox uses it).
+To keep it on one drive instead, run recognizer/install.sh /Volumes/MyDrive in
+the terminal. Then close the photo app and run Recognize (and Recognize pets)
+in the launcher. A Faces section appears in the sidebar.
 
 Name them
 Under Unnamed, shoebox shows cards of similar faces. Type a name once and the

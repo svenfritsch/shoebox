@@ -284,8 +284,9 @@ impl WorkerCommand {
 }
 
 /// The worker to use: `explicit` (`--recognizer`) or `$SHOEBOX_RECOGNIZER`
-/// if given, else `recognizer/recognizer.py` in the library's `.shoebox/` or
-/// next to the folder of the shoebox binary (`.shoebox/bin/../recognizer`).
+/// if given, else `recognizer/recognizer.py` in the library's `.shoebox/`, then
+/// `recognizer/` next to the shoebox binary (the downloaded folder), then
+/// next to the folder of the binary (`.shoebox/bin/../recognizer`).
 /// A `.py` is run with the standalone Python in `recognizer/runtime/<os>-<arch>/`
 /// when there is one, else with `python3` from `PATH`.
 pub fn find_worker(root: &Path, explicit: Option<&Path>) -> Option<WorkerCommand> {
@@ -301,6 +302,7 @@ pub fn find_worker(root: &Path, explicit: Option<&Path>) -> Option<WorkerCommand
     }
     let mut dirs = vec![root.join(db::DIR).join("recognizer")];
     if let Some(bin) = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)) {
+        dirs.push(bin.join("recognizer"));
         dirs.push(bin.join("..").join("recognizer"));
     }
     dirs.into_iter().find_map(|dir| {
@@ -1052,7 +1054,8 @@ pub fn run(opts: &Options) -> Result<Stats> {
     }
     let cmd = find_worker(&root, opts.recognizer.as_deref()).ok_or_else(|| {
         anyhow!(
-            "face recognition is not installed: no {} found (see recognizer/README.md)",
+            "face recognition is not installed: no {} found, nor a recognizer/ folder next to shoebox \
+             (double-click \"Install face recognition.command\", or see recognizer/README.md)",
             root.join(db::DIR).join("recognizer").join("recognizer.py").display()
         )
     })?;
