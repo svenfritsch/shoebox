@@ -504,10 +504,15 @@ body.selecting .sec .pick { display: inline; }
 .banner { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 12px 14px; margin: 0 0 14px; }
 .banner.warn { border-color: #d9a066; }
 .banner .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-.drive-card { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin: 0 0 8px; }
+.drive-cards { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; margin: 0 0 18px; }
+.drive-group { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+.drive-card { flex: 0 0 300px; max-width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+.drive-card .head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.drive-card .banner { border: 0; background: none; padding: 0; margin: 0; }
 .drive-card .title { font-weight: 600; }
 .drive-card.offline { opacity: .6; }
-.drive-card .role { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.drive-card .role { display: flex; flex-direction: column; gap: 2px; }
+.drive-card .role select { width: 100%; }
 .drive-card select { padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
 .pill { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; font-size: 12px; color: var(--muted); margin-right: 4px; }
 .pill.on { color: var(--fg); background: var(--panel); }
