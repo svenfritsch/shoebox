@@ -9,17 +9,14 @@
 //!   rectangle needs no bookkeeping.
 //! - Maps are drawn by the browser (Leaflet, OpenStreetMap tiles). The server
 //!   never fetches or stores a tile; the whole map feature is a setting that
-//!   is off by default (`maps`).
+//!   is off by default. It belongs to the application, not to a drive: the
+//!   browser keeps it (`shoebox-maps`), the server knows nothing of it.
 
 use anyhow::{Result, bail};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 use crate::db;
-
-/// Setting `maps`: show maps (needs the internet; tiles come from
-/// OpenStreetMap). Off unless the user turned it on.
-pub const MAPS_KEY: &str = "maps";
 
 const MAX_NAME: usize = 100;
 

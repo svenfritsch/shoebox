@@ -83,11 +83,6 @@ fn positions_come_from_the_file_or_from_the_user() {
     assert_eq!(details(addr, gps)["position"]["source"], "file");
     assert!(details(addr, plain)["position"].is_null());
 
-    // Maps are a setting, off until asked for.
-    assert_eq!(get(addr, "/api/maps").json()["on"], false);
-    assert_eq!(post(addr, "/api/maps", &json!({ "on": true })).json()["on"], true);
-    assert_eq!(get(addr, "/api/maps").json()["on"], true);
-
     // A photo with a position in its file keeps it.
     let r = post(addr, &format!("/api/files/{gps}/position"), &json!({ "lat": 1.0, "lon": 2.0 }));
     assert_eq!(r.status, 400);

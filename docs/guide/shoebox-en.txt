@@ -447,7 +447,9 @@ browser from OpenStreetMap, so this is the one place where shoebox needs the
 internet: OpenStreetMap sees which parts of the map you look at, never your
 photos or their names. shoebox saves no map pictures on the drive (your
 browser may keep some in its own cache). With the box unticked nothing is ever
-loaded from the internet.
+loaded from the internet. The setting is the same for all your drives: you
+tick it once, and it stays on when you switch to another drive. It is
+remembered by your browser, so another browser starts with maps off.
 
 In a photo’s info
 Where the file has GPS data, GPS data in the info panel shows the position
