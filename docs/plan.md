@@ -198,19 +198,32 @@ offer is gone after the next scan. Those cases are for the duplicates screen.
 
 ### Dates shown for a photo
 
-The timeline and the info panel use, in this order: the capture date in the
-file (EXIF, video container); else the month in the name of the nearest event
-folder (shown as the 1st of that month); else, for a file outside any event
-folder, the earlier of its created and modification dates (a copy gets a new
-created date but keeps the old modification date). Event folder names start with
-year then month, 4 or 2 digits for the year (20YY), `-` or `.` between, and
-any of the gaps listed under event folder naming below. Only the capture date is the day the photo was taken: for the
-others the info panel shows an "estimated" mark next to the date (hover: "Not
-the date the photo was taken") and a tooltip on the mark says which fallback was used.
-The created date does not come before the folder because a copy made years
-later has a created date of its own (a scan of 1998 sits in `98.08 Urlaub`
-but was created the day it was copied to the drive).
-Nothing is ever written to the file (see the rules at the top).
+The timeline, the groups, the Year jump, date search and the info panel use, in
+this order, the first date that exists (phase 12, [phase12.md](phase12.md)):
+
+1. **The user's estimated date** (year, month or day, set in the info panel
+   or for a selection; `date_estimates` in `library.db`). It wins on every
+   photo, even one with a capture date in the file: a scan or a photo of a
+   print has an EXIF date of the day it was made.
+2. The capture date in the file (EXIF, video container; also a date a
+   duplicate clean-up carried over).
+3. The month in the name of the nearest event folder (shown as the 1st of that
+   month).
+4. For a file outside any event folder, the earlier of its created and
+   modification dates (a copy gets a new created date but keeps the old
+   modification date).
+
+Event folder names start with year then month, 4 or 2 digits for the year
+(20YY), `-` or `.` between, and any of the gaps listed under event folder naming
+below. Only a capture date in the file is the day the photo was taken: for the
+others the info panel shows an "estimated" mark next to the date (a date the
+user set shows "manual") and a tooltip on the mark says which fallback was used.
+When the user's date sits on top of a capture date, the row "EXIF" under the date
+shows the file's own; "Remove estimate" brings it back. The created date does
+not come before the folder because a copy made years later has a created date
+of its own (a scan of 1998 sits in `98.08 Urlaub` but was created the day it was
+copied to the drive). Nothing is ever written to the file (see the rules at the
+top).
 
 ### Event folder naming (a setting)
 
@@ -351,6 +364,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 9 | Text in photos (OCR): documents, screenshots, street signs, shop fronts found by the words in them. A new task of the recognizer worker, results in `recognition.db` with an FTS5 index, a search term in the UI | **Planned** (design below, no code yet) |
 | 10 | Locations: GPS positions from files, map in the photo info (Leaflet, OpenStreetMap, opt-in setting), Locations page with clustered pins, named places drawn on the map, positions set by hand (design in [phase10.md](phase10.md)) | **Built, check open**: scan reads GPS, schema v10, API, UI, guide; real-hardware check and the CI run are open |
 | 11 | Screenshots: a fourth entry in the Type drop-down, found from metadata and a pixel check (no new model); "Photos" then means stills that are not screenshots (design in [phase11.md](phase11.md)) | **Built with test pictures; threshold and real-hardware run open** (see [phase11.md](phase11.md)) |
+| 12 | Estimated capture date: a date of the user's own (year, month or day) for a photo, kept in `library.db` only, that wins over the file's date on the timeline; "Needs a date" worklist; search by date with the Date group and `date:` / `datum:` (design in [phase12.md](phase12.md)) | **Built except the real-hardware check**: core, info panel (pencil, dialog, EXIF row), "~", year-only group, selection with Undo, "Needs a date", date search (`date:` / `datum:`), guide in both languages |
 
 ### Phase 10: locations
 
@@ -620,7 +634,8 @@ picture is a second, separate kind of term:
 The two combine with AND like every other term (and with folder, people, type
 and favorites). The suggestion list shows the groups in this order: names,
 folders and tags (today's rows), people and pets, then the one text row, so
-nobody gets OCR hits by accident. A hit by text shows the matching line under
+nobody gets OCR hits by accident (phase 12 adds the group "Date" after that,
+only when what was typed is clearly a date; see [phase12.md](phase12.md)). A hit by text shows the matching line under
 the thumbnail; a hit by name shows nothing extra, as today.
 
 **Words and icons (decided with the mock-ups).** The old group name "In the
@@ -655,6 +670,7 @@ mixed in):
 | `name:IMG_62` | one group "File names": the row `[page] “IMG_62”` with its photo count | "draft" page icon (grey): `[page] IMG_62 ✕` | `name=IMG_62` |
 | `text:Rechnung` | one group "Recognized text": the row `[scanner] “Rechnung”` | "document scanner" icon (accent colour): `[scanner] Rechnung ✕` | `text=Rechnung` |
 | plain `Rechn` | today's groups (tags, folders, faces, pets) and, last, "Recognized text" | as today | `q=` |
+| `date:june` or `datum:juni` (phase 12) | one group "Date" (German "Datum"): the Junes of the library, newest first, with their photo counts | calendar icon: `June 1987 ✕` | `date=1987-06` |
 
 - `name:` matches the **file name only** (the last path segment, NFC,
   case- and diacritic-insensitive substring), not folders, tags or people. It

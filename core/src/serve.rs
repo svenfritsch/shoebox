@@ -62,6 +62,7 @@ use tower_http::services::ServeFile;
 use crate::browse::{self, Snapshot};
 use crate::classify::Kind;
 use crate::clusters;
+use crate::dates;
 use crate::db;
 use crate::duplicates;
 use crate::library;
@@ -833,6 +834,9 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/screenshots", post(screenshots_set))
         .route("/api/geo/points", get(geo_points))
         .route("/api/files/{id}/position", post(position_set))
+        .route("/api/files/dates", post(dates_set))
+        .route("/api/files/dates/check", post(dates_check))
+        .route("/api/dates", get(dates_suggest))
         .route("/api/places", get(places_list).post(places_create))
         .route("/api/places/{id}/rename", post(places_rename))
         .route("/api/places/{id}/area", post(places_redraw))
@@ -1310,6 +1314,8 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
     let types = types_of(&pairs)?;
     let pet_terms = pets_of(&pairs)?;
     let fav = fav_of(&pairs);
+    let dates = dates_of(&pairs)?;
+    let needs_date = param(&pairs, "nodate").is_some_and(|v| !v.is_empty() && v != "0");
     let libs: Vec<LibraryRef> = apps.iter().map(|a| LibraryRef { id: library_id(&a.name), name: a.name.clone(), volume: volume::placement(&a.root).map(|p| p.volume) }).collect();
 
     let timeline = tokio::task::spawn_blocking(move || -> ApiResult<Timeline> {
@@ -1322,6 +1328,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
             version: String,
             live: Option<i64>,
             fav: bool,
+            est: Option<char>,
         }
         let mut rows: Vec<Row> = Vec::new();
         for (d, app) in apps.iter().enumerate() {
@@ -1353,6 +1360,8 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
                 pets: pet_terms.clone(),
                 types: types.clone(),
                 fav,
+                dates: dates.clone(),
+                needs_date,
                 ..Default::default()
             };
             let hearts = own_tags::favorite_ids(&conn)?;
@@ -1372,6 +1381,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
                     day: it.day(),
                     version: it.version.clone(),
                     live: it.live.map(|v| d as i64 * ID_SPAN + v),
+                    est: estimate_code(it.date_source),
                 });
             }
         }
@@ -1386,10 +1396,14 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
             tags: Vec::new(),
             people: Vec::new(),
             favs: Vec::new(),
+            est: Vec::new(),
         };
         for r in rows {
             if r.fav {
                 t.favs.push(r.gid);
+            }
+            if let Some(c) = r.est {
+                t.est.push((r.gid, c));
             }
             t.ids.push(r.gid);
             t.kinds.push(r.kind);
@@ -1574,6 +1588,8 @@ struct Info {
     index_version: String,
     /// Photos (with their companions) in the trash.
     trash: u64,
+    /// Photos that need a date: none in the file, none of the user's.
+    needs_date: u64,
     /// Face recognition (`shoebox recognize`).
     faces: recognize::Overview,
     /// Clusters and suggestions (5c-2).
@@ -1624,6 +1640,7 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
         let busy = jobs_running(&conn)?;
         let (data_version, generation) = app.version(&conn)?;
         let trash: i64 = conn.query_row("SELECT count(DISTINCT batch) FROM trash", [], |r| r.get(0))?;
+        let needs_date = app.snapshot(&conn)?.items.iter().filter(|it| needs_a_date(it)).count() as u64;
         let faces = recognize::overview(&conn)?;
         // New faces from a `recognize` run that stopped before clustering.
         if !faces.running
@@ -1650,6 +1667,7 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
             busy,
             index_version: format!("{data_version}.{generation}"),
             trash: trash as u64,
+            needs_date,
             faces,
             clusters,
             reveal,
@@ -1698,7 +1716,39 @@ fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
         fav: fav_of(pairs),
         area: area_of(pairs)?,
         place: param(pairs, "place").filter(|v| !v.is_empty()).map(number).transpose()?,
+        dates: dates_of(pairs)?,
+        needs_date: param(pairs, "nodate").is_some_and(|v| !v.is_empty() && v != "0"),
     })
+}
+
+/// `date=1987`, `date=1987-06`, `date=1987-06-14`, repeatable (all must match,
+/// each once): photos dated inside it.
+fn dates_of(pairs: &Pairs) -> ApiResult<Vec<dates::Term>> {
+    let mut out: Vec<dates::Term> = Vec::new();
+    for (_, v) in pairs.iter().filter(|(k, v)| k == "date" && !v.is_empty()) {
+        let t = dates::Term::parse_param(v).map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+        if !out.contains(&t) {
+            out.push(t);
+        }
+    }
+    Ok(out)
+}
+
+/// A photo with no capture date in its file and no date of the user's.
+fn needs_a_date(it: &browse::Item) -> bool {
+    matches!(it.date_source, browse::DateSource::Folder | browse::DateSource::Created | browse::DateSource::Modified)
+}
+
+/// For the "~" on a timeline cell: m(anual), f(older name), c(reated),
+/// (m)o(d)ified is `u`; a date from the file has none.
+fn estimate_code(source: browse::DateSource) -> Option<char> {
+    match source {
+        browse::DateSource::Estimate => Some('m'),
+        browse::DateSource::Folder => Some('f'),
+        browse::DateSource::Created => Some('c'),
+        browse::DateSource::Modified => Some('u'),
+        browse::DateSource::File => None,
+    }
 }
 
 /// `area=south,west,north,east`: only photos taken inside that rectangle.
@@ -1783,6 +1833,10 @@ struct Timeline {
     people: Vec<people::PersonRef>,
     /// Ids of the items with a heart.
     favs: Vec<i64>,
+    /// [id, code] of the items whose date is not from the file: `m` set by the
+    /// user, `f` the event folder's name, `c` the file's created date, `u` its
+    /// modification date. For the "~" on the cell.
+    est: Vec<(i64, char)>,
 }
 
 async fn timeline(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Timeline>> {
@@ -1810,10 +1864,14 @@ async fn timeline(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> Ap
             tags,
             people,
             favs: Vec::new(),
+            est: Vec::new(),
         };
         for it in items {
             if hearts.contains(&it.id) {
                 t.favs.push(it.id);
+            }
+            if let Some(c) = estimate_code(it.date_source) {
+                t.est.push((it.id, c));
             }
             t.ids.push(it.id);
             t.kinds.push(match it.kind {
@@ -2346,6 +2404,76 @@ async fn position_set(State(app): State<Arc<App>>, Path(id): Path<i64>, Json(req
     })
     .await
     .map(|position| Json(serde_json::json!({ "position": position })))
+}
+
+#[derive(Deserialize)]
+struct DatesRequest {
+    #[serde(default)]
+    ids: Vec<i64>,
+    year: Option<i32>,
+    month: Option<u32>,
+    day: Option<u32>,
+    /// Take the user's date away (the file's own date, else the folder's
+    /// month, comes back).
+    #[serde(default)]
+    clear: bool,
+    /// Put earlier dates back (Undo): `[{id, estimate}]`, `estimate: null` for none.
+    restore: Option<Vec<RestoreDate>>,
+}
+
+#[derive(Deserialize)]
+struct RestoreDate {
+    id: i64,
+    estimate: Option<dates::Estimate>,
+}
+
+/// Give photos a date of the user's (phase 12), take it away, or put back what
+/// was there. Works on every photo, also one with a capture date in its file;
+/// the answer says how many of them had one and what each had before.
+async fn dates_set(State(app): State<Arc<App>>, Json(req): Json<DatesRequest>) -> ApiResult<Json<dates::Changed>> {
+    change(&app, move |_, conn| {
+        let items: Vec<(i64, Option<dates::Estimate>)> = if let Some(restore) = req.restore {
+            restore.into_iter().map(|r| (r.id, r.estimate)).collect()
+        } else if req.clear {
+            req.ids.iter().map(|&id| (id, None)).collect()
+        } else {
+            let Some(year) = req.year else { bail!("a year is needed") };
+            let e = dates::Estimate { year, month: req.month, day: req.day };
+            req.ids.iter().map(|&id| (id, Some(e))).collect()
+        };
+        dates::apply(conn, &items)
+    })
+    .await
+    .map(Json)
+}
+
+#[derive(Deserialize)]
+struct DatesCheckRequest {
+    ids: Vec<i64>,
+}
+
+/// What a date dialog for these photos should say.
+async fn dates_check(State(app): State<Arc<App>>, Json(req): Json<DatesCheckRequest>) -> ApiResult<Json<dates::Check>> {
+    blocking(&app, move |app| {
+        let conn = app.conn.lock().unwrap();
+        dates::check(&conn, &req.ids).map(Json).map_err(|e| ApiError::BadRequest(format!("{e:#}")))
+    })
+    .await
+}
+
+/// The rows of the search box's "Date" group (`q` is what was typed after the
+/// optional `date:` prefix, `prefix=1` when it was typed), counted within the
+/// rest of the filter.
+async fn dates_suggest(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<dates::Row>>> {
+    blocking(&app, move |app| {
+        let conn = app.conn.lock().unwrap();
+        let filter = browse::Query { text: None, ..filter_of(&pairs)? };
+        let snapshot = app.snapshot(&conn)?;
+        let all: Vec<(i32, Option<u32>, Option<u32>)> = snapshot.query(&conn, &filter)?.iter().map(|it| it.date_parts()).collect();
+        let prefix = param(&pairs, "prefix").is_some_and(|v| !v.is_empty() && v != "0");
+        Ok(Json(dates::suggest(param(&pairs, "q").unwrap_or(""), prefix, &all)))
+    })
+    .await
 }
 
 /// The places with the number of shown photos inside each.

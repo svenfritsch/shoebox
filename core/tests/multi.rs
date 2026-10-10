@@ -342,3 +342,28 @@ fn pet_terms_work_over_the_drives() {
     assert_eq!((a.snapshot(), b.snapshot()), before);
     server.stop().unwrap();
 }
+
+#[test]
+fn the_common_timeline_shows_dates_the_user_gave_and_filters_by_them() {
+    let a = own_library("multi-dates-a", 10);
+    let b = own_library("multi-dates-b", 90);
+    let server = start_many(&[&a, &b], &[]);
+    let addr = server.addr;
+    let id_a = lib_id(addr, &a);
+    let photo = id_of(&a, "Familie/Weihnachten/DSC_2001.jpg");
+    let r = post(addr, &format!("/raw/api/lib/{id_a}/files/dates"), &json!({ "ids": [photo], "year": 1987, "month": 6 }));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+
+    // Only that photo is dated 1987, and it carries the mark of a date the user gave.
+    let found = get(addr, "/raw/api/all/timeline?date=1987").json();
+    assert_eq!(found["count"], 1);
+    let est = found["est"].as_array().unwrap();
+    assert_eq!((est.len(), est[0][1].as_str()), (1, Some("m")));
+    assert_eq!(found["days"][0], 19870600);
+    // Photos that need a date are the others; a bad date is refused.
+    let needs = get(addr, "/raw/api/all/timeline?nodate=1").json();
+    assert!(needs["count"].as_i64().unwrap() >= 1);
+    assert!(!needs["ids"].as_array().unwrap().contains(&found["ids"][0]));
+    assert_eq!(get(addr, "/raw/api/all/timeline?date=87").status, 400);
+    server.stop().unwrap();
+}

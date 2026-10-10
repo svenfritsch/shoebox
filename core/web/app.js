@@ -123,7 +123,7 @@ var PET_TERMS = {
 };
 
 function readHash() {
-  var f = { folder: null, tags: [], people: [], pets: [], types: [], fav: false, place: null, q: '', view: null, id: null, tab: null };
+  var f = { folder: null, tags: [], people: [], pets: [], types: [], fav: false, place: null, dates: [], nodate: false, q: '', view: null, id: null, tab: null };
   location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
     var i = kv.indexOf('=');
     if (i < 0) return;
@@ -138,6 +138,9 @@ function readHash() {
     if (k === 'pet' && PET_TERMS[v] && f.pets.indexOf(v) < 0) f.pets.push(v);
     if (k === 'fav') f.fav = v === '1';
     if (k === 'place') f.place = parseInt(v, 10) || null;
+    // Photos dated inside a year, month or day (several: all must match), and those that need a date.
+    if (k === 'date' && /^\d{4}(-\d{2}(-\d{2})?)?$/.test(v) && f.dates.indexOf(v) < 0) f.dates.push(v);
+    if (k === 'nodate') f.nodate = v === '1';
     if (k === 'q') f.q = v;
     if (k === 'view' && VIEWS.indexOf(v) >= 0) f.view = v;
     if (k === 'id') f.id = parseInt(v, 10) || null;
@@ -153,7 +156,7 @@ function readHash() {
 // folder, any number of tags and people (`tag`, `person` repeated in the
 // URL) and free text.
 function setFilter(f) {
-  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], type: f.types || [], fav: f.fav ? 1 : null, place: f.place, q: f.q }).replace(/^\?/, '');
+  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], type: f.types || [], fav: f.fav ? 1 : null, place: f.place, date: f.dates || [], nodate: f.nodate ? 1 : null, q: f.q }).replace(/^\?/, '');
   if (h === location.hash.replace(/^#/, '')) { applyFilter(); return; }
   location.hash = h; // triggers hashchange -> applyFilter
 }
@@ -163,7 +166,7 @@ function withFilter(changes) {
   var f = state.filter;
   // A place picked on the Locations page goes with the search to the timeline.
   var place = f.view === 'locations' ? f.id : f.place;
-  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), pets: f.pets.slice(), types: f.types.slice(), fav: f.fav, place: place, q: f.q }, changes);
+  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), pets: f.pets.slice(), types: f.types.slice(), fav: f.fav, place: place, dates: f.dates.slice(), nodate: f.nodate, q: f.q }, changes);
 }
 
 function showView(view, id, tab) { setFilter({ view: view, id: id, tab: tab, folder: null, tags: [], people: [], q: '' }); }
@@ -182,7 +185,9 @@ function applyFilter() {
   $('sizer').hidden = !!view;
   $('current-month').textContent = view && VIEW_LABELS[view] ? tr(VIEW_LABELS[view]) : '';
   var f = state.filter;
-  $('all').classList.toggle('active', !view && !f.folder && !f.tags.length && !f.people.length && !f.pets.length && !f.place && !f.fav && !f.q);
+  $('all').classList.toggle('active', !view && !f.folder && !f.tags.length && !f.people.length && !f.pets.length && !f.place && !f.fav && !f.dates.length && !f.nodate && !f.q);
+  $('nav-nodate').classList.toggle('active', !view && f.nodate);
+  if (isAll()) $('nav-nodate').hidden = true;
   $('nav-dups').classList.toggle('active', view === 'duplicates');
   $('nav-trash').classList.toggle('active', view === 'trash');
   $('nav-settings').classList.toggle('active', view === 'settings' || view === 'faces' || view === 'pets');
@@ -252,6 +257,11 @@ function renderChips() {
     onMap.onclick = function () { showView('locations', f.place); };
     box.lastChild.insertBefore(onMap, box.lastChild.lastChild);
   }
+  f.dates.forEach(function (term) {
+    add('📅 ' + dateTermLabel(term), function () { setFilter(withFilter({ dates: f.dates.filter(function (t) { return t !== term; }) })); });
+    box.lastChild.title = tr('dates.chip_hint', { date: dateTermLabel(term) });
+  });
+  if (f.nodate) add('📅 ' + tr('side.needs_date'), function () { setFilter(withFilter({ nodate: false })); });
   if (f.q) add('“' + f.q + '”', function () { setFilter(withFilter({ q: '' })); });
   var terms = box.children.length;
   if (terms) {
@@ -401,6 +411,8 @@ $('search').addEventListener('input', function () {
   var v = this.value;
   // On the Locations page typing looks for a place; the text only becomes a search with Enter.
   if (state.filter.view === 'locations' && geo.on) { suggest(v); return; }
+  // `date:` looks for a date; what follows is not a text search.
+  if (DATE_PREFIX.test(v)) { suggest(v); return; }
   searchTimer = setTimeout(function () { setFilter(withFilter({ q: v.trim() })); }, 300);
   suggest(v);
 });
@@ -417,6 +429,7 @@ $('search').addEventListener('keydown', function (ev) {
   } else if (ev.key === 'Enter') {
     ev.preventDefault();
     if (open && sugg.at >= 0) { pickSuggest(sugg.items[sugg.at]); return; }
+    if (DATE_PREFIX.test(this.value)) { if (sugg.items.length) pickSuggest(sugg.items[0]); return; }
     clearTimeout(searchTimer);
     closeSuggest();
     setFilter(withFilter({ q: this.value.trim() }));
@@ -427,6 +440,8 @@ $('search').addEventListener('keydown', function (ev) {
     var f = state.filter;
     if (f.fav) setFilter(withFilter({ fav: false }));
     else if (f.place) setFilter(withFilter({ place: null }));
+    else if (f.nodate) setFilter(withFilter({ nodate: false }));
+    else if (f.dates.length) setFilter(withFilter({ dates: f.dates.slice(0, -1) }));
     else if (f.pets.length) setFilter(withFilter({ pets: f.pets.slice(0, -1) }));
     else if (f.people.length) setFilter(withFilter({ people: f.people.slice(0, -1) }));
     else if (f.tags.length) setFilter(withFilter({ tags: f.tags.slice(0, -1) }));
@@ -449,6 +464,17 @@ function suggest(text) {
   // On the Locations page the search finds places: picking one shows it.
   if (f.view === 'locations' && geo.on) { showSuggest(placeSuggestions(text.trim(), f)); return; }
   if (f.view) { closeSuggest(); return; }
+  // `date:` (or `datum:`): only dates, a month alone lists it in every year.
+  var typed = DATE_PREFIX.exec(text);
+  if (typed) {
+    if (isAll()) { closeSuggest(); return; }
+    var after = typed[1].trim();
+    suggestDates(after, true, datesWithin(f)).then(function (rows) {
+      if (seq !== sugg.seq) return;
+      showSuggest(dateItems(rows), after && rows.length ? '' : tr('dates.hint_prefix'));
+    });
+    return;
+  }
   if (isAll()) { suggestAll(text, seq); return; }
   var needle = text.trim();
   var within = { q: needle, tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place };
@@ -456,6 +482,7 @@ function suggest(text) {
     api(LIBAPI + '/tags' + query(Object.assign({ limit: 8 }, within))),
     api(LIBAPI + '/people/search' + query(Object.assign({ limit: 6 }, within))).catch(function () { return []; }),
     api(LIBAPI + '/pets/search' + query(within)).catch(function () { return []; }),
+    suggestDates(needle, false, datesWithin(f)),
   ]).then(function (r) {
     if (seq !== sugg.seq) return;
     var items = favSuggestion(needle, f);
@@ -477,6 +504,8 @@ function suggest(text) {
         .slice(0, 4)
         .forEach(function (fo) { items.push({ kind: 'folder', id: fo.id, label: fo.path, count: fo.count }); });
     }
+    // Last: a year, a month with a year or a day, when that is what was typed.
+    items = items.concat(dateItems(r[3]));
     showSuggest(items);
   }).catch(function () {});
 }
@@ -508,7 +537,7 @@ function suggestAll(text, seq) {
   }).catch(function () {});
 }
 
-function showSuggest(items) {
+function showSuggest(items, hint) {
   var box = $('suggest');
   box.textContent = '';
   sugg.items = items;
@@ -519,7 +548,7 @@ function showSuggest(items) {
       var f = state.filter, narrowed = !isAll() && (f.tags.length || f.people.length || f.pets.length || f.folder || f.place);
       var head = it.kind === 'fav' ? tr('fav.label') : it.kind === 'tag' ? tr(narrowed ? 'search.tags_here' : 'search.tags')
         : it.kind === 'person' ? tr(narrowed ? 'search.faces_here' : 'side.faces')
-          : it.kind === 'pet' ? tr(narrowed ? 'search.pets_here' : 'search.pets') : it.kind === 'place' ? tr('search.places') : tr('search.folders');
+          : it.kind === 'pet' ? tr(narrowed ? 'search.pets_here' : 'search.pets') : it.kind === 'place' ? tr('search.places') : it.kind === 'date' ? tr('search.dates') : tr('search.folders');
       box.appendChild(el('div', 'head', head));
       last = it.kind;
     }
@@ -531,7 +560,7 @@ function showSuggest(items) {
     if (it.kind === 'person') label.appendChild(avatar(it.person, 'tiny'));
     label.appendChild(document.createTextNode((it.kind === 'fav' ? '♥ ' : it.kind === 'pet' ? PET_TERMS[it.id].icon + ' '
       : it.kind === 'person' ? (petIcon(it.person && it.person.species) ? petIcon(it.person.species) + ' ' : '')
-        : ({ folder: '📁 ', place: '📍 ' }[it.kind] || '# ')) + it.label));
+        : ({ folder: '📁 ', place: '📍 ', date: '📅 ' }[it.kind] || '# ')) + it.label));
     b.appendChild(label);
     b.appendChild(el('span', 'count', I18n.number(it.count)));
     b.onmousedown = function (ev) { ev.preventDefault(); }; // keep the focus in the box
@@ -539,7 +568,8 @@ function showSuggest(items) {
     b.dataset.i = i;
     box.appendChild(b);
   });
-  box.hidden = !items.length || document.activeElement !== $('search');
+  if (hint) box.appendChild(el('div', 'hint', hint));
+  box.hidden = (!items.length && !hint) || document.activeElement !== $('search');
 }
 
 function markSuggest() {
@@ -558,6 +588,7 @@ function pickSuggest(it) {
   else if (it.kind === 'tag') setFilter(withFilter({ tags: f.tags.indexOf(it.id) < 0 ? f.tags.concat([it.id]) : f.tags, q: '' }));
   else if (it.kind === 'person') setFilter(withFilter({ people: f.people.indexOf(it.id) < 0 ? f.people.concat([it.id]) : f.people, q: '' }));
   else if (it.kind === 'pet') setFilter(withFilter({ pets: f.pets.indexOf(it.id) < 0 ? f.pets.concat([it.id]) : f.pets, q: '' }));
+  else if (it.kind === 'date') setFilter(withFilter({ dates: f.dates.indexOf(it.id) < 0 ? f.dates.concat([it.id]) : f.dates, q: '' }));
   else if (it.kind === 'place') pickPlace(it.id);
   else setFilter(withFilter({ folder: it.id, q: '' }));
 }
@@ -674,6 +705,7 @@ function markActiveFolder() {
 }
 
 $('all').onclick = function () { setFilter({ folder: null, tags: [], people: [], q: '' }); };
+$('nav-nodate').onclick = function () { setFilter({ folder: null, tags: [], people: [], q: '', nodate: true }); };
 $('nav-dups').onclick = function () { showView('duplicates'); };
 $('nav-trash').onclick = function () { showView('trash'); };
 $('nav-drives').onclick = function () { showView('drives'); };
@@ -740,8 +772,8 @@ function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
 function loadTimeline(resetScroll) {
   var seq = ++state.loadSeq;
   var f = state.filter;
-  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, q: f.q })
-    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, place: f.place, q: f.q });
+  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null, q: f.q })
+    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null, q: f.q });
   return api(url).then(function (data) {
     if (seq !== state.loadSeq) return;
     if (isAll()) allTimelineLoaded(data);
@@ -750,7 +782,12 @@ function loadTimeline(resetScroll) {
     data.tags.forEach(function (t) { state.tagNames[t.id] = t.name; });
     data.people.forEach(function (p) { state.personNames[p.id] = p.name; });
     if (unnamed) renderChips(); // a link with tags this page has not seen yet
+    // A date change moves photos: the open one is found again by its id.
+    var openId = state.open >= 0 && state.data && state.data.ids ? state.data.ids[state.open] : null;
     state.data = data;
+    if (openId != null) { var again = data.ids.indexOf(openId); if (again >= 0) state.open = again; }
+    state.est = {};
+    (data.est || []).forEach(function (e) { state.est[e[0]] = e[1]; });
     state.favs = {};
     (data.favs || []).forEach(function (id) { state.favs[id] = true; });
     state.live = {};
@@ -891,6 +928,7 @@ function buildRow(row) {
     var badge = KIND_BADGE[kind] || '';
     if (state.live[d.ids[i]]) badge = 'LIVE';
     if (badge) a.appendChild(el('span', 'badge', badge));
+    if (state.est && state.est[d.ids[i]]) a.appendChild(estimateMark(state.est[d.ids[i]]));
     if (!isAll()) a.appendChild(heartButton(d.ids[i], 'fav'));
     else if (state.favs[d.ids[i]]) a.appendChild(heartButton(d.ids[i], 'fav', true));
     e.appendChild(a);
@@ -1251,6 +1289,7 @@ function viewUrl(i) {
 }
 
 function formatDate(info) {
+  if (info.estimate) return formatEstimate(info.estimate);
   var s = info.taken || info.sort_date;
   if (!s) return '';
   var p = s.split(/[-T:]/).map(Number);
@@ -1352,15 +1391,7 @@ function renderPanel() {
     dl.appendChild(dd);
     return dd;
   };
-  var date = row(tr('info.date'), formatDate(info) + (info.taken_offset ? ' (UTC' + info.taken_offset + ')' : ''));
-  if (date && info.date_source !== 'file') {
-    // Not the day the photo was taken: say so next to the date; which
-    // fallback was used is in the tooltip.
-    var badge = el('span', 'estimated', tr('info.estimated'));
-    badge.title = tr('info.estimated_hint') + '\n' + tr(info.date_source === 'created' ? 'info.no_date_created'
-      : info.date_source === 'folder' ? 'info.no_date_folder' : 'info.no_date_file');
-    date.appendChild(badge);
-  }
+  infoDate(row, info);
   row(tr('info.name'), info.name);
   var folder = info.path.indexOf('/') >= 0 ? info.path.slice(0, info.path.lastIndexOf('/')) : '';
   if (folder) {
@@ -1536,6 +1567,9 @@ function loadInfo() {
     $('nav-trash').textContent = info.trash ? tr('side.trash_n', { n: info.trash }) : tr('side.trash');
     trashCount = info.trash || 0;
     applyAllowTrash();
+    dates.needs = info.needs_date || 0;
+    $('nav-nodate').textContent = dates.needs ? tr('side.needs_date_n', { n: dates.needs }) : tr('side.needs_date');
+    $('nav-nodate').hidden = isAll() || (!dates.needs && !(state.filter && state.filter.nodate));
     if (info.thumbs_done < info.thumbs_total) {
       parts.push(tr('status.thumbs', { pct: Math.floor(100 * info.thumbs_done / info.thumbs_total) }));
     }
@@ -1709,7 +1743,7 @@ function updateSelbar() {
   var total = state.data && state.data.ids ? state.data.ids.length : 0;
   $('sel-all').textContent = tr(total && n >= total ? 'sel.none' : 'sel.all');
   $('sel-all').disabled = !total;
-  $('sel-move').disabled = $('sel-trash').disabled = $('sel-tag').disabled = $('sel-untag').disabled = !n;
+  $('sel-move').disabled = $('sel-trash').disabled = $('sel-tag').disabled = $('sel-untag').disabled = $('sel-date').disabled = !n;
 }
 
 $('select').onclick = function () {

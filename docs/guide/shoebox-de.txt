@@ -92,12 +92,15 @@ Eine Seite im Browser, eine Zeitleiste von allem auf dem Laufwerk.
 
 - Zeitleiste
    Alle Fotos und Videos nach Monat, mit Jahressprung, Ordnerbaum und einer
-   Ansicht mit Infos zum Foto.
+   Ansicht mit Infos zum Foto. Gib einem Scan oder einem weitergeleiteten Bild
+   ein eigenes Datum (ein Jahr, einen Monat oder einen Tag), und es landet an
+   der richtigen Stelle; die Datei bleibt unverändert.
 
 - Suchen & Filtern
-   Tippe eine Person, ein Haustier, einen Tag oder Ordner. Kombiniere
-   Schlagwörter für eine komplexere Suche. Filter nach Fotos, Videos, Live
-   Photos oder Screenshots, oder zeige nur deine Favoriten ♥.
+   Tippe eine Person, ein Haustier, einen Tag, einen Ordner oder ein Datum wie
+   Juni 1987. Kombiniere Schlagwörter für eine komplexere Suche. Filter nach
+   Fotos, Videos, Live Photos oder Screenshots, oder zeige nur deine Favoriten
+   ♥.
 
 - Personen & Haustiere
    Optionale Erkennung gruppiert Gesichter, Katzen und Hunde. Du vergibst
@@ -119,7 +122,7 @@ Alles ist auf einer Seite. So findest du dich zurecht.
    ☰ blendet die Seitenleiste auf schmalen Bildschirmen ein oder aus.
 
 2. Suchfeld
-   Personen, Haustiere, Tags und Ordner; mehrere wählen, um sie zu
+   Personen, Haustiere, Tags, Ordner und Datum; mehrere wählen, um sie zu
    kombinieren.
 
 3. Favoriten ♥
@@ -139,7 +142,8 @@ Alles ist auf einer Seite. So findest du dich zurecht.
    Fotos zum Verschieben, Taggen oder in den Papierkorb wählen.
 
 7. Schnellzugriff
-   Alle Fotos · Duplikate · Papierkorb · Einstellungen.
+   Alle Fotos · Datum fehlt (nur wenn bei manchen Fotos eines fehlt) ·
+   Duplikate · Papierkorb · Einstellungen.
 
 8. Ordner
    Deine Ordner mit Anzahl. Tags, Gesichter und Laufwerke erscheinen hier,
@@ -319,13 +323,14 @@ Stöbern und ansehen
 Durch die Zeitleiste scrollen, nach Jahr springen, ein Foto öffnen.
 
 Zeitleiste
-Fotos sind nach Aufnahmedatum gruppiert, neueste zuerst. Das Menü Jahr
-springt; der Monat neben dem Laufwerksnamen in der oberen Leiste zeigt, wo du
-bist. Auf einer anderen Seite (Duplikate, Papierkorb, Einstellungen,
-Gesichter, …) steht dort stattdessen der Name dieser Seite. Ein Foto ohne
-Aufnahmedatum nimmt den Monat aus dem Namen seines Ereignisordners (2020-07,
-2020.07, 20-07 oder 20.07), sonst das frühere von Erstellungs- und
-Änderungsdatum der Datei; das Infofeld markiert das Datum dann als geschätzt.
+Fotos sind nach Datum gruppiert, neueste zuerst. Das Menü Jahr springt; der
+Monat neben dem Laufwerksnamen in der oberen Leiste zeigt, wo du bist. Auf
+einer anderen Seite (Duplikate, Papierkorb, Einstellungen, Gesichter, …) steht
+dort stattdessen der Name dieser Seite. Eine kleine ~ in der Ecke eines Fotos
+bedeutet, dass sein Datum geschätzt ist; zeige darauf, um die Art zu sehen
+(von dir gesetzt, aus dem Namen des Ereignisordners oder aus dem Erstellungs-
+bzw. Änderungsdatum der Datei). Nach welchem Datum ein Foto einsortiert wird,
+steht unter „Datum und Suche nach Datum“.
 
 Ordner
 Die Seitenleiste spiegelt die Ordner deines Laufwerks. Ein Klick zeigt nur
@@ -337,9 +342,10 @@ offen.
 
 Ansicht
 Foto anklicken. ⓘ öffnet das Infofeld: Datum (als geschätzt markiert, wenn es
-nicht der Aufnahmetag ist), Kamera, Größe, Tags, Personen und Knöpfe, um den
-Ordner zu öffnen oder den Pfad zu kopieren. Ganz unten zeigen die GPS-Daten,
-wo das Foto aufgenommen wurde (siehe „Orte und Karten“).
+nicht der Aufnahmetag ist, oder als manuell, wenn du es selbst gesetzt hast;
+der Stift daneben setzt oder ändert dein Datum), Kamera, Größe, Tags, Personen
+und Knöpfe, um den Ordner zu öffnen oder den Pfad zu kopieren. Ganz unten
+zeigen die GPS-Daten, wo das Foto aufgenommen wurde (siehe „Orte und Karten“).
 
 Favoriten
 Das ♥ in der oberen Leiste der Ansicht oder die Taste f markiert das Foto als
@@ -376,7 +382,9 @@ einen, Alle entfernen beginnt neu. Deine Favoriten findest du mit dem ♥-Knopf
 neben Typ, oder tippe favorit (deutsch) bzw. favorite (englisch) und wähle ♥
 Favoriten; das lässt sich mit allem anderen kombinieren, z. B. Favoriten einer
 Person oder eines Jahres. Bei eingeschalteten Karten (siehe „Orte und Karten“)
-bieten die Vorschläge auch deine Orte an.
+bieten die Vorschläge auch deine Orte an. Ein Jahr oder ein Monat mit Jahr,
+etwa 1987 oder Juni 1987, bietet am Ende der Liste eine Zeile unter Datum an
+(siehe „Datum und Suche nach Datum“).
 
 Typ bietet Fotos (Standbilder ohne Screenshots), Videos, Live Photos und
 Screenshots; hake beliebige an, ohne Haken wird alles gezeigt. Um Screenshots
@@ -401,6 +409,10 @@ Taggen
 Tag hinzufügen … gibt der Auswahl deinen eigenen Tag. Tags leben im Index von
 shoebox, nie in den Fotodateien.
 
+Datum
+Datum setzen … gibt der Auswahl ein eigenes Datum, zum Beispiel einem ganzen
+Ordner voller Scans auf einmal. Siehe „Datum und Suche nach Datum“.
+
 Verschieben
 Verschieben … fragt nach einem Ordner. Neue Ordner werden angelegt, nichts
 wird überschrieben, RAW-, Live-Photo- und Sidecar-Dateien wandern mit. Die
@@ -416,6 +428,87 @@ Papierkorb.]
 [Screenshot: Tag hinzufügen.]
 
 [Screenshot: In einen neuen Ereignisordner verschieben.]
+
+Datum und Suche nach Datum
+--------------------------
+
+Wo ein Foto in der Zeitleiste steht, wie du ihm ein eigenes Datum gibst und
+wie du Fotos nach Datum findest.
+
+Welches Datum zählt
+Die Zeitleiste, ihre Monatsgruppen, das Menü Jahr und die Suche benutzen ein
+Datum pro Foto: das erste der folgenden, das es gibt.
+
+1. Das Datum, das du dem Foto gegeben hast (ein Jahr, ein Monat oder ein Tag),
+   falls du eines gesetzt hast. Es gilt sogar vor einem Aufnahmedatum in der
+   Datei.
+2. Das Aufnahmedatum in der Datei (EXIF; bei einem Video das Datum im Video).
+3. Der Monat im Namen des Ereignisordners (2020-07, 2020.07, 20-07 oder
+   20.07), angezeigt als der 1. dieses Monats.
+4. Das frühere von Erstellungs- und Änderungsdatum der Datei (eine Kopie
+   bekommt ein neues Erstellungsdatum, behält aber das alte Änderungsdatum).
+
+Nur ein Aufnahmedatum in der Datei ist der Tag, an dem das Foto aufgenommen
+wurde. Jedes andere Datum ist im Infofeld als geschätzt markiert; ein von dir
+gesetztes zeigt manuell. In ein Foto wird nie etwas geschrieben: deine Daten
+liegen im Index von shoebox auf dem Laufwerk.
+
+Einem Foto ein Datum geben
+Foto öffnen, ⓘ drücken und dann den Stift am rechten Ende der Zeile Datum
+(Datum setzen, oder Ändern, wenn du schon eines gesetzt hast). Jahr ist nötig;
+Monat und Tag können auf Unbekannt bleiben. Die Tagesliste richtet sich nach
+dem Monat (der Februar hat 28 oder 29 Tage) und bleibt grau, bis ein Monat
+gewählt ist. Ein Datum in der Zukunft wird abgelehnt. Unter den Feldern zeigt
+eine Vorschau, wo das Foto stehen wird. Speichern behält es; Schätzung
+entfernen (nur da, wenn du ein Datum gesetzt hast) nimmt es wieder weg.
+
+Das geht bei jedem Foto, auch bei einem mit Aufnahmedatum in der Datei: ein
+Scan oder ein Foto, das du von einem alten Abzug gemacht hast, trägt den Tag,
+an dem es entstand. Das Datum der Datei geht nicht verloren; das Infofeld
+zeigt es dann in einer Zeile EXIF, und wenn du dein Datum entfernst, gilt es
+wieder.
+
+Viele Fotos auf einmal
+☑ drücken, die Fotos wählen (ein ganzer Monat oder alle Fotos eines Ordners
+gehen auch) und Datum setzen … drücken. Haben einige schon ein Aufnahmedatum
+in der Datei, sagt der Dialog, wie viele; für sie gilt auf der Zeitleiste dein
+Datum. Danach erscheint eine Meldung mit Rückgängig.
+
+Datum fehlt
+Haben manche Fotos weder ein Aufnahmedatum in der Datei noch ein Datum von
+dir, erscheint neben Alle Fotos der Eintrag Datum fehlt mit der Anzahl. Er
+listet sie auf, damit du Scans und weitergeleitete Bilder abarbeiten kannst;
+ein Foto verlässt die Liste, sobald es ein Datum hat.
+
+Wo ein Foto landet
+Ein Tag setzt das Foto auf diesen Tag. Mit nur einem Monat steht es in der
+Gruppe dieses Monats, nach den Fotos mit genauem Tag. Mit nur einem Jahr
+bekommt es eine eigene Gruppe, nach dem Jahr benannt, unter dem Januar dieses
+Jahres. Eine kleine ~ am Foto zeigt, dass sein Datum geschätzt ist; zeige
+darauf, um die Art zu sehen.
+
+Nach Datum suchen
+Tippe ein Jahr (1987), einen Monat und ein Jahr (Juni 1987, june 1987, 6/1987,
+1987-06) oder einen Tag (14.6.1987, 14 Juni 1987; Zahlen mit Punkt oder
+Schrägstrich sind Tag, Monat, Jahr) und wähle die Zeile unter Datum, der
+letzten Gruppe der Liste. Sie wird zu einem Chip mit Kalender und lässt sich
+mit den anderen Chips kombinieren, zum Beispiel eine Person und ein Jahr.
+
+Ein Monat allein bietet nie ein Datum an, damit Juni weiter Tags und Personen
+namens Juni findet. Dafür tippst du datum: und den Monat, zum Beispiel
+datum:juni (auch date: geht): Die Liste zeigt dann nur Daten und führt diesen
+Monat in jedem Jahr deiner Bibliothek auf. datum: mit einem Jahr führt das
+Jahr und seine Monate auf.
+
+Ein Foto wird gefunden, wenn sein Datum ganz in dem liegt, was du getippt
+hast. Ein Foto, das nur sein Jahr kennt, wird von 1987 gefunden, aber nicht
+von Juni 1987, denn es muss nicht aus dem Juni sein; ein Foto, das sein Datum
+aus dem Ereignisordner hat, kennt seinen Monat, nicht seinen Tag. Die
+Vorschläge zählen die Fotos jeweils eines Laufwerks.
+
+[Screenshot: Einem Foto ein Datum geben: Juni 1987.]
+
+[Screenshot: Mit datum:jul erscheint der Juli jedes Jahres.]
 
 Einlesen, Duplikate und Papierkorb
 ----------------------------------
@@ -752,9 +845,11 @@ Die Grundregel ist einfach: shoebox liest deine Originale und schreibt nie
 etwas hinein.
 
 - Nur lesen
-   Metadaten, Vorschaubilder, Tags und von dir festgelegte Aufnahmeorte liegen
-   im Index auf dem Laufwerk (.shoebox/library.db), nie in einem Foto.
-   Aufnahme- und Erstellungsdatum ändern sich nie.
+   Metadaten, Vorschaubilder, Tags und von dir festgelegte Aufnahmeorte und
+   Daten liegen im Index auf dem Laufwerk (.shoebox/library.db), nie in einem
+   Foto. Aufnahme- und Erstellungsdatum ändern sich nie: ein Datum, das du
+   einem Foto gibst, lebt nur in shoebox, und das Datum der Datei bleibt, wie
+   es war.
 
 - Bewacht
    Jeder Scan wird kontrolliert: Größe, Daten und ein vollständiger Hash davor
@@ -790,6 +885,12 @@ PIN.
 
 Ein Laufwerk steht auf offline. Wieder anstecken; shoebox findet es beim
 Neuladen.
+
+Ein Foto steht an der falschen Stelle der Zeitleiste. Sein Datum kommt aus der
+Datei, dem Namen seines Ereignisordners oder den Dateidaten, und bei einem
+Scan oder einem über einen Messenger geschickten Bild stimmt es oft nicht.
+Öffne das Infofeld und drücke den Stift neben dem Datum, um ein eigenes zu
+setzen; siehe „Datum und Suche nach Datum“.
 
 Eine Karte ist leer oder sagt Offline. Karten brauchen das Internet.
 Verbindung prüfen und das Foto noch einmal öffnen; alles andere funktioniert

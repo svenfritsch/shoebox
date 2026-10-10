@@ -802,6 +802,16 @@ fn follow_content(conn: &Connection, old: &str, new: &str, quarters: i32) -> Res
             conn.execute("DELETE FROM taken_overrides WHERE key = ?1", [old])?;
         }
     }
+    if !same && has_table("date_estimates")? {
+        conn.execute(
+            "INSERT OR REPLACE INTO date_estimates (key, year, month, day, at)
+             SELECT ?2, year, month, day, at FROM date_estimates WHERE key = ?1",
+            params![old, new],
+        )?;
+        if !still_used {
+            conn.execute("DELETE FROM date_estimates WHERE key = ?1", [old])?;
+        }
+    }
     if !same && has_table("geo_overrides")? {
         conn.execute(
             "INSERT OR REPLACE INTO geo_overrides (key, lat, lon, at)
