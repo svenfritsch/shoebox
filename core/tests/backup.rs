@@ -274,3 +274,54 @@ fn a_file_that_changed_on_the_backup_since_its_scan_is_skipped() {
     assert_eq!(done.skipped.len(), 1);
     assert_eq!(fs::read(backup.path(COPY)).unwrap(), b"edited later");
 }
+
+#[test]
+fn the_backup_lists_open_files_in_the_file_manager_and_cards_know_their_facts() {
+    use std::path::{Path, PathBuf};
+    use std::sync::{Arc, Mutex};
+
+    let (original, backup) = scenario("backup-reveal");
+    let opened: Arc<Mutex<Vec<PathBuf>>> = Arc::default();
+    let log = opened.clone();
+    let opener: shoebox::serve::RevealFn = Arc::new(move |p: &Path| -> anyhow::Result<()> {
+        log.lock().unwrap().push(p.to_path_buf());
+        Ok(())
+    });
+    let server = start_many_with(&[&original, &backup], &[], Some(opener));
+    let addr = server.addr;
+    let id = |lib: &Library| {
+        let name = lib.root.file_name().unwrap().to_str().unwrap().to_string();
+        get(addr, "/api/libraries").json().as_array().unwrap().iter().find(|l| l["name"] == name.as_str()).unwrap()["id"].as_str().unwrap().to_string()
+    };
+    let (i_orig, i_backup) = (id(&original), id(&backup));
+    assert_eq!(post(addr, "/raw/api/all/role", &json!({ "library": i_backup, "role": "backup" })).status, 200);
+
+    // The card of every drive: file count, last scan, when new files arrived.
+    let drives = get(addr, "/raw/api/all/drives").json();
+    for d in drives.as_array().unwrap() {
+        assert!(d["files"].as_u64().unwrap() > 0, "{d}");
+        assert!(d["last_scan"].is_i64() && d["last_new_files"].is_i64(), "{d}");
+        assert!(d.get("volume").is_some() && d.get("folder").is_some(), "{d}");
+    }
+    // The backup says which drive it copies, for the "not on the backup yet" files.
+    let b = get(addr, "/raw/api/all/backups").json()[0].clone();
+    assert_eq!(b["primary_library"], i_orig.as_str());
+
+    // A file of the first list is on the original, one of the last list on the backup.
+    let reveal = |library: &str, path: &str| post(addr, "/raw/api/all/reveal", &json!({ "library": library, "path": path })).status;
+    assert_eq!(reveal(&i_orig, "Neu/neu.jpg"), 200);
+    let only_on_backup = b["extra_files"][0]["path"].as_str().unwrap().to_string();
+    assert_eq!(reveal(&i_backup, &only_on_backup), 200);
+    let opened_now = opened.lock().unwrap().clone();
+    assert_eq!(opened_now[0], original.root.canonicalize().unwrap().join("Neu/neu.jpg"));
+    assert_eq!(opened_now[1], backup.root.canonicalize().unwrap().join(&only_on_backup));
+
+    // Only what the index of that drive lists: not another drive's file,
+    // not a path outside the folder, not a drive that does not exist.
+    assert_eq!(reveal(&i_backup, "Neu/neu.jpg"), 404);
+    assert_eq!(reveal(&i_orig, "../outside.jpg"), 404);
+    assert_eq!(reveal(&i_orig, "/etc/passwd"), 404);
+    assert_eq!(reveal("00000000", "Neu/neu.jpg"), 404);
+    assert_eq!(opened.lock().unwrap().len(), 2);
+    server.stop().unwrap();
+}

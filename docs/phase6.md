@@ -135,6 +135,17 @@ Built:
   page (roles with confirm buttons, duplicates across drives, people across
   drives), an offline page for the selected drive that opens it again when it
   comes back. Tests: `core/tests/multi.rs`, `core/tests/serve.rs`.
+- Manage drives page: every drive is a card (same height, a status strip on
+  top, the role menu in the name row, the disk name and folder from
+  `volume.rs`, a footer with "Scanned" and "New files" / "Last backup"). A
+  backup follows its original, has a blue outline and shows a progress bar
+  plus the lists "not on the backup yet" / "only on the backup", each file with
+  a "show in Finder" button (`POST /api/all/reveal`: drive and path, only a
+  file in that drive's index, only from this computer). Below: tabs for people
+  and duplicates across drives. The disk name comes from the path
+  (`/Volumes/<name>`, `/media/<user>/<name>`, `/run/media/…`, `/mnt/<name>`) and,
+  on Windows, from the volume label (`GetVolumeInformationW`; not tested in CI,
+  which does not build Windows yet).
 - Common timeline ("All drives" in the drive list, `GET /api/all/timeline`):
   one list, newest first, over the drives that are online and not backups
   (nor suspected ones). Filters name things instead of numbering them
