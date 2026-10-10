@@ -68,7 +68,14 @@ function newMap(box, opts) {
   label.hidden = true;
   box.appendChild(label);
   var ok = 0, bad = 0;
-  var layer = L.tileLayer(TILES, { maxZoom: 19, attribution: OSM_ATTRIBUTION });
+  var layer = L.tileLayer(TILES, {
+    maxZoom: 19,
+    attribution: OSM_ATTRIBUTION,
+    // The OSM tile servers answer a request without a Referer with an "Access
+    // blocked" tile (403, still a PNG, so no error shows). The pages are served
+    // with Referrer-Policy: no-referrer; for tiles only send the origin.
+    referrerPolicy: 'origin',
+  });
   layer.on('loading', function () { ok = 0; bad = 0; });
   layer.on('tileload', function () { ok++; label.hidden = true; });
   layer.on('tileerror', function () { bad++; });
