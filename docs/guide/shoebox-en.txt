@@ -555,8 +555,10 @@ sidebar. Pets work the same way: a group Pets can hold the dog and the cat.
 Corrections
 The same ⋯ menu has Merge into… for two cards of one person. On a person’s
 page, Review faces lists Confirmed, Suggested, Maybe and Not them, and a face
-marked by mistake can go back with ↺. Calibration (Face check, Pet check)
-shows what recognition found: small faces, scores and false finds.
+marked by mistake can go back with ↺. In Suggested and Maybe, click a face to
+see its photo; the arrow keys then step through the faces still to check.
+Calibration (Face check, Pet check) shows what recognition found: small faces,
+scores and false finds.
 
 [Screenshot: Two passers-by ticked in a photo: Ignore 2 or 2 not a face.]
 

@@ -594,8 +594,10 @@ Korrekturen
 Im selben ⋯-Menü steht Zusammenführen mit … für zwei Karten derselben Person.
 Auf der Seite einer Person listet Gesichter prüfen Bestätigt, Vorgeschlagen,
 Vielleicht und Nicht sie, und ein versehentlich markiertes Gesicht kommt mit ↺
-zurück. Kalibrierung (Gesichts- und Haustier-Prüfung) zeigt, was die Erkennung
-gefunden hat: kleine Gesichter, Werte und Fehlfunde.
+zurück. Bei Vorgeschlagen und Vielleicht zeigt ein Klick auf ein Gesicht sein
+Foto; mit den Pfeiltasten blätterst du dann durch die Gesichter, die noch zu
+prüfen sind. Kalibrierung (Gesichts- und Haustier-Prüfung) zeigt, was die
+Erkennung gefunden hat: kleine Gesichter, Werte und Fehlfunde.
 
 [Screenshot: Zwei Passanten in einem Foto angekreuzt: 2 ignorieren oder 2 kein
 Gesicht.]

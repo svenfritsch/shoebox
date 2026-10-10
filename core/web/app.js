@@ -4405,7 +4405,8 @@ function personFaceCard(face, tab) {
       updatePersonPick();
       return;
     }
-    if (face.file != null) openFacePhoto(face);
+    // Suggested and maybe: the arrow keys step through the faces to check.
+    if (face.file != null) openFacePhoto(face, tab === 'suggested' || tab === 'maybe' ? pp.faces : null);
   };
   card.appendChild(a);
   var caption = face.similarity != null ? tr('person.alike', { pct: Math.round(face.similarity * 100) }) : Math.round(face.px) + ' px';
