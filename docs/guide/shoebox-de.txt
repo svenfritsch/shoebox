@@ -21,6 +21,42 @@ Duplikaten, ohne sie je zu kopieren oder ihre Metadaten anzufassen.
 [Screenshot: Die Zeitleiste: Monate, Ordner, Suche, Typfilter und
 Jahressprung.]
 
+Was shoebox besonders macht
+---------------------------
+
+Fünf Dinge, die shoebox von anderen Foto-Verwaltungen unterscheiden.
+
+- Deine Fotos bleiben deine
+   shoebox hat keinen Import und keine eigene Bibliothek, in die deine Fotos
+   eingesperrt werden. Deine Ordner bleiben genau so, wie du sie angelegt
+   hast. Es liest deine Dateien und schreibt nichts hinein: Tags, Daten und
+   Orte stehen in seinem eigenen Index. Vor und nach jedem Lesen prüft ein
+   Wächter Größe, Daten und einen vollen Hash und bricht bei jeder Abweichung
+   ab. Eine Datei ändert sich nur, wenn du sie verschiebst, umbenennst oder in
+   den Papierkorb legst oder ein JPEG drehst (zwei Bytes).
+
+- Liegt auf deinem Laufwerk und bleibt klein
+   Alles, was shoebox braucht, liegt in einem versteckten Ordner .shoebox
+   neben deinen Fotos: die Bibliothek library.db, die Vorschauen thumbs.db,
+   der Papierkorb und das Programm. Das Laufwerk an einen anderen Computer
+   stecken, und alles ist dabei. shoebox fügt nur hinzu, was eine Foto-App zum
+   Laufen braucht: etwa 1 GB bei 80 GB Fotos (grob 1–2 %), gemessen mit JPEGs
+   zu 12 Megapixeln. Die optionale Gesichtserkennung braucht mehr.
+
+- Duplikate über Laufwerke hinweg
+   Findet identische, verkleinerte, bearbeitete und ähnliche Fotos, auch über
+   mehrere Laufwerke, und prüft ein Backup gegen das Original. Die beste Kopie
+   bleibt immer, den Rest entscheidest du.
+
+- Gemacht für den Datei-Manager
+   Du ordnest im Finder oder Explorer, und ein schneller Scan übernimmt die
+   Änderungen. Ordner zählen als Tags, und wenn du Fotos in shoebox
+   verschiebst, wandern RAW-, Live-Photo- und Sidecar-Dateien mit.
+
+- Lokale Erkennung, optionale Karten
+   Gesichter, Katzen und Hunde werden auf deinem eigenen Computer erkannt, und
+   Karten sind aus, bis du sie einschaltest. Keine Cloud, kein Konto.
+
 Was shoebox kann
 ----------------
 
@@ -181,8 +217,13 @@ Foto-App öffnen.]
 Gut zu wissen
 - Videos bekommen Vorschaubilder, wenn ein statisches ffmpeg neben dem
   Programm liegt (.shoebox/bin/ffmpeg). Ohne holt sich der Browser ein Bild.
-- shoebox legt Index und Vorschaubilder im versteckten Ordner .shoebox auf dem
-  Laufwerk ab. Das Laufwerk kann also an einen anderen Computer umziehen.
+- shoebox legt alles in einem versteckten Ordner .shoebox oben auf dem
+  Laufwerk ab: die Bibliothek library.db (Index, Tags, Namen, Entscheidungen)
+  mit ihrer Sicherungskopie library.db.bak, die Vorschauen thumbs.db,
+  recognition.db, wenn du die Erkennung nutzt, den trash und das Programm in
+  bin. Deshalb kann das Laufwerk an einen anderen Computer umziehen. Auf dem
+  Mac ist der Ordner versteckt: Im Finder Cmd + Umschalt + . drücken, um ihn
+  zu sehen.
 - Schließt du das Terminal-Fenster, beendet das shoebox.
 
 Die App spricht Deutsch und Englisch: Die Sprache wählst du unten in der
@@ -302,8 +343,9 @@ Ordner werden nicht umbenannt, und alle Formen werden erkannt.
 Duplikate
 Duplikate zeigt vier Arten: identisch, dasselbe Foto in anderer Größe,
 Original und bearbeitet sowie Ähnliche. Hake diese Kopie löschen bei dem an,
-was weg soll; die beste Datei bleibt, und pro Gruppe bleibt immer mindestens
-eine. Tags und Aufnahmedatum einer entfernten Kopie gehen auf die übrige über.
+was weg soll; die beste Datei bleibt, und von jedem Duplikat bleibt immer
+mindestens eine Datei. Tags und Aufnahmedatum einer entfernten Kopie gehen auf
+die übrige über.
 
 Schnellaktionen
 Kopien im selben Ordner entfernen und Kopien geringerer Qualität entfernen
@@ -320,10 +362,12 @@ anhaken, die weg soll; die beste Datei bleibt.
 Dieses behalten: Alle anderen kommen in den Papierkorb. Nur bei ähnlichen
 Fotos: Foto öffnen, vergleichen, wählen, bestätigen.
 
-Alle behalten und Verschiedene Fotos sind nur eine Notiz in shoeboxes eigener
-Datenbank auf dem Laufwerk, nie in den Fotos. Die Notiz bleibt erhalten, wenn
-du Fotos verschiebst oder umbenennst, und Kopien im selben Ordner entfernen
-und Kopien geringerer Qualität entfernen lassen diese Fotos in Ruhe.
+Alle behalten und Verschiedene Fotos sind interne Notizen: shoebox speichert
+sie in seiner eigenen Datenbank in .shoebox auf dem Laufwerk, nie in den
+Fotos. Diese Funde zeigt dir shoebox auf dem Bildschirm Duplikate nicht mehr
+an. Die Notizen bleiben erhalten, wenn du Fotos verschiebst oder umbenennst,
+und Kopien im selben Ordner entfernen und Kopien geringerer Qualität entfernen
+lassen diese Fotos in Ruhe.
 
 Papierkorb
 Nichts wird sofort gelöscht. Gelöschte Fotos warten in .shoebox/trash auf dem
@@ -561,8 +605,8 @@ etwas hinein.
 
 - Nur lesen
    Metadaten, Vorschaubilder, Tags und von dir festgelegte Aufnahmeorte liegen
-   im Index auf dem Laufwerk, nie in einem Foto. Aufnahme- und
-   Erstellungsdatum ändern sich nie.
+   im Index auf dem Laufwerk (.shoebox/library.db), nie in einem Foto.
+   Aufnahme- und Erstellungsdatum ändern sich nie.
 
 - Bewacht
    Jeder Scan wird kontrolliert: Größe, Daten und ein vollständiger Hash davor

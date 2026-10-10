@@ -157,6 +157,7 @@
     </figure>
     <nav aria-label="Contents" data-txt="skip">
       <ul>
+      <li><a href="#why">What sets shoebox apart</a></li>
       <li><a href="#features">What shoebox can do</a></li>
       <li><a href="#glance">The screen at a glance</a></li>
       <li><a href="#start">Get started in three steps</a></li>
@@ -175,6 +176,38 @@
   </header>
 
   <main>
+    <section id="why">
+      <h2>What sets shoebox apart</h2>
+      <p class="sub">Five things that make it different from other photo managers.</p>
+      <ul class="cards">
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg></div>
+          <h3>Your photos stay yours</h3>
+          <p>shoebox has no import and no library of its own that your photos get locked into. Your folders stay exactly as you made them. It reads your files and writes nothing into them: tags, dates and places live in its own index. Before and after every read, a guard checks size, dates and a full hash and stops on any difference. A file changes only when you move, rename or trash it, or turn a JPEG (two bytes).</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-drive"/></svg></div>
+          <h3>Lives on your drive, and stays small</h3>
+          <p>Everything shoebox needs sits in one hidden <code>.shoebox</code> folder next to your photos: the library <code>library.db</code>, the previews <code>thumbs.db</code>, the trash and the program. Plug the drive into another computer and it all comes along. It adds only what a photo app needs to run: about 1 GB for 80 GB of photos (roughly 1–2 %), measured on 12-megapixel JPEGs. Optional face recognition adds more.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-dup"/></svg></div>
+          <h3>Duplicates across drives</h3>
+          <p>Finds identical, resized, edited and look-alike photos, also across several drives, and checks a backup against the original. The best copy always stays, and you decide the rest.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-move"/></svg></div>
+          <h3>Made for the file manager</h3>
+          <p>You organise in Finder or File Explorer and a quick scan picks the changes up. Folders count as tags, and moving photos in shoebox moves the RAW, Live Photo and sidecar files along.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-people"/></svg></div>
+          <h3>Local recognition, optional maps</h3>
+          <p>Faces, cats and dogs are recognised on your own computer, and maps are off until you switch them on. No cloud, no account.</p>
+        </li>
+      </ul>
+    </section>
+
     <section id="features">
       <h2>What shoebox can do</h2>
       <p class="sub">One page in your browser, a timeline of everything on the drive.</p>
@@ -353,7 +386,7 @@
         <h3>Good to know</h3>
         <ul>
           <li>Videos get preview images if you put a static <b>ffmpeg</b> next to the program (<code>.shoebox/bin/ffmpeg</code>). Without it, the browser grabs a frame instead.</li>
-          <li>shoebox keeps its index and thumbnails in a hidden <code>.shoebox</code> folder on the drive, so the drive can move to another computer.</li>
+          <li>shoebox keeps everything in a hidden <code>.shoebox</code> folder at the top of the drive: the library <code>library.db</code> (index, tags, names, decisions) with its backup copy <code>library.db.bak</code>, the previews <code>thumbs.db</code>, <code>recognition.db</code> if you use recognition, the <code>trash</code> and the program in <code>bin</code>. That is why the drive can move to another computer. On a Mac the folder is hidden: press <b>Cmd + Shift + .</b> in Finder to see it.</li>
           <li>Closing the Terminal window stops shoebox.</li>
         </ul>
         <p class="note">The app speaks English and German: pick the language at the bottom of the sidebar.</p>
@@ -468,7 +501,7 @@
           </div>
           <div>
             <h3>Duplicates</h3>
-            <p><b>Duplicates</b> lists four kinds: identical, same photo in another size, original and edited, and look-alikes. Tick <b>delete this copy</b> on what you want gone; the best file stays and at least one per group always does. Tags and capture dates of a removed copy carry over.</p>
+            <p><b>Duplicates</b> lists four kinds: identical, same photo in another size, original and edited, and look-alikes. Tick <b>delete this copy</b> on what you want gone; the best file stays, and at least one file of every duplicate always remains. Tags and capture dates of a removed copy carry over.</p>
             <div class="subs">
               <h4>Quick actions</h4>
               <p><b>Clear Same Folder Copies</b> and <b>Clear Lower Quality Copies</b> clean up the clear-cut cases in one go.</p>
@@ -482,7 +515,7 @@
                   <tr><td>Keep this one</td><td><b>All others go to the trash.</b> Look-alikes only: open a photo, compare, press it, confirm.</td></tr>
                 </tbody>
               </table>
-              <p class="note"><b>Keep all</b> and <b>Different photos</b> are only a note in shoebox’s own database on the drive, never in the photos. The note follows the photos if you move or rename them, and <b>Clear Same Folder Copies</b> and <b>Clear Lower Quality Copies</b> leave these photos alone.</p>
+              <p class="note"><b>Keep all</b> and <b>Different photos</b> are internal notes: shoebox saves them in its own database in <code>.shoebox</code> on the drive, never in the photos. Those finds are not shown to you on the <b>Duplicates</b> screen again. The notes follow the photos if you move or rename them, and <b>Clear Same Folder Copies</b> and <b>Clear Lower Quality Copies</b> leave these photos alone.</p>
             </div>
           </div>
           <div>
@@ -709,7 +742,7 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg></div>
           <h3>Read-only</h3>
-          <p>Metadata, thumbnails, tags and locations you set are kept in the index on the drive, never inside a photo. Capture dates and created dates never change.</p>
+          <p>Metadata, thumbnails, tags and locations you set are kept in the index on the drive (<code>.shoebox/library.db</code>), never inside a photo. Capture dates and created dates never change.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg></div>

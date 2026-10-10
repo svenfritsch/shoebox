@@ -21,6 +21,41 @@ their metadata.
 [Screenshot: The timeline: months, folders, search, type filter and year
 jump.]
 
+What sets shoebox apart
+-----------------------
+
+Five things that make it different from other photo managers.
+
+- Your photos stay yours
+   shoebox has no import and no library of its own that your photos get locked
+   into. Your folders stay exactly as you made them. It reads your files and
+   writes nothing into them: tags, dates and places live in its own index.
+   Before and after every read, a guard checks size, dates and a full hash and
+   stops on any difference. A file changes only when you move, rename or trash
+   it, or turn a JPEG (two bytes).
+
+- Lives on your drive, and stays small
+   Everything shoebox needs sits in one hidden .shoebox folder next to your
+   photos: the library library.db, the previews thumbs.db, the trash and the
+   program. Plug the drive into another computer and it all comes along. It
+   adds only what a photo app needs to run: about 1 GB for 80 GB of photos
+   (roughly 1–2 %), measured on 12-megapixel JPEGs. Optional face recognition
+   adds more.
+
+- Duplicates across drives
+   Finds identical, resized, edited and look-alike photos, also across several
+   drives, and checks a backup against the original. The best copy always
+   stays, and you decide the rest.
+
+- Made for the file manager
+   You organise in Finder or File Explorer and a quick scan picks the changes
+   up. Folders count as tags, and moving photos in shoebox moves the RAW, Live
+   Photo and sidecar files along.
+
+- Local recognition, optional maps
+   Faces, cats and dogs are recognised on your own computer, and maps are off
+   until you switch them on. No cloud, no account.
+
 What shoebox can do
 -------------------
 
@@ -175,8 +210,12 @@ the photo app.]
 Good to know
 - Videos get preview images if you put a static ffmpeg next to the program
   (.shoebox/bin/ffmpeg). Without it, the browser grabs a frame instead.
-- shoebox keeps its index and thumbnails in a hidden .shoebox folder on the
-  drive, so the drive can move to another computer.
+- shoebox keeps everything in a hidden .shoebox folder at the top of the
+  drive: the library library.db (index, tags, names, decisions) with its
+  backup copy library.db.bak, the previews thumbs.db, recognition.db if you
+  use recognition, the trash and the program in bin. That is why the drive can
+  move to another computer. On a Mac the folder is hidden: press Cmd + Shift +
+  . in Finder to see it.
 - Closing the Terminal window stops shoebox.
 
 The app speaks English and German: pick the language at the bottom of the
@@ -288,8 +327,8 @@ all forms are recognised.
 Duplicates
 Duplicates lists four kinds: identical, same photo in another size, original
 and edited, and look-alikes. Tick delete this copy on what you want gone; the
-best file stays and at least one per group always does. Tags and capture dates
-of a removed copy carry over.
+best file stays, and at least one file of every duplicate always remains. Tags
+and capture dates of a removed copy carry over.
 
 Quick actions
 Clear Same Folder Copies and Clear Lower Quality Copies clean up the clear-cut
@@ -306,10 +345,11 @@ the best file stays.
 Keep this one: All others go to the trash. Look-alikes only: open a photo,
 compare, press it, confirm.
 
-Keep all and Different photos are only a note in shoebox’s own database on the
-drive, never in the photos. The note follows the photos if you move or rename
-them, and Clear Same Folder Copies and Clear Lower Quality Copies leave these
-photos alone.
+Keep all and Different photos are internal notes: shoebox saves them in its
+own database in .shoebox on the drive, never in the photos. Those finds are
+not shown to you on the Duplicates screen again. The notes follow the photos
+if you move or rename them, and Clear Same Folder Copies and Clear Lower
+Quality Copies leave these photos alone.
 
 Trash
 Nothing is deleted right away. Trashed photos wait in .shoebox/trash on the
@@ -528,8 +568,8 @@ anything into them.
 
 - Read-only
    Metadata, thumbnails, tags and locations you set are kept in the index on
-   the drive, never inside a photo. Capture dates and created dates never
-   change.
+   the drive (.shoebox/library.db), never inside a photo. Capture dates and
+   created dates never change.
 
 - Guarded
    Every scan is checked: size, dates and a full hash before and after. Any
