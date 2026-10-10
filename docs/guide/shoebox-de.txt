@@ -530,7 +530,9 @@ benennen.
    In der Seitenleiste Gesichter und dann Unbenannt öffnen. Jede Karte enthält
    Gesichter, die sich ähneln, die Karte mit den meisten Treffern zuerst.
    Katzen und Hunde haben eigene Karten; das Menü über den Karten wählt
-   Personen, Haustiere oder beides.
+   Personen, Haustiere oder beides. Ein Klick auf ein Gesicht zeigt sein Foto;
+   mit den Pfeiltasten links und rechts blätterst du durch die Fotos der
+   Karte, Leertaste oder Esc schließt die Ansicht.
 
 2. Eine Karte benennen
    Den Namen einmal eintippen und Benennen drücken: Die ganze Karte ist

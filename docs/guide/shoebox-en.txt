@@ -497,7 +497,9 @@ all.
 1. Open Unnamed
    In the sidebar, open Faces and then Unnamed. Each card holds faces that
    look alike, the card with the most matches first. Cats and dogs have cards
-   of their own; the menu above the cards chooses People, Pets or both.
+   of their own; the menu above the cards chooses People, Pets or both. Click
+   a face to see its photo; the left and right arrow keys step through the
+   photos on that card, and Space or Esc closes the viewer.
 
 2. Name a card
    Type the name once and press Name: the whole card is named. Start typing to

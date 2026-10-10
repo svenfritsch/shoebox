@@ -3361,17 +3361,33 @@ function similarFaces(face) {
 
 // Open one photo in the viewer from the page, and come back to it when the
 // viewer closes.
-function openFacePhoto(face) {
+// `siblings` (optional): the faces shown with it, e.g. in a cluster card; the
+// arrow keys then step through their photos (once per photo).
+function openFacePhoto(face, siblings) {
   var saved = state.data;
-  var letter = { jpeg: 'j', png: 'p', heic: 'h' }[face.kind] || 'j';
-  state.data = { count: 1, ids: [face.file], kinds: letter, days: [0], versions: (face.version + '00000000').slice(0, 8), live: [] };
+  var list = [], seen = {}, at = 0;
+  (siblings || [face]).forEach(function (f) {
+    if (f.file == null || seen[f.file]) return;
+    seen[f.file] = true;
+    list.push(f);
+  });
+  list.forEach(function (f, k) { if (f.file === face.file) at = k; });
+  if (!list.length) list = [face];
+  state.data = {
+    count: list.length,
+    ids: list.map(function (f) { return f.file; }),
+    kinds: list.map(function (f) { return { jpeg: 'j', png: 'p', heic: 'h' }[f.kind] || 'j'; }).join(''),
+    days: list.map(function () { return 0; }),
+    versions: list.map(function (f) { return ((f.version || '') + '00000000').slice(0, 8); }).join(''),
+    live: [],
+  };
   // Back to the thumbnail it was opened from (keyboard: Tab, Space, Space).
   var from = document.activeElement;
   lb.restore = function () {
     state.data = saved;
     if (from && from.isConnected && from.focus) from.focus();
   };
-  openLightbox(0);
+  openLightbox(at);
 }
 
 // ------------------------------------------------------------------ settings
@@ -4811,7 +4827,7 @@ function clusterCard(c) {
           update();
           return;
         }
-        openFacePhoto(face);
+        openFacePhoto(face, faces);
       };
       grid.appendChild(f);
     });
