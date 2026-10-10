@@ -8,12 +8,14 @@ progress. Update the status section when a phase moves.
 
 - **No copies, no changes to originals.** shoebox only indexes files by path
   and hash. Originals are opened read-only; the only operations that touch
-  them are explicit user actions (move, import, delete duplicate).
+  them are explicit user actions (move, delete duplicate, and turning
+  a JPEG, which changes the two bytes of its EXIF Orientation tag in place).
 - **Timestamps are sacred.** EXIF `DateTimeOriginal` and the file's created
   date must never change. Moving within the drive uses `rename`, which keeps
   all timestamps. Every scan path is covered by the *guard* (see below).
 - **Local only.** No cloud services; everything runs on the machine the drive
-  is plugged into.
+  is plugged into. The one optional exception: with the Maps setting on (off by
+  default, phase 10) the browser loads OpenStreetMap tiles; shoebox stores none.
 - **Portable, few dependencies.** One binary per platform on the drive. Must
   run on an older Intel MacBook with an older macOS.
 - **Web UI**, so an iPad on the same network can browse the library.
@@ -28,12 +30,12 @@ progress. Update the status section when a phase moves.
 | Thumbnails | **Not** written into EXIF of originals (would change hashes and mtimes). Stored as BLOBs in `.shoebox/thumbs.db` (exFAT's 128 KB clusters would waste ~5× space with one file per thumbnail) |
 | HEIC | libheif + libde265 built from source as static, decoder-only libs (`scripts/build-deps.sh`). LGPL: fine for personal use, check before distributing |
 | RAW | Indexed (hash, dates, duplicates, backup checks) but hidden in the UI; paired with JPEG/HEIC of the same stem and moved together |
-| Video | Yes. Metadata via `nom-exif`; poster frame via a static `ffmpeg` next to the binary; playback streams the original (HTTP range requests), no transcoding |
+| Video | Yes. Metadata via `nom-exif`; poster frame via a static `ffmpeg` next to the binary or on `PATH`; playback streams the original (HTTP range requests), no transcoding |
 | Drive format | exFAT |
 | Scale | ~100,000 files, 150 GB today, up to 1 TB |
 | Repo | `core/` (Rust), `recognizer/` (Python), `scripts/`, `docker/`, `docs/` |
 | Dev environment | Docker for Linux builds/tests; native macOS builds with rustup; GitHub Actions for both |
-| CI until v1.0 | macOS only (PRs: arm64; main/tags: universal + Rosetta). Linux, incl. the real recognizer, runs only when started by hand; releases ship `shoebox-macos` plus `recognizer/` |
+| CI until v1.0 | macOS only (PRs: arm64; main/tags: universal + Rosetta). Linux, incl. the real recognizer, runs only when started by hand; releases ship `shoebox-macos` plus `recognizer/` and the guide (`docs/guide/`: HTML and text, English and German, in the `guide/` folder of the archive) |
 
 ## Architecture
 
@@ -43,10 +45,7 @@ progress. Update the status section when a phase moves.
 /Volumes/<drive>/
   <library>/                     ← user's folders; read-only for shoebox
   .shoebox/
-    bin/shoebox-macos            ← universal (x86_64 10.13+, arm64 11+)
-    bin/shoebox-linux
-    bin/shoebox.exe              ← later
-    bin/ffmpeg                   ← optional, static, for video posters
+    bin/shoebox-macos            ← older layout (the release now ships the folder below)
     library.db                   ← SQLite index (+ rotating backup copy)
     thumbs.db                    ← preview BLOBs keyed by quick hash, face crops only for undecided faces and people's pictures
     recognition.db               ← faces (boxes + embeddings) keyed by quick hash
@@ -57,11 +56,87 @@ progress. Update the status section when a phase moves.
   Start shoebox.command          ← launcher scripts per OS
 ```
 
+### The shoebox folder and the add-ons (Control Panel)
+
+The release is one folder per system (`shoebox-macos/`): the program
+`shoebox`, `Start shoebox.command`, `recognizer/` (installer, `recognizer.py`,
+later its `runtime/` and `models/`) and `guide/`. Two ways to use it, both
+supported by the same lookup:
+
+- **On the drive**: the whole folder is copied to the drive's top folder
+  (`/Volumes/X/shoebox-macos/`); other systems get their own folder beside it
+  (`shoebox-windows/`). Add-ons then live in `shoebox-macos/recognizer/` on the
+  drive and travel with it. `.shoebox/` is made by the first scan, never by hand.
+- **On the computer**: the folder stays where the user put it; add-ons live in
+  its `recognizer/` and serve every drive; drives are added by path.
+
+Add-ons are installed from the Control Panel (step 1, "Add-ons"; job
+`install_addons` runs `recognizer/install.sh --faces/--pets/--text`, on Windows `install.ps1`) into
+`recognizer/` **next to the program** (`recognize::program_dir`). They are
+independent: Faces (~40 MB), Pets (~140 MB), later Text; the Python/OpenCV
+runtime (~200 MB) is shared and shown in the list. `POST /api/addons` reports
+what is installed for the computer and for each ticked drive
+(`recognize::installed`, by looking for files, never by starting the worker),
+and the Control Panel greys out Recognize / Recognize lying down (need Faces)
+and Recognize pets (needs Pets) with the reason. Lookup order
+(`recognize::worker_dirs`): `recognizer/` next to the program, then the drive's
+`.shoebox/recognizer/` (made by `install.sh <drive>`; the older
+`.shoebox/bin/` layout lands here too); `find_worker_for` takes the first folder that has the
+models the run needs and the Python for this computer. The models are the
+same everywhere; the runtime is per `<os>-<arch>` (`recognizer/runtime/`), so
+another kind of Mac shows "Python and OpenCV: required" and the add-ons "models found, needs Python for this computer", and installing
+there adds only its runtime next to the existing one (`install.sh` skips models
+that are present). The worker starts without face models when started
+with `--pets` (hello lists only the pet tasks); the core then skips the face
+passes.
+
+**Windows installer (decision).** Windows runs `recognizer/install.ps1` and
+`fetch-models.ps1` through `powershell.exe -NoProfile -ExecutionPolicy Bypass
+-File` (`recognize::installer_command`; same job, same flags as `-Faces`/`-Pets`).
+Chosen over doing download, checksum and unpacking in Rust because it adds no
+crate (an HTTPS client, gzip, tar, sha2 would each enter `THIRD-PARTY-LICENSES.txt`
+and the static build), PowerShell 5.1 and `tar.exe` ship with Windows 10 1803+,
+and one script per OS mirrors `install.sh` line by line. The cost is that the
+logic exists twice; `core/tests/recognize.rs` keeps the model checksums and the
+Python version in step. Runtime: python-build-standalone `x86_64-pc-windows-msvc`
+(archive checked against a pinned SHA-256) into `runtime/windows-x86_64/` with
+`python.exe` at its top (no symlinks there, so a plain copy works on exFAT/NTFS);
+only x86-64 (OpenCV has no ARM Windows wheel). Cancel kills the whole process tree
+(`taskkill /T`). Status: reviewed, **not run on Windows**; the Rust side and the
+checksum test run on Linux. Windows packaging (`shoebox-windows/` with
+`shoebox.exe`, `Start shoebox.bat`, `recognizer/`) still waits for a Windows build
+in CI: `scripts/build-deps.sh` (libheif and libde265 via cmake, sh) and
+`scripts/build.sh` are POSIX-only, there is no `windows-latest` job, and the
+release job packs macOS only. Once such a job exists, copy `*.ps1` along with
+`*.sh` in the release step.
+
+**What this means for phase 9 (text in photos)** — the text add-on follows the
+same pattern, so the phase 9 PR must:
+
+1. add `--text` to `recognizer/install.sh` and `fetch-models.sh` (checksummed
+   PP-OCR detector and Latin recogniser; the spike in build step 1 decides the
+   files and sizes) and show its size in the Add-ons list (`index.html`,
+   `launcher.addon.text` and `.desc` in `en.json`/`de.json`, state pill);
+2. extend `recognize::installed` / `Installed` with `text` (model files present)
+   and `find_worker_for` with a text flag, `JobRequest.text`, the
+   `install_addons` argument and `ADDON_OF['recognize_text'] = 'text'` in
+   `launcher.js`, so "Recognize text" is grey where the add-on is missing;
+3. let the worker start with only the text models: like pets, the hello lists
+   the tasks that are installed, and `Worker::start` accepts any non-empty set;
+   a text-only run must skip the face passes (`recognize()` already bails on a
+   missing face model; the text pass must not call it), and `embed_drawn` only
+   counts the kinds the worker can do;
+4. mention it in the guide (both languages): the Add-ons paragraph and the
+   sizes line in "Get started", the launcher task list and the People/Text
+   section; regenerate the Control Panel screenshot;
+5. keep the manifest-free rule: availability is decided from the files, so a
+   model dropped in by hand (like DINOv2) counts.
+
 ### Responsibilities
 
 - **Rust core** owns everything stateful: walking, hashing, metadata,
   SQLite (single writer), thumbnails, web UI (assets embedded with
-  `rust-embed`), import/move/duplicates, backup verification, and the
+  `rust-embed`), move/duplicates, backup verification, and the
   clustering/matching of recognition embeddings.
 - **Python recognizer** is stateless: image path in, boxes + labels +
   embeddings out. No DB access, no knowledge of names. If it's missing, the
@@ -100,11 +175,94 @@ Later option: run the ONNX models in Rust (`tract` or `ort`) and drop Python.
   `Familie/Weihnachten` is found under "Familie" and under "Weihnachten".
 - Never assume every folder starts with a date.
 
-### Import
+### Adding photos (no import)
 
-Drag and drop in the browser (works from other devices too, as an upload).
-Dialog asks year, month, event name and creates `YYYY-MM Name`. File modified
-dates are set from the browser's `File.lastModified`.
+There is no upload or import in the app: a browser never reveals file paths,
+so an upload could not keep a file's created date, and the app is meant to be
+a viewer and tagger while the drive is managed in the Finder / File Explorer.
+The user copies or moves a folder onto the drive there (dates are kept) and
+runs Scan. The scan knows which records are new (their id is higher than any
+record before it started) and, once everything is hashed, lists the new files
+whose content the drive already had (`arrivals.rs`, `Stats.duplicates`, shown
+in the launcher as "same content as: <older copy>"). The
+launcher then offers "Delete the new copies" (`scan_cleanup`): each goes
+through `duplicates::remove_copies` (trash, or for good if ticked; tags and
+dates go to the older copy; a backup check learns it was removed on purpose).
+The scan result also lists the files behind its other counts (`Stats.moved_files`
+with the old path, `changed_files`, `missing_files`; at most 5000 each, the counts
+stay exact). The launcher shows them as tabs next to "Results per file" (Moved,
+Changed, Missing, Already on the drive, each with its count; a tab only appears
+when its count is above 0, "Added" has none). Only copies that have an older copy are listed: two new files that only match
+each other, a first scan, a quick scan and a file that moved are not, and the
+offer is gone after the next scan. Those cases are for the duplicates screen.
+
+### Dates shown for a photo
+
+The timeline and the info panel use, in this order: the capture date in the
+file (EXIF, video container); else the month in the name of the nearest event
+folder (shown as the 1st of that month); else, for a file outside any event
+folder, the earlier of its created and modification dates (a copy gets a new
+created date but keeps the old modification date). Event folder names start with
+year then month, 4 or 2 digits for the year (20YY), `-` or `.` between, and
+any of the gaps listed under event folder naming below. Only the capture date is the day the photo was taken: for the
+others the info panel shows an "estimated" mark next to the date (hover: "Not
+the date the photo was taken") and a tooltip on the mark says which fallback was used.
+The created date does not come before the folder because a copy made years
+later has a created date of its own (a scan of 1998 sits in `98.08 Urlaub`
+but was created the day it was copied to the drive).
+Nothing is ever written to the file (see the rules at the top).
+
+### Event folder naming (a setting)
+
+Settings page, "Event folder names": three dropdowns (no free text, so the
+result always fits what the scanner reads). Year first: 4 digits (`YYYY`) or 2
+(`YY`, 20YY); `-` or `.` between year and month (`MM`); then a space, `_`,
+`.`, `-` or nothing before the name. Stored per library as the setting
+`event_pattern` (text such as `YY.MM_Name`; the default `YYYY-MM Name` is
+stored as no setting). `/` is not offered: it would make a subfolder. The UI
+shows the pattern with the letters of its language (`JJJJ-MM Name` in
+German) in the rename hint and the move placeholder.
+
+- The pattern only decides what the app **creates** (`library::event_pattern`,
+  `GET/POST /api/event-pattern`). It refuses a year
+  the pattern cannot write (2-digit years are 2000 to 2099) and a name that
+  would not be read back (after a punctuation mark or nothing the name may
+  not start with a digit).
+- The scanner (`library::parse_event`) reads every form whatever the setting
+  is, so older folders and other drives keep their date, and `2020-07-15 Foo`
+  (a day) is no event folder. A scan refreshes the stored event fields of
+  folders already indexed.
+- A changed pattern does not rename existing folders (originals only change
+  through explicit actions).
+
+### Move dialog: "Keep folder tags" (built)
+
+A photo's **own** tags (the ones the user added by hand) are never lost: they
+always move with the photo, and duplicate cleanup (`duplicates::remove_copies`)
+already hands the own and folder tags of a removed copy to the survivor as own
+tags. Adding tags by hand is slow work, so the index must always keep as many
+as possible. The Move dialog checkbox is only about the generated **folder
+tags**, which are the ones that would otherwise be lost: "Keep folder tags" /
+"Ordnertags behalten" (default: off) keeps the old folder's tags on the photo
+as own tags; folder tags always follow the new folder either way.
+`POST /api/move` takes `keep_folder_tags` (default false); see
+`organize::move_files_with`, `tags::keep_as_own` and
+`move_always_keeps_own_tags_and_can_keep_folder_tags` in `core/tests/tags.rs`.
+
+### Recognition after a scan (open)
+
+`shoebox recognize` (faces, `--rotated`, `--pets`) only runs when the user
+starts it: from the launcher, or in Terminal. The photo app does not call it:
+`serve` only clusters faces and embeds faces and pets drawn by hand, and the
+launcher refuses to run a job while the photo app is running ("the photo app
+is already running; stop it first"). So photos added by a scan
+while the photo app is open stay unrecognised until the user stops the app and
+runs Recognize in the launcher. To do: after a rescan
+that found new files,, `serve` starts the recognizer in the background for
+the new photos only (faces, the turned pass and pets, the way `shoebox
+recognize` resumes), with progress in the status line (`status.finding_faces`
+exists), and skips it when no recognizer is installed or a `recognize` run is
+going.
 
 ### Scanner (phase 1)
 
@@ -134,7 +292,7 @@ created and full hash before and after, and failing on any difference.
 `shoebox probe` does this at runtime; `core/tests/scan.rs` does it for
 `scan` and `verify`, `core/tests/serve.rs` for thumbnails and every
 endpoint of `serve`, `core/tests/recognize.rs` for `recognize` (both
-passes) and the face crops. Explicit changes (move, rename, trash, import) are
+passes) and the face crops. Explicit changes (move, rename, trash) are
 covered by `core/tests/organize.rs`: every file keeps content, size and
 timestamps, only its path changes, nothing is replaced, and a scan and
 `verify` afterwards find the index in line with the drive.
@@ -177,17 +335,30 @@ rot) and shows "last backup N days ago, M files new since".
 | 0 | Toolchain + portability probe (`shoebox probe`) | **Done except the real-hardware run** (see below) |
 | 1 | Scanner + SQLite schema + incremental rescan + move detection + guard integration test. CLI: `shoebox scan`, `shoebox verify` | **Done except the real-hardware run** (see below) |
 | 2 | `thumbs.db` + perceptual hash, web UI (virtualised timeline grid, folder tree, tag search, video playback), LAN access with PIN. `shoebox serve` | **Done except the real-hardware run** (see below) |
-| 3 | Import dialog, move (with RAW pairs, case-only renames), duplicates UI, self-healing paths | **Done except the real-hardware run** (see below) |
+| 3 | Move (with RAW pairs, case-only renames), duplicates UI, self-healing paths | **Done except the real-hardware run** (see below) |
 | 4 | Worker protocol + Python recognizer (faces), worker supervision in Rust | **Done except the real-hardware run** (see below) |
 | 5a | Show in Finder / Explorer, copy path | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5b | Own tags (add/remove, many photos at once, search), user data backup | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5b-2 | Search by several tags at once (AND, chips); people join in with 5c-3 | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **5c-1 done**, checked on the real drive; **5c-2 and 5c-3 done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 5d | Duplicates UI: one row per photo, multi-select, bulk delete within a folder, tag and capture-date carry-over; Move dialog "keep tags"; trash dialog focus | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
+| 5d | Duplicates UI: one row per photo, multi-select, bulk delete within a folder, tag and capture-date carry-over; Move dialog "keep folder tags"; trash dialog focus | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
 | 5e | Lean `thumbs.db`: face crops only for faces without a decision and for each person's picture; right-click "Use as … picture" on a person's photos | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | **In progress**: library id, launcher (cancel, saved folders, start scripts) and the multi-drive core (hub, offline, backup roles, common timeline, cross-drive duplicates and people) built; backup verification (`shoebox backup`, launcher button, All drives page) built; real-hardware checks and Linux/Windows packaging open |
+| 5f | "Type" check box drop-down (Photos, Videos, Live Photos) next to the search box | **Done except the real-hardware run** (see "Phase 5f details") |
+| 5g | Favorites: a heart in the viewer's top bar and in the top right corner of each timeline photo; a heart button next to the type filter and "♥ Favorites" as a search suggestion | **Done except the real-hardware run** (see "Favorites" below) |
+| 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | **In progress**: library id, launcher (cancel, saved folders, start scripts) and the multi-drive core (hub, offline, backup roles, common timeline, cross-drive duplicates and people) built; backup verification (`shoebox backup`, launcher button, All drives page) built; add-ons (launcher step 1: install Faces / Pets into `recognizer/` next to the program, which is on the drive when shoebox was copied there; Recognize buttons grey where the add-on is missing; a phase 9 text add-on follows the same pattern); real-hardware checks and Linux/Windows packaging open |
 | 7 | Pets: cats and dogs found (`shoebox recognize --pets`, launcher button "Recognize pets"), named, grouped and searched like people, also by kind ("all cats", "Katze", "Hund"); pets the detector missed can be drawn by hand; Settings → Calibration with the Face check and the new Pet check | **Built except the real-hardware run and DINOv2** (see [phase7.md](phase7.md)) |
+| 8 | UI translation, German and English, JSON message files (design and steps in [phase8.md](phase8.md)) | **Built, check open**: loader, key test, launcher and the whole photo app; the real-hardware check, a native read-through of the German texts and the CI run are open |
 | 9 | Text in photos (OCR): documents, screenshots, street signs, shop fronts found by the words in them. A new task of the recognizer worker, results in `recognition.db` with an FTS5 index, a search term in the UI | **Planned** (design below, no code yet) |
+| 10 | Locations: GPS positions from files, map in the photo info (Leaflet, OpenStreetMap, opt-in setting), Locations page with clustered pins, named places drawn on the map, positions set by hand (design in [phase10.md](phase10.md)) | **Built, check open**: scan reads GPS, schema v10, API, UI, guide; real-hardware check and the CI run are open |
+| 11 | Screenshots: a fourth entry in the Type drop-down, found from metadata and a pixel check (no new model); "Photos" then means stills that are not screenshots (design in [phase11.md](phase11.md)) | **Built with test pictures; threshold and real-hardware run open** (see [phase11.md](phase11.md)) |
+
+### Phase 10: locations
+
+Positions from the file's GPS data, a map in the photo info, a Locations page
+with clustered pins and named rectangular places, positions set by hand for
+photos without one (in `library.db` only). Maps (Leaflet, OpenStreetMap tiles
+loaded by the browser) are an opt-in setting. Design, API and open checks in
+[phase10.md](phase10.md).
 
 ### Phase 0 details
 
@@ -266,23 +437,21 @@ Done (see [phase3.md](phase3.md)):
   trash in `.shoebox/trash/` with restore and empty. Only `rename`, never
   replacing (`RENAME_NOREPLACE` / `RENAME_EXCL`), names compared NFC and
   case-insensitively, files must match the index.
-- `core/src/import.rs`: browser upload streamed into `.shoebox/incoming/`,
-  hashed on the way, mtime from `File.lastModified`, renamed into
-  `YYYY-MM Name`, indexed with its full hash; known content is skipped,
-  taken names get ` (2)`.
+- `core/src/arrivals.rs` (added after phase 3, replacing the browser upload
+  `import.rs`): see "Adding photos" above.
 - `core/src/duplicates.rs`: exact (full hash) and near (`phash` ≤ 8 bits,
   all pairs on all cores) groups; decisions per pair (`distinct`,
   `linked`) in schema v2.
 - Self-healing paths: `serve` runs the scan's index step in the background
   when a file is not where the index says.
-- UI: selection with move/trash, import dialog with drag and drop, folder
+- UI: selection with move/trash, folder
   rename, duplicates and trash pages. Added later: Shift-click selects a
   range, "Select all" on a month heading selects the month (the iPad has no
   Shift). Every non-GET request needs an
   `X-Shoebox` header (CSRF protection for localhost without PIN).
 
 Open:
-- [ ] Moves, renames and imports on the exFAT drive from the old Intel
+- [ ] Moves and renames on the exFAT drive from the old Intel
       MacBook and the iPad (checklist in [phase3.md](phase3.md)).
 - [ ] Confirm the GitHub Actions run is green.
 
@@ -392,7 +561,7 @@ Open:
 
 ### Phase 9 details (text in photos)
 
-Planned, nothing built. Goal: type "Rechnung", "Hauptstraße" or a licence
+Planned, nothing built (updated 2026-10-10 after merging main: Control Panel add-ons, phase 11 screenshots). Goal: type "Rechnung", "Hauptstraße" or a licence
 plate and get the photos that contain those words: a photographed document,
 a screenshot, a street sign, a menu, a shop front. Only the words that are
 really in the picture count; what the picture shows (a "dog", a "beach") is a
@@ -424,12 +593,94 @@ worker, guard tests) is reused.
 | Normalisation | `text_norm` = NFC, case-folded, diacritics folded (`straße` → `strasse`, `Müller` → `muller`), punctuation to spaces. The query is normalised the same way. The raw text is kept for display and copying | Search must find "strasse" for "Straße" and "muller" for "Müller", and must not care about NFC/NFD (a standing rule for paths, applied here too) |
 | Matching | FTS5 with the **`trigram`** tokenizer (SQLite ≥ 3.34, check the bundled version) so any substring of three or more characters matches ("rechn" finds "Rechnung", a half-read licence plate still matches) and OCR typos hurt less. Queries shorter than 3 characters fall back to `LIKE` on `text_norm`. Ranking: more matched words, higher OCR confidence, bigger box first | Word tokenizers need stemming and per-language rules; trigram is language-free and tolerant. No fuzzy matching beyond that in v1 |
 | Quality filter | Lines below a confidence threshold (set from the calibration page, like the pet thresholds) and single-character lines are not indexed. Stored but hidden is not an option: noise in the index is what makes text search useless | OCR on textured scenes (foliage, brick) produces garbage lines; precision matters more than recall here |
-| Search term | A **text chip**, not a silent extension of plain words. Typing "winter" keeps meaning path / tag / person / pet; the suggestion list gains a last row "Search for “winter” in the text of photos", and `text:winter` (and quoted `"text:hello world"`) works typed. Several chips are ANDed as everywhere else; the text chip combines with tags, people and folders ("Rechnung" + folder "2023") | A plain word matching OCR would drown tag results in photos that merely contain the word. Same mechanism as the pet term (`pet=cat`), so the term parsing, chips and AND logic are reused; API gets `text=` |
+| Search term | Two clearly separate kinds of search (see "Search: names versus text" below). Plain words keep meaning file name, folder, tag, person and pet, exactly as today; **text in the picture** is its own chip (`text:winter`, or the suggestion row "In the text of photos"), ANDed with everything else ("Rechnung" in text + folder "2023") | A plain word matching OCR would drown tag results in photos that merely contain the word. Same mechanism as the pet term (`pet=cat`), so term parsing, chips and AND logic are reused; the API gets `text=` |
 | Results | Normal timeline grid. Each cell hit by text shows the matching line as a small caption under the thumbnail; in the viewer the matching boxes are outlined (same overlay as face boxes, own colour) and the info panel has a "Text in this photo" block listing the lines with a copy button. Selecting text itself on the image is not built | Reuses the viewer overlay and the info panel hot spots listed in phase 5 |
 | Multi-drive | Each drive keeps its own `recognition.db`; a text search fans out over all online libraries and merges by the common timeline, like tags | Consistent with phase 6. An offline drive's photos are simply missing from the results |
-| Launcher / CLI | `shoebox recognize --text` (resumable, newest first, `--limit`, `--retry-failed`, model change redoes), launcher button "Recognize text", progress in `/api/info` and the status line. `shoebox text stats` (photos looked at, with text, lines, model) | Same shape as `--pets` |
+| Launcher / CLI | `shoebox recognize --text` (resumable, newest first, `--limit`, `--retry-failed`, a model change redoes it) and a **"Recognize text" button** in the Control Panel next to Recognize / Recognize pets, with the same progress bar and per-file results, a Cancel that keeps what was read, and the same grey-out with a reason when the Text add-on is missing. The add-on, `--text` in the installers and the job plumbing follow the checklist under "What this means for phase 9" above. `shoebox text stats` prints photos read, with text, lines and the model | Same shape as `--pets`. Resumable and partial results are usable at once: the search works on whatever has been read so far and the status line says "Text read for 12,400 of 50,000 photos" |
 | Privacy | Photos of documents contain names, addresses and numbers. The index is a plain SQLite file on the user's own drive, never leaves the machine, and is covered by the "local only" principle; the settings page gets a "Delete all recognised text" button | Stated explicitly because text search makes sensitive content easy to find for anyone who can open the web UI (LAN PIN applies) |
 | Not in scope | Handwriting, translation, tables/layout analysis, PDF files, searching text in video, "find similar documents", semantic search ("photos of receipts" without a word in them). Document *classification* is a CLIP job and belongs to that later phase | Keep the first slice small and shippable |
+
+#### Search: names versus text
+
+Today one search box does one job: every word must be found in the path (folder
+and file name), in one of the photo's tags, or in the name of someone
+confirmed on it (`browse.rs`, `Query.text`, `q=` in the API). That stays
+exactly as it is, and is named in the UI as **names and tags**. Text in the
+picture is a second, separate kind of term:
+
+| | Names and tags (today) | Text in photos (new) |
+|---|---|---|
+| Looks at | folder names, file name, tags, people, pets | words an OCR pass read in the picture |
+| Typed | plain words: `winter` | `text:winter`, or the last suggestion row "In the text of photos: winter" |
+| Chip | plain chip | chip with a "T" icon and the label "Text: winter", own colour |
+| API | `q=winter` | `text=winter` (repeatable, AND) |
+| Computed from | `files`, `tags`, `people` | `recognition.db` (`text_fts`) |
+| Before the Text add-on is installed or read | works | the suggestion row shows greyed with "Read the text of your photos first (Control Panel)" |
+
+The two combine with AND like every other term (and with folder, people, type
+and favorites). The suggestion list shows the groups in this order: names,
+folders and tags (today's rows), people and pets, then the one text row, so
+nobody gets OCR hits by accident. A hit by text shows the matching line under
+the thumbnail; a hit by name shows nothing extra, as today.
+
+How it runs: the text term becomes a set of photo ids, the way the people
+term does (`files_of_people`: matching quick hashes, mapped to file ids by
+the same hash-to-ids lookup), and is intersected with the other sets. It is
+evaluated only when a text chip is present; typing in the box never queries
+the text index (the suggestion row needs no lookup).
+
+#### What it costs: space, search speed, reading time
+
+These are **estimates for planning, not measurements**; step 1 (the spike)
+replaces them with numbers from the real drive, and they are written back here.
+
+*Assumed library:* 100 GB of photos is about 50,000 files (the plan's "150 GB,
+100,000 files" scale gives 1.5 MB per file; phone photos and videos mix).
+`.shoebox` is about 1 % today (under 1 GB for 80 GB, measured on a real
+library, mostly thumbnails, see the guide), so roughly 1.2 GB for this drive.
+Estimated share of photos with readable text: 10–20 % (screenshots, documents,
+signs, menus, tickets); 15 % is used below: 7,500 photos, about 15 lines each.
+
+| Item | Calculation | Size |
+|---|---|---|
+| `text_looked`, one row per photo read (with or without text) | 50,000 rows × ~40 bytes | ~2 MB |
+| `text_lines`, one row per line: box, score, raw text, normalised text | 112,000 lines × ~110 bytes | ~12 MB |
+| FTS5 trigram index over the normalised text | ~3.4 MB of text; a trigram index is about 3–4× its text | ~12 MB |
+| **Total in `recognition.db`, typical** | | **~25 MB** (range 20–60 MB) |
+| Extra for a text-heavy library (half the photos are scanned documents, 40 lines each) | 25,000 photos × 40 lines × ~40 bytes of text, ×4 for the index and rows | up to ~400 MB |
+| The Text add-on's models (on the computer or in `recognizer/` next to the program, **not** in `recognition.db`) | detector + Latin recogniser | ~15–25 MB, one time |
+
+So for 100 GB of photos with a normal share of text the drive grows by about
+**25–60 MB (2–5 % on top of the ~1.2 GB `.shoebox`, 0.03–0.06 % of the
+photos)**; the worst realistic case (a drive full of scanned documents) is
+about 0.4 GB. Two things keep it small: the FTS table indexes `text_norm`
+only (an external-content table, the text is not stored twice), and nothing
+is stored for a photo without text except its one `text_looked` row. There
+are no crops and no thumbnails for text: the Text check page cuts its crops
+from the original on demand, as the pet check does, and never writes them.
+
+*Search speed.* A text search is one FTS5 query on roughly 100,000 lines,
+a few milliseconds for a trigram match; queries under 3 characters fall back
+to `LIKE` over `text_norm`, about 10–30 ms for 100,000 rows. The rest is the
+hash-to-file-id lookup shared with the people term (loaded once, a few tens
+of ms for 50,000 files, cached by `data_version`). Expected: **well under
+100 ms**, the same order as a people search, and nothing changes for ordinary
+searches, because the text index is not touched unless a text chip is
+present. Across several drives the query runs per drive in parallel and the
+results are merged by the common timeline.
+
+*Reading time (the real cost).* OCR is heavier than faces. Detection runs on
+every photo, recognition only on photos where the detector found text.
+Guesses: old Intel MacBook (OpenCV runner) about 0.5 s detection per photo
+plus ~1 s more for the 15 % with text, so 50,000 photos take **~8–10 hours**;
+a modern Mac or PC with onnxruntime about 0.1 s, so **~1.5–2 hours**. The
+faces pass is the comparison: the plan's 4–5 h per 100,000 photos on the old
+Mac, i.e. 2–2.5 h for this drive, so expect text to take 3–4× as long as
+faces there. It is a background job, resumable, newest first, and the search
+works on what has been read so far. If the spike confirms the old Mac is that
+slow, add an order that helps early: photos the screenshot score (phase 11)
+rates as screenshots or that have no camera data come first, because that is
+where most text is.
 
 #### Build order (each step is its own commit, mergeable alone)
 
@@ -451,15 +702,21 @@ worker, guard tests) is reused.
    normalisation (one function, used for both index and query, with unit
    tests for ß, umlauts, NFD input), `shoebox recognize --text`, pruning of
    deleted photos like faces, `text stats`.
-4. **Search**: the `text` term in `browse.rs` (query, ranking, AND with other
-   terms, multi-library merge), `text=` in the API, snippet in the result.
-5. **UI**: suggestion row and `text:` chip, caption in grid cells, boxes in
+4. **Search**: the `text` term in `browse.rs` (a set of ids from the FTS
+   query, ranking, AND with the other terms, multi-library merge), `text=` in
+   the API, the matching line as a snippet in the result. Plain `q=` is not
+   changed.
+5. **Add-on and Control Panel**: `--text` in `install.sh` / `install.ps1` /
+   `fetch-models.sh`, `Installed.text`, the "Recognize text" button with
+   progress, Cancel and the grey-out reason, the Add-ons list entry, `text
+   stats`; the checklist under "What this means for phase 9" above.
+6. **UI**: suggestion row and `text:` chip, caption in grid cells, boxes in
    the viewer, "Text in this photo" in the info panel, launcher button,
    status line. Settings → Calibration gets a **Text check**: the lines with
    the lowest confidence next to their crop, a threshold slider, so the
    quality filter is set by looking, not guessing (same idea as the Face and
    Pet checks).
-6. **Docs and checklist**: `docs/phase9.md` (as built, how it was checked,
+7. **Docs and checklist**: `docs/phase9.md` (as built, how it was checked,
    real-hardware list), this table row set to done-except-hardware.
 
 #### Tests
@@ -501,7 +758,7 @@ Built, one PR, one commit per step (as built: [phase5.md](phase5.md)). Feedback 
 
 UI
 - Trash dialog: focus the "Move to trash" button when it opens, so Enter confirms.
-- Move dialog: checkbox "Keep tags". Checked: the photos' own tags move along (as today). Unchecked: they are dropped.
+- Move dialog: checkbox "Keep folder tags". Own tags always move along; checked, the old folder's tags also stay as own tags (default: off).
 - Duplicates page: one row per photo instead of one card per copy. Left: one thumbnail and the file name. Right: one compact card per copy with the metadata (resolution, size in MB, folder, tags, capture date). The thumbnail is shown once per group, not once per copy.
 - Each copy card has a checkbox "delete this copy". At least one card per group must stay unchecked; the last unchecked one is disabled, so the original can never be deleted.
 - Multi-select: select copies across groups and trash them in one action.
@@ -532,6 +789,36 @@ Tests
 
 Open
 - [ ] Check the new duplicates page on the real drive and the iPad (list in [phase5.md](phase5.md)).
+- [ ] Confirm the GitHub Actions run is green.
+
+### Phase 5f details (filter by file type)
+
+Feedback: a type used to be found by typing an extension (".mp4") into the
+search box, which matches it as a word in the path: you had to know the
+extension, it found only that one, and it also hit folders or tags that
+merely contain the text.
+
+Decided: a **check box drop-down "Type"** next to the search box (option A),
+nothing else. No suggestions in the search box, no sidebar entries, no
+separate extensions (MP4 vs MOV); typing ".mp4" keeps working as before.
+
+- Entries: **Photos** (all stills, a Live Photo's still included),
+  **Videos** (stand-alone videos only: the clip of a Live Photo is folded into
+  its still and is never listed), **Live Photos** (the stills that have a
+  clip). Ticked types are OR; the filter is AND with folder, tags, people and
+  text. Nothing ticked means everything.
+- **RAW gets no entry** (RAW stays hidden in the UI, see Decisions).
+- API: `type=photo|video|live` (repeatable) on the timeline, the tag and
+  people suggestions and the common timeline `/api/all/timeline`; an unknown
+  value is a 400. The filter lives in the URL hash (`type=video`), so it
+  survives reload and back; picking a folder keeps it, "All photos" and
+  "Clear all" drop it. Read-only over the index, so no guard change.
+- Tests: `timeline_order_filters_and_search` in `core/tests/serve.rs` (types,
+  OR, AND with a folder, Live and Videos with the fixtures, 400).
+
+Open:
+- [ ] Check the drop-down on the real drive and the iPad (it opens on tap,
+      closes on a tap outside, the button shows what is ticked).
 - [ ] Confirm the GitHub Actions run is green.
 
 ## Build notes and pitfalls (learned in phases 0–4)
@@ -631,6 +918,139 @@ Open
 - **Git push** uses SSH via the 1Password agent with the "GitHub" key pinned
   in this repo's `core.sshCommand` (the keychain's HTTPS login belongs to a
   different account, `svenfritschpeers`).
+
+## Rotate (lightbox)
+
+Rotate button (`r` left, Shift+R or Option-click right) in the detail view,
+like the Finder's Quick Look. Two mechanisms, chosen by what the file really
+is (`organize::turn`, going by content, not name):
+
+- **JPEG: in the file.** `organize::rotate` patches the EXIF Orientation tag
+  in place (`orientation.rs`): two bytes, lossless, same size, creation date
+  kept; the modification date is the file system's, as in the Finder. Before:
+  the file matches the index (size, mtime, full hash if known). After: its
+  full hash must equal the old bytes with those two changed, else the old
+  bytes are put back. The quick hash changes, so the index record is updated
+  and the capture-date override, face decisions (boxes turned with the
+  picture) and a person's picture follow to the new key; thumbnails and
+  detected faces are made again (next view, next `shoebox recognize`).
+  Refused: a JPEG without an Orientation tag (adding one shifts every byte
+  after it). The small EXIF thumbnail inside the file is not turned.
+- **HEIC and PNG: in shoebox only.** The turn is stored in `library.db`
+  (`view_turns`, keyed by quick hash like `taken_overrides`, in
+  `userdata.json` v4) and applied when shoebox serves the picture
+  (`/thumb`, `/view`: decode, turn, encode). The file is not opened for
+  writing. Finder, Explorer, the download button and other apps show it as it
+  was. The `?v=` of the picture addresses carries the turn
+  (`db::version_of`: 7 hash characters and the turn), so browsers fetch the
+  new picture.
+
+**Why HEIC is not turned in the file** (measured on a real iPhone HEIC with
+macOS Preview, 4032×3024, 1.91 MB, after one rotation):
+- Preview writes a whole new file: 99.9% of the bytes differ, the `ftyp`
+  and `meta` boxes are rebuilt, and the size drops 18% (1.56 MB). The pixel
+  size is reported swapped (3024×4032), so the turn is baked into re-encoded
+  pixels: lossy. The Apple HDR gain map brand (`tmap`) is gone from the
+  header, so HDR information is probably dropped too.
+- A lossless change would add an `irot` box to the container. Rotation of a
+  HEIC lives there, not in EXIF (HEIF readers, libheif and Apple's apps
+  ignore the EXIF Orientation of a HEIC). Landscape iPhone photos usually
+  have no `irot` box, so adding one grows `meta`, which shifts the absolute
+  offsets in `iloc` (every item's position in `mdat`) and means writing a
+  new file and replacing the original: against the rename-only rule. The
+  gain map is a second image with its own transform that would have to be
+  kept consistent. Decided against; no plan to do it.
+- Live Photos: the still is turned in the view, the paired video is not.
+
+**Pitfalls of the view-only turn:**
+- Face boxes are in the file's orientation; the lightbox turns them for
+  display (`turnedBox`), "Add face" is disabled while a photo is turned, and
+  face crops (people pages, face check) are cut from the file as it is, so
+  they show the unturned photo.
+- Duplicate, people and trash pages build their addresses without the turn
+  (`take(8)` of the quick hash in `duplicates.rs`, `people.rs`, `faces.rs`);
+  the server still turns the picture, but a browser that cached the old one
+  keeps it until reload.
+- Identical copies (same quick hash) share the turn; a copy that is edited
+  elsewhere (new content) starts unturned. The turn is not carried when a
+  JPEG is turned in the file, and not removed when the last copy goes.
+- Real-hardware check: turn a copy of a JPEG and look at it in Finder and
+  Explorer; turn a HEIC and a PNG and check Finder shows them as before.
+
+## Favorites
+
+A favorite is an **own tag called `favorite`** (`tags::FAVORITE`, source
+`user`), so it lives in the index, survives moves, rescans and the trash, and
+is in `userdata.json` like any own tag. The UI shows it as a heart and hides
+the tag itself (info panel chips, tag suggestions); the sidebar's Tags list
+has one "♥ Favorites" row instead.
+
+- Heart: top bar of the viewer (also key `f`) and the top right corner of each
+  timeline cell (shown on hover, always for a favorite; on touch screens
+  always). `POST /api/favorites {ids, on}` calls `tags::set_favorite`. Not over
+  all drives (ids are per drive); the filter works there.
+- Search, three ways to the same thing: the heart button next to **Type**
+  (`fav=1` in the URL hash and the API, a chip "♥ Favorites", AND with the rest);
+  the suggestion "♥ Favorites" while typing the start of *favorite*, *favorit*
+  or the UI language's word; and plain text, where `tags::is_favorite_word`
+  accepts the English and German words (favorite(s), favorit(en)) whatever
+  language the UI is in, like the pet words. The tag is stored in English
+  only, so "favorit" is not a second tag.
+- Typed as a tag name (info panel, bulk "Add tag…", the API), `favorite`, `favorites`,
+  `favorit`, `favoriten` (and `favourite(s)`) all mean the heart: `tags::check_name`
+  maps them to `favorite`, so there is no second tag.
+- The timeline response carries `favs` (ids of the shown items with a heart).
+- Only the user's own tag counts; a folder named "favorite" does not make its
+  photos favorites. Read-only over originals, so no guard change.
+- Tests: `favorites_are_the_own_tag_favorite_and_found_by_heart_or_word` in
+  `core/tests/tags.rs`.
+- Real-hardware check: heart a few photos on the iPad (the corner heart is
+  tappable, the button and suggestion filter) and look at the heart in the
+  dark theme.
+
+## Trash is opt-in
+
+Moving photos to the trash is off by default, because shoebox's key goal is to
+leave originals alone. The library setting `allow_trash` (Settings, "Allow
+move to trash"; `/api/allow-trash`) turns it on. Only then does the photo view
+show the trash icon (top bar, between rotate and download) and the timeline
+selection bar offer "Move to trash". The sidebar's Trash entry is hidden while
+the setting is off and the trash is empty; it stays while something is in the
+trash. UI gating only: the trash API and the duplicates screens are unchanged.
+Real-hardware check: with the setting off there is no trash icon or button;
+tick it and both appear.
+
+## Before giving shoebox to others
+
+The release archive (`shoebox-macos.tar.gz`) carries `LICENSE.txt` (all rights
+reserved, private use; the repository is public only while GitHub Actions
+minutes are needed and goes private when development is done) and
+`THIRD-PARTY-LICENSES.txt` (generated by `scripts/third-party-licenses.py`,
+checked by the release job). Open:
+
+- [ ] **LGPL: recipients must be able to replace libheif and libde265.**
+      Both are LGPL-3.0 and linked **statically** into the binary. The LGPL
+      does not force shoebox open, but its section 4(d) wants whoever receives
+      the program to be able to use a modified version of those libraries.
+      With closed source that works in one of two ways:
+      1. *(preferred)* ship them as separate files (dylibs) in the archive
+         next to the binary, loaded from there (`@executable_path`), with the
+         LGPL text and the upstream source URLs. Changes `scripts/build-deps.sh`
+         (shared instead of static), `core/build.rs` and the archive layout;
+         copies, no symlinks (exFAT, as for the recognizer's Python).
+      2. keep static linking and provide the program's object files and a link
+         script on request, so the user can link again with their own build.
+         Until step 1 is done, `THIRD-PARTY-LICENSES.txt` promises exactly
+         this on request.
+      Alternative that avoids the libraries on macOS: decode HEIC with the
+      system (ImageIO); a larger change (behaviour, no Linux/Windows).
+- [ ] Check with a lawyer before shoebox goes to more than friends or is sold
+      (this is not legal advice).
+- [ ] When the repository goes private: the guide and README no longer link to
+      GitHub (they do not any more); releases need the repository's own
+      Actions minutes.
+- [ ] First release: the job needs internet to fetch the crates' licence texts
+      for `--check`; look at the first run.
 
 ## Next step
 

@@ -67,16 +67,41 @@ pub struct Stats {
     pub moved: u64,
     pub renamed_unicode: u64,
     pub missing: u64,
+    /// The files behind `moved`, `changed` and `missing` for the launcher's
+    /// tabs (paths as the index has them, sorted, at most `MAX_LISTED` each; the counts above
+    /// are exact).
+    pub moved_files: Vec<Moved>,
+    pub changed_files: Vec<String>,
+    pub missing_files: Vec<String>,
     pub forgotten: u64,
     pub full_hashed: u64,
     pub bytes_full_hashed: u64,
     pub hash_pending: u64,
+    /// New files whose content the drive had before this scan (see `arrivals`).
+    pub duplicates: Vec<crate::arrivals::Duplicate>,
+    pub duplicates_total: u64,
     pub thumbs: thumbs::Stats,
     /// Files that could not be indexed this time, with the reason.
     pub skipped: Vec<String>,
     /// The `scan` job that brought the index in line.
     #[serde(skip)]
     pub job_id: i64,
+}
+
+/// A file that kept its content but not its place.
+#[derive(Debug, Clone, Serialize)]
+pub struct Moved {
+    pub path: String,
+    pub from: String,
+}
+
+/// How many files of each kind a scan lists by name.
+const MAX_LISTED: usize = 5000;
+
+fn list_push<T>(list: &mut Vec<T>, item: T) {
+    if list.len() < MAX_LISTED {
+        list.push(item);
+    }
 }
 
 /// Steps 1–4: walk the library and bring the index in line with it, as one
@@ -120,6 +145,7 @@ pub fn run(opts: &Options) -> Result<Stats> {
     let conn = db::open(&db_path)?;
 
     say!("Scanning {}", root.display());
+    let new_after = crate::arrivals::start(&conn)?;
     let mut stats = index_library(&conn, &root)?;
     say!(
         "Index: {} added, {} changed, {} moved, {} unchanged ({} with time-zone shift), {} missing.",
@@ -151,6 +177,18 @@ pub fn run(opts: &Options) -> Result<Stats> {
         })? as u64;
     if stats.hash_pending > 0 {
         say!("{} files still need a full hash (run `shoebox scan` again).", stats.hash_pending);
+    }
+    if opts.full_hash {
+        (stats.duplicates, stats.duplicates_total) = crate::arrivals::finish(&conn, new_after)?;
+        if stats.duplicates_total > 0 {
+            say!("{} of the new files are copies of files the drive already had:", stats.duplicates_total);
+            for d in stats.duplicates.iter().take(20) {
+                say!("  {} = {}", d.path, d.of);
+            }
+            if stats.duplicates_total > 20 {
+                say!("  … {} more", stats.duplicates_total - 20);
+            }
+        }
     }
     if !stats.skipped.is_empty() {
         say!("Skipped ({}):", stats.skipped.len());
@@ -245,12 +283,14 @@ struct Rec {
     missing: bool,
     /// Reading its metadata failed last time.
     meta_failed: bool,
+    /// Indexed before positions were read (schema 10).
+    geo_pending: bool,
 }
 
 fn load_records(conn: &Connection) -> Result<HashMap<String, Rec>> {
     let mut stmt = conn.prepare(
         "SELECT id, path, path_nfc, name, size, mtime_ns, created_ns, quick_hash, full_hash,
-                missing_since IS NOT NULL, meta_error IS NOT NULL FROM files",
+                missing_since IS NOT NULL, meta_error IS NOT NULL, geo_done = 0 FROM files",
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
@@ -267,6 +307,7 @@ fn load_records(conn: &Connection) -> Result<HashMap<String, Rec>> {
                 full_hash: r.get(8)?,
                 missing: r.get(9)?,
                 meta_failed: r.get(10)?,
+                geo_pending: r.get(11)?,
             },
         ))
     })?;
@@ -333,6 +374,7 @@ fn index(conn: &Connection, root: &Path, walked: &Walked, job_id: i64, stats: &m
         rec.missing = false;
         records.insert(f.rel.nfc.clone(), rec);
         stats.moved += 1;
+        list_push(&mut stats.moved_files, Moved { path: f.rel.nfc.clone(), from: old_nfc });
         batch.tick()?;
     }
 
@@ -388,7 +430,7 @@ fn index(conn: &Connection, root: &Path, walked: &Walked, job_id: i64, stats: &m
             if !moved[i] {
                 stats.unchanged += 1;
             }
-            if rec.meta_failed {
+            if rec.meta_failed || rec.geo_pending {
                 // Maybe this shoebox can read it (e.g. a JPEG called `.HEIC`).
                 reread_metadata(conn, &mut parser, &path, f, rec.id)?;
             }
@@ -400,6 +442,7 @@ fn index(conn: &Connection, root: &Path, walked: &Walked, job_id: i64, stats: &m
                 Ok(info) => {
                     update_file(conn, rec.id, f, &info)?;
                     stats.changed += 1;
+                    list_push(&mut stats.changed_files, f.rel.nfc.clone());
                 }
                 Err(e) => stats.skipped.push(format!("{}: {e}", f.rel.raw)),
             }
@@ -417,8 +460,13 @@ fn index(conn: &Connection, root: &Path, walked: &Walked, job_id: i64, stats: &m
         if !rec.missing && !found_nfc.contains(path_nfc.as_str()) {
             conn.execute("UPDATE files SET missing_since = ?2 WHERE id = ?1", params![rec.id, now])?;
             stats.missing += 1;
+            stats.missing_files.push(rec.path.clone());
         }
     }
+    stats.missing_files.sort();
+    stats.missing_files.truncate(MAX_LISTED);
+    stats.moved_files.sort_by(|a, b| a.path.cmp(&b.path));
+    stats.changed_files.sort();
     prune(conn, job_id)?;
     batch.commit()
 }
@@ -481,8 +529,8 @@ pub(crate) fn insert_file(conn: &Connection, f: &Found, folder_id: i64, info: &F
     let m = &info.meta;
     conn.execute(
         "INSERT INTO files (folder_id, path, path_nfc, name, kind, size, mtime_ns, created_ns, quick_hash,
-                            taken, taken_offset, width, height, duration_ms, camera, meta_error, added_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+                            taken, taken_offset, width, height, duration_ms, camera, meta_error, added_at, lat, lon, geo_done)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, 1)",
         params![
             folder_id,
             f.rel.raw,
@@ -501,6 +549,8 @@ pub(crate) fn insert_file(conn: &Connection, f: &Found, folder_id: i64, info: &F
             m.camera,
             info.meta_error,
             db::now(),
+            m.lat,
+            m.lon,
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -508,12 +558,12 @@ pub(crate) fn insert_file(conn: &Connection, f: &Found, folder_id: i64, info: &F
 
 /// New content at a known path: refresh everything and drop the full hash,
 /// which the hash pass recomputes.
-fn update_file(conn: &Connection, id: i64, f: &Found, info: &FileInfo) -> Result<()> {
+pub(crate) fn update_file(conn: &Connection, id: i64, f: &Found, info: &FileInfo) -> Result<()> {
     let m = &info.meta;
     conn.execute(
         "UPDATE files SET kind = ?2, size = ?3, mtime_ns = ?4, created_ns = ?5, quick_hash = ?6, full_hash = NULL,
                 taken = ?7, taken_offset = ?8, width = ?9, height = ?10, duration_ms = ?11, camera = ?12,
-                meta_error = ?13, phash = NULL, verified_at = NULL
+                meta_error = ?13, phash = NULL, shot_pixels = NULL, verified_at = NULL, lat = ?14, lon = ?15, geo_done = 1
          WHERE id = ?1",
         params![
             id,
@@ -529,6 +579,8 @@ fn update_file(conn: &Connection, id: i64, f: &Found, info: &FileInfo) -> Result
             m.duration_ms.map(|d| d as i64),
             m.camera,
             info.meta_error,
+            m.lat,
+            m.lon,
         ],
     )?;
     Ok(())
@@ -543,9 +595,9 @@ fn reread_metadata(conn: &Connection, parser: &mut MediaParser, path: &Path, f: 
     }
     conn.execute(
         "UPDATE files SET taken = ?2, taken_offset = ?3, width = ?4, height = ?5, duration_ms = ?6, camera = ?7,
-                meta_error = NULL
+                meta_error = NULL, lat = ?8, lon = ?9, geo_done = 1
          WHERE id = ?1",
-        params![id, m.taken, m.taken_offset, m.width, m.height, m.duration_ms.map(|d| d as i64), m.camera],
+        params![id, m.taken, m.taken_offset, m.width, m.height, m.duration_ms.map(|d| d as i64), m.camera, m.lat, m.lon],
     )?;
     Ok(())
 }
@@ -563,7 +615,8 @@ pub(crate) fn upsert_folders(conn: &Connection, folders: &[RelPath], job_id: i64
         "INSERT INTO folders (parent_id, path, path_nfc, name, event_year, event_month, event_name, last_seen)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
          ON CONFLICT (path_nfc) DO UPDATE SET parent_id = excluded.parent_id, path = excluded.path,
-             last_seen = excluded.last_seen
+             event_year = excluded.event_year, event_month = excluded.event_month,
+             event_name = excluded.event_name, last_seen = excluded.last_seen
          RETURNING id",
     )?;
     for folder in folders {
@@ -597,6 +650,26 @@ pub(crate) fn set_folder_tags(conn: &Connection, file_id: i64, rel: &RelPath) ->
         )?;
     }
     Ok(())
+}
+
+/// Delete the records of files that are gone (launcher button "Forget
+/// missing"); photos on the drive are not touched.
+pub fn forget_missing_records(root: &Path) -> Result<u64> {
+    let root = root.canonicalize().with_context(|| format!("cannot open {}", root.display()))?;
+    let db_path = db::default_path(&root);
+    if !db_path.is_file() {
+        bail!("no index at {} (run a scan first)", db_path.display());
+    }
+    let conn = db::open(&db_path)?;
+    // Files deleted since the last scan are marked missing first, so every
+    // path a verify called missing is forgotten, and moves are followed.
+    index_library(&conn, &root)?;
+    let job = Job::start(&conn, "forget")?;
+    let n = forget_missing(&conn, job.id)?;
+    say!("Forgot {n} missing files.");
+    job.finish(&conn, "done", &serde_json::json!({ "forgotten": n }))?;
+    db::backup(&conn, &db_path)?;
+    Ok(n)
 }
 
 fn forget_missing(conn: &Connection, job_id: i64) -> Result<u64> {

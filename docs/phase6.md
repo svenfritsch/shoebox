@@ -63,19 +63,38 @@ Built (first slice, `core/src/launcher.rs`, page in `core/launcher-web/`):
   one job at a time (409 otherwise). `core/tests/launcher.rs` runs scan,
   verify, face stats and recognize through the API under the guard
   (snapshot of size, mtime, created and hash before and after).
-- Several folders: the path field holds chips (Enter adds, × removes); a
-  command runs over all of them, one after the other, with a result list and a
-  summary per folder. The chosen folders are remembered in a JSON file in the
-  user's config folder (`~/Library/Application Support/shoebox/launcher.json`,
+- Several folders: the path field holds chips (Enter adds, × removes), each
+  with a check box. A command runs over the ticked folders only, one after the
+  other, with a result list and a summary per folder; "Start photo app" opens
+  the ticked ones too. The "Backup check" button is enabled only with exactly
+  two ticked folders (first = original, second = copy), and the others only
+  with at least one. The list is remembered in a JSON file in the user's
+  config folder (`~/Library/Application Support/shoebox/launcher.json`,
   `~/.config/shoebox/launcher.json`, `%APPDATA%\shoebox\launcher.json`, or
-  `$SHOEBOX_CONFIG`): `{ "paths": [ … ] }`.
+  `$SHOEBOX_CONFIG`): `{ "paths": [ … ], "checked": [ … ], "history": [ … ],
+  "backups": { "<backup>": { "of": "<original>", "at": <unix seconds> } } }`.
+  `checked` is absent while everything is ticked; `history` holds every folder
+  ever added, newest first, and is offered in the drop-down again;
+  `backups` is written by the launcher only (see below), never by the page.
 - Cancel: the same as Ctrl-C on the command line. The command stops between
   files, keeps what it committed and the job is marked interrupted, so the next
   run continues (`report::request_cancel`, checked by scan, hashing,
   thumbnails, verify and recognize).
 - While a command runs, and while the photo app runs, all inputs and buttons
-  that start or change something are disabled (a disabled `fieldset`); the
-  server refuses them too (409). Only Cancel and "Stop photo app" stay usable.
+  that start or change something are disabled (the folders in a disabled
+  `fieldset`, the command buttons one by one); the server refuses them too
+  (409). Only Cancel and "Stop photo app" stay usable.
+- **Exception: recognition** (`recognize`, `recognize_pets`, `faces_stats`).
+  It may run while the photo app is open, and the photo app may be started
+  while it runs, so after a scan the person can browse while the
+  faces are found. This is safe because `serve` already tolerates it: both
+  open the databases shared (`db::open_shared`, 10 s busy timeout), `serve`
+  skips its own clustering and drawn-face embedding while a recognition job
+  is running (`recognize::running`), recognition does not block moves or tags
+  and a file moved or changed meanwhile is skipped by the guard.
+  Scan, Verify and Backup check stay locked while the app runs
+  (`launcher::runs_beside_app`; test
+  `recognition_runs_while_the_photo_app_is_open`).
 - "Start photo app" opens every chosen folder as one library (see section 3).
 - Start scripts for the double-click fallback are in `scripts/launchers/`
   (`Start shoebox.command`, `Start shoebox.sh`, `Start shoebox.bat`); the
@@ -116,6 +135,17 @@ Built:
   page (roles with confirm buttons, duplicates across drives, people across
   drives), an offline page for the selected drive that opens it again when it
   comes back. Tests: `core/tests/multi.rs`, `core/tests/serve.rs`.
+- Manage drives page: every drive is a card (same height, a status strip on
+  top, the role menu in the name row, the disk name and folder from
+  `volume.rs`, a footer with "Scanned" and "New files" / "Last backup"). A
+  backup follows its original, has a blue outline and shows a progress bar
+  plus the lists "not on the backup yet" / "only on the backup", each file with
+  a "show in Finder" button (`POST /api/all/reveal`: drive and path, only a
+  file in that drive's index, only from this computer). Below: tabs for people
+  and duplicates across drives. The disk name comes from the path
+  (`/Volumes/<name>`, `/media/<user>/<name>`, `/run/media/…`, `/mnt/<name>`) and,
+  on Windows, from the volume label (`GetVolumeInformationW`; not tested in CI,
+  which does not build Windows yet).
 - Common timeline ("All drives" in the drive list, `GET /api/all/timeline`):
   one list, newest first, over the drives that are online and not backups
   (nor suspected ones). Filters name things instead of numbering them
@@ -123,9 +153,11 @@ Built:
   that lacks one of the names has no match. An item's id is
   `drive * 2^40 + id` and the drive is its position in the `libs` the server
   sends along; `/api/all/tags` and `/api/all/people` feed the search
-  suggestions. It is for looking: no selecting, importing or trash; the info
-  panel shows the drive and a button that opens the photo's own drive for
-  tags, faces and moving. Searching for a person who exists on two drives
+  suggestions. It is for looking: no selecting, importing or trash; hearts show
+  only on favorites (disabled buttons, no outline heart to click); the info
+  panel shows the drive, the favorite, tags and people read-only (no
+  add/remove, no face editing; Show boxes and hovering a person still work) and a button that opens the photo's own
+  drive for changing them and moving. Searching for a person who exists on two drives
   gives the photos of both in one timeline (`core/tests/multi.rs`).
 - Duplicates screen: with several drives it has two tabs, "On this drive"
   (the existing groups and decisions) and "Across drives" (same content on
@@ -164,7 +196,8 @@ Backup verification, built (`core/src/backup.rs`, `multi::backup_report`):
   (`POST /api/all/role` with `of`), else the one that holds most of its
   contents.
 - `shoebox backup <original> <backup> [--deep] [--json] [--limit N]`, the
-  launcher button "Backup check" (first folder = original, second = backup)
+  launcher button "Backup check" (first ticked folder = original, second =
+  backup)
   and `GET /api/all/backups` give the same report from the two indexes, by
   full hash, without reading any photo: files new since the last backup (not
   on the backup), files at the same path with other content, content only the
@@ -172,10 +205,41 @@ Backup verification, built (`core/src/backup.rs`, `multi::backup_report`):
   the original without a full hash yet, and "last backup N days ago" (the
   backup index's last scan and the day files last arrived on it). Exit
   status 2 if something is missing or different.
+- A clean check (`ok`: nothing missing, different or unhashed) marks the backup
+  folder in the launcher: its chip shows "backup of <drive>" (the mark is in
+  the launcher's config, keyed by the folders as written; any later check that
+  is not clean takes it away). Result rows of the backup check have a "show
+  both" button that opens the file on the original and on the backup in
+  Finder / Explorer (`POST /api/reveal`: only folders of the job on screen,
+  only paths inside them).
+- Copies removed on the duplicates screen. Deleting there moves a copy into
+  `.shoebox/trash/<batch>/` on its drive (one batch per photo with its RAW,
+  Live Photo and sidecar files) and the `trash` table keeps what is needed to
+  put it back; emptying the trash deletes those files and their batch folders
+  (the `.shoebox/trash` folder goes with the last one) and the table rows. So
+  that the backup can still be told, `duplicates::remove_copies` also writes
+  a row to `removed_copies` (library schema v9: the removed copy's path, size
+  and content hash, plus the hash of the copy that stays; no file content),
+  which emptying the trash does not touch. A plain "Move to trash" of a photo
+  is not recorded: it may be the only copy.
+  The backup check lists, as "removed here, still on the backup", the
+  backup's files that match such a row by path and content and are safe to
+  remove: the kept content is still on the original, the original has no such
+  file at that path again, and the backup keeps another file with the kept
+  content (`multi::removable_on_backup`). They do not make the check fail: a
+  backup that holds more is still complete.
+  `backup::cleanup` (launcher: "Delete duplicates from backup as well", job
+  `backup_cleanup`) removes them from the backup one at a time, asking again
+  before each (`multi::still_removable`, so the last copy of a content on the
+  backup can never go), through `organize::trash_files` on the backup's own
+  index: they land in the backup's `.shoebox/trash`, or are deleted for good
+  with "Delete for good". A file that no longer matches the backup's index is
+  skipped with a reason. Nothing on the original changes. Tests:
+  `core/tests/backup.rs`, `core/tests/launcher.rs`.
 - `--deep` (launcher: "also re-read the backup drive") then runs `verify` on
   the backup drive: bit rot shows as DAMAGED although size and date match.
 - UI: the "All drives" page shows a status box per backup drive with the
-  lists; the photo app never writes to a backup.
+  lists; the photo app never writes to a backup (only the cleanup below does, on request).
 - Tests: `core/tests/backup.rs`, `core/tests/launcher.rs`.
 
 Packaging: the release archive contains the macOS binary, `recognizer/` and

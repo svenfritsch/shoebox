@@ -1,0 +1,797 @@
+<!doctype html>
+<!-- The guide's source: edit this file, then run `python3 docs/guide/html2txt.py` to
+     refresh shoebox-en.txt. Keep shoebox-en.html and shoebox-de.html in step; UI
+     names come from core/i18n/en.json and de.json. See docs/guide/README.md. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>shoebox: your photo library, on the drive</title>
+  <style>
+    :root {
+      --brown: #a0602c; --ink: #2a2420; --muted: #6f655c; --bg: #faf8f5; --card: #fff;
+      --soft: #f1ece5; --line: #e4dcd1; --code: #6b3d17; --iconbg: #f6e6d0;
+      --green: #3f7a3a; --greenbg: #e5efe1;
+      --hero: linear-gradient(165deg, #fff3e2 0%, #f6dfbf 45%, #e3b583 100%);
+      --hero-ink: #3a2512; --hero-sub: #4a3622; --badge: rgba(255, 255, 255, .7);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --brown: #e0a066; --ink: #efe8e0; --muted: #b3a89d; --bg: #1d1916; --card: #26211d;
+        --soft: #322b25; --line: #3d352e; --code: #e9b98a; --iconbg: #3a2e22;
+        --green: #8cc884; --greenbg: #27382a;
+        --hero: linear-gradient(165deg, #3a2a1a 0%, #2d2118 60%, #26211d 100%);
+        --hero-ink: #fbe9d2; --hero-sub: #e5d3bd; --badge: rgba(255, 255, 255, .08);
+      }
+    }
+    * { box-sizing: border-box }
+    body { margin: 0; background: var(--bg); color: var(--ink);
+           font: 1rem/1.55 system-ui, -apple-system, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif }
+    main, header, footer, nav { max-width: 60rem; margin: 0 auto; padding: 0 1.25rem }
+    h1, h2, h3, h4, p, ul, ol, dl, figure { margin: 0 }
+    h1 { font-size: clamp(2rem, 6vw, 2.8rem); line-height: 1.08; letter-spacing: -.02em; color: var(--hero-ink) }
+    h2 { font-size: 1.6rem; line-height: 1.15; letter-spacing: -.015em; margin-bottom: .3rem }
+    h3 { font-size: 1.02rem; margin-bottom: .1rem }
+    section { margin-top: 3.2rem; scroll-margin-top: 1rem }
+    a { color: var(--brown) }
+    b { font-weight: 650 }
+    code { font: .86em ui-monospace, "SF Mono", Menlo, "DejaVu Sans Mono", monospace; background: var(--soft);
+           color: var(--code); padding: .05em .35em; border-radius: .25rem }
+    .sub { color: var(--muted); margin-bottom: 1.2rem }
+    .ic { width: 1.4rem; height: 1.4rem; flex: none }
+
+    /* cover */
+    .hero { background: var(--hero); border-radius: 1rem; padding: 1.5rem 1.5rem 1.8rem; margin-top: 1.25rem }
+    .hero-top { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; align-items: center }
+    .brand { display: flex; align-items: center; gap: .7rem; font-weight: 700; font-size: 1.3rem; color: var(--hero-ink) }
+    .brand svg { width: 2.6rem; height: 2.6rem }
+    .meta { font-size: .85rem; color: var(--hero-sub); text-align: right }
+    .hero h1 { margin-top: 2rem; max-width: 36rem }
+    .lede { font-size: 1.1rem; line-height: 1.5; max-width: 40rem; margin-top: 1rem; color: var(--hero-sub) }
+    .badges { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: .6rem; margin-top: 1.3rem }
+    .badges li { display: flex; align-items: center; gap: .45rem; background: var(--badge); color: var(--hero-ink);
+                 border: 1px solid rgba(160, 96, 44, .25); padding: .35rem .8rem .35rem .55rem; border-radius: 99rem;
+                 font-weight: 600; font-size: .85rem }
+    .badges .ic { color: var(--brown); width: 1.15rem; height: 1.15rem }
+    nav ul { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: .4rem 1.1rem; margin-top: 1.4rem; font-size: .92rem }
+
+    /* screenshots */
+    figure { margin: 1rem 0 }
+    figure img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: .6rem;
+                 box-shadow: 0 .2rem 1rem rgba(60, 35, 10, .16) }
+    figure.narrow { max-width: 24rem }
+    figcaption { color: var(--muted); font-size: .85rem; margin-top: .4rem }
+    .shotwrap { position: relative }
+    .dot, .legend > li::before { background: var(--brown); color: #fff; font-weight: 700; border-radius: 50%;
+                                  display: flex; align-items: center; justify-content: center }
+    .dot { position: absolute; transform: translate(-50%, -50%); width: clamp(.9rem, 2.4vw, 1.5rem); height: clamp(.9rem, 2.4vw, 1.5rem);
+           font-size: clamp(.5rem, 1.3vw, .78rem); box-shadow: 0 0 0 .12rem #fff, 0 .1rem .4rem rgba(0, 0, 0, .35) }
+
+    /* blocks */
+    .cards { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1rem }
+    .cards > li, .panel { background: var(--card); border: 1px solid var(--line); border-radius: .8rem; padding: 1.1rem 1.2rem }
+    .cards .ic-box { width: 2.4rem; height: 2.4rem; border-radius: .6rem; background: var(--iconbg); color: var(--brown);
+                     display: flex; align-items: center; justify-content: center; margin-bottom: .7rem }
+    .cards p { color: var(--muted); font-size: .92rem; line-height: 1.45 }
+    .cards.safe .ic-box { background: var(--greenbg); color: var(--green) }
+    .panel { margin-top: 1.4rem }
+    .panel h3 { color: var(--brown); text-transform: uppercase; letter-spacing: .06em; font-size: .78rem; margin-bottom: .5rem }
+    .panel ul { padding-left: 1.2rem } .panel li { margin-bottom: .45rem }
+    .panel p + p { margin-top: .5rem }
+    .items > div { margin-bottom: 1rem } .items h3 { color: var(--brown) }
+    .subs { border-left: .2rem solid var(--line); padding-left: .9rem; margin-top: .8rem }
+    .subs h4 { color: var(--brown); text-transform: uppercase; letter-spacing: .06em; font-size: .78rem; margin: .8rem 0 .3rem }
+    .subs h4:first-child { margin-top: 0 }
+    .subs table { border-collapse: collapse; width: 100%; font-size: .92rem; margin: .4rem 0 .6rem }
+    .subs th, .subs td { text-align: left; vertical-align: top; padding: .4rem .6rem; border-bottom: 1px solid var(--line) }
+    .subs th { color: var(--muted); font-size: .8rem; font-weight: 650 }
+    .subs td:first-child { white-space: nowrap; font-weight: 650 }
+    .steps, .legend { list-style: none; padding: 0; counter-reset: n }
+    .steps > li, .legend > li { counter-increment: n; display: grid; grid-template-columns: 2rem 1fr; gap: 0 .9rem; margin-bottom: 1rem; align-content: start }
+    .steps > li::before, .legend > li::before { content: counter(n); grid-row: 1 / span 2; width: 2rem; height: 2rem; margin-top: .1rem }
+    .steps > li::before { background: var(--brown); color: #fff; font-weight: 700; border-radius: 50%;
+                          display: flex; align-items: center; justify-content: center }
+    .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: .2rem 2rem; margin-top: 1.2rem }
+    .legend > li::before { width: 1.5rem; height: 1.5rem; font-size: .78rem }
+    .legend > li { grid-template-columns: 1.5rem 1fr; color: var(--muted); font-size: .92rem }
+    .legend h3 { color: var(--ink); font-size: .95rem }
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: .35rem 1rem }
+    dt { font-weight: 650 } dd { margin: 0 }
+    dl.cli { grid-template-columns: 1fr } dl.cli dd { color: var(--muted); margin-bottom: .5rem }
+    .faq p + p { margin-top: .7rem } .faq b { color: var(--brown) }
+    .note { color: var(--muted); font-size: .85rem }
+    @media (min-width: 50rem) {
+      .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; align-items: start }
+      .cols.wide-left { grid-template-columns: 1.15fr .85fr }
+    }
+    footer { text-align: center; color: var(--muted); margin: 4rem auto 2rem }
+    @media print {
+      body { background: #fff } nav { display: none }
+      figure, li, .panel, .items > div { break-inside: avoid }
+      .hero { print-color-adjust: exact; -webkit-print-color-adjust: exact }
+    }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" data-txt="skip">
+    <symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l5 5"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12V4h8l10 10-8 8L3 12z"/><circle cx="7.5" cy="8.5" r="1.2"/></symbol>
+    <symbol id="i-move" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/><path d="M9 13h7m-3-3l3 3-3 3"/></symbol>
+    <symbol id="i-add" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m-4-4l4 4 4-4"/><path d="M4 19h16"/></symbol>
+    <symbol id="i-dup" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-people" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><circle cx="17" cy="9" r="2.4"/><path d="M17 14c2.5 0 4.5 2 4.5 5"/></symbol>
+    <symbol id="i-drive" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="2"/><circle cx="17" cy="12" r="1"/><path d="M6 12h6"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></symbol>
+    <symbol id="i-tablet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M11 18h2"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3L5 14h6l-1 7 8-11h-6l1-7z"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6-5.6-6-10.5a6 6 0 0 1 12 0C18 15.4 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.2"/></symbol>
+    <symbol id="logo" viewBox="0 0 64 64"><rect x="6" y="22" width="52" height="34" rx="4" fill="#b07d4f"/><rect x="2" y="12" width="60" height="14" rx="4" fill="#d9a066"/><rect x="10" y="30" width="44" height="3" rx="1.5" fill="#fff" opacity=".35"/></symbol>
+  </svg>
+
+  <header>
+    <div class="hero">
+      <div class="hero-top">
+        <div class="brand"><svg aria-hidden="true"><use href="#logo"/></svg> shoebox</div>
+        <div class="meta">
+          <p>Guide · English</p>
+          <p>Deutsche Version: <a href="shoebox-de.html" hreflang="de">shoebox-de.html</a></p>
+        </div>
+      </div>
+      <h1>Your photo library, on the drive.</h1>
+      <p class="lede">shoebox is a small program that lives on your external drive next to your photos. It indexes them, shows them in a fast timeline in your browser, and helps you tag, sort and de-duplicate, without ever copying them or touching their metadata.</p>
+      <ul class="badges">
+        <li><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><span>Drive structure stays untouched</span></li>
+        <li><svg class="ic" aria-hidden="true"><use href="#i-drive"/></svg><span>Lives on your drive</span></li>
+        <li><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg><span>Private: no cloud, no account</span></li>
+        <li><svg class="ic" aria-hidden="true"><use href="#i-tablet"/></svg><span>Browse from the iPad too</span></li>
+        <li><svg class="ic" aria-hidden="true"><use href="#i-globe"/></svg><span>macOS today · Linux &amp; Windows next</span></li>
+      </ul>
+    </div>
+    <figure>
+      <img src="assets/en/ui-overview.jpg" alt="" loading="lazy">
+      <figcaption>The timeline: months, folders, search, type filter and year jump.</figcaption>
+    </figure>
+    <nav aria-label="Contents" data-txt="skip">
+      <ul>
+      <li><a href="#why">What sets shoebox apart</a></li>
+      <li><a href="#features">What shoebox can do</a></li>
+      <li><a href="#glance">The screen at a glance</a></li>
+      <li><a href="#start">Get started in three steps</a></li>
+      <li><a href="#browse">Browse and view</a></li>
+      <li><a href="#find">Find and organise</a></li>
+      <li><a href="#scanning">Scanning, duplicates and trash</a></li>
+      <li><a href="#people">People and pets</a></li>
+      <li><a href="#faces">Tag faces, step by step</a></li>
+      <li><a href="#groups">Several faces in a photo, and groups</a></li>
+      <li><a href="#locations">Locations and maps</a></li>
+      <li><a href="#drives">Drives, backups and the iPad</a></li>
+      <li><a href="#safety">Your photos are safe</a></li>
+      <li><a href="#faq">If something looks off</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    <section id="why">
+      <h2>What sets shoebox apart</h2>
+      <p class="sub">Five things that make it different from other photo managers.</p>
+      <ul class="cards">
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg></div>
+          <h3>Your photos stay yours</h3>
+          <p>shoebox has no import and no library of its own that your photos get locked into. Your folders stay exactly as you made them. It reads your files and writes nothing into them: tags, dates and places live in its own index. Before and after every read, a guard checks size, dates and a full hash and stops on any difference. A file changes only when you move, rename or trash it, or turn a JPEG (two bytes).</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-drive"/></svg></div>
+          <h3>Lives on your drive, and stays small</h3>
+          <p>Everything shoebox stores about your photos sits in one hidden <code>.shoebox</code> folder next to your photos: the library <code>library.db</code>, the previews <code>thumbs.db</code> and the trash. Plug the drive into another computer and it all comes along. It adds only what a photo app needs to run: under 1 GB for 80 GB of photos (about 1 %), measured on a real library of 31 GB, including the face recognition data.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-dup"/></svg></div>
+          <h3>Duplicates across drives</h3>
+          <p>Finds identical, resized, edited and look-alike photos, also across several drives, and checks a backup against the original. The best copy always stays, and you decide the rest.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-move"/></svg></div>
+          <h3>Made for the file manager</h3>
+          <p>You organise in Finder or File Explorer and a quick scan picks the changes up. Folders count as tags, and moving photos in shoebox moves the RAW, Live Photo and sidecar files along.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-people"/></svg></div>
+          <h3>Local recognition, optional maps</h3>
+          <p>Faces, cats and dogs are recognised on your own computer, and maps are off until you switch them on. No cloud, no account.</p>
+        </li>
+      </ul>
+    </section>
+
+    <section id="features">
+      <h2>What shoebox can do</h2>
+      <p class="sub">One page in your browser, a timeline of everything on the drive.</p>
+      <ul class="cards">
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-add"/></svg></div>
+          <h3>Scan</h3>
+          <p>With <b>Scan</b>, shoebox indexes your photos into its database and collects the metadata a photo app needs, such as dates, sizes and places. It also finds duplicates on the disk and compares backups and other drives with this index.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-dup"/></svg></div>
+          <h3>Duplicates</h3>
+          <p>Finds identical, resized, edited and look-alike photos. You review; the best copy always stays.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-drive"/></svg></div>
+          <h3>Several drives</h3>
+          <p>Browse the photos of several drives in one common timeline, even when they sit on different disks. Backups are recognised and checked.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg></div>
+          <h3>Safe trash</h3>
+          <p>Deleted photos go to a trash on the drive. Put them back, or delete them for good.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-move"/></svg></div>
+          <h3>Move & organise</h3>
+          <p>Move photos to a folder (created if needed). RAW, Live Photo and sidecar files travel along.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-tag"/></svg></div>
+          <h3>Tags</h3>
+          <p>Your own tags on many photos at once. Folders count as tags too. Stored in the index, never in the photos.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-grid"/></svg></div>
+          <h3>Timeline</h3>
+          <p>All photos and videos by month, with a year jump, folder tree and a viewer with full-size info.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg></div>
+          <h3>Search & filter</h3>
+          <p>Type a person, pet, tag or folder. Combine keywords for a more complex search. Filter by photos, videos, Live Photos or screenshots, or show only your favorites ♥.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-people"/></svg></div>
+          <h3>People & pets</h3>
+          <p>Optional recognition groups faces, cats and dogs. You name them; shoebox suggests the rest.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-pin"/></svg></div>
+          <h3>Locations</h3>
+          <p>Optional maps, off by default: a map in the info of photos with GPS data, a world map of all your photos, and named places like “Home” that collect their photos by themselves.</p>
+        </li>
+      </ul>
+      <figure>
+        <img src="assets/en/multitag-search.jpg" alt="" loading="lazy">
+        <figcaption>Search with two chips: a person and a tag.</figcaption>
+      </figure>
+    </section>
+
+    <section id="glance">
+      <h2>The screen at a glance</h2>
+      <p class="sub">Everything is on one page. Here is where things are.</p>
+      <div class="shotwrap">
+        <img src="assets/en/ui-overview.jpg" alt="" loading="lazy" style="display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:.6rem;box-shadow:0 .2rem 1rem rgba(60,35,10,.16)">
+        <span class="dot" style="left:5.0%;top:8.9%" data-txt="skip">1</span>
+        <span class="dot" style="left:55.5%;top:7.8%" data-txt="skip">2</span>
+        <span class="dot" style="left:73.8%;top:7.8%" data-txt="skip">3</span>
+        <span class="dot" style="left:78.8%;top:7.8%" data-txt="skip">4</span>
+        <span class="dot" style="left:85.2%;top:7.8%" data-txt="skip">5</span>
+        <span class="dot" style="left:90.0%;top:7.8%" data-txt="skip">6</span>
+        <span class="dot" style="left:20.6%;top:11.6%" data-txt="skip">7</span>
+        <span class="dot" style="left:20.6%;top:26%" data-txt="skip">8</span>
+        <span class="dot" style="left:58%;top:33%" data-txt="skip">9</span>
+        <span class="dot" style="left:95.2%;top:7.8%" data-txt="skip">10</span>
+        <span class="dot" style="left:13.0%;top:93.0%" data-txt="skip">11</span>
+      </div>
+      <ol class="legend">
+        <li>
+          <h3>Folders menu</h3>
+          <p>☰ shows or hides the sidebar on narrow screens.</p>
+        </li>
+        <li>
+          <h3>Search box</h3>
+          <p>People, pets, tags and folders; pick several to combine them.</p>
+        </li>
+        <li>
+          <h3>Favorites ♥</h3>
+          <p>Show only the photos you have hearted. Also found by typing <i>favorite</i> in the search box.</p>
+        </li>
+        <li>
+          <h3>Type</h3>
+          <p>Tick what to show; nothing ticked shows everything. <b>Photos</b>: still pictures without screenshots (hover the ⓘ). <b>Videos</b>: stand-alone videos. <b>Live Photos</b>: photos that come with a short clip. <b>Screenshots</b>: pictures of a phone or computer screen.</p>
+        </li>
+        <li>
+          <h3>Year</h3>
+          <p>Jump straight to a year.</p>
+        </li>
+        <li>
+          <h3>Select ☑</h3>
+          <p>Pick photos to move, tag or trash.</p>
+        </li>
+        <li>
+          <h3>Quick links</h3>
+          <p>All photos · Duplicates · Trash · Settings.</p>
+        </li>
+        <li>
+          <h3>Folders</h3>
+          <p>Your folders, with counts. Tags, Faces and Drives appear here when you have them, and so does Locations when maps are on.</p>
+        </li>
+        <li>
+          <h3>Timeline</h3>
+          <p>Months with counts. Click a photo to open the viewer.</p>
+        </li>
+        <li>
+          <h3>Language</h3>
+          <p>Switch English / German.</p>
+        </li>
+        <li>
+          <h3>Status</h3>
+          <p>Scan, thumbnail and drive status at the bottom of the sidebar.</p>
+        </li>
+      </ol>
+      <div class="panel">
+        <h3>A typical session</h3>
+        <p>Plug in the drive and double-click <b>Start shoebox</b>. <b>Scan</b> (quick when little has changed) and open the photo app. To add the photos of an event, copy their folder onto the drive in Finder (named like <b>2025-08 Holiday</b>) and <b>Scan</b> again: if some files were on the drive already, the Control Panel offers to delete the new copies. Then tag and sort. Look at <b>Duplicates</b> now and then, and run the <b>Backup check</b> after every backup.</p>
+      </div>
+    </section>
+
+    <section id="start">
+      <h2>Get started in three steps</h2>
+      <p class="sub">macOS, Intel (10.13 or newer) and Apple Silicon. Nothing to install to browse and scan; face and pet recognition are add-ons you install from the Control Panel.</p>
+      <div class="cols">
+        <div>
+          <ol class="steps">
+            <li>
+              <h3>Unpack it and choose where it lives</h3>
+              <p>Unpack <b>shoebox-macos.tar.gz</b> from the release (double-click it in Finder). You get one folder, <b>shoebox-macos</b> (the name says which system it is for), with the program <b>shoebox</b>, <b>Start shoebox.command</b>, the folder <b>recognizer</b> (the add-ons installer) and this guide in <b>guide</b>. Keep these files together; never pull single files out of the folder. Then pick one of two ways:</p>
+              <p><b>On the drive</b> (best if you take the drive to other computers): copy the whole folder <b>shoebox-macos</b> into the top folder of your photo drive, next to your photo folders, so you have <code>/Volumes/MyDrive/shoebox-macos/</code>. Do not create a <b>.shoebox</b> folder yourself: shoebox makes it on the drive at the first scan. Add-ons you install later are stored in <code>shoebox-macos/recognizer</code> on the drive and travel with it. Other systems get their own folder next to it (for example <b>shoebox-windows</b>, when it is published), each with its own add-ons; start shoebox from the folder of the system you are on.</p>
+              <p><b>On your computer</b>: move the whole unpacked folder <b>shoebox-macos</b> somewhere you will keep it (Documents, for example, not Downloads) and leave its files together. Open it from there whichever drives you plug in; add-ons are installed once into its <b>recognizer</b> folder and used for every drive. The library index (a hidden <b>.shoebox</b> folder) is on each drive in both ways.</p>
+            </li>
+            <li>
+              <h3>Start the Control Panel</h3>
+              <p>Double-click <b>Start shoebox.command</b> (on the drive, or in the folder on your computer). A Terminal window opens (leave it open) and the Control Panel appears in your browser. If macOS asks, right-click the file and choose <b>Open</b>.</p>
+            </li>
+            <li>
+              <h3>Add-ons, scan, then open</h3>
+              <p>Only if you want people and pets recognized: in step 1, <b>Add-ons</b>, tick what you want (<b>Faces</b>, <b>Pets</b>, or both; each works without the other) and press <b>Install the selected add-ons</b>. The Control Panel lists what is downloaded: the Python and OpenCV program (about 200 MB, once, for all add-ons), Faces (about 40 MB) and Pets (about 140 MB). Internet needed, a few minutes. Add-ons can be added later, and a computer of another kind (Intel or Apple Silicon) needs them installed once on that computer. Python and OpenCV is always installed with the first add-on (its box is ticked and cannot be unticked). Until an add-on is installed, its recognize button stays grey and says why. Click the heading <b>Add-ons</b> to fold the step away; it stays folded once everything is installed. Then add your drive (click it, or type <code>/Volumes/MyDrive</code>), press <b>Scan</b>, then <b>Start photo app</b>. The first scan reads every file once and takes a while on a big drive; later scans only look at what changed. When it finishes, the tabs <b>Moved</b>, <b>Changed</b>, <b>Missing</b> and <b>Already on the drive</b> (each with its count) list exactly which files they mean; for new files you already had, the tab shows the older copy right next to each one.</p>
+            </li>
+          </ol>
+          <div class="panel">
+            <h3>Control Panel tasks</h3>
+            <dl>
+                <dt>Scan</dt>
+                <dd>find new, moved and changed photos. Fast: it only looks at what changed since the last scan, and the tabs list what this scan changed. Run it after you move, rename or add photos. It also lists new copies of files the drive already had.</dd>
+                <dt>Verify</dt>
+                <dd>check that nothing was lost or damaged. It re-reads every file and compares it with what the index remembers, which finds files that were silently damaged on the drive. Slow, so run it now and then (every few months, or before you rely on a backup), not after every move. Moves are not its business: a moved photo has its new place in the index and passes. A photo whose path is gone but whose content is still on the drive elsewhere (a duplicate you deleted) is listed as "relocated", not as a failure. Only content that is nowhere on the drive any more counts as missing. If files are gone, a button appears after the check (and after a scan) that forgets their records: they are removed from the shoebox index, its database on the drive. No photo file is touched.</dd>
+                <dt>Recognize faces</dt>
+                <dd>find the faces in your photos (and, with Recognize pets, cats and dogs). Needs the Faces add-on.</dd>
+                <dt>Rotated faces</dt>
+                <dd>also find faces turned on their side, for example people lying down (slower). Needs the Faces add-on.</dd>
+                <dt>Recognize pets</dt>
+                <dd>find cats and dogs; they show up among the faces. Needs the Pets add-on, not the Faces one.</dd>
+                <dt>Face stats</dt>
+                <dd>how recognition went</dd>
+                <dt>Backup check</dt>
+                <dd>is the 2nd folder a complete copy of the 1st?</dd>
+            </dl>
+          </div>
+        </div>
+        <figure class="narrow">
+          <img src="assets/en/launcher-overview.jpg" alt="" loading="lazy">
+          <figcaption>The Control Panel: 1 install add-ons, 2 choose the drive or folder, 3 pick a task, 4 open the photo app.</figcaption>
+        </figure>
+      </div>
+      <div class="panel">
+        <h3>Several computers and systems</h3>
+        <ul>
+          <li><b>Where the add-ons are looked for:</b> first in the <b>recognizer</b> folder next to the shoebox program you started, last in the drive's own hidden <code>.shoebox/recognizer</code> (only used when the program folder has nothing). So a shoebox folder on your computer is used for every drive, even if a drive holds models too.</li>
+          <li><b>Models and Python are different things.</b> The models (Faces, Pets) are the same on every computer. <b>Python and OpenCV</b> is built for one kind of computer: Intel Mac, Apple Silicon Mac, Linux, Windows. If you take a drive with <b>shoebox-macos</b> from an Intel MacBook to a newer one, step 1 shows <b>Python and OpenCV: required</b> on the newer one, your add-ons say <b>models found, needs Python for this computer</b>, and the recognize buttons are grey. Press <b>Install the selected add-ons</b> once there: only the missing Python is downloaded, the models are kept. Both kinds then live side by side in the same <b>recognizer</b> folder, and each computer uses its own.</li>
+          <li><b>Mac and Windows on one drive:</b> copy both folders to the drive's top folder: <code>shoebox-macos</code> and <code>shoebox-windows</code>. Each has its own <b>recognizer</b> folder, so models you install in one are not shared with the other. Start shoebox from the folder of the system you are on. Both use the same hidden <code>.shoebox</code> index on the drive. The add-ons install on Windows too, with the same button: it needs Windows 10 or 11 on a 64-bit Intel or AMD processor and nothing else to be installed first.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>Good to know</h3>
+        <ul>
+          <li>Video previews need <b>ffmpeg</b>, a free tool that picks one frame out of a video. shoebox looks for it in the same folder as the <b>shoebox</b> program (the file is called <code>ffmpeg</code>, or <code>ffmpeg.exe</code> on Windows) and then on your computer’s <code>PATH</code>, for example after <code>brew install ffmpeg</code>. Or download a static build (one single file) from <a href="https://ffmpeg.org/download.html">ffmpeg.org/download</a> and put it next to the program; it is optional and usually takes 50–100 MB. Which file to take:<ul><li><b>Mac:</b> easiest is <code>brew install ffmpeg</code>. Or open the page’s <i>macOS</i> link, download a static build, unzip it and put the file <code>ffmpeg</code> next to <b>shoebox</b>. If macOS refuses to open it, right-click it once and choose <b>Open</b>.</li><li><b>Windows:</b> open the page’s <i>Windows</i> link and download the <i>release essentials</i> zip. Open it, go into its <code>bin</code> folder and copy <code>ffmpeg.exe</code> (only that file) next to <code>shoebox.exe</code>.</li><li><b>Linux:</b> <code>sudo apt install ffmpeg</code>, or the equivalent of your distribution.</li></ul>Everything else works without ffmpeg. Without it a scan stores no preview for videos, and your browser grabs a frame while you browse; those frames are not stored. After you add ffmpeg, run <b>Scan</b> to store the previews, or restart the photo app.</li>
+          <li>shoebox keeps everything in a hidden <code>.shoebox</code> folder at the top of the drive: the library <code>library.db</code> (index, tags, names, decisions) with its backup copy <code>library.db.bak</code>, the previews <code>thumbs.db</code>, <code>recognition.db</code> if you use recognition and the <code>trash</code>. That is why the drive can move to another computer. On a Mac the folder is hidden: press <b>Cmd + Shift + .</b> in Finder to see it.</li>
+          <li>Closing the Terminal window stops shoebox.</li>
+        </ul>
+        <p class="note">The app speaks English and German: pick the language at the bottom of the sidebar.</p>
+      </div>
+    </section>
+
+    <section id="browse">
+      <h2>Browse and view</h2>
+      <p class="sub">Scroll through the timeline, jump by year, open a photo.</p>
+      <div class="cols">
+        <div class="items">
+          <div>
+            <h3>Timeline</h3>
+            <p>Photos are grouped by capture date, newest first. The <b>Year</b> menu jumps; the month next to the drive name in the top bar shows where you are. On another page (Duplicates, Trash, Settings, Faces, …) it shows the name of that page instead. A photo without a capture date takes the month in the name of its event folder (<code>2020-07</code>, <code>2020.07</code>, <code>20-07</code> or <code>20.07</code>), or else the earlier of the file’s created and modified dates; the info panel then marks the date as <b>estimated</b>.</p>
+          </div>
+          <div>
+            <h3>Folders</h3>
+            <p>The sidebar mirrors the folders on your drive. Click one to see only its photos. Rename or move a folder from its chip.</p>
+          </div>
+          <div>
+            <h3>Viewer</h3>
+            <p>Click a photo. <b>ⓘ</b> opens the info panel: date (marked <b>estimated</b> when it is not the day the photo was taken), camera, size, tags, people, and buttons to open the folder or copy the path. At the bottom, <b>GPS data</b> shows where the photo was taken (see “Locations and maps”).</p>
+          </div>
+          <div>
+            <h3>Favorites</h3>
+            <p>The <b>♥</b> in the top bar of the viewer, or the key <b>f</b>, marks the photo as a favorite. In the timeline the same heart sits in the top right corner of each photo (it appears when you point at a photo; hearted photos always show it). Click it again to take it off. Under the hood a favorite is just your own tag <i>favorite</i>, kept in the index like any tag, never in the photo.</p>
+          </div>
+          <div>
+            <h3>Rotate</h3>
+            <p><b>r</b> turns left, <b>Shift+R</b> right. For JPEGs this changes only the two bytes of the rotation flag; for other formats the turn exists in shoebox only.</p>
+          </div>
+        </div>
+        <div>
+          <figure>
+            <img src="assets/en/viewer-info.jpg" alt="" loading="lazy">
+            <figcaption>The viewer with its info panel.</figcaption>
+          </figure>
+          <div class="panel">
+            <h3>Keyboard in the viewer</h3>
+            <dl>
+              <dt>← →</dt>
+              <dd>previous / next</dd>
+              <dt>i</dt>
+              <dd>show / hide the info panel</dd>
+              <dt>Space</dt>
+              <dd>open / close the viewer (on a photo picked with the arrow keys)</dd>
+              <dt>f</dt>
+              <dd>add to / remove from favorites</dd>
+              <dt>r · Shift+R</dt>
+              <dd>rotate left / right</dd>
+              <dt>Esc</dt>
+              <dd>close the viewer</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="find">
+      <h2>Find and organise</h2>
+      <p class="sub">Search, select, tag and move: all of it works on many photos at once.</p>
+      <div class="cols">
+        <div class="items">
+          <div>
+            <h3>Search</h3>
+            <p>Type in the search box: suggestions appear for tags, people and folders. Pick several and they become chips that narrow the result; × removes one, <b>Clear all</b> starts over. To find your favorites press the <b>♥</b> button next to <b>Type</b>, or type <i>favorite</i> (English) or <i>favorit</i> (German) and pick <b>♥ Favorites</b>; it combines with everything else, e.g. favorites of one person or one year. With maps on (see “Locations and maps”) the suggestions also offer your <b>places</b>.</p>
+            <p><b>Type</b> offers <b>Photos</b> (still pictures without screenshots), <b>Videos</b>, <b>Live Photos</b> and <b>Screenshots</b>; tick any of them, and nothing ticked shows everything. To leave screenshots out of the timeline, tick Photos, Videos and Live Photos but not Screenshots; to see only screenshots, tick just <b>Screenshots</b>. Shoebox recognises a screenshot from the file (a PNG without camera data, a name like <i>Screenshot</i> or <i>Bildschirmfoto</i>, the size of a phone or computer screen) and from the picture itself (large areas of one colour). It can be wrong in both directions: in the photo’s info panel, <b>Screenshot</b> is a drop-down that starts on shoebox’s guess; pick <i>Yes</i> or <i>No</i> to correct it, and <i>Back to automatic</i> returns to the guess. Your choice is kept in the library; the photo file is never changed.</p>
+          </div>
+          <div>
+            <h3>Select</h3>
+            <p>Press <b>☑</b>, then click photos (Shift-click for a range; on the iPad just tap). “Select all” on a month heading takes the whole month.</p>
+          </div>
+          <div>
+            <h3>Tag</h3>
+            <p><b>Add tag…</b> puts your own tag on the selection. Tags live in shoebox’s index, never in the photo files.</p>
+          </div>
+          <div>
+            <h3>Move</h3>
+            <p><b>Move…</b> asks for a folder. New folders are created, nothing is ever overwritten, and RAW, Live Photo and sidecar files move along. The photos’ own tags always go with them. “Keep folder tags” also keeps the old folder’s tags as own tags; folder tags always follow the new folder.</p>
+          </div>
+        </div>
+        <div>
+          <figure>
+            <img src="assets/en/search-suggestions.jpg" alt="" loading="lazy">
+            <figcaption>Suggestions as you type.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/en/select-photos.jpg" alt="" loading="lazy">
+            <figcaption>Three photos selected; the bar offers Move, Tag and Trash.</figcaption>
+          </figure>
+        </div>
+      </div>
+      <div class="cols">
+        <figure>
+          <img src="assets/en/add-tag.jpg" alt="" loading="lazy">
+          <figcaption>Adding a tag.</figcaption>
+        </figure>
+        <figure>
+          <img src="assets/en/move-dialog.jpg" alt="" loading="lazy">
+          <figcaption>Moving into a new event folder.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="scanning">
+      <h2>Scanning, duplicates and trash</h2>
+      <div class="cols">
+        <div class="items">
+          <div>
+            <h3>Scanning new photos</h3>
+            <p>shoebox does not import photos. Copy or move the photos onto the drive in Finder or File Explorer, which keeps their dates, ideally into a folder named <b>YYYY-MM Event</b>, and press <b>Scan</b>. If the scan finds new files the drive already had, the Control Panel marks them <i>already on the drive</i> and offers <b>Delete the new copies</b> (to the trash, or for good). The older original stays and gets the deleted copy’s folder name as a tag. <b>Settings</b> sets how event folders are named in suggestions (for example <code>YY.MM_Event</code>); existing folders are not renamed and all forms are recognised.</p>
+          </div>
+          <div>
+            <h3>Duplicates</h3>
+            <p><b>Duplicates</b> lists four kinds: identical, same photo in another size, original and edited, and look-alikes. Tick <b>delete this copy</b> on what you want gone; the best file stays, and at least one file of every duplicate always remains. Tags and capture dates of a removed copy carry over. With more than one drive, the tab <b>Across drives</b> (in <b>All drives</b> and under <b>Manage drives</b>) lists photos that are on several drives: one picture, one row per copy with the disk name and folder. Tick the copies to remove, or pick a drive and <b>Mark all</b> to tick every copy on it; the last copy of a photo can never be ticked. <b>Move to trash</b> asks first and puts each copy in the trash of its own drive.</p>
+            <div class="subs">
+              <h4>Quick actions</h4>
+              <p><b>Clear Same Folder Copies</b> and <b>Clear Lower Quality Copies</b> clean up the clear-cut cases in one go.</p>
+              <h4>What you can do with duplicates</h4>
+              <table>
+                <thead><tr><th>Action</th><th>What it means</th></tr></thead>
+                <tbody>
+                  <tr><td>Keep all</td><td><b>Nothing is deleted.</b> These files belong together; they show as <b>Versions</b> on each photo. Button at the top right.</td></tr>
+                  <tr><td>Different photos</td><td><b>Nothing is deleted.</b> Look-alikes are separate shots, not copies. Button at the top right.</td></tr>
+                  <tr><td>Delete this copy</td><td><b>Copy goes to the trash.</b> Tick it on every copy you want gone; the best file stays.</td></tr>
+                  <tr><td>Keep this one</td><td><b>All others go to the trash.</b> Look-alikes only: open a photo, compare, press it, confirm.</td></tr>
+                </tbody>
+              </table>
+              <p class="note"><b>Keep all</b> and <b>Different photos</b> are internal notes: shoebox saves them in its own database in <code>.shoebox</code> on the drive, never in the photos. Those finds are not shown to you on the <b>Duplicates</b> screen again. The notes follow the photos if you move or rename them, and <b>Clear Same Folder Copies</b> and <b>Clear Lower Quality Copies</b> leave these photos alone.</p>
+            </div>
+          </div>
+          <div>
+            <h3>Trash</h3>
+            <p>Nothing is deleted right away. Trashed photos wait in <code>.shoebox/trash</code> on the drive. Click photos to select them (Shift-click selects a range), or use <b>Select all</b>; the bar at the bottom then has <b>Put back</b> and <b>Delete for good</b>. Deleting for good asks first. Moving photos to the trash from the timeline or the photo view is off by default: switch it on once in <b>Settings</b> (<i>Allow move to trash</i>). Deleting copies on the <b>Duplicates</b> screen and with <b>Delete the new copies</b> works either way and also goes to the trash.</p>
+          </div>
+        </div>
+        <div>
+          <figure>
+            <img src="assets/en/scan-copies.jpg" alt="" loading="lazy">
+            <figcaption>After a scan: new copies of files the drive already had.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/en/trash.jpg" alt="" loading="lazy">
+            <figcaption>The trash page.</figcaption>
+          </figure>
+        </div>
+      </div>
+      <figure>
+        <img src="assets/en/duplicates.jpg" alt="" loading="lazy">
+        <figcaption>Duplicates: a pre-ticked messenger copy next to its original.</figcaption>
+      </figure>
+    </section>
+
+    <section id="people">
+      <h2>People and pets</h2>
+      <p class="sub">Optional: shoebox finds faces, cats and dogs; you give them names.</p>
+      <div class="cols">
+        <div class="items">
+          <div>
+            <h3>Find them</h3>
+            <p>Install the add-ons once: in the Control Panel, step 1 <b>Add-ons</b>, tick what you need (<b>Faces</b>, and <b>Pets</b> for cats and dogs) and press <b>Install the selected add-ons</b>. They are stored in the <code>recognizer</code> folder next to the shoebox program: on the drive if shoebox lives on the drive, otherwise on your computer for every drive. Then run <b>Recognize faces</b> (and <b>Recognize pets</b>) in the Control Panel. A <b>Faces</b> section appears in the sidebar.</p>
+          </div>
+          <div>
+            <h3>Name them</h3>
+            <p>Under <b>Unnamed</b>, shoebox shows cards of similar faces. Type a name once and the whole card is named; later, confirm (✓) or reject (✗) the suggestions. The next two pages show every step, with groups and the buttons for strangers and false finds.</p>
+          </div>
+          <div>
+            <h3>In the viewer</h3>
+            <p>The info panel lists who is on the photo and draws a box around each face or pet. Click a name to see all their photos, or draw a box around a face or pet that was missed.</p>
+          </div>
+          <div>
+            <h3>Search</h3>
+            <p>Names work in the search box like tags, and so do kinds such as “all cats”. Combine a person with a tag, a folder or another person.</p>
+          </div>
+          <div>
+            <h3>New photos</h3>
+            <p>Recognition does not start by itself after a scan. Click <b>Recognize faces</b> in the Control Panel again; the photo app can stay open. Face recognition only runs on the new photos.</p>
+          </div>
+        </div>
+        <div>
+          <figure>
+            <img src="assets/en/people-unnamed.jpg" alt="" loading="lazy">
+            <figcaption>Unnamed cards: one name for every face on a card.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/en/viewer-people.jpg" alt="" loading="lazy">
+            <figcaption>The info panel names the girl and the cat; boxes show where they are.</figcaption>
+          </figure>
+          <p class="note">Sample pictures are drawn comics, not real photos.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="faces">
+      <h2>Tag faces, step by step</h2>
+      <p class="sub">After Recognize, every face waits for a name. You do not have to name them all.</p>
+      <div class="cols">
+        <div>
+        <ol class="steps">
+          <li>
+            <h3>Open Unnamed</h3>
+            <p>In the sidebar, open <b>Faces</b> and then <b>Unnamed</b>. Each card holds faces that look alike, the card with the most matches first. Cats and dogs have cards of their own; the menu above the cards chooses <i>People</i>, <i>Pets</i> or both. Click a face to see its photo; the left and right arrow keys step through the photos on that card, and Space or Esc closes the viewer.</p>
+          </li>
+          <li>
+            <h3>Name a card</h3>
+            <p>Type the name once and press <b>Name</b>: the whole card is named. Start typing to pick a person you already have (on a card of pets only cats and dogs are offered, and the other way round), or choose <b>+ New person</b> (on a card of pets it reads <b>+ New cat</b>, <b>+ New dog</b> or <b>+ New pet</b>). After that shoebox suggests more faces of them (<i>Looks like Mia</i>): confirm with ✓ or reject with ✗.</p>
+          </li>
+          <li>
+            <h3>Strangers and false finds</h3>
+            <p><b>Ignore</b> is for strangers, and for faces on posters, screens and pictures: nobody needs to name them. <b>Not a face</b> (for pets <b>Not a pet</b>) is for false finds that are no face at all. Nothing is deleted and no photo is touched; shoebox only notes the decision in its own database.</p>
+          </li>
+          <li>
+            <h3>Only some faces of a card</h3>
+            <p><b>Select</b> lets you tick the faces yourself. The buttons then work on those only: <b>Name 2</b>, <b>Ignore 2</b>, <b>2 not a face</b>. Use it when a card mixes two people. While it is on, the button reads <b>Clear</b>; press it to stop selecting and clear the selection.</p>
+          </li>
+        </ol>
+        </div>
+        <div>
+          <figure>
+            <img src="assets/en/people-unnamed.jpg" alt="" loading="lazy">
+            <figcaption>Unnamed: a card for every group of similar faces, with Ignore and Not a face.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/en/faces-select.jpg" alt="" loading="lazy">
+            <figcaption>Select: two faces ticked on a card.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section id="groups">
+      <h2>Several faces in a photo, and groups</h2>
+      <p class="sub">Tick faces in the viewer. Sort people into groups such as Family, Friends and Colleagues.</p>
+      <div class="cols">
+        <div>
+        <div class="items">
+          <div>
+            <h3>In a photo</h3>
+            <p>Open a photo and its info panel (ⓘ). Under <b>People</b> every face has its picture and a name, or <b>+ Name</b>. <b>Select</b> turns the list into a checklist: tick several faces (<b>All unnamed</b> ticks every face nobody has named), then <b>Ignore</b> or <b>Not a face</b> for all of them at once. <b>+ Add face or pet</b> draws a box around a face or pet that was missed. Say what it is first, <b>Person</b>, <b>Cat</b> or <b>Dog</b>, then name it: the list offers only names of that kind (no people when you name a cat), and <b>+ New person</b>, <b>+ New cat</b> or <b>+ New dog</b> adds a new one. The kind of a drawn pet cannot be changed later; delete the box and draw it again.</p>
+          </div>
+          <div>
+            <h3>Groups</h3>
+            <p><b>Faces</b> shows people by group. <b>New group…</b> makes one; <b>Groups…</b> renames, reorders and deletes groups; to reorder, drag a row by the dotted handle on its left (or focus the handle and press Alt+↑/↓). A person is in one group at most, and deleting a group deletes nobody.</p>
+          </div>
+          <div>
+            <h3>Put people into groups</h3>
+            <p>Use <b>⋯</b> on a person, then <b>Move to group…</b>, or drag the person onto a group in the sidebar. Pets work the same way: a group <i>Pets</i> can hold the dog and the cat.</p>
+          </div>
+          <div>
+            <h3>Corrections</h3>
+            <p>The same <b>⋯</b> menu has <b>Merge into…</b> for two cards of one person. On a person’s page, <b>Review faces</b> lists Confirmed, Suggested, Maybe and Not them, and a face marked by mistake can go back with ↺. In Suggested and Maybe, click a face to see its photo; the arrow keys then step through the faces still to check. <b>Calibration</b> (Face check, Pet check) shows what recognition found: small faces, scores and false finds.</p>
+          </div>
+        </div>
+        </div>
+        <div>
+          <figure>
+            <img src="assets/en/info-select.jpg" alt="" loading="lazy">
+            <figcaption>Two passers-by ticked in a photo: Ignore 2 or 2 not a face.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/en/people-overview.jpg" alt="" loading="lazy">
+            <figcaption>Faces: people by group, with the pets in their own group.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/en/groups-dialog.jpg" alt="" loading="lazy">
+            <figcaption>Groups…: rename, delete, drag to reorder.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/en/move-to-group.jpg" alt="" loading="lazy">
+            <figcaption>Move to group… from a person’s ⋯ menu.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section id="locations">
+      <h2>Locations and maps</h2>
+      <p class="sub">Optional: where your photos were taken, on a map. Off until you turn it on.</p>
+      <div class="cols">
+        <div class="items">
+          <div>
+            <h3>Turn maps on</h3>
+            <p>Open <b>Settings</b> and tick <b>Show maps (OpenStreetMap)</b>. The maps are drawn in your browser from OpenStreetMap, so this is the one place where shoebox needs the internet: OpenStreetMap sees which parts of the map you look at, never your photos or their names. shoebox saves no map pictures on the drive (your browser may keep some in its own cache). With the box unticked nothing is ever loaded from the internet. The setting is the same for all your drives: you tick it once, and it stays on when you switch to another drive. It is remembered by your browser, so another browser starts with maps off.</p>
+          </div>
+          <div>
+            <h3>In a photo’s info</h3>
+            <p>Where the file has GPS data, <b>GPS data</b> in the info panel shows the position and, with maps on, a small square map with a pin on it, fixed to the bottom of the panel. Without internet the map says <b>Offline</b> instead. A photo without GPS data shows no map at all, only the heading with a <b>Set location…</b> button.</p>
+          </div>
+          <div>
+            <h3>Give a photo a location</h3>
+            <p><b>Set location…</b> (right next to the heading <b>GPS data</b>) opens a dialog with a map and two fields, latitude and longitude, which are always both there and follow each other: click the map to place the pin, or type the numbers (a point or a comma both work; latitude −90 to 90, longitude −180 to 180, anything else is refused). With maps off, only the fields work. The location is saved in shoebox only: the photo file is not changed, and it stays with the photo if you move it. A location you gave can be changed or removed again; a location that is in the file itself is never changed.</p>
+          </div>
+          <div>
+            <h3>The Locations page</h3>
+            <p>With maps on, <b>Locations</b> appears in the sidebar below Folders. It opens a world map with a pin for every photo that has a location; pins close together are grouped into a number and split apart as you zoom in. Click a pin or a group and the screen splits: the map on the left, the photos from there on the right, like the timeline. Click a photo to view it; the arrow at the top of the list folds it away.</p>
+          </div>
+          <div>
+            <h3>Places</h3>
+            <p>A place is a named area, like “Home” or “Island XY”. Press <b>New place</b>, click two opposite corners on the map and give it a name: every photo with a location inside the area belongs to it, now and later. Places are listed under <b>Locations</b> in the sidebar with their number of photos; click one to see its photos. You can also search for a place by name. If the search is empty, picking a place opens it on the map, like a click in the sidebar (a <b>Type</b> filter is dropped then, as on every click in the sidebar). If the search already has chips (a folder, tag, person, pet, favorites ♥), the place joins them as a chip <b>📍</b> and you stay in the timeline: all chips must match, so “Home” + “Anna” shows Anna’s photos taken at home. A second place replaces the first. The <b>🗺</b> on the chip shows the place on the map, and a place chosen on the map goes along when you add another chip. In the list on the right you can <b>Rename</b> a place, <b>Draw area again</b> or delete it; only the place goes, never a photo or its location.</p>
+          </div>
+        </div>
+        <div>
+          <p class="note">Places and the locations you set are written to <code>userdata.json</code> next to the index on the drive, together with your tags and people.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="drives">
+      <h2>Drives, backups and the iPad</h2>
+      <div class="cols">
+        <div>
+          <div class="items">
+            <div>
+              <h3>Several drives</h3>
+              <p>Start shoebox with more than one drive and each one appears in the sidebar. <b>All drives</b> gives you one common timeline across all of them. It is for looking: photos that are favorites show a ♥ (greyed out, you cannot click it), and the info panel shows tags, favorite and people, but none of it can be changed there (<b>Show boxes</b> and pointing at a person to see their face still work). The panel names the drive the photo is on (its disk name, as in <b>Manage drives</b>) and has <b>Show in Finder</b> (<b>Show in Explorer</b> on Windows) and <b>Copy path</b>; <b>Open in &lt;drive&gt;'s timeline</b> switches to that drive's own timeline, at the photo's folder, to change tags, people or favorites. <b>Manage drives</b>, next to Duplicates, Trash and Settings, opens a page that does not depend on the drive you are looking at: your drives as cards, and two tabs below them, <b>People across drives</b> and <b>Duplicates across drives</b>. A drive that is unplugged is shown as offline. The drive you are looking at is filled in with the accent colour, and so is the page you have open under it (All photos, Duplicates, Trash, Settings), so you can always see which drive's trash you are in.</p>
+            </div>
+            <div>
+              <h3>Original and backup drives</h3>
+              <p>On the Manage drives page every drive is a card with its disk name and the folder on it (for example <i>Extreme SSD · /Photos</i>). Say what each drive is with the menu in the card: <b>Original drive</b> or <b>Backup drive</b>. shoebox suggests a backup when almost everything on a drive is on another one, until you decide. A backup has a blue outline, sits right after its original and says <b>Backup of …</b> and <b>Not in common timeline</b>. It shows how much of the original is on the backup, and two lists: files <b>not on the backup yet</b> and files <b>only on the backup</b>. The folder icon next to a file shows it in Finder (Explorer on Windows). The bar at the bottom of a card says when the drive was last scanned and when new files last arrived on it (on a backup: <b>Last backup</b>); point at a date for the exact time.</p>
+            </div>
+            <div>
+              <h3>Backup check</h3>
+              <p>Choose the original first and the backup second. shoebox compares the two indexes (no photo is read) and lists what is not on the backup yet, what differs and what exists only on the backup. <i>Also re-read the backup</i> finds bit rot.</p>
+            </div>
+            <div>
+              <h3>iPad & other devices</h3>
+              <p>In Terminal: <code>shoebox serve /Volumes/MyDrive --lan</code>. It prints an address and a PIN; open the address in Safari on the same Wi-Fi and enter the PIN once. Swipe in the viewer, tap to select.</p>
+            </div>
+          </div>
+          <div class="panel">
+            <h3>Command line (optional)</h3>
+            <dl class="cli">
+              <dt><code>shoebox scan &lt;folder&gt;</code></dt>
+              <dd>index new, moved and changed files</dd>
+              <dt><code>shoebox verify &lt;folder&gt;</code></dt>
+              <dd>re-read files and compare with the index</dd>
+              <dt><code>shoebox recognize &lt;folder&gt; [--pets]</code></dt>
+              <dd>find faces (and pets)</dd>
+              <dt><code>shoebox backup &lt;original&gt; &lt;backup&gt;</code></dt>
+              <dd>is the backup complete?</dd>
+              <dt><code>shoebox serve &lt;folder&gt; [--lan] [--pin …]</code></dt>
+              <dd>open the photo app</dd>
+            </dl>
+          </div>
+        </div>
+        <figure class="narrow">
+          <img src="assets/en/ipad.jpg" alt="" loading="lazy">
+          <figcaption>On the iPad the same page works with touch.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="safety">
+      <h2>Your photos are safe</h2>
+      <p class="sub">The design rule is simple: shoebox reads your originals and never writes anything into them.</p>
+      <ul class="cards safe">
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg></div>
+          <h3>Read-only</h3>
+          <p>Metadata, thumbnails, tags and locations you set are kept in the index on the drive (<code>.shoebox/library.db</code>), never inside a photo. Capture dates and created dates never change.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg></div>
+          <h3>Guarded</h3>
+          <p>Every scan is checked: size, dates and a full hash before and after. Any difference is an error.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-bolt"/></svg></div>
+          <h3>Only on your command</h3>
+          <p>Originals change only through your actions: move, rename, trash. Always a rename, never a copy, and only if the file still matches the index. The only other thing shoebox removes is a new copy of a file the drive already had, and only when you press the button after a scan.</p>
+        </li>
+        <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-globe"/></svg></div>
+          <h3>Local</h3>
+          <p>No cloud, no account. By default only this computer can connect; other devices need <code>--lan</code> and a PIN. The one exception is the optional maps (Settings, off by default): your browser then loads map pictures from OpenStreetMap.</p>
+        </li>
+      </ul>
+    </section>
+
+    <section id="faq">
+      <h2>If something looks off</h2>
+      <div class="panel faq">
+        <p><b>The grid is empty.</b> Run <b>Scan</b> in the Control Panel first, then start the photo app.</p>
+        <p><b>New photos are missing.</b> Scan again. It is quick: only new and changed files are read.</p>
+        <p><b>A video has no preview.</b> Add <code>ffmpeg</code> (see “Good to know”), then run <b>Scan</b> or restart the photo app.</p>
+        <p><b>The iPad cannot connect.</b> Same Wi-Fi? Started with <code>--lan</code>? Enter the PIN printed in Terminal. Restarting shoebox asks for the PIN again.</p>
+        <p><b>A drive shows as offline.</b> Plug it in again; shoebox picks it up when you reload.</p>
+        <p><b>A map is empty or says Offline.</b> Maps need the internet. Check the connection and open the photo again; without it everything else works as before.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>shoebox · © 2026 Tesselina Späth · for private use, the terms are in <code>LICENSE.txt</code> next to the program in the download</p>
+    <p>The libraries inside shoebox and their licences are listed in <code>THIRD-PARTY-LICENSES.txt</code>, next to it.</p>
+  </footer>
+</body>
+</html>

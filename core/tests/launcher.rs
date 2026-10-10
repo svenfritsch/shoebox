@@ -21,7 +21,7 @@ fn serial() -> std::sync::MutexGuard<'static, ()> {
 }
 
 fn start_launcher() -> launcher::Launcher {
-    launcher::start(&launcher::Options { port: 0, open_browser: false, config: None }).unwrap()
+    launcher::start(&launcher::Options { port: 0, open_browser: false, config: None, reveal: None }).unwrap()
 }
 
 /// The launcher's routes are not library routes: `/raw` sends them as written.
@@ -81,6 +81,15 @@ fn guard_commands_run_from_the_launcher_leave_originals_untouched() {
     assert_eq!(broken["failures"][0]["path"], "Familie/Weihnachten/DSC_2001.jpg");
     assert_eq!(broken["result"]["missing"].as_array().unwrap().len(), 1);
 
+    // Scan marks it missing; "Forget missing" drops its record, then verify is clean.
+    let rescan = run_job(addr, json!({ "kind": "scan", "root": root }));
+    assert_eq!(rescan["result"]["missing"], 1, "{rescan}");
+    let forgot = run_job(addr, json!({ "kind": "forget_missing", "root": root }));
+    assert_eq!(forgot["ok"], true, "{forgot}");
+    assert_eq!(forgot["result"]["forgotten"], 1);
+    let after = run_job(addr, json!({ "kind": "verify", "root": root }));
+    assert_eq!(after["ok"], true, "{after}");
+
     // Face stats before any recognition: a result, not an error.
     let faces = run_job(addr, json!({ "kind": "faces_stats", "root": root }));
     assert_eq!(faces["ok"], true, "{faces}");
@@ -116,6 +125,20 @@ fn only_this_computer_and_only_with_the_header() {
     assert_eq!(lpost(addr, "/api/job", &json!({ "kind": "scan", "root": "/no/such/folder" })).status, 400);
     assert_eq!(lget(addr, "/api/nothing").status, 404);
     assert_eq!(lget(addr, "/api/job").json()["running"], false);
+    launcher.stop().unwrap();
+}
+
+#[test]
+fn the_launcher_serves_its_translations() {
+    let launcher = start_launcher();
+    let addr = launcher.addr;
+    assert_eq!(lget(addr, "/i18n/i18n.js").status, 200);
+    for lang in ["en", "de"] {
+        let messages = lget(addr, &format!("/i18n/{lang}.json"));
+        assert_eq!(messages.status, 200, "{lang}");
+        assert_eq!(messages.header("content-type"), Some("application/json"));
+        assert!(messages.json()["launcher.step1"].is_string(), "{lang}");
+    }
     launcher.stop().unwrap();
 }
 
@@ -194,27 +217,28 @@ fn the_remembered_folders_are_a_json_file() {
     let dir = std::env::temp_dir().join(format!("shoebox-launcher-config-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let file = dir.join("nested").join("launcher.json");
-    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(file.clone()) }).unwrap();
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(file.clone()), reveal: None }).unwrap();
     let addr = launcher.addr;
 
     assert_eq!(lget(addr, "/api/config").json(), json!({ "paths": [] }), "no file yet");
     let saved = lpost(addr, "/api/config", &json!({ "paths": [" /Volumes/Fotos ", "/Volumes/Fotos", "", "/Volumes/Fotos 2"] }));
     assert_eq!(saved.status, 200);
-    assert_eq!(saved.json(), json!({ "paths": ["/Volumes/Fotos", "/Volumes/Fotos 2"] }), "trimmed, no duplicates");
+    let expected = json!({ "paths": ["/Volumes/Fotos", "/Volumes/Fotos 2"], "history": ["/Volumes/Fotos", "/Volumes/Fotos 2"] });
+    assert_eq!(saved.json(), expected, "trimmed, no duplicates");
     // A plain JSON file a person can read and edit.
     let on_disk: serde_json::Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
-    assert_eq!(on_disk, json!({ "paths": ["/Volumes/Fotos", "/Volumes/Fotos 2"] }));
+    assert_eq!(on_disk, expected);
     assert_eq!(launcher::Config::load(&file).paths.len(), 2);
     launcher.stop().unwrap();
 
     // The next start offers them again; a broken file is just empty.
-    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(file.clone()) }).unwrap();
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(file.clone()), reveal: None }).unwrap();
     assert_eq!(lget(launcher.addr, "/api/config").json()["paths"][0], "/Volumes/Fotos");
     launcher.stop().unwrap();
     std::fs::write(&file, b"{ not json").unwrap();
     assert_eq!(launcher::Config::load(&file).paths.len(), 0);
     // Changing it needs the header like everything else.
-    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(file) }).unwrap();
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(file), reveal: None }).unwrap();
     let json_ct = ("Content-Type", "application/json");
     assert_eq!(bare_request(launcher.addr, "POST", "/raw/api/config", &[json_ct], br#"{"paths":["/x"]}"#).status, 403);
     launcher.stop().unwrap();
@@ -251,6 +275,50 @@ fn recognize_pets_runs_the_pets_pass_under_the_guard() {
     assert!(clustered > 0 && clustered <= photos, "clustered in a space of their own: {pets}");
     assert_eq!(pets["result"]["pets"]["model"], "fake-pets-1");
     assert_eq!(lib.snapshot(), before, "looking for pets changed an original");
+    launcher.stop().unwrap();
+}
+
+#[test]
+fn recognition_runs_while_the_photo_app_is_open() {
+    let _turn = serial();
+    let lib = Library::new("launcher-beside-app");
+    // A picture the fake recognizer never answers keeps the run going until cancelled.
+    image::RgbImage::from_pixel(64, 64, image::Rgb([0, 0, 255])).save(lib.path("blue.png")).unwrap();
+    lib.scan_opts(true, false, false);
+    let before = lib.snapshot();
+    unsafe { std::env::set_var("SHOEBOX_RECOGNIZER", env!("CARGO_BIN_EXE_shoebox-fake-recognizer")) };
+    let launcher = start_launcher();
+    let addr = launcher.addr;
+    let root = lib.root.display().to_string();
+
+    assert_eq!(lpost(addr, "/api/job", &json!({ "kind": "recognize", "root": root })).status, 200);
+    // The photo app starts although recognition is running, and answers.
+    let started = lpost(addr, "/api/app", &json!({ "root": root, "port": 0 }));
+    assert_eq!(started.status, 200, "{}", String::from_utf8_lossy(&started.body));
+    let url = started.json()["url"].as_str().unwrap().to_string();
+    let app: SocketAddr = url.trim_start_matches("http://localhost:").trim_end_matches('/').parse::<u16>().map(|p| ([127, 0, 0, 1], p).into()).unwrap();
+    assert_eq!(get(app, "/api/info").json()["name"], lib.root.file_name().unwrap().to_str().unwrap());
+    assert_eq!(lget(addr, "/api/job").json()["running"], true);
+    // Everything else stays locked out: no second command, no scan while the app runs.
+    assert_eq!(lpost(addr, "/api/job", &json!({ "kind": "recognize", "root": root })).status, 409);
+    let scan = lpost(addr, "/api/job", &json!({ "kind": "scan", "root": root }));
+    assert_eq!(scan.status, 409);
+    assert!(scan.json()["error"].as_str().unwrap().contains("stop the photo app"));
+
+    // Cancel it; with the app still open, a new recognition run may start (and a scan may not).
+    assert_eq!(lpost(addr, "/api/job/cancel", &json!({})).json()["cancelling"], true);
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while lget(addr, "/api/job").json()["running"] == true {
+        assert!(Instant::now() < deadline, "cancel did not stop the run");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let stats = run_job(addr, json!({ "kind": "faces_stats", "root": root }));
+    assert_eq!(stats["ok"], true, "{stats}");
+    assert_eq!(lpost(addr, "/api/job", &json!({ "kind": "verify", "root": root })).status, 409);
+
+    assert_eq!(lpost(addr, "/api/app/stop", &json!({})).status, 200);
+    unsafe { std::env::remove_var("SHOEBOX_RECOGNIZER") };
+    assert_eq!(lib.snapshot(), before, "recognition beside the app changed an original");
     launcher.stop().unwrap();
 }
 
@@ -329,5 +397,162 @@ fn a_backup_check_runs_over_two_folders_and_lists_what_is_missing() {
     assert_eq!(job["result"]["report"]["missing"], 1);
     assert_eq!(job["failures"][0]["path"], "Neu/neu.jpg");
     assert_eq!(job["failures"][0]["note"], "not on the backup yet");
+    launcher.stop().unwrap();
+}
+
+#[test]
+fn ticked_folders_history_and_backup_marks_are_remembered() {
+    let dir = std::env::temp_dir().join(format!("shoebox-launcher-ticks-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let file = dir.join("launcher.json");
+    std::fs::create_dir_all(&dir).unwrap();
+    // A mark the launcher wrote earlier stays when the page saves its list.
+    std::fs::write(&file, br#"{"paths":[],"backups":{"/b":{"of":"/a","at":5}}}"#).unwrap();
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(file.clone()), reveal: None }).unwrap();
+    let addr = launcher.addr;
+
+    let saved = lpost(addr, "/api/config", &json!({ "paths": ["/a", "/b", "/c"], "checked": ["/c", "/a", "/gone"] })).json();
+    assert_eq!(saved["checked"], json!(["/a", "/c"]), "ticks in list order, only folders that are in the list");
+    assert_eq!(saved["backups"]["/b"], json!({ "of": "/a", "at": 5 }), "the page cannot write marks, nor lose them");
+    // Taking a folder out of the list keeps it in the history, newest first.
+    let saved = lpost(addr, "/api/config", &json!({ "paths": ["/c"], "backups": { "/c": { "of": "/x", "at": 1 } } })).json();
+    assert_eq!(saved["history"], json!(["/c", "/a", "/b"]));
+    assert!(saved.get("checked").is_none(), "no ticks stored: all are ticked");
+    assert_eq!(saved["backups"].as_object().unwrap().len(), 1, "a mark sent by the page is ignored");
+    launcher.stop().unwrap();
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_clean_backup_check_marks_the_backup_and_a_failed_one_takes_it_away() {
+    let _turn = serial();
+    let dir = std::env::temp_dir().join(format!("shoebox-launcher-mark-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let file = dir.join("launcher.json");
+    let original = Library::new("launcher-mark-original");
+    let backup = Library::new("launcher-mark-copy");
+    original.scan();
+    backup.scan();
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(file.clone()), reveal: None }).unwrap();
+    let addr = launcher.addr;
+    let (o, b) = (original.root.display().to_string(), backup.root.display().to_string());
+
+    let job = run_job(addr, json!({ "kind": "backup", "roots": [o, b] }));
+    assert_eq!(job["ok"], true, "{job}");
+    let mark = &lget(addr, "/api/config").json()["backups"][&b];
+    assert_eq!(mark["of"], json!(o));
+    assert!(mark["at"].as_u64().unwrap() > 0);
+
+    original.jpeg("Neu/neu.jpg", 77);
+    original.scan();
+    let job = run_job(addr, json!({ "kind": "backup", "roots": [o, b] }));
+    assert_eq!(job["ok"], false);
+    assert!(lget(addr, "/api/config").json().get("backups").is_none(), "no longer a complete copy: the label goes");
+    launcher.stop().unwrap();
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_result_can_be_shown_on_both_drives_but_only_inside_the_jobs_folders() {
+    let _turn = serial();
+    let original = Library::new("launcher-reveal-original");
+    let backup = Library::new("launcher-reveal-copy");
+    original.scan();
+    backup.scan();
+    original.jpeg("Neu/neu.jpg", 77);
+    original.scan();
+    let opened = std::sync::Arc::new(std::sync::Mutex::new(Vec::<std::path::PathBuf>::new()));
+    let sink = opened.clone();
+    let reveal: shoebox::serve::RevealFn = std::sync::Arc::new(move |p: &Path| {
+        sink.lock().unwrap().push(p.to_path_buf());
+        Ok(())
+    });
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(std::env::temp_dir().join(format!("shoebox-reveal-{}.json", std::process::id()))), reveal: Some(reveal) }).unwrap();
+    let addr = launcher.addr;
+    let (o, b) = (original.root.display().to_string(), backup.root.display().to_string());
+
+    let before = original.snapshot();
+    // Before any job there is nothing to show.
+    assert_eq!(lpost(addr, "/api/reveal", &json!({ "items": [{ "root": o, "path": "Neu/neu.jpg" }] })).status, 400);
+    run_job(addr, json!({ "kind": "backup", "roots": [o, b] }));
+    let shown = lpost(addr, "/api/reveal", &json!({ "items": [{ "root": o, "path": "Neu/neu.jpg" }, { "root": b, "path": "Neu/neu.jpg" }] }));
+    assert_eq!(shown.json()["opened"], 1, "only the original has the file");
+    assert_eq!(opened.lock().unwrap().len(), 1);
+    assert!(opened.lock().unwrap()[0].ends_with("Neu/neu.jpg"));
+    // Paths that leave the folder, and folders that are not the job's, are refused.
+    let outside = lpost(addr, "/api/reveal", &json!({ "items": [{ "root": o, "path": "../" }] }));
+    assert_eq!(outside.json()["opened"], 0);
+    assert_eq!(lpost(addr, "/api/reveal", &json!({ "items": [{ "root": "/tmp", "path": "x" }] })).status, 400);
+    assert_eq!(opened.lock().unwrap().len(), 1);
+    assert_eq!(original.snapshot(), before, "showing a file changes nothing");
+    launcher.stop().unwrap();
+}
+
+#[test]
+fn the_backup_check_lists_removed_copies_and_the_cleanup_job_takes_them_off_the_backup() {
+    let _turn = serial();
+    let photo = "Familie/Weihnachten/DSC_2001.jpg";
+    let libs: Vec<Library> = ["launcher-clean-original", "launcher-clean-copy"].iter().map(|n| Library::new(n)).collect();
+    for lib in &libs {
+        let _ = std::fs::remove_dir_all(lib.path("fixtures"));
+        std::fs::create_dir_all(lib.path("Kochen")).unwrap();
+        std::fs::copy(lib.path(photo), lib.path("Kochen/braten.jpg")).unwrap();
+        lib.scan();
+    }
+    let (original, backup) = (&libs[0], &libs[1]);
+    shoebox::duplicates::remove_copies(&original.db(), &original.root, &[id_of(original, photo)], &[id_of(original, "Kochen/braten.jpg")], &Default::default()).unwrap();
+    shoebox::organize::empty_trash(&original.db(), &original.root, None).unwrap();
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(std::env::temp_dir().join(format!("shoebox-clean-{}.json", std::process::id()))), reveal: None }).unwrap();
+    let addr = launcher.addr;
+    let (o, b) = (original.root.display().to_string(), backup.root.display().to_string());
+
+    let job = run_job(addr, json!({ "kind": "backup", "roots": [o, b] }));
+    assert_eq!(job["ok"], true, "removed copies are not a problem of the backup: {job}");
+    assert_eq!(job["result"]["report"]["removed"], 1);
+    assert_eq!(job["result"]["report"]["removed_files"][0]["path"], "Kochen/braten.jpg");
+    assert!(job["recent_ok"].as_array().unwrap().iter().any(|f| f["path"] == "Kochen/braten.jpg" && f["note"].as_str().unwrap().contains("still on the backup")));
+
+    // Exactly the two drives, like the check itself.
+    assert_eq!(lpost(addr, "/api/job", &json!({ "kind": "backup_cleanup", "roots": [o] })).status, 400);
+    let before = original.snapshot();
+    let job = run_job(addr, json!({ "kind": "backup_cleanup", "roots": [o, b], "forever": true }));
+    assert_eq!(job["ok"], true, "{job}");
+    assert_eq!(job["result"]["removed"], json!(["Kochen/braten.jpg"]));
+    assert!(!backup.path("Kochen/braten.jpg").exists());
+    assert!(backup.path(photo).exists());
+    assert_eq!(original.snapshot(), before, "the original is untouched");
+    let job = run_job(addr, json!({ "kind": "backup", "roots": [o, b] }));
+    assert_eq!(job["result"]["report"]["removed"], 0);
+    launcher.stop().unwrap();
+}
+
+#[test]
+fn the_scan_reports_copies_of_old_files_and_the_cleanup_job_removes_them() {
+    let _turn = serial();
+    let photo = "Familie/Weihnachten/DSC_2001.jpg";
+    let lib = Library::new("launcher-arrivals");
+    let _ = std::fs::remove_dir_all(lib.path("fixtures"));
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: None, reveal: None }).unwrap();
+    let addr = launcher.addr;
+    let root = lib.root.display().to_string();
+
+    // The first scan has nothing older to compare with.
+    let job = run_job(addr, json!({ "kind": "scan", "roots": [root] }));
+    assert_eq!(job["result"]["duplicates_total"], 0, "{job}");
+
+    std::fs::create_dir_all(lib.path("Neu")).unwrap();
+    std::fs::copy(lib.path(photo), lib.path("Neu/kopie.jpg")).unwrap();
+    let job = run_job(addr, json!({ "kind": "scan", "roots": [root] }));
+    assert_eq!(job["result"]["duplicates_total"], 1, "{job}");
+    assert_eq!(job["result"]["duplicates"], json!([{ "path": "Neu/kopie.jpg", "of": photo, "size": std::fs::metadata(lib.path(photo)).unwrap().len() }]));
+
+    let before = lib.snapshot();
+    let job = run_job(addr, json!({ "kind": "scan_cleanup", "roots": [root] }));
+    assert_eq!(job["ok"], true, "{job}");
+    assert_eq!(job["result"]["removed"], json!(["Neu/kopie.jpg"]));
+    assert!(!lib.path("Neu/kopie.jpg").exists());
+    let mut expected = before;
+    expected.retain(|p, _| !p.ends_with("Neu/kopie.jpg"));
+    assert_eq!(lib.snapshot(), expected, "only the new copy went");
     launcher.stop().unwrap();
 }

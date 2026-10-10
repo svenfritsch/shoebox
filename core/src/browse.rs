@@ -2,9 +2,11 @@
 //! and tags. Read-only over the index; the server keeps one `Snapshot` until
 //! another process (a scan) commits to the database.
 //!
-//! Sorting: newest first by capture date. A file without one takes the
-//! month of its nearest `YYYY-MM Name` folder, and failing that its
-//! modification date. RAW files are not shown (their JPEG/HEIC twin is), and
+//! Sorting: newest first by capture date. A file without one takes the month
+//! of its nearest `YYYY-MM Name` folder (the date in the folder's name), else
+//! the earlier of its created and modification dates (a copy gets a new
+//! created date but keeps the old modification date); the info panel marks
+//! such a date as estimated. RAW files are not shown (their JPEG/HEIC twin is), and
 //! the short video of a Live Photo is folded into its still.
 
 use std::collections::{HashMap, HashSet};
@@ -27,9 +29,12 @@ const LIVE_MAX_MS: i64 = 6_000;
 pub enum DateSource {
     /// Capture date from the file (EXIF, video container).
     File,
-    /// Month of the event folder.
+    /// Month of the event folder (no capture date in the file).
     Folder,
-    /// Modification date.
+    /// The file's created date, the earlier of the two (no capture date, not
+    /// in an event folder).
+    Created,
+    /// Modification date: the earlier of the two, or the only one known.
     Modified,
 }
 
@@ -48,6 +53,8 @@ pub struct Item {
     pub path_lower: String,
     /// The video of a Live Photo.
     pub live: Option<i64>,
+    /// A screenshot: the user's decision, else the score (`screenshots.rs`).
+    pub shot: bool,
 }
 
 impl Item {
@@ -75,6 +82,39 @@ pub struct Snapshot {
     children: HashMap<i64, Vec<i64>>,
 }
 
+/// What the type filter offers. Photos are the stills that are not
+/// screenshots (a Live Photo's still included), Screenshots the stills that
+/// are, Videos only stand-alone videos (the motion part of a Live Photo is
+/// folded into its still, never listed), Live the stills that have one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaType {
+    Photo,
+    Video,
+    Live,
+    Screenshot,
+}
+
+impl MediaType {
+    pub fn parse(s: &str) -> Option<MediaType> {
+        match s {
+            "photo" => Some(MediaType::Photo),
+            "video" => Some(MediaType::Video),
+            "live" => Some(MediaType::Live),
+            "screenshot" => Some(MediaType::Screenshot),
+            _ => None,
+        }
+    }
+
+    pub fn matches(self, it: &Item) -> bool {
+        match self {
+            MediaType::Photo => it.kind != Kind::Video && !it.shot,
+            MediaType::Screenshot => it.kind != Kind::Video && it.shot,
+            MediaType::Video => it.kind == Kind::Video,
+            MediaType::Live => it.live.is_some(),
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct Query {
     pub folder: Option<i64>,
@@ -85,9 +125,17 @@ pub struct Query {
     /// Only photos with a confirmed face of every one of these people
     /// (AND, 5c-3).
     pub people: Vec<i64>,
+    /// Any of these types (OR); empty means every type.
+    pub types: Vec<MediaType>,
     /// Only photos with a pet of every one of these species (AND): `cat`,
     /// `dog` or `pet` (any); named or not (phase 7).
     pub pets: Vec<String>,
+    /// Only favorites (photos with a heart).
+    pub fav: bool,
+    /// Only photos taken inside this area of the map (phase 10) ...
+    pub area: Option<crate::geo::Area>,
+    /// ... or inside the area of this place.
+    pub place: Option<i64>,
 }
 
 impl Snapshot {
@@ -141,13 +189,19 @@ impl Snapshot {
             path_lower: String,
             taken: Option<String>,
             mtime_ns: i64,
+            created_ns: Option<i64>,
             duration_ms: Option<i64>,
             quick_hash: String,
+            turn: i32,
+            shot: bool,
         }
         let mut rows = Vec::new();
         {
             let mut stmt = conn.prepare(&format!(
-                "SELECT id, kind, folder_id, name, path_nfc, {}, mtime_ns, duration_ms, quick_hash
+                "SELECT id, kind, folder_id, name, path_nfc, {}, mtime_ns, created_ns, duration_ms, quick_hash,
+                        coalesce((SELECT quarters FROM view_turns v WHERE v.key = files.quick_hash), 0),
+                        (SELECT is_shot FROM shot_marks m WHERE m.key = files.quick_hash),
+                        width, height, camera, shot_pixels
                  FROM files WHERE missing_since IS NULL AND kind != 'raw'",
                 db::TAKEN
             ))?;
@@ -164,8 +218,19 @@ impl Snapshot {
                     path_lower: r.get::<_, String>(4)?.to_lowercase(),
                     taken: r.get(5)?,
                     mtime_ns: r.get(6)?,
-                    duration_ms: r.get(7)?,
-                    quick_hash: r.get(8)?,
+                    created_ns: r.get(7)?,
+                    duration_ms: r.get(8)?,
+                    quick_hash: r.get(9)?,
+                    turn: r.get(10)?,
+                    shot: match r.get::<_, Option<i64>>(11)? {
+                        Some(mark) => mark != 0,
+                        None => {
+                            let pixels = r.get::<_, Option<i64>>(15)?.map(|p| p.clamp(0, 100) as u8);
+                            let size = |i| r.get::<_, Option<i64>>(i).ok().flatten().map(|v| v as u32);
+                            crate::screenshots::score(&name, kind, size(12), size(13), r.get::<_, Option<String>>(14)?.as_deref(), pixels)
+                                >= crate::screenshots::THRESHOLD
+                        }
+                    },
                 });
             }
         }
@@ -193,10 +258,16 @@ impl Snapshot {
             .iter()
             .filter(|r| !hidden.contains(&r.id))
             .map(|r| {
-                let (sort, date_source) = match (&r.taken, event_of.get(&r.folder_id).copied().flatten()) {
-                    (Some(t), _) => (t.clone(), DateSource::File),
-                    (None, Some((y, m))) => (format!("{y:04}-{m:02}-01T00:00:00"), DateSource::Folder),
-                    (None, None) => (local_time(r.mtime_ns), DateSource::Modified),
+                // The capture date; else the month of the event folder; else
+                // the earlier of the file's created and modification dates.
+                let created = r.created_ns.filter(|&ns| ns > 0);
+                let (sort, date_source) = match (&r.taken, created, event_of.get(&r.folder_id).copied().flatten()) {
+                    (Some(t), _, _) => (t.clone(), DateSource::File),
+                    (None, _, Some((y, m))) => (format!("{y:04}-{m:02}-01T00:00:00"), DateSource::Folder),
+                    (None, created, None) => {
+                        let (ns, source) = earlier_of(created, r.mtime_ns);
+                        (local_time(ns), source)
+                    }
                 };
                 Item {
                     id: r.id,
@@ -204,9 +275,10 @@ impl Snapshot {
                     folder_id: r.folder_id,
                     sort,
                     date_source,
-                    version: r.quick_hash.chars().take(8).collect(),
+                    version: db::version_of(&r.quick_hash, r.turn),
                     path_lower: r.path_lower.clone(),
                     live: live.get(&r.id).copied(),
+                    shot: r.shot,
                 }
             })
             .collect();
@@ -320,6 +392,7 @@ impl Snapshot {
             pet_files.insert(species.to_string(), ids.clone());
             Ok(ids)
         };
+        let favorites = || crate::tags::favorite_ids(conn).unwrap_or_default();
         for word in text.split_whitespace() {
             let word = library::nfc(word).to_lowercase();
             let tags: Vec<i64> =
@@ -332,7 +405,24 @@ impl Snapshot {
             for species in crate::pets::species_for_word(&word) {
                 ids.extend(files_of_pets(species)?);
             }
+            // "favorite", "favoriten": the photos with a heart (the tag is
+            // called "favorite" in both languages).
+            if crate::tags::is_favorite_word(&word) {
+                ids.extend(favorites());
+            }
             words.push((word, ids));
+        }
+        let fav = if q.fav { Some(favorites()) } else { None };
+        let mut located: Option<HashSet<i64>> = None;
+        for area in q.area.into_iter().chain(match q.place {
+            Some(id) => Some(crate::geo::place(conn, id)?.ok_or(crate::geo::NoSuchPlace)?.area),
+            None => None,
+        }) {
+            let ids = crate::geo::files_in(conn, &area)?;
+            located = Some(match located {
+                Some(have) => have.intersection(&ids).copied().collect(),
+                None => ids,
+            });
         }
         let mut pet: Option<HashSet<i64>> = None;
         for species in &q.pets {
@@ -353,9 +443,12 @@ impl Snapshot {
         Ok(self
             .items
             .iter()
+            .filter(|it| q.types.is_empty() || q.types.iter().any(|t| t.matches(it)))
             .filter(|it| person.as_ref().is_none_or(|p| p.contains(&it.id)))
             .filter(|it| pet.as_ref().is_none_or(|p| p.contains(&it.id)))
             .filter(|it| folders.as_ref().is_none_or(|f| f.contains(&it.folder_id)))
+            .filter(|it| fav.as_ref().is_none_or(|f| f.contains(&it.id)))
+            .filter(|it| located.as_ref().is_none_or(|l| l.contains(&it.id)))
             .filter(|it| tagged.as_ref().is_none_or(|t| t.contains(&it.id)))
             .filter(|it| words.iter().all(|(w, ids)| ids.contains(&it.id) || it.path_lower.contains(w.as_str())))
             .collect())
@@ -490,6 +583,15 @@ fn file_ids_with_tags(conn: &Connection, tags: &[i64]) -> Result<HashSet<i64>> {
     Ok(ids)
 }
 
+/// The earlier of the created and modification date; the created date wins a
+/// tie, and is the only one used when the modification date is not a date.
+fn earlier_of(created: Option<i64>, mtime_ns: i64) -> (i64, DateSource) {
+    match created {
+        Some(c) if c <= mtime_ns || mtime_ns <= 0 => (c, DateSource::Created),
+        _ => (mtime_ns, DateSource::Modified),
+    }
+}
+
 fn local_time(ns: i64) -> String {
     let secs = ns.div_euclid(1_000_000_000);
     match Local.timestamp_opt(secs, 0).single() {
@@ -560,4 +662,20 @@ pub fn details(conn: &Connection, id: i64) -> Result<Option<Details>> {
         .query_map([id], |r| Ok(FileTag { id: r.get(0)?, name: r.get(1)?, source: r.get(2)? }))?
         .collect::<rusqlite::Result<_>>()?;
     Ok(Some(d))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_earlier_of_created_and_modified_is_used() {
+        // A copy: created today, modified years ago.
+        assert_eq!(earlier_of(Some(2_000), 1_000), (1_000, DateSource::Modified));
+        // Modified later than created (edited since): the creation.
+        assert_eq!(earlier_of(Some(1_000), 2_000), (1_000, DateSource::Created));
+        assert_eq!(earlier_of(Some(1_000), 1_000), (1_000, DateSource::Created));
+        assert_eq!(earlier_of(None, 2_000), (2_000, DateSource::Modified));
+        assert_eq!(earlier_of(Some(1_000), 0), (1_000, DateSource::Created));
+    }
 }

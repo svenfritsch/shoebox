@@ -689,9 +689,10 @@ Built, one commit per step. Scope and rules are in "Phase 5d details" in
 
 - **Trash dialog**: `openModal` takes `focus: true` on an action; the "Move to
   trash" button has focus, Enter confirms.
-- **Move dialog**: "Keep tags" (default checked). `POST /api/move` takes
-  `keep_tags` (default true); unchecked drops the moved photos' own tags
-  (`organize::move_files_with`, `tags::drop_own`), folder tags follow the path.
+- **Move dialog**: "Keep folder tags" (default unchecked). Own tags always
+  move along. `POST /api/move` takes `keep_folder_tags` (default false);
+  checked, the old folder's tags stay on the photos as own tags
+  (`organize::move_files_with`, `tags::keep_as_own`); folder tags follow the path.
 - **Deleting copies**: `POST /api/duplicates/remove {keep, remove, dates?}`
   (`duplicates::remove_copies`). At least one copy must stay; every removed
   file must be a duplicate of a kept one (same full hash, or phash within 8
@@ -711,7 +712,8 @@ Built, one commit per step. Scope and rules are in "Phase 5d details" in
   the reply has `conflicts: [{keep, path, dates}]`, the UI asks and repeats the
   request with `dates: {<keep id>: "<chosen>"}`. Exact copies share content and
   therefore one date, so conflicts only arise among similar photos.
-  `userdata.json` is version 3 and lists `taken_overrides`.
+  `userdata.json` is version 3 and lists `taken_overrides`. Version 4 adds
+  `view_turns` (photos shown turned in shoebox only, see plan.md, Rotate).
 - **Same-folder button**: `GET /api/duplicates/same-folder` → `{groups, copies}`,
   `POST` does it (`duplicates::same_folder_plan`). Per (full hash, folder) one
   file stays: highest resolution (identical for exact copies, so in practice
@@ -734,6 +736,37 @@ Built, one commit per step. Scope and rules are in "Phase 5d details" in
   wrapping row, every card with its own thumbnail (a shot's other versions
   follow it). Identical and same-photo groups keep one thumbnail at the start
   of the row, since repeating it would add nothing.
+- **The bar** (Preselect copies / Clear / Move to trash) stays while the page shows
+  duplicates. Clear unticks everything in the shown groups, also the ones
+  below the first page; “Preselect copies” puts the suggestion back and is disabled
+  while the ticks are exactly the suggestion; Clear and Move to trash are
+  disabled with nothing ticked, so one can Clear, tick a single copy and move
+  just that. The suggestion is the clearly worse copies and exact repeats of
+  the best file, never a different shot.
+- **Series are not versions** (feedback: IMG_4284 and IMG_4285 were shown as
+  one photo): files with a capture date each, the same size and different
+  bytes are different shots (a burst puts several in one second), and two
+  camera-style names with the same prefix and different numbers
+  ("IMG_4284", "IMG_4285 1") never count as the same photo. They are rows of
+  a "Similar photos" group.
+- **Folders that hold copies** (feedback: a packaged InDesign project keeps
+  its photos as copies in a "Link" folder): Settings has a list of folder
+  names (library setting `dup_copy_folders`, `GET/POST
+  /api/lib/{id}/duplicates/copy-folders`; compared NFC-normalised and case-sensitively ("Link" and "link" are two names),
+  at any level of the path, one name each). A file inside such a folder is
+  never the pick of its photo (the first criterion, before quality) and is
+  ticked by "Preselect copies" whenever the same photo lies elsewhere, even if
+  it is not worse; its card says "in a folder for copies". Empty by default.
+- **Names decide first** (feedback: a series from one device always counts
+  up, and a trailing " 1" is a copy's suffix): only the first part of a camera
+  name is read (`camera_name`: IMG, DSC, DSCN, DSCF, PXL, MVIMG, P, DJI, GOPR,
+  SAM, PICT, CIMG, IMAGE, a leading `_` as in `_DSC1234`; 3–6 digits; an iPhone
+  edit's `E`). What follows the number counts only if it starts with a space
+  or "(": "IMG_4285 1", "IMG_6621 (2)", "IMG_4285 - Copy" are shot 4285 and 6621.
+  Two such names with different numbers are two shots, whatever the pictures
+  and capture dates say (`names_differ`); a messenger's
+  "IMG-20250726-WA0001" or a Pixel's date name does not parse and never vetoes.
+  Only when the names say nothing, the same-size-and-date rule below decides.
 - **Pre-selection and the original name**: of every photo with several files
   all but the `pick` are ticked (the page, once; an untick stays). The pick is
   the best quality, then a capture date, then **the file without a copy's
@@ -783,7 +816,7 @@ Built, one commit per step. Scope and rules are in "Phase 5d details" in
   decided pairs, lower-quality versions: rows, `keeper`, a burst shot with another
   capture time and a stretched picture stay out, 6 bits count only with a lost
   date, guard: originals unchanged, `verify` clean), plus
-  `move_without_keep_tags_drops_own_tags` in `tags.rs`. The page was driven with
+  `move_always_keeps_own_tags_and_can_keep_folder_tags` in `tags.rs`. The page was driven with
   Playwright (Chromium, 1280 × 800) on a small library.
 
 ## 5e: lean `thumbs.db` (crops only for faces that wait)
@@ -965,8 +998,9 @@ crops removed at the start, guard).
       (feedback needed from you; note what looks wrong):
   - [ ] Trash dialog: select a photo, "Move to trash": the button has focus,
     Enter confirms, Escape cancels.
-  - [ ] Move dialog: "Keep tags" checked keeps the photo's own tags after
-    the move; unchecked drops them (folder tags follow the new folder).
+  - [ ] Move dialog: the photo's own tags are always there after the move;
+    "Keep folder tags" checked also keeps the old folder's tags as own tags
+    (folder tags follow the new folder).
   - [ ] Duplicates page: one thumbnail per group, one card per copy with
     resolution, MB, folder, tags and capture date. Do the numbers match the
     info panel? Is the layout readable on the iPad?
@@ -977,6 +1011,9 @@ crops removed at the start, guard).
     hides and shows them. Does a file with a copy-style name
     (“IMG (2)”, “IMG - Copy”, “IMG copy 2”, “IMG (1)”) ever stay while the
     original name is ticked? Note any pattern that is not recognised.
+  - [ ] Settings → “Folders that hold copies”: add “Link” (or “Links”); the
+    photos of an InDesign project's Link folder are ticked, the same photo
+    elsewhere is the one that stays. Remove the name again.
   - [ ] A photo and its WhatsApp (or other messenger) copy: they are one row,
     the messenger copy is ticked and says “lower quality”. Do other shots
     of a series stay in rows of their own? Any wrongly ticked copy, or a

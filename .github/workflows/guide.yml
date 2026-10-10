@@ -1,0 +1,19 @@
+name: guide
+
+# The guide (docs/guide) is plain HTML and text, so there is nothing to build.
+# This only checks, when the guide changes, that the .txt copies match the HTML
+# and that every image exists. The release job in build.yml repeats the check
+# and puts the guide into shoebox-macos.tar.gz.
+on:
+  push:
+    branches: [main]
+    paths: ['docs/guide/**', '.github/workflows/guide.yml']
+  pull_request:
+    paths: ['docs/guide/**', '.github/workflows/guide.yml']
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 docs/guide/html2txt.py --check

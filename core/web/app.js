@@ -22,6 +22,7 @@ var state = {
   selected: {},      // id -> true
   anchor: null,      // index of the last photo clicked while selecting (Shift-click ranges)
   data: null,        // timeline columns from /api/timeline
+  favs: {},          // still id -> true, for the loaded timeline (empty on pages that open before it)
   live: {},          // still id -> video id
   folders: [],
   folderById: {},
@@ -106,22 +107,23 @@ $('login-form').addEventListener('submit', function (ev) {
     body: JSON.stringify({ pin: $('pin').value }),
   }).then(function (r) {
     if (r.ok) { location.reload(); return; }
-    return r.json().then(function (body) { $('login-error').textContent = body.error || 'Wrong PIN'; });
+    return r.json().then(function (body) { $('login-error').textContent = body.error || tr('login.wrong'); });
   }).catch(function (e) { $('login-error').textContent = String(e); });
 });
 
 // ------------------------------------------------------------------ filters (in the URL hash)
 
-var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person', 'drives', 'settings', 'pets'];
+var TYPES = ['photo', 'video', 'live', 'screenshot'];
+var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person', 'drives', 'settings', 'pets', 'locations'];
 // Pet search terms (`pet=` in the URL and the API): a species or any pet.
 var PET_TERMS = {
-  cat: { icon: '🐱', label: 'All cats' },
-  dog: { icon: '🐶', label: 'All dogs' },
-  pet: { icon: '🐾', label: 'Any pet' },
+  cat: { icon: '🐱', get label() { return tr('pet.term.cat'); } },
+  dog: { icon: '🐶', get label() { return tr('pet.term.dog'); } },
+  pet: { icon: '🐾', get label() { return tr('pet.term.pet'); } },
 };
 
 function readHash() {
-  var f = { folder: null, tags: [], people: [], pets: [], q: '', view: null, id: null, tab: null };
+  var f = { folder: null, tags: [], people: [], pets: [], types: [], fav: false, place: null, q: '', view: null, id: null, tab: null };
   location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
     var i = kv.indexOf('=');
     if (i < 0) return;
@@ -131,8 +133,11 @@ function readHash() {
     var all = isAll();
     if (k === 'tag') { var t = all ? v : parseInt(v, 10); if (t && f.tags.indexOf(t) < 0) f.tags.push(t); }
     if (k === 'person') { var pp = all ? v : parseInt(v, 10); if (pp && f.people.indexOf(pp) < 0) f.people.push(pp); }
+    if (k === 'type' && TYPES.indexOf(v) >= 0 && f.types.indexOf(v) < 0) f.types.push(v);
     // A kind of pet (all cats, all dogs, any pet): the same on every drive.
     if (k === 'pet' && PET_TERMS[v] && f.pets.indexOf(v) < 0) f.pets.push(v);
+    if (k === 'fav') f.fav = v === '1';
+    if (k === 'place') f.place = parseInt(v, 10) || null;
     if (k === 'q') f.q = v;
     if (k === 'view' && VIEWS.indexOf(v) >= 0) f.view = v;
     if (k === 'id') f.id = parseInt(v, 10) || null;
@@ -140,6 +145,7 @@ function readHash() {
   });
   // Over all drives only these pages exist (the others belong to one drive).
   if (isAll() && f.view && f.view !== 'duplicates' && f.view !== 'drives') f.view = null;
+  if (isAll()) f.place = null; // places belong to one drive
   return f;
 }
 
@@ -147,7 +153,7 @@ function readHash() {
 // folder, any number of tags and people (`tag`, `person` repeated in the
 // URL) and free text.
 function setFilter(f) {
-  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], q: f.q }).replace(/^\?/, '');
+  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], type: f.types || [], fav: f.fav ? 1 : null, place: f.place, q: f.q }).replace(/^\?/, '');
   if (h === location.hash.replace(/^#/, '')) { applyFilter(); return; }
   location.hash = h; // triggers hashchange -> applyFilter
 }
@@ -155,7 +161,9 @@ function setFilter(f) {
 // The current filter with some terms changed.
 function withFilter(changes) {
   var f = state.filter;
-  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), pets: f.pets.slice(), q: f.q }, changes);
+  // A place picked on the Locations page goes with the search to the timeline.
+  var place = f.view === 'locations' ? f.id : f.place;
+  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), pets: f.pets.slice(), types: f.types.slice(), fav: f.fav, place: place, q: f.q }, changes);
 }
 
 function showView(view, id, tab) { setFilter({ view: view, id: id, tab: tab, folder: null, tags: [], people: [], q: '' }); }
@@ -164,6 +172,7 @@ function applyFilter() {
   state.filter = readHash();
   $('search').value = state.filter.q;
   renderChips();
+  markTypes();
   // Still typing: offer what narrows the new search down.
   if (document.activeElement === $('search')) suggest($('search').value);
   markActiveFolder();
@@ -171,12 +180,18 @@ function applyFilter() {
   var view = state.filter.view;
   $('page').hidden = !view;
   $('sizer').hidden = !!view;
+  $('current-month').textContent = view && VIEW_LABELS[view] ? tr(VIEW_LABELS[view]) : '';
+  var f = state.filter;
+  $('all').classList.toggle('active', !view && !f.folder && !f.tags.length && !f.people.length && !f.pets.length && !f.place && !f.fav && !f.q);
   $('nav-dups').classList.toggle('active', view === 'duplicates');
   $('nav-trash').classList.toggle('active', view === 'trash');
   $('nav-settings').classList.toggle('active', view === 'settings' || view === 'faces' || view === 'pets');
   $('nav-drives').classList.toggle('active', view === 'drives');
   markFacesSection();
   updateSections();
+  document.body.classList.toggle('geo-view', view === 'locations');
+  if (view !== 'locations') geoLeave();
+  renderLocationsSection();
   if (view) {
     endSelection();
     $('empty').hidden = true;
@@ -198,7 +213,7 @@ function renderChips() {
   var add = function (label, clear) {
     var c = el('span', 'chip', label);
     var x = el('button', '', '✕');
-    x.title = 'Remove from the search';
+    x.title = tr('chip.remove');
     x.onclick = clear;
     c.appendChild(x);
     box.appendChild(c);
@@ -208,7 +223,7 @@ function renderChips() {
     add('📁 ' + (folder.path || folder.name), function () { setFilter(withFilter({ folder: null })); });
     if (folder.path) {
       var edit = el('button', 'edit', '✎');
-      edit.title = 'Rename or move this folder';
+      edit.title = tr('chip.rename_folder');
       edit.onclick = function () { renameFolder(folder); };
       box.lastChild.insertBefore(edit, box.lastChild.lastChild);
     }
@@ -219,7 +234,7 @@ function renderChips() {
     });
   });
   f.people.forEach(function (id) {
-    add('👤 ' + (state.personNames[id] || id), function () {
+    add((petIcon(state.personSpecies[id]) || '👤') + ' ' + (state.personNames[id] || id), function () {
       setFilter(withFilter({ people: f.people.filter(function (p) { return p !== id; }) }));
     });
   });
@@ -228,19 +243,28 @@ function renderChips() {
       setFilter(withFilter({ pets: f.pets.filter(function (p) { return p !== species; }) }));
     });
   });
+  if (f.fav) add('♥ ' + tr('fav.label'), function () { setFilter(withFilter({ fav: false })); });
+  if (f.place) {
+    var spot = placeOf(f.place);
+    add('📍 ' + (spot ? spot.name : '…'), function () { setFilter(withFilter({ place: null })); });
+    var onMap = el('button', 'edit', '🗺');
+    onMap.title = tr('chip.show_on_map');
+    onMap.onclick = function () { showView('locations', f.place); };
+    box.lastChild.insertBefore(onMap, box.lastChild.lastChild);
+  }
   if (f.q) add('“' + f.q + '”', function () { setFilter(withFilter({ q: '' })); });
   var terms = box.children.length;
   if (terms) {
     var more = el('button', 'chip more', '+');
-    more.title = 'Add a tag, person, pet or folder to the search';
+    more.title = tr('chip.add');
     more.onclick = function () { $('search').value = ''; $('search').focus(); suggest(''); };
     box.appendChild(more);
   }
   // One click for the whole search; the ✕ on a chip drops just that term.
   if (terms >= 2) {
-    var clear = el('button', 'chip clear', 'Clear all');
-    clear.title = 'Show all photos again';
-    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], pets: [], q: '' }); };
+    var clear = el('button', 'chip clear', tr('chip.clear_all'));
+    clear.title = tr('chip.clear_all_hint');
+    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], pets: [], fav: false, place: null, q: '' }); };
     box.appendChild(clear);
   }
   personHead(box, f);
@@ -248,6 +272,121 @@ function renderChips() {
 }
 state.tagNames = {};
 state.personNames = {};
+state.personSpecies = {}; // id -> cat, dog or pet, for people who are pets
+
+// ------------------------------------------------------------------ type filter
+
+// A check box drop-down: Photos (not screenshots), Videos (stand-alone only),
+// Live Photos and Screenshots.
+// Any ticked type matches; it combines with the rest of the search.
+var typeBoxes = Array.prototype.slice.call($('types-menu').querySelectorAll('input'));
+function typeLabel(t) { return tr(t === 'live' ? 'types.live_short' : 'types.' + t); }
+
+function markTypes() {
+  markFavFilter();
+  var on = state.filter.types;
+  typeBoxes.forEach(function (b) { b.checked = on.indexOf(b.value) >= 0; });
+  var btn = $('types-btn');
+  btn.textContent = (on.length ? on.map(typeLabel).join(', ') : tr('types.label')) + ' ▾';
+  btn.classList.toggle('on', on.length > 0);
+  $('types').hidden = !!state.filter.view;
+}
+
+function setTypesOpen(open) {
+  $('types-menu').hidden = !open;
+  $('types-btn').setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+$('types-btn').onclick = function () { setTypesOpen($('types-menu').hidden); };
+typeBoxes.forEach(function (b) {
+  b.onchange = function () {
+    setFilter(withFilter({ types: typeBoxes.filter(function (x) { return x.checked; }).map(function (x) { return x.value; }) }));
+  };
+});
+document.addEventListener('click', function (ev) { if (!$('types').contains(ev.target)) setTypesOpen(false); });
+document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') setTypesOpen(false); });
+
+// ------------------------------------------------------------------ favorites
+
+// The heart: an own tag called "favorite" in the database (`tags.rs`), shown
+// as a heart everywhere. The tag itself is left out of tag lists and the info
+// panel. The button next to the type filter shows only favorites; typing
+// "favorite" / "favorit" in the search box offers the same as a suggestion.
+var FAV_TAG = 'favorite';
+function isFavTag(name) { return String(name).trim().toLowerCase() === FAV_TAG; }
+// What typing in a tag field means the heart (the server maps these to the tag too).
+var FAV_TYPED = [FAV_TAG, 'favorites', 'favourite', 'favourites', 'favorit', 'favoriten'];
+function meansFav(name) { return FAV_TYPED.indexOf(String(name).trim().toLowerCase()) >= 0; }
+var HEART_ON = '<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true"><path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>';
+var HEART_OFF = '<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" d="M12 20.4l-1.1-1C6 15.1 3 12.4 3 8.9 3 6.5 4.8 4.7 7.2 4.7c1.4 0 2.7.6 3.6 1.7l1.2 1.4 1.2-1.4c.9-1.1 2.2-1.7 3.6-1.7C19.2 4.7 21 6.5 21 8.9c0 3.5-3 6.2-7.9 10.5l-1.1 1z"/></svg>';
+
+function markFavFilter() {
+  var on = !!state.filter.fav, b = $('fav-btn');
+  b.classList.toggle('on', on);
+  b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  b.innerHTML = on ? HEART_ON : HEART_OFF;
+  b.hidden = !!state.filter.view;
+}
+$('fav-btn').onclick = function () { setFilter(withFilter({ fav: !state.filter.fav })); };
+
+// Heart or un-heart photos (ids of the current list), then update what shows.
+function setFavorite(ids, on) {
+  return post(LIBAPI + '/favorites', { ids: ids, on: on }).then(function () {
+    ids.forEach(function (id) { if (on) state.favs[id] = true; else delete state.favs[id]; });
+    paintHearts();
+    // Showing only favorites: the list changes (the open viewer keeps its photos until it closes).
+    if (!on && state.filter.fav && state.open < 0) loadTimeline(false);
+    loadOwnTags();
+    if (ids.length === 1 && lb.details && lb.details.id === ids[0]) tagsChanged(ids[0]);
+  }).catch(failed);
+}
+
+function heartButton(id, cls, readonly) {
+  var b = el('button', cls), on = !!state.favs[id];
+  b.type = 'button';
+  b.innerHTML = on ? HEART_ON : HEART_OFF;
+  b.classList.toggle('on', on);
+  b.title = tr(readonly ? 'fav.readonly' : on ? 'fav.remove' : 'fav.add');
+  b.setAttribute('aria-label', b.title);
+  b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  if (readonly) b.disabled = true; // the common timeline only shows hearts
+  return b;
+}
+
+// Redraw the hearts that are on screen (grid cells and the viewer).
+function paintHearts() {
+  var d = state.data;
+  if (d) Array.prototype.forEach.call(document.querySelectorAll('.cell .fav'), function (b) {
+    var id = d.ids[parseInt(b.parentNode.dataset.index, 10)], on = !!state.favs[id];
+    b.innerHTML = on ? HEART_ON : HEART_OFF;
+    b.classList.toggle('on', on);
+    b.title = tr(isAll() ? 'fav.readonly' : on ? 'fav.remove' : 'fav.add');
+    b.setAttribute('aria-label', b.title);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  markLightboxHeart();
+}
+
+function markLightboxHeart() {
+  var d = state.data, i = state.open, b = $('lb-fav');
+  if (!d || i < 0) return;
+  var on = !!state.favs[d.ids[i]];
+  b.innerHTML = on ? HEART_ON : HEART_OFF;
+  b.classList.toggle('on', on);
+  b.title = tr(isAll() ? 'fav.readonly' : on ? 'fav.remove_hint' : 'fav.add_hint');
+  b.setAttribute('aria-label', isAll() ? b.title : tr(on ? 'fav.remove' : 'fav.add'));
+  b.disabled = isAll();
+  if (isAll()) b.hidden = !on; // the common timeline shows a heart only on favorites
+  b.setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+
+function toggleFavoriteOpen() {
+  var d = state.data, i = state.open;
+  if (!d || i < 0 || isAll()) return;
+  var id = d.ids[i];
+  setFavorite([id], !state.favs[id]);
+}
+$('lb-fav').onclick = toggleFavoriteOpen;
 
 // ------------------------------------------------------------------ search box
 
@@ -260,6 +399,8 @@ var sugg = { items: [], at: -1, seq: 0 };
 $('search').addEventListener('input', function () {
   clearTimeout(searchTimer);
   var v = this.value;
+  // On the Locations page typing looks for a place; the text only becomes a search with Enter.
+  if (state.filter.view === 'locations' && geo.on) { suggest(v); return; }
   searchTimer = setTimeout(function () { setFilter(withFilter({ q: v.trim() })); }, 300);
   suggest(v);
 });
@@ -284,34 +425,52 @@ $('search').addEventListener('keydown', function (ev) {
   } else if (ev.key === 'Backspace' && this.value === '') {
     // Like a token field: the last chip goes.
     var f = state.filter;
-    if (f.pets.length) setFilter(withFilter({ pets: f.pets.slice(0, -1) }));
+    if (f.fav) setFilter(withFilter({ fav: false }));
+    else if (f.place) setFilter(withFilter({ place: null }));
+    else if (f.pets.length) setFilter(withFilter({ pets: f.pets.slice(0, -1) }));
     else if (f.people.length) setFilter(withFilter({ people: f.people.slice(0, -1) }));
     else if (f.tags.length) setFilter(withFilter({ tags: f.tags.slice(0, -1) }));
     else if (f.folder) setFilter(withFilter({ folder: null }));
   }
 });
 
+// "♥ Favorites" when what is typed starts a word for it (favorite, favorit,
+// the UI language's own word) and something has a heart.
+function favSuggestion(needle, f) {
+  var low = needle.toLowerCase();
+  if (f.fav || !state.favCount || low.length < 2) return [];
+  var words = ['favorite', 'favorites', 'favourite', 'favorit', 'favoriten', tr('fav.label').toLowerCase()];
+  if (!words.some(function (w) { return w.indexOf(low) === 0; })) return [];
+  return [{ kind: 'fav', id: 'fav', label: tr('fav.label'), count: state.favCount }];
+}
+
 function suggest(text) {
   var seq = ++sugg.seq, f = state.filter;
+  // On the Locations page the search finds places: picking one shows it.
+  if (f.view === 'locations' && geo.on) { showSuggest(placeSuggestions(text.trim(), f)); return; }
   if (f.view) { closeSuggest(); return; }
   if (isAll()) { suggestAll(text, seq); return; }
   var needle = text.trim();
-  var within = { q: needle, tag: f.tags, person: f.people, pet: f.pets, folder: f.folder };
+  var within = { q: needle, tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place };
   Promise.all([
     api(LIBAPI + '/tags' + query(Object.assign({ limit: 8 }, within))),
     api(LIBAPI + '/people/search' + query(Object.assign({ limit: 6 }, within))).catch(function () { return []; }),
     api(LIBAPI + '/pets/search' + query(within)).catch(function () { return []; }),
   ]).then(function (r) {
     if (seq !== sugg.seq) return;
-    var items = r[1].map(function (p) {
+    var items = favSuggestion(needle, f);
+    items = items.concat(r[1].map(function (p) {
       state.personNames[p.id] = p.name;
-      return { kind: 'person', id: p.id, label: p.name, count: p.photos };
-    });
+      state.personSpecies[p.id] = p.species;
+      return { kind: 'person', id: p.id, label: p.name, count: p.photos, person: p };
+    }));
     r[2].forEach(function (p) { items.push({ kind: 'pet', id: p.species, label: PET_TERMS[p.species].label, count: p.photos }); });
     r[0].forEach(function (t) {
+      if (isFavTag(t.name)) return; // the heart, offered above
       state.tagNames[t.id] = t.name;
       items.push({ kind: 'tag', id: t.id, label: t.name, count: t.count, folderTag: t.kind === 'folder' });
     });
+    items = items.concat(placeSuggestions(needle, f));
     if (needle && !f.folder) {
       var low = needle.toLowerCase();
       state.folders.filter(function (fo) { return fo.path && fo.count && fo.name.toLowerCase().indexOf(low) >= 0; })
@@ -339,9 +498,10 @@ function suggestAll(text, seq) {
   Promise.all([api('/api/all/tags' + query({ q: needle, limit: 8 })), people.catch(function () { return []; }), pets]).then(function (r) {
     if (seq !== sugg.seq) return;
     var items = r[1].filter(function (p) { return f.people.indexOf(p.name) < 0 && (!low || p.name.toLowerCase().indexOf(low) >= 0); })
-      .slice(0, 6).map(function (p) { return { kind: 'person', id: p.name, label: p.name, count: p.photos }; });
+      .slice(0, 6).map(function (p) { return { kind: 'person', id: p.name, label: p.name, count: p.photos, person: { name: p.name, species: p.species } }; });
     r[2].forEach(function (p) { items.push({ kind: 'pet', id: p.species, label: PET_TERMS[p.species].label, count: p.photos }); });
-    r[0].filter(function (t) { return f.tags.indexOf(t.name) < 0; }).forEach(function (t) {
+    items = favSuggestion(needle, f).concat(items);
+    r[0].filter(function (t) { return f.tags.indexOf(t.name) < 0 && !isFavTag(t.name); }).forEach(function (t) {
       items.push({ kind: 'tag', id: t.name, label: t.name, count: t.count, folderTag: t.kind === 'folder' });
     });
     showSuggest(items);
@@ -356,18 +516,24 @@ function showSuggest(items) {
   var last = null;
   items.forEach(function (it, i) {
     if (it.kind !== last) {
-      var f = state.filter, narrowed = !isAll() && (f.tags.length || f.people.length || f.pets.length || f.folder);
-      var head = it.kind === 'tag' ? (narrowed ? 'Tags in these photos' : 'Tags')
-        : it.kind === 'person' ? (narrowed ? 'People in these photos' : 'People')
-          : it.kind === 'pet' ? (narrowed ? 'Pets in these photos' : 'Pets') : 'Folders';
+      var f = state.filter, narrowed = !isAll() && (f.tags.length || f.people.length || f.pets.length || f.folder || f.place);
+      var head = it.kind === 'fav' ? tr('fav.label') : it.kind === 'tag' ? tr(narrowed ? 'search.tags_here' : 'search.tags')
+        : it.kind === 'person' ? tr(narrowed ? 'search.faces_here' : 'side.faces')
+          : it.kind === 'pet' ? tr(narrowed ? 'search.pets_here' : 'search.pets') : it.kind === 'place' ? tr('search.places') : tr('search.folders');
       box.appendChild(el('div', 'head', head));
       last = it.kind;
     }
     var b = el('button', 'item');
     b.type = 'button';
     b.setAttribute('role', 'option');
-    b.appendChild(el('span', 'label', (it.kind === 'pet' ? PET_TERMS[it.id].icon + ' ' : ({ folder: '📁 ', person: '👤 ' }[it.kind] || '# ')) + it.label));
-    b.appendChild(el('span', 'count', it.count.toLocaleString()));
+    // People as in the sidebar: their picture, and the dog or cat for a pet.
+    var label = el('span', 'label');
+    if (it.kind === 'person') label.appendChild(avatar(it.person, 'tiny'));
+    label.appendChild(document.createTextNode((it.kind === 'fav' ? '♥ ' : it.kind === 'pet' ? PET_TERMS[it.id].icon + ' '
+      : it.kind === 'person' ? (petIcon(it.person && it.person.species) ? petIcon(it.person.species) + ' ' : '')
+        : ({ folder: '📁 ', place: '📍 ' }[it.kind] || '# ')) + it.label));
+    b.appendChild(label);
+    b.appendChild(el('span', 'count', I18n.number(it.count)));
     b.onmousedown = function (ev) { ev.preventDefault(); }; // keep the focus in the box
     b.onclick = function () { pickSuggest(it); };
     b.dataset.i = i;
@@ -388,9 +554,11 @@ function pickSuggest(it) {
   clearTimeout(searchTimer);
   $('search').value = '';
   var f = state.filter;
-  if (it.kind === 'tag') setFilter(withFilter({ tags: f.tags.indexOf(it.id) < 0 ? f.tags.concat([it.id]) : f.tags, q: '' }));
+  if (it.kind === 'fav') setFilter(withFilter({ fav: true, q: '' }));
+  else if (it.kind === 'tag') setFilter(withFilter({ tags: f.tags.indexOf(it.id) < 0 ? f.tags.concat([it.id]) : f.tags, q: '' }));
   else if (it.kind === 'person') setFilter(withFilter({ people: f.people.indexOf(it.id) < 0 ? f.people.concat([it.id]) : f.people, q: '' }));
   else if (it.kind === 'pet') setFilter(withFilter({ pets: f.pets.indexOf(it.id) < 0 ? f.pets.concat([it.id]) : f.pets, q: '' }));
+  else if (it.kind === 'place') pickPlace(it.id);
   else setFilter(withFilter({ folder: it.id, q: '' }));
 }
 
@@ -404,6 +572,7 @@ function suggestTags(text) {
     var list = $('tag-list');
     list.textContent = '';
     tags.forEach(function (t) {
+      if (isFavTag(t.name)) return;
       state.tagNames[t.id] = t.name;
       var o = el('option');
       o.value = t.name;
@@ -457,7 +626,7 @@ function folderNode(f, depth) {
   var name = el('button', 'name', f.name);
   name.dataset.id = f.id;
   name.title = f.path;
-  var count = el('span', 'count', f.count.toLocaleString());
+  var count = el('span', 'count', I18n.number(f.count));
   row.appendChild(toggle);
   row.appendChild(name);
   row.appendChild(count);
@@ -479,7 +648,8 @@ function folderNode(f, depth) {
   toggle.onclick = function () { expand(!ul || ul.hidden); };
   name.onclick = function () {
     expand(true);
-    setFilter({ folder: f.id, tags: [], people: [], q: state.filter.q });
+    // Opening a folder replaces the search: its chip is the only one left.
+    setFilter({ folder: f.id, tags: [], people: [], pets: [], types: state.filter.types, fav: false, q: '' });
   };
   return li;
 }
@@ -522,6 +692,7 @@ function sectionHasActive(id) {
   var f = state.filter;
   if (id === 'folders-section') return !f.view && f.folder != null;
   if (id === 'tags-section') return !f.view && f.tags.length > 0;
+  if (id === 'locations-section') return f.view === 'locations';
   return f.view === 'people' || f.view === 'unnamed' || f.view === 'person' || (!f.view && f.people.length > 0);
 }
 
@@ -552,8 +723,8 @@ function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
 function loadTimeline(resetScroll) {
   var seq = ++state.loadSeq;
   var f = state.filter;
-  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, pet: f.pets, q: f.q })
-    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, pet: f.pets, q: f.q });
+  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, q: f.q })
+    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, place: f.place, q: f.q });
   return api(url).then(function (data) {
     if (seq !== state.loadSeq) return;
     if (isAll()) allTimelineLoaded(data);
@@ -563,6 +734,8 @@ function loadTimeline(resetScroll) {
     data.people.forEach(function (p) { state.personNames[p.id] = p.name; });
     if (unnamed) renderChips(); // a link with tags this page has not seen yet
     state.data = data;
+    state.favs = {};
+    (data.favs || []).forEach(function (id) { state.favs[id] = true; });
     state.live = {};
     data.live.forEach(function (p) { state.live[p[0]] = p[1]; });
     var scroller = $('scroller');
@@ -589,9 +762,9 @@ function groups() {
 
 function monthLabel(month) {
   var y = Math.floor(month / 100), m = month % 100;
-  if (!y) return 'No date';
+  if (!y) return tr('grid.no_date');
   if (!m) return String(y);
-  return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  return I18n.date(new Date(y, m - 1, 1), { month: 'long', year: 'numeric' });
 }
 
 function relayout() {
@@ -647,8 +820,15 @@ function render() {
   // The month at the top of the viewport.
   var r = rowAt(Math.max(0, top));
   for (; r >= 0; r--) if (state.rows[r].type === 'h') break;
-  $('current-month').textContent = r >= 0 ? state.rows[r].label : '';
+  if (!state.filter.view) $('current-month').textContent = r >= 0 ? state.rows[r].label : '';
 }
+
+// The page that is open, shown next to the drive name instead of a month.
+var VIEW_LABELS = {
+  duplicates: 'side.duplicates', trash: 'side.trash', settings: 'side.settings', drives: 'side.manage_drives',
+  faces: 'side.faces', pets: 'side.faces', people: 'side.faces', unnamed: 'side.faces', person: 'side.faces',
+  locations: 'side.locations',
+};
 
 function thumbUrl(i) {
   var d = state.data;
@@ -658,13 +838,13 @@ function thumbUrl(i) {
 function buildRow(row) {
   if (row.type === 'h') {
     var h = el('div', 'sec', row.label);
-    h.appendChild(el('span', 'n', row.n.toLocaleString()));
+    h.appendChild(el('span', 'n', I18n.number(row.n)));
     // While selecting: the whole month at once (also where Shift is missing, the iPad).
     var pick = el('button', 'pick');
     pick.type = 'button';
     pick.dataset.start = row.start;
     pick.dataset.end = row.end;
-    pick.textContent = allSelected(row.start, row.end) ? 'Deselect' : 'Select all';
+    pick.textContent = tr(allSelected(row.start, row.end) ? 'grid.deselect' : 'grid.select_all');
     pick.onclick = function () { selectRange(row.start, row.end - 1, !allSelected(row.start, row.end)); };
     h.appendChild(pick);
     h.style.top = row.top + 'px';
@@ -694,6 +874,8 @@ function buildRow(row) {
     var badge = KIND_BADGE[kind] || '';
     if (state.live[d.ids[i]]) badge = 'LIVE';
     if (badge) a.appendChild(el('span', 'badge', badge));
+    if (!isAll()) a.appendChild(heartButton(d.ids[i], 'fav'));
+    else if (state.favs[d.ids[i]]) a.appendChild(heartButton(d.ids[i], 'fav', true));
     e.appendChild(a);
   }
   return e;
@@ -816,6 +998,8 @@ $('sizer').addEventListener('click', function (ev) {
   if (!a) return;
   ev.preventDefault();
   var i = parseInt(a.dataset.index, 10);
+  // The heart in the corner: heart or un-heart, nothing else.
+  if (ev.target.closest('.fav')) { if (isAll()) return; var fid = state.data.ids[i]; setFavorite([fid], !state.favs[fid]); return; }
   // Shift-click: everything between the last clicked photo and this one.
   if (ev.shiftKey && state.selecting && state.anchor != null) selectRange(state.anchor, i, true);
   else if (state.selecting || ev.shiftKey) {
@@ -877,7 +1061,7 @@ window.addEventListener('resize', function () {
 function fillYears() {
   var sel = $('years');
   sel.textContent = '';
-  var placeholder = el('option', '', 'Year');
+  var placeholder = el('option', '', tr('grid.year'));
   placeholder.value = '';
   sel.appendChild(placeholder);
   var seen = {};
@@ -916,6 +1100,7 @@ function openLightbox(i) {
 }
 
 function closeLightbox() {
+  geoCleanup();
   stopDrawing();
   stopMedia();
   $('stage').textContent = '';
@@ -957,6 +1142,13 @@ function showItem() {
   $('lb-next').hidden = i >= d.count - 1;
   $('lb-download').href = fileBase(id) + '/original?download=1';
   $('lb-live').hidden = !state.live[id];
+  $('lb-fav').hidden = false;
+  markLightboxHeart();
+  applyAllowTrash();
+  var rot = $('lb-rotate');
+  rot.hidden = isAll() || kind === 'v';
+  rot.disabled = kind !== 'j' && kind !== 'h' && kind !== 'p';
+  rot.title = tr(rot.disabled ? 'lb.rotate_raw' : kind === 'j' ? 'lb.rotate_hint' : 'lb.rotate_view_hint');
   $('lb-title').textContent = '';
   lb.hover = null;
   stopDrawing();
@@ -1001,13 +1193,15 @@ function drawFaces() {
   var stage = $('stage');
   stage.querySelectorAll('.face-box').forEach(function (b) { b.remove(); });
   var info = lb.details, img = stage.querySelector('img');
-  if (isAll()) return;
   if ($('lb-panel').hidden || !info || !info.faces || !img || img.hidden) return;
-  if (info.id !== state.data.ids[state.open]) return;
+  // In the common timeline the item's id carries the drive; the details have the drive's own id.
+  var openId = state.data.ids[state.open];
+  if (info.id !== (isAll() ? openId % SPAN : openId)) return;
   var r = img.getBoundingClientRect(), s = stage.getBoundingClientRect();
   info.faces.forEach(function (f, k) {
     var hot = lb.hover === k;
     if (!lb.showFaces && !hot) return;
+    f = turnedBox(f, info.view_turn || 0);
     var b = el('div', 'face-box' + (hot ? ' hot' : '') + (f.manual != null ? ' drawn' : '') + (f.species ? ' pet' : ''));
     b.style.left = (r.left - s.left + f.x * r.width) + 'px';
     b.style.top = (r.top - s.top + f.y * r.height) + 'px';
@@ -1016,11 +1210,23 @@ function drawFaces() {
     if (f.person && f.state !== 'ignored') {
       b.appendChild(el('span', 'face-name', f.person.name + (f.state === 'confirmed' ? '' : '?')));
     }
-    b.title = (f.species ? f.species + ', ' : '') + (f.score != null ? 'score ' + f.score.toFixed(2) : 'drawn by hand');
+    b.title = (f.species ? speciesName(f.species) + ', ' : '') + (f.score != null ? tr('face.score', { score: f.score.toFixed(2) }) : tr('face.drawn'));
     stage.appendChild(b);
   });
 }
 window.addEventListener('resize', drawFaces);
+
+// A face's box (fractions of the picture as the file has it) for a picture
+// that shoebox shows turned by `q` quarter turns clockwise.
+function turnedBox(f, q) {
+  q = ((q % 4) + 4) % 4;
+  if (!q) return f;
+  var b = [f.x, f.y, f.w, f.h];
+  var t = q === 1 ? [1 - b[1] - b[3], b[0], b[3], b[2]]
+    : q === 2 ? [1 - b[0] - b[2], 1 - b[1] - b[3], b[2], b[3]]
+    : [b[1], 1 - b[0] - b[2], b[3], b[2]];
+  return Object.assign({}, f, { x: t[0], y: t[1], w: t[2], h: t[3] });
+}
 
 function viewUrl(i) {
   var d = state.data;
@@ -1032,8 +1238,8 @@ function formatDate(info) {
   if (!s) return '';
   var p = s.split(/[-T:]/).map(Number);
   var date = new Date(p[0], p[1] - 1, p[2], p[3] || 0, p[4] || 0);
-  if (info.date_source === 'folder') return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  if (info.date_source === 'folder') return I18n.date(date, { month: 'long', year: 'numeric' });
+  return I18n.dateTime(date, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
 function formatBytes(n) {
@@ -1046,26 +1252,78 @@ function formatBytes(n) {
 // and a way into its own drive for everything else (tags, faces, moving).
 function renderPanelAll(info) {
   var panel = $('lb-panel');
-  var lib = drives.allLibs[Math.floor(state.data.ids[state.open] / SPAN)];
+  var id = state.data.ids[state.open];
+  var lib = drives.allLibs[Math.floor(id / SPAN)];
   var dl = el('dl');
-  var row = function (label, value) { if (value) { dl.appendChild(el('dt', '', label)); dl.appendChild(el('dd', '', value)); } };
-  row('Date', formatDate(info));
-  row('Drive', lib.name);
-  row('Path', info.path);
-  row('Size', (info.width && info.height ? info.width + ' × ' + info.height + ' · ' : '') + formatBytes(info.size));
-  row('Camera', info.camera);
+  var row = function (label, value) {
+    if (!value) return;
+    dl.appendChild(el('dt', '', label));
+    var dd = el('dd');
+    if (value instanceof Node) dd.appendChild(value); else dd.textContent = value;
+    dl.appendChild(dd);
+  };
+  row(tr('info.date'), formatDate(info));
+  var driveName = lib.volume || lib.name;
+  row(tr('info.drive'), driveName);
+  row(tr('info.path'), info.path);
+  row(tr('info.size'), (info.width && info.height ? info.width + ' × ' + info.height + ' · ' : '') + formatBytes(info.size));
+  row(tr('info.camera'), info.camera);
+  // Everything below is only shown: tags, favorites and people are changed on the photo's own drive.
+  if (state.favs[id]) {
+    var heart = el('span', 'heart');
+    heart.innerHTML = HEART_ON;
+    heart.title = tr('fav.readonly');
+    row(tr('info.favorite'), heart);
+  }
+  var tags = el('div', 'tags readonly');
+  (info.tags || []).forEach(function (t) {
+    if (t.source === 'user' && isFavTag(t.name)) return;
+    tags.appendChild(el('span', t.source === 'folder' ? 'folder' : 'own', (t.source === 'folder' ? '📁 ' : '') + t.name));
+  });
+  if (tags.children.length) row(tr('info.tags'), tags);
+  var faces = el('div', 'pfaces readonly');
+  (info.faces || []).forEach(function (f, k) {
+    if (!f.person || f.state === 'ignored') return;
+    var name = f.state === 'confirmed' ? f.person.name : tr(f.state === 'maybe' ? 'info.guess_maybe' : 'info.guess', { name: f.person.name });
+    var line = el('div', 'pface', name + (f.species ? ' ' + petIcon(f.species) : ''));
+    // As in the drive's own panel: pointing at (or tapping) a face shows its box.
+    line.title = tr('info.show_where');
+    line.onclick = function () { lb.hover = lb.hover === k ? null : k; drawFaces(); };
+    line.addEventListener('mouseenter', function () { lb.hover = k; drawFaces(); });
+    line.addEventListener('mouseleave', function () { if (lb.hover === k) { lb.hover = null; drawFaces(); } });
+    faces.appendChild(line);
+  });
+  if ((info.faces || []).length) {
+    var show = el('button', '', tr(lb.showFaces ? 'info.hide_boxes' : 'info.show_boxes'));
+    show.onclick = function () { lb.showFaces = !lb.showFaces; renderPanel(); };
+    var tools = el('div', 'ptools');
+    tools.appendChild(show);
+    faces.appendChild(tools);
+    row(tr('info.people'), faces);
+  }
   panel.appendChild(dl);
   var actions = el('div', 'actions');
-  var open = el('button', 'btn quiet', 'Open in ' + lib.name);
-  open.title = 'Tags, faces, moving and the rest are done in the photo\'s own drive';
+  var open = el('button', 'btn quiet', tr('info.open_in', { name: driveName }));
+  open.title = tr('info.open_in_hint');
   open.onclick = function () { switchLibrary(lib.id, 'folder=' + info.folder_id); };
   actions.appendChild(open);
+  if (state.reveal) {
+    var reveal = el('button', 'btn quiet', state.reveal);
+    reveal.onclick = function () { revealOn(lib.id, info.path); };
+    actions.appendChild(reveal);
+  }
+  var copy = el('button', 'btn quiet', tr('reveal.copy_path'));
+  copy.title = info.path;
+  copy.onclick = function () { copyPath(info.path); };
+  actions.appendChild(copy);
   panel.appendChild(actions);
+  drawFaces();
 }
 
 function renderPanel() {
   var info = lb.details, panel = $('lb-panel');
   panel.textContent = '';
+  geoCleanup();
   if (!info) return;
   if (isAll()) { renderPanelAll(info); return; }
   var dl = el('dl');
@@ -1077,26 +1335,32 @@ function renderPanel() {
     dl.appendChild(dd);
     return dd;
   };
-  var date = row('Date', formatDate(info) + (info.taken_offset ? ' (UTC' + info.taken_offset + ')' : ''));
+  var date = row(tr('info.date'), formatDate(info) + (info.taken_offset ? ' (UTC' + info.taken_offset + ')' : ''));
   if (date && info.date_source !== 'file') {
-    date.appendChild(el('div', 'note', info.date_source === 'folder' ? 'No capture date; month of the event folder' : 'No capture date; file modification date'));
+    // Not the day the photo was taken: say so next to the date; which
+    // fallback was used is in the tooltip.
+    var badge = el('span', 'estimated', tr('info.estimated'));
+    badge.title = tr('info.estimated_hint') + '\n' + tr(info.date_source === 'created' ? 'info.no_date_created'
+      : info.date_source === 'folder' ? 'info.no_date_folder' : 'info.no_date_file');
+    date.appendChild(badge);
   }
-  row('Name', info.name);
+  row(tr('info.name'), info.name);
   var folder = info.path.indexOf('/') >= 0 ? info.path.slice(0, info.path.lastIndexOf('/')) : '';
   if (folder) {
     var fb = el('button', '', folder);
     fb.onclick = function () { closeLightbox(); setFilter({ folder: info.folder_id, tags: [], q: '' }); };
-    row('Folder', fb);
+    row(tr('info.folder'), fb);
   }
-  if (info.width && info.height) row('Size', info.width + ' × ' + info.height + ' · ' + formatBytes(info.size));
-  else row('Size', formatBytes(info.size));
-  if (info.duration_ms) row('Length', Math.round(info.duration_ms / 1000) + ' s');
-  row('Camera', info.camera);
+  if (info.width && info.height) row(tr('info.size'), info.width + ' × ' + info.height + ' · ' + formatBytes(info.size));
+  else row(tr('info.size'), formatBytes(info.size));
+  if (info.duration_ms) row(tr('info.length'), tr('info.seconds', { n: Math.round(info.duration_ms / 1000) }));
+  row(tr('info.camera'), info.camera);
+  infoScreenshot(row, info);
   infoTags(row, info);
   if (info.linked && info.linked.length) {
     var versions = el('div');
-    info.linked.forEach(function (l) { versions.appendChild(el('div', '', l.path + (l.missing ? ' (missing)' : ''))); });
-    row('Versions', versions);
+    info.linked.forEach(function (l) { versions.appendChild(el('div', '', l.path + (l.missing ? ' ' + tr('info.missing') : ''))); });
+    row(tr('info.versions'), versions);
   }
   infoFaces(row, info);
   panel.appendChild(dl);
@@ -1104,15 +1368,65 @@ function renderPanel() {
 
   var actions = el('div', 'actions');
   infoReveal(actions, info);
-  var move = el('button', 'btn quiet', 'Move…');
+  var move = el('button', 'btn quiet', tr('sel.move'));
   move.onclick = function () { moveDialog([info.id], function () { closeLightbox(); }); };
-  var trash = el('button', 'btn danger', 'Move to trash');
-  trash.onclick = function () { trashDialog([info.id], function () { closeLightbox(); }); };
   actions.appendChild(move);
-  actions.appendChild(trash);
   panel.appendChild(actions);
+  panel.appendChild(infoGeo(info));
 }
 
+// Moving to the trash is off until it is allowed in the settings (originals
+// stay as they are by default): the photo view's trash icon and the
+// selection bar's button only show then.
+var allowTrash = false;
+var trashCount = 0;
+
+function applyAllowTrash() {
+  // The trash page stays reachable while something is in it (or while it is open).
+  $('nav-trash').hidden = !allowTrash && !trashCount && state.filter.view !== 'trash';
+  var d = state.data, i = state.open;
+  $('lb-trash').hidden = !allowTrash || isAll() || i < 0 || !d;
+  $('sel-trash').hidden = !allowTrash;
+}
+
+function loadAllowTrash() {
+  return api(LIBAPI + '/allow-trash').then(function (r) { allowTrash = !!r.allow; applyAllowTrash(); }).catch(function () {});
+}
+
+$('lb-trash').onclick = function () {
+  var d = state.data, i = state.open;
+  if (!allowTrash || !d || i < 0 || isAll()) return;
+  trashDialog([d.ids[i]], function () { closeLightbox(); });
+};
+
+// Turns a JPEG on the drive (its EXIF orientation, two bytes, no loss), like
+// the rotate button of the Finder's Quick Look; a HEIC or PNG is only shown
+// turned by shoebox (its file stays as it is). `turns` is in quarter turns
+// clockwise.
+function rotateOpen(turns) {
+  var d = state.data, i = state.open;
+  if (!d || i < 0 || isAll() || d.kinds[i] === 'v' || d.kinds[i] === 'r' || lb.rotating) return;
+  lb.rotating = true;
+  var id = d.ids[i];
+  post(fileBase(id) + '/rotate', { turns: turns }).then(function (r) {
+    lb.rotating = false;
+    // The address of the picture carries the version, so the new one is
+    // fetched; the grid follows when the status poll sees the change.
+    if (state.data === d && d.ids[i] === id) {
+      d.versions = d.versions.slice(0, i * 8) + r.version + d.versions.slice(i * 8 + 8);
+      if (state.open === i) showItem();
+    }
+    if (r.view_only && !lb.toldViewOnly) {
+      lb.toldViewOnly = true;
+      toast(tr('lb.rotate_view_only'));
+    }
+  }).catch(function (e) {
+    lb.rotating = false;
+    toast(e.message);
+  });
+}
+
+$('lb-rotate').onclick = function (ev) { rotateOpen(ev && ev.altKey ? 1 : -1); };
 $('lb-close').onclick = closeLightbox;
 $('lb-prev').onclick = function () { step(-1); };
 $('lb-next').onclick = function () { step(1); };
@@ -1120,7 +1434,7 @@ $('lb-info').onclick = function () {
   var p = $('lb-panel');
   p.hidden = !p.hidden;
   if (!p.hidden) renderPanel();
-  else drawFaces();
+  else { geoCleanup(); drawFaces(); }
 };
 $('lb-live').onclick = function () {
   var d = state.data, id = d.ids[state.open], video = state.live[id];
@@ -1168,6 +1482,8 @@ document.addEventListener('keydown', function (ev) {
   else if (ev.key === 'ArrowLeft') step(-1);
   else if (ev.key === 'ArrowRight') step(1);
   else if (ev.key === 'i') $('lb-info').onclick();
+  else if ((ev.key === 'f' || ev.key === 'F') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) toggleFavoriteOpen();
+  else if ((ev.key === 'r' || ev.key === 'R') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) rotateOpen(ev.shiftKey ? 1 : -1);
 });
 
 // Swipe left/right on touch screens.
@@ -1193,28 +1509,30 @@ document.addEventListener('keydown', function (ev) {
 function loadInfo() {
   return api(LIBAPI + '/info').then(function (info) {
     $('title').textContent = info.name;
-    state.reveal = info.reveal || null;
+    state.reveal = revealLabel(info.reveal);
     document.title = info.name + ' · shoebox';
     var parts = [
-      info.photos.toLocaleString() + ' photos',
-      info.videos.toLocaleString() + ' videos',
+      trn('count.photos', info.photos),
+      trn('count.videos', info.videos),
     ];
-    if (info.missing) parts.push(info.missing.toLocaleString() + ' missing');
-    $('nav-trash').textContent = info.trash ? 'Trash (' + info.trash + ')' : 'Trash';
+    if (info.missing) parts.push(tr('status.missing', { n: info.missing }));
+    $('nav-trash').textContent = info.trash ? tr('side.trash_n', { n: info.trash }) : tr('side.trash');
+    trashCount = info.trash || 0;
+    applyAllowTrash();
     if (info.thumbs_done < info.thumbs_total) {
-      parts.push('thumbnails ' + Math.floor(100 * info.thumbs_done / info.thumbs_total) + '%');
+      parts.push(tr('status.thumbs', { pct: Math.floor(100 * info.thumbs_done / info.thumbs_total) }));
     }
     var scan = info.jobs.filter(function (j) { return j.kind === 'scan'; })[0];
-    if (info.busy) parts.push('scan running…');
-    else if (scan) parts.push('last scan ' + new Date(scan.started_at * 1000).toLocaleDateString());
-    if (!info.ffmpeg && info.videos) parts.push('no ffmpeg: video previews made by the browser');
+    if (info.busy) parts.push(tr('status.scanning'));
+    else if (scan) parts.push(tr('status.last_scan', { date: I18n.date(new Date(scan.started_at * 1000)) }));
+    if (!info.ffmpeg && info.videos) parts.push(tr('status.no_ffmpeg'));
     var f = info.faces, c = info.clusters;
-    if (f.running) parts.push('finding faces ' + Math.floor(100 * f.done / Math.max(f.total, 1)) + '%');
-    else if (f.done && f.done < f.total) parts.push('faces: ' + (f.total - f.done).toLocaleString() + ' photos to look at');
-    if (!f.running && f.pets_done && f.pets_done < f.total) parts.push('pets: ' + (f.total - f.pets_done).toLocaleString() + ' photos to look at');
-    if (c.embedding) parts.push('learning drawn faces…');
-    if (c.running && c.total) parts.push('grouping faces ' + Math.floor(100 * c.done / Math.max(c.total, 1)) + '%');
-    else if (c.running || c.stale) parts.push('grouping faces…');
+    if (f.running) parts.push(tr('status.finding_faces', { pct: Math.floor(100 * f.done / Math.max(f.total, 1)) }));
+    else if (f.done && f.done < f.total) parts.push(tr('status.faces_todo', { count: trn('count.photos', f.total - f.done) }));
+    if (!f.running && f.pets_done && f.pets_done < f.total) parts.push(tr('status.pets_todo', { count: trn('count.photos', f.total - f.pets_done) }));
+    if (c.embedding) parts.push(tr('status.learning'));
+    if (c.running && c.total) parts.push(tr('status.grouping_pct', { pct: Math.floor(100 * c.done / Math.max(c.total, 1)) }));
+    else if (c.running || c.stale) parts.push(tr('status.grouping'));
     facesInfo(info);
     $('status').textContent = parts.join(' · ');
 
@@ -1235,6 +1553,7 @@ function reloadAll() {
   loadFolders();
   loadOwnTags();
   loadPeople();
+  loadPlaces();
   // The unnamed clusters and a person's faces change their cards in place
   // after each action; loading them again would lose the place and what is
   // typed in other cards.
@@ -1251,6 +1570,7 @@ function loadView(view) {
   else if (view === 'unnamed') loadUnnamed();
   else if (view === 'person') loadPersonPage();
   else if (view === 'drives') loadDrivesPage();
+  else if (view === 'locations') loadLocations();
   else loadTrash();
 }
 
@@ -1267,8 +1587,6 @@ function toast(text) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(function () { t.hidden = true; }, 4000);
 }
-
-function plural(n, one, many) { return n.toLocaleString() + ' ' + (n === 1 ? one : many); }
 
 // A small dialog. actions: [{label, cls, onclick(close)}]; onclick returns
 // false to keep the dialog open.
@@ -1297,17 +1615,17 @@ function closeModal() {
   if (closeModal.onclose) { var f = closeModal.onclose; closeModal.onclose = null; f(); }
 }
 
-$('modal').addEventListener('click', function (ev) { if (ev.target === this && !importState.busy) closeModal(); });
+$('modal').addEventListener('click', function (ev) { if (ev.target === this) closeModal(); });
 
 // Shows what did not work, if anything.
 function report(title, lines) {
   if (!lines || !lines.length) return;
   var ul = el('ul', 'filelist');
   lines.forEach(function (l) { ul.appendChild(el('li', '', l)); });
-  openModal(title, ul, [{ label: 'OK' }]);
+  openModal(title, ul, [{ label: tr('app.ok') }]);
 }
 
-function failed(e) { openModal('That did not work', String(e.message || e), [{ label: 'OK' }]); }
+function failed(e) { openModal(tr('app.failed'), String(e.message || e), [{ label: tr('app.ok') }]); }
 
 // ------------------------------------------------------------------ selection
 
@@ -1360,10 +1678,10 @@ function allSelected(start, end) {
 function updateSelbar() {
   var n = selectedIds().length;
   $('selbar').hidden = !state.selecting;
-  var hint = window.matchMedia('(pointer: fine)').matches ? 'Click photos to select, Shift-click for a range' : 'Tap photos to select';
-  $('sel-count').textContent = n ? plural(n, 'photo', 'photos') : hint;
+  var hint = tr(window.matchMedia('(pointer: fine)').matches ? 'sel.hint_mouse' : 'sel.hint_touch');
+  $('sel-count').textContent = n ? trn('count.photos', n) : hint;
   Array.prototype.forEach.call(document.querySelectorAll('.sec .pick'), function (b) {
-    b.textContent = state.data && allSelected(parseInt(b.dataset.start, 10), parseInt(b.dataset.end, 10)) ? 'Deselect' : 'Select all';
+    b.textContent = tr(state.data && allSelected(parseInt(b.dataset.start, 10), parseInt(b.dataset.end, 10)) ? 'grid.deselect' : 'grid.select_all');
   });
   $('sel-move').disabled = $('sel-trash').disabled = $('sel-tag').disabled = $('sel-untag').disabled = !n;
 }
@@ -1382,55 +1700,55 @@ $('sel-untag').onclick = function () { removeTagDialog(selectedIds()); };
 
 function moveDialog(ids, done) {
   var body = el('div');
-  body.appendChild(el('p', '', 'Move ' + plural(ids.length, 'photo', 'photos') + ' into the folder:'));
+  body.appendChild(el('p', '', tr('move.text', { count: trn('count.photos', ids.length) })));
   var input = el('input');
   input.type = 'text';
   input.className = 'wide';
   input.setAttribute('list', 'folder-list');
-  input.placeholder = 'e.g. 2021-03 Ausflug or Familie/Weihnachten';
+  input.placeholder = tr('move.placeholder', { event: eventFolderName(2021, 3, tr('pattern.example_event')) });
   var current = state.filter.folder && state.folderById[state.filter.folder];
   if (current && current.path) input.value = current.path;
   body.appendChild(input);
   var keepLabel = el('label', 'check');
   var keep = el('input');
   keep.type = 'checkbox';
-  keep.checked = true;
+  keep.checked = false;
   keepLabel.appendChild(keep);
-  keepLabel.appendChild(document.createTextNode(' Keep tags'));
-  keepLabel.title = 'Checked: the photos’ own tags move along. Unchecked: they are dropped. Folder tags always follow the new folder.';
+  keepLabel.appendChild(document.createTextNode(' ' + tr('move.keep_folder_tags')));
+  keepLabel.title = tr('move.keep_hint');
   body.appendChild(keepLabel);
-  body.appendChild(el('p', 'hint', 'Folders that do not exist yet are created. RAW, Live Photo and sidecar files of the same name move along. Nothing is ever overwritten.'));
+  body.appendChild(el('p', 'hint', tr('move.hint')));
   var error = el('p', 'error');
   body.appendChild(error);
   var go = function (btn) {
     var folder = input.value.trim();
-    if (!folder) { error.textContent = 'Choose a folder.'; return false; }
+    if (!folder) { error.textContent = tr('move.choose'); return false; }
     btn.disabled = true;
-    post(LIBAPI + '/move', { ids: ids, folder: folder, keep_tags: keep.checked }).then(function (r) {
+    post(LIBAPI + '/move', { ids: ids, folder: folder, keep_folder_tags: keep.checked }).then(function (r) {
       closeModal();
       if (done) done();
-      toast(plural(r.files.length, 'file', 'files') + ' moved to ' + r.folder);
-      report('Some photos stayed where they were', r.skipped);
+      toast(tr('move.done', { count: trn('count.files', r.files.length), folder: r.folder }));
+      report(tr('move.skipped'), r.skipped);
       changed();
     }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
     return false;
   };
-  var buttons = openModal('Move', body, [{ label: 'Cancel', cls: 'quiet' }, { label: 'Move', onclick: go }]);
+  var buttons = openModal(tr('move.title'), body, [{ label: tr('app.cancel'), cls: 'quiet' }, { label: tr('move.title'), onclick: go }]);
   input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go(buttons[1]); });
 }
 
 function trashDialog(ids, done) {
   openModal(
-    'Move to trash',
-    'Move ' + plural(ids.length, 'photo', 'photos') + ' (with their RAW, Live Photo and sidecar files) to the shoebox trash? You can put them back from there until the trash is emptied.',
-    [{ label: 'Cancel', cls: 'quiet' }, {
-      label: 'Move to trash', cls: 'danger', focus: true, onclick: function (btn) {
+    tr('sel.trash'),
+    tr('trash.text', { count: trn('count.photos', ids.length) }),
+    [{ label: tr('app.cancel'), cls: 'quiet' }, {
+      label: tr('sel.trash'), cls: 'danger', focus: true, onclick: function (btn) {
         btn.disabled = true;
         post(LIBAPI + '/trash', { ids: ids }).then(function (r) {
           closeModal();
           if (done) done();
-          toast(plural(r.files.length + r.sidecars, 'file', 'files') + ' moved to the trash');
-          report('Some photos were not moved to the trash', r.skipped);
+          toast(tr('trash.done', { count: trn('count.files', r.files.length + r.sidecars) }));
+          report(tr('trash.skipped'), r.skipped);
           changed();
         }).catch(function (e) { closeModal(); failed(e); });
         return false;
@@ -1446,208 +1764,31 @@ function renameFolder(folder) {
   input.className = 'wide';
   input.value = folder.path;
   body.appendChild(input);
-  body.appendChild(el('p', 'hint', 'Change the name, or the whole path to move the folder. Event folders are named “YYYY-MM Name”.'));
+  body.appendChild(el('p', 'hint', tr('rename.hint', { pattern: patternLabel(eventPattern) })));
   var error = el('p', 'error');
   body.appendChild(error);
   var go = function (btn) {
     btn.disabled = true;
     post(LIBAPI + '/folders/' + folder.id + '/rename', { path: input.value }).then(function (r) {
       closeModal();
-      toast('Now ' + r.path);
+      toast(tr('rename.now', { path: r.path }));
       changed();
     }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
     return false;
   };
-  var buttons = openModal('Rename folder', body, [{ label: 'Cancel', cls: 'quiet' }, { label: 'Rename', onclick: go }]);
+  var buttons = openModal(tr('rename.title'), body, [{ label: tr('app.cancel'), cls: 'quiet' }, { label: tr('rename.button'), onclick: go }]);
   input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go(buttons[1]); });
 }
-
-// ------------------------------------------------------------------ import
-
-var importState = { files: [], busy: false, touched: false };
-
-function importDialog(files) {
-  if (importState.busy) return;
-  importState.files = [];
-  importState.touched = false;
-  var now = new Date();
-  var body = el('div');
-  var fields = el('div', 'fields');
-  var year = el('input');
-  year.type = 'number';
-  year.min = 1800;
-  year.max = 2200;
-  year.value = now.getFullYear();
-  year.style.width = '6em';
-  var month = el('select');
-  for (var m = 1; m <= 12; m++) {
-    var o = el('option', '', new Date(2000, m - 1, 1).toLocaleDateString(undefined, { month: 'long' }));
-    o.value = m;
-    month.appendChild(o);
-  }
-  month.value = now.getMonth() + 1;
-  var name = el('input');
-  name.type = 'text';
-  name.className = 'grow';
-  name.placeholder = 'Event, e.g. Ausflug';
-  fields.appendChild(year);
-  fields.appendChild(month);
-  fields.appendChild(name);
-  body.appendChild(fields);
-  var target = el('p', 'hint', '');
-  body.appendChild(target);
-
-  var picker = el('label', 'picker', 'Choose photos and videos, or drop them here');
-  var input = el('input');
-  input.type = 'file';
-  input.multiple = true;
-  input.accept = 'image/*,video/*,.heic,.heif,.dng,.cr2,.cr3,.nef,.arw,.orf,.rw2,.raf';
-  picker.appendChild(input);
-  body.appendChild(picker);
-  var list = el('ul', 'filelist');
-  body.appendChild(list);
-  var error = el('p', 'error');
-  body.appendChild(error);
-
-  var describe = function () {
-    var y = parseInt(year.value, 10), mo = parseInt(month.value, 10);
-    var folder = (y || '????') + '-' + (mo < 10 ? '0' : '') + mo + ' ' + (name.value.trim() || '…');
-    target.textContent = 'Into the folder “' + folder + '”. Files keep their dates; files already in the library are skipped.';
-  };
-  [year, month, name].forEach(function (f) {
-    f.addEventListener('input', function () { if (f !== name) importState.touched = true; describe(); });
-  });
-  describe();
-
-  var addFiles = function (fileList) {
-    Array.prototype.forEach.call(fileList, function (f) {
-      var li = el('li');
-      li.appendChild(el('span', 'fname', f.name));
-      var st = el('span', 'fstate', formatBytes(f.size));
-      li.appendChild(st);
-      list.appendChild(li);
-      importState.files.push({ file: f, state: st, done: false });
-    });
-    // The month of the oldest file, unless chosen by hand.
-    if (!importState.touched && importState.files.length) {
-      var oldest = Math.min.apply(null, importState.files.map(function (x) { return x.file.lastModified || Date.now(); }));
-      var d = new Date(oldest);
-      year.value = d.getFullYear();
-      month.value = d.getMonth() + 1;
-      describe();
-    }
-    buttons[1].textContent = 'Import ' + plural(importState.files.length, 'file', 'files');
-  };
-  input.addEventListener('change', function () { addFiles(input.files); input.value = ''; });
-  importState.add = addFiles;
-
-  var go = function (btn) {
-    error.textContent = '';
-    var pending = importState.files.filter(function (x) { return !x.done; });
-    if (!pending.length) { error.textContent = 'Choose some files first.'; return false; }
-    post(LIBAPI + '/import/folder', { year: parseInt(year.value, 10), month: parseInt(month.value, 10), name: name.value })
-      .then(function (r) { runImport(r.folder, pending, btn, buttons[0]); })
-      .catch(function (e) { error.textContent = e.message; });
-    return false;
-  };
-  var buttons = openModal('Import photos', body, [
-    { label: 'Close', cls: 'quiet', onclick: function () { return !importState.busy; } },
-    { label: 'Import', onclick: go },
-  ]);
-  closeModal.onclose = function () { importState.add = null; };
-  if (files && files.length) addFiles(files);
-  name.focus();
-}
-
-// One file after the other, as the raw request body.
-function runImport(folder, pending, btn, closeBtn) {
-  importState.busy = true;
-  btn.disabled = closeBtn.disabled = true;
-  var counts = { imported: 0, duplicate: 0, failed: 0 };
-  var next = function (k) {
-    if (k >= pending.length) {
-      importState.busy = false;
-      closeBtn.disabled = false;
-      btn.textContent = 'Done';
-      btn.disabled = false;
-      btn.onclick = function () { closeModal(); };
-      toast(plural(counts.imported, 'file', 'files') + ' imported' +
-        (counts.duplicate ? ', ' + counts.duplicate + ' already there' : '') +
-        (counts.failed ? ', ' + counts.failed + ' failed' : ''));
-      loadInfo();
-      // Show the folder the files went to.
-      loadFolders().then(function () {
-        var f = state.folders.filter(function (x) { return x.path === folder; })[0];
-        if (f && counts.imported) setFilter({ folder: f.id, tags: [], q: '' }); else reloadAll();
-      });
-      return;
-    }
-    var item = pending[k];
-    var xhr = new XMLHttpRequest();
-    var url = LIBAPI + '/import' + query({ folder: folder, name: item.file.name, modified: item.file.lastModified || null });
-    xhr.open('POST', url);
-    xhr.setRequestHeader('X-Shoebox', '1');
-    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-    xhr.upload.onprogress = function (ev) {
-      if (ev.lengthComputable) item.state.textContent = Math.floor(100 * ev.loaded / ev.total) + '%';
-    };
-    var finish = function (ok, text) {
-      item.state.textContent = text;
-      item.state.className = 'fstate ' + (ok ? 'ok' : 'bad');
-      next(k + 1);
-    };
-    xhr.onload = function () {
-      var body = {};
-      try { body = JSON.parse(xhr.responseText); } catch (e) { /* not JSON */ }
-      if (xhr.status === 200 && body.status === 'imported') {
-        item.done = true;
-        counts.imported++;
-        finish(true, body.path.split('/').pop() === item.file.name ? 'imported' : 'imported as ' + body.path.split('/').pop());
-      } else if (xhr.status === 200) {
-        item.done = true;
-        counts.duplicate++;
-        item.state.title = body.duplicate_of;
-        finish(true, 'already in ' + body.duplicate_of.split('/').slice(0, -1).join('/'));
-      } else {
-        counts.failed++;
-        finish(false, body.error || 'HTTP ' + xhr.status);
-      }
-    };
-    xhr.onerror = function () { counts.failed++; finish(false, 'connection lost'); };
-    xhr.send(item.file);
-  };
-  next(0);
-}
-
-$('import').onclick = function () { importDialog(); };
-
-// Drag and drop anywhere opens the import dialog (or adds to it).
-(function () {
-  var depth = 0;
-  var hasFiles = function (ev) { return ev.dataTransfer && Array.prototype.indexOf.call(ev.dataTransfer.types || [], 'Files') >= 0; };
-  window.addEventListener('dragenter', function (ev) { if (!hasFiles(ev) || isAll()) return; depth++; $('dropzone').hidden = false; });
-  window.addEventListener('dragleave', function () { if (--depth <= 0) { depth = 0; $('dropzone').hidden = true; } });
-  window.addEventListener('dragover', function (ev) { if (hasFiles(ev)) ev.preventDefault(); });
-  window.addEventListener('drop', function (ev) {
-    if (!hasFiles(ev)) return;
-    ev.preventDefault();
-    if (isAll()) { $('dropzone').hidden = true; depth = 0; toast('Pick one drive to import into'); return; }
-    depth = 0;
-    $('dropzone').hidden = true;
-    if (importState.add && !$('modal').hidden) importState.add(ev.dataTransfer.files);
-    else importDialog(ev.dataTransfer.files);
-  });
-})();
 
 // ------------------------------------------------------------------ duplicates page
 
 var DUP_KINDS_IDS = ['identical', 'resolution', 'edited', 'similar'];
-var dupState = { groups: [], shown: 0, marked: {}, seen: {}, sameFolder: null, lowerQuality: null, types: dupTypes() };
+var dupState = { syncs: [], groups: [], shown: 0, marked: {}, seen: {}, sameFolder: null, lowerQuality: null, types: dupTypes() };
 var DUP_KINDS = [
-  { id: 'identical', label: 'Identical photos', hint: 'The same file, copied.' },
-  { id: 'resolution', label: 'Same photo, different resolution', hint: 'The same picture in another size, quality or name (a messenger copy, say).' },
-  { id: 'edited', label: 'Original and edited', hint: 'An iPhone edit (the “E” in IMG_E1234, a portrait blur, say) next to its original. Keep the one you like, or both.' },
-  { id: 'similar', label: 'Similar photos', hint: 'Different shots that look alike: a series, repeated clicks, a burst.' },
+  { id: 'identical', get label() { return tr('dups.kind.identical'); }, get hint() { return tr('dups.kind.identical.hint'); } },
+  { id: 'resolution', get label() { return tr('dups.kind.resolution'); }, get hint() { return tr('dups.kind.resolution.hint'); } },
+  { id: 'edited', get label() { return tr('dups.kind.edited'); }, get hint() { return tr('dups.kind.edited.hint'); } },
+  { id: 'similar', get label() { return tr('dups.kind.similar'); }, get hint() { return tr('dups.kind.similar.hint'); } },
 ];
 
 // Which kinds of duplicates are shown (remembered in this browser).
@@ -1675,7 +1816,7 @@ var dupTab = 'here';
 function addDupTabs(page) {
   if (drives.list.length < 2 || isAll()) return;
   var tabs = el('div', 'tabs');
-  [['here', 'On this drive'], ['across', 'Across drives']].forEach(function (t) {
+  [['here', tr('dups.tab.here')], ['across', tr('dups.tab.across')]].forEach(function (t) {
     var b = el('button', dupTab === t[0] ? 'on' : '', t[1]);
     b.onclick = function () { dupTab = t[0]; loadDuplicates(); };
     tabs.appendChild(b);
@@ -1692,82 +1833,233 @@ function loadDuplicates() {
 function loadDuplicatesAcross() {
   var page = $('page');
   page.textContent = '';
-  page.appendChild(el('h2', '', 'Duplicates'));
+  page.appendChild(el('h2', '', tr('dups.title')));
   addDupTabs(page);
-  var sub = el('p', 'sub', 'Looking…');
+  return renderDuplicatesAcross(page, function () { return state.filter.view === 'duplicates'; }, false);
+}
+
+// The copies on different drives, into `page`; `alive` says whether it is still
+// the page on screen when the answer arrives. Inside "Manage drives" (`embedded`)
+// the link back to the drive roles is left out: they are right above.
+// Same content, so one picture per photo and one row per copy; ticked copies
+// (key `drive:id`) go to the trash of their own drive, one copy per photo stays.
+var crossState = { groups: [], marked: {}, syncs: [], reload: null, bar: null, pick: null };
+
+function crossKey(f) { return f.library + ':' + f.id; }
+
+// The disk name where it is known, else the library's name; two drives that
+// would read the same get the library name added.
+function crossLabels(groups) {
+  var seen = {}, label = {};
+  groups.forEach(function (g) { g.files.forEach(function (f) { seen[f.library] = f; }); });
+  var count = {};
+  Object.keys(seen).forEach(function (lib) { var n = seen[lib].volume || seen[lib].name; count[n] = (count[n] || 0) + 1; });
+  Object.keys(seen).forEach(function (lib) {
+    var f = seen[lib], n = f.volume || f.name;
+    label[lib] = count[n] > 1 && f.volume ? f.volume + ' · ' + f.name : n;
+  });
+  return label;
+}
+
+function renderDuplicatesAcross(page, alive, embedded) {
+  var sub = el('p', 'sub', tr('dups.looking'));
   page.appendChild(sub);
+  crossState.reload = embedded
+    ? function () { page.textContent = ''; return renderDuplicatesAcross(page, alive, true); }
+    : loadDuplicatesAcross;
   return api('/api/all/duplicates?limit=200').then(function (r) {
-    if (state.filter.view !== 'duplicates') return;
+    if (!alive()) return;
     sub.textContent = r.total_groups
-      ? plural(r.total_groups, 'photo exists', 'photos exist') + ' on more than one drive (' + r.compared.join(', ') + '). Move the copy you do not need to the trash of its drive.'
-      : 'No photo exists on more than one drive' + (r.compared.length > 1 ? ' (' + r.compared.join(', ') + ').' : '.');
+      ? tr('dups.across.some', { count: trn('count.photos_exist', r.total_groups), drives: r.compared.join(', ') })
+      : r.compared.length > 1 ? tr('dups.across.none_in', { drives: r.compared.join(', ') }) : tr('dups.across.none');
     r.excluded.forEach(function (x) {
       var b = el('div', 'banner');
-      b.appendChild(document.createTextNode(x.name + ' is not compared: ' + x.reason + '. '));
-      var go = el('button', 'link', 'Decide in All drives →');
-      go.onclick = function () { showView('drives'); };
-      b.appendChild(go);
+      b.appendChild(document.createTextNode(tr('dups.excluded', { name: x.name, reason: x.reason })));
+      if (!embedded) {
+        var go = el('button', 'link', tr('dups.decide'));
+        go.onclick = function () { showView('drives'); };
+        b.appendChild(go);
+      }
       page.appendChild(b);
     });
-    r.groups.forEach(function (g) { page.appendChild(crossGroupNode(g)); });
-    if (r.total_groups > r.groups.length) page.appendChild(el('p', 'sub', 'Showing the first ' + r.groups.length + ' of ' + r.total_groups + '.'));
+    crossState.groups = r.groups;
+    crossState.marked = {};
+    crossState.syncs = [];
+    var labels = crossLabels(r.groups);
+    r.groups.forEach(function (g) { page.appendChild(crossGroupNode(g, labels)); });
+    if (r.total_groups > r.groups.length) page.appendChild(el('p', 'sub', tr('dups.first_of', { shown: r.groups.length, total: r.total_groups })));
+    var bar = el('div', 'dup-bar');
+    bar.hidden = !r.groups.length;
+    page.appendChild(bar);
+    crossState.bar = bar;
+    updateCrossBar(labels);
   }).catch(failed);
 }
 
-function crossGroupNode(g) {
-  var box = el('div', 'group');
-  var head = el('div', 'group-head');
-  head.appendChild(el('span', 'label', 'Same content on ' + plural(new Set(g.files.map(function (f) { return f.library; })).size, 'drive', 'drives')));
-  box.appendChild(head);
-  var cards = el('div', 'cards');
-  g.files.forEach(function (f) {
-    var base = '/api/lib/' + f.library + '/files/' + f.id;
-    var card = el('div', 'card');
-    var a = el('a', 'thumb');
-    a.href = base + (f.kind === 'video' ? '/original' : '/view') + '?v=' + f.version;
-    a.target = '_blank';
-    a.rel = 'noopener';
-    var img = el('img');
-    img.alt = '';
-    img.loading = 'lazy';
-    img.src = base + '/thumb?v=' + f.version;
-    a.appendChild(img);
-    card.appendChild(a);
-    card.appendChild(el('div', 'name', f.name));
-    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : '(top level)';
-    var fb = el('button', 'folder', folder);
-    fb.title = 'Show this photo in ' + f.name;
-    fb.onclick = function () { switchLibrary(f.library, 'q=' + encodeURIComponent(f.path.split('/').pop())); };
-    card.appendChild(fb);
-    card.appendChild(el('div', 'meta', f.path.split('/').pop() + ' · ' + formatBytes(g.size)));
-    var trash = el('button', 'btn danger', 'Move to trash');
-    trash.onclick = function () {
-      openModal('Move to trash', 'Move this copy on ' + f.name + ' (' + f.path + ') to the trash of that drive? The same photo stays on the other drive' + (g.files.length > 2 ? 's' : '') + '. You can put it back from the trash until it is emptied.', [
-        { label: 'Cancel', cls: 'quiet' },
-        { label: 'Move to trash', cls: 'danger', onclick: function (btn) {
-          btn.disabled = true;
-          post('/api/lib/' + f.library + '/trash', { ids: [f.id] }).then(function (r) {
-            closeModal();
-            toast(plural(r.files.length + r.sidecars, 'file', 'files') + ' moved to the trash of ' + f.name);
-            loadDuplicatesAcross();
-          }).catch(function (e) { closeModal(); failed(e); });
-          return false;
-        } },
-      ]);
-    };
-    card.appendChild(trash);
-    cards.appendChild(card);
+function crossMarkedCount() {
+  var n = 0;
+  crossState.groups.forEach(function (g) { g.files.forEach(function (f) { if (crossState.marked[crossKey(f)]) n++; }); });
+  return n;
+}
+
+// Ticks every copy on drive `lib`, but never the last copy of a photo.
+function crossMarkDrive(lib) {
+  crossState.groups.forEach(function (g) {
+    var open = g.files.filter(function (f) { return !crossState.marked[crossKey(f)]; }).length;
+    g.files.forEach(function (f) {
+      if (f.library !== lib || crossState.marked[crossKey(f)] || open <= 1) return;
+      crossState.marked[crossKey(f)] = true;
+      open--;
+    });
   });
-  box.appendChild(cards);
+  crossState.syncs.forEach(function (sync) { sync(); });
+}
+
+// "N marked", "Mark all copies on [drive]", Clear, Move to trash.
+function updateCrossBar(labels) {
+  var bar = crossState.bar;
+  if (!bar) return;
+  bar.textContent = '';
+  var n = crossMarkedCount();
+  bar.appendChild(el('span', '', tr('dups.marked', { count: trn('count.copies', n) })));
+  bar.appendChild(el('span', 'meta', tr('dups.cross.mark_on')));
+  var pick = el('select');
+  Object.keys(labels).forEach(function (lib) {
+    var o = el('option', '', labels[lib]);
+    o.value = lib;
+    pick.appendChild(o);
+  });
+  if (crossState.pick && labels[crossState.pick]) pick.value = crossState.pick;
+  pick.onchange = function () { crossState.pick = pick.value; };
+  bar.appendChild(pick);
+  var mark = el('button', 'btn quiet', tr('dups.cross.mark'));
+  mark.title = tr('dups.cross.mark_hint');
+  mark.onclick = function () { crossState.pick = pick.value; crossMarkDrive(pick.value); };
+  bar.appendChild(mark);
+  var clear = el('button', 'btn quiet', tr('dups.clear'));
+  clear.title = tr('dups.clear_hint');
+  clear.disabled = n === 0;
+  clear.onclick = function () { crossState.marked = {}; crossState.syncs.forEach(function (sync) { sync(); }); };
+  bar.appendChild(clear);
+  var del = el('button', 'btn danger', tr('sel.trash'));
+  del.disabled = n === 0;
+  del.onclick = trashCrossMarked;
+  bar.appendChild(del);
+}
+
+// One request per drive; each file goes to the trash of the drive it is on,
+// and only if it is still in that drive's index.
+function trashCrossMarked() {
+  var perDrive = {}, total = 0;
+  crossState.groups.forEach(function (g) {
+    var keep = g.files.filter(function (f) { return !crossState.marked[crossKey(f)]; }).length;
+    if (!keep) return;
+    g.files.forEach(function (f) {
+      if (!crossState.marked[crossKey(f)]) return;
+      (perDrive[f.library] = perDrive[f.library] || []).push(f.id);
+      total++;
+    });
+  });
+  if (!total) return;
+  var libs = Object.keys(perDrive);
+  openModal(tr('sel.trash'), tr('dups.cross.delete_text', { count: trn('count.copies', total) }), [
+    { label: tr('app.cancel'), cls: 'quiet' },
+    { label: tr('sel.trash'), cls: 'danger', focus: true, onclick: function (btn) {
+      btn.disabled = true;
+      var done = 0, skipped = [];
+      var send = function (i) {
+        if (i >= libs.length) return Promise.resolve();
+        return post('/api/lib/' + libs[i] + '/trash', { ids: perDrive[libs[i]] }).then(function (r) {
+          done += r.files.length + r.sidecars;
+          (r.skipped || []).forEach(function (x) { skipped.push(x); });
+          return send(i + 1);
+        });
+      };
+      send(0).then(function () {
+        closeModal();
+        toast(tr('dups.cross.done', { count: trn('count.files', done) }));
+        report(tr('trash.skipped'), skipped);
+        crossState.reload();
+      }).catch(function (e) { closeModal(); failed(e); crossState.reload(); });
+      return false;
+    } },
+  ]);
+}
+
+function crossGroupNode(g, labels) {
+  var box = el('div', 'group cross');
+  var first = g.files[0];
+  var base = '/api/lib/' + first.library + '/files/' + first.id;
+  var a = el('a', 'thumb');
+  a.href = base + (first.kind === 'video' ? '/original' : '/view') + '?v=' + first.version;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  var img = el('img');
+  img.alt = '';
+  img.loading = 'lazy';
+  img.src = base + '/thumb?v=' + first.version;
+  a.appendChild(img);
+  box.appendChild(a);
+  var main = el('div', 'main');
+  var baseName = function (f) { return f.path.split('/').pop(); };
+  var sameName = g.files.every(function (f) { return baseName(f) === baseName(first); });
+  main.appendChild(el('div', 'name', baseName(first)));
+  main.appendChild(el('div', 'meta', tr('dups.same_on', { count: trn('count.drives', new Set(g.files.map(function (f) { return f.library; })).size) }) + ' · ' + formatBytes(g.size)));
+  var boxes = [], rows = [];
+  // At least one copy stays: the last unticked box is disabled.
+  var refresh = function () {
+    var open = boxes.filter(function (b) { return !b.checked; });
+    boxes.forEach(function (b) { b.disabled = !b.checked && open.length === 1; });
+  };
+  g.files.forEach(function (f) {
+    var row = el('div', 'copy-row');
+    var cb = el('input');
+    cb.type = 'checkbox';
+    cb.title = tr('dups.delete_copy');
+    var state = el('span', 'state');
+    var sync = function () {
+      cb.checked = !!crossState.marked[crossKey(f)];
+      row.classList.toggle('marked', cb.checked);
+      state.textContent = tr(cb.checked ? 'dups.cross.goes' : 'dups.cross.stays');
+      refresh();
+      updateCrossBar(labels);
+    };
+    cb.onchange = function () {
+      if (cb.checked) crossState.marked[crossKey(f)] = true; else delete crossState.marked[crossKey(f)];
+      sync();
+    };
+    boxes.push(cb);
+    rows.push(sync);
+    row.appendChild(cb);
+    var where = el('div', 'where');
+    var disk = el('span', 'disk', labels[f.library]);
+    where.appendChild(disk);
+    if (f.volume) where.appendChild(el('span', 'meta', ' · ' + tr('dups.cross.folder', { name: f.name })));
+    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : tr('dups.top_level');
+    var fb = el('button', 'folder', folder + (sameName ? '' : ' / ' + baseName(f)));
+    fb.title = tr('dups.show_in', { name: f.name });
+    fb.onclick = function () { switchLibrary(f.library, 'q=' + encodeURIComponent(baseName(f))); };
+    var line = el('div');
+    line.appendChild(fb);
+    where.appendChild(line);
+    row.appendChild(where);
+    row.appendChild(state);
+    main.appendChild(row);
+    cb.checked = false;
+    row.classList.remove('marked');
+    state.textContent = tr('dups.cross.stays');
+  });
+  crossState.syncs.push(function () { rows.forEach(function (sync) { sync(); }); });
+  box.appendChild(main);
   return box;
 }
 
 function loadDuplicatesHere() {
   var page = $('page');
   page.textContent = '';
-  page.appendChild(el('h2', '', 'Duplicates'));
+  page.appendChild(el('h2', '', tr('dups.title')));
   addDupTabs(page);
-  page.appendChild(el('p', 'sub', 'Looking…'));
+  page.appendChild(el('p', 'sub', tr('dups.looking')));
   return Promise.all([api(LIBAPI + '/duplicates'), api(LIBAPI + '/duplicates/same-folder'), api(LIBAPI + '/duplicates/lower-quality')]).then(function (res) {
     if (state.filter.view !== 'duplicates') return;
     dupState.groups = res[0].groups;
@@ -1777,13 +2069,13 @@ function loadDuplicatesHere() {
     // Ticks survive a reload (a scan finishing meanwhile) for copies still listed.
     var still = {};
     dupState.groups.forEach(function (g) {
+      var suggested = {};
+      suggestedIds(g).forEach(function (id) { suggested[id] = true; });
       g.files.forEach(function (f) {
         if (dupState.marked[f.id]) still[f.id] = true;
-        // Of every photo with several files all but the best start ticked
-        // (the best quality, then the one without a copy's name), once
-        // (unticking one stays unticked after a reload).
-        else if (!f.pick && !dupState.seen[f.id]) still[f.id] = true;
-        if (!f.pick) dupState.seen[f.id] = true;
+        // The suggestion starts ticked, once (an untick stays after a reload).
+        else if (suggested[f.id] && !dupState.seen[f.id]) still[f.id] = true;
+        if (suggested[f.id]) dupState.seen[f.id] = true;
       });
     });
     dupState.marked = still;
@@ -1795,15 +2087,14 @@ function loadDuplicatesHere() {
 function renderDuplicates() {
   var page = $('page');
   page.textContent = '';
-  page.appendChild(el('h2', '', 'Duplicates'));
+  dupState.syncs = [];
+  page.appendChild(el('h2', '', tr('dups.title')));
   addDupTabs(page);
-  page.appendChild(el('p', 'sub', dupState.groups.length
-    ? 'Tick “delete this copy” on the files to remove; of every photo the best file is left unticked and one file per group always stays. Decided groups are not shown again.'
-    : 'No duplicates. Photos added since the last scan are compared once they have thumbnails.'));
+  page.appendChild(el('p', 'sub', tr(dupState.groups.length ? 'dups.sub' : 'dups.none')));
   if (dupState.groups.length) page.appendChild(dupToolbar());
   var box = el('div');
   page.appendChild(box);
-  var more = el('button', 'btn quiet', 'Show more');
+  var more = el('button', 'btn quiet', tr('app.show_more'));
   more.onclick = function () { showGroups(box, more); };
   page.appendChild(more);
   var action = el('div', 'dup-bar');
@@ -1819,7 +2110,7 @@ function showGroups(box, more) {
   for (var k = dupState.shown; k < end; k++) box.appendChild(groupNode(groups[k]));
   dupState.shown = end;
   more.hidden = end >= groups.length;
-  if (!groups.length && dupState.groups.length) box.appendChild(el('p', 'sub', 'No duplicates of the chosen kinds.'));
+  if (!groups.length && dupState.groups.length) box.appendChild(el('p', 'sub', tr('dups.none_kinds')));
 }
 
 // Ticked files in the groups that are shown.
@@ -1840,7 +2131,7 @@ function dupToolbar() {
   dupState.groups.forEach(function (g) { count[g.kind] = (count[g.kind] || 0) + 1; });
   var refreshLabel = function () {
     var on = DUP_KINDS.filter(function (k) { return dupState.types[k.id]; });
-    sum.textContent = 'Show: ' + (on.length === DUP_KINDS.length ? 'all kinds' : on.length ? on.map(function (k) { return k.label; }).join(', ') : 'nothing') + ' ▾';
+    sum.textContent = tr('dups.show', { what: on.length === DUP_KINDS.length ? tr('dups.all_kinds') : on.length ? on.map(function (k) { return k.label; }).join(', ') : tr('dups.nothing') });
   };
   DUP_KINDS.forEach(function (k) {
     var label = el('label', 'check');
@@ -1869,16 +2160,16 @@ function dupToolbar() {
   bar.appendChild(filter);
   var sf = dupState.sameFolder, lq = dupState.lowerQuality;
   var buttons = el('div', 'dup-buttons');
-  var same = el('button', 'btn', 'Clear Same Folder Copies');
+  var same = el('button', 'btn', tr('dups.same_folder'));
   same.title = sf && sf.copies
-    ? 'Deletes ' + plural(sf.copies, 'file', 'files') + ': identical copies in the same folder as another copy. The best one stays, no review.'
-    : 'No identical copies in the same folder.';
+    ? tr('dups.same_folder_hint', { count: trn('count.files', sf.copies) })
+    : tr('dups.same_folder_none');
   same.disabled = !(sf && sf.copies);
   same.onclick = removeSameFolder;
-  var low = el('button', 'btn', 'Clear Lower Quality Copies');
+  var low = el('button', 'btn', tr('dups.lower'));
   low.title = lq && lq.copies
-    ? 'Deletes ' + plural(lq.copies, 'file', 'files') + ': the same photo in a lower resolution or without its metadata (a messenger copy, say). The better file stays, no review.'
-    : 'No lower-quality versions of a photo.';
+    ? tr('dups.lower_hint', { count: trn('count.files', lq.copies) })
+    : tr('dups.lower_none');
   low.disabled = !(lq && lq.copies);
   low.onclick = removeLowerQuality;
   buttons.appendChild(same);
@@ -1887,24 +2178,83 @@ function dupToolbar() {
   return bar;
 }
 
-// The bar with the delete button, shown while copies are ticked.
+// What the page ticks by itself in a group: of every photo the files that
+// are surely worse (a smaller or stripped copy) or the same file again, never
+// the best one, and never a different shot that merely looks alike.
+function suggestedIds(g) {
+  var pickOf = {};
+  g.files.forEach(function (f) { if (f.pick) pickOf[f.row] = f; });
+  return g.files.filter(function (f) {
+    var best = pickOf[f.row];
+    return !f.pick && (f.keeper || (f.same && best && best.same === f.same) || (f.in_copies && best && !best.in_copies));
+  }).map(function (f) { return f.id; });
+}
+
+// The suggestion for all groups that are shown.
+function autoMarked() {
+  var auto = {};
+  var edits = onlyEditedShown();
+  visibleGroups().forEach(function (g) {
+    suggestedIds(g).forEach(function (id) { auto[id] = true; });
+    // On the "Original and edited" screen the button ticks the edited
+    // versions, so the originals stay.
+    if (edits) g.files.forEach(function (f) { if (isEdit(f)) auto[f.id] = true; });
+  });
+  return auto;
+}
+
+// True while "Original and edited" is the only kind that is shown.
+function onlyEditedShown() {
+  return DUP_KINDS_IDS.every(function (k) { return !!dupState.types[k] === (k === 'edited'); });
+}
+
+// Ticked files of the groups that are shown, as a set of ids.
+function shownMarked() {
+  var m = {};
+  visibleGroups().forEach(function (g) { g.files.forEach(function (f) { if (dupState.marked[f.id]) m[f.id] = true; }); });
+  return m;
+}
+
+// Puts the check boxes in line with `dupState.marked`, also for the groups
+// that are not on screen yet.
+function syncDupBoxes() {
+  dupState.syncs.forEach(function (sync) { sync(); });
+  updateDupBar();
+}
+
+// The bar stays while there are duplicates: Preselect copies puts the page's
+// pre-selection back, Clear unticks everything, Move to trash deletes
+// whatever is ticked (also a single file after a Clear).
 function updateDupBar() {
   var bar = $('dup-bar');
   if (!bar) return;
-  var n = markedCount();
-  bar.hidden = n === 0;
+  var groups = visibleGroups();
+  bar.hidden = groups.length === 0;
   bar.textContent = '';
-  if (!n) return;
-  bar.appendChild(el('span', '', plural(n, 'copy', 'copies') + ' marked'));
-  var clear = el('button', 'btn quiet', 'Clear');
+  if (!groups.length) return;
+  var marked = shownMarked(), auto = autoMarked();
+  var n = Object.keys(marked).length;
+  bar.appendChild(el('span', '', tr('dups.marked', { count: trn('count.copies', n) })));
+  var same = Object.keys(auto).length === n && Object.keys(auto).every(function (id) { return marked[id]; });
+  var preselect = el('button', 'btn quiet', tr(onlyEditedShown() ? 'dups.preselect_edited' : 'dups.preselect'));
+  preselect.title = tr(onlyEditedShown() ? 'dups.preselect_edited_hint' : 'dups.preselect_hint');
+  preselect.disabled = same;
+  preselect.onclick = function () {
+    Object.keys(marked).forEach(function (id) { delete dupState.marked[id]; });
+    Object.keys(auto).forEach(function (id) { dupState.marked[id] = true; });
+    syncDupBoxes();
+  };
+  bar.appendChild(preselect);
+  var clear = el('button', 'btn quiet', tr('dups.clear'));
+  clear.title = tr('dups.clear_hint');
+  clear.disabled = n === 0;
   clear.onclick = function () {
-    Array.prototype.forEach.call(document.querySelectorAll('.copy input[type=checkbox]:checked'), function (cb) {
-      cb.checked = false;
-      cb.dispatchEvent(new Event('change'));
-    });
+    Object.keys(marked).forEach(function (id) { delete dupState.marked[id]; });
+    syncDupBoxes();
   };
   bar.appendChild(clear);
-  var del = el('button', 'btn danger', 'Move to trash');
+  var del = el('button', 'btn danger', tr('sel.trash'));
+  del.disabled = n === 0;
   del.onclick = deleteMarked;
   bar.appendChild(del);
 }
@@ -1933,7 +2283,7 @@ function dupThumb(f, compare) {
   if (compare) {
     // Opens the group's pictures side by side instead of one in a new tab.
     a.removeAttribute('target');
-    a.title = 'Compare the photos';
+    a.title = tr('dups.compare');
     a.onclick = function (e) { e.preventDefault(); compare(f); };
   }
   return a;
@@ -1942,12 +2292,12 @@ function dupThumb(f, compare) {
 // "IMG_E1234" is the edited version of "IMG_1234" (iPhone).
 function isEdit(f) { return /^img_e\d+/i.test(f.name); }
 
-// The group's photos large and side by side; "Keep this one" ticks all the
-// others for deletion (the dialog closes), so the choice is one click.
+// The group's photos large and side by side; "Keep this one" trashes all the
+// others (the dialog closes), so the choice is one click.
 function compareDialog(g, start, onKeep) {
   var back = el('div', 'modal');
   var dlg = el('div', 'dialog compare');
-  dlg.appendChild(el('h2', '', 'Which one do you like most?'));
+  dlg.appendChild(el('h2', '', tr('dups.compare_title')));
   var strip = el('div', 'compare-strip');
   var close = function () { back.remove(); document.removeEventListener('keydown', onKey); };
   var onKey = function (e) { if (e.key === 'Escape') close(); };
@@ -1958,19 +2308,19 @@ function compareDialog(g, start, onKeep) {
     img.alt = f.name;
     img.src = LIBAPI + '/files/' + f.id + (f.kind === 'video' ? '/thumb' : '/view') + '?v=' + f.version;
     col.appendChild(img);
-    col.appendChild(el('div', 'name', f.name + (g.kind === 'edited' ? (isEdit(f) ? ' · edited' : ' · original') : '')));
+    col.appendChild(el('div', 'name', f.name + (g.kind === 'edited' ? ' · ' + tr(isEdit(f) ? 'dups.edited_lower' : 'dups.original_lower') : '')));
     var meta = [];
     if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
     meta.push((f.size / 1e6).toFixed(1) + ' MB');
     col.appendChild(el('div', 'meta', meta.join(' · ')));
-    var keep = el('button', 'btn', 'Keep this one');
+    var keep = el('button', 'btn', tr('dups.keep_this'));
     keep.onclick = function () { close(); onKeep(f); };
     col.appendChild(keep);
     strip.appendChild(col);
   });
   dlg.appendChild(strip);
   var row = el('div', 'actions');
-  var done = el('button', 'btn quiet', 'Close');
+  var done = el('button', 'btn quiet', tr('app.close'));
   done.onclick = close;
   row.appendChild(done);
   dlg.appendChild(row);
@@ -1995,34 +2345,42 @@ function groupNode(g) {
         ids.forEach(function (id) { delete dupState.marked[id]; });
         box.remove();
         updateDupBar();
-        toast(decision === 'linked' ? 'Kept as versions of one photo' : 'Kept as different photos');
+        toast(tr(decision === 'linked' ? 'dups.kept_versions' : 'dups.kept_different'));
       }).catch(function (e) { b.disabled = false; failed(e); });
     };
     head.appendChild(b);
   };
-  if (g.kind === 'similar') decide('distinct', 'Different photos');
-  decide('linked', g.kind === 'identical' ? 'Keep all copies' : g.kind === 'resolution' ? 'Keep all versions'
-    : g.kind === 'edited' ? 'Keep both' : 'Versions of one photo');
+  if (g.kind === 'similar') decide('distinct', tr('dups.btn_different'));
+  decide('linked', tr('dups.btn_keep'));
   box.appendChild(head);
   box.appendChild(el('p', 'group-hint', g.kind === 'similar' || g.kind === 'edited'
-    ? kind.hint + ' Every card is one file; click a picture to compare them large.'
+    ? tr('dups.group_hint_series', { hint: kind.hint })
     : kind.hint));
 
-  var boxes = [];
+  var boxes = [], cardSyncs = [];
   // At least one copy of the group stays: the last unticked box is disabled.
   var refresh = function () {
     var open = boxes.filter(function (b) { return !b.checked; });
     boxes.forEach(function (b) { b.disabled = !b.checked && open.length === 1; });
   };
+  var registerGroup = function () {
+    refresh();
+    dupState.syncs.push(function () {
+      cardSyncs.forEach(function (sync) { sync(); });
+      refresh();
+    });
+  };
   // One card per file: the check box, where it is, what it is, its tags.
   // `thumb`: the card carries its own thumbnail (similar photos).
   var cards = [];
-  // "Keep this one" in the compare dialog: tick every other file, untick it.
+  // "Keep this one" in the compare dialog: tick every other file, untick it,
+  // and move the others to the trash (after the usual confirmation).
   var keepOnly = function (keep) {
     cards.forEach(function (c) {
       c.cb.checked = c.f.id !== keep.id;
       c.cb.dispatchEvent(new Event('change'));
     });
+    deleteMarked(g);
   };
   var compare = function (f) { compareDialog(g, f, keepOnly); };
   var copyCard = function (f, showName, thumb) {
@@ -2040,28 +2398,33 @@ function groupNode(g) {
     };
     boxes.push(cb);
     cards.push({ f: f, cb: cb });
+    cardSyncs.push(function () {
+      cb.checked = !!dupState.marked[f.id];
+      card.classList.toggle('marked', cb.checked);
+    });
     label.appendChild(cb);
-    label.appendChild(document.createTextNode(' delete this copy'));
+    label.appendChild(document.createTextNode(' ' + tr('dups.delete_copy')));
     card.appendChild(label);
     card.classList.toggle('marked', cb.checked);
-    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : '(top level)';
+    var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : tr('dups.top_level');
     var fb = el('button', 'folder', folder);
     fb.title = f.path;
     fb.onclick = function () { setFilter({ folder: f.folder_id, tags: [], q: '' }); };
     card.appendChild(fb);
     if (showName) card.appendChild(el('div', 'name', f.name));
-    if (g.kind === 'edited') card.appendChild(el('div', 'badge', isEdit(f) ? 'Edited' : 'Original'));
+    if (g.kind === 'edited') card.appendChild(el('div', 'badge', tr(isEdit(f) ? 'dups.badge_edited' : 'dups.badge_original')));
     var meta = [];
     if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
     meta.push((f.size / 1e6).toFixed(1) + ' MB');
     card.appendChild(el('div', 'meta', meta.join(' · ')));
-    if (f.keeper) card.appendChild(el('div', 'meta worse', 'lower quality than the best version'));
-    card.appendChild(el('div', 'meta', f.taken ? formatDate({ taken: f.taken, date_source: 'file' }) : 'no capture date'));
+    if (f.keeper) card.appendChild(el('div', 'meta worse', tr('dups.lower_quality')));
+    if (f.in_copies) card.appendChild(el('div', 'meta', tr('dups.in_copies')));
+    card.appendChild(el('div', 'meta', f.taken ? formatDate({ taken: f.taken, date_source: 'file' }) : tr('dups.no_capture_date')));
     if (f.tags && f.tags.length) {
       var tags = el('div', 'tagline');
       f.tags.forEach(function (t) {
         var chip = el('span', 'chip' + (t.own ? ' own' : ''), (t.own ? '' : '📁 ') + t.name);
-        chip.title = t.own ? 'Own tag' : 'Folder tag';
+        chip.title = tr(t.own ? 'dups.own_tag' : 'dups.folder_tag');
         tags.appendChild(chip);
       });
       card.appendChild(tags);
@@ -2082,7 +2445,7 @@ function groupNode(g) {
       bestFirst(copies).forEach(function (f) { series.appendChild(copyCard(f, true, true)); });
     });
     box.appendChild(series);
-    refresh();
+    registerGroup();
     return box;
   }
 
@@ -2096,7 +2459,7 @@ function groupNode(g) {
     var name = el('div', 'name', first.name + ' ');
     if (first.same) {
       var same = el('span', 'same', String.fromCharCode(64 + first.same));
-      same.title = 'Files with the same letter are identical';
+      same.title = tr('dups.same_letter');
       name.appendChild(same);
     }
     left.appendChild(name);
@@ -2106,15 +2469,17 @@ function groupNode(g) {
     row.appendChild(cards);
     box.appendChild(row);
   });
-  refresh();
+  registerGroup();
   return box;
 }
 
 // Sends the marked copies, one request per group. Capture dates that really
 // conflict are asked for afterwards, then those groups are sent again.
-function deleteMarked() {
+// `only`: a single group (the compare dialog's "Keep this one").
+function deleteMarked(only) {
   var jobs = [], total = 0;
   visibleGroups().forEach(function (g) {
+    if (only && only.files && g !== only) return;
     var remove = g.files.filter(function (f) { return dupState.marked[f.id]; }).map(function (f) { return f.id; });
     if (!remove.length) return;
     var keep = g.files.filter(function (f) { return !dupState.marked[f.id]; }).map(function (f) { return f.id; });
@@ -2143,9 +2508,9 @@ function deleteMarked() {
     return false;
   };
   openModal(
-    'Move to trash',
-    'Move ' + plural(total, 'copy', 'copies') + ' to the shoebox trash? In every group at least one copy stays. The tags and the capture date of a deleted copy are added to the copy that stays (as tags you can remove again). You can put the copies back from the trash.',
-    [{ label: 'Cancel', cls: 'quiet' }, { label: 'Move to trash', cls: 'danger', focus: true, onclick: run }]
+    tr('sel.trash'),
+    tr('dups.delete_text', { count: trn('count.copies', total) }),
+    [{ label: tr('app.cancel'), cls: 'quiet' }, { label: tr('sel.trash'), cls: 'danger', focus: true, onclick: run }]
   );
 }
 
@@ -2157,11 +2522,11 @@ function collectRemoved(done, r) {
 }
 
 function finishRemoved(done) {
-  var text = plural(done.files, 'copy', 'copies') + ' moved to the trash';
-  if (done.tags) text += ', ' + plural(done.tags, 'tag', 'tags') + ' carried over';
-  if (done.dates) text += ', ' + plural(done.dates, 'capture date', 'capture dates') + ' taken over';
-  toast(text);
-  report('Some copies were not moved to the trash', done.skipped);
+  var text = [tr('dups.done.trashed', { count: trn('count.copies', done.files) })];
+  if (done.tags) text.push(tr('dups.done.tags', { count: trn('count.tags', done.tags) }));
+  if (done.dates) text.push(tr('dups.done.dates', { count: trn('count.capture_dates', done.dates) }));
+  toast(text.join(', '));
+  report(tr('dups.skipped'), done.skipped);
   dupState.marked = {};
   changed();
 }
@@ -2171,7 +2536,7 @@ function finishRemoved(done) {
 function askDates(conflicts, done) {
   return new Promise(function (resolve, reject) {
     var body = el('div');
-    body.appendChild(el('p', '', 'These photos have copies with different capture dates. Which date should the photo that stays have? (Stored in the library only; the file is not changed.)'));
+    body.appendChild(el('p', '', tr('dups.dates.text')));
     var picks = [];
     conflicts.forEach(function (c) {
       c.list.forEach(function (x, n) {
@@ -2190,10 +2555,10 @@ function askDates(conflicts, done) {
         });
       });
     });
-    openModal('Capture dates differ', body, [{
-      label: 'Cancel', cls: 'quiet', onclick: function () { resolve(); },
+    openModal(tr('dups.dates.title'), body, [{
+      label: tr('app.cancel'), cls: 'quiet', onclick: function () { resolve(); },
     }, {
-      label: 'Move to trash', cls: 'danger', onclick: function (btn) {
+      label: tr('sel.trash'), cls: 'danger', onclick: function (btn) {
         btn.disabled = true;
         var chosen = {};
         picks.forEach(function (p) {
@@ -2219,15 +2584,15 @@ function askDates(conflicts, done) {
 function removeLowerQuality() {
   var lq = dupState.lowerQuality;
   openModal(
-    'Remove lower-quality versions',
-    plural(lq.copies, 'copy', 'copies') + ' (of ' + plural(lq.groups, 'photo', 'photos') + ') are surely the same photo as a better file: the same picture with fewer pixels or without the capture date, as after sending it by messenger. They go to the shoebox trash without review; the better file stays. Folders, tags and capture dates of the removed copies are carried over to it. Photos that merely look alike (other shots of a series) are never touched.',
-    [{ label: 'Cancel', cls: 'quiet' }, {
-      label: 'Move to trash', cls: 'danger', focus: true, onclick: function (btn) {
+    tr('dups.lower.title'),
+    tr('dups.lower.text', { copies: trn('count.copies', lq.copies), photos: trn('count.photos', lq.groups) }),
+    [{ label: tr('app.cancel'), cls: 'quiet' }, {
+      label: tr('sel.trash'), cls: 'danger', focus: true, onclick: function (btn) {
         btn.disabled = true;
         post(LIBAPI + '/duplicates/lower-quality', {}).then(function (r) {
           closeModal();
-          toast(plural(r.removed, 'copy', 'copies') + ' moved to the trash, ' + plural(r.tags_added, 'tag', 'tags') + ' carried over');
-          report('Some copies were not moved to the trash', r.skipped);
+          toast(tr('dups.lower.done', { copies: trn('count.copies', r.removed), tags: trn('count.tags', r.tags_added) }));
+          report(tr('dups.skipped'), r.skipped);
           changed();
         }).catch(function (e) { closeModal(); failed(e); });
         return false;
@@ -2239,15 +2604,15 @@ function removeLowerQuality() {
 function removeSameFolder() {
   var sf = dupState.sameFolder;
   openModal(
-    'Remove exact duplicates',
-    plural(sf.copies, 'copy', 'copies') + ' (' + plural(sf.groups, 'photo', 'photos') + ') have identical content to another file in the same folder. They go to the shoebox trash without review; in each folder one stays: the highest resolution, and the one with the original name rather than “IMG_1 (2)” or “IMG_1 - Copy”. Similar photos and copies in other folders are not touched. Tags and capture dates are carried over to the copy that stays.',
-    [{ label: 'Cancel', cls: 'quiet' }, {
-      label: 'Move to trash', cls: 'danger', focus: true, onclick: function (btn) {
+    tr('dups.same.title'),
+    tr('dups.same.text', { copies: trn('count.copies', sf.copies), photos: trn('count.photos', sf.groups) }),
+    [{ label: tr('app.cancel'), cls: 'quiet' }, {
+      label: tr('sel.trash'), cls: 'danger', focus: true, onclick: function (btn) {
         btn.disabled = true;
         post(LIBAPI + '/duplicates/same-folder', {}).then(function (r) {
           closeModal();
-          toast(plural(r.removed, 'copy', 'copies') + ' moved to the trash');
-          report('Some copies were not moved to the trash', r.skipped);
+          toast(tr('dups.done.trashed', { count: trn('count.copies', r.removed) }));
+          report(tr('dups.skipped'), r.skipped);
           changed();
         }).catch(function (e) { closeModal(); failed(e); });
         return false;
@@ -2263,28 +2628,48 @@ function loadTrash() {
     if (state.filter.view !== 'trash') return;
     var page = $('page');
     page.textContent = '';
-    page.appendChild(el('h2', '', 'Trash'));
+    page.appendChild(el('h2', '', tr('side.trash')));
     var batches = [], byBatch = {};
     items.forEach(function (it) {
       if (!byBatch[it.batch]) { byBatch[it.batch] = []; batches.push(it.batch); }
       byBatch[it.batch].push(it);
     });
     page.appendChild(el('p', 'sub', batches.length
-      ? plural(batches.length, 'photo', 'photos') + ' in .shoebox/trash on the drive. Put them back, or delete them for good.'
-      : 'The trash is empty.'));
-    if (batches.length) {
-      var bar = el('div', 'toolbar');
-      var empty = el('button', 'btn danger', 'Empty trash');
-      empty.onclick = function () { emptyTrash(null, batches.length); };
-      bar.appendChild(empty);
-      page.appendChild(bar);
-    }
+      ? tr('trash.page_sub', { count: trn('count.photos', batches.length) })
+      : tr('trash.empty')));
+    // Click a photo to select it (Shift-click: from the last one clicked); the
+    // bar at the bottom puts the selection back or deletes it for good.
+    var picked = {}, anchor = null, cardOf = {};
+    var bar = el('div', 'dup-bar');
+    bar.hidden = !batches.length;
+    var drawBar = function () {
+      var n = batches.filter(function (b) { return picked[b]; }).length;
+      bar.textContent = '';
+      bar.appendChild(el('span', n ? '' : 'meta', n ? tr('trash.selected', { count: trn('count.photos', n) }) : tr('trash.hint')));
+      var all = el('button', 'btn quiet', tr('trash.select_all', { count: I18n.number(batches.length) }));
+      all.disabled = n === batches.length;
+      all.onclick = function () { batches.forEach(function (b) { picked[b] = true; cardOf[b].classList.add('sel'); }); drawBar(); };
+      bar.appendChild(all);
+      var clear = el('button', 'btn quiet', tr('dups.clear'));
+      clear.disabled = !n;
+      clear.onclick = function () { picked = {}; batches.forEach(function (b) { cardOf[b].classList.remove('sel'); }); drawBar(); };
+      bar.appendChild(clear);
+      var back = el('button', 'btn quiet', tr('trash.put_back'));
+      back.disabled = !n;
+      back.onclick = function () { putBack(batches.filter(function (b) { return picked[b]; }), byBatch); };
+      bar.appendChild(back);
+      var del = el('button', 'btn danger', tr('trash.delete_for_good'));
+      del.disabled = !n;
+      del.onclick = function () { deleteBatches(batches.filter(function (b) { return picked[b]; }), batches.length); };
+      bar.appendChild(del);
+    };
     var cards = el('div', 'cards');
     cards.style.flexWrap = 'wrap';
     batches.forEach(function (b) {
       var files = byBatch[b];
       var first = files.filter(function (f) { return f.kind; })[0] || files[0];
-      var card = el('div', 'card');
+      var card = el('div', 'card pick');
+      cardOf[b] = card;
       var thumb = el('div', 'thumb');
       var img = el('img');
       img.alt = '';
@@ -2293,34 +2678,64 @@ function loadTrash() {
       thumb.appendChild(img);
       card.appendChild(thumb);
       card.appendChild(el('div', 'name', first.path.split('/').pop()));
-      var folder = first.path.indexOf('/') >= 0 ? first.path.slice(0, first.path.lastIndexOf('/')) : '(top level)';
+      var folder = first.path.indexOf('/') >= 0 ? first.path.slice(0, first.path.lastIndexOf('/')) : tr('dups.top_level');
       card.appendChild(el('div', 'meta', folder));
-      var extra = files.length > 1 ? ' · with ' + files.slice(1).map(function (f) { return f.path.split('/').pop(); }).join(', ') : '';
-      card.appendChild(el('div', 'meta', 'deleted ' + new Date(first.deleted_at * 1000).toLocaleDateString() + extra));
-      var restore = el('button', 'btn quiet', 'Put back');
-      restore.onclick = function () {
-        restore.disabled = true;
-        post(LIBAPI + '/trash/' + b + '/restore').then(function () { toast('Put back ' + first.path); changed(); })
-          .catch(function (e) { restore.disabled = false; failed(e); });
+      var extra = files.length > 1 ? tr('trash.with', { names: files.slice(1).map(function (f) { return f.path.split('/').pop(); }).join(', ') }) : '';
+      card.appendChild(el('div', 'meta', tr('trash.deleted', { date: I18n.date(new Date(first.deleted_at * 1000)), extra: extra })));
+      card.onclick = function (ev) {
+        var span = ev.shiftKey && anchor !== null ? pickSpan(batches, function (x) { return x; }, anchor, b) : null;
+        var on = !picked[b];
+        (span || [b]).forEach(function (x) {
+          if (on) picked[x] = true; else delete picked[x];
+          cardOf[x].classList.toggle('sel', !!picked[x]);
+        });
+        anchor = b;
+        drawBar();
       };
-      card.appendChild(restore);
-      var del = el('button', 'btn danger', 'Delete for good');
-      del.onclick = function () { emptyTrash(b, 1); };
-      card.appendChild(del);
+      card.onmousedown = function (ev) { if (ev.shiftKey) ev.preventDefault(); };
       cards.appendChild(card);
     });
     page.appendChild(cards);
+    page.appendChild(bar);
+    drawBar();
   }).catch(failed);
 }
 
-function emptyTrash(batch, n) {
-  openModal('Delete for good', 'Delete ' + plural(n, 'photo', 'photos') + ' (with their companion files) from the drive? This cannot be undone.', [
-    { label: 'Cancel', cls: 'quiet' },
-    { label: 'Delete', cls: 'danger', onclick: function () {
-      post(LIBAPI + '/trash/empty', { batch: batch }).then(function (r) {
-        toast(plural(r.deleted, 'file', 'files') + ' deleted');
+// Puts the batches back, one after the other; says how many worked.
+function putBack(list, byBatch) {
+  var done = 0, first = null;
+  var next = function (i) {
+    if (i >= list.length) return Promise.resolve();
+    return post(LIBAPI + '/trash/' + list[i] + '/restore').then(function () {
+      if (!first) first = byBatch[list[i]][0].path;
+      done++;
+      return next(i + 1);
+    });
+  };
+  next(0).then(function () {
+    toast(done === 1 ? tr('trash.put_back_done', { path: first }) : tr('trash.put_back_many', { count: trn('count.photos', done) }));
+    changed();
+  }).catch(function (e) { failed(e); changed(); });
+}
+
+// Asks, then deletes the batches for good; everything at once when all are chosen.
+function deleteBatches(list, total) {
+  deleteForGood(list.length === total ? [null] : list, list.length);
+}
+
+function deleteForGood(batches, n) {
+  openModal(tr('trash.delete_for_good'), tr('trash.delete_text', { count: trn('count.photos', n) }), [
+    { label: tr('app.cancel'), cls: 'quiet' },
+    { label: tr('trash.delete_btn'), cls: 'danger', onclick: function () {
+      var deleted = 0;
+      var next = function (i) {
+        if (i >= batches.length) return Promise.resolve();
+        return post(LIBAPI + '/trash/empty', { batch: batches[i] }).then(function (r) { deleted += r.deleted; return next(i + 1); });
+      };
+      next(0).then(function () {
+        toast(tr('trash.deleted_toast', { count: trn('count.files', deleted) }));
         changed();
-      }).catch(failed);
+      }).catch(function (e) { failed(e); changed(); });
     } },
   ]);
 }
@@ -2330,9 +2745,12 @@ function emptyTrash(batch, n) {
 // Ask the computer that runs shoebox to show the file in its file manager.
 // Only offered (state.reveal) to a browser on that computer; an iPad cannot
 // open a Finder window over there.
+var REVEAL_LABELS = { 'Show in Finder': 'reveal.finder', 'Show in Explorer': 'reveal.explorer', 'Open folder': 'reveal.folder' };
+function revealLabel(text) { return text ? (REVEAL_LABELS[text] ? tr(REVEAL_LABELS[text]) : text) : null; }
+
 function revealFile(id) {
   post(LIBAPI + '/files/' + id + '/reveal').then(function (r) {
-    toast('Shown in ' + r.app);
+    toast(tr('reveal.shown', { app: r.app === 'file manager' ? tr('reveal.file_manager') : r.app }));
   }).catch(failed);
 }
 
@@ -2344,7 +2762,7 @@ function infoReveal(actions, info) {
     reveal.onclick = function () { revealFile(info.id); };
     actions.appendChild(reveal);
   }
-  var copy = el('button', 'btn quiet', 'Copy path');
+  var copy = el('button', 'btn quiet', tr('reveal.copy_path'));
   copy.title = info.path;
   copy.onclick = function () { copyPath(info.path); };
   actions.appendChild(copy);
@@ -2353,13 +2771,13 @@ function infoReveal(actions, info) {
 // The path within the library, as in the info panel. Works on every device.
 function copyPath(path) {
   copyText(path).then(function (ok) {
-    if (ok) { toast('Path copied'); return; }
+    if (ok) { toast(tr('reveal.copied')); return; }
     // No clipboard access: show the path, selected, for copying by hand.
     var box = el('input');
     box.readOnly = true;
     box.value = path;
     box.onfocus = function () { box.select(); };
-    openModal('Path', box, [{ label: 'OK' }]);
+    openModal(tr('info.path'), box, [{ label: tr('app.ok') }]);
   });
 }
 
@@ -2448,15 +2866,15 @@ $('sizer').addEventListener('contextmenu', function (ev) {
   var id = state.data.ids[parseInt(a.dataset.index, 10)];
   var items = [];
   if (state.reveal) items.push({ label: state.reveal, run: function () { revealFile(id); } });
-  items.push({ label: 'Copy path', run: function () {
+  items.push({ label: tr('reveal.copy_path'), run: function () {
     api(LIBAPI + '/files/' + id).then(function (info) { copyPath(info.path); }).catch(failed);
   } });
   // On one person's photos (from the sidebar or as the only search term):
   // their face in this photo becomes their picture.
   var only = state.filter.people && state.filter.people.length === 1 ? state.filter.people[0] : null;
   if (only != null && state.personNames[only]) {
-    items.push({ label: 'Use as ' + state.personNames[only] + '’s picture', run: function () {
-      post('/api/people/' + only + '/cover', { file: id }).then(function () { toast('Picture changed'); peopleChanged(); }).catch(failed);
+    items.push({ label: tr('menu.use_as', { name: state.personNames[only] }), run: function () {
+      post(LIBAPI + '/people/' + only + '/cover', { file: id }).then(function () { toast(tr('menu.picture_changed')); peopleChanged(); }).catch(failed);
     } });
   }
   showMenu(ev.clientX, ev.clientY, items);
@@ -2470,10 +2888,11 @@ function infoTags(row, info) {
   var tags = el('div', 'tags');
   info.tags.forEach(function (t) {
     state.tagNames[t.id] = t.name;
+    if (t.source === 'user' && isFavTag(t.name)) return; // the heart in the top bar
     var show = function () { closeLightbox(); setFilter({ folder: null, tags: [t.id], q: '' }); };
     if (t.source === 'folder') {
       var b = el('button', '', '📁 ' + t.name);
-      b.title = 'Folder tag: comes from where the photo is';
+      b.title = tr('tags.folder_hint');
       b.onclick = show;
       tags.appendChild(b);
       return;
@@ -2482,8 +2901,8 @@ function infoTags(row, info) {
     var name = el('button', '', t.name);
     name.onclick = show;
     var x = el('button', 'x', '✕');
-    x.title = 'Remove this tag';
-    x.setAttribute('aria-label', 'Remove tag ' + t.name);
+    x.title = tr('tags.remove_hint');
+    x.setAttribute('aria-label', tr('tags.remove_label', { name: t.name }));
     x.onclick = function () {
       post(LIBAPI + '/tags/remove', { ids: [info.id], name: t.name }).then(function () { tagsChanged(info.id); }).catch(failed);
     };
@@ -2491,13 +2910,15 @@ function infoTags(row, info) {
     chip.appendChild(x);
     tags.appendChild(chip);
   });
-  var add = el('button', 'add', '+ Tag');
+  var add = el('button', 'add', tr('tags.add'));
   add.onclick = function () {
     var input = tagInput();
     input.onkeydown = function (ev) {
       ev.stopPropagation(); // arrows and Escape belong to the field, not the viewer
       if (ev.key === 'Escape') { input.replaceWith(add); return; }
       if (ev.key !== 'Enter' || !input.value.trim()) return;
+      // "favorite" is the heart, not a tag in the list.
+      if (meansFav(input.value)) { setFavorite([info.id], true).then(function () { input.replaceWith(add); }); return; }
       input.disabled = true;
       post(LIBAPI + '/tags/add', { ids: [info.id], name: input.value }).then(function () { tagsChanged(info.id); })
         .catch(function (e) { input.disabled = false; failed(e); });
@@ -2506,14 +2927,14 @@ function infoTags(row, info) {
     input.focus();
   };
   tags.appendChild(add);
-  row('Tags', tags);
+  row(tr('info.tags'), tags);
 }
 
 // A text field that suggests existing tags while typing.
 function tagInput() {
   var input = el('input');
   input.type = 'text';
-  input.placeholder = 'Tag name';
+  input.placeholder = tr('tags.placeholder');
   input.setAttribute('list', 'tag-list');
   input.setAttribute('enterkeyhint', 'done');
   input.addEventListener('input', function () { suggestTags(input.value); });
@@ -2521,6 +2942,47 @@ function tagInput() {
 }
 
 // After a change: refresh the open info panel and the sidebar.
+// "Screenshot": a drop-down (Yes / No) that starts on shoebox's guess. Picking
+// an answer is the user's own decision, kept by content in the library (never
+// in the file); "Back to automatic" returns to the guess.
+function infoScreenshot(row, info) {
+  if (info.kind === 'video' || info.kind === 'raw') return;
+  var box = el('div', 'shot-pick');
+  var pick = el('select');
+  [['1', tr('shot.yes')], ['0', tr('shot.no')]].forEach(function (o) {
+    var opt = el('option', '', o[1]);
+    opt.value = o[0];
+    pick.appendChild(opt);
+  });
+  var marked = info.screenshot_mark != null;
+  pick.value = info.screenshot ? '1' : '0';
+  pick.title = tr('shot.hint');
+  var set = function (value) {
+    post(LIBAPI + '/screenshots', { ids: [info.id], value: value }).then(function () { screenshotsChanged(info.id); }).catch(failed);
+  };
+  pick.onchange = function () { set(pick.value === '1'); };
+  box.appendChild(pick);
+  box.appendChild(el('span', 'note', ' ' + tr(marked ? 'shot.yours' : 'shot.guess')));
+  if (marked) {
+    var back = el('button', 'link', tr('shot.back'));
+    back.onclick = function () { set(null); };
+    box.appendChild(document.createTextNode(' '));
+    box.appendChild(back);
+  }
+  row(tr('shot.label'), box);
+}
+
+function screenshotsChanged(id) {
+  // The Type filter may now show other photos (the open viewer keeps its photos until it closes).
+  if (!state.filter.view && state.filter.types.length) loadTimeline(false);
+  if (!lb.details || lb.details.id !== id) return;
+  api(LIBAPI + '/files/' + id).then(function (info) {
+    if (!lb.details || lb.details.id !== id) return;
+    lb.details = info;
+    renderPanel();
+  }).catch(function () {});
+}
+
 function tagsChanged(id) {
   loadOwnTags();
   // A bulk change can change what a tag filter or search shows (the open
@@ -2536,24 +2998,25 @@ function tagsChanged(id) {
 
 function addTagDialog(ids) {
   var body = el('div');
-  body.appendChild(el('p', '', 'Add a tag to ' + plural(ids.length, 'photo', 'photos') + ':'));
+  body.appendChild(el('p', '', tr('tags.add_text', { count: trn('count.photos', ids.length) })));
   var input = tagInput();
   input.className = 'wide';
   body.appendChild(input);
-  body.appendChild(el('p', 'hint', 'Tags are kept in shoebox’s index, never written into the photos. Names are matched ignoring case.'));
+  body.appendChild(el('p', 'hint', tr('tags.add_hint')));
   var error = el('p', 'error');
   body.appendChild(error);
   var go = function (btn) {
-    if (!input.value.trim()) { error.textContent = 'Type a tag name.'; return false; }
+    if (!input.value.trim()) { error.textContent = tr('tags.type_name'); return false; }
     btn.disabled = true;
     post(LIBAPI + '/tags/add', { ids: ids, name: input.value }).then(function (r) {
       closeModal();
-      toast(r.files ? plural(r.files, 'photo', 'photos') + ' tagged “' + r.tag.name + '”' : 'All of them have “' + r.tag.name + '” already');
+      toast(r.files ? tr('tags.added', { count: trn('count.photos', r.files), name: r.tag.name }) : tr('tags.already', { name: r.tag.name }));
       tagsChanged(null);
+      if (isFavTag(r.tag.name)) loadTimeline(false); // the hearts (any spelling came back as the tag)
     }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
     return false;
   };
-  var buttons = openModal('Add tag', body, [{ label: 'Cancel', cls: 'quiet' }, { label: 'Add', onclick: go }]);
+  var buttons = openModal(tr('tags.add_title'), body, [{ label: tr('app.cancel'), cls: 'quiet' }, { label: tr('tags.add_btn'), onclick: go }]);
   input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go(buttons[1]); });
   input.focus();
 }
@@ -2562,26 +3025,27 @@ function addTagDialog(ids) {
 function removeTagDialog(ids) {
   post(LIBAPI + '/tags/selection', { ids: ids }).then(function (tags) {
     if (!tags.length) {
-      openModal('Remove tag', 'None of these photos has an own tag. Folder tags come from where a photo is; move it to change them.', [{ label: 'OK' }]);
+      openModal(tr('tags.remove_title'), tr('tags.none_own'), [{ label: tr('app.ok') }]);
       return;
     }
     var body = el('div');
-    body.appendChild(el('p', '', 'Remove which tag from ' + plural(ids.length, 'photo', 'photos') + '?'));
+    body.appendChild(el('p', '', tr('tags.remove_which', { count: trn('count.photos', ids.length) })));
     var list = el('div', 'taglist');
     tags.forEach(function (t) {
-      var b = el('button', '', t.name + ' (' + t.count.toLocaleString() + ')');
+      var b = el('button', '', (isFavTag(t.name) ? '♥ ' + tr('fav.label') : t.name) + ' (' + I18n.number(t.count) + ')');
       b.onclick = function () {
         b.disabled = true;
         post(LIBAPI + '/tags/remove', { ids: ids, name: t.name }).then(function (r) {
           closeModal();
-          toast('“' + t.name + '” removed from ' + plural(r.files, 'photo', 'photos'));
+          toast(tr('tags.removed', { name: t.name, count: trn('count.photos', r.files) }));
           tagsChanged(null);
+          if (isFavTag(t.name)) loadTimeline(false); // the hearts
         }).catch(function (e) { closeModal(); failed(e); });
       };
       list.appendChild(b);
     });
     body.appendChild(list);
-    openModal('Remove tag', body, [{ label: 'Cancel', cls: 'quiet' }]);
+    openModal(tr('tags.remove_title'), body, [{ label: tr('app.cancel'), cls: 'quiet' }]);
   }).catch(failed);
 }
 
@@ -2590,6 +3054,21 @@ function loadOwnTags() {
   return api(LIBAPI + '/tags' + query({ own: 1, limit: 500 })).then(function (tags) {
     var list = $('own-tags');
     list.textContent = '';
+    state.favCount = 0;
+    tags = tags.filter(function (t) {
+      if (isFavTag(t.name)) state.favCount = t.count;
+      return !isFavTag(t.name);
+    });
+    if (state.favCount) {
+      var fli = el('li'), fr = el('div', 'row');
+      fr.appendChild(el('span', 'toggle heart', '♥'));
+      var fname = el('button', 'name', tr('fav.label'));
+      fname.onclick = function () { setFilter({ folder: null, tags: [], fav: true, q: '' }); };
+      fr.appendChild(fname);
+      fr.appendChild(el('span', 'count', I18n.number(state.favCount)));
+      fli.appendChild(fr);
+      list.appendChild(fli);
+    }
     tags.forEach(function (t) {
       state.tagNames[t.id] = t.name;
       var li = el('li');
@@ -2599,11 +3078,11 @@ function loadOwnTags() {
       name.dataset.tag = t.id;
       name.onclick = function () { setFilter({ folder: null, tags: [t.id], q: '' }); };
       r.appendChild(name);
-      r.appendChild(el('span', 'count', t.count.toLocaleString()));
+      r.appendChild(el('span', 'count', I18n.number(t.count)));
       li.appendChild(r);
       list.appendChild(li);
     });
-    $('tags-section').hidden = !tags.length;
+    $('tags-section').hidden = !tags.length && !state.favCount;
     markActiveFolder();
     renderChips();
   }).catch(function () {});
@@ -2619,22 +3098,25 @@ var faceState = { sort: 'size', desc: false, filter: 'all', faces: [], total: 0,
 // `pet`: a pet drawn by hand, whose species nobody said.
 var PET_ICON = { cat: '🐱', dog: '🐶', pet: '🐾' };
 function petIcon(species) { return PET_ICON[species] || ''; }
+function speciesName(species) { return tr('pet.species.' + (PET_ICON[species] ? species : 'pet')); }
+// "3 cats", "1 dog": the pets of one species (or just pets).
+function animalCount(species, n) { return trn('count.' + (species === 'cat' ? 'cats' : species === 'dog' ? 'dogs' : 'pets'), n); }
 
 // The check page of people's faces (view `faces`) or of cats and dogs (view `pets`).
 function checkKind() { return state.filter.view === 'pets' ? 'pets' : 'faces'; }
 function onCheckPage() { return state.filter.view === 'faces' || state.filter.view === 'pets'; }
 var PAGE_FACES = 300;
 var FACE_SORTS = [
-  ['size', false, 'Smallest first'], ['size', true, 'Largest first'],
-  ['score', false, 'Lowest score first'], ['score', true, 'Highest score first'],
+  ['size', false, 'facecheck.sort.smallest'], ['size', true, 'facecheck.sort.largest'],
+  ['score', false, 'facecheck.sort.lowest'], ['score', true, 'facecheck.sort.highest'],
 ];
 var FACE_FILTERS = [
-  ['all', 'All faces'], ['small', 'Too small for clustering'], ['large', 'Large enough'], ['rotated', 'Found turned'],
-  ['not_face', 'Marked “not a face”'],
+  ['all', 'facecheck.filter.all'], ['small', 'facecheck.filter.small'], ['large', 'facecheck.filter.large'], ['rotated', 'facecheck.filter.rotated'],
+  ['not_face', 'facecheck.filter.not_face'], ['pet_face', 'facecheck.filter.pet_face'], ['unmatched', 'facecheck.filter.unmatched'],
 ];
 // Cats and dogs are not looked for in turned copies, and the false finds are no pets.
 var PET_FILTERS = [
-  ['all', 'All pets'], ['small', 'Too small for clustering'], ['large', 'Large enough'], ['not_face', 'Marked “not a pet”'],
+  ['all', 'facecheck.pet_filter.all'], ['small', 'facecheck.filter.small'], ['large', 'facecheck.filter.large'], ['not_face', 'facecheck.pet_filter.not_face'], ['unmatched', 'facecheck.filter.unmatched'],
 ];
 function checkFilters() { return checkKind() === 'pets' ? PET_FILTERS : FACE_FILTERS; }
 
@@ -2644,17 +3126,17 @@ function loadFaces() {
   var page = $('page');
   var kind = checkKind();
   page.textContent = '';
-  var back = el('button', 'link back', '← Settings');
+  var back = el('button', 'link back', tr('settings.back'));
   back.onclick = function () { showView('settings'); };
   page.appendChild(back);
-  page.appendChild(el('h2', '', kind === 'pets' ? 'Pet check' : 'Face check'));
-  var sub = el('p', 'sub', 'Looking…');
+  page.appendChild(el('h2', '', tr(kind === 'pets' ? 'side.pet_check' : 'side.face_check')));
+  var sub = el('p', 'sub', tr('dups.looking'));
   page.appendChild(sub);
   if (!checkFilters().some(function (o) { return o[0] === faceState.filter; })) faceState.filter = 'all';
   page.appendChild(faceToolbar());
   var grid = el('div', 'faces');
   page.appendChild(grid);
-  var more = el('button', 'btn quiet', 'Show more');
+  var more = el('button', 'btn quiet', tr('app.show_more'));
   more.hidden = true;
   more.onclick = function () { moreFaces(grid, more); };
   page.appendChild(more);
@@ -2670,25 +3152,34 @@ function loadFaces() {
 
 function faceSummary(s) {
   var pets = s.kind === 'pets';
-  var noun = pets ? ['pet', 'pets'] : ['face', 'faces'];
-  var parts = [plural(s.faces, noun[0], noun[1]) + ' in ' + plural(s.looked - s.failed, 'photo', 'photos')];
-  if (s.failed) parts.push(plural(s.failed, 'photo', 'photos') + ' failed');
-  if (s.looked < s.photos) parts.push((s.photos - s.looked).toLocaleString() + ' still to look at');
-  parts.push(s.small.toLocaleString() + ' under ' + s.min_cluster_px + ' px (too small for clustering)');
-  if (!pets) parts.push(s.rotated_looked ? plural(s.rotated_faces, 'face', 'faces') + ' found turned' : 'not looked at turned yet');
-  if (s.not_faces) parts.push(plural(s.not_faces, noun[0], noun[1]) + ' marked “not ' + (pets ? 'a pet' : 'a face') + '”');
+  var things = function (n) { return trn(pets ? 'count.pets' : 'count.faces', n); };
+  var parts = [tr('facecheck.faces_in', { faces: things(s.faces), photos: trn('count.photos', s.looked - s.failed) })];
+  if (s.failed) parts.push(tr('facecheck.failed', { count: trn('count.photos', s.failed) }));
+  if (s.looked < s.photos) parts.push(tr('facecheck.todo', { n: s.photos - s.looked }));
+  parts.push(tr('facecheck.small', { n: s.small, px: s.min_cluster_px }));
+  if (!pets) parts.push(s.rotated_looked ? tr('facecheck.turned', { count: trn('count.faces', s.rotated_faces) }) : tr('facecheck.turned_none'));
+  if (s.pet_faces) parts.push(tr('facecheck.pet_faces', { count: trn('count.faces', s.pet_faces) }));
+  if (s.not_faces) parts.push(tr(pets ? 'facecheck.not_pets' : 'facecheck.not_faces', { count: things(s.not_faces) }));
   var widths = s.widths.map(function (b) {
     var label = b.from == null ? '< ' + b.to : b.to == null ? b.from + '+' : b.from + '–' + b.to;
-    return label + ' px: ' + b.count.toLocaleString();
+    return label + ' px: ' + I18n.number(b.count);
   });
-  return parts.join(' · ') + '. Widths in the copy the recognizer saw: ' + widths.join(', ') + '.';
+  var text = parts.join(' · ') + '. ' + tr('facecheck.widths', { widths: widths.join(', ') });
+  if (s.unmatched) {
+    var left = s.widths.filter(function (b) { return b.unmatched; }).map(function (b) {
+      var label = b.from == null ? '< ' + b.to : b.to == null ? b.from + '+' : b.from + '–' + b.to;
+      return label + ' px: ' + I18n.number(b.unmatched);
+    });
+    text += ' ' + tr('facecheck.unmatched', { count: things(s.unmatched), widths: left.join(', ') });
+  }
+  return text;
 }
 
 function faceToolbar() {
   var bar = el('div', 'toolbar');
   var sort = el('select');
   FACE_SORTS.forEach(function (o, k) {
-    var opt = el('option', '', o[2]);
+    var opt = el('option', '', tr(o[2]));
     opt.value = k;
     opt.selected = o[0] === faceState.sort && o[1] === faceState.desc;
     sort.appendChild(opt);
@@ -2701,13 +3192,13 @@ function faceToolbar() {
   };
   var filter = el('select');
   checkFilters().forEach(function (o) {
-    var opt = el('option', '', o[1]);
+    var opt = el('option', '', tr(o[1]));
     opt.value = o[0];
     opt.selected = o[0] === faceState.filter;
     filter.appendChild(opt);
   });
   filter.onchange = function () { faceState.filter = filter.value; loadFaces(); };
-  var pick = el('button', 'btn quiet', 'Select');
+  var pick = el('button', 'btn quiet', tr('facecheck.select'));
   pick.id = 'face-pick';
   pick.onclick = function () {
     faceState.picking = !faceState.picking;
@@ -2731,7 +3222,7 @@ function facePickBar() {
   var mark = el('button', 'btn');
   mark.id = 'face-pick-mark';
   mark.onclick = function () { markFaces(Object.keys(faceState.picked).map(Number)); };
-  var done = el('button', 'btn quiet', 'Done');
+  var done = el('button', 'btn quiet', tr('app.done'));
   done.onclick = function () { faceState.picking = false; clearFacePicks(); updateFacePick(); };
   bar.appendChild(count);
   bar.appendChild(mark);
@@ -2751,10 +3242,11 @@ function updateFacePick() {
   var n = Object.keys(faceState.picked).length;
   bar.hidden = !faceState.picking;
   $('face-pick').classList.toggle('active', faceState.picking);
-  $('face-pick-count').textContent = n ? plural(n, 'face', 'faces') : 'Tap faces to select';
+  var pets = checkKind() === 'pets';
+  $('face-pick-count').textContent = n ? trn(pets ? 'count.pets' : 'count.faces', n) : tr('facecheck.tap');
   var mark = $('face-pick-mark');
-  var what = checkKind() === 'pets' ? 'a pet' : 'a face';
-  mark.textContent = faceState.filter === 'not_face' ? 'It is ' + what : 'Not ' + what;
+  var undoing = faceState.filter === 'not_face';
+  mark.textContent = tr(pets ? (undoing ? 'facecheck.is_pet' : 'facecheck.not_pet') : (undoing ? 'facecheck.is_face' : 'facecheck.not_face'));
   mark.disabled = !n;
 }
 
@@ -2773,7 +3265,7 @@ function markFaces(ids) {
     faceState.faces = faceState.faces.filter(function (f) { return ids.indexOf(f.id) < 0; });
     faceState.total -= before - faceState.faces.length;
     updateFacePick();
-    toast(undo ? plural(r.faces, 'face', 'faces') + ' back' : plural(r.faces, 'face', 'faces') + ' marked “not a face”');
+    toast(tr(undo ? 'facecheck.back' : 'facecheck.marked', { count: trn('count.faces', r.faces) }));
   }).catch(failed);
 }
 
@@ -2783,7 +3275,7 @@ function moreFaces(grid, more) {
     kind: checkKind() === 'pets' ? 'pets' : null,
     sort: faceState.sort, desc: faceState.desc ? 'true' : null, offset: faceState.faces.length, limit: PAGE_FACES,
     max_px: f === 'small' ? faceState.minPx : null, min_px: f === 'large' ? faceState.minPx : null,
-    rotated: f === 'rotated' ? 'true' : null, not_face: f === 'not_face' ? 'true' : null,
+    rotated: f === 'rotated' ? 'true' : null, not_face: f === 'not_face' ? 'true' : null, pet_face: f === 'pet_face' ? 'true' : null, unmatched: f === 'unmatched' ? 'true' : null,
   });
   more.disabled = true;
   return api(LIBAPI + '/faces' + q).then(function (r) {
@@ -2791,9 +3283,7 @@ function moreFaces(grid, more) {
     faceState.total = r.total;
     faceState.minPx = r.min_cluster_px;
     r.faces.forEach(function (face) { faceState.faces.push(face); grid.appendChild(faceCard(face, null)); });
-    if (!faceState.total) grid.appendChild(el('p', 'sub', checkKind() === 'pets'
-      ? 'No pets here. `shoebox recognize --pets` (or “Recognize pets” in the launcher) finds them.'
-      : 'No faces here. `shoebox recognize` finds them.'));
+    if (!faceState.total) grid.appendChild(el('p', 'sub', tr(checkKind() === 'pets' ? 'facecheck.none_pets' : 'facecheck.none')));
     more.disabled = false;
     more.hidden = faceState.faces.length >= faceState.total;
   }).catch(failed);
@@ -2806,7 +3296,7 @@ function faceCard(face, similarity) {
   card.dataset.id = face.id;
   var a = el('a', 'crop');
   a.href = '#';
-  a.title = 'Open the photo';
+  a.title = tr('facecheck.open_photo');
   var img = el('img');
   img.alt = '';
   img.loading = 'lazy';
@@ -2838,18 +3328,17 @@ function faceCard(face, similarity) {
   var caption = Math.round(face.px) + ' px · ' + face.score.toFixed(2);
   if (similarity != null) caption = similarity.toFixed(2) + ' · ' + caption;
   card.appendChild(el('div', 'meta', caption));
-  if (face.species) card.appendChild(el('span', 'tag', petIcon(face.species) + ' ' + face.species));
-  if (face.small) card.appendChild(el('span', 'tag', 'small'));
-  if (face.roll) card.appendChild(el('span', 'tag', 'turned'));
+  if (face.species) card.appendChild(el('span', 'tag', petIcon(face.species) + ' ' + speciesName(face.species)));
+  if (face.small) card.appendChild(el('span', 'tag', tr('facecheck.tag_small')));
+  if (face.roll) card.appendChild(el('span', 'tag', tr('facecheck.tag_turned')));
   if (similarity == null) {
     var near = el('button', 'near', '≈');
-    near.title = face.species ? 'Most similar pets' : 'Most similar faces';
+    near.title = tr(face.species ? 'facecheck.similar_pets' : 'facecheck.similar_btn');
     near.onclick = function () { similarFaces(face); };
     card.appendChild(near);
     var undo = faceState.filter === 'not_face';
     var mark = el('button', 'mark', undo ? '↺' : '✕');
-    var what = face.species ? 'a pet' : 'a face';
-    mark.title = undo ? 'It is ' + what + ' (undo “not ' + what + '”)' : 'Not ' + what;
+    mark.title = face.species ? tr(undo ? 'facecheck.undo_hint_pet' : 'facecheck.not_pet') : tr(undo ? 'facecheck.undo_hint' : 'facecheck.not_face');
     mark.onclick = function () { markFaces([face.id]); };
     card.appendChild(mark);
   }
@@ -2861,23 +3350,44 @@ function faceCard(face, similarity) {
 function similarFaces(face) {
   api(LIBAPI + '/faces/' + face.id + '/similar?limit=24').then(function (list) {
     var box = el('div');
-    box.appendChild(el('p', 'hint', 'Cosine similarity of the embeddings (1 = identical), most similar first. Click ' + (face.species ? 'a pet' : 'a face') + ' to open its photo.'));
+    box.appendChild(el('p', 'hint', tr(face.species ? 'facecheck.similar_hint_pet' : 'facecheck.similar_hint')));
     var grid = el('div', 'faces');
     grid.appendChild(faceCard(face, 1));
     list.forEach(function (n) { grid.appendChild(faceCard(n, n.similarity)); });
     box.appendChild(grid);
-    openModal(face.species ? 'Most similar pets' : 'Most similar faces', box, [{ label: 'Close' }]);
+    openModal(tr(face.species ? 'facecheck.similar_pets' : 'facecheck.similar_btn'), box, [{ label: tr('app.close') }]);
   }).catch(failed);
 }
 
 // Open one photo in the viewer from the page, and come back to it when the
 // viewer closes.
-function openFacePhoto(face) {
+// `siblings` (optional): the faces shown with it, e.g. in a cluster card; the
+// arrow keys then step through their photos (once per photo).
+function openFacePhoto(face, siblings) {
   var saved = state.data;
-  var letter = { jpeg: 'j', png: 'p', heic: 'h' }[face.kind] || 'j';
-  state.data = { count: 1, ids: [face.file], kinds: letter, days: [0], versions: (face.version + '00000000').slice(0, 8), live: [] };
-  lb.restore = function () { state.data = saved; };
-  openLightbox(0);
+  var list = [], seen = {}, at = 0;
+  (siblings || [face]).forEach(function (f) {
+    if (f.file == null || seen[f.file]) return;
+    seen[f.file] = true;
+    list.push(f);
+  });
+  list.forEach(function (f, k) { if (f.file === face.file) at = k; });
+  if (!list.length) list = [face];
+  state.data = {
+    count: list.length,
+    ids: list.map(function (f) { return f.file; }),
+    kinds: list.map(function (f) { return { jpeg: 'j', png: 'p', heic: 'h' }[f.kind] || 'j'; }).join(''),
+    days: list.map(function () { return 0; }),
+    versions: list.map(function (f) { return ((f.version || '') + '00000000').slice(0, 8); }).join(''),
+    live: [],
+  };
+  // Back to the thumbnail it was opened from (keyboard: Tab, Space, Space).
+  var from = document.activeElement;
+  lb.restore = function () {
+    state.data = saved;
+    if (from && from.isConnected && from.focus) from.focus();
+  };
+  openLightbox(at);
 }
 
 // ------------------------------------------------------------------ settings
@@ -2887,32 +3397,180 @@ function openFacePhoto(face) {
 function loadSettings() {
   var page = $('page');
   page.textContent = '';
-  page.appendChild(el('h2', '', 'Settings'));
+  page.appendChild(el('h2', '', tr('settings.title')));
   var sec = el('section', 'settings-section');
-  sec.appendChild(el('h3', '', 'Calibration'));
-  sec.appendChild(el('p', 'hint', 'Look at what recognition found in your photos: sizes, scores, nearest neighbours and false finds. Nothing here changes a photo.'));
+  sec.appendChild(el('h3', '', tr('settings.calibration')));
+  sec.appendChild(el('p', 'hint', tr('settings.calibration_hint')));
   var cards = el('div', 'settings-cards');
   [
-    ['faces', 'Face check', 'People’s faces: how many were found, how small they are, which look alike.'],
-    ['pets', 'Pet check', 'Cats and dogs: how many were found, how small they are, which look alike.'],
+    ['faces', tr('side.face_check'), tr('settings.faces_desc')],
+    ['pets', tr('side.pet_check'), tr('settings.pets_desc')],
   ].forEach(function (c) {
     var card = el('button', 'settings-card');
     card.type = 'button';
     card.appendChild(el('span', 'title', c[1]));
     card.appendChild(el('span', 'hint', c[2]));
-    var line = el('span', 'sub', 'Looking…');
+    var line = el('span', 'sub', tr('dups.looking'));
     card.appendChild(line);
     card.onclick = function () { showView(c[0]); };
     cards.appendChild(card);
     api(LIBAPI + '/faces/stats' + query({ kind: c[0] === 'pets' ? 'pets' : null })).then(function (s) {
       line.textContent = s.faces
-        ? plural(s.faces, c[0] === 'pets' ? 'pet' : 'face', c[0] === 'pets' ? 'pets' : 'faces') + ' in ' + plural(s.looked - s.failed, 'photo', 'photos')
-        : s.looked ? 'Looked at ' + plural(s.looked, 'photo', 'photos') + ', nothing found.'
-          : c[0] === 'pets' ? 'Not looked for yet: `shoebox recognize --pets`, or “Recognize pets” in the launcher.' : 'Not looked for yet: `shoebox recognize`.';
+        ? tr('facecheck.faces_in', { faces: trn(c[0] === 'pets' ? 'count.pets' : 'count.faces', s.faces), photos: trn('count.photos', s.looked - s.failed) })
+        : s.looked ? tr('settings.looked_none', { photos: trn('count.photos', s.looked) })
+          : tr(c[0] === 'pets' ? 'settings.not_yet_pets' : 'settings.not_yet_faces');
     }).catch(function () { line.textContent = ''; });
   });
   sec.appendChild(cards);
   page.appendChild(sec);
+  page.appendChild(allowTrashSection());
+  page.appendChild(mapsSection());
+  page.appendChild(eventPatternSection());
+  page.appendChild(copyFoldersSection());
+}
+
+// Settings: whether photos can be moved to the trash from the photo view and
+// the timeline selection. Off by default: shoebox leaves the originals alone.
+function allowTrashSection() {
+  var sec = el('section', 'settings-section');
+  sec.appendChild(el('h3', '', tr('settings.allow_trash')));
+  var label = el('label', 'check-row');
+  var box = el('input');
+  box.type = 'checkbox';
+  box.checked = allowTrash;
+  box.onchange = function () {
+    var want = box.checked;
+    post(LIBAPI + '/allow-trash', { allow: want }).then(function (r) {
+      allowTrash = !!r.allow;
+      applyAllowTrash();
+      toast(tr('settings.allow_trash_saved'));
+    }).catch(function (e) { box.checked = allowTrash; failed(e); });
+  };
+  label.appendChild(box);
+  label.appendChild(document.createTextNode(' ' + tr('settings.allow_trash_label')));
+  sec.appendChild(label);
+  sec.appendChild(el('p', 'hint', tr('settings.allow_trash_hint')));
+  return sec;
+}
+
+// How event folders are named when the app creates them (the library's
+// setting, e.g. "YYYY-MM Name"); the scanner reads every form.
+var eventPattern = 'YYYY-MM Name';
+
+function loadEventPattern() {
+  return api(LIBAPI + '/event-pattern').then(function (r) { eventPattern = r.pattern; }).catch(function () {});
+}
+
+// The folder name for a year, month and event name, as the server makes it.
+function eventFolderName(year, month, name, pattern) {
+  var m = /^(YYYY|YY)([.-])MM([ _.-]?)Name$/.exec(pattern || eventPattern) || ['', 'YYYY', '-', ' '];
+  var y = !year ? (m[1] === 'YYYY' ? '????' : '??')
+    : m[1] === 'YYYY' ? ('000' + year).slice(-4) : ('0' + (year % 100)).slice(-2);
+  return y + m[2] + (month < 10 ? '0' : '') + month + m[3] + name;
+}
+
+// The pattern written with the letters of the UI language (JJJJ-MM Name).
+function patternLabel(pattern) {
+  var keys = { YYYY: 'pattern.year4', YY: 'pattern.year2', MM: 'pattern.month', Name: 'pattern.name' };
+  return pattern.replace(/YYYY|YY|MM|Name/g, function (m) { return tr(keys[m]); });
+}
+
+// Settings: how new event folders are named. Three choices, so the result
+// always fits what the scanner reads (no free text to get wrong).
+function eventPatternSection() {
+  var sec = el('section', 'settings-section');
+  sec.appendChild(el('h3', '', tr('settings.event_pattern')));
+  sec.appendChild(el('p', 'hint', tr('settings.event_pattern_hint')));
+  var row = el('div', 'copy-folder-row');
+  var choose = function (label, options, current) {
+    var wrap = el('label', 'pattern-choice', label + ' ');
+    var sel = el('select');
+    options.forEach(function (o) {
+      var opt = el('option', '', o[1]);
+      opt.value = o[0];
+      if (o[0] === current) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    wrap.appendChild(sel);
+    row.appendChild(wrap);
+    return sel;
+  };
+  var m = /^(YYYY|YY)([.-])MM([ _.-]?)Name$/.exec(eventPattern) || ['', 'YYYY', '-', ' '];
+  var year = choose(tr('settings.event_year'), [['YYYY', tr('settings.event_year4')], ['YY', tr('settings.event_year2')]], m[1]);
+  var sep = choose(tr('settings.event_sep'), [['-', tr('settings.sep_dash')], ['.', tr('settings.sep_dot')]], m[2]);
+  var gap = choose(tr('settings.event_gap'), [[' ', tr('settings.gap_space')], ['_', tr('settings.gap_underscore')],
+    ['.', tr('settings.gap_dot')], ['-', tr('settings.gap_dash')], ['', tr('settings.gap_none')]], m[3]);
+  var preview = el('p', 'hint', '');
+  var error = el('p', 'error');
+  var current = function () { return year.value + sep.value + 'MM' + gap.value + 'Name'; };
+  var draw = function () {
+    preview.textContent = tr('settings.event_preview', {
+      example: eventFolderName(2020, 7, tr('pattern.example_name'), current()),
+      pattern: patternLabel(current()),
+    });
+  };
+  [year, sep, gap].forEach(function (sel) {
+    sel.onchange = function () {
+      error.textContent = '';
+      draw();
+      post(LIBAPI + '/event-pattern', { pattern: current() }).then(function (r) {
+        eventPattern = r.pattern;
+        toast(tr('settings.event_saved'));
+      }).catch(function (e) { error.textContent = e.message; });
+    };
+  });
+  draw();
+  sec.appendChild(row);
+  sec.appendChild(preview);
+  sec.appendChild(error);
+  return sec;
+}
+
+// Folder names whose files are copies, not originals (InDesign's "Links").
+function copyFoldersSection() {
+  var sec = el('section', 'settings-section');
+  sec.appendChild(el('h3', '', tr('settings.copy_folders')));
+  sec.appendChild(el('p', 'hint', tr('settings.copy_folders_hint')));
+  var chips = el('div', 'tagline');
+  var folders = [];
+  var save = function (next) {
+    return post(LIBAPI + '/duplicates/copy-folders', { folders: next }).then(function (r) {
+      folders = r.folders;
+      draw();
+    }).catch(failed);
+  };
+  var draw = function () {
+    chips.textContent = '';
+    if (!folders.length) chips.appendChild(el('span', 'hint', tr('settings.copy_folders_none')));
+    folders.forEach(function (name) {
+      var chip = el('span', 'chip own', name + ' ');
+      var x = el('button', 'chip-x', '✕');
+      x.type = 'button';
+      x.title = tr('settings.copy_folders_remove');
+      x.onclick = function () { save(folders.filter(function (f) { return f !== name; })); };
+      chip.appendChild(x);
+      chips.appendChild(chip);
+    });
+  };
+  var row = el('div', 'copy-folder-row');
+  var input = el('input');
+  input.type = 'text';
+  input.placeholder = tr('settings.copy_folders_placeholder');
+  var add = el('button', 'btn', tr('settings.copy_folders_add'));
+  var go = function () {
+    var name = input.value.trim();
+    if (!name) return;
+    input.value = '';
+    save(folders.concat([name]));
+  };
+  add.onclick = go;
+  input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go(); });
+  row.appendChild(input);
+  row.appendChild(add);
+  sec.appendChild(chips);
+  sec.appendChild(row);
+  api(LIBAPI + '/duplicates/copy-folders').then(function (r) { folders = r.folders; draw(); }).catch(function () { draw(); });
+  return sec;
 }
 
 // ------------------------------------------------------------------ faces: people, groups, unnamed (5c-3)
@@ -2931,7 +3589,7 @@ function loadPeople() {
     people.list = r[0];
     people.groups = r[1];
     people.byId = {};
-    r[0].forEach(function (p) { people.byId[p.id] = p; state.personNames[p.id] = p.name; });
+    r[0].forEach(function (p) { people.byId[p.id] = p; state.personNames[p.id] = p.name; state.personSpecies[p.id] = p.species; });
     renderFacesSection();
     renderChips();
   }).catch(function () {});
@@ -2943,7 +3601,7 @@ function groupedPeople() {
   var out = people.groups.map(function (g) { return { id: g.id, name: g.name, people: [] }; });
   var byGroup = {};
   out.forEach(function (s) { byGroup[s.id] = s; });
-  var none = { id: null, name: 'No group', people: [] };
+  var none = { id: null, name: tr('people.no_group'), people: [] };
   people.list.forEach(function (p) { (byGroup[p.group_id] || none).people.push(p); });
   if (none.people.length) out.push(none);
   return out;
@@ -3025,7 +3683,7 @@ function zoomFace(face) {
     img.style.top = (-y0 / side * 100) + '%';
     box.classList.add('ready');
   };
-  img.src = '/api/files/' + face.file + '/thumb?v=' + face.version;
+  img.src = LIBAPI + '/files/' + face.file + '/thumb?v=' + face.version;
   inner.appendChild(img);
   box.appendChild(inner);
   return box;
@@ -3082,7 +3740,7 @@ function dropOnGroup(node, groupId) {
 function setGroup(p, groupId) {
   return post(LIBAPI + '/people/' + p.id + '/group', { group_id: groupId }).then(function () {
     var g = people.groups.filter(function (x) { return x.id === groupId; })[0];
-    toast(p.name + (g ? ' is in “' + g.name + '” now' : ' is in no group now'));
+    toast(g ? tr('people.is_in', { name: p.name, group: g.name }) : tr('people.is_in_none', { name: p.name }));
     peopleChanged();
     if (state.filter.view === 'people') loadPeople().then(loadPeoplePage);
   }).catch(failed);
@@ -3104,7 +3762,7 @@ function renderFacesSection() {
     var toggle = el('button', 'toggle');
     if (s.people.length) setArrow(toggle, !!people.open[key]);
     var name = el('button', 'name', s.name);
-    name.title = s.people.length ? 'Show or hide its people' : 'Nobody in it yet';
+    name.title = tr(s.people.length ? 'people.group_toggle' : 'people.group_empty');
     var flip = function () { people.open[key] = !people.open[key]; renderFacesSection(); };
     toggle.onclick = flip;
     name.onclick = flip;
@@ -3123,7 +3781,7 @@ function renderFacesSection() {
         b.dataset.person = p.id;
         b.onclick = function () { showPerson(p.id); };
         prow.appendChild(b);
-        prow.appendChild(el('span', 'count', p.photos.toLocaleString()));
+        prow.appendChild(el('span', 'count', I18n.number(p.photos)));
         dragPerson(prow, p);
         pli.appendChild(prow);
         ul.appendChild(pli);
@@ -3136,7 +3794,7 @@ function renderFacesSection() {
   var uli = el('li');
   var urow = el('div', 'row');
   urow.appendChild(el('span', 'toggle', ''));
-  var ub = el('button', 'name', 'Unnamed' + (c ? ' (' + plural(c.clusters, 'cluster', 'clusters') + ')' : ''));
+  var ub = el('button', 'name', c ? tr('people.unnamed_n', { count: trn('count.clusters', c.clusters) }) : tr('people.unnamed'));
   ub.dataset.view = 'unnamed';
   ub.onclick = function () { showView('unnamed'); };
   urow.appendChild(ub);
@@ -3158,16 +3816,36 @@ function markFacesSection() {
 
 // ---- a field that names someone
 
+// The species to name these faces: the one most of them have ('cat', 'dog';
+// the first on a tie), 'pet' if all are drawn pets of no species, '' unless
+// every one is a pet. A stray dog among six cats is a wrong find.
+function facesSpecies(faces) {
+  if (!faces.length || !faces.every(function (f) { return f.species; })) return '';
+  var n = { cat: 0, dog: 0 };
+  faces.forEach(function (f) { if (f.species in n) n[f.species]++; });
+  if (!n.cat && !n.dog) return 'pet';
+  return n.dog > n.cat ? 'dog' : 'cat';
+}
+
+// Whether a person (or pet) of `p.species` is one `species` asks for: ''
+// people only, 'cat' or 'dog' those (and pets of no species), 'pet' any pet.
+function kindOf(p, species) {
+  if (!species) return !p.species;
+  if (!p.species) return false;
+  return species === 'pet' || p.species === 'pet' || p.species === species;
+}
+
 // A text field offering people by group while typing (the autocomplete
 // that makes naming quick); picking one calls done({person_id} or {name},
 // label). opts: allowNew (offer a new person of the typed name), except
-// (ids to leave out), placeholder.
+// (ids to leave out), placeholder, species (a species, or a function giving
+// it when the list is drawn: the new one is then a "cat", "dog" or "pet").
 function personField(done, opts) {
   opts = opts || {};
   var wrap = el('div', 'pfield');
   var input = el('input');
   input.type = 'text';
-  input.placeholder = opts.placeholder || 'Name';
+  input.placeholder = opts.placeholder || tr('people.name_placeholder');
   input.autocomplete = 'off';
   input.setAttribute('autocapitalize', 'words');
   input.setAttribute('enterkeyhint', 'done');
@@ -3177,6 +3855,9 @@ function personField(done, opts) {
   wrap.appendChild(input);
   wrap.appendChild(list);
   var items = [], at = -1;
+  // Only the kind of face being named is offered: people for faces, cats for
+  // a cat, dogs for a dog.
+  var kind = function () { return typeof opts.species === 'function' ? opts.species() : opts.species || ''; };
   var pick = function (it) {
     list.hidden = true;
     input.value = it.label;
@@ -3185,6 +3866,9 @@ function personField(done, opts) {
   var mark = function () {
     Array.prototype.forEach.call(list.querySelectorAll('.item'), function (b, k) { b.classList.toggle('at', k === at); });
   };
+  var isTaken = function (text) {
+    return people.list.some(function (p) { return fold(p.name) === fold(text) && !(opts.except && opts.except.indexOf(p.id) >= 0); });
+  };
   var render = function () {
     var text = input.value.trim(), low = fold(text), exact = null;
     list.textContent = '';
@@ -3192,7 +3876,7 @@ function personField(done, opts) {
     at = -1;
     groupedPeople().forEach(function (s) {
       var ps = s.people.filter(function (p) {
-        return (!low || fold(p.name).indexOf(low) >= 0) && !(opts.except && opts.except.indexOf(p.id) >= 0);
+        return kindOf(p, kind()) && (!low || fold(p.name).indexOf(low) >= 0) && !(opts.except && opts.except.indexOf(p.id) >= 0);
       });
       if (!ps.length) return;
       list.appendChild(el('div', 'head', s.name));
@@ -3209,9 +3893,13 @@ function personField(done, opts) {
         list.appendChild(b);
       });
     });
-    if (opts.allowNew && text && !exact) {
+    if (opts.allowNew && text && !exact && isTaken(text)) {
+      // A name is one person's, whatever the kind: not offered again as new.
+      list.appendChild(el('div', 'head', tr('people.name_taken', { name: text })));
+    } else if (opts.allowNew && text && !exact) {
       var it = { who: { name: text }, label: text };
-      var b = el('button', 'item new', '+ New person “' + text + '”');
+      var sp = kind();
+      var b = el('button', 'item new', tr(sp ? 'people.new.' + (PET_ICON[sp] ? sp : 'pet') : 'people.new_person', { name: text }));
       b.type = 'button';
       b.onmousedown = function (ev) { ev.preventDefault(); };
       b.onclick = function () { pick(it); };
@@ -3219,7 +3907,7 @@ function personField(done, opts) {
       list.appendChild(b);
     }
     wrap.exact = exact;
-    list.hidden = !items.length || document.activeElement !== input;
+    list.hidden = !list.childNodes.length || document.activeElement !== input;
   };
   input.addEventListener('focus', render);
   input.addEventListener('input', render);
@@ -3237,7 +3925,7 @@ function personField(done, opts) {
       var text = input.value.trim();
       if (at >= 0) pick(items[at]);
       else if (wrap.exact) pick(wrap.exact);
-      else if (text && opts.allowNew) pick({ who: { name: text }, label: text });
+      else if (text && opts.allowNew && !isTaken(text)) pick({ who: { name: text }, label: text });
     } else if (ev.key === 'Escape') {
       if (!list.hidden) { list.hidden = true; return; }
       if (opts.onEscape) opts.onEscape();
@@ -3250,8 +3938,9 @@ function personField(done, opts) {
     var text = input.value.trim();
     if (!text) return null;
     if (wrap.exact) return wrap.exact.who;
-    var hit = people.list.filter(function (p) { return fold(p.name) === fold(text); })[0];
+    var hit = people.list.filter(function (p) { return fold(p.name) === fold(text) && kindOf(p, kind()); })[0];
     if (hit) return { person_id: hit.id };
+    if (isTaken(text)) return null;
     return opts.allowNew ? { name: text } : null;
   };
   return wrap;
@@ -3269,20 +3958,20 @@ function nameDialog(title, value, label, save) {
   var error = el('p', 'error');
   body.appendChild(error);
   var go = function (btn) {
-    if (!input.value.trim()) { error.textContent = 'Type a name.'; return false; }
+    if (!input.value.trim()) { error.textContent = tr('people.type_name'); return false; }
     btn.disabled = true;
     save(input.value.trim()).then(function () { closeModal(); }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
     return false;
   };
-  var buttons = openModal(title, body, [{ label: 'Cancel', cls: 'quiet' }, { label: label, onclick: go }]);
+  var buttons = openModal(title, body, [{ label: tr('app.cancel'), cls: 'quiet' }, { label: label, onclick: go }]);
   input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go(buttons[1]); });
   input.select();
 }
 
 function renamePerson(p) {
-  nameDialog('Rename', p.name, 'Rename', function (name) {
+  nameDialog(tr('people.rename'), p.name, tr('people.rename'), function (name) {
     return post(LIBAPI + '/people/' + p.id + '/rename', { name: name }).then(function (r) {
-      toast('Now “' + r.name + '”');
+      toast(tr('people.renamed', { name: r.name }));
       state.personNames[p.id] = r.name;
       peopleChanged();
       if (state.filter.view) loadView(state.filter.view); else renderChips();
@@ -3292,11 +3981,11 @@ function renamePerson(p) {
 
 // Only for someone without faces (a misspelled name); others are merged.
 function deletePersonDialog(p) {
-  openModal('Delete person', 'Delete “' + p.name + '”? Nobody is confirmed as them, so no photo changes.', [
-    { label: 'Cancel', cls: 'quiet' },
-    { label: 'Delete', cls: 'danger', onclick: function () {
+  openModal(tr('people.delete_title'), tr('people.delete_text', { name: p.name }), [
+    { label: tr('app.cancel'), cls: 'quiet' },
+    { label: tr('app.delete'), cls: 'danger', onclick: function () {
       post(LIBAPI + '/people/' + p.id + '/delete').then(function () {
-        toast('“' + p.name + '” deleted');
+        toast(tr('people.deleted', { name: p.name }));
         peopleChanged();
         if (state.filter.people.indexOf(p.id) >= 0) setFilter({ people: state.filter.people.filter(function (x) { return x !== p.id; }) });
         else if (state.filter.view === 'person' && state.filter.id === p.id) showView('people');
@@ -3307,9 +3996,9 @@ function deletePersonDialog(p) {
 }
 
 function newGroup(then) {
-  nameDialog('New group', '', 'Create', function (name) {
+  nameDialog(tr('people.new_group'), '', tr('people.create'), function (name) {
     return post(LIBAPI + '/groups', { name: name }).then(function (g) {
-      toast('Group “' + g.name + '” created');
+      toast(tr('people.group_created', { name: g.name }));
       return loadPeople().then(function () {
         if (then) then(g);
         else if (state.filter.view === 'people') loadPeoplePage();
@@ -3320,7 +4009,7 @@ function newGroup(then) {
 
 function moveToGroupDialog(p) {
   var body = el('div');
-  body.appendChild(el('p', '', 'Put ' + p.name + ' into:'));
+  body.appendChild(el('p', '', tr('people.put_into', { name: p.name })));
   var list = el('div', 'taglist');
   var choice = function (label, id, current) {
     var b = el('button', current ? 'current' : '', label + (current ? ' ✓' : ''));
@@ -3328,33 +4017,33 @@ function moveToGroupDialog(p) {
     list.appendChild(b);
   };
   people.groups.forEach(function (g) { choice(g.name, g.id, p.group_id === g.id); });
-  choice('No group', null, p.group_id == null);
+  choice(tr('people.no_group'), null, p.group_id == null);
   body.appendChild(list);
-  body.appendChild(el('p', 'hint', 'A person is in one group at most. On a computer you can also drag people onto a group.'));
-  openModal('Move to group', body, [
-    { label: 'New group…', cls: 'quiet', onclick: function () { setTimeout(function () { newGroup(function (g) { setGroup(p, g.id); }); }, 0); } },
-    { label: 'Cancel', cls: 'quiet' },
+  body.appendChild(el('p', 'hint', tr('people.group_hint')));
+  openModal(tr('people.to_group_title'), body, [
+    { label: tr('people.new_group_btn'), cls: 'quiet', onclick: function () { setTimeout(function () { newGroup(function (g) { setGroup(p, g.id); }); }, 0); } },
+    { label: tr('app.cancel'), cls: 'quiet' },
   ]);
 }
 
 function mergeDialog(p) {
   var body = el('div');
-  body.appendChild(el('p', '', 'Merge ' + p.name + ' into:'));
+  body.appendChild(el('p', '', tr('people.merge_text', { name: p.name })));
   var into = null;
-  var field = personField(function (who) { into = who.person_id; }, { except: [p.id], placeholder: 'Who is it really?' });
+  var field = personField(function (who) { into = who.person_id; }, { except: [p.id], species: p.species || '', placeholder: tr('people.merge_placeholder') });
   body.appendChild(field);
-  body.appendChild(el('p', 'hint', 'All faces of ' + p.name + ' (and the photos they are on) become that person’s; ' + p.name + ' is removed. The other person keeps their name and group.'));
+  body.appendChild(el('p', 'hint', tr('people.merge_hint', { name: p.name })));
   var error = el('p', 'error');
   body.appendChild(error);
-  openModal('Merge', body, [{ label: 'Cancel', cls: 'quiet' }, {
-    label: 'Merge', onclick: function (btn) {
+  openModal(tr('people.merge_title'), body, [{ label: tr('app.cancel'), cls: 'quiet' }, {
+    label: tr('people.merge_title'), onclick: function (btn) {
       var who = field.value();
       into = into || (who && who.person_id);
-      if (!into) { error.textContent = 'Choose someone from the list.'; return false; }
+      if (!into) { error.textContent = tr('people.choose_someone'); return false; }
       btn.disabled = true;
       post(LIBAPI + '/people/' + p.id + '/merge', { into: into }).then(function (r) {
         closeModal();
-        toast(p.name + ' merged into ' + r.name);
+        toast(tr('people.merged', { name: p.name, into: r.name }));
         peopleChanged();
         if (state.filter.people.indexOf(p.id) >= 0 || (state.filter.view === 'person' && state.filter.id === p.id)) showPerson(r.id);
         else if (state.filter.view) loadView(state.filter.view);
@@ -3371,40 +4060,78 @@ function groupsDialog() {
   body.appendChild(list);
   var render = function () {
     list.textContent = '';
-    if (!people.groups.length) list.appendChild(el('p', 'hint', 'No groups yet.'));
+    if (!people.groups.length) list.appendChild(el('p', 'hint', tr('people.groups_none')));
     people.groups.forEach(function (g, k) {
       var row = el('div', 'grow-row');
       row.appendChild(el('span', 'gname', g.name));
-      row.appendChild(el('span', 'gcount', plural(g.people, 'person', 'people')));
-      var btn = function (label, title, run, disabled) {
+      row.appendChild(el('span', 'gcount', trn('count.people', g.people)));
+      var btn = function (label, title, run) {
         var b = el('button', 'btn quiet small', label);
         b.title = title;
         b.setAttribute('aria-label', title);
-        b.disabled = !!disabled;
         b.onclick = run;
         row.appendChild(b);
       };
-      var move = function (d) {
+      // Put group k at index `to` and save the new order.
+      var moveTo = function (to, refocus) {
+        if (to === k || to < 0 || to >= people.groups.length) return;
         var ids = people.groups.map(function (x) { return x.id; });
         ids.splice(k, 1);
-        ids.splice(k + d, 0, g.id);
-        post(LIBAPI + '/groups/reorder', { ids: ids }).then(function (gs) { people.groups = gs; render(); peopleChanged(); }).catch(failed);
+        ids.splice(to, 0, g.id);
+        post(LIBAPI + '/groups/reorder', { ids: ids }).then(function (gs) {
+          people.groups = gs; render(); peopleChanged();
+          if (refocus) { var h = list.querySelectorAll('.grip')[to]; if (h) h.focus(); }
+        }).catch(failed);
       };
-      btn('↑', 'Move up', function () { move(-1); }, k === 0);
-      btn('↓', 'Move down', function () { move(1); }, k === people.groups.length - 1);
-      btn('Rename', 'Rename', function () {
-        nameDialog('Rename group', g.name, 'Rename', function (name) {
+      var grip = el('span', 'grip', '\u283F');
+      grip.tabIndex = 0;
+      grip.setAttribute('role', 'button');
+      grip.title = tr('people.drag_handle');
+      grip.setAttribute('aria-label', tr('people.drag_handle'));
+      grip.onkeydown = function (e) {
+        if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+        e.preventDefault();
+        moveTo(k + (e.key === 'ArrowUp' ? -1 : 1), true);
+      };
+      // Pointer events cover mouse, pen and touch with one code path.
+      grip.onpointerdown = function (e) {
+        if (e.button) return;
+        e.preventDefault();
+        grip.setPointerCapture(e.pointerId);
+        row.classList.add('dragging');
+        var rows = Array.prototype.slice.call(list.children);
+        var target = k;
+        var mark = function (ev) {
+          var hit = document.elementFromPoint(ev.clientX, ev.clientY);
+          var r = hit && hit.closest ? hit.closest('.grow-row') : null;
+          var i = rows.indexOf(r);
+          if (i >= 0) target = i;
+          rows.forEach(function (x, j) { x.classList.toggle('over', j === target && j !== k); });
+        };
+        grip.onpointermove = mark;
+        var end = function (ev) {
+          grip.onpointermove = grip.onpointerup = grip.onpointercancel = null;
+          row.classList.remove('dragging');
+          rows.forEach(function (x) { x.classList.remove('over'); });
+          if (ev.type === 'pointerup') moveTo(target);
+        };
+        grip.onpointerup = end;
+        grip.onpointercancel = end;
+      };
+      row.insertBefore(grip, row.firstChild);
+      btn(tr('people.rename'), tr('people.rename'), function () {
+        nameDialog(tr('people.rename_group'), g.name, tr('people.rename'), function (name) {
           return post(LIBAPI + '/groups/' + g.id + '/rename', { name: name }).then(function () {
             return loadPeople().then(function () { groupsDialog(); if (state.filter.view === 'people') loadPeoplePage(); });
           });
         });
       });
-      btn('Delete', 'Delete', function () {
-        openModal('Delete group', 'Delete “' + g.name + '”? ' + (g.people ? plural(g.people, 'person', 'people') + ' in it will be in no group; nobody is deleted.' : 'Nobody is in it.'), [
-          { label: 'Cancel', cls: 'quiet', onclick: function () { setTimeout(groupsDialog, 0); } },
-          { label: 'Delete', cls: 'danger', onclick: function () {
+      btn(tr('app.delete'), tr('app.delete'), function () {
+        openModal(tr('people.delete_group_title'), tr('people.delete_group_text', { name: g.name, detail: g.people ? tr('people.delete_group_some', { count: trn('count.people', g.people) }) : tr('people.delete_group_none') }), [
+          { label: tr('app.cancel'), cls: 'quiet', onclick: function () { setTimeout(groupsDialog, 0); } },
+          { label: tr('app.delete'), cls: 'danger', onclick: function () {
             post(LIBAPI + '/groups/' + g.id + '/delete').then(function () {
-              toast('Group “' + g.name + '” deleted');
+              toast(tr('people.group_deleted', { name: g.name }));
               return loadPeople().then(function () { groupsDialog(); if (state.filter.view === 'people') loadPeoplePage(); });
             }).catch(failed);
           } },
@@ -3414,28 +4141,28 @@ function groupsDialog() {
     });
   };
   render();
-  openModal('Groups', body, [
-    { label: 'New group…', cls: 'quiet', onclick: function () { setTimeout(function () { newGroup(function () { groupsDialog(); }); }, 0); } },
-    { label: 'Done', onclick: function () { if (state.filter.view === 'people') loadPeoplePage(); } },
+  openModal(tr('people.groups_title'), body, [
+    { label: tr('people.new_group_btn'), cls: 'quiet', onclick: function () { setTimeout(function () { newGroup(function () { groupsDialog(); }); }, 0); } },
+    { label: tr('app.done'), onclick: function () { if (state.filter.view === 'people') loadPeoplePage(); } },
   ]);
 }
 
 function personMenuItems(p) {
   return [
-    { label: 'Show photos', run: function () { showPerson(p.id); } },
-    { label: 'Review faces', run: function () { showView('person', p.id, p.suggested ? 'suggested' : p.maybe ? 'maybe' : 'confirmed'); } },
-    { label: 'Rename…', run: function () { renamePerson(p); } },
-    { label: 'Move to group…', run: function () { moveToGroupDialog(p); } },
-    { label: 'Merge into…', run: function () { mergeDialog(p); } },
-  ].concat(p.faces === 0 ? [{ label: 'Delete…', run: function () { deletePersonDialog(p); } }] : []);
+    { label: tr('people.menu.show'), run: function () { showPerson(p.id); } },
+    { label: tr('people.menu.review'), run: function () { showView('person', p.id, p.suggested ? 'suggested' : p.maybe ? 'maybe' : 'confirmed'); } },
+    { label: tr('people.menu.rename'), run: function () { renamePerson(p); } },
+    { label: tr('people.menu.move'), run: function () { moveToGroupDialog(p); } },
+    { label: tr('people.menu.merge'), run: function () { mergeDialog(p); } },
+  ].concat(p.faces === 0 ? [{ label: tr('people.menu.delete'), run: function () { deletePersonDialog(p); } }] : []);
 }
 
 // A ⋯ button that opens a menu below itself (works by touch).
 function menuButton(items, title) {
   var b = el('button', 'more-btn', '⋯');
   b.type = 'button';
-  b.title = title || 'More';
-  b.setAttribute('aria-label', title || 'More');
+  b.title = title || tr('people.more');
+  b.setAttribute('aria-label', title || tr('people.more'));
   b.onclick = function (ev) {
     ev.preventDefault();
     ev.stopPropagation();
@@ -3455,13 +4182,13 @@ function personHead(box, f) {
   var text = el('div', 'ptext');
   text.appendChild(el('div', 'pname', (p.species ? petIcon(p.species) + ' ' : '') + p.name));
   var g = people.groups.filter(function (x) { return x.id === p.group_id; })[0];
-  text.appendChild(el('div', 'pmeta', plural(p.photos, 'photo', 'photos') + ' · ' + (g ? g.name : 'no group')));
+  text.appendChild(el('div', 'pmeta', trn('count.photos', p.photos) + ' · ' + (g ? g.name : tr('people.no_group_lower'))));
   head.appendChild(text);
   var review = p.suggested + p.maybe;
-  var faces = el('button', 'btn quiet', review ? 'Check ' + plural(review, 'face', 'faces') : 'Faces');
+  var faces = el('button', 'btn quiet', review ? tr('people.check', { count: trn('count.faces', review) }) : tr('side.faces'));
   faces.onclick = function () { showView('person', p.id, p.suggested ? 'suggested' : p.maybe ? 'maybe' : 'confirmed'); };
   head.appendChild(faces);
-  head.appendChild(menuButton(personMenuItems(p).slice(1), 'More for ' + p.name));
+  head.appendChild(menuButton(personMenuItems(p).slice(1), tr('people.more_for', { name: p.name })));
   box.insertBefore(head, box.firstChild);
 }
 
@@ -3471,30 +4198,32 @@ function loadPeoplePage() {
   var page = $('page');
   if (state.filter.view !== 'people') return;
   page.textContent = '';
-  page.appendChild(el('h2', '', 'Faces'));
+  page.appendChild(el('h2', '', tr('side.faces')));
   var c = people.info && people.info.clusters;
   var sub = el('p', 'sub');
-  sub.appendChild(document.createTextNode(plural(people.list.length, 'person', 'people') + (c ? ' · ' + plural(c.unnamed, 'face', 'faces') + ' without a name in ' + plural(c.clusters, 'cluster', 'clusters') + ' ' : ' ')));
+  sub.appendChild(document.createTextNode((c
+    ? tr('people.overview_unnamed', { people: trn('count.people', people.list.length), faces: trn('count.faces', c.unnamed), clusters: trn('count.clusters', c.clusters) })
+    : tr('people.overview', { people: trn('count.people', people.list.length) })) + ' '));
   if (c && c.clusters) {
-    var name = el('button', 'link', 'Name them →');
+    var name = el('button', 'link', tr('people.name_them'));
     name.onclick = function () { showView('unnamed'); };
     sub.appendChild(name);
   }
   page.appendChild(sub);
   var bar = el('div', 'toolbar');
-  var ng = el('button', 'btn quiet', 'New group…');
+  var ng = el('button', 'btn quiet', tr('people.new_group_btn'));
   ng.onclick = function () { newGroup(); };
-  var gs = el('button', 'btn quiet', 'Groups…');
+  var gs = el('button', 'btn quiet', tr('people.groups_btn'));
   gs.onclick = groupsDialog;
-  var check = el('button', 'btn quiet', 'Calibration');
-  check.title = 'Face check and pet check, in Settings';
+  var check = el('button', 'btn quiet', tr('settings.calibration'));
+  check.title = tr('people.calibration_hint');
   check.onclick = function () { showView('settings'); };
   bar.appendChild(ng);
   bar.appendChild(gs);
   bar.appendChild(check);
   page.appendChild(bar);
   var sections = groupedPeople();
-  if (!people.list.length) page.appendChild(el('p', 'sub', 'Nobody is named yet. Name faces under “Unnamed”, or in the info panel of a photo.'));
+  if (!people.list.length) page.appendChild(el('p', 'sub', tr('people.nobody_named')));
   sections.forEach(function (s) {
     var sec = el('section', 'pgroup');
     var h = el('h3', '', s.name);
@@ -3502,7 +4231,7 @@ function loadPeoplePage() {
     sec.appendChild(h);
     var grid = el('div', 'people');
     s.people.forEach(function (p) { grid.appendChild(personTile(p)); });
-    if (!s.people.length) grid.appendChild(el('p', 'hint', 'Nobody in it yet: “Move to group…” on a person, or drag one here.'));
+    if (!s.people.length) grid.appendChild(el('p', 'hint', tr('people.group_empty_hint')));
     sec.appendChild(grid);
     dropOnGroup(sec, s.id);
     page.appendChild(sec);
@@ -3510,7 +4239,7 @@ function loadPeoplePage() {
   // "No group" as a drop target even when nobody is in it.
   if (people.groups.length && !sections.some(function (s) { return s.id == null; })) {
     var none = el('section', 'pgroup empty-drop');
-    none.appendChild(el('h3', '', 'No group'));
+    none.appendChild(el('h3', '', tr('people.no_group')));
     dropOnGroup(none, null);
     page.appendChild(none);
   }
@@ -3524,22 +4253,22 @@ function personTile(p) {
   a.onclick = function (ev) { ev.preventDefault(); showPerson(p.id); };
   a.appendChild(avatar(p, 'big'));
   a.appendChild(el('span', 'pname', (p.species ? petIcon(p.species) + ' ' : '') + p.name));
-  a.appendChild(el('span', 'pmeta', plural(p.photos, 'photo', 'photos')));
+  a.appendChild(el('span', 'pmeta', trn('count.photos', p.photos)));
   t.appendChild(a);
   if (p.suggested + p.maybe) {
-    var badge = el('button', 'pbadge', (p.suggested + p.maybe).toLocaleString() + ' to check');
-    badge.title = 'Faces suggested for ' + p.name;
+    var badge = el('button', 'pbadge', tr('people.to_check', { n: p.suggested + p.maybe }));
+    badge.title = tr('people.suggested_for', { name: p.name });
     badge.onclick = function () { showView('person', p.id, p.suggested ? 'suggested' : 'maybe'); };
     t.appendChild(badge);
   }
-  t.appendChild(menuButton(personMenuItems(p), 'More for ' + p.name));
+  t.appendChild(menuButton(personMenuItems(p), tr('people.more_for', { name: p.name })));
   dragPerson(t, p);
   return t;
 }
 
 // ---- a person's faces
 
-var PERSON_TABS = [['confirmed', 'Confirmed'], ['suggested', 'Suggested'], ['maybe', 'Maybe'], ['rejected', 'Not them']];
+var PERSON_TABS = [['confirmed', 'person.tab.confirmed'], ['suggested', 'person.tab.suggested'], ['maybe', 'person.tab.maybe'], ['rejected', 'person.tab.rejected']];
 var pp = { person: null, faces: [], total: 0, picking: false, picked: {} };
 
 function loadPersonPage() {
@@ -3553,16 +4282,17 @@ function loadPersonPage() {
     if (state.filter.view !== 'person' || state.filter.id !== p.id) return;
     pp.person = p;
     state.personNames[p.id] = p.name;
+    state.personSpecies[p.id] = p.species;
     var head = el('div', 'person-head');
     head.appendChild(avatar(p, 'big'));
     var text = el('div', 'ptext');
     text.appendChild(el('h2', 'pname', (p.species ? petIcon(p.species) + ' ' : '') + p.name));
-    text.appendChild(el('div', 'pmeta', plural(p.photos, 'photo', 'photos') + ' · ' + plural(p.faces, p.species ? p.species : 'face', p.species ? p.species + 's' : 'faces') + ' confirmed'));
+    text.appendChild(el('div', 'pmeta', tr('person.meta', { photos: trn('count.photos', p.photos), faces: p.species ? animalCount(p.species, p.faces) : trn('count.faces', p.faces) })));
     head.appendChild(text);
-    var photos = el('button', 'btn quiet', 'Photos');
+    var photos = el('button', 'btn quiet', tr('person.photos'));
     photos.onclick = function () { showPerson(p.id); };
     head.appendChild(photos);
-    head.appendChild(menuButton(personMenuItems(p).slice(2), 'More for ' + p.name));
+    head.appendChild(menuButton(personMenuItems(p).slice(2), tr('people.more_for', { name: p.name })));
     page.appendChild(head);
     var tabs = el('div', 'tabs');
     tabs.id = 'person-tabs';
@@ -3574,19 +4304,14 @@ function loadPersonPage() {
     });
     page.appendChild(tabs);
     personTabCounts(p);
-    page.appendChild(el('p', 'sub', {
-      confirmed: 'Faces named ' + p.name + ', largest first. Select some to take them out (“Not ' + p.name + '”) or give them another name.',
-      suggested: 'Faces that look like ' + p.name + ' (from all confirmed faces), most similar first. ✓ confirms, ✗ says it is someone else.',
-      maybe: 'Faces that might be ' + p.name + ', less sure than the suggestions. ✓ confirms, ✗ says it is someone else.',
-      rejected: 'Faces marked “not ' + p.name + '”. They are never suggested for ' + p.name + ' again; ↺ undoes that.',
-    }[tab]));
+    page.appendChild(el('p', 'sub', tr('person.sub.' + tab, { name: p.name })));
     var bar = el('div', 'toolbar');
-    var pick = el('button', 'btn quiet', 'Select');
+    var pick = el('button', 'btn quiet', tr('facecheck.select'));
     pick.id = 'pp-pick';
     pick.onclick = function () { pp.picking = !pp.picking; if (!pp.picking) clearPersonPicks(); updatePersonPick(); };
     bar.appendChild(pick);
     if (tab === 'suggested') {
-      var all = el('button', 'btn quiet', 'Confirm all shown');
+      var all = el('button', 'btn quiet', tr('person.confirm_all'));
       all.onclick = function () { personAction('confirm', pp.faces.map(function (x) { return x.id; }).filter(function (x) { return x != null; })); };
       bar.appendChild(all);
     }
@@ -3594,7 +4319,7 @@ function loadPersonPage() {
     var grid = el('div', 'faces');
     grid.id = 'pp-grid';
     page.appendChild(grid);
-    var more = el('button', 'btn quiet', 'Show more');
+    var more = el('button', 'btn quiet', tr('app.show_more'));
     more.hidden = true;
     more.onclick = function () { morePersonFaces(grid, more, tab); };
     page.appendChild(more);
@@ -3602,7 +4327,7 @@ function loadPersonPage() {
     updatePersonPick();
     return morePersonFaces(grid, more, tab);
   }).catch(function (e) {
-    if (e.status === 404) { page.appendChild(el('p', 'sub', 'This person does not exist (any more).')); return; }
+    if (e.status === 404) { page.appendChild(el('p', 'sub', tr('person.missing'))); return; }
     failed(e);
   });
 }
@@ -3611,7 +4336,7 @@ function personTabCounts(p) {
   var counts = { confirmed: p.faces, suggested: p.suggested, maybe: p.maybe };
   Array.prototype.forEach.call(document.querySelectorAll('#person-tabs .tab'), function (b) {
     var t = PERSON_TABS.filter(function (x) { return x[0] === b.dataset.tab; })[0];
-    b.textContent = t[1] + (counts[t[0]] != null ? ' (' + counts[t[0]].toLocaleString() + ')' : '');
+    b.textContent = tr(t[1]) + (counts[t[0]] != null ? ' (' + I18n.number(counts[t[0]]) + ')' : '');
   });
 }
 
@@ -3629,7 +4354,7 @@ function morePersonFaces(grid, more, tab) {
     if (state.filter.view !== 'person') return;
     pp.total = r.total;
     r.faces.forEach(function (face) { pp.faces.push(face); grid.appendChild(personFaceCard(face, tab)); });
-    if (!pp.total) grid.appendChild(el('p', 'sub', 'None.'));
+    if (!pp.total) grid.appendChild(el('p', 'sub', tr('person.none')));
     more.disabled = false;
     more.hidden = pp.faces.length >= pp.total;
   }).catch(failed);
@@ -3644,7 +4369,7 @@ function personFaceCard(face, tab) {
   card.dataset.key = key;
   var a = el('a', 'crop');
   a.href = '#';
-  a.title = 'Open the photo';
+  a.title = tr('facecheck.open_photo');
   var url = cropUrl(face);
   if (tab === 'confirmed' && face.file != null) {
     // Confirmed faces have no stored crop: cut out of the photo's thumbnail.
@@ -3680,14 +4405,15 @@ function personFaceCard(face, tab) {
       updatePersonPick();
       return;
     }
-    if (face.file != null) openFacePhoto(face);
+    // Suggested and maybe: the arrow keys step through the faces to check.
+    if (face.file != null) openFacePhoto(face, tab === 'suggested' || tab === 'maybe' ? pp.faces : null);
   };
   card.appendChild(a);
-  var caption = face.similarity != null ? Math.round(face.similarity * 100) + '% alike' : Math.round(face.px) + ' px';
-  if (face.lost) caption = 'no longer found';
-  else if (face.manual != null) caption = 'drawn by hand';
+  var caption = face.similarity != null ? tr('person.alike', { pct: Math.round(face.similarity * 100) }) : Math.round(face.px) + ' px';
+  if (face.lost) caption = tr('person.lost');
+  else if (face.manual != null) caption = tr('face.drawn');
   card.appendChild(el('div', 'meta', caption));
-  if (face.small) card.appendChild(el('span', 'tag', 'small'));
+  if (face.small) card.appendChild(el('span', 'tag', tr('facecheck.tag_small')));
   var acts = el('div', 'acts');
   var act = function (label, title, cls, run) {
     var b = el('button', cls, label);
@@ -3697,12 +4423,12 @@ function personFaceCard(face, tab) {
     acts.appendChild(b);
   };
   if (tab === 'suggested' || tab === 'maybe') {
-    act('✓', 'It is ' + p.name, 'yes', function () { personAction('confirm', [face.id]); });
-    act('✗', 'Not ' + p.name, 'no', function () { personAction('reject', [face.id]); });
+    act('✓', tr('person.it_is', { name: p.name }), 'yes', function () { personAction('confirm', [face.id]); });
+    act('✗', tr('person.not', { name: p.name }), 'no', function () { personAction('reject', [face.id]); });
   } else if (tab === 'rejected') {
-    act('↺', 'Undo “not ' + p.name + '”', 'undo', function () { personAction('unreject', [face.id]); });
+    act('↺', tr('person.undo_not', { name: p.name }), 'undo', function () { personAction('unreject', [face.id]); });
   } else if (!face.lost) {
-    card.appendChild(menuButton(function () { return confirmedFaceMenu(face); }, 'More for this face'));
+    card.appendChild(menuButton(function () { return confirmedFaceMenu(face); }, tr('person.more_face')));
   }
   card.appendChild(acts);
   return card;
@@ -3711,16 +4437,16 @@ function personFaceCard(face, tab) {
 function confirmedFaceMenu(face) {
   var p = pp.person, items = [];
   if (face.manual != null) {
-    items.push({ label: 'Name someone else…', run: function () { nameFacesDialog([face], personRefresh); } });
-    items.push({ label: 'Delete this drawn face', run: function () { personAction('undo', [], [face.manual]); } });
+    items.push({ label: tr('person.name_else'), run: function () { nameFacesDialog([face], personRefresh); } });
+    items.push({ label: tr('person.delete_drawn'), run: function () { personAction('undo', [], [face.manual]); } });
     return items;
   }
-  items.push({ label: 'Not ' + p.name, run: function () { personAction('reject', [face.id]); } });
-  items.push({ label: 'Name someone else…', run: function () { nameFacesDialog([face], personRefresh); } });
-  items.push({ label: 'Use as ' + p.name + '’s picture', run: function () {
-    post(LIBAPI + '/people/' + p.id + '/cover', { face: face.id }).then(function () { toast('Picture changed'); peopleChanged(); }).catch(failed);
+  items.push({ label: tr('person.not', { name: p.name }), run: function () { personAction('reject', [face.id]); } });
+  items.push({ label: tr('person.name_else'), run: function () { nameFacesDialog([face], personRefresh); } });
+  items.push({ label: tr('menu.use_as', { name: p.name }), run: function () {
+    post(LIBAPI + '/people/' + p.id + '/cover', { face: face.id }).then(function () { toast(tr('menu.picture_changed')); peopleChanged(); }).catch(failed);
   } });
-  items.push({ label: 'Not a face', run: function () { personAction('not-face', [face.id]); } });
+  items.push({ label: tr(p.species ? 'pet.not_a.pet' : 'facecheck.not_face'), run: function () { personAction('not-face', [face.id]); } });
   return items;
 }
 
@@ -3748,12 +4474,13 @@ function personAction(action, ids, manual) {
       return false;
     });
     updatePersonPick();
+    var count = trn('count.faces', r.faces);
     toast({
-      confirm: plural(r.faces, 'face', 'faces') + ' confirmed as ' + p.name,
-      reject: plural(r.faces, 'face', 'faces') + ': not ' + p.name,
-      unreject: plural(r.faces, 'face', 'faces') + ' may be ' + p.name + ' again',
-      'not-face': plural(r.faces, 'face', 'faces') + ' marked “not a face”',
-      undo: 'Drawn face deleted',
+      confirm: tr('person.toast.confirm', { count: count, name: p.name }),
+      reject: tr('person.toast.reject', { count: count, name: p.name }),
+      unreject: tr('person.toast.unreject', { count: count, name: p.name }),
+      'not-face': tr(p.species ? 'facecheck.marked_pet' : 'facecheck.marked', { count: count }),
+      undo: tr('person.toast.undo'),
     }[action]);
     peopleChanged();
     loadPersonCounts();
@@ -3777,7 +4504,7 @@ function personPickBar(tab) {
     };
     bar.appendChild(b);
   };
-  var all = el('button', 'btn quiet', 'All');
+  var all = el('button', 'btn quiet', tr('person.all'));
   all.onclick = function () {
     pp.faces.forEach(function (face) {
       var k = faceKey(face);
@@ -3790,16 +4517,16 @@ function personPickBar(tab) {
   };
   bar.appendChild(all);
   if (tab === 'suggested' || tab === 'maybe') {
-    button('Confirm', '', function (faces, ids) { personAction('confirm', ids); });
-    button('Not ' + p.name, 'quiet', function (faces, ids) { personAction('reject', ids); });
+    button(tr('person.confirm'), '', function (faces, ids) { personAction('confirm', ids); });
+    button(tr('person.not', { name: p.name }), 'quiet', function (faces, ids) { personAction('reject', ids); });
   } else if (tab === 'rejected') {
-    button('Undo', '', function (faces, ids) { personAction('unreject', ids); });
+    button(tr('person.undo'), '', function (faces, ids) { personAction('unreject', ids); });
   } else {
-    button('Not ' + p.name, 'quiet', function (faces, ids) { personAction('reject', ids); });
-    button('Name…', '', function (faces) { nameFacesDialog(faces, personRefresh); });
-    button('Not a face', 'quiet', function (faces, ids) { personAction('not-face', ids); });
+    button(tr('person.not', { name: p.name }), 'quiet', function (faces, ids) { personAction('reject', ids); });
+    button(tr('person.name_btn'), '', function (faces) { nameFacesDialog(faces, personRefresh); });
+    button(tr(p.species ? 'pet.not_a.pet' : 'facecheck.not_face'), 'quiet', function (faces, ids) { personAction('not-face', ids); });
   }
-  var done = el('button', 'btn quiet', 'Done');
+  var done = el('button', 'btn quiet', tr('app.done'));
   done.onclick = function () { pp.picking = false; clearPersonPicks(); updatePersonPick(); };
   bar.appendChild(done);
   return bar;
@@ -3817,7 +4544,7 @@ function updatePersonPick() {
   var n = Object.keys(pp.picked).length;
   bar.hidden = !pp.picking;
   $('pp-pick').classList.toggle('active', pp.picking);
-  $('pp-count').textContent = n ? plural(n, 'face', 'faces') : 'Tap faces to select';
+  $('pp-count').textContent = n ? trn('count.faces', n) : tr('facecheck.tap');
   Array.prototype.forEach.call(bar.querySelectorAll('.pp-act'), function (b) { b.disabled = !n; });
 }
 
@@ -3825,7 +4552,12 @@ function updatePersonPick() {
 // a new person.
 function nameFacesDialog(faces, done) {
   var body = el('div');
-  body.appendChild(el('p', '', 'Who is on ' + (faces.length === 1 ? 'this face' : 'these ' + faces.length + ' faces') + '?'));
+  var kind = facesSpecies(faces);
+  // "Which cat is this?" for a cat, "dog" for a dog, "pet" for any other: the
+  // same question for one face or many, since they are all one animal.
+  var question = !kind ? (faces.length === 1 ? tr('person.who_one') : tr('person.who_many', { n: faces.length }))
+    : kind === 'cat' ? tr('person.who_cat') : kind === 'dog' ? tr('person.who_dog') : tr('person.who_pet');
+  body.appendChild(el('p', '', question));
   var save = function (who) {
     var ids = faces.map(function (x) { return x.id; }).filter(function (x) { return x != null; });
     var drawn = faces.filter(function (x) { return x.id == null && x.manual != null; });
@@ -3839,15 +4571,15 @@ function nameFacesDialog(faces, done) {
       })).then(function () { return r; });
     }).then(function (r) {
       closeModal();
-      toast(plural(faces.length, 'face', 'faces') + ' named ' + (r.person ? r.person.name : who.name || state.personNames[who.person_id] || ''));
+      toast(tr('person.named', { count: kind ? animalCount(kind, faces.length) : trn('count.faces', faces.length), name: r.person ? r.person.name : who.name || state.personNames[who.person_id] || '' }));
       peopleChanged();
       if (done) done();
     }).catch(failed);
   };
-  var field = personField(function (who) { save(who); }, { allowNew: true, placeholder: 'Name' });
+  var field = personField(function (who) { save(who); }, { allowNew: true, placeholder: tr('people.name_placeholder'), species: facesSpecies(faces) });
   body.appendChild(field);
-  openModal('Name', body, [{ label: 'Cancel', cls: 'quiet' }, {
-    label: 'Name', onclick: function () {
+  openModal(tr('person.name'), body, [{ label: tr('app.cancel'), cls: 'quiet' }, {
+    label: tr('person.name'), onclick: function () {
       var who = field.value();
       if (!who) return false;
       save(who);
@@ -3860,22 +4592,22 @@ function nameFacesDialog(faces, done) {
 // ---- unnamed clusters
 
 var un = { shown: 0, total: 0, unnamed: 0, kind: 'all' };
-var UN_KINDS = [['all', 'People and pets'], ['faces', 'People'], ['pets', 'Pets (cats and dogs)']];
+var UN_KINDS = [['all', 'unnamed.kind.all'], ['faces', 'unnamed.kind.faces'], ['pets', 'unnamed.kind.pets']];
 var PAGE_CLUSTERS = 30;
 
 function loadUnnamed() {
   var page = $('page');
   page.textContent = '';
-  page.appendChild(el('h2', '', 'Unnamed'));
-  var sub = el('p', 'sub', 'Looking…');
+  page.appendChild(el('h2', '', tr('people.unnamed')));
+  var sub = el('p', 'sub', tr('dups.looking'));
   sub.id = 'un-sub';
   page.appendChild(sub);
   // Pets are named like people, but listed apart when asked.
   var kinds = el('select');
   kinds.id = 'un-kind';
-  kinds.setAttribute('aria-label', 'Which faces');
+  kinds.setAttribute('aria-label', tr('unnamed.which'));
   UN_KINDS.forEach(function (o) {
-    var opt = el('option', '', o[1]);
+    var opt = el('option', '', tr(o[1]));
     opt.value = o[0];
     opt.selected = o[0] === un.kind;
     kinds.appendChild(opt);
@@ -3887,12 +4619,154 @@ function loadUnnamed() {
   var box = el('div', 'clusters');
   box.id = 'un-box';
   page.appendChild(box);
-  var more = el('button', 'btn quiet', 'Show more');
+  var more = el('button', 'btn quiet', tr('app.show_more'));
   more.hidden = true;
   more.onclick = function () { moreClusters(box, more); };
   page.appendChild(more);
   un.shown = 0;
-  return moreClusters(box, more);
+  var singles = singlesSection();
+  page.appendChild(singles.section);
+  page.appendChild(singles.bar);
+  return Promise.all([moreClusters(box, more), singles.load()]);
+}
+
+// Clusters of one or two faces are not worth a card each: their faces are
+// listed together as thumbnails, picked one by one (tap, Shift-tap for a
+// range) and named, ignored or marked "not a face" from the bar below.
+var SINGLES_PAGE = 60;
+
+function singlesSection() {
+  var st = { faces: [], picked: {}, anchor: null, shown: 0, total: 0, count: 0, tiles: {} };
+  var section = el('section', 'singles');
+  section.hidden = true;
+  var head = el('h3');
+  var hint = el('p', 'sub', tr('unnamed.singles_hint'));
+  var grid = el('div', 'sface-grid');
+  var more = el('button', 'btn quiet', tr('app.show_more'));
+  more.hidden = true;
+  section.appendChild(head);
+  section.appendChild(hint);
+  section.appendChild(grid);
+  section.appendChild(more);
+
+  var bar = el('div', 'selbar singles-bar');
+  bar.hidden = true;
+  var count = el('span');
+  bar.appendChild(count);
+  var field = personField(function () { name(); }, { allowNew: true, placeholder: tr('unnamed.who'), species: function () { return facesSpecies(picked()); } });
+  bar.appendChild(field);
+  var nameBtn = el('button', 'btn', tr('person.name'));
+  var ignore = el('button', 'btn quiet', tr('unnamed.ignore'));
+  ignore.title = tr('unnamed.ignore_hint');
+  var notFace = el('button', 'btn quiet', tr('facecheck.not_face'));
+  var done = el('button', 'btn quiet', tr('unnamed.clear'));
+  [nameBtn, ignore, notFace, done].forEach(function (b) { bar.appendChild(b); });
+
+  var picked = function () { return st.faces.filter(function (f) { return st.picked[f.id]; }); };
+  var update = function () {
+    var chosen = picked(), n = chosen.length;
+    var pets = n > 0 && chosen.every(function (f) { return f.species; });
+    head.textContent = tr('unnamed.singles', { count: trn('count.faces', st.count) });
+    section.hidden = !st.faces.length && st.shown >= st.total;
+    count.textContent = trn('count.faces', n);
+    notFace.textContent = tr(pets ? 'pet.not_a.pet' : 'facecheck.not_face');
+    notFace.title = tr(pets ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint');
+    bar.hidden = !n;
+    nameBtn.disabled = ignore.disabled = notFace.disabled = !n;
+    more.hidden = st.shown >= st.total;
+  };
+  var tile = function (face) {
+    var t = el('a', 'cface' + (st.picked[face.id] ? ' sel' : '') + (face.small ? ' small' : ''));
+    t.href = '#';
+    t.title = tr('facecheck.select');
+    t.appendChild(faceImg(face, 'big'));
+    var open = el('span', 'copen', '↗');
+    open.title = tr('facecheck.open_photo');
+    open.onclick = function (ev) { ev.preventDefault(); ev.stopPropagation(); openFacePhoto(face); };
+    t.appendChild(open);
+    // Keyboard: Tab between thumbnails (or ←/→), Enter selects (the click
+    // below), Space opens the photo and, in the viewer, closes it again.
+    t.onkeydown = function (ev) {
+      if (ev.altKey || ev.metaKey || ev.ctrlKey) return;
+      if (ev.key === ' ') {
+        ev.preventDefault();
+        ev.stopPropagation(); // the viewer's own Space (close) must not see this one
+        openFacePhoto(face);
+      } else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
+        var next = ev.key === 'ArrowLeft' ? t.previousElementSibling : t.nextElementSibling;
+        if (next) { ev.preventDefault(); next.focus(); }
+      }
+    };
+    t.onclick = function (ev) {
+      ev.preventDefault();
+      var span = ev.shiftKey && pickSpan(st.faces, function (x) { return x.id; }, st.anchor, face.id);
+      if (span) {
+        span.forEach(function (x) { st.picked[x.id] = true; if (st.tiles[x.id]) st.tiles[x.id].classList.add('sel'); });
+      } else {
+        if (st.picked[face.id]) delete st.picked[face.id]; else st.picked[face.id] = true;
+        t.classList.toggle('sel', !!st.picked[face.id]);
+        st.anchor = face.id;
+      }
+      update();
+    };
+    st.tiles[face.id] = t;
+    return t;
+  };
+  var load = function () {
+    more.disabled = true;
+    return api(LIBAPI + '/clusters' + query({ size: 'small', offset: st.shown, limit: SINGLES_PAGE, samples: 2, kind: un.kind === 'all' ? null : un.kind })).then(function (r) {
+      if (state.filter.view !== 'unnamed') return;
+      st.total = r.total;
+      st.count = r.unnamed;
+      st.shown += r.clusters.length;
+      r.clusters.forEach(function (c) {
+        c.faces.forEach(function (face) { st.faces.push(face); grid.appendChild(tile(face)); });
+      });
+      more.disabled = false;
+      update();
+    }).catch(failed);
+  };
+  more.onclick = load;
+
+  var act = function (action, who) {
+    var chosen = picked();
+    if (!chosen.length) return;
+    var ids = chosen.map(function (f) { return f.id; });
+    var pets = chosen.every(function (f) { return f.species; });
+    bar.classList.add('busy');
+    var request = action === 'assign' ? post(LIBAPI + '/faces/assign', Object.assign({ faces: ids }, who))
+      : post(LIBAPI + '/faces/' + action, { faces: ids });
+    request.then(function (r) {
+      bar.classList.remove('busy');
+      var n = pets ? animalCount(facesSpecies(chosen), ids.length) : trn('count.faces', ids.length);
+      toast(action === 'assign' ? tr('person.named', { count: n, name: r.person ? r.person.name : who.name || '' })
+        : action === 'ignore' ? tr('unnamed.ignored', { count: n }) : tr(pets ? 'facecheck.marked_pet' : 'facecheck.marked', { count: n }));
+      var gone = {};
+      ids.forEach(function (id) { gone[id] = true; if (st.tiles[id]) st.tiles[id].remove(); delete st.tiles[id]; });
+      st.faces = st.faces.filter(function (f) { return !gone[f.id]; });
+      st.picked = {};
+      st.anchor = null;
+      st.count -= ids.length;
+      field.input.value = '';
+      update();
+      peopleChanged();
+    }).catch(function (e) { bar.classList.remove('busy'); failed(e); loadUnnamed(); });
+  };
+  var name = function () {
+    var who = field.value();
+    if (!who) { field.input.focus(); return; }
+    act('assign', who);
+  };
+  nameBtn.onclick = name;
+  ignore.onclick = function () { act('ignore'); };
+  notFace.onclick = function () { act('not-face'); };
+  done.onclick = function () {
+    Object.keys(st.picked).forEach(function (id) { if (st.tiles[id]) st.tiles[id].classList.remove('sel'); });
+    st.picked = {};
+    st.anchor = null;
+    update();
+  };
+  return { section: section, bar: bar, load: load };
 }
 
 function unnamedSummary() {
@@ -3900,14 +4774,13 @@ function unnamedSummary() {
   if (!sub) return;
   var pets = un.kind === 'pets';
   sub.textContent = un.total
-    ? plural(un.unnamed, pets ? 'pet' : 'face', pets ? 'pets' : 'faces') + ' without a name, in ' + plural(un.total, 'cluster', 'clusters') + ' of similar ' + (pets ? 'pets' : 'faces') + ', largest first. Name a card, or say they are strangers (Ignore) or no ' + (pets ? 'pets' : 'faces') + ' at all. “Select” names only some faces of a card.'
-    : pets ? 'Every cat and dog large enough has a name (or is ignored). New photos bring new ones after `shoebox recognize --pets`.'
-      : 'Every face large enough has a name (or is ignored). New photos bring new ones after `shoebox recognize`.';
+    ? tr(pets ? 'unnamed.summary_pets' : 'unnamed.summary', { faces: trn(pets ? 'count.pets' : 'count.faces', un.unnamed), clusters: trn('count.clusters', un.total) })
+    : tr(pets ? 'unnamed.done_pets' : 'unnamed.done');
 }
 
 function moreClusters(box, more) {
   more.disabled = true;
-  return api(LIBAPI + '/clusters' + query({ offset: un.shown, limit: PAGE_CLUSTERS, samples: 8, kind: un.kind === 'all' ? null : un.kind })).then(function (r) {
+  return api(LIBAPI + '/clusters' + query({ size: 'large', offset: un.shown, limit: PAGE_CLUSTERS, samples: 8, kind: un.kind === 'all' ? null : un.kind })).then(function (r) {
     if (state.filter.view !== 'unnamed') return;
     un.total = r.total;
     un.unnamed = r.unnamed;
@@ -3928,8 +4801,8 @@ function clusterCard(c) {
   head.appendChild(count);
   // Open a card (all faces, or Select) and it takes the whole width; this
   // button stays at the top of the screen while the faces scroll by.
-  var close = el('button', 'btn small cclose', 'Close ✕');
-  close.title = 'Back to the short card';
+  var close = el('button', 'btn small cclose', tr('unnamed.close'));
+  close.title = tr('unnamed.close_hint');
   close.hidden = true;
   head.appendChild(close);
   card.appendChild(head);
@@ -3942,7 +4815,7 @@ function clusterCard(c) {
     faces.forEach(function (face) {
       var f = el('a', 'cface' + (card.picked[face.id] ? ' sel' : '') + (face.small ? ' small' : ''));
       f.href = '#';
-      f.title = card.picking ? 'Select' : 'Open the photo';
+      f.title = tr(card.picking ? 'facecheck.select' : 'facecheck.open_photo');
       f.appendChild(faceImg(face, 'big'));
       f.onclick = function (ev) {
         ev.preventDefault();
@@ -3959,13 +4832,13 @@ function clusterCard(c) {
           update();
           return;
         }
-        openFacePhoto(face);
+        openFacePhoto(face, faces);
       };
       grid.appendChild(f);
     });
     if (c.size > faces.length) {
-      var all = el('button', 'cmore', '+' + (c.size - faces.length).toLocaleString());
-      all.title = 'Show all ' + c.size + ' faces';
+      var all = el('button', 'cmore', '+' + I18n.number(c.size - faces.length));
+      all.title = tr('unnamed.show_all', { n: c.size });
       all.onclick = function () {
         api(LIBAPI + '/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
           faces = list;
@@ -3980,9 +4853,9 @@ function clusterCard(c) {
   var suggestion = el('div', 'csugg');
   card.appendChild(suggestion);
   var row = el('div', 'crow');
-  var field = personField(function (who) { act('name', who); }, { allowNew: true, placeholder: 'Who is it?' });
+  var field = personField(function (who) { act('name', who); }, { allowNew: true, placeholder: tr('unnamed.who'), species: facesSpecies(c.faces) });
   row.appendChild(field);
-  var nameBtn = el('button', 'btn', 'Name');
+  var nameBtn = el('button', 'btn', tr('person.name'));
   nameBtn.onclick = function () {
     var who = field.value();
     if (!who) { field.input.focus(); return; }
@@ -3991,14 +4864,16 @@ function clusterCard(c) {
   row.appendChild(nameBtn);
   card.appendChild(row);
   var tools = el('div', 'crow tools');
-  var ignore = el('button', 'btn quiet', 'Ignore');
-  ignore.title = 'Strangers: nobody needs to name them';
+  var ignore = el('button', 'btn quiet', tr('unnamed.ignore'));
+  ignore.title = tr('unnamed.ignore_hint');
   ignore.onclick = function () { act('ignore', {}); };
-  var notFace = el('button', 'btn quiet', 'Not a face');
-  notFace.title = 'False finds: no face at all';
+  // A card of pets says "not a pet": the finds that are no pet at all.
+  var petCard = c.faces.length > 0 && c.faces.every(function (f) { return f.species; });
+  var notFace = el('button', 'btn quiet', tr(petCard ? 'pet.not_a.pet' : 'facecheck.not_face'));
+  notFace.title = tr(petCard ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint');
   notFace.onclick = function () { act('not-face', {}); };
-  var pick = el('button', 'btn quiet', 'Select');
-  pick.title = 'Name, ignore or mark only some faces of this card';
+  var pick = el('button', 'btn quiet', tr('facecheck.select'));
+  pick.title = tr('unnamed.select_hint');
   // Select needs all the faces to choose from.
   var loadAll = function () {
     if (faces.length >= c.size) return Promise.resolve();
@@ -4033,30 +4908,32 @@ function clusterCard(c) {
   var update = function () {
     var n = picked().length;
     var pets = c.faces.length > 0 && c.faces.every(function (f) { return f.species; });
-    count.textContent = (pets ? plural(c.size, 'pet', 'pets') : plural(c.size, 'face', 'faces')) + (card.picking ? ' · ' + (n ? n + ' selected' : 'tap faces to select') : '');
+    count.textContent = trn(pets ? 'count.pets' : 'count.faces', c.size) + (card.picking ? ' · ' + (n ? tr('unnamed.selected', { n: n }) : tr('unnamed.tap')) : '');
     pick.classList.toggle('active', card.picking);
+    pick.textContent = tr(card.picking ? 'unnamed.select_done' : 'facecheck.select');
+    pick.title = tr(card.picking ? 'unnamed.select_done_hint' : 'unnamed.select_hint');
     card.classList.toggle('picking', card.picking);
     card.classList.toggle('open', expanded || card.picking);
     close.hidden = !(expanded || card.picking);
     var some = card.picking && n;
-    nameBtn.textContent = some ? 'Name ' + n : 'Name';
-    ignore.textContent = some ? 'Ignore ' + n : 'Ignore';
-    notFace.textContent = some ? n + ' not a face' : 'Not a face';
+    nameBtn.textContent = some ? tr('unnamed.name_n', { n: n }) : tr('person.name');
+    ignore.textContent = some ? tr('unnamed.ignore_n', { n: n }) : tr('unnamed.ignore');
+    notFace.textContent = some ? tr(petCard ? 'unnamed.notface_n_pet' : 'unnamed.notface_n', { n: n }) : tr(petCard ? 'pet.not_a.pet' : 'facecheck.not_face');
     nameBtn.disabled = ignore.disabled = notFace.disabled = card.picking && !n;
     suggestion.textContent = '';
     if (c.suggestion && !card.picking) {
       var s = c.suggestion;
-      suggestion.appendChild(el('span', '', 'Looks like '));
+      suggestion.appendChild(el('span', '', tr('unnamed.looks_like') + ' '));
       suggestion.appendChild(el('b', '', s.person.name));
-      suggestion.appendChild(el('span', '', ' (' + s.faces + ' of ' + c.size + ') '));
+      suggestion.appendChild(el('span', '', ' ' + tr('unnamed.of', { faces: s.faces, size: c.size }) + ' '));
       var yes = el('button', 'btn small', '✓ ' + s.person.name);
-      yes.title = 'Name all ' + c.size + ' faces of this card ' + s.person.name;
+      yes.title = tr('unnamed.name_all', { size: c.size, name: s.person.name });
       yes.onclick = function () { act('name', { person_id: s.person.id }); };
       suggestion.appendChild(yes);
       if (s.faces < c.size) {
         // Only the faces that really look like them; the rest stays.
-        var only = el('button', 'btn small', '✓ Only the ' + s.faces.toLocaleString());
-        only.title = 'Name only the ' + s.faces + ' faces recognised as ' + s.person.name + '; the other ' + (c.size - s.faces) + ' stay unnamed';
+        var only = el('button', 'btn small', tr('unnamed.only', { n: s.faces }));
+        only.title = tr('unnamed.only_hint', { n: s.faces, name: s.person.name, rest: c.size - s.faces });
         only.onclick = function () {
           loadAll().then(function () {
             var ids = faces.filter(function (x) { return x.state === 'suggested' && x.person && x.person.id === s.person.id; })
@@ -4072,7 +4949,7 @@ function clusterCard(c) {
   };
   var stale = function (e) {
     if (e.status === 409) {
-      toast('These faces were regrouped in the meantime; here are the cards as they are now.');
+      toast(tr('unnamed.regrouped'));
       loadUnnamed();
     } else failed(e);
   };
@@ -4088,8 +4965,9 @@ function clusterCard(c) {
     card.classList.add('busy');
     post(LIBAPI + '/clusters/' + c.id + '/' + action, body).then(function (r) {
       card.classList.remove('busy');
-      toast(action === 'name' ? plural(r.faces, 'face', 'faces') + ' named ' + r.person.name
-        : action === 'ignore' ? plural(r.faces, 'face', 'faces') + ' ignored' : plural(r.faces, 'face', 'faces') + ' marked “not a face”');
+      var n = petCard ? animalCount(facesSpecies(c.faces), r.faces) : trn('count.faces', r.faces);
+      toast(action === 'name' ? tr('person.named', { count: n, name: r.person.name })
+        : action === 'ignore' ? tr('unnamed.ignored', { count: n }) : tr(petCard ? 'facecheck.marked_pet' : 'facecheck.marked', { count: n }));
       un.unnamed -= r.faces;
       if (!r.cluster) {
         card.remove();
@@ -4123,37 +5001,117 @@ function clusterCard(c) {
 function infoFaces(row, info) {
   var box = el('div', 'pfaces');
   var faces = info.faces || [];
-  if (!info.faces) box.appendChild(el('div', 'note', 'Not looked at for faces yet (shoebox recognize).'));
-  else if (!faces.length) box.appendChild(el('div', 'note', 'No faces found.'));
-  faces.forEach(function (f, k) { box.appendChild(infoFace(info, f, k)); });
+  // "Select" turns the list into a checklist (picking mode) with a bar to
+  // ignore or mark several faces at once. The pick belongs to one photo.
+  if (!lb.pick || lb.pick.file !== info.id) lb.pick = { file: info.id, on: false, ids: {} };
+  var pick = lb.pick;
+  var pickable = faces.filter(function (f) { return f.id != null; });
+  if (!pickable.length) pick.on = false;
+  box.classList.toggle('picking', pick.on);
+  if (!info.faces) box.appendChild(el('div', 'note', tr('info.faces_unlooked')));
+  else if (!faces.length) box.appendChild(el('div', 'note', tr('info.no_faces')));
+  faces.forEach(function (f, k) { box.appendChild(infoFace(info, f, k, pick)); });
   (info.faces_lost || []).forEach(function (f) {
     var line = el('div', 'pface lost');
     line.appendChild(el('span', 'avatar small'));
-    line.appendChild(el('span', 'who', (f.person ? f.person.name : '?') + ' (face no longer found)'));
+    line.appendChild(el('span', 'who', tr('info.face_lost', { name: f.person ? f.person.name : '?' })));
     box.appendChild(line);
   });
+  if (pick.on) box.appendChild(infoPickBar(info, pickable, pick));
   var tools = el('div', 'ptools');
   if (faces.length) {
-    var show = el('button', '', lb.showFaces ? 'Hide boxes' : 'Show boxes');
+    var show = el('button', '', tr(lb.showFaces ? 'info.hide_boxes' : 'info.show_boxes'));
     show.onclick = function () { lb.showFaces = !lb.showFaces; renderPanel(); };
     tools.appendChild(show);
   }
+  if (pickable.length > 1 && !pick.on) {
+    var select = el('button', '', tr('info.select'));
+    select.title = tr('info.select_hint');
+    select.onclick = function () { pick.on = true; pick.ids = {}; renderPanel(); };
+    tools.appendChild(select);
+  }
   if (lb.details && state.data && state.data.kinds[state.open] !== 'v') {
-    var add = el('button', '', '+ Add face or pet');
-    add.title = 'Draw a box around a face or a pet that was missed';
+    var add = el('button', '', tr('info.add_face'));
+    add.title = tr('info.add_face_hint');
     add.onclick = startDrawing;
+    if (lb.details.view_turn) {
+      add.disabled = true;
+      add.title = tr('info.add_face_turned');
+    }
     tools.appendChild(add);
   }
   box.appendChild(tools);
-  row('People', box);
+  row(tr('info.people'), box);
 }
 
-function infoFace(info, f, k) {
+// The bar under the list in picking mode: how many are ticked, a shortcut to
+// tick every face nobody has named, and Ignore / Not a face for the ticked.
+function infoPickBar(info, pickable, pick) {
+  var bar = el('div', 'pickbar');
+  var chosen = pickable.filter(function (f) { return pick.ids[f.id]; });
+  var n = chosen.length;
+  var pets = n > 0 && chosen.every(function (f) { return f.species; });
+  var head = el('div', 'pickhead');
+  head.appendChild(el('span', 'pickcount', n ? trn('count.faces', n) : tr('info.select_none')));
+  var unnamed = pickable.filter(function (f) { return f.state !== 'confirmed' && f.state !== 'ignored'; });
+  if (unnamed.length) {
+    var all = el('button', 'link', tr('info.select_unnamed'));
+    all.onclick = function () { unnamed.forEach(function (f) { pick.ids[f.id] = true; }); renderPanel(); };
+    head.appendChild(all);
+  }
+  bar.appendChild(head);
+  var row = el('div', 'pickacts');
+  var ignore = el('button', 'btn quiet', n ? tr('unnamed.ignore_n', { n: n }) : tr('unnamed.ignore'));
+  ignore.title = tr('unnamed.ignore_hint');
+  var notFace = el('button', 'btn quiet', n ? tr(pets ? 'unnamed.notface_n_pet' : 'unnamed.notface_n', { n: n }) : tr('facecheck.not_face'));
+  notFace.title = tr(pets ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint');
+  var cancel = el('button', 'btn quiet', tr('app.cancel'));
+  ignore.disabled = notFace.disabled = !n;
+  var act = function (action) {
+    var ids = chosen.map(function (f) { return f.id; });
+    bar.classList.add('busy');
+    post(LIBAPI + '/faces/' + action, { faces: ids }).then(function () {
+      var count = trn('count.faces', ids.length);
+      toast(action === 'ignore' ? tr('unnamed.ignored', { count: count }) : tr(pets ? 'facecheck.marked_pet' : 'facecheck.marked', { count: count }));
+      pick.on = false;
+      pick.ids = {};
+      infoFacesChanged(info.id);
+    }).catch(function (e) { bar.classList.remove('busy'); failed(e); });
+  };
+  ignore.onclick = function () { act('ignore'); };
+  notFace.onclick = function () { act('not-face'); };
+  cancel.onclick = function () { pick.on = false; pick.ids = {}; renderPanel(); };
+  [ignore, notFace, cancel].forEach(function (b) { row.appendChild(b); });
+  bar.appendChild(row);
+  return bar;
+}
+
+function infoFace(info, f, k, pick) {
   var line = el('div', 'pface');
+  if (pick && pick.on) {
+    // Picking mode: the whole row is a checkbox; its own buttons are hidden.
+    if (f.id == null) {
+      line.classList.add('nopick');
+    } else {
+      line.classList.add('pickable');
+      if (pick.ids[f.id]) line.classList.add('picked');
+      var tick = el('input');
+      tick.type = 'checkbox';
+      tick.checked = !!pick.ids[f.id];
+      tick.setAttribute('aria-label', tr('facecheck.select'));
+      var toggle = function () {
+        if (pick.ids[f.id]) delete pick.ids[f.id]; else pick.ids[f.id] = true;
+        renderPanel();
+      };
+      tick.onchange = toggle;
+      line.onclick = function (ev) { if (ev.target !== tick) toggle(); };
+      line.appendChild(tick);
+    }
+  }
   // A named person shows their picture (no crop of the face is kept); the
   // box on the photo shows which face it is.
   var pic = f.state === 'confirmed' && f.person ? avatar(people.byId[f.person.id] || { name: f.person.name }, 'small') : faceImg(f, 'small');
-  pic.title = 'Show where it is';
+  pic.title = tr('info.show_where');
   pic.onclick = function () { lb.hover = lb.hover === k ? null : k; drawFaces(); };
   line.appendChild(pic);
   line.addEventListener('mouseenter', function () { lb.hover = k; drawFaces(); });
@@ -4165,62 +5123,62 @@ function infoFace(info, f, k) {
   var ids = f.id != null ? [f.id] : [];
   if (f.state === 'confirmed') {
     var name = el('button', 'pname', f.person.name);
-    name.title = 'Photos of ' + f.person.name;
+    name.title = tr('info.photos_of', { name: f.person.name });
     name.onclick = function () { showPerson(f.person.id); };
     who.appendChild(name);
   } else if (f.state === 'suggested' || f.state === 'maybe') {
-    who.appendChild(el('span', 'guess', (f.state === 'maybe' ? 'Maybe ' : '') + f.person.name + '?'));
+    who.appendChild(el('span', 'guess', tr(f.state === 'maybe' ? 'info.guess_maybe' : 'info.guess', { name: f.person.name })));
     var yes = el('button', 'yes', '✓');
-    yes.title = 'It is ' + f.person.name;
+    yes.title = tr('person.it_is', { name: f.person.name });
     yes.setAttribute('aria-label', yes.title);
     yes.onclick = function () { send('confirm', { faces: ids }); };
     var no = el('button', 'no', '✗');
-    no.title = 'Not ' + f.person.name;
+    no.title = tr('person.not', { name: f.person.name });
     no.setAttribute('aria-label', no.title);
     no.onclick = function () { send('reject', { faces: ids, person_id: f.person.id }); };
     who.appendChild(yes);
     who.appendChild(no);
   } else if (f.state === 'ignored') {
-    who.appendChild(el('span', 'note', 'Stranger'));
+    who.appendChild(el('span', 'note', tr('info.stranger')));
   }
   if (f.state !== 'confirmed') {
-    var add = el('button', 'add', f.state === 'suggested' || f.state === 'maybe' ? 'Other…' : '+ Name');
+    var add = el('button', 'add', tr(f.state === 'suggested' || f.state === 'maybe' ? 'info.other_person' : 'info.plus_name'));
     add.onclick = function () {
       var field = personField(function (person) {
         send('assign', Object.assign({ faces: ids }, person));
-      }, { allowNew: true, placeholder: 'Who is it?', onEscape: function () { field.replaceWith(add); } });
+      }, { allowNew: true, placeholder: tr('unnamed.who'), species: f.species, onEscape: function () { field.replaceWith(add); } });
       add.replaceWith(field);
       field.input.focus();
     };
     who.appendChild(add);
   }
-  if (f.species) who.appendChild(el('span', 'note', ' ' + petIcon(f.species) + ' ' + f.species));
-  if (f.small) who.appendChild(el('span', 'note', ' small'));
+  if (f.species) who.appendChild(el('span', 'note', ' ' + petIcon(f.species) + ' ' + speciesName(f.species)));
+  if (f.small) who.appendChild(el('span', 'note', ' ' + tr('facecheck.tag_small')));
   line.appendChild(menuButton(function () {
     var items = [];
     if (f.manual != null) {
-      items.push({ label: 'Name someone else…', run: function () { nameFacesDialog([Object.assign({ file: info.id }, f)], changed); } });
-      items.push({ label: 'Delete this drawn face', run: function () { send('undo', { manual: [f.manual] }); } });
+      items.push({ label: tr('person.name_else'), run: function () { nameFacesDialog([Object.assign({ file: info.id }, f)], changed); } });
+      items.push({ label: tr('person.delete_drawn'), run: function () { send('undo', { manual: [f.manual] }); } });
       return items;
     }
     if (f.state === 'confirmed') {
-      items.push({ label: 'Not ' + f.person.name, run: function () { send('reject', { faces: ids, person_id: f.person.id }); } });
-      items.push({ label: 'Name someone else…', run: function () { nameFacesDialog([f], changed); } });
-      items.push({ label: 'Use as ' + f.person.name + '’s picture', run: function () {
-        post(LIBAPI + '/people/' + f.person.id + '/cover', { face: f.id }).then(function () { toast('Picture changed'); peopleChanged(); }).catch(failed);
+      items.push({ label: tr('person.not', { name: f.person.name }), run: function () { send('reject', { faces: ids, person_id: f.person.id }); } });
+      items.push({ label: tr('person.name_else'), run: function () { nameFacesDialog([f], changed); } });
+      items.push({ label: tr('menu.use_as', { name: f.person.name }), run: function () {
+        post(LIBAPI + '/people/' + f.person.id + '/cover', { face: f.id }).then(function () { toast(tr('menu.picture_changed')); peopleChanged(); }).catch(failed);
       } });
     }
-    if (f.state !== 'ignored') items.push({ label: 'Ignore (a stranger)', run: function () { send('ignore', { faces: ids }); } });
-    if (f.state) items.push({ label: 'Forget what was said', run: function () { send('undo', { faces: ids }); } });
+    if (f.state !== 'ignored') items.push({ label: tr('info.ignore_stranger'), run: function () { send('ignore', { faces: ids }); } });
+    if (f.state) items.push({ label: tr('info.forget'), run: function () { send('undo', { faces: ids }); } });
     if (f.rejected && f.rejected.length) {
       f.rejected.forEach(function (pid) {
-        var n = state.personNames[pid] || 'someone';
-        items.push({ label: 'May be ' + n + ' after all', run: function () { send('unreject', { faces: ids, person_id: pid }); } });
+        var n = state.personNames[pid] || tr('info.someone');
+        items.push({ label: tr('info.maybe_after_all', { name: n }), run: function () { send('unreject', { faces: ids, person_id: pid }); } });
       });
     }
-    items.push({ label: f.species ? 'Not a ' + f.species : 'Not a face', run: function () { send('not-face', { faces: ids }); } });
+    items.push({ label: tr(f.species ? 'pet.not_a.pet' : 'facecheck.not_face'), run: function () { send('not-face', { faces: ids }); } });
     return items;
-  }, 'More for this face'));
+  }, tr('person.more_face')));
   return line;
 }
 
@@ -4260,8 +5218,8 @@ function startDrawing() {
   layer.appendChild(rect);
   stage.appendChild(layer);
   var hint = el('div', 'draw-hint');
-  hint.appendChild(el('span', '', 'Drag a box around the face or pet'));
-  var cancel = el('button', 'btn quiet small', 'Cancel');
+  hint.appendChild(el('span', '', tr('draw.hint')));
+  var cancel = el('button', 'btn quiet small', tr('app.cancel'));
   cancel.onclick = function () { stopDrawing(); };
   hint.appendChild(cancel);
   $('lightbox').appendChild(hint);
@@ -4313,39 +5271,44 @@ function stopDrawing() {
 
 function nameDrawnFace(info, frac) {
   var body = el('div');
-  body.appendChild(el('p', '', 'Who is it?'));
-  // A cat or a dog the detector missed: a pet is embedded as a whole, a face by its eyes, nose and mouth.
-  var petBox = el('input');
-  petBox.type = 'checkbox';
-  petBox.id = 'draw-pet';
+  body.appendChild(el('p', '', tr('unnamed.who')));
+  // What was drawn: a person's face, or a cat or a dog the detector missed (a
+  // pet is embedded as a whole, a face by its eyes, nose and mouth). Whoever
+  // draws a pet knows which one it is, and nothing changes it later.
+  var kind = '';
+  var kinds = el('div', 'kinds');
+  var field, hint;
+  var update = function () {
+    Array.prototype.forEach.call(kinds.children, function (b) { b.classList.toggle('on', b.dataset.kind === kind); });
+    hint.textContent = tr(kind ? 'draw.note_pet' : 'draw.note');
+    field.input.value = '';
+    field.input.dispatchEvent(new Event('input'));
+  };
+  [['', '🧑', 'draw.kind.person'], ['cat', PET_ICON.cat, 'draw.kind.cat'], ['dog', PET_ICON.dog, 'draw.kind.dog']].forEach(function (k) {
+    var b = el('button', '', k[1] + ' ' + tr(k[2]));
+    b.type = 'button';
+    b.dataset.kind = k[0];
+    b.onclick = function () { kind = k[0]; update(); field.input.focus(); };
+    kinds.appendChild(b);
+  });
   var save = function (who) {
-    var pet = petBox.checked;
-    post(LIBAPI + '/faces/manual', Object.assign({ file: info.id, box: frac, pet: pet || undefined }, who)).then(function () {
+    post(LIBAPI + '/faces/manual', Object.assign({ file: info.id, box: frac, species: kind || undefined }, who)).then(function () {
       closeModal();
       stopDrawing();
-      toast(pet ? 'Pet added' : 'Face added');
+      toast(tr(kind ? 'draw.added_pet' : 'draw.added'));
       infoFacesChanged(info.id);
     }).catch(failed);
   };
-  var field = personField(function (who) { save(who); }, { allowNew: true, placeholder: 'Name' });
+  field = personField(function (who) { save(who); }, { allowNew: true, placeholder: tr('people.name_placeholder'), species: function () { return kind; } });
+  body.appendChild(kinds);
   body.appendChild(field);
-  var petRow = el('label', 'check');
-  petRow.appendChild(petBox);
-  petRow.appendChild(document.createTextNode(' This is a pet (a cat or a dog)'));
-  body.appendChild(petRow);
-  var hint = el('p', 'hint');
-  var hintText = function () {
-    hint.textContent = petBox.checked
-      ? 'The box is kept in shoebox’s index, never written into the photo. The whole pet in the box is learned for suggestions.'
-      : 'The box is kept in shoebox’s index, never written into the photo. Its face is learned for suggestions when the recognizer finds its eyes, nose and mouth in it.';
-  };
-  petBox.onchange = hintText;
-  hintText();
+  hint = el('p', 'hint');
   body.appendChild(hint);
-  openModal('Add face or pet', body, [
-    { label: 'Draw again', cls: 'quiet', onclick: function () { var r = lb.drawing && lb.drawing.layer.querySelector('.draw-box'); if (r) r.hidden = true; } },
-    { label: 'Cancel', cls: 'quiet', onclick: function () { stopDrawing(); } },
-    { label: 'Save', onclick: function () { var who = field.value(); if (!who) return false; save(who); return false; } },
+  update();
+  openModal(tr('draw.title'), body, [
+    { label: tr('draw.again'), cls: 'quiet', onclick: function () { var r = lb.drawing && lb.drawing.layer.querySelector('.draw-box'); if (r) r.hidden = true; } },
+    { label: tr('app.cancel'), cls: 'quiet', onclick: function () { stopDrawing(); } },
+    { label: tr('draw.save'), onclick: function () { var who = field.value(); if (!who) return false; save(who); return false; } },
   ]);
   field.input.focus();
 }
@@ -4385,8 +5348,8 @@ function renderDriveList() {
     var all = el('li', 'all-entry' + (isAll() ? ' current' : ''));
     var ab = el('button');
     ab.appendChild(el('span', 'dot'));
-    ab.appendChild(el('span', 'name', 'All drives'));
-    ab.title = 'One timeline over every drive that is not a backup';
+    ab.appendChild(el('span', 'name', tr('drives.all')));
+    ab.title = tr('drives.all_hint');
     ab.onclick = function () { if (!isAll()) switchLibrary('all', ''); };
     all.appendChild(ab);
     ul.appendChild(all);
@@ -4396,9 +5359,9 @@ function renderDriveList() {
     var b = el('button');
     b.appendChild(el('span', 'dot'));
     b.appendChild(el('span', 'name', l.name));
-    if (!l.online) b.appendChild(el('span', 'tag', 'offline'));
-    else if (l.role === 'backup') b.appendChild(el('span', 'tag', 'backup'));
-    b.title = l.online ? l.name : l.name + ' is not connected' + (l.reason ? ' (' + l.reason + ')' : '');
+    if (!l.online) b.appendChild(el('span', 'tag', tr('drives.offline')));
+    else if (l.role === 'backup') b.appendChild(el('span', 'tag', tr('drives.backup')));
+    b.title = l.online ? l.name : l.reason ? tr('drives.not_connected_reason', { name: l.name, reason: l.reason }) : tr('drives.not_connected', { name: l.name });
     b.onclick = function () { if (isAll() || l.id !== drives.current.id) switchLibrary(l.id); };
     li.appendChild(b);
     ul.appendChild(li);
@@ -4412,10 +5375,9 @@ function showOffline() {
   $('sizer').hidden = true;
   $('empty').hidden = true;
   page.textContent = '';
-  page.appendChild(el('h2', '', drives.current.name + ' is offline'));
-  page.appendChild(el('p', 'sub', 'This drive is not connected. Plug it in and it opens by itself; nothing was changed. '
-    + 'The other drives in the list on the left keep working.'));
-  var overview = el('button', 'btn quiet', 'Show all drives');
+  page.appendChild(el('h2', '', tr('drives.offline_title', { name: drives.current.name })));
+  page.appendChild(el('p', 'sub', tr('drives.offline_text')));
+  var overview = el('button', 'btn quiet', tr('drives.show_all'));
   overview.onclick = function () { location.hash = '#view=drives'; location.reload(); };
   page.appendChild(overview);
   $('title').textContent = drives.current.name;
@@ -4428,84 +5390,161 @@ function showOffline() {
   }, 4000);
 }
 
+var drivesTab = 'people';
+
+// Groups of drives: an original followed by its backups (the confirmed ones, or
+// an undecided drive that looks like a copy of it), so a backup always sits
+// next to the drive it copies.
+function driveOrder(list, backups) {
+  var primaryOf = {};
+  backups.forEach(function (b) { if (b.primary) primaryOf[b.library] = b.primary; });
+  list.forEach(function (d) { if (!primaryOf[d.library] && d.suggested_backup_of) primaryOf[d.library] = d.suggested_backup_of; });
+  var names = list.map(function (d) { return d.name; });
+  var isCopy = function (d) { return primaryOf[d.library] && names.indexOf(primaryOf[d.library]) >= 0 && primaryOf[d.library] !== d.name; };
+  var out = [];
+  list.forEach(function (d) {
+    if (isCopy(d)) return;
+    out.push([d].concat(list.filter(function (c) { return isCopy(c) && primaryOf[c.library] === d.name; })));
+  });
+  return out;
+}
+
+// A Unix time for a drive card: "today, 14:05", "4 days ago, 7:30", and from a
+// week on the date ("21 Sep 2026, 19:12"). The title has the exact date.
+function whenOf(t) {
+  var d = new Date(t * 1000), now = new Date();
+  var midnight = function (x) { return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(); };
+  var days = Math.round((midnight(now) - midnight(d)) / 86400000);
+  var time = d.toLocaleTimeString(I18n.lang, { hour: 'numeric', minute: '2-digit', hourCycle: 'h23' });
+  var text = days <= 0 ? tr('time.today_at', { time: time })
+    : days <= 7 ? trn('time.days_ago_at', days, { time: time })
+    : I18n.date(d, { day: 'numeric', month: 'short', year: 'numeric' }) + ', ' + time;
+  var span = el('b', '', text);
+  span.title = d.toLocaleString(I18n.lang, { dateStyle: 'full', timeStyle: 'short', hourCycle: 'h23' });
+  return span;
+}
+
+// One footer cell: "Scanned today, 14:05" with an optional (i) hint after the date.
+function footCell(label, t, hint) {
+  var c = el('span', 'cell', label + ' ');
+  if (!t) { c.appendChild(el('b', '', tr('time.never'))); return c; }
+  c.appendChild(whenOf(t));
+  if (hint) { var i = el('i', 'info', 'i'); i.title = hint; c.appendChild(i); }
+  return c;
+}
+
 function loadDrivesPage() {
   var page = $('page');
   page.textContent = '';
-  page.appendChild(el('h2', '', 'All drives'));
-  page.appendChild(el('p', 'sub', 'Each drive keeps its own library. Here they are compared, without copying anything.'));
-  var drivesBox = el('div'), peopleBox = el('div');
-  page.appendChild(drivesBox);
-  page.appendChild(el('h2', '', 'People across drives'));
-  page.appendChild(peopleBox);
+  page.appendChild(el('h2', '', tr('side.manage_drives')));
+  page.appendChild(el('p', 'sub', tr('drives.page_sub')));
+  var cards = el('div', 'drive-cards'), tabs = el('div', 'tabs'), tabBox = el('div');
+  page.appendChild(cards);
+  page.appendChild(tabs);
+  page.appendChild(tabBox);
   var role = function (d, value, of) {
-    post('/api/all/role', { library: d.library, role: value, of: of || null }).then(function () { toast(d.name + ': ' + value); loadDrivesPage(); refreshDrives(); }).catch(failed);
+    post('/api/all/role', { library: d.library, role: value, of: of || null }).then(function () { toast(tr('drives.role_toast', { name: d.name, role: tr('drives.role.' + value) })); loadDrivesPage(); refreshDrives(); }).catch(failed);
   };
-  api('/api/all/drives').then(function (list) {
-    var shown = list.filter(function (d) { return d.shown_in_all; }).length;
-    var tools = el('div', 'toolbar');
-    var allBtn = el('button', 'btn', 'Photos of all drives');
-    allBtn.title = 'One timeline over ' + plural(shown, 'drive', 'drives');
-    allBtn.onclick = function () { switchLibrary('all', ''); };
-    var dups = el('button', 'btn quiet', 'Duplicates across drives');
-    dups.onclick = function () { dupTab = 'across'; showView('duplicates'); };
-    tools.appendChild(allBtn);
-    tools.appendChild(dups);
-    drivesBox.appendChild(tools);
-    list.forEach(function (d) {
-      var card = el('div', 'drive-card' + (d.online ? '' : ' offline'));
-      card.appendChild(el('span', 'title', d.name));
-      card.appendChild(el('span', 'pill' + (d.online ? ' on' : ''), d.online ? 'online' : 'offline'));
-      if (d.online && !d.shown_in_all) card.appendChild(el('span', 'pill', 'not in the common views'));
-      if (d.online) {
-        var wrap = el('span', 'role');
-        wrap.appendChild(el('span', 'sub', 'This drive is'));
-        var sel = el('select');
-        [['unknown', 'not decided'], ['separate', 'separate: has its own photos'], ['backup', 'a backup of another drive']].forEach(function (o) {
-          var opt = el('option', '', o[1]); opt.value = o[0]; if (d.role === o[0]) opt.selected = true; sel.appendChild(opt);
-        });
-        sel.onchange = function () { role(d, sel.value); };
-        wrap.appendChild(sel);
-        card.appendChild(wrap);
-      }
-      drivesBox.appendChild(card);
-      if (d.online && d.role === 'backup') {
-        var slot = el('div', 'backup-status');
-        slot.dataset.library = d.library;
-        slot.appendChild(el('p', 'sub', 'Comparing with the original drive…'));
-        drivesBox.appendChild(slot);
-      }
-      if (d.online && d.role === 'unknown' && d.suggested_backup_of) {
-        var b = el('div', 'banner warn');
-        b.appendChild(el('div', '', d.name + ' looks like a backup of ' + d.suggested_backup_of + ': almost everything on it is on the other drive too. '
-          + 'Until you decide, it is left out of the common timeline and the duplicates across drives.'));
-        var row = el('div', 'row');
-        var yes = el('button', 'btn', 'Yes, it is a backup'); yes.onclick = function () { role(d, 'backup'); };
-        var no = el('button', 'btn quiet', 'No, it has its own photos'); no.onclick = function () { role(d, 'separate'); };
-        row.appendChild(yes); row.appendChild(no);
-        b.appendChild(row);
-        drivesBox.appendChild(b);
-      }
+  Promise.all([api('/api/all/drives'), api('/api/all/backups')]).then(function (res) {
+    var list = res[0], backups = res[1];
+    var primaryOf = {};
+    backups.forEach(function (b) { if (b.primary) primaryOf[b.library] = b.primary; });
+    driveOrder(list, backups).forEach(function (group) {
+      var box = el('div', 'drive-group');
+      cards.appendChild(box);
+      group.forEach(function (d) {
+        var of = primaryOf[d.library] || d.suggested_backup_of;
+        var kind = !d.online ? 'off' : d.role === 'backup' ? 'bk' : d.role === 'unknown' ? 'undecided' : 'orig';
+        var card = el('div', 'drive-card ' + kind);
+        // The same row on every card says what the drive is.
+        var strip = el('div', 'strip');
+        strip.appendChild(el('span', '', kind === 'off' ? tr('drives.offline') : kind === 'bk' ? (of ? tr('drives.strip_backup', { primary: of }) : tr('drives.role.backup')) : tr('drives.role.' + d.role)));
+        if (d.online && !d.shown_in_all) strip.appendChild(el('span', 'r', tr('drives.not_in_timeline')));
+        card.appendChild(strip);
+        var body = el('div', 'body');
+        var top = el('div', 'top');
+        var name = el('div', 'name');
+        name.appendChild(el('span', '', d.name));
+        name.appendChild(el('span', 'on', d.online ? '● ' + tr('drives.online') : ''));
+        top.appendChild(name);
+        if (d.online) {
+          var sel = el('select');
+          sel.title = tr('drives.role_hint');
+          [['unknown', tr('drives.role.unknown')], ['separate', tr('drives.role.separate')], ['backup', tr('drives.role.backup')]].forEach(function (o) {
+            var opt = el('option', '', o[1]); opt.value = o[0]; if (d.role === o[0]) opt.selected = true; sel.appendChild(opt);
+          });
+          sel.onchange = function () { role(d, sel.value); };
+          top.appendChild(sel);
+        }
+        body.appendChild(top);
+        // The disk the folder is on: the folder's own name says little when the
+        // drive holds more than photos.
+        if (d.volume) {
+          var where = el('div', 'where');
+          where.appendChild(el('span', 'ico', '💾'));
+          where.appendChild(el('b', '', d.volume));
+          where.appendChild(el('span', '', ' · ' + d.folder));
+          body.appendChild(where);
+        }
+        if (d.online && d.role === 'backup') {
+          var slot = el('div', 'backup-status');
+          renderBackup(slot, backups.filter(function (x) { return x.library === d.library; })[0], d);
+          body.appendChild(slot);
+        } else if (d.online) {
+          body.appendChild(el('div', 'sub', trn('count.files', d.files)));
+        }
+        if (d.online && d.role === 'unknown' && d.suggested_backup_of) {
+          var bn = el('div', 'banner warn');
+          bn.appendChild(el('div', '', tr('drives.looks_backup', { name: d.name, other: d.suggested_backup_of })));
+          var row = el('div', 'row');
+          var yes = el('button', 'btn', tr('drives.yes_backup')); yes.onclick = function () { role(d, 'backup'); };
+          var no = el('button', 'btn quiet', tr('drives.no_backup')); no.onclick = function () { role(d, 'separate'); };
+          row.appendChild(yes); row.appendChild(no);
+          bn.appendChild(row);
+          body.appendChild(bn);
+        }
+        card.appendChild(body);
+        if (d.online) {
+          var foot = el('div', 'foot');
+          foot.appendChild(footCell(tr('drives.scanned'), d.last_scan));
+          foot.appendChild(footCell(tr(d.role === 'backup' ? 'drives.last_backup' : 'drives.new_files'), d.last_new_files, tr('drives.new_files_hint')));
+          card.appendChild(foot);
+        }
+        box.appendChild(card);
+      });
     });
   }).catch(failed);
-  api('/api/all/backups').then(function (list) {
-    Array.prototype.forEach.call(drivesBox.querySelectorAll('.backup-status'), function (slot) { renderBackup(slot, list.filter(function (b) { return b.library === slot.dataset.library; })[0]); });
-  }).catch(failed);
-  api('/api/all/people').then(function (r) {
-    if (r.offline.length) peopleBox.appendChild(el('p', 'sub', 'Not included, offline: ' + r.offline.join(', ')));
-    if (!r.people.length) peopleBox.appendChild(el('p', 'sub', 'Nobody is named yet.'));
-    var grid = el('div', 'people-grid');
-    r.people.forEach(function (p) {
-      var c = el('div', 'person-merged');
-      c.appendChild(el('div', 'n', p.name));
-      c.appendChild(el('div', 'sub', plural(p.photos, 'photo', 'photos') + (p.group ? ' · ' + p.group : '')));
-      p.libraries.forEach(function (l) { c.appendChild(el('span', 'pill', l.name + ' · ' + l.faces)); });
-      var show = el('button', 'btn quiet', 'Photos on all drives');
-      show.onclick = function () { switchLibrary('all', 'person=' + encodeURIComponent(p.name)); };
-      c.appendChild(show);
-      grid.appendChild(c);
+
+  var show = function () {
+    tabs.textContent = '';
+    [['people', tr('drives.people_across')], ['dups', tr('drives.dups_across')]].forEach(function (t) {
+      var b = el('button', drivesTab === t[0] ? 'on' : '', t[1]);
+      b.onclick = function () { drivesTab = t[0]; show(); };
+      tabs.appendChild(b);
     });
-    peopleBox.appendChild(grid);
-  }).catch(failed);
+    tabBox.textContent = '';
+    var mine = tabBox, tab = drivesTab;
+    var alive = function () { return mine.parentNode && drivesTab === tab; };
+    if (tab === 'dups') return renderDuplicatesAcross(tabBox, alive, true);
+    api('/api/all/people').then(function (r) {
+      if (!alive()) return;
+      if (r.offline.length) tabBox.appendChild(el('p', 'sub', tr('drives.people_offline', { names: r.offline.join(', ') })));
+      if (!r.people.length) tabBox.appendChild(el('p', 'sub', tr('drives.nobody')));
+      var grid = el('div', 'people-grid');
+      r.people.forEach(function (p) {
+        var c = el('div', 'person-merged');
+        c.appendChild(el('div', 'n', p.name));
+        c.appendChild(el('div', 'sub', trn('count.photos', p.photos) + (p.group ? ' · ' + p.group : '')));
+        p.libraries.forEach(function (l) { c.appendChild(el('span', 'pill', l.name + ' · ' + l.faces)); });
+        var go = el('button', 'btn quiet', tr('drives.photos_everywhere'));
+        go.onclick = function () { switchLibrary('all', 'person=' + encodeURIComponent(p.name)); };
+        c.appendChild(go);
+        grid.appendChild(c);
+      });
+      tabBox.appendChild(grid);
+    }).catch(failed);
+  };
+  show();
 }
 
 // The common timeline came in: which drives its ids refer to, and what is left out.
@@ -4518,47 +5557,79 @@ function allTimelineLoaded(data) {
     $('scroller').insertBefore(note, $('filters'));
   }
   var out = data.left_out.map(function (x) { return x.name + ' (' + x.reason.split(';')[0] + ')'; });
-  note.textContent = 'Photos of ' + data.libs.map(function (l) { return l.name; }).join(', ') + (out.length ? ' · not shown: ' + out.join(', ') : '');
-  $('status').textContent = plural(data.count, 'photo', 'photos') + ' on ' + plural(data.libs.length, 'drive', 'drives') + ' · for looking; open a photo\'s drive to change things';
+  note.textContent = tr('drives.note', { libs: data.libs.map(function (l) { return l.name; }).join(', ') }) + (out.length ? tr('drives.note_out', { out: out.join(', ') }) : '');
+  $('status').textContent = tr('drives.status', { photos: trn('count.photos', data.count), drives: trn('count.drives', data.libs.length) });
 }
 
-// How long ago a Unix time was, for "last backup".
-function daysAgo(t) {
-  if (!t) return 'never';
-  var d = Math.floor((Date.now() / 1000 - t) / 86400);
-  return d <= 0 ? 'today' : d === 1 ? '1 day ago' : d + ' days ago';
+// "Show in Finder" for a file on one of the drives (named by drive and path).
+function revealOn(library, path) {
+  post('/api/all/reveal', { library: library, path: path }).then(function (r) {
+    toast(tr('reveal.shown', { app: r.app === 'file manager' ? tr('reveal.file_manager') : r.app }));
+  }).catch(failed);
 }
 
 // A backup drive against the drive it copies, from the two indexes (nothing is
-// read from the photos): what is new since the last backup, what differs, what
-// only the backup has. Bit rot on the backup itself is found by "Backup check"
-// with re-reading in the launcher (`shoebox backup … --deep`).
-function renderBackup(slot, b) {
+// read from the photos): how much of it is on the backup, what is new since the
+// last backup, what differs, what only the backup has. Bit rot on the backup
+// itself is found by "Backup check" with re-reading in the launcher
+// (`shoebox backup … --deep`).
+function renderBackup(slot, b, d) {
   slot.textContent = '';
   if (!b || !b.primary) {
-    slot.appendChild(el('p', 'sub', (b && b.note) || 'No comparison possible.'));
+    slot.appendChild(el('p', 'sub', (b && b.note) || tr('drives.backup_none')));
     return;
   }
-  var box = el('div', 'banner' + (b.up_to_date ? '' : ' warn'));
-  box.appendChild(el('div', '', (b.up_to_date ? '✓ ' : '! ') + b.backup + ' is a backup of ' + b.primary + ': '
-    + (b.up_to_date ? 'it holds all ' + plural(b.compared, 'file', 'files') + '.'
-      : plural(b.missing, 'file', 'files') + ' not on it yet' + (b.different ? ', ' + b.different + ' different' : '') + '.')));
-  box.appendChild(el('div', 'sub', 'Last backup: ' + daysAgo(b.backup_last_new_files) + ' (new files last arrived); the backup drive was scanned ' + daysAgo(b.backup_last_scan)
-    + '. Scan it after every backup to bring this up to date.'
-    + (b.unhashed ? ' ' + plural(b.unhashed, 'file', 'files') + ' of ' + b.primary + ' have no full hash yet and are not compared.' : '')
-    + (b.extra ? ' ' + plural(b.extra, 'file', 'files') + ' only on the backup (gone or changed on ' + b.primary + ').' : '')));
-  var lists = [['Not on the backup yet', b.missing, b.missing_files], ['Different on the backup', b.different, b.different_files], ['Only on the backup', b.extra, b.extra_files]];
+  if (b.compared) {
+    var pct = b.covered >= b.compared ? 100 : Math.floor(b.covered * 100 / b.compared);
+    var prog = el('div', 'prog');
+    var t = el('div', 't');
+    var lead = el('span');
+    lead.appendChild(el('b', '', I18n.number(b.covered)));
+    lead.appendChild(document.createTextNode(' ' + tr('drives.bar_of', { total: I18n.number(b.compared) })));
+    t.appendChild(lead);
+    t.appendChild(el('b', '', pct + ' %'));
+    prog.appendChild(t);
+    var bar = el('div', 'bar');
+    var fill = el('i');
+    fill.style.width = pct + '%';
+    bar.appendChild(fill);
+    prog.appendChild(bar);
+    slot.appendChild(prog);
+  }
+  if (b.unhashed) slot.appendChild(el('div', 'sub', tr('drives.backup_unhashed', { files: trn('count.files', b.unhashed), primary: b.primary }).trim()));
+  var lists = [
+    [b.missing, 'drives.sum_missing', b.missing_files, b.primary_library, 'warn'],
+    [b.different, 'drives.sum_different', b.different_files, b.primary_library, 'warn'],
+    [b.extra, 'drives.sum_extra', b.extra_files, d.library, '']
+  ];
+  var wrap = el('div', 'lists');
   lists.forEach(function (l) {
-    if (!l[1]) return;
+    if (!l[0]) return;
     var det = el('details');
-    det.appendChild(el('summary', '', l[0] + ' (' + l[1].toLocaleString() + ')'));
-    var ul = el('ul', 'pathlist');
-    l[2].forEach(function (f) { ul.appendChild(el('li', '', f.path)); });
-    if (l[1] > l[2].length) ul.appendChild(el('li', 'sub', '… ' + (l[1] - l[2].length).toLocaleString() + ' more'));
+    var sum = el('summary');
+    sum.appendChild(el('b', l[4], I18n.number(l[0])));
+    sum.appendChild(document.createTextNode(' ' + tr(l[1])));
+    if (l[1] === 'drives.sum_extra') sum.appendChild(el('span', 'sub', ' ' + tr('drives.sum_extra_hint', { primary: b.primary })));
+    det.appendChild(sum);
+    var ul = el('ul', 'files');
+    l[2].forEach(function (f) {
+      var li = el('li');
+      li.appendChild(el('span', 'path', f.path));
+      li.appendChild(el('span', 'size', formatBytes(f.size)));
+      if (state.reveal && l[3]) {
+        var go = el('button', 'btn quiet reveal', '📂');
+        go.title = state.reveal;
+        go.setAttribute('aria-label', state.reveal);
+        go.onclick = function () { revealOn(l[3], f.path); };
+        li.appendChild(go);
+      }
+      ul.appendChild(li);
+    });
+    if (l[0] > l[2].length) ul.appendChild(el('li', 'more', tr('drives.more', { n: l[0] - l[2].length })));
     det.appendChild(ul);
-    box.appendChild(det);
+    wrap.appendChild(det);
   });
-  slot.appendChild(box);
+  slot.appendChild(wrap);
 }
 
 function refreshDrives() {
@@ -4572,19 +5643,31 @@ function refreshDrives() {
   });
 }
 
-api('/api/libraries').then(function (libs) {
+// The messages first: everything below builds its text from them.
+I18n.ready.then(function () {
+  var sel = $('lang');
+  Object.keys(I18n.langs).forEach(function (code) {
+    var o = el('option', '', I18n.langs[code]);
+    o.value = code;
+    if (code === I18n.lang) o.selected = true;
+    sel.appendChild(o);
+  });
+  sel.onchange = function () { I18n.setLang(sel.value); };
+  return api('/api/libraries');
+}).then(function (libs) {
   drives.list = libs;
   drives.current = chosenLibrary(libs);
   LIBAPI = '/api/lib/' + drives.current.id;
   return api('/api/session');
 }).then(function (s) {
   if (!s.authenticated) {
-    if (!s.pin_enabled) $('login-text').textContent = 'This shoebox only accepts connections from its own computer. Restart it with --lan to allow other devices.';
+    if (!s.pin_enabled) $('login-text').textContent = tr('login.local_only');
     showLogin();
     return;
   }
   return refreshDrives().then(function () {
     setInterval(refreshDrives, 10000);
+    if (drives.current.online) { loadEventPattern(); loadAllowTrash(); }
     if (!drives.current.online) {
       // Nothing of this library can be loaded: only the overview of the drives can be shown.
       if (readHash().view === 'drives') { state.filter = readHash(); applyFilter(); } else showOffline();
@@ -4594,14 +5677,19 @@ api('/api/libraries').then(function (libs) {
     $('search').value = state.filter.q;
     if (isAll()) {
       // The common timeline: no folders, tags or faces of its own; the drives answer by name.
-      $('title').textContent = 'All drives';
-      document.title = 'All drives · shoebox';
+      $('title').textContent = tr('drives.all');
+      document.title = tr('drives.all') + ' · shoebox';
       applyFilter();
+      // Only for the label of the "show in the file manager" button.
+      api(LIBAPI + '/info').then(function (i) { state.reveal = revealLabel(i.reveal); }).catch(function () {});
       return;
     }
-    return Promise.all([loadFolders(), loadInfo(), loadOwnTags(), loadPeople()]).then(function () {
+    return Promise.all([loadFolders(), loadInfo(), loadOwnTags(), loadPeople(), loadGeo()]).then(function () {
       applyFilter();
       setInterval(loadInfo, 20000);
     });
   });
-}).catch(function (e) { console.error(e); });
+}).catch(function (e) { console.error(e); }).then(function () {
+  // Folders, tags and faces load separately; show them once all are there.
+  $('sidebar').classList.remove('loading');
+});

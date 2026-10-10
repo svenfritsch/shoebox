@@ -39,6 +39,8 @@ pub struct Report {
     pub damaged: Vec<String>,
     /// No full hash yet (scan has not finished hashing).
     pub unhashed: u64,
+    /// Not at its old path, but the same content is present elsewhere.
+    pub relocated: u64,
     pub errors: Vec<String>,
     pub database_ok: bool,
 }
@@ -104,6 +106,14 @@ pub fn run(opts: &Options) -> Result<Report> {
         let stamp = match fingerprint::stamp(&path) {
             Ok(s) => s,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // Not a loss when the same content is still indexed (and
+                // present) under another path: the file was moved or merged
+                // into a copy there, and that copy is verified on its own.
+                if let Some(other) = full_hash.as_deref().and_then(|h| other_copy(&conn, *id, h)) {
+                    crate::report::file(rel, true, format!("moved: the same content is at {other}"));
+                    report.relocated += 1;
+                    continue;
+                }
                 crate::report::file(rel, false, "missing from the drive");
                 report.missing.push(rel.clone());
                 continue;
@@ -156,11 +166,24 @@ pub fn run(opts: &Options) -> Result<Report> {
     Ok(report)
 }
 
+/// Another present file with this full hash.
+fn other_copy(conn: &rusqlite::Connection, id: i64, hash: &str) -> Option<String> {
+    conn.query_row(
+        "SELECT path_nfc FROM files WHERE full_hash = ?1 AND id != ?2 AND missing_since IS NULL LIMIT 1",
+        params![hash, id],
+        |r| r.get(0),
+    )
+    .ok()
+}
+
 fn print_report(r: &Report) {
     say!();
     say!("Checked {} files: {} OK.", r.checked, r.ok);
     if r.unhashed > 0 {
         say!("{} files have no full hash yet (run `shoebox scan`).", r.unhashed);
+    }
+    if r.relocated > 0 {
+        say!("{} files are not at their old path, but the same content is on the drive elsewhere.", r.relocated);
     }
     let list = |title: &str, items: &[String]| {
         if items.is_empty() {

@@ -15,7 +15,7 @@ pub const FILE: &str = "library.db";
 const BACKUP_SUFFIX: &str = ".bak";
 
 /// Bump when the schema changes and add a step to `migrate`.
-const SCHEMA_VERSION: i32 = 7;
+const SCHEMA_VERSION: i32 = 11;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -239,6 +239,121 @@ pub fn has_column(conn: &Connection, schema: &str, table: &str, column: &str) ->
     Ok(names.iter().any(|n| n == column))
 }
 
+/// Photos that cannot be turned in the file (HEIC, PNG) are turned in
+/// shoebox only, by content like `taken_overrides`.
+const SCHEMA_V8: &str = "
+CREATE TABLE IF NOT EXISTS view_turns (
+    key      TEXT PRIMARY KEY,   -- files.quick_hash
+    quarters INTEGER NOT NULL,   -- 1 to 3 quarter turns clockwise
+    at       INTEGER NOT NULL
+);
+";
+
+/// How far shoebox shows the content with this quick hash turned, in quarter
+/// turns clockwise (0 to 3). The file itself is not changed.
+pub fn view_turn(conn: &Connection, quick_hash: &str) -> Result<i32> {
+    Ok(conn
+        .query_row("SELECT quarters FROM view_turns WHERE key = ?1", [quick_hash], |r| r.get(0))
+        .optional()?
+        .unwrap_or(0))
+}
+
+/// The user's decision for the content with this quick hash: `Some(true)` is a
+/// screenshot, `Some(false)` is not, `None` leaves it to the score.
+pub fn shot_mark(conn: &Connection, quick_hash: &str) -> Result<Option<bool>> {
+    Ok(conn
+        .query_row("SELECT is_shot FROM shot_marks WHERE key = ?1", [quick_hash], |r| r.get::<_, i64>(0))
+        .optional()?
+        .map(|v| v != 0))
+}
+
+/// Remember (or, with `None`, forget) the user's decision for these files'
+/// content. Returns how many contents were changed.
+pub fn set_shot_marks(conn: &Connection, ids: &[i64], value: Option<bool>) -> Result<u64> {
+    let tx = conn.unchecked_transaction()?;
+    let mut n = 0;
+    for id in ids {
+        let Some(key): Option<String> =
+            tx.query_row("SELECT quick_hash FROM files WHERE id = ?1", [id], |r| r.get(0)).optional()?
+        else {
+            continue;
+        };
+        n += match value {
+            Some(v) => tx.execute(
+                "INSERT INTO shot_marks (key, is_shot, at) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(key) DO UPDATE SET is_shot = ?2, at = ?3 WHERE is_shot != ?2",
+                params![key, v as i64, now()],
+            )?,
+            None => tx.execute("DELETE FROM shot_marks WHERE key = ?1", [&key])?,
+        } as u64;
+    }
+    tx.commit()?;
+    Ok(n)
+}
+
+/// What the web page puts on picture addresses (`?v=`) so a changed picture is
+/// fetched again: 7 characters of the quick hash and the view turn.
+pub fn version_of(quick_hash: &str, turn: i32) -> String {
+    format!("{}{}", quick_hash.chars().take(7).collect::<String>(), turn.rem_euclid(4))
+}
+
+/// Copies the user removed on the duplicates screen. The trash forgets what
+/// was in it once it is emptied; this keeps, for good, that a copy with this
+/// content was removed here although another copy stays, so a backup check can
+/// find the copy on the backup drive. Content hashes and paths only.
+const SCHEMA_V9: &str = "
+CREATE TABLE IF NOT EXISTS removed_copies (
+    id         INTEGER PRIMARY KEY,
+    path_nfc   TEXT NOT NULL,        -- where the removed copy was
+    size       INTEGER NOT NULL,
+    full_hash  TEXT NOT NULL,        -- its content
+    kept_hash  TEXT NOT NULL,        -- the content of the copy that stays (the same for an exact copy)
+    removed_at INTEGER NOT NULL      -- Unix seconds
+);
+CREATE INDEX IF NOT EXISTS removed_copies_hash ON removed_copies(full_hash);
+";
+
+/// Phase 10: where photos were taken. `files.lat/lon` come from the file
+/// (EXIF GPS, video location; read by the scan, `geo_done` says it has been
+/// read: files indexed before this version are read once more by the next
+/// scan). `geo_overrides` is a position the user gave a photo without one,
+/// keyed by content like `taken_overrides`; never written into the photo.
+/// `places` are named rectangles; the photos inside are found by a query.
+const SCHEMA_V10: &str = "
+CREATE INDEX IF NOT EXISTS files_geo ON files(lat, lon);
+CREATE TABLE IF NOT EXISTS geo_overrides (
+    key TEXT PRIMARY KEY,   -- files.quick_hash
+    lat REAL NOT NULL,
+    lon REAL NOT NULL,
+    at  INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS places (
+    id       INTEGER PRIMARY KEY,
+    name     TEXT NOT NULL UNIQUE,
+    south    REAL NOT NULL,
+    west     REAL NOT NULL,
+    north    REAL NOT NULL,
+    east     REAL NOT NULL,
+    position INTEGER NOT NULL
+);
+";
+
+/// `files.lat` / `files.lon` as the user sees them: the file's own position,
+/// else one the user gave. For queries on `files` without an alias.
+pub const LAT: &str = "coalesce(files.lat, (SELECT o.lat FROM geo_overrides o WHERE o.key = files.quick_hash))";
+pub const LON: &str = "coalesce(files.lon, (SELECT o.lon FROM geo_overrides o WHERE o.key = files.quick_hash))";
+
+/// v11 (phase 11): how flat the thumbnail is (0 to 100, `screenshots.rs`; NULL
+/// until it is looked at) and the user's own decision whether a picture is a
+/// screenshot, by content like `view_turns`. Nothing is written to a file.
+const SCHEMA_V11: &str = "
+CREATE TABLE IF NOT EXISTS shot_marks (
+    key     TEXT PRIMARY KEY,   -- files.quick_hash
+    is_shot INTEGER NOT NULL,   -- 1: is a screenshot, 0: is not
+    at      INTEGER NOT NULL
+);
+";
+
 fn migrate(conn: &Connection) -> Result<()> {
     let version: i32 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
     if version > SCHEMA_VERSION {
@@ -292,6 +407,42 @@ fn migrate(conn: &Connection) -> Result<()> {
             tx.execute_batch(SCHEMA_V7)?;
         }
         tx.pragma_update(None, "user_version", 7)?;
+        tx.commit()?;
+    }
+    if version < 8 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V8)?;
+        tx.pragma_update(None, "user_version", 8)?;
+        tx.commit()?;
+    }
+    if version < 9 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V9)?;
+        tx.pragma_update(None, "user_version", 9)?;
+        tx.commit()?;
+    }
+    if version < 10 {
+        let tx = conn.unchecked_transaction()?;
+        // A re-run (the tests lower user_version) must not add them twice.
+        if !has_column(&tx, "main", "files", "lat")? {
+            tx.execute_batch(
+                "ALTER TABLE files ADD COLUMN lat REAL;
+                 ALTER TABLE files ADD COLUMN lon REAL;
+                 ALTER TABLE files ADD COLUMN geo_done INTEGER NOT NULL DEFAULT 0;",
+            )?;
+        }
+        tx.execute_batch(SCHEMA_V10)?;
+        tx.pragma_update(None, "user_version", 10)?;
+        tx.commit()?;
+    }
+    if version < 11 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V11)?;
+        // A re-run (the tests lower user_version) must not add it twice.
+        if !has_column(&tx, "main", "files", "shot_pixels")? {
+            tx.execute_batch("ALTER TABLE files ADD COLUMN shot_pixels INTEGER;")?;
+        }
+        tx.pragma_update(None, "user_version", 11)?;
         tx.commit()?;
     }
     Ok(())

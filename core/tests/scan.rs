@@ -46,6 +46,37 @@ fn guard_scan_and_verify_leave_originals_untouched() {
 }
 
 #[test]
+fn event_folders_in_every_naming_form_are_picked_up_on_the_next_scan() {
+    let lib = Library::new("event-forms");
+    lib.jpeg("20.07.Foo/a.jpg", 1);
+    lib.jpeg("20.07_Foo/b.jpg", 2);
+    lib.jpeg("98-08 Urlaub/c.jpg", 3);
+    lib.jpeg("2019.05Mai/d.jpg", 4);
+    lib.jpeg("2020-07-15 Tag/e.jpg", 5);
+    lib.scan();
+    // Folders indexed before the forms were known: the next scan reads them again.
+    lib.db().execute("UPDATE folders SET event_year = NULL, event_month = NULL, event_name = NULL", []).unwrap();
+    lib.scan();
+    let event = |name: &str| -> Option<(i64, i64, String)> {
+        let row: (Option<i64>, Option<i64>, Option<String>) = lib
+            .db()
+            .query_row("SELECT event_year, event_month, event_name FROM folders WHERE name = ?1", [name], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .unwrap();
+        match row {
+            (Some(y), Some(m), Some(n)) => Some((y, m, n)),
+            _ => None,
+        }
+    };
+    assert_eq!(event("20.07.Foo"), Some((2020, 7, "Foo".into())));
+    assert_eq!(event("20.07_Foo"), Some((2020, 7, "Foo".into())));
+    assert_eq!(event("98-08 Urlaub"), Some((2098, 8, "Urlaub".into())));
+    assert_eq!(event("2019.05Mai"), Some((2019, 5, "Mai".into())));
+    assert_eq!(event("2020-07-15 Tag"), None);
+}
+
+#[test]
 fn indexes_media_and_skips_bookkeeping() {
     let lib = Library::new("index");
     let stats = lib.scan();
@@ -125,6 +156,14 @@ fn moves_keep_their_record() {
 
     let stats = lib.scan();
     assert_eq!((stats.moved, stats.added, stats.missing, stats.full_hashed), (2, 0, 0, 0));
+    let listed: Vec<(&str, &str)> = stats.moved_files.iter().map(|m| (m.path.as_str(), m.from.as_str())).collect();
+    assert_eq!(
+        listed,
+        [
+            ("2020-08 Neu/IMG_0001.JPG", "2020-07 Urlaub Griechenland/IMG_0001.JPG"),
+            ("Familie/Weihnachten 2012/DSC_2001.jpg", "Familie/Weihnachten/DSC_2001.jpg"),
+        ]
+    );
     assert_eq!(lib.record("2020-08 Neu/IMG_0001.JPG"), Some((id1, hash1, false)));
     assert_eq!(lib.record("Familie/Weihnachten 2012/DSC_2001.jpg").unwrap().0, id2);
     assert_eq!(lib.count("SELECT count(*) FROM folders WHERE path_nfc = 'Familie/Weihnachten'"), 0);
@@ -183,6 +222,7 @@ fn same_size_and_quick_hash_but_different_content_is_not_a_move() {
     lib.write("b/other.jpg", &data);
     let stats = lib.scan();
     assert_eq!((stats.moved, stats.added, stats.missing), (0, 1, 1));
+    assert_eq!(stats.missing_files, ["a/original.jpg"]);
     let (id_after, _, missing) = lib.record("a/original.jpg").unwrap();
     assert_eq!((id_after, missing), (id, true));
 }
@@ -197,6 +237,7 @@ fn changed_content_is_reindexed_and_rehashed() {
 
     let stats = lib.scan();
     assert_eq!((stats.changed, stats.full_hashed), (1, 1));
+    assert_eq!(stats.changed_files, ["Familie/Weihnachten/DSC_2001.jpg"]);
     let (id_after, hash_after, _) = lib.record("Familie/Weihnachten/DSC_2001.jpg").unwrap();
     assert_eq!(id_after, id);
     assert!(hash_after.is_some() && hash_after != hash);
@@ -295,4 +336,40 @@ fn verify_reports_damage_missing_and_changes() {
     assert_eq!(report.damaged, ["2020-07 Urlaub Griechenland/IMG_0001.JPG"]);
     assert_eq!(report.missing, ["Familie/Weihnachten/DSC_2001.jpg"]);
     assert_eq!(report.changed, ["Familie/Screenshot.png"]);
+}
+
+#[test]
+fn verify_is_clean_after_moves() {
+    let lib = Library::new("verify-after-move");
+    // Identical copies in two folders, and a quick scan first.
+    let data = std::fs::read(lib.path("Familie/Weihnachten/DSC_2001.jpg")).unwrap();
+    lib.write("Aurelia/a/IMG_1.JPG", &data);
+    lib.write("Aurelia/b/IMG_1.JPG", &data);
+    lib.scan_with(false, false);
+    lib.scan();
+    assert!(lib.verify(false).is_clean());
+
+    fs::create_dir_all(lib.path("Familie/Aurelia")).unwrap();
+    fs::rename(lib.path("Aurelia/a"), lib.path("Familie/Aurelia/a")).unwrap();
+    fs::rename(lib.path("Aurelia/b"), lib.path("Familie/Aurelia/b")).unwrap();
+    fs::rename(lib.path("Familie/Weihnachten/DSC_2001.jpg"), lib.path("Familie/Aurelia/DSC_2001.jpg")).unwrap();
+    let stats = lib.scan();
+    assert_eq!(stats.moved, 3, "{stats:?}");
+    let report = lib.verify(false);
+    assert!(report.is_clean(), "{report:?}");
+}
+
+#[test]
+fn verify_does_not_fail_a_copy_whose_content_is_still_there() {
+    let lib = Library::new("verify-merged-copy");
+    let data = fs::read(lib.path("Familie/Weihnachten/DSC_2001.jpg")).unwrap();
+    lib.write("Aurelia/IMG_9156.JPG", &data);
+    lib.write("Familie/Aurelia/IMG_9156.JPG", &data);
+    lib.scan();
+    // The copy in Aurelia/ goes away; its content stays at Familie/Aurelia/.
+    fs::remove_file(lib.path("Aurelia/IMG_9156.JPG")).unwrap();
+    assert_eq!(lib.scan().missing, 1);
+    let report = lib.verify(false);
+    assert!(report.is_clean(), "{report:?}");
+    assert_eq!(report.relocated, 1);
 }

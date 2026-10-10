@@ -158,7 +158,9 @@ jobs:
   # Push a tag like `v0.1.0-phase1` to publish the binaries as a GitHub
   # release. Workflow artifacts need a GitHub login, expire, and lose the
   # executable bit; release assets don't. The recognizer installer goes
-  # along, so the drive can be set up without a clone of the repo.
+  # along, so the drive can be set up without a clone of the repo, and so does
+  # the guide (docs/guide: HTML and plain text, English and German, with its
+  # screenshots), in the folder `guide` of the archive.
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [macos]
@@ -175,14 +177,22 @@ jobs:
       - name: Package
         run: |
           mkdir -p release
+          # never ship a guide whose text copy is stale or whose images are missing
+          python3 docs/guide/html2txt.py --check
+          # the notices for the libraries in the binary must match Cargo.lock and the vendored web libraries
+          python3 scripts/third-party-licenses.py --check
           for os in macos; do
             pkg="$RUNNER_TEMP/shoebox-$os"
             mkdir -p "$pkg/recognizer"
-            cp artifacts/shoebox-$os/shoebox-$os "$pkg/"
-            chmod +x "$pkg/shoebox-$os"
+            # inside its own folder per system the program is just "shoebox"
+            cp artifacts/shoebox-$os/shoebox-$os "$pkg/shoebox"
+            chmod +x "$pkg/shoebox"
+            cp LICENSE.txt THIRD-PARTY-LICENSES.txt "$pkg/"
             cp "scripts/launchers/Start shoebox.command" "$pkg/"
             chmod +x "$pkg/Start shoebox.command"
             cp recognizer/README.md recognizer/install.sh recognizer/fetch-models.sh recognizer/recognizer.py "$pkg/recognizer/"
+            mkdir -p "$pkg/guide"
+            cp -R docs/guide/shoebox-en.html docs/guide/shoebox-de.html docs/guide/shoebox-en.txt docs/guide/shoebox-de.txt docs/guide/assets "$pkg/guide/"
             chmod +x "$pkg/recognizer/install.sh" "$pkg/recognizer/fetch-models.sh"
             tar -C "$RUNNER_TEMP" -czf release/shoebox-$os.tar.gz shoebox-$os
           done

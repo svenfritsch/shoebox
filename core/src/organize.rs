@@ -14,10 +14,15 @@
 //!   the next scan recognises the move.
 //! - "Deleting" moves files into `.shoebox/trash/` on the same drive; only
 //!   emptying the trash removes them.
+//! - Turning a JPEG is the one change that writes into an original, and only
+//!   the two bytes of its EXIF Orientation tag, in place: nothing is copied
+//!   or replaced, the picture data and the capture and creation dates stay.
+//!   It must match the index first, and what is on disk afterwards must be
+//!   exactly the old file with those two bytes changed (full hash).
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io;
+use std::io::{self, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -29,6 +34,8 @@ use crate::classify;
 use crate::db;
 use crate::fingerprint::{self, Stamp};
 use crate::library::{self, RelPath};
+use crate::media;
+use crate::orientation;
 use crate::scan::{self, Found};
 use crate::tags;
 
@@ -126,22 +133,6 @@ impl Names {
     fn remove(&mut self, name: &str) {
         self.by_fold.remove(&fold(name));
     }
-}
-
-/// `name`, or `stem (2).ext`, `stem (3).ext`, … if that is taken in `dir`.
-pub(crate) fn free_name(dir: &Path, name: &str) -> Result<String> {
-    let names = Names::load(dir)?;
-    if names.get(name).is_none() {
-        return Ok(name.to_string());
-    }
-    let (stem, ext) = match name.rsplit_once('.') {
-        Some((s, e)) => (s, format!(".{e}")),
-        None => (name, String::new()),
-    };
-    (2..10_000)
-        .map(|n| format!("{stem} ({n}){ext}"))
-        .find(|candidate| names.get(candidate).is_none())
-        .ok_or_else(|| anyhow!("no free name for {name}"))
 }
 
 // ---------------------------------------------------------------- renaming
@@ -494,12 +485,13 @@ pub struct Moved {
 /// Move photos into a folder (NFC path, created if needed), each with its
 /// companions. A photo whose group cannot move completely stays put.
 pub fn move_files(conn: &Connection, root: &Path, ids: &[i64], folder: &str) -> Result<Moved> {
-    move_files_with(conn, root, ids, folder, true)
+    move_files_with(conn, root, ids, folder, false)
 }
 
-/// As `move_files`; without `keep_tags` the photos' own tags are dropped
-/// (folder tags always follow the new folder).
-pub fn move_files_with(conn: &Connection, root: &Path, ids: &[i64], folder: &str, keep_tags: bool) -> Result<Moved> {
+/// As `move_files`. The photos' own tags always move along and folder tags
+/// follow the new folder; with `keep_folder_tags` the tags of the old folder
+/// stay on the photos as own tags too.
+pub fn move_files_with(conn: &Connection, root: &Path, ids: &[i64], folder: &str, keep_folder_tags: bool) -> Result<Moved> {
     let folder = check_folder_path(folder)?;
     let (folder_id, folder_raw) = ensure_folder(conn, root, &folder)?;
     let dir = root.join(&folder_raw);
@@ -515,7 +507,7 @@ pub fn move_files_with(conn: &Connection, root: &Path, ids: &[i64], folder: &str
                 None => Ok(()),
             }
         });
-        if let Err(e) = result.and_then(|()| move_group(conn, root, &group, folder_id, &folder_raw, keep_tags, &mut names, &mut out)) {
+        if let Err(e) = result.and_then(|()| move_group(conn, root, &group, folder_id, &folder_raw, keep_folder_tags, &mut names, &mut out)) {
             out.skipped.push(format!("{}: {e:#}", group.files[0].path_nfc));
         }
     }
@@ -528,7 +520,7 @@ fn move_group(
     group: &Group,
     folder_id: i64,
     folder_raw: &str,
-    keep_tags: bool,
+    keep_folder_tags: bool,
     names: &mut Names,
     out: &mut Moved,
 ) -> Result<()> {
@@ -543,10 +535,10 @@ fn move_group(
             let to = rename_into(&from, &dir, name, names)?;
             let raw = join(folder_raw, name);
             let rel = RelPath { nfc: library::nfc(&raw), raw };
+            // Own tags are attached to the file id and always survive.
+            let old_folder_tags = if keep_folder_tags { crate::tags::folder_names(&tx, f.id)? } else { Vec::new() };
             set_path(&tx, f.id, &rel, folder_id)?;
-            if !keep_tags {
-                crate::tags::drop_own(&tx, f.id)?;
-            }
+            crate::tags::keep_as_own(&tx, f.id, &old_folder_tags)?;
             out.files.push(rel.nfc);
             check_kept(&before, &to)?;
         }
@@ -586,6 +578,239 @@ pub(crate) fn index_file(conn: &Connection, root: &Path, raw: &str, full_hash: O
     }
     scan::set_folder_tags(conn, id, &found.rel)?;
     Ok(id)
+}
+
+// ---------------------------------------------------------------- rotate
+
+/// What turning a photo changed.
+#[derive(Debug, Serialize)]
+pub struct Rotated {
+    pub id: i64,
+    /// The first 8 characters of the new quick hash: what the web page puts
+    /// on the picture addresses.
+    pub version: String,
+    /// The EXIF orientation stored now (1 to 8); 0 when only the view was
+    /// turned.
+    pub orientation: u8,
+    /// The file was not changed: shoebox shows it turned (HEIC, PNG).
+    pub view_only: bool,
+}
+
+/// Larger files are not read into memory to be checked.
+const ROTATE_MAX_BYTES: u64 = 256 << 20;
+
+/// Turn a JPEG by `quarters` quarter turns clockwise (negative:
+/// counter-clockwise) by changing its EXIF Orientation tag in place.
+///
+/// Like the Finder's Quick Look this is lossless and quick, and it is the
+/// only time shoebox writes into an original: two bytes, no copy, no
+/// replacement. The file must still match the index, carry an Orientation
+/// tag already (adding one would move every byte after it), and afterwards
+/// hash to exactly the old content with those two bytes changed; if not, the
+/// old bytes are put back. The modification time is the file system's own
+/// doing, as in the Finder; the creation time must not change.
+pub fn rotate(conn: &Connection, root: &Path, id: i64, quarters: i32) -> Result<Rotated> {
+    let quarters = quarters.rem_euclid(4);
+    if quarters == 0 {
+        bail!("nothing to turn");
+    }
+    let rec = load(conn, id)?.ok_or_else(|| anyhow!("not in the index"))?;
+    let name = rec.path_nfc.as_str();
+    if rec.missing {
+        bail!("{name} is missing from the drive");
+    }
+    let kind = classify::Kind::parse(&rec.kind).ok_or_else(|| anyhow!("{name}: unknown kind"))?;
+    let path = root.join(&rec.path);
+    // A JPEG called `.HEIC` is a JPEG; a HEIC, PNG, RAW file or video has no
+    // Orientation tag that is safe to change in place.
+    if media::content_kind(kind, &path) != classify::Kind::Jpeg {
+        bail!("{name}: only JPEG photos can be turned for now");
+    }
+    if rec.size > ROTATE_MAX_BYTES {
+        bail!("{name} is too large to turn");
+    }
+
+    let before = fingerprint::stamp(&path).with_context(|| name.to_string())?;
+    let bytes = fingerprint::read_unchanged(&path, rec.size, rec.mtime_ns, || fs::read(&path).map_err(|e| e.to_string()))
+        .map_err(|e| anyhow!("{name}: {e}; scan the library first"))?;
+    if let Some(stored) = &rec.full_hash
+        && blake3::hash(&bytes).to_hex().as_str() != stored
+    {
+        bail!("{name} differs from the index (hash); check it before changing it");
+    }
+
+    let slot = orientation::find(&bytes).map_err(|e| anyhow!("{name}: {e:#}"))?;
+    let value = orientation::turned(slot.value, quarters);
+    let old_bytes = [bytes[slot.offset], bytes[slot.offset + 1]];
+    let new_bytes = slot.bytes(value);
+    let mut expected = bytes;
+    expected[slot.offset..slot.offset + 2].copy_from_slice(&new_bytes);
+    let expected_hash = blake3::hash(&expected).to_hex().to_string();
+    drop(expected);
+
+    patch(&path, slot.offset as u64, &new_bytes).with_context(|| format!("{name}: could not write"))?;
+    let verified = (|| -> Result<fingerprint::Stamp> {
+        let after = fingerprint::stamp(&path)?;
+        if after.size != before.size || after.created_ns != before.created_ns {
+            bail!("the drive changed the size or the creation date");
+        }
+        if fingerprint::full_hash(&path)? != expected_hash {
+            bail!("the file reads differently from what was written");
+        }
+        Ok(after)
+    })();
+    let stamp = match verified {
+        Ok(s) => s,
+        Err(e) => {
+            let restored = patch(&path, slot.offset as u64, &old_bytes);
+            bail!("{name}: {e:#}; {}", if restored.is_ok() { "the old bytes were put back" } else { "putting the old bytes back failed too" });
+        }
+    };
+
+    let rel = RelPath::new(root, &path).context("not inside the library")?;
+    let found = Found { rel, kind, stamp };
+    let info = scan::read_file(&mut MediaParser::new(), &path, &found, None).map_err(|e| anyhow!("{name}: {e}"))?;
+    let tx = conn.unchecked_transaction()?;
+    scan::update_file(&tx, id, &found, &info)?;
+    tx.execute("UPDATE files SET full_hash = ?2 WHERE id = ?1", params![id, expected_hash])?;
+    let key: String = tx.query_row("SELECT quick_hash FROM files WHERE id = ?1", [id], |r| r.get(0))?;
+    follow_content(&tx, &rec.quick_hash, &key, quarters)?;
+    tx.commit()?;
+    Ok(Rotated { id, version: db::version_of(&key, 0), orientation: value, view_only: false })
+}
+
+/// Turn a photo by `turns` quarter turns clockwise: a JPEG in the file
+/// (`rotate`), anything else that shoebox can show (HEIC, PNG) in shoebox only.
+///
+/// HEIC keeps its rotation in a box that is often missing, and adding it, or
+/// anything to a PNG, means writing a new file; Apple's Preview does that and
+/// re-encodes the picture. shoebox does not touch such originals.
+pub fn turn(conn: &Connection, root: &Path, id: i64, turns: i32) -> Result<Rotated> {
+    let rec = load(conn, id)?.ok_or_else(|| anyhow!("not in the index"))?;
+    let kind = classify::Kind::parse(&rec.kind).ok_or_else(|| anyhow!("{}: unknown kind", rec.path_nfc))?;
+    match media::content_kind(kind, &root.join(&rec.path)) {
+        classify::Kind::Jpeg => rotate(conn, root, id, turns),
+        classify::Kind::Heic | classify::Kind::Png => turn_view(conn, &rec, turns),
+        _ => bail!("{}: only photos can be turned", rec.path_nfc),
+    }
+}
+
+/// Remember the turn by content (`view_turns`); the file is not opened.
+fn turn_view(conn: &Connection, rec: &Rec, turns: i32) -> Result<Rotated> {
+    if rec.missing {
+        bail!("{} is missing from the drive", rec.path_nfc);
+    }
+    let quarters = (db::view_turn(conn, &rec.quick_hash)? + turns).rem_euclid(4);
+    if quarters == 0 {
+        conn.execute("DELETE FROM view_turns WHERE key = ?1", [&rec.quick_hash])?;
+    } else {
+        conn.execute(
+            "INSERT OR REPLACE INTO view_turns (key, quarters, at) VALUES (?1, ?2, ?3)",
+            params![rec.quick_hash, quarters, db::now()],
+        )?;
+    }
+    Ok(Rotated { id: rec.id, version: db::version_of(&rec.quick_hash, quarters), orientation: 0, view_only: true })
+}
+
+/// Overwrite `bytes.len()` bytes at `offset`, in place.
+fn patch(path: &Path, offset: u64, bytes: &[u8]) -> Result<()> {
+    let mut file = fs::OpenOptions::new().write(true).open(path)?;
+    file.seek(SeekFrom::Start(offset))?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    Ok(())
+}
+
+/// A box (x, y, w, h as fractions of the upright picture) after the picture
+/// was turned by `quarters` quarter turns clockwise.
+fn turn_box(b: [f64; 4], quarters: i32) -> [f64; 4] {
+    let [x, y, w, h] = b;
+    match quarters.rem_euclid(4) {
+        1 => [1.0 - y - h, x, h, w],
+        2 => [1.0 - x - w, 1.0 - y - h, w, h],
+        3 => [y, 1.0 - x - w, h, w],
+        _ => b,
+    }
+}
+
+/// Things the user decided are keyed by the content's quick hash, which
+/// changed with the tag: the capture date they set and who is where on the
+/// photo (turned with the picture) follow the photo to its new key. What the
+/// other copies of the old content still use stays with them. What is only
+/// cached (thumbnails, detected faces) is made again: the next view and the
+/// next `shoebox recognize` do that, and prune the old.
+fn follow_content(conn: &Connection, old: &str, new: &str, quarters: i32) -> Result<()> {
+    let has_table = |name: &str| -> Result<bool> {
+        Ok(conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)", [name], |r| r.get(0))?)
+    };
+    let still_used: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM files WHERE quick_hash = ?1) OR EXISTS(SELECT 1 FROM trash WHERE quick_hash = ?1)",
+        [old],
+        |r| r.get(0),
+    )?;
+    let same = old == new;
+
+    if has_table("face_decisions")? {
+        let rows: Vec<(i64, [f64; 4])> = conn
+            .prepare("SELECT id, x, y, w, h FROM face_decisions WHERE key = ?1")?
+            .query_map([old], |r| Ok((r.get(0)?, [r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?])))?
+            .collect::<rusqlite::Result<_>>()?;
+        for (row, b) in rows {
+            let [x, y, w, h] = turn_box(b, quarters);
+            if same {
+                conn.execute("UPDATE face_decisions SET x = ?2, y = ?3, w = ?4, h = ?5 WHERE id = ?1", params![row, x, y, w, h])?;
+            } else {
+                conn.execute(
+                    "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at)
+                     SELECT ?2, ?3, ?4, ?5, ?6, person_id, decision, manual, at FROM face_decisions WHERE id = ?1",
+                    params![row, new, x, y, w, h],
+                )?;
+            }
+        }
+        if !same && !still_used {
+            conn.execute("DELETE FROM face_decisions WHERE key = ?1 AND id NOT IN (SELECT id FROM face_decisions WHERE key = ?2)", params![old, new])?;
+        }
+    }
+    if !same && has_table("taken_overrides")? {
+        conn.execute(
+            "INSERT OR REPLACE INTO taken_overrides (key, taken, taken_offset, at)
+             SELECT ?2, taken, taken_offset, at FROM taken_overrides WHERE key = ?1",
+            params![old, new],
+        )?;
+        if !still_used {
+            conn.execute("DELETE FROM taken_overrides WHERE key = ?1", [old])?;
+        }
+    }
+    if !same && has_table("geo_overrides")? {
+        conn.execute(
+            "INSERT OR REPLACE INTO geo_overrides (key, lat, lon, at)
+             SELECT ?2, lat, lon, at FROM geo_overrides WHERE key = ?1",
+            params![old, new],
+        )?;
+        if !still_used {
+            conn.execute("DELETE FROM geo_overrides WHERE key = ?1", [old])?;
+        }
+    }
+    if !same && !still_used && has_table("people")? {
+        let covers: Vec<(i64, String)> = conn
+            .prepare("SELECT id, cover_box FROM people WHERE cover_key = ?1 AND cover_box IS NOT NULL")?
+            .query_map([old], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        for (person, json) in covers {
+            let Ok(b) = serde_json::from_str::<[f64; 4]>(&json) else { continue };
+            conn.execute(
+                "UPDATE people SET cover_key = ?2, cover_box = ?3 WHERE id = ?1",
+                params![person, new, serde_json::to_string(&turn_box(b, quarters))?],
+            )?;
+        }
+    }
+    // The cached picture of the old content, if nothing uses it any more, or
+    // of the new one when the key did not change although the picture did.
+    // (Not every connection has the thumbnail database attached.)
+    if same || !still_used {
+        let _ = conn.execute("DELETE FROM thumbs.thumbs WHERE key = ?1", [old]);
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------- trash
@@ -835,7 +1060,32 @@ pub fn empty_trash(conn: &Connection, root: &Path, batch: Option<i64>) -> Result
         }
         let _ = fs::remove_dir(&dir);
     }
+    if batch.is_none() {
+        sweep_trash_dir(root);
+    }
     Ok(rows.len() as u64)
+}
+
+/// After emptying the whole trash: no empty batch folder (left over from an
+/// attempt that failed) and no empty trash folder stays behind. Only empty
+/// folders are removed; anything with a file in it is left alone.
+fn sweep_trash_dir(root: &Path) {
+    let trash = trash_dir(root);
+    let Ok(entries) = fs::read_dir(&trash) else { return };
+    for e in entries.flatten() {
+        let dir = e.path();
+        if dir.is_dir() {
+            if let Ok(inner) = fs::read_dir(&dir) {
+                for f in inner.flatten() {
+                    if classify::is_ignored(&f.file_name().to_string_lossy()) {
+                        let _ = fs::remove_file(f.path());
+                    }
+                }
+            }
+            let _ = fs::remove_dir(&dir);
+        }
+    }
+    let _ = fs::remove_dir(&trash);
 }
 
 #[cfg(test)]
@@ -861,16 +1111,10 @@ mod tests {
     }
 
     #[test]
-    fn free_names_get_a_number() {
+    fn renaming_never_replaces() {
         let dir = std::env::temp_dir().join(format!("shoebox-names-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        assert_eq!(free_name(&dir, "IMG_1.JPG").unwrap(), "IMG_1.JPG");
-        fs::write(dir.join("img_1.jpg"), b"x").unwrap();
-        assert_eq!(free_name(&dir, "IMG_1.JPG").unwrap(), "IMG_1 (2).JPG");
-        fs::write(dir.join("IMG_1 (2).JPG"), b"x").unwrap();
-        assert_eq!(free_name(&dir, "IMG_1.JPG").unwrap(), "IMG_1 (3).JPG");
-
         // No replacing, whatever the platform.
         fs::write(dir.join("a"), b"a").unwrap();
         fs::write(dir.join("b"), b"b").unwrap();

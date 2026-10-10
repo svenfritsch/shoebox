@@ -11,10 +11,25 @@ boxes and embeddings out. It never touches the database or an original.
 - `fetch-models.sh [dir]`: download the ONNX models (checksummed) into
   `models/`; `SHOEBOX_NO_PETS=1` leaves out the two pet models
   (~140 MB).
-- `install.sh <library-root>`: standalone Python, OpenCV, numpy, the worker
-  and the models into `<root>/.shoebox/recognizer/`, where `shoebox
-  recognize` finds them. Run it on each kind of computer that will run
-  recognition.
+- `install.sh [--faces] [--pets] [library-root]`: standalone Python, OpenCV,
+  numpy and the models of the add-ons asked for (Faces ~40 MB, Pets ~140 MB,
+  independent; both are asked in a terminal when neither flag is given). The
+  runtime (~200 MB) is always installed. Without a path everything goes into
+  this folder (next to the shoebox program) and every drive you recognize uses
+  it; with a path into `<root>/.shoebox/recognizer/`, which travels with that
+  drive. `shoebox recognize` looks next to the program first and in the drive
+  last. Run it on each kind of computer that will run recognition: the models
+  are kept, only that computer's Python is added. People who do not use the
+  terminal press **Install the selected add-ons** in the Control Panel (step 1,
+  Add-ons), which runs this script.
+- `install.ps1 [-Faces] [-Pets] [-Root library-root]` and `fetch-models.ps1`:
+  the same for Windows 10/11 on x86-64, in PowerShell (no extra tools: it uses
+  `Invoke-WebRequest`, `Get-FileHash` and the system's `tar.exe`). The Control
+  Panel runs `powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1`.
+  The Python archive and the models are checked against SHA-256 sums; the
+  runtime goes to `runtime\windows-x86_64\` (`python.exe`). If OpenCV does not
+  start, the Microsoft Visual C++ Redistributable (x64) is missing.
+  `core/tests/recognize.rs` keeps the model sums of the two fetch scripts equal.
 - `test_recognizer.py`: protocol tests
   (`python3 -m unittest -v recognizer/test_recognizer.py`; set
   `SHOEBOX_TEST_FACE` to a photo with a face, `SHOEBOX_TEST_PET` to a

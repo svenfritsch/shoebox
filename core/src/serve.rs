@@ -10,8 +10,8 @@
 //! ones are rendered on first request, under the guard), and originals are
 //! streamed as they are, with range requests for video seeking.
 //!
-//! Originals change only through explicit actions (`organize.rs`,
-//! `import.rs`): move, rename a folder, trash/restore, import. They run one
+//! Originals change only through explicit actions (`organize.rs`): move,
+//! rename a folder, trash/restore, turn a JPEG. They run one
 //! at a time, never while a scan is running, and need an `X-Shoebox` header
 //! (like every non-GET request), which a web page on another origin cannot
 //! send without a CORS preflight that this server never grants.
@@ -46,13 +46,12 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use axum::Json;
 use axum::Router;
-use axum::body::{Body, Bytes};
+use axum::body::Body;
 use axum::extract::{ConnectInfo, Path, Query, Request, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, Uri, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use http_body_util::BodyExt;
 use libheif_rs::LibHeif;
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -65,13 +64,14 @@ use crate::classify::Kind;
 use crate::clusters;
 use crate::db;
 use crate::duplicates;
-use crate::import;
+use crate::library;
 use crate::media;
 use crate::multi;
 use crate::organize;
 use crate::people;
 use crate::recognize;
 use crate::reveal;
+use crate::volume;
 use crate::scan;
 use crate::tags as own_tags;
 use crate::thumbs::{self, Source};
@@ -371,7 +371,6 @@ impl App {
         if covers > 0 || pruned > 0 {
             println!("{name}: tidied up, {covers} people got a picture, {pruned} face crops nobody needs were removed.");
         }
-        import::clean_incoming(&root);
         let (heal_tx, heal_rx) = mpsc::channel();
         let (backup_tx, backup_rx) = mpsc::channel();
         let (clusters_tx, clusters_rx) = mpsc::channel();
@@ -554,7 +553,7 @@ impl App {
         if pending.total() == 0 {
             return Ok(());
         }
-        let Some(cmd) = recognize::find_worker(&self.root, self.recognizer.as_deref()) else {
+        let Some(cmd) = recognize::find_worker_for(&self.root, self.recognizer.as_deref(), pending.pets > 0) else {
             println!("{} faces and pets drawn by hand wait for the recognizer (not installed).", pending.total());
             return Ok(());
         };
@@ -759,6 +758,7 @@ fn hub_router(hub: Arc<Hub>) -> Router {
         .route("/api/all/drives", get(all_drives))
         .route("/api/all/role", post(all_set_role))
         .route("/api/all/backups", get(all_backups))
+        .route("/api/all/reveal", post(all_reveal))
         // Not a route with parameters: those would leak into the `Path`
         // extractors of the library's own routes.
         .fallback(fallback)
@@ -810,14 +810,16 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/files/{id}/view", get(view))
         .route("/api/files/{id}/original", get(original))
         .route("/api/files/{id}/reveal", post(reveal_file))
+        .route("/api/files/{id}/rotate", post(rotate_file))
         .route("/api/move", post(move_files))
         .route("/api/folders/{id}/rename", post(rename_folder))
-        .route("/api/import/folder", post(import_folder))
-        .route("/api/import", post(import_file))
         .route("/api/duplicates", get(duplicates_list))
         .route("/api/duplicates/decide", post(duplicates_decide))
         .route("/api/duplicates/remove", post(duplicates_remove))
         .route("/api/duplicates/same-folder", get(duplicates_same_folder).post(duplicates_remove_same_folder))
+        .route("/api/event-pattern", get(event_pattern_get).post(event_pattern_set))
+        .route("/api/allow-trash", get(allow_trash_get).post(allow_trash_set))
+        .route("/api/duplicates/copy-folders", get(duplicates_copy_folders).post(duplicates_set_copy_folders))
         .route("/api/duplicates/lower-quality", get(duplicates_lower_quality).post(duplicates_remove_lower_quality))
         .route("/api/trash", get(trash_list).post(trash_files))
         .route("/api/trash/{id}/thumb", get(trash_thumb))
@@ -827,6 +829,14 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/tags/add", post(tags_add))
         .route("/api/tags/remove", post(tags_remove))
         .route("/api/tags/selection", post(tags_selection))
+        .route("/api/favorites", post(favorites_set))
+        .route("/api/screenshots", post(screenshots_set))
+        .route("/api/geo/points", get(geo_points))
+        .route("/api/files/{id}/position", post(position_set))
+        .route("/api/places", get(places_list).post(places_create))
+        .route("/api/places/{id}/rename", post(places_rename))
+        .route("/api/places/{id}/area", post(places_redraw))
+        .route("/api/places/{id}/delete", post(places_delete))
         .route("/api/faces", get(faces_api::list))
         .route("/api/faces/stats", get(faces_api::stats))
         .route("/api/faces/{id}/crop", get(faces_api::crop))
@@ -883,6 +893,9 @@ enum ApiError {
 
 impl From<anyhow::Error> for ApiError {
     fn from(e: anyhow::Error) -> Self {
+        if e.is::<crate::geo::NoSuchPlace>() {
+            return ApiError::BadRequest(format!("{e}"));
+        }
         ApiError::Internal(e)
     }
 }
@@ -1177,7 +1190,20 @@ async fn overview(hub: &Arc<Hub>) -> ApiResult<Overview> {
 async fn all_duplicates(State(hub): State<Arc<Hub>>, Query(q): Query<LimitQuery>) -> ApiResult<Json<multi::CrossDuplicates>> {
     let o = overview(&hub).await?;
     let limit = q.limit.unwrap_or(500).min(5000);
-    let result = tokio::task::spawn_blocking(move || multi::cross_duplicates(&o.drives, &o.roles, limit))
+    let result = tokio::task::spawn_blocking(move || {
+        let mut result = multi::cross_duplicates(&o.drives, &o.roles, limit)?;
+        // The disk name tells two folders of the same name apart.
+        let mut volumes: std::collections::HashMap<String, Option<String>> = std::collections::HashMap::new();
+        for g in &mut result.groups {
+            for f in &mut g.files {
+                let v = volumes.entry(f.library.clone()).or_insert_with(|| {
+                    o.apps.iter().find(|a| library_id(&a.name) == f.library).and_then(|a| volume::placement(&a.root)).map(|p| p.volume)
+                });
+                f.volume = v.clone();
+            }
+        }
+        Ok::<_, anyhow::Error>(result)
+    })
         .await
         .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
     Ok(Json(result))
@@ -1192,34 +1218,53 @@ struct DriveState {
     suggested_backup_of: Option<String>,
     /// Takes part in the common timeline and the duplicates across drives.
     shown_in_all: bool,
+    /// The disk the library folder is on and the folder on it (see `volume.rs`).
+    volume: Option<String>,
+    folder: Option<String>,
+    #[serde(flatten)]
+    facts: multi::DriveFacts,
 }
 
 /// Every drive with its role and, where undecided, what its contents suggest.
 async fn all_drives(State(hub): State<Arc<Hub>>) -> ApiResult<Json<Vec<DriveState>>> {
     let o = overview(&hub).await?;
-    let (eligible, _) = multi::eligibility(&o.drives, &o.roles);
-    let list = hub
-        .slots
-        .iter()
-        .map(|s| match o.roles.iter().position(|r| r.library == s.id) {
-            Some(i) => DriveState {
-                library: s.id.clone(),
-                name: s.name.clone(),
-                online: true,
-                role: o.roles[i].role,
-                suggested_backup_of: o.roles[i].suggested_backup_of.clone(),
-                shown_in_all: eligible.contains(&i),
-            },
-            None => DriveState {
-                library: s.id.clone(),
-                name: s.name.clone(),
-                online: false,
-                role: multi::Role::Unknown,
-                suggested_backup_of: None,
-                shown_in_all: false,
-            },
-        })
-        .collect();
+    let list = tokio::task::spawn_blocking(move || -> ApiResult<Vec<DriveState>> {
+        let (eligible, _) = multi::eligibility(&o.drives, &o.roles);
+        hub.slots
+            .iter()
+            .map(|s| {
+                let Some(i) = o.roles.iter().position(|r| r.library == s.id) else {
+                    return Ok(DriveState {
+                        library: s.id.clone(),
+                        name: s.name.clone(),
+                        online: false,
+                        role: multi::Role::Unknown,
+                        suggested_backup_of: None,
+                        shown_in_all: false,
+                        volume: None,
+                        folder: None,
+                        facts: multi::DriveFacts::default(),
+                    });
+                };
+                let app = o.apps.iter().find(|a| library_id(&a.name) == s.id).ok_or(ApiError::NotFound)?;
+                let place = volume::placement(&app.root);
+                let facts = multi::drive_facts(&app.conn.lock().unwrap())?;
+                Ok(DriveState {
+                    library: s.id.clone(),
+                    name: s.name.clone(),
+                    online: true,
+                    role: o.roles[i].role,
+                    suggested_backup_of: o.roles[i].suggested_backup_of.clone(),
+                    shown_in_all: eligible.contains(&i),
+                    volume: place.as_ref().map(|p| p.volume.clone()),
+                    folder: place.map(|p| p.folder),
+                    facts,
+                })
+            })
+            .collect()
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
     Ok(Json(list))
 }
 
@@ -1241,6 +1286,8 @@ struct AllTimeline {
 struct LibraryRef {
     id: String,
     name: String,
+    /// The disk the drive is on, as the drive cards show it.
+    volume: Option<String>,
 }
 
 /// One timeline over the drives that are there and not backups. Filters name
@@ -1259,8 +1306,10 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
     let tag_names: Vec<String> = pairs.iter().filter(|(k, v)| k == "tag" && !v.is_empty()).map(|(_, v)| v.clone()).collect();
     let person_names: Vec<String> = pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| v.clone()).collect();
     let text = param(&pairs, "q").map(str::to_string).filter(|s| !s.trim().is_empty());
+    let types = types_of(&pairs)?;
     let pet_terms = pets_of(&pairs)?;
-    let libs: Vec<LibraryRef> = apps.iter().map(|a| LibraryRef { id: library_id(&a.name), name: a.name.clone() }).collect();
+    let fav = fav_of(&pairs);
+    let libs: Vec<LibraryRef> = apps.iter().map(|a| LibraryRef { id: library_id(&a.name), name: a.name.clone(), volume: volume::placement(&a.root).map(|p| p.volume) }).collect();
 
     let timeline = tokio::task::spawn_blocking(move || -> ApiResult<Timeline> {
         struct Row {
@@ -1271,6 +1320,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
             day: u32,
             version: String,
             live: Option<i64>,
+            fav: bool,
         }
         let mut rows: Vec<Row> = Vec::new();
         for (d, app) in apps.iter().enumerate() {
@@ -1294,9 +1344,20 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
                 continue;
             }
             let snapshot = app.snapshot(&conn)?;
-            let query = browse::Query { folder: None, tags, text: text.clone(), people: people_ids, pets: pet_terms.clone() };
+            let query = browse::Query {
+                folder: None,
+                tags,
+                text: text.clone(),
+                people: people_ids,
+                pets: pet_terms.clone(),
+                types: types.clone(),
+                fav,
+                ..Default::default()
+            };
+            let hearts = own_tags::favorite_ids(&conn)?;
             for it in snapshot.query(&conn, &query)? {
                 rows.push(Row {
+                    fav: hearts.contains(&it.id),
                     sort: it.sort.clone(),
                     path: it.path_lower.clone(),
                     gid: d as i64 * ID_SPAN + it.id,
@@ -1323,8 +1384,12 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
             live: Vec::new(),
             tags: Vec::new(),
             people: Vec::new(),
+            favs: Vec::new(),
         };
         for r in rows {
+            if r.fav {
+                t.favs.push(r.gid);
+            }
             t.ids.push(r.gid);
             t.kinds.push(r.kind);
             t.days.push(r.day);
@@ -1373,6 +1438,8 @@ async fn all_tags(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> Ap
 #[derive(Serialize)]
 struct BackupState {
     library: String,
+    /// The drive it copies (its id), for the "not on the backup yet" files.
+    primary_library: Option<String>,
     #[serde(flatten)]
     report: Option<multi::BackupReport>,
     /// Why there is no report: the drive it copies is not there, or none matches.
@@ -1393,11 +1460,13 @@ async fn all_backups(State(hub): State<Arc<Hub>>, Query(q): Query<LimitQuery>) -
             match multi::primary_of(&o.drives, i)? {
                 Some(p) => out.push(BackupState {
                     library: d.id.clone(),
+                    primary_library: Some(o.drives[p].id.clone()),
                     report: Some(multi::backup_report(&o.drives[p].db, &o.drives[p].name, &d.db, &d.name, limit)?),
                     note: None,
                 }),
                 None => out.push(BackupState {
                     library: d.id.clone(),
+                    primary_library: None,
                     report: None,
                     note: Some("No drive that is there holds what this backup holds (is the original drive plugged in?)".into()),
                 }),
@@ -1604,8 +1673,17 @@ fn param<'a>(pairs: &'a Pairs, key: &str) -> Option<&'a str> {
     pairs.iter().rev().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
 }
 
+/// `type=photo|video|live|screenshot`, several allowed (any of them matches).
+fn types_of(pairs: &Pairs) -> ApiResult<Vec<browse::MediaType>> {
+    pairs
+        .iter()
+        .filter(|(k, v)| k == "type" && !v.is_empty())
+        .map(|(_, v)| browse::MediaType::parse(v).ok_or_else(|| ApiError::BadRequest(format!("unknown type: {v}"))))
+        .collect()
+}
+
 /// The timeline filter of a request: `folder`, `tag` (several, all must
-/// match), `q` (free text) and `person` (several, all must match: photos
+/// match), `type` (several, any matches), `q` (free text) and `person` (several, all must match: photos
 /// with a confirmed face of each).
 fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
     let number = |v: &str| v.parse::<i64>().map_err(|_| ApiError::BadRequest(format!("not a number: {v}")));
@@ -1614,8 +1692,25 @@ fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
         tags: pairs.iter().filter(|(k, v)| k == "tag" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
         text: param(pairs, "q").map(str::to_string).filter(|s| !s.trim().is_empty()),
         people: pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
+        types: types_of(pairs)?,
         pets: pets_of(pairs)?,
+        fav: fav_of(pairs),
+        area: area_of(pairs)?,
+        place: param(pairs, "place").filter(|v| !v.is_empty()).map(number).transpose()?,
     })
+}
+
+/// `area=south,west,north,east`: only photos taken inside that rectangle.
+fn area_of(pairs: &Pairs) -> ApiResult<Option<crate::geo::Area>> {
+    let Some(v) = param(pairs, "area").filter(|v| !v.is_empty()) else { return Ok(None) };
+    let n: Vec<f64> = v.split(',').map(|p| p.trim().parse::<f64>()).collect::<Result<_, _>>().map_err(|_| ApiError::BadRequest("area is south,west,north,east".into()))?;
+    let [south, west, north, east] = n[..] else { return Err(ApiError::BadRequest("area is south,west,north,east".into())) };
+    crate::geo::Area { south, west, north, east }.checked().map(Some).map_err(|e| ApiError::BadRequest(format!("{e:#}")))
+}
+
+/// `fav=1`: only favorites.
+fn fav_of(pairs: &Pairs) -> bool {
+    param(pairs, "fav").is_some_and(|v| !v.is_empty() && v != "0")
 }
 
 /// The pet terms of a request (`pet=cat`, `pet=dog`, `pet=pet` for any pet,
@@ -1644,7 +1739,13 @@ async fn tags(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiRes
         let own = param(&pairs, "own").is_some_and(|o| o != "0");
         let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(50);
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
-        let all = if filter.folder.is_none() && filter.tags.is_empty() && filter.people.is_empty() && filter.pets.is_empty() {
+        let all = if filter.folder.is_none()
+            && filter.tags.is_empty()
+            && filter.people.is_empty()
+            && filter.pets.is_empty()
+            && filter.place.is_none()
+            && filter.area.is_none()
+        {
             browse::all_tags(&conn)?
         } else {
             let snapshot = app.snapshot(&conn)?;
@@ -1679,16 +1780,24 @@ struct Timeline {
     tags: Vec<browse::TagName>,
     /// Names of the people in the filter, for their chips.
     people: Vec<people::PersonRef>,
+    /// Ids of the items with a heart.
+    favs: Vec<i64>,
 }
 
 async fn timeline(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Timeline>> {
     let query = filter_of(&pairs)?;
     blocking(&app, move |app| {
         let conn = app.conn.lock().unwrap();
+        if let Some(place) = query.place
+            && crate::geo::place(&conn, place)?.is_none()
+        {
+            return Err(ApiError::BadRequest("no such place".into()));
+        }
         let snapshot = app.snapshot(&conn)?;
         let items = snapshot.query(&conn, &query)?;
         let tags = browse::tag_names(&conn, &query.tags)?;
         let people = people::person_names(&conn, &query.people)?;
+        let hearts = own_tags::favorite_ids(&conn)?;
         drop(conn);
         let mut t = Timeline {
             count: items.len(),
@@ -1699,8 +1808,12 @@ async fn timeline(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> Ap
             live: Vec::new(),
             tags,
             people,
+            favs: Vec::new(),
         };
         for it in items {
+            if hearts.contains(&it.id) {
+                t.favs.push(it.id);
+            }
             t.ids.push(it.id);
             t.kinds.push(match it.kind {
                 Kind::Jpeg => 'j',
@@ -1735,6 +1848,17 @@ struct FileInfo {
     faces: Option<Vec<people::FileFace>>,
     /// Confirmed faces that are no longer found (after a model change).
     faces_lost: Vec<people::FaceItem>,
+    /// Quarter turns clockwise that shoebox shows the photo turned (HEIC,
+    /// PNG; the file itself is as it was). Face boxes are in the file's
+    /// orientation.
+    view_turn: i32,
+    /// Counts as a screenshot (the decision below, else the score).
+    screenshot: bool,
+    /// The user's own decision: `true` is one, `false` is not, `null` leaves
+    /// it to the score.
+    screenshot_mark: Option<bool>,
+    /// Where it was taken (in the file, or given by the user).
+    position: Option<crate::geo::Position>,
 }
 
 async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Json<FileInfo>> {
@@ -1745,6 +1869,14 @@ async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiRe
         let item = snapshot.items.iter().find(|it| it.id == id);
         let key: Option<String> =
             conn.query_row("SELECT quick_hash FROM files WHERE id = ?1", [id], |r| r.get(0)).optional()?;
+        let view_turn = match &key {
+            Some(key) => db::view_turn(&conn, key)?,
+            None => 0,
+        };
+        let screenshot_mark = match &key {
+            Some(key) => db::shot_mark(&conn, key)?,
+            None => None,
+        };
         let faces = match key {
             Some(key) => people::file_faces(&conn, &key)?,
             None => people::FileFaces { faces: None, lost: Vec::new() },
@@ -1757,6 +1889,10 @@ async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiRe
             linked: duplicates::linked(&conn, id)?,
             faces: faces.faces,
             faces_lost: faces.lost,
+            view_turn,
+            screenshot: item.is_some_and(|it| it.shot),
+            screenshot_mark,
+            position: crate::geo::position_of(&conn, id)?,
         }))
     })
     .await
@@ -1773,22 +1909,23 @@ fn jpeg(bytes: Vec<u8>, cache: &'static str) -> Response {
 async fn thumb(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Response> {
     // A stored thumbnail is served even while its file is being looked for
     // (moved behind shoebox's back); only making one needs the file.
-    let src = blocking(&app, move |app| {
+    let (src, turn) = blocking(&app, move |app| {
         let conn = app.conn.lock().unwrap();
         let key: String = conn
             .query_row("SELECT quick_hash FROM files WHERE id = ?1 AND missing_since IS NULL", [id], |r| r.get(0))
             .optional()?
             .ok_or(ApiError::NotFound)?;
+        let turn = db::view_turn(&conn, &key)?;
         match thumbs::load(&conn, &key)? {
-            Some(Ok(bytes)) => Ok(Err(jpeg(bytes, IMMUTABLE))),
+            Some(Ok(bytes)) => Ok((Err(bytes), turn)),
             Some(Err(_)) => Err(ApiError::NotFound),
-            None => app.source(&conn, id)?.filter(|s| s.kind != Kind::Raw).map(Ok).ok_or(ApiError::NotFound),
+            None => Ok((app.source(&conn, id)?.filter(|s| s.kind != Kind::Raw).map(Ok).ok_or(ApiError::NotFound)?, turn)),
         }
     })
     .await?;
     let src = match src {
         Ok(src) => src,
-        Err(stored) => return Ok(stored),
+        Err(stored) => return turned_jpeg(&app, stored, turn).await,
     };
 
     // Not made yet (scan ran with --no-thumbs, or is still busy): make it now.
@@ -1808,24 +1945,40 @@ async fn thumb(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Re
     })
     .await?;
     match made {
-        Ok(bytes) => Ok(jpeg(bytes, IMMUTABLE)),
+        Ok(bytes) => turned_jpeg(&app, bytes, turn).await,
         Err(_) => Err(ApiError::NotFound),
     }
+}
+
+/// A rendered picture, turned the way the user turned it in shoebox
+/// (`view_turns`); as it is when it was not.
+async fn turned_jpeg(app: &Arc<App>, bytes: Vec<u8>, turn: i32) -> ApiResult<Response> {
+    if turn == 0 {
+        return Ok(jpeg(bytes, IMMUTABLE));
+    }
+    let bytes = blocking(app, move |_| {
+        media::turn_jpeg(&bytes, turn, 85).map_err(ApiError::Internal)
+    })
+    .await?;
+    Ok(jpeg(bytes, IMMUTABLE))
 }
 
 /// The full-screen image: the original where browsers can show it, a large
 /// JPEG rendering for HEIC.
 async fn view(State(app): State<Arc<App>>, Path(id): Path<i64>, req: Request) -> ApiResult<Response> {
-    let (src, content) = blocking(&app, move |app| {
-        let src = app.source(&app.conn.lock().unwrap(), id)?.ok_or(ApiError::NotFound)?;
+    let (src, content, turn) = blocking(&app, move |app| {
+        let conn = app.conn.lock().unwrap();
+        let src = app.source(&conn, id)?.ok_or(ApiError::NotFound)?;
         let content = media::content_kind(src.kind, &src.path);
-        Ok((src, content))
+        let turn = db::view_turn(&conn, &src.quick_hash)?;
+        Ok((src, content, turn))
     })
     .await?;
     match src.kind {
         // A file whose name does not match its content (a JPEG called
-        // `.HEIC`) is rendered, so the browser gets what the type says.
-        Kind::Jpeg | Kind::Png | Kind::Video if content == src.kind => serve_file(&src.path, req, None).await,
+        // `.HEIC`) is rendered, so the browser gets what the type says. A
+        // picture the user turned in shoebox is rendered turned.
+        Kind::Jpeg | Kind::Png | Kind::Video if content == src.kind && turn == 0 => serve_file(&src.path, req, None).await,
         Kind::Raw => Err(ApiError::NotFound),
         Kind::Jpeg | Kind::Png | Kind::Video | Kind::Heic => {
             let _permit = app.renders.acquire().await.map_err(|e| ApiError::Internal(e.into()))?;
@@ -1833,7 +1986,7 @@ async fn view(State(app): State<Arc<App>>, Path(id): Path<i64>, req: Request) ->
                 thumbs::render_view(&LibHeif::new(), &src).map_err(|e| ApiError::Internal(anyhow::anyhow!(e)))
             })
             .await?;
-            Ok(jpeg(bytes, IMMUTABLE))
+            turned_jpeg(&app, bytes, turn).await
         }
     }
 }
@@ -1871,6 +2024,47 @@ async fn reveal_file(
     blocking(&app, move |app| {
         let src = app.source(&app.conn.lock().unwrap(), id)?.ok_or(ApiError::NotFound)?;
         (app.reveal)(&src.path).map_err(ApiError::Internal)?;
+        Ok(Json(serde_json::json!({ "ok": true, "app": reveal::app_name() })))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct AllRevealRequest {
+    library: String,
+    /// As in the index of that drive (relative to its folder).
+    path: String,
+}
+
+/// "Show in Finder" for a file named by drive and path, as the lists of the
+/// backup check give them. Only a file that is in that drive's index and still
+/// there is shown; the request never supplies a path to open.
+async fn all_reveal(
+    State(hub): State<Arc<Hub>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(req): Json<AllRevealRequest>,
+) -> ApiResult<Json<serde_json::Value>> {
+    if !is_local(peer.ip(), host(&headers)) {
+        return Err(ApiError::Forbidden("only this computer can open its file manager"));
+    }
+    let apps = online_apps(&hub).await;
+    let app = apps.into_iter().find(|a| library_id(&a.name) == req.library).ok_or(ApiError::NotFound)?;
+    blocking(&app, move |app| {
+        if !FsPath::new(&req.path).components().all(|c| matches!(c, Component::Normal(_))) {
+            return Err(ApiError::NotFound);
+        }
+        let known: Option<i64> = app
+            .conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT 1 FROM files WHERE path = ?1 AND missing_since IS NULL", [&req.path], |r| r.get(0))
+            .optional()?;
+        let path = app.root.join(&req.path);
+        if known.is_none() || path.symlink_metadata().is_err() {
+            return Err(ApiError::NotFound);
+        }
+        (app.reveal)(&path).map_err(ApiError::Internal)?;
         Ok(Json(serde_json::json!({ "ok": true, "app": reveal::app_name() })))
     })
     .await
@@ -1930,17 +2124,30 @@ struct MoveRequest {
     ids: Vec<i64>,
     /// Folder path relative to the library (NFC); created if needed.
     folder: String,
-    /// Own tags move along (default) or are dropped.
-    #[serde(default = "keep_tags_default")]
-    keep_tags: bool,
-}
-
-fn keep_tags_default() -> bool {
-    true
+    /// Own tags always move along; with this the old folder's tags stay as
+    /// own tags too (default: off).
+    #[serde(default)]
+    keep_folder_tags: bool,
 }
 
 async fn move_files(State(app): State<Arc<App>>, Json(req): Json<MoveRequest>) -> ApiResult<Json<organize::Moved>> {
-    change(&app, move |app, conn| organize::move_files_with(conn, &app.root, &req.ids, &req.folder, req.keep_tags)).await.map(Json)
+    change(&app, move |app, conn| organize::move_files_with(conn, &app.root, &req.ids, &req.folder, req.keep_folder_tags)).await.map(Json)
+}
+
+#[derive(Deserialize)]
+struct RotateRequest {
+    /// Quarter turns clockwise; negative turns counter-clockwise.
+    turns: i32,
+}
+
+/// Turn a photo: a JPEG in the file (its EXIF Orientation tag, in place), a
+/// HEIC or PNG in shoebox only; see `organize::turn`.
+async fn rotate_file(
+    State(app): State<Arc<App>>,
+    Path(id): Path<i64>,
+    Json(req): Json<RotateRequest>,
+) -> ApiResult<Json<organize::Rotated>> {
+    change(&app, move |app, conn| organize::turn(conn, &app.root, id, req.turns)).await.map(Json)
 }
 
 #[derive(Deserialize)]
@@ -1955,93 +2162,6 @@ async fn rename_folder(
     Json(req): Json<RenameRequest>,
 ) -> ApiResult<Json<organize::RenamedFolder>> {
     change(&app, move |app, conn| organize::rename_folder(conn, &app.root, id, &req.path)).await.map(Json)
-}
-
-#[derive(Deserialize)]
-struct EventFolderRequest {
-    year: i32,
-    month: u32,
-    name: String,
-}
-
-/// The `YYYY-MM Name` folder an import goes to, and whether it exists.
-async fn import_folder(State(app): State<Arc<App>>, Json(req): Json<EventFolderRequest>) -> ApiResult<Json<serde_json::Value>> {
-    let folder = import::event_folder(req.year, req.month, &req.name).map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
-    blocking(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
-        let folder_fold = organize::fold(&folder);
-        let existing = app
-            .snapshot(&conn)?
-            .folders
-            .iter()
-            .find(|f| organize::fold(&f.path) == folder_fold)
-            .map(|f| (f.id, f.path.clone()));
-        Ok(Json(serde_json::json!({
-            "folder": existing.as_ref().map(|e| e.1.clone()).unwrap_or(folder),
-            "exists": existing.is_some(),
-            "id": existing.map(|e| e.0),
-        })))
-    })
-    .await
-}
-
-#[derive(Deserialize)]
-struct ImportQuery {
-    folder: String,
-    name: String,
-    /// `File.lastModified` in the browser (ms since 1970).
-    modified: Option<i64>,
-    /// Import even if the library has this content already.
-    keep: Option<u8>,
-}
-
-/// One file as the raw request body, streamed to the drive.
-async fn import_file(State(app): State<Arc<App>>, Query(q): Query<ImportQuery>, body: Body) -> ApiResult<Json<import::Imported>> {
-    let (folder, name, modified) = (q.folder.clone(), q.name.clone(), q.modified);
-    let mut upload = blocking(&app, move |app| {
-        if jobs_running(&app.conn.lock().unwrap())? {
-            return Err(ApiError::Conflict("a scan is running; try again when it is done".into()));
-        }
-        import::Upload::begin(&app.root, &folder, &name, modified).map_err(|e| ApiError::BadRequest(format!("{e:#}")))
-    })
-    .await?;
-
-    // Writing happens on a blocking thread; the body arrives here.
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<Bytes>(16);
-    let writer = tokio::task::spawn_blocking(move || -> Result<import::Upload> {
-        while let Some(chunk) = rx.blocking_recv() {
-            if let Err(e) = upload.write(&chunk) {
-                upload.abort();
-                return Err(e);
-            }
-        }
-        Ok(upload)
-    });
-    let mut body = body;
-    let mut cut_off = false;
-    while let Some(frame) = body.frame().await {
-        match frame {
-            Ok(frame) => {
-                if let Ok(data) = frame.into_data()
-                    && tx.send(data).await.is_err()
-                {
-                    break; // the writer failed; it says why
-                }
-            }
-            Err(_) => {
-                cut_off = true;
-                break;
-            }
-        }
-    }
-    drop(tx);
-    let upload = writer.await.map_err(|e| ApiError::Internal(anyhow::anyhow!("writer failed: {e}")))?.map_err(ApiError::Internal)?;
-    if cut_off {
-        upload.abort();
-        return Err(ApiError::BadRequest("the upload was cut off".into()));
-    }
-    let keep = q.keep.is_some_and(|k| k != 0);
-    change(&app, move |app, conn| upload.finish(conn, &app.root, keep)).await.map(Json)
 }
 
 #[derive(Serialize)]
@@ -2117,6 +2237,179 @@ async fn duplicates_same_folder(State(app): State<Arc<App>>) -> ApiResult<Json<s
 /// Delete exact duplicates in the same folder without review.
 async fn duplicates_remove_same_folder(State(app): State<Arc<App>>) -> ApiResult<Json<duplicates::BulkRemoved>> {
     change(&app, |app, conn| duplicates::remove_planned(conn, &app.root, &same_folder_plan(app, conn)?)).await.map(Json)
+}
+
+/// Folder names whose files count as copies, not originals.
+async fn duplicates_copy_folders(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
+    blocking(&app, |app| {
+        let conn = app.conn.lock().unwrap();
+        Ok(Json(serde_json::json!({ "folders": duplicates::copy_folders(&conn)? })))
+    })
+    .await
+}
+
+/// How event folders are named when the app creates them (`YYYY-MM Name`).
+async fn event_pattern_get(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
+    blocking(&app, |app| {
+        let conn = app.conn.lock().unwrap();
+        Ok(Json(serde_json::json!({ "pattern": library::event_pattern(&conn)?.format() })))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct EventPatternRequest {
+    pattern: String,
+}
+
+async fn event_pattern_set(State(app): State<Arc<App>>, Json(req): Json<EventPatternRequest>) -> ApiResult<Json<serde_json::Value>> {
+    change(&app, move |_, conn| library::set_event_pattern(conn, &req.pattern))
+        .await
+        .map(|p| Json(serde_json::json!({ "pattern": p.format() })))
+}
+
+/// Setting `allow_trash`: off unless the user turned it on in the settings
+/// (the photo view and the timeline selection offer "Move to trash" only then).
+const ALLOW_TRASH_KEY: &str = "allow_trash";
+
+async fn allow_trash_get(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
+    blocking(&app, |app| {
+        let conn = app.conn.lock().unwrap();
+        Ok(Json(serde_json::json!({ "allow": db::setting(&conn, ALLOW_TRASH_KEY)?.as_deref() == Some("1") })))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct AllowTrashRequest {
+    allow: bool,
+}
+
+async fn allow_trash_set(State(app): State<Arc<App>>, Json(req): Json<AllowTrashRequest>) -> ApiResult<Json<serde_json::Value>> {
+    change(&app, move |_, conn| {
+        db::set_setting(conn, ALLOW_TRASH_KEY, req.allow.then_some("1"))?;
+        Ok(req.allow)
+    })
+    .await
+    .map(|allow| Json(serde_json::json!({ "allow": allow })))
+}
+
+// ---------------------------------------------------------------- maps (phase 10)
+
+// The Maps setting is the browser's (one for all drives), not an endpoint.
+
+/// Every shown photo with a position, in columns like the timeline.
+#[derive(Serialize)]
+struct GeoPoints {
+    ids: Vec<i64>,
+    lats: Vec<f64>,
+    lons: Vec<f64>,
+}
+
+async fn geo_points(State(app): State<Arc<App>>) -> ApiResult<Json<GeoPoints>> {
+    blocking(&app, |app| {
+        let conn = app.conn.lock().unwrap();
+        let snapshot = app.snapshot(&conn)?;
+        let shown: HashSet<i64> = snapshot.items.iter().map(|it| it.id).collect();
+        let mut out = GeoPoints { ids: Vec::new(), lats: Vec::new(), lons: Vec::new() };
+        for (id, lat, lon) in crate::geo::positions(&conn)? {
+            if shown.contains(&id) {
+                out.ids.push(id);
+                out.lats.push(lat);
+                out.lons.push(lon);
+            }
+        }
+        Ok(Json(out))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct PositionRequest {
+    lat: Option<f64>,
+    lon: Option<f64>,
+    /// Forget the position the user gave.
+    #[serde(default)]
+    clear: bool,
+}
+
+async fn position_set(State(app): State<Arc<App>>, Path(id): Path<i64>, Json(req): Json<PositionRequest>) -> ApiResult<Json<serde_json::Value>> {
+    change(&app, move |_, conn| {
+        if req.clear {
+            crate::geo::clear_position(conn, id)?;
+        } else {
+            let (Some(lat), Some(lon)) = (req.lat, req.lon) else { bail!("latitude and longitude are needed") };
+            crate::geo::set_position(conn, id, lat, lon)?;
+        }
+        Ok(crate::geo::position_of(conn, id)?)
+    })
+    .await
+    .map(|position| Json(serde_json::json!({ "position": position })))
+}
+
+/// The places with the number of shown photos inside each.
+#[derive(Serialize)]
+struct PlaceRow {
+    #[serde(flatten)]
+    place: crate::geo::Place,
+    count: usize,
+}
+
+async fn places_list(State(app): State<Arc<App>>) -> ApiResult<Json<Vec<PlaceRow>>> {
+    blocking(&app, |app| {
+        let conn = app.conn.lock().unwrap();
+        let snapshot = app.snapshot(&conn)?;
+        let shown: HashSet<i64> = snapshot.items.iter().map(|it| it.id).collect();
+        let points = crate::geo::positions(&conn)?;
+        let rows = crate::geo::places(&conn)?
+            .into_iter()
+            .map(|place| {
+                let count = points.iter().filter(|(id, lat, lon)| shown.contains(id) && place.area.contains(*lat, *lon)).count();
+                PlaceRow { place, count }
+            })
+            .collect();
+        Ok(Json(rows))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct PlaceRequest {
+    name: String,
+    #[serde(flatten)]
+    area: crate::geo::Area,
+}
+
+async fn places_create(State(app): State<Arc<App>>, Json(req): Json<PlaceRequest>) -> ApiResult<Json<crate::geo::Place>> {
+    change(&app, move |_, conn| crate::geo::create_place(conn, &req.name, req.area)).await.map(Json)
+}
+
+#[derive(Deserialize)]
+struct NameRequest {
+    name: String,
+}
+
+async fn places_rename(State(app): State<Arc<App>>, Path(id): Path<i64>, Json(req): Json<NameRequest>) -> ApiResult<Json<crate::geo::Place>> {
+    change(&app, move |_, conn| crate::geo::rename_place(conn, id, &req.name)).await.map(Json)
+}
+
+async fn places_redraw(State(app): State<Arc<App>>, Path(id): Path<i64>, Json(area): Json<crate::geo::Area>) -> ApiResult<Json<crate::geo::Place>> {
+    change(&app, move |_, conn| crate::geo::redraw_place(conn, id, area)).await.map(Json)
+}
+
+async fn places_delete(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Json<serde_json::Value>> {
+    change(&app, move |_, conn| crate::geo::delete_place(conn, id)).await.map(|_| Json(serde_json::json!({ "deleted": true })))
+}
+
+#[derive(Deserialize)]
+struct CopyFoldersRequest {
+    folders: Vec<String>,
+}
+
+async fn duplicates_set_copy_folders(State(app): State<Arc<App>>, Json(req): Json<CopyFoldersRequest>) -> ApiResult<Json<serde_json::Value>> {
+    change(&app, move |_, conn| duplicates::set_copy_folders(conn, &req.folders))
+        .await
+        .map(|folders| Json(serde_json::json!({ "folders": folders })))
 }
 
 fn lower_quality_plan(app: &App, conn: &Connection) -> anyhow::Result<Vec<(i64, Vec<i64>)>> {
@@ -2206,6 +2499,38 @@ async fn tags_remove(State(app): State<Arc<App>>, Json(req): Json<TagRequest>) -
     change(&app, move |_, conn| own_tags::remove(conn, &req.ids, &req.name)).await.map(Json)
 }
 
+#[derive(Deserialize)]
+struct FavoriteRequest {
+    ids: Vec<i64>,
+    on: bool,
+}
+
+#[derive(Deserialize)]
+struct ScreenshotRequest {
+    ids: Vec<i64>,
+    /// `true`: these are screenshots; `false`: they are not; `null`: leave it
+    /// to the score again.
+    value: Option<bool>,
+}
+
+#[derive(Serialize)]
+struct ScreenshotChanged {
+    changed: u64,
+}
+
+/// The user's own decision whether pictures are screenshots (by content, in
+/// `library.db`; the files are not touched).
+async fn screenshots_set(State(app): State<Arc<App>>, Json(req): Json<ScreenshotRequest>) -> ApiResult<Json<ScreenshotChanged>> {
+    change(&app, move |_, conn| db::set_shot_marks(conn, &req.ids, req.value))
+        .await
+        .map(|changed| Json(ScreenshotChanged { changed }))
+}
+
+/// The heart: the own tag `favorite` on or off (see `tags::FAVORITE`).
+async fn favorites_set(State(app): State<Arc<App>>, Json(req): Json<FavoriteRequest>) -> ApiResult<Json<own_tags::Changed>> {
+    change(&app, move |_, conn| own_tags::set_favorite(conn, &req.ids, req.on)).await.map(Json)
+}
+
 /// The own tags on a selection, for "Remove tag…".
 async fn tags_selection(State(app): State<Arc<App>>, Json(req): Json<IdsRequest>) -> ApiResult<Json<Vec<own_tags::Counted>>> {
     blocking(&app, move |app| Ok(Json(own_tags::own_tags_of(&app.conn.lock().unwrap(), &req.ids)?))).await
@@ -2217,10 +2542,16 @@ async fn tags_selection(State(app): State<Arc<App>>, Json(req): Json<IdsRequest>
 #[folder = "web/"]
 struct Assets;
 
+/// Translations and their loader, shared with the launcher (`i18n/`).
+#[derive(rust_embed::Embed)]
+#[folder = "i18n/"]
+#[prefix = "i18n/"]
+struct I18n;
+
 async fn asset(uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
     let path = if path.is_empty() { "index.html" } else { path };
-    let Some(file) = Assets::get(path) else {
+    let Some(file) = Assets::get(path).or_else(|| I18n::get(path)) else {
         return (StatusCode::NOT_FOUND, "not found").into_response();
     };
     let mime = match path.rsplit('.').next() {
@@ -2238,7 +2569,7 @@ async fn asset(uri: Uri) -> Response {
         (
             header::CONTENT_SECURITY_POLICY,
             HeaderValue::from_static(
-                "default-src 'self'; img-src 'self' data: blob:; media-src 'self'; style-src 'self' 'unsafe-inline'",
+                "default-src 'self'; img-src 'self' data: blob: https://tile.openstreetmap.org; media-src 'self'; style-src 'self' 'unsafe-inline'",
             ),
         ),
     ];

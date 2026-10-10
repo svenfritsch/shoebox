@@ -185,9 +185,9 @@ exited 5 seconds later is killed.
 1. `--recognizer <program>` or the `SHOEBOX_RECOGNIZER` environment variable:
    any executable that speaks this protocol (`shoebox-fake-recognizer` in
    tests).
-2. `recognizer/recognizer.py` in the library's `.shoebox/` folder, or next to
-   the shoebox binary's folder (`.shoebox/bin/../recognizer/`), run with the
-   standalone Python in `recognizer/runtime/<platform>/bin/python3` if
+2. `recognizer/recognizer.py` next to the shoebox binary (the downloaded
+   folder), else in the library's `.shoebox/recognizer/` (also what an older
+   `.shoebox/bin/` layout means), run with the standalone Python in `recognizer/runtime/<platform>/bin/python3` if
    present, else `python3` from `PATH`.
 
 Without a worker, `shoebox recognize` reports that recognition is not

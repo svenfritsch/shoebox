@@ -25,6 +25,23 @@ pub struct Metadata {
     pub camera: Option<String>,
     /// Whether the file carries an embedded EXIF preview image.
     pub has_embedded_thumb: bool,
+    /// Where it was taken, decimal degrees (EXIF GPS, video location).
+    pub lat: Option<f64>,
+    pub lon: Option<f64>,
+}
+
+/// A position from a file, or None for one that cannot be real: out of range
+/// or exactly 0,0 (what cameras without a fix write).
+pub fn valid_position(lat: Option<f64>, lon: Option<f64>) -> Option<(f64, f64)> {
+    let (lat, lon) = (lat?, lon?);
+    let ok = lat.is_finite() && lon.is_finite() && (-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon);
+    (ok && !(lat == 0.0 && lon == 0.0)).then_some((lat, lon))
+}
+
+fn apply_gps(meta: &mut Metadata, gps: Option<&nom_exif::GPSInfo>) {
+    if let Some((lat, lon)) = gps.and_then(|g| valid_position(g.latitude_decimal(), g.longitude_decimal())) {
+        (meta.lat, meta.lon) = (Some(lat), Some(lon));
+    }
 }
 
 /// Read capture date, dimensions and camera. A file without EXIF (e.g. a PNG
@@ -49,6 +66,7 @@ pub fn read_metadata(parser: &mut MediaParser, kind: Kind, path: &Path) -> Resul
             meta.height = track.get(TrackInfoTag::Height).and_then(|v| v.as_u32());
             meta.duration_ms = track.get(TrackInfoTag::DurationMs).and_then(|v| v.as_u64());
             meta.camera = track.get(TrackInfoTag::Model).map(|v| v.to_string());
+            apply_gps(&mut meta, track.gps_info());
         }
     }
     if meta.width.is_none() && matches!(kind, Kind::Jpeg | Kind::Png) {
@@ -75,6 +93,7 @@ fn apply_exif(meta: &mut Metadata, exif: &nom_exif::Exif) {
             .and_then(|v| v.as_u32())
     });
     meta.camera = exif.get(ExifTag::Model).map(|v| v.to_string());
+    apply_gps(meta, exif.gps_info());
     meta.has_embedded_thumb = exif
         .entries()
         .any(|e| e.tag().tag() == Some(ExifTag::ThumbnailLength));
@@ -211,6 +230,18 @@ fn decode_jpeg_scaled(src: &Path, edge: u32) -> Result<DynamicImage> {
 }
 
 /// Encode a preview as JPEG.
+/// A JPEG turned by `quarters` quarter turns clockwise and encoded again.
+pub fn turn_jpeg(bytes: &[u8], quarters: i32, quality: u8) -> Result<Vec<u8>> {
+    let img = image::load_from_memory_with_format(bytes, image::ImageFormat::Jpeg)?;
+    let img = match quarters.rem_euclid(4) {
+        1 => img.rotate90(),
+        2 => img.rotate180(),
+        3 => img.rotate270(),
+        _ => img,
+    };
+    encode_jpeg(&img, quality)
+}
+
 pub fn encode_jpeg(img: &DynamicImage, quality: u8) -> Result<Vec<u8>> {
     let mut out = Vec::new();
     image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, quality).encode_image(&img.to_rgb8())?;

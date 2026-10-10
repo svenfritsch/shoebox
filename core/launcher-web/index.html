@@ -3,70 +3,119 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>shoebox launcher</title>
+<title data-i18n="launcher.title">shoebox launcher</title>
 <link rel="stylesheet" href="launcher.css">
+<script src="i18n/i18n.js"></script>
 </head>
 <body>
 <main>
   <header>
+    <div class="lang">
+      <label for="lang" data-i18n="launcher.lang">Language</label>
+      <select id="lang"></select>
+    </div>
     <h1>shoebox</h1>
-    <p class="sub">Your photo library on this drive. Nothing is copied or changed in your photos.</p>
+    <p class="sub" data-i18n="launcher.sub">Your photo library on this drive. Nothing is copied or changed in your photos.</p>
   </header>
+
+  <section class="card" id="addons-card">
+    <details id="addons-details" open>
+      <summary><h2 data-i18n="launcher.step0">1 · Add-ons</h2><span id="addons-summary" class="summary-line"></span></summary>
+      <p class="hint" data-i18n="launcher.addons.intro">Scanning and the photo app work out of the box. Recognizing people and pets needs add-ons, which are downloaded once (internet needed).</p>
+      <ul id="addon-list" class="addons">
+        <li>
+          <label><input type="checkbox" id="addon-runtime" checked disabled aria-disabled="true"> <b data-i18n="launcher.addon.runtime">Python and OpenCV</b> <span data-i18n="launcher.addon.runtime.desc">needed by every add-on, always installed with the first one (about 200 MB per kind of computer)</span></label>
+          <span id="addon-runtime-state" class="pill"></span>
+        </li>
+        <li>
+          <label><input type="checkbox" id="addon-faces" checked> <b data-i18n="launcher.addon.faces">Faces</b> <span data-i18n="launcher.addon.faces.desc">find and name the people in your photos (about 40 MB)</span></label>
+          <span id="addon-faces-state" class="pill"></span>
+        </li>
+        <li>
+          <label><input type="checkbox" id="addon-pets"> <b data-i18n="launcher.addon.pets">Pets</b> <span data-i18n="launcher.addon.pets.desc">find cats and dogs; works without Faces (about 140 MB)</span></label>
+          <span id="addon-pets-state" class="pill"></span>
+        </li>
+      </ul>
+      <button id="addons-install" class="primary" data-i18n="launcher.addons.install">Install the selected add-ons</button>
+      <p id="addons-hint" class="hint"></p>
+    </details>
+  </section>
 
   <fieldset id="controls">
   <section class="card">
-    <h2>1 · Where are your photos?</h2>
-    <label for="root">Drives or photo folders (type a path, press Enter to add it)</label>
+    <h2 data-i18n="launcher.step1">1 · Where are your photos?</h2>
+    <label for="root" data-i18n="launcher.root.label">Drives or photo folders (type a path, press Enter to add it)</label>
     <div class="chipbox" id="chipbox">
-      <ul id="path-chips" aria-label="Chosen folders"></ul>
-      <input id="root" list="drives" placeholder="/Volumes/MyDrive" autocomplete="off" spellcheck="false">
+      <ul id="path-chips" data-i18n-aria-label="launcher.root.chosen" aria-label="Chosen folders"></ul>
+      <input id="root" list="drives" data-i18n-placeholder="launcher.root.placeholder" placeholder="/Volumes/MyDrive" autocomplete="off" spellcheck="false">
     </div>
     <datalist id="drives"></datalist>
-    <p class="hint">Detected drives, click to add:</p>
-    <div id="drive-chips" class="chips" aria-label="Detected drives"></div>
+    <p class="hint" data-i18n="launcher.drives.hint">Detected drives, click to add:</p>
+    <div id="drive-chips" class="chips" data-i18n-aria-label="launcher.drives.detected" aria-label="Detected drives"></div>
     <p id="root-hint" class="hint"></p>
   </section>
 
+  </fieldset>
+
   <section class="card">
-    <h2>2 · What should shoebox do?</h2>
+    <h2 data-i18n="launcher.step2">2 · What should shoebox do?</h2>
     <div class="actions">
-      <button data-kind="scan">Scan<span>find new, moved and changed photos</span></button>
-      <button data-kind="verify">Verify<span>check that nothing was lost or damaged</span></button>
-      <button data-kind="recognize">Recognize<span>find the faces in your photos</span></button>
-      <button data-kind="recognize_pets">Recognize pets<span>find cats and dogs; they show up among the faces</span></button>
-      <button data-kind="faces_stats">Face stats<span>how recognition went</span></button>
-      <button data-kind="backup">Backup check<span>is the 2nd folder a complete copy of the 1st?</span></button>
+      <button data-kind="scan"><b data-i18n="launcher.kind.scan">Scan</b><span data-i18n="launcher.kind.scan.desc">find new, moved and changed photos</span></button>
+      <button data-kind="verify"><b data-i18n="launcher.kind.verify">Verify</b><span data-i18n="launcher.kind.verify.desc">check that nothing was lost or damaged</span></button>
+      <button data-kind="recognize"><b data-i18n="launcher.kind.recognize">Recognize</b><span data-i18n="launcher.kind.recognize.desc">find the faces in your photos</span></button>
+      <button data-kind="recognize_rotated"><b data-i18n="launcher.kind.recognize_rotated">Recognize lying down</b><span data-i18n="launcher.kind.recognize_rotated.desc">also find faces lying down in the photos (slower)</span></button>
+      <button data-kind="recognize_pets"><b data-i18n="launcher.kind.recognize_pets">Recognize pets</b><span data-i18n="launcher.kind.recognize_pets.desc">find cats and dogs; they show up among the faces</span></button>
+      <button data-kind="faces_stats"><b data-i18n="launcher.kind.faces_stats">Face stats</b><span data-i18n="launcher.kind.faces_stats.desc">how recognition went</span></button>
+      <button data-kind="backup"><b data-i18n="launcher.kind.backup">Backup check</b><span data-i18n="launcher.kind.backup.desc">is the 2nd folder a complete copy of the 1st?</span></button>
     </div>
+    <p id="backup-hint" class="hint"></p>
+    <p id="addon-need" class="hint"></p>
     <div class="options">
-      <label><input type="checkbox" id="opt-quick"> Quick (Scan: skip full hashes · Verify: size and date only)</label>
-      <label><input type="checkbox" id="opt-rotated"> Recognize: also look for faces lying down (slower)</label>
-      <label><input type="checkbox" id="opt-deep"> Backup check: also re-read the backup drive (finds bit rot; slow)</label>
+      <label><input type="checkbox" id="opt-quick"> <span data-i18n="launcher.opt.quick">Quick (Scan: skip full hashes · Verify: size and date only)</span></label>
+      <label><input type="checkbox" id="opt-deep"> <span data-i18n="launcher.opt.deep">Backup check: also re-read the backup drive (finds bit rot; slow)</span></label>
     </div>
   </section>
-  </fieldset>
 
   <section class="card" id="progress-card" hidden>
     <div class="title-row">
-      <h2 id="job-title">Working…</h2>
-      <button id="cancel" class="danger" hidden>Cancel</button>
+      <h2 id="job-title" data-i18n="launcher.working">Working…</h2>
+      <button id="cancel" class="danger" data-i18n="launcher.cancel" hidden>Cancel</button>
     </div>
     <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div id="bar-fill"></div></div>
     <p id="progress-label" class="hint"></p>
     <div id="summary" class="summary" hidden></div>
-    <p id="job-error" class="error" hidden></p>
-    <div class="list-head">
-      <h3>Results per file</h3>
-      <label><input type="checkbox" id="only-failed"> only problems</label>
+    <div id="cleanup-box" class="cleanup" hidden>
+      <p id="cleanup-text"></p>
+      <label><input type="checkbox" id="cleanup-forever"> <span data-i18n="launcher.cleanup.forever">Delete for good (skip the backup's trash folder)</span></label>
+      <button id="cleanup-go" class="primary" data-i18n="launcher.cleanup.button">Delete duplicates from backup as well</button>
     </div>
+    <div id="arrivals-box" class="cleanup" hidden>
+      <p id="arrivals-text"></p>
+      <p class="hint" data-i18n="launcher.arrivals.tags_hint">The folder names of the deleted copies are saved as tags on the older originals.</p>
+      <label><input type="checkbox" id="arrivals-forever"> <span data-i18n="launcher.arrivals.forever">Delete for good (skip the trash folder)</span></label>
+      <button id="arrivals-go" class="primary" data-i18n="launcher.arrivals.button">Delete the new copies</button>
+    </div>
+    <div id="forget-box" class="cleanup" hidden>
+      <p id="forget-text"></p>
+      <p class="hint" data-i18n="launcher.forget.hint">Only the index changes; no photo file is touched. Photos that are still on the drive under another path stay.</p>
+      <button id="forget-go" class="primary" data-i18n="launcher.forget.button">Forget the missing files</button>
+    </div>
+    <p id="job-error" class="error" hidden></p>
+    <div id="tabs" class="tabs" role="tablist" hidden></div>
+    <div class="list-head">
+      <h3 id="results-title" data-i18n="launcher.results">Results per file</h3>
+      <label id="only-failed-label"><input type="checkbox" id="only-failed"> <span data-i18n="launcher.only_problems">only problems</span></label>
+    </div>
+    <p id="tab-hint" class="hint" hidden></p>
     <ul id="results" class="results"></ul>
-    <details><summary>Messages</summary><pre id="lines"></pre></details>
+    <details><summary data-i18n="launcher.messages">Messages</summary><pre id="lines"></pre></details>
   </section>
 
   <section class="card">
-    <h2>3 · Open your photos</h2>
-    <button id="start-app" class="primary">Start photo app</button>
-    <button id="stop-app" class="quiet" hidden>Stop photo app</button>
-    <p id="app-state" class="hint">The photo app starts only when you press this button. Scan first if this is a new drive.</p>
+    <h2 data-i18n="launcher.step3">3 · Open your photos</h2>
+    <button id="start-app" class="primary" data-i18n="launcher.app.start">Start photo app</button>
+    <button id="stop-app" class="quiet" data-i18n="launcher.app.stop" hidden>Stop photo app</button>
+    <p id="app-state" class="hint" data-i18n="launcher.app.idle">The photo app starts only when you press this button. Scan first if this is a new drive.</p>
   </section>
 </main>
 <script src="launcher.js"></script>

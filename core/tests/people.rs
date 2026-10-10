@@ -635,7 +635,8 @@ fn user_data_backup_has_people_groups_and_decisions() {
     server.stop().unwrap();
 
     let data: Value = serde_json::from_slice(&std::fs::read(lib.path(".shoebox/userdata.json")).unwrap()).unwrap();
-    assert_eq!(data["version"], 3);
+    assert_eq!(data["version"], 5);
+    assert_eq!(data["view_turns"], json!([]));
     assert_eq!(data["groups"], json!([{ "name": "Familie", "position": 1 }]));
     assert_eq!(data["people"][0]["name"], "Anna");
     assert_eq!(data["people"][0]["group"], "Familie");
@@ -913,7 +914,18 @@ fn people_as_search_terms_and_undoing_a_rejection() {
 
     // Suggestions for the search box: by name, counted within the search;
     // people of the search and people who would show nothing left out.
-    let search = |q: &str| get(addr, &format!("/api/people/search?{q}")).json();
+    // Without the picture and the species (they have their own checks).
+    let search = |q: &str| {
+        let mut hits = get(addr, &format!("/api/people/search?{q}")).json();
+        for h in hits.as_array_mut().unwrap() {
+            let h = h.as_object_mut().unwrap();
+            assert!(h["species"].is_null(), "people are no pets");
+            for k in ["species", "cover", "cover_manual"] {
+                h.remove(k);
+            }
+        }
+        hits
+    };
     let all = search("q=");
     assert_eq!(all, json!([
         { "id": anna, "name": "Anna", "group_id": null, "photos": 2 },
@@ -1013,6 +1025,19 @@ fn pets_are_people_in_a_space_of_their_own() {
     // Anna's photo (the fake finds a pet in every picture) alone: 0.875
     // is below the 0.90 that joins pets.
     assert_eq!(sizes(&pets), [3, 2, 1, 1, 1, 1]);
+    // The unnamed page lists clusters of up to two faces apart, to pick one by one.
+    let large = get(addr, "/api/clusters?kind=pets&size=large").json();
+    let small = get(addr, "/api/clusters?kind=pets&size=small").json();
+    assert_eq!(sizes(&large), [3]);
+    assert_eq!(sizes(&small).len(), 5);
+    assert!(sizes(&small).iter().all(|&n| n <= 2));
+    assert_eq!((small["unnamed"].as_u64(), large["small_faces"].as_u64()), (Some(6), Some(6)), "{small} {large}");
+    assert_eq!(get(addr, "/api/clusters?size=huge").status, 400);
+    // The Face check lists what recognition could not place: no name, nobody suggested.
+    let unmatched = get(addr, "/api/faces?kind=pets&unmatched=true").json();
+    let stats = get(addr, "/api/faces/stats?kind=pets").json();
+    assert_eq!(unmatched["total"], stats["unmatched"], "{unmatched} {stats}");
+    assert!(unmatched["total"].as_u64().unwrap() > 0);
     for c in pets["clusters"].as_array().unwrap() {
         assert!(c["faces"].as_array().unwrap().iter().all(|f| f["species"].is_string()), "{c}");
     }
@@ -1162,8 +1187,16 @@ fn a_pet_drawn_by_hand() {
     // A decision about a pet never lands on the person's face of the same photo.
     assert!(face_of_person(addr, &lib, "Pets/spooky.png")["state"].is_null());
 
+    // A pet drawn as a cat keeps that species; an unknown one is refused.
+    let body = json!({ "file": missed, "box": [0.6, 0.1, 0.2, 0.4], "person_id": spooky, "species": "cat" });
+    let m3 = ok(addr, "/api/faces/manual", &body)["manual"].as_i64().unwrap();
+    let faces = faces_of(addr, &lib, "Pets/missed.png");
+    assert_eq!(faces.iter().find(|f| f["manual"].as_i64() == Some(m3)).unwrap()["species"], "cat");
+    let body = json!({ "file": missed, "box": [0.6, 0.6, 0.2, 0.3], "person_id": spooky, "species": "horse" });
+    assert_eq!(post(addr, "/api/faces/manual", &body).status, 400);
+
     // A drawn pet can be deleted like a drawn face.
-    assert_eq!(ok(addr, "/api/faces/undo", &json!({ "manual": [m, m2] }))["faces"], 2);
+    assert_eq!(ok(addr, "/api/faces/undo", &json!({ "manual": [m, m2, m3] }))["faces"], 3);
     assert_eq!(faces_of(addr, &lib, "Pets/missed.png").len(), 0);
     assert_eq!(lib.snapshot(), before, "nothing here may change an original");
     server.stop().unwrap();
@@ -1370,4 +1403,95 @@ fn searching_by_pet_species() {
     assert_eq!(found("/api/timeline?pet=cat"), want(&["Fotos/miez1.png", "Fotos/miez2.png", "Fotos/falsch.png"]));
     assert_eq!(lib.snapshot(), before, "searching changed an original");
     server.stop().unwrap();
+}
+
+/// The face detector also finds a dog's or cat's face. When the pets pass
+/// found a pet around it and no person, the face is the pet's: not listed
+/// as a face (viewer, clusters, face check) unless the user decided on it.
+#[test]
+fn a_pets_face_is_not_a_persons() {
+    let lib = empty("people-pets-face");
+    // Nobody in the picture: a yellow bottom quarter (the fake's cue).
+    let dog = image::RgbImage::from_fn(200, 200, |_, y| image::Rgb(if y >= 150 { [255, 255, 0] } else { [90, 90, 200] }));
+    save(&lib, "Dog/dog.png", dog.clone());
+    let mut other = dog;
+    other.put_pixel(0, 0, image::Rgb([1, 2, 3]));
+    save(&lib, "Dog/dog2.png", other);
+    // A person (and a pet) in the picture: the face stays.
+    plain(&lib, "Anna/a1.png", ANNA, 1);
+    lib.scan_opts(true, false, false);
+    let before = lib.snapshot();
+    let stats = recognize::run(&recognize::Options { pets: true, ..options(&lib) }).unwrap();
+    assert_eq!(stats.failed, 0, "{:?}", stats.errors);
+    let after = lib.snapshot();
+    assert_eq!(before, after, "originals untouched");
+
+    let server = start(&lib, None);
+    let addr = server.addr;
+    wait_for_clusters(addr);
+    let boxes = |rel: &str| faces_of(addr, &lib, rel);
+    // The dog's pictures show the dog only; Anna's both.
+    for rel in ["Dog/dog.png", "Dog/dog2.png"] {
+        let faces = boxes(rel);
+        assert_eq!(faces.len(), 1, "{rel}: {faces:?}");
+        assert!(faces[0]["species"].is_string(), "{rel}: {faces:?}");
+    }
+    assert_eq!(boxes("Anna/a1.png").len(), 2);
+
+    // Not in the face clusters, not in the face check; counted apart.
+    let humans = get(addr, "/api/clusters?kind=faces").json();
+    let in_clusters: u64 = humans["clusters"].as_array().unwrap().iter().map(|c| c["size"].as_u64().unwrap()).sum();
+    assert_eq!(in_clusters, 1, "{humans}");
+    let listed = get(addr, "/api/faces").json();
+    assert_eq!(listed["total"], 1, "{listed}");
+    let hidden = get(addr, "/api/faces?pet_face=true").json();
+    assert_eq!(hidden["total"], 2, "{hidden}");
+    let stats = get(addr, "/api/faces/stats").json();
+    assert_eq!((stats["faces"].as_u64(), stats["pet_faces"].as_u64()), (Some(1), Some(2)), "{stats}");
+
+    // Drawing a face by hand settles it: that face is shown again.
+    let file = id_of(&lib, "Dog/dog.png");
+    ok(addr, "/api/faces/manual", &json!({ "file": file, "box": [0.25, 0.25, 0.5, 0.5], "name": "Dog person" }));
+    let faces = boxes("Dog/dog.png");
+    assert!(faces.iter().any(|f| f["species"].is_null()), "{faces:?}");
+}
+
+/// A dog the detector now and then takes for a cat: once the photo is
+/// Layka's, the box, the person and the pet search all say dog.
+#[test]
+fn a_named_pets_species_follows_the_person() {
+    let lib = empty("people-pets-species");
+    plain(&lib, "Layka/a.png", REX, 1);
+    plain(&lib, "Layka/b.png", REX, 2);
+    plain(&lib, "Layka/c.png", REX, 3);
+    plain(&lib, "Layka/cat.png", SPOOKY, 1); // reads as a cat
+    plain(&lib, "Other/cat.png", SPOOKY, 2);
+    lib.scan_opts(true, false, false);
+    let stats = recognize::run(&recognize::Options { pets: true, ..options(&lib) }).unwrap();
+    assert_eq!(stats.failed, 0, "{:?}", stats.errors);
+    let before = lib.snapshot();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    wait_for_clusters(addr);
+    let pet = |rel: &str| pet_of(addr, &lib, rel);
+    assert_eq!(pet("Layka/cat.png")["species"], "cat");
+
+    let faces: Vec<i64> = ["Layka/a.png", "Layka/b.png", "Layka/c.png", "Layka/cat.png"].iter().map(|r| pet(r)["id"].as_i64().unwrap()).collect();
+    let layka = ok(addr, "/api/faces/assign", &json!({ "faces": faces, "name": "Layka" }))["person"]["id"].as_i64().unwrap();
+    wait_for_clusters(addr);
+    let people = get(addr, "/api/people").json();
+    let row = people.as_array().unwrap().iter().find(|p| p["id"] == layka).unwrap().clone();
+    assert_eq!(row["species"], "dog", "three dogs and one cat: a dog");
+    // The info panel: the "cat" is Layka the dog; the other cat stays one.
+    assert_eq!(pet("Layka/cat.png")["species"], "dog");
+    assert_eq!(pet("Layka/cat.png")["person"]["name"], "Layka");
+    assert_eq!(pet("Other/cat.png")["species"], "cat");
+
+    let found = |term: &str| sorted(ids(&get(addr, &format!("/api/timeline?pet={term}")).json()));
+    let want = |rels: &[&str]| sorted(rels.iter().map(|r| id_of(&lib, r)).collect());
+    assert_eq!(found("dog"), want(&["Layka/a.png", "Layka/b.png", "Layka/c.png", "Layka/cat.png"]));
+    assert_eq!(found("cat"), want(&["Other/cat.png"]), "Layka is no cat");
+    assert_eq!(found("pet").len(), 5);
+    server.stop().unwrap();
+    assert_eq!(lib.snapshot(), before, "originals untouched");
 }

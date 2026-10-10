@@ -25,13 +25,11 @@ own lists for the MacBook and the drive.
 - [ ] Live Photos: "LIVE ▶" plays the motion part.
 - [ ] Videos play and seeking works (range requests).
 
-## Import, move, trash (phase 3, [phase3.md](phase3.md))
+## Move, trash (phase 3, [phase3.md](phase3.md))
 
-- [ ] Import from the iPad's photo library: Safari may convert HEIC to JPEG
-      ("Most Compatible"); note what arrives, its name and its date
-      (taken from `File.lastModified`).
 - [ ] Select photos by tapping, then "Move…" into an existing and a new
-      folder; "Move to trash" and restore from the Trash page.
+      folder; after ticking "Allow move to trash" in Settings, "Move to trash" and
+      restore from the Trash page.
 - [ ] Select a whole month with "Select all" on its heading (Shift-click
       ranges need a keyboard; this is the iPad's way), then deselect it.
 

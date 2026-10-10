@@ -207,6 +207,10 @@ pub fn roles(drives: &[Drive]) -> Result<Vec<DriveRole>> {
 pub struct DuplicateFile {
     pub library: String,
     pub name: String,
+    /// The disk the drive's folder is on (filled in by the server, which knows
+    /// the folders); two drives can have folders of the same name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume: Option<String>,
     pub id: i64,
     pub path: String,
     /// `jpeg`, `png`, `heic`, `raw` or `video`, and the first characters of
@@ -309,6 +313,7 @@ pub fn cross_duplicates(drives: &[Drive], roles: &[DriveRole], limit: usize) -> 
                 .map(|(d, id, path, kind, version)| DuplicateFile {
                     library: eligible[d].id.clone(),
                     name: eligible[d].name.clone(),
+                    volume: None,
                     id,
                     path,
                     kind,
@@ -329,6 +334,8 @@ pub struct MergedPerson {
     pub faces: u64,
     pub photos: u64,
     pub hidden: bool,
+    /// `cat`, `dog` or `pet` for a pet (the first drive that knows), else absent.
+    pub species: Option<String>,
     /// Where this person is known: the same name on a drive is the same person.
     pub libraries: Vec<PersonOnDrive>,
 }
@@ -360,12 +367,14 @@ pub fn merge_people(per_drive: &[(String, String, Vec<crate::people::Person>, Ve
                 faces: 0,
                 photos: 0,
                 hidden: true,
+                species: None,
                 libraries: Vec::new(),
             });
             entry.group = entry.group.take().or(group);
             entry.faces += p.faces;
             entry.photos += p.photos;
             entry.hidden &= p.hidden;
+            entry.species = entry.species.take().or_else(|| p.species.clone());
             entry.libraries.push(PersonOnDrive {
                 library: lib.clone(),
                 name: lib_name.clone(),
@@ -383,6 +392,23 @@ pub fn merge_people(per_drive: &[(String, String, Vec<crate::people::Person>, Ve
 }
 
 // ---------------------------------------------------------------- backups
+
+/// What a drive's card says about its index: how many files, when it was last
+/// scanned and when new files last arrived (Unix seconds).
+#[derive(Debug, Clone, Serialize, Default, PartialEq)]
+pub struct DriveFacts {
+    pub files: u64,
+    pub last_scan: Option<i64>,
+    pub last_new_files: Option<i64>,
+}
+
+pub fn drive_facts(conn: &Connection) -> Result<DriveFacts> {
+    Ok(DriveFacts {
+        files: conn.query_row("SELECT count(*) FROM main.files WHERE missing_since IS NULL", [], |r| r.get::<_, i64>(0))? as u64,
+        last_scan: conn.query_row("SELECT max(finished_at) FROM main.jobs WHERE kind = 'scan' AND state = 'done'", [], |r| r.get(0))?,
+        last_new_files: conn.query_row("SELECT max(added_at) FROM main.files", [], |r| r.get(0))?,
+    })
+}
 
 /// A file that is not (correctly) on the backup, or only on the backup.
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -410,16 +436,81 @@ pub struct BackupReport {
     pub different: u64,
     /// Content only the backup has (deleted or changed on the original drive since).
     pub extra: u64,
+    /// Copies removed on the original's duplicates screen that the backup
+    /// still holds at the same path (see `removable_on_backup`).
+    pub removed: u64,
     /// The first of each (up to the limit asked for).
     pub missing_files: Vec<BackupFile>,
     pub different_files: Vec<BackupFile>,
     pub extra_files: Vec<BackupFile>,
+    pub removed_files: Vec<BackupFile>,
     /// Unix seconds: the backup drive's last scan, and the last time its
     /// index learned of new files (the day files last arrived there).
     pub backup_last_scan: Option<i64>,
     pub backup_last_new_files: Option<i64>,
     /// Nothing missing, different or unhashed.
     pub up_to_date: bool,
+}
+
+/// A copy of the backup that the user removed from the original on the
+/// duplicates screen, and that is safe to remove from the backup as well.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Removable {
+    /// The backup's file (as found on disk), and its id in the backup's index.
+    pub path: String,
+    pub size: u64,
+    pub backup_id: i64,
+    /// Its content, and the content of the copy that stayed.
+    pub full_hash: String,
+    pub kept_hash: String,
+}
+
+/// The backup's files that belong to a copy removed on the original's
+/// duplicates screen (`removed_copies`), and are safe to take away: the same
+/// path and content on the backup, the copy that stayed is still on the
+/// original, the original has no such file at that path again, and the backup
+/// keeps another file with the kept content, so no content is ever lost. The
+/// connection is `open_pair`'s: the original is `main`, the backup `other`.
+const REMOVABLE: &str = "
+    FROM main.removed_copies r
+    JOIN other.files b ON b.path_nfc = r.path_nfc AND b.full_hash = r.full_hash AND b.missing_since IS NULL
+    WHERE EXISTS (SELECT 1 FROM main.files a WHERE a.full_hash = r.kept_hash AND a.missing_since IS NULL)
+      AND NOT EXISTS (SELECT 1 FROM main.files a2 WHERE a2.path_nfc = r.path_nfc AND a2.full_hash = r.full_hash AND a2.missing_since IS NULL)
+      AND EXISTS (SELECT 1 FROM other.files k WHERE k.full_hash = r.kept_hash AND k.missing_since IS NULL AND k.id != b.id)";
+
+fn has_removed_table(conn: &Connection) -> Result<bool> {
+    Ok(conn.query_row("SELECT count(*) FROM main.sqlite_master WHERE type = 'table' AND name = 'removed_copies'", [], |r| r.get::<_, i64>(0))? > 0)
+}
+
+/// How many there are, and the first `limit` of them.
+pub fn removable_on_backup(conn: &Connection, limit: usize) -> Result<(u64, Vec<Removable>)> {
+    if !has_removed_table(conn)? {
+        return Ok((0, Vec::new()));
+    }
+    let n: i64 = conn.query_row(&format!("SELECT count(DISTINCT b.id) {REMOVABLE}"), [], |r| r.get(0))?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT b.id, b.path, b.size, r.full_hash, r.kept_hash {REMOVABLE} GROUP BY b.id ORDER BY b.path_nfc LIMIT ?1"
+    ))?;
+    let list = stmt
+        .query_map([limit as i64], |r| {
+            Ok(Removable { backup_id: r.get(0)?, path: r.get(1)?, size: r.get::<_, i64>(2)? as u64, full_hash: r.get(3)?, kept_hash: r.get(4)? })
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok((n as u64, list))
+}
+
+/// Is this one still safe, right now? Asked before each removal, because
+/// removing one copy changes what the next one's "another file" can be.
+pub fn still_removable(conn: &Connection, backup_id: i64) -> Result<bool> {
+    if !has_removed_table(conn)? {
+        return Ok(false);
+    }
+    Ok(conn.query_row(&format!("SELECT count(*) {REMOVABLE} AND b.id = ?1"), [backup_id], |r| r.get::<_, i64>(0))? > 0)
+}
+
+/// Open the pair for the checks above (read-only; the original is `main`).
+pub fn open_pair_read_only(original: &Path, backup: &Path) -> Result<Connection> {
+    open_pair(original, backup)
 }
 
 /// Compare a backup drive (its `library.db`) with the drive it copies.
@@ -477,6 +568,8 @@ pub fn backup_report(primary: &Path, primary_name: &str, backup: &Path, backup_n
             extra.push(row?);
         }
     }
+    let (removed_n, removable) = removable_on_backup(&conn, limit)?;
+    let removed_files = removable.into_iter().map(|c| BackupFile { path: c.path, size: c.size }).collect();
     let backup_last_scan: Option<i64> =
         conn.query_row("SELECT max(finished_at) FROM other.jobs WHERE kind = 'scan' AND state = 'done'", [], |r| r.get(0))?;
     let backup_last_new_files: Option<i64> = conn.query_row("SELECT max(added_at) FROM other.files", [], |r| r.get(0))?;
@@ -489,9 +582,11 @@ pub fn backup_report(primary: &Path, primary_name: &str, backup: &Path, backup_n
         missing: missing_n,
         different: different_n,
         extra: extra_n,
+        removed: removed_n,
         missing_files: missing,
         different_files: different,
         extra_files: extra,
+        removed_files,
         backup_last_scan,
         backup_last_new_files,
         up_to_date: missing_n == 0 && different_n == 0 && unhashed == 0,

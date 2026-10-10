@@ -149,6 +149,8 @@ pub struct Matched {
     pub states: Vec<State>,
     /// Per decision: the face it belongs to.
     pub face_of: Vec<Option<usize>>,
+    /// Where the pets pass saw people, per content (fractions).
+    pub bodies: HashMap<String, Vec<[f64; 4]>>,
 }
 
 pub(crate) fn table_exists(conn: &Connection, schema: &str, table: &str) -> Result<bool> {
@@ -190,7 +192,16 @@ impl Matched {
             }
         }
         let decisions = if table_exists(conn, "main", "face_decisions")? { load_decisions(conn, key)? } else { Vec::new() };
-        Ok(Matched::new(faces, decisions))
+        let mut m = Matched::new(faces, decisions);
+        // Before v6 nobody saw people: no face is taken for a pet's.
+        if version >= 6 {
+            let mut stmt = conn.prepare("SELECT key, x, y, w, h FROM recog.bodies WHERE ?1 IS NULL OR key = ?1")?;
+            let mut rows = stmt.query([key])?;
+            while let Some(r) = rows.next()? {
+                m.bodies.entry(r.get(0)?).or_default().push([r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?]);
+            }
+        }
+        Ok(m)
     }
 
     pub fn new(faces: Vec<Detected>, decisions: Vec<DecisionRow>) -> Matched {
@@ -221,7 +232,7 @@ impl Matched {
                 states[i].decided = Some(d);
             }
         }
-        Matched { faces, decisions, states, face_of }
+        Matched { faces, decisions, states, face_of, bodies: HashMap::new() }
     }
 
     pub fn decided(&self, i: usize) -> Option<&DecisionRow> {
@@ -232,6 +243,29 @@ impl Matched {
     pub fn not_faces(&self) -> HashSet<i64> {
         (0..self.faces.len())
             .filter(|&i| self.decided(i).is_some_and(|d| d.decision == Decision::NotFace))
+            .map(|i| self.faces[i].id)
+            .collect()
+    }
+
+    /// Ids of the people's faces that are really a pet's: inside a pet found
+    /// in the same picture, outside any person (`pets::is_pet_face`). Only
+    /// faces nobody decided on count, so drawing a face by hand or any
+    /// decision settles it; pets marked "not a pet" do not count.
+    pub fn pet_faces(&self) -> HashSet<i64> {
+        let mut pets: HashMap<&str, Vec<[f64; 4]>> = HashMap::new();
+        for (i, f) in self.faces.iter().enumerate() {
+            let not_a_pet = self.decided(i).is_some_and(|d| d.decision == Decision::NotFace);
+            if f.species.is_some() && !not_a_pet {
+                pets.entry(f.key.as_str()).or_default().push(f.b);
+            }
+        }
+        (0..self.faces.len())
+            .filter(|&i| self.faces[i].species.is_none() && self.decided(i).is_none())
+            .filter(|&i| {
+                let f = &self.faces[i];
+                let people = self.bodies.get(&f.key).map(Vec::as_slice).unwrap_or(&[]);
+                pets.get(f.key.as_str()).is_some_and(|p| crate::pets::is_pet_face(f.b, p, people))
+            })
             .map(|i| self.faces[i].id)
             .collect()
     }
@@ -269,6 +303,61 @@ fn load_decisions(conn: &Connection, key: Option<&str>) -> Result<Vec<DecisionRo
 }
 
 /// Ids of the faces marked "not a face" (read-only works).
+/// The species of every person who is a pet: the majority of their
+/// confirmed faces (people's, cats', dogs', pets drawn without saying which),
+/// a tie going to the people, then cats, then dogs. A dog the detector took
+/// for a cat is still the dog's face once it is Layka's.
+pub fn person_species(conn: &Connection) -> Result<HashMap<i64, String>> {
+    if !table_exists(conn, "main", "face_decisions")? || !db::has_column(conn, "main", "face_decisions", "species")? {
+        return Ok(HashMap::new());
+    }
+    // (people, cats, dogs, pets)
+    let mut counts: HashMap<i64, [u64; 4]> = HashMap::new();
+    let mut stmt = conn.prepare(
+        "SELECT person_id, species, count(*) FROM face_decisions
+         WHERE decision = 'confirmed' AND person_id IS NOT NULL GROUP BY person_id, species",
+    )?;
+    let mut rows = stmt.query([])?;
+    while let Some(r) = rows.next()? {
+        let at = match r.get::<_, Option<String>>(1)?.as_deref() {
+            None => 0,
+            Some("cat") => 1,
+            Some("dog") => 2,
+            Some(_) => 3,
+        };
+        counts.entry(r.get(0)?).or_default()[at] += r.get::<_, i64>(2)? as u64;
+    }
+    Ok(counts
+        .into_iter()
+        .filter(|(_, [people, cats, dogs, pets])| cats + dogs + pets > *people)
+        .map(|(id, [_, cats, dogs, pets])| {
+            let species = if cats >= dogs && cats >= pets {
+                "cat"
+            } else if dogs >= pets {
+                "dog"
+            } else {
+                crate::pets::PET
+            };
+            (id, species.to_string())
+        })
+        .collect())
+}
+
+/// The species to show for a pet's box: the person's when it belongs to one
+/// who is a cat or a dog, else what was detected or drawn.
+fn effective_species(own: Option<&str>, person: Option<i64>, of_people: &HashMap<i64, String>) -> Option<String> {
+    let own = own?;
+    match person.and_then(|p| of_people.get(&p)).map(String::as_str) {
+        Some(s) if crate::pets::is_species(s) => Some(s.to_string()),
+        _ => Some(own.to_string()),
+    }
+}
+
+/// Ids of the faces taken for a pet's (`Matched::pet_faces`).
+pub fn pet_face_ids(conn: &Connection) -> Result<HashSet<i64>> {
+    Ok(Matched::load(conn, None)?.pet_faces())
+}
+
 pub fn not_face_ids(conn: &Connection) -> Result<HashSet<i64>> {
     Ok(Matched::load(conn, None)?.not_faces())
 }
@@ -343,6 +432,11 @@ pub struct View {
     names: HashMap<i64, String>,
     /// Content → width and height of the copy the worker saw.
     sizes: HashMap<String, (f64, f64)>,
+    /// Faces taken for a pet's (`Matched::pet_faces`): not listed anywhere.
+    pet_faces: HashSet<i64>,
+    /// What each named person is (`cat`, `dog`, `pet`), by what their
+    /// confirmed faces are; people's are left out.
+    person_species: HashMap<i64, String>,
 }
 
 impl View {
@@ -390,7 +484,9 @@ impl View {
                 sizes.insert(r.get::<_, String>(0)?, (r.get(1)?, r.get(2)?));
             }
         }
-        Ok(View { m, present, cache, names, sizes })
+        let pet_faces = m.pet_faces();
+        let person_species = person_species(conn)?;
+        Ok(View { m, present, cache, names, sizes, pet_faces, person_species })
     }
 
     fn person(&self, id: Option<i64>) -> Option<PersonRef> {
@@ -401,7 +497,7 @@ impl View {
     /// The person suggested for face `i` (not decided, not rejected for
     /// them, similar enough), with the similarity.
     pub fn suggestion(&self, i: usize) -> Option<(i64, f32)> {
-        if self.m.states[i].decided.is_some() {
+        if self.m.states[i].decided.is_some() || self.pet_faces.contains(&self.m.faces[i].id) {
             return None;
         }
         let c = self.cache.get(&self.m.faces[i].id)?;
@@ -414,7 +510,7 @@ impl View {
 
     /// The cluster of face `i` if it has no decision.
     fn cluster(&self, i: usize) -> Option<i64> {
-        if self.m.states[i].decided.is_some() {
+        if self.m.states[i].decided.is_some() || self.pet_faces.contains(&self.m.faces[i].id) {
             return None;
         }
         self.cache.get(&self.m.faces[i].id).map(|c| c.cluster)
@@ -430,6 +526,17 @@ impl View {
             None => (None, None),
         };
         (file, kind, key.chars().take(8).collect())
+    }
+
+    /// Ids of the faces not matched yet: nothing decided, nobody suggested
+    /// (not even as "maybe"), and not taken for a pet's. Faces of every
+    /// size, so the Face check can show what recognition could not place.
+    pub fn unplaced_ids(&self) -> HashSet<i64> {
+        (0..self.m.faces.len())
+            .filter(|&i| self.m.states[i].decided.is_none() && self.suggestion(i).is_none())
+            .map(|i| self.m.faces[i].id)
+            .filter(|id| !self.pet_faces.contains(id))
+            .collect()
     }
 
     /// Detected face `i`, with what is decided or suggested.
@@ -463,7 +570,7 @@ impl View {
             px: f.px,
             score: Some(f.score),
             small: f.space().too_small(f.px),
-            species: f.species.clone(),
+            species: effective_species(f.species.as_deref(), decided.filter(|d| d.decision == Decision::Confirmed).and_then(|d| d.person), &self.person_species),
             state,
             person,
             similarity,
@@ -492,7 +599,11 @@ impl View {
             px,
             score: None,
             small: false,
-            species: row.species.clone(),
+            species: effective_species(
+                row.species.as_deref(),
+                (row.decision == Decision::Confirmed).then_some(row.person).flatten(),
+                &self.person_species,
+            ),
             state: Some(row.decision.as_str()),
             person: self.person(row.person),
             similarity: None,
@@ -537,6 +648,7 @@ pub fn file_faces(conn: &Connection, key: &str) -> Result<FileFaces> {
         found.into_iter().map(|f| ([f.x, f.y, f.w, f.h].map(f64::to_bits), f.landmarks)).collect();
     let mut faces: Vec<FileFace> = (0..v.m.faces.len())
         .filter(|&i| v.m.decided(i).is_none_or(|d| d.decision != Decision::NotFace))
+        .filter(|&i| !v.pet_faces.contains(&v.m.faces[i].id))
         .map(|i| FileFace {
             item: v.item(i),
             landmarks: landmarks.get(&v.m.faces[i].b.map(f64::to_bits)).cloned().unwrap_or_default(),
@@ -738,27 +850,12 @@ pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
         maybe: u64,
         largest: Option<(f64, i64)>,
         drawn: Option<(f64, i64)>,
-        /// Confirmed faces: people's, cats', dogs', and pets drawn by hand
-        /// without saying which.
-        people: u64,
-        cats: u64,
-        dogs: u64,
-        pets: u64,
     }
     let mut counts: HashMap<i64, Counts> = HashMap::new();
-    for (di, d) in v.m.decisions.iter().enumerate() {
+    for d in v.m.decisions.iter() {
         if let (Decision::Confirmed, Some(p)) = (d.decision, d.person) {
             let c = counts.entry(p).or_default();
             c.faces += 1;
-            // A drawn box over no detected face is the only sign of its kind.
-            if d.manual && v.m.face_of[di].is_none() {
-                match d.species.as_deref() {
-                    None => c.people += 1,
-                    Some("cat") => c.cats += 1,
-                    Some("dog") => c.dogs += 1,
-                    Some(_) => c.pets += 1,
-                }
-            }
             if v.is_present(&d.key) {
                 c.photos.insert(d.key.clone());
                 if d.manual && c.drawn.is_none_or(|(w, _)| d.b[2] > w) {
@@ -776,11 +873,6 @@ pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
             let c = counts.entry(p).or_default();
             if c.largest.is_none_or(|(px, _)| f.px > px) {
                 c.largest = Some((f.px, f.id));
-            }
-            match f.species.as_deref() {
-                Some("cat") => c.cats += 1,
-                Some("dog") => c.dogs += 1,
-                _ => c.people += 1,
             }
         }
         if let Some((p, sim)) = v.suggestion(i) {
@@ -828,16 +920,7 @@ pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
                 photos: c.photos.len() as u64,
                 suggested: c.suggested,
                 maybe: c.maybe,
-                species: (c.cats + c.dogs + c.pets > c.people).then(|| {
-                    if c.cats >= c.dogs && c.cats >= c.pets {
-                        "cat"
-                    } else if c.dogs >= c.pets {
-                        "dog"
-                    } else {
-                        crate::pets::PET
-                    }
-                    .to_string()
-                }),
+                species: v.person_species.get(&p.id).cloned(),
                 cover: if chosen.is_none() && chosen_manual.is_some() { None } else { cover },
                 cover_manual: if chosen.is_none() && chosen_manual.is_some() {
                     chosen_manual
@@ -1262,9 +1345,15 @@ pub fn decide(conn: &Connection, faces: &[i64], action: &Action) -> Result<Decid
     Ok(Decided { faces: changed, person, cluster: None })
 }
 
-/// Add a face drawn by hand on a photo (a `pet` if the user says it is one):
-/// always confirmed, with a person. Returns its id (`manual` in the API).
-pub fn add_manual(conn: &Connection, file: i64, b: [f64; 4], who: &Who, pet: bool) -> Result<i64> {
+/// Add a face drawn by hand on a photo (a pet of the given species, `cat` or
+/// `dog`, or `pet` for one of no species, if the user says it is one): always
+/// confirmed, with a person. Returns its id (`manual` in the API).
+pub fn add_manual(conn: &Connection, file: i64, b: [f64; 4], who: &Who, species: Option<&str>) -> Result<i64> {
+    if let Some(s) = species {
+        if !crate::pets::is_species(s) && s != crate::pets::PET {
+            bail!("the species is cat or dog, not {s:?}");
+        }
+    }
     let ok = b.iter().all(|v| v.is_finite()) && b[0] >= 0.0 && b[1] >= 0.0 && b[2] > 0.0 && b[3] > 0.0;
     if !ok || b[0] + b[2] > 1.0 + 1e-9 || b[1] + b[3] > 1.0 + 1e-9 {
         bail!("the box must lie inside the picture (fractions of its width and height)");
@@ -1278,7 +1367,7 @@ pub fn add_manual(conn: &Connection, file: i64, b: [f64; 4], who: &Who, pet: boo
     tx.execute(
         "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at, species)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'confirmed', 1, ?7, ?8)",
-        params![key, b[0], b[1], b[2], b[3], person, db::now(), pet.then_some(crate::pets::PET)],
+        params![key, b[0], b[1], b[2], b[3], person, db::now(), species],
     )?;
     let id = tx.last_insert_rowid();
     tx.commit()?;
@@ -1394,6 +1483,9 @@ pub struct Clusters {
     pub total: u64,
     /// Faces in them: faces large enough without a decision.
     pub unnamed: u64,
+    /// Faces in clusters of up to `SMALL_CLUSTER` faces (whatever `size`
+    /// asked for): the ones listed one by one.
+    pub small_faces: u64,
     pub clusters: Vec<Cluster>,
 }
 
@@ -1435,12 +1527,36 @@ fn generation_of(v: &View, faces: &[usize]) -> i64 {
     i64::from_le_bytes(n)
 }
 
+/// Clusters of up to this many faces are "small": listed as single faces to
+/// pick one by one, not as cards.
+pub const SMALL_CLUSTER: usize = 2;
+
+/// Which clusters to list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Size {
+    All,
+    /// More than `SMALL_CLUSTER` faces.
+    Large,
+    /// At most `SMALL_CLUSTER` faces.
+    Small,
+}
+
 /// The clusters of faces without a decision, largest first, with up to
 /// `samples` faces each; only those of one space (people's faces or
 /// pets) if `kind` is given. Faces and pets never share a cluster.
-pub fn clusters(conn: &Connection, offset: usize, limit: usize, samples: usize, kind: Option<Space>) -> Result<Clusters> {
+pub fn clusters(conn: &Connection, offset: usize, limit: usize, samples: usize, kind: Option<Space>, size: Size) -> Result<Clusters> {
     let v = View::load(conn)?;
-    let all = grouped(&v, kind);
+    let mut all = grouped(&v, kind);
+    let singles: u64 = all.iter().filter(|c| c.1.len() <= SMALL_CLUSTER).map(|c| c.1.len() as u64).sum();
+    all.retain(|c| match size {
+        Size::All => true,
+        Size::Large => c.1.len() > SMALL_CLUSTER,
+        Size::Small => c.1.len() <= SMALL_CLUSTER,
+    });
+    if size == Size::Small {
+        // Largest faces first, so the ones that can be recognised come first.
+        all.sort_by(|a, b| v.m.faces[b.1[0]].px.total_cmp(&v.m.faces[a.1[0]].px).then(a.0.cmp(&b.0)));
+    }
     let unnamed = all.iter().map(|c| c.1.len() as u64).sum();
     let total = all.len() as u64;
     let clusters = all
@@ -1467,7 +1583,7 @@ pub fn clusters(conn: &Connection, offset: usize, limit: usize, samples: usize, 
             }
         })
         .collect();
-    Ok(Clusters { total, unnamed, clusters })
+    Ok(Clusters { total, unnamed, small_faces: singles, clusters })
 }
 
 /// All faces of a cluster: of the one whose faces have `generation` (its
@@ -1530,38 +1646,41 @@ pub fn keys_of_people(conn: &Connection, ids: &[i64]) -> Result<HashSet<String>>
 }
 
 /// Contents with a pet of this species in them (`pet`: of any species), named
-/// or not: detected cats and dogs (unless marked "not a face"), and pets drawn
-/// by hand. For searching; only reads, and `recog` need not be attached.
+/// or not: detected cats and dogs (unless marked "not a pet"), and pets drawn
+/// by hand. A pet that is Layka's counts as the dog Layka is, whatever the
+/// detector thought. For searching; only reads, and `recog` need not be
+/// attached.
 pub fn keys_of_pets(conn: &Connection, species: &str) -> Result<HashSet<String>> {
     let mut keys = HashSet::new();
     let any = species == crate::pets::PET;
+    let of_people = person_species(conn)?;
+    let wanted = |own: Option<&str>, person: Option<i64>| {
+        effective_species(own, person, &of_people).is_some_and(|s| any || s == species)
+    };
     if table_exists(conn, "recog", "faces")? && db::has_column(conn, "recog", "faces", "species")? {
-        // Decisions that say a detection is no pet: matched to boxes below.
-        let mut not_pet: HashMap<String, Vec<[f64; 4]>> = HashMap::new();
-        if table_exists(conn, "main", "face_decisions")? && db::has_column(conn, "main", "face_decisions", "species")? {
-            let mut stmt = conn.prepare("SELECT key, x, y, w, h FROM face_decisions WHERE decision = 'not_face' AND species IS NOT NULL")?;
-            let mut rows = stmt.query([])?;
-            while let Some(r) = rows.next()? {
-                not_pet.entry(r.get(0)?).or_default().push([r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?]);
+        let m = Matched::load(conn, None)?;
+        for i in 0..m.faces.len() {
+            let f = &m.faces[i];
+            let decided = m.decided(i);
+            if f.species.is_none() || decided.is_some_and(|d| d.decision == Decision::NotFace) {
+                continue;
             }
-        }
-        let mut stmt = conn.prepare("SELECT key, x, y, w, h FROM recog.faces WHERE species IS NOT NULL AND (?1 OR species = ?2)")?;
-        let mut rows = stmt.query(params![any, species])?;
-        while let Some(r) = rows.next()? {
-            let key: String = r.get(0)?;
-            let b: [f64; 4] = [r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?];
-            let marked = not_pet.get(&key).is_some_and(|boxes| boxes.iter().any(|d| recognize::iou(*d, b) >= MATCH_IOU));
-            if !marked {
-                keys.insert(key);
+            let person = decided.filter(|d| d.decision == Decision::Confirmed).and_then(|d| d.person);
+            if wanted(f.species.as_deref(), person) {
+                keys.insert(f.key.clone());
             }
         }
     }
     if table_exists(conn, "main", "face_decisions")? && db::has_column(conn, "main", "face_decisions", "species")? {
         let mut stmt = conn.prepare(
-            "SELECT DISTINCT key FROM face_decisions
-             WHERE decision = 'confirmed' AND species IS NOT NULL AND (?1 OR species = ?2)",
+            "SELECT key, species, person_id FROM face_decisions WHERE decision = 'confirmed' AND species IS NOT NULL",
         )?;
-        keys.extend(stmt.query_map(params![any, species], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?);
+        let mut rows = stmt.query([])?;
+        while let Some(r) = rows.next()? {
+            if wanted(r.get::<_, Option<String>>(1)?.as_deref(), r.get(2)?) {
+                keys.insert(r.get(0)?);
+            }
+        }
     }
     Ok(keys)
 }

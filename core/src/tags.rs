@@ -44,7 +44,57 @@ pub fn check_name(name: &str) -> Result<String> {
     if name.chars().any(char::is_control) {
         bail!("tag names cannot contain control characters");
     }
+    // "Favoriten" and the like are the heart, not a tag of their own.
+    if means_favorite(&name) {
+        return Ok(FAVORITE.to_string());
+    }
     Ok(name)
+}
+
+/// Favorites are an own tag with this name (the heart in the UI). Stored in
+/// English whatever the UI language is; the words people type to find them
+/// are in `is_favorite_word`.
+pub const FAVORITE: &str = "favorite";
+
+/// Words that mean "favorites" in a search, in English and German: the
+/// start of one of them (three letters at least) or its plural.
+pub fn is_favorite_word(word: &str) -> bool {
+    let word = word.to_lowercase();
+    word.chars().count() >= 3
+        && ["favorite", "favorites", "favourite", "favourites", "favorit", "favoriten"].iter().any(|w| w.starts_with(&word))
+}
+
+/// Names typed as a tag that mean the heart: the stored name and its other
+/// spellings (the plural, German, British). They all become `FAVORITE`.
+const FAVORITE_ALIASES: [&str; 5] = ["favorites", "favourite", "favourites", "favorit", "favoriten"];
+
+/// Is this tag name the favorites tag (the UI shows it as a heart, not as a tag)?
+pub fn is_favorite_name(name: &str) -> bool {
+    db::tag_fold(name) == FAVORITE
+}
+
+/// Does a typed tag name mean the heart (`favorite`, `favorites`, `favorit`,
+/// `favoriten`, …)?
+pub fn means_favorite(name: &str) -> bool {
+    let fold = db::tag_fold(name);
+    fold == FAVORITE || FAVORITE_ALIASES.contains(&fold.as_str())
+}
+
+/// Heart a file or take the heart off. Only the user's own tag counts: a
+/// folder called "favorite" does not make its photos favorites.
+pub fn set_favorite(conn: &Connection, ids: &[i64], on: bool) -> Result<Changed> {
+    if on { add(conn, ids, FAVORITE) } else { remove(conn, ids, FAVORITE) }
+}
+
+/// Files with a heart.
+pub fn favorite_ids(conn: &Connection) -> Result<std::collections::HashSet<i64>> {
+    Ok(conn
+        .prepare(
+            "SELECT DISTINCT ft.file_id FROM file_tags ft JOIN tags t ON t.id = ft.tag_id
+             WHERE ft.source = 'user' AND t.fold = ?1",
+        )?
+        .query_map([FAVORITE], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -53,11 +103,28 @@ pub struct TagRef {
     pub name: String,
 }
 
-/// Take all own tags off one file (a move without "keep tags"). Folder tags
-/// stay; a tag nothing refers to any more goes.
-pub fn drop_own(conn: &Connection, id: i64) -> Result<()> {
-    conn.execute("DELETE FROM file_tags WHERE file_id = ?1 AND source = 'user'", [id])?;
-    conn.execute("DELETE FROM tags WHERE NOT EXISTS (SELECT 1 FROM file_tags WHERE tag_id = tags.id)", [])?;
+/// Names of a file's folder tags (the ones that come from where it lies).
+pub fn folder_names(conn: &Connection, id: i64) -> Result<Vec<String>> {
+    Ok(conn
+        .prepare(
+            "SELECT t.name FROM file_tags ft JOIN tags t ON t.id = ft.tag_id
+             WHERE ft.file_id = ?1 AND ft.source = 'folder' ORDER BY t.name",
+        )?
+        .query_map([id], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?)
+}
+
+/// Keep folder tags a file had as own tags (a move with "keep folder tags"),
+/// unless it has the tag as a folder tag now. Own tags are never dropped.
+pub fn keep_as_own(conn: &Connection, id: i64, names: &[String]) -> Result<()> {
+    let have: Vec<String> = folder_names(conn, id)?.iter().map(|n| db::tag_fold(n)).collect();
+    for name in names {
+        if have.contains(&db::tag_fold(name)) {
+            continue;
+        }
+        let tag = db::own_tag_id(conn, name)?;
+        conn.execute("INSERT OR IGNORE INTO file_tags (file_id, tag_id, source) VALUES (?1, ?2, 'user')", params![id, tag])?;
+    }
     Ok(())
 }
 
@@ -198,9 +265,16 @@ pub struct UserData {
     pub own_tags: Vec<OwnTag>,
     /// Capture dates taken over when duplicates were deleted (version 3).
     pub taken_overrides: Vec<TakenOverride>,
+    /// Photos shown turned in shoebox only (version 4).
+    pub view_turns: Vec<ViewTurn>,
+    /// Screenshot decisions (phase 11), by content.
+    pub shot_marks: Vec<ShotMark>,
     /// Groups, people and face decisions (version 2).
     #[serde(flatten)]
     pub people: crate::people::UserPeople,
+    /// Positions the user gave and named places on the map (version 5).
+    #[serde(flatten)]
+    pub geo: crate::geo::UserGeo,
 }
 
 #[derive(Debug, Serialize)]
@@ -220,6 +294,45 @@ fn taken_overrides(conn: &Connection) -> Result<Vec<TakenOverride>> {
     let mut stmt = conn.prepare("SELECT path_nfc FROM files WHERE quick_hash = ?1 AND missing_since IS NULL ORDER BY path_nfc")?;
     for o in &mut out {
         o.files = stmt.query_map([&o.quick_hash], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+    }
+    Ok(out)
+}
+
+#[derive(Debug, Serialize)]
+pub struct ViewTurn {
+    pub quick_hash: String,
+    /// Quarter turns clockwise.
+    pub quarters: i32,
+    pub files: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ShotMark {
+    pub quick_hash: String,
+    pub is_shot: bool,
+    pub files: Vec<String>,
+}
+
+fn shot_marks(conn: &Connection) -> Result<Vec<ShotMark>> {
+    let mut out: Vec<ShotMark> = conn
+        .prepare("SELECT key, is_shot FROM shot_marks ORDER BY key")?
+        .query_map([], |r| Ok(ShotMark { quick_hash: r.get(0)?, is_shot: r.get::<_, i64>(1)? != 0, files: Vec::new() }))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut stmt = conn.prepare("SELECT path_nfc FROM files WHERE quick_hash = ?1 AND missing_since IS NULL ORDER BY path_nfc")?;
+    for m in &mut out {
+        m.files = stmt.query_map([&m.quick_hash], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+    }
+    Ok(out)
+}
+
+fn view_turns(conn: &Connection) -> Result<Vec<ViewTurn>> {
+    let mut out: Vec<ViewTurn> = conn
+        .prepare("SELECT key, quarters FROM view_turns ORDER BY key")?
+        .query_map([], |r| Ok(ViewTurn { quick_hash: r.get(0)?, quarters: r.get(1)?, files: Vec::new() }))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut stmt = conn.prepare("SELECT path_nfc FROM files WHERE quick_hash = ?1 AND missing_since IS NULL ORDER BY path_nfc")?;
+    for t in &mut out {
+        t.files = stmt.query_map([&t.quick_hash], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
     }
     Ok(out)
 }
@@ -282,11 +395,14 @@ pub fn user_data(conn: &Connection) -> Result<UserData> {
     own_tags.sort_by_key(|t| t.name.to_lowercase());
     Ok(UserData {
         shoebox: env!("CARGO_PKG_VERSION"),
-        version: 3,
+        version: 5,
         written_at: db::now(),
         own_tags,
         taken_overrides: taken_overrides(conn)?,
+        view_turns: view_turns(conn)?,
+        shot_marks: shot_marks(conn)?,
         people: crate::people::user_data(conn)?,
+        geo: crate::geo::user_data(conn)?,
     })
 }
 
@@ -318,6 +434,13 @@ mod tests {
         assert!(check_name("a\nb").is_err());
         assert!(check_name(&"x".repeat(MAX_NAME + 1)).is_err());
         assert_eq!(db::tag_fold(" Europa-PARK"), db::tag_fold("europa-park"));
+        assert!(is_favorite_word("Favoriten") && is_favorite_word("fav") && is_favorite_word("favorite"));
+        assert!(!is_favorite_word("fa") && !is_favorite_word("favoriten2") && !is_favorite_name("favorites"));
+        assert!(is_favorite_name(" Favorite "));
+        for n in ["Favorit", " FAVORITEN", "favorites"] {
+            assert_eq!(check_name(n).unwrap(), "favorite", "{n}");
+        }
+        assert_eq!(check_name("Favoritenstraße").unwrap(), "Favoritenstraße");
         assert_eq!(db::tag_fold("O\u{308}STERREICH"), db::tag_fold("\u{f6}sterreich"));
     }
 }

@@ -21,6 +21,9 @@ fn guard_thumbnails_and_serving_leave_originals_untouched() {
         "/",
         "/app.js",
         "/app.css",
+        "/i18n/i18n.js",
+        "/i18n/en.json",
+        "/i18n/de.json",
         "/api/info",
         "/api/folders",
         "/api/tags",
@@ -257,6 +260,11 @@ fn timeline_order_filters_and_search() {
     let lib = Library::new("timeline");
     lib.write("Familie/IMG_0009.CR2", b"raw stand-in");
     lib.scan_opts(false, true, false);
+    // The files are made just now, so they have created dates. Take the one
+    // of the event-folder photo away (the folder's month then decides), and
+    // give the screenshot a known created date (2019-03-04 12:00 UTC).
+    lib.db().execute("UPDATE files SET created_ns = 1700000000000000000 WHERE path_nfc = '2020-07 Urlaub Griechenland/IMG_0001.JPG'", []).unwrap();
+    lib.db().execute("UPDATE files SET created_ns = 1551700800000000000 WHERE path_nfc = 'Familie/Screenshot.png'", []).unwrap();
     let server = start(&lib, None);
     let addr = server.addr;
     let timeline = |q: &str| get(addr, &format!("/api/timeline{q}")).json();
@@ -269,7 +277,14 @@ fn timeline_order_filters_and_search() {
     let days: Vec<u64> = all["days"].as_array().unwrap().iter().map(|d| d.as_u64().unwrap()).collect();
     assert!(days.windows(2).all(|w| w[0] >= w[1]), "{days:?}");
 
-    // No capture date in an event folder: the folder's month.
+    // No capture date, not in an event folder: the file's created date.
+    let screenshot = id_of(&lib, "Familie/Screenshot.png");
+    let pos = all_ids.iter().position(|&i| i == screenshot).unwrap();
+    assert_eq!(days[pos], 20190304);
+    assert_eq!(get(addr, &format!("/api/files/{screenshot}")).json()["date_source"], "created");
+
+    // No capture date, in an event folder: the folder's month, even though
+    // the file has a (later) created date.
     let griechenland = id_of(&lib, "2020-07 Urlaub Griechenland/IMG_0001.JPG");
     let pos = all_ids.iter().position(|&i| i == griechenland).unwrap();
     assert_eq!(days[pos], 20200701);
@@ -316,8 +331,103 @@ fn timeline_order_filters_and_search() {
         assert!(all["live"].as_array().unwrap().iter().any(|p| p[0] == still && p[1] == video));
         assert!(!all_ids.contains(&video));
         assert!(all_ids.contains(&id_of(&lib, "fixtures/2020-07 Urlaub Griechenland/VID_0003.mp4")));
+
+        // Type filter: Live lists the stills that have a video, Videos only
+        // stand-alone videos (never the Live Photo's clip).
+        assert_eq!(ids(&timeline("?type=live")), vec![still]);
+        let videos = ids(&timeline("?type=video"));
+        assert!(videos.contains(&id_of(&lib, "fixtures/2020-07 Urlaub Griechenland/VID_0003.mp4")));
+        assert!(!videos.contains(&video) && !videos.contains(&still));
     }
+
+    // Type filter: Photos are the stills, Videos the videos, several are "or".
+    let kinds_of = |t: &serde_json::Value| t["kinds"].as_str().unwrap().to_string();
+    let photos = timeline("?type=photo");
+    assert!(!kinds_of(&photos).contains('v') && !ids(&photos).is_empty());
+    assert!(kinds_of(&timeline("?type=video")).chars().all(|c| c == 'v'));
+    // (the fixture "Familie/Screenshot.png" is a screenshot: PNG, no camera, named so)
+    assert_eq!(ids(&timeline("?type=photo&type=video&type=screenshot")).len(), all_ids.len());
+    assert!(!ids(&photos).contains(&screenshot) && ids(&timeline("?type=screenshot")).contains(&screenshot));
+    // It combines with the other filters (and).
+    let in_familie_photos = ids(&timeline(&format!("?folder={}&type=photo", folder_id("Familie"))));
+    assert_eq!(in_familie_photos.len(), 1); // the screenshot is not a photo
+    assert!(ids(&timeline(&format!("?folder={}&type=video", folder_id("Familie")))).is_empty());
+    assert_eq!(get(addr, "/api/timeline?type=raw").status, 400);
     server.stop().unwrap();
+}
+
+/// Phase 11: the Type filter's Screenshots entry, the user's own decision,
+/// and "Photos" meaning the stills that are not screenshots.
+#[test]
+fn screenshots_are_a_type_of_their_own() {
+    let lib = Library::new("screenshots");
+    fs::create_dir_all(lib.path("Handy")).unwrap();
+    // A phone screen: a display size, no camera, mostly flat colour, no name.
+    image::RgbImage::from_fn(1170, 2532, |x, y| {
+        if y < 200 || (y / 90) % 3 == 0 && x > 100 && x < 900 && (x / 6) % 5 != 0 { image::Rgb([20, 20, 30]) } else { image::Rgb([250, 250, 252]) }
+    })
+    .save(lib.path("Handy/IMG_7001.PNG"))
+    .unwrap();
+    // A forwarded JPEG that kept only its name.
+    image::RgbImage::from_pixel(600, 400, image::Rgb([240, 240, 240]))
+        .save(lib.path("Handy/Bildschirmfoto 2024-03-02 um 10.11.12.jpg"))
+        .unwrap();
+    // A noisy PNG (a scan, an export) of the same size is not.
+    let mut seed = 7u32;
+    image::RgbImage::from_fn(1170, 2532, |_, _| {
+        seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+        image::Rgb([(seed >> 24) as u8, (seed >> 16) as u8, (seed >> 8) as u8])
+    })
+    .save(lib.path("Handy/scan.png"))
+    .unwrap();
+    let before = lib.snapshot();
+    lib.scan_opts(false, true, false);
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let timeline = |q: &str| get(addr, &format!("/api/timeline{q}")).json();
+    let id = |p: &str| id_of(&lib, p);
+    let (phone, named, scan, fixture, camera_free_jpeg) =
+        (id("Handy/IMG_7001.PNG"), id("Handy/Bildschirmfoto 2024-03-02 um 10.11.12.jpg"), id("Handy/scan.png"), id("Familie/Screenshot.png"), id("Familie/Weihnachten/DSC_2001.jpg"));
+
+    let shots = ids(&timeline("?type=screenshot"));
+    for s in [phone, named, fixture] {
+        assert!(shots.contains(&s), "{s} should be a screenshot");
+    }
+    assert!(!shots.contains(&scan) && !shots.contains(&camera_free_jpeg));
+    // Photos are the stills that are not screenshots; together they are everything.
+    let photos = ids(&timeline("?type=photo"));
+    assert!(photos.contains(&scan) && photos.contains(&camera_free_jpeg));
+    assert!(shots.iter().all(|s| !photos.contains(s)));
+    // (with the fixtures there are stand-alone videos too, which are neither)
+    assert_eq!(ids(&timeline("?type=photo&type=screenshot&type=video")).len(), ids(&timeline("")).len());
+    let info = get(addr, &format!("/api/files/{phone}")).json();
+    assert_eq!((info["screenshot"].as_bool(), info["screenshot_mark"].is_null()), (Some(true), true));
+
+    // The user's decision wins, both ways, and "null" gives it back to the score.
+    let set = |ids: &[i64], value: serde_json::Value| {
+        let r = post(addr, "/api/screenshots", &serde_json::json!({ "ids": ids, "value": value }));
+        assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+        r.json()["changed"].as_u64().unwrap()
+    };
+    assert_eq!(set(&[scan], serde_json::json!(true)), 1);
+    assert_eq!(set(&[phone], serde_json::json!(false)), 1);
+    let shots = ids(&timeline("?type=screenshot"));
+    assert!(shots.contains(&scan) && !shots.contains(&phone));
+    let info = get(addr, &format!("/api/files/{scan}")).json();
+    assert_eq!((info["screenshot"].as_bool(), info["screenshot_mark"].as_bool()), (Some(true), Some(true)));
+    assert_eq!(lib.count("SELECT count(*) FROM shot_marks"), 2);
+    let data = shoebox::tags::user_data(&lib.db()).unwrap();
+    assert_eq!(data.shot_marks.len(), 2);
+    assert_eq!(set(&[scan, phone], serde_json::Value::Null), 2);
+    assert_eq!(lib.count("SELECT count(*) FROM shot_marks"), 0);
+    assert!(ids(&timeline("?type=screenshot")).contains(&phone));
+    // Videos are never screenshots, and it combines with the other filters.
+    assert!(ids(&timeline("?type=screenshot&type=video")).len() >= ids(&timeline("?type=screenshot")).len());
+    let folder: i64 = lib.db().query_row("SELECT id FROM folders WHERE path_nfc = 'Handy'", [], |r| r.get(0)).unwrap();
+    assert_eq!(ids(&timeline(&format!("?folder={folder}&type=photo"))), vec![scan]);
+    server.stop().unwrap();
+    // Nothing was written to an original.
+    assert_eq!(lib.snapshot(), before);
 }
 
 #[test]
@@ -379,8 +489,17 @@ fn several_libraries_share_one_server_and_an_unplugged_drive_is_only_offline() {
     // Each library answers for itself; the same file id means different photos.
     let route = |id: &str, rest: &str| format!("/raw/api/lib/{id}/{rest}");
     let (ta, tb) = (get(addr, &route(&id_a, "timeline")).json(), get(addr, &route(&id_b, "timeline")).json());
-    assert_eq!(ids(&ta), ids(&tb), "both databases hand out the same ids");
-    let (fa, fb) = (get(addr, &route(&id_a, &format!("files/{}", ids(&ta)[0]))).json(), get(addr, &route(&id_b, &format!("files/{}", ids(&tb)[0]))).json());
+    // The timeline order of undated photos follows their modified time in
+    // whole seconds, and the two libraries were written a moment apart, so
+    // only the set of ids is the same, not the order.
+    let sorted = |t: &serde_json::Value| {
+        let mut v = ids(t);
+        v.sort_unstable();
+        v
+    };
+    assert_eq!(sorted(&ta), sorted(&tb), "both databases hand out the same ids");
+    let first = sorted(&ta)[0];
+    let (fa, fb) = (get(addr, &route(&id_a, &format!("files/{first}"))).json(), get(addr, &route(&id_b, &format!("files/{first}"))).json());
     assert_eq!(fa["id"], fb["id"]);
     assert_ne!(get(addr, &route(&id_a, "info")).json()["name"], get(addr, &route(&id_b, "info")).json()["name"]);
 

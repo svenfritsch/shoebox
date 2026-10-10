@@ -11,7 +11,9 @@
 //! peer address and `Host` header against DNS rebinding), `X-Shoebox` on
 //! every request that is not a GET, one job at a time. The launcher never
 //! writes anywhere a CLI command would not: scan writes `.shoebox/`, the
-//! others only read, and every one of them reads originals under the guard.
+//! others only read (except the two cleanup buttons, which take duplicate
+//! copies off a drive after a scan or a backup check), and every one of them
+//! reads originals under the guard.
 
 use std::collections::VecDeque;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -47,6 +49,8 @@ pub struct Options {
     pub open_browser: bool,
     /// The JSON file with the remembered paths (default: `config_path()`).
     pub config: Option<PathBuf>,
+    /// Opens a file in the file manager (default: `reveal::reveal`); tests pass their own.
+    pub reveal: Option<serve::RevealFn>,
 }
 
 pub struct Launcher {
@@ -91,6 +95,8 @@ pub fn start(opts: &Options) -> Result<Launcher> {
         open_browser: opts.open_browser,
         next_id: Mutex::new(0),
         config: opts.config.clone().or_else(config_path),
+        reveal: opts.reveal.clone().unwrap_or_else(|| -> serve::RevealFn { Arc::new(|p: &Path| crate::reveal::reveal(p)) }),
+        config_lock: Mutex::new(()),
     });
     let router = router(shared.clone());
     let (tx, rx) = oneshot::channel::<()>();
@@ -115,7 +121,7 @@ pub fn start(opts: &Options) -> Result<Launcher> {
 
 /// `shoebox` without arguments: run until the window is closed with Ctrl-C.
 pub fn run() -> Result<()> {
-    let launcher = start(&Options { port: DEFAULT_PORT, open_browser: true, config: None })?;
+    let launcher = start(&Options { port: DEFAULT_PORT, open_browser: true, config: None, reveal: None })?;
     println!("shoebox {} launcher: {}", env!("CARGO_PKG_VERSION"), launcher.url);
     println!("Leave this window open while you use shoebox; close it to stop.");
     launcher.wait()
@@ -154,14 +160,35 @@ pub fn open_browser(url: &str) {
 // ---------------------------------------------------------------- config
 
 /// What the launcher remembers between starts, as JSON:
-/// `{ "paths": ["/Volumes/Fotos", "/Volumes/Fotos 2"] }`. It lives in the
-/// user's own configuration folder (not on a drive, whose mount point differs
-/// from computer to computer), never next to the photos. `$SHOEBOX_CONFIG`
-/// names another file.
+/// `{ "paths": ["/Volumes/Fotos", "/Volumes/Fotos 2"] }`, plus (all optional)
+/// which of them are ticked, every folder ever added (offered in the drop-down
+/// again) and the folders a backup check found to be complete copies. It lives
+/// in the user's own configuration folder (not on a drive, whose mount point
+/// differs from computer to computer), never next to the photos.
+/// `$SHOEBOX_CONFIG` names another file.
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
 pub struct Config {
+    /// The folders in the list, in order.
     #[serde(default)]
     pub paths: Vec<String>,
+    /// The ticked ones; absent means all of them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked: Option<Vec<String>>,
+    /// Every folder that was ever in the list, newest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub history: Vec<String>,
+    /// Backup folder -> the folder a backup check found it to be a complete copy of.
+    /// Written by the launcher after a clean backup check, not by the page.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub backups: std::collections::BTreeMap<String, BackupMark>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct BackupMark {
+    /// The folder it copies, as it was written in the list.
+    pub of: String,
+    /// Unix seconds of the clean check.
+    pub at: u64,
 }
 
 pub fn config_path() -> Option<PathBuf> {
@@ -197,15 +224,26 @@ impl Config {
     }
 
     /// Trimmed, without empty entries and duplicates.
-    fn cleaned(paths: Vec<String>) -> Config {
+    fn clean_list(paths: Vec<String>, max: usize) -> Vec<String> {
         let mut seen = std::collections::HashSet::new();
-        let paths = paths
+        paths
             .into_iter()
             .map(|p| p.trim().to_string())
             .filter(|p| !p.is_empty() && p.len() < 4096 && seen.insert(p.clone()))
-            .take(50)
-            .collect();
-        Config { paths }
+            .take(max)
+            .collect()
+    }
+
+    /// The list and ticks the page sent, on top of what is already stored: the
+    /// history grows, the backup marks stay as the launcher wrote them.
+    fn updated(self, body: Config) -> Config {
+        let paths = Config::clean_list(body.paths, 50);
+        let checked = body.checked.map(|c| {
+            let c = Config::clean_list(c, 50);
+            paths.iter().filter(|p| c.contains(p)).cloned().collect::<Vec<_>>()
+        });
+        let history = Config::clean_list(paths.iter().cloned().chain(self.history).collect(), 100);
+        Config { paths, checked, history, backups: self.backups }
     }
 }
 
@@ -214,11 +252,59 @@ async fn config_get(State(shared): State<Arc<Shared>>) -> Json<Config> {
 }
 
 async fn config_set(State(shared): State<Arc<Shared>>, Json(body): Json<Config>) -> Result<Json<Config>, ApiError> {
-    let config = Config::cleaned(body.paths);
+    let _lock = shared.config_lock.lock().unwrap();
+    let config = shared.config.as_deref().map(Config::load).unwrap_or_default().updated(body);
     if let Some(path) = &shared.config {
         config.save(path).map_err(ApiError::Internal)?;
     }
     Ok(Json(config))
+}
+
+/// A clean backup check marks the backup folder as "backup of <original>"; any
+/// other result takes the mark away. Keyed by the folders as the page wrote them.
+fn mark_backup(shared: &Shared, original: &str, backup: &str, complete: bool) {
+    let Some(path) = &shared.config else { return };
+    let _lock = shared.config_lock.lock().unwrap();
+    let mut config = Config::load(path);
+    let (original, backup) = (original.trim().to_string(), backup.trim().to_string());
+    if complete {
+        config.backups.insert(backup, BackupMark { of: original, at: now_secs() });
+    } else if config.backups.remove(&backup).is_none() {
+        return;
+    }
+    let _ = config.save(path);
+}
+
+#[derive(Deserialize)]
+struct RevealItem {
+    /// One of the current job's folders.
+    root: String,
+    /// Relative to it, as in the result list.
+    path: String,
+}
+
+#[derive(Deserialize)]
+struct RevealRequest {
+    items: Vec<RevealItem>,
+}
+
+/// "Show in Finder" for a file of the result list, on each folder that has it
+/// (the backup check lists a file on the original and on the backup). Only
+/// folders of the job on screen and paths inside them; nothing is opened.
+async fn reveal_files(State(shared): State<Arc<Shared>>, Json(body): Json<RevealRequest>) -> Result<Json<serde_json::Value>, ApiError> {
+    let job_roots: Vec<PathBuf> = shared.job.lock().unwrap().roots.iter().filter_map(|r| PathBuf::from(r).canonicalize().ok()).collect();
+    let mut targets = Vec::new();
+    for item in &body.items {
+        let root = PathBuf::from(&item.root).canonicalize().ok().filter(|r| job_roots.contains(r)).ok_or(ApiError::BadRequest("not a folder of this job".into()))?;
+        let Ok(file) = root.join(&item.path).canonicalize() else { continue };
+        if file.starts_with(&root) && file.exists() {
+            targets.push(file);
+        }
+    }
+    let reveal = shared.reveal.clone();
+    let found = targets.len();
+    let opened = tokio::task::spawn_blocking(move || targets.iter().filter(|t| reveal(t).is_ok()).count()).await.unwrap_or(0);
+    Ok(Json(serde_json::json!({ "found": found, "opened": opened })))
 }
 
 // ---------------------------------------------------------------- state
@@ -230,6 +316,9 @@ struct Shared {
     open_browser: bool,
     next_id: Mutex<u64>,
     config: Option<PathBuf>,
+    reveal: serve::RevealFn,
+    /// Serialises read-modify-write of the config file.
+    config_lock: Mutex<()>,
 }
 
 struct AppRunning {
@@ -357,8 +446,10 @@ fn now_secs() -> u64 {
 
 #[derive(Deserialize, Clone)]
 struct JobRequest {
-    /// `scan`, `verify`, `recognize`, `recognize_pets` (the same, then cats
-    /// and dogs too), `faces_stats` or `backup`.
+    /// `scan`, `scan_cleanup` (remove the copies the last scan found), `verify`,
+    /// `forget_missing` (drop the records of files that are gone),
+    /// `recognize`, `recognize_pets` (the same, then cats and dogs too),
+    /// `recognize_rotated` (also faces lying down), `faces_stats`, `backup` or `backup_cleanup`.
     kind: String,
     /// One folder, or several in `roots`: they are processed one after the other.
     #[serde(default)]
@@ -378,6 +469,15 @@ struct JobRequest {
     /// Backup check: also re-read the backup drive's files.
     #[serde(default)]
     deep: bool,
+    /// Cleanup (of a backup, or of the copies a scan found): delete for good
+    /// instead of moving into the trash.
+    #[serde(default)]
+    forever: bool,
+    /// `install_addons`: the face models and/or the cat and dog models.
+    #[serde(default)]
+    faces: bool,
+    #[serde(default)]
+    pets: bool,
 }
 
 /// Run one command and return its result as JSON plus whether it was clean.
@@ -393,6 +493,20 @@ fn run_command(req: &JobRequest, roots: Vec<PathBuf>) -> Result<(serde_json::Val
                 limit: 200,
             })?;
             (serde_json::to_value(&check)?, check.ok)
+        }
+        "backup_cleanup" => {
+            let done = crate::backup::cleanup(&crate::backup::CleanupOptions {
+                primary: roots[0].clone(),
+                backup: roots.get(1).cloned().ok_or_else(|| anyhow::anyhow!("a backup cleanup needs the original drive and the backup"))?,
+                forever: req.forever,
+            })?;
+            let clean = done.skipped.is_empty();
+            (serde_json::to_value(&done)?, clean)
+        }
+        "scan_cleanup" => {
+            let done = crate::arrivals::cleanup(&crate::arrivals::CleanupOptions { root, forever: req.forever })?;
+            let clean = done.skipped.is_empty();
+            (serde_json::to_value(&done)?, clean)
         }
         "scan" => {
             let stats = scan::run(&scan::Options {
@@ -410,19 +524,32 @@ fn run_command(req: &JobRequest, roots: Vec<PathBuf>) -> Result<(serde_json::Val
             let clean = r.is_clean();
             (serde_json::to_value(&r)?, clean)
         }
-        "recognize" | "recognize_pets" => {
+        "forget_missing" => {
+            let n = scan::forget_missing_records(&root)?;
+            (serde_json::json!({ "forgotten": n }), true)
+        }
+        "recognize" | "recognize_pets" | "recognize_rotated" => {
             let stats = recognize::run(&recognize::Options {
                 root,
                 db: None,
                 recognizer: None,
                 limit: req.limit,
                 retry_failed: req.retry_failed,
-                rotated: req.rotated,
+                rotated: req.rotated || req.kind == "recognize_rotated",
                 pets: req.kind == "recognize_pets",
                 timeouts: recognize::Timeouts::default(),
             })?;
             let clean = stats.errors.is_empty() && stats.pets.as_ref().is_none_or(|a| a.errors.is_empty());
             (serde_json::to_value(&stats)?, clean)
+        }
+        "install_addons" => {
+            // `root` is the recognizer folder next to the program (see `start_job`).
+            if !req.faces && !req.pets {
+                anyhow::bail!("choose at least one add-on to install");
+            }
+            let found = recognize::install(&root, req.faces, req.pets)?;
+            let clean = (found.faces || !req.faces) && (found.pets || !req.pets);
+            (serde_json::to_value(&found)?, clean)
         }
         "faces_stats" => {
             let stats = faces::print_stats(&root, None)?;
@@ -433,7 +560,12 @@ fn run_command(req: &JobRequest, roots: Vec<PathBuf>) -> Result<(serde_json::Val
 }
 
 /// The folders of a request: `roots` plus `root`, each an existing folder.
+/// Installing add-ons works on no drive: its one folder is `recognizer/` next
+/// to the program.
 fn request_roots(req: &JobRequest) -> Result<Vec<PathBuf>, ApiError> {
+    if req.kind == "install_addons" {
+        return recognize::program_dir().map(|d| vec![d]).ok_or_else(|| ApiError::BadRequest("the recognizer folder is not next to the shoebox program".into()));
+    }
     let mut all: Vec<&str> = req.roots.iter().map(String::as_str).collect();
     if !req.root.trim().is_empty() {
         all.push(&req.root);
@@ -459,15 +591,23 @@ fn short_name(root: &Path) -> String {
     root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| root.display().to_string())
 }
 
+/// Recognition may run while the photo app is open: `serve` opens the
+/// databases shared, skips its own clustering and embedding while a
+/// recognition job is running, and a moved or changed original is skipped by
+/// the guard. Scan, verify and backup checks stay locked out.
+fn runs_beside_app(kind: &str) -> bool {
+    matches!(kind, "recognize" | "recognize_pets" | "recognize_rotated" | "faces_stats")
+}
+
 fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
-    if !matches!(req.kind.as_str(), "scan" | "verify" | "recognize" | "recognize_pets" | "faces_stats" | "backup") {
+    if !matches!(req.kind.as_str(), "scan" | "forget_missing" | "verify" | "recognize" | "recognize_pets" | "recognize_rotated" | "faces_stats" | "backup" | "backup_cleanup" | "scan_cleanup" | "install_addons") {
         return Err(ApiError::BadRequest(format!("unknown command {:?}", req.kind)));
     }
-    if shared.app.lock().unwrap().is_some() {
+    if !runs_beside_app(&req.kind) && shared.app.lock().unwrap().is_some() {
         return Err(ApiError::Conflict("stop the photo app first".into()));
     }
     let roots = request_roots(&req)?;
-    if req.kind == "backup" && roots.len() != 2 {
+    if req.kind.starts_with("backup") && roots.len() != 2 {
         return Err(ApiError::BadRequest("a backup check compares two folders: the original drive first, then the backup".into()));
     }
     let id = {
@@ -501,7 +641,7 @@ fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
             }));
             // A backup check is one run over the two folders; the others run once per folder.
             let groups: Vec<Vec<PathBuf>> =
-                if req.kind == "backup" { vec![roots.clone()] } else { roots.iter().map(|r| vec![r.clone()]).collect() };
+                if req.kind.starts_with("backup") { vec![roots.clone()] } else { roots.iter().map(|r| vec![r.clone()]).collect() };
             let many = groups.len() > 1;
             for group in groups {
                 let root = group[0].clone();
@@ -530,6 +670,14 @@ fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
                 job.results.push(entry);
             }
             drop(guard);
+            if req.kind == "backup" && req.roots.len() == 2 {
+                let complete = shared.job.lock().unwrap().results.first().is_some_and(|r| r.ok);
+                let cancelled = report::cancelled();
+                let ran = shared.job.lock().unwrap().results.first().is_some_and(|r| r.result.is_some());
+                if ran && !cancelled {
+                    mark_backup(&shared, &req.roots[0], &req.roots[1], complete);
+                }
+            }
             let was_cancelled = report::cancelled();
             report::clear_cancel();
             let mut job = shared.job.lock().unwrap();
@@ -572,11 +720,13 @@ async fn job_cancel(State(shared): State<Arc<Shared>>) -> Json<serde_json::Value
 fn router(shared: Arc<Shared>) -> Router {
     Router::new()
         .route("/api/drives", get(drives))
+        .route("/api/addons", post(addons))
         .route("/api/job", get(job_state).post(job_start))
         .route("/api/app", get(app_state).post(app_start))
         .route("/api/app/stop", post(app_stop))
         .route("/api/job/cancel", post(job_cancel))
         .route("/api/config", get(config_get).post(config_set))
+        .route("/api/reveal", post(reveal_files))
         .fallback(asset)
         .layer(middleware::from_fn(guard))
         .with_state(shared)
@@ -647,8 +797,11 @@ struct AppRequest {
 /// as one library. A drive that is not plugged in is offline in the app.
 async fn app_start(State(shared): State<Arc<Shared>>, Json(req): Json<AppRequest>) -> Result<Json<serde_json::Value>, ApiError> {
     let url = tokio::task::spawn_blocking(move || -> Result<String, ApiError> {
-        if shared.job.lock().unwrap().running {
-            return Err(ApiError::Conflict("a command is still running".into()));
+        {
+            let job = shared.job.lock().unwrap();
+            if job.running && !runs_beside_app(&job.kind) {
+                return Err(ApiError::Conflict("a command is still running".into()));
+            }
         }
         let jobless = JobRequest {
             kind: String::new(),
@@ -660,6 +813,9 @@ async fn app_start(State(shared): State<Arc<Shared>>, Json(req): Json<AppRequest
             retry_failed: false,
             rotated: false,
             deep: false,
+            forever: false,
+            faces: false,
+            pets: false,
         };
         let roots = request_roots(&jobless)?;
         let mut app = shared.app.lock().unwrap();
@@ -785,6 +941,38 @@ pub fn detect_drives() -> Vec<Drive> {
         .collect()
 }
 
+/// Which add-ons (faces, pets) can be used, for this computer and for each
+/// drive in `roots`; and whether they can be installed from here.
+#[derive(Deserialize, Default)]
+struct AddonsRequest {
+    #[serde(default)]
+    roots: Vec<String>,
+}
+
+async fn addons(Json(req): Json<AddonsRequest>) -> Json<serde_json::Value> {
+    let program = recognize::installed(None);
+    let roots: Vec<serde_json::Value> = req
+        .roots
+        .iter()
+        .map(|r| {
+            let found = recognize::installed(Some(Path::new(r)));
+            serde_json::json!({ "root": r, "faces": found.faces, "pets": found.pets })
+        })
+        .collect();
+    let dir = recognize::program_dir();
+    Json(serde_json::json!({
+        "installable": dir.is_some(),
+        "dir": dir,
+        "runtime": program.runtime,
+        "models": program.models,
+        "faces_models": program.faces_models,
+        "pets_models": program.pets_models,
+        "faces": program.faces,
+        "pets": program.pets,
+        "roots": roots,
+    }))
+}
+
 async fn drives() -> Json<Vec<Drive>> {
     Json(tokio::task::spawn_blocking(detect_drives).await.unwrap_or_default())
 }
@@ -795,10 +983,16 @@ async fn drives() -> Json<Vec<Drive>> {
 #[folder = "launcher-web/"]
 struct Assets;
 
+/// Translations and their loader, shared with the photo app (`i18n/`).
+#[derive(rust_embed::RustEmbed)]
+#[folder = "i18n/"]
+#[prefix = "i18n/"]
+struct I18n;
+
 async fn asset(uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
     let path = if path.is_empty() { "index.html" } else { path };
-    let Some(file) = Assets::get(path) else {
+    let Some(file) = Assets::get(path).or_else(|| I18n::get(path)) else {
         return (StatusCode::NOT_FOUND, "not found").into_response();
     };
     let mime = match path.rsplit('.').next() {
@@ -806,6 +1000,7 @@ async fn asset(uri: Uri) -> Response {
         Some("js") => "text/javascript; charset=utf-8",
         Some("css") => "text/css; charset=utf-8",
         Some("svg") => "image/svg+xml",
+        Some("json") => "application/json",
         _ => "application/octet-stream",
     };
     ([(header::CONTENT_TYPE, mime)], file.data.into_owned()).into_response()

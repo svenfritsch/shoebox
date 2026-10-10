@@ -5,65 +5,80 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <title>shoebox</title>
+<script src="i18n/i18n.js"></script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='5' width='14' height='10' rx='1' fill='%23b07d4f'/%3E%3Crect x='0' y='2' width='16' height='4' rx='1' fill='%23d9a066'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
 <header class="bar">
-  <button id="menu" class="icon" title="Folders" aria-label="Folders">☰</button>
+  <button id="menu" class="icon" data-i18n-title="app.folders" data-i18n-aria-label="app.folders" title="Folders" aria-label="Folders">☰</button>
   <h1 id="title">shoebox</h1>
   <span id="current-month" class="month"></span>
   <div class="search">
-    <input id="search" type="search" placeholder="Search people, pets, tags, folders" autocomplete="off" enterkeyhint="search" role="combobox" aria-controls="suggest" aria-autocomplete="list">
+    <input id="search" type="search" data-i18n-placeholder="search.placeholder" placeholder="Search people, pets, tags, folders" autocomplete="off" enterkeyhint="search" role="combobox" aria-controls="suggest" aria-autocomplete="list">
     <div id="suggest" class="suggest" role="listbox" hidden></div>
     <datalist id="tag-list"></datalist>
   </div>
-  <select id="years" title="Jump to year" aria-label="Jump to year"></select>
-  <button id="select" class="icon" title="Select photos" aria-label="Select photos">☑︎</button>
-  <button id="import" class="icon" title="Import photos" aria-label="Import photos">⤒</button>
+  <button id="fav-btn" type="button" class="fav-btn" aria-pressed="false" data-i18n-title="fav.filter_hint" title="Show only favorites"></button>
+  <div id="types" class="types">
+    <button id="types-btn" type="button" class="types-btn" aria-haspopup="true" aria-expanded="false" data-i18n-title="types.hint" title="Show only some types"><span data-i18n="types.label">Type</span> ▾</button>
+    <div id="types-menu" class="types-menu" hidden>
+      <label><input type="checkbox" value="photo"> 🖼 <span data-i18n="types.photo">Photos</span> <span class="tip" data-i18n-title="types.photo_hint" title="Stills without screenshots">ⓘ</span></label>
+      <label><input type="checkbox" value="video"> 🎞 <span data-i18n="types.video">Videos</span></label>
+      <label><input type="checkbox" value="live"> ◉ <span data-i18n="types.live">Live Photos</span></label>
+      <label><input type="checkbox" value="screenshot"> ▭ <span data-i18n="types.screenshot">Screenshots</span></label>
+    </div>
+  </div>
+  <select id="years" data-i18n-title="app.jump_year" data-i18n-aria-label="app.jump_year" title="Jump to year" aria-label="Jump to year"></select>
+  <button id="select" class="icon" data-i18n-title="app.select" data-i18n-aria-label="app.select" title="Select photos" aria-label="Select photos">☑︎</button>
+  <select id="lang" class="lang-pick" data-i18n-aria-label="app.language" data-i18n-title="app.language" aria-label="Language" title="Language"></select>
 </header>
 
 <div class="layout">
-  <nav id="sidebar" class="sidebar" aria-label="Folders">
+  <nav id="sidebar" class="sidebar loading" data-i18n-aria-label="app.folders" aria-label="Folders">
     <div id="drives-box" class="drives-box" hidden>
-      <h3 class="side-head">Drives</h3>
+      <h3 class="side-head" data-i18n="side.drives">Drives</h3>
       <ul id="drive-list" class="drive-list"></ul>
-      <button id="nav-drives" class="link">All drives: backups, duplicates, people</button>
     </div>
     <div class="sidebar-head">
-      <button id="all" class="link">All photos</button>
-      <button id="nav-dups" class="link">Duplicates</button>
-      <button id="nav-trash" class="link">Trash</button>
-      <button id="nav-settings" class="link">Settings</button>
+      <button id="all" class="link" data-i18n="side.all_photos">All photos</button>
+      <button id="nav-dups" class="link" data-i18n="side.duplicates">Duplicates</button>
+      <button id="nav-trash" class="link" data-i18n="side.trash">Trash</button>
+      <button id="nav-drives" class="link" data-i18n="side.manage_drives" hidden>Manage drives</button>
+      <button id="nav-settings" class="link" data-i18n="side.settings">Settings</button>
     </div>
     <div id="faces-section" class="side-tags side-faces" hidden>
-      <h3><button class="caret" data-section="faces-section" data-body="people-tree" aria-label="Show or hide faces" aria-expanded="true"></button><button id="nav-people" class="link">Faces</button></h3>
+      <h3><button class="caret" data-section="faces-section" data-body="people-tree" data-i18n-aria-label="side.toggle_faces" aria-label="Show or hide faces" aria-expanded="true"></button><button id="nav-people" class="link" data-i18n="side.faces">Faces</button></h3>
       <ul id="people-tree" class="tree"></ul>
     </div>
     <div id="tags-section" class="side-tags" hidden>
-      <h3><button class="caret" data-section="tags-section" data-body="own-tags" aria-label="Show or hide tags" aria-expanded="true"></button>Tags</h3>
+      <h3><button class="caret" data-section="tags-section" data-body="own-tags" data-i18n-aria-label="side.toggle_tags" aria-label="Show or hide tags" aria-expanded="true"></button><span data-i18n="side.tags">Tags</span></h3>
       <ul id="own-tags" class="tree"></ul>
     </div>
-    <h3 id="folders-section" class="side-head"><button class="caret" data-section="folders-section" data-body="tree" aria-label="Show or hide folders" aria-expanded="true"></button>Folders</h3>
+    <h3 id="folders-section" class="side-head"><button class="caret" data-section="folders-section" data-body="tree" data-i18n-aria-label="side.toggle_folders" aria-label="Show or hide folders" aria-expanded="true"></button><span data-i18n="side.folders">Folders</span></h3>
     <ul id="tree" class="tree"></ul>
+    <div id="locations-section" class="side-tags side-locations" hidden>
+      <h3><button class="caret" data-section="locations-section" data-body="place-list" data-i18n-aria-label="side.toggle_locations" aria-label="Show or hide locations" aria-expanded="true"></button><button id="nav-locations" class="link" data-i18n="side.locations">Locations</button></h3>
+      <ul id="place-list" class="tree"></ul>
+    </div>
     <footer id="status" class="status"></footer>
   </nav>
 
   <main id="scroller" class="scroller">
     <div id="filters" class="filters" hidden></div>
     <div id="sizer" class="sizer"></div>
-    <p id="empty" class="empty" hidden>Nothing here.</p>
+    <p id="empty" class="empty" data-i18n="app.nothing" hidden>Nothing here.</p>
     <section id="page" class="page" hidden></section>
   </main>
 </div>
 
 <div id="selbar" class="selbar" hidden>
   <span id="sel-count"></span>
-  <button id="sel-move" class="btn">Move…</button>
-  <button id="sel-tag" class="btn">Add tag…</button>
-  <button id="sel-untag" class="btn">Remove tag…</button>
-  <button id="sel-trash" class="btn">Move to trash</button>
-  <button id="sel-done" class="btn quiet">Done</button>
+  <button id="sel-move" class="btn" data-i18n="sel.move">Move…</button>
+  <button id="sel-tag" class="btn" data-i18n="sel.tag">Add tag…</button>
+  <button id="sel-untag" class="btn" data-i18n="sel.untag">Remove tag…</button>
+  <button id="sel-trash" class="btn" data-i18n="sel.trash">Move to trash</button>
+  <button id="sel-done" class="btn quiet" data-i18n="sel.done">Done</button>
 </div>
 
 <div id="modal" class="modal" hidden>
@@ -74,34 +89,37 @@
   </div>
 </div>
 
-<div id="dropzone" class="dropzone" hidden><p>Drop photos to import them</p></div>
 <div id="toast" class="toast" hidden></div>
 <datalist id="folder-list"></datalist>
 
 <div id="lightbox" class="lightbox" hidden>
   <div id="stage" class="stage"></div>
   <div class="lb-bar">
-    <button id="lb-close" class="icon" title="Close (Esc)" aria-label="Close">✕</button>
+    <button id="lb-close" class="icon" data-i18n-title="lb.close_hint" data-i18n-aria-label="lb.close" title="Close (Esc)" aria-label="Close">✕</button>
     <span id="lb-title" class="lb-title"></span>
     <button id="lb-live" class="pill" hidden>LIVE ▶</button>
-    <a id="lb-download" class="icon" title="Download original" aria-label="Download original">⤓</a>
-    <button id="lb-info" class="icon" title="Info (i)" aria-label="Info">ⓘ</button>
+    <button id="lb-fav" class="icon fav-lb" aria-pressed="false" data-i18n-title="fav.add_hint" title="Favorite (f)"></button>
+    <button id="lb-rotate" class="icon" data-i18n-title="lb.rotate_hint" data-i18n-aria-label="lb.rotate" title="Rotate left (r) · Option-click or Shift+R: right" aria-label="Rotate left">↺</button>
+    <button id="lb-trash" class="icon" data-i18n-title="lb.trash_hint" data-i18n-aria-label="sel.trash" title="Move to trash" aria-label="Move to trash" hidden>🗑</button>
+    <a id="lb-download" class="icon" data-i18n-title="lb.download" data-i18n-aria-label="lb.download" title="Download original" aria-label="Download original">⤓</a>
+    <button id="lb-info" class="icon" data-i18n-title="lb.info_hint" data-i18n-aria-label="lb.info" title="Info (i)" aria-label="Info">ⓘ</button>
   </div>
-  <button id="lb-prev" class="nav prev" title="Previous (←)" aria-label="Previous">‹</button>
-  <button id="lb-next" class="nav next" title="Next (→)" aria-label="Next">›</button>
+  <button id="lb-prev" class="nav prev" data-i18n-title="lb.prev_hint" data-i18n-aria-label="lb.prev" title="Previous (←)" aria-label="Previous">‹</button>
+  <button id="lb-next" class="nav next" data-i18n-title="lb.next_hint" data-i18n-aria-label="lb.next" title="Next (→)" aria-label="Next">›</button>
   <aside id="lb-panel" class="lb-panel" hidden></aside>
 </div>
 
 <div id="login" class="login" hidden>
   <form id="login-form">
     <h2>shoebox</h2>
-    <p id="login-text">Enter the PIN shown in the terminal where shoebox is running.</p>
+    <p id="login-text" data-i18n="login.text">Enter the PIN shown in the terminal where shoebox is running.</p>
     <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="PIN" required>
-    <button type="submit">Open</button>
+    <button type="submit" data-i18n="login.open">Open</button>
     <p id="login-error" class="error"></p>
   </form>
 </div>
 
 <script src="app.js"></script>
+<script src="geo.js"></script>
 </body>
 </html>
