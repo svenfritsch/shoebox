@@ -96,7 +96,7 @@ const POLL: Duration = Duration::from_millis(200);
 /// A `running` job that has not reported progress for this long is dead.
 const JOB_ALIVE_SECS: i64 = 120;
 
-const SCHEMA_VERSION: i32 = 7;
+const SCHEMA_VERSION: i32 = 8;
 const SCHEMA_V1: &str = "
 CREATE TABLE recog.jobs (
     id          INTEGER PRIMARY KEY,
@@ -201,6 +201,7 @@ CREATE INDEX IF NOT EXISTS recog.bodies_key ON bodies (key);
 /// (boxes are fractions) and in the folded form the search looks at.
 const SCHEMA_V7: &str = "
 CREATE TABLE IF NOT EXISTS recog.text_lines (
+    id        INTEGER PRIMARY KEY,
     key       TEXT NOT NULL,
     x         REAL NOT NULL,
     y         REAL NOT NULL,
@@ -211,6 +212,21 @@ CREATE TABLE IF NOT EXISTS recog.text_lines (
     text_norm TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS recog.text_lines_key ON text_lines (key);
+";
+
+/// v8 (phase 9): the search index over `text_lines.text_norm`: FTS5 with the
+/// trigram tokenizer, so any part of a word of three letters or more is found
+/// ("rechn" finds "rechnung", a half-read plate still matches). An external
+/// content table kept in step by triggers; `text_lines.id` is its row id.
+const SCHEMA_V8: &str = "
+CREATE VIRTUAL TABLE IF NOT EXISTS recog.text_fts USING fts5(text_norm, content='text_lines', content_rowid='id', tokenize='trigram');
+CREATE TRIGGER IF NOT EXISTS recog.text_lines_ai AFTER INSERT ON text_lines BEGIN
+    INSERT INTO text_fts(rowid, text_norm) VALUES (new.id, new.text_norm);
+END;
+CREATE TRIGGER IF NOT EXISTS recog.text_lines_ad AFTER DELETE ON text_lines BEGIN
+    INSERT INTO text_fts(text_fts, rowid, text_norm) VALUES ('delete', old.id, old.text_norm);
+END;
+INSERT INTO recog.text_fts(text_fts) VALUES ('rebuild');
 ";
 
 /// Location of `recognition.db` for a library database.
@@ -272,6 +288,10 @@ pub fn attach(conn: &Connection, db_path: &Path) -> Result<()> {
     if version < 7 {
         tx.execute_batch(SCHEMA_V7)?;
         tx.pragma_update(Some("recog"), "user_version", 7)?;
+    }
+    if version < 8 {
+        tx.execute_batch(SCHEMA_V8)?;
+        tx.pragma_update(Some("recog"), "user_version", 8)?;
     }
     tx.commit()?;
     Ok(())

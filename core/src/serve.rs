@@ -36,7 +36,7 @@
 //! Finder while shoebox runs), the server runs the scan's index step in the
 //! background, which finds it again by its hashes.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Component, Path as FsPath, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
@@ -78,6 +78,7 @@ use crate::thumbs::{self, Source};
 
 mod faces_api;
 mod people_api;
+mod text_api;
 
 pub const DEFAULT_PORT: u16 = 7878;
 const SESSION_COOKIE: &str = "shoebox_session";
@@ -833,6 +834,10 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/screenshots", post(screenshots_set))
         .route("/api/geo/points", get(geo_points))
         .route("/api/files/{id}/position", post(position_set))
+        .route("/api/files/{id}/text-hidden", post(text_api::hide))
+        .route("/api/text/stats", get(text_api::stats))
+        .route("/api/text/limits", get(text_api::limits_get).post(text_api::limits_set))
+        .route("/api/text/delete-all", post(text_api::delete_all))
         .route("/api/places", get(places_list).post(places_create))
         .route("/api/places/{id}/rename", post(places_rename))
         .route("/api/places/{id}/area", post(places_redraw))
@@ -1309,6 +1314,8 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
     let text = param(&pairs, "q").map(str::to_string).filter(|s| !s.trim().is_empty());
     let types = types_of(&pairs)?;
     let pet_terms = pets_of(&pairs)?;
+    let text_terms = terms_of(&pairs, "text");
+    let name_terms = terms_of(&pairs, "name");
     let fav = fav_of(&pairs);
     let libs: Vec<LibraryRef> = apps.iter().map(|a| LibraryRef { id: library_id(&a.name), name: a.name.clone(), volume: volume::placement(&a.root).map(|p| p.volume) }).collect();
 
@@ -1322,6 +1329,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
             version: String,
             live: Option<i64>,
             fav: bool,
+            snip: Option<String>,
         }
         let mut rows: Vec<Row> = Vec::new();
         for (d, app) in apps.iter().enumerate() {
@@ -1352,12 +1360,21 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
                 people: people_ids,
                 pets: pet_terms.clone(),
                 types: types.clone(),
+                in_text: text_terms.clone(),
+                names: name_terms.clone(),
                 fav,
                 ..Default::default()
             };
             let hearts = own_tags::favorite_ids(&conn)?;
-            for it in snapshot.query(&conn, &query)? {
+            let items = snapshot.query(&conn, &query)?;
+            let snips = if text_terms.is_empty() {
+                HashMap::new()
+            } else {
+                crate::text::snippets(&conn, &items.iter().map(|it| it.id).collect(), &text_terms)?
+            };
+            for it in items {
                 rows.push(Row {
+                    snip: snips.get(&it.id).cloned(),
                     fav: hearts.contains(&it.id),
                     sort: it.sort.clone(),
                     path: it.path_lower.clone(),
@@ -1386,8 +1403,12 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
             tags: Vec::new(),
             people: Vec::new(),
             favs: Vec::new(),
+            snips: Vec::new(),
         };
         for r in rows {
+            if let Some(line) = r.snip {
+                t.snips.push((r.gid, line));
+            }
             if r.fav {
                 t.favs.push(r.gid);
             }
@@ -1695,10 +1716,25 @@ fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
         people: pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
         types: types_of(pairs)?,
         pets: pets_of(pairs)?,
+        in_text: terms_of(pairs, "text"),
+        names: terms_of(pairs, "name"),
         fav: fav_of(pairs),
         area: area_of(pairs)?,
         place: param(pairs, "place").filter(|v| !v.is_empty()).map(number).transpose()?,
     })
+}
+
+/// The search terms of a repeated parameter (`text=…`, `name=…`), each once,
+/// empty ones left out.
+fn terms_of(pairs: &Pairs, key: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for (_, v) in pairs.iter().filter(|(k, v)| k == key && !v.trim().is_empty()) {
+        let v = v.trim().to_string();
+        if !out.contains(&v) {
+            out.push(v);
+        }
+    }
+    out
 }
 
 /// `area=south,west,north,east`: only photos taken inside that rectangle.
@@ -1783,6 +1819,10 @@ struct Timeline {
     people: Vec<people::PersonRef>,
     /// Ids of the items with a heart.
     favs: Vec<i64>,
+    /// [id, line] of what a text search found in an item (the first matching
+    /// line of recognized text); only with `text=` in the filter.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    snips: Vec<(i64, String)>,
 }
 
 async fn timeline(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Timeline>> {
@@ -1799,7 +1839,6 @@ async fn timeline(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> Ap
         let tags = browse::tag_names(&conn, &query.tags)?;
         let people = people::person_names(&conn, &query.people)?;
         let hearts = own_tags::favorite_ids(&conn)?;
-        drop(conn);
         let mut t = Timeline {
             count: items.len(),
             ids: Vec::with_capacity(items.len()),
@@ -1810,7 +1849,14 @@ async fn timeline(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> Ap
             tags,
             people,
             favs: Vec::new(),
+            snips: Vec::new(),
         };
+        if !query.in_text.is_empty() {
+            let ids: HashSet<i64> = items.iter().map(|it| it.id).collect();
+            let found = crate::text::snippets(&conn, &ids, &query.in_text)?;
+            t.snips = items.iter().filter_map(|it| found.get(&it.id).map(|l| (it.id, l.clone()))).collect();
+        }
+        drop(conn);
         for it in items {
             if hearts.contains(&it.id) {
                 t.favs.push(it.id);
@@ -1860,6 +1906,10 @@ struct FileInfo {
     screenshot_mark: Option<bool>,
     /// Where it was taken (in the file, or given by the user).
     position: Option<crate::geo::Position>,
+    /// Lines of recognized text (phase 9) that the limits show, top to
+    /// bottom, hidden ones marked; boxes are fractions of the picture in the
+    /// file's orientation, like the face boxes. Empty if nothing was read.
+    text: Vec<crate::text::LineOut>,
 }
 
 async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Json<FileInfo>> {
@@ -1878,6 +1928,10 @@ async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiRe
             Some(key) => db::shot_mark(&conn, key)?,
             None => None,
         };
+        let text = match &key {
+            Some(key) => crate::text::lines_of(&conn, key)?,
+            None => Vec::new(),
+        };
         let faces = match key {
             Some(key) => people::file_faces(&conn, &key)?,
             None => people::FileFaces { faces: None, lost: Vec::new() },
@@ -1894,6 +1948,7 @@ async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiRe
             screenshot: item.is_some_and(|it| it.shot),
             screenshot_mark,
             position: crate::geo::position_of(&conn, id)?,
+            text,
         }))
     })
     .await

@@ -130,6 +130,12 @@ pub struct Query {
     /// Only photos with a pet of every one of these species (AND): `cat`,
     /// `dog` or `pet` (any); named or not (phase 7).
     pub pets: Vec<String>,
+    /// Words read in the picture (phase 9, `text.rs`), repeated: every word of
+    /// every term must be found in the photo's lines of text.
+    pub in_text: Vec<String>,
+    /// Parts of the file name (not folders, tags or people): every one must
+    /// be in the name, ignoring case and accents.
+    pub names: Vec<String>,
     /// Only favorites (photos with a heart).
     pub fav: bool,
     /// Only photos taken inside this area of the map (phase 10) ...
@@ -424,6 +430,25 @@ impl Snapshot {
                 None => ids,
             });
         }
+        // The photos whose recognized text has every word (phase 9).
+        let in_text: Option<HashSet<i64>> = match crate::text::keys_matching(conn, &q.in_text)? {
+            None => None,
+            Some(keys) => {
+                let mut ids = HashSet::new();
+                if !keys.is_empty() {
+                    let mut stmt = conn.prepare("SELECT id, quick_hash FROM files WHERE missing_since IS NULL")?;
+                    let mut rows = stmt.query([])?;
+                    while let Some(r) = rows.next()? {
+                        if keys.contains(&r.get::<_, String>(1)?) {
+                            ids.insert(r.get::<_, i64>(0)?);
+                        }
+                    }
+                }
+                Some(ids)
+            }
+        };
+        // Parts of the file name, folded like the text so "IMG_62" finds "img_6620.jpg".
+        let name_parts: Vec<String> = q.names.iter().map(|n| crate::text::fold(n)).filter(|n| !n.is_empty()).collect();
         let mut pet: Option<HashSet<i64>> = None;
         for species in &q.pets {
             let ids = files_of_pets(species)?;
@@ -448,6 +473,13 @@ impl Snapshot {
             .filter(|it| pet.as_ref().is_none_or(|p| p.contains(&it.id)))
             .filter(|it| folders.as_ref().is_none_or(|f| f.contains(&it.folder_id)))
             .filter(|it| fav.as_ref().is_none_or(|f| f.contains(&it.id)))
+            .filter(|it| in_text.as_ref().is_none_or(|t| t.contains(&it.id)))
+            .filter(|it| {
+                name_parts.is_empty() || {
+                    let name = crate::text::fold(it.path_lower.rsplit('/').next().unwrap_or(&it.path_lower));
+                    name_parts.iter().all(|p| name.contains(p.as_str()))
+                }
+            })
             .filter(|it| located.as_ref().is_none_or(|l| l.contains(&it.id)))
             .filter(|it| tagged.as_ref().is_none_or(|t| t.contains(&it.id)))
             .filter(|it| words.iter().all(|(w, ids)| ids.contains(&it.id) || it.path_lower.contains(w.as_str())))

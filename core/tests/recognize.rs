@@ -1012,21 +1012,22 @@ fn the_text_pass_reads_filters_and_stores_lines_under_the_guard() {
     let stats = recognize::run(&text_options(&lib)).unwrap();
     assert_eq!(lib.snapshot(), before, "the text pass changed an original");
     let t = stats.text.as_ref().expect("the text pass ran");
-    assert_eq!((t.looked, t.faces, t.failed), (2, 4, 0), "{:?}", t.errors);
+    assert_eq!((t.looked, t.faces, t.failed), (2, 6, 0), "{:?}", t.errors);
     assert_eq!(t.model, "fake-text-1");
     // A run that only reads text leaves faces alone, and does not cluster.
     assert_eq!((stats.looked, stats.faces), (0, 0));
     assert!(stats.clusters.is_none());
     assert_eq!(count(&lib, "SELECT count(*) FROM recog.faces"), 0);
     assert_eq!(count(&lib, "SELECT count(*) FROM recog.looked WHERE task = 'faces'"), 0);
-    assert_eq!(count(&lib, "SELECT count(*) FROM recog.looked WHERE task = 'text' AND found = 2 AND model = 'fake-text-1'"), 2);
+    assert_eq!(count(&lib, "SELECT count(*) FROM recog.looked WHERE task = 'text' AND found = 3 AND model = 'fake-text-1'"), 2);
 
-    // Kept: the two good lines per photo; "tiny", "unsure" and the CJK line are not.
+    // Stored: the two good lines and the faint one per photo (shown only above the user's
+    // limit); "tiny", "unsure" and the CJK line are not stored.
     let stored = lines(&lib);
-    assert_eq!(stored.len(), 4);
-    for (text, norm) in &stored[..2] {
-        assert!(matches!(text.as_str(), "Rechnung Nr. 2024" | "Straße 12"), "{text}");
-        assert_eq!(norm, if text.starts_with("Rechnung") { "rechnung nr 2024" } else { "strasse 12" });
+    assert_eq!(stored.len(), 6);
+    for (text, norm) in &stored[..3] {
+        assert!(matches!(text.as_str(), "Rechnung Nr. 2024" | "Straße 12" | "faint"), "{text}");
+        assert_eq!(norm, match text.as_str() { "Rechnung Nr. 2024" => "rechnung nr 2024", "Straße 12" => "strasse 12", _ => "faint" });
     }
     assert!(!stored.iter().any(|(t, _)| t == "tiny" || t == "unsure" || t == "田"));
     // Boxes are fractions of the picture.
@@ -1040,7 +1041,7 @@ fn the_text_pass_reads_filters_and_stores_lines_under_the_guard() {
     // Nothing left to read the second time; the lines stay.
     let again = recognize::run(&text_options(&lib)).unwrap();
     assert_eq!(again.text.unwrap().looked, 0);
-    assert_eq!(lines(&lib).len(), 4);
+    assert_eq!(lines(&lib).len(), 6);
     assert!(lib.verify(false).is_clean());
 }
 
@@ -1086,7 +1087,7 @@ fn text_and_faces_in_one_run_and_a_model_change_redoes_only_text() {
     let redo = recognize::run(&opts).unwrap();
     assert_eq!((redo.looked, redo.text.unwrap().looked), (0, 1));
     assert_eq!(count(&lib, "SELECT count(*) FROM recog.looked WHERE model = 'old'"), 0);
-    assert_eq!(lines(&lib).len(), 2, "the old lines were replaced, not added to");
+    assert_eq!(lines(&lib).len(), 3, "the old lines were replaced, not added to");
 }
 
 /// Lines of a photo that is gone go with it; a picture the worker refuses is
@@ -1111,7 +1112,7 @@ fn text_rows_are_pruned_and_failures_are_remembered() {
     conn(&lib).execute("DELETE FROM files WHERE path_nfc = 'Docs/a.jpg'", []).unwrap();
     let pruned = recognize::run(&text_options(&lib)).unwrap().text.unwrap();
     assert_eq!(pruned.pruned, 1);
-    assert_eq!(lines(&lib).len(), 2);
+    assert_eq!(lines(&lib).len(), 3);
 }
 
 #[test]
@@ -1131,6 +1132,6 @@ fn the_text_task_needs_a_worker_started_for_it() {
     assert!(worker.faces_model().is_none() && worker.pets_model().is_none());
     assert_eq!(worker.text_model().map(|a| a.model.as_str()), Some("fake-text-1"));
     let stats = recognize::recognize_text(&conn, &lib.root, &mut worker, None, false).unwrap();
-    assert_eq!((stats.looked, stats.faces), (1, 2), "{:?}", stats.errors);
+    assert_eq!((stats.looked, stats.faces), (1, 3), "{:?}", stats.errors);
     worker.stop();
 }

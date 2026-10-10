@@ -294,9 +294,9 @@ fn recognize_text_reads_only_the_words_under_the_guard() {
     assert_eq!(text["ok"], true, "{text}");
     let photos = lib.count("SELECT count(DISTINCT quick_hash) FROM files WHERE missing_since IS NULL AND kind IN ('jpeg', 'png', 'heic')");
     assert!(photos >= 8, "{photos}");
-    // The fake reports five lines per picture, two of them are kept.
+    // The fake reports six lines per picture, three of them are stored.
     assert_eq!(text["result"]["text"]["looked"], photos, "{text}");
-    assert_eq!(text["result"]["text"]["faces"], photos * 2, "{text}");
+    assert_eq!(text["result"]["text"]["faces"], photos * 3, "{text}");
     assert_eq!(text["result"]["text"]["model"], "fake-text-1");
     // Only the words: no faces, no pets, no clusters.
     assert_eq!(text["result"]["looked"], 0, "{text}");

@@ -40,7 +40,7 @@
 //! 115 (0.45) only "maybe", 64 (0.25) nothing.
 //!
 //! With `--text` the hello also lists the task `text` (model `fake-text-1`,
-//! `dim` 0) and a picture "contains" five lines of text, whatever its colour
+//! `dim` 0) and a picture "contains" six lines of text, whatever its colour
 //! (dark pictures, all channels < 16: none; pure green: an error reply). The
 //! worker reports lines the core must filter out, so that can be tested:
 //!
@@ -48,8 +48,9 @@
 //! |---|---|---|---|
 //! | `Rechnung Nr. 2024` | 0.97 | 8 % | yes |
 //! | `Straβe 12` (a Greek beta, as the real model prints ß) | 0.90 | 6 % | yes, as `Straße 12` |
-//! | `tiny` | 0.95 | 0.4 % | no (too small) |
-//! | `unsure` | 0.40 | 6 % | no (score) |
+//! | `faint` | 0.60 | 5 % | stored, but below the default limit of 0.7: not shown until the user lowers it |
+//! | `tiny` | 0.95 | 0.2 % | no (too small to be stored) |
+//! | `unsure` | 0.40 | 6 % | no (score too low to be stored) |
 //! | `田` | 0.99 | 6 % | no (not German or English) |
 //!
 //! The `embed` task (protocol 2, faces drawn by hand) embeds each box from
@@ -388,7 +389,8 @@ fn text_reply(req: &Value) -> Value {
         "text": [
             line("Rechnung Nr. 2024", 0.97, 0.10, 0.08),
             line("Stra\u{3b2}e 12", 0.90, 0.25, 0.06),
-            line("tiny", 0.95, 0.40, 0.004),
+            line("faint", 0.60, 0.33, 0.05),
+            line("tiny", 0.95, 0.40, 0.002),
             line("unsure", 0.40, 0.50, 0.06),
             line("\u{7530}", 0.99, 0.65, 0.06),
         ],

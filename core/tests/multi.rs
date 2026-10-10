@@ -346,3 +346,55 @@ fn pet_terms_work_over_the_drives() {
     assert_eq!((a.snapshot(), b.snapshot()), before);
     server.stop().unwrap();
 }
+
+fn read_text_of(lib: &Library) {
+    let stats = shoebox::recognize::run(&shoebox::recognize::Options {
+        root: lib.root.clone(),
+        db: None,
+        recognizer: Some(env!("CARGO_BIN_EXE_shoebox-fake-recognizer").into()),
+        limit: None,
+        retry_failed: false,
+        rotated: false,
+        pets: false,
+        text: true,
+        text_only: true,
+        timeouts: Default::default(),
+    })
+    .unwrap();
+    assert_eq!(stats.text.unwrap().failed, 0);
+}
+
+/// The words in the photos and the file names are searched on every drive that
+/// takes part, and the answer is one list with the matching line of each hit.
+#[test]
+fn text_and_name_terms_work_over_the_drives() {
+    let a = own_library("multi-text-a", 10);
+    let b = own_library("multi-text-b", 100);
+    read_text_of(&a);
+    read_text_of(&b);
+    let before = (a.snapshot(), b.snapshot());
+    let server = start_many(&[&a, &b], &[]);
+    let addr = server.addr;
+
+    let all = get(addr, "/raw/api/all/timeline").json();
+    let every = all["count"].as_u64().unwrap();
+    assert!(every >= 8);
+    let text = get(addr, "/raw/api/all/timeline?text=rechnung").json();
+    let drives: std::collections::BTreeSet<i64> = ids_of(&text).iter().map(|g| g / SPAN).collect();
+    assert_eq!(drives.len(), 2, "hits on both drives");
+    assert!(text["count"].as_u64().unwrap() > 0 && text["count"].as_u64().unwrap() <= every);
+    let snips = text["snips"].as_array().unwrap();
+    assert_eq!(snips.len() as u64, text["count"].as_u64().unwrap(), "a snippet for every hit");
+    assert!(snips.iter().all(|s| s[1] == "Rechnung Nr. 2024"));
+    let listed: std::collections::BTreeSet<i64> = ids_of(&text).into_iter().collect();
+    assert!(snips.iter().all(|s| listed.contains(&s[0].as_i64().unwrap())), "snippets are for ids of the list");
+    assert_eq!(get(addr, "/raw/api/all/timeline?text=zebra").json()["count"], 0);
+    assert_eq!(get(addr, "/raw/api/all/timeline?text=rechnung&text=strasse").json()["count"], text["count"]);
+
+    // File names: this one is on drive a and b alike (the same name in each).
+    let named = get(addr, "/raw/api/all/timeline?name=img_0002").json();
+    assert_eq!(named["count"], 2, "{named}");
+    assert!(get(addr, "/raw/api/all/timeline?name=urlaub").json()["count"] == 0, "folder names are not file names");
+    server.stop().unwrap();
+    assert_eq!((a.snapshot(), b.snapshot()), before, "searching changed an original");
+}

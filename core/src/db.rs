@@ -15,7 +15,7 @@ pub const FILE: &str = "library.db";
 const BACKUP_SUFFIX: &str = ".bak";
 
 /// Bump when the schema changes and add a step to `migrate`.
-const SCHEMA_VERSION: i32 = 12;
+const SCHEMA_VERSION: i32 = 13;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -247,6 +247,19 @@ CREATE TABLE IF NOT EXISTS face_species (
 CREATE INDEX IF NOT EXISTS face_species_key ON face_species(key);
 ";
 
+/// v13 (phase 9): lines of text the user does not want to find a photo by.
+/// By content and the folded text of the line (`text::index_form`), so the
+/// decision holds when the photo moves and when the text is read again; the
+/// text itself is a cache in `recognition.db` (`text.rs`).
+const SCHEMA_V13: &str = "
+CREATE TABLE IF NOT EXISTS text_hidden (
+    key  TEXT NOT NULL,           -- files.quick_hash
+    norm TEXT NOT NULL,           -- recog.text_lines.text_norm
+    at   INTEGER NOT NULL,        -- Unix seconds
+    PRIMARY KEY (key, norm)
+);
+";
+
 /// Whether `table` of `schema` has a column.
 pub fn has_column(conn: &Connection, schema: &str, table: &str, column: &str) -> Result<bool> {
     let mut stmt = conn.prepare(&format!("SELECT name FROM pragma_table_info('{table}', '{schema}')"))?;
@@ -464,6 +477,12 @@ fn migrate(conn: &Connection) -> Result<()> {
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V12)?;
         tx.pragma_update(None, "user_version", 12)?;
+        tx.commit()?;
+    }
+    if version < 13 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V13)?;
+        tx.pragma_update(None, "user_version", 13)?;
         tx.commit()?;
     }
     Ok(())
