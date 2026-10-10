@@ -87,9 +87,8 @@ Eine Seite im Browser, eine Zeitleiste von allem auf dem Laufwerk.
    Live-Photo- und Sidecar-Dateien wandern mit.
 
 - Tags
-   Eigene Tags für viele Fotos auf einmal. Die Tag-Liste in der Seitenleiste
-   zeigt nur deine eigenen Tags; Ordner durchsuchst du unter Ordner (die Suche
-   findet sie wie Tags). Im Index gespeichert, nie in den Fotos.
+   Eigene Tags für viele Fotos auf einmal. Auch Ordner zählen als Tags. Im
+   Index gespeichert, nie in den Fotos.
 
 - Zeitleiste
    Alle Fotos und Videos nach Monat, mit Jahressprung, Ordnerbaum und einer

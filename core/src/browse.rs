@@ -476,24 +476,12 @@ pub struct Tag {
 
 /// Every tag with the number of present files carrying it, most used first.
 pub fn all_tags(conn: &Connection) -> Result<Vec<Tag>> {
-    tag_list(conn, false)
-}
-
-/// Only the tags the user added, counting only the files they added them to
-/// (a folder name the user also used as a tag does not count its folder's
-/// files). For the sidebar, where folders are browsed on their own.
-pub fn own_tags(conn: &Connection) -> Result<Vec<Tag>> {
-    tag_list(conn, true)
-}
-
-fn tag_list(conn: &Connection, own_only: bool) -> Result<Vec<Tag>> {
-    let mut stmt = conn.prepare(&format!(
+    let mut stmt = conn.prepare(
         "SELECT t.id, t.name, count(DISTINCT f.id) AS n, max(ft.source = 'folder'), max(ft.source = 'user') FROM tags t
-         JOIN file_tags ft ON ft.tag_id = t.id{}
+         JOIN file_tags ft ON ft.tag_id = t.id
          JOIN files f ON f.id = ft.file_id AND f.missing_since IS NULL AND f.kind != 'raw'
          GROUP BY t.id ORDER BY n DESC, t.name",
-        if own_only { " AND ft.source = 'user'" } else { "" }
-    ))?;
+    )?;
     let tags = stmt
         .query_map([], |r| {
             let kind = match (r.get::<_, bool>(3)?, r.get::<_, bool>(4)?) {

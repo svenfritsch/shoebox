@@ -1417,8 +1417,7 @@ async fn all_tags(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> Ap
     let tags = tokio::task::spawn_blocking(move || -> ApiResult<Vec<browse::Tag>> {
         let mut merged: std::collections::BTreeMap<String, browse::Tag> = std::collections::BTreeMap::new();
         for app in &apps {
-            let conn = app.conn.lock().unwrap();
-            for t in if own { browse::own_tags(&conn)? } else { browse::all_tags(&conn)? } {
+            for t in browse::all_tags(&app.conn.lock().unwrap())? {
                 let key = db::tag_fold(&t.name);
                 if !key.contains(&needle) || (own && t.kind == browse::TagKind::Folder) {
                     continue;
@@ -1747,7 +1746,7 @@ async fn tags(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiRes
             && filter.place.is_none()
             && filter.area.is_none()
         {
-            if own { browse::own_tags(&conn)? } else { browse::all_tags(&conn)? }
+            browse::all_tags(&conn)?
         } else {
             let snapshot = app.snapshot(&conn)?;
             let shown: HashSet<i64> = snapshot.query(&conn, &filter)?.iter().map(|it| it.id).collect();

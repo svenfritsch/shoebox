@@ -120,9 +120,6 @@ fn own_tags_add_remove_many_at_once_and_fold_names() {
     let own: Vec<String> = tag_list(addr, "?own=1").iter().map(|t| t["name"].as_str().unwrap().to_string()).collect();
     assert!(own.contains(&"Europa-Park".to_string()) && own.contains(&"Familie".to_string()), "{own:?}");
     assert!(!own.contains(&"Weihnachten".to_string()), "{own:?}");
-    // The sidebar list counts only the photos the user tagged, not the folder's.
-    let own_tags_list = tag_list(addr, "?own=1");
-    assert_eq!(find(&own_tags_list, "Familie").unwrap()["count"], 1);
     assert_eq!(tag_list(addr, "?q=EUROPA").len(), 1);
 
     // The info panel gets folder tags first, then own tags, with their source.
