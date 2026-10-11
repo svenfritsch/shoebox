@@ -560,6 +560,10 @@ body.selecting .sec .pick { display: inline; }
 .note-bar { margin: 8px 16px 0; font-size: 13px; color: var(--muted); }
 .tabs { display: flex; gap: 6px; margin: 0 0 14px; }
 .tabs button { padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--fg); font: inherit; cursor: pointer; }
+.tabs.underline { gap: 8px; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
+.tabs.underline button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; margin-bottom: -1px; padding: 10px 14px; background: transparent; color: var(--muted); font-weight: 500; letter-spacing: .04em; text-transform: uppercase; }
+.tabs.underline button:hover { color: var(--fg); }
+.tabs.underline button.on { color: var(--accent); border-bottom-color: var(--accent); background: transparent; font-weight: 600; }
 .tabs button.on { background: var(--panel); font-weight: 600; border-color: var(--accent); }
 .xcopies { display: flex; flex-wrap: wrap; gap: 12px; }
 .xcopy { width: 190px; }

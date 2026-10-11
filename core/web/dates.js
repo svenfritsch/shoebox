@@ -166,7 +166,7 @@ function buildDatesDialog(ids, info, check) {
     var group = formatEstimate({ year: v.year, month: v.month });
     lands.textContent = v.day ? tr('dates.lands_day', { group: group })
       : v.month ? tr('dates.lands_month', { group: group })
-        : tr('dates.lands_year', { year: v.year });
+        : tr('dates.lands_year', { year: String(v.year) });
   };
   [year, month, day].forEach(function (n) { n.addEventListener('input', render); n.addEventListener('change', render); });
 

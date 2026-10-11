@@ -35,6 +35,7 @@
   "launcher.app.idle": "The photo app starts only when you press this button. Scan first if this is a new drive.",
   "launcher.app.running": "Running for {roots} at ",
   "launcher.app.running_end": ". Stop it to scan, verify or change folders.",
+  "launcher.app.offline": "Not connected: {names}. Plug the drive in or untick it, then start the photo app.",
   "launcher.app.stopped": "Photo app stopped.",
   "launcher.remove": "Remove",
   "launcher.remove_path": "Remove {path}",
