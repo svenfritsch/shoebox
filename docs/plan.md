@@ -264,6 +264,34 @@ recognize` resumes), with progress in the status line (`status.finding_faces`
 exists), and skips it when no recognizer is installed or a `recognize` run is
 going.
 
+### Recognition housekeeping: one Stats button, "forget" for faces and pets (planned)
+
+Two gaps found while building phase 9 (nothing built yet):
+
+- **Stats for every kind.** The Control Panel has one button, "Face stats"
+  (`faces_stats`), and it reports faces only. There is no way to see how the
+  pets, the turned-photo pass or the text pass went except `shoebox text stats`
+  in a terminal (text) and the Calibration pages in the photo app. Rethink it as
+  one **Recognition stats** button: one summary per drive with a line for each
+  kind that was run (faces and persons, pets, turned photos, text): photos
+  read of photos total, finds, how many are confirmed or named, errors, model
+  and version, and what is still to read. The CLI follows: `shoebox recognize
+  --stats` (or `shoebox stats`) prints the same, `--json` for scripts;
+  `shoebox faces stats` and `shoebox text stats` stay. Strings in EN and DE,
+  guide launcher task list and test in `core/tests/launcher.rs`.
+- **"Forget" for faces and pets.** Same use case as "Delete all recognized
+  text" (Settings → Recognized text): a person may want the automatic finds
+  gone from the drive before lending it, or to start again after changing the
+  model. It differs in one way: a face or pet carries work the user did (names,
+  confirmed and rejected faces, drawn boxes, groups), which cannot be read
+  again. So two buttons, in Settings: **Delete automatic finds** (the faces and
+  pets the recognizer found and nobody confirmed, named or drew; the
+  embeddings, the clusters and the looked-at marks go, so "Recognize" reads the
+  photos again) and, behind a second confirmation that names the count, **Delete
+  everything incl. names** (a full reset). Hidden by default, nothing touches a
+  photo. Needs a decision before building: whether "automatic only" keeps the
+  suggestions of confirmed people (it would: confirmed faces stay).
+
 ### Scanner (phase 1)
 
 - Skip: `._*`, `.DS_Store`, `.Spotlight-V100`, `.Trashes`, `.fseventsd`,
