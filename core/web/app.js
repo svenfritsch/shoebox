@@ -594,7 +594,7 @@ function pickSuggest(it) {
   else setFilter(withFilter({ folder: it.id, q: '' }));
 }
 
-var RECENT_MAX = 6; // how many "Recently used" the suggestion lists show
+var RECENT_MAX = 4; // how many "Recently used" the suggestion lists show
 
 // Suggestions for the tag fields (info panel, "Add tag…"): with the field
 // empty the tags used last, then the most used; while typing the matches,

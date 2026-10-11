@@ -473,6 +473,9 @@ und was mitkommt.]
 
 [Screenshot: Tag hinzufügen.]
 
+[Screenshot: Tag hinzufügen: zuerst die zuletzt benutzten Tags, dann die am
+häufigsten benutzten.]
+
 [Screenshot: In einen neuen Ereignisordner verschieben.]
 
 Datum und Suche nach Datum
@@ -715,6 +718,9 @@ benennen.
 Ignorieren und Kein Gesicht.]
 
 [Screenshot: Auswählen: zwei Gesichter einer Karte angekreuzt.]
+
+[Screenshot: Eine Karte benennen: zuerst die zuletzt Benannten, dann die mit
+den meisten Fotos, dann alle nach Gruppe.]
 
 Mehrere Gesichter in einem Foto, und Gruppen
 --------------------------------------------

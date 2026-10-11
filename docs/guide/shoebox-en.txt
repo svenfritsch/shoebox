@@ -443,6 +443,8 @@ take along.]
 
 [Screenshot: Adding a tag.]
 
+[Screenshot: Adding a tag: the tags used last come first, then the most used.]
+
 [Screenshot: Moving into a new event folder.]
 
 Dates and searching by date
@@ -668,6 +670,9 @@ all.
 Not a face.]
 
 [Screenshot: Select: two faces ticked on a card.]
+
+[Screenshot: Naming a card: who you named last, then who has the most photos,
+then everyone by group.]
 
 Several faces in a photo, and groups
 ------------------------------------
