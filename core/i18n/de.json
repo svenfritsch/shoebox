@@ -855,6 +855,7 @@
   "sel.date": "Datum setzen…",
   "side.needs_date": "Datum fehlt",
   "side.needs_date_n": "Datum fehlt ({n})",
+  "side.needs_date_note": "Diese Fotos haben kein Aufnahmedatum (EXIF) in der Datei. Das angezeigte Datum stammt aus dem Ordner oder dem Erstell- bzw. Änderungsdatum der Datei und ist nur eine Schätzung, wann das Foto entstand.",
   "search.dates": "Datum",
   "sel.export": "Exportieren …",
   "sel.leave_title": "Auswahl verlassen?",

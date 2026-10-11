@@ -507,9 +507,11 @@ message with Undo appears afterwards.
 
 Needs a date
 When some photos have neither a capture date in their file nor a date of
-yours, Needs a date appears next to All photos, with the number. It lists
-them, so you can work through scans and forwarded pictures; a photo leaves the
-list as soon as you give it a date.
+yours, Needs a date appears next to All photos. It lists them (the chip above
+the list shows the number and a note that the dates shown are only estimates,
+taken from the folder or the file's created or modified date), so you can work
+through scans and forwarded pictures; a photo leaves the list as soon as you
+give it a date.
 
 Where a photo lands
 A day puts the photo on that day. With only a month it sits in that month’s
