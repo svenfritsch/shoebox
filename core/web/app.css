@@ -60,6 +60,7 @@ button { cursor: pointer; }
 .types-menu label:hover { background: var(--panel); }
 .types-menu .tip { color: var(--muted, #888); cursor: help; font-size: 13px; }
 .bar select { padding: 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); }
+.icon svg { display: block; width: 1em; height: 1em; fill: currentColor; }
 .icon { background: none; border: 0; font-size: 20px; padding: 4px 8px; line-height: 1; color: inherit; text-decoration: none; }
 .link { background: none; border: 0; padding: 0; color: var(--accent); }
 
