@@ -512,7 +512,10 @@ function exportPicker() {
       if (!l.folders.length) list.appendChild(el('li', 'x-none', tr('export.empty_folder')));
       l.folders.forEach(function (f) {
         var li = el('li');
-        li.appendChild(el('span', '', '📁 ' + f.name));
+        var nm = el('span', '');
+        nm.appendChild(folderIcon());
+        nm.appendChild(document.createTextNode(f.name));
+        li.appendChild(nm);
         if (f.library) li.appendChild(el('small', '', tr('export.shoebox_tag')));
         li.onclick = function () { show(f.path); };
         list.appendChild(li);

@@ -798,10 +798,84 @@ async fn forward(hub: Arc<Hub>, mut req: Request) -> Response {
         Some(q) => format!("/api/{tail}?{q}"),
         None => format!("/api/{tail}"),
     };
+    // `/api/lib/{id}/compare`: which of this drive's files only it has (for the
+    // badge in the info panel); needs both drives, so it is answered here.
+    if tail == "compare" {
+        return match compare_all(&hub, &id).await {
+            Ok(v) => Json(v).into_response(),
+            Err(e) => e.into_response(),
+        };
+    }
     let Ok(uri) = new.parse::<Uri>() else { return ApiError::NotFound.into_response() };
+    // `compare=backup|original` on the timeline: the files this drive has
+    // and the other drive of its backup pair does not. Worked out here,
+    // where the other drive is known, and handed to the library's handler.
+    let mut only = None;
+    if tail == "timeline"
+        && let Some(kind) = req.uri().query().and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("compare=")))
+        && matches!(kind, "backup" | "original")
+    {
+        match compare_ids(&hub, &id, kind == "backup").await {
+            Ok(ids) => only = Some(ids),
+            Err(e) => return e.into_response(),
+        }
+    }
     *req.uri_mut() = uri;
     req.extensions_mut().insert(LibraryScope(id));
+    req.extensions_mut().insert(CompareIds(only));
     router.oneshot(req).await.into_response()
+}
+
+/// The files a library's timeline is narrowed to by `compare=` (see `forward`).
+#[derive(Clone)]
+struct CompareIds(Option<Arc<HashSet<i64>>>);
+
+/// `{"kind": "backup" | "original" | null, "ids": […]}`: what only this drive
+/// has compared with the other drive of its backup pair (`null` and no ids for
+/// a drive that is not half of a pair).
+async fn compare_all(hub: &Arc<Hub>, library: &str) -> ApiResult<serde_json::Value> {
+    let o = overview(hub).await?;
+    let here = o.drives.iter().position(|d| d.id == library).ok_or(ApiError::NotFound)?;
+    let backup = o.drives[here].role == multi::Role::Backup;
+    Ok(match compare_ids(hub, library, backup).await {
+        Ok(ids) => {
+            let mut ids: Vec<i64> = ids.iter().copied().collect();
+            ids.sort_unstable();
+            serde_json::json!({ "kind": if backup { "backup" } else { "original" }, "ids": ids })
+        }
+        Err(ApiError::BadRequest(_)) => serde_json::json!({ "kind": null, "ids": [] }),
+        Err(e) => return Err(e),
+    })
+}
+
+/// The files of `library` that the other drive of its backup pair does not
+/// have: for a backup, what only it holds; for the drive it copies, what is
+/// not on the backup yet. A drive without such a partner gets a 400.
+async fn compare_ids(hub: &Arc<Hub>, library: &str, backup: bool) -> ApiResult<Arc<HashSet<i64>>> {
+    let o = overview(hub).await?;
+    let library = library.to_string();
+    tokio::task::spawn_blocking(move || -> ApiResult<Arc<HashSet<i64>>> {
+        let here = o.drives.iter().position(|d| d.id == library).ok_or(ApiError::NotFound)?;
+        if (o.drives[here].role == multi::Role::Backup) != backup {
+            return Err(ApiError::BadRequest(if backup { "this drive is not a backup" } else { "this drive is a backup" }.into()));
+        }
+        let other = if backup {
+            multi::primary_of(&o.drives, here)?
+        } else {
+            let mut found = None;
+            for (j, d) in o.drives.iter().enumerate() {
+                if d.role == multi::Role::Backup && multi::primary_of(&o.drives, j)? == Some(here) {
+                    found = Some(j);
+                    break;
+                }
+            }
+            found
+        };
+        let other = other.ok_or_else(|| ApiError::BadRequest("no drive to compare with".into()))?;
+        Ok(Arc::new(multi::only_here(&o.drives[here].db, &o.drives[other].db, backup)?))
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))?
 }
 
 fn router(app: Arc<App>) -> Router {
@@ -1302,6 +1376,9 @@ struct AllTimeline {
     libs: Vec<LibraryRef>,
     /// Drives that are left out (backups) or offline.
     left_out: Vec<multi::Excluded>,
+    /// In path order, so the two versions of a photo sit side by side (the
+    /// UI shows no month headings): `compare=different`.
+    flat: bool,
 }
 
 #[derive(Serialize)]
@@ -1310,6 +1387,7 @@ struct LibraryRef {
     name: String,
     /// The disk the drive is on, as the drive cards show it.
     volume: Option<String>,
+    role: multi::Role,
 }
 
 /// One timeline over the drives that are there and not backups. Filters name
@@ -1318,12 +1396,35 @@ struct LibraryRef {
 /// without one of the tags or people has nothing that matches all of them.
 async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<AllTimeline>> {
     let o = overview(&hub).await?;
-    let (eligible, mut left_out) = multi::eligibility(&o.drives, &o.roles);
+    let (mut eligible, mut left_out) = multi::eligibility(&o.drives, &o.roles);
     for s in &hub.slots {
         if !o.drives.iter().any(|d| d.id == s.id) {
             left_out.push(multi::Excluded { library: s.id.clone(), name: s.name.clone(), reason: "offline".into() });
         }
     }
+    // `compare=different`: the photos the backup check lists as different on
+    // the backup, from both drives of the pair (the backup is shown here on
+    // purpose), the two versions of a photo next to each other.
+    let mut different: Option<Vec<Arc<HashSet<i64>>>> = None;
+    if param(&pairs, "compare") == Some("different") {
+        let drives = o.drives.clone();
+        let found = tokio::task::spawn_blocking(move || -> ApiResult<Option<(usize, usize, Vec<(i64, i64)>)>> {
+            Ok(match multi::first_pair(&drives)? {
+                Some((p, b)) => Some((p, b, multi::different_pairs(&drives[p].db, &drives[b].db)?)),
+                None => None,
+            })
+        })
+        .await
+        .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+        let (p, b, same_path) = found.ok_or_else(|| ApiError::BadRequest("no backup to compare with".into()))?;
+        eligible = vec![p, b];
+        left_out.clear();
+        different = Some(vec![
+            Arc::new(same_path.iter().map(|x| x.0).collect()),
+            Arc::new(same_path.iter().map(|x| x.1).collect()),
+        ]);
+    }
+    let flat = different.is_some();
     let apps: Vec<Arc<App>> = eligible.iter().map(|&i| o.apps[i].clone()).collect();
     let tag_names: Vec<String> = pairs.iter().filter(|(k, v)| k == "tag" && !v.is_empty()).map(|(_, v)| v.clone()).collect();
     let person_names: Vec<String> = pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| v.clone()).collect();
@@ -1333,7 +1434,11 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
     let fav = fav_of(&pairs);
     let dates = dates_of(&pairs)?;
     let needs_date = param(&pairs, "nodate").is_some_and(|v| !v.is_empty() && v != "0");
-    let libs: Vec<LibraryRef> = apps.iter().map(|a| LibraryRef { id: library_id(&a.name), name: a.name.clone(), volume: volume::placement(&a.root).map(|p| p.volume) }).collect();
+    let libs: Vec<LibraryRef> = apps
+        .iter()
+        .zip(&eligible)
+        .map(|(a, &i)| LibraryRef { id: library_id(&a.name), name: a.name.clone(), volume: volume::placement(&a.root).map(|p| p.volume), role: o.drives[i].role })
+        .collect();
 
     let timeline = tokio::task::spawn_blocking(move || -> ApiResult<Timeline> {
         struct Row {
@@ -1379,6 +1484,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
                 fav,
                 dates: dates.clone(),
                 needs_date,
+                ids: different.as_ref().map(|sets| sets[d].clone()),
                 ..Default::default()
             };
             let hearts = own_tags::favorite_ids(&conn)?;
@@ -1402,7 +1508,11 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
                 });
             }
         }
-        rows.sort_by(|a, b| b.sort.cmp(&a.sort).then_with(|| a.path.cmp(&b.path)).then_with(|| a.gid.cmp(&b.gid)));
+        if flat {
+            rows.sort_by(|a, b| a.path.cmp(&b.path).then_with(|| a.gid.cmp(&b.gid)));
+        } else {
+            rows.sort_by(|a, b| b.sort.cmp(&a.sort).then_with(|| a.path.cmp(&b.path)).then_with(|| a.gid.cmp(&b.gid)));
+        }
         let mut t = Timeline {
             count: rows.len(),
             ids: Vec::with_capacity(rows.len()),
@@ -1434,7 +1544,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
     })
     .await
     .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
-    Ok(Json(AllTimeline { timeline, libs, left_out }))
+    Ok(Json(AllTimeline { timeline, libs, left_out, flat }))
 }
 
 /// Tags over the drives that take part, by name (spellings fold together),
@@ -1746,6 +1856,7 @@ fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
         place: param(pairs, "place").filter(|v| !v.is_empty()).map(number).transpose()?,
         dates: dates_of(pairs)?,
         needs_date: param(pairs, "nodate").is_some_and(|v| !v.is_empty() && v != "0"),
+        ids: None,
     })
 }
 
@@ -1867,8 +1978,9 @@ struct Timeline {
     est: Vec<(i64, char)>,
 }
 
-async fn timeline(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Timeline>> {
-    let query = filter_of(&pairs)?;
+async fn timeline(State(app): State<Arc<App>>, axum::Extension(only): axum::Extension<CompareIds>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Timeline>> {
+    let mut query = filter_of(&pairs)?;
+    query.ids = only.0;
     blocking(&app, move |app| {
         let conn = app.conn.lock().unwrap();
         if let Some(place) = query.place
@@ -1965,7 +2077,7 @@ async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiRe
             None => None,
         };
         let faces = match key {
-            Some(key) => people::file_faces(&conn, &key)?,
+            Some(key) => people::file_faces(&conn, &key, details.kind == "video")?,
             None => people::FileFaces { faces: None, lost: Vec::new() },
         };
         Ok(Json(FileInfo {

@@ -171,6 +171,10 @@ body.selecting #select { color: var(--accent); }
 .btn.danger { background: #c63b2f; }
 .btn.with-icon { display: inline-flex; align-items: center; gap: 8px; }
 .btn.with-icon svg { width: 18px; height: 18px; flex: none; fill: currentColor; }
+.ficon { display: inline-flex; vertical-align: -.2em; margin-right: .35em; }
+.ficon svg { width: 1.15em; height: 1.15em; fill: currentColor; }
+.btn .ficon, .btn.with-icon .ficon { margin-right: 0; }
+.btn.reveal .ficon svg { width: 16px; height: 16px; }
 .btn:disabled { opacity: .5; cursor: default; }
 
 .modal { position: fixed; inset: 0; z-index: 25; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; padding: 16px; }
@@ -283,7 +287,7 @@ body.selecting #select { color: var(--accent); }
 /* Own tags (5b): sidebar section, info panel chips, selection bar. */
 .side-tags h3 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 10px 8px 0 4px; }
 .side-tags .tree { flex: none; padding-bottom: 4px; }
-.lb-panel .tags.readonly span { background: rgba(255,255,255,.12); color: #eee; border-radius: 99px; padding: 2px 10px; font-size: 13px; }
+.lb-panel .tags.readonly > span { background: rgba(255,255,255,.12); color: #eee; border-radius: 99px; padding: 2px 10px; font-size: 13px; }
 .lb-panel .pfaces.readonly .pface { padding: 2px 0; cursor: pointer; }
 .lb-panel .tags .own { display: inline-flex; align-items: center; background: rgba(255,255,255,.12); border-radius: 99px; }
 .lb-panel .tags .own button { background: none; padding-right: 4px; }
@@ -525,9 +529,10 @@ body.selecting .sec .pick { display: inline; }
 .drive-card { --bk: #6cb4ee; --ok: #5cc58a; --warn: #e0a46d; flex: 0 0 400px; max-width: 100%; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); overflow: hidden; }
 .drive-card.offline, .drive-card.off { opacity: .6; }
 .drive-card.bk { border: 2px solid var(--bk); }
-.drive-card .strip { display: flex; align-items: center; gap: 8px; padding: 8px 14px; min-height: 36px; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; background: var(--panel); color: var(--muted); }
+.drive-card .strip { display: flex; flex-wrap: wrap; row-gap: 2px; align-items: center; gap: 8px; padding: 8px 14px; min-height: 36px; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; background: var(--panel); color: var(--muted); }
 .drive-card.bk .strip { background: var(--bk); color: #0b2233; }
 .drive-card.undecided .strip { color: var(--warn); }
+.drive-card .strip > span { white-space: nowrap; }
 .drive-card .strip .r { margin-left: auto; font-weight: 600; text-transform: none; letter-spacing: 0; opacity: .85; }
 .drive-card .body { padding: 14px; display: flex; flex-direction: column; gap: 12px; flex: 1; min-width: 0; }
 .drive-card .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -539,8 +544,8 @@ body.selecting .sec .pick { display: inline; }
 .drive-card .banner { border: 0; background: none; padding: 0; margin: 0; }
 .drive-card .prog .t { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 12px; color: var(--muted); }
 .drive-card .prog .t b { color: var(--fg); }
-.drive-card .bar { height: 8px; border-radius: 9px; background: var(--panel); overflow: hidden; }
-.drive-card .bar i { display: block; height: 100%; background: var(--ok); }
+.drive-card .meter { height: 8px; border-radius: 9px; background: var(--panel); overflow: hidden; }
+.drive-card .meter i { display: block; height: 100%; background: var(--ok); }
 .drive-card .lists details { font-size: 13px; padding: 2px 0; }
 .drive-card .lists details + details { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 4px; }
 .drive-card .lists summary { cursor: pointer; }
@@ -561,8 +566,7 @@ body.selecting .sec .pick { display: inline; }
 .xgroup { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin: 0 0 8px; }
 .xgroup .path { font-size: 13px; word-break: break-all; }
 .xgroup .path b { font-weight: 600; }
-.people-grid { display: flex; flex-wrap: wrap; gap: 10px; }
-.person-merged { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; min-width: 170px; }
+.person-merged { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
 .person-merged .n { font-weight: 600; }
 
 /* ---- the common timeline of all drives is for looking: no folders or selecting */
@@ -861,3 +865,24 @@ body.geo-view #page { padding: 0; height: 100%; }
 .face-size input::-moz-range-thumb { width: 18px; height: 18px; border: 0; border-radius: 50%; background: var(--fg); box-shadow: 0 1px 3px rgba(0,0,0,.5); }
 .face-size input:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
 .face-size output { min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Comparing the two drives of a backup pair (Manage drives: "Show photos") */
+.chip.cmp { border-color: var(--accent); background: rgba(224, 164, 109, .12); }
+.cell .tb { position: absolute; left: 8px; top: 8px; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 9px; pointer-events: none; }
+.cell .tb.orig { background: rgba(0, 0, 0, .6); color: #fff; }
+.cell .tb.bk { background: #6cb4ee; color: #0b2233; }
+.lb-panel .cmp-badge { display: inline-block; margin-left: 8px; padding: 0 8px; border-radius: 9px; font-size: 11px; font-weight: 700; vertical-align: 1px; cursor: help; white-space: nowrap; background: #6cb4ee; color: #0b2233; }
+.lb-panel .cmp-badge.original { background: rgba(255, 255, 255, .2); color: #fff; }
+.drive-card .lists summary .go { float: right; margin: -3px 0 0 8px; padding: 4px 10px; font-size: 12px; border-radius: 8px; font-weight: 600; }
+.drive-card .lists summary .sub { color: var(--muted); }
+.drive-card .backup-status { display: flex; flex-direction: column; gap: 12px; }
+/* The same row in an original's card and a backup's: a muted line, 30px tall (the backup's has a bar). */
+.drive-card .statline { min-height: 30px; }
+.drive-card .statline .t { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 12px; color: var(--muted); }
+.drive-card .statline b { color: var(--fg); }
+/* People across drives: cards of one width on a grid, the drives in one row, the button at the bottom. */
+.people-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.person-merged { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.person-merged .pills { display: flex; flex-wrap: wrap; gap: 4px; }
+.person-merged .pills .pill { margin-right: 0; }
+.person-merged > .btn { margin-top: auto; align-self: flex-start; }

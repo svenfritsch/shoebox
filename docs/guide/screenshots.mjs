@@ -90,6 +90,44 @@ await shot('name-suggestions');
   await b.close(); process.exit(0);
 }
 
+if (mode === 'drives') {
+  // An original and its backup: Manage drives, the filter on the backup, the
+  // photos that are different on the backup, and the badge in the info panel.
+  await p.goto(url); await p.waitForSelector('.cell'); await wait(1000);
+  const ids = await p.evaluate(async () => {
+    const libs = await api('/api/libraries');
+    const orig = libs.find((l) => l.name === 'Photos'), bak = libs.find((l) => l.name === 'Photos Backup');
+    await post('/api/all/role', { library: bak.id, role: 'backup', of: orig.id });
+    await post('/api/all/role', { library: orig.id, role: 'separate' });
+    localStorage.setItem('shoebox-library', orig.id);
+    return [orig.id, bak.id];
+  });
+  const drivesPage = async () => { await p.goto(url + '#view=drives'); await p.reload(); await p.waitForSelector('.drive-card'); await wait(1500); };
+  await p.setViewportSize({ width: 1280, height: 780 });
+  await drivesPage();
+  // One list open, to show its files and the folder icon.
+  await p.locator('.drive-card:not(.bk) .lists summary').first().click(); await wait(400);
+  await shot('drives-overview');
+  // "Show photos" on the backup's "only on the backup": that drive's timeline with the chip.
+  await p.locator('.drive-card.bk .lists summary .go').nth(1).click(); await p.waitForSelector('.cell'); await wait(1800);
+  await p.setViewportSize({ width: 1280, height: 700 });
+  await shot('drives-only-backup');
+  // The info panel of one of them: the badge next to the name.
+  await p.locator('.cell').first().click(); await wait(1000);
+  if (!(await p.locator('#lb-panel:visible').count())) await p.keyboard.press('i');
+  await wait(1000);
+  const box = await p.locator('#lb-panel').boundingBox();
+  await shot('drives-badge', { clip: { x: box.x, y: 0, width: box.width, height: 480 } });
+  await p.keyboard.press('Escape'); await wait(300);
+  // "Show photos" on "different on the backup": both versions, side by side.
+  await p.setViewportSize({ width: 1280, height: 780 });
+  await drivesPage();
+  await p.locator('.drive-card.bk .lists summary .go').first().click(); await p.waitForSelector('.cell'); await wait(1800);
+  await p.setViewportSize({ width: 1280, height: 560 });
+  await shot('drives-different');
+  await b.close(); process.exit(0);
+}
+
 if (mode === 'launcher') {
   await p.setViewportSize({ width: 760, height: 1100 });
   await p.goto(url); await wait(1200);

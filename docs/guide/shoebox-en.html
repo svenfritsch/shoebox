@@ -730,7 +730,7 @@
         <div class="items">
           <div>
             <h3>In a photo</h3>
-            <p>Open a photo and its info panel (ⓘ). Under <b>People</b> every face has its picture and a name, or <b>+ Name</b>. <b>Select</b> turns the list into a checklist: tick several faces (<b>All unnamed</b> ticks every face nobody has named), then <b>Ignore</b> or <b>Not a face</b> for all of them at once. <b>+ Add face or pet</b> draws a box around a face or pet that was missed. Say what it is first, <b>Person</b>, <b>Cat</b> or <b>Dog</b>, then name it: the list offers only names of that kind (no people when you name a cat), and <b>+ New person</b>, <b>+ New cat</b> or <b>+ New dog</b> adds a new one. The kind of a pet you drew yourself cannot be changed later; delete the box and draw it again. For a pet the detector found, <b>⋯</b> offers <b>It's a cat, not a dog</b> (or the other way round) when it took it for the wrong one.</p>
+            <p>Open a photo and its info panel (ⓘ). Under <b>People</b> every face has its picture and a name, or <b>+ Name</b>. <b>Select</b> turns the list into a checklist: tick several faces (<b>All unnamed</b> ticks every face nobody has named), then <b>Ignore</b> or <b>Not a face</b> for all of them at once. <b>+ Add face or pet</b> draws a box around a face or pet that was missed. Say what it is first, <b>Person</b>, <b>Cat</b> or <b>Dog</b>, then name it: the list offers only names of that kind (no people when you name a cat), and <b>+ New person</b>, <b>+ New cat</b> or <b>+ New dog</b> adds a new one. The kind of a pet you drew yourself cannot be changed later; delete the box and draw it again. For a pet the detector found, <b>⋯</b> offers <b>It's a cat, not a dog</b> (or the other way round) when it took it for the wrong one. <b>Videos</b> are not scanned for faces, so their info panel says so. There you can still link a person: The same <b>+ Add face or pet</b> button opens the same dialog (Person, Cat or Dog, then the name); there is no box to draw, shoebox places the small one it needs by itself, and nothing is drawn on the video. The person or pet is linked to the whole clip. Their profile picture shows in the list, and the video is found when you filter the timeline by that person.</p>
           </div>
           <div>
             <h3>Groups</h3>
@@ -810,7 +810,23 @@
             </div>
             <div>
               <h3>Original and backup drives</h3>
-              <p>On the Manage drives page every drive is a card with its disk name and the folder on it (for example <i>Extreme SSD · /Photos</i>). Say what each drive is with the menu in the card: <b>Original drive</b> or <b>Backup drive</b>. shoebox suggests a backup when almost everything on a drive is on another one, until you decide. A backup has a blue outline, sits right after its original and says <b>Backup of …</b> and <b>Not in common timeline</b>. It shows how much of the original is on the backup, and two lists: files <b>not on the backup yet</b> and files <b>only on the backup</b>. The folder icon next to a file shows it in Finder (Explorer on Windows). The bar at the bottom of a card says when the drive was last scanned and when new files last arrived on it (on a backup: <b>Last backup</b>); point at a date for the exact time.</p>
+              <p>On the Manage drives page every drive is a card with its disk name and the folder on it (for example <i>Extreme SSD · /Photos</i>). Say what each drive is with the menu in the card: <b>Original drive</b> or <b>Backup drive</b>. shoebox suggests a backup when almost everything on a drive is on another one, until you decide. A backup has a blue outline, sits right after its original and says <b>Backup of </b><i>disk name</i> and <b>Not in common timeline</b>. It shows how much of the original is on the backup, and two lists: files <b>different on the backup</b> (the same path with other content, for example after an edit) and files <b>only on the backup</b>. The original's card has the third list, files <b>not on the backup yet</b>. All lists start folded; open one to see its files, and the folder icon next to a file shows it in Finder (Explorer on Windows). Every list has a <b>Show photos ›</b> button. For <b>only on the backup</b> and <b>not on the backup yet</b> it opens that drive's own timeline with a filter chip, <b>Only on backup</b> or <b>Only on original</b>; for <b>different on the backup</b> it opens a timeline of both drives with an <b>Original</b> and a <b>Backup</b> badge on every photo, the two versions of a photo side by side. The chip works like any other: the search (file names, tags, people) and the other filters narrow it down, <b>✕</b> removes it, and typing <i>only on</i> or <i>backup</i> offers it. When you pick a drive it does not fit (an original drive for <b>Only on backup</b>, All drives), the chip is removed and a note says why. In the photo's info panel a badge next to the name says <b>Only on backup</b> or <b>Not backed up</b>; point at it for the explanation. The bar at the bottom of a card says when the drive was last scanned and when new files last arrived on it (on a backup: <b>Last backup</b>); point at a date for the exact time.</p>
+              <figure>
+                <img src="assets/en/drives-overview.jpg" alt="" loading="lazy">
+                <figcaption>Manage drives: an original and its backup. Every list has a Show photos button.</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/en/drives-only-backup.jpg" alt="" loading="lazy">
+                <figcaption>Show photos on “only on the backup”: the backup's own timeline with the <b>Only on backup</b> chip.</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/en/drives-different.jpg" alt="" loading="lazy">
+                <figcaption>Different on the backup: both versions of a photo side by side, each with an Original or Backup badge.</figcaption>
+              </figure>
+              <figure class="narrow">
+                <img src="assets/en/drives-badge.jpg" alt="" loading="lazy">
+                <figcaption>The info panel of a photo that only the backup has: the badge sits next to the name.</figcaption>
+              </figure>
             </div>
             <div>
               <h3>Backup check</h3>
