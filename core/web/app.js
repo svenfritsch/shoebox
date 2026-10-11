@@ -2541,6 +2541,7 @@ function compareDialog(g, start, onKeep) {
   var dlg = el('div', 'dialog compare');
   dlg.appendChild(el('h2', '', tr('dups.compare_title')));
   var strip = el('div', 'compare-strip');
+  var boxes = [];
   var close = function () { back.remove(); document.removeEventListener('keydown', onKey); };
   var onKey = function (e) { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKey);
@@ -2558,13 +2559,43 @@ function compareDialog(g, start, onKeep) {
     var keep = el('button', 'btn', tr('dups.keep_this'));
     keep.onclick = function () { close(); onKeep(f); };
     col.appendChild(keep);
+    // The same tick as on the card in the group behind (one state), so one
+    // photo can go to the trash while the others stay.
+    var label = el('label', 'check');
+    var cb = el('input');
+    cb.type = 'checkbox';
+    cb.onchange = function () {
+      if (cb.checked) dupState.marked[f.id] = true; else delete dupState.marked[f.id];
+      syncDupBoxes();
+      refresh();
+    };
+    boxes.push({ f: f, cb: cb });
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(' ' + tr('dups.delete_copy')));
+    col.appendChild(label);
     strip.appendChild(col);
   });
   dlg.appendChild(strip);
   var row = el('div', 'actions');
+  var trash = el('button', 'btn danger');
+  trash.onclick = function () { close(); deleteMarked(g); };
+  row.appendChild(trash);
   var done = el('button', 'btn quiet', tr('app.close'));
   done.onclick = close;
   row.appendChild(done);
+  // Ticks as they are now; one file of the group always stays, so the last
+  // unticked box is locked. Move to trash counts this group's ticks.
+  var refresh = function () {
+    var open = boxes.filter(function (b) { return !dupState.marked[b.f.id]; });
+    boxes.forEach(function (b) {
+      b.cb.checked = !!dupState.marked[b.f.id];
+      b.cb.disabled = !b.cb.checked && open.length === 1;
+    });
+    var n = boxes.length - open.length;
+    trash.textContent = tr('sel.trash') + ' (' + n + ')';
+    trash.disabled = n === 0;
+  };
+  refresh();
   dlg.appendChild(row);
   back.onclick = function (e) { if (e.target === back) close(); };
   back.appendChild(dlg);
@@ -2726,9 +2757,11 @@ function groupNode(g) {
 
 // Sends the marked copies, one request per group. Capture dates that really
 // conflict are asked for afterwards, then those groups are sent again.
-function deleteMarked() {
+// `only`: a single group (the compare dialog's Move to trash).
+function deleteMarked(only) {
   var jobs = [], total = 0;
   visibleGroups().forEach(function (g) {
+    if (only && only.files && g !== only) return;
     var remove = g.files.filter(function (f) { return dupState.marked[f.id]; }).map(function (f) { return f.id; });
     if (!remove.length) return;
     var keep = g.files.filter(function (f) { return !dupState.marked[f.id]; }).map(function (f) { return f.id; });
