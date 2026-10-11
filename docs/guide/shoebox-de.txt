@@ -675,7 +675,10 @@ benennen.
    Katzen und Hunde haben eigene Karten; das Menü über den Karten wählt
    Personen, Haustiere oder beides. Ein Klick auf ein Gesicht zeigt sein Foto;
    mit den Pfeiltasten links und rechts blätterst du durch die Fotos der
-   Karte, Leertaste oder Esc schließt die Ansicht.
+   Karte, Leertaste oder Esc schließt die Ansicht. Der Schieberegler rechts
+   neben dem Menü stellt die Größe der Gesichtskreise ein, von 64 bis 150
+   Pixel; shoebox merkt sie sich in diesem Browser. Größere Kreise machen die
+   Karten höher, daher passen weniger auf den Bildschirm.
 
 2. Eine Karte benennen
    Den Namen einmal eintippen und Benennen drücken: Die ganze Karte ist

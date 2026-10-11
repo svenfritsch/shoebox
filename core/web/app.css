@@ -389,7 +389,7 @@ body.selecting .sec .pick { display: inline; }
 .face .more-btn { position: absolute; top: 4px; right: 4px; width: 28px; min-width: 28px; height: 28px; background: rgba(0,0,0,.55); color: #fff; }
 
 /* unnamed clusters */
-.clusters { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.clusters { display: grid; grid-template-columns: repeat(auto-fill, minmax(max(320px, calc(var(--face-size, 64px) * 3 + 60px)), 1fr)); gap: 14px; }
 .cluster { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--panel); display: flex; flex-direction: column; gap: 8px; }
 .cluster.busy { opacity: .5; pointer-events: none; }
 .cluster .chead { font-weight: 600; font-size: 14px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -397,15 +397,14 @@ body.selecting .sec .pick { display: inline; }
    in view while the faces scroll, so it can always be closed. */
 .cluster.open { grid-column: 1 / -1; }
 .cluster.open .chead { position: sticky; top: 0; z-index: 5; background: var(--panel); padding: 8px 0; border-bottom: 1px solid var(--line); }
-.cluster.open .cface .avatar.big { width: 72px; height: 72px; }
 .cluster .cclose { flex: none; }
-.cluster .cfaces { display: flex; flex-wrap: wrap; gap: 6px; }
+.cluster .cfaces { display: flex; flex-wrap: wrap; gap: 12px; }
 .cluster .cface { display: block; border-radius: 50%; }
-.cluster .cface .avatar.big { width: 64px; height: 64px; }
+.cluster .cface .avatar.big, .sface-grid .cface .avatar.big { width: var(--face-size, 64px); height: var(--face-size, 64px); }
 .cluster .cface.small .avatar { outline: 2px dashed var(--muted); outline-offset: -2px; }
 .cluster .cface.sel .avatar { outline: 3px solid var(--accent); outline-offset: -3px; }
 .cluster.picking .cface:not(.sel) .avatar { opacity: .6; }
-.cluster .cmore { width: 64px; height: 64px; border-radius: 50%; border: 1px dashed var(--muted); background: none; color: var(--muted); font-size: 13px; }
+.cluster .cmore { width: var(--face-size, 64px); height: var(--face-size, 64px); border-radius: 50%; border: 1px dashed var(--muted); background: none; color: var(--muted); font-size: 13px; }
 .cluster .csugg { font-size: 13px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 .cluster .csugg b { font-weight: 600; }
 .cluster .crow { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
@@ -617,9 +616,8 @@ body.selecting .sec .pick { display: inline; }
 /* Faces alone or in pairs, picked one by one (unnamed page) */
 .singles { margin-top: 24px; padding-bottom: 90px; }
 .singles h3 { margin: 0 0 4px; }
-.sface-grid { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
+.sface-grid { display: flex; flex-wrap: wrap; gap: 12px; margin: 10px 0 14px; }
 .sface-grid .cface { position: relative; display: block; border-radius: 50%; }
-.sface-grid .cface .avatar.big { width: 64px; height: 64px; }
 .sface-grid .cface.small .avatar { outline: 2px dashed var(--muted); outline-offset: -2px; }
 .sface-grid .cface.sel .avatar { outline: 3px solid var(--accent); outline-offset: -3px; }
 .sface-grid .copen { position: absolute; right: -2px; top: -2px; width: 18px; height: 18px; border-radius: 50%; background: var(--panel); border: 1px solid var(--line); color: var(--fg); font-size: 11px; line-height: 16px; text-align: center; opacity: 0; }
@@ -817,3 +815,16 @@ body.geo-view #page { padding: 0; height: 100%; }
 .actions .dates-remove { margin-right: auto; }
 .toast .toast-undo { margin-left: 10px; background: transparent; border: 1px solid currentColor; border-radius: 8px; color: inherit; padding: 1px 9px; font: inherit; cursor: pointer; }
 .suggest .hint { padding: 7px 12px 9px; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line); }
+
+/* Face size slider on the unnamed page (browser setting, 64 to 150 px) */
+.page .toolbar .face-size { margin-left: auto; display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+.face-size .dot { display: block; flex: none; border: 1.5px solid var(--muted); border-radius: 50%; }
+.face-size .dot.s { width: 9px; height: 9px; }
+.face-size .dot.l { width: 18px; height: 18px; }
+.face-size input { -webkit-appearance: none; appearance: none; width: 170px; height: 20px; margin: 0; background: transparent; }
+.face-size input::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--line); }
+.face-size input::-moz-range-track { height: 4px; border-radius: 2px; background: var(--line); }
+.face-size input::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; margin-top: -7px; border: 0; border-radius: 50%; background: var(--fg); box-shadow: 0 1px 3px rgba(0,0,0,.5); }
+.face-size input::-moz-range-thumb { width: 18px; height: 18px; border: 0; border-radius: 50%; background: var(--fg); box-shadow: 0 1px 3px rgba(0,0,0,.5); }
+.face-size input:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+.face-size output { min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
