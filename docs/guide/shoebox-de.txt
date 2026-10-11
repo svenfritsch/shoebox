@@ -241,7 +241,7 @@ die du in der Zentrale installierst.
    weiter, wo es aufgehört hat, und liest zuerst Bildschirmfotos und Fotos
    ohne Kameradaten, weil dort die meisten Texte stehen. Die Wörter bleiben
    auf dem Laufwerk, im versteckten Ordner .shoebox, neben den Gesichtern. Wie
-   du sie suchst, steht unter „Finden und ordnen“. Wenn das Schild neben Text
+   du sie suchst, steht unter „Wörter in Fotos“. Wenn das Schild neben Text
    nicht auf installiert springt oder die Zentrale sagt, Text laufe auf diesem
    Computer nicht (bei einem sehr alten Mac möglich), ist alles andere, was du
    angekreuzt hast, trotzdem installiert: das Laufwerk an einen neueren
@@ -276,7 +276,8 @@ Text erkennen: die Wörter in deinen Fotos lesen (Dokumente, Bildschirmfotos,
 Schilder, Speisekarten). Braucht die Erweiterung „Text“, nicht die für
 Gesichter. Es liest nur; kein Foto wird verändert. Langsam: man kann
 abbrechen, und es macht dort weiter, wo es aufgehört hat.
-Gesichts-Statistik: wie die Erkennung gelaufen ist
+Erkennungs-Statistik: wie Gesichter, Haustiere und Text gelaufen sind:
+angesehene Fotos, Funde, benannte Personen, was noch zu tun ist. Liest nur.
 Backup-Prüfung: ist der 2. Ordner eine vollständige Kopie des 1.?
 
 [Screenshot: Die Zentrale: 1 Erweiterungen installieren, 2 Laufwerk oder
@@ -384,17 +385,6 @@ erscheint, wenn du mit der Maus darüberfährst; Favoriten zeigen es immer).
 Noch einmal klicken nimmt es wieder weg. Intern ist ein Favorit einfach dein
 eigener Tag favorite, im Index gespeichert wie jeder Tag, nie im Foto.
 
-Erkannter Text in der Ansicht
-Bei einem Foto mit erkanntem Text erscheint in der oberen Leiste neben dem ♥
-ein Scanner-Knopf, abgedunkelt; Fotos ohne Text zeigen ihn nicht. Drück ihn
-oder die Taste t: Die Zeilen werden auf dem Foto umrandet, und im Infofeld
-öffnet sich der Abschnitt Erkannter Text, eine Liste, die scrollt, wenn es
-viele Zeilen sind, mit Alles kopieren am rechten Ende der Kopfzeile. Drückst
-du den Knopf erneut, verschwinden die Umrandungen und die Liste klappt zu. Ein
-Klick auf die Kopfzeile klappt nur die Liste auf oder zu. Das ✕ neben einer
-Zeile nimmt sie aus der Suche (für Text, der nicht gefunden werden soll);
-Wieder zeigen holt sie zurück.
-
 Drehen
 r dreht nach links, Umschalt+R nach rechts. Bei JPEGs ändern sich nur die zwei
 Bytes der Drehmarke; bei anderen Formaten gilt die Drehung nur in shoebox.
@@ -436,27 +426,6 @@ sich in beide Richtungen irren: Im Info-Fenster eines Fotos ist Screenshot ein
 Auswahlfeld, das mit der Schätzung von Shoebox beginnt; wähle Ja oder Nein zum
 Korrigieren, Zurück zu automatisch kehrt zur Schätzung zurück. Deine Wahl wird
 in der Bibliothek gemerkt; die Fotodatei wird nie verändert.
-
-Wörter in Fotos und Dateinamen
-Nachdem Text erkennen gelaufen ist (siehe „In drei Schritten loslegen“),
-findet das Suchfeld auch die Wörter in deinen Fotos: einen Brief, ein
-Bildschirmfoto, ein Straßenschild. Tippe das Wort und wähle in den Vorschlägen
-die Gruppe Erkannter Text, oder tippe zuerst text: (text:Rechnung), um nur
-dort zu suchen. Es wird ein Chip mit Scanner-Symbol. Nur Dateinamen suchst du
-mit name: davor (name:IMG_20); dieser Chip hat ein Seiten-Symbol. Groß- und
-Kleinschreibung, Akzente und ß spielen keine Rolle (strasse findet Straße);
-bei mehreren Wörtern müssen alle im selben Foto stehen. Beide Chip-Arten
-lassen sich mit allen anderen Chips verbinden, zum Beispiel der Text Rechnung
-in einem Jahr oder von einer Person, und sie funktionieren in Alle Laufwerke.
-Die gezeigten Fotos tragen einen Streifen mit der Zeile, die gepasst hat.
-
-Es zählen nur Zeilen, bei denen sich das Programm sicher ist: Lesen ist nicht
-perfekt, und winzige Schrift wird mit Absicht weggelassen. Die Text-Prüfung
-(Einstellungen → Kalibrierung → Text-Prüfung) zeigt, was zählt und was
-weggelassen wird, mit dem ausgeschnittenen Teil des Fotos neben jeder Zeile,
-und zwei Regler (Sicherheit mindestens, Höhe mindestens) verschieben die
-Grenzen; Zurück zu den Standardwerten setzt sie zurück. Solange noch Fotos zu
-lesen sind, steht in der Statuszeile Text: N noch zu lesen.
 
 Auswählen
 ☑ drücken, dann Fotos anklicken (mit Umschalt für einen Bereich; am iPad
@@ -580,6 +549,18 @@ Tier einen Rahmen. Ein Klick auf einen Namen zeigt alle Fotos der Person; ein
 Suchen
 Namen funktionieren im Suchfeld wie Tags, ebenso Arten wie „alle Katzen“.
 Kombiniere eine Person mit einem Tag, einem Ordner oder einer weiteren Person.
+
+Gefundenes vergessen
+Einstellungen → Gefundene Gesichter und Gefundene Haustiere haben je zwei
+Knöpfe. Automatische Funde löschen entfernt die Gesichter (oder Katzen und
+Hunde), die die Erkennung gefunden hat, vom Laufwerk. Deine Namen,
+Bestätigungen und gezeichneten Rahmen bleiben und greifen wieder, sobald die
+Fotos erneut erkannt wurden; bis dahin wird nichts vorgeschlagen und die
+Personenseiten sind leer. Alles löschen, auch Namen entfernt auch, was du
+getan hast: die benannten Personen, bestätigte und abgelehnte Gesichter, „kein
+Gesicht“ und gezeichnete Rahmen. Das lässt sich nicht rückgängig machen, weil
+in den Fotos nichts davon steht; ein Dialog sagt vorher, wie viele es sind.
+Deine Fotos werden nie angefasst.
 
 Neue Fotos
 Die Erkennung startet nach einem Scan noch nicht von selbst. In der Zentrale
@@ -756,6 +737,74 @@ Foto oder dessen Ort.
 Orte und die von dir festgelegten Aufnahmeorte stehen zusammen mit deinen Tags
 und Personen in userdata.json neben dem Index auf dem Laufwerk.
 
+Wörter in Fotos
+---------------
+
+Optional: Fotos über die Wörter finden, die darin stehen, etwa ein Brief, ein
+Bildschirmfoto oder ein Straßenschild. Braucht die Erweiterung „Text“.
+
+Die Wörter lesen
+In der Zentrale in Schritt 1 Text ankreuzen, Ausgewählte Erweiterungen
+installieren drücken, dann dein Laufwerk wählen und Text erkennen drücken
+(siehe „In drei Schritten loslegen“). Es liest deutsche und englische
+Buchstaben, liest nur (kein Foto wird verändert) und braucht eine Weile: am
+besten abends starten. Es liest zuerst Bildschirmfotos und Fotos ohne
+Kameradaten, weil dort die meisten Texte stehen, und macht nach einem Abbruch
+dort weiter, wo es aufgehört hat. Nach einem Scan drückst du es noch einmal,
+um die neuen Fotos zu lesen. Die Statuszeile unten in der Foto-App sagt Text:
+N noch zu lesen, solange Fotos warten. Erkennungs-Statistik in der Zentrale
+zeigt, wie weit Gesichter, Haustiere und Text sind (im Terminal: shoebox
+stats).
+
+Die Wörter suchen
+Tippe ein Wort ins Suchfeld und wähle in den Vorschlägen die Gruppe Erkannter
+Text, oder tippe zuerst text: (text:Rechnung), um nur dort zu suchen. Es wird
+ein Chip mit Scanner-Symbol, und die gezeigten Fotos tragen einen Streifen mit
+der Zeile, die gepasst hat. Nur Dateinamen suchst du mit name: davor
+(name:IMG_20); dieser Chip hat ein Seiten-Symbol. Groß- und Kleinschreibung,
+Akzente und ß spielen keine Rolle (strasse findet Straße); bei mehreren
+Wörtern müssen alle im selben Foto stehen. Beide Chips lassen sich mit allen
+anderen Chips verbinden, zum Beispiel der Text Rechnung in einem Jahr oder von
+einer Person, und sie funktionieren in Alle Laufwerke.
+
+Nur, was sich das Programm sicher ist
+Lesen ist nicht perfekt, und winzige Schrift wird mit Absicht weggelassen.
+Einstellungen → Kalibrierung → Text-Prüfung zeigt, was zählt und was
+weggelassen wird, mit dem ausgeschnittenen Teil des Fotos neben jeder Zeile;
+zwei Regler (Sicherheit mindestens, Höhe mindestens) verschieben die Grenzen,
+und Zurück zu den Standardwerten setzt sie zurück.
+
+In der Ansicht
+Bei einem Foto mit erkanntem Text erscheint in der oberen Leiste neben dem ♥
+ein Scanner-Knopf, abgedunkelt; Fotos ohne Text zeigen ihn nicht. Drück ihn
+oder die Taste t: Die Zeilen werden auf dem Foto umrandet, und im Infofeld
+öffnet sich der Abschnitt Erkannter Text, eine Liste, die scrollt, wenn es
+viele Zeilen sind, mit Alles kopieren am rechten Ende der Kopfzeile. Drückst
+du den Knopf erneut, verschwinden die Umrandungen und die Liste klappt zu; ein
+Klick auf die Kopfzeile klappt nur die Liste auf oder zu. Nach einer Textsuche
+sind die Umrandungen von selbst an, und die gesuchten Wörter sind markiert.
+Das ✕ neben einer Zeile nimmt sie aus der Suche (für Text, der nicht gefunden
+werden soll); Wieder zeigen holt sie zurück.
+
+Den Text vergessen
+Dokumente können Namen und Nummern enthalten. Einstellungen → Erkannter Text →
+Gesamten erkannten Text löschen entfernt jedes gelesene Wort von diesem
+Laufwerk. Fotos bleiben unberührt, ausgeblendete Zeilen bleiben ausgeblendet,
+und Text erkennen liest sie auf Wunsch erneut. Im Terminal gibt shoebox text
+stats aus, wie viele Fotos gelesen wurden und wie viele Zeilen gespeichert
+sind (--json für Skripte).
+
+[Screenshot: Beim Tippen eines Worts: Die Vorschläge haben die Gruppe
+Erkannter Text.]
+
+[Screenshot: Der Chip text: und die Zeile, die gepasst hat, über dem Foto.]
+
+[Screenshot: Die Ansicht: der Scanner-Knopf, die umrandeten Zeilen und die
+Liste mit Alles kopieren.]
+
+[Screenshot: Einstellungen: Gefundenes vergessen, für Text, Gesichter und
+Haustiere.]
+
 Laufwerke, Backups und das iPad
 -------------------------------
 
@@ -843,13 +892,15 @@ etwas hinein.
    sind die optionalen Karten (Einstellungen, standardmäßig aus): Dein Browser
    lädt dann Kartenbilder von OpenStreetMap.
 
-- Text, den du vergessen kannst
+- Gefundenes kannst du vergessen
    Die aus deinen Fotos gelesenen Wörter liegen auf dem Laufwerk in
    .shoebox/recognition.db, nie in einem Foto. Einstellungen → Erkannter Text
    → Gesamten erkannten Text löschen entfernt alle (ausgeblendete Zeilen
-   bleiben ausgeblendet); Text erkennen liest sie erneut. shoebox text stats
-   im Terminal zeigt, wie viele Fotos gelesen wurden und wie viele Zeilen
-   gespeichert sind.
+   bleiben ausgeblendet); Text erkennen liest sie erneut. Gefundene Gesichter
+   und Gefundene Haustiere daneben tun dasselbe für Gesichter und Haustiere,
+   mit einem zweiten Knopf, der auch deine Namen löscht (der Dialog sagt
+   vorher, wie viele es sind). shoebox text stats im Terminal zeigt, wie viele
+   Fotos gelesen wurden und wie viele Zeilen gespeichert sind.
 
 Wenn etwas komisch aussieht
 ---------------------------

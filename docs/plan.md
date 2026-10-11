@@ -266,7 +266,7 @@ going.
 
 ### Recognition housekeeping: one Stats button, "forget" for faces and pets (planned)
 
-Two gaps found while building phase 9 (nothing built yet):
+Two gaps found while building phase 9. **Built** (`forget.rs`, `overview.rs`): the Control Panel button "Recognition stats" (job `recognition_stats`, `shoebox stats [--json]`), and in Settings "Faces found" and "Pets found" with "Delete automatic finds" and "Delete everything incl. names" (`POST /api/recognition/forget`). Decided: the user's decisions are kept by content and box in `library.db`, so after "automatic finds" they take hold again when the photos are recognized again; until then nothing is suggested. The text below is the original plan:
 
 - **Stats for every kind.** The Control Panel has one button, "Face stats"
   (`faces_stats`), and it reports faces only. There is no way to see how the

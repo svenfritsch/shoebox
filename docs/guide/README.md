@@ -45,4 +45,5 @@ CHROME=/path/to/chrome docs/guide/screenshots.sh core/target/release/shoebox
 
 `comic.py` draws the pictures, `make-sample-library.py` builds the library,
 `mock-recognizer.py` answers the recognizer protocol for it (docs/protocol.md).
+The text search pictures (`text-search-*`, `viewer-text`, `settings-forget`) come from the same library plus a folder of drawn documents, a street sign and a phone screenshot (`SHOEBOX_SAMPLE_TEXT=1`); the mock recognizer "reads" them from the annotations (its `text` task). `text-check` is not in the guide.
 `shrink-shots.py` turns the PNGs into the 1800 px JPEGs kept in `assets/`.

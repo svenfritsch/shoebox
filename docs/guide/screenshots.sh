@@ -26,6 +26,16 @@ for lang in en de; do
     sleep 2
     node screenshots.mjs launcher "$lang" "$out" http://localhost:7879/ "$LIB"
     kill $pid
+    # the text search pictures: the same library plus a folder of pictures with
+    # words in them, "read" by the mock recognizer
+    rm -rf "$LIB"; mkdir -p "$LIB"
+    SHOEBOX_SAMPLE_TEXT=1 python3 make-sample-library.py "$LIB" "$lang" /tmp/shoebox-guide-ann.json
+    "$BIN" scan "$LIB" >/dev/null 2>&1
+    SHOEBOX_MOCK_ANN=/tmp/shoebox-guide-ann.json "$BIN" recognize "$LIB" --recognizer "$PWD/mock-recognizer.py" --pets --text >/dev/null 2>&1
+    "$BIN" serve "$LIB" --port 7900 >/dev/null 2>&1 & pid=$!
+    sleep 2
+    node screenshots.mjs text "$lang" "$out" http://localhost:7900/ "$LIB"
+    kill $pid
 done
 rm -rf "$LIB" /tmp/shoebox-guide-home
 python3 shrink-shots.py

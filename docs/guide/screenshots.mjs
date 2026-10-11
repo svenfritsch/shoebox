@@ -40,6 +40,37 @@ if (mode === 'launcher') {
   await b.close(); process.exit(0);
 }
 
+// Text search (phase 9): the sample library has a folder of pictures with words
+// in them (SHOEBOX_SAMPLE_TEXT=1) that the mock recognizer "reads".
+if (mode === 'text') {
+  const word = de ? 'rechnung' : 'invoice';
+  await p.goto(url); await p.waitForSelector('.cell'); await wait(1500);
+  // The suggestions: the words in photos are a group of their own.
+  await p.setViewportSize({ width: 1280, height: 560 });
+  await p.fill('#search', word.slice(0, 4)); await wait(1200);
+  await shot('text-search-dropdown');
+  await p.fill('#search', ''); await p.keyboard.press('Escape'); await p.evaluate(() => document.activeElement && document.activeElement.blur());
+  // text: as a chip, the photos that have the word, with the matching line.
+  await p.goto(url + '#text=' + word); await p.waitForSelector('.cell .snip'); await wait(1500);
+  await shot('text-search-results');
+  // The viewer: the scanner button outlines the lines and opens the list.
+  await p.locator('.cell').first().click(); await wait(1200);
+  await p.setViewportSize({ width: 1280, height: 860 });
+  // Opened from a text search, the viewer shows the outlines and the list by itself.
+  await p.waitForSelector('#lb-text.on'); await wait(1500);
+  if (await p.locator('#lb-panel').isHidden()) { await p.keyboard.press('i'); await wait(1200); }
+  await shot('viewer-text');
+  await p.keyboard.press('Escape'); await wait(300);
+  // Settings: forgetting what was found; the Text check.
+  await p.goto(url + '#view=settings'); await p.waitForSelector('.settings-section'); await wait(1500);
+  await p.setViewportSize({ width: 1280, height: 1400 }); await wait(500);
+  await shot('settings-forget', { fullPage: false });
+  await p.goto(url + '#view=text'); await p.waitForSelector('.tc-card, .textcheck .sub'); await wait(2000);
+  await p.setViewportSize({ width: 1280, height: 900 }); await wait(500);
+  await shot('text-check');
+  await b.close(); process.exit(0);
+}
+
 await p.goto(url); await p.waitForSelector('.cell'); await wait(1000);
 // Moving to the trash is off until it is allowed in the settings; the guide shows it on.
 await p.evaluate(() => post(LIBAPI + '/allow-trash', { allow: true }));
