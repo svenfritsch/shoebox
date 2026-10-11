@@ -372,9 +372,10 @@ fn screenshots_are_a_type_of_their_own() {
     image::RgbImage::from_pixel(600, 400, image::Rgb([240, 240, 240]))
         .save(lib.path("Handy/Bildschirmfoto 2024-03-02 um 10.11.12.jpg"))
         .unwrap();
-    // A noisy PNG (a scan, an export) of the same size is not.
+    // A noisy PNG (a scan, an export) that is not a display's size is not one
+    // (at exactly a display's size it would count, whatever the picture).
     let mut seed = 7u32;
-    image::RgbImage::from_fn(1170, 2532, |_, _| {
+    image::RgbImage::from_fn(1171, 2532, |_, _| {
         seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
         image::Rgb([(seed >> 24) as u8, (seed >> 16) as u8, (seed >> 8) as u8])
     })
