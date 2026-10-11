@@ -516,12 +516,17 @@ pub struct Tag {
     pub name: String,
     pub count: u64,
     pub kind: TagKind,
+    /// When a photo was last given this own tag (Unix seconds); absent if
+    /// never (or only before this was recorded).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_used: Option<i64>,
 }
 
 /// Every tag with the number of present files carrying it, most used first.
 pub fn all_tags(conn: &Connection) -> Result<Vec<Tag>> {
     let mut stmt = conn.prepare(
-        "SELECT t.id, t.name, count(DISTINCT f.id) AS n, max(ft.source = 'folder'), max(ft.source = 'user') FROM tags t
+        "SELECT t.id, t.name, count(DISTINCT f.id) AS n, max(ft.source = 'folder'), max(ft.source = 'user'),
+                max(CASE WHEN ft.source = 'user' THEN ft.added_at END) FROM tags t
          JOIN file_tags ft ON ft.tag_id = t.id
          JOIN files f ON f.id = ft.file_id AND f.missing_since IS NULL AND f.kind != 'raw'
          GROUP BY t.id ORDER BY n DESC, t.name",
@@ -533,7 +538,7 @@ pub fn all_tags(conn: &Connection) -> Result<Vec<Tag>> {
                 (false, true) => TagKind::Own,
                 _ => TagKind::Folder,
             };
-            Ok(Tag { id: r.get(0)?, name: r.get(1)?, count: r.get::<_, i64>(2)? as u64, kind })
+            Ok(Tag { id: r.get(0)?, name: r.get(1)?, count: r.get::<_, i64>(2)? as u64, kind, last_used: r.get(5)? })
         })?
         .collect::<rusqlite::Result<_>>()?;
     Ok(tags)
@@ -611,6 +616,7 @@ pub fn tags_within(conn: &Connection, files: &HashSet<i64>, skip: &[i64]) -> Res
                 (false, true) => TagKind::Own,
                 _ => TagKind::Folder,
             },
+            last_used: None,
         })
         .collect();
     tags.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.name.cmp(&b.name)));

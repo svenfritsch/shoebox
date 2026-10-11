@@ -14,6 +14,81 @@ const TAG = 'Highlights';
 const HOLIDAY = de ? '2025-08 Urlaub' : '2025-08 Holiday';
 const shot = (name, opts = {}) => p.screenshot({ path: `${out}/${name}.png`, ...opts });
 const wait = (ms = 600) => p.waitForTimeout(ms);
+// A button by its label (core/i18n), not by its place: cards differ in which buttons they have.
+const { readFileSync } = await import('node:fs');
+const SELECT = JSON.parse(readFileSync(new URL(`../../core/i18n/${lang}.json`, import.meta.url), 'utf8'))['facecheck.select'];
+
+const GROUPS = de ? { family: 'Familie', friends: 'Freunde', colleagues: 'Kollegen', pets: 'Haustiere' } : { family: 'Family', friends: 'Friends', colleagues: 'Colleagues', pets: 'Pets' };
+const nameEveryone = () => p.evaluate(async (g) => {
+  const WHO = { '2023-08': ['Mia', 'Rosa', 'Ben'], '2023-09': ['Lena', 'Jonas', 'Sam'], '2023-10': ['Priya', 'Marco', 'Chen'], '2025-05': ['Mia'], '2025-07': ['Mia'] };
+  const ids = {};
+  for (const kind of ['faces', 'pets']) {
+    const res = await api(LIBAPI + '/clusters?kind=' + kind);
+    for (const c of res.clusters) {
+      let name = null;
+      if (kind === 'pets') name = c.size > 5 ? 'Whiskers' : 'Buddy';
+      else {
+        const f = c.faces[0];
+        const info = await api(LIBAPI + '/files/' + f.file);
+        const row = WHO[info.path.slice(0, 7)];
+        if (row) name = row[Math.min(info.faces.map((x) => x.x).sort((a, b) => a - b).indexOf(f.x), row.length - 1)];
+      }
+      if (!name) continue;
+      const d = await post(LIBAPI + '/clusters/' + c.id + '/name', { generation: c.generation, name });
+      ids[name] = d.person.id;
+    }
+  }
+  const members = { [g.family]: ['Rosa', 'Ben'], [g.friends]: ['Lena', 'Jonas', 'Sam'], [g.colleagues]: ['Priya', 'Marco', 'Chen'], [g.pets]: ['Whiskers', 'Buddy'] };
+  for (const [name, who] of Object.entries(members)) {
+    const grp = await post(LIBAPI + '/groups', { name });
+    for (const w of who) await post(LIBAPI + '/people/' + ids[w] + '/group', { group_id: grp.id });
+  }
+}, GROUPS);
+
+// Only the suggestion lists (tag field, name field): a fresh recognised library, no
+// other steps. usage: node screenshots.mjs suggestions <lang> <outdir> <url> <library-path>
+if (mode === 'suggestions') {
+  await p.goto(url); await p.waitForSelector('.cell'); await wait(1500);
+  await nameEveryone();
+
+  // Tags are seeded oldest first with pauses: the first two are the most used,
+  // the rest the most recently used.
+const SEED = de
+  ? [['Garten', 6], ['Strand', 4], ['See', 1], ['Picknick', 1], ['Markt', 1], ['Sonnenuntergang', 1], ['Radtour', 1]]
+  : [['Garden', 6], ['Beach', 4], ['Lake', 1], ['Picnic', 1], ['Market', 1], ['Sunset', 1], ['Cycling', 1]];
+for (const [name, n] of SEED) {
+  await p.evaluate(async ([name, n]) => {
+    const t = await api(LIBAPI + '/timeline');
+    await post(LIBAPI + '/tags/add', { ids: t.ids.slice(0, n), name });
+  }, [name, n]);
+  await wait(1100);
+}
+await p.goto(url); await p.waitForSelector('.cell'); await wait(1500);
+await p.click('#select'); await p.locator('.cell').nth(0).click(); await wait(300);
+await p.click('#sel-tag'); await wait(900);
+await shot('tag-suggestions');
+await p.keyboard.press('Escape'); await wait(300);   // the first closes the list
+await p.keyboard.press('Escape'); await wait(300);   // the second the dialog
+await p.click('#sel-done').catch(() => {}); await wait(300);
+// The name field of the bar under the single faces (the strangers left unnamed): who was
+// named last, who has the most photos.
+await p.click('#nav-people'); await wait(1500);
+await p.locator('#page .link').first().click(); await wait(3000);
+await p.locator('.sface-grid .cface').first().click(); await wait(500);
+await p.locator('.singles-bar .pfield input').click(); await wait(800);
+await shot('name-suggestions');
+  // The bar must stay on one row on a normal screen, also with the longest button (a pet card's
+  // "it's a dog, not a cat").
+  const rows = await p.evaluate(() => {
+    const kids = [...document.querySelector('.singles-bar').children];
+    kids.forEach((k) => { k.hidden = false; });
+    kids[5].textContent = 'Es ist ein Hund, keine Katze';
+    const mid = kids.map((k) => { const r = k.getBoundingClientRect(); return r.top + r.height / 2; });
+    return Math.max(...mid) - Math.min(...mid);
+  });
+  if (rows > 12) throw new Error(`the bar under the single faces wraps (${rows}px between its items)`);
+  await b.close(); process.exit(0);
+}
 
 if (mode === 'drives') {
   // An original and its backup: Manage drives, the filter on the backup, the
@@ -42,7 +117,7 @@ if (mode === 'drives') {
   if (!(await p.locator('#lb-panel:visible').count())) await p.keyboard.press('i');
   await wait(1000);
   const box = await p.locator('#lb-panel').boundingBox();
-  await shot('drives-badge', { clip: { x: box.x, y: 0, width: box.width, height: 420 } });
+  await shot('drives-badge', { clip: { x: box.x, y: 0, width: box.width, height: 480 } });
   await p.keyboard.press('Escape'); await wait(300);
   // "Show photos" on "different on the backup": both versions, side by side.
   await p.setViewportSize({ width: 1280, height: 780 });
@@ -98,6 +173,11 @@ await p.keyboard.press('Escape'); await wait(300);
 // Duplicates, from a clean state; tall so the whole page is in the shot.
 await p.click('#nav-dups'); await wait(7000);
 await p.setViewportSize({ width: 1280, height: 1500 }); await wait(800);
+// The Preselect menu open, then its "Smaller versions": that group comes to the
+// top with the messenger copy ticked.
+await p.click('.dup-pre summary'); await wait(400);
+await shot('duplicates-preselect', { clip: { x: 0, y: 0, width: 1280, height: 760 } });
+await p.locator('.dup-pre button', { hasText: de ? 'Kleinere Versionen' : 'Smaller versions' }).first().click(); await wait(1200);
 await shot('duplicates');
 await p.setViewportSize({ width: 1280, height: 860 });
 await p.click('#all'); await wait(800);
@@ -105,11 +185,12 @@ await p.click('#all'); await wait(800);
 // People and pets: the cards waiting for a name.
 await p.click('#nav-people'); await wait(1200);
 await p.locator('#page .link').first().click(); await wait(2500);
+await p.waitForSelector('#un-box .cluster button.btn.quiet', { timeout: 120000 }); await wait(1500);   // the cards come when the clusters are computed
 await shot('people-unnamed');
 
 // "Select" on a card: tick some faces, then name, ignore or mark only those.
 const card = p.locator('#un-box .cluster').first();
-await card.locator('button.btn.quiet:visible').nth(2).click(); await wait(500);
+await card.locator('button.btn.quiet', { hasText: SELECT }).first().click(); await wait(500);
 await card.locator('.cface').nth(1).click(); await card.locator('.cface').nth(3).click(); await wait(300);
 await card.locator('input[type=text]').fill('Mia'); await wait(300);
 await card.screenshot({ path: `${out}/faces-select.png` });
@@ -130,32 +211,7 @@ await p.click('#all'); await wait(800);
 
 // Name everybody (the people in the drawn photos), make groups, put them in.
 // Two strangers and the framed picture stay unnamed on purpose.
-const GROUPS = de ? { family: 'Familie', friends: 'Freunde', colleagues: 'Kollegen', pets: 'Haustiere' } : { family: 'Family', friends: 'Friends', colleagues: 'Colleagues', pets: 'Pets' };
-await p.evaluate(async (g) => {
-  const WHO = { '2023-08': ['Mia', 'Rosa', 'Ben'], '2023-09': ['Lena', 'Jonas', 'Sam'], '2023-10': ['Priya', 'Marco', 'Chen'], '2025-05': ['Mia'], '2025-07': ['Mia'] };
-  const ids = {};
-  for (const kind of ['faces', 'pets']) {
-    const res = await api(LIBAPI + '/clusters?kind=' + kind);
-    for (const c of res.clusters) {
-      let name = null;
-      if (kind === 'pets') name = c.size > 5 ? 'Whiskers' : 'Buddy';
-      else {
-        const f = c.faces[0];
-        const info = await api(LIBAPI + '/files/' + f.file);
-        const row = WHO[info.path.slice(0, 7)];
-        if (row) name = row[Math.min(info.faces.map((x) => x.x).sort((a, b) => a - b).indexOf(f.x), row.length - 1)];
-      }
-      if (!name) continue;
-      const d = await post(LIBAPI + '/clusters/' + c.id + '/name', { generation: c.generation, name });
-      ids[name] = d.person.id;
-    }
-  }
-  const members = { [g.family]: ['Rosa', 'Ben'], [g.friends]: ['Lena', 'Jonas', 'Sam'], [g.colleagues]: ['Priya', 'Marco', 'Chen'], [g.pets]: ['Whiskers', 'Buddy'] };
-  for (const [name, who] of Object.entries(members)) {
-    const grp = await post(LIBAPI + '/groups', { name });
-    for (const w of who) await post(LIBAPI + '/people/' + ids[w] + '/group', { group_id: grp.id });
-  }
-}, GROUPS);
+await nameEveryone();
 await p.goto(url); await p.waitForSelector('.cell'); await wait(2000);
 await p.click('#nav-people'); await wait(2000);
 await p.setViewportSize({ width: 1280, height: 1020 }); await wait(500);
@@ -236,4 +292,5 @@ await pad.addInitScript((l) => { try { localStorage.setItem('shoebox.lang', l); 
 const q = await pad.newPage();
 await q.goto(url); await q.waitForSelector('.cell'); await q.waitForTimeout(1500);
 await q.screenshot({ path: `${out}/ipad.png` });
+
 await b.close();

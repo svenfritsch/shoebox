@@ -425,7 +425,7 @@
           </div>
           <div>
             <h3>Viewer</h3>
-            <p>Click a photo. <b>ⓘ</b> opens the info panel: date (marked <b>estimated</b> when it is not the day the photo was taken, or <b>manual</b> when you set it yourself; the pencil next to it sets or changes your date), camera, size, tags, people, and buttons to open the folder or copy the path. At the bottom, <b>GPS data</b> shows where the photo was taken (see “Locations and maps”).</p>
+            <p>Click a photo. <b>ⓘ</b> opens the info panel: date (marked <b>estimated</b> when it is not the day the photo was taken, or <b>manual</b> when you set it yourself; the pencil next to it sets or changes your date), drive, camera, size, tags, people, and buttons to open the folder or copy the path. At the bottom, <b>GPS data</b> shows where the photo was taken (see “Locations and maps”).</p>
           </div>
           <div>
             <h3>Favorites</h3>
@@ -478,7 +478,7 @@
           </div>
           <div>
             <h3>Tag</h3>
-            <p><b>Add tag…</b> puts your own tag on the selection. Tags live in shoebox’s index, never in the photo files.</p>
+            <p><b>Add tag…</b> puts your own tag on the selection. Tags live in shoebox’s index, never in the photo files. In the tag field the tags you used last come first (<b>Recently used</b>), then the <b>Most used</b>; typing narrows the list and keeps recent tags on top. Shoebox remembers this in the drive’s index (never in the photo files), so it is the same on every computer and tablet.</p>
           </div>
           <div>
             <h3>Date</h3>
@@ -514,6 +514,10 @@
         <figure>
           <img src="assets/en/add-tag.jpg" alt="" loading="lazy">
           <figcaption>Adding a tag.</figcaption>
+        </figure>
+        <figure>
+          <img src="assets/en/tag-suggestions.jpg" alt="" loading="lazy">
+          <figcaption>Adding a tag: the tags used last come first, then the most used.</figcaption>
         </figure>
         <figure>
           <img src="assets/en/move-dialog.jpg" alt="" loading="lazy">
@@ -585,10 +589,17 @@
           </div>
           <div>
             <h3>Duplicates</h3>
-            <p><b>Duplicates</b> lists four kinds: identical, same photo in another size, original and edited, and look-alikes. Tick <b>delete this copy</b> on what you want gone; the best file stays, and at least one file of every duplicate always remains. Tags and capture dates of a removed copy carry over. With more than one drive, the tab <b>Across drives</b> (in <b>All drives</b> and under <b>Manage drives</b>) lists photos that are on several drives: one picture, one row per copy with the disk name and folder. Tick the copies to remove, or pick a drive and <b>Mark all</b> to tick every copy on it; the last copy of a photo can never be ticked. <b>Move to trash</b> asks first and puts each copy in the trash of its own drive.</p>
+            <p><b>Duplicates</b> lists four kinds: identical, same photo with other pixel dimensions or another format (a smaller or re-sent version, or a HEIC and the JPEG made from it), original and edited, and look-alikes. Tick <b>delete this copy</b> on what you want gone; the best file stays. Shoebox pre-ticks only what it is sure of: identical files and a version with fewer pixels (a HEIC and its JPEG are shown together, but neither is pre-ticked). Two files in the same format with the same pixel dimensions but different bytes, such as a camera JPEG and a JPEG developed from the RAW (often named like <i>IMG_1 2.jpg</i>), are never pre-ticked: they appear under look-alikes and you choose which to keep: <b>Keep this one</b> on a card ticks every other file of the group in one click (nothing moves until <b>Move to trash</b>), and small badges show which file has the <b>most pixels</b> or is the <b>biggest file</b>, and at least one file of every duplicate always remains. Tags and capture dates of a removed copy carry over. With more than one drive, the tab <b>Across drives</b> (in <b>All drives</b> and under <b>Manage drives</b>) lists photos that are on several drives: one picture, one row per copy with the disk name and folder. Tick the copies to remove, or pick a drive and <b>Mark all</b> to tick every copy on it; the last copy of a photo can never be ticked. <b>Move to trash</b> asks first and puts each copy in the trash of its own drive.</p>
             <div class="subs">
-              <h4>Quick actions</h4>
-              <p><b>Clear Same Folder Copies</b> and <b>Clear Lower Quality Copies</b> clean up the clear-cut cases in one go.</p>
+              <h4>Preselect</h4>
+              <p><b>Preselect</b> (top right) ticks <b>delete this copy</b> by a rule and brings the groups it ticked to the top, so you see exactly what is marked. Nothing is removed until you press <b>Move to trash</b> and confirm. Every line shows how many files it would tick, and its tooltip says what it does; a line with nothing to tick is not listed.</p>
+              <ul>
+                <li><b>Suggested</b>: only what shoebox is sure of: of identical files all but the best one, and smaller versions of a photo. This is also what is ticked when the page opens.</li>
+                <li><b>Identical photos:</b> <b>Copies in the same folder</b> (<i>IMG_1 (2)</i> next to <i>IMG_1</i>; identical files in other folders stay).</li>
+                <li><b>Same photo, different resolution:</b> <b>Smaller versions</b> (every card with a red <b>Lower quality</b> badge, also inside look-alike groups), <b>Keep the HEIC</b> (ticks the JPEG) and <b>Keep the JPEG</b> (ticks the HEIC).</li>
+                <li><b>Original and edited:</b> <b>Edited versions</b> (the originals stay) and <b>Originals</b> (the edits stay).</li>
+                <li><b>Similar photos:</b> <b>Keep the bigger file</b> ticks all others of every group, and <b>Keep the last shot</b> keeps the shot taken last (groups without capture dates are skipped). Look-alikes can be different shots, so look through the groups first.</li>
+              </ul>
               <h4>What you can do with duplicates</h4>
               <table>
                 <thead><tr><th>Action</th><th>What it means</th></tr></thead>
@@ -596,10 +607,10 @@
                   <tr><td>Keep all</td><td><b>Nothing is deleted.</b> These files belong together; they show as <b>Versions</b> on each photo. Button at the top right.</td></tr>
                   <tr><td>Different photos</td><td><b>Nothing is deleted.</b> Look-alikes are separate shots, not copies. Button at the top right.</td></tr>
                   <tr><td>Delete this copy</td><td><b>Copy goes to the trash.</b> Tick it on every copy you want gone; the best file stays.</td></tr>
-                  <tr><td>Keep this one</td><td><b>All others go to the trash.</b> Look-alikes only: open a photo, compare, press it, confirm.</td></tr>
+                  <tr><td>Keep this one</td><td><b>Ticks all the others.</b> Look-alikes only: the button at the foot of a card ticks <b>delete this copy</b> on every other file of the group in one click. The same button in the compare dialog (click a picture) ticks the others and closes the dialog, so you can go through several groups and press <b>Move to trash</b> once at the end.</td></tr>
                 </tbody>
               </table>
-              <p class="note"><b>Keep all</b> and <b>Different photos</b> are internal notes: shoebox saves them in its own database in <code>.shoebox</code> on the drive, never in the photos. Those finds are not shown to you on the <b>Duplicates</b> screen again. The notes follow the photos if you move or rename them, and <b>Clear Same Folder Copies</b> and <b>Clear Lower Quality Copies</b> leave these photos alone.</p>
+              <p class="note"><b>Keep all</b> and <b>Different photos</b> are internal notes: shoebox saves them in its own database in <code>.shoebox</code> on the drive, never in the photos. Those finds are not shown to you on the <b>Duplicates</b> screen again. The notes follow the photos if you move or rename them. Hover over the buttons for a short explanation: <b>Different photos</b> says the files are separate shots, <b>Keep all</b> links them as versions of one photo.</p>
             </div>
           </div>
           <div>
@@ -619,8 +630,12 @@
         </div>
       </div>
       <figure>
+        <img src="assets/en/duplicates-preselect.jpg" alt="" loading="lazy">
+        <figcaption>The Preselect menu: every line shows how many files it would tick; nothing is removed before Move to trash.</figcaption>
+      </figure>
+      <figure>
         <img src="assets/en/duplicates.jpg" alt="" loading="lazy">
-        <figcaption>Duplicates: a pre-ticked messenger copy next to its original.</figcaption>
+        <figcaption>Duplicates after Preselect › Smaller versions: the messenger copy is ticked and marked Lower quality.</figcaption>
       </figure>
     </section>
 
@@ -676,7 +691,7 @@
           </li>
           <li>
             <h3>Name a card</h3>
-            <p>Type the name once and press <b>Name</b>: the whole card is named. Start typing to pick a person you already have (on a card of pets only cats and dogs are offered, and the other way round), or choose <b>+ New person</b> (on a card of pets it reads <b>+ New cat</b>, <b>+ New dog</b> or <b>+ New pet</b>). After that shoebox suggests more faces of them (<i>Looks like Mia</i>): confirm with ✓ or reject with ✗.</p>
+            <p>Type the name once and press <b>Name</b>: the whole card is named. Click into the field to see the people you named last (<b>Recently used</b>) and those with the most photos, then everyone by group; start typing to pick a person you already have (on a card of pets only cats and dogs are offered, and the other way round), or choose <b>+ New person</b> (on a card of pets it reads <b>+ New cat</b>, <b>+ New dog</b> or <b>+ New pet</b>). After that shoebox suggests more faces of them (<i>Looks like Mia</i>): confirm with ✓ or reject with ✗.</p>
           </li>
           <li>
             <h3>Strangers and false finds</h3>
@@ -697,6 +712,10 @@
           <figure>
             <img src="assets/en/faces-select.jpg" alt="" loading="lazy">
             <figcaption>Select: two faces ticked on a card.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/en/name-suggestions.jpg" alt="" loading="lazy">
+            <figcaption>Naming faces: who you named last, then who has the most photos, then everyone by group. The list opens upwards over the page.</figcaption>
           </figure>
         </div>
       </div>

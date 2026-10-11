@@ -239,14 +239,20 @@ body.selecting #select { color: var(--accent); }
 .copy.with-thumb .thumb { display: block; width: 100%; height: 150px; background: var(--cell-bg); border-radius: 6px; overflow: hidden; margin-bottom: 4px; }
 .copy.with-thumb .thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .copies.series { gap: 10px; }
+.copy.with-thumb { padding-bottom: 0; overflow: hidden; }
+.copy .keep-one { margin: auto -8px 0; padding: 9px 8px; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: var(--cell-bg); color: var(--fg, inherit); font: inherit; font-weight: 600; cursor: pointer; }
+.copy .keep-one:hover { background: var(--accent); color: #fff; }
 .copy.marked { border-color: var(--danger, #c0392b); background: rgba(192, 57, 43, 0.06); }
 .copy .check { display: flex; align-items: center; gap: 4px; font-weight: 600; }
 .copy .check input { width: 18px; height: 18px; }
 .copy .meta { color: var(--muted); }
-.copy .meta.worse { color: #c63b2f; }
 .dup-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; justify-content: space-between; }
 .dup-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; justify-content: flex-end; }
 .dup-filter { position: relative; }
+.dup-pre { margin-left: auto; }
+.dup-pre .dup-filter-menu { left: auto; right: 0; align-items: stretch; }
+.dup-pre .dup-filter-menu .btn { text-align: left; }
+.dup-pre-head { font-size: 12px; font-weight: 700; color: var(--muted); margin-top: 6px; }
 .dup-filter summary { list-style: none; cursor: pointer; display: inline-block; }
 .dup-filter summary::-webkit-details-marker { display: none; }
 .dup-filter-menu { position: absolute; z-index: 5; top: 100%; left: 0; margin-top: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2); white-space: nowrap; }
@@ -422,6 +428,9 @@ body.selecting .sec .pick { display: inline; }
 .plist .item { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 36px; padding: 4px 10px; border: 0; background: none; color: var(--fg); text-align: left; font-size: 14px; }
 .plist .item:hover, .plist .item.at { background: var(--panel); }
 .plist .item.new { color: var(--accent); }
+.plist .item .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.plist .item .count { color: var(--muted); font-size: 12px; }
+.tlist { margin-bottom: 6px; }
 .dialog .taglist .current { border-color: var(--accent); font-weight: 600; }
 .grouplist { display: flex; flex-direction: column; gap: 6px; }
 .grow-row {
@@ -582,6 +591,7 @@ body.selecting .sec .pick { display: inline; }
 .compare-col img { width: 100%; max-height: 65vh; object-fit: contain; background: var(--cell-bg); border-radius: 6px; }
 .compare-col .name { font-weight: 600; font-size: 13px; word-break: break-all; }
 .compare-col .meta { color: var(--muted); font-size: 12px; }
+.copy .badge.worse { background: #c63b2f; color: #fff; }
 .copy .badge { align-self: flex-start; background: var(--cell-bg); border-radius: 10px; padding: 1px 8px; font-weight: 600; }
 
 /* Collapsible sidebar sections */
@@ -627,8 +637,19 @@ body.selecting .sec .pick { display: inline; }
 .sface-grid .copen { position: absolute; right: -2px; top: -2px; width: 18px; height: 18px; border-radius: 50%; background: var(--panel); border: 1px solid var(--line); color: var(--fg); font-size: 11px; line-height: 16px; text-align: center; opacity: 0; }
 .sface-grid .cface:hover .copen, .sface-grid .cface.sel .copen { opacity: 1; }
 @media (hover: none) { .sface-grid .copen { opacity: 1; } }
-.singles-bar { flex-wrap: wrap; white-space: normal; max-width: calc(100% - 24px); }
+/* The bar is centred with left: 50%, which would cap its width at half the screen and wrap
+   its buttons early: size it by its content, up to the screen. It only wraps where a row
+   cannot fit (a phone). */
+.singles-bar { flex-wrap: wrap; white-space: normal; width: max-content; max-width: calc(100vw - 24px); }
 .singles-bar .pfield { min-width: 160px; }
+/* The bar sits at the bottom of the screen: the name list opens upwards, over the page,
+   instead of making the bar grow. */
+.singles-bar .pfield { position: relative; }
+.singles-bar .plist {
+  position: absolute; left: 0; bottom: 100%; z-index: 1; margin: 0 0 6px;
+  min-width: 100%; width: max-content; max-width: min(360px, 90vw); max-height: min(260px, 50vh);
+  box-shadow: 0 6px 24px rgba(0,0,0,.25);
+}
 .singles-bar.busy { opacity: .6; pointer-events: none; }
 .sface-grid .cface:focus-visible { outline: none; }
 .sface-grid .cface:focus-visible .avatar { box-shadow: 0 0 0 3px var(--bg, #000), 0 0 0 5px var(--fg); }

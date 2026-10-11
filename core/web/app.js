@@ -702,24 +702,87 @@ function pickSuggest(it) {
   else setFilter(withFilter({ folder: it.id, q: '' }));
 }
 
-// Suggestions for the tag fields (info panel, "Add tag…"): every tag.
+var RECENT_MAX = 4; // how many "Recently used" the suggestion lists show
+
+// Suggestions for the tag fields (info panel, "Add tag…"): with the field
+// empty the tags used last, then the most used; while typing the matches,
+// the recent ones first, then by use. A list under the field, not a
+// <datalist>, so it can have headings.
 var suggestSeq = 0;
-function suggestTags(text) {
-  var seq = ++suggestSeq;
-  if (!text.trim()) return;
-  api(LIBAPI + '/tags' + query({ q: text.trim(), limit: 12 })).then(function (tags) {
-    if (seq !== suggestSeq) return;
-    var list = $('tag-list');
+function attachTagSuggestions(input) {
+  var list = el('div', 'plist tlist');
+  list.setAttribute('role', 'listbox');
+  list.hidden = true;
+  var items = [], at = -1;
+  var close = function () { list.hidden = true; at = -1; };
+  var mark = function () {
+    Array.prototype.forEach.call(list.querySelectorAll('.item'), function (b, k) { b.classList.toggle('at', k === at); });
+  };
+  var choose = function (name) {
+    input.value = name;
+    close();
+    // The field's own Enter handling adds the tag.
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  };
+  var show = function (tags, text) {
     list.textContent = '';
-    tags.forEach(function (t) {
-      if (isFavTag(t.name)) return;
-      state.tagNames[t.id] = t.name;
-      var o = el('option');
-      o.value = t.name;
-      o.label = t.count + '';
-      list.appendChild(o);
-    });
-  }).catch(function () {});
+    items = [];
+    at = -1;
+    var low = fold(text);
+    tags = tags.filter(function (t) { return !isFavTag(t.name); });
+    // Tags a photo was last given (the index remembers when), newest first.
+    var last = tags.filter(function (t) { return t.last_used && (!low || fold(t.name).indexOf(low) >= 0); })
+      .sort(function (a, b) { return b.last_used - a.last_used; }).slice(0, RECENT_MAX);
+    var rest = tags.filter(function (t) { return last.indexOf(t) < 0; });
+    var section = function (title, ts) {
+      if (!ts.length) return;
+      if (title) list.appendChild(el('div', 'head', title));
+      ts.forEach(function (t) {
+        var b = el('button', 'item');
+        b.type = 'button';
+        b.appendChild(el('span', 'grow', t.name));
+        b.appendChild(el('span', 'count', I18n.number(t.count)));
+        b.onmousedown = function (ev) { ev.preventDefault(); };
+        b.onclick = function () { choose(t.name); };
+        items.push(t.name);
+        list.appendChild(b);
+      });
+    };
+    section(tr('suggest.recent'), last);
+    section(last.length ? tr(text ? 'suggest.more' : 'suggest.most_used') : '', rest);
+    list.hidden = !items.length || document.activeElement !== input;
+  };
+  var load = function () {
+    var seq = ++suggestSeq, text = input.value.trim();
+    // Own tags when empty (folder names are not what one types by hand).
+    api(LIBAPI + '/tags' + query(text ? { q: text, limit: 50 } : { own: 1, limit: 500 })).then(function (tags) {
+      if (seq !== suggestSeq) return;
+      tags.forEach(function (t) { state.tagNames[t.id] = t.name; });
+      show(tags, text);
+    }).catch(function () {});
+  };
+  // Put the list under the field as soon as the field is in the page.
+  var place = function () {
+    if (input.parentNode && list.previousSibling !== input) input.parentNode.insertBefore(list, input.nextSibling);
+  };
+  input.addEventListener('focus', function () { place(); load(); });
+  input.addEventListener('input', function () { place(); load(); });
+  input.addEventListener('blur', function () { setTimeout(close, 150); });
+  input.addEventListener('keydown', function (ev) {
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      if (!items.length) return;
+      ev.preventDefault();
+      list.hidden = false;
+      at = ev.key === 'ArrowDown' ? (at + 1) % items.length : (at + items.length - 1) % items.length;
+      mark();
+    } else if (ev.key === 'Enter' && at >= 0 && !list.hidden) {
+      input.value = items[at]; // before the field's own handler reads it
+      close();
+    } else if (ev.key === 'Escape' && !list.hidden) {
+      ev.stopImmediatePropagation(); // the first Escape closes the list only
+      close();
+    }
+  });
 }
 
 // ------------------------------------------------------------------ folders
@@ -1517,6 +1580,8 @@ function renderPanel() {
     return dd;
   };
   infoDate(row, info);
+  // The drive is named whenever it is known, also with a single photo app per drive.
+  if (drives.current) row(tr('info.drive'), drives.current.volume || drives.current.name);
   var nameCell = row(tr('info.name'), info.name);
   var cmpBadge = compareBadge(info.id);
   if (nameCell && cmpBadge) nameCell.appendChild(cmpBadge);
@@ -1981,7 +2046,7 @@ function renameFolder(folder) {
 // ------------------------------------------------------------------ duplicates page
 
 var DUP_KINDS_IDS = ['identical', 'resolution', 'edited', 'similar'];
-var dupState = { syncs: [], groups: [], shown: 0, marked: {}, seen: {}, sameFolder: null, lowerQuality: null, types: dupTypes() };
+var dupState = { syncs: [], groups: [], shown: 0, marked: {}, seen: {}, types: dupTypes() };
 var DUP_KINDS = [
   { id: 'identical', get label() { return tr('dups.kind.identical'); }, get hint() { return tr('dups.kind.identical.hint'); } },
   { id: 'resolution', get label() { return tr('dups.kind.resolution'); }, get hint() { return tr('dups.kind.resolution.hint'); } },
@@ -2258,11 +2323,9 @@ function loadDuplicatesHere() {
   page.appendChild(el('h2', '', tr('dups.title')));
   addDupTabs(page);
   page.appendChild(el('p', 'sub', tr('dups.looking')));
-  return Promise.all([api(LIBAPI + '/duplicates'), api(LIBAPI + '/duplicates/same-folder'), api(LIBAPI + '/duplicates/lower-quality')]).then(function (res) {
+  return api(LIBAPI + '/duplicates').then(function (res) {
     if (state.filter.view !== 'duplicates') return;
-    dupState.groups = res[0].groups;
-    dupState.sameFolder = res[1];
-    dupState.lowerQuality = res[2];
+    dupState.groups = res.groups;
     dupState.shown = 0;
     // Ticks survive a reload (a scan finishing meanwhile) for copies still listed.
     var still = {};
@@ -2318,8 +2381,8 @@ function markedCount() {
   return n;
 }
 
-// Left: which kinds to show (a drop-down with check boxes). Right: the two
-// buttons that clear without review.
+// Left: which kinds to show (a drop-down with check boxes). Right: the
+// Preselect menu, which only ticks; nothing is removed before Move to trash.
 var dupFilterCloser = false;
 function dupToolbar() {
   var bar = el('div', 'dup-top');
@@ -2358,37 +2421,24 @@ function dupToolbar() {
   if (!dupFilterCloser) {
     dupFilterCloser = true;
     document.addEventListener('click', function (e) {
-      var open = document.querySelector('.dup-filter[open]');
-      if (open && !open.contains(e.target)) open.open = false;
+      document.querySelectorAll('.dup-filter[open]').forEach(function (open) {
+        if (!open.contains(e.target)) open.open = false;
+      });
     });
   }
   filter.appendChild(sum);
   filter.appendChild(menu);
   bar.appendChild(filter);
-  var sf = dupState.sameFolder, lq = dupState.lowerQuality;
-  var buttons = el('div', 'dup-buttons');
-  var same = el('button', 'btn', tr('dups.same_folder'));
-  same.title = sf && sf.copies
-    ? tr('dups.same_folder_hint', { count: trn('count.files', sf.copies) })
-    : tr('dups.same_folder_none');
-  same.disabled = !(sf && sf.copies);
-  same.onclick = removeSameFolder;
-  var low = el('button', 'btn', tr('dups.lower'));
-  low.title = lq && lq.copies
-    ? tr('dups.lower_hint', { count: trn('count.files', lq.copies) })
-    : tr('dups.lower_none');
-  low.disabled = !(lq && lq.copies);
-  low.onclick = removeLowerQuality;
-  buttons.appendChild(same);
-  buttons.appendChild(low);
-  bar.appendChild(buttons);
+  bar.appendChild(preselectMenu());
   return bar;
 }
 
-// What the page ticks by itself in a group: of every photo the files that
-// are surely worse (a smaller or stripped copy) or the same file again, never
-// the best one, and never a different shot that merely looks alike.
+// What the page ticks by itself: of an identical or same-photo group the
+// files that are surely worse (a smaller or stripped copy) or the same file
+// again, never the best one. Look-alikes and edits are never ticked by the
+// page: the person decides on those.
 function suggestedIds(g) {
+  if (g.kind !== 'identical' && g.kind !== 'resolution') return [];
   var pickOf = {};
   g.files.forEach(function (f) { if (f.pick) pickOf[f.row] = f; });
   return g.files.filter(function (f) {
@@ -2397,22 +2447,140 @@ function suggestedIds(g) {
   }).map(function (f) { return f.id; });
 }
 
-// The suggestion for all groups that are shown.
-function autoMarked() {
-  var auto = {};
-  var edits = onlyEditedShown();
-  visibleGroups().forEach(function (g) {
-    suggestedIds(g).forEach(function (id) { auto[id] = true; });
-    // On the "Original and edited" screen the button ticks the edited
-    // versions, so the originals stay.
-    if (edits) g.files.forEach(function (f) { if (isEdit(f)) auto[f.id] = true; });
-  });
-  return auto;
+// The format of a file by its extension, JPEG and HEIC spelled one way.
+function fileFormat(f) {
+  var e = (f.name.split('.').pop() || '').toLowerCase();
+  return e === 'jpeg' || e === 'jpe' ? 'jpg' : e === 'heif' ? 'heic' : e;
 }
 
-// True while "Original and edited" is the only kind that is shown.
-function onlyEditedShown() {
-  return DUP_KINDS_IDS.every(function (k) { return !!dupState.types[k] === (k === 'edited'); });
+// The HEIC and JPEG files of a group to tick so that `keep` stays wherever a
+// photo exists in both formats.
+function otherFormats(g, keep) {
+  var ids = [];
+  dupRows(g).forEach(function (row) {
+    if (!row.some(function (f) { return fileFormat(f) === keep; })) return;
+    row.forEach(function (f) {
+      var fmt = fileFormat(f);
+      if (fmt !== keep && (fmt === 'heic' || fmt === 'jpg')) ids.push(f.id);
+    });
+  });
+  return ids;
+}
+
+// The entries of the Preselect menu: what each ticks in a group (`ids`), and
+// the kind of group it is for (`kind`, and `also` for a second one; none:
+// every kind).
+var PRESELECT = [
+  { id: 'suggested', ids: suggestedIds },
+  { id: 'samefolder', kind: 'identical', ids: function (g) {
+    var buckets = {}, ids = [];
+    g.files.forEach(function (f) { var k = f.same + ':' + f.folder_id; (buckets[k] = buckets[k] || []).push(f); });
+    Object.keys(buckets).forEach(function (k) {
+      var b = buckets[k];
+      if (b.length < 2) return;
+      var keep = b.filter(function (f) { return f.pick; })[0] || b.filter(function (f) { return !f.copy_named; })[0] || b[0];
+      b.forEach(function (f) { if (f !== keep) ids.push(f.id); });
+    });
+    return ids;
+  } },
+  { id: 'smaller', kind: 'resolution', also: 'similar', ids: function (g) { return g.files.filter(function (f) { return f.keeper; }).map(function (f) { return f.id; }); } },
+  { id: 'heic', kind: 'resolution', ids: function (g) { return otherFormats(g, 'heic'); } },
+  { id: 'jpeg', kind: 'resolution', ids: function (g) { return otherFormats(g, 'jpg'); } },
+  { id: 'edited', kind: 'edited', ids: function (g) {
+    return g.files.some(function (f) { return !isEdit(f); }) ? g.files.filter(isEdit).map(function (f) { return f.id; }) : [];
+  } },
+  { id: 'originals', kind: 'edited', ids: function (g) {
+    return g.files.some(isEdit) ? g.files.filter(function (f) { return !isEdit(f); }).map(function (f) { return f.id; }) : [];
+  } },
+  { id: 'biggest', kind: 'similar', ids: function (g) {
+    var top = Math.max.apply(null, g.files.map(function (f) { return f.size; }));
+    var best = g.files.filter(function (f) { return f.size === top; });
+    return best.length === 1 ? g.files.filter(function (f) { return f !== best[0]; }).map(function (f) { return f.id; }) : [];
+  } },
+  { id: 'lastshot', kind: 'similar', ids: function (g) {
+    // The best file of the latest shot stays; a group is skipped when a shot
+    // has no capture date or two shots tie for the latest.
+    var shots = dupRows(g).map(function (row) { return row.filter(function (f) { return f.pick; })[0] || row[0]; });
+    if (shots.some(function (f) { return !f.taken; })) return [];
+    var latest = shots.map(function (f) { return f.taken; }).sort().pop();
+    var last = shots.filter(function (f) { return f.taken === latest; });
+    return last.length === 1 ? g.files.filter(function (f) { return f !== last[0]; }).map(function (f) { return f.id; }) : [];
+  } },
+];
+
+// The message of an entry (its label, or its tooltip with `_hint`).
+function preselectText(entry, hint) {
+  var texts = {
+    suggested: ['dups.pre.suggested', 'dups.pre.suggested_hint'],
+    samefolder: ['dups.pre.samefolder', 'dups.pre.samefolder_hint'],
+    smaller: ['dups.pre.smaller', 'dups.pre.smaller_hint'],
+    heic: ['dups.pre.heic', 'dups.pre.heic_hint'],
+    jpeg: ['dups.pre.jpeg', 'dups.pre.jpeg_hint'],
+    edited: ['dups.pre.edited', 'dups.pre.edited_hint'],
+    originals: ['dups.pre.originals', 'dups.pre.originals_hint'],
+    biggest: ['dups.pre.biggest', 'dups.pre.biggest_hint'],
+    lastshot: ['dups.pre.lastshot', 'dups.pre.lastshot_hint'],
+  };
+  return tr(texts[entry.id][hint ? 1 : 0]);
+}
+
+// Is a group of the kind this entry works on?
+function preselectKind(entry, g) {
+  return !entry.kind || g.kind === entry.kind || g.kind === entry.also;
+}
+
+// Files and groups an entry would tick among the groups that are shown.
+function preselectCount(entry) {
+  var files = 0, groups = 0;
+  visibleGroups().forEach(function (g) {
+    if (!preselectKind(entry, g)) return;
+    var n = entry.ids(g).length;
+    if (n) { files += n; groups++; }
+  });
+  return { files: files, groups: groups };
+}
+
+// Ticks what the entry names (replacing the ticks of the groups that are
+// shown) and brings those groups to the top. Nothing is removed.
+function applyPreselect(entry) {
+  Object.keys(shownMarked()).forEach(function (id) { delete dupState.marked[id]; });
+  var hit = [], rest = [];
+  dupState.groups.forEach(function (g) {
+    var ids = dupState.types[g.kind] && preselectKind(entry, g) ? entry.ids(g) : [];
+    ids.forEach(function (id) { dupState.marked[id] = true; });
+    (ids.length ? hit : rest).push(g);
+  });
+  dupState.groups = hit.concat(rest);
+  dupState.shown = 0;
+  renderDuplicates();
+  updateDupBar();
+  window.scrollTo(0, 0);
+}
+
+// The Preselect drop-down: one line per rule that finds something, with how
+// many files it would tick and a tooltip that says what it does. Rules that
+// find nothing among the groups that are shown are left out.
+function preselectMenu() {
+  var box = el('details', 'dup-filter dup-pre');
+  box.appendChild(el('summary', 'btn', tr('dups.pre')));
+  var menu = el('div', 'dup-filter-menu');
+  var heading = null, any = false;
+  PRESELECT.forEach(function (entry) {
+    var c = preselectCount(entry);
+    if (!c.files) return;
+    any = true;
+    if (entry.kind && entry.kind !== heading) {
+      heading = entry.kind;
+      menu.appendChild(el('div', 'dup-pre-head', DUP_KINDS.filter(function (k) { return k.id === entry.kind; })[0].label));
+    }
+    var b = el('button', 'btn quiet', preselectText(entry, false) + ' · ' + trn('count.files', c.files));
+    b.title = preselectText(entry, true);
+    b.onclick = function () { applyPreselect(entry); };
+    menu.appendChild(b);
+  });
+  if (!any) menu.appendChild(el('div', 'dup-pre-head', tr('dups.pre.none')));
+  box.appendChild(menu);
+  return box;
 }
 
 // Ticked files of the groups that are shown, as a set of ids.
@@ -2429,8 +2597,8 @@ function syncDupBoxes() {
   updateDupBar();
 }
 
-// The bar stays while there are duplicates: Preselect copies puts the page's
-// pre-selection back, Clear unticks everything, Move to trash deletes
+// The bar stays while there are duplicates: Clear unticks everything, Move
+// to trash deletes
 // whatever is ticked (also a single file after a Clear).
 function updateDupBar() {
   var bar = $('dup-bar');
@@ -2439,19 +2607,9 @@ function updateDupBar() {
   bar.hidden = groups.length === 0;
   bar.textContent = '';
   if (!groups.length) return;
-  var marked = shownMarked(), auto = autoMarked();
+  var marked = shownMarked();
   var n = Object.keys(marked).length;
   bar.appendChild(el('span', '', tr('dups.marked', { count: trn('count.copies', n) })));
-  var same = Object.keys(auto).length === n && Object.keys(auto).every(function (id) { return marked[id]; });
-  var preselect = el('button', 'btn quiet', tr(onlyEditedShown() ? 'dups.preselect_edited' : 'dups.preselect'));
-  preselect.title = tr(onlyEditedShown() ? 'dups.preselect_edited_hint' : 'dups.preselect_hint');
-  preselect.disabled = same;
-  preselect.onclick = function () {
-    Object.keys(marked).forEach(function (id) { delete dupState.marked[id]; });
-    Object.keys(auto).forEach(function (id) { dupState.marked[id] = true; });
-    syncDupBoxes();
-  };
-  bar.appendChild(preselect);
   var clear = el('button', 'btn quiet', tr('dups.clear'));
   clear.title = tr('dups.clear_hint');
   clear.disabled = n === 0;
@@ -2499,8 +2657,9 @@ function dupThumb(f, compare) {
 // "IMG_E1234" is the edited version of "IMG_1234" (iPhone).
 function isEdit(f) { return /^img_e\d+/i.test(f.name); }
 
-// The group's photos large and side by side; "Keep this one" trashes all the
-// others (the dialog closes), so the choice is one click.
+// The group's photos large and side by side; "Keep this one" ticks all the
+// others (the dialog closes), so the choice is one click and Move to trash
+// in the bar does the removing for every group at once.
 function compareDialog(g, start, onKeep) {
   var back = el('div', 'modal');
   var dlg = el('div', 'dialog compare');
@@ -2544,8 +2703,9 @@ function groupNode(g) {
   title.title = kind.hint;
   head.appendChild(title);
   var ids = g.files.map(function (f) { return f.id; });
-  var decide = function (decision, label) {
+  var decide = function (decision, label, hint) {
     var b = el('button', 'btn quiet', label);
+    b.title = hint;
     b.onclick = function () {
       b.disabled = true;
       post(LIBAPI + '/duplicates/decide', { ids: ids, decision: decision }).then(function () {
@@ -2557,8 +2717,8 @@ function groupNode(g) {
     };
     head.appendChild(b);
   };
-  if (g.kind === 'similar') decide('distinct', tr('dups.btn_different'));
-  decide('linked', tr('dups.btn_keep'));
+  if (g.kind === 'similar') decide('distinct', tr('dups.btn_different'), tr('dups.btn_different_hint'));
+  decide('linked', tr('dups.btn_keep'), tr('dups.btn_keep_hint'));
   box.appendChild(head);
   box.appendChild(el('p', 'group-hint', g.kind === 'similar' || g.kind === 'edited'
     ? tr('dups.group_hint_series', { hint: kind.hint })
@@ -2580,16 +2740,23 @@ function groupNode(g) {
   // One card per file: the check box, where it is, what it is, its tags.
   // `thumb`: the card carries its own thumbnail (similar photos).
   var cards = [];
-  // "Keep this one" in the compare dialog: tick every other file, untick it,
-  // and move the others to the trash (after the usual confirmation).
-  var keepOnly = function (keep) {
+  var compare = function (f) { compareDialog(g, f, keepTicked); };
+  // The one-click choice on a card of a series: tick the other files and
+  // leave this one open. Nothing is trashed until "Move to trash".
+  var keepTicked = function (keep) {
     cards.forEach(function (c) {
       c.cb.checked = c.f.id !== keep.id;
       c.cb.dispatchEvent(new Event('change'));
     });
-    deleteMarked(g);
   };
-  var compare = function (f) { compareDialog(g, f, keepOnly); };
+  // What tells the files of a series apart, on the card that leads: more
+  // pixels, a bigger file. Shown only where the files differ; never decides.
+  var most = function (key) {
+    var v = g.files.map(key), top = Math.max.apply(null, v);
+    return v.some(function (x) { return x !== top; }) ? top : null;
+  };
+  var topPixels = most(function (f) { return (f.width || 0) * (f.height || 0); });
+  var topSize = most(function (f) { return f.size; });
   var copyCard = function (f, showName, thumb) {
     var card = el('div', 'copy' + (thumb ? ' with-thumb' : ''));
     if (thumb) card.appendChild(dupThumb(f, compare));
@@ -2619,24 +2786,23 @@ function groupNode(g) {
     fb.onclick = function () { setFilter({ folder: f.folder_id, tags: [], q: '' }); };
     card.appendChild(fb);
     if (showName) card.appendChild(el('div', 'name', f.name));
+
     if (g.kind === 'edited') card.appendChild(el('div', 'badge', tr(isEdit(f) ? 'dups.badge_edited' : 'dups.badge_original')));
     var meta = [];
     if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
     meta.push((f.size / 1e6).toFixed(1) + ' MB');
     card.appendChild(el('div', 'meta', meta.join(' · ')));
-    if (f.keeper) card.appendChild(el('div', 'meta worse', tr('dups.lower_quality')));
+    if (f.keeper) card.appendChild(el('div', 'badge worse', tr('dups.lower_quality')));
     if (f.in_copies) card.appendChild(el('div', 'meta', tr('dups.in_copies')));
     card.appendChild(el('div', 'meta', f.taken ? formatDate({ taken: f.taken, date_source: 'file' }) : tr('dups.no_capture_date')));
-    if (f.tags && f.tags.length) {
-      var tags = el('div', 'tagline');
-      f.tags.forEach(function (t) {
-        var chip = el('span', 'chip' + (t.own ? ' own' : ''));
-        if (!t.own) chip.appendChild(folderIcon());
-        chip.appendChild(document.createTextNode(t.name));
-        chip.title = tr(t.own ? 'dups.own_tag' : 'dups.folder_tag');
-        tags.appendChild(chip);
-      });
-      card.appendChild(tags);
+    if (thumb && topPixels !== null && (f.width || 0) * (f.height || 0) === topPixels) card.appendChild(el('div', 'badge', tr('dups.badge_pixels')));
+    if (thumb && topSize !== null && f.size === topSize) card.appendChild(el('div', 'badge', tr('dups.badge_bigger')));
+    if (thumb) {
+      // Pinned to the foot of the card, edge to edge.
+      var only = el('button', 'keep-one', tr('dups.keep_this'));
+      only.title = tr('dups.keep_this_hint');
+      only.onclick = function () { keepTicked(f); };
+      card.appendChild(only);
     }
     return card;
   };
@@ -2684,11 +2850,9 @@ function groupNode(g) {
 
 // Sends the marked copies, one request per group. Capture dates that really
 // conflict are asked for afterwards, then those groups are sent again.
-// `only`: a single group (the compare dialog's "Keep this one").
-function deleteMarked(only) {
+function deleteMarked() {
   var jobs = [], total = 0;
   visibleGroups().forEach(function (g) {
-    if (only && only.files && g !== only) return;
     var remove = g.files.filter(function (f) { return dupState.marked[f.id]; }).map(function (f) { return f.id; });
     if (!remove.length) return;
     var keep = g.files.filter(function (f) { return !dupState.marked[f.id]; }).map(function (f) { return f.id; });
@@ -2788,46 +2952,6 @@ function askDates(conflicts, done) {
       },
     }]);
   });
-}
-
-function removeLowerQuality() {
-  var lq = dupState.lowerQuality;
-  openModal(
-    tr('dups.lower.title'),
-    tr('dups.lower.text', { copies: trn('count.copies', lq.copies), photos: trn('count.photos', lq.groups) }),
-    [{ label: tr('app.cancel'), cls: 'quiet' }, {
-      label: tr('sel.trash'), cls: 'danger', focus: true, onclick: function (btn) {
-        btn.disabled = true;
-        post(LIBAPI + '/duplicates/lower-quality', {}).then(function (r) {
-          closeModal();
-          toast(tr('dups.lower.done', { copies: trn('count.copies', r.removed), tags: trn('count.tags', r.tags_added) }));
-          report(tr('dups.skipped'), r.skipped);
-          changed();
-        }).catch(function (e) { closeModal(); failed(e); });
-        return false;
-      },
-    }]
-  );
-}
-
-function removeSameFolder() {
-  var sf = dupState.sameFolder;
-  openModal(
-    tr('dups.same.title'),
-    tr('dups.same.text', { copies: trn('count.copies', sf.copies), photos: trn('count.photos', sf.groups) }),
-    [{ label: tr('app.cancel'), cls: 'quiet' }, {
-      label: tr('sel.trash'), cls: 'danger', focus: true, onclick: function (btn) {
-        btn.disabled = true;
-        post(LIBAPI + '/duplicates/same-folder', {}).then(function (r) {
-          closeModal();
-          toast(tr('dups.done.trashed', { count: trn('count.copies', r.removed) }));
-          report(tr('dups.skipped'), r.skipped);
-          changed();
-        }).catch(function (e) { closeModal(); failed(e); });
-        return false;
-      },
-    }]
-  );
 }
 
 // ------------------------------------------------------------------ trash page
@@ -3164,9 +3288,9 @@ function tagInput() {
   var input = el('input');
   input.type = 'text';
   input.placeholder = tr('tags.placeholder');
-  input.setAttribute('list', 'tag-list');
+  input.autocomplete = 'off';
   input.setAttribute('enterkeyhint', 'done');
-  input.addEventListener('input', function () { suggestTags(input.value); });
+  attachTagSuggestions(input);
   return input;
 }
 
@@ -4130,24 +4254,39 @@ function personField(done, opts) {
     list.textContent = '';
     items = [];
     at = -1;
+    var offered = function (p) {
+      return kindOf(p, kind()) && (!low || fold(p.name).indexOf(low) >= 0) && !(opts.except && opts.except.indexOf(p.id) >= 0);
+    };
+    var addItem = function (p) {
+      var it = { who: { person_id: p.id }, label: p.name };
+      if (fold(p.name) === low) exact = it;
+      var b = el('button', 'item');
+      b.type = 'button';
+      b.appendChild(avatar(p, 'tiny'));
+      b.appendChild(el('span', '', p.name));
+      b.onmousedown = function (ev) { ev.preventDefault(); };
+      b.onclick = function () { pick(it); };
+      items.push(it);
+      list.appendChild(b);
+    };
+    // First the people named last, then (field empty) the most photographed,
+    // then everyone by group; nobody twice.
+    var shown = {}, top = [], frequent = [];
+    top = people.list.filter(function (p) { return p.last_named && offered(p); })
+      .sort(function (a, b) { return b.last_named - a.last_named; }).slice(0, RECENT_MAX);
+    top.forEach(function (p) { shown[p.id] = true; });
+    if (!low) {
+      frequent = people.list.filter(function (p) { return offered(p) && !shown[p.id] && p.photos > 0; })
+        .sort(function (a, b) { return b.photos - a.photos || a.name.localeCompare(b.name); }).slice(0, RECENT_MAX);
+      frequent.forEach(function (p) { shown[p.id] = true; });
+    }
+    if (top.length) { list.appendChild(el('div', 'head', tr('suggest.recent'))); top.forEach(addItem); }
+    if (frequent.length) { list.appendChild(el('div', 'head', tr('suggest.most_photos'))); frequent.forEach(addItem); }
     groupedPeople().forEach(function (s) {
-      var ps = s.people.filter(function (p) {
-        return kindOf(p, kind()) && (!low || fold(p.name).indexOf(low) >= 0) && !(opts.except && opts.except.indexOf(p.id) >= 0);
-      });
+      var ps = s.people.filter(function (p) { return offered(p) && !shown[p.id]; });
       if (!ps.length) return;
       list.appendChild(el('div', 'head', s.name));
-      ps.forEach(function (p) {
-        var it = { who: { person_id: p.id }, label: p.name };
-        if (fold(p.name) === low) exact = it;
-        var b = el('button', 'item');
-        b.type = 'button';
-        b.appendChild(avatar(p, 'tiny'));
-        b.appendChild(el('span', '', p.name));
-        b.onmousedown = function (ev) { ev.preventDefault(); };
-        b.onclick = function () { pick(it); };
-        items.push(it);
-        list.appendChild(b);
-      });
+      ps.forEach(addItem);
     });
     if (opts.allowNew && text && !exact && isTaken(text)) {
       // A name is one person's, whatever the kind: not offered again as new.
@@ -4983,6 +5122,9 @@ function singlesSection() {
     // Keyboard: Tab between thumbnails (or ←/→), Enter selects (the click
     // below), Space opens the photo and, in the viewer, closes it again.
     t.onkeydown = function (ev) {
+      // While the viewer is open the thumbnail keeps the focus (to come back to);
+      // its keys belong to the viewer then, so Space can close it.
+      if (!$('lightbox').hidden) return;
       if (ev.altKey || ev.metaKey || ev.ctrlKey) return;
       if (ev.key === ' ') {
         ev.preventDefault();

@@ -331,9 +331,9 @@ stays open.
 Viewer
 Click a photo. ⓘ opens the info panel: date (marked estimated when it is not
 the day the photo was taken, or manual when you set it yourself; the pencil
-next to it sets or changes your date), camera, size, tags, people, and buttons
-to open the folder or copy the path. At the bottom, GPS data shows where the
-photo was taken (see “Locations and maps”).
+next to it sets or changes your date), drive, camera, size, tags, people, and
+buttons to open the folder or copy the path. At the bottom, GPS data shows
+where the photo was taken (see “Locations and maps”).
 
 Favorites
 The ♥ in the top bar of the viewer, or the key f, marks the photo as a
@@ -391,7 +391,10 @@ photos of a tag, to remove that tag from them at once).
 
 Tag
 Add tag… puts your own tag on the selection. Tags live in shoebox’s index,
-never in the photo files.
+never in the photo files. In the tag field the tags you used last come first
+(Recently used), then the Most used; typing narrows the list and keeps recent
+tags on top. Shoebox remembers this in the drive’s index (never in the photo
+files), so it is the same on every computer and tablet.
 
 Date
 Set date… gives the selection a date of your own, for example a whole folder
@@ -442,6 +445,8 @@ Trash.]
 take along.]
 
 [Screenshot: Adding a tag.]
+
+[Screenshot: Adding a tag: the tags used last come first, then the most used.]
 
 [Screenshot: Moving into a new event folder.]
 
@@ -534,9 +539,18 @@ in suggestions (for example YY.MM_Event); existing folders are not renamed and
 all forms are recognised.
 
 Duplicates
-Duplicates lists four kinds: identical, same photo in another size, original
-and edited, and look-alikes. Tick delete this copy on what you want gone; the
-best file stays, and at least one file of every duplicate always remains. Tags
+Duplicates lists four kinds: identical, same photo with other pixel dimensions
+or another format (a smaller or re-sent version, or a HEIC and the JPEG made
+from it), original and edited, and look-alikes. Tick delete this copy on what
+you want gone; the best file stays. Shoebox pre-ticks only what it is sure of:
+identical files and a version with fewer pixels (a HEIC and its JPEG are shown
+together, but neither is pre-ticked). Two files in the same format with the
+same pixel dimensions but different bytes, such as a camera JPEG and a JPEG
+developed from the RAW (often named like IMG_1 2.jpg), are never pre-ticked:
+they appear under look-alikes and you choose which to keep: Keep this one on a
+card ticks every other file of the group in one click (nothing moves until
+Move to trash), and small badges show which file has the most pixels or is the
+biggest file, and at least one file of every duplicate always remains. Tags
 and capture dates of a removed copy carry over. With more than one drive, the
 tab Across drives (in All drives and under Manage drives) lists photos that
 are on several drives: one picture, one row per copy with the disk name and
@@ -544,9 +558,27 @@ folder. Tick the copies to remove, or pick a drive and Mark all to tick every
 copy on it; the last copy of a photo can never be ticked. Move to trash asks
 first and puts each copy in the trash of its own drive.
 
-Quick actions
-Clear Same Folder Copies and Clear Lower Quality Copies clean up the clear-cut
-cases in one go.
+Preselect
+Preselect (top right) ticks delete this copy by a rule and brings the groups
+it ticked to the top, so you see exactly what is marked. Nothing is removed
+until you press Move to trash and confirm. Every line shows how many files it
+would tick, and its tooltip says what it does; a line with nothing to tick is
+not listed.
+
+- Suggested: only what shoebox is sure of: of identical files all but the best
+  one, and smaller versions of a photo. This is also what is ticked when the
+  page opens.
+- Identical photos: Copies in the same folder (IMG_1 (2) next to IMG_1;
+  identical files in other folders stay).
+- Same photo, different resolution: Smaller versions (every card with a red
+  Lower quality badge, also inside look-alike groups), Keep the HEIC (ticks
+  the JPEG) and Keep the JPEG (ticks the HEIC).
+- Original and edited: Edited versions (the originals stay) and Originals (the
+  edits stay).
+- Similar photos: Keep the bigger file ticks all others of every group, and
+  Keep the last shot keeps the shot taken last (groups without capture dates
+  are skipped). Look-alikes can be different shots, so look through the groups
+  first.
 
 What you can do with duplicates
 Action: What it means
@@ -556,14 +588,18 @@ Different photos: Nothing is deleted. Look-alikes are separate shots, not
 copies. Button at the top right.
 Delete this copy: Copy goes to the trash. Tick it on every copy you want gone;
 the best file stays.
-Keep this one: All others go to the trash. Look-alikes only: open a photo,
-compare, press it, confirm.
+Keep this one: Ticks all the others. Look-alikes only: the button at the foot
+of a card ticks delete this copy on every other file of the group in one
+click. The same button in the compare dialog (click a picture) ticks the
+others and closes the dialog, so you can go through several groups and press
+Move to trash once at the end.
 
 Keep all and Different photos are internal notes: shoebox saves them in its
 own database in .shoebox on the drive, never in the photos. Those finds are
 not shown to you on the Duplicates screen again. The notes follow the photos
-if you move or rename them, and Clear Same Folder Copies and Clear Lower
-Quality Copies leave these photos alone.
+if you move or rename them. Hover over the buttons for a short explanation:
+Different photos says the files are separate shots, Keep all links them as
+versions of one photo.
 
 Trash
 Nothing is deleted right away. Trashed photos wait in .shoebox/trash on the
@@ -578,7 +614,11 @@ copies works either way and also goes to the trash.
 
 [Screenshot: The trash page.]
 
-[Screenshot: Duplicates: a pre-ticked messenger copy next to its original.]
+[Screenshot: The Preselect menu: every line shows how many files it would
+tick; nothing is removed before Move to trash.]
+
+[Screenshot: Duplicates after Preselect › Smaller versions: the messenger copy
+is ticked and marked Lower quality.]
 
 People and pets
 ---------------
@@ -637,12 +677,13 @@ all.
    so fewer fit on the screen.
 
 2. Name a card
-   Type the name once and press Name: the whole card is named. Start typing to
-   pick a person you already have (on a card of pets only cats and dogs are
-   offered, and the other way round), or choose + New person (on a card of
-   pets it reads + New cat, + New dog or + New pet). After that shoebox
-   suggests more faces of them (Looks like Mia): confirm with ✓ or reject with
-   ✗.
+   Type the name once and press Name: the whole card is named. Click into the
+   field to see the people you named last (Recently used) and those with the
+   most photos, then everyone by group; start typing to pick a person you
+   already have (on a card of pets only cats and dogs are offered, and the
+   other way round), or choose + New person (on a card of pets it reads + New
+   cat, + New dog or + New pet). After that shoebox suggests more faces of
+   them (Looks like Mia): confirm with ✓ or reject with ✗.
 
 3. Strangers and false finds
    Ignore is for strangers, and for faces on posters, screens and pictures:
@@ -670,6 +711,9 @@ all.
 Not a face.]
 
 [Screenshot: Select: two faces ticked on a card.]
+
+[Screenshot: Naming faces: who you named last, then who has the most photos,
+then everyone by group. The list opens upwards over the page.]
 
 Several faces in a photo, and groups
 ------------------------------------

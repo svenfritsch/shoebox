@@ -495,3 +495,34 @@ fn favorites_are_the_own_tag_favorite_and_found_by_heart_or_word() {
 
     assert_untouched(&before, &lib.snapshot());
 }
+
+#[test]
+fn tags_remember_when_they_were_last_used() {
+    let lib = Library::new("tags-last-used");
+    lib.scan();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let img = id_of(&lib, "2020-07 Urlaub Griechenland/IMG_0001.JPG");
+
+    let last_used = |name: &str| -> Option<i64> {
+        let tags = tag_list(addr, "?own=1");
+        find(&tags, name).and_then(|t| t["last_used"].as_i64())
+    };
+
+    add(addr, &[img], "alt");
+    add(addr, &[img], "neu");
+    // Tags from before the time was recorded have none.
+    lib.db().execute("UPDATE file_tags SET added_at = NULL WHERE source = 'user'", []).unwrap();
+    assert_eq!((last_used("alt"), last_used("neu")), (None, None));
+
+    // A tag counts as used when a photo is given it, even if that photo had
+    // it already.
+    lib.db().execute("UPDATE file_tags SET added_at = 1000 WHERE source = 'user'", []).unwrap();
+    let r = add(addr, &[img], "alt");
+    assert_eq!(r["files"], 0, "{r}");
+    assert!(last_used("alt").unwrap() > 1000);
+    assert_eq!(last_used("neu"), Some(1000));
+    // The folder tag of the same photo has none (it is not used by hand).
+    let tags = tag_list(addr, "");
+    assert!(tags.iter().filter(|t| t["kind"] == "folder").all(|t| t.get("last_used").is_none()));
+}
