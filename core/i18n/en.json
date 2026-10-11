@@ -855,6 +855,7 @@
   "sel.date": "Set date…",
   "side.needs_date": "Needs a date",
   "side.needs_date_n": "Needs a date ({n})",
+  "side.needs_date_note": "These photos have no capture date (EXIF) in the file. The date shown comes from the folder or the file's created or modified date, so it is only an estimate of when the photo was taken.",
   "search.dates": "Date",
   "sel.export": "Export…",
   "export.tag_hint": "Save copies of everything shown here in a new folder",

@@ -529,9 +529,11 @@ Datum. Danach erscheint eine Meldung mit Rückgängig.
 
 Datum fehlt
 Haben manche Fotos weder ein Aufnahmedatum in der Datei noch ein Datum von
-dir, erscheint neben Alle Fotos der Eintrag Datum fehlt mit der Anzahl. Er
-listet sie auf, damit du Scans und weitergeleitete Bilder abarbeiten kannst;
-ein Foto verlässt die Liste, sobald es ein Datum hat.
+dir, erscheint neben Alle Fotos der Eintrag Datum fehlt. Er listet sie auf
+(der Chip über der Liste zeigt die Anzahl und einen Hinweis, dass die
+angezeigten Daten nur Schätzungen aus dem Ordner oder dem Erstell- bzw.
+Änderungsdatum der Datei sind), damit du Scans und weitergeleitete Bilder
+abarbeiten kannst; ein Foto verlässt die Liste, sobald es ein Datum hat.
 
 Wo ein Foto landet
 Ein Tag setzt das Foto auf diesen Tag. Mit nur einem Monat steht es in der

@@ -266,7 +266,7 @@ function renderChips() {
     add('📅 ' + dateTermLabel(term), function () { setFilter(withFilter({ dates: f.dates.filter(function (t) { return t !== term; }) })); });
     box.lastChild.title = tr('dates.chip_hint', { date: dateTermLabel(term) });
   });
-  if (f.nodate) add('📅 ' + tr('side.needs_date'), function () { setFilter(withFilter({ nodate: false })); });
+  if (f.nodate) add('📅 ' + (dates.needs ? tr('side.needs_date_n', { n: dates.needs }) : tr('side.needs_date')), function () { setFilter(withFilter({ nodate: false })); });
   if (f.compare) {
     add('⇄ ' + compareLabel(f.compare), function () { setFilter(withFilter({ compare: '' })); });
     box.lastChild.classList.add('cmp');
@@ -286,6 +286,7 @@ function renderChips() {
     clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], pets: [], fav: false, place: null, compare: '', q: '' }); };
     box.appendChild(clear);
   }
+  if (f.nodate) box.appendChild(el('p', 'filter-note', tr('side.needs_date_note')));
   personHead(box, f);
   exportChip(box, f);
   box.hidden = !box.firstChild;
@@ -1763,7 +1764,7 @@ function loadInfo() {
     trashCount = info.trash || 0;
     applyAllowTrash();
     dates.needs = info.needs_date || 0;
-    $('nav-nodate').textContent = dates.needs ? tr('side.needs_date_n', { n: dates.needs }) : tr('side.needs_date');
+    if (state.filter && state.filter.nodate) renderChips();
     $('nav-nodate').hidden = isAll() || (!dates.needs && !(state.filter && state.filter.nodate));
     if (info.thumbs_done < info.thumbs_total) {
       parts.push(tr('status.thumbs', { pct: Math.floor(100 * info.thumbs_done / info.thumbs_total) }));
