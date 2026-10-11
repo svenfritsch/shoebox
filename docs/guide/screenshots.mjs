@@ -171,6 +171,10 @@ await p.fill('#search', TAG); await wait(900);
 await p.keyboard.press('ArrowDown'); await p.keyboard.press('Enter'); await wait(1200);
 await p.keyboard.press('Escape'); await p.locator('#title').click(); await wait(800);
 await shot('multitag-search');
+// Export: the same dialog from the tag chip (the folder name is the tag's name).
+await p.locator('.export-chip').click(); await wait(1200);
+await shot('export-dialog');
+await p.keyboard.press('Escape'); await wait(400);
 await p.click('#all'); await wait(500);
 // Search by date: `date:` and a month lists it in every year.
 await p.fill('#search', de ? 'datum:jul' : 'date:jul'); await wait(900);

@@ -79,6 +79,7 @@
   <button id="sel-move" class="btn" data-i18n="sel.move">Move…</button>
   <button id="sel-tag" class="btn" data-i18n="sel.tag">Add tag…</button>
   <button id="sel-untag" class="btn" data-i18n="sel.untag">Remove tag…</button>
+  <button id="sel-export" class="btn" data-i18n="sel.export" hidden>Export…</button>
   <button id="sel-date" class="btn" data-i18n="sel.date">Set date…</button>
   <button id="sel-trash" class="btn" data-i18n="sel.trash">Move to trash</button>
   <button id="sel-done" class="btn quiet" data-i18n="sel.done">Done</button>
@@ -102,6 +103,7 @@
     <span id="lb-title" class="lb-title"></span>
     <button id="lb-live" class="pill" hidden>LIVE ▶</button>
     <button id="lb-fav" class="icon fav-lb" aria-pressed="false" data-i18n-title="fav.add_hint" title="Favorite (f)"></button>
+    <button id="lb-coll" class="icon coll" aria-pressed="false" hidden></button>
     <button id="lb-rotate" class="icon" data-i18n-title="lb.rotate_hint" data-i18n-aria-label="lb.rotate" title="Rotate left (r) · Option-click or Shift+R: right" aria-label="Rotate left">↺</button>
     <button id="lb-trash" class="icon" data-i18n-title="lb.trash_hint" data-i18n-aria-label="sel.trash" title="Move to trash" aria-label="Move to trash" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 21q-.825 0-1.412-.587Q5 19.825 5 19V6H4V4h5V3h6v1h5v2h-1v13q0 .825-.587 1.413Q17.825 21 17 21ZM17 6H7v13h10ZM9 17h2V8H9Zm4 0h2V8h-2ZM7 6v13Z"/></svg></button>
     <a id="lb-download" class="icon" data-i18n-title="lb.download" data-i18n-aria-label="lb.download" title="Download original" aria-label="Download original">⤓</a>
@@ -125,5 +127,6 @@
 <script src="app.js"></script>
 <script src="dates.js"></script>
 <script src="geo.js"></script>
+<script src="export.js"></script>
 </body>
 </html>

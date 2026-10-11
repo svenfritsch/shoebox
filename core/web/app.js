@@ -278,6 +278,7 @@ function renderChips() {
     box.appendChild(clear);
   }
   personHead(box, f);
+  exportChip(box, f);
   box.hidden = !box.firstChild;
 }
 state.tagNames = {};
@@ -1199,6 +1200,7 @@ function showItem() {
   $('lb-live').hidden = !state.live[id];
   $('lb-fav').hidden = false;
   markLightboxHeart();
+  markCollectionButton();
   applyAllowTrash();
   var rot = $('lb-rotate');
   rot.hidden = isAll() || kind === 'v';
@@ -1234,6 +1236,7 @@ function showItem() {
   api(fileBase(id)).then(function (info) {
     if (state.open !== i) return;
     lb.details = info;
+    markCollectionButton();
     $('lb-title').textContent = formatDate(info) + ' · ' + info.name;
     if (!$('lb-panel').hidden) renderPanel();
     drawFaces();
@@ -1531,6 +1534,7 @@ document.addEventListener('keydown', function (ev) {
   else if (ev.key === 'ArrowRight') step(1);
   else if (ev.key === 'i') $('lb-info').onclick();
   else if ((ev.key === 'f' || ev.key === 'F') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) toggleFavoriteOpen();
+  else if ((ev.key === 'c' || ev.key === 'C') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) toggleCollection();
   else if ((ev.key === 'r' || ev.key === 'R') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) rotateOpen(ev.shiftKey ? 1 : -1);
 });
 
@@ -1558,6 +1562,8 @@ function loadInfo() {
   return api(LIBAPI + '/info').then(function (info) {
     $('title').textContent = info.name;
     state.reveal = revealLabel(info.reveal);
+    state.exportOk = !!info.export;
+    applyExportOk();
     document.title = info.name + ' · shoebox';
     var parts = [
       trn('count.photos', info.photos),
@@ -1641,7 +1647,8 @@ function toast(text) {
 
 // A small dialog. actions: [{label, cls, onclick(close)}]; onclick returns
 // false to keep the dialog open.
-function openModal(title, body, actions) {
+function openModal(title, body, actions, cls) {
+  document.querySelector('#modal .dialog').className = 'dialog' + (cls ? ' ' + cls : '');
   $('modal-title').textContent = title;
   var b = $('modal-body');
   b.textContent = '';
@@ -1743,7 +1750,7 @@ function updateSelbar() {
   var total = state.data && state.data.ids ? state.data.ids.length : 0;
   $('sel-all').textContent = tr(total && n >= total ? 'sel.none' : 'sel.all');
   $('sel-all').disabled = !total;
-  $('sel-move').disabled = $('sel-trash').disabled = $('sel-tag').disabled = $('sel-untag').disabled = $('sel-date').disabled = !n;
+  $('sel-move').disabled = $('sel-trash').disabled = $('sel-tag').disabled = $('sel-untag').disabled = $('sel-date').disabled = $('sel-export').disabled = !n;
 }
 
 $('select').onclick = function () {
@@ -1761,6 +1768,7 @@ $('sel-move').onclick = function () { moveDialog(selectedIds(), endSelection); }
 $('sel-trash').onclick = function () { trashDialog(selectedIds(), endSelection); };
 $('sel-tag').onclick = function () { addTagDialog(selectedIds()); };
 $('sel-untag').onclick = function () { removeTagDialog(selectedIds()); };
+$('sel-export').onclick = function () { openExport(selectedIds(), ''); };
 
 // ------------------------------------------------------------------ move and trash
 
@@ -3069,8 +3077,10 @@ function tagsChanged(id) {
   api(LIBAPI + '/files/' + id).then(function (info) {
     if (!lb.details || lb.details.id !== id) return;
     lb.details = info;
+    coll.busy = false;
+    markCollectionButton();
     renderPanel();
-  }).catch(function () {});
+  }).catch(function () { coll.busy = false; markCollectionButton(); });
 }
 
 function addTagDialog(ids) {
@@ -3502,6 +3512,8 @@ function loadSettings() {
   page.appendChild(sec);
   page.appendChild(allowTrashSection());
   page.appendChild(mapsSection());
+  page.appendChild(collectionSection());
+  page.appendChild(exportSection());
   page.appendChild(eventPatternSection());
   page.appendChild(copyFoldersSection());
 }

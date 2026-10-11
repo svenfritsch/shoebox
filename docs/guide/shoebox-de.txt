@@ -90,6 +90,11 @@ Eine Seite im Browser, eine Zeitleiste von allem auf dem Laufwerk.
    Eigene Tags für viele Fotos auf einmal. Auch Ordner zählen als Tags. Im
    Index gespeichert, nie in den Fotos.
 
+- Sammeln & exportieren
+   Fotos für eine Druckbestellung, ein Album oder ein Geburtstagsvideo mit
+   einem Klick sammeln und dann als nummerierten Ordner auf deinen Computer
+   oder einen USB-Stick kopieren. Deine Originale bleiben, wie sie sind.
+
 - Zeitleiste
    Alle Fotos und Videos nach Monat, mit Jahressprung, Ordnerbaum und einer
    Ansicht mit Infos zum Foto. Gib einem Scan oder einem weitergeleiteten Bild
@@ -421,10 +426,46 @@ eigenen Tags der Fotos gehen immer mit. „Ordnertags behalten“ behält
 zusätzlich die Tags des alten Ordners als eigene Tags; Ordner-Tags folgen
 immer dem neuen Ordner.
 
+Sammeln und exportieren
+Um Fotos für etwas zu sammeln (eine Druckbestellung, ein Album in InDesign,
+ein Video zum Geburtstag), gib ihnen einen gemeinsamen Tag. Unter
+Einstellungen → Sammlung trägst du den Namen dieses Tags ein, zum Beispiel
+druck-maerz. In der Fotoansicht erscheint dann ein Lesezeichen-Knopf: Ein
+Klick, oder die Taste C, setzt den Tag auf das Foto, der nächste Klick nimmt
+ihn wieder weg. Wenn du mit der Maus über den Knopf fährst, siehst du, welchen
+Tag er benutzt. Du kannst über mehrere Sitzungen sammeln; such nach dem Tag,
+um zu sehen, was du hast. Bleibt die Einstellung leer, ist der Knopf weg.
+
+Dann drückst du Exportieren …: in der Leiste unten für die ausgewählten Fotos
+oder, wenn ein Tag in der Suche ist, neben seinem Chip für alles, was gezeigt
+wird. Der Dialog fragt, wohin gespeichert wird (Wählen … öffnet eine Liste
+deiner Ordner und Laufwerke; Downloads steht oben) und wie der neue Ordner
+heißen soll. Bei einem Tag ist das der Name des Tags, bei einer Auswahl tippst
+du einen. Darin liegen Kopien mit Namen wie 001_IMG_3457.jpg, 002_… in der
+Reihenfolge der Aufnahmedaten (Einstellungen → Export schaltet die Nummern
+ab). HEIC in JPEG umwandeln ist für Druckereien und Programme, die HEIC nicht
+lesen können; das JPEG behält Aufnahmedatum und Kameradaten. Haben Fotos eine
+RAW-Datei oder das Video eines Live Photos, nimmt ein Häkchen diese mit.
+Videos werden unverändert kopiert.
+
+Ein erneuter Export in denselben Ordner fügt nur Neues hinzu: Eine Datei, die
+schon da ist (gleicher Name ohne die Nummer, gleiche Größe), wird
+übersprungen, und die Nummern der übrigen werden auf die neue Reihenfolge
+angepasst. Im Ordner wird nie etwas gelöscht. Wählst du ein Laufwerk, das eine
+eigene shoebox-Bibliothek hat, fragt shoebox vorher nach, denn der nächste
+Scan dieses Laufwerks findet die Kopien und nimmt sie als neue Fotos ohne ihre
+Tags auf. Jedes Original wird mit derselben Kontrolle wie bei einem Scan
+gelesen und jede Kopie danach damit verglichen; die Originale werden nie
+verändert. Der Export speichert in den Ordnern des Computers, auf dem shoebox
+läuft, und wird deshalb auf dem iPad nicht angeboten.
+
 [Screenshot: Vorschläge beim Tippen.]
 
-[Screenshot: Drei Fotos ausgewählt; die Leiste bietet Verschieben, Tag und
-Papierkorb.]
+[Screenshot: Drei Fotos ausgewählt; die Leiste bietet Verschieben, Tag,
+Exportieren und Papierkorb.]
+
+[Screenshot: Exportieren: wohin gespeichert wird, wie der neue Ordner heißt
+und was mitkommt.]
 
 [Screenshot: Tag hinzufügen.]
 
@@ -868,7 +909,8 @@ etwas hinein.
    Papierkorb. Immer ein Umbenennen, nie ein Kopieren, und nur wenn die Datei
    noch zum Index passt. Das Einzige, was shoebox sonst entfernt, ist eine
    neue Kopie einer Datei, die das Laufwerk schon hatte, und nur, wenn du nach
-   einem Scan den Knopf drückst.
+   einem Scan den Knopf drückst. Exportieren liest nur: Es schreibt Kopien in
+   einen neuen Ordner deiner Wahl und prüft jede einzelne gegen ihr Original.
 
 - Lokal
    Keine Cloud, kein Konto. Standardmäßig kann sich nur dieser Computer
@@ -890,6 +932,12 @@ Scannen ausführen oder die Foto-App neu starten.
 Das iPad verbindet sich nicht. Selbes WLAN? Mit --lan gestartet? PIN aus dem
 Terminal eingeben. Nach einem Neustart von shoebox fragt es wieder nach der
 PIN.
+
+Es gibt keinen Exportieren-Knopf. Der Export speichert in die Ordner des
+Computers, auf dem shoebox läuft, und wird deshalb nur in einem Browser auf
+diesem Computer angeboten, nicht auf einem iPad. Ist ein Tag in der Suche,
+sitzt der Knopf neben dem Chip des Tags; für andere Fotos ☑ drücken, auswählen
+und in der Leiste Exportieren … benutzen.
 
 Ein Laufwerk steht auf offline. Wieder anstecken; shoebox findet es beim
 Neuladen.

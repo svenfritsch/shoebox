@@ -11,6 +11,7 @@ pub mod clusters;
 pub mod dates;
 pub mod db;
 pub mod duplicates;
+pub mod export;
 pub mod faces;
 pub mod fingerprint;
 pub mod fsinfo;

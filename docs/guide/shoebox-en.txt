@@ -87,6 +87,11 @@ One page in your browser, a timeline of everything on the drive.
    Your own tags on many photos at once. Folders count as tags too. Stored in
    the index, never in the photos.
 
+- Collect & export
+   Gather photos for a print order, an album or a birthday video with one
+   click, then copy them into a numbered folder on your computer or a USB
+   stick. Your originals stay as they are.
+
 - Timeline
    All photos and videos by month, with a year jump, folder tree and a viewer
    with full-size info. Give a scan or a forwarded picture a date of your own
@@ -395,9 +400,43 @@ and RAW, Live Photo and sidecar files move along. The photos’ own tags always
 go with them. “Keep folder tags” also keeps the old folder’s tags as own tags;
 folder tags always follow the new folder.
 
+Collect and export
+To gather photos for something (a print order, an album in InDesign, a video
+for a birthday), give them one tag. In Settings → Collection type the name of
+that tag, for example print-march. A bookmark button then appears in the photo
+view: one click, or the key C, puts the tag on the photo, and the next click
+takes it off again. Hover over the button to see which tag it uses. You can
+collect over several sessions; search for the tag to see what you have. Leave
+the setting empty and the button is gone.
+
+Then press Export…: in the bar at the bottom for the selected photos, or, when
+a tag is in the search, next to its chip for everything shown. The dialog asks
+where to save (Choose… opens a list of your folders and drives; Downloads is
+the first place) and how to call the new folder. From a tag the name is the
+tag’s name; from a selection you type one. Inside you get copies named
+001_IMG_3457.jpg, 002_… in the order of the capture dates (Settings → Export
+switches the numbers off). Convert HEIC to JPEG is for print shops and
+programs that cannot read HEIC; the JPEG keeps the capture date and the camera
+data. For photos that have a RAW file, or the video of a Live Photo, a tick
+box takes those along. Videos are copied as they are.
+
+Exporting again into the same folder only adds what is new: a file that is
+already there (same name without the number, same size) is skipped, and the
+numbers of the others are changed to the new order. Nothing in the folder is
+ever deleted. If you choose a drive that has a shoebox library of its own,
+shoebox asks first, because that drive’s next scan will find the copies and
+add them as new photos without their tags. Every original is read under the
+same check as a scan and every copy is compared with it afterwards; the
+originals are never changed. Export saves into the computer shoebox runs on,
+so it is not offered on the iPad.
+
 [Screenshot: Suggestions as you type.]
 
-[Screenshot: Three photos selected; the bar offers Move, Tag and Trash.]
+[Screenshot: Three photos selected; the bar offers Move, Tag, Export and
+Trash.]
+
+[Screenshot: Export: where to save, the name of the new folder, and what to
+take along.]
 
 [Screenshot: Adding a tag.]
 
@@ -804,7 +843,9 @@ anything into them.
    Originals change only through your actions: move, rename, trash. Always a
    rename, never a copy, and only if the file still matches the index. The
    only other thing shoebox removes is a new copy of a file the drive already
-   had, and only when you press the button after a scan.
+   had, and only when you press the button after a scan. Export only reads: it
+   writes copies into a new folder you choose and checks each one against its
+   original.
 
 - Local
    No cloud, no account. By default only this computer can connect; other
@@ -826,6 +867,11 @@ restart the photo app.
 
 The iPad cannot connect. Same Wi-Fi? Started with --lan? Enter the PIN printed
 in Terminal. Restarting shoebox asks for the PIN again.
+
+There is no Export button. Export saves into the folders of the computer
+shoebox runs on, so it is only offered in a browser on that computer, not on
+an iPad. With a tag in the search the button sits next to the tag’s chip; for
+other photos press ☑, select, and use Export… in the bar.
 
 A drive shows as offline. Plug it in again; shoebox picks it up when you
 reload.
