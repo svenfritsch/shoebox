@@ -401,7 +401,6 @@ body.selecting .sec .pick { display: inline; }
 .cluster .cfaces { display: flex; flex-wrap: wrap; gap: 12px; }
 .cluster .cface { display: block; border-radius: 50%; }
 .cluster .cface .avatar.big, .sface-grid .cface .avatar.big { width: var(--face-size, 64px); height: var(--face-size, 64px); }
-.cluster .cfaces .avatar.big.pet::after, .sface-grid .avatar.big.pet::after { font-size: calc(var(--face-size, 64px) * .4); }
 .cluster .cface.small .avatar { outline: 2px dashed var(--muted); outline-offset: -2px; }
 .cluster .cface.sel .avatar { outline: 3px solid var(--accent); outline-offset: -3px; }
 .cluster.picking .cface:not(.sel) .avatar { opacity: .6; }
