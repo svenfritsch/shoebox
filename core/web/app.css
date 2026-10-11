@@ -438,7 +438,7 @@ body.selecting .sec .pick { display: inline; }
 .lb-panel .pface { display: flex; align-items: center; gap: 8px; }
 .lb-panel .pface .who { flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
 .lb-panel .pface .guess { font-style: italic; }
-.lb-panel .pface button.yes, .lb-panel .pface button.no { width: 32px; height: 28px; padding: 0; border-radius: 8px; }
+.lb-panel .pface button.yes, .lb-panel .pface button.no { width: 22px; height: 22px; padding: 0; border-radius: 50%; font-size: 13px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
 .lb-panel .pface button.yes { background: #2f8a3b; color: #fff; }
 .lb-panel .pface button.no { background: #c63b2f; color: #fff; }
 .lb-panel .pface button.add { background: none; border: 1px dashed rgba(255,255,255,.3); color: #ccc; }
