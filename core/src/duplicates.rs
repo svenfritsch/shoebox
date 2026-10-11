@@ -377,9 +377,10 @@ fn same_photo(a: &Row, b: &Row) -> bool {
 }
 
 /// `a` is better than `b`: more pixels, or as many and the metadata (a
-/// capture date) that `b` lost.
+/// capture date) that `b` lost, unless `b` is the bigger file (a RAW export
+/// without metadata is the better picture, so nothing is suggested then).
 fn better(a: &Row, b: &Row) -> bool {
-    pixels(a) > pixels(b) || (pixels(a) == pixels(b) && a.file.taken.is_some() && b.file.taken.is_none())
+    pixels(a) > pixels(b) || (pixels(a) == pixels(b) && a.file.taken.is_some() && b.file.taken.is_none() && a.file.size >= b.file.size)
 }
 
 /// For the files of one group, in `order`: the row each belongs to, and the
@@ -402,7 +403,9 @@ fn photo_rows(rows: &[Row], order: &[usize], open: &dyn Fn(usize, usize) -> bool
         })
         .collect();
     // The best of each component: most pixels, then a capture date, then
-    // size, then the earliest record and first path. Sameness is not
+    // size (a copy's name does not outweigh it: a RAW exported next to its
+    // camera JPEG gets a " 2"), then a name that is no copy's, the earliest
+    // record and first path. Sameness is not
     // transitive (a messenger copy without a date fits two shots a day
     // apart), so a file joins the best one's row only if it is the same
     // photo as the best itself; any other gets a row of its own.
@@ -412,7 +415,7 @@ fn photo_rows(rows: &[Row], order: &[usize], open: &dyn Fn(usize, usize) -> bool
     };
     let key = |i: usize| {
         let r = &rows[i];
-        (!r.file.in_copies, pixels(r), r.file.taken.is_some(), !copy_name[&i], r.file.size, std::cmp::Reverse(r.added_at), std::cmp::Reverse(r.file.path.clone()))
+        (!r.file.in_copies, pixels(r), r.file.taken.is_some(), r.file.size, !copy_name[&i], std::cmp::Reverse(r.added_at), std::cmp::Reverse(r.file.path.clone()))
     };
     let mut best: HashMap<u32, usize> = HashMap::new();
     for (x, &i) in order.iter().enumerate() {
