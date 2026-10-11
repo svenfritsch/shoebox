@@ -135,6 +135,19 @@ enum Command {
         #[command(subcommand)]
         command: FacesCommand,
     },
+    /// How every kind of recognition went on a drive: faces, pets, text.
+    /// Only reads.
+    Stats {
+        /// Library root.
+        root: PathBuf,
+        /// Database to use instead of `<root>/.shoebox/library.db`.
+        #[arg(long)]
+        db: Option<PathBuf>,
+        /// Print the result as JSON on standard output (the usual text goes to
+        /// standard error).
+        #[arg(long)]
+        json: bool,
+    },
     /// The words read in the photos by `shoebox recognize --text`.
     Text {
         #[command(subcommand)]
@@ -223,6 +236,7 @@ fn main() -> ExitCode {
             | Command::Backup { json: true, .. }
             | Command::Faces { command: FacesCommand::Stats { json: true, .. } }
             | Command::Text { command: TextCommand::Stats { json: true, .. } }
+            | Command::Stats { json: true, .. }
     ) {
         report::text_to_stderr(true);
     }
@@ -277,6 +291,10 @@ fn main() -> ExitCode {
                 true
             })
         }
+        Command::Stats { root, db, json } => shoebox::overview::print_overview(&root, db.as_deref()).map(|o| {
+            json_out(json, &o);
+            true
+        }),
         Command::Text { command: TextCommand::Stats { root, db, json } } => shoebox::text::print_stats(&root, db.as_deref()).map(|stats| {
             json_out(json, &stats);
             true

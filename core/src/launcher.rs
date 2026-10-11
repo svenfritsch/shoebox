@@ -450,7 +450,7 @@ struct JobRequest {
     /// `forget_missing` (drop the records of files that are gone),
     /// `recognize`, `recognize_pets` (the same, then cats and dogs too),
     /// `recognize_rotated` (also faces lying down), `recognize_text` (only
-    /// the words in the photos), `faces_stats`, `backup` or `backup_cleanup`.
+    /// the words in the photos), `faces_stats` (faces only), `recognition_stats` (every kind), `backup` or `backup_cleanup`.
     kind: String,
     /// One folder, or several in `roots`: they are processed one after the other.
     #[serde(default)]
@@ -559,6 +559,10 @@ fn run_command(req: &JobRequest, roots: Vec<PathBuf>) -> Result<(serde_json::Val
             let clean = (found.faces || !req.faces) && (found.pets || !req.pets) && (found.text || !req.text);
             (serde_json::to_value(&found)?, clean)
         }
+        "recognition_stats" => {
+            let o = crate::overview::print_overview(&root, None)?;
+            (serde_json::to_value(&o)?, true)
+        }
         "faces_stats" => {
             let stats = faces::print_stats(&root, None)?;
             (serde_json::to_value(&stats)?, true)
@@ -604,11 +608,11 @@ fn short_name(root: &Path) -> String {
 /// recognition job is running, and a moved or changed original is skipped by
 /// the guard. Scan, verify and backup checks stay locked out.
 fn runs_beside_app(kind: &str) -> bool {
-    matches!(kind, "recognize" | "recognize_pets" | "recognize_rotated" | "recognize_text" | "faces_stats")
+    matches!(kind, "recognize" | "recognize_pets" | "recognize_rotated" | "recognize_text" | "faces_stats" | "recognition_stats")
 }
 
 fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
-    if !matches!(req.kind.as_str(), "scan" | "forget_missing" | "verify" | "recognize" | "recognize_pets" | "recognize_rotated" | "recognize_text" | "faces_stats" | "backup" | "backup_cleanup" | "scan_cleanup" | "install_addons") {
+    if !matches!(req.kind.as_str(), "scan" | "forget_missing" | "verify" | "recognize" | "recognize_pets" | "recognize_rotated" | "recognize_text" | "faces_stats" | "recognition_stats" | "backup" | "backup_cleanup" | "scan_cleanup" | "install_addons") {
         return Err(ApiError::BadRequest(format!("unknown command {:?}", req.kind)));
     }
     if !runs_beside_app(&req.kind) && shared.app.lock().unwrap().is_some() {

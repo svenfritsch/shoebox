@@ -3742,6 +3742,8 @@ function loadSettings() {
   sec.appendChild(cards);
   page.appendChild(sec);
   page.appendChild(textSection());
+  page.appendChild(forgetSection('faces'));
+  page.appendChild(forgetSection('pets'));
   page.appendChild(allowTrashSection());
   page.appendChild(mapsSection());
   page.appendChild(eventPatternSection());
@@ -3776,6 +3778,54 @@ function textSection() {
     ]);
   };
   sec.appendChild(del);
+  return sec;
+}
+
+// Forget what recognition found, for faces or for pets (`forget.rs`): the
+// automatic finds only (names and decisions stay and take hold again after the
+// next "Recognize"), or everything including the user's own work.
+function forgetSection(space) {
+  var what = space === 'pets' ? tr('forget.what_pets') : tr('forget.what_faces');
+  var sec = el('section', 'settings-section');
+  sec.appendChild(el('h3', '', space === 'pets' ? tr('forget.title_pets') : tr('forget.title_faces')));
+  sec.appendChild(el('p', 'hint', tr('forget.hint', { what: what })));
+  var line = el('p', 'sub', '');
+  sec.appendChild(line);
+  var auto = el('button', 'btn quiet', tr('forget.auto'));
+  var all = el('button', 'btn quiet', tr('forget.all'));
+  auto.type = all.type = 'button';
+  auto.disabled = all.disabled = true;
+  var counts = null;
+  api(LIBAPI + '/recognition/forget').then(function (c) {
+    counts = c[space];
+    line.textContent = counts.finds || counts.decisions
+      ? tr('forget.stored', { finds: counts.finds, photos: counts.photos, decisions: counts.decisions, people: counts.people })
+      : tr('forget.nothing', { what: what });
+    auto.disabled = !counts.finds && !counts.photos;
+    all.disabled = !counts.finds && !counts.photos && !counts.decisions;
+  }).catch(function () {});
+  function run(everything) {
+    post(LIBAPI + '/recognition/forget', { space: space, everything: everything }).then(function (r) {
+      toast(tr('forget.done', { n: r.finds + r.decisions }));
+      changed();
+      if (state.filter.view === 'settings') loadSettings();
+    }).catch(failed);
+  }
+  auto.onclick = function () {
+    openModal(tr('forget.auto'), tr('forget.auto_confirm', { what: what, finds: counts.finds }), [
+      { label: tr('app.cancel'), cls: 'quiet', focus: true },
+      { label: tr('forget.auto'), cls: 'danger', onclick: function () { run(false); } },
+    ]);
+  };
+  all.onclick = function () {
+    openModal(tr('forget.all'), tr('forget.all_confirm', { what: what, finds: counts.finds, decisions: counts.decisions, people: counts.people }), [
+      { label: tr('app.cancel'), cls: 'quiet', focus: true },
+      { label: tr('forget.all'), cls: 'danger', onclick: function () { run(true); } },
+    ]);
+  };
+  sec.appendChild(auto);
+  sec.appendChild(document.createTextNode(' '));
+  sec.appendChild(all);
   return sec;
 }
 

@@ -78,6 +78,7 @@ use crate::thumbs::{self, Source};
 
 mod faces_api;
 mod people_api;
+mod forget_api;
 mod text_api;
 
 pub const DEFAULT_PORT: u16 = 7878;
@@ -836,6 +837,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/geo/points", get(geo_points))
         .route("/api/files/{id}/position", post(position_set))
         .route("/api/files/{id}/text-hidden", post(text_api::hide))
+        .route("/api/recognition/forget", get(forget_api::counts).post(forget_api::forget))
         .route("/api/text/stats", get(text_api::stats))
         .route("/api/text/limits", get(text_api::limits_get).post(text_api::limits_set))
         .route("/api/text/delete-all", post(text_api::delete_all))

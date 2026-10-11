@@ -19,7 +19,7 @@ use crate::people::{self, Action, Who};
 
 /// Run a change to people or decisions, tidy up what it left behind, then
 /// recompute the clusters.
-async fn people_change<T: Send + 'static>(
+pub(super) async fn people_change<T: Send + 'static>(
     app: &Arc<App>,
     f: impl FnOnce(&rusqlite::Connection) -> anyhow::Result<T> + Send + 'static,
 ) -> ApiResult<T> {

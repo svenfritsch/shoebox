@@ -94,6 +94,10 @@ fn guard_commands_run_from_the_launcher_leave_originals_untouched() {
     let faces = run_job(addr, json!({ "kind": "faces_stats", "root": root }));
     assert_eq!(faces["ok"], true, "{faces}");
     assert!(faces["result"].is_null());
+    // The same for the overview of every kind: before any run, nothing started.
+    let overview = run_job(addr, json!({ "kind": "recognition_stats", "root": root }));
+    assert_eq!(overview["ok"], true, "{overview}");
+    assert_eq!(overview["result"]["started"], false, "{overview}");
 
     // Recognize without a worker fails with a message, and the launcher lives on.
     let recognize = run_job(addr, json!({ "kind": "recognize", "root": root, "limit": 1 }));

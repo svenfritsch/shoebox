@@ -314,7 +314,7 @@ function poll() {
 // the photo app runs; only Cancel (command) or Stop (app) stay usable. The
 // recognition buttons are the exception while the photo app runs, and the
 // photo app can be started while recognition runs.
-var BESIDE_APP = ['recognize', 'recognize_pets', 'recognize_rotated', 'recognize_text', 'faces_stats'];
+var BESIDE_APP = ['recognize', 'recognize_pets', 'recognize_rotated', 'recognize_text', 'recognition_stats'];
 
 function applyLocks() {
   $('controls').disabled = busy || serving;
@@ -589,7 +589,14 @@ function summaryOf(kind, r) {
   else if (kind === 'forget_missing') out.push(tr('launcher.sum.forgotten', { n: r.forgotten }));
   else if (kind === 'recognize_pets' && r.pets) out.push(tr('launcher.sum.pets', { n: r.pets.faces }), tr('launcher.failed', { n: r.pets.failed }));
   else if (kind === 'recognize_text' && r.text) out.push(tr('launcher.sum.text', { n: r.text.faces }), tr('launcher.failed', { n: r.text.failed }));
-  else if (kind === 'faces_stats') out.push(r === null ? tr('launcher.sum.no_faces') : tr('launcher.sum.faces', { n: r.faces }));
+  else if (kind === 'recognition_stats') {
+    if (!r || !r.started) out.push(tr('launcher.sum.nothing_yet'));
+    else {
+      if (r.faces.looked) out.push(tr('launcher.sum.faces', { n: r.faces.finds }));
+      if (r.pets.looked) out.push(tr('launcher.sum.pets', { n: r.pets.finds }));
+      if (r.text.looked) out.push(tr('launcher.sum.text', { n: r.text.finds }));
+    }
+  }
   return out;
 }
 
