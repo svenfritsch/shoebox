@@ -71,7 +71,7 @@ await shot('people-unnamed');
 
 // "Select" on a card: tick some faces, then name, ignore or mark only those.
 const card = p.locator('#un-box .cluster').first();
-await card.locator('button.btn.quiet').nth(2).click(); await wait(500);
+await card.locator('button.btn.quiet:visible').nth(2).click(); await wait(500);
 await card.locator('.cface').nth(1).click(); await card.locator('.cface').nth(3).click(); await wait(300);
 await card.locator('input[type=text]').fill('Mia'); await wait(300);
 await card.screenshot({ path: `${out}/faces-select.png` });
