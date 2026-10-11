@@ -4845,6 +4845,9 @@ function singlesSection() {
     // Keyboard: Tab between thumbnails (or ←/→), Enter selects (the click
     // below), Space opens the photo and, in the viewer, closes it again.
     t.onkeydown = function (ev) {
+      // While the viewer is open the thumbnail keeps the focus (to come back to);
+      // its keys belong to the viewer then, so Space can close it.
+      if (!$('lightbox').hidden) return;
       if (ev.altKey || ev.metaKey || ev.ctrlKey) return;
       if (ev.key === ' ') {
         ev.preventDefault();
