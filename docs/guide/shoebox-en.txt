@@ -697,11 +697,12 @@ New person, + New cat or + New dog adds a new one. The kind of a pet you drew
 yourself cannot be changed later; delete the box and draw it again. For a pet
 the detector found, ⋯ offers It's a cat, not a dog (or the other way round)
 when it took it for the wrong one. Videos are not scanned for faces, so their
-info panel says so. There you can still link a person: + Add person opens a
-dialog where you name the person; shoebox places the small box it needs by
-itself, and nothing is drawn on the video. The person is linked to the whole
-clip. Their profile picture shows in the list, and the video is found when you
-filter the timeline by that person.
+info panel says so. There you can still link a person: The same + Add face or
+pet button opens the same dialog (Person, Cat or Dog, then the name); there is
+no box to draw, shoebox places the small one it needs by itself, and nothing
+is drawn on the video. The person or pet is linked to the whole clip. Their
+profile picture shows in the list, and the video is found when you filter the
+timeline by that person.
 
 Groups
 Faces shows people by group. New group… makes one; Groups… renames, reorders

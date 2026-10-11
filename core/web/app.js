@@ -5303,7 +5303,7 @@ function infoFaces(row, info) {
   }
   if (lb.details && state.data) {
     var isVideo = state.data.kinds[state.open] === 'v';
-    var add = el('button', '', tr(isVideo ? 'info.add_person' : 'info.add_face'));
+    var add = el('button', '', tr('info.add_face'));
     add.title = tr(isVideo ? 'info.add_person_hint' : 'info.add_face_hint');
     add.onclick = startDrawing;
     if (lb.details.view_turn) {
@@ -5582,7 +5582,7 @@ function nameDrawnFace(info, frac) {
     field.input.dispatchEvent(new Event('input'));
   };
   var video = info.kind === 'video';
-  [['', '🧑', 'draw.kind.person'], ['cat', PET_ICON.cat, 'draw.kind.cat'], ['dog', PET_ICON.dog, 'draw.kind.dog']].slice(0, video ? 1 : 3).forEach(function (k) {
+  [['', '🧑', 'draw.kind.person'], ['cat', PET_ICON.cat, 'draw.kind.cat'], ['dog', PET_ICON.dog, 'draw.kind.dog']].forEach(function (k) {
     var b = el('button', '', k[1] + ' ' + tr(k[2]));
     b.type = 'button';
     b.dataset.kind = k[0];
@@ -5598,12 +5598,12 @@ function nameDrawnFace(info, frac) {
     }).catch(failed);
   };
   field = personField(function (who) { save(who); }, { allowNew: true, placeholder: tr('people.name_placeholder'), species: function () { return kind; } });
-  if (!video) body.appendChild(kinds);
+  body.appendChild(kinds);
   body.appendChild(field);
   hint = el('p', 'hint');
   body.appendChild(hint);
   update();
-  openModal(tr(video ? 'draw.title_video' : 'draw.title'), body, [
+  openModal(tr('draw.title'), body, [
     video ? null : { label: tr('draw.again'), cls: 'quiet', onclick: function () { var r = lb.drawing && lb.drawing.layer.querySelector('.draw-box'); if (r) r.hidden = true; } },
     { label: tr('app.cancel'), cls: 'quiet', onclick: function () { stopDrawing(); } },
     { label: tr('draw.save'), onclick: function () { var who = field.value(); if (!who) return false; save(who); return false; } },
