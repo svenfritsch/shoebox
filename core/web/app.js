@@ -2405,8 +2405,9 @@ function groupNode(g) {
   title.title = kind.hint;
   head.appendChild(title);
   var ids = g.files.map(function (f) { return f.id; });
-  var decide = function (decision, label) {
+  var decide = function (decision, label, hint) {
     var b = el('button', 'btn quiet', label);
+    b.title = hint;
     b.onclick = function () {
       b.disabled = true;
       post(LIBAPI + '/duplicates/decide', { ids: ids, decision: decision }).then(function () {
@@ -2418,8 +2419,8 @@ function groupNode(g) {
     };
     head.appendChild(b);
   };
-  if (g.kind === 'similar') decide('distinct', tr('dups.btn_different'));
-  decide('linked', tr('dups.btn_keep'));
+  if (g.kind === 'similar') decide('distinct', tr('dups.btn_different'), tr('dups.btn_different_hint'));
+  decide('linked', tr('dups.btn_keep'), tr('dups.btn_keep_hint'));
   box.appendChild(head);
   box.appendChild(el('p', 'group-hint', g.kind === 'similar' || g.kind === 'edited'
     ? tr('dups.group_hint_series', { hint: kind.hint })
