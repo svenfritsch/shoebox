@@ -888,6 +888,18 @@ Karte sagt, wann das Laufwerk zuletzt gescannt wurde und wann zuletzt neue
 Dateien darauf angekommen sind (beim Backup: Letztes Backup); zeig auf ein
 Datum für die genaue Uhrzeit.
 
+[Screenshot: Laufwerke verwalten: ein Original und sein Backup. Jede Liste hat
+einen Knopf „Fotos anzeigen“.]
+
+[Screenshot: „Fotos anzeigen“ bei „nur auf dem Backup“: die eigene Zeitleiste
+des Backups mit dem Chip Nur auf Backup.]
+
+[Screenshot: Auf dem Backup anders: beide Versionen eines Fotos nebeneinander,
+jede mit einem Abzeichen Original oder Backup.]
+
+[Screenshot: Die Info-Leiste eines Fotos, das es nur auf dem Backup gibt: Das
+Abzeichen steht neben dem Namen.]
+
 Backup-Prüfung
 Erst das Original wählen, dann das Backup. shoebox vergleicht die beiden
 Indizes (kein Foto wird gelesen) und listet, was noch nicht auf dem Backup
