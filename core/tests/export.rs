@@ -315,3 +315,54 @@ fn the_picker_lists_folders_and_only_this_computer_may_export() {
     assert!(!out.join("nope").exists());
     let _ = fs::remove_dir_all(&out);
 }
+
+/// Needs the HEIC and the Live Photo video of `scripts/make-fixtures.sh`.
+#[test]
+fn a_heic_becomes_a_jpeg_with_its_exif_and_stays_there_on_the_second_export() {
+    if std::env::var_os("SHOEBOX_FIXTURES").is_none_or(|f| f.is_empty()) {
+        eprintln!("SHOEBOX_FIXTURES is not set: skipping the HEIC export test");
+        return;
+    }
+    let lib = Library::new("export-heic");
+    lib.scan_opts(true, false, false);
+    let before = lib.snapshot();
+    let heic: (i64, String) = lib
+        .db()
+        .query_row("SELECT id, path FROM files WHERE kind = 'heic' AND missing_since IS NULL", [], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap();
+    let server = start(&lib, None);
+    let out = out_dir("heic");
+    let ids = [heic.0];
+
+    let summary = post(server.addr, "/api/export/summary", &json!({ "ids": ids })).json();
+    assert_eq!((summary["heic"].as_u64(), summary["live"].as_u64()), (Some(1), Some(1)), "{summary}");
+
+    let options = json!({ "number": true, "live": true, "heic_to_jpeg": true });
+    let req = body(&out, "jpegs", &ids, options.clone());
+    let status = export(server.addr, &req);
+    assert_eq!(status["state"], "done", "{status}");
+    assert_eq!((status["converted"].as_u64(), status["no_exif"].as_u64()), (Some(1), Some(0)), "{status}");
+    let dest = out.join("jpegs");
+    assert_eq!(names(&dest), ["001_IMG_0002.MOV", "001_IMG_0002.jpg"]);
+
+    let jpeg = fs::read(dest.join("001_IMG_0002.jpg")).unwrap();
+    let img = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg).unwrap();
+    assert_eq!((img.width(), img.height()), (4032, 3024));
+    // The capture date and the camera made it across, and the picture is upright.
+    let has = |needle: &[u8]| jpeg.windows(needle.len()).any(|w| w == needle);
+    assert!(has(b"2020:07:15 09:10:11"), "capture date");
+    assert!(has(b"iPhone 12"), "camera model");
+    // (No Orientation tag at all also means upright.)
+    if let Ok(slot) = shoebox::orientation::find(&jpeg) {
+        assert_eq!(slot.value, 1);
+    }
+    // The video came as it is.
+    let mov = lib.root.join(Path::new(&heic.1).with_extension("MOV"));
+    assert_eq!(fs::read(dest.join("001_IMG_0002.MOV")).unwrap(), fs::read(mov).unwrap());
+
+    // Again: the .jpg counts as the HEIC, nothing is written.
+    let status = export(server.addr, &req);
+    assert_eq!((status["copied"].as_u64(), status["already"].as_u64()), (Some(0), Some(2)), "{status}");
+    assert_eq!(lib.snapshot(), before);
+    let _ = fs::remove_dir_all(&out);
+}
