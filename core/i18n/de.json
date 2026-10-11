@@ -315,6 +315,8 @@
   "dups.badge_pixels": "Meiste Pixel",
   "dups.badge_bigger": "Größte Datei",
   "dups.keep_this_hint": "Hakt „diese Kopie löschen“ bei allen anderen Dateien dieser Gruppe an und lässt diese. Erst „In den Papierkorb“ verschiebt etwas.",
+  "dups.keep": "Behalten",
+  "dups.keep_hint": "Dieses Foto zum Behalten markieren. Es können mehrere markiert werden; „Behalten (N)“ unten hakt dann alle anderen an.",
   "dups.keep_this": "Dieses behalten",
   "dups.kept_versions": "Als Versionen eines Fotos behalten",
   "dups.kept_different": "Als verschiedene Fotos behalten",

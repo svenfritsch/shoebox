@@ -633,11 +633,12 @@ anhaken, die weg soll; die beste Datei bleibt.
 Dieses behalten: Hakt alle anderen an. Nur bei ähnlichen Fotos: der Knopf am
 Fuß einer Karte hakt diese Kopie löschen bei allen anderen Dateien der Gruppe
 mit einem Klick an. Der gleiche Knopf im Vergleichsfenster (Bild anklicken)
-hakt die anderen an und schließt das Fenster, so kannst du mehrere Gruppen
-durchgehen und am Ende einmal In den Papierkorb drücken. Unter jedem Bild im
-Fenster steht außerdem diese Kopie löschen (derselbe Haken wie auf der Karte),
-und In den Papierkorb unten schickt die angehakten Dateien dieser Gruppe nach
-der Bestätigung in den Papierkorb; eine Datei bleibt immer.
+hakt die anderen an und schließt das Fenster. Um mehrere zu behalten, drücke
+unter jedem Foto, das bleiben soll, Behalten (der Knopf mit dem Häkchen) und
+dann unten Behalten (2), oder so viele du markiert hast: das Fenster schließt,
+und alle anderen Fotos der Gruppe sind angehakt. Im Fenster wird nichts
+verschoben; geh deine Gruppen durch und drücke dann einmal In den Papierkorb
+in der Leiste unten auf der Seite.
 
 Alle behalten und Verschiedene Fotos sind interne Notizen: shoebox speichert
 sie in seiner eigenen Datenbank in .shoebox auf dem Laufwerk, nie in den

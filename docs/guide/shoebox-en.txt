@@ -591,11 +591,11 @@ the best file stays.
 Keep this one: Ticks all the others. Look-alikes only: the button at the foot
 of a card ticks delete this copy on every other file of the group in one
 click. The same button in the compare dialog (click a picture) ticks the
-others and closes the dialog, so you can go through several groups and press
-Move to trash once at the end. Under every picture in the dialog there is also
-delete this copy (the same tick as on the card), and Move to trash at the
-bottom sends this group's ticked files to the trash after you confirm; one
-file always stays.
+others and closes the dialog. To keep several, press Keep (the checkbox
+button) under each photo you want to stay, then Keep (2), or however many you
+marked, at the bottom: the dialog closes and every other photo of the group is
+ticked. Nothing is moved in the dialog; go through your groups, then press
+Move to trash once in the bar at the bottom of the page.
 
 Keep all and Different photos are internal notes: shoebox saves them in its
 own database in .shoebox on the drive, never in the photos. Those finds are

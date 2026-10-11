@@ -2533,18 +2533,20 @@ function dupThumb(f, compare) {
 // "IMG_E1234" is the edited version of "IMG_1234" (iPhone).
 function isEdit(f) { return /^img_e\d+/i.test(f.name); }
 
-// The group's photos large and side by side; "Keep this one" ticks all the
-// others (the dialog closes), so the choice is one click and Move to trash
-// in the bar does the removing for every group at once.
+// The group's photos large and side by side. "Keep this one" ticks all the
+// others and closes the dialog; "Keep" marks photos to stay (several can) and
+// "Keep (N)" ticks all the others. Nothing is trashed here: Move to trash in
+// the bar does the removing for every group at once.
 function compareDialog(g, start, onKeep) {
   var back = el('div', 'modal');
   var dlg = el('div', 'dialog compare');
   dlg.appendChild(el('h2', '', tr('dups.compare_title')));
   var strip = el('div', 'compare-strip');
-  var boxes = [];
+  var kept = {};
   var close = function () { back.remove(); document.removeEventListener('keydown', onKey); };
   var onKey = function (e) { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKey);
+  var toggles = [];
   g.files.forEach(function (f) {
     var col = el('div', 'compare-col' + (f.id === start.id ? ' start' : ''));
     var img = el('img');
@@ -2556,44 +2558,43 @@ function compareDialog(g, start, onKeep) {
     if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
     meta.push((f.size / 1e6).toFixed(1) + ' MB');
     col.appendChild(el('div', 'meta', meta.join(' · ')));
+    var row = el('div', 'compare-buttons');
+    // Keep: mark this photo to stay; Keep (N) below ticks all the others.
+    var tog = el('button', 'btn quiet keep-toggle');
+    tog.title = tr('dups.keep_hint');
+    tog.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path class="tick" d="M7.5 12.5l3 3 6-7"/></svg>';
+    tog.appendChild(el('span', '', tr('dups.keep')));
+    tog.onclick = function () { if (kept[f.id]) delete kept[f.id]; else kept[f.id] = true; refresh(); };
+    toggles.push({ f: f, col: col, tog: tog });
+    row.appendChild(tog);
     var keep = el('button', 'btn', tr('dups.keep_this'));
-    keep.onclick = function () { close(); onKeep(f); };
-    col.appendChild(keep);
-    // The same tick as on the card in the group behind (one state), so one
-    // photo can go to the trash while the others stay.
-    var label = el('label', 'check');
-    var cb = el('input');
-    cb.type = 'checkbox';
-    cb.onchange = function () {
-      if (cb.checked) dupState.marked[f.id] = true; else delete dupState.marked[f.id];
-      syncDupBoxes();
-      refresh();
-    };
-    boxes.push({ f: f, cb: cb });
-    label.appendChild(cb);
-    label.appendChild(document.createTextNode(' ' + tr('dups.delete_copy')));
-    col.appendChild(label);
+    keep.onclick = function () { close(); onKeep([f]); };
+    row.appendChild(keep);
+    col.appendChild(row);
     strip.appendChild(col);
   });
   dlg.appendChild(strip);
   var row = el('div', 'actions');
-  var trash = el('button', 'btn danger');
-  trash.onclick = function () { close(); deleteMarked(g); };
-  row.appendChild(trash);
+  var go = el('button', 'btn');
+  go.onclick = function () {
+    close();
+    onKeep(g.files.filter(function (f) { return kept[f.id]; }));
+  };
+  row.appendChild(go);
   var done = el('button', 'btn quiet', tr('app.close'));
   done.onclick = close;
   row.appendChild(done);
-  // Ticks as they are now; one file of the group always stays, so the last
-  // unticked box is locked. Move to trash counts this group's ticks.
+  // Keep (N) counts the photos marked; one has to stay, so it needs at least one.
   var refresh = function () {
-    var open = boxes.filter(function (b) { return !dupState.marked[b.f.id]; });
-    boxes.forEach(function (b) {
-      b.cb.checked = !!dupState.marked[b.f.id];
-      b.cb.disabled = !b.cb.checked && open.length === 1;
+    var n = 0;
+    toggles.forEach(function (t) {
+      var on = !!kept[t.f.id];
+      if (on) n++;
+      t.tog.classList.toggle('on', on);
+      t.col.classList.toggle('kept', on);
     });
-    var n = boxes.length - open.length;
-    trash.textContent = tr('sel.trash') + ' (' + n + ')';
-    trash.disabled = n === 0;
+    go.textContent = tr('dups.keep') + ' (' + n + ')';
+    go.disabled = n === 0;
   };
   refresh();
   dlg.appendChild(row);
@@ -2650,9 +2651,12 @@ function groupNode(g) {
   var compare = function (f) { compareDialog(g, f, keepTicked); };
   // The one-click choice on a card of a series: tick the other files and
   // leave this one open. Nothing is trashed until "Move to trash".
+  // `keep`: the files that stay; every other file of the group is ticked.
   var keepTicked = function (keep) {
+    var stay = {};
+    keep.forEach(function (f) { stay[f.id] = true; });
     cards.forEach(function (c) {
-      c.cb.checked = c.f.id !== keep.id;
+      c.cb.checked = !stay[c.f.id];
       c.cb.dispatchEvent(new Event('change'));
     });
   };
@@ -2708,7 +2712,7 @@ function groupNode(g) {
       // Pinned to the foot of the card, edge to edge.
       var only = el('button', 'keep-one', tr('dups.keep_this'));
       only.title = tr('dups.keep_this_hint');
-      only.onclick = function () { keepTicked(f); };
+      only.onclick = function () { keepTicked([f]); };
       card.appendChild(only);
     }
     return card;
@@ -2757,11 +2761,9 @@ function groupNode(g) {
 
 // Sends the marked copies, one request per group. Capture dates that really
 // conflict are asked for afterwards, then those groups are sent again.
-// `only`: a single group (the compare dialog's Move to trash).
-function deleteMarked(only) {
+function deleteMarked() {
   var jobs = [], total = 0;
   visibleGroups().forEach(function (g) {
-    if (only && only.files && g !== only) return;
     var remove = g.files.filter(function (f) { return dupState.marked[f.id]; }).map(function (f) { return f.id; });
     if (!remove.length) return;
     var keep = g.files.filter(function (f) { return !dupState.marked[f.id]; }).map(function (f) { return f.id; });
