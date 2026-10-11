@@ -794,10 +794,12 @@ body.geo-view #page { padding: 0; height: 100%; }
 .lb-bar .coll:disabled { opacity: .5; }
 /* estimated capture dates (phase 12) */
 .cell .est {
-  position: absolute; left: 6px; bottom: 6px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px;
-  display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; line-height: 1;
+  position: absolute; left: 6px; bottom: 6px; width: 18px; height: 18px; padding: 0; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
   color: #fff; background: rgba(0,0,0,.5); cursor: help;
 }
+/* The wave is drawn, not a "~" character: the glyph sits off centre in its box. */
+.cell .est svg { width: 12px; height: 12px; display: block; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .lb-panel .datecell { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .lb-panel .datecell .v { flex: 1; min-width: 0; }
 .lb-panel .estimated.mine { background: #e0a46d; color: #2a1608; cursor: default; }
