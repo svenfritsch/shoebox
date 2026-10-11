@@ -5814,7 +5814,7 @@ function renderBackup(slot, b, d) {
     t.appendChild(lead);
     t.appendChild(el('b', '', pct + ' %'));
     prog.appendChild(t);
-    var bar = el('div', 'bar');
+    var bar = el('div', 'meter');
     var fill = el('i');
     fill.style.width = pct + '%';
     bar.appendChild(fill);
