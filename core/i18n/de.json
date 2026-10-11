@@ -532,6 +532,8 @@
   "info.other_person": "Andere …",
   "info.plus_name": "+ Name",
   "info.ignore_stranger": "Ignorieren (Fremde Person)",
+  "info.stranger_pet": "Fremdes Haustier",
+  "info.ignore_stranger_pet": "Ignorieren (Fremdes Haustier)",
   "info.select": "Auswählen",
   "info.select_hint": "Mehrere Gesichter ankreuzen, um sie gemeinsam zu ignorieren oder als „kein Gesicht“ zu markieren",
   "info.select_none": "Gesichter ankreuzen",

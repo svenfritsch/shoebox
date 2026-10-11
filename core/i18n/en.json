@@ -532,6 +532,8 @@
   "info.other_person": "Other…",
   "info.plus_name": "+ Name",
   "info.ignore_stranger": "Ignore (a stranger)",
+  "info.stranger_pet": "Someone else's pet",
+  "info.ignore_stranger_pet": "Ignore (someone else's pet)",
   "info.select": "Select",
   "info.select_hint": "Tick several faces to ignore them or mark them “not a face” at once",
   "info.select_none": "Tick the faces",

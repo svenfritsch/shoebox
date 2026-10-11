@@ -63,6 +63,10 @@ COCO_PETS = {15: "cat", 16: "dog"}
 # hidden or far away, higher fewer plush toys.
 PET_SCORE = 0.35
 PET_NMS = 0.45
+# A pet box that lies at least this much inside a better-scoring one (share of
+# its own area) is the same pet found twice with a bigger or smaller frame:
+# plain NMS keeps both when their IoU stays under PET_NMS.
+PET_INSIDE = 0.8
 # COCO class 0, person. The pets task also reports where people are, so the
 # core can tell a pet's face (a "face" found inside a pet and outside every
 # person) from a person's.
@@ -165,6 +169,15 @@ def iou(a, b):
     inter = iw * ih
     union = aw * ah + bw * bh - inter
     return inter / union if union > 0 else 0.0
+
+
+def inside(a, b):
+    """The share of box `a` (x, y, w, h) that lies inside box `b`."""
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    iw = max(0.0, min(ax + aw, bx + bw) - max(ax, bx))
+    ih = max(0.0, min(ay + ah, by + bh) - max(ay, by))
+    return iw * ih / (aw * ah) if aw * ah > 0 else 0.0
 
 
 class Embed:
@@ -385,7 +398,13 @@ class Pets:
             [round(float(v), 2) for v in box]
             for _, box in self.pick(xy, wh, r, person, PEOPLE_SCORE)
         ]
-        return [(COCO_PETS[int(best[i])], sc, box) for i, (sc, box) in self.pick(xy, wh, r, score, PET_SCORE, True)]
+        found = []
+        for i, (sc, box) in self.pick(xy, wh, r, score, PET_SCORE, True):
+            # `pick` is best first, so a box inside an earlier one is the worse find.
+            if any(inside(box, kept) >= PET_INSIDE for _, _, kept in found):
+                continue
+            found.append((COCO_PETS[int(best[i])], sc, box))
+        return found
 
     def pick(self, xy, wh, r, score, threshold, with_index=False):
         """The boxes whose score reaches `threshold`, after non-maximum
