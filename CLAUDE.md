@@ -17,10 +17,21 @@ current status and next step. Update its status table when a phase moves.
   in `organize.rs`: rename only, never copy, never replace, and only files
   that still match the index. There is no import: photos are copied onto the
   drive in the file manager (which keeps their dates) and a scan finds them.
+- Moving photos (`organize::move_files_with`) and trashing them from the photo
+  view or selection (`organize::trash_files_tidy`, `/api/trash`) or removing
+  copies on the duplicates screen or with "Delete the new copies"
+  (`duplicates::remove_copies_tidy`) also remove a
+  folder the photos left, only if nothing is in it but system bookkeeping files
+  (`classify::is_ignored`: `.DS_Store`, `._*`, `Thumbs.db`; those go with it) and
+  `remove_dir` succeeds (so never one with a subfolder or any other file),
+  never the library root, and report it (`removed_folders`). A restore from
+  the trash creates the folder again (`ensure_folder`); the trash keeps the
+  full path.
 - After a scan, `arrivals::cleanup` (launcher button "Delete the new copies")
   may remove files the scan added whose content (full hash) was on the drive
   before that scan, through `duplicates::remove_copies` (the older copy stays;
-  trash or, if asked, for good). Never anything but those new copies.
+  trash or, if asked, for good). Never anything but those new copies (and the
+  folder they leave empty, see above).
 - The one exception: turning a JPEG (`organize::rotate`) overwrites the two
   bytes of its EXIF Orientation tag in place, only when the file matches the
   index, and checks the full hash afterwards (old content plus those two

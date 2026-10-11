@@ -480,6 +480,54 @@ pub struct Moved {
     /// Where they went.
     pub folder_id: i64,
     pub folder: String,
+    /// Folders the photos left that were empty afterwards and were removed
+    /// (NFC paths).
+    pub removed_folders: Vec<String>,
+}
+
+/// Remove the folders photos were just moved or trashed out of, if nothing
+/// but the system's own bookkeeping files (`.DS_Store`, `._*`, `Thumbs.db`,
+/// see `classify::is_ignored`) is left in them; those go with the folder.
+/// Any other entry, a subfolder included, keeps the folder (`remove_dir`
+/// refuses a folder that is not empty). Never the library itself, never a
+/// folder that still has records in the index or subfolders there. Returns
+/// the NFC paths removed.
+pub(crate) fn remove_emptied_folders(conn: &Connection, root: &Path, folder_ids: &HashSet<i64>) -> Vec<String> {
+    let mut removed = Vec::new();
+    let mut found: Vec<(String, String)> = folder_ids
+        .iter()
+        .filter_map(|id| {
+            conn.query_row("SELECT path, path_nfc FROM folders WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?))).ok()
+        })
+        .filter(|(_, nfc): &(String, String)| !nfc.is_empty())
+        .collect();
+    // Deepest first, so the order of the report is stable.
+    found.sort_by(|a, b| b.1.cmp(&a.1));
+    for (raw, nfc) in found {
+        let dir = root.join(&raw);
+        let Ok(entries) = fs::read_dir(&dir) else { continue };
+        let leftovers: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
+        let only_bookkeeping = leftovers.iter().all(|p| {
+            p.is_file() && p.file_name().is_some_and(|n| classify::is_ignored(&n.to_string_lossy()))
+        });
+        if !only_bookkeeping {
+            continue;
+        }
+        for p in &leftovers {
+            let _ = fs::remove_file(p);
+        }
+        if fs::remove_dir(&dir).is_err() {
+            continue;
+        }
+        let _ = conn.execute(
+            "DELETE FROM folders WHERE path_nfc = ?1
+                AND id NOT IN (SELECT folder_id FROM files)
+                AND id NOT IN (SELECT parent_id FROM folders WHERE parent_id IS NOT NULL)",
+            [&nfc],
+        );
+        removed.push(nfc);
+    }
+    removed
 }
 
 /// Move photos into a folder (NFC path, created if needed), each with its
@@ -497,6 +545,7 @@ pub fn move_files_with(conn: &Connection, root: &Path, ids: &[i64], folder: &str
     let dir = root.join(&folder_raw);
     let mut names = Names::load(&dir)?;
     let mut out = Moved { folder_id, folder: library::nfc(&folder_raw), ..Default::default() };
+    let mut left: HashSet<i64> = HashSet::new();
     for group in Group::all(conn, root, ids, &mut out.skipped)? {
         if group.files[0].folder_id == folder_id {
             continue; // already there
@@ -507,10 +556,14 @@ pub fn move_files_with(conn: &Connection, root: &Path, ids: &[i64], folder: &str
                 None => Ok(()),
             }
         });
+        // Whatever the outcome, the folder may have lost files.
+        left.extend(group.files.iter().map(|f| f.folder_id));
         if let Err(e) = result.and_then(|()| move_group(conn, root, &group, folder_id, &folder_raw, keep_folder_tags, &mut names, &mut out)) {
             out.skipped.push(format!("{}: {e:#}", group.files[0].path_nfc));
         }
     }
+    left.remove(&folder_id);
+    out.removed_folders = remove_emptied_folders(conn, root, &left);
     Ok(out)
 }
 
@@ -858,6 +911,23 @@ pub struct Trashed {
     pub files: Vec<String>,
     pub sidecars: u64,
     pub skipped: Vec<String>,
+    /// Folders left empty by `trash_files_tidy` (or `duplicates::remove_copies_tidy`) and removed (NFC paths).
+    pub removed_folders: Vec<String>,
+}
+
+/// As `trash_files`, then the folders the photos were in are removed if they
+/// are empty (see `remove_emptied_folders`). Putting a photo back creates its
+/// folder again, the trash keeps the full path.
+pub fn trash_files_tidy(conn: &Connection, root: &Path, ids: &[i64]) -> Result<Trashed> {
+    let mut left = HashSet::new();
+    for &id in ids {
+        if let Some(f) = load(conn, id)? {
+            left.insert(f.folder_id);
+        }
+    }
+    let mut out = trash_files(conn, root, ids)?;
+    out.removed_folders = remove_emptied_folders(conn, root, &left);
+    Ok(out)
 }
 
 /// Move photos and their companions into `.shoebox/trash/<batch>/`. Their

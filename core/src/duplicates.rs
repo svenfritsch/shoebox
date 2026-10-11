@@ -821,6 +821,27 @@ fn carry_names(conn: &Connection, heir: i64, names: &[String]) -> Result<u64> {
     Ok(added)
 }
 
+/// As `remove_copies` (what the duplicates screen calls), then the folders the
+/// copies were in are removed if they are empty (`organize::trash_files_tidy`
+/// explains which). Also used by `arrivals::cleanup`.
+pub fn remove_copies_tidy(
+    conn: &Connection,
+    root: &Path,
+    keep_ids: &[i64],
+    remove_ids: &[i64],
+    dates: &HashMap<i64, String>,
+) -> Result<Removed> {
+    let mut left = HashSet::new();
+    for id in remove_ids {
+        if let Ok(f) = conn.query_row("SELECT folder_id FROM files WHERE id = ?1", [id], |r| r.get::<_, i64>(0)) {
+            left.insert(f);
+        }
+    }
+    let mut out = remove_copies(conn, root, keep_ids, remove_ids, dates)?;
+    out.trashed.removed_folders = organize::remove_emptied_folders(conn, root, &left);
+    Ok(out)
+}
+
 /// Move `remove` to the trash while `keep` stays. At least one file must
 /// stay, and each removed file must be a duplicate of one that stays (same
 /// content, or a similar photo), so this cannot delete anything else. What

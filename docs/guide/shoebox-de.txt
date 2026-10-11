@@ -446,7 +446,10 @@ Verschieben … fragt nach einem Ordner. Neue Ordner werden angelegt, nichts
 wird überschrieben, RAW-, Live-Photo- und Sidecar-Dateien wandern mit. Die
 eigenen Tags der Fotos gehen immer mit. „Ordnertags behalten“ behält
 zusätzlich die Tags des alten Ordners als eigene Tags; Ordner-Tags folgen
-immer dem neuen Ordner.
+immer dem neuen Ordner. Ist ein Ordner nach dem Verschieben leer (nur das, was
+dein Computer dort selbst ablegt, etwa .DS_Store oder Thumbs.db, ist noch
+darin), entfernt shoebox diesen leeren Ordner und sagt dir, welcher es war.
+Ein Ordner, in dem noch etwas anderes liegt, auch ein Unterordner, bleibt.
 
 Sammeln und exportieren
 Um Fotos für etwas zu sammeln (eine Druckbestellung, ein Album in InDesign,
@@ -589,9 +592,11 @@ besten in einen Ordner namens JJJJ-MM Ereignis, und Scannen drücken. Findet
 der Scan neue Dateien, die das Laufwerk schon hatte, markiert die Zentrale sie
 mit schon auf dem Laufwerk und bietet Die neuen Kopien löschen an (in den
 Papierkorb oder endgültig). Das ältere Original bleibt und bekommt den
-Ordnernamen der gelöschten Kopie als Tag. In den Einstellungen wählst du, wie
-Ereignisordner in Vorschlägen heißen (zum Beispiel JJ.MM_Ereignis); vorhandene
-Ordner werden nicht umbenannt, und alle Formen werden erkannt.
+Ordnernamen der gelöschten Kopie als Tag. War die gelöschte Kopie das Einzige
+in ihrem Ordner, entfernt shoebox auch diesen leeren Ordner und nennt ihn. In
+den Einstellungen wählst du, wie Ereignisordner in Vorschlägen heißen (zum
+Beispiel JJ.MM_Ereignis); vorhandene Ordner werden nicht umbenannt, und alle
+Formen werden erkannt.
 
 Duplikate
 Duplikate zeigt vier Arten: identisch, dasselbe Foto mit anderen Pixelmaßen
@@ -608,13 +613,15 @@ auf einer Karte hakt alle anderen Dateien der Gruppe mit einem Klick an (erst
 In den Papierkorb verschiebt etwas), und kleine Marken zeigen, welche Datei
 die meisten Pixel hat oder die größte Datei ist, und von jedem Duplikat bleibt
 immer mindestens eine Datei. Tags und Aufnahmedatum einer entfernten Kopie
-gehen auf die übrige über. Bei mehr als einem Laufwerk zeigt der Reiter Über
-Laufwerke hinweg (in Alle Laufwerke und unter Laufwerke verwalten) Fotos, die
-auf mehreren Laufwerken liegen: ein Bild, eine Zeile pro Kopie mit Name des
-Datenträgers und Ordner. Hake die Kopien an, die weg sollen, oder wähle ein
-Laufwerk und Alle markieren, um jede Kopie darauf anzukreuzen; die letzte
-Kopie eines Fotos lässt sich nie ankreuzen. In den Papierkorb fragt vorher
-nach und legt jede Kopie in den Papierkorb ihres eigenen Laufwerks.
+gehen auf die übrige über. War die entfernte Kopie das Letzte in ihrem Ordner,
+entfernt shoebox den leeren Ordner und sagt dir, welcher es war. Bei mehr als
+einem Laufwerk zeigt der Reiter Über Laufwerke hinweg (in Alle Laufwerke und
+unter Laufwerke verwalten) Fotos, die auf mehreren Laufwerken liegen: ein
+Bild, eine Zeile pro Kopie mit Name des Datenträgers und Ordner. Hake die
+Kopien an, die weg sollen, oder wähle ein Laufwerk und Alle markieren, um jede
+Kopie darauf anzukreuzen; die letzte Kopie eines Fotos lässt sich nie
+ankreuzen. In den Papierkorb fragt vorher nach und legt jede Kopie in den
+Papierkorb ihres eigenen Laufwerks.
 
 Vorauswählen
 Vorauswählen (oben rechts) hakt diese Kopie löschen nach einer Regel an und
@@ -671,8 +678,10 @@ Bereich), oder nimm Alle auswählen; die Leiste unten bietet dann Zurücklegen
 und Endgültig löschen. Endgültig löschen fragt vorher nach. Das Legen in den
 Papierkorb in der Zeitleiste und in der Fotoansicht ist standardmäßig aus:
 Schalte es einmal in den Einstellungen ein (In den Papierkorb legen erlauben).
-Das Löschen von Kopien bei den Duplikaten und mit Die neuen Kopien löschen
-funktioniert in jedem Fall und geht ebenfalls in den Papierkorb.
+Bleibt dabei ein Ordner leer, entfernt shoebox ihn und sagt dir, welcher es
+war; Zurücklegen legt den Ordner wieder an. Das Löschen von Kopien bei den
+Duplikaten und mit Die neuen Kopien löschen funktioniert in jedem Fall und
+geht ebenfalls in den Papierkorb.
 
 [Screenshot: Nach einem Scan: neue Kopien von Dateien, die das Laufwerk schon
 hatte.]
