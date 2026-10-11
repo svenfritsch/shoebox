@@ -2533,17 +2533,20 @@ function dupThumb(f, compare) {
 // "IMG_E1234" is the edited version of "IMG_1234" (iPhone).
 function isEdit(f) { return /^img_e\d+/i.test(f.name); }
 
-// The group's photos large and side by side; "Keep this one" ticks all the
-// others (the dialog closes), so the choice is one click and Move to trash
-// in the bar does the removing for every group at once.
+// The group's photos large and side by side. "Keep this one" ticks all the
+// others and closes the dialog; "Keep" marks photos to stay (several can) and
+// "Keep (N)" ticks all the others. Nothing is trashed here: Move to trash in
+// the bar does the removing for every group at once.
 function compareDialog(g, start, onKeep) {
   var back = el('div', 'modal');
   var dlg = el('div', 'dialog compare');
   dlg.appendChild(el('h2', '', tr('dups.compare_title')));
   var strip = el('div', 'compare-strip');
+  var kept = {};
   var close = function () { back.remove(); document.removeEventListener('keydown', onKey); };
   var onKey = function (e) { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKey);
+  var toggles = [];
   g.files.forEach(function (f) {
     var col = el('div', 'compare-col' + (f.id === start.id ? ' start' : ''));
     var img = el('img');
@@ -2555,16 +2558,45 @@ function compareDialog(g, start, onKeep) {
     if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
     meta.push((f.size / 1e6).toFixed(1) + ' MB');
     col.appendChild(el('div', 'meta', meta.join(' · ')));
+    var row = el('div', 'compare-buttons');
+    // Keep: mark this photo to stay; Keep (N) below ticks all the others.
+    var tog = el('button', 'btn quiet keep-toggle');
+    tog.title = tr('dups.keep_hint');
+    tog.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path class="tick" d="M7.5 12.5l3 3 6-7"/></svg>';
+    tog.appendChild(el('span', '', tr('dups.keep')));
+    tog.onclick = function () { if (kept[f.id]) delete kept[f.id]; else kept[f.id] = true; refresh(); };
+    toggles.push({ f: f, col: col, tog: tog });
+    row.appendChild(tog);
     var keep = el('button', 'btn', tr('dups.keep_this'));
-    keep.onclick = function () { close(); onKeep(f); };
-    col.appendChild(keep);
+    keep.onclick = function () { close(); onKeep([f]); };
+    row.appendChild(keep);
+    col.appendChild(row);
     strip.appendChild(col);
   });
   dlg.appendChild(strip);
   var row = el('div', 'actions');
+  var go = el('button', 'btn');
+  go.onclick = function () {
+    close();
+    onKeep(g.files.filter(function (f) { return kept[f.id]; }));
+  };
+  row.appendChild(go);
   var done = el('button', 'btn quiet', tr('app.close'));
   done.onclick = close;
   row.appendChild(done);
+  // Keep (N) counts the photos marked; one has to stay, so it needs at least one.
+  var refresh = function () {
+    var n = 0;
+    toggles.forEach(function (t) {
+      var on = !!kept[t.f.id];
+      if (on) n++;
+      t.tog.classList.toggle('on', on);
+      t.col.classList.toggle('kept', on);
+    });
+    go.textContent = tr('dups.keep') + ' (' + n + ')';
+    go.disabled = n === 0;
+  };
+  refresh();
   dlg.appendChild(row);
   back.onclick = function (e) { if (e.target === back) close(); };
   back.appendChild(dlg);
@@ -2619,9 +2651,12 @@ function groupNode(g) {
   var compare = function (f) { compareDialog(g, f, keepTicked); };
   // The one-click choice on a card of a series: tick the other files and
   // leave this one open. Nothing is trashed until "Move to trash".
+  // `keep`: the files that stay; every other file of the group is ticked.
   var keepTicked = function (keep) {
+    var stay = {};
+    keep.forEach(function (f) { stay[f.id] = true; });
     cards.forEach(function (c) {
-      c.cb.checked = c.f.id !== keep.id;
+      c.cb.checked = !stay[c.f.id];
       c.cb.dispatchEvent(new Event('change'));
     });
   };
@@ -2677,7 +2712,7 @@ function groupNode(g) {
       // Pinned to the foot of the card, edge to edge.
       var only = el('button', 'keep-one', tr('dups.keep_this'));
       only.title = tr('dups.keep_this_hint');
-      only.onclick = function () { keepTicked(f); };
+      only.onclick = function () { keepTicked([f]); };
       card.appendChild(only);
     }
     return card;
