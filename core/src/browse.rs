@@ -161,6 +161,9 @@ pub struct Query {
     /// Only photos that need a date: no capture date in the file and no date
     /// of the user's.
     pub needs_date: bool,
+    /// Only these files (the comparison with the other drive of a backup
+    /// pair: `multi::only_here`).
+    pub ids: Option<std::sync::Arc<HashSet<i64>>>,
 }
 
 impl Snapshot {
@@ -485,6 +488,7 @@ impl Snapshot {
             .filter(|it| fav.as_ref().is_none_or(|f| f.contains(&it.id)))
             .filter(|it| located.as_ref().is_none_or(|l| l.contains(&it.id)))
             .filter(|it| tagged.as_ref().is_none_or(|t| t.contains(&it.id)))
+            .filter(|it| q.ids.as_ref().is_none_or(|ids| ids.contains(&it.id)))
             .filter(|it| !q.needs_date || matches!(it.date_source, DateSource::Folder | DateSource::Created | DateSource::Modified))
             .filter(|it| {
                 let (y, m, d) = it.date_parts();

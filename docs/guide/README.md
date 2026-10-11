@@ -45,4 +45,5 @@ CHROME=/path/to/chrome docs/guide/screenshots.sh core/target/release/shoebox
 
 `comic.py` draws the pictures, `make-sample-library.py` builds the library,
 `mock-recognizer.py` answers the recognizer protocol for it (docs/protocol.md).
+`make-drives-pair.py` makes a backup of that library that has drifted from it (photos not on the backup yet, only on the backup, different on the backup); a second pass per language serves both drives (`/Volumes/Extreme SSD/Photos` and `/Volumes/Backup Drive/Photos Backup`, under `/mnt` on Linux) for the `drives-*` screenshots of Manage drives and the comparison views.
 `shrink-shots.py` turns the PNGs into the 1800 px JPEGs kept in `assets/`.

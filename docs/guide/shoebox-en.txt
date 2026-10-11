@@ -849,12 +849,36 @@ folder on it (for example Extreme SSD · /Photos). Say what each drive is with
 the menu in the card: Original drive or Backup drive. shoebox suggests a
 backup when almost everything on a drive is on another one, until you decide.
 A backup has a blue outline, sits right after its original and says Backup of
-… and Not in common timeline. It shows how much of the original is on the
-backup, and two lists: files not on the backup yet and files only on the
-backup. The folder icon next to a file shows it in Finder (Explorer on
-Windows). The bar at the bottom of a card says when the drive was last scanned
-and when new files last arrived on it (on a backup: Last backup); point at a
-date for the exact time.
+disk name and Not in common timeline. It shows how much of the original is on
+the backup, and two lists: files different on the backup (the same path with
+other content, for example after an edit) and files only on the backup. The
+original's card has the third list, files not on the backup yet. All lists
+start folded; open one to see its files, and the folder icon next to a file
+shows it in Finder (Explorer on Windows). Every list has a Show photos ›
+button. For only on the backup and not on the backup yet it opens that drive's
+own timeline with a filter chip, Only on backup or Only on original; for
+different on the backup it opens a timeline of both drives with an Original
+and a Backup badge on every photo, the two versions of a photo side by side.
+The chip works like any other: the search (file names, tags, people) and the
+other filters narrow it down, ✕ removes it, and typing only on or backup
+offers it. When you pick a drive it does not fit (an original drive for Only
+on backup, All drives), the chip is removed and a note says why. In the
+photo's info panel a badge next to the name says Only on backup or Not backed
+up; point at it for the explanation. The bar at the bottom of a card says when
+the drive was last scanned and when new files last arrived on it (on a backup:
+Last backup); point at a date for the exact time.
+
+[Screenshot: Manage drives: an original and its backup. Every list has a Show
+photos button.]
+
+[Screenshot: Show photos on “only on the backup”: the backup's own timeline
+with the Only on backup chip.]
+
+[Screenshot: Different on the backup: both versions of a photo side by side,
+each with an Original or Backup badge.]
+
+[Screenshot: The info panel of a photo that only the backup has: the badge
+sits next to the name.]
 
 Backup check
 Choose the original first and the backup second. shoebox compares the two

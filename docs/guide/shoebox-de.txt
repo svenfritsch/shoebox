@@ -918,13 +918,40 @@ dem Menü in der Karte sagst du, was das Laufwerk ist: Original-Laufwerk oder
 Backup-Laufwerk. shoebox schlägt ein Backup vor, wenn fast alles auf einem
 Laufwerk auch auf einem anderen ist, bis du dich entscheidest. Ein Backup hat
 einen blauen Rahmen, steht direkt hinter seinem Original und trägt Backup von
-… und Nicht in der gemeinsamen Zeitleiste. Es zeigt, wie viel vom Original auf
-dem Backup ist, und zwei Listen: Dateien, die noch nicht auf dem Backup sind,
-und Dateien nur auf dem Backup. Das Ordner-Symbol neben einer Datei zeigt sie
-im Finder (unter Windows im Explorer). Die Leiste unten in einer Karte sagt,
-wann das Laufwerk zuletzt gescannt wurde und wann zuletzt neue Dateien darauf
-angekommen sind (beim Backup: Letztes Backup); zeig auf ein Datum für die
-genaue Uhrzeit.
+Name der Festplatte und Nicht in der gemeinsamen Zeitleiste. Es zeigt, wie
+viel vom Original auf dem Backup ist, und zwei Listen: Dateien, die auf dem
+Backup anders sind (gleicher Pfad, anderer Inhalt, zum Beispiel nach einer
+Bearbeitung), und Dateien nur auf dem Backup. Die dritte Liste, Dateien, die
+noch nicht auf dem Backup sind, steht in der Karte des Originals. Alle Listen
+sind zunächst zugeklappt; klapp eine auf, um ihre Dateien zu sehen, und das
+Ordner-Symbol neben einer Datei zeigt sie im Finder (unter Windows im
+Explorer). Jede Liste hat einen Knopf Fotos anzeigen ›. Bei nur auf dem Backup
+und noch nicht auf dem Backup öffnet er die eigene Zeitleiste des Laufwerks
+mit einem Filter-Chip, Nur auf Backup oder Nur auf Original; bei auf dem
+Backup anders öffnet er eine Zeitleiste beider Laufwerke mit einem Abzeichen
+Original und Backup auf jedem Foto, die zwei Versionen eines Fotos
+nebeneinander. Der Chip funktioniert wie jeder andere: Die Suche (Dateinamen,
+Tags, Personen) und die übrigen Filter schränken ihn weiter ein, ✕ entfernt
+ihn, und wer nur auf oder backup tippt, bekommt ihn vorgeschlagen. Wählst du
+ein Laufwerk, zu dem er nicht passt (ein Original-Laufwerk bei Nur auf Backup,
+Alle Laufwerke), wird der Chip entfernt, und ein Hinweis sagt warum. In der
+Info-Leiste des Fotos steht neben dem Namen ein Abzeichen Nur auf Backup oder
+Nicht auf Backup; zeig darauf für die Erklärung. Die Leiste unten in einer
+Karte sagt, wann das Laufwerk zuletzt gescannt wurde und wann zuletzt neue
+Dateien darauf angekommen sind (beim Backup: Letztes Backup); zeig auf ein
+Datum für die genaue Uhrzeit.
+
+[Screenshot: Laufwerke verwalten: ein Original und sein Backup. Jede Liste hat
+einen Knopf „Fotos anzeigen“.]
+
+[Screenshot: „Fotos anzeigen“ bei „nur auf dem Backup“: die eigene Zeitleiste
+des Backups mit dem Chip Nur auf Backup.]
+
+[Screenshot: Auf dem Backup anders: beide Versionen eines Fotos nebeneinander,
+jede mit einem Abzeichen Original oder Backup.]
+
+[Screenshot: Die Info-Leiste eines Fotos, das es nur auf dem Backup gibt: Das
+Abzeichen steht neben dem Namen.]
 
 Backup-Prüfung
 Erst das Original wählen, dann das Backup. shoebox vergleicht die beiden
