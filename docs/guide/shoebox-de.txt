@@ -749,11 +749,11 @@ später nicht ändern; den Rahmen löschen und neu zeichnen. Bei einem Tier, das
 die Erkennung gefunden hat, bietet ⋯ Ist eine Katze, kein Hund (oder
 umgekehrt) an, wenn sie es für das falsche gehalten hat. Videos werden nicht
 nach Gesichtern durchsucht; ihr Infofeld sagt das. Eine Person kannst du
-trotzdem verknüpfen: + Person hinzufügen hält das Video an, und du ziehst
-irgendwo auf dem Bild einen Rahmen. Der Rahmen ist nur eine Formalität: Er
-kann überall liegen, auf dem Video wird danach nichts gezeichnet, und die
-Person gehört zum ganzen Clip. Ihr Profilbild erscheint in der Liste, und das
-Video wird gefunden, wenn du die Zeitleiste nach dieser Person filterst.
+trotzdem verknüpfen: + Person hinzufügen öffnet einen Dialog, in dem du die
+Person benennst; den kleinen Rahmen, den shoebox dafür braucht, setzt es
+selbst, und auf dem Video wird nichts gezeichnet. Die Person gehört zum ganzen
+Clip. Ihr Profilbild erscheint in der Liste, und das Video wird gefunden, wenn
+du die Zeitleiste nach dieser Person filterst.
 
 Gruppen
 Gesichter zeigt die Personen nach Gruppen. Neue Gruppe … legt eine an; Gruppen

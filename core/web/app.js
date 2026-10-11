@@ -5486,14 +5486,19 @@ function infoFacesChanged(id) {
 // ---- drawing a missed face
 
 // "+ Add face": the panel steps aside, a box is dragged over the photo
-// (mouse, pen or finger), then named. On a video (never scanned for faces) the
-// box is a formality: the person is linked to the whole clip and no box is
-// shown afterwards.
+// (mouse, pen or finger), then named. A video (never scanned for faces) gets
+// no drawing: a small box is placed in a corner (a little further along for
+// each person already there) and the dialog opens at once. The person is
+// linked to the whole clip and no box is ever shown.
 function startDrawing() {
   var stage = $('stage'), img = stage.querySelector('img, video');
   if (!img || !lb.details) return;
   stopDrawing();
-  if (img.tagName === 'VIDEO') img.pause();
+  if (img.tagName === 'VIDEO') {
+    var n = (lb.details.faces || []).length % 8;
+    nameDrawnFace(lb.details, [Math.round((0.02 + 0.1 * n) * 10000) / 10000, 0.02, 0.08, 0.08]);
+    return;
+  }
   var info = lb.details;
   var panel = $('lb-panel');
   lb.drawing = { panelWasOpen: !panel.hidden };
@@ -5510,7 +5515,7 @@ function startDrawing() {
   layer.appendChild(rect);
   stage.appendChild(layer);
   var hint = el('div', 'draw-hint');
-  hint.appendChild(el('span', '', tr(img.tagName === 'VIDEO' ? 'draw.hint_video' : 'draw.hint')));
+  hint.appendChild(el('span', '', tr('draw.hint')));
   var cancel = el('button', 'btn quiet small', tr('app.cancel'));
   cancel.onclick = function () { stopDrawing(); };
   hint.appendChild(cancel);
@@ -5572,11 +5577,12 @@ function nameDrawnFace(info, frac) {
   var field, hint;
   var update = function () {
     Array.prototype.forEach.call(kinds.children, function (b) { b.classList.toggle('on', b.dataset.kind === kind); });
-    hint.textContent = tr(info.kind === 'video' ? 'draw.note_video' : kind ? 'draw.note_pet' : 'draw.note');
+    hint.textContent = tr(video ? 'draw.note_video' : kind ? 'draw.note_pet' : 'draw.note');
     field.input.value = '';
     field.input.dispatchEvent(new Event('input'));
   };
-  [['', '🧑', 'draw.kind.person'], ['cat', PET_ICON.cat, 'draw.kind.cat'], ['dog', PET_ICON.dog, 'draw.kind.dog']].forEach(function (k) {
+  var video = info.kind === 'video';
+  [['', '🧑', 'draw.kind.person'], ['cat', PET_ICON.cat, 'draw.kind.cat'], ['dog', PET_ICON.dog, 'draw.kind.dog']].slice(0, video ? 1 : 3).forEach(function (k) {
     var b = el('button', '', k[1] + ' ' + tr(k[2]));
     b.type = 'button';
     b.dataset.kind = k[0];
@@ -5592,16 +5598,16 @@ function nameDrawnFace(info, frac) {
     }).catch(failed);
   };
   field = personField(function (who) { save(who); }, { allowNew: true, placeholder: tr('people.name_placeholder'), species: function () { return kind; } });
-  body.appendChild(kinds);
+  if (!video) body.appendChild(kinds);
   body.appendChild(field);
   hint = el('p', 'hint');
   body.appendChild(hint);
   update();
-  openModal(tr('draw.title'), body, [
-    { label: tr('draw.again'), cls: 'quiet', onclick: function () { var r = lb.drawing && lb.drawing.layer.querySelector('.draw-box'); if (r) r.hidden = true; } },
+  openModal(tr(video ? 'draw.title_video' : 'draw.title'), body, [
+    video ? null : { label: tr('draw.again'), cls: 'quiet', onclick: function () { var r = lb.drawing && lb.drawing.layer.querySelector('.draw-box'); if (r) r.hidden = true; } },
     { label: tr('app.cancel'), cls: 'quiet', onclick: function () { stopDrawing(); } },
     { label: tr('draw.save'), onclick: function () { var who = field.value(); if (!who) return false; save(who); return false; } },
-  ]);
+ ].filter(Boolean));
   field.input.focus();
 }
 
