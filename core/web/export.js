@@ -1,4 +1,4 @@
-// Export (phase 12): collect photos with a tag and copy them into a new
+// Export (phase 13): collect photos with a tag and copy them into a new
 // folder. The two settings (the collection tag and numbering) are the
 // browser's, like Maps: one for every drive. Everything else is the server's
 // (`/api/export/...`, only for a browser on the computer shoebox runs on).

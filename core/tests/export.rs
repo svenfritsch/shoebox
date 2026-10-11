@@ -1,4 +1,4 @@
-//! Export (phase 12): copies into a new folder under the guard, numbering,
+//! Export (phase 13): copies into a new folder under the guard, numbering,
 //! RAW and Live Photo partners, merging into a folder that exists, and that
 //! only this computer may export.
 

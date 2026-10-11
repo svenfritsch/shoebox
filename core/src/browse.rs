@@ -2,11 +2,13 @@
 //! and tags. Read-only over the index; the server keeps one `Snapshot` until
 //! another process (a scan) commits to the database.
 //!
-//! Sorting: newest first by capture date. A file without one takes the month
-//! of its nearest `YYYY-MM Name` folder (the date in the folder's name), else
-//! the earlier of its created and modification dates (a copy gets a new
-//! created date but keeps the old modification date); the info panel marks
-//! such a date as estimated. RAW files are not shown (their JPEG/HEIC twin is), and
+//! Sorting: newest first. The date the user gave the photo (`dates.rs`, phase
+//! 12) wins, even over a capture date in the file; else the capture date in the
+//! file; a file without one takes the month of its nearest `YYYY-MM Name`
+//! folder (the date in the folder's name), else the earlier of its created and
+//! modification dates (a copy gets a new created date but keeps the old
+//! modification date); the info panel marks every date but a capture date as
+//! estimated. RAW files are not shown (their JPEG/HEIC twin is), and
 //! the short video of a Live Photo is folded into its still.
 
 use std::collections::{HashMap, HashSet};
@@ -17,6 +19,7 @@ use rusqlite::{Connection, OptionalExtension, params_from_iter};
 use serde::Serialize;
 
 use crate::classify::Kind;
+use crate::dates::{self, Estimate, Precision};
 use crate::db;
 use crate::library;
 
@@ -27,6 +30,8 @@ const LIVE_MAX_MS: i64 = 6_000;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DateSource {
+    /// A date the user gave the photo (year, month or day).
+    Estimate,
     /// Capture date from the file (EXIF, video container).
     File,
     /// Month of the event folder (no capture date in the file).
@@ -46,6 +51,9 @@ pub struct Item {
     /// `YYYY-MM-DDTHH:MM:SS`, local time.
     pub sort: String,
     pub date_source: DateSource,
+    /// How much of the date is known: a user's date may be a year or a month,
+    /// a date from an event folder is a month, the rest are exact.
+    pub precision: Precision,
     /// First characters of the quick hash: changes when the content does,
     /// so thumbnail URLs can be cached for good.
     pub version: String,
@@ -58,7 +66,19 @@ pub struct Item {
 }
 
 impl Item {
-    /// `YYYYMMDD` as a number, for the client.
+    /// Year, and month and day as far as they are known.
+    pub fn date_parts(&self) -> (i32, Option<u32>, Option<u32>) {
+        let num = |a: usize, b: usize| self.sort.get(a..b).and_then(|p| p.parse::<u32>().ok());
+        let year = num(0, 4).unwrap_or(0) as i32;
+        match self.precision {
+            Precision::Year => (year, None, None),
+            Precision::Month => (year, num(5, 7), None),
+            Precision::Day => (year, num(5, 7), num(8, 10)),
+        }
+    }
+
+    /// `YYYYMMDD` as a number, for the client (`YYYY0000` for a year only,
+    /// which the timeline shows as a group of its own).
     pub fn day(&self) -> u32 {
         let d: String = self.sort.chars().take(10).filter(char::is_ascii_digit).collect();
         d.parse().unwrap_or(0)
@@ -136,6 +156,11 @@ pub struct Query {
     pub area: Option<crate::geo::Area>,
     /// ... or inside the area of this place.
     pub place: Option<i64>,
+    /// Photos whose date lies inside every one of these (AND, phase 12).
+    pub dates: Vec<dates::Term>,
+    /// Only photos that need a date: no capture date in the file and no date
+    /// of the user's.
+    pub needs_date: bool,
 }
 
 impl Snapshot {
@@ -194,6 +219,7 @@ impl Snapshot {
             quick_hash: String,
             turn: i32,
             shot: bool,
+            estimate: Option<Estimate>,
         }
         let mut rows = Vec::new();
         {
@@ -201,7 +227,10 @@ impl Snapshot {
                 "SELECT id, kind, folder_id, name, path_nfc, {}, mtime_ns, created_ns, duration_ms, quick_hash,
                         coalesce((SELECT quarters FROM view_turns v WHERE v.key = files.quick_hash), 0),
                         (SELECT is_shot FROM shot_marks m WHERE m.key = files.quick_hash),
-                        width, height, camera, shot_pixels
+                        width, height, camera, shot_pixels,
+                        (SELECT year FROM date_estimates e WHERE e.key = files.quick_hash),
+                        (SELECT month FROM date_estimates e WHERE e.key = files.quick_hash),
+                        (SELECT day FROM date_estimates e WHERE e.key = files.quick_hash)
                  FROM files WHERE missing_since IS NULL AND kind != 'raw'",
                 db::TAKEN
             ))?;
@@ -216,6 +245,10 @@ impl Snapshot {
                     folder_id: r.get(2)?,
                     stem,
                     path_lower: r.get::<_, String>(4)?.to_lowercase(),
+                    estimate: match r.get::<_, Option<i32>>(16)? {
+                        Some(year) => Some(Estimate { year, month: r.get(17)?, day: r.get(18)? }),
+                        None => None,
+                    },
                     taken: r.get(5)?,
                     mtime_ns: r.get(6)?,
                     created_ns: r.get(7)?,
@@ -261,12 +294,13 @@ impl Snapshot {
                 // The capture date; else the month of the event folder; else
                 // the earlier of the file's created and modification dates.
                 let created = r.created_ns.filter(|&ns| ns > 0);
-                let (sort, date_source) = match (&r.taken, created, event_of.get(&r.folder_id).copied().flatten()) {
-                    (Some(t), _, _) => (t.clone(), DateSource::File),
-                    (None, _, Some((y, m))) => (format!("{y:04}-{m:02}-01T00:00:00"), DateSource::Folder),
-                    (None, created, None) => {
+                let (sort, date_source, precision) = match (r.estimate, &r.taken, created, event_of.get(&r.folder_id).copied().flatten()) {
+                    (Some(e), ..) => (e.sort_key(), DateSource::Estimate, e.precision()),
+                    (None, Some(t), _, _) => (t.clone(), DateSource::File, Precision::Day),
+                    (None, None, _, Some((y, m))) => (format!("{y:04}-{m:02}-01T00:00:00"), DateSource::Folder, Precision::Month),
+                    (None, None, created, None) => {
                         let (ns, source) = earlier_of(created, r.mtime_ns);
-                        (local_time(ns), source)
+                        (local_time(ns), source, Precision::Day)
                     }
                 };
                 Item {
@@ -275,6 +309,7 @@ impl Snapshot {
                     folder_id: r.folder_id,
                     sort,
                     date_source,
+                    precision,
                     version: db::version_of(&r.quick_hash, r.turn),
                     path_lower: r.path_lower.clone(),
                     live: live.get(&r.id).copied(),
@@ -450,6 +485,11 @@ impl Snapshot {
             .filter(|it| fav.as_ref().is_none_or(|f| f.contains(&it.id)))
             .filter(|it| located.as_ref().is_none_or(|l| l.contains(&it.id)))
             .filter(|it| tagged.as_ref().is_none_or(|t| t.contains(&it.id)))
+            .filter(|it| !q.needs_date || matches!(it.date_source, DateSource::Folder | DateSource::Created | DateSource::Modified))
+            .filter(|it| {
+                let (y, m, d) = it.date_parts();
+                q.dates.iter().all(|t| t.matches(y, m, d))
+            })
             .filter(|it| words.iter().all(|(w, ids)| ids.contains(&it.id) || it.path_lower.contains(w.as_str())))
             .collect())
     }
@@ -600,6 +640,13 @@ fn local_time(ns: i64) -> String {
     }
 }
 
+/// The capture date in the file.
+#[derive(Debug, Serialize)]
+pub struct Exif {
+    pub taken: String,
+    pub taken_offset: Option<String>,
+}
+
 /// Everything the info panel shows about one file.
 #[derive(Debug, Serialize)]
 pub struct Details {
@@ -611,6 +658,11 @@ pub struct Details {
     pub size: u64,
     pub taken: Option<String>,
     pub taken_offset: Option<String>,
+    /// The user's own date for the photo; it wins on the timeline.
+    pub estimate: Option<Estimate>,
+    /// The capture date in the file itself (not a date taken over from a
+    /// deleted copy), shown next to an estimate.
+    pub exif: Option<Exif>,
     pub modified: String,
     pub width: Option<u32>,
     pub height: Option<u32>,
@@ -626,7 +678,7 @@ pub fn details(conn: &Connection, id: i64) -> Result<Option<Details>> {
         .query_row(
             &format!(
                 "SELECT id, name, path_nfc, folder_id, kind, size, {}, {}, mtime_ns, width, height,
-                        duration_ms, camera, missing_since IS NOT NULL
+                        duration_ms, camera, missing_since IS NOT NULL, taken, taken_offset
                  FROM files WHERE id = ?1",
                 db::TAKEN,
                 db::TAKEN_OFFSET
@@ -642,6 +694,8 @@ pub fn details(conn: &Connection, id: i64) -> Result<Option<Details>> {
                     size: r.get::<_, i64>(5)? as u64,
                     taken: r.get(6)?,
                     taken_offset: r.get(7)?,
+                    estimate: None,
+                    exif: r.get::<_, Option<String>>(14)?.map(|taken| Exif { taken, taken_offset: r.get(15).ok().flatten() }),
                     modified: local_time(r.get(8)?),
                     width: r.get(9)?,
                     height: r.get(10)?,
@@ -654,6 +708,7 @@ pub fn details(conn: &Connection, id: i64) -> Result<Option<Details>> {
         )
         .optional()?;
     let Some(mut d) = d else { return Ok(None) };
+    d.estimate = dates::get(conn, id)?;
     d.tags = conn
         .prepare(
             "SELECT t.id, t.name, ft.source FROM file_tags ft JOIN tags t ON t.id = ft.tag_id WHERE ft.file_id = ?1

@@ -1,4 +1,4 @@
-//! Export (phase 12): copies of chosen photos and videos in a new folder
+//! Export (phase 13): copies of chosen photos and videos in a new folder
 //! somewhere else, for a print shop, a layout program or another person.
 //!
 //! Originals are only read, and every read is under the guard: the file must

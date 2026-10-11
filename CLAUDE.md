@@ -34,7 +34,7 @@ current status and next step. Update its status table when a phase moves.
   Each goes through `organize::trash_files` (a rename into the backup's own
   trash, only if the file still matches the backup's index), emptied again
   only if the user asked for "for good". Never anything on the original.
-- Export (`export.rs`, phase 12; the dialog is `core/web/export.js`) only
+- Export (`export.rs`, phase 13; the dialog is `core/web/export.js`) only
   reads originals: it copies the photos asked for (plus, if ticked, their RAW
   files and Live Photo videos) into a new folder the user chose, which must not
   be inside the library. Every read is under the guard (the file matches the
@@ -53,6 +53,10 @@ current status and next step. Update its status table when a phase moves.
   browser as `shoebox-maps`, not per drive). The browser
   loads the tiles; shoebox never fetches or stores one. A position the user
   gives a photo lives in `library.db` (`geo_overrides`) only, never in the file.
+- Estimated dates (phase 12): a date the user gives a photo (`date_estimates`,
+  year, month or day) lives in `library.db` only, never in the file, and wins on
+  the timeline over the capture date in the file; the file's date is shown in the
+  info panel row "EXIF" and returns when the estimate is removed.
 - Licences: `LICENSE.txt` (all rights reserved, private use) and the generated
   `THIRD-PARTY-LICENSES.txt` go into the release archive. After a change to
   `Cargo.lock`, `scripts/build-deps.sh` or `core/web/vendor/` run
