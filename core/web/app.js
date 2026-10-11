@@ -197,8 +197,10 @@ function applyFilter() {
   document.body.classList.toggle('geo-view', view === 'locations');
   if (view !== 'locations') geoLeave();
   renderLocationsSection();
+  // Another tag, folder, search or page is another list: the selection (ids and
+  // bar) belongs to the one it was made in.
+  endSelection();
   if (view) {
-    endSelection();
     $('empty').hidden = true;
     $('filters').hidden = true;
     $('scroller').scrollTop = 0;

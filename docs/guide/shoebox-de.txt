@@ -413,7 +413,9 @@ Auswählen
 einfach tippen). „Alle auswählen“ an einer Monatsüberschrift nimmt den ganzen
 Monat; Alle auswählen in der Leiste unten nimmt alle gezeigten Fotos über alle
 Monate (zum Beispiel alle Fotos eines Tags, um den Tag auf einmal zu
-entfernen).
+entfernen). Die Auswahl gehört zu der Liste, in der du sie getroffen hast: Ein
+Klick auf einen anderen Tag, Ordner oder eine andere Seite in der Seitenleiste
+oder eine geänderte Suche beendet sie.
 
 Taggen
 Tag hinzufügen … gibt der Auswahl deinen eigenen Tag. Tags leben im Index von
