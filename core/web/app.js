@@ -621,7 +621,7 @@ function suggest(text) {
   var needle = text.trim();
   var within = { q: needle, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place };
   Promise.all([
-    api(LIBAPI + '/tags' + query(Object.assign({ limit: 8 }, within))),
+    api(LIBAPI + '/tags' + query(Object.assign({ limit: 8, own: 1 }, within))),
     api(LIBAPI + '/people/search' + query(Object.assign({ limit: 6 }, within))).catch(function () { return []; }),
     api(LIBAPI + '/pets/search' + query(within)).catch(function () { return []; }),
     suggestDates(needle, false, datesWithin(f)),
@@ -666,7 +666,7 @@ function suggestAll(text, seq) {
     lists.forEach(function (list) { list.forEach(function (h) { sum[h.species] = (sum[h.species] || 0) + h.photos; }); });
     return Object.keys(sum).sort(function (a, b) { return sum[b] - sum[a]; }).map(function (s) { return { species: s, photos: sum[s] }; });
   });
-  Promise.all([api('/api/all/tags' + query({ q: needle, limit: 8 })), people.catch(function () { return []; }), pets]).then(function (r) {
+  Promise.all([api('/api/all/tags' + query({ q: needle, limit: 8, own: 1 })), people.catch(function () { return []; }), pets]).then(function (r) {
     if (seq !== sugg.seq) return;
     var items = r[1].filter(function (p) { return f.people.indexOf(p.name) < 0 && (!low || p.name.toLowerCase().indexOf(low) >= 0); })
       .slice(0, 6).map(function (p) { return { kind: 'person', id: p.name, label: p.name, count: p.photos, person: { name: p.name, species: p.species } }; });

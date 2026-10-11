@@ -385,15 +385,17 @@ Suchen, auswählen, taggen und verschieben: alles geht für viele Fotos auf
 einmal.
 
 Suchen
-Tippe ins Suchfeld: Vorschläge erscheinen für Tags, Personen und Ordner.
-Mehrere gewählte werden zu Chips, die das Ergebnis eingrenzen; × entfernt
-einen, Alle entfernen beginnt neu. Deine Favoriten findest du mit dem ♥-Knopf
-neben Typ, oder tippe favorit (deutsch) bzw. favorite (englisch) und wähle ♥
-Favoriten; das lässt sich mit allem anderen kombinieren, z. B. Favoriten einer
-Person oder eines Jahres. Bei eingeschalteten Karten (siehe „Orte und Karten“)
-bieten die Vorschläge auch deine Orte an. Ein Jahr oder ein Monat mit Jahr,
-etwa 1987 oder Juni 1987, bietet am Ende der Liste eine Zeile unter Datum an
-(siehe „Datum und Suche nach Datum“).
+Tippe ins Suchfeld: Vorschläge erscheinen für Tags, Personen und Ordner (ein
+Ordnername steht unter Ordner; unter Tags stehen nur Tags, die du von Hand
+vergeben hast, auch solche mit dem Namen eines Ordners). Mehrere gewählte
+werden zu Chips, die das Ergebnis eingrenzen; × entfernt einen, Alle entfernen
+beginnt neu. Deine Favoriten findest du mit dem ♥-Knopf neben Typ, oder tippe
+favorit (deutsch) bzw. favorite (englisch) und wähle ♥ Favoriten; das lässt
+sich mit allem anderen kombinieren, z. B. Favoriten einer Person oder eines
+Jahres. Bei eingeschalteten Karten (siehe „Orte und Karten“) bieten die
+Vorschläge auch deine Orte an. Ein Jahr oder ein Monat mit Jahr, etwa 1987
+oder Juni 1987, bietet am Ende der Liste eine Zeile unter Datum an (siehe
+„Datum und Suche nach Datum“).
 
 Typ bietet Fotos (Standbilder ohne Screenshots), Videos, Live Photos und
 Screenshots; hake beliebige an, ohne Haken wird alles gezeigt. Um Screenshots

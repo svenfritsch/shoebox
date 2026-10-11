@@ -362,14 +362,16 @@ Find and organise
 Search, select, tag and move: all of it works on many photos at once.
 
 Search
-Type in the search box: suggestions appear for tags, people and folders. Pick
-several and they become chips that narrow the result; × removes one, Clear all
-starts over. To find your favorites press the ♥ button next to Type, or type
-favorite (English) or favorit (German) and pick ♥ Favorites; it combines with
-everything else, e.g. favorites of one person or one year. With maps on (see
-“Locations and maps”) the suggestions also offer your places. A year or a
-month with a year, such as 1987 or June 1987, offers a row under Date at the
-end of the list (see “Dates and searching by date”).
+Type in the search box: suggestions appear for tags, people and folders (a
+folder name is offered under Folders; Tags lists only tags you gave by hand,
+including those that share a folder’s name). Pick several and they become
+chips that narrow the result; × removes one, Clear all starts over. To find
+your favorites press the ♥ button next to Type, or type favorite (English) or
+favorit (German) and pick ♥ Favorites; it combines with everything else, e.g.
+favorites of one person or one year. With maps on (see “Locations and maps”)
+the suggestions also offer your places. A year or a month with a year, such as
+1987 or June 1987, offers a row under Date at the end of the list (see “Dates
+and searching by date”).
 
 Type offers Photos (still pictures without screenshots), Videos, Live Photos
 and Screenshots; tick any of them, and nothing ticked shows everything. To
