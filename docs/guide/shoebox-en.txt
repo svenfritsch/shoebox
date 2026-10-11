@@ -323,9 +323,9 @@ stays open.
 Viewer
 Click a photo. ⓘ opens the info panel: date (marked estimated when it is not
 the day the photo was taken, or manual when you set it yourself; the pencil
-next to it sets or changes your date), camera, size, tags, people, and buttons
-to open the folder or copy the path. At the bottom, GPS data shows where the
-photo was taken (see “Locations and maps”).
+next to it sets or changes your date), drive, camera, size, tags, people, and
+buttons to open the folder or copy the path. At the bottom, GPS data shows
+where the photo was taken (see “Locations and maps”).
 
 Favorites
 The ♥ in the top bar of the viewer, or the key f, marks the photo as a

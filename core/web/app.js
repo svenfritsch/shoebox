@@ -1392,6 +1392,8 @@ function renderPanel() {
     return dd;
   };
   infoDate(row, info);
+  // The drive is named whenever it is known, also with a single photo app per drive.
+  if (drives.current) row(tr('info.drive'), drives.current.volume || drives.current.name);
   row(tr('info.name'), info.name);
   var folder = info.path.indexOf('/') >= 0 ? info.path.slice(0, info.path.lastIndexOf('/')) : '';
   if (folder) {

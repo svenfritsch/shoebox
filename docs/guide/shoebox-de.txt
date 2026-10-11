@@ -343,9 +343,10 @@ offen.
 Ansicht
 Foto anklicken. ⓘ öffnet das Infofeld: Datum (als geschätzt markiert, wenn es
 nicht der Aufnahmetag ist, oder als manuell, wenn du es selbst gesetzt hast;
-der Stift daneben setzt oder ändert dein Datum), Kamera, Größe, Tags, Personen
-und Knöpfe, um den Ordner zu öffnen oder den Pfad zu kopieren. Ganz unten
-zeigen die GPS-Daten, wo das Foto aufgenommen wurde (siehe „Orte und Karten“).
+der Stift daneben setzt oder ändert dein Datum), Laufwerk, Kamera, Größe,
+Tags, Personen und Knöpfe, um den Ordner zu öffnen oder den Pfad zu kopieren.
+Ganz unten zeigen die GPS-Daten, wo das Foto aufgenommen wurde (siehe „Orte
+und Karten“).
 
 Favoriten
 Das ♥ in der oberen Leiste der Ansicht oder die Taste f markiert das Foto als
