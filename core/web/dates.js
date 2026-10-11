@@ -28,7 +28,9 @@ var EST_TITLES = { m: 'dates.est_manual', f: 'dates.est_folder', c: 'dates.est_c
 
 // The small "~" on a cell whose date is not the capture date in the file.
 function estimateMark(code) {
-  var s = el('span', 'est', '~');
+  var s = el('span', 'est');
+  // Drawn rather than the "~" character, so that it sits in the middle of the circle.
+  s.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 7.5C3 4 4.5 4 6 6s3 2 4.5-1.5"/></svg>';
   s.title = tr(EST_TITLES[code]);
   return s;
 }
@@ -166,7 +168,7 @@ function buildDatesDialog(ids, info, check) {
     var group = formatEstimate({ year: v.year, month: v.month });
     lands.textContent = v.day ? tr('dates.lands_day', { group: group })
       : v.month ? tr('dates.lands_month', { group: group })
-        : tr('dates.lands_year', { year: v.year });
+        : tr('dates.lands_year', { year: String(v.year) });
   };
   [year, month, day].forEach(function (n) { n.addEventListener('input', render); n.addEventListener('change', render); });
 

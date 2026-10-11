@@ -278,6 +278,7 @@ function renderChips() {
     box.appendChild(clear);
   }
   personHead(box, f);
+  exportChip(box, f);
   box.hidden = !box.firstChild;
 }
 state.tagNames = {};
@@ -593,24 +594,87 @@ function pickSuggest(it) {
   else setFilter(withFilter({ folder: it.id, q: '' }));
 }
 
-// Suggestions for the tag fields (info panel, "Add tag…"): every tag.
+var RECENT_MAX = 4; // how many "Recently used" the suggestion lists show
+
+// Suggestions for the tag fields (info panel, "Add tag…"): with the field
+// empty the tags used last, then the most used; while typing the matches,
+// the recent ones first, then by use. A list under the field, not a
+// <datalist>, so it can have headings.
 var suggestSeq = 0;
-function suggestTags(text) {
-  var seq = ++suggestSeq;
-  if (!text.trim()) return;
-  api(LIBAPI + '/tags' + query({ q: text.trim(), limit: 12 })).then(function (tags) {
-    if (seq !== suggestSeq) return;
-    var list = $('tag-list');
+function attachTagSuggestions(input) {
+  var list = el('div', 'plist tlist');
+  list.setAttribute('role', 'listbox');
+  list.hidden = true;
+  var items = [], at = -1;
+  var close = function () { list.hidden = true; at = -1; };
+  var mark = function () {
+    Array.prototype.forEach.call(list.querySelectorAll('.item'), function (b, k) { b.classList.toggle('at', k === at); });
+  };
+  var choose = function (name) {
+    input.value = name;
+    close();
+    // The field's own Enter handling adds the tag.
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  };
+  var show = function (tags, text) {
     list.textContent = '';
-    tags.forEach(function (t) {
-      if (isFavTag(t.name)) return;
-      state.tagNames[t.id] = t.name;
-      var o = el('option');
-      o.value = t.name;
-      o.label = t.count + '';
-      list.appendChild(o);
-    });
-  }).catch(function () {});
+    items = [];
+    at = -1;
+    var low = fold(text);
+    tags = tags.filter(function (t) { return !isFavTag(t.name); });
+    // Tags a photo was last given (the index remembers when), newest first.
+    var last = tags.filter(function (t) { return t.last_used && (!low || fold(t.name).indexOf(low) >= 0); })
+      .sort(function (a, b) { return b.last_used - a.last_used; }).slice(0, RECENT_MAX);
+    var rest = tags.filter(function (t) { return last.indexOf(t) < 0; });
+    var section = function (title, ts) {
+      if (!ts.length) return;
+      if (title) list.appendChild(el('div', 'head', title));
+      ts.forEach(function (t) {
+        var b = el('button', 'item');
+        b.type = 'button';
+        b.appendChild(el('span', 'grow', t.name));
+        b.appendChild(el('span', 'count', I18n.number(t.count)));
+        b.onmousedown = function (ev) { ev.preventDefault(); };
+        b.onclick = function () { choose(t.name); };
+        items.push(t.name);
+        list.appendChild(b);
+      });
+    };
+    section(tr('suggest.recent'), last);
+    section(last.length ? tr(text ? 'suggest.more' : 'suggest.most_used') : '', rest);
+    list.hidden = !items.length || document.activeElement !== input;
+  };
+  var load = function () {
+    var seq = ++suggestSeq, text = input.value.trim();
+    // Own tags when empty (folder names are not what one types by hand).
+    api(LIBAPI + '/tags' + query(text ? { q: text, limit: 50 } : { own: 1, limit: 500 })).then(function (tags) {
+      if (seq !== suggestSeq) return;
+      tags.forEach(function (t) { state.tagNames[t.id] = t.name; });
+      show(tags, text);
+    }).catch(function () {});
+  };
+  // Put the list under the field as soon as the field is in the page.
+  var place = function () {
+    if (input.parentNode && list.previousSibling !== input) input.parentNode.insertBefore(list, input.nextSibling);
+  };
+  input.addEventListener('focus', function () { place(); load(); });
+  input.addEventListener('input', function () { place(); load(); });
+  input.addEventListener('blur', function () { setTimeout(close, 150); });
+  input.addEventListener('keydown', function (ev) {
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      if (!items.length) return;
+      ev.preventDefault();
+      list.hidden = false;
+      at = ev.key === 'ArrowDown' ? (at + 1) % items.length : (at + items.length - 1) % items.length;
+      mark();
+    } else if (ev.key === 'Enter' && at >= 0 && !list.hidden) {
+      input.value = items[at]; // before the field's own handler reads it
+      close();
+    } else if (ev.key === 'Escape' && !list.hidden) {
+      ev.stopImmediatePropagation(); // the first Escape closes the list only
+      close();
+    }
+  });
 }
 
 // ------------------------------------------------------------------ folders
@@ -1199,6 +1263,7 @@ function showItem() {
   $('lb-live').hidden = !state.live[id];
   $('lb-fav').hidden = false;
   markLightboxHeart();
+  markCollectionButton();
   applyAllowTrash();
   var rot = $('lb-rotate');
   rot.hidden = isAll() || kind === 'v';
@@ -1234,6 +1299,7 @@ function showItem() {
   api(fileBase(id)).then(function (info) {
     if (state.open !== i) return;
     lb.details = info;
+    markCollectionButton();
     $('lb-title').textContent = formatDate(info) + ' · ' + info.name;
     if (!$('lb-panel').hidden) renderPanel();
     drawFaces();
@@ -1364,7 +1430,7 @@ function renderPanelAll(info) {
   open.onclick = function () { switchLibrary(lib.id, 'folder=' + info.folder_id); };
   actions.appendChild(open);
   if (state.reveal) {
-    var reveal = el('button', 'btn quiet', state.reveal);
+    var reveal = revealButton();
     reveal.onclick = function () { revealOn(lib.id, info.path); };
     actions.appendChild(reveal);
   }
@@ -1533,6 +1599,7 @@ document.addEventListener('keydown', function (ev) {
   else if (ev.key === 'ArrowRight') step(1);
   else if (ev.key === 'i') $('lb-info').onclick();
   else if ((ev.key === 'f' || ev.key === 'F') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) toggleFavoriteOpen();
+  else if ((ev.key === 'c' || ev.key === 'C') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) toggleCollection();
   else if ((ev.key === 'r' || ev.key === 'R') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) rotateOpen(ev.shiftKey ? 1 : -1);
 });
 
@@ -1560,6 +1627,8 @@ function loadInfo() {
   return api(LIBAPI + '/info').then(function (info) {
     $('title').textContent = info.name;
     state.reveal = revealLabel(info.reveal);
+    state.exportOk = !!info.export;
+    applyExportOk();
     document.title = info.name + ' · shoebox';
     var parts = [
       trn('count.photos', info.photos),
@@ -1643,7 +1712,8 @@ function toast(text) {
 
 // A small dialog. actions: [{label, cls, onclick(close)}]; onclick returns
 // false to keep the dialog open.
-function openModal(title, body, actions) {
+function openModal(title, body, actions, cls) {
+  document.querySelector('#modal .dialog').className = 'dialog' + (cls ? ' ' + cls : '');
   $('modal-title').textContent = title;
   var b = $('modal-body');
   b.textContent = '';
@@ -1745,7 +1815,7 @@ function updateSelbar() {
   var total = state.data && state.data.ids ? state.data.ids.length : 0;
   $('sel-all').textContent = tr(total && n >= total ? 'sel.none' : 'sel.all');
   $('sel-all').disabled = !total;
-  $('sel-move').disabled = $('sel-trash').disabled = $('sel-tag').disabled = $('sel-untag').disabled = $('sel-date').disabled = !n;
+  $('sel-move').disabled = $('sel-trash').disabled = $('sel-tag').disabled = $('sel-untag').disabled = $('sel-date').disabled = $('sel-export').disabled = !n;
 }
 
 $('select').onclick = function () {
@@ -1763,6 +1833,7 @@ $('sel-move').onclick = function () { moveDialog(selectedIds(), endSelection); }
 $('sel-trash').onclick = function () { trashDialog(selectedIds(), endSelection); };
 $('sel-tag').onclick = function () { addTagDialog(selectedIds()); };
 $('sel-untag').onclick = function () { removeTagDialog(selectedIds()); };
+$('sel-export').onclick = function () { openExport(selectedIds(), ''); };
 
 // ------------------------------------------------------------------ move and trash
 
@@ -1883,7 +1954,7 @@ var dupTab = 'here';
 
 function addDupTabs(page) {
   if (drives.list.length < 2 || isAll()) return;
-  var tabs = el('div', 'tabs');
+  var tabs = el('div', 'tabs underline');
   [['here', tr('dups.tab.here')], ['across', tr('dups.tab.across')]].forEach(function (t) {
     var b = el('button', dupTab === t[0] ? 'on' : '', t[1]);
     b.onclick = function () { dupTab = t[0]; loadDuplicates(); };
@@ -2188,6 +2259,7 @@ function markedCount() {
 
 // Left: which kinds to show (a drop-down with check boxes). Right: the
 // Preselect menu, which only ticks; nothing is removed before Move to trash.
+var dupFilterCloser = false;
 function dupToolbar() {
   var bar = el('div', 'dup-top');
   var filter = el('details', 'dup-filter');
@@ -2221,6 +2293,15 @@ function dupToolbar() {
     menu.appendChild(label);
   });
   refreshLabel();
+  // A click anywhere else closes the menu (one listener, whichever toolbar is current).
+  if (!dupFilterCloser) {
+    dupFilterCloser = true;
+    document.addEventListener('click', function (e) {
+      document.querySelectorAll('.dup-filter[open]').forEach(function (open) {
+        if (!open.contains(e.target)) open.open = false;
+      });
+    });
+  }
   filter.appendChild(sum);
   filter.appendChild(menu);
   bar.appendChild(filter);
@@ -2882,11 +2963,19 @@ function revealFile(id) {
   }).catch(failed);
 }
 
+// "Show in Finder" with the drawn open-folder icon at the left of the label.
+function revealButton() {
+  var b = el('button', 'btn quiet with-icon');
+  b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20q-.825 0-1.412-.587Q2 18.825 2 18V6q0-.825.588-1.412Q3.175 4 4 4h6l2 2h8q.825 0 1.413.588Q22 7.175 22 8H11.175l-2-2H4v12l2.4-8H23.85l-2.575 8.575q-.2.65-.737 1.038Q20 20 19.325 20ZM6.1 18H19.2l1.8-6H7.9Z"/></svg>';
+  b.appendChild(el('span', '', state.reveal));
+  return b;
+}
+
 // Info panel, 5a: the buttons that show the file on the shoebox computer
 // and copy its path.
 function infoReveal(actions, info) {
   if (state.reveal) {
-    var reveal = el('button', 'btn quiet', state.reveal);
+    var reveal = revealButton();
     reveal.onclick = function () { revealFile(info.id); };
     actions.appendChild(reveal);
   }
@@ -3063,9 +3152,9 @@ function tagInput() {
   var input = el('input');
   input.type = 'text';
   input.placeholder = tr('tags.placeholder');
-  input.setAttribute('list', 'tag-list');
+  input.autocomplete = 'off';
   input.setAttribute('enterkeyhint', 'done');
-  input.addEventListener('input', function () { suggestTags(input.value); });
+  attachTagSuggestions(input);
   return input;
 }
 
@@ -3092,9 +3181,12 @@ function infoScreenshot(row, info) {
   box.appendChild(pick);
   box.appendChild(el('span', 'note', ' ' + tr(marked ? 'shot.yours' : 'shot.guess')));
   if (marked) {
-    var back = el('button', 'link', tr('shot.back'));
+    // An undo icon at the right of the row; the words are its tooltip.
+    var back = el('button', 'icon-btn shot-back');
+    back.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>';
+    back.title = tr('shot.back');
+    back.setAttribute('aria-label', tr('shot.back'));
     back.onclick = function () { set(null); };
-    box.appendChild(document.createTextNode(' '));
     box.appendChild(back);
   }
   row(tr('shot.label'), box);
@@ -3120,8 +3212,10 @@ function tagsChanged(id) {
   api(LIBAPI + '/files/' + id).then(function (info) {
     if (!lb.details || lb.details.id !== id) return;
     lb.details = info;
+    coll.busy = false;
+    markCollectionButton();
     renderPanel();
-  }).catch(function () {});
+  }).catch(function () { coll.busy = false; markCollectionButton(); });
 }
 
 function addTagDialog(ids) {
@@ -3553,6 +3647,8 @@ function loadSettings() {
   page.appendChild(sec);
   page.appendChild(allowTrashSection());
   page.appendChild(mapsSection());
+  page.appendChild(collectionSection());
+  page.appendChild(exportSection());
   page.appendChild(eventPatternSection());
   page.appendChild(copyFoldersSection());
 }
@@ -4022,24 +4118,39 @@ function personField(done, opts) {
     list.textContent = '';
     items = [];
     at = -1;
+    var offered = function (p) {
+      return kindOf(p, kind()) && (!low || fold(p.name).indexOf(low) >= 0) && !(opts.except && opts.except.indexOf(p.id) >= 0);
+    };
+    var addItem = function (p) {
+      var it = { who: { person_id: p.id }, label: p.name };
+      if (fold(p.name) === low) exact = it;
+      var b = el('button', 'item');
+      b.type = 'button';
+      b.appendChild(avatar(p, 'tiny'));
+      b.appendChild(el('span', '', p.name));
+      b.onmousedown = function (ev) { ev.preventDefault(); };
+      b.onclick = function () { pick(it); };
+      items.push(it);
+      list.appendChild(b);
+    };
+    // First the people named last, then (field empty) the most photographed,
+    // then everyone by group; nobody twice.
+    var shown = {}, top = [], frequent = [];
+    top = people.list.filter(function (p) { return p.last_named && offered(p); })
+      .sort(function (a, b) { return b.last_named - a.last_named; }).slice(0, RECENT_MAX);
+    top.forEach(function (p) { shown[p.id] = true; });
+    if (!low) {
+      frequent = people.list.filter(function (p) { return offered(p) && !shown[p.id] && p.photos > 0; })
+        .sort(function (a, b) { return b.photos - a.photos || a.name.localeCompare(b.name); }).slice(0, RECENT_MAX);
+      frequent.forEach(function (p) { shown[p.id] = true; });
+    }
+    if (top.length) { list.appendChild(el('div', 'head', tr('suggest.recent'))); top.forEach(addItem); }
+    if (frequent.length) { list.appendChild(el('div', 'head', tr('suggest.most_photos'))); frequent.forEach(addItem); }
     groupedPeople().forEach(function (s) {
-      var ps = s.people.filter(function (p) {
-        return kindOf(p, kind()) && (!low || fold(p.name).indexOf(low) >= 0) && !(opts.except && opts.except.indexOf(p.id) >= 0);
-      });
+      var ps = s.people.filter(function (p) { return offered(p) && !shown[p.id]; });
       if (!ps.length) return;
       list.appendChild(el('div', 'head', s.name));
-      ps.forEach(function (p) {
-        var it = { who: { person_id: p.id }, label: p.name };
-        if (fold(p.name) === low) exact = it;
-        var b = el('button', 'item');
-        b.type = 'button';
-        b.appendChild(avatar(p, 'tiny'));
-        b.appendChild(el('span', '', p.name));
-        b.onmousedown = function (ev) { ev.preventDefault(); };
-        b.onclick = function () { pick(it); };
-        items.push(it);
-        list.appendChild(b);
-      });
+      ps.forEach(addItem);
     });
     if (opts.allowNew && text && !exact && isTaken(text)) {
       // A name is one person's, whatever the kind: not offered again as new.
@@ -4743,6 +4854,41 @@ var un = { shown: 0, total: 0, unnamed: 0, kind: 'all' };
 var UN_KINDS = [['all', 'unnamed.kind.all'], ['faces', 'unnamed.kind.faces'], ['pets', 'unnamed.kind.pets']];
 var PAGE_CLUSTERS = 30;
 
+// Size of the face circles: a browser setting for the whole application, like
+// the maps switch (nothing is kept on the drive or in the library).
+var FACE_SIZE = { min: 64, max: 150, step: 2, key: 'shoebox-face-size' };
+
+function faceSize() {
+  var n = 64;
+  try { n = parseInt(localStorage.getItem(FACE_SIZE.key), 10); } catch (e) { /* private window */ }
+  return isNaN(n) ? FACE_SIZE.min : Math.max(FACE_SIZE.min, Math.min(FACE_SIZE.max, n));
+}
+
+function faceSizeControl(page) {
+  var size = faceSize();
+  page.style.setProperty('--face-size', size + 'px');
+  var label = el('label', 'face-size');
+  label.title = tr('unnamed.size');
+  label.appendChild(el('span', 'dot s'));
+  var input = el('input');
+  input.type = 'range';
+  input.min = FACE_SIZE.min;
+  input.max = FACE_SIZE.max;
+  input.step = FACE_SIZE.step;
+  input.value = size;
+  input.setAttribute('aria-label', tr('unnamed.size'));
+  label.appendChild(input);
+  label.appendChild(el('span', 'dot l'));
+  var out = el('output', '', size + ' px');
+  label.appendChild(out);
+  input.oninput = function () {
+    page.style.setProperty('--face-size', input.value + 'px');
+    out.textContent = input.value + ' px';
+    try { localStorage.setItem(FACE_SIZE.key, input.value); } catch (e) { /* ignore */ }
+  };
+  return label;
+}
+
 function loadUnnamed() {
   var page = $('page');
   page.textContent = '';
@@ -4763,6 +4909,7 @@ function loadUnnamed() {
   kinds.onchange = function () { un.kind = kinds.value; loadUnnamed(); };
   var bar = el('div', 'toolbar');
   bar.appendChild(kinds);
+  bar.appendChild(faceSizeControl(page));
   page.appendChild(bar);
   var box = el('div', 'clusters');
   box.id = 'un-box';
@@ -5632,7 +5779,7 @@ function loadDrivesPage() {
   page.textContent = '';
   page.appendChild(el('h2', '', tr('side.manage_drives')));
   page.appendChild(el('p', 'sub', tr('drives.page_sub')));
-  var cards = el('div', 'drive-cards'), tabs = el('div', 'tabs'), tabBox = el('div');
+  var cards = el('div', 'drive-cards'), tabs = el('div', 'tabs underline'), tabBox = el('div');
   page.appendChild(cards);
   page.appendChild(tabs);
   page.appendChild(tabBox);
@@ -5729,7 +5876,12 @@ function loadDrivesPage() {
         var c = el('div', 'person-merged');
         c.appendChild(el('div', 'n', p.name));
         c.appendChild(el('div', 'sub', trn('count.photos', p.photos) + (p.group ? ' · ' + p.group : '')));
-        p.libraries.forEach(function (l) { c.appendChild(el('span', 'pill', l.name + ' · ' + l.faces)); });
+        // The drive first (its disk name; the folder name only where that is all there is).
+        p.libraries.forEach(function (l) {
+          var pill = el('span', 'pill drive', (l.volume || l.name) + ' · ' + l.faces);
+          if (l.volume) pill.title = tr('drives.person_folder', { name: l.name });
+          c.appendChild(pill);
+        });
         var go = el('button', 'btn quiet', tr('drives.photos_everywhere'));
         go.onclick = function () { switchLibrary('all', 'person=' + encodeURIComponent(p.name)); };
         c.appendChild(go);

@@ -65,6 +65,7 @@ use crate::clusters;
 use crate::dates;
 use crate::db;
 use crate::duplicates;
+use crate::export;
 use crate::library;
 use crate::media;
 use crate::multi;
@@ -400,6 +401,7 @@ impl App {
             reveal: shared.reveal.clone(),
             renders: Semaphore::new(shared.workers),
             auth: shared.auth.clone(),
+            export: Arc::new(export::Shared::default()),
         });
         spawn_healer(Arc::downgrade(&app), heal_rx);
         spawn_backups(Arc::downgrade(&app), backup_rx);
@@ -453,6 +455,8 @@ struct App {
     /// Limits concurrent decodes to the number of cores.
     renders: Semaphore,
     auth: Arc<Auth>,
+    /// The export that is running or ran last (phase 12).
+    export: Arc<export::Shared>,
 }
 
 /// Changes whenever another connection (a scan) commits, or this server
@@ -819,6 +823,14 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/duplicates/remove", post(duplicates_remove))
         .route("/api/event-pattern", get(event_pattern_get).post(event_pattern_set))
         .route("/api/allow-trash", get(allow_trash_get).post(allow_trash_set))
+        .route("/api/export/places", get(export_places))
+        .route("/api/export/folders", get(export_folders))
+        .route("/api/export/summary", post(export_summary))
+        .route("/api/export/check", post(export_check))
+        .route("/api/export/start", post(export_start))
+        .route("/api/export/status", get(export_status))
+        .route("/api/export/stop", post(export_stop))
+        .route("/api/export/reveal", post(export_reveal))
         .route("/api/duplicates/copy-folders", get(duplicates_copy_folders).post(duplicates_set_copy_folders))
         .route("/api/trash", get(trash_list).post(trash_files))
         .route("/api/trash/{id}/thumb", get(trash_thumb))
@@ -1147,7 +1159,14 @@ async fn all_people(State(hub): State<Arc<Hub>>) -> ApiResult<Json<AllPeople>> {
             let conn = app.conn.lock().unwrap();
             per_drive.push((library_id(&app.name), app.name.clone(), people::people(&conn, true)?, people::groups(&conn)?));
         }
-        Ok(multi::merge_people(&per_drive))
+        let mut people = multi::merge_people(&per_drive);
+        // The disk name tells the drives apart; the folder name often does not.
+        for p in &mut people {
+            for l in &mut p.libraries {
+                l.volume = apps.iter().find(|a| library_id(&a.name) == l.library).and_then(|a| volume::placement(&a.root)).map(|p| p.volume);
+            }
+        }
+        Ok(people)
     })
     .await
     .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
@@ -1435,7 +1454,13 @@ async fn all_tags(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> Ap
                 if !key.contains(&needle) || (own && t.kind == browse::TagKind::Folder) {
                     continue;
                 }
-                merged.entry(key).and_modify(|m| m.count += t.count).or_insert(browse::Tag { id: 0, ..t });
+                merged
+                    .entry(key)
+                    .and_modify(|m| {
+                        m.count += t.count;
+                        m.last_used = m.last_used.max(t.last_used);
+                    })
+                    .or_insert(browse::Tag { id: 0, ..t });
             }
         }
         let mut list: Vec<browse::Tag> = merged.into_values().collect();
@@ -1595,6 +1620,8 @@ struct Info {
     /// Text of the "show in the file manager" button ("Show in Finder", …),
     /// only for requests from this computer; `null` for other devices.
     reveal: Option<&'static str>,
+    /// Export (phase 12) saves into this computer's folders: only for requests from this computer.
+    export: bool,
 }
 
 async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: HeaderMap) -> ApiResult<Json<Info>> {
@@ -1668,6 +1695,7 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
             needs_date,
             faces,
             clusters,
+            export: reveal.is_some(),
             reveal,
         }))
     })
@@ -2328,6 +2356,163 @@ async fn allow_trash_set(State(app): State<Arc<App>>, Json(req): Json<AllowTrash
     })
     .await
     .map(|allow| Json(serde_json::json!({ "allow": allow })))
+}
+
+// ---------------------------------------------------------------- export (phase 12)
+
+/// Export copies files onto this computer and shows its folders, so only a
+/// browser on this computer may use it (not a session over the network).
+fn local_only(peer: SocketAddr, headers: &HeaderMap) -> ApiResult<()> {
+    if is_local(peer.ip(), host(headers)) {
+        Ok(())
+    } else {
+        Err(ApiError::Forbidden("only this computer can export: it saves into this computer's folders"))
+    }
+}
+
+fn bad(e: anyhow::Error) -> ApiError {
+    ApiError::BadRequest(format!("{e:#}"))
+}
+
+async fn export_places(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: HeaderMap) -> ApiResult<Json<export::Places>> {
+    local_only(peer, &headers)?;
+    blocking(&app, |_| Ok(Json(export::places()))).await
+}
+
+async fn export_folders(
+    State(app): State<Arc<App>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Query(pairs): Query<Pairs>,
+) -> ApiResult<Json<export::Listing>> {
+    local_only(peer, &headers)?;
+    let path = pairs.iter().find(|(k, _)| k == "path").map(|(_, v)| v.clone()).unwrap_or_default();
+    blocking(&app, move |_| export::list_folders(FsPath::new(&path)).map(Json).map_err(bad)).await
+}
+
+#[derive(Deserialize)]
+struct ExportIds {
+    ids: Vec<i64>,
+}
+
+async fn export_summary(
+    State(app): State<Arc<App>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(req): Json<ExportIds>,
+) -> ApiResult<Json<export::Summary>> {
+    local_only(peer, &headers)?;
+    blocking(&app, move |app| export::summarize(&app.conn.lock().unwrap(), &req.ids).map(Json).map_err(bad)).await
+}
+
+#[derive(Deserialize)]
+struct ExportRequest {
+    ids: Vec<i64>,
+    /// The folder to save in, and the name of the new folder inside it.
+    parent: String,
+    name: String,
+    #[serde(default)]
+    options: export::Options,
+}
+
+/// What an export would do (nothing is written): the counts, whether the
+/// folder exists, and whether the copies would land on a drive with a library.
+async fn export_check(
+    State(app): State<Arc<App>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(req): Json<ExportRequest>,
+) -> ApiResult<Json<serde_json::Value>> {
+    local_only(peer, &headers)?;
+    blocking(&app, move |app| {
+        let dest = export::destination(&req.parent, &req.name).map_err(bad)?;
+        let plan = export::plan(&app.conn.lock().unwrap(), &req.ids, req.options, &dest).map_err(bad)?;
+        let shoebox = export::shoebox_drive(&dest).map(|drive| {
+            let same = export::drive_of_index(&app.db_path).is_some_and(|own| own == drive);
+            let name = drive.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| drive.display().to_string());
+            serde_json::json!({ "name": library::nfc(&name), "path": drive.display().to_string(), "same_drive": same })
+        });
+        Ok(Json(serde_json::json!({
+            "dest": dest.display().to_string(),
+            "exists": dest.is_dir(),
+            "counts": plan.counts,
+            "skipped": plan.skipped,
+            "shoebox": shoebox,
+            "free": export::free_space(FsPath::new(&req.parent)),
+        })))
+    })
+    .await
+}
+
+async fn export_start(
+    State(app): State<Arc<App>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(req): Json<ExportRequest>,
+) -> ApiResult<Json<serde_json::Value>> {
+    local_only(peer, &headers)?;
+    blocking(&app, move |app| {
+        if app.export.running() {
+            return Err(ApiError::Conflict("an export is running already".into()));
+        }
+        let dest = export::destination(&req.parent, &req.name).map_err(bad)?;
+        let plan = {
+            let conn = app.conn.lock().unwrap();
+            if jobs_running(&conn)? {
+                return Err(ApiError::Conflict("a scan is running; try again when it is done".into()));
+            }
+            export::plan(&conn, &req.ids, req.options, &dest).map_err(bad)?
+        };
+        if plan.counts.total == 0 {
+            return Err(ApiError::BadRequest("there is nothing to export".into()));
+        }
+        if let Some(free) = export::free_space(FsPath::new(&req.parent))
+            && free < plan.counts.bytes
+        {
+            return Err(ApiError::BadRequest(format!(
+                "there is not enough room: {} MB are needed and {} MB are free",
+                plan.counts.bytes / 1_000_000 + 1,
+                free / 1_000_000
+            )));
+        }
+        // Say so before the thread has started, so a second click is refused.
+        app.export.begin(&dest);
+        let (root, shared) = (app.root.clone(), app.export.clone());
+        std::thread::spawn(move || export::run(&root, plan, &dest, &shared));
+        Ok(Json(serde_json::json!({ "started": true })))
+    })
+    .await
+}
+
+async fn export_status(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: HeaderMap) -> ApiResult<Json<export::Progress>> {
+    local_only(peer, &headers)?;
+    Ok(Json(app.export.progress.lock().unwrap().clone()))
+}
+
+async fn export_stop(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: HeaderMap) -> ApiResult<Json<serde_json::Value>> {
+    local_only(peer, &headers)?;
+    app.export.stop.store(true, Ordering::SeqCst);
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+/// "Show in Finder" for what the last export wrote (its first file, or the
+/// folder itself). The path is the one the export reported, never one sent.
+async fn export_reveal(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: HeaderMap) -> ApiResult<Json<serde_json::Value>> {
+    local_only(peer, &headers)?;
+    blocking(&app, |app| {
+        let dest = PathBuf::from(app.export.progress.lock().unwrap().dest.clone());
+        if dest.as_os_str().is_empty() || !dest.is_dir() {
+            return Err(ApiError::NotFound);
+        }
+        let mut files: Vec<PathBuf> = std::fs::read_dir(&dest)
+            .map(|r| r.flatten().map(|e| e.path()).filter(|p| p.is_file() && !p.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.'))).collect())
+            .unwrap_or_default();
+        files.sort();
+        let target = files.into_iter().next().unwrap_or(dest);
+        (app.reveal)(&target).map_err(ApiError::Internal)?;
+        Ok(Json(serde_json::json!({ "ok": true, "app": reveal::app_name() })))
+    })
+    .await
 }
 
 // ---------------------------------------------------------------- maps (phase 10)

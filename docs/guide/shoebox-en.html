@@ -245,6 +245,11 @@
           <p>Your own tags on many photos at once. Folders count as tags too. Stored in the index, never in the photos.</p>
         </li>
         <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-move"/></svg></div>
+          <h3>Collect & export</h3>
+          <p>Gather photos for a print order, an album or a birthday video with one click, then copy them into a numbered folder on your computer or a USB stick. Your originals stay as they are.</p>
+        </li>
+        <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-grid"/></svg></div>
           <h3>Timeline</h3>
           <p>All photos and videos by month, with a year jump, folder tree and a viewer with full-size info. Give a scan or a forwarded picture a date of your own (a year, a month or a day) and it lands in the right place; the file is never changed.</p>
@@ -336,7 +341,7 @@
       </ol>
       <div class="panel">
         <h3>A typical session</h3>
-        <p>Plug in the drive and double-click <b>Start shoebox</b>. <b>Scan</b> (quick when little has changed) and open the photo app. To add the photos of an event, copy their folder onto the drive in Finder (named like <b>2025-08 Holiday</b>) and <b>Scan</b> again: if some files were on the drive already, the Control Panel offers to delete the new copies. Then tag and sort. Look at <b>Duplicates</b> now and then, and run the <b>Backup check</b> after every backup.</p>
+        <p>Plug in the drive and double-click <b>Start shoebox</b>. The Control Panel remembers the folders you ticked last time; if one of those drives is not plugged in, its chip is dashed and <b>Start photo app</b> stays off, with the reason in red, until you plug the drive in or untick it. <b>Scan</b> (quick when little has changed) and open the photo app. To add the photos of an event, copy their folder onto the drive in Finder (named like <b>2025-08 Holiday</b>) and <b>Scan</b> again: if some files were on the drive already, the Control Panel offers to delete the new copies. Then tag and sort. Look at <b>Duplicates</b> now and then, and run the <b>Backup check</b> after every backup.</p>
       </div>
     </section>
 
@@ -465,7 +470,7 @@
           <div>
             <h3>Search</h3>
             <p>Type in the search box: suggestions appear for tags, people and folders. Pick several and they become chips that narrow the result; × removes one, <b>Clear all</b> starts over. To find your favorites press the <b>♥</b> button next to <b>Type</b>, or type <i>favorite</i> (English) or <i>favorit</i> (German) and pick <b>♥ Favorites</b>; it combines with everything else, e.g. favorites of one person or one year. With maps on (see “Locations and maps”) the suggestions also offer your <b>places</b>. A year or a month with a year, such as <i>1987</i> or <i>June 1987</i>, offers a row under <b>Date</b> at the end of the list (see “Dates and searching by date”).</p>
-            <p><b>Type</b> offers <b>Photos</b> (still pictures without screenshots), <b>Videos</b>, <b>Live Photos</b> and <b>Screenshots</b>; tick any of them, and nothing ticked shows everything. To leave screenshots out of the timeline, tick Photos, Videos and Live Photos but not Screenshots; to see only screenshots, tick just <b>Screenshots</b>. Shoebox recognises a screenshot from the file (a PNG without camera data, a name like <i>Screenshot</i> or <i>Bildschirmfoto</i>, the size of a phone or computer screen) and from the picture itself (large areas of one colour). It can be wrong in both directions: in the photo’s info panel, <b>Screenshot</b> is a drop-down that starts on shoebox’s guess; pick <i>Yes</i> or <i>No</i> to correct it, and <i>Back to automatic</i> returns to the guess. Your choice is kept in the library; the photo file is never changed.</p>
+            <p><b>Type</b> offers <b>Photos</b> (still pictures without screenshots), <b>Videos</b>, <b>Live Photos</b> and <b>Screenshots</b>; tick any of them, and nothing ticked shows everything. To leave screenshots out of the timeline, tick Photos, Videos and Live Photos but not Screenshots; to see only screenshots, tick just <b>Screenshots</b>. Shoebox recognises a screenshot from the file (a PNG without camera data, a name like <i>Screenshot</i> or <i>Bildschirmfoto</i>, the size of a phone or computer screen) and from the picture itself (large areas of one colour). It can be wrong in both directions: in the photo’s info panel, <b>Screenshot</b> is a drop-down that starts on shoebox’s guess; pick <i>Yes</i> or <i>No</i> to correct it, and the undo icon at the right of the row (tooltip <i>Back to automatic</i>) returns to the guess. Your choice is kept in the library; the photo file is never changed.</p>
           </div>
           <div>
             <h3>Select</h3>
@@ -473,7 +478,7 @@
           </div>
           <div>
             <h3>Tag</h3>
-            <p><b>Add tag…</b> puts your own tag on the selection. Tags live in shoebox’s index, never in the photo files.</p>
+            <p><b>Add tag…</b> puts your own tag on the selection. Tags live in shoebox’s index, never in the photo files. In the tag field the tags you used last come first (<b>Recently used</b>), then the <b>Most used</b>; typing narrows the list and keeps recent tags on top. Shoebox remembers this in the drive’s index (never in the photo files), so it is the same on every computer and tablet.</p>
           </div>
           <div>
             <h3>Date</h3>
@@ -483,6 +488,12 @@
             <h3>Move</h3>
             <p><b>Move…</b> asks for a folder. New folders are created, nothing is ever overwritten, and RAW, Live Photo and sidecar files move along. The photos’ own tags always go with them. “Keep folder tags” also keeps the old folder’s tags as own tags; folder tags always follow the new folder.</p>
           </div>
+          <div>
+            <h3>Collect and export</h3>
+            <p>To gather photos for something (a print order, an album in InDesign, a video for a birthday), give them one tag. In <b>Settings → Collection</b> type the name of that tag, for example <i>print-march</i>. A bookmark button then appears in the photo view: one click, or the key <b>C</b>, puts the tag on the photo, and the next click takes it off again. Hover over the button to see which tag it uses. You can collect over several sessions; search for the tag to see what you have. Leave the setting empty and the button is gone.</p>
+            <p>Then press <b>Export…</b>: in the bar at the bottom for the selected photos, or, when a tag is in the search, next to its chip for everything shown. The dialog asks where to save (<b>Choose…</b> opens a list of your folders and drives; <b>Downloads</b> is the first place) and how to call the new folder. From a tag the name is the tag’s name; from a selection you type one. Inside you get copies named <b>001_IMG_3457.jpg</b>, <b>002_…</b> in the order of the capture dates (<b>Settings → Export</b> switches the numbers off). <b>Convert HEIC to JPEG</b> is for print shops and programs that cannot read HEIC; the JPEG keeps the capture date and the camera data. For photos that have a <b>RAW</b> file, or the video of a <b>Live Photo</b>, a tick box takes those along. Videos are copied as they are.</p>
+            <p>Exporting again into the same folder only adds what is new: a file that is already there (same name without the number, same size) is skipped, and the numbers of the others are changed to the new order. Nothing in the folder is ever deleted. If you choose a drive that has a shoebox library of its own, shoebox asks first, because that drive’s next scan will find the copies and add them as new photos without their tags. Every original is read under the same check as a scan and every copy is compared with it afterwards; the originals are never changed. Export saves into the computer shoebox runs on, so it is not offered on the iPad.</p>
+          </div>
         </div>
         <div>
           <figure>
@@ -491,7 +502,11 @@
           </figure>
           <figure>
             <img src="assets/en/select-photos.jpg" alt="" loading="lazy">
-            <figcaption>Three photos selected; the bar offers Move, Tag and Trash.</figcaption>
+            <figcaption>Three photos selected; the bar offers Move, Tag, Export and Trash.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/en/export-dialog.jpg" alt="" loading="lazy">
+            <figcaption>Export: where to save, the name of the new folder, and what to take along.</figcaption>
           </figure>
         </div>
       </div>
@@ -499,6 +514,10 @@
         <figure>
           <img src="assets/en/add-tag.jpg" alt="" loading="lazy">
           <figcaption>Adding a tag.</figcaption>
+        </figure>
+        <figure>
+          <img src="assets/en/tag-suggestions.jpg" alt="" loading="lazy">
+          <figcaption>Adding a tag: the tags used last come first, then the most used.</figcaption>
         </figure>
         <figure>
           <img src="assets/en/move-dialog.jpg" alt="" loading="lazy">
@@ -668,11 +687,11 @@
         <ol class="steps">
           <li>
             <h3>Open Unnamed</h3>
-            <p>In the sidebar, open <b>Faces</b> and then <b>Unnamed</b>. Each card holds faces that look alike, the card with the most matches first. Cats and dogs have cards of their own; the menu above the cards chooses <i>People</i>, <i>Pets</i> or both. Click a face to see its photo; the left and right arrow keys step through the photos on that card, and Space or Esc closes the viewer.</p>
+            <p>In the sidebar, open <b>Faces</b> and then <b>Unnamed</b>. Each card holds faces that look alike, the card with the most matches first. Cats and dogs have cards of their own; the menu above the cards chooses <i>People</i>, <i>Pets</i> or both. Click a face to see its photo; the left and right arrow keys step through the photos on that card, and Space or Esc closes the viewer. The slider at the right of the menu sets the size of the face circles, from 64 to 150 pixels; shoebox remembers it in this browser. Bigger circles make the cards taller, so fewer fit on the screen.</p>
           </li>
           <li>
             <h3>Name a card</h3>
-            <p>Type the name once and press <b>Name</b>: the whole card is named. Start typing to pick a person you already have (on a card of pets only cats and dogs are offered, and the other way round), or choose <b>+ New person</b> (on a card of pets it reads <b>+ New cat</b>, <b>+ New dog</b> or <b>+ New pet</b>). After that shoebox suggests more faces of them (<i>Looks like Mia</i>): confirm with ✓ or reject with ✗.</p>
+            <p>Type the name once and press <b>Name</b>: the whole card is named. Click into the field to see the people you named last (<b>Recently used</b>) and those with the most photos, then everyone by group; start typing to pick a person you already have (on a card of pets only cats and dogs are offered, and the other way round), or choose <b>+ New person</b> (on a card of pets it reads <b>+ New cat</b>, <b>+ New dog</b> or <b>+ New pet</b>). After that shoebox suggests more faces of them (<i>Looks like Mia</i>): confirm with ✓ or reject with ✗.</p>
           </li>
           <li>
             <h3>Strangers and false finds</h3>
@@ -693,6 +712,10 @@
           <figure>
             <img src="assets/en/faces-select.jpg" alt="" loading="lazy">
             <figcaption>Select: two faces ticked on a card.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/en/name-suggestions.jpg" alt="" loading="lazy">
+            <figcaption>Naming a card: who you named last, then who has the most photos, then everyone by group.</figcaption>
           </figure>
         </div>
       </div>
@@ -782,7 +805,7 @@
           <div class="items">
             <div>
               <h3>Several drives</h3>
-              <p>Start shoebox with more than one drive and each one appears in the sidebar. <b>All drives</b> gives you one common timeline across all of them. It is for looking: photos that are favorites show a ♥ (greyed out, you cannot click it), and the info panel shows tags, favorite and people, but none of it can be changed there (<b>Show boxes</b> and pointing at a person to see their face still work). The panel names the drive the photo is on (its disk name, as in <b>Manage drives</b>) and has <b>Show in Finder</b> (<b>Show in Explorer</b> on Windows) and <b>Copy path</b>; <b>Open in &lt;drive&gt;'s timeline</b> switches to that drive's own timeline, at the photo's folder, to change tags, people or favorites. <b>Manage drives</b>, next to Duplicates, Trash and Settings, opens a page that does not depend on the drive you are looking at: your drives as cards, and two tabs below them, <b>People across drives</b> and <b>Duplicates across drives</b>. A drive that is unplugged is shown as offline. The drive you are looking at is filled in with the accent colour, and so is the page you have open under it (All photos, Duplicates, Trash, Settings), so you can always see which drive's trash you are in.</p>
+              <p>Start shoebox with more than one drive and each one appears in the sidebar. <b>All drives</b> gives you one common timeline across all of them. It is for looking: photos that are favorites show a ♥ (greyed out, you cannot click it), and the info panel shows tags, favorite and people, but none of it can be changed there (<b>Show boxes</b> and pointing at a person to see their face still work). The panel names the drive the photo is on (its disk name, as in <b>Manage drives</b>) and has <b>Show in Finder</b> (<b>Show in Explorer</b> on Windows) and <b>Copy path</b>; <b>Open in &lt;drive&gt;'s timeline</b> switches to that drive's own timeline, at the photo's folder, to change tags, people or favorites. <b>Manage drives</b>, next to Duplicates, Trash and Settings, opens a page that does not depend on the drive you are looking at: your drives as cards, and two tabs below them, <b>People across drives</b> and <b>Duplicates across drives</b>. A drive that is unplugged is shown as offline. Under <b>People across drives</b> each person shows the drives they are on by disk name with the number of faces found there (point at one to see its folder), and the people who are on the most drives come first. The drive you are looking at is filled in with the accent colour, and so is the page you have open under it (All photos, Duplicates, Trash, Settings), so you can always see which drive's trash you are in.</p>
             </div>
             <div>
               <h3>Original and backup drives</h3>
@@ -837,7 +860,7 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-bolt"/></svg></div>
           <h3>Only on your command</h3>
-          <p>Originals change only through your actions: move, rename, trash. Always a rename, never a copy, and only if the file still matches the index. The only other thing shoebox removes is a new copy of a file the drive already had, and only when you press the button after a scan.</p>
+          <p>Originals change only through your actions: move, rename, trash. Always a rename, never a copy, and only if the file still matches the index. The only other thing shoebox removes is a new copy of a file the drive already had, and only when you press the button after a scan. Export only reads: it writes copies into a new folder you choose and checks each one against its original.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-globe"/></svg></div>
@@ -854,6 +877,7 @@
         <p><b>New photos are missing.</b> Scan again. It is quick: only new and changed files are read.</p>
         <p><b>A video has no preview.</b> Add <code>ffmpeg</code> (see “Good to know”), then run <b>Scan</b> or restart the photo app.</p>
         <p><b>The iPad cannot connect.</b> Same Wi-Fi? Started with <code>--lan</code>? Enter the PIN printed in Terminal. Restarting shoebox asks for the PIN again.</p>
+        <p><b>There is no Export button.</b> Export saves into the folders of the computer shoebox runs on, so it is only offered in a browser on that computer, not on an iPad. With a tag in the search the button sits next to the tag’s chip; for other photos press ☑, select, and use <b>Export…</b> in the bar.</p>
         <p><b>A drive shows as offline.</b> Plug it in again; shoebox picks it up when you reload.</p>
         <p><b>A photo is in the wrong place on the timeline.</b> Its date comes from the file, the name of its event folder or the file’s dates, and a scan or a picture sent through a messenger often has the wrong one. Open the info panel and press the pencil next to the date to give it your own; see “Dates and searching by date”.</p>
         <p><b>A map is empty or says Offline.</b> Maps need the internet. Check the connection and open the photo again; without it everything else works as before.</p>

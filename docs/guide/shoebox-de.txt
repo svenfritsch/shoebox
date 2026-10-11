@@ -90,6 +90,11 @@ Eine Seite im Browser, eine Zeitleiste von allem auf dem Laufwerk.
    Eigene Tags für viele Fotos auf einmal. Auch Ordner zählen als Tags. Im
    Index gespeichert, nie in den Fotos.
 
+- Sammeln & exportieren
+   Fotos für eine Druckbestellung, ein Album oder ein Geburtstagsvideo mit
+   einem Klick sammeln und dann als nummerierten Ordner auf deinen Computer
+   oder einen USB-Stick kopieren. Deine Originale bleiben, wie sie sind.
+
 - Zeitleiste
    Alle Fotos und Videos nach Monat, mit Jahressprung, Ordnerbaum und einer
    Ansicht mit Infos zum Foto. Gib einem Scan oder einem weitergeleiteten Bild
@@ -159,13 +164,16 @@ Alles ist auf einer Seite. So findest du dich zurecht.
    Scan-, Vorschau- und Laufwerksstatus unten in der Seitenleiste.
 
 Ein typischer Ablauf
-Laufwerk anstecken und Start shoebox doppelklicken. Scannen (geht schnell,
-wenn sich wenig geändert hat) und die Foto-App öffnen. Für die Fotos eines
-Ereignisses den Ordner im Finder aufs Laufwerk kopieren (benannt wie 2025-08
-Urlaub) und erneut scannen: Waren einzelne Dateien schon auf dem Laufwerk,
-bietet die Zentrale an, die neuen Kopien zu löschen. Dann taggen und
-sortieren. Ab und zu die Duplikate ansehen und nach jedem Backup die
-Backup-Prüfung laufen lassen.
+Laufwerk anstecken und Start shoebox doppelklicken. Die Zentrale merkt sich
+die Ordner, die du zuletzt angekreuzt hattest; ist eines dieser Laufwerke
+nicht angesteckt, ist sein Chip gestrichelt und Foto-App starten bleibt aus,
+mit dem Grund in Rot, bis du das Laufwerk ansteckst oder den Haken entfernst.
+Scannen (geht schnell, wenn sich wenig geändert hat) und die Foto-App öffnen.
+Für die Fotos eines Ereignisses den Ordner im Finder aufs Laufwerk kopieren
+(benannt wie 2025-08 Urlaub) und erneut scannen: Waren einzelne Dateien schon
+auf dem Laufwerk, bietet die Zentrale an, die neuen Kopien zu löschen. Dann
+taggen und sortieren. Ab und zu die Duplikate ansehen und nach jedem Backup
+die Backup-Prüfung laufen lassen.
 
 In drei Schritten loslegen
 --------------------------
@@ -396,8 +404,9 @@ Name wie Screenshot oder Bildschirmfoto, die Größe eines Handy- oder
 Computerbildschirms) und am Bild selbst (große einfarbige Flächen). Es kann
 sich in beide Richtungen irren: Im Info-Fenster eines Fotos ist Screenshot ein
 Auswahlfeld, das mit der Schätzung von Shoebox beginnt; wähle Ja oder Nein zum
-Korrigieren, Zurück zu automatisch kehrt zur Schätzung zurück. Deine Wahl wird
-in der Bibliothek gemerkt; die Fotodatei wird nie verändert.
+Korrigieren, das Rückgängig-Symbol rechts in der Zeile (Tooltip Zurück zu
+automatisch) kehrt zur Schätzung zurück. Deine Wahl wird in der Bibliothek
+gemerkt; die Fotodatei wird nie verändert.
 
 Auswählen
 ☑ drücken, dann Fotos anklicken (mit Umschalt für einen Bereich; am iPad
@@ -408,7 +417,11 @@ entfernen).
 
 Taggen
 Tag hinzufügen … gibt der Auswahl deinen eigenen Tag. Tags leben im Index von
-shoebox, nie in den Fotodateien.
+shoebox, nie in den Fotodateien. Im Tag-Feld stehen zuerst die Tags, die du
+zuletzt benutzt hast (Zuletzt verwendet), dann die Am häufigsten benutzten;
+beim Tippen wird die Liste enger, die zuletzt benutzten bleiben oben. Das
+merkt sich shoebox im Index des Laufwerks (nie in den Fotodateien), also auf
+jedem Computer und Tablet gleich.
 
 Datum
 Datum setzen … gibt der Auswahl ein eigenes Datum, zum Beispiel einem ganzen
@@ -421,12 +434,51 @@ eigenen Tags der Fotos gehen immer mit. „Ordnertags behalten“ behält
 zusätzlich die Tags des alten Ordners als eigene Tags; Ordner-Tags folgen
 immer dem neuen Ordner.
 
+Sammeln und exportieren
+Um Fotos für etwas zu sammeln (eine Druckbestellung, ein Album in InDesign,
+ein Video zum Geburtstag), gib ihnen einen gemeinsamen Tag. Unter
+Einstellungen → Sammlung trägst du den Namen dieses Tags ein, zum Beispiel
+druck-maerz. In der Fotoansicht erscheint dann ein Lesezeichen-Knopf: Ein
+Klick, oder die Taste C, setzt den Tag auf das Foto, der nächste Klick nimmt
+ihn wieder weg. Wenn du mit der Maus über den Knopf fährst, siehst du, welchen
+Tag er benutzt. Du kannst über mehrere Sitzungen sammeln; such nach dem Tag,
+um zu sehen, was du hast. Bleibt die Einstellung leer, ist der Knopf weg.
+
+Dann drückst du Exportieren …: in der Leiste unten für die ausgewählten Fotos
+oder, wenn ein Tag in der Suche ist, neben seinem Chip für alles, was gezeigt
+wird. Der Dialog fragt, wohin gespeichert wird (Wählen … öffnet eine Liste
+deiner Ordner und Laufwerke; Downloads steht oben) und wie der neue Ordner
+heißen soll. Bei einem Tag ist das der Name des Tags, bei einer Auswahl tippst
+du einen. Darin liegen Kopien mit Namen wie 001_IMG_3457.jpg, 002_… in der
+Reihenfolge der Aufnahmedaten (Einstellungen → Export schaltet die Nummern
+ab). HEIC in JPEG umwandeln ist für Druckereien und Programme, die HEIC nicht
+lesen können; das JPEG behält Aufnahmedatum und Kameradaten. Haben Fotos eine
+RAW-Datei oder das Video eines Live Photos, nimmt ein Häkchen diese mit.
+Videos werden unverändert kopiert.
+
+Ein erneuter Export in denselben Ordner fügt nur Neues hinzu: Eine Datei, die
+schon da ist (gleicher Name ohne die Nummer, gleiche Größe), wird
+übersprungen, und die Nummern der übrigen werden auf die neue Reihenfolge
+angepasst. Im Ordner wird nie etwas gelöscht. Wählst du ein Laufwerk, das eine
+eigene shoebox-Bibliothek hat, fragt shoebox vorher nach, denn der nächste
+Scan dieses Laufwerks findet die Kopien und nimmt sie als neue Fotos ohne ihre
+Tags auf. Jedes Original wird mit derselben Kontrolle wie bei einem Scan
+gelesen und jede Kopie danach damit verglichen; die Originale werden nie
+verändert. Der Export speichert in den Ordnern des Computers, auf dem shoebox
+läuft, und wird deshalb auf dem iPad nicht angeboten.
+
 [Screenshot: Vorschläge beim Tippen.]
 
-[Screenshot: Drei Fotos ausgewählt; die Leiste bietet Verschieben, Tag und
-Papierkorb.]
+[Screenshot: Drei Fotos ausgewählt; die Leiste bietet Verschieben, Tag,
+Exportieren und Papierkorb.]
+
+[Screenshot: Exportieren: wohin gespeichert wird, wie der neue Ordner heißt
+und was mitkommt.]
 
 [Screenshot: Tag hinzufügen.]
+
+[Screenshot: Tag hinzufügen: zuerst die zuletzt benutzten Tags, dann die am
+häufigsten benutzten.]
 
 [Screenshot: In einen neuen Ereignisordner verschieben.]
 
@@ -666,15 +718,20 @@ benennen.
    Katzen und Hunde haben eigene Karten; das Menü über den Karten wählt
    Personen, Haustiere oder beides. Ein Klick auf ein Gesicht zeigt sein Foto;
    mit den Pfeiltasten links und rechts blätterst du durch die Fotos der
-   Karte, Leertaste oder Esc schließt die Ansicht.
+   Karte, Leertaste oder Esc schließt die Ansicht. Der Schieberegler rechts
+   neben dem Menü stellt die Größe der Gesichtskreise ein, von 64 bis 150
+   Pixel; shoebox merkt sie sich in diesem Browser. Größere Kreise machen die
+   Karten höher, daher passen weniger auf den Bildschirm.
 
 2. Eine Karte benennen
    Den Namen einmal eintippen und Benennen drücken: Die ganze Karte ist
-   benannt. Beim Tippen erscheinen Personen, die es schon gibt (bei Tieren nur
-   Katzen und Hunde, und umgekehrt); sonst + Neue Person wählen (bei Tieren
-   steht dort + Neue Katze, + Neuer Hund oder + Neues Tier). Danach schlägt
-   shoebox weitere Gesichter vor (Sieht aus wie Mia): mit ✓ bestätigen oder
-   mit ✗ ablehnen.
+   benannt. Ein Klick ins Feld zeigt zuerst die zuletzt benannten Personen
+   (Zuletzt verwendet) und die mit den meisten Fotos, dann alle nach Gruppe;
+   beim Tippen erscheinen Personen, die es schon gibt (bei Tieren nur Katzen
+   und Hunde, und umgekehrt); sonst + Neue Person wählen (bei Tieren steht
+   dort + Neue Katze, + Neuer Hund oder + Neues Tier). Danach schlägt shoebox
+   weitere Gesichter vor (Sieht aus wie Mia): mit ✓ bestätigen oder mit ✗
+   ablehnen.
 
 3. Fremde und Fehlfunde
    Ignorieren ist für Fremde und für Gesichter auf Postern, Bildschirmen und
@@ -703,6 +760,9 @@ benennen.
 Ignorieren und Kein Gesicht.]
 
 [Screenshot: Auswählen: zwei Gesichter einer Karte angekreuzt.]
+
+[Screenshot: Eine Karte benennen: zuerst die zuletzt Benannten, dann die mit
+den meisten Fotos, dann alle nach Gruppe.]
 
 Mehrere Gesichter in einem Foto, und Gruppen
 --------------------------------------------
@@ -837,10 +897,14 @@ Laufwerks, im Ordner des Fotos, um Tags, Personen oder Favoriten zu ändern.
 Laufwerke verwalten, neben Duplikate, Papierkorb und Einstellungen, öffnet
 eine Seite, die nicht vom angesehenen Laufwerk abhängt: deine Laufwerke als
 Karten und darunter zwei Reiter, Personen über Laufwerke hinweg und Duplikate
-über Laufwerke hinweg. Ein abgestecktes Laufwerk steht als offline da. Das
-Laufwerk, das du gerade ansiehst, ist in der Akzentfarbe ausgefüllt, ebenso
-die Seite darunter (Alle Fotos, Duplikate, Papierkorb, Einstellungen); so
-siehst du immer, welcher Papierkorb von welchem Laufwerk offen ist.
+über Laufwerke hinweg. Ein abgestecktes Laufwerk steht als offline da. Unter
+Personen über Laufwerke hinweg steht bei jeder Person, auf welchen Laufwerken
+sie vorkommt: mit dem Namen des Datenträgers und der Zahl der dort gefundenen
+Gesichter (der Ordner erscheint beim Darüberfahren), und wer auf den meisten
+Laufwerken ist, steht ganz vorn. Das Laufwerk, das du gerade ansiehst, ist in
+der Akzentfarbe ausgefüllt, ebenso die Seite darunter (Alle Fotos, Duplikate,
+Papierkorb, Einstellungen); so siehst du immer, welcher Papierkorb von welchem
+Laufwerk offen ist.
 
 Original- und Backup-Laufwerke
 Auf der Seite Laufwerke verwalten ist jedes Laufwerk eine Karte mit dem Namen
@@ -899,7 +963,8 @@ etwas hinein.
    Papierkorb. Immer ein Umbenennen, nie ein Kopieren, und nur wenn die Datei
    noch zum Index passt. Das Einzige, was shoebox sonst entfernt, ist eine
    neue Kopie einer Datei, die das Laufwerk schon hatte, und nur, wenn du nach
-   einem Scan den Knopf drückst.
+   einem Scan den Knopf drückst. Exportieren liest nur: Es schreibt Kopien in
+   einen neuen Ordner deiner Wahl und prüft jede einzelne gegen ihr Original.
 
 - Lokal
    Keine Cloud, kein Konto. Standardmäßig kann sich nur dieser Computer
@@ -921,6 +986,12 @@ Scannen ausführen oder die Foto-App neu starten.
 Das iPad verbindet sich nicht. Selbes WLAN? Mit --lan gestartet? PIN aus dem
 Terminal eingeben. Nach einem Neustart von shoebox fragt es wieder nach der
 PIN.
+
+Es gibt keinen Exportieren-Knopf. Der Export speichert in die Ordner des
+Computers, auf dem shoebox läuft, und wird deshalb nur in einem Browser auf
+diesem Computer angeboten, nicht auf einem iPad. Ist ein Tag in der Suche,
+sitzt der Knopf neben dem Chip des Tags; für andere Fotos ☑ drücken, auswählen
+und in der Leiste Exportieren … benutzen.
 
 Ein Laufwerk steht auf offline. Wieder anstecken; shoebox findet es beim
 Neuladen.
