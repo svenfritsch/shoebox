@@ -3387,7 +3387,7 @@ function loadOwnTags() {
         var sr = el('div', 'row sub');
         var sname = el('button', 'name', tr('side.manual_only'));
         sname.dataset.manual = t.id;
-        sname.onclick = function () { setFilter(withFilter({ manual: !state.filter.manual })); };
+        sname.onclick = function () { if (!state.filter.manual) setFilter(withFilter({ manual: true })); };
         sr.appendChild(sname);
         sr.appendChild(el('span', 'count', I18n.number(t.manual)));
         sr.hidden = true;

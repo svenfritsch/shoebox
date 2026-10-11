@@ -404,8 +404,8 @@ A tag can also be a folder name (the folder “Justin” gives all its photos th
 tag “Justin”, and you may have given it by hand to others). Under such a tag
 in the sidebar, while it is the one shown, a row Manual tags only appears with
 the number of photos you tagged yourself; click it to see just those (the tag
-then shows in orange text, and its chip says “manual”). Click the tag again to
-see all of its photos.
+then shows in orange text, and its chip says “manual”). Click the tag itself
+to see all of its photos again.
 
 Date
 Set date… gives the selection a date of your own, for example a whole folder

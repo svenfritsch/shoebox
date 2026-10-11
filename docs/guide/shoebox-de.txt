@@ -432,8 +432,8 @@ Fotos den Tag „Justin“, und du hast ihn vielleicht anderen Fotos von Hand
 gegeben). Unter so einem Tag in der Seitenleiste erscheint, solange er gezeigt
 wird, eine Zeile Nur manuelle Tags mit der Zahl der Fotos, die du selbst
 getaggt hast; ein Klick darauf zeigt nur diese (der Tag steht dann in orangem
-Text, sein Chip sagt „manuell“). Ein Klick auf den Tag zeigt wieder alle seine
-Fotos.
+Text, sein Chip sagt „manuell“). Ein Klick auf den Tag selbst zeigt wieder
+alle seine Fotos.
 
 Datum
 Datum setzen … gibt der Auswahl ein eigenes Datum, zum Beispiel einem ganzen
