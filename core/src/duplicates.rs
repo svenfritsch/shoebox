@@ -823,7 +823,7 @@ fn carry_names(conn: &Connection, heir: i64, names: &[String]) -> Result<u64> {
 
 /// As `remove_copies` (what the duplicates screen calls), then the folders the
 /// copies were in are removed if they are empty (`organize::trash_files_tidy`
-/// explains which). `arrivals::cleanup` keeps calling `remove_copies`.
+/// explains which). Also used by `arrivals::cleanup`.
 pub fn remove_copies_tidy(
     conn: &Connection,
     root: &Path,

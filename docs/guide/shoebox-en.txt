@@ -537,9 +537,10 @@ Finder or File Explorer, which keeps their dates, ideally into a folder named
 YYYY-MM Event, and press Scan. If the scan finds new files the drive already
 had, the Control Panel marks them already on the drive and offers Delete the
 new copies (to the trash, or for good). The older original stays and gets the
-deleted copy’s folder name as a tag. Settings sets how event folders are named
-in suggestions (for example YY.MM_Event); existing folders are not renamed and
-all forms are recognised.
+deleted copy’s folder name as a tag. If the deleted copies were all that was
+in a folder, shoebox removes that empty folder too and lists it. Settings sets
+how event folders are named in suggestions (for example YY.MM_Event); existing
+folders are not renamed and all forms are recognised.
 
 Duplicates
 Duplicates lists four kinds: identical, same photo with other pixel dimensions

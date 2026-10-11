@@ -576,9 +576,11 @@ besten in einen Ordner namens JJJJ-MM Ereignis, und Scannen drücken. Findet
 der Scan neue Dateien, die das Laufwerk schon hatte, markiert die Zentrale sie
 mit schon auf dem Laufwerk und bietet Die neuen Kopien löschen an (in den
 Papierkorb oder endgültig). Das ältere Original bleibt und bekommt den
-Ordnernamen der gelöschten Kopie als Tag. In den Einstellungen wählst du, wie
-Ereignisordner in Vorschlägen heißen (zum Beispiel JJ.MM_Ereignis); vorhandene
-Ordner werden nicht umbenannt, und alle Formen werden erkannt.
+Ordnernamen der gelöschten Kopie als Tag. War die gelöschte Kopie das Einzige
+in ihrem Ordner, entfernt shoebox auch diesen leeren Ordner und nennt ihn. In
+den Einstellungen wählst du, wie Ereignisordner in Vorschlägen heißen (zum
+Beispiel JJ.MM_Ereignis); vorhandene Ordner werden nicht umbenannt, und alle
+Formen werden erkannt.
 
 Duplikate
 Duplikate zeigt vier Arten: identisch, dasselbe Foto mit anderen Pixelmaßen
