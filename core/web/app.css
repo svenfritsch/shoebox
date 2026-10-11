@@ -60,6 +60,7 @@ button { cursor: pointer; }
 .types-menu label:hover { background: var(--panel); }
 .types-menu .tip { color: var(--muted, #888); cursor: help; font-size: 13px; }
 .bar select { padding: 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); }
+.icon svg { display: block; width: 1em; height: 1em; fill: currentColor; }
 .icon { background: none; border: 0; font-size: 20px; padding: 4px 8px; line-height: 1; color: inherit; text-decoration: none; }
 .link { background: none; border: 0; padding: 0; color: var(--accent); }
 
@@ -165,6 +166,8 @@ body.selecting #select { color: var(--accent); }
 .btn { padding: 7px 14px; border-radius: 9px; border: 0; background: var(--accent); color: #fff; font-weight: 600; }
 .btn.quiet { background: var(--line); color: var(--fg); font-weight: 400; }
 .btn.danger { background: #c63b2f; }
+.btn.with-icon { display: inline-flex; align-items: center; gap: 8px; }
+.btn.with-icon svg { width: 18px; height: 18px; flex: none; fill: currentColor; }
 .btn:disabled { opacity: .5; cursor: default; }
 
 .modal { position: fixed; inset: 0; z-index: 25; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; padding: 16px; }
@@ -542,6 +545,7 @@ body.selecting .sec .pick { display: inline; }
 .drive-card .foot b { font-weight: 600; color: var(--fg); opacity: .8; }
 .drive-card .foot .info { display: inline-block; width: 14px; height: 14px; margin-left: 8px; line-height: 13px; text-align: center; border: 1px solid var(--muted); border-radius: 50%; font-size: 10px; font-style: normal; cursor: help; vertical-align: 1px; }
 .pill { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; font-size: 12px; color: var(--muted); margin-right: 4px; }
+.person-merged .pill.drive { color: var(--fg); font-weight: 600; border-color: var(--accent); padding: 2px 10px; }
 .pill.on { color: var(--fg); background: var(--panel); }
 .xgroup { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin: 0 0 8px; }
 .xgroup .path { font-size: 13px; word-break: break-all; }
@@ -694,6 +698,9 @@ body.geo-view #page { padding: 0; height: 100%; }
 .geo-side-head h3 { margin: 0; font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .geo-tools { display: flex; gap: 2px; flex: none; }
 .icon-btn { background: none; border: 0; color: var(--muted); font-size: 16px; padding: 4px 7px; border-radius: 6px; }
+.shot-pick { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+.shot-pick .shot-back { margin-left: auto; padding: 4px; display: flex; }
+.shot-pick .shot-back svg { width: 18px; height: 18px; fill: currentColor; }
 .icon-btn:hover { background: var(--line); color: var(--fg); }
 .geo-sub { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
 .geo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 3px; margin-bottom: 10px; }

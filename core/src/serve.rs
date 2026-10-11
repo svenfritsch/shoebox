@@ -1149,7 +1149,14 @@ async fn all_people(State(hub): State<Arc<Hub>>) -> ApiResult<Json<AllPeople>> {
             let conn = app.conn.lock().unwrap();
             per_drive.push((library_id(&app.name), app.name.clone(), people::people(&conn, true)?, people::groups(&conn)?));
         }
-        Ok(multi::merge_people(&per_drive))
+        let mut people = multi::merge_people(&per_drive);
+        // The disk name tells the drives apart; the folder name often does not.
+        for p in &mut people {
+            for l in &mut p.libraries {
+                l.volume = apps.iter().find(|a| library_id(&a.name) == l.library).and_then(|a| volume::placement(&a.root)).map(|p| p.volume);
+            }
+        }
+        Ok(people)
     })
     .await
     .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;

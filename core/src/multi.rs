@@ -344,6 +344,9 @@ pub struct MergedPerson {
 pub struct PersonOnDrive {
     pub library: String,
     pub name: String,
+    /// The disk name of the drive (the folder `name` alone does not say which
+    /// drive it is); filled in by the server, which knows the paths.
+    pub volume: Option<String>,
     /// The person's id in that drive's database.
     pub person: i64,
     pub faces: u64,
@@ -378,6 +381,7 @@ pub fn merge_people(per_drive: &[(String, String, Vec<crate::people::Person>, Ve
             entry.libraries.push(PersonOnDrive {
                 library: lib.clone(),
                 name: lib_name.clone(),
+                volume: None,
                 person: p.id,
                 faces: p.faces,
                 photos: p.photos,
@@ -387,7 +391,10 @@ pub fn merge_people(per_drive: &[(String, String, Vec<crate::people::Person>, Ve
         }
     }
     let mut list: Vec<MergedPerson> = merged.into_values().collect();
-    list.sort_by(|a, b| b.faces.cmp(&a.faces).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    // Known on the most drives first, then the most faces.
+    list.sort_by(|a, b| {
+        b.libraries.len().cmp(&a.libraries.len()).then_with(|| b.faces.cmp(&a.faces)).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
     list
 }
 

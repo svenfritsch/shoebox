@@ -395,8 +395,9 @@ Name wie Screenshot oder Bildschirmfoto, die Größe eines Handy- oder
 Computerbildschirms) und am Bild selbst (große einfarbige Flächen). Es kann
 sich in beide Richtungen irren: Im Info-Fenster eines Fotos ist Screenshot ein
 Auswahlfeld, das mit der Schätzung von Shoebox beginnt; wähle Ja oder Nein zum
-Korrigieren, Zurück zu automatisch kehrt zur Schätzung zurück. Deine Wahl wird
-in der Bibliothek gemerkt; die Fotodatei wird nie verändert.
+Korrigieren, das Rückgängig-Symbol rechts in der Zeile (Tooltip Zurück zu
+automatisch) kehrt zur Schätzung zurück. Deine Wahl wird in der Bibliothek
+gemerkt; die Fotodatei wird nie verändert.
 
 Auswählen
 ☑ drücken, dann Fotos anklicken (mit Umschalt für einen Bereich; am iPad
@@ -801,10 +802,14 @@ Laufwerks, im Ordner des Fotos, um Tags, Personen oder Favoriten zu ändern.
 Laufwerke verwalten, neben Duplikate, Papierkorb und Einstellungen, öffnet
 eine Seite, die nicht vom angesehenen Laufwerk abhängt: deine Laufwerke als
 Karten und darunter zwei Reiter, Personen über Laufwerke hinweg und Duplikate
-über Laufwerke hinweg. Ein abgestecktes Laufwerk steht als offline da. Das
-Laufwerk, das du gerade ansiehst, ist in der Akzentfarbe ausgefüllt, ebenso
-die Seite darunter (Alle Fotos, Duplikate, Papierkorb, Einstellungen); so
-siehst du immer, welcher Papierkorb von welchem Laufwerk offen ist.
+über Laufwerke hinweg. Ein abgestecktes Laufwerk steht als offline da. Unter
+Personen über Laufwerke hinweg steht bei jeder Person, auf welchen Laufwerken
+sie vorkommt: mit dem Namen des Datenträgers und der Zahl der dort gefundenen
+Gesichter (der Ordner erscheint beim Darüberfahren), und wer auf den meisten
+Laufwerken ist, steht ganz vorn. Das Laufwerk, das du gerade ansiehst, ist in
+der Akzentfarbe ausgefüllt, ebenso die Seite darunter (Alle Fotos, Duplikate,
+Papierkorb, Einstellungen); so siehst du immer, welcher Papierkorb von welchem
+Laufwerk offen ist.
 
 Original- und Backup-Laufwerke
 Auf der Seite Laufwerke verwalten ist jedes Laufwerk eine Karte mit dem Namen

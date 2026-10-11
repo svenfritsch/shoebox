@@ -1364,7 +1364,7 @@ function renderPanelAll(info) {
   open.onclick = function () { switchLibrary(lib.id, 'folder=' + info.folder_id); };
   actions.appendChild(open);
   if (state.reveal) {
-    var reveal = el('button', 'btn quiet', state.reveal);
+    var reveal = revealButton();
     reveal.onclick = function () { revealOn(lib.id, info.path); };
     actions.appendChild(reveal);
   }
@@ -2820,11 +2820,19 @@ function revealFile(id) {
   }).catch(failed);
 }
 
+// "Show in Finder" with the drawn open-folder icon at the left of the label.
+function revealButton() {
+  var b = el('button', 'btn quiet with-icon');
+  b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20q-.825 0-1.412-.587Q2 18.825 2 18V6q0-.825.588-1.412Q3.175 4 4 4h6l2 2h8q.825 0 1.413.588Q22 7.175 22 8H11.175l-2-2H4v12l2.4-8H23.85l-2.575 8.575q-.2.65-.737 1.038Q20 20 19.325 20ZM6.1 18H19.2l1.8-6H7.9Z"/></svg>';
+  b.appendChild(el('span', '', state.reveal));
+  return b;
+}
+
 // Info panel, 5a: the buttons that show the file on the shoebox computer
 // and copy its path.
 function infoReveal(actions, info) {
   if (state.reveal) {
-    var reveal = el('button', 'btn quiet', state.reveal);
+    var reveal = revealButton();
     reveal.onclick = function () { revealFile(info.id); };
     actions.appendChild(reveal);
   }
@@ -3030,9 +3038,12 @@ function infoScreenshot(row, info) {
   box.appendChild(pick);
   box.appendChild(el('span', 'note', ' ' + tr(marked ? 'shot.yours' : 'shot.guess')));
   if (marked) {
-    var back = el('button', 'link', tr('shot.back'));
+    // An undo icon at the right of the row; the words are its tooltip.
+    var back = el('button', 'icon-btn shot-back');
+    back.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>';
+    back.title = tr('shot.back');
+    back.setAttribute('aria-label', tr('shot.back'));
     back.onclick = function () { set(null); };
-    box.appendChild(document.createTextNode(' '));
     box.appendChild(back);
   }
   row(tr('shot.label'), box);
@@ -5667,7 +5678,12 @@ function loadDrivesPage() {
         var c = el('div', 'person-merged');
         c.appendChild(el('div', 'n', p.name));
         c.appendChild(el('div', 'sub', trn('count.photos', p.photos) + (p.group ? ' · ' + p.group : '')));
-        p.libraries.forEach(function (l) { c.appendChild(el('span', 'pill', l.name + ' · ' + l.faces)); });
+        // The drive first (its disk name; the folder name only where that is all there is).
+        p.libraries.forEach(function (l) {
+          var pill = el('span', 'pill drive', (l.volume || l.name) + ' · ' + l.faces);
+          if (l.volume) pill.title = tr('drives.person_folder', { name: l.name });
+          c.appendChild(pill);
+        });
         var go = el('button', 'btn quiet', tr('drives.photos_everywhere'));
         go.onclick = function () { switchLibrary('all', 'person=' + encodeURIComponent(p.name)); };
         c.appendChild(go);
