@@ -526,14 +526,17 @@ Ereignisordner in Vorschlägen heißen (zum Beispiel JJ.MM_Ereignis); vorhandene
 Ordner werden nicht umbenannt, und alle Formen werden erkannt.
 
 Duplikate
-Duplikate zeigt vier Arten: identisch, dasselbe Foto in anderer Größe,
-Original und bearbeitet sowie Ähnliche. Hake diese Kopie löschen bei dem an,
-was weg soll; die beste Datei bleibt (die meisten Pixel, dann ein
-Aufnahmedatum, dann die größere Datei; ein Kopie-Name wie IMG_1 2.jpg zählt
-nie gegen eine Datei, denn ein Export aus einer RAW-Datei trägt ihn oft), und
-von jedem Duplikat bleibt immer mindestens eine Datei. Tags und Aufnahmedatum
-einer entfernten Kopie gehen auf die übrige über. Bei mehr als einem Laufwerk
-zeigt der Reiter Über Laufwerke hinweg (in Alle Laufwerke und unter Laufwerke
+Duplikate zeigt vier Arten: identisch, dasselbe Foto mit anderen Pixelmaßen
+(eine kleinere oder weitergeschickte Version), Original und bearbeitet sowie
+Ähnliche. Hake diese Kopie löschen bei dem an, was weg soll; die beste Datei
+bleibt. shoebox hakt nur an, was sicher ist: identische Dateien und eine
+Version mit weniger Pixeln. Zwei Dateien mit gleichen Pixelmaßen, aber
+verschiedenen Bytes, etwa ein Kamera-JPEG und ein aus der RAW-Datei
+entwickeltes JPEG (oft benannt wie IMG_1 2.jpg), werden nie vorab angehakt:
+sie erscheinen unter Ähnliche, und du wählst, welche bleibt, und von jedem
+Duplikat bleibt immer mindestens eine Datei. Tags und Aufnahmedatum einer
+entfernten Kopie gehen auf die übrige über. Bei mehr als einem Laufwerk zeigt
+der Reiter Über Laufwerke hinweg (in Alle Laufwerke und unter Laufwerke
 verwalten) Fotos, die auf mehreren Laufwerken liegen: ein Bild, eine Zeile pro
 Kopie mit Name des Datenträgers und Ordner. Hake die Kopien an, die weg
 sollen, oder wähle ein Laufwerk und Alle markieren, um jede Kopie darauf

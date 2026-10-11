@@ -492,18 +492,20 @@ in suggestions (for example YY.MM_Event); existing folders are not renamed and
 all forms are recognised.
 
 Duplicates
-Duplicates lists four kinds: identical, same photo in another size, original
-and edited, and look-alikes. Tick delete this copy on what you want gone; the
-best file stays (most pixels, then a capture date, then the bigger file; a
-copy-style name such as IMG_1 2.jpg never counts against a file, since an
-export of a RAW file often carries it), and at least one file of every
-duplicate always remains. Tags and capture dates of a removed copy carry over.
-With more than one drive, the tab Across drives (in All drives and under
-Manage drives) lists photos that are on several drives: one picture, one row
-per copy with the disk name and folder. Tick the copies to remove, or pick a
-drive and Mark all to tick every copy on it; the last copy of a photo can
-never be ticked. Move to trash asks first and puts each copy in the trash of
-its own drive.
+Duplicates lists four kinds: identical, same photo with other pixel dimensions
+(a smaller or re-sent version), original and edited, and look-alikes. Tick
+delete this copy on what you want gone; the best file stays. Shoebox pre-ticks
+only what it is sure of: identical files and a version with fewer pixels. Two
+files with the same pixel dimensions but different bytes, such as a camera
+JPEG and a JPEG developed from the RAW (often named like IMG_1 2.jpg), are
+never pre-ticked: they appear under look-alikes and you choose which to keep,
+and at least one file of every duplicate always remains. Tags and capture
+dates of a removed copy carry over. With more than one drive, the tab Across
+drives (in All drives and under Manage drives) lists photos that are on
+several drives: one picture, one row per copy with the disk name and folder.
+Tick the copies to remove, or pick a drive and Mark all to tick every copy on
+it; the last copy of a photo can never be ticked. Move to trash asks first and
+puts each copy in the trash of its own drive.
 
 Quick actions
 Clear Same Folder Copies and Clear Lower Quality Copies clean up the clear-cut

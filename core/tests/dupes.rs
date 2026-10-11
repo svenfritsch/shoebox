@@ -420,6 +420,28 @@ fn shots_of_a_series_are_not_one_photo_in_two_versions() {
 }
 
 #[test]
+fn same_size_other_bytes_is_never_suggested() {
+    let lib = Library::new("dupes-same-size");
+    // A camera JPEG and a developed export of the same shot: same pixels,
+    // other bytes, one of them without a capture date, the copy-style name on
+    // the export. Both stay open: nothing is suggested for either.
+    rings(&lib.path("Familie/IMG_3281.JPG"), 1600, 1200);
+    tweaked_copy(&lib.path("Familie/IMG_3281.JPG"), &lib.path("Export/IMG_3281 2.jpg"));
+    lib.scan();
+    let (a, b) = (id_of(&lib, "Familie/IMG_3281.JPG"), id_of(&lib, "Export/IMG_3281 2.jpg"));
+    set_taken(&lib, a, Some("2020-05-13T14:23:00"));
+    set_taken(&lib, b, None);
+    let server = start(&lib, None);
+    let all = groups(server.addr);
+    let (fa, fb) = (file_of(&all, "Familie/IMG_3281.JPG"), file_of(&all, "Export/IMG_3281 2.jpg"));
+    assert_eq!(group_of(&all, "Familie/IMG_3281.JPG")["kind"], "similar");
+    assert_ne!(fa["row"], fb["row"]);
+    assert_eq!((fa["keeper"].as_i64(), fb["keeper"].as_i64()), (None, None));
+    assert!(fa["pick"] == true && fb["pick"] == true);
+    server.stop().unwrap();
+}
+
+#[test]
 fn files_in_a_copies_folder_are_never_the_original() {
     let lib = Library::new("dupes-copies-folder");
     // A packaged InDesign project: its "Link" folder holds copies. The Link

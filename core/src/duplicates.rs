@@ -333,11 +333,12 @@ fn secs(taken: &str) -> Option<i64> {
     chrono::NaiveDateTime::parse_from_str(taken, "%Y-%m-%dT%H:%M:%S").ok().map(|d| d.and_utc().timestamp())
 }
 
-/// Two pictures that are the same photo for certain, differing in size,
-/// quality or metadata only: identical content, or the same picture (hash at
-/// most `SURE_BITS` apart) in the same shape (a turned copy counts) and with
-/// no capture time that disagrees. Shots of a burst or a re-taken photo fail
-/// this: their capture times differ.
+/// Two pictures that are the same photo for certain, differing in pixel size
+/// or metadata only: identical content, or the same picture (hash at most
+/// `SURE_BITS` apart) in the same shape (a turned copy counts), with another
+/// pixel size and no capture time that disagrees. Shots of a burst or a
+/// re-taken photo fail this: their capture times differ. Two files with the
+/// same pixel size and other bytes never pass: the user judges those.
 fn same_photo(a: &Row, b: &Row) -> bool {
     if a.file.kind == "video" || b.file.kind == "video" {
         return false;
@@ -363,11 +364,12 @@ fn same_photo(a: &Row, b: &Row) -> bool {
     if (sa - sb).abs() / sa.max(sb) > 0.02 {
         return false;
     }
-    // Two files with a capture date, the same size and different bytes are
-    // two shots of a series (a burst puts several in one second), not one
-    // photo twice: a copy differs in size or has lost its metadata.
+    // The same size and different bytes: not a smaller or stripped copy but
+    // another shot or another export (a RAW developed next to the camera's
+    // JPEG looks different, with or without a capture date). That is for the
+    // user to judge, so it is never "surely the same photo".
     let size = |r: &Row| (r.file.width.unwrap_or(0).max(r.file.height.unwrap_or(0)), r.file.width.unwrap_or(0).min(r.file.height.unwrap_or(0)));
-    if a.file.taken.is_some() && b.file.taken.is_some() && size(a) == size(b) {
+    if size(a) == size(b) {
         return false;
     }
     match (&a.file.taken, &b.file.taken) {
@@ -376,11 +378,10 @@ fn same_photo(a: &Row, b: &Row) -> bool {
     }
 }
 
-/// `a` is better than `b`: more pixels, or as many and the metadata (a
-/// capture date) that `b` lost, unless `b` is the bigger file (a RAW export
-/// without metadata is the better picture, so nothing is suggested then).
+/// `a` is better than `b`: more pixels. (Files with as many pixels are never
+/// "surely the same photo", see `same_photo`.)
 fn better(a: &Row, b: &Row) -> bool {
-    pixels(a) > pixels(b) || (pixels(a) == pixels(b) && a.file.taken.is_some() && b.file.taken.is_none() && a.file.size >= b.file.size)
+    pixels(a) > pixels(b)
 }
 
 /// For the files of one group, in `order`: the row each belongs to, and the
