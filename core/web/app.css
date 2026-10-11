@@ -628,6 +628,14 @@ body.selecting .sec .pick { display: inline; }
 @media (hover: none) { .sface-grid .copen { opacity: 1; } }
 .singles-bar { flex-wrap: wrap; white-space: normal; max-width: calc(100% - 24px); }
 .singles-bar .pfield { min-width: 160px; }
+/* The bar sits at the bottom of the screen: the name list opens upwards, over the page,
+   instead of making the bar grow. */
+.singles-bar .pfield { position: relative; }
+.singles-bar .plist {
+  position: absolute; left: 0; bottom: 100%; z-index: 1; margin: 0 0 6px;
+  min-width: 100%; width: max-content; max-width: min(360px, 90vw); max-height: min(260px, 50vh);
+  box-shadow: 0 6px 24px rgba(0,0,0,.25);
+}
 .singles-bar.busy { opacity: .6; pointer-events: none; }
 .sface-grid .cface:focus-visible { outline: none; }
 .sface-grid .cface:focus-visible .avatar { box-shadow: 0 0 0 3px var(--bg, #000), 0 0 0 5px var(--fg); }
