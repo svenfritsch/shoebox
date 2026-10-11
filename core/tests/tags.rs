@@ -555,6 +555,15 @@ fn manual_tags_only_leaves_out_what_a_folder_name_gives() {
     // Within another search the same: counted over what it shows.
     let within = tag_list(addr, &format!("?tag={id}&manual=1"));
     assert!(find(&within, "Weihnachten").is_none(), "{within:?}");
+    // The suggestions (own=1) keep a tag that is also given by hand, even inside
+    // a search whose photos only have it from their folder, and leave out a tag
+    // that is only a folder name.
+    let weihnachten: i64 = lib.db().query_row("SELECT id FROM folders WHERE path_nfc = 'Familie/Weihnachten'", [], |r| r.get(0)).unwrap();
+    let narrowed = tag_list(addr, &format!("?folder={weihnachten}&own=1"));
+    assert!(find(&narrowed, "Familie").is_some(), "{narrowed:?}");
+    assert!(find(&narrowed, "Weihnachten").is_none(), "{narrowed:?}");
+    let plain = tag_list(addr, "?own=1");
+    assert!(find(&plain, "Familie").is_some() && find(&plain, "Weihnachten").is_none(), "{plain:?}");
     // A tag that is only a folder name has none by hand.
     assert_eq!(find(&tags, "Weihnachten").unwrap()["manual"], 0);
 
