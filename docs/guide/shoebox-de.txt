@@ -413,7 +413,10 @@ entfernen).
 
 Taggen
 Tag hinzufügen … gibt der Auswahl deinen eigenen Tag. Tags leben im Index von
-shoebox, nie in den Fotodateien.
+shoebox, nie in den Fotodateien. Im Tag-Feld stehen zuerst die Tags, die du
+zuletzt benutzt hast (Zuletzt verwendet), dann die Am häufigsten benutzten;
+beim Tippen wird die Liste enger, die zuletzt benutzten bleiben oben. Die
+Liste der letzten Tags merkt sich dein Browser, pro Laufwerk.
 
 Datum
 Datum setzen … gibt der Auswahl ein eigenes Datum, zum Beispiel einem ganzen
@@ -676,11 +679,13 @@ benennen.
 
 2. Eine Karte benennen
    Den Namen einmal eintippen und Benennen drücken: Die ganze Karte ist
-   benannt. Beim Tippen erscheinen Personen, die es schon gibt (bei Tieren nur
-   Katzen und Hunde, und umgekehrt); sonst + Neue Person wählen (bei Tieren
-   steht dort + Neue Katze, + Neuer Hund oder + Neues Tier). Danach schlägt
-   shoebox weitere Gesichter vor (Sieht aus wie Mia): mit ✓ bestätigen oder
-   mit ✗ ablehnen.
+   benannt. Ein Klick ins Feld zeigt zuerst die zuletzt benannten Personen
+   (Zuletzt verwendet) und die mit den meisten Fotos, dann alle nach Gruppe;
+   beim Tippen erscheinen Personen, die es schon gibt (bei Tieren nur Katzen
+   und Hunde, und umgekehrt); sonst + Neue Person wählen (bei Tieren steht
+   dort + Neue Katze, + Neuer Hund oder + Neues Tier). Danach schlägt shoebox
+   weitere Gesichter vor (Sieht aus wie Mia): mit ✓ bestätigen oder mit ✗
+   ablehnen.
 
 3. Fremde und Fehlfunde
    Ignorieren ist für Fremde und für Gesichter auf Postern, Bildschirmen und

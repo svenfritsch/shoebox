@@ -419,6 +419,9 @@ body.selecting .sec .pick { display: inline; }
 .plist .item { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 36px; padding: 4px 10px; border: 0; background: none; color: var(--fg); text-align: left; font-size: 14px; }
 .plist .item:hover, .plist .item.at { background: var(--panel); }
 .plist .item.new { color: var(--accent); }
+.plist .item .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.plist .item .count { color: var(--muted); font-size: 12px; }
+.tlist { margin-bottom: 6px; }
 .dialog .taglist .current { border-color: var(--accent); font-weight: 600; }
 .grouplist { display: flex; flex-direction: column; gap: 6px; }
 .grow-row {

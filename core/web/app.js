@@ -594,24 +594,109 @@ function pickSuggest(it) {
   else setFilter(withFilter({ folder: it.id, q: '' }));
 }
 
-// Suggestions for the tag fields (info panel, "Add tag…"): every tag.
+// What was used last, per drive, kept by the browser only (like Maps): the
+// tag names and person ids that the suggestion lists offer first.
+var RECENT_MAX = 6;
+function recentKey() { return 'shoebox-recent:' + LIBAPI; }
+function recentGet(kind) {
+  try {
+    var all = JSON.parse(localStorage.getItem(recentKey()) || '{}') || {};
+    return Array.isArray(all[kind]) ? all[kind] : [];
+  } catch (e) { return []; }
+}
+function recentAdd(kind, value) {
+  try {
+    var all = JSON.parse(localStorage.getItem(recentKey()) || '{}') || {};
+    var list = (Array.isArray(all[kind]) ? all[kind] : []).filter(function (v) { return kind === 'tags' ? fold(v) !== fold(value) : v !== value; });
+    list.unshift(value);
+    all[kind] = list.slice(0, 20);
+    localStorage.setItem(recentKey(), JSON.stringify(all));
+  } catch (e) { /* private window: the lists stay as they are */ }
+}
+
+// Suggestions for the tag fields (info panel, "Add tag…"): with the field
+// empty the tags used last, then the most used; while typing the matches,
+// the recent ones first, then by use. A list under the field, not a
+// <datalist>, so it can have headings.
 var suggestSeq = 0;
-function suggestTags(text) {
-  var seq = ++suggestSeq;
-  if (!text.trim()) return;
-  api(LIBAPI + '/tags' + query({ q: text.trim(), limit: 12 })).then(function (tags) {
-    if (seq !== suggestSeq) return;
-    var list = $('tag-list');
+function attachTagSuggestions(input) {
+  var list = el('div', 'plist tlist');
+  list.setAttribute('role', 'listbox');
+  list.hidden = true;
+  var items = [], at = -1;
+  var close = function () { list.hidden = true; at = -1; };
+  var mark = function () {
+    Array.prototype.forEach.call(list.querySelectorAll('.item'), function (b, k) { b.classList.toggle('at', k === at); });
+  };
+  var choose = function (name) {
+    input.value = name;
+    close();
+    // The field's own Enter handling adds the tag.
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  };
+  var show = function (tags, text) {
     list.textContent = '';
-    tags.forEach(function (t) {
-      if (isFavTag(t.name)) return;
-      state.tagNames[t.id] = t.name;
-      var o = el('option');
-      o.value = t.name;
-      o.label = t.count + '';
-      list.appendChild(o);
+    items = [];
+    at = -1;
+    var low = fold(text), byName = {};
+    tags = tags.filter(function (t) { return !isFavTag(t.name); });
+    tags.forEach(function (t) { byName[fold(t.name)] = t; });
+    var last = [];
+    recentGet('tags').forEach(function (n) {
+      var t = byName[fold(n)];
+      if (t && last.indexOf(t) < 0 && (!low || fold(t.name).indexOf(low) >= 0)) last.push(t);
     });
-  }).catch(function () {});
+    last = last.slice(0, RECENT_MAX);
+    var rest = tags.filter(function (t) { return last.indexOf(t) < 0; });
+    var section = function (title, ts) {
+      if (!ts.length) return;
+      if (title) list.appendChild(el('div', 'head', title));
+      ts.forEach(function (t) {
+        var b = el('button', 'item');
+        b.type = 'button';
+        b.appendChild(el('span', 'grow', t.name));
+        b.appendChild(el('span', 'count', I18n.number(t.count)));
+        b.onmousedown = function (ev) { ev.preventDefault(); };
+        b.onclick = function () { choose(t.name); };
+        items.push(t.name);
+        list.appendChild(b);
+      });
+    };
+    section(tr('suggest.recent'), last);
+    section(last.length ? tr(text ? 'suggest.more' : 'suggest.most_used') : '', rest);
+    list.hidden = !items.length || document.activeElement !== input;
+  };
+  var load = function () {
+    var seq = ++suggestSeq, text = input.value.trim();
+    // Own tags when empty (folder names are not what one types by hand).
+    api(LIBAPI + '/tags' + query(text ? { q: text, limit: 12 } : { own: 1, limit: 30 })).then(function (tags) {
+      if (seq !== suggestSeq) return;
+      tags.forEach(function (t) { state.tagNames[t.id] = t.name; });
+      show(tags, text);
+    }).catch(function () {});
+  };
+  // Put the list under the field as soon as the field is in the page.
+  var place = function () {
+    if (input.parentNode && list.previousSibling !== input) input.parentNode.insertBefore(list, input.nextSibling);
+  };
+  input.addEventListener('focus', function () { place(); load(); });
+  input.addEventListener('input', function () { place(); load(); });
+  input.addEventListener('blur', function () { setTimeout(close, 150); });
+  input.addEventListener('keydown', function (ev) {
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      if (!items.length) return;
+      ev.preventDefault();
+      list.hidden = false;
+      at = ev.key === 'ArrowDown' ? (at + 1) % items.length : (at + items.length - 1) % items.length;
+      mark();
+    } else if (ev.key === 'Enter' && at >= 0 && !list.hidden) {
+      input.value = items[at]; // before the field's own handler reads it
+      close();
+    } else if (ev.key === 'Escape' && !list.hidden) {
+      ev.stopImmediatePropagation(); // the first Escape closes the list only
+      close();
+    }
+  });
 }
 
 // ------------------------------------------------------------------ folders
@@ -3002,7 +3087,7 @@ function infoTags(row, info) {
       // "favorite" is the heart, not a tag in the list.
       if (meansFav(input.value)) { setFavorite([info.id], true).then(function () { input.replaceWith(add); }); return; }
       input.disabled = true;
-      post(LIBAPI + '/tags/add', { ids: [info.id], name: input.value }).then(function () { tagsChanged(info.id); })
+      post(LIBAPI + '/tags/add', { ids: [info.id], name: input.value }).then(function (r) { recentAdd('tags', r && r.tag ? r.tag.name : input.value); tagsChanged(info.id); })
         .catch(function (e) { input.disabled = false; failed(e); });
     };
     add.replaceWith(input);
@@ -3017,9 +3102,9 @@ function tagInput() {
   var input = el('input');
   input.type = 'text';
   input.placeholder = tr('tags.placeholder');
-  input.setAttribute('list', 'tag-list');
+  input.autocomplete = 'off';
   input.setAttribute('enterkeyhint', 'done');
-  input.addEventListener('input', function () { suggestTags(input.value); });
+  attachTagSuggestions(input);
   return input;
 }
 
@@ -3096,6 +3181,7 @@ function addTagDialog(ids) {
     if (!input.value.trim()) { error.textContent = tr('tags.type_name'); return false; }
     btn.disabled = true;
     post(LIBAPI + '/tags/add', { ids: ids, name: input.value }).then(function (r) {
+      recentAdd('tags', r.tag.name);
       closeModal();
       toast(r.files ? tr('tags.added', { count: trn('count.photos', r.files), name: r.tag.name }) : tr('tags.already', { name: r.tag.name }));
       tagsChanged(null);
@@ -3970,6 +4056,7 @@ function personField(done, opts) {
   var pick = function (it) {
     list.hidden = true;
     input.value = it.label;
+    if (it.who.person_id != null) recentAdd('people', it.who.person_id);
     done(it.who, it.label);
   };
   var mark = function () {
@@ -3983,24 +4070,40 @@ function personField(done, opts) {
     list.textContent = '';
     items = [];
     at = -1;
+    var offered = function (p) {
+      return kindOf(p, kind()) && (!low || fold(p.name).indexOf(low) >= 0) && !(opts.except && opts.except.indexOf(p.id) >= 0);
+    };
+    var addItem = function (p) {
+      var it = { who: { person_id: p.id }, label: p.name };
+      if (fold(p.name) === low) exact = it;
+      var b = el('button', 'item');
+      b.type = 'button';
+      b.appendChild(avatar(p, 'tiny'));
+      b.appendChild(el('span', '', p.name));
+      b.onmousedown = function (ev) { ev.preventDefault(); };
+      b.onclick = function () { pick(it); };
+      items.push(it);
+      list.appendChild(b);
+    };
+    // First the people named last, then (field empty) the most photographed,
+    // then everyone by group; nobody twice.
+    var shown = {}, top = [], frequent = [];
+    recentGet('people').forEach(function (id) {
+      var p = people.byId[id];
+      if (p && offered(p) && !shown[p.id] && top.length < RECENT_MAX) { shown[p.id] = true; top.push(p); }
+    });
+    if (!low) {
+      frequent = people.list.filter(function (p) { return offered(p) && !shown[p.id] && p.photos > 0; })
+        .sort(function (a, b) { return b.photos - a.photos || a.name.localeCompare(b.name); }).slice(0, RECENT_MAX);
+      frequent.forEach(function (p) { shown[p.id] = true; });
+    }
+    if (top.length) { list.appendChild(el('div', 'head', tr('suggest.recent'))); top.forEach(addItem); }
+    if (frequent.length) { list.appendChild(el('div', 'head', tr('suggest.most_photos'))); frequent.forEach(addItem); }
     groupedPeople().forEach(function (s) {
-      var ps = s.people.filter(function (p) {
-        return kindOf(p, kind()) && (!low || fold(p.name).indexOf(low) >= 0) && !(opts.except && opts.except.indexOf(p.id) >= 0);
-      });
+      var ps = s.people.filter(function (p) { return offered(p) && !shown[p.id]; });
       if (!ps.length) return;
       list.appendChild(el('div', 'head', s.name));
-      ps.forEach(function (p) {
-        var it = { who: { person_id: p.id }, label: p.name };
-        if (fold(p.name) === low) exact = it;
-        var b = el('button', 'item');
-        b.type = 'button';
-        b.appendChild(avatar(p, 'tiny'));
-        b.appendChild(el('span', '', p.name));
-        b.onmousedown = function (ev) { ev.preventDefault(); };
-        b.onclick = function () { pick(it); };
-        items.push(it);
-        list.appendChild(b);
-      });
+      ps.forEach(addItem);
     });
     if (opts.allowNew && text && !exact && isTaken(text)) {
       // A name is one person's, whatever the kind: not offered again as new.
