@@ -243,6 +243,11 @@
           <p>Eigene Tags für viele Fotos auf einmal. Auch Ordner zählen als Tags. Im Index gespeichert, nie in den Fotos.</p>
         </li>
         <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-move"/></svg></div>
+          <h3>Sammeln & exportieren</h3>
+          <p>Fotos für eine Druckbestellung, ein Album oder ein Geburtstagsvideo mit einem Klick sammeln und dann als nummerierten Ordner auf deinen Computer oder einen USB-Stick kopieren. Deine Originale bleiben, wie sie sind.</p>
+        </li>
+        <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-grid"/></svg></div>
           <h3>Zeitleiste</h3>
           <p>Alle Fotos und Videos nach Monat, mit Jahressprung, Ordnerbaum und einer Ansicht mit Infos zum Foto.</p>
@@ -477,6 +482,12 @@
             <h3>Verschieben</h3>
             <p><b>Verschieben …</b> fragt nach einem Ordner. Neue Ordner werden angelegt, nichts wird überschrieben, RAW-, Live-Photo- und Sidecar-Dateien wandern mit. Die eigenen Tags der Fotos gehen immer mit. „Ordnertags behalten“ behält zusätzlich die Tags des alten Ordners als eigene Tags; Ordner-Tags folgen immer dem neuen Ordner.</p>
           </div>
+          <div>
+            <h3>Sammeln und exportieren</h3>
+            <p>Um Fotos für etwas zu sammeln (eine Druckbestellung, ein Album in InDesign, ein Video zum Geburtstag), gib ihnen einen gemeinsamen Tag. Unter <b>Einstellungen → Sammlung</b> trägst du den Namen dieses Tags ein, zum Beispiel <i>druck-maerz</i>. In der Fotoansicht erscheint dann ein Lesezeichen-Knopf: Ein Klick, oder die Taste <b>C</b>, setzt den Tag auf das Foto, der nächste Klick nimmt ihn wieder weg. Wenn du mit der Maus über den Knopf fährst, siehst du, welchen Tag er benutzt. Du kannst über mehrere Sitzungen sammeln; such nach dem Tag, um zu sehen, was du hast. Bleibt die Einstellung leer, ist der Knopf weg.</p>
+            <p>Dann drückst du <b>Exportieren …</b>: in der Leiste unten für die ausgewählten Fotos oder, wenn ein Tag in der Suche ist, neben seinem Chip für alles, was gezeigt wird. Der Dialog fragt, wohin gespeichert wird (<b>Wählen …</b> öffnet eine Liste deiner Ordner und Laufwerke; <b>Downloads</b> steht oben) und wie der neue Ordner heißen soll. Bei einem Tag ist das der Name des Tags, bei einer Auswahl tippst du einen. Darin liegen Kopien mit Namen wie <b>001_IMG_3457.jpg</b>, <b>002_…</b> in der Reihenfolge der Aufnahmedaten (<b>Einstellungen → Export</b> schaltet die Nummern ab). <b>HEIC in JPEG umwandeln</b> ist für Druckereien und Programme, die HEIC nicht lesen können; das JPEG behält Aufnahmedatum und Kameradaten. Haben Fotos eine <b>RAW</b>-Datei oder das Video eines <b>Live Photos</b>, nimmt ein Häkchen diese mit. Videos werden unverändert kopiert.</p>
+            <p>Ein erneuter Export in denselben Ordner fügt nur Neues hinzu: Eine Datei, die schon da ist (gleicher Name ohne die Nummer, gleiche Größe), wird übersprungen, und die Nummern der übrigen werden auf die neue Reihenfolge angepasst. Im Ordner wird nie etwas gelöscht. Wählst du ein Laufwerk, das eine eigene shoebox-Bibliothek hat, fragt shoebox vorher nach, denn der nächste Scan dieses Laufwerks findet die Kopien und nimmt sie als neue Fotos ohne ihre Tags auf. Jedes Original wird mit derselben Kontrolle wie bei einem Scan gelesen und jede Kopie danach damit verglichen; die Originale werden nie verändert. Der Export speichert in den Ordnern des Computers, auf dem shoebox läuft, und wird deshalb auf dem iPad nicht angeboten.</p>
+          </div>
         </div>
         <div>
           <figure>
@@ -485,7 +496,11 @@
           </figure>
           <figure>
             <img src="assets/de/select-photos.jpg" alt="" loading="lazy">
-            <figcaption>Drei Fotos ausgewählt; die Leiste bietet Verschieben, Tag und Papierkorb.</figcaption>
+            <figcaption>Drei Fotos ausgewählt; die Leiste bietet Verschieben, Tag, Exportieren und Papierkorb.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/de/export-dialog.jpg" alt="" loading="lazy">
+            <figcaption>Exportieren: wohin gespeichert wird, wie der neue Ordner heißt und was mitkommt.</figcaption>
           </figure>
         </div>
       </div>
@@ -767,7 +782,7 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-bolt"/></svg></div>
           <h3>Nur auf deinen Befehl</h3>
-          <p>Originale ändern sich nur durch deine Aktionen: verschieben, umbenennen, Papierkorb. Immer ein Umbenennen, nie ein Kopieren, und nur wenn die Datei noch zum Index passt. Das Einzige, was shoebox sonst entfernt, ist eine neue Kopie einer Datei, die das Laufwerk schon hatte, und nur, wenn du nach einem Scan den Knopf drückst.</p>
+          <p>Originale ändern sich nur durch deine Aktionen: verschieben, umbenennen, Papierkorb. Immer ein Umbenennen, nie ein Kopieren, und nur wenn die Datei noch zum Index passt. Das Einzige, was shoebox sonst entfernt, ist eine neue Kopie einer Datei, die das Laufwerk schon hatte, und nur, wenn du nach einem Scan den Knopf drückst. Exportieren liest nur: Es schreibt Kopien in einen neuen Ordner deiner Wahl und prüft jede einzelne gegen ihr Original.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-globe"/></svg></div>
@@ -784,6 +799,7 @@
         <p><b>Neue Fotos fehlen.</b> Noch einmal scannen. Das geht schnell: nur neue und geänderte Dateien werden gelesen.</p>
         <p><b>Ein Video hat keine Vorschau.</b> <code>ffmpeg</code> hinzufügen (siehe „Gut zu wissen“), dann <b>Scannen</b> ausführen oder die Foto-App neu starten.</p>
         <p><b>Das iPad verbindet sich nicht.</b> Selbes WLAN? Mit <code>--lan</code> gestartet? PIN aus dem Terminal eingeben. Nach einem Neustart von shoebox fragt es wieder nach der PIN.</p>
+        <p><b>Es gibt keinen Exportieren-Knopf.</b> Der Export speichert in die Ordner des Computers, auf dem shoebox läuft, und wird deshalb nur in einem Browser auf diesem Computer angeboten, nicht auf einem iPad. Ist ein Tag in der Suche, sitzt der Knopf neben dem Chip des Tags; für andere Fotos ☑ drücken, auswählen und in der Leiste <b>Exportieren …</b> benutzen.</p>
         <p><b>Ein Laufwerk steht auf offline.</b> Wieder anstecken; shoebox findet es beim Neuladen.</p>
         <p><b>Eine Karte ist leer oder sagt Offline.</b> Karten brauchen das Internet. Verbindung prüfen und das Foto noch einmal öffnen; alles andere funktioniert wie zuvor.</p>
       </div>

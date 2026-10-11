@@ -1,6 +1,6 @@
 # Phase 12: export (collect photos, copy them to a folder)
 
-**Planned, not built.** Mock-ups of every screen are in
+**Built; the real-hardware check is open** (see section 9 for what is as designed and what is not). Mock-ups of every screen are in
 [`mocks/export/`](mocks/export/) (static HTML plus PNGs, made by
 `mocks/export/build.py`; they reuse `core/web/app.css`, they are not the app).
 
@@ -36,13 +36,14 @@ journey does not force tagging.
 |---|---|
 | Collecting | An ordinary own tag, named in **Settings → Collection**. No new table. The bookmark button is **hidden** (not greyed) while the setting is empty, like the trash icon while `allow_trash` is off |
 | Wording | **Collection** in the UI and the guide; the button itself is only an icon. Its tooltip says what it does in tag terms: `Add tag “print-march” (C)` / `Remove tag “print-march” (C)`. German: **Sammlung** (not "Kollektion", which means a fashion or product line); tooltip `Tag „print-march“ hinzufügen (C)` / `… entfernen (C)`. The file-side words stay Tag / Export / Exportieren |
-| Where the two settings live | Library settings next to `allow_trash` (server-side, so the export job can read the numbering setting). To confirm when building. The tag name goes through `tags::check_name`; `favorite` and its spellings are refused (they mean the heart) |
+| Where the two settings live | **The browser** (`localStorage`: `shoebox-collection`, `shoebox-export-number`), like Maps: they are about how this person works, not about a drive, and the server needs nothing stored (the numbering flag travels with the request). `favorite` and its spellings are refused as a collection name (they mean the heart) |
 | Export = copy, never move | Originals are only read. A copy is byte-identical (EXIF and everything else stays), modified time is set to the original's, the created date where the system allows it (macOS, Windows; not Linux) |
 | Naming | Settings → Export → **Number exported files** (on by default): `001_IMG_3457.jpg`. Numbers follow capture date (then path), width at least 3 digits, wider if the set needs it. The same dialog explains this and points to Settings → Export in both entry points |
 | Name clashes | With numbering **on** the prefix makes every name unique, no suffix. With numbering **off** two different photos can both be `IMG_0001.jpg`: the later one becomes `IMG_0001_2.jpg`. The suffix exists for this case only |
 | RAW | A checkbox "Also export the RAW files (N photos have one)", **only shown when the set has RAW pairs**. A RAW file takes the number and stem of its picture. Off by default |
 | HEIC | A checkbox "Convert HEIC to JPEG (N photos)", only shown when the set has HEIC. On by default (print shops, InDesign). See section 5 |
-| Videos | Allowed; copied as they are, numbered like photos. Live Photos: open (section 8) |
+| Videos | Allowed; copied as they are, numbered like photos |
+| Live Photos | A checkbox like the RAW one, "Also export the videos of Live Photos (for N photos)", only shown when the set has some, off by default. The video takes the number and name of its photo |
 | Destination | Two rows: **Save in** (the parent folder, chosen with the in-app picker, remembered) and **Folder name**. Downloads is the first place in the picker. The folder is always created by the export, so the picker has no "New folder" |
 | Other shoebox drives | **Not forbidden.** Drives and folders that are on a drive with a `.shoebox` folder are marked "shoebox" in the picker. Clicking Export with such a destination first asks "Save to another shoebox drive?": the copies will be found by that drive's next scan and added as new photos, without tags, people or favorites. Confirm to go on. If the destination is on the drive the photos come from, the text says the copies will show up there as duplicates of the originals |
 | Re-export | Folder exists → merge, never replace, never delete. Skip a photo that is already there: same name **without the number** and same size. A photo that was converted from HEIC counts as already there when a `.jpg` with the same name without the number exists (no size test: no second conversion just to compare). All files of the set are then renumbered to the new order (section 4) |
@@ -161,3 +162,37 @@ writes to an original and never touches the index of the source drive.
 - [ ] German strings (Sammlung, Exportieren …, Ordnername, Speichern in).
 - [ ] Real-hardware check: a USB stick formatted exFAT, FAT32 and NTFS; a
       folder with spaces and decomposed Unicode names.
+
+## 9. As built
+
+Everything in sections 1 to 7 is built; the integration tests are in
+`core/tests/export.rs` (copies are byte-identical and keep their modified time,
+numbering in capture order, RAW and Live partners only when asked, merging and
+renumbering, suffix only without numbers, the guard refuses a changed file, a
+drive with a library is reported, folder names are checked, the picker, and
+that a device on the network gets `403`; with the fixtures also a real HEIC
+with its Live Photo video). Where it differs from the design:
+
+- **The settings are the browser's**, not the library's (section 2).
+- **Windows places:** `%USERPROFILE%\Downloads`, `Desktop`, `Documents`,
+  `Pictures` and the drive letters (`launcher::detect_drives`). A Downloads
+  folder that was moved elsewhere in Windows is not found yet (it needs the
+  system's known-folder lookup); Linux reads `user-dirs.dirs`. Not run on
+  Windows.
+- **Created date of the copies is not set** (only the modified time); macOS and
+  Windows could, Linux cannot. Open.
+- **Suffix variants on re-export:** with numbers off, `IMG_0001_2.JPG` from the
+  last export counts as the second `IMG_0001.JPG` (same size), so a repeat
+  export does not write it again.
+- **Free space** is checked on macOS and Linux before starting (not on Windows).
+- **No size shown for the HEIC conversions** in the dialog: the size line is
+  the originals' size.
+- **Rotation:** a rotation the user set in shoebox only is applied to a
+  converted HEIC; a copied PNG or HEIC opens unrotated outside shoebox.
+- **Stop** ends before the next file (a file being copied is removed).
+- The thumbnails' JPEG encoder (quality 95) is used for the conversion; the
+  user will tell if it is not good enough.
+
+Still open from section 8: the real-hardware check (a USB stick in exFAT,
+FAT32 and NTFS; names with spaces and decomposed Unicode), the created date,
+Windows known folders.

@@ -243,6 +243,11 @@
           <p>Your own tags on many photos at once. Folders count as tags too. Stored in the index, never in the photos.</p>
         </li>
         <li>
+          <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-move"/></svg></div>
+          <h3>Collect & export</h3>
+          <p>Gather photos for a print order, an album or a birthday video with one click, then copy them into a numbered folder on your computer or a USB stick. Your originals stay as they are.</p>
+        </li>
+        <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-grid"/></svg></div>
           <h3>Timeline</h3>
           <p>All photos and videos by month, with a year jump, folder tree and a viewer with full-size info.</p>
@@ -477,6 +482,12 @@
             <h3>Move</h3>
             <p><b>Move…</b> asks for a folder. New folders are created, nothing is ever overwritten, and RAW, Live Photo and sidecar files move along. The photos’ own tags always go with them. “Keep folder tags” also keeps the old folder’s tags as own tags; folder tags always follow the new folder.</p>
           </div>
+          <div>
+            <h3>Collect and export</h3>
+            <p>To gather photos for something (a print order, an album in InDesign, a video for a birthday), give them one tag. In <b>Settings → Collection</b> type the name of that tag, for example <i>print-march</i>. A bookmark button then appears in the photo view: one click, or the key <b>C</b>, puts the tag on the photo, and the next click takes it off again. Hover over the button to see which tag it uses. You can collect over several sessions; search for the tag to see what you have. Leave the setting empty and the button is gone.</p>
+            <p>Then press <b>Export…</b>: in the bar at the bottom for the selected photos, or, when a tag is in the search, next to its chip for everything shown. The dialog asks where to save (<b>Choose…</b> opens a list of your folders and drives; <b>Downloads</b> is the first place) and how to call the new folder. From a tag the name is the tag’s name; from a selection you type one. Inside you get copies named <b>001_IMG_3457.jpg</b>, <b>002_…</b> in the order of the capture dates (<b>Settings → Export</b> switches the numbers off). <b>Convert HEIC to JPEG</b> is for print shops and programs that cannot read HEIC; the JPEG keeps the capture date and the camera data. For photos that have a <b>RAW</b> file, or the video of a <b>Live Photo</b>, a tick box takes those along. Videos are copied as they are.</p>
+            <p>Exporting again into the same folder only adds what is new: a file that is already there (same name without the number, same size) is skipped, and the numbers of the others are changed to the new order. Nothing in the folder is ever deleted. If you choose a drive that has a shoebox library of its own, shoebox asks first, because that drive’s next scan will find the copies and add them as new photos without their tags. Every original is read under the same check as a scan and every copy is compared with it afterwards; the originals are never changed. Export saves into the computer shoebox runs on, so it is not offered on the iPad.</p>
+          </div>
         </div>
         <div>
           <figure>
@@ -485,7 +496,11 @@
           </figure>
           <figure>
             <img src="assets/en/select-photos.jpg" alt="" loading="lazy">
-            <figcaption>Three photos selected; the bar offers Move, Tag and Trash.</figcaption>
+            <figcaption>Three photos selected; the bar offers Move, Tag, Export and Trash.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/en/export-dialog.jpg" alt="" loading="lazy">
+            <figcaption>Export: where to save, the name of the new folder, and what to take along.</figcaption>
           </figure>
         </div>
       </div>
@@ -767,7 +782,7 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-bolt"/></svg></div>
           <h3>Only on your command</h3>
-          <p>Originals change only through your actions: move, rename, trash. Always a rename, never a copy, and only if the file still matches the index. The only other thing shoebox removes is a new copy of a file the drive already had, and only when you press the button after a scan.</p>
+          <p>Originals change only through your actions: move, rename, trash. Always a rename, never a copy, and only if the file still matches the index. The only other thing shoebox removes is a new copy of a file the drive already had, and only when you press the button after a scan. Export only reads: it writes copies into a new folder you choose and checks each one against its original.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-globe"/></svg></div>
@@ -784,6 +799,7 @@
         <p><b>New photos are missing.</b> Scan again. It is quick: only new and changed files are read.</p>
         <p><b>A video has no preview.</b> Add <code>ffmpeg</code> (see “Good to know”), then run <b>Scan</b> or restart the photo app.</p>
         <p><b>The iPad cannot connect.</b> Same Wi-Fi? Started with <code>--lan</code>? Enter the PIN printed in Terminal. Restarting shoebox asks for the PIN again.</p>
+        <p><b>There is no Export button.</b> Export saves into the folders of the computer shoebox runs on, so it is only offered in a browser on that computer, not on an iPad. With a tag in the search the button sits next to the tag’s chip; for other photos press ☑, select, and use <b>Export…</b> in the bar.</p>
         <p><b>A drive shows as offline.</b> Plug it in again; shoebox picks it up when you reload.</p>
         <p><b>A map is empty or says Offline.</b> Maps need the internet. Check the connection and open the photo again; without it everything else works as before.</p>
       </div>

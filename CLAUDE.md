@@ -34,6 +34,18 @@ current status and next step. Update its status table when a phase moves.
   Each goes through `organize::trash_files` (a rename into the backup's own
   trash, only if the file still matches the backup's index), emptied again
   only if the user asked for "for good". Never anything on the original.
+- Export (`export.rs`, phase 12; the dialog is `core/web/export.js`) only
+  reads originals: it copies the photos asked for (plus, if ticked, their RAW
+  files and Live Photo videos) into a new folder the user chose, which must not
+  be inside the library. Every read is under the guard (the file matches the
+  index before, does not change while it is read; it is hashed while copied and
+  the copy is hashed again from the destination). Nothing is written next to an
+  original or into an index. An existing export folder is merged: never
+  replaced, nothing deleted, only files that are ours (a number and a name in
+  the set) get a new number. A destination on a drive that has a `.shoebox`
+  folder is allowed after a question (its next scan finds the copies). It only
+  answers to a browser on this computer (`/api/export/*`, `info.export`).
+  Collection tag and numbering are browser settings, like Maps.
 - Moving to the trash from the photo view and the timeline selection is off by
   default: the library setting `allow_trash` (Settings, "Allow move to trash")
   shows the trash icon and the selection button.
