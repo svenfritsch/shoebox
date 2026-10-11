@@ -397,6 +397,8 @@ i: Infofeld ein- / ausblenden
 Leertaste: Ansicht öffnen / schließen (bei einem per Pfeiltasten gewählten
 Foto)
 f: zu Favoriten hinzufügen / entfernen
+t: erkannter Text: Zeilen umranden und Liste zeigen / ausblenden (nur bei
+Fotos mit Text)
 r · Umschalt+R: nach links / rechts drehen
 Esc: Ansicht schließen
 
@@ -551,7 +553,8 @@ Namen funktionieren im Suchfeld wie Tags, ebenso Arten wie „alle Katzen“.
 Kombiniere eine Person mit einem Tag, einem Ordner oder einer weiteren Person.
 
 Gefundenes vergessen
-Einstellungen → Gefundene Gesichter und Gefundene Haustiere haben je zwei
+Einstellungen → Daten aufräumen hat je eine Karte für erkannten Text,
+Gesichter und Haustiere; die Karten für Gesichter und Haustiere haben zwei
 Knöpfe. Automatische Funde löschen entfernt die Gesichter (oder Katzen und
 Hunde), die die Erkennung gefunden hat, vom Laufwerk. Deine Namen,
 Bestätigungen und gezeichneten Rahmen bleiben und greifen wieder, sobald die
@@ -787,12 +790,12 @@ Das ✕ neben einer Zeile nimmt sie aus der Suche (für Text, der nicht gefunden
 werden soll); Wieder zeigen holt sie zurück.
 
 Den Text vergessen
-Dokumente können Namen und Nummern enthalten. Einstellungen → Erkannter Text →
-Gesamten erkannten Text löschen entfernt jedes gelesene Wort von diesem
-Laufwerk. Fotos bleiben unberührt, ausgeblendete Zeilen bleiben ausgeblendet,
-und Text erkennen liest sie auf Wunsch erneut. Im Terminal gibt shoebox text
-stats aus, wie viele Fotos gelesen wurden und wie viele Zeilen gespeichert
-sind (--json für Skripte).
+Dokumente können Namen und Nummern enthalten. Einstellungen → Daten aufräumen
+→ Erkannter Text → Gesamten erkannten Text löschen entfernt jedes gelesene
+Wort von diesem Laufwerk. Fotos bleiben unberührt, ausgeblendete Zeilen
+bleiben ausgeblendet, und Text erkennen liest sie auf Wunsch erneut. Im
+Terminal gibt shoebox text stats aus, wie viele Fotos gelesen wurden und wie
+viele Zeilen gespeichert sind (--json für Skripte).
 
 [Screenshot: Beim Tippen eines Worts: Die Vorschläge haben die Gruppe
 Erkannter Text.]
@@ -802,8 +805,8 @@ Erkannter Text.]
 [Screenshot: Die Ansicht: der Scanner-Knopf, die umrandeten Zeilen und die
 Liste mit Alles kopieren.]
 
-[Screenshot: Einstellungen: Gefundenes vergessen, für Text, Gesichter und
-Haustiere.]
+[Screenshot: Einstellungen → Daten aufräumen: Gefundenes vergessen, für Text,
+Gesichter und Haustiere.]
 
 Laufwerke, Backups und das iPad
 -------------------------------
@@ -894,13 +897,14 @@ etwas hinein.
 
 - Gefundenes kannst du vergessen
    Die aus deinen Fotos gelesenen Wörter liegen auf dem Laufwerk in
-   .shoebox/recognition.db, nie in einem Foto. Einstellungen → Erkannter Text
-   → Gesamten erkannten Text löschen entfernt alle (ausgeblendete Zeilen
-   bleiben ausgeblendet); Text erkennen liest sie erneut. Gefundene Gesichter
-   und Gefundene Haustiere daneben tun dasselbe für Gesichter und Haustiere,
-   mit einem zweiten Knopf, der auch deine Namen löscht (der Dialog sagt
-   vorher, wie viele es sind). shoebox text stats im Terminal zeigt, wie viele
-   Fotos gelesen wurden und wie viele Zeilen gespeichert sind.
+   .shoebox/recognition.db, nie in einem Foto. Einstellungen → Daten aufräumen
+   → Erkannter Text → Gesamten erkannten Text löschen entfernt alle
+   (ausgeblendete Zeilen bleiben ausgeblendet); Text erkennen liest sie
+   erneut. Die Karten Gesichter und Haustiere daneben tun dasselbe für
+   Gesichter und Haustiere, mit einem zweiten Knopf, der auch deine Namen
+   löscht (der Dialog sagt vorher, wie viele es sind). shoebox text stats im
+   Terminal zeigt, wie viele Fotos gelesen wurden und wie viele Zeilen
+   gespeichert sind.
 
 Wenn etwas komisch aussieht
 ---------------------------

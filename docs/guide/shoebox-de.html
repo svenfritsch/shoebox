@@ -450,6 +450,8 @@
               <dd>Ansicht öffnen / schließen (bei einem per Pfeiltasten gewählten Foto)</dd>
               <dt>f</dt>
               <dd>zu Favoriten hinzufügen / entfernen</dd>
+              <dt>t</dt>
+              <dd>erkannter Text: Zeilen umranden und Liste zeigen / ausblenden (nur bei Fotos mit Text)</dd>
               <dt>r · Umschalt+R</dt>
               <dd>nach links / rechts drehen</dd>
               <dt>Esc</dt>
@@ -578,7 +580,7 @@
           </div>
           <div>
             <h3>Gefundenes vergessen</h3>
-            <p><b>Einstellungen → Gefundene Gesichter</b> und <b>Gefundene Haustiere</b> haben je zwei Knöpfe. <b>Automatische Funde löschen</b> entfernt die Gesichter (oder Katzen und Hunde), die die Erkennung gefunden hat, vom Laufwerk. Deine Namen, Bestätigungen und gezeichneten Rahmen bleiben und greifen wieder, sobald die Fotos erneut erkannt wurden; bis dahin wird nichts vorgeschlagen und die Personenseiten sind leer. <b>Alles löschen, auch Namen</b> entfernt auch, was du getan hast: die benannten Personen, bestätigte und abgelehnte Gesichter, „kein Gesicht“ und gezeichnete Rahmen. Das lässt sich nicht rückgängig machen, weil in den Fotos nichts davon steht; ein Dialog sagt vorher, wie viele es sind. Deine Fotos werden nie angefasst.</p>
+            <p><b>Einstellungen → Daten aufräumen</b> hat je eine Karte für erkannten Text, Gesichter und Haustiere; die Karten für Gesichter und Haustiere haben zwei Knöpfe. <b>Automatische Funde löschen</b> entfernt die Gesichter (oder Katzen und Hunde), die die Erkennung gefunden hat, vom Laufwerk. Deine Namen, Bestätigungen und gezeichneten Rahmen bleiben und greifen wieder, sobald die Fotos erneut erkannt wurden; bis dahin wird nichts vorgeschlagen und die Personenseiten sind leer. <b>Alles löschen, auch Namen</b> entfernt auch, was du getan hast: die benannten Personen, bestätigte und abgelehnte Gesichter, „kein Gesicht“ und gezeichnete Rahmen. Das lässt sich nicht rückgängig machen, weil in den Fotos nichts davon steht; ein Dialog sagt vorher, wie viele es sind. Deine Fotos werden nie angefasst.</p>
           </div>
           <div>
             <h3>Neue Fotos</h3>
@@ -737,7 +739,7 @@
           </div>
           <div>
             <h3>Den Text vergessen</h3>
-            <p>Dokumente können Namen und Nummern enthalten. <b>Einstellungen → Erkannter Text → Gesamten erkannten Text löschen</b> entfernt jedes gelesene Wort von diesem Laufwerk. Fotos bleiben unberührt, ausgeblendete Zeilen bleiben ausgeblendet, und <b>Text erkennen</b> liest sie auf Wunsch erneut. Im Terminal gibt <code>shoebox text stats</code> aus, wie viele Fotos gelesen wurden und wie viele Zeilen gespeichert sind (<code>--json</code> für Skripte).</p>
+            <p>Dokumente können Namen und Nummern enthalten. <b>Einstellungen → Daten aufräumen → Erkannter Text → Gesamten erkannten Text löschen</b> entfernt jedes gelesene Wort von diesem Laufwerk. Fotos bleiben unberührt, ausgeblendete Zeilen bleiben ausgeblendet, und <b>Text erkennen</b> liest sie auf Wunsch erneut. Im Terminal gibt <code>shoebox text stats</code> aus, wie viele Fotos gelesen wurden und wie viele Zeilen gespeichert sind (<code>--json</code> für Skripte).</p>
           </div>
         </div>
         <div>
@@ -755,7 +757,7 @@
           </figure>
           <figure>
             <img src="assets/de/settings-forget.jpg" alt="" loading="lazy">
-            <figcaption>Einstellungen: Gefundenes vergessen, für Text, Gesichter und Haustiere.</figcaption>
+            <figcaption>Einstellungen → Daten aufräumen: Gefundenes vergessen, für Text, Gesichter und Haustiere.</figcaption>
           </figure>
         </div>
       </div>
@@ -833,7 +835,7 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg></div>
           <h3>Gefundenes kannst du vergessen</h3>
-          <p>Die aus deinen Fotos gelesenen Wörter liegen auf dem Laufwerk in <code>.shoebox/recognition.db</code>, nie in einem Foto. <b>Einstellungen → Erkannter Text → Gesamten erkannten Text löschen</b> entfernt alle (ausgeblendete Zeilen bleiben ausgeblendet); <b>Text erkennen</b> liest sie erneut. <b>Gefundene Gesichter</b> und <b>Gefundene Haustiere</b> daneben tun dasselbe für Gesichter und Haustiere, mit einem zweiten Knopf, der auch deine Namen löscht (der Dialog sagt vorher, wie viele es sind). <code>shoebox text stats</code> im Terminal zeigt, wie viele Fotos gelesen wurden und wie viele Zeilen gespeichert sind.</p>
+          <p>Die aus deinen Fotos gelesenen Wörter liegen auf dem Laufwerk in <code>.shoebox/recognition.db</code>, nie in einem Foto. <b>Einstellungen → Daten aufräumen → Erkannter Text → Gesamten erkannten Text löschen</b> entfernt alle (ausgeblendete Zeilen bleiben ausgeblendet); <b>Text erkennen</b> liest sie erneut. Die Karten <b>Gesichter</b> und <b>Haustiere</b> daneben tun dasselbe für Gesichter und Haustiere, mit einem zweiten Knopf, der auch deine Namen löscht (der Dialog sagt vorher, wie viele es sind). <code>shoebox text stats</code> im Terminal zeigt, wie viele Fotos gelesen wurden und wie viele Zeilen gespeichert sind.</p>
         </li>
       </ul>
     </section>

@@ -373,6 +373,8 @@ Keyboard in the viewer
 i: show / hide the info panel
 Space: open / close the viewer (on a photo picked with the arrow keys)
 f: add to / remove from favorites
+t: recognized text: outline the lines and show the list / hide them (only on
+photos that have text)
 r · Shift+R: rotate left / right
 Esc: close the viewer
 
@@ -514,15 +516,15 @@ Names work in the search box like tags, and so do kinds such as “all cats”.
 Combine a person with a tag, a folder or another person.
 
 Forgetting what was found
-Settings → Faces found and Pets found each have two buttons. Delete automatic
-finds removes the faces (or the cats and dogs) that recognition found, from
-the drive. Your names, confirmations and drawn boxes are kept, and they take
-hold again when the photos have been recognized again; until then nothing is
-suggested and the people pages are empty. Delete everything incl. names also
-removes what you did: the people you named, confirmed and rejected faces, “not
-a face” and drawn boxes. That cannot be undone, because the photos hold none
-of it, so a dialog first says how many there are. Your photos are never
-touched.
+Settings → Data cleanup has a card each for recognized text, faces and pets;
+the faces and pets cards have two buttons. Delete automatic finds removes the
+faces (or the cats and dogs) that recognition found, from the drive. Your
+names, confirmations and drawn boxes are kept, and they take hold again when
+the photos have been recognized again; until then nothing is suggested and the
+people pages are empty. Delete everything incl. names also removes what you
+did: the people you named, confirmed and rejected faces, “not a face” and
+drawn boxes. That cannot be undone, because the photos hold none of it, so a
+dialog first says how many there are. Your photos are never touched.
 
 New photos
 Recognition does not start by itself after a scan. Click Recognize faces in
@@ -728,11 +730,11 @@ searched for are marked. The ✕ beside a line hides it from the search (for
 text you do not want found); Show again brings it back.
 
 Forgetting the text
-Documents can hold names and numbers. Settings → Recognized text → Delete all
-recognized text removes every word that was read from this drive. Photos are
-not touched, hidden lines stay hidden, and Recognize text reads them again if
-you want. In a terminal, shoebox text stats prints how many photos were read
-and how many lines are kept (--json for scripts).
+Documents can hold names and numbers. Settings → Data cleanup → Recognized
+text → Delete all recognized text removes every word that was read from this
+drive. Photos are not touched, hidden lines stay hidden, and Recognize text
+reads them again if you want. In a terminal, shoebox text stats prints how
+many photos were read and how many lines are kept (--json for scripts).
 
 [Screenshot: Typing a word: the suggestions have a group Recognized text.]
 
@@ -741,7 +743,8 @@ and how many lines are kept (--json for scripts).
 [Screenshot: The viewer: the scanner button, the outlined lines and the list
 with Copy all.]
 
-[Screenshot: Settings: forget what was found, for text, faces and pets.]
+[Screenshot: Settings → Data cleanup: forget what was found, for text, faces
+and pets.]
 
 Drives, backups and the iPad
 ----------------------------
@@ -826,12 +829,13 @@ anything into them.
 
 - What was found, you can forget
    Words read from your photos are kept on the drive, in
-   .shoebox/recognition.db, never in a photo. Settings → Recognized text →
-   Delete all recognized text removes every one of them (lines you hid stay
-   hidden); Recognize text reads them again. Faces found and Pets found next
-   to it do the same for faces and pets, with a second button that also
-   deletes your names (the dialog says how many first). shoebox text stats in
-   a terminal shows how many photos were read and how many lines are kept.
+   .shoebox/recognition.db, never in a photo. Settings → Data cleanup →
+   Recognized text → Delete all recognized text removes every one of them
+   (lines you hid stay hidden); Recognize text reads them again. The Faces and
+   Pets cards next to it do the same for faces and pets, with a second button
+   that also deletes your names (the dialog says how many first). shoebox text
+   stats in a terminal shows how many photos were read and how many lines are
+   kept.
 
 If something looks off
 ----------------------

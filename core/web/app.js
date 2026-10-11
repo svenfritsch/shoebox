@@ -3741,9 +3741,7 @@ function loadSettings() {
   });
   sec.appendChild(cards);
   page.appendChild(sec);
-  page.appendChild(textSection());
-  page.appendChild(forgetSection('faces'));
-  page.appendChild(forgetSection('pets'));
+  page.appendChild(cleanupSection());
   page.appendChild(allowTrashSection());
   page.appendChild(mapsSection());
   page.appendChild(eventPatternSection());
@@ -3752,9 +3750,23 @@ function loadSettings() {
 
 // Settings: the words read in the photos live on the drive (`recognition.db`);
 // this forgets them all. Photos are read again by the next "Recognize text".
-function textSection() {
+// "Data cleanup": what recognition found, forgotten again, as three cards in a
+// row (text, faces, pets) with their buttons.
+function cleanupSection() {
   var sec = el('section', 'settings-section');
-  sec.appendChild(el('h3', '', tr('settings.text')));
+  sec.appendChild(el('h3', '', tr('cleanup.title')));
+  sec.appendChild(el('p', 'hint', tr('cleanup.hint')));
+  var cards = el('div', 'settings-cards cleanup');
+  cards.appendChild(textCleanupCard());
+  cards.appendChild(forgetCard('faces'));
+  cards.appendChild(forgetCard('pets'));
+  sec.appendChild(cards);
+  return sec;
+}
+
+function textCleanupCard() {
+  var sec = el('div', 'cleanup-card');
+  sec.appendChild(el('span', 'title', tr('settings.text')));
   sec.appendChild(el('p', 'hint', tr('settings.text_hint')));
   var line = el('p', 'sub', '');
   sec.appendChild(line);
@@ -3777,17 +3789,19 @@ function textSection() {
       } },
     ]);
   };
-  sec.appendChild(del);
+  var btns = el('div', 'btns');
+  btns.appendChild(del);
+  sec.appendChild(btns);
   return sec;
 }
 
 // Forget what recognition found, for faces or for pets (`forget.rs`): the
 // automatic finds only (names and decisions stay and take hold again after the
 // next "Recognize"), or everything including the user's own work.
-function forgetSection(space) {
+function forgetCard(space) {
   var what = space === 'pets' ? tr('forget.what_pets') : tr('forget.what_faces');
-  var sec = el('section', 'settings-section');
-  sec.appendChild(el('h3', '', space === 'pets' ? tr('forget.title_pets') : tr('forget.title_faces')));
+  var sec = el('div', 'cleanup-card');
+  sec.appendChild(el('span', 'title', space === 'pets' ? tr('forget.title_pets') : tr('forget.title_faces')));
   sec.appendChild(el('p', 'hint', tr('forget.hint', { what: what })));
   var line = el('p', 'sub', '');
   sec.appendChild(line);
@@ -3823,9 +3837,10 @@ function forgetSection(space) {
       { label: tr('forget.all'), cls: 'danger', onclick: function () { run(true); } },
     ]);
   };
-  sec.appendChild(auto);
-  sec.appendChild(document.createTextNode(' '));
-  sec.appendChild(all);
+  var btns = el('div', 'btns');
+  btns.appendChild(auto);
+  btns.appendChild(all);
+  sec.appendChild(btns);
   return sec;
 }
 

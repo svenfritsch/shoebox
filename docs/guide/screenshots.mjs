@@ -64,7 +64,7 @@ if (mode === 'text') {
   // Settings: forgetting what was found; the Text check.
   await p.goto(url + '#view=settings'); await p.waitForSelector('.settings-section'); await wait(1500);
   await p.setViewportSize({ width: 1280, height: 1400 }); await wait(500);
-  await shot('settings-forget', { fullPage: false });
+  await p.locator('.settings-section', { hasText: de ? 'Daten aufräumen' : 'Data cleanup' }).screenshot({ path: `${out}/settings-forget.png` });
   await p.goto(url + '#view=text'); await p.waitForSelector('.tc-card, .textcheck .sub'); await wait(2000);
   await p.setViewportSize({ width: 1280, height: 900 }); await wait(500);
   await shot('text-check');

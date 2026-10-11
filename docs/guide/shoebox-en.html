@@ -450,6 +450,8 @@
               <dd>open / close the viewer (on a photo picked with the arrow keys)</dd>
               <dt>f</dt>
               <dd>add to / remove from favorites</dd>
+              <dt>t</dt>
+              <dd>recognized text: outline the lines and show the list / hide them (only on photos that have text)</dd>
               <dt>r · Shift+R</dt>
               <dd>rotate left / right</dd>
               <dt>Esc</dt>
@@ -578,7 +580,7 @@
           </div>
           <div>
             <h3>Forgetting what was found</h3>
-            <p><b>Settings → Faces found</b> and <b>Pets found</b> each have two buttons. <b>Delete automatic finds</b> removes the faces (or the cats and dogs) that recognition found, from the drive. Your names, confirmations and drawn boxes are kept, and they take hold again when the photos have been recognized again; until then nothing is suggested and the people pages are empty. <b>Delete everything incl. names</b> also removes what you did: the people you named, confirmed and rejected faces, “not a face” and drawn boxes. That cannot be undone, because the photos hold none of it, so a dialog first says how many there are. Your photos are never touched.</p>
+            <p><b>Settings → Data cleanup</b> has a card each for recognized text, faces and pets; the faces and pets cards have two buttons. <b>Delete automatic finds</b> removes the faces (or the cats and dogs) that recognition found, from the drive. Your names, confirmations and drawn boxes are kept, and they take hold again when the photos have been recognized again; until then nothing is suggested and the people pages are empty. <b>Delete everything incl. names</b> also removes what you did: the people you named, confirmed and rejected faces, “not a face” and drawn boxes. That cannot be undone, because the photos hold none of it, so a dialog first says how many there are. Your photos are never touched.</p>
           </div>
           <div>
             <h3>New photos</h3>
@@ -737,7 +739,7 @@
           </div>
           <div>
             <h3>Forgetting the text</h3>
-            <p>Documents can hold names and numbers. <b>Settings → Recognized text → Delete all recognized text</b> removes every word that was read from this drive. Photos are not touched, hidden lines stay hidden, and <b>Recognize text</b> reads them again if you want. In a terminal, <code>shoebox text stats</code> prints how many photos were read and how many lines are kept (<code>--json</code> for scripts).</p>
+            <p>Documents can hold names and numbers. <b>Settings → Data cleanup → Recognized text → Delete all recognized text</b> removes every word that was read from this drive. Photos are not touched, hidden lines stay hidden, and <b>Recognize text</b> reads them again if you want. In a terminal, <code>shoebox text stats</code> prints how many photos were read and how many lines are kept (<code>--json</code> for scripts).</p>
           </div>
         </div>
         <div>
@@ -755,7 +757,7 @@
           </figure>
           <figure>
             <img src="assets/en/settings-forget.jpg" alt="" loading="lazy">
-            <figcaption>Settings: forget what was found, for text, faces and pets.</figcaption>
+            <figcaption>Settings → Data cleanup: forget what was found, for text, faces and pets.</figcaption>
           </figure>
         </div>
       </div>
@@ -833,7 +835,7 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg></div>
           <h3>What was found, you can forget</h3>
-          <p>Words read from your photos are kept on the drive, in <code>.shoebox/recognition.db</code>, never in a photo. <b>Settings → Recognized text → Delete all recognized text</b> removes every one of them (lines you hid stay hidden); <b>Recognize text</b> reads them again. <b>Faces found</b> and <b>Pets found</b> next to it do the same for faces and pets, with a second button that also deletes your names (the dialog says how many first). <code>shoebox text stats</code> in a terminal shows how many photos were read and how many lines are kept.</p>
+          <p>Words read from your photos are kept on the drive, in <code>.shoebox/recognition.db</code>, never in a photo. <b>Settings → Data cleanup → Recognized text → Delete all recognized text</b> removes every one of them (lines you hid stay hidden); <b>Recognize text</b> reads them again. The <b>Faces</b> and <b>Pets</b> cards next to it do the same for faces and pets, with a second button that also deletes your names (the dialog says how many first). <code>shoebox text stats</code> in a terminal shows how many photos were read and how many lines are kept.</p>
         </li>
       </ul>
     </section>
