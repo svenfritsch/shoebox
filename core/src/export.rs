@@ -425,7 +425,20 @@ pub fn plan(conn: &Connection, ids: &[i64], opts: Options, dest: &Path) -> Resul
 /// The drive with a shoebox library that `path` is on (the folder that has a
 /// `.shoebox` folder), if any: copies there would be found by its next scan.
 pub fn shoebox_drive(path: &Path) -> Option<PathBuf> {
-    let mut at = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    // The new folder does not exist yet: resolve the nearest folder that does
+    // (symlinks such as /var -> /private/var on a Mac), so the answer can be
+    // compared with `drive_of_index`.
+    let mut at = path.to_path_buf();
+    let resolved = loop {
+        if let Ok(real) = at.canonicalize() {
+            break real;
+        }
+        at.file_name()?;
+        if !at.pop() {
+            return None;
+        }
+    };
+    let mut at = resolved;
     loop {
         if at.join(db::DIR).is_dir() {
             return Some(at);

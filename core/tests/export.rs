@@ -255,6 +255,15 @@ fn a_drive_with_a_library_is_reported_and_folder_names_are_checked() {
     // Inside the drive the photos are on.
     let inside = post(server.addr, "/api/export/check", &body(&lib.path("Familie"), "copies", &ids, json!({}))).json();
     assert_eq!(inside["shoebox"]["same_drive"], true, "{inside}");
+    // Reached through a link (on a Mac /var is /private/var), and the new folder does not exist yet.
+    #[cfg(unix)]
+    {
+        let links = out_dir("shoebox-link");
+        std::os::unix::fs::symlink(&lib.root, links.join("drive")).unwrap();
+        let via = post(server.addr, "/api/export/check", &body(&links.join("drive").join("Familie"), "copies", &ids, json!({}))).json();
+        assert_eq!(via["shoebox"]["same_drive"], true, "{via}");
+        let _ = fs::remove_dir_all(&links);
+    }
     // Somewhere else: nothing to say.
     let out = out_dir("shoebox");
     let outside = post(server.addr, "/api/export/check", &body(&out, "copies", &ids, json!({}))).json();
