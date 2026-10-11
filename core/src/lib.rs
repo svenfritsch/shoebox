@@ -10,6 +10,7 @@ pub mod classify;
 pub mod clusters;
 pub mod db;
 pub mod duplicates;
+pub mod export;
 pub mod faces;
 pub mod fingerprint;
 pub mod fsinfo;
