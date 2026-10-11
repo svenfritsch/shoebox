@@ -637,6 +637,7 @@
   "unnamed.kind.faces": "Personen",
   "unnamed.kind.pets": "Haustiere (Katzen und Hunde)",
   "unnamed.which": "Welche Gesichter",
+  "unnamed.size": "Gesichtsgröße",
   "unnamed.summary_pets": "{faces} ohne Namen, in {clusters} ähnlicher Haustiere, die größten zuerst. Benenne eine Karte oder sage, dass es Fremde sind (Ignorieren) oder gar keine Haustiere. „Auswählen“ benennt nur einige Haustiere einer Karte.",
   "unnamed.done_pets": "Jede ausreichend große Katze und jeder Hund hat einen Namen (oder wird ignoriert). Neue Fotos bringen nach `shoebox recognize --pets` neue.",
   "draw.added_pet": "Haustier hinzugefügt",

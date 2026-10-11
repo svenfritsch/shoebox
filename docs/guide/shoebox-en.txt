@@ -628,7 +628,10 @@ all.
    look alike, the card with the most matches first. Cats and dogs have cards
    of their own; the menu above the cards chooses People, Pets or both. Click
    a face to see its photo; the left and right arrow keys step through the
-   photos on that card, and Space or Esc closes the viewer.
+   photos on that card, and Space or Esc closes the viewer. The slider at the
+   right of the menu sets the size of the face circles, from 64 to 150 pixels;
+   shoebox remembers it in this browser. Bigger circles make the cards taller,
+   so fewer fit on the screen.
 
 2. Name a card
    Type the name once and press Name: the whole card is named. Start typing to
