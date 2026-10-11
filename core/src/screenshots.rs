@@ -87,6 +87,12 @@ pub fn score(name: &str, kind: Kind, width: Option<u32>, height: Option<u32>, ca
         && is_display_size(w, h)
     {
         s += 25;
+        // A PNG without camera at exactly the size of a display is what a
+        // phone's screen capture is, even when the picture inside is a photo
+        // (a lock screen with a photo as wallpaper: little flat colour).
+        if kind == Kind::Png && !has_camera {
+            s += 10;
+        }
     }
     s += pixels.unwrap_or(0) as u32 / 2;
     if has_camera {
@@ -178,8 +184,10 @@ mod tests {
         assert!(score("Screenshot 1.png", png, None, None, None, None) >= THRESHOLD);
         // iPhone screenshot: PNG, no camera, phone size, flat.
         assert!(score("IMG_1234.PNG", png, Some(1170), Some(2532), None, Some(90)) >= THRESHOLD);
-        // The same without a flat picture is a scan or an export, not one.
-        assert!(score("IMG_1234.PNG", png, Some(1170), Some(2532), None, Some(0)) < THRESHOLD);
+        // The same with a photographic picture (lock screen with a photo) too.
+        assert!(score("IMG_7201.PNG", png, Some(750), Some(1334), None, Some(0)) >= THRESHOLD);
+        // A PNG of another size without a flat picture is a scan or an export, not one.
+        assert!(score("IMG_1234.PNG", png, Some(1171), Some(2532), None, Some(0)) < THRESHOLD);
         // A forwarded JPEG that lost everything but its pixels.
         assert!(score("IMG-20240302-WA0001.jpg", Kind::Jpeg, Some(1080), Some(2400), None, Some(90)) >= THRESHOLD);
         // A camera made it: never, whatever it looks like.
