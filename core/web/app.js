@@ -17,7 +17,7 @@ var OVERSCAN = 600; // px above and below the viewport that stay rendered
 var KIND_BADGE = { v: '▶', h: '', j: '', p: '' };
 
 var state = {
-  filter: { folder: null, tags: [], people: [], q: '', view: null, id: null, tab: null },
+  filter: { folder: null, tags: [], people: [], manual: false, q: '', view: null, id: null, tab: null },
   selecting: false,
   selected: {},      // id -> true
   anchor: null,      // index of the last photo clicked while selecting (Shift-click ranges)
@@ -123,7 +123,7 @@ var PET_TERMS = {
 };
 
 function readHash() {
-  var f = { folder: null, tags: [], people: [], pets: [], types: [], fav: false, place: null, dates: [], nodate: false, q: '', view: null, id: null, tab: null };
+  var f = { folder: null, tags: [], people: [], pets: [], types: [], fav: false, manual: false, place: null, dates: [], nodate: false, q: '', view: null, id: null, tab: null };
   location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
     var i = kv.indexOf('=');
     if (i < 0) return;
@@ -137,6 +137,7 @@ function readHash() {
     // A kind of pet (all cats, all dogs, any pet): the same on every drive.
     if (k === 'pet' && PET_TERMS[v] && f.pets.indexOf(v) < 0) f.pets.push(v);
     if (k === 'fav') f.fav = v === '1';
+    if (k === 'manual') f.manual = v === '1';
     if (k === 'place') f.place = parseInt(v, 10) || null;
     // Photos dated inside a year, month or day (several: all must match), and those that need a date.
     if (k === 'date' && /^\d{4}(-\d{2}(-\d{2})?)?$/.test(v) && f.dates.indexOf(v) < 0) f.dates.push(v);
@@ -149,6 +150,7 @@ function readHash() {
   // Over all drives only these pages exist (the others belong to one drive).
   if (isAll() && f.view && f.view !== 'duplicates' && f.view !== 'drives') f.view = null;
   if (isAll()) f.place = null; // places belong to one drive
+  if (isAll() || !f.tags.length) f.manual = false; // "manual tags only" belongs to the tags of one drive
   return f;
 }
 
@@ -156,7 +158,7 @@ function readHash() {
 // folder, any number of tags and people (`tag`, `person` repeated in the
 // URL) and free text.
 function setFilter(f) {
-  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], type: f.types || [], fav: f.fav ? 1 : null, place: f.place, date: f.dates || [], nodate: f.nodate ? 1 : null, q: f.q }).replace(/^\?/, '');
+  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], type: f.types || [], fav: f.fav ? 1 : null, manual: f.manual && (f.tags || []).length ? 1 : null, place: f.place, date: f.dates || [], nodate: f.nodate ? 1 : null, q: f.q }).replace(/^\?/, '');
   if (h === location.hash.replace(/^#/, '')) { applyFilter(); return; }
   location.hash = h; // triggers hashchange -> applyFilter
 }
@@ -166,7 +168,7 @@ function withFilter(changes) {
   var f = state.filter;
   // A place picked on the Locations page goes with the search to the timeline.
   var place = f.view === 'locations' ? f.id : f.place;
-  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), pets: f.pets.slice(), types: f.types.slice(), fav: f.fav, place: place, dates: f.dates.slice(), nodate: f.nodate, q: f.q }, changes);
+  return Object.assign({ folder: f.folder, tags: f.tags.slice(), manual: f.manual && !('tags' in changes), people: f.people.slice(), pets: f.pets.slice(), types: f.types.slice(), fav: f.fav, place: place, dates: f.dates.slice(), nodate: f.nodate, q: f.q }, changes);
 }
 
 function showView(view, id, tab) { setFilter({ view: view, id: id, tab: tab, folder: null, tags: [], people: [], q: '' }); }
@@ -255,7 +257,7 @@ function renderChips() {
     }
   }
   f.tags.forEach(function (id) {
-    add('# ' + (state.tagNames[id] || id), function () {
+    add('# ' + (state.tagNames[id] || id) + (f.manual ? ' · ' + tr('side.manual_only_short') : ''), function () {
       setFilter(withFilter({ tags: f.tags.filter(function (t) { return t !== id; }) }));
     });
   });
@@ -511,7 +513,7 @@ function suggest(text) {
   }
   if (isAll()) { suggestAll(text, seq); return; }
   var needle = text.trim();
-  var within = { q: needle, tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place };
+  var within = { q: needle, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place };
   Promise.all([
     api(LIBAPI + '/tags' + query(Object.assign({ limit: 8 }, within))),
     api(LIBAPI + '/people/search' + query(Object.assign({ limit: 6 }, within))).catch(function () { return []; }),
@@ -796,8 +798,17 @@ function markActiveFolder() {
   Array.prototype.forEach.call(document.querySelectorAll('.tree .name'), function (b) {
     b.classList.toggle('active', String(active) === b.dataset.id);
   });
-  Array.prototype.forEach.call(document.querySelectorAll('#own-tags .name'), function (b) {
-    b.classList.toggle('active', state.filter.tags.indexOf(parseInt(b.dataset.tag, 10)) >= 0);
+  var fl = state.filter, manualOnly = fl.manual && fl.tags.length === 1;
+  Array.prototype.forEach.call(document.querySelectorAll('#own-tags .name[data-tag]'), function (b) {
+    var on = fl.tags.indexOf(parseInt(b.dataset.tag, 10)) >= 0;
+    // "Manual tags only" takes the fill; the tag keeps only its colour.
+    b.classList.toggle('active', on && !manualOnly);
+    b.classList.toggle('part', on && manualOnly);
+    var sub = b.parentNode.parentNode.querySelector('.row.sub');
+    if (sub) sub.hidden = !(on && fl.tags.length === 1);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('#own-tags .name[data-manual]'), function (b) {
+    b.classList.toggle('active', manualOnly && fl.tags[0] === parseInt(b.dataset.manual, 10));
   });
 }
 
@@ -870,7 +881,7 @@ function loadTimeline(resetScroll) {
   var seq = ++state.loadSeq;
   var f = state.filter;
   var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null, q: f.q })
-    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null, q: f.q });
+    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null, q: f.q });
   return api(url).then(function (data) {
     if (seq !== state.loadSeq) return;
     if (isAll()) allTimelineLoaded(data);
@@ -3370,6 +3381,18 @@ function loadOwnTags() {
       r.appendChild(name);
       r.appendChild(el('span', 'count', I18n.number(t.count)));
       li.appendChild(r);
+      // Under the active tag: only the photos given it by hand. Only a tag that is
+      // also a folder name has any other kind (a folder tag is not listed on its own).
+      if (t.kind === 'both' && t.manual > 0) {
+        var sr = el('div', 'row sub');
+        var sname = el('button', 'name', tr('side.manual_only'));
+        sname.dataset.manual = t.id;
+        sname.onclick = function () { setFilter(withFilter({ manual: !state.filter.manual })); };
+        sr.appendChild(sname);
+        sr.appendChild(el('span', 'count', I18n.number(t.manual)));
+        sr.hidden = true;
+        li.appendChild(sr);
+      }
       list.appendChild(li);
     });
     $('tags-section').hidden = !tags.length && !state.favCount;

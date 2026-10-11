@@ -1458,6 +1458,7 @@ async fn all_tags(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> Ap
                     .entry(key)
                     .and_modify(|m| {
                         m.count += t.count;
+                        m.manual += t.manual;
                         m.last_used = m.last_used.max(t.last_used);
                     })
                     .or_insert(browse::Tag { id: 0, ..t });
@@ -1735,6 +1736,7 @@ fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
     Ok(browse::Query {
         folder: param(pairs, "folder").filter(|v| !v.is_empty()).map(number).transpose()?,
         tags: pairs.iter().filter(|(k, v)| k == "tag" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
+        manual_tags: param(pairs, "manual").is_some_and(|v| !v.is_empty() && v != "0"),
         text: param(pairs, "q").map(str::to_string).filter(|s| !s.trim().is_empty()),
         people: pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
         types: types_of(pairs)?,
