@@ -171,7 +171,26 @@ function withFilter(changes) {
 
 function showView(view, id, tab) { setFilter({ view: view, id: id, tab: tab, folder: null, tags: [], people: [], q: '' }); }
 
+// The hash the page is showing; navigating away from a selection asks first.
+var shownHash = location.hash, revertingHash = false;
+
 function applyFilter() {
+  if (revertingHash) { revertingHash = false; return; }
+  var moved = location.hash !== shownHash;
+  var wanted = location.hash;
+  // Another list while photos are selected: put the old page back and ask. Typing
+  // in the search box is not asked about (it would ask on every key).
+  if (moved && state.selecting && selectedIds().length && readHash().q === state.filter.q) {
+    revertingHash = true;
+    location.hash = shownHash;
+    var n = trn('count.photos', selectedIds().length);
+    openModal(tr('sel.leave_title'), tr('sel.leave_text', { count: n }), [
+      { label: tr('sel.leave_stay'), cls: 'quiet', focus: true },
+      { label: tr('sel.leave_go'), onclick: function () { endSelection(); location.hash = wanted; } },
+    ]);
+    return;
+  }
+  shownHash = location.hash;
   state.filter = readHash();
   $('search').value = state.filter.q;
   renderChips();
@@ -199,7 +218,7 @@ function applyFilter() {
   renderLocationsSection();
   // Another tag, folder, search or page is another list: the selection (ids and
   // bar) belongs to the one it was made in.
-  endSelection();
+  if (moved) endSelection();
   if (view) {
     $('empty').hidden = true;
     $('filters').hidden = true;
