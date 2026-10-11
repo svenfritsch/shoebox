@@ -235,14 +235,20 @@ body.selecting #select { color: var(--accent); }
 .copy.with-thumb .thumb { display: block; width: 100%; height: 150px; background: var(--cell-bg); border-radius: 6px; overflow: hidden; margin-bottom: 4px; }
 .copy.with-thumb .thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .copies.series { gap: 10px; }
+.copy.with-thumb { padding-bottom: 0; overflow: hidden; }
+.copy .keep-one { margin: auto -8px 0; padding: 9px 8px; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: var(--cell-bg); color: var(--fg, inherit); font: inherit; font-weight: 600; cursor: pointer; }
+.copy .keep-one:hover { background: var(--accent); color: #fff; }
 .copy.marked { border-color: var(--danger, #c0392b); background: rgba(192, 57, 43, 0.06); }
 .copy .check { display: flex; align-items: center; gap: 4px; font-weight: 600; }
 .copy .check input { width: 18px; height: 18px; }
 .copy .meta { color: var(--muted); }
-.copy .meta.worse { color: #c63b2f; }
 .dup-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; justify-content: space-between; }
 .dup-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; justify-content: flex-end; }
 .dup-filter { position: relative; }
+.dup-pre { margin-left: auto; }
+.dup-pre .dup-filter-menu { left: auto; right: 0; align-items: stretch; }
+.dup-pre .dup-filter-menu .btn { text-align: left; }
+.dup-pre-head { font-size: 12px; font-weight: 700; color: var(--muted); margin-top: 6px; }
 .dup-filter summary { list-style: none; cursor: pointer; display: inline-block; }
 .dup-filter summary::-webkit-details-marker { display: none; }
 .dup-filter-menu { position: absolute; z-index: 5; top: 100%; left: 0; margin-top: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2); white-space: nowrap; }
@@ -581,6 +587,7 @@ body.selecting .sec .pick { display: inline; }
 .compare-col img { width: 100%; max-height: 65vh; object-fit: contain; background: var(--cell-bg); border-radius: 6px; }
 .compare-col .name { font-weight: 600; font-size: 13px; word-break: break-all; }
 .compare-col .meta { color: var(--muted); font-size: 12px; }
+.copy .badge.worse { background: #c63b2f; color: #fff; }
 .copy .badge { align-self: flex-start; background: var(--cell-bg); border-radius: 10px; padding: 1px 8px; font-weight: 600; }
 
 /* Collapsible sidebar sections */

@@ -425,7 +425,7 @@
           </div>
           <div>
             <h3>Ansicht</h3>
-            <p>Foto anklicken. <b>ⓘ</b> öffnet das Infofeld: Datum (als <b>geschätzt</b> markiert, wenn es nicht der Aufnahmetag ist, oder als <b>manuell</b>, wenn du es selbst gesetzt hast; der Stift daneben setzt oder ändert dein Datum), Kamera, Größe, Tags, Personen und Knöpfe, um den Ordner zu öffnen oder den Pfad zu kopieren. Ganz unten zeigen die <b>GPS-Daten</b>, wo das Foto aufgenommen wurde (siehe „Orte und Karten“).</p>
+            <p>Foto anklicken. <b>ⓘ</b> öffnet das Infofeld: Datum (als <b>geschätzt</b> markiert, wenn es nicht der Aufnahmetag ist, oder als <b>manuell</b>, wenn du es selbst gesetzt hast; der Stift daneben setzt oder ändert dein Datum), Laufwerk, Kamera, Größe, Tags, Personen und Knöpfe, um den Ordner zu öffnen oder den Pfad zu kopieren. Ganz unten zeigen die <b>GPS-Daten</b>, wo das Foto aufgenommen wurde (siehe „Orte und Karten“).</p>
           </div>
           <div>
             <h3>Favoriten</h3>
@@ -589,10 +589,17 @@
           </div>
           <div>
             <h3>Duplikate</h3>
-            <p><b>Duplikate</b> zeigt vier Arten: identisch, dasselbe Foto in anderer Größe, Original und bearbeitet sowie Ähnliche. Hake <b>diese Kopie löschen</b> bei dem an, was weg soll; die beste Datei bleibt, und von jedem Duplikat bleibt immer mindestens eine Datei. Tags und Aufnahmedatum einer entfernten Kopie gehen auf die übrige über. Bei mehr als einem Laufwerk zeigt der Reiter <b>Über Laufwerke hinweg</b> (in <b>Alle Laufwerke</b> und unter <b>Laufwerke verwalten</b>) Fotos, die auf mehreren Laufwerken liegen: ein Bild, eine Zeile pro Kopie mit Name des Datenträgers und Ordner. Hake die Kopien an, die weg sollen, oder wähle ein Laufwerk und <b>Alle markieren</b>, um jede Kopie darauf anzukreuzen; die letzte Kopie eines Fotos lässt sich nie ankreuzen. <b>In den Papierkorb</b> fragt vorher nach und legt jede Kopie in den Papierkorb ihres eigenen Laufwerks.</p>
+            <p><b>Duplikate</b> zeigt vier Arten: identisch, dasselbe Foto mit anderen Pixelmaßen oder anderem Format (eine kleinere oder weitergeschickte Version, oder ein HEIC und das daraus gemachte JPEG), Original und bearbeitet sowie Ähnliche. Hake <b>diese Kopie löschen</b> bei dem an, was weg soll; die beste Datei bleibt. shoebox hakt nur an, was sicher ist: identische Dateien und eine Version mit weniger Pixeln (ein HEIC und sein JPEG werden zusammen gezeigt, aber keins wird vorab angehakt). Zwei Dateien im gleichen Format mit gleichen Pixelmaßen, aber verschiedenen Bytes, etwa ein Kamera-JPEG und ein aus der RAW-Datei entwickeltes JPEG (oft benannt wie <i>IMG_1 2.jpg</i>), werden nie vorab angehakt: sie erscheinen unter Ähnliche, und du wählst, welche bleibt: <b>Dieses behalten</b> auf einer Karte hakt alle anderen Dateien der Gruppe mit einem Klick an (erst <b>In den Papierkorb</b> verschiebt etwas), und kleine Marken zeigen, welche Datei die <b>meisten Pixel</b> hat oder die <b>größte Datei</b> ist, und von jedem Duplikat bleibt immer mindestens eine Datei. Tags und Aufnahmedatum einer entfernten Kopie gehen auf die übrige über. Bei mehr als einem Laufwerk zeigt der Reiter <b>Über Laufwerke hinweg</b> (in <b>Alle Laufwerke</b> und unter <b>Laufwerke verwalten</b>) Fotos, die auf mehreren Laufwerken liegen: ein Bild, eine Zeile pro Kopie mit Name des Datenträgers und Ordner. Hake die Kopien an, die weg sollen, oder wähle ein Laufwerk und <b>Alle markieren</b>, um jede Kopie darauf anzukreuzen; die letzte Kopie eines Fotos lässt sich nie ankreuzen. <b>In den Papierkorb</b> fragt vorher nach und legt jede Kopie in den Papierkorb ihres eigenen Laufwerks.</p>
             <div class="subs">
-              <h4>Schnellaktionen</h4>
-              <p><b>Kopien im selben Ordner entfernen</b> und <b>Kopien geringerer Qualität entfernen</b> räumen die eindeutigen Fälle in einem Zug auf.</p>
+              <h4>Vorauswählen</h4>
+              <p><b>Vorauswählen</b> (oben rechts) hakt <b>diese Kopie löschen</b> nach einer Regel an und bringt die angehakten Gruppen nach oben, damit du genau siehst, was markiert ist. Entfernt wird erst, wenn du <b>In den Papierkorb</b> drückst und bestätigst. Jede Zeile zeigt, wie viele Dateien sie anhaken würde, und ihr Tooltip sagt, was sie tut; eine Zeile ohne Treffer wird nicht aufgeführt.</p>
+              <ul>
+                <li><b>Vorschlag</b>: nur was shoebox sicher weiß: von identischen Dateien alle außer der besten, und kleinere Versionen eines Fotos. Das ist auch angehakt, wenn die Seite aufgeht.</li>
+                <li><b>Identische Fotos:</b> <b>Kopien im selben Ordner</b> (<i>IMG_1 (2)</i> neben <i>IMG_1</i>; identische Dateien in anderen Ordnern bleiben).</li>
+                <li><b>Dasselbe Foto, andere Auflösung:</b> <b>Kleinere Versionen</b> (jede Karte mit rotem Schild <b>Geringere Qualität</b>, auch in Gruppen Ähnlicher), <b>HEIC behalten</b> (hakt das JPEG an) und <b>JPEG behalten</b> (hakt das HEIC an).</li>
+                <li><b>Original und bearbeitet:</b> <b>Bearbeitete Versionen</b> (die Originale bleiben) und <b>Originale</b> (die Bearbeitungen bleiben).</li>
+                <li><b>Ähnliche Fotos:</b> <b>Größere Datei behalten</b> hakt in jeder Gruppe alle anderen an, und <b>Letzte Aufnahme behalten</b> behält die zuletzt aufgenommene (Gruppen ohne Aufnahmedatum werden übersprungen). Ähnliche können verschiedene Aufnahmen sein: sieh die Gruppen vorher durch.</li>
+              </ul>
               <h4>Was du bei Duplikaten tun kannst</h4>
               <table>
                 <thead><tr><th>Aktion</th><th>Bedeutung</th></tr></thead>
@@ -600,10 +607,10 @@
                   <tr><td>Alle behalten</td><td><b>Nichts wird gelöscht.</b> Diese Dateien gehören zusammen; sie erscheinen als <b>Versionen</b> bei jedem Foto. Schaltfläche oben rechts.</td></tr>
                   <tr><td>Verschiedene Fotos</td><td><b>Nichts wird gelöscht.</b> Ähnliche Fotos sind getrennte Aufnahmen, keine Kopien. Schaltfläche oben rechts.</td></tr>
                   <tr><td>Diese Kopie löschen</td><td><b>Die Kopie kommt in den Papierkorb.</b> Bei jeder Kopie anhaken, die weg soll; die beste Datei bleibt.</td></tr>
-                  <tr><td>Dieses behalten</td><td><b>Alle anderen kommen in den Papierkorb.</b> Nur bei ähnlichen Fotos: Foto öffnen, vergleichen, wählen, bestätigen.</td></tr>
+                  <tr><td>Dieses behalten</td><td><b>Hakt alle anderen an.</b> Nur bei ähnlichen Fotos: der Knopf am Fuß einer Karte hakt <b>diese Kopie löschen</b> bei allen anderen Dateien der Gruppe mit einem Klick an. Der gleiche Knopf im Vergleichsfenster (Bild anklicken) hakt die anderen an und schließt das Fenster, so kannst du mehrere Gruppen durchgehen und am Ende einmal <b>In den Papierkorb</b> drücken.</td></tr>
                 </tbody>
               </table>
-              <p class="note"><b>Alle behalten</b> und <b>Verschiedene Fotos</b> sind interne Notizen: shoebox speichert sie in seiner eigenen Datenbank in <code>.shoebox</code> auf dem Laufwerk, nie in den Fotos. Diese Funde zeigt dir shoebox auf dem Bildschirm <b>Duplikate</b> nicht mehr an. Die Notizen bleiben erhalten, wenn du Fotos verschiebst oder umbenennst, und <b>Kopien im selben Ordner entfernen</b> und <b>Kopien geringerer Qualität entfernen</b> lassen diese Fotos in Ruhe.</p>
+              <p class="note"><b>Alle behalten</b> und <b>Verschiedene Fotos</b> sind interne Notizen: shoebox speichert sie in seiner eigenen Datenbank in <code>.shoebox</code> auf dem Laufwerk, nie in den Fotos. Diese Funde zeigt dir shoebox auf dem Bildschirm <b>Duplikate</b> nicht mehr an. Die Notizen bleiben erhalten, wenn du Fotos verschiebst oder umbenennst, Zu den Knöpfen zeigt ein Tooltip eine kurze Erklärung: <b>Verschiedene Fotos</b> sagt, dass die Dateien getrennte Aufnahmen sind, <b>Alle behalten</b> verknüpft sie als Versionen eines Fotos.</p>
             </div>
           </div>
           <div>
@@ -623,8 +630,12 @@
         </div>
       </div>
       <figure>
+        <img src="assets/de/duplicates-preselect.jpg" alt="" loading="lazy">
+        <figcaption>Das Menü Vorauswählen: jede Zeile zeigt, wie viele Dateien sie anhaken würde; erst „In den Papierkorb“ entfernt etwas.</figcaption>
+      </figure>
+      <figure>
         <img src="assets/de/duplicates.jpg" alt="" loading="lazy">
-        <figcaption>Duplikate: eine vorgewählte Messenger-Kopie neben ihrem Original.</figcaption>
+        <figcaption>Duplikate nach Vorauswählen › Kleinere Versionen: die Messenger-Kopie ist angehakt und mit Geringere Qualität markiert.</figcaption>
       </figure>
     </section>
 
