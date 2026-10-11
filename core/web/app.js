@@ -1851,7 +1851,7 @@ function renameFolder(folder) {
 // ------------------------------------------------------------------ duplicates page
 
 var DUP_KINDS_IDS = ['identical', 'resolution', 'edited', 'similar'];
-var dupState = { syncs: [], groups: [], shown: 0, marked: {}, seen: {}, sameFolder: null, lowerQuality: null, types: dupTypes() };
+var dupState = { syncs: [], groups: [], shown: 0, marked: {}, seen: {}, types: dupTypes() };
 var DUP_KINDS = [
   { id: 'identical', get label() { return tr('dups.kind.identical'); }, get hint() { return tr('dups.kind.identical.hint'); } },
   { id: 'resolution', get label() { return tr('dups.kind.resolution'); }, get hint() { return tr('dups.kind.resolution.hint'); } },
@@ -2128,11 +2128,9 @@ function loadDuplicatesHere() {
   page.appendChild(el('h2', '', tr('dups.title')));
   addDupTabs(page);
   page.appendChild(el('p', 'sub', tr('dups.looking')));
-  return Promise.all([api(LIBAPI + '/duplicates'), api(LIBAPI + '/duplicates/same-folder'), api(LIBAPI + '/duplicates/lower-quality')]).then(function (res) {
+  return api(LIBAPI + '/duplicates').then(function (res) {
     if (state.filter.view !== 'duplicates') return;
-    dupState.groups = res[0].groups;
-    dupState.sameFolder = res[1];
-    dupState.lowerQuality = res[2];
+    dupState.groups = res.groups;
     dupState.shown = 0;
     // Ticks survive a reload (a scan finishing meanwhile) for copies still listed.
     var still = {};
@@ -2188,8 +2186,8 @@ function markedCount() {
   return n;
 }
 
-// Left: which kinds to show (a drop-down with check boxes). Right: the two
-// buttons that clear without review.
+// Left: which kinds to show (a drop-down with check boxes). Right: the
+// Preselect menu, which only ticks; nothing is removed before Move to trash.
 function dupToolbar() {
   var bar = el('div', 'dup-top');
   var filter = el('details', 'dup-filter');
@@ -2226,30 +2224,16 @@ function dupToolbar() {
   filter.appendChild(sum);
   filter.appendChild(menu);
   bar.appendChild(filter);
-  var sf = dupState.sameFolder, lq = dupState.lowerQuality;
-  var buttons = el('div', 'dup-buttons');
-  var same = el('button', 'btn', tr('dups.same_folder'));
-  same.title = sf && sf.copies
-    ? tr('dups.same_folder_hint', { count: trn('count.files', sf.copies) })
-    : tr('dups.same_folder_none');
-  same.disabled = !(sf && sf.copies);
-  same.onclick = removeSameFolder;
-  var low = el('button', 'btn', tr('dups.lower'));
-  low.title = lq && lq.copies
-    ? tr('dups.lower_hint', { count: trn('count.files', lq.copies) })
-    : tr('dups.lower_none');
-  low.disabled = !(lq && lq.copies);
-  low.onclick = removeLowerQuality;
-  buttons.appendChild(same);
-  buttons.appendChild(low);
-  bar.appendChild(buttons);
+  bar.appendChild(preselectMenu());
   return bar;
 }
 
-// What the page ticks by itself in a group: of every photo the files that
-// are surely worse (a smaller or stripped copy) or the same file again, never
-// the best one, and never a different shot that merely looks alike.
+// What the page ticks by itself: of an identical or same-photo group the
+// files that are surely worse (a smaller or stripped copy) or the same file
+// again, never the best one. Look-alikes and edits are never ticked by the
+// page: the person decides on those.
 function suggestedIds(g) {
+  if (g.kind !== 'identical' && g.kind !== 'resolution') return [];
   var pickOf = {};
   g.files.forEach(function (f) { if (f.pick) pickOf[f.row] = f; });
   return g.files.filter(function (f) {
@@ -2258,22 +2242,122 @@ function suggestedIds(g) {
   }).map(function (f) { return f.id; });
 }
 
-// The suggestion for all groups that are shown.
-function autoMarked() {
-  var auto = {};
-  var edits = onlyEditedShown();
-  visibleGroups().forEach(function (g) {
-    suggestedIds(g).forEach(function (id) { auto[id] = true; });
-    // On the "Original and edited" screen the button ticks the edited
-    // versions, so the originals stay.
-    if (edits) g.files.forEach(function (f) { if (isEdit(f)) auto[f.id] = true; });
-  });
-  return auto;
+// The format of a file by its extension, JPEG and HEIC spelled one way.
+function fileFormat(f) {
+  var e = (f.name.split('.').pop() || '').toLowerCase();
+  return e === 'jpeg' || e === 'jpe' ? 'jpg' : e === 'heif' ? 'heic' : e;
 }
 
-// True while "Original and edited" is the only kind that is shown.
-function onlyEditedShown() {
-  return DUP_KINDS_IDS.every(function (k) { return !!dupState.types[k] === (k === 'edited'); });
+// The HEIC and JPEG files of a group to tick so that `keep` stays wherever a
+// photo exists in both formats.
+function otherFormats(g, keep) {
+  var ids = [];
+  dupRows(g).forEach(function (row) {
+    if (!row.some(function (f) { return fileFormat(f) === keep; })) return;
+    row.forEach(function (f) {
+      var fmt = fileFormat(f);
+      if (fmt !== keep && (fmt === 'heic' || fmt === 'jpg')) ids.push(f.id);
+    });
+  });
+  return ids;
+}
+
+// The entries of the Preselect menu: what each ticks in a group (`ids`), and
+// the kind of group it is for (`kind`; none: every kind).
+var PRESELECT = [
+  { id: 'suggested', ids: suggestedIds },
+  { id: 'samefolder', kind: 'identical', ids: function (g) {
+    var buckets = {}, ids = [];
+    g.files.forEach(function (f) { var k = f.same + ':' + f.folder_id; (buckets[k] = buckets[k] || []).push(f); });
+    Object.keys(buckets).forEach(function (k) {
+      var b = buckets[k];
+      if (b.length < 2) return;
+      var keep = b.filter(function (f) { return f.pick; })[0] || b.filter(function (f) { return !f.copy_named; })[0] || b[0];
+      b.forEach(function (f) { if (f !== keep) ids.push(f.id); });
+    });
+    return ids;
+  } },
+  { id: 'smaller', kind: 'resolution', ids: function (g) { return g.files.filter(function (f) { return f.keeper; }).map(function (f) { return f.id; }); } },
+  { id: 'heic', kind: 'resolution', ids: function (g) { return otherFormats(g, 'heic'); } },
+  { id: 'jpeg', kind: 'resolution', ids: function (g) { return otherFormats(g, 'jpg'); } },
+  { id: 'edited', kind: 'edited', ids: function (g) {
+    return g.files.some(function (f) { return !isEdit(f); }) ? g.files.filter(isEdit).map(function (f) { return f.id; }) : [];
+  } },
+  { id: 'originals', kind: 'edited', ids: function (g) {
+    return g.files.some(isEdit) ? g.files.filter(function (f) { return !isEdit(f); }).map(function (f) { return f.id; }) : [];
+  } },
+  { id: 'biggest', kind: 'similar', ids: function (g) {
+    var top = Math.max.apply(null, g.files.map(function (f) { return f.size; }));
+    var best = g.files.filter(function (f) { return f.size === top; });
+    return best.length === 1 ? g.files.filter(function (f) { return f !== best[0]; }).map(function (f) { return f.id; }) : [];
+  } },
+];
+
+// The message of an entry (its label, or its tooltip with `_hint`).
+function preselectText(entry, hint) {
+  var texts = {
+    suggested: ['dups.pre.suggested', 'dups.pre.suggested_hint'],
+    samefolder: ['dups.pre.samefolder', 'dups.pre.samefolder_hint'],
+    smaller: ['dups.pre.smaller', 'dups.pre.smaller_hint'],
+    heic: ['dups.pre.heic', 'dups.pre.heic_hint'],
+    jpeg: ['dups.pre.jpeg', 'dups.pre.jpeg_hint'],
+    edited: ['dups.pre.edited', 'dups.pre.edited_hint'],
+    originals: ['dups.pre.originals', 'dups.pre.originals_hint'],
+    biggest: ['dups.pre.biggest', 'dups.pre.biggest_hint'],
+  };
+  return tr(texts[entry.id][hint ? 1 : 0]);
+}
+
+// Files and groups an entry would tick among the groups that are shown.
+function preselectCount(entry) {
+  var files = 0, groups = 0;
+  visibleGroups().forEach(function (g) {
+    if (entry.kind && g.kind !== entry.kind) return;
+    var n = entry.ids(g).length;
+    if (n) { files += n; groups++; }
+  });
+  return { files: files, groups: groups };
+}
+
+// Ticks what the entry names (replacing the ticks of the groups that are
+// shown) and brings those groups to the top. Nothing is removed.
+function applyPreselect(entry) {
+  Object.keys(shownMarked()).forEach(function (id) { delete dupState.marked[id]; });
+  var hit = [], rest = [];
+  dupState.groups.forEach(function (g) {
+    var ids = dupState.types[g.kind] && (!entry.kind || g.kind === entry.kind) ? entry.ids(g) : [];
+    ids.forEach(function (id) { dupState.marked[id] = true; });
+    (ids.length ? hit : rest).push(g);
+  });
+  dupState.groups = hit.concat(rest);
+  dupState.shown = 0;
+  renderDuplicates();
+  updateDupBar();
+  window.scrollTo(0, 0);
+}
+
+// The Preselect drop-down: one line per rule, with how many files it would
+// tick and a tooltip that says what it does. Rules that find nothing among
+// the groups that are shown are greyed out.
+function preselectMenu() {
+  var box = el('details', 'dup-filter dup-pre');
+  box.appendChild(el('summary', 'btn', tr('dups.pre')));
+  var menu = el('div', 'dup-filter-menu');
+  var heading = null;
+  PRESELECT.forEach(function (entry) {
+    if (entry.kind && entry.kind !== heading) {
+      heading = entry.kind;
+      menu.appendChild(el('div', 'dup-pre-head', DUP_KINDS.filter(function (k) { return k.id === entry.kind; })[0].label));
+    }
+    var c = preselectCount(entry);
+    var b = el('button', 'btn quiet', preselectText(entry, false) + (c.files ? ' · ' + trn('count.files', c.files) + ' · ' + trn('count.photos', c.groups) : ''));
+    b.disabled = !c.files;
+    b.title = c.files ? preselectText(entry, true) : tr('dups.pre.none');
+    b.onclick = function () { applyPreselect(entry); };
+    menu.appendChild(b);
+  });
+  box.appendChild(menu);
+  return box;
 }
 
 // Ticked files of the groups that are shown, as a set of ids.
@@ -2290,8 +2374,8 @@ function syncDupBoxes() {
   updateDupBar();
 }
 
-// The bar stays while there are duplicates: Preselect copies puts the page's
-// pre-selection back, Clear unticks everything, Move to trash deletes
+// The bar stays while there are duplicates: Clear unticks everything, Move
+// to trash deletes
 // whatever is ticked (also a single file after a Clear).
 function updateDupBar() {
   var bar = $('dup-bar');
@@ -2300,19 +2384,9 @@ function updateDupBar() {
   bar.hidden = groups.length === 0;
   bar.textContent = '';
   if (!groups.length) return;
-  var marked = shownMarked(), auto = autoMarked();
+  var marked = shownMarked();
   var n = Object.keys(marked).length;
   bar.appendChild(el('span', '', tr('dups.marked', { count: trn('count.copies', n) })));
-  var same = Object.keys(auto).length === n && Object.keys(auto).every(function (id) { return marked[id]; });
-  var preselect = el('button', 'btn quiet', tr(onlyEditedShown() ? 'dups.preselect_edited' : 'dups.preselect'));
-  preselect.title = tr(onlyEditedShown() ? 'dups.preselect_edited_hint' : 'dups.preselect_hint');
-  preselect.disabled = same;
-  preselect.onclick = function () {
-    Object.keys(marked).forEach(function (id) { delete dupState.marked[id]; });
-    Object.keys(auto).forEach(function (id) { dupState.marked[id] = true; });
-    syncDupBoxes();
-  };
-  bar.appendChild(preselect);
   var clear = el('button', 'btn quiet', tr('dups.clear'));
   clear.title = tr('dups.clear_hint');
   clear.disabled = n === 0;
@@ -2665,46 +2739,6 @@ function askDates(conflicts, done) {
       },
     }]);
   });
-}
-
-function removeLowerQuality() {
-  var lq = dupState.lowerQuality;
-  openModal(
-    tr('dups.lower.title'),
-    tr('dups.lower.text', { copies: trn('count.copies', lq.copies), photos: trn('count.photos', lq.groups) }),
-    [{ label: tr('app.cancel'), cls: 'quiet' }, {
-      label: tr('sel.trash'), cls: 'danger', focus: true, onclick: function (btn) {
-        btn.disabled = true;
-        post(LIBAPI + '/duplicates/lower-quality', {}).then(function (r) {
-          closeModal();
-          toast(tr('dups.lower.done', { copies: trn('count.copies', r.removed), tags: trn('count.tags', r.tags_added) }));
-          report(tr('dups.skipped'), r.skipped);
-          changed();
-        }).catch(function (e) { closeModal(); failed(e); });
-        return false;
-      },
-    }]
-  );
-}
-
-function removeSameFolder() {
-  var sf = dupState.sameFolder;
-  openModal(
-    tr('dups.same.title'),
-    tr('dups.same.text', { copies: trn('count.copies', sf.copies), photos: trn('count.photos', sf.groups) }),
-    [{ label: tr('app.cancel'), cls: 'quiet' }, {
-      label: tr('sel.trash'), cls: 'danger', focus: true, onclick: function (btn) {
-        btn.disabled = true;
-        post(LIBAPI + '/duplicates/same-folder', {}).then(function (r) {
-          closeModal();
-          toast(tr('dups.done.trashed', { count: trn('count.copies', r.removed) }));
-          report(tr('dups.skipped'), r.skipped);
-          changed();
-        }).catch(function (e) { closeModal(); failed(e); });
-        return false;
-      },
-    }]
-  );
 }
 
 // ------------------------------------------------------------------ trash page

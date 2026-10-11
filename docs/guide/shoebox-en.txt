@@ -511,9 +511,24 @@ folder. Tick the copies to remove, or pick a drive and Mark all to tick every
 copy on it; the last copy of a photo can never be ticked. Move to trash asks
 first and puts each copy in the trash of its own drive.
 
-Quick actions
-Clear Same Folder Copies and Clear Lower Quality Copies clean up the clear-cut
-cases in one go.
+Preselect
+Preselect (top right) ticks delete this copy by a rule and brings the groups
+it ticked to the top, so you see exactly what is marked. Nothing is removed
+until you press Move to trash and confirm. Every line shows how many files it
+would tick, and its tooltip says what it does; a line with nothing to tick is
+grey.
+
+- Suggested: only what shoebox is sure of: of identical files all but the best
+  one, and smaller versions of a photo. This is also what is ticked when the
+  page opens.
+- Identical photos: Copies in the same folder (IMG_1 (2) next to IMG_1;
+  identical files in other folders stay).
+- Same photo, different resolution: Smaller versions, Keep the HEIC (ticks the
+  JPEG) and Keep the JPEG (ticks the HEIC).
+- Original and edited: Edited versions (the originals stay) and Originals (the
+  edits stay).
+- Similar photos: Keep the bigger file ticks all others of every group.
+  Look-alikes can be different shots, so look through the groups first.
 
 What you can do with duplicates
 Action: What it means
@@ -523,14 +538,17 @@ Different photos: Nothing is deleted. Look-alikes are separate shots, not
 copies. Button at the top right.
 Delete this copy: Copy goes to the trash. Tick it on every copy you want gone;
 the best file stays.
-Keep this one: All others go to the trash. Look-alikes only: open a photo,
-compare, press it, confirm.
+Keep this one: Ticks all the others. Look-alikes only: the button at the foot
+of a card ticks delete this copy on every other file of the group in one
+click. In the compare dialog (click a picture) it moves the others to the
+trash after you confirm.
 
 Keep all and Different photos are internal notes: shoebox saves them in its
 own database in .shoebox on the drive, never in the photos. Those finds are
 not shown to you on the Duplicates screen again. The notes follow the photos
-if you move or rename them, and Clear Same Folder Copies and Clear Lower
-Quality Copies leave these photos alone.
+if you move or rename them. Hover over the buttons for a short explanation:
+Different photos says the files are separate shots, Keep all links them as
+versions of one photo.
 
 Trash
 Nothing is deleted right away. Trashed photos wait in .shoebox/trash on the

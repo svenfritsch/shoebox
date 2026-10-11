@@ -548,9 +548,24 @@ Laufwerk und Alle markieren, um jede Kopie darauf anzukreuzen; die letzte
 Kopie eines Fotos lässt sich nie ankreuzen. In den Papierkorb fragt vorher
 nach und legt jede Kopie in den Papierkorb ihres eigenen Laufwerks.
 
-Schnellaktionen
-Kopien im selben Ordner entfernen und Kopien geringerer Qualität entfernen
-räumen die eindeutigen Fälle in einem Zug auf.
+Vorauswählen
+Vorauswählen (oben rechts) hakt diese Kopie löschen nach einer Regel an und
+bringt die angehakten Gruppen nach oben, damit du genau siehst, was markiert
+ist. Entfernt wird erst, wenn du In den Papierkorb drückst und bestätigst.
+Jede Zeile zeigt, wie viele Dateien sie anhaken würde, und ihr Tooltip sagt,
+was sie tut; eine Zeile ohne Treffer ist grau.
+
+- Vorschlag: nur was shoebox sicher weiß: von identischen Dateien alle außer
+  der besten, und kleinere Versionen eines Fotos. Das ist auch angehakt, wenn
+  die Seite aufgeht.
+- Identische Fotos: Kopien im selben Ordner (IMG_1 (2) neben IMG_1; identische
+  Dateien in anderen Ordnern bleiben).
+- Dasselbe Foto, andere Auflösung: Kleinere Versionen, HEIC behalten (hakt das
+  JPEG an) und JPEG behalten (hakt das HEIC an).
+- Original und bearbeitet: Bearbeitete Versionen (die Originale bleiben) und
+  Originale (die Bearbeitungen bleiben).
+- Ähnliche Fotos: Größere Datei behalten hakt in jeder Gruppe alle anderen an.
+  Ähnliche können verschiedene Aufnahmen sein: sieh die Gruppen vorher durch.
 
 Was du bei Duplikaten tun kannst
 Aktion: Bedeutung
@@ -560,15 +575,18 @@ Verschiedene Fotos: Nichts wird gelöscht. Ähnliche Fotos sind getrennte
 Aufnahmen, keine Kopien. Schaltfläche oben rechts.
 Diese Kopie löschen: Die Kopie kommt in den Papierkorb. Bei jeder Kopie
 anhaken, die weg soll; die beste Datei bleibt.
-Dieses behalten: Alle anderen kommen in den Papierkorb. Nur bei ähnlichen
-Fotos: Foto öffnen, vergleichen, wählen, bestätigen.
+Dieses behalten: Hakt alle anderen an. Nur bei ähnlichen Fotos: der Knopf am
+Fuß einer Karte hakt diese Kopie löschen bei allen anderen Dateien der Gruppe
+mit einem Klick an. Im Vergleichsfenster (Bild anklicken) kommen die anderen
+nach der Bestätigung in den Papierkorb.
 
 Alle behalten und Verschiedene Fotos sind interne Notizen: shoebox speichert
 sie in seiner eigenen Datenbank in .shoebox auf dem Laufwerk, nie in den
 Fotos. Diese Funde zeigt dir shoebox auf dem Bildschirm Duplikate nicht mehr
 an. Die Notizen bleiben erhalten, wenn du Fotos verschiebst oder umbenennst,
-und Kopien im selben Ordner entfernen und Kopien geringerer Qualität entfernen
-lassen diese Fotos in Ruhe.
+Zu den Knöpfen zeigt ein Tooltip eine kurze Erklärung: Verschiedene Fotos
+sagt, dass die Dateien getrennte Aufnahmen sind, Alle behalten verknüpft sie
+als Versionen eines Fotos.
 
 Papierkorb
 Nichts wird sofort gelöscht. Gelöschte Fotos warten in .shoebox/trash auf dem

@@ -73,6 +73,9 @@ pub struct DupFile {
     /// a copy's name ("IMG_1 (2)", "IMG_1 - Copy"), then the earliest. The
     /// page ticks the other files of a row.
     pub pick: bool,
+    /// Its name is a copy's ("IMG_1 (2)", "IMG_1 - Copy") of another file of
+    /// the group.
+    pub copy_named: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -180,6 +183,7 @@ pub fn load(conn: &Connection, shown: &HashSet<i64>) -> Result<Candidates> {
                     keeper: None,
                     in_copies: false,
                     pick: false,
+                    copy_named: false,
                 },
                 full_hash: r.get(10)?,
                 phash: r.get::<_, Option<String>>(11)?.as_deref().and_then(phash::from_hex),
@@ -553,8 +557,10 @@ pub fn find(candidates: &Candidates) -> Vec<Group> {
             let mut order: Vec<usize> = m.clone();
             order.sort_by(|&i, &j| rows[j].file.taken.cmp(&rows[i].file.taken).then(rows[i].file.path.cmp(&rows[j].file.path)));
             let info = photo_rows(rows, &order, &open);
-            for (&i, &(row, keeper, pick)) in order.iter().zip(&info) {
+            let copy_flags = copy_named(&order.iter().map(|&i| rows[i].file.name.as_str()).collect::<Vec<_>>());
+            for ((&i, &(row, keeper, pick)), &copy) in order.iter().zip(&info).zip(&copy_flags) {
                 let mut f = rows[i].file.clone();
+                f.copy_named = copy;
                 f.row = row;
                 f.keeper = keeper;
                 f.pick = pick;
@@ -591,101 +597,6 @@ pub fn add_tags(conn: &Connection, groups: &mut [Group]) -> Result<()> {
         f.tags = stmt.query_map([f.id], |r| Ok(DupTag { name: r.get(0)?, own: r.get(1)? }))?.collect::<rusqlite::Result<_>>()?;
     }
     Ok(())
-}
-
-/// Exact duplicates (same full hash) that lie in the same folder: per
-/// content and folder one file stays (the highest resolution, then the
-/// earliest record, then the first path) and the others go. Near duplicates
-/// are never part of it, and a copy the user already decided about with the
-/// keeper (`distinct`, `linked`) stays too. Returns `(keep, remove)`.
-pub fn same_folder_plan(candidates: &Candidates) -> Vec<(i64, Vec<i64>)> {
-    let Candidates { rows, decided } = candidates;
-    let mut parts: HashMap<(&str, i64), Vec<&Row>> = HashMap::new();
-    for r in rows {
-        if let Some(h) = &r.full_hash {
-            parts.entry((h, r.file.folder_id)).or_default().push(r);
-        }
-    }
-    let mut plan: Vec<(i64, Vec<i64>)> = parts
-        .into_values()
-        .filter(|p| p.len() > 1)
-        .filter_map(|mut p| {
-            let pixels = |r: &Row| r.file.width.unwrap_or(0) as u64 * r.file.height.unwrap_or(0) as u64;
-            let copies = copy_named(&p.iter().map(|r| r.file.name.as_str()).collect::<Vec<_>>());
-            let flag: HashMap<i64, bool> = p.iter().map(|r| r.file.id).zip(copies).collect();
-            p.sort_by(|a, b| {
-                a.file
-                    .in_copies
-                    .cmp(&b.file.in_copies)
-                    .then(pixels(b).cmp(&pixels(a)))
-                    .then(flag[&a.file.id].cmp(&flag[&b.file.id]))
-                    .then(a.added_at.cmp(&b.added_at))
-                    .then(a.file.path.cmp(&b.file.path))
-            });
-            let keep = p[0].file.id;
-            let gone: Vec<i64> = p[1..]
-                .iter()
-                .map(|r| r.file.id)
-                .filter(|&id| !decided.contains(&(keep.min(id), keep.max(id))))
-                .collect();
-            (!gone.is_empty()).then_some((keep, gone))
-        })
-        .collect();
-    plan.sort();
-    plan
-}
-
-/// Copies that are surely the same photo as a better one (see `same_photo`
-/// and `better`: a smaller or re-sent version, say from WhatsApp), without
-/// review: the better file stays. Returns `(keep, remove)`; pairs the user
-/// decided about never count.
-pub fn lower_quality_plan(candidates: &Candidates) -> Vec<(i64, Vec<i64>)> {
-    let mut by_keeper: HashMap<i64, Vec<i64>> = HashMap::new();
-    for g in find(candidates) {
-        for f in &g.files {
-            if let Some(k) = f.keeper {
-                by_keeper.entry(k).or_default().push(f.id);
-            }
-        }
-    }
-    let mut plan: Vec<(i64, Vec<i64>)> = by_keeper.into_iter().collect();
-    for (_, gone) in &mut plan {
-        gone.sort_unstable();
-    }
-    plan.sort();
-    plan
-}
-
-/// What `remove_planned` did.
-#[derive(Debug, Default, Serialize)]
-pub struct BulkRemoved {
-    /// Contents that lost copies.
-    pub groups: u64,
-    /// Files moved to the trash.
-    pub removed: u64,
-    pub tags_added: u64,
-    pub dates_set: u64,
-    pub skipped: Vec<String>,
-}
-
-/// Carry out `same_folder_plan` or `lower_quality_plan`; each group like
-/// `remove_copies`.
-pub fn remove_planned(conn: &Connection, root: &Path, plan: &[(i64, Vec<i64>)]) -> Result<BulkRemoved> {
-    let mut out = BulkRemoved::default();
-    for (keep, gone) in plan {
-        match remove_copies(conn, root, &[*keep], gone, &HashMap::new()) {
-            Ok(r) if r.conflicts.is_empty() => {
-                out.groups += 1;
-                out.removed += r.trashed.files.len() as u64;
-                out.tags_added += r.tags_added;
-                out.dates_set += r.dates_set;
-                out.skipped.extend(r.trashed.skipped);
-            }
-            Ok(r) => out.skipped.extend(r.conflicts.iter().map(|c| format!("{}: capture dates conflict", c.path))),
-            Err(e) => out.skipped.push(format!("{e:#}")),
-        }
-    }
-    Ok(out)
 }
 
 /// Record a decision for every pair among `ids`, or forget it (`None`).
