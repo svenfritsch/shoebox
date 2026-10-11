@@ -389,8 +389,9 @@ Press ☑, then click photos (Shift-click for a range; on the iPad just tap).
 at the bottom takes every photo shown, across all months (for example all
 photos of a tag, to remove that tag from them at once). The selection belongs
 to the list it was made in: clicking another tag, folder or page in the
-sidebar, or changing the search, ends it; if photos are selected, shoebox asks
-first (Stay or Leave and drop selection).
+sidebar, or a search, ends it; if photos are selected, shoebox asks first,
+when you click the page or the search box (Stay or Leave and drop selection /
+Search and drop selection).
 
 Tag
 Add tag… puts your own tag on the selection. Tags live in shoebox’s index,

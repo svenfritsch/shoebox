@@ -438,7 +438,19 @@ $('search').addEventListener('input', function () {
   searchTimer = setTimeout(function () { setFilter(withFilter({ q: v.trim() })); }, 300);
   suggest(v);
 });
-$('search').addEventListener('focus', function () { suggest(this.value); });
+$('search').addEventListener('focus', function () {
+  // A search shows another list: with photos selected, ask once when the box is
+  // entered (not on every key).
+  if (state.selecting && selectedIds().length && $('modal').hidden) {
+    this.blur();
+    openModal(tr('sel.leave_title'), tr('sel.search_text', { count: trn('count.photos', selectedIds().length) }), [
+      { label: tr('sel.leave_stay'), cls: 'quiet', focus: true },
+      { label: tr('sel.search_go'), onclick: function () { endSelection(); setTimeout(function () { $('search').focus(); }, 0); } },
+    ]);
+    return;
+  }
+  suggest(this.value);
+});
 $('search').addEventListener('blur', function () { setTimeout(closeSuggest, 150); });
 $('search').addEventListener('keydown', function (ev) {
   var open = !$('suggest').hidden && sugg.items.length;

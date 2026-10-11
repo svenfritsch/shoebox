@@ -840,6 +840,8 @@
   "sel.leave_text": "{count} selected. If you go to another page, the selection is dropped.",
   "sel.leave_stay": "Stay",
   "sel.leave_go": "Leave and drop selection",
+  "sel.search_text": "{count} selected. A search shows another list, so the selection would be dropped.",
+  "sel.search_go": "Search and drop selection",
   "export.tag_hint": "Save copies of everything shown here in a new folder",
   "export.nothing": "There is nothing to export here.",
   "export.title": "Export {what}",
