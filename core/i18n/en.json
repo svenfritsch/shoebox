@@ -638,6 +638,7 @@
   "unnamed.kind.faces": "People",
   "unnamed.kind.pets": "Pets (cats and dogs)",
   "unnamed.which": "Which faces",
+  "unnamed.size": "Face size",
   "unnamed.summary_pets": "{faces} without a name, in {clusters} of similar pets, largest first. Name a card, or say they are strangers (Ignore) or no pets at all. “Select” names only some pets of a card.",
   "unnamed.done_pets": "Every cat and dog large enough has a name (or is ignored). New photos bring new ones after `shoebox recognize --pets`.",
   "draw.added_pet": "Pet added",

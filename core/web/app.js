@@ -4713,6 +4713,41 @@ var un = { shown: 0, total: 0, unnamed: 0, kind: 'all' };
 var UN_KINDS = [['all', 'unnamed.kind.all'], ['faces', 'unnamed.kind.faces'], ['pets', 'unnamed.kind.pets']];
 var PAGE_CLUSTERS = 30;
 
+// Size of the face circles: a browser setting for the whole application, like
+// the maps switch (nothing is kept on the drive or in the library).
+var FACE_SIZE = { min: 64, max: 150, step: 2, key: 'shoebox-face-size' };
+
+function faceSize() {
+  var n = 64;
+  try { n = parseInt(localStorage.getItem(FACE_SIZE.key), 10); } catch (e) { /* private window */ }
+  return isNaN(n) ? FACE_SIZE.min : Math.max(FACE_SIZE.min, Math.min(FACE_SIZE.max, n));
+}
+
+function faceSizeControl(page) {
+  var size = faceSize();
+  page.style.setProperty('--face-size', size + 'px');
+  var label = el('label', 'face-size');
+  label.title = tr('unnamed.size');
+  label.appendChild(el('span', 'dot s'));
+  var input = el('input');
+  input.type = 'range';
+  input.min = FACE_SIZE.min;
+  input.max = FACE_SIZE.max;
+  input.step = FACE_SIZE.step;
+  input.value = size;
+  input.setAttribute('aria-label', tr('unnamed.size'));
+  label.appendChild(input);
+  label.appendChild(el('span', 'dot l'));
+  var out = el('output', '', size + ' px');
+  label.appendChild(out);
+  input.oninput = function () {
+    page.style.setProperty('--face-size', input.value + 'px');
+    out.textContent = input.value + ' px';
+    try { localStorage.setItem(FACE_SIZE.key, input.value); } catch (e) { /* ignore */ }
+  };
+  return label;
+}
+
 function loadUnnamed() {
   var page = $('page');
   page.textContent = '';
@@ -4733,6 +4768,7 @@ function loadUnnamed() {
   kinds.onchange = function () { un.kind = kinds.value; loadUnnamed(); };
   var bar = el('div', 'toolbar');
   bar.appendChild(kinds);
+  bar.appendChild(faceSizeControl(page));
   page.appendChild(bar);
   var box = el('div', 'clusters');
   box.id = 'un-box';
