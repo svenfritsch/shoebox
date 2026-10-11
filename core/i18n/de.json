@@ -293,6 +293,8 @@
   "dups.pre.edited_hint": "Hakt die bearbeiteten Versionen an (IMG_E…), damit jedes Original bleibt. Erst „In den Papierkorb“ entfernt etwas.",
   "dups.pre.originals": "Originale",
   "dups.pre.originals_hint": "Hakt die Originale an, damit jede bearbeitete Version bleibt. Erst „In den Papierkorb“ entfernt etwas.",
+  "dups.pre.lastshot": "Letzte Aufnahme behalten",
+  "dups.pre.lastshot_hint": "Hakt in jeder Gruppe Ähnlicher alle Dateien außer der besten Datei der zuletzt aufgenommenen Aufnahme an (nach Aufnahmezeit). Gruppen, in denen eine Aufnahme kein Aufnahmedatum hat oder zwei Aufnahmen gleichzeitig die letzten sind, werden übersprungen. Sieh die Gruppen durch, bevor du etwas in den Papierkorb verschiebst. Erst „In den Papierkorb“ entfernt etwas.",
   "dups.pre.biggest": "Größere Datei behalten",
   "dups.pre.biggest_hint": "Hakt in jeder Gruppe Ähnlicher alle Dateien außer der größten an. Ähnliche können verschiedene Aufnahmen sein: sieh die Gruppen durch, bevor du etwas in den Papierkorb verschiebst. Gruppen, in denen zwei Dateien gleich groß sind, werden übersprungen.",
   "dups.clear_hint": "Alle Kopien abwählen.",

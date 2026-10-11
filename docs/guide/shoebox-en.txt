@@ -528,8 +528,10 @@ not listed.
   the JPEG) and Keep the JPEG (ticks the HEIC).
 - Original and edited: Edited versions (the originals stay) and Originals (the
   edits stay).
-- Similar photos: Keep the bigger file ticks all others of every group.
-  Look-alikes can be different shots, so look through the groups first.
+- Similar photos: Keep the bigger file ticks all others of every group, and
+  Keep the last shot keeps the shot taken last (groups without capture dates
+  are skipped). Look-alikes can be different shots, so look through the groups
+  first.
 
 What you can do with duplicates
 Action: What it means

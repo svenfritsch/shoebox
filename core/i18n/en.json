@@ -293,6 +293,8 @@
   "dups.pre.edited_hint": "Ticks the edited versions (IMG_E…), so every original stays. Nothing is removed until you press Move to trash.",
   "dups.pre.originals": "Originals",
   "dups.pre.originals_hint": "Ticks the originals, so every edited version stays. Nothing is removed until you press Move to trash.",
+  "dups.pre.lastshot": "Keep the last shot",
+  "dups.pre.lastshot_hint": "In every look-alike group, ticks all files but the best file of the shot taken last (by capture time). Groups where a shot has no capture date, or two shots tie for the last, are skipped. Look through the groups before you move anything to the trash. Nothing is removed until you press Move to trash.",
   "dups.pre.biggest": "Keep the bigger file",
   "dups.pre.biggest_hint": "In every look-alike group, ticks all files but the biggest one. Look-alikes can be different shots, so look through the groups before you move anything to the trash. Groups where two files tie for the biggest are skipped.",
   "dups.clear_hint": "Untick all copies.",

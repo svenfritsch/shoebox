@@ -2292,6 +2292,15 @@ var PRESELECT = [
     var best = g.files.filter(function (f) { return f.size === top; });
     return best.length === 1 ? g.files.filter(function (f) { return f !== best[0]; }).map(function (f) { return f.id; }) : [];
   } },
+  { id: 'lastshot', kind: 'similar', ids: function (g) {
+    // The best file of the latest shot stays; a group is skipped when a shot
+    // has no capture date or two shots tie for the latest.
+    var shots = dupRows(g).map(function (row) { return row.filter(function (f) { return f.pick; })[0] || row[0]; });
+    if (shots.some(function (f) { return !f.taken; })) return [];
+    var latest = shots.map(function (f) { return f.taken; }).sort().pop();
+    var last = shots.filter(function (f) { return f.taken === latest; });
+    return last.length === 1 ? g.files.filter(function (f) { return f !== last[0]; }).map(function (f) { return f.id; }) : [];
+  } },
 ];
 
 // The message of an entry (its label, or its tooltip with `_hint`).
@@ -2305,6 +2314,7 @@ function preselectText(entry, hint) {
     edited: ['dups.pre.edited', 'dups.pre.edited_hint'],
     originals: ['dups.pre.originals', 'dups.pre.originals_hint'],
     biggest: ['dups.pre.biggest', 'dups.pre.biggest_hint'],
+    lastshot: ['dups.pre.lastshot', 'dups.pre.lastshot_hint'],
   };
   return tr(texts[entry.id][hint ? 1 : 0]);
 }

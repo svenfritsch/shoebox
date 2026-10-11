@@ -565,8 +565,10 @@ was sie tut; eine Zeile ohne Treffer wird nicht aufgeführt.
   das JPEG an) und JPEG behalten (hakt das HEIC an).
 - Original und bearbeitet: Bearbeitete Versionen (die Originale bleiben) und
   Originale (die Bearbeitungen bleiben).
-- Ähnliche Fotos: Größere Datei behalten hakt in jeder Gruppe alle anderen an.
-  Ähnliche können verschiedene Aufnahmen sein: sieh die Gruppen vorher durch.
+- Ähnliche Fotos: Größere Datei behalten hakt in jeder Gruppe alle anderen an,
+  und Letzte Aufnahme behalten behält die zuletzt aufgenommene (Gruppen ohne
+  Aufnahmedatum werden übersprungen). Ähnliche können verschiedene Aufnahmen
+  sein: sieh die Gruppen vorher durch.
 
 Was du bei Duplikaten tun kannst
 Aktion: Bedeutung
