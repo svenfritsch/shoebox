@@ -2336,26 +2336,28 @@ function applyPreselect(entry) {
   window.scrollTo(0, 0);
 }
 
-// The Preselect drop-down: one line per rule, with how many files it would
-// tick and a tooltip that says what it does. Rules that find nothing among
-// the groups that are shown are greyed out.
+// The Preselect drop-down: one line per rule that finds something, with how
+// many files it would tick and a tooltip that says what it does. Rules that
+// find nothing among the groups that are shown are left out.
 function preselectMenu() {
   var box = el('details', 'dup-filter dup-pre');
   box.appendChild(el('summary', 'btn', tr('dups.pre')));
   var menu = el('div', 'dup-filter-menu');
-  var heading = null;
+  var heading = null, any = false;
   PRESELECT.forEach(function (entry) {
+    var c = preselectCount(entry);
+    if (!c.files) return;
+    any = true;
     if (entry.kind && entry.kind !== heading) {
       heading = entry.kind;
       menu.appendChild(el('div', 'dup-pre-head', DUP_KINDS.filter(function (k) { return k.id === entry.kind; })[0].label));
     }
-    var c = preselectCount(entry);
-    var b = el('button', 'btn quiet', preselectText(entry, false) + (c.files ? ' · ' + trn('count.files', c.files) + ' · ' + trn('count.photos', c.groups) : ''));
-    b.disabled = !c.files;
-    b.title = c.files ? preselectText(entry, true) : tr('dups.pre.none');
+    var b = el('button', 'btn quiet', preselectText(entry, false) + ' · ' + trn('count.files', c.files));
+    b.title = preselectText(entry, true);
     b.onclick = function () { applyPreselect(entry); };
     menu.appendChild(b);
   });
+  if (!any) menu.appendChild(el('div', 'dup-pre-head', tr('dups.pre.none')));
   box.appendChild(menu);
   return box;
 }

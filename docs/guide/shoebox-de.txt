@@ -553,7 +553,7 @@ Vorauswählen (oben rechts) hakt diese Kopie löschen nach einer Regel an und
 bringt die angehakten Gruppen nach oben, damit du genau siehst, was markiert
 ist. Entfernt wird erst, wenn du In den Papierkorb drückst und bestätigst.
 Jede Zeile zeigt, wie viele Dateien sie anhaken würde, und ihr Tooltip sagt,
-was sie tut; eine Zeile ohne Treffer ist grau.
+was sie tut; eine Zeile ohne Treffer wird nicht aufgeführt.
 
 - Vorschlag: nur was shoebox sicher weiß: von identischen Dateien alle außer
   der besten, und kleinere Versionen eines Fotos. Das ist auch angehakt, wenn

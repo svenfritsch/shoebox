@@ -516,7 +516,7 @@ Preselect (top right) ticks delete this copy by a rule and brings the groups
 it ticked to the top, so you see exactly what is marked. Nothing is removed
 until you press Move to trash and confirm. Every line shows how many files it
 would tick, and its tooltip says what it does; a line with nothing to tick is
-grey.
+not listed.
 
 - Suggested: only what shoebox is sure of: of identical files all but the best
   one, and smaller versions of a photo. This is also what is ticked when the
