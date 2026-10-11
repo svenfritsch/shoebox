@@ -1889,7 +1889,7 @@ var dupTab = 'here';
 
 function addDupTabs(page) {
   if (drives.list.length < 2 || isAll()) return;
-  var tabs = el('div', 'tabs');
+  var tabs = el('div', 'tabs underline');
   [['here', tr('dups.tab.here')], ['across', tr('dups.tab.across')]].forEach(function (t) {
     var b = el('button', dupTab === t[0] ? 'on' : '', t[1]);
     b.onclick = function () { dupTab = t[0]; loadDuplicates(); };
@@ -5602,7 +5602,7 @@ function loadDrivesPage() {
   page.textContent = '';
   page.appendChild(el('h2', '', tr('side.manage_drives')));
   page.appendChild(el('p', 'sub', tr('drives.page_sub')));
-  var cards = el('div', 'drive-cards'), tabs = el('div', 'tabs'), tabBox = el('div');
+  var cards = el('div', 'drive-cards'), tabs = el('div', 'tabs underline'), tabBox = el('div');
   page.appendChild(cards);
   page.appendChild(tabs);
   page.appendChild(tabBox);
