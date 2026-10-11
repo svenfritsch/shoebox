@@ -1364,7 +1364,7 @@ function renderPanelAll(info) {
   open.onclick = function () { switchLibrary(lib.id, 'folder=' + info.folder_id); };
   actions.appendChild(open);
   if (state.reveal) {
-    var reveal = el('button', 'btn quiet', state.reveal);
+    var reveal = revealButton();
     reveal.onclick = function () { revealOn(lib.id, info.path); };
     actions.appendChild(reveal);
   }
@@ -2820,11 +2820,19 @@ function revealFile(id) {
   }).catch(failed);
 }
 
+// "Show in Finder" with the drawn open-folder icon at the left of the label.
+function revealButton() {
+  var b = el('button', 'btn quiet with-icon');
+  b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20q-.825 0-1.412-.587Q2 18.825 2 18V6q0-.825.588-1.412Q3.175 4 4 4h6l2 2h8q.825 0 1.413.588Q22 7.175 22 8H11.175l-2-2H4v12l2.4-8H23.85l-2.575 8.575q-.2.65-.737 1.038Q20 20 19.325 20ZM6.1 18H19.2l1.8-6H7.9Z"/></svg>';
+  b.appendChild(el('span', '', state.reveal));
+  return b;
+}
+
 // Info panel, 5a: the buttons that show the file on the shoebox computer
 // and copy its path.
 function infoReveal(actions, info) {
   if (state.reveal) {
-    var reveal = el('button', 'btn quiet', state.reveal);
+    var reveal = revealButton();
     reveal.onclick = function () { revealFile(info.id); };
     actions.appendChild(reveal);
   }

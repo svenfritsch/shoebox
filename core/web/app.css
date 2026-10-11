@@ -166,6 +166,8 @@ body.selecting #select { color: var(--accent); }
 .btn { padding: 7px 14px; border-radius: 9px; border: 0; background: var(--accent); color: #fff; font-weight: 600; }
 .btn.quiet { background: var(--line); color: var(--fg); font-weight: 400; }
 .btn.danger { background: #c63b2f; }
+.btn.with-icon { display: inline-flex; align-items: center; gap: 8px; }
+.btn.with-icon svg { width: 18px; height: 18px; flex: none; fill: currentColor; }
 .btn:disabled { opacity: .5; cursor: default; }
 
 .modal { position: fixed; inset: 0; z-index: 25; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; padding: 16px; }
