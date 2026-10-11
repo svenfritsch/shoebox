@@ -239,7 +239,6 @@ body.selecting #select { color: var(--accent); }
 .copy .check { display: flex; align-items: center; gap: 4px; font-weight: 600; }
 .copy .check input { width: 18px; height: 18px; }
 .copy .meta { color: var(--muted); }
-.copy .meta.worse { color: #c63b2f; }
 .dup-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; justify-content: space-between; }
 .dup-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; justify-content: flex-end; }
 .dup-filter { position: relative; }
@@ -578,6 +577,7 @@ body.selecting .sec .pick { display: inline; }
 .compare-col img { width: 100%; max-height: 65vh; object-fit: contain; background: var(--cell-bg); border-radius: 6px; }
 .compare-col .name { font-weight: 600; font-size: 13px; word-break: break-all; }
 .compare-col .meta { color: var(--muted); font-size: 12px; }
+.copy .badge.worse { background: #c63b2f; color: #fff; }
 .copy .badge { align-self: flex-start; background: var(--cell-bg); border-radius: 10px; padding: 1px 8px; font-weight: 600; }
 
 /* Collapsible sidebar sections */

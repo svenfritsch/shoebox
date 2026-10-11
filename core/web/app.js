@@ -2263,7 +2263,8 @@ function otherFormats(g, keep) {
 }
 
 // The entries of the Preselect menu: what each ticks in a group (`ids`), and
-// the kind of group it is for (`kind`; none: every kind).
+// the kind of group it is for (`kind`, and `also` for a second one; none:
+// every kind).
 var PRESELECT = [
   { id: 'suggested', ids: suggestedIds },
   { id: 'samefolder', kind: 'identical', ids: function (g) {
@@ -2277,7 +2278,7 @@ var PRESELECT = [
     });
     return ids;
   } },
-  { id: 'smaller', kind: 'resolution', ids: function (g) { return g.files.filter(function (f) { return f.keeper; }).map(function (f) { return f.id; }); } },
+  { id: 'smaller', kind: 'resolution', also: 'similar', ids: function (g) { return g.files.filter(function (f) { return f.keeper; }).map(function (f) { return f.id; }); } },
   { id: 'heic', kind: 'resolution', ids: function (g) { return otherFormats(g, 'heic'); } },
   { id: 'jpeg', kind: 'resolution', ids: function (g) { return otherFormats(g, 'jpg'); } },
   { id: 'edited', kind: 'edited', ids: function (g) {
@@ -2308,11 +2309,16 @@ function preselectText(entry, hint) {
   return tr(texts[entry.id][hint ? 1 : 0]);
 }
 
+// Is a group of the kind this entry works on?
+function preselectKind(entry, g) {
+  return !entry.kind || g.kind === entry.kind || g.kind === entry.also;
+}
+
 // Files and groups an entry would tick among the groups that are shown.
 function preselectCount(entry) {
   var files = 0, groups = 0;
   visibleGroups().forEach(function (g) {
-    if (entry.kind && g.kind !== entry.kind) return;
+    if (!preselectKind(entry, g)) return;
     var n = entry.ids(g).length;
     if (n) { files += n; groups++; }
   });
@@ -2325,7 +2331,7 @@ function applyPreselect(entry) {
   Object.keys(shownMarked()).forEach(function (id) { delete dupState.marked[id]; });
   var hit = [], rest = [];
   dupState.groups.forEach(function (g) {
-    var ids = dupState.types[g.kind] && (!entry.kind || g.kind === entry.kind) ? entry.ids(g) : [];
+    var ids = dupState.types[g.kind] && preselectKind(entry, g) ? entry.ids(g) : [];
     ids.forEach(function (id) { dupState.marked[id] = true; });
     (ids.length ? hit : rest).push(g);
   });
@@ -2571,7 +2577,7 @@ function groupNode(g) {
     if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
     meta.push((f.size / 1e6).toFixed(1) + ' MB');
     card.appendChild(el('div', 'meta', meta.join(' · ')));
-    if (f.keeper) card.appendChild(el('div', 'meta worse', tr('dups.lower_quality')));
+    if (f.keeper) card.appendChild(el('div', 'badge worse', tr('dups.lower_quality')));
     if (f.in_copies) card.appendChild(el('div', 'meta', tr('dups.in_copies')));
     card.appendChild(el('div', 'meta', f.taken ? formatDate({ taken: f.taken, date_source: 'file' }) : tr('dups.no_capture_date')));
     if (thumb && topPixels !== null && (f.width || 0) * (f.height || 0) === topPixels) card.appendChild(el('div', 'badge', tr('dups.badge_pixels')));

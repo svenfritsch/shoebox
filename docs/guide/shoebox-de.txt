@@ -560,8 +560,9 @@ was sie tut; eine Zeile ohne Treffer wird nicht aufgeführt.
   die Seite aufgeht.
 - Identische Fotos: Kopien im selben Ordner (IMG_1 (2) neben IMG_1; identische
   Dateien in anderen Ordnern bleiben).
-- Dasselbe Foto, andere Auflösung: Kleinere Versionen, HEIC behalten (hakt das
-  JPEG an) und JPEG behalten (hakt das HEIC an).
+- Dasselbe Foto, andere Auflösung: Kleinere Versionen (jede Karte mit rotem
+  Schild Geringere Qualität, auch in Gruppen Ähnlicher), HEIC behalten (hakt
+  das JPEG an) und JPEG behalten (hakt das HEIC an).
 - Original und bearbeitet: Bearbeitete Versionen (die Originale bleiben) und
   Originale (die Bearbeitungen bleiben).
 - Ähnliche Fotos: Größere Datei behalten hakt in jeder Gruppe alle anderen an.
