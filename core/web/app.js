@@ -2196,6 +2196,7 @@ function markedCount() {
 
 // Left: which kinds to show (a drop-down with check boxes). Right: the two
 // buttons that clear without review.
+var dupFilterCloser = false;
 function dupToolbar() {
   var bar = el('div', 'dup-top');
   var filter = el('details', 'dup-filter');
@@ -2229,6 +2230,14 @@ function dupToolbar() {
     menu.appendChild(label);
   });
   refreshLabel();
+  // A click anywhere else closes the menu (one listener, whichever toolbar is current).
+  if (!dupFilterCloser) {
+    dupFilterCloser = true;
+    document.addEventListener('click', function (e) {
+      var open = document.querySelector('.dup-filter[open]');
+      if (open && !open.contains(e.target)) open.open = false;
+    });
+  }
   filter.appendChild(sum);
   filter.appendChild(menu);
   bar.appendChild(filter);
