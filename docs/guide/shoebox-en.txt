@@ -404,9 +404,10 @@ Move
 Move… asks for a folder. New folders are created, nothing is ever overwritten,
 and RAW, Live Photo and sidecar files move along. The photos’ own tags always
 go with them. “Keep folder tags” also keeps the old folder’s tags as own tags;
-folder tags always follow the new folder. If a folder is completely empty
-after the move (no file at all left in it, not even a hidden one), shoebox
-removes that empty folder and tells you which one.
+folder tags always follow the new folder. If a folder is empty after the move
+(nothing left in it but the leftovers your computer keeps there, such as
+.DS_Store or Thumbs.db), shoebox removes that empty folder and tells you which
+one. A folder that still holds anything else, a subfolder included, stays.
 
 Collect and export
 To gather photos for something (a print order, an album in InDesign, a video
@@ -612,8 +613,10 @@ drive. Click photos to select them (Shift-click selects a range), or use
 Select all; the bar at the bottom then has Put back and Delete for good.
 Deleting for good asks first. Moving photos to the trash from the timeline or
 the photo view is off by default: switch it on once in Settings (Allow move to
-trash). Deleting copies on the Duplicates screen and with Delete the new
-copies works either way and also goes to the trash.
+trash). If that leaves a folder empty, shoebox removes it and tells you which
+one; Put back creates the folder again. Deleting copies on the Duplicates
+screen and with Delete the new copies works either way and also goes to the
+trash.
 
 [Screenshot: After a scan: new copies of files the drive already had.]
 

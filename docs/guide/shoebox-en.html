@@ -486,7 +486,7 @@
           </div>
           <div>
             <h3>Move</h3>
-            <p><b>Move…</b> asks for a folder. New folders are created, nothing is ever overwritten, and RAW, Live Photo and sidecar files move along. The photos’ own tags always go with them. “Keep folder tags” also keeps the old folder’s tags as own tags; folder tags always follow the new folder. If a folder is completely empty after the move (no file at all left in it, not even a hidden one), shoebox removes that empty folder and tells you which one.</p>
+            <p><b>Move…</b> asks for a folder. New folders are created, nothing is ever overwritten, and RAW, Live Photo and sidecar files move along. The photos’ own tags always go with them. “Keep folder tags” also keeps the old folder’s tags as own tags; folder tags always follow the new folder. If a folder is empty after the move (nothing left in it but the leftovers your computer keeps there, such as <code>.DS_Store</code> or <code>Thumbs.db</code>), shoebox removes that empty folder and tells you which one. A folder that still holds anything else, a subfolder included, stays.</p>
           </div>
           <div>
             <h3>Collect and export</h3>
@@ -615,7 +615,7 @@
           </div>
           <div>
             <h3>Trash</h3>
-            <p>Nothing is deleted right away. Trashed photos wait in <code>.shoebox/trash</code> on the drive. Click photos to select them (Shift-click selects a range), or use <b>Select all</b>; the bar at the bottom then has <b>Put back</b> and <b>Delete for good</b>. Deleting for good asks first. Moving photos to the trash from the timeline or the photo view is off by default: switch it on once in <b>Settings</b> (<i>Allow move to trash</i>). Deleting copies on the <b>Duplicates</b> screen and with <b>Delete the new copies</b> works either way and also goes to the trash.</p>
+            <p>Nothing is deleted right away. Trashed photos wait in <code>.shoebox/trash</code> on the drive. Click photos to select them (Shift-click selects a range), or use <b>Select all</b>; the bar at the bottom then has <b>Put back</b> and <b>Delete for good</b>. Deleting for good asks first. Moving photos to the trash from the timeline or the photo view is off by default: switch it on once in <b>Settings</b> (<i>Allow move to trash</i>). If that leaves a folder empty, shoebox removes it and tells you which one; <b>Put back</b> creates the folder again. Deleting copies on the <b>Duplicates</b> screen and with <b>Delete the new copies</b> works either way and also goes to the trash.</p>
           </div>
         </div>
         <div>

@@ -432,9 +432,10 @@ Verschieben … fragt nach einem Ordner. Neue Ordner werden angelegt, nichts
 wird überschrieben, RAW-, Live-Photo- und Sidecar-Dateien wandern mit. Die
 eigenen Tags der Fotos gehen immer mit. „Ordnertags behalten“ behält
 zusätzlich die Tags des alten Ordners als eigene Tags; Ordner-Tags folgen
-immer dem neuen Ordner. Ist ein Ordner nach dem Verschieben ganz leer (nicht
-einmal eine versteckte Datei darin), entfernt shoebox diesen leeren Ordner und
-sagt dir, welcher es war.
+immer dem neuen Ordner. Ist ein Ordner nach dem Verschieben leer (nur das, was
+dein Computer dort selbst ablegt, etwa .DS_Store oder Thumbs.db, ist noch
+darin), entfernt shoebox diesen leeren Ordner und sagt dir, welcher es war.
+Ein Ordner, in dem noch etwas anderes liegt, auch ein Unterordner, bleibt.
 
 Sammeln und exportieren
 Um Fotos für etwas zu sammeln (eine Druckbestellung, ein Album in InDesign,
@@ -657,8 +658,10 @@ Bereich), oder nimm Alle auswählen; die Leiste unten bietet dann Zurücklegen
 und Endgültig löschen. Endgültig löschen fragt vorher nach. Das Legen in den
 Papierkorb in der Zeitleiste und in der Fotoansicht ist standardmäßig aus:
 Schalte es einmal in den Einstellungen ein (In den Papierkorb legen erlauben).
-Das Löschen von Kopien bei den Duplikaten und mit Die neuen Kopien löschen
-funktioniert in jedem Fall und geht ebenfalls in den Papierkorb.
+Bleibt dabei ein Ordner leer, entfernt shoebox ihn und sagt dir, welcher es
+war; Zurücklegen legt den Ordner wieder an. Das Löschen von Kopien bei den
+Duplikaten und mit Die neuen Kopien löschen funktioniert in jedem Fall und
+geht ebenfalls in den Papierkorb.
 
 [Screenshot: Nach einem Scan: neue Kopien von Dateien, die das Laufwerk schon
 hatte.]

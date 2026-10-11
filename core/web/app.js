@@ -1961,6 +1961,13 @@ $('sel-export').onclick = function () { openExport(selectedIds(), ''); };
 
 // ------------------------------------------------------------------ move and trash
 
+// " Empty folder removed: X" for the end of a toast, or nothing.
+function removedFolders(r) {
+  var gone = r.removed_folders || [];
+  if (!gone.length) return '';
+  return '. ' + tr(gone.length === 1 ? 'move.folders_removed' : 'move.folders_removed_many', { folders: gone.join(', ') });
+}
+
 function moveDialog(ids, done) {
   var body = el('div');
   body.appendChild(el('p', '', tr('move.text', { count: trn('count.photos', ids.length) })));
@@ -1990,9 +1997,7 @@ function moveDialog(ids, done) {
     post(LIBAPI + '/move', { ids: ids, folder: folder, keep_folder_tags: keep.checked }).then(function (r) {
       closeModal();
       if (done) done();
-      var gone = r.removed_folders || [];
-      toast(tr('move.done', { count: trn('count.files', r.files.length), folder: r.folder }) +
-        (gone.length ? '. ' + tr(gone.length === 1 ? 'move.folders_removed' : 'move.folders_removed_many', { folders: gone.join(', ') }) : ''));
+      toast(tr('move.done', { count: trn('count.files', r.files.length), folder: r.folder }) + removedFolders(r));
       report(tr('move.skipped'), r.skipped);
       changed();
     }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
@@ -2012,7 +2017,7 @@ function trashDialog(ids, done) {
         post(LIBAPI + '/trash', { ids: ids }).then(function (r) {
           closeModal();
           if (done) done();
-          toast(tr('trash.done', { count: trn('count.files', r.files.length + r.sidecars) }));
+          toast(tr('trash.done', { count: trn('count.files', r.files.length + r.sidecars) }) + removedFolders(r));
           report(tr('trash.skipped'), r.skipped);
           changed();
         }).catch(function (e) { closeModal(); failed(e); });
