@@ -390,7 +390,8 @@ Tag
 Add tag… puts your own tag on the selection. Tags live in shoebox’s index,
 never in the photo files. In the tag field the tags you used last come first
 (Recently used), then the Most used; typing narrows the list and keeps recent
-tags on top. The list of recent tags is kept by your browser, per drive.
+tags on top. Shoebox remembers this in the drive’s index (never in the photo
+files), so it is the same on every computer and tablet.
 
 Date
 Set date… gives the selection a date of your own, for example a whole folder

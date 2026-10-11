@@ -1456,7 +1456,13 @@ async fn all_tags(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> Ap
                 if !key.contains(&needle) || (own && t.kind == browse::TagKind::Folder) {
                     continue;
                 }
-                merged.entry(key).and_modify(|m| m.count += t.count).or_insert(browse::Tag { id: 0, ..t });
+                merged
+                    .entry(key)
+                    .and_modify(|m| {
+                        m.count += t.count;
+                        m.last_used = m.last_used.max(t.last_used);
+                    })
+                    .or_insert(browse::Tag { id: 0, ..t });
             }
         }
         let mut list: Vec<browse::Tag> = merged.into_values().collect();

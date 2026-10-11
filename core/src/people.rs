@@ -844,6 +844,10 @@ pub struct Person {
     /// Faces suggested for this person, and offered as "maybe".
     pub suggested: u64,
     pub maybe: u64,
+    /// When a face was last confirmed as this person (Unix seconds), for the
+    /// name fields to offer who was named last first.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_named: Option<i64>,
     /// `cat`, `dog` or `pet` when most of the person's confirmed faces are
     /// pets (a pet); absent for everyone else.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -896,6 +900,7 @@ pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
         photos: HashSet<String>,
         suggested: u64,
         maybe: u64,
+        last_named: Option<i64>,
         largest: Option<(f64, i64)>,
         drawn: Option<(f64, i64)>,
     }
@@ -904,6 +909,7 @@ pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
         if let (Decision::Confirmed, Some(p)) = (d.decision, d.person) {
             let c = counts.entry(p).or_default();
             c.faces += 1;
+            c.last_named = c.last_named.max(Some(d.at));
             if v.is_present(&d.key) {
                 c.photos.insert(d.key.clone());
                 if d.manual && c.drawn.is_none_or(|(w, _)| d.b[2] > w) {
@@ -968,6 +974,7 @@ pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
                 photos: c.photos.len() as u64,
                 suggested: c.suggested,
                 maybe: c.maybe,
+                last_named: c.last_named,
                 species: v.person_species.get(&p.id).cloned(),
                 cover: if chosen.is_none() && chosen_manual.is_some() { None } else { cover },
                 cover_manual: if chosen.is_none() && chosen_manual.is_some() {

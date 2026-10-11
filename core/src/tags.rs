@@ -143,7 +143,8 @@ fn tag_ref(conn: &Connection, id: i64) -> Result<TagRef> {
 }
 
 /// Give files an own tag. Unknown ids are skipped; files that have it
-/// already (as an own tag) count as unchanged.
+/// already (as an own tag) count as unchanged, but the tag still counts as
+/// used just now (`added_at`), so the tag fields offer it first.
 pub fn add(conn: &Connection, ids: &[i64], name: &str) -> Result<Changed> {
     let name = check_name(name)?;
     let tx = conn.unchecked_transaction()?;
@@ -155,6 +156,13 @@ pub fn add(conn: &Connection, ids: &[i64], name: &str) -> Result<Changed> {
         )?;
         for id in ids {
             files += insert.execute(params![id, tag])? as u64;
+        }
+        let mut used = tx.prepare(
+            "UPDATE file_tags SET added_at = ?3 WHERE file_id = ?1 AND tag_id = ?2 AND source = 'user'",
+        )?;
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64;
+        for id in ids {
+            used.execute(params![id, tag, now])?;
         }
     }
     let tag = tag_ref(&tx, tag)?;

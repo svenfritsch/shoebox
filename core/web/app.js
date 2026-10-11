@@ -594,25 +594,7 @@ function pickSuggest(it) {
   else setFilter(withFilter({ folder: it.id, q: '' }));
 }
 
-// What was used last, per drive, kept by the browser only (like Maps): the
-// tag names and person ids that the suggestion lists offer first.
-var RECENT_MAX = 6;
-function recentKey() { return 'shoebox-recent:' + LIBAPI; }
-function recentGet(kind) {
-  try {
-    var all = JSON.parse(localStorage.getItem(recentKey()) || '{}') || {};
-    return Array.isArray(all[kind]) ? all[kind] : [];
-  } catch (e) { return []; }
-}
-function recentAdd(kind, value) {
-  try {
-    var all = JSON.parse(localStorage.getItem(recentKey()) || '{}') || {};
-    var list = (Array.isArray(all[kind]) ? all[kind] : []).filter(function (v) { return kind === 'tags' ? fold(v) !== fold(value) : v !== value; });
-    list.unshift(value);
-    all[kind] = list.slice(0, 20);
-    localStorage.setItem(recentKey(), JSON.stringify(all));
-  } catch (e) { /* private window: the lists stay as they are */ }
-}
+var RECENT_MAX = 6; // how many "Recently used" the suggestion lists show
 
 // Suggestions for the tag fields (info panel, "Add tag…"): with the field
 // empty the tags used last, then the most used; while typing the matches,
@@ -638,15 +620,11 @@ function attachTagSuggestions(input) {
     list.textContent = '';
     items = [];
     at = -1;
-    var low = fold(text), byName = {};
+    var low = fold(text);
     tags = tags.filter(function (t) { return !isFavTag(t.name); });
-    tags.forEach(function (t) { byName[fold(t.name)] = t; });
-    var last = [];
-    recentGet('tags').forEach(function (n) {
-      var t = byName[fold(n)];
-      if (t && last.indexOf(t) < 0 && (!low || fold(t.name).indexOf(low) >= 0)) last.push(t);
-    });
-    last = last.slice(0, RECENT_MAX);
+    // Tags a photo was last given (the index remembers when), newest first.
+    var last = tags.filter(function (t) { return t.last_used && (!low || fold(t.name).indexOf(low) >= 0); })
+      .sort(function (a, b) { return b.last_used - a.last_used; }).slice(0, RECENT_MAX);
     var rest = tags.filter(function (t) { return last.indexOf(t) < 0; });
     var section = function (title, ts) {
       if (!ts.length) return;
@@ -669,7 +647,7 @@ function attachTagSuggestions(input) {
   var load = function () {
     var seq = ++suggestSeq, text = input.value.trim();
     // Own tags when empty (folder names are not what one types by hand).
-    api(LIBAPI + '/tags' + query(text ? { q: text, limit: 12 } : { own: 1, limit: 30 })).then(function (tags) {
+    api(LIBAPI + '/tags' + query(text ? { q: text, limit: 50 } : { own: 1, limit: 500 })).then(function (tags) {
       if (seq !== suggestSeq) return;
       tags.forEach(function (t) { state.tagNames[t.id] = t.name; });
       show(tags, text);
@@ -3087,7 +3065,7 @@ function infoTags(row, info) {
       // "favorite" is the heart, not a tag in the list.
       if (meansFav(input.value)) { setFavorite([info.id], true).then(function () { input.replaceWith(add); }); return; }
       input.disabled = true;
-      post(LIBAPI + '/tags/add', { ids: [info.id], name: input.value }).then(function (r) { recentAdd('tags', r && r.tag ? r.tag.name : input.value); tagsChanged(info.id); })
+      post(LIBAPI + '/tags/add', { ids: [info.id], name: input.value }).then(function () { tagsChanged(info.id); })
         .catch(function (e) { input.disabled = false; failed(e); });
     };
     add.replaceWith(input);
@@ -3181,7 +3159,6 @@ function addTagDialog(ids) {
     if (!input.value.trim()) { error.textContent = tr('tags.type_name'); return false; }
     btn.disabled = true;
     post(LIBAPI + '/tags/add', { ids: ids, name: input.value }).then(function (r) {
-      recentAdd('tags', r.tag.name);
       closeModal();
       toast(r.files ? tr('tags.added', { count: trn('count.photos', r.files), name: r.tag.name }) : tr('tags.already', { name: r.tag.name }));
       tagsChanged(null);
@@ -4056,7 +4033,6 @@ function personField(done, opts) {
   var pick = function (it) {
     list.hidden = true;
     input.value = it.label;
-    if (it.who.person_id != null) recentAdd('people', it.who.person_id);
     done(it.who, it.label);
   };
   var mark = function () {
@@ -4088,10 +4064,9 @@ function personField(done, opts) {
     // First the people named last, then (field empty) the most photographed,
     // then everyone by group; nobody twice.
     var shown = {}, top = [], frequent = [];
-    recentGet('people').forEach(function (id) {
-      var p = people.byId[id];
-      if (p && offered(p) && !shown[p.id] && top.length < RECENT_MAX) { shown[p.id] = true; top.push(p); }
-    });
+    top = people.list.filter(function (p) { return p.last_named && offered(p); })
+      .sort(function (a, b) { return b.last_named - a.last_named; }).slice(0, RECENT_MAX);
+    top.forEach(function (p) { shown[p.id] = true; });
     if (!low) {
       frequent = people.list.filter(function (p) { return offered(p) && !shown[p.id] && p.photos > 0; })
         .sort(function (a, b) { return b.photos - a.photos || a.name.localeCompare(b.name); }).slice(0, RECENT_MAX);

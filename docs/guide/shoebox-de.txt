@@ -415,8 +415,9 @@ Taggen
 Tag hinzufügen … gibt der Auswahl deinen eigenen Tag. Tags leben im Index von
 shoebox, nie in den Fotodateien. Im Tag-Feld stehen zuerst die Tags, die du
 zuletzt benutzt hast (Zuletzt verwendet), dann die Am häufigsten benutzten;
-beim Tippen wird die Liste enger, die zuletzt benutzten bleiben oben. Die
-Liste der letzten Tags merkt sich dein Browser, pro Laufwerk.
+beim Tippen wird die Liste enger, die zuletzt benutzten bleiben oben. Das
+merkt sich shoebox im Index des Laufwerks (nie in den Fotodateien), also auf
+jedem Computer und Tablet gleich.
 
 Datum
 Datum setzen … gibt der Auswahl ein eigenes Datum, zum Beispiel einem ganzen
