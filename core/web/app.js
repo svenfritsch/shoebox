@@ -215,8 +215,10 @@ function renderChips() {
   var box = $('filters');
   box.textContent = '';
   var f = state.filter;
-  var add = function (label, clear) {
-    var c = el('span', 'chip', label);
+  var add = function (label, clear, icon) {
+    var c = el('span', 'chip');
+    if (icon) c.appendChild(icon);
+    c.appendChild(document.createTextNode(label));
     var x = el('button', '', '✕');
     x.title = tr('chip.remove');
     x.onclick = clear;
@@ -225,7 +227,7 @@ function renderChips() {
   };
   if (f.folder && state.folderById[f.folder]) {
     var folder = state.folderById[f.folder];
-    add('📁 ' + (folder.path || folder.name), function () { setFilter(withFilter({ folder: null })); });
+    add(folder.path || folder.name, function () { setFilter(withFilter({ folder: null })); }, folderIcon());
     if (folder.path) {
       var edit = el('button', 'edit', '✎');
       edit.title = tr('chip.rename_folder');
@@ -559,9 +561,10 @@ function showSuggest(items, hint) {
     // People as in the sidebar: their picture, and the dog or cat for a pet.
     var label = el('span', 'label');
     if (it.kind === 'person') label.appendChild(avatar(it.person, 'tiny'));
+    if (it.kind === 'folder') label.appendChild(folderIcon());
     label.appendChild(document.createTextNode((it.kind === 'fav' ? '♥ ' : it.kind === 'pet' ? PET_TERMS[it.id].icon + ' '
       : it.kind === 'person' ? (petIcon(it.person && it.person.species) ? petIcon(it.person.species) + ' ' : '')
-        : ({ folder: '📁 ', place: '📍 ', date: '📅 ' }[it.kind] || '# ')) + it.label));
+        : ({ place: '📍 ', date: '📅 ' }[it.kind] || (it.kind === 'folder' ? '' : '# '))) + it.label));
     b.appendChild(label);
     b.appendChild(el('span', 'count', I18n.number(it.count)));
     b.onmousedown = function (ev) { ev.preventDefault(); }; // keep the focus in the box
@@ -1337,7 +1340,10 @@ function renderPanelAll(info) {
   var tags = el('div', 'tags readonly');
   (info.tags || []).forEach(function (t) {
     if (t.source === 'user' && isFavTag(t.name)) return;
-    tags.appendChild(el('span', t.source === 'folder' ? 'folder' : 'own', (t.source === 'folder' ? '📁 ' : '') + t.name));
+    var tag = el('span', t.source === 'folder' ? 'folder' : 'own');
+    if (t.source === 'folder') tag.appendChild(folderIcon());
+    tag.appendChild(document.createTextNode(t.name));
+    tags.appendChild(tag);
   });
   if (tags.children.length) row(tr('info.tags'), tags);
   var faces = el('div', 'pfaces readonly');
@@ -2506,7 +2512,9 @@ function groupNode(g) {
     if (f.tags && f.tags.length) {
       var tags = el('div', 'tagline');
       f.tags.forEach(function (t) {
-        var chip = el('span', 'chip' + (t.own ? ' own' : ''), (t.own ? '' : '📁 ') + t.name);
+        var chip = el('span', 'chip' + (t.own ? ' own' : ''));
+        if (!t.own) chip.appendChild(folderIcon());
+        chip.appendChild(document.createTextNode(t.name));
         chip.title = tr(t.own ? 'dups.own_tag' : 'dups.folder_tag');
         tags.appendChild(chip);
       });
@@ -2837,10 +2845,20 @@ function revealFile(id) {
   }).catch(failed);
 }
 
+// The one open-folder icon of the whole app (drawn, so it looks the same on
+// every system and takes the colour of the text around it). Never the emoji.
+var FOLDER_OPEN_PATH = 'M4 20q-.825 0-1.412-.587Q2 18.825 2 18V6q0-.825.588-1.412Q3.175 4 4 4h6l2 2h8q.825 0 1.413.588Q22 7.175 22 8H11.175l-2-2H4v12l2.4-8H23.85l-2.575 8.575q-.2.65-.737 1.038Q20 20 19.325 20ZM6.1 18H19.2l1.8-6H7.9Z';
+function folderIcon() {
+  var i = el('span', 'ficon');
+  i.setAttribute('aria-hidden', 'true');
+  i.innerHTML = '<svg viewBox="0 0 24 24"><path d="' + FOLDER_OPEN_PATH + '"/></svg>';
+  return i;
+}
+
 // "Show in Finder" with the drawn open-folder icon at the left of the label.
 function revealButton() {
   var b = el('button', 'btn quiet with-icon');
-  b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20q-.825 0-1.412-.587Q2 18.825 2 18V6q0-.825.588-1.412Q3.175 4 4 4h6l2 2h8q.825 0 1.413.588Q22 7.175 22 8H11.175l-2-2H4v12l2.4-8H23.85l-2.575 8.575q-.2.65-.737 1.038Q20 20 19.325 20ZM6.1 18H19.2l1.8-6H7.9Z"/></svg>';
+  b.appendChild(folderIcon());
   b.appendChild(el('span', '', state.reveal));
   return b;
 }
@@ -2982,7 +3000,9 @@ function infoTags(row, info) {
     if (t.source === 'user' && isFavTag(t.name)) return; // the heart in the top bar
     var show = function () { closeLightbox(); setFilter({ folder: null, tags: [t.id], q: '' }); };
     if (t.source === 'folder') {
-      var b = el('button', '', '📁 ' + t.name);
+      var b = el('button', '');
+      b.appendChild(folderIcon());
+      b.appendChild(document.createTextNode(t.name));
       b.title = tr('tags.folder_hint');
       b.onclick = show;
       tags.appendChild(b);
@@ -5822,7 +5842,8 @@ function renderBackup(slot, b, d) {
       li.appendChild(el('span', 'path', f.path));
       li.appendChild(el('span', 'size', formatBytes(f.size)));
       if (state.reveal && l[3]) {
-        var go = el('button', 'btn quiet reveal', '📂');
+        var go = el('button', 'btn quiet reveal');
+        go.appendChild(folderIcon());
         go.title = state.reveal;
         go.setAttribute('aria-label', state.reveal);
         go.onclick = function () { revealOn(l[3], f.path); };
