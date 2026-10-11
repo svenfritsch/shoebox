@@ -2434,8 +2434,9 @@ function dupThumb(f, compare) {
 // "IMG_E1234" is the edited version of "IMG_1234" (iPhone).
 function isEdit(f) { return /^img_e\d+/i.test(f.name); }
 
-// The group's photos large and side by side; "Keep this one" trashes all the
-// others (the dialog closes), so the choice is one click.
+// The group's photos large and side by side; "Keep this one" ticks all the
+// others (the dialog closes), so the choice is one click and Move to trash
+// in the bar does the removing for every group at once.
 function compareDialog(g, start, onKeep) {
   var back = el('div', 'modal');
   var dlg = el('div', 'dialog compare');
@@ -2516,16 +2517,7 @@ function groupNode(g) {
   // One card per file: the check box, where it is, what it is, its tags.
   // `thumb`: the card carries its own thumbnail (similar photos).
   var cards = [];
-  // "Keep this one" in the compare dialog: tick every other file, untick it,
-  // and move the others to the trash (after the usual confirmation).
-  var keepOnly = function (keep) {
-    cards.forEach(function (c) {
-      c.cb.checked = c.f.id !== keep.id;
-      c.cb.dispatchEvent(new Event('change'));
-    });
-    deleteMarked(g);
-  };
-  var compare = function (f) { compareDialog(g, f, keepOnly); };
+  var compare = function (f) { compareDialog(g, f, keepTicked); };
   // The one-click choice on a card of a series: tick the other files and
   // leave this one open. Nothing is trashed until "Move to trash".
   var keepTicked = function (keep) {
@@ -2635,11 +2627,9 @@ function groupNode(g) {
 
 // Sends the marked copies, one request per group. Capture dates that really
 // conflict are asked for afterwards, then those groups are sent again.
-// `only`: a single group (the compare dialog's "Keep this one").
-function deleteMarked(only) {
+function deleteMarked() {
   var jobs = [], total = 0;
   visibleGroups().forEach(function (g) {
-    if (only && only.files && g !== only) return;
     var remove = g.files.filter(function (f) { return dupState.marked[f.id]; }).map(function (f) { return f.id; });
     if (!remove.length) return;
     var keep = g.files.filter(function (f) { return !dupState.marked[f.id]; }).map(function (f) { return f.id; });
