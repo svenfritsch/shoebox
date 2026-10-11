@@ -351,9 +351,10 @@ offen.
 Ansicht
 Foto anklicken. ⓘ öffnet das Infofeld: Datum (als geschätzt markiert, wenn es
 nicht der Aufnahmetag ist, oder als manuell, wenn du es selbst gesetzt hast;
-der Stift daneben setzt oder ändert dein Datum), Kamera, Größe, Tags, Personen
-und Knöpfe, um den Ordner zu öffnen oder den Pfad zu kopieren. Ganz unten
-zeigen die GPS-Daten, wo das Foto aufgenommen wurde (siehe „Orte und Karten“).
+der Stift daneben setzt oder ändert dein Datum), Laufwerk, Kamera, Größe,
+Tags, Personen und Knöpfe, um den Ordner zu öffnen oder den Pfad zu kopieren.
+Ganz unten zeigen die GPS-Daten, wo das Foto aufgenommen wurde (siehe „Orte
+und Karten“).
 
 Favoriten
 Das ♥ in der oberen Leiste der Ansicht oder die Taste f markiert das Foto als
@@ -577,21 +578,49 @@ Ereignisordner in Vorschlägen heißen (zum Beispiel JJ.MM_Ereignis); vorhandene
 Ordner werden nicht umbenannt, und alle Formen werden erkannt.
 
 Duplikate
-Duplikate zeigt vier Arten: identisch, dasselbe Foto in anderer Größe,
-Original und bearbeitet sowie Ähnliche. Hake diese Kopie löschen bei dem an,
-was weg soll; die beste Datei bleibt, und von jedem Duplikat bleibt immer
-mindestens eine Datei. Tags und Aufnahmedatum einer entfernten Kopie gehen auf
-die übrige über. Bei mehr als einem Laufwerk zeigt der Reiter Über Laufwerke
-hinweg (in Alle Laufwerke und unter Laufwerke verwalten) Fotos, die auf
-mehreren Laufwerken liegen: ein Bild, eine Zeile pro Kopie mit Name des
+Duplikate zeigt vier Arten: identisch, dasselbe Foto mit anderen Pixelmaßen
+oder anderem Format (eine kleinere oder weitergeschickte Version, oder ein
+HEIC und das daraus gemachte JPEG), Original und bearbeitet sowie Ähnliche.
+Hake diese Kopie löschen bei dem an, was weg soll; die beste Datei bleibt.
+shoebox hakt nur an, was sicher ist: identische Dateien und eine Version mit
+weniger Pixeln (ein HEIC und sein JPEG werden zusammen gezeigt, aber keins
+wird vorab angehakt). Zwei Dateien im gleichen Format mit gleichen Pixelmaßen,
+aber verschiedenen Bytes, etwa ein Kamera-JPEG und ein aus der RAW-Datei
+entwickeltes JPEG (oft benannt wie IMG_1 2.jpg), werden nie vorab angehakt:
+sie erscheinen unter Ähnliche, und du wählst, welche bleibt: Dieses behalten
+auf einer Karte hakt alle anderen Dateien der Gruppe mit einem Klick an (erst
+In den Papierkorb verschiebt etwas), und kleine Marken zeigen, welche Datei
+die meisten Pixel hat oder die größte Datei ist, und von jedem Duplikat bleibt
+immer mindestens eine Datei. Tags und Aufnahmedatum einer entfernten Kopie
+gehen auf die übrige über. Bei mehr als einem Laufwerk zeigt der Reiter Über
+Laufwerke hinweg (in Alle Laufwerke und unter Laufwerke verwalten) Fotos, die
+auf mehreren Laufwerken liegen: ein Bild, eine Zeile pro Kopie mit Name des
 Datenträgers und Ordner. Hake die Kopien an, die weg sollen, oder wähle ein
 Laufwerk und Alle markieren, um jede Kopie darauf anzukreuzen; die letzte
 Kopie eines Fotos lässt sich nie ankreuzen. In den Papierkorb fragt vorher
 nach und legt jede Kopie in den Papierkorb ihres eigenen Laufwerks.
 
-Schnellaktionen
-Kopien im selben Ordner entfernen und Kopien geringerer Qualität entfernen
-räumen die eindeutigen Fälle in einem Zug auf.
+Vorauswählen
+Vorauswählen (oben rechts) hakt diese Kopie löschen nach einer Regel an und
+bringt die angehakten Gruppen nach oben, damit du genau siehst, was markiert
+ist. Entfernt wird erst, wenn du In den Papierkorb drückst und bestätigst.
+Jede Zeile zeigt, wie viele Dateien sie anhaken würde, und ihr Tooltip sagt,
+was sie tut; eine Zeile ohne Treffer wird nicht aufgeführt.
+
+- Vorschlag: nur was shoebox sicher weiß: von identischen Dateien alle außer
+  der besten, und kleinere Versionen eines Fotos. Das ist auch angehakt, wenn
+  die Seite aufgeht.
+- Identische Fotos: Kopien im selben Ordner (IMG_1 (2) neben IMG_1; identische
+  Dateien in anderen Ordnern bleiben).
+- Dasselbe Foto, andere Auflösung: Kleinere Versionen (jede Karte mit rotem
+  Schild Geringere Qualität, auch in Gruppen Ähnlicher), HEIC behalten (hakt
+  das JPEG an) und JPEG behalten (hakt das HEIC an).
+- Original und bearbeitet: Bearbeitete Versionen (die Originale bleiben) und
+  Originale (die Bearbeitungen bleiben).
+- Ähnliche Fotos: Größere Datei behalten hakt in jeder Gruppe alle anderen an,
+  und Letzte Aufnahme behalten behält die zuletzt aufgenommene (Gruppen ohne
+  Aufnahmedatum werden übersprungen). Ähnliche können verschiedene Aufnahmen
+  sein: sieh die Gruppen vorher durch.
 
 Was du bei Duplikaten tun kannst
 Aktion: Bedeutung
@@ -601,15 +630,19 @@ Verschiedene Fotos: Nichts wird gelöscht. Ähnliche Fotos sind getrennte
 Aufnahmen, keine Kopien. Schaltfläche oben rechts.
 Diese Kopie löschen: Die Kopie kommt in den Papierkorb. Bei jeder Kopie
 anhaken, die weg soll; die beste Datei bleibt.
-Dieses behalten: Alle anderen kommen in den Papierkorb. Nur bei ähnlichen
-Fotos: Foto öffnen, vergleichen, wählen, bestätigen.
+Dieses behalten: Hakt alle anderen an. Nur bei ähnlichen Fotos: der Knopf am
+Fuß einer Karte hakt diese Kopie löschen bei allen anderen Dateien der Gruppe
+mit einem Klick an. Der gleiche Knopf im Vergleichsfenster (Bild anklicken)
+hakt die anderen an und schließt das Fenster, so kannst du mehrere Gruppen
+durchgehen und am Ende einmal In den Papierkorb drücken.
 
 Alle behalten und Verschiedene Fotos sind interne Notizen: shoebox speichert
 sie in seiner eigenen Datenbank in .shoebox auf dem Laufwerk, nie in den
 Fotos. Diese Funde zeigt dir shoebox auf dem Bildschirm Duplikate nicht mehr
 an. Die Notizen bleiben erhalten, wenn du Fotos verschiebst oder umbenennst,
-und Kopien im selben Ordner entfernen und Kopien geringerer Qualität entfernen
-lassen diese Fotos in Ruhe.
+Zu den Knöpfen zeigt ein Tooltip eine kurze Erklärung: Verschiedene Fotos
+sagt, dass die Dateien getrennte Aufnahmen sind, Alle behalten verknüpft sie
+als Versionen eines Fotos.
 
 Papierkorb
 Nichts wird sofort gelöscht. Gelöschte Fotos warten in .shoebox/trash auf dem
@@ -626,8 +659,11 @@ hatte.]
 
 [Screenshot: Die Papierkorb-Seite.]
 
-[Screenshot: Duplikate: eine vorgewählte Messenger-Kopie neben ihrem
-Original.]
+[Screenshot: Das Menü Vorauswählen: jede Zeile zeigt, wie viele Dateien sie
+anhaken würde; erst „In den Papierkorb“ entfernt etwas.]
+
+[Screenshot: Duplikate nach Vorauswählen › Kleinere Versionen: die
+Messenger-Kopie ist angehakt und mit Geringere Qualität markiert.]
 
 Personen und Haustiere
 ----------------------

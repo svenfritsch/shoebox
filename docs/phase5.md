@@ -1048,3 +1048,17 @@ crops removed at the start, guard).
   - [ ] Right-click a photo on a person's page (from the sidebar and from the
         search box): "Use as … picture" changes the picture; on a photo of
         someone else it says why not.
+
+## Later change: the two bulk buttons became the Preselect menu
+
+"Clear Same Folder Copies" and "Clear Lower Quality Copies" (and their
+`GET/POST /api/duplicates/same-folder` and `/lower-quality`, `same_folder_plan`,
+`lower_quality_plan`, `remove_planned`) are gone: they deleted without review
+and showed no count. The toolbar has a **Preselect** menu instead
+(`PRESELECT` in `core/web/app.js`): each entry only ticks "delete this copy",
+shows how many files and groups it ticks, has a tooltip, and brings those groups
+to the top; **Move to trash** does the removing, as always. Entries: Suggested
+(identical and same-photo groups only, also ticked on load), Copies in the same
+folder, Smaller versions, Keep the HEIC / Keep the JPEG, Edited versions /
+Originals, Keep the bigger file (look-alikes). `DupFile.copy_named` tells the
+page which name is a copy's.
