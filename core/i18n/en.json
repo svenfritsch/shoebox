@@ -789,7 +789,6 @@
   "export.creates": "Creates {path}",
   "export.creates_none": "The new folder is created inside the folder above.",
   "export.numbered": "Files are numbered in capture order, like {example}. Change this in Settings → Export.",
-  "export.not_numbered": "Files keep their names. You can number them in Settings → Export.",
   "export.heic": "Convert HEIC to JPEG ({count})",
   "export.heic_hint": "For print shops and apps that cannot read HEIC. The JPEG keeps the capture date and the camera data; the original stays as it is.",
   "export.raw": "Also export the RAW files (for {count})",

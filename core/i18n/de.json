@@ -789,7 +789,6 @@
   "export.creates": "Legt {path} an",
   "export.creates_none": "Der neue Ordner wird im Ordner oben angelegt.",
   "export.numbered": "Die Dateien werden in der Reihenfolge der Aufnahme nummeriert, etwa {example}. Das änderst du unter Einstellungen → Export.",
-  "export.not_numbered": "Die Dateien behalten ihre Namen. Nummerieren kannst du sie unter Einstellungen → Export.",
   "export.heic": "HEIC in JPEG umwandeln ({count})",
   "export.heic_hint": "Für Druckereien und Programme, die HEIC nicht lesen können. Das JPEG behält Aufnahmedatum und Kameradaten; das Original bleibt, wie es ist.",
   "export.raw": "RAW-Dateien auch exportieren (für {count})",

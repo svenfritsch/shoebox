@@ -326,10 +326,11 @@ function updateExport() {
   var name = ex.name.trim();
   u.result.textContent = '';
   u.result.appendChild(document.createTextNode(name && ex.parent ? tr('export.creates', { path: pathJoin(ex.parent, name) }) : tr('export.creates_none')));
-  u.result.appendChild(el('br'));
-  u.result.appendChild(document.createTextNode(exportNumbered()
-    ? tr('export.numbered', { example: '001_IMG_3457.jpg' })
-    : tr('export.not_numbered')));
+  // Only said when numbering is on; with it off there is nothing to point out.
+  if (exportNumbered()) {
+    u.result.appendChild(el('br'));
+    u.result.appendChild(document.createTextNode(tr('export.numbered', { example: '001_IMG_3457.jpg' })));
+  }
 
   var c = ex.check;
   u.note.hidden = !(c && c.exists);
