@@ -585,6 +585,7 @@
   "drives.people_offline": "Not included, offline: {names}",
   "drives.nobody": "Nobody is named yet.",
   "drives.photos_everywhere": "Photos on all drives",
+  "drives.person_folder": "Folder: {name}",
   "drives.note": "Photos of {libs}",
   "drives.note_out": " · not shown: {out}",
   "drives.status": "{photos} on {drives} · for looking; open a photo’s drive to change things",

@@ -5675,7 +5675,12 @@ function loadDrivesPage() {
         var c = el('div', 'person-merged');
         c.appendChild(el('div', 'n', p.name));
         c.appendChild(el('div', 'sub', trn('count.photos', p.photos) + (p.group ? ' · ' + p.group : '')));
-        p.libraries.forEach(function (l) { c.appendChild(el('span', 'pill', l.name + ' · ' + l.faces)); });
+        // The drive first (its disk name; the folder name only where that is all there is).
+        p.libraries.forEach(function (l) {
+          var pill = el('span', 'pill drive', (l.volume || l.name) + ' · ' + l.faces);
+          if (l.volume) pill.title = tr('drives.person_folder', { name: l.name });
+          c.appendChild(pill);
+        });
         var go = el('button', 'btn quiet', tr('drives.photos_everywhere'));
         go.onclick = function () { switchLibrary('all', 'person=' + encodeURIComponent(p.name)); };
         c.appendChild(go);

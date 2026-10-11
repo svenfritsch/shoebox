@@ -744,9 +744,12 @@ photo's folder, to change tags, people or favorites. Manage drives, next to
 Duplicates, Trash and Settings, opens a page that does not depend on the drive
 you are looking at: your drives as cards, and two tabs below them, People
 across drives and Duplicates across drives. A drive that is unplugged is shown
-as offline. The drive you are looking at is filled in with the accent colour,
-and so is the page you have open under it (All photos, Duplicates, Trash,
-Settings), so you can always see which drive's trash you are in.
+as offline. Under People across drives each person shows the drives they are
+on by disk name with the number of faces found there (point at one to see its
+folder), and the people who are on the most drives come first. The drive you
+are looking at is filled in with the accent colour, and so is the page you
+have open under it (All photos, Duplicates, Trash, Settings), so you can
+always see which drive's trash you are in.
 
 Original and backup drives
 On the Manage drives page every drive is a card with its disk name and the
