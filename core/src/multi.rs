@@ -11,7 +11,7 @@
 //! other drive does not is *suggested* as a backup and left out of the
 //! duplicates until the user confirms or says "separate".
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -620,4 +620,56 @@ pub fn primary_of(drives: &[Drive], backup: usize) -> Result<Option<usize>> {
         }
     }
     Ok(best.map(|(i, _)| i))
+}
+
+/// Which files of `here` the other drive of a backup pair does not have, by
+/// content (full hash; files without one are left out, as in the backup
+/// check). `here_is_backup`: the files only the backup has (the check's "only
+/// on the backup", including the ones changed since). Otherwise the files
+/// only the original has and the backup holds nothing at that path for ("not
+/// on the backup yet"; a file with the same path and other content is
+/// `different_pairs`).
+pub fn only_here(here: &Path, other: &Path, here_is_backup: bool) -> Result<HashSet<i64>> {
+    let conn = open_pair(here, other)?;
+    let sql = if here_is_backup {
+        "SELECT a.id FROM main.files a
+         WHERE a.missing_since IS NULL AND a.full_hash IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM other.files b WHERE b.full_hash = a.full_hash AND b.missing_since IS NULL)"
+    } else {
+        "SELECT a.id FROM main.files a
+         WHERE a.missing_since IS NULL AND a.full_hash IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM other.files b WHERE b.full_hash = a.full_hash AND b.missing_since IS NULL)
+           AND NOT EXISTS (SELECT 1 FROM other.files b WHERE b.path_nfc = a.path_nfc AND b.missing_since IS NULL)"
+    };
+    let mut stmt = conn.prepare(sql)?;
+    let ids = stmt.query_map([], |r| r.get::<_, i64>(0))?.collect::<rusqlite::Result<HashSet<i64>>>()?;
+    Ok(ids)
+}
+
+/// The files that the backup check lists as "different on the backup": the
+/// same path (NFC, ignoring case) on the original and on the backup, other
+/// content. Pairs of (id on the original, id on the backup), by path.
+pub fn different_pairs(primary: &Path, backup: &Path) -> Result<Vec<(i64, i64)>> {
+    let conn = open_pair(primary, backup)?;
+    let mut stmt = conn.prepare(
+        "SELECT a.id, b.id FROM main.files a JOIN other.files b ON b.path_nfc = a.path_nfc AND b.missing_since IS NULL
+         WHERE a.missing_since IS NULL AND a.full_hash IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM other.files c WHERE c.full_hash = a.full_hash AND c.missing_since IS NULL)
+         ORDER BY a.path_nfc",
+    )?;
+    let pairs = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?.collect::<rusqlite::Result<_>>()?;
+    Ok(pairs)
+}
+
+/// The backup drive and the drive it copies, as positions in `drives`: the
+/// first backup that has a drive to compare with.
+pub fn first_pair(drives: &[Drive]) -> Result<Option<(usize, usize)>> {
+    for (i, d) in drives.iter().enumerate() {
+        if d.role == Role::Backup
+            && let Some(p) = primary_of(drives, i)?
+        {
+            return Ok(Some((p, i)));
+        }
+    }
+    Ok(None)
 }

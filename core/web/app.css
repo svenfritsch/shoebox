@@ -553,8 +553,7 @@ body.selecting .sec .pick { display: inline; }
 .xgroup { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin: 0 0 8px; }
 .xgroup .path { font-size: 13px; word-break: break-all; }
 .xgroup .path b { font-weight: 600; }
-.people-grid { display: flex; flex-wrap: wrap; gap: 10px; }
-.person-merged { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; min-width: 170px; }
+.person-merged { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
 .person-merged .n { font-weight: 600; }
 
 /* ---- the common timeline of all drives is for looking: no folders or selecting */
@@ -834,3 +833,24 @@ body.geo-view #page { padding: 0; height: 100%; }
 .face-size input::-moz-range-thumb { width: 18px; height: 18px; border: 0; border-radius: 50%; background: var(--fg); box-shadow: 0 1px 3px rgba(0,0,0,.5); }
 .face-size input:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
 .face-size output { min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Comparing the two drives of a backup pair (Manage drives: "Show photos") */
+.chip.cmp { border-color: var(--accent); background: rgba(224, 164, 109, .12); }
+.cell .tb { position: absolute; left: 8px; top: 8px; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 9px; pointer-events: none; }
+.cell .tb.orig { background: rgba(0, 0, 0, .6); color: #fff; }
+.cell .tb.bk { background: #6cb4ee; color: #0b2233; }
+.lb-panel .cmp-badge { display: inline-block; margin-left: 8px; padding: 0 8px; border-radius: 9px; font-size: 11px; font-weight: 700; vertical-align: 1px; cursor: help; white-space: nowrap; background: #6cb4ee; color: #0b2233; }
+.lb-panel .cmp-badge.original { background: rgba(255, 255, 255, .2); color: #fff; }
+.drive-card .lists summary .go { float: right; margin: -3px 0 0 8px; padding: 4px 10px; font-size: 12px; border-radius: 8px; font-weight: 600; }
+.drive-card .lists summary .sub { color: var(--muted); }
+.drive-card .backup-status { display: flex; flex-direction: column; gap: 12px; }
+/* The same row in an original's card and a backup's: a muted line, 30px tall (the backup's has a bar). */
+.drive-card .statline { min-height: 30px; }
+.drive-card .statline .t { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 12px; color: var(--muted); }
+.drive-card .statline b { color: var(--fg); }
+/* People across drives: cards of one width on a grid, the drives in one row, the button at the bottom. */
+.people-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.person-merged { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.person-merged .pills { display: flex; flex-wrap: wrap; gap: 4px; }
+.person-merged .pills .pill { margin-right: 0; }
+.person-merged > .btn { margin-top: auto; align-self: flex-start; }

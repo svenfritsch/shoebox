@@ -114,6 +114,7 @@ $('login-form').addEventListener('submit', function (ev) {
 // ------------------------------------------------------------------ filters (in the URL hash)
 
 var TYPES = ['photo', 'video', 'live', 'screenshot'];
+var COMPARES = ['backup', 'original', 'different'];
 var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person', 'drives', 'settings', 'pets', 'locations'];
 // Pet search terms (`pet=` in the URL and the API): a species or any pet.
 var PET_TERMS = {
@@ -123,7 +124,7 @@ var PET_TERMS = {
 };
 
 function readHash() {
-  var f = { folder: null, tags: [], people: [], pets: [], types: [], fav: false, place: null, dates: [], nodate: false, q: '', view: null, id: null, tab: null };
+  var f = { folder: null, tags: [], people: [], pets: [], types: [], fav: false, place: null, dates: [], nodate: false, compare: '', q: '', view: null, id: null, tab: null };
   location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
     var i = kv.indexOf('=');
     if (i < 0) return;
@@ -141,6 +142,8 @@ function readHash() {
     // Photos dated inside a year, month or day (several: all must match), and those that need a date.
     if (k === 'date' && /^\d{4}(-\d{2}(-\d{2})?)?$/.test(v) && f.dates.indexOf(v) < 0) f.dates.push(v);
     if (k === 'nodate') f.nodate = v === '1';
+    // Only on the backup / only on the original / different on the backup (Manage drives).
+    if (k === 'compare' && COMPARES.indexOf(v) >= 0) f.compare = v;
     if (k === 'q') f.q = v;
     if (k === 'view' && VIEWS.indexOf(v) >= 0) f.view = v;
     if (k === 'id') f.id = parseInt(v, 10) || null;
@@ -156,7 +159,7 @@ function readHash() {
 // folder, any number of tags and people (`tag`, `person` repeated in the
 // URL) and free text.
 function setFilter(f) {
-  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], type: f.types || [], fav: f.fav ? 1 : null, place: f.place, date: f.dates || [], nodate: f.nodate ? 1 : null, q: f.q }).replace(/^\?/, '');
+  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], type: f.types || [], fav: f.fav ? 1 : null, place: f.place, date: f.dates || [], nodate: f.nodate ? 1 : null, compare: f.compare || null, q: f.q }).replace(/^\?/, '');
   if (h === location.hash.replace(/^#/, '')) { applyFilter(); return; }
   location.hash = h; // triggers hashchange -> applyFilter
 }
@@ -166,7 +169,7 @@ function withFilter(changes) {
   var f = state.filter;
   // A place picked on the Locations page goes with the search to the timeline.
   var place = f.view === 'locations' ? f.id : f.place;
-  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), pets: f.pets.slice(), types: f.types.slice(), fav: f.fav, place: place, dates: f.dates.slice(), nodate: f.nodate, q: f.q }, changes);
+  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), pets: f.pets.slice(), types: f.types.slice(), fav: f.fav, place: place, dates: f.dates.slice(), nodate: f.nodate, compare: f.compare, q: f.q }, changes);
 }
 
 function showView(view, id, tab) { setFilter({ view: view, id: id, tab: tab, folder: null, tags: [], people: [], q: '' }); }
@@ -185,7 +188,7 @@ function applyFilter() {
   $('sizer').hidden = !!view;
   $('current-month').textContent = view && VIEW_LABELS[view] ? tr(VIEW_LABELS[view]) : '';
   var f = state.filter;
-  $('all').classList.toggle('active', !view && !f.folder && !f.tags.length && !f.people.length && !f.pets.length && !f.place && !f.fav && !f.dates.length && !f.nodate && !f.q);
+  $('all').classList.toggle('active', !view && !f.folder && !f.tags.length && !f.people.length && !f.pets.length && !f.place && !f.fav && !f.dates.length && !f.nodate && !f.compare && !f.q);
   $('nav-nodate').classList.toggle('active', !view && f.nodate);
   if (isAll()) $('nav-nodate').hidden = true;
   $('nav-dups').classList.toggle('active', view === 'duplicates');
@@ -264,6 +267,10 @@ function renderChips() {
     box.lastChild.title = tr('dates.chip_hint', { date: dateTermLabel(term) });
   });
   if (f.nodate) add('📅 ' + tr('side.needs_date'), function () { setFilter(withFilter({ nodate: false })); });
+  if (f.compare) {
+    add('⇄ ' + compareLabel(f.compare), function () { setFilter(withFilter({ compare: '' })); });
+    box.lastChild.classList.add('cmp');
+  }
   if (f.q) add('“' + f.q + '”', function () { setFilter(withFilter({ q: '' })); });
   var terms = box.children.length;
   if (terms) {
@@ -276,7 +283,7 @@ function renderChips() {
   if (terms >= 2) {
     var clear = el('button', 'chip clear', tr('chip.clear_all'));
     clear.title = tr('chip.clear_all_hint');
-    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], pets: [], fav: false, place: null, q: '' }); };
+    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], pets: [], fav: false, place: null, compare: '', q: '' }); };
     box.appendChild(clear);
   }
   personHead(box, f);
@@ -462,6 +469,93 @@ function favSuggestion(needle, f) {
   return [{ kind: 'fav', id: 'fav', label: tr('fav.label'), count: state.favCount }];
 }
 
+// ---- comparing the drives of a backup pair (Manage drives opens these views)
+
+function compareLabel(kind) { return tr(kind === 'backup' ? 'cmp.only_backup' : kind === 'original' ? 'cmp.only_original' : 'cmp.different'); }
+
+// The disk name of a drive (its folder's name only where that is all there is).
+function driveLabel(library) {
+  var d = ((drives.cmp && drives.cmp.drives) || []).filter(function (x) { return x.library === library; })[0];
+  if (d) return d.volume || d.name;
+  var l = drives.list.filter(function (x) { return x.id === library; })[0];
+  return l ? l.name : '';
+}
+
+// For the open drive, when it is one half of a backup pair: what only it has
+// (`kind` is the filter: `backup` on the backup, `original` on the drive it
+// copies), how many photos, and the other drive.
+function compareFor() {
+  if (isAll() || !drives.cmp || !drives.current) return null;
+  var id = drives.current.id, list = drives.cmp.backups;
+  var mine = list.filter(function (b) { return b.library === id; })[0];
+  if (mine) return mine.extra ? { kind: 'backup', count: mine.extra, other: mine.primary_library } : null;
+  var of = list.filter(function (b) { return b.primary_library === id; })[0];
+  return of && of.missing ? { kind: 'original', count: of.missing, other: of.library } : null;
+}
+
+// Counts of the drives and their backup checks, once per page load. A link
+// with a comparison the open drive cannot show is opened without it, and
+// the page says so.
+function loadCompare() {
+  drives.cmp = { backups: [], drives: [] };
+  if (drives.list.length < 2) { checkCompare(); return Promise.resolve(); }
+  return Promise.all([api('/api/all/backups?limit=0'), api('/api/all/drives')]).then(function (r) {
+    drives.cmp = { backups: r[0], drives: r[1] };
+  }).catch(function () {}).then(checkCompare);
+}
+
+function compareProblem(kind) {
+  var name = driveLabel(drives.current.id), backups = drives.cmp.backups;
+  var pair = backups.filter(function (b) { return b.primary_library; });
+  if (kind === 'different') {
+    if (!isAll()) return tr('cmp.gone_one', { name: name });
+    return pair.some(function (b) { return b.different; }) ? null : tr('cmp.gone_empty');
+  }
+  if (isAll()) return tr('cmp.gone_all');
+  var mine = backups.filter(function (b) { return b.library === drives.current.id; })[0];
+  var of = pair.filter(function (b) { return b.primary_library === drives.current.id; })[0];
+  if (kind === 'backup') {
+    if (!mine) return tr(of ? 'cmp.gone_original' : 'cmp.gone_nobackup', { name: name });
+    return mine.extra ? null : tr('cmp.gone_none', { name: name });
+  }
+  if (mine) return tr('cmp.gone_backup', { name: name });
+  if (!of) return tr('cmp.gone_nobackup', { name: name });
+  return of.missing ? null : tr('cmp.gone_none', { name: name });
+}
+
+function checkCompare() {
+  var kind = readHash().compare;
+  if (!kind) return;
+  var why = compareProblem(kind);
+  if (!why) return;
+  var h = location.hash.replace(/^#/, '').split('&').filter(function (kv) { return kv.indexOf('compare=') !== 0; }).join('&');
+  history.replaceState(null, '', location.pathname + location.search + (h ? '#' + h : ''));
+  toast(tr('cmp.removed', { filter: compareLabel(kind), reason: why }));
+}
+
+// The badge next to the name in the info panel, while the photos are listed
+// by what only one drive of the pair has: the sentence is its tooltip.
+function compareBadge() {
+  var kind = state.filter.compare, c = compareFor();
+  if (isAll() || !c || kind !== c.kind) return null;
+  var b = el('span', 'cmp-badge ' + kind, tr(kind === 'backup' ? 'cmp.only_backup' : 'cmp.not_backed_up'));
+  b.title = tr(kind === 'backup' ? 'cmp.tip_only_backup' : 'cmp.tip_not_backed_up', { drive: driveLabel(drives.current.id), other: driveLabel(c.other) });
+  return b;
+}
+
+// "Only on backup" / "Only on original" in the search (typed as "only on",
+// "nur auf" or "backup"), for a drive that is one half of a backup pair and
+// has such photos. The photos are compared by content with the other drive.
+function compareSuggestion(needle, f) {
+  var low = needle.toLowerCase(), c = compareFor();
+  if (!c || f.compare || low.length < 2) return [];
+  var label = compareLabel(c.kind);
+  // The label in this language and in the other one, and the word that is the same in both.
+  var words = [label.toLowerCase(), 'only on ' + c.kind, 'nur auf ' + c.kind, 'backup'];
+  if (!words.some(function (w) { return w.indexOf(low) === 0; })) return [];
+  return [{ kind: 'compare', id: c.kind, label: label, count: c.count }];
+}
+
 function suggest(text) {
   var seq = ++sugg.seq, f = state.filter;
   // On the Locations page the search finds places: picking one shows it.
@@ -488,7 +582,7 @@ function suggest(text) {
     suggestDates(needle, false, datesWithin(f)),
   ]).then(function (r) {
     if (seq !== sugg.seq) return;
-    var items = favSuggestion(needle, f);
+    var items = compareSuggestion(needle, f).concat(favSuggestion(needle, f));
     items = items.concat(r[1].map(function (p) {
       state.personNames[p.id] = p.name;
       state.personSpecies[p.id] = p.species;
@@ -549,7 +643,7 @@ function showSuggest(items, hint) {
   items.forEach(function (it, i) {
     if (it.kind !== last) {
       var f = state.filter, narrowed = !isAll() && (f.tags.length || f.people.length || f.pets.length || f.folder || f.place);
-      var head = it.kind === 'fav' ? tr('fav.label') : it.kind === 'tag' ? tr(narrowed ? 'search.tags_here' : 'search.tags')
+      var head = it.kind === 'fav' ? tr('fav.label') : it.kind === 'compare' ? tr('cmp.head') : it.kind === 'tag' ? tr(narrowed ? 'search.tags_here' : 'search.tags')
         : it.kind === 'person' ? tr(narrowed ? 'search.faces_here' : 'side.faces')
           : it.kind === 'pet' ? tr(narrowed ? 'search.pets_here' : 'search.pets') : it.kind === 'place' ? tr('search.places') : it.kind === 'date' ? tr('search.dates') : tr('search.folders');
       box.appendChild(el('div', 'head', head));
@@ -562,7 +656,7 @@ function showSuggest(items, hint) {
     var label = el('span', 'label');
     if (it.kind === 'person') label.appendChild(avatar(it.person, 'tiny'));
     if (it.kind === 'folder') label.appendChild(folderIcon());
-    label.appendChild(document.createTextNode((it.kind === 'fav' ? '♥ ' : it.kind === 'pet' ? PET_TERMS[it.id].icon + ' '
+    label.appendChild(document.createTextNode((it.kind === 'fav' ? '♥ ' : it.kind === 'compare' ? '⇄ ' : it.kind === 'pet' ? PET_TERMS[it.id].icon + ' '
       : it.kind === 'person' ? (petIcon(it.person && it.person.species) ? petIcon(it.person.species) + ' ' : '')
         : ({ place: '📍 ', date: '📅 ' }[it.kind] || (it.kind === 'folder' ? '' : '# '))) + it.label));
     b.appendChild(label);
@@ -589,6 +683,7 @@ function pickSuggest(it) {
   $('search').value = '';
   var f = state.filter;
   if (it.kind === 'fav') setFilter(withFilter({ fav: true, q: '' }));
+  else if (it.kind === 'compare') setFilter(withFilter({ compare: it.id, q: '' }));
   else if (it.kind === 'tag') setFilter(withFilter({ tags: f.tags.indexOf(it.id) < 0 ? f.tags.concat([it.id]) : f.tags, q: '' }));
   else if (it.kind === 'person') setFilter(withFilter({ people: f.people.indexOf(it.id) < 0 ? f.people.concat([it.id]) : f.people, q: '' }));
   else if (it.kind === 'pet') setFilter(withFilter({ pets: f.pets.indexOf(it.id) < 0 ? f.pets.concat([it.id]) : f.pets, q: '' }));
@@ -708,8 +803,8 @@ function markActiveFolder() {
   });
 }
 
-$('all').onclick = function () { setFilter({ folder: null, tags: [], people: [], q: '' }); };
-$('nav-nodate').onclick = function () { setFilter({ folder: null, tags: [], people: [], q: '', nodate: true }); };
+$('all').onclick = function () { setFilter({ folder: null, tags: [], people: [], compare: '', q: '' }); };
+$('nav-nodate').onclick = function () { setFilter({ folder: null, tags: [], people: [], compare: '', q: '', nodate: true }); };
 $('nav-dups').onclick = function () { showView('duplicates'); };
 $('nav-trash').onclick = function () { showView('trash'); };
 $('nav-drives').onclick = function () { showView('drives'); };
@@ -776,8 +871,8 @@ function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
 function loadTimeline(resetScroll) {
   var seq = ++state.loadSeq;
   var f = state.filter;
-  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null, q: f.q })
-    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null, q: f.q });
+  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null, compare: f.compare === 'different' ? 'different' : null, q: f.q })
+    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null, compare: f.compare === 'different' ? null : f.compare || null, q: f.q });
   return api(url).then(function (data) {
     if (seq !== state.loadSeq) return;
     if (isAll()) allTimelineLoaded(data);
@@ -809,6 +904,8 @@ function loadTimeline(resetScroll) {
 // Month groups over the (already sorted) items.
 function groups() {
   var d = state.data, out = [];
+  // Pairs of versions in path order: one list, no months.
+  if (d.flat) return d.count ? [{ month: 0, start: 0, end: d.count, flat: true }] : [];
   for (var i = 0; i < d.count; i++) {
     var month = Math.floor(d.days[i] / 100);
     var g = out[out.length - 1];
@@ -834,11 +931,15 @@ function relayout() {
   var width = sizer.clientWidth || 300;
   var target = width < 500 ? 96 : width < 900 ? 140 : 180;
   state.cols = Math.max(3, Math.round(width / target));
+  // Two versions of a photo sit side by side: whole pairs in a row.
+  if (state.data.flat && state.cols % 2) state.cols++;
   state.cell = width / state.cols;
   var y = 0;
   groups().forEach(function (g) {
-    state.rows.push({ type: 'h', top: y, h: HEADER_H, label: monthLabel(g.month), n: g.end - g.start, month: g.month, start: g.start, end: g.end });
-    y += HEADER_H;
+    if (!g.flat) {
+      state.rows.push({ type: 'h', top: y, h: HEADER_H, label: monthLabel(g.month), n: g.end - g.start, month: g.month, start: g.start, end: g.end });
+      y += HEADER_H;
+    }
     for (var i = g.start; i < g.end; i += state.cols) {
       state.rows.push({ type: 'r', top: y, h: state.cell, start: i, end: Math.min(i + state.cols, g.end) });
       y += state.cell;
@@ -933,6 +1034,10 @@ function buildRow(row) {
     if (state.live[d.ids[i]]) badge = 'LIVE';
     if (badge) a.appendChild(el('span', 'badge', badge));
     if (state.est && state.est[d.ids[i]]) a.appendChild(estimateMark(state.est[d.ids[i]]));
+    if (d.flat && isAll()) {
+      var side = drives.allLibs[Math.floor(d.ids[i] / SPAN)];
+      if (side) a.appendChild(el('span', 'tb ' + (side.role === 'backup' ? 'bk' : 'orig'), tr(side.role === 'backup' ? 'cmp.badge_backup' : 'cmp.badge_original')));
+    }
     if (!isAll()) a.appendChild(heartButton(d.ids[i], 'fav'));
     else if (state.favs[d.ids[i]]) a.appendChild(heartButton(d.ids[i], 'fav', true));
     e.appendChild(a);
@@ -1326,7 +1431,8 @@ function renderPanelAll(info) {
   };
   row(tr('info.date'), formatDate(info));
   var driveName = lib.volume || lib.name;
-  row(tr('info.drive'), driveName);
+  var driveCell = row(tr('info.drive'), driveName);
+  if (driveCell && state.data.flat) driveCell.appendChild(el('span', 'cmp-badge ' + (lib.role === 'backup' ? 'backup' : 'original'), tr(lib.role === 'backup' ? 'cmp.badge_backup' : 'cmp.badge_original')));
   row(tr('info.path'), info.path);
   row(tr('info.size'), (info.width && info.height ? info.width + ' × ' + info.height + ' · ' : '') + formatBytes(info.size));
   row(tr('info.camera'), info.camera);
@@ -1401,7 +1507,9 @@ function renderPanel() {
     return dd;
   };
   infoDate(row, info);
-  row(tr('info.name'), info.name);
+  var nameCell = row(tr('info.name'), info.name);
+  var cmpBadge = compareBadge();
+  if (nameCell && cmpBadge) nameCell.appendChild(cmpBadge);
   var folder = info.path.indexOf('/') >= 0 ? info.path.slice(0, info.path.lastIndexOf('/')) : '';
   if (folder) {
     var fb = el('button', '', folder);
@@ -5558,6 +5666,9 @@ function switchLibrary(id, hash) {
   location.reload();
 }
 
+// A comparison stays on when another drive is picked: it is dropped there, with a note, if that drive cannot show it.
+function keepCompare() { return state.filter && state.filter.compare && !state.filter.view ? 'compare=' + state.filter.compare : ''; }
+
 function renderDriveList() {
   var multi = drives.list.length > 1;
   $('drives-box').hidden = !multi;
@@ -5570,7 +5681,7 @@ function renderDriveList() {
     ab.appendChild(el('span', 'dot'));
     ab.appendChild(el('span', 'name', tr('drives.all')));
     ab.title = tr('drives.all_hint');
-    ab.onclick = function () { if (!isAll()) switchLibrary('all', ''); };
+    ab.onclick = function () { if (!isAll()) switchLibrary('all', keepCompare()); };
     all.appendChild(ab);
     ul.appendChild(all);
   }
@@ -5582,7 +5693,7 @@ function renderDriveList() {
     if (!l.online) b.appendChild(el('span', 'tag', tr('drives.offline')));
     else if (l.role === 'backup') b.appendChild(el('span', 'tag', tr('drives.backup')));
     b.title = l.online ? l.name : l.reason ? tr('drives.not_connected_reason', { name: l.name, reason: l.reason }) : tr('drives.not_connected', { name: l.name });
-    b.onclick = function () { if (isAll() || l.id !== drives.current.id) switchLibrary(l.id); };
+    b.onclick = function () { if (isAll() || l.id !== drives.current.id) switchLibrary(l.id, keepCompare()); };
     li.appendChild(b);
     ul.appendChild(li);
   });
@@ -5674,11 +5785,13 @@ function loadDrivesPage() {
       cards.appendChild(box);
       group.forEach(function (d) {
         var of = primaryOf[d.library] || d.suggested_backup_of;
+        // The drive it copies, by its disk name (its folder's name only where that is all there is).
+        var ofDisk = (list.filter(function (x) { return x.name === of; })[0] || {}).volume || of;
         var kind = !d.online ? 'off' : d.role === 'backup' ? 'bk' : d.role === 'unknown' ? 'undecided' : 'orig';
         var card = el('div', 'drive-card ' + kind);
         // The same row on every card says what the drive is.
         var strip = el('div', 'strip');
-        strip.appendChild(el('span', '', kind === 'off' ? tr('drives.offline') : kind === 'bk' ? (of ? tr('drives.strip_backup', { primary: of }) : tr('drives.role.backup')) : tr('drives.role.' + d.role)));
+        strip.appendChild(el('span', '', kind === 'off' ? tr('drives.offline') : kind === 'bk' ? (of ? tr('drives.strip_backup', { primary: ofDisk }) : tr('drives.role.backup')) : tr('drives.role.' + d.role)));
         if (d.online && !d.shown_in_all) strip.appendChild(el('span', 'r', tr('drives.not_in_timeline')));
         card.appendChild(strip);
         var body = el('div', 'body');
@@ -5711,7 +5824,9 @@ function loadDrivesPage() {
           renderBackup(slot, backups.filter(function (x) { return x.library === d.library; })[0], d);
           body.appendChild(slot);
         } else if (d.online) {
-          body.appendChild(el('div', 'sub', trn('count.files', d.files)));
+          var orig = el('div', 'backup-status');
+          renderOriginal(orig, d, backups.filter(function (x) { return x.primary_library === d.library; })[0]);
+          body.appendChild(orig);
         }
         if (d.online && d.role === 'unknown' && d.suggested_backup_of) {
           var bn = el('div', 'banner warn');
@@ -5756,12 +5871,14 @@ function loadDrivesPage() {
         c.appendChild(el('div', 'n', p.name));
         c.appendChild(el('div', 'sub', trn('count.photos', p.photos) + (p.group ? ' · ' + p.group : '')));
         // The drive first (its disk name; the folder name only where that is all there is).
+        var pills = el('div', 'pills');
         p.libraries.forEach(function (l) {
           var pill = el('span', 'pill drive', (l.volume || l.name) + ' · ' + l.faces);
           if (l.volume) pill.title = tr('drives.person_folder', { name: l.name });
-          c.appendChild(pill);
+          pills.appendChild(pill);
         });
-        var go = el('button', 'btn quiet', tr('drives.photos_everywhere'));
+        c.appendChild(pills);
+        var go = el('button', 'btn quiet', tr('cmp.show_photos'));
         go.onclick = function () { switchLibrary('all', 'person=' + encodeURIComponent(p.name)); };
         c.appendChild(go);
         grid.appendChild(c);
@@ -5782,6 +5899,11 @@ function allTimelineLoaded(data) {
     $('scroller').insertBefore(note, $('filters'));
   }
   var out = data.left_out.map(function (x) { return x.name + ' (' + x.reason.split(';')[0] + ')'; });
+  if (data.flat && data.libs.length === 2) {
+    note.textContent = tr('cmp.pairs_note', { original: data.libs[0].volume || data.libs[0].name, backup: data.libs[1].volume || data.libs[1].name, n: I18n.number(data.count) });
+    $('status').textContent = tr('drives.status', { photos: trn('count.photos', data.count), drives: trn('count.drives', data.libs.length) });
+    return;
+  }
   note.textContent = tr('drives.note', { libs: data.libs.map(function (l) { return l.name; }).join(', ') }) + (out.length ? tr('drives.note_out', { out: out.join(', ') }) : '');
   $('status').textContent = tr('drives.status', { photos: trn('count.photos', data.count), drives: trn('count.drives', data.libs.length) });
 }
@@ -5822,16 +5944,46 @@ function renderBackup(slot, b, d) {
     slot.appendChild(prog);
   }
   if (b.unhashed) slot.appendChild(el('div', 'sub', tr('drives.backup_unhashed', { files: trn('count.files', b.unhashed), primary: b.primary }).trim()));
-  var lists = [
-    [b.missing, 'drives.sum_missing', b.missing_files, b.primary_library, 'warn'],
-    [b.different, 'drives.sum_different', b.different_files, b.primary_library, 'warn'],
-    [b.extra, 'drives.sum_extra', b.extra_files, d.library, '']
-  ];
+  // "Show photos" opens the timeline with that comparison (the first one on
+  // both drives of the pair, in one list).
+  slot.appendChild(backupLists([
+    [b.different, 'drives.sum_different', b.different_files, b.primary_library, 'warn', function () { switchLibrary('all', 'compare=different'); }],
+    [b.extra, 'drives.sum_extra', b.extra_files, d.library, '', function () { switchLibrary(d.library, 'compare=backup'); }]
+  ], b));
+}
+
+// The original's card: how many files, and what is not on its backup yet.
+function renderOriginal(slot, d, b) {
+  slot.textContent = '';
+  // The count as in the backup's bar line (a bold number), so the cards line up.
+  var line = el('div', 'statline');
+  var t = el('div', 't');
+  var lead = el('span');
+  var text = trn('count.files', d.files), num = I18n.number(d.files), at = text.indexOf(num);
+  if (at >= 0) {
+    lead.appendChild(document.createTextNode(text.slice(0, at)));
+    lead.appendChild(el('b', '', num));
+    lead.appendChild(document.createTextNode(text.slice(at + num.length)));
+  } else lead.textContent = text;
+  t.appendChild(lead);
+  line.appendChild(t);
+  slot.appendChild(line);
+  if (b && b.missing) {
+    slot.appendChild(backupLists([
+      [b.missing, 'drives.sum_missing', b.missing_files, d.library, 'warn', function () { switchLibrary(d.library, 'compare=original'); }]
+    ], b));
+  }
+}
+
+function backupLists(lists, b) {
   var wrap = el('div', 'lists');
   lists.forEach(function (l) {
     if (!l[0]) return;
     var det = el('details');
     var sum = el('summary');
+    var go = el('button', 'btn quiet small go', tr('cmp.show_photos'));
+    go.onclick = function (ev) { ev.preventDefault(); ev.stopPropagation(); l[5](); };
+    sum.appendChild(go);
     sum.appendChild(el('b', l[4], I18n.number(l[0])));
     sum.appendChild(document.createTextNode(' ' + tr(l[1])));
     if (l[1] === 'drives.sum_extra') sum.appendChild(el('span', 'sub', ' ' + tr('drives.sum_extra_hint', { primary: b.primary })));
@@ -5842,12 +5994,12 @@ function renderBackup(slot, b, d) {
       li.appendChild(el('span', 'path', f.path));
       li.appendChild(el('span', 'size', formatBytes(f.size)));
       if (state.reveal && l[3]) {
-        var go = el('button', 'btn quiet reveal');
-        go.appendChild(folderIcon());
-        go.title = state.reveal;
-        go.setAttribute('aria-label', state.reveal);
-        go.onclick = function () { revealOn(l[3], f.path); };
-        li.appendChild(go);
+        var show = el('button', 'btn quiet reveal');
+        show.appendChild(folderIcon());
+        show.title = state.reveal;
+        show.setAttribute('aria-label', state.reveal);
+        show.onclick = function () { revealOn(l[3], f.path); };
+        li.appendChild(show);
       }
       ul.appendChild(li);
     });
@@ -5855,7 +6007,7 @@ function renderBackup(slot, b, d) {
     det.appendChild(ul);
     wrap.appendChild(det);
   });
-  slot.appendChild(wrap);
+  return wrap;
 }
 
 function refreshDrives() {
@@ -5891,7 +6043,7 @@ I18n.ready.then(function () {
     showLogin();
     return;
   }
-  return refreshDrives().then(function () {
+  return refreshDrives().then(loadCompare).then(function () {
     setInterval(refreshDrives, 10000);
     if (drives.current.online) { loadEventPattern(); loadAllowTrash(); }
     if (!drives.current.online) {
