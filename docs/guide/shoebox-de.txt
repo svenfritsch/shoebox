@@ -533,16 +533,18 @@ bleibt. shoebox hakt nur an, was sicher ist: identische Dateien und eine
 Version mit weniger Pixeln. Zwei Dateien mit gleichen Pixelmaßen, aber
 verschiedenen Bytes, etwa ein Kamera-JPEG und ein aus der RAW-Datei
 entwickeltes JPEG (oft benannt wie IMG_1 2.jpg), werden nie vorab angehakt:
-sie erscheinen unter Ähnliche, und du wählst, welche bleibt, und von jedem
-Duplikat bleibt immer mindestens eine Datei. Tags und Aufnahmedatum einer
-entfernten Kopie gehen auf die übrige über. Bei mehr als einem Laufwerk zeigt
-der Reiter Über Laufwerke hinweg (in Alle Laufwerke und unter Laufwerke
-verwalten) Fotos, die auf mehreren Laufwerken liegen: ein Bild, eine Zeile pro
-Kopie mit Name des Datenträgers und Ordner. Hake die Kopien an, die weg
-sollen, oder wähle ein Laufwerk und Alle markieren, um jede Kopie darauf
-anzukreuzen; die letzte Kopie eines Fotos lässt sich nie ankreuzen. In den
-Papierkorb fragt vorher nach und legt jede Kopie in den Papierkorb ihres
-eigenen Laufwerks.
+sie erscheinen unter Ähnliche, und du wählst, welche bleibt: Dieses behalten
+auf einer Karte hakt alle anderen Dateien der Gruppe mit einem Klick an (erst
+In den Papierkorb verschiebt etwas), und kleine Marken zeigen, welche Datei
+die meisten Pixel hat oder die größte Datei ist, und von jedem Duplikat bleibt
+immer mindestens eine Datei. Tags und Aufnahmedatum einer entfernten Kopie
+gehen auf die übrige über. Bei mehr als einem Laufwerk zeigt der Reiter Über
+Laufwerke hinweg (in Alle Laufwerke und unter Laufwerke verwalten) Fotos, die
+auf mehreren Laufwerken liegen: ein Bild, eine Zeile pro Kopie mit Name des
+Datenträgers und Ordner. Hake die Kopien an, die weg sollen, oder wähle ein
+Laufwerk und Alle markieren, um jede Kopie darauf anzukreuzen; die letzte
+Kopie eines Fotos lässt sich nie ankreuzen. In den Papierkorb fragt vorher
+nach und legt jede Kopie in den Papierkorb ihres eigenen Laufwerks.
 
 Schnellaktionen
 Kopien im selben Ordner entfernen und Kopien geringerer Qualität entfernen

@@ -2451,6 +2451,22 @@ function groupNode(g) {
     deleteMarked(g);
   };
   var compare = function (f) { compareDialog(g, f, keepOnly); };
+  // The one-click choice on a card of a series: tick the other files and
+  // leave this one open. Nothing is trashed until "Move to trash".
+  var keepTicked = function (keep) {
+    cards.forEach(function (c) {
+      c.cb.checked = c.f.id !== keep.id;
+      c.cb.dispatchEvent(new Event('change'));
+    });
+  };
+  // What tells the files of a series apart, on the card that leads: more
+  // pixels, a bigger file. Shown only where the files differ; never decides.
+  var most = function (key) {
+    var v = g.files.map(key), top = Math.max.apply(null, v);
+    return v.some(function (x) { return x !== top; }) ? top : null;
+  };
+  var topPixels = most(function (f) { return (f.width || 0) * (f.height || 0); });
+  var topSize = most(function (f) { return f.size; });
   var copyCard = function (f, showName, thumb) {
     var card = el('div', 'copy' + (thumb ? ' with-thumb' : ''));
     if (thumb) card.appendChild(dupThumb(f, compare));
@@ -2480,6 +2496,12 @@ function groupNode(g) {
     fb.onclick = function () { setFilter({ folder: f.folder_id, tags: [], q: '' }); };
     card.appendChild(fb);
     if (showName) card.appendChild(el('div', 'name', f.name));
+    if (thumb) {
+      var only = el('button', 'btn quiet', tr('dups.keep_this'));
+      only.title = tr('dups.keep_this_hint');
+      only.onclick = function () { keepTicked(f); };
+      card.appendChild(only);
+    }
     if (g.kind === 'edited') card.appendChild(el('div', 'badge', tr(isEdit(f) ? 'dups.badge_edited' : 'dups.badge_original')));
     var meta = [];
     if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
@@ -2488,6 +2510,8 @@ function groupNode(g) {
     if (f.keeper) card.appendChild(el('div', 'meta worse', tr('dups.lower_quality')));
     if (f.in_copies) card.appendChild(el('div', 'meta', tr('dups.in_copies')));
     card.appendChild(el('div', 'meta', f.taken ? formatDate({ taken: f.taken, date_source: 'file' }) : tr('dups.no_capture_date')));
+    if (thumb && topPixels !== null && (f.width || 0) * (f.height || 0) === topPixels) card.appendChild(el('div', 'badge', tr('dups.badge_pixels')));
+    if (thumb && topSize !== null && f.size === topSize) card.appendChild(el('div', 'badge', tr('dups.badge_bigger')));
     if (f.tags && f.tags.length) {
       var tags = el('div', 'tagline');
       f.tags.forEach(function (t) {
