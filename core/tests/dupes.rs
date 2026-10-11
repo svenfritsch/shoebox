@@ -442,6 +442,24 @@ fn same_size_other_bytes_is_never_suggested() {
 }
 
 #[test]
+fn the_same_pixels_in_another_format_are_one_photo_with_no_suggestion() {
+    let lib = Library::new("dupes-other-format");
+    // A picture and its conversion (HEIC and the JPEG made from it, here a
+    // JPEG and a PNG): one photo, shown with the resolution group, and
+    // nothing is suggested, since which format to keep is the user's call.
+    rings(&lib.path("Fotos/IMG_3069.jpg"), 1600, 1200);
+    tweaked_copy(&lib.path("Fotos/IMG_3069.jpg"), &lib.path("Fotos/IMG_3069.png"));
+    lib.scan();
+    let server = start(&lib, None);
+    let all = groups(server.addr);
+    let (fj, fp) = (file_of(&all, "Fotos/IMG_3069.jpg"), file_of(&all, "Fotos/IMG_3069.png"));
+    assert_eq!(group_of(&all, "Fotos/IMG_3069.jpg")["kind"], "resolution");
+    assert_eq!(fj["row"], fp["row"]);
+    assert_eq!((fj["keeper"].as_i64(), fp["keeper"].as_i64()), (None, None));
+    server.stop().unwrap();
+}
+
+#[test]
 fn files_in_a_copies_folder_are_never_the_original() {
     let lib = Library::new("dupes-copies-folder");
     // A packaged InDesign project: its "Link" folder holds copies. The Link

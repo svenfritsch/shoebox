@@ -2496,12 +2496,7 @@ function groupNode(g) {
     fb.onclick = function () { setFilter({ folder: f.folder_id, tags: [], q: '' }); };
     card.appendChild(fb);
     if (showName) card.appendChild(el('div', 'name', f.name));
-    if (thumb) {
-      var only = el('button', 'btn quiet', tr('dups.keep_this'));
-      only.title = tr('dups.keep_this_hint');
-      only.onclick = function () { keepTicked(f); };
-      card.appendChild(only);
-    }
+
     if (g.kind === 'edited') card.appendChild(el('div', 'badge', tr(isEdit(f) ? 'dups.badge_edited' : 'dups.badge_original')));
     var meta = [];
     if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
@@ -2512,14 +2507,12 @@ function groupNode(g) {
     card.appendChild(el('div', 'meta', f.taken ? formatDate({ taken: f.taken, date_source: 'file' }) : tr('dups.no_capture_date')));
     if (thumb && topPixels !== null && (f.width || 0) * (f.height || 0) === topPixels) card.appendChild(el('div', 'badge', tr('dups.badge_pixels')));
     if (thumb && topSize !== null && f.size === topSize) card.appendChild(el('div', 'badge', tr('dups.badge_bigger')));
-    if (f.tags && f.tags.length) {
-      var tags = el('div', 'tagline');
-      f.tags.forEach(function (t) {
-        var chip = el('span', 'chip' + (t.own ? ' own' : ''), (t.own ? '' : '📁 ') + t.name);
-        chip.title = tr(t.own ? 'dups.own_tag' : 'dups.folder_tag');
-        tags.appendChild(chip);
-      });
-      card.appendChild(tags);
+    if (thumb) {
+      // Pinned to the foot of the card, edge to edge.
+      var only = el('button', 'keep-one', tr('dups.keep_this'));
+      only.title = tr('dups.keep_this_hint');
+      only.onclick = function () { keepTicked(f); };
+      card.appendChild(only);
     }
     return card;
   };

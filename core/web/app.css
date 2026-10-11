@@ -232,6 +232,9 @@ body.selecting #select { color: var(--accent); }
 .copy.with-thumb .thumb { display: block; width: 100%; height: 150px; background: var(--cell-bg); border-radius: 6px; overflow: hidden; margin-bottom: 4px; }
 .copy.with-thumb .thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .copies.series { gap: 10px; }
+.copy.with-thumb { padding-bottom: 0; overflow: hidden; }
+.copy .keep-one { margin: auto -8px 0; padding: 9px 8px; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: var(--cell-bg); color: var(--fg, inherit); font: inherit; font-weight: 600; cursor: pointer; }
+.copy .keep-one:hover { background: var(--accent); color: #fff; }
 .copy.marked { border-color: var(--danger, #c0392b); background: rgba(192, 57, 43, 0.06); }
 .copy .check { display: flex; align-items: center; gap: 4px; font-weight: 600; }
 .copy .check input { width: 18px; height: 18px; }

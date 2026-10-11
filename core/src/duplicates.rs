@@ -325,6 +325,17 @@ fn original_and_edit(a: &str, b: &str) -> bool {
     matches!((camera_name(a), camera_name(b)), (Some(x), Some(y)) if x.0 == y.0 && x.2 == y.2 && x.1 != y.1)
 }
 
+/// The file's format from its extension, JPEG and HEIC spelled one way.
+fn format_of(name: &str) -> String {
+    let ext = name.rsplit_once('.').map_or("", |(_, e)| e).to_lowercase();
+    match ext.as_str() {
+        "jpeg" | "jpe" => "jpg".into(),
+        "heif" => "heic".into(),
+        "tiff" => "tif".into(),
+        _ => ext,
+    }
+}
+
 fn pixels(r: &Row) -> u64 {
     r.file.width.unwrap_or(0) as u64 * r.file.height.unwrap_or(0) as u64
 }
@@ -336,9 +347,9 @@ fn secs(taken: &str) -> Option<i64> {
 /// Two pictures that are the same photo for certain, differing in pixel size
 /// or metadata only: identical content, or the same picture (hash at most
 /// `SURE_BITS` apart) in the same shape (a turned copy counts), with another
-/// pixel size and no capture time that disagrees. Shots of a burst or a
+/// pixel size or format and no capture time that disagrees. Shots of a burst or a
 /// re-taken photo fail this: their capture times differ. Two files with the
-/// same pixel size and other bytes never pass: the user judges those.
+/// same pixel size and format but other bytes never pass: the user judges those.
 fn same_photo(a: &Row, b: &Row) -> bool {
     if a.file.kind == "video" || b.file.kind == "video" {
         return false;
@@ -364,12 +375,14 @@ fn same_photo(a: &Row, b: &Row) -> bool {
     if (sa - sb).abs() / sa.max(sb) > 0.02 {
         return false;
     }
-    // The same size and different bytes: not a smaller or stripped copy but
-    // another shot or another export (a RAW developed next to the camera's
-    // JPEG looks different, with or without a capture date). That is for the
-    // user to judge, so it is never "surely the same photo".
+    // The same size and different bytes in the same format: not a smaller or
+    // stripped copy but another shot or another export (a RAW developed next
+    // to the camera's JPEG looks different, with or without a capture date).
+    // That is for the user to judge, so it is never "surely the same photo".
+    // The same picture in another format (a HEIC and the JPEG made from it)
+    // is a conversion of the same pixels, and passes.
     let size = |r: &Row| (r.file.width.unwrap_or(0).max(r.file.height.unwrap_or(0)), r.file.width.unwrap_or(0).min(r.file.height.unwrap_or(0)));
-    if size(a) == size(b) {
+    if size(a) == size(b) && format_of(&a.file.name) == format_of(&b.file.name) {
         return false;
     }
     match (&a.file.taken, &b.file.taken) {

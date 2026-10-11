@@ -527,11 +527,13 @@ Ordner werden nicht umbenannt, und alle Formen werden erkannt.
 
 Duplikate
 Duplikate zeigt vier Arten: identisch, dasselbe Foto mit anderen Pixelmaßen
-(eine kleinere oder weitergeschickte Version), Original und bearbeitet sowie
-Ähnliche. Hake diese Kopie löschen bei dem an, was weg soll; die beste Datei
-bleibt. shoebox hakt nur an, was sicher ist: identische Dateien und eine
-Version mit weniger Pixeln. Zwei Dateien mit gleichen Pixelmaßen, aber
-verschiedenen Bytes, etwa ein Kamera-JPEG und ein aus der RAW-Datei
+oder anderem Format (eine kleinere oder weitergeschickte Version, oder ein
+HEIC und das daraus gemachte JPEG), Original und bearbeitet sowie Ähnliche.
+Hake diese Kopie löschen bei dem an, was weg soll; die beste Datei bleibt.
+shoebox hakt nur an, was sicher ist: identische Dateien und eine Version mit
+weniger Pixeln (ein HEIC und sein JPEG werden zusammen gezeigt, aber keins
+wird vorab angehakt). Zwei Dateien im gleichen Format mit gleichen Pixelmaßen,
+aber verschiedenen Bytes, etwa ein Kamera-JPEG und ein aus der RAW-Datei
 entwickeltes JPEG (oft benannt wie IMG_1 2.jpg), werden nie vorab angehakt:
 sie erscheinen unter Ähnliche, und du wählst, welche bleibt: Dieses behalten
 auf einer Karte hakt alle anderen Dateien der Gruppe mit einem Klick an (erst
