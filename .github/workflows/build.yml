@@ -1,10 +1,19 @@
 name: build
 
-# Until v1.0 only macOS is built, to keep CI fast. Pull requests build and
-# test arm64 only; main, tags and manual runs also build x86_64 (the old
-# Intel MacBook), the universal binary and run it under Rosetta 2. Linux runs
-# only when started by hand (Actions → build → Run workflow); it is the one
-# job that tests the real recognizer.
+# Until v1.0 only macOS is built, to keep CI fast. Two macOS jobs run side by
+# side: `test` (debug build, unit and integration tests on the fixtures) and
+# `build` (release binary, probe/scan/verify on the fixtures, the artifact).
+# Pull requests build arm64 only; main, tags and manual runs also build x86_64
+# (the old Intel MacBook), the universal binary and run it under Rosetta 2.
+# A pull request that changes only docs (docs/**, *.md) skips both: skipped
+# jobs count as passed for required checks. Linux runs only when started by
+# hand (Actions → build → Run workflow); it is the one job that tests the real
+# recognizer.
+#
+# Compiled dependencies are cached per job by Swatinem/rust-cache; only runs
+# on main save the cache, pull requests start from main's. The static C
+# libraries (libheif, libde265) are cached separately in .deps, outside
+# core/target so that the Rust cache's clean-up never touches them.
 on:
   push:
     branches: [main]
@@ -12,33 +21,99 @@ on:
   pull_request:
   workflow_dispatch:
 
-# A newer push to the same branch or PR cancels the run still going.
+# A newer push to the same pull request cancels the run still going. Runs on
+# main and tags are never cancelled (they save the cache, and a tag's run is
+# the release).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DEPS_DIR: ${{ github.workspace }}/.deps
+  CARGO_INCREMENTAL: 0
 
 jobs:
-  macos:
+  # Does this pull request touch anything but docs? Push and manual runs
+  # always build.
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      code: ${{ github.event_name != 'pull_request' || steps.filter.outputs.code == 'true' }}
+    steps:
+      - uses: dorny/paths-filter@v4
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '!docs/**'
+              - '!**/*.md'
+
+  test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Cache static deps
+        uses: actions/cache@v6
+        with:
+          path: .deps
+          key: deps-macos-${{ hashFiles('scripts/build-deps.sh') }}
+
+      # Runs each test in its own process, all test files at once (cargo test
+      # runs the files one after the other).
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      - name: Tools for test fixtures
+        run: brew install ffmpeg libheif exiftool
+
+      - name: Fixtures
+        run: scripts/make-fixtures.sh "$RUNNER_TEMP/fixtures"
+
+      - name: Tests
+        run: SHOEBOX_FIXTURES="$RUNNER_TEMP/fixtures" scripts/build.sh aarch64-apple-darwin test
+
+  build:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     # Apple Silicon runner; the x86_64 binary is tested under Rosetta 2.
     runs-on: macos-latest
     env:
       FULL: ${{ github.event_name != 'pull_request' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Rust toolchain
         run: |
           rustup toolchain install stable --profile minimal
           rustup target add x86_64-apple-darwin aarch64-apple-darwin
 
-      - name: Tools for test fixtures
-        run: brew install ffmpeg libheif exiftool
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Cache static deps
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
-          path: core/target/deps
+          path: .deps
           key: deps-macos-${{ hashFiles('scripts/build-deps.sh') }}
+
+      - name: Tools for test fixtures
+        run: brew install ffmpeg libheif exiftool
 
       - name: Build x86_64 (macOS 10.13+)
         if: env.FULL == 'true'
@@ -67,9 +142,6 @@ jobs:
       - name: Fixtures
         run: scripts/make-fixtures.sh "$RUNNER_TEMP/fixtures"
 
-      - name: Tests
-        run: SHOEBOX_FIXTURES="$RUNNER_TEMP/fixtures" scripts/build.sh aarch64-apple-darwin test
-
       - name: Probe, scan and verify fixtures (arm64, and x86_64 via Rosetta)
         run: |
           archs=arm64
@@ -85,7 +157,7 @@ jobs:
             arch -$arch dist/shoebox-macos verify "$RUNNER_TEMP/lib-$arch"
           done
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: shoebox-macos
           path: dist/
@@ -96,7 +168,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Packages
         run: |
@@ -106,10 +178,15 @@ jobs:
       - name: Rust toolchain
         run: rustup toolchain install stable --profile minimal
 
-      - name: Cache static deps
-        uses: actions/cache@v4
+      - uses: Swatinem/rust-cache@v2
         with:
-          path: core/target/deps
+          workspaces: core
+          save-if: false
+
+      - name: Cache static deps
+        uses: actions/cache@v6
+        with:
+          path: .deps
           key: deps-linux-${{ hashFiles('scripts/build-deps.sh') }}
 
       - name: Build
@@ -150,35 +227,45 @@ jobs:
           dist/shoebox-linux recognize "$RUNNER_TEMP/lib" --recognizer recognizer/recognizer.py --pets
           dist/shoebox-linux verify "$RUNNER_TEMP/lib"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: shoebox-linux
           path: dist/
+
+  # The guide (HTML, its plain-text copies and the screenshots) is made from
+  # this commit by guide.yml and goes into the archive.
+  guide:
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/guide.yml
 
   # Push a tag like `v0.1.0-phase1` to publish the binaries as a GitHub
   # release. Workflow artifacts need a GitHub login, expire, and lose the
   # executable bit; release assets don't. The recognizer installer goes
   # along, so the drive can be set up without a clone of the repo, and so does
-  # the guide (docs/guide: HTML and plain text, English and German, with its
-  # screenshots), in the folder `guide` of the archive.
+  # the guide (English and German, HTML and plain text, with its screenshots)
+  # in the folder `guide` of the archive.
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [macos]
+    needs: [test, build, guide]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
-          path: artifacts
+          name: shoebox-macos
+          path: artifacts/shoebox-macos
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: guide
+          path: artifacts/guide
 
       - name: Package
         run: |
           mkdir -p release
-          # never ship a guide whose text copy is stale or whose images are missing
-          python3 docs/guide/html2txt.py --check
           # the notices for the libraries in the binary must match Cargo.lock and the vendored web libraries
           python3 scripts/third-party-licenses.py --check
           for os in macos; do
@@ -191,8 +278,7 @@ jobs:
             cp "scripts/launchers/Start shoebox.command" "$pkg/"
             chmod +x "$pkg/Start shoebox.command"
             cp recognizer/README.md recognizer/install.sh recognizer/fetch-models.sh recognizer/recognizer.py "$pkg/recognizer/"
-            mkdir -p "$pkg/guide"
-            cp -R docs/guide/shoebox-en.html docs/guide/shoebox-de.html docs/guide/shoebox-en.txt docs/guide/shoebox-de.txt docs/guide/assets "$pkg/guide/"
+            cp -R artifacts/guide "$pkg/guide"
             chmod +x "$pkg/recognizer/install.sh" "$pkg/recognizer/fetch-models.sh"
             tar -C "$RUNNER_TEMP" -czf release/shoebox-$os.tar.gz shoebox-$os
           done

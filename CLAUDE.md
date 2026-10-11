@@ -73,17 +73,13 @@ current status and next step. Update its status table when a phase moves.
   that adds, removes or alters something a person can see or do (the photo app,
   the launcher, a button, a setting, what a command does, the safety rules
   above) updates both files in the same pull request, and removing a feature
-  removes it from the guide. Before finishing, grep both files for the old
-  behaviour and its UI names (`grep -n -i '<word>' docs/guide/shoebox-*.html`)
-  and read the guide's pages that touch it: the feature cards, the "at a
-  glance" legend (its numbered dots sit at fixed positions on `ui-overview`,
-  one dot per legend item, in the order of the screen), the typical session,
-  the launcher tasks, the sections on the feature, the FAQ and "Your photos are
-  safe". If the screen changed visibly, regenerate the screenshots
-  (`docs/guide/README.md`) and check that the dots still sit on the right
-  controls; the sample screenshots must not use a word that is a feature now
-  (the tag "Favorites" is the heart). Then run `python3 docs/guide/html2txt.py`
-  and commit the `.txt` files. Say in the pull request what changed in the
+  removes it from the guide. Follow the `guide` skill
+  (`.claude/skills/guide/SKILL.md`): which sections to read, how to keep both
+  languages in step, when a screenshot step or a dot needs you. Screenshots and
+  the `.txt` copies are not in git: CI makes them from the code
+  (`.github/workflows/guide.yml`, artifact `guide`, and every release), so do
+  not build shoebox or run a browser just for the guide. Run
+  `python3 docs/guide/check.py` and say in the pull request what changed in the
   guide, or that it is not affected. Look at `main` first: a pull request
   stacked on a branch that is already merged never reaches `main`.
 

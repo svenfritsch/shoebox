@@ -54,7 +54,8 @@ A landing page and handbook as plain HTML and text, one per language (English
 and German). They come in the `guide/` folder of `shoebox-macos.tar.gz` from
 every release: open `guide/shoebox-en.html` or `guide/shoebox-de.html` in a
 browser (`shoebox-en.txt` / `shoebox-de.txt` hold the same text). Sources and
-how to edit them: [docs/guide/](docs/guide/README.md).
+how to edit them: [docs/guide/](docs/guide/README.md). The screenshots and the
+text copies are made by CI from the code of each release, not kept in git.
 
 ## License
 
