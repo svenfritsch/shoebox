@@ -725,8 +725,9 @@ Ignorieren und Kein Gesicht.]
 
 [Screenshot: Auswählen: zwei Gesichter einer Karte angekreuzt.]
 
-[Screenshot: Eine Karte benennen: zuerst die zuletzt Benannten, dann die mit
-den meisten Fotos, dann alle nach Gruppe.]
+[Screenshot: Gesichter benennen: zuerst die zuletzt Benannten, dann die mit
+den meisten Fotos, dann alle nach Gruppe. Die Liste öffnet sich nach oben über
+der Seite.]
 
 Mehrere Gesichter in einem Foto, und Gruppen
 --------------------------------------------
