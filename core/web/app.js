@@ -1313,7 +1313,7 @@ function showItem() {
 function drawFaces() {
   var stage = $('stage');
   stage.querySelectorAll('.face-box').forEach(function (b) { b.remove(); });
-  var info = lb.details, img = stage.querySelector('img');
+  var info = lb.details, img = stage.querySelector('img, video');
   if ($('lb-panel').hidden || !info || !info.faces || !img || img.hidden) return;
   // In the common timeline the item's id carries the drive; the details have the drive's own id.
   var openId = state.data.ids[state.open];
@@ -3810,11 +3810,17 @@ function avatar(p, cls) {
     img.alt = '';
     img.loading = 'lazy';
     img.src = p.cover != null ? LIBAPI + '/faces/' + p.cover + '/crop' : LIBAPI + '/faces/manual/' + p.cover_manual + '/crop';
+    // A cover drawn on a video has no crop: show the initials.
+    img.onerror = function () { img.remove(); a.textContent = initials(p); };
     a.appendChild(img);
   } else {
-    a.textContent = p ? p.name.split(/\s+/).map(function (w) { return w.charAt(0); }).join('').slice(0, 2).toUpperCase() : '?';
+    a.textContent = initials(p);
   }
   return a;
+}
+
+function initials(p) {
+  return p ? p.name.split(/\s+/).map(function (w) { return w.charAt(0); }).join('').slice(0, 2).toUpperCase() : '?';
 }
 
 // A face cut out of its photo's thumbnail here in the browser, for faces that
@@ -5273,7 +5279,7 @@ function infoFaces(row, info) {
   if (!pickable.length) pick.on = false;
   box.classList.toggle('picking', pick.on);
   if (!info.faces) box.appendChild(el('div', 'note', tr('info.faces_unlooked')));
-  else if (!faces.length) box.appendChild(el('div', 'note', tr('info.no_faces')));
+  else if (!faces.length) box.appendChild(el('div', 'note', tr(info.kind === 'video' ? 'info.faces_video' : 'info.no_faces')));
   faces.forEach(function (f, k) { box.appendChild(infoFace(info, f, k, pick)); });
   (info.faces_lost || []).forEach(function (f) {
     var line = el('div', 'pface lost');
@@ -5294,9 +5300,10 @@ function infoFaces(row, info) {
     select.onclick = function () { pick.on = true; pick.ids = {}; renderPanel(); };
     tools.appendChild(select);
   }
-  if (lb.details && state.data && state.data.kinds[state.open] !== 'v') {
-    var add = el('button', '', tr('info.add_face'));
-    add.title = tr('info.add_face_hint');
+  if (lb.details && state.data) {
+    var isVideo = state.data.kinds[state.open] === 'v';
+    var add = el('button', '', tr(isVideo ? 'info.add_person' : 'info.add_face'));
+    add.title = tr(isVideo ? 'info.add_person_hint' : 'info.add_face_hint');
     add.onclick = startDrawing;
     if (lb.details.view_turn) {
       add.disabled = true;
@@ -5478,11 +5485,14 @@ function infoFacesChanged(id) {
 // ---- drawing a missed face
 
 // "+ Add face": the panel steps aside, a box is dragged over the photo
-// (mouse, pen or finger), then named.
+// (mouse, pen or finger), then named. On a video (never scanned for faces) the
+// box is only a marker that links the person to the whole clip; it is drawn
+// over the picture while the video is paused.
 function startDrawing() {
-  var stage = $('stage'), img = stage.querySelector('img');
+  var stage = $('stage'), img = stage.querySelector('img, video');
   if (!img || !lb.details) return;
   stopDrawing();
+  if (img.tagName === 'VIDEO') img.pause();
   var info = lb.details;
   var panel = $('lb-panel');
   lb.drawing = { panelWasOpen: !panel.hidden };
@@ -5499,7 +5509,7 @@ function startDrawing() {
   layer.appendChild(rect);
   stage.appendChild(layer);
   var hint = el('div', 'draw-hint');
-  hint.appendChild(el('span', '', tr('draw.hint')));
+  hint.appendChild(el('span', '', tr(img.tagName === 'VIDEO' ? 'draw.hint_video' : 'draw.hint')));
   var cancel = el('button', 'btn quiet small', tr('app.cancel'));
   cancel.onclick = function () { stopDrawing(); };
   hint.appendChild(cancel);

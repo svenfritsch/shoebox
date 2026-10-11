@@ -686,10 +686,14 @@ pub struct FileFaces {
     pub lost: Vec<FaceItem>,
 }
 
-/// The faces of one content, for the viewer and the info panel.
-pub fn file_faces(conn: &Connection, key: &str) -> Result<FileFaces> {
-    let Some(found) = recognize::faces_of(conn, key)? else {
-        return Ok(FileFaces { faces: None, lost: Vec::new() });
+/// The faces of one content, for the viewer and the info panel. A `video` is
+/// never looked at for faces, so it counts as looked at with nothing found:
+/// only boxes drawn by hand show.
+pub fn file_faces(conn: &Connection, key: &str, video: bool) -> Result<FileFaces> {
+    let found = match recognize::faces_of(conn, key)? {
+        Some(found) => found,
+        None if video => Vec::new(),
+        None => return Ok(FileFaces { faces: None, lost: Vec::new() }),
     };
     let v = View::load_for(conn, Some(key))?;
     let landmarks: HashMap<[u64; 4], Vec<[f64; 2]>> =
