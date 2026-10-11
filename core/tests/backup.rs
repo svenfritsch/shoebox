@@ -378,6 +378,12 @@ fn the_timelines_can_be_narrowed_to_what_only_one_drive_of_a_pair_has() {
     assert_eq!((libs[0]["role"].as_str(), libs[1]["role"].as_str()), (Some("unknown"), Some("backup")), "{libs:?}");
     let got = ids(&diff);
     assert_eq!(got, vec![id_of(&original, "Familie/Weihnachten/DSC_2001.jpg"), SPAN + id_of(&backup, "Familie/Weihnachten/DSC_2001.jpg")]);
+    // The badge in the info panel asks which photos only a drive has, whatever is open.
+    let only = get(addr, &format!("/raw/api/lib/{i_backup}/compare")).json();
+    assert_eq!(only["kind"], "backup");
+    assert_eq!(only["ids"].as_array().unwrap().len(), 2);
+    let only = get(addr, &format!("/raw/api/lib/{i_orig}/compare")).json();
+    assert_eq!((only["kind"].as_str(), only["ids"].clone()), (Some("original"), json!([id_of(&original, "Neu/neu.jpg")])));
     // The normal common timeline leaves the backup out, as before.
     let normal = get(addr, "/raw/api/all/timeline").json();
     assert_eq!(normal["flat"], false);

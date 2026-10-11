@@ -798,6 +798,14 @@ async fn forward(hub: Arc<Hub>, mut req: Request) -> Response {
         Some(q) => format!("/api/{tail}?{q}"),
         None => format!("/api/{tail}"),
     };
+    // `/api/lib/{id}/compare`: which of this drive's files only it has (for the
+    // badge in the info panel); needs both drives, so it is answered here.
+    if tail == "compare" {
+        return match compare_all(&hub, &id).await {
+            Ok(v) => Json(v).into_response(),
+            Err(e) => e.into_response(),
+        };
+    }
     let Ok(uri) = new.parse::<Uri>() else { return ApiError::NotFound.into_response() };
     // `compare=backup|original` on the timeline: the files this drive has
     // and the other drive of its backup pair does not. Worked out here,
@@ -821,6 +829,24 @@ async fn forward(hub: Arc<Hub>, mut req: Request) -> Response {
 /// The files a library's timeline is narrowed to by `compare=` (see `forward`).
 #[derive(Clone)]
 struct CompareIds(Option<Arc<HashSet<i64>>>);
+
+/// `{"kind": "backup" | "original" | null, "ids": […]}`: what only this drive
+/// has compared with the other drive of its backup pair (`null` and no ids for
+/// a drive that is not half of a pair).
+async fn compare_all(hub: &Arc<Hub>, library: &str) -> ApiResult<serde_json::Value> {
+    let o = overview(hub).await?;
+    let here = o.drives.iter().position(|d| d.id == library).ok_or(ApiError::NotFound)?;
+    let backup = o.drives[here].role == multi::Role::Backup;
+    Ok(match compare_ids(hub, library, backup).await {
+        Ok(ids) => {
+            let mut ids: Vec<i64> = ids.iter().copied().collect();
+            ids.sort_unstable();
+            serde_json::json!({ "kind": if backup { "backup" } else { "original" }, "ids": ids })
+        }
+        Err(ApiError::BadRequest(_)) => serde_json::json!({ "kind": null, "ids": [] }),
+        Err(e) => return Err(e),
+    })
+}
 
 /// The files of `library` that the other drive of its backup pair does not
 /// have: for a backup, what only it holds; for the drive it copies, what is

@@ -501,7 +501,16 @@ function loadCompare() {
   if (drives.list.length < 2) { checkCompare(); return Promise.resolve(); }
   return Promise.all([api('/api/all/backups?limit=0'), api('/api/all/drives')]).then(function (r) {
     drives.cmp = { backups: r[0], drives: r[1] };
-  }).catch(function () {}).then(checkCompare);
+  }).catch(function () {}).then(checkCompare).then(loadOnlyHere);
+}
+
+// Which photos of the open drive only it has (for the badge in the info panel, always).
+function loadOnlyHere() {
+  drives.only = {};
+  if (!compareFor()) return Promise.resolve();
+  return api(LIBAPI + '/compare').then(function (r) {
+    (r.ids || []).forEach(function (id) { drives.only[id] = true; });
+  }).catch(function () {});
 }
 
 function compareProblem(kind) {
@@ -533,11 +542,12 @@ function checkCompare() {
   toast(tr('cmp.removed', { filter: compareLabel(kind), reason: why }));
 }
 
-// The badge next to the name in the info panel, while the photos are listed
-// by what only one drive of the pair has: the sentence is its tooltip.
-function compareBadge() {
-  var kind = state.filter.compare, c = compareFor();
-  if (isAll() || !c || kind !== c.kind) return null;
+// The badge next to the name in the info panel for a photo that only this
+// drive of the pair has (whatever is open): the sentence is its tooltip.
+function compareBadge(fileId) {
+  var c = compareFor();
+  if (isAll() || !c || !drives.only || !drives.only[fileId]) return null;
+  var kind = c.kind;
   var b = el('span', 'cmp-badge ' + kind, tr(kind === 'backup' ? 'cmp.only_backup' : 'cmp.not_backed_up'));
   b.title = tr(kind === 'backup' ? 'cmp.tip_only_backup' : 'cmp.tip_not_backed_up', { drive: driveLabel(drives.current.id), other: driveLabel(c.other) });
   return b;
@@ -1508,7 +1518,7 @@ function renderPanel() {
   };
   infoDate(row, info);
   var nameCell = row(tr('info.name'), info.name);
-  var cmpBadge = compareBadge();
+  var cmpBadge = compareBadge(info.id);
   if (nameCell && cmpBadge) nameCell.appendChild(cmpBadge);
   var folder = info.path.indexOf('/') >= 0 ? info.path.slice(0, info.path.lastIndexOf('/')) : '';
   if (folder) {
