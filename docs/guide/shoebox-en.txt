@@ -371,9 +371,9 @@ recognises a screenshot from the file (a PNG without camera data, a name like
 Screenshot or Bildschirmfoto, the size of a phone or computer screen) and from
 the picture itself (large areas of one colour). It can be wrong in both
 directions: in the photo’s info panel, Screenshot is a drop-down that starts
-on shoebox’s guess; pick Yes or No to correct it, and Back to automatic
-returns to the guess. Your choice is kept in the library; the photo file is
-never changed.
+on shoebox’s guess; pick Yes or No to correct it, and the undo icon at the
+right of the row (tooltip Back to automatic) returns to the guess. Your choice
+is kept in the library; the photo file is never changed.
 
 Select
 Press ☑, then click photos (Shift-click for a range; on the iPad just tap).

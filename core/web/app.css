@@ -698,6 +698,9 @@ body.geo-view #page { padding: 0; height: 100%; }
 .geo-side-head h3 { margin: 0; font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .geo-tools { display: flex; gap: 2px; flex: none; }
 .icon-btn { background: none; border: 0; color: var(--muted); font-size: 16px; padding: 4px 7px; border-radius: 6px; }
+.shot-pick { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+.shot-pick .shot-back { margin-left: auto; padding: 4px; display: flex; }
+.shot-pick .shot-back svg { width: 18px; height: 18px; fill: currentColor; }
 .icon-btn:hover { background: var(--line); color: var(--fg); }
 .geo-sub { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
 .geo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 3px; margin-bottom: 10px; }

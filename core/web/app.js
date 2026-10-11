@@ -3038,9 +3038,12 @@ function infoScreenshot(row, info) {
   box.appendChild(pick);
   box.appendChild(el('span', 'note', ' ' + tr(marked ? 'shot.yours' : 'shot.guess')));
   if (marked) {
-    var back = el('button', 'link', tr('shot.back'));
+    // An undo icon at the right of the row; the words are its tooltip.
+    var back = el('button', 'icon-btn shot-back');
+    back.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>';
+    back.title = tr('shot.back');
+    back.setAttribute('aria-label', tr('shot.back'));
     back.onclick = function () { set(null); };
-    box.appendChild(document.createTextNode(' '));
     box.appendChild(back);
   }
   row(tr('shot.label'), box);

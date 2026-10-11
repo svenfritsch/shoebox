@@ -395,8 +395,9 @@ Name wie Screenshot oder Bildschirmfoto, die Größe eines Handy- oder
 Computerbildschirms) und am Bild selbst (große einfarbige Flächen). Es kann
 sich in beide Richtungen irren: Im Info-Fenster eines Fotos ist Screenshot ein
 Auswahlfeld, das mit der Schätzung von Shoebox beginnt; wähle Ja oder Nein zum
-Korrigieren, Zurück zu automatisch kehrt zur Schätzung zurück. Deine Wahl wird
-in der Bibliothek gemerkt; die Fotodatei wird nie verändert.
+Korrigieren, das Rückgängig-Symbol rechts in der Zeile (Tooltip Zurück zu
+automatisch) kehrt zur Schätzung zurück. Deine Wahl wird in der Bibliothek
+gemerkt; die Fotodatei wird nie verändert.
 
 Auswählen
 ☑ drücken, dann Fotos anklicken (mit Umschalt für einen Bereich; am iPad
