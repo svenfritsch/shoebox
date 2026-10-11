@@ -787,7 +787,14 @@ wenn du eine Katze benennst), und + Neue Person, + Neue Katze oder + Neuer
 Hund legt eine neue an. Die Art eines selbst gezeichneten Tiers lässt sich
 später nicht ändern; den Rahmen löschen und neu zeichnen. Bei einem Tier, das
 die Erkennung gefunden hat, bietet ⋯ Ist eine Katze, kein Hund (oder
-umgekehrt) an, wenn sie es für das falsche gehalten hat.
+umgekehrt) an, wenn sie es für das falsche gehalten hat. Videos werden nicht
+nach Gesichtern durchsucht; ihr Infofeld sagt das. Eine Person kannst du
+trotzdem verknüpfen: Derselbe Knopf + Gesicht oder Haustier hinzufügen öffnet
+denselben Dialog (Person, Katze oder Hund, dann der Name); es gibt keinen
+Rahmen zu ziehen, den kleinen Rahmen setzt shoebox selbst, und auf dem Video
+wird nichts gezeichnet. Die Person oder das Haustier gehört zum ganzen Clip.
+Ihr Profilbild erscheint in der Liste, und das Video wird gefunden, wenn du
+die Zeitleiste nach dieser Person filterst.
 
 Gruppen
 Gesichter zeigt die Personen nach Gruppen. Neue Gruppe … legt eine an; Gruppen

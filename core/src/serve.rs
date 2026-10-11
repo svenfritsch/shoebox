@@ -2075,7 +2075,7 @@ async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiRe
             None => None,
         };
         let faces = match key {
-            Some(key) => people::file_faces(&conn, &key)?,
+            Some(key) => people::file_faces(&conn, &key, details.kind == "video")?,
             None => people::FileFaces { faces: None, lost: Vec::new() },
         };
         Ok(Json(FileInfo {
