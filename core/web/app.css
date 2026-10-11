@@ -626,7 +626,10 @@ body.selecting .sec .pick { display: inline; }
 .sface-grid .copen { position: absolute; right: -2px; top: -2px; width: 18px; height: 18px; border-radius: 50%; background: var(--panel); border: 1px solid var(--line); color: var(--fg); font-size: 11px; line-height: 16px; text-align: center; opacity: 0; }
 .sface-grid .cface:hover .copen, .sface-grid .cface.sel .copen { opacity: 1; }
 @media (hover: none) { .sface-grid .copen { opacity: 1; } }
-.singles-bar { flex-wrap: wrap; white-space: normal; max-width: calc(100% - 24px); }
+/* The bar is centred with left: 50%, which would cap its width at half the screen and wrap
+   its buttons early: size it by its content, up to the screen. It only wraps where a row
+   cannot fit (a phone). */
+.singles-bar { flex-wrap: wrap; white-space: normal; width: max-content; max-width: calc(100vw - 24px); }
 .singles-bar .pfield { min-width: 160px; }
 /* The bar sits at the bottom of the screen: the name list opens upwards, over the page,
    instead of making the bar grow. */

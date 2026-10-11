@@ -77,6 +77,16 @@ await p.locator('#page .link').first().click(); await wait(3000);
 await p.locator('.sface-grid .cface').first().click(); await wait(500);
 await p.locator('.singles-bar .pfield input').click(); await wait(800);
 await shot('name-suggestions');
+  // The bar must stay on one row on a normal screen, also with the longest button (a pet card's
+  // "it's a dog, not a cat").
+  const rows = await p.evaluate(() => {
+    const kids = [...document.querySelector('.singles-bar').children];
+    kids.forEach((k) => { k.hidden = false; });
+    kids[5].textContent = 'Es ist ein Hund, keine Katze';
+    const mid = kids.map((k) => { const r = k.getBoundingClientRect(); return r.top + r.height / 2; });
+    return Math.max(...mid) - Math.min(...mid);
+  });
+  if (rows > 12) throw new Error(`the bar under the single faces wraps (${rows}px between its items)`);
   await b.close(); process.exit(0);
 }
 
