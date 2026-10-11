@@ -385,15 +385,17 @@ Suchen, auswählen, taggen und verschieben: alles geht für viele Fotos auf
 einmal.
 
 Suchen
-Tippe ins Suchfeld: Vorschläge erscheinen für Tags, Personen und Ordner.
-Mehrere gewählte werden zu Chips, die das Ergebnis eingrenzen; × entfernt
-einen, Alle entfernen beginnt neu. Deine Favoriten findest du mit dem ♥-Knopf
-neben Typ, oder tippe favorit (deutsch) bzw. favorite (englisch) und wähle ♥
-Favoriten; das lässt sich mit allem anderen kombinieren, z. B. Favoriten einer
-Person oder eines Jahres. Bei eingeschalteten Karten (siehe „Orte und Karten“)
-bieten die Vorschläge auch deine Orte an. Ein Jahr oder ein Monat mit Jahr,
-etwa 1987 oder Juni 1987, bietet am Ende der Liste eine Zeile unter Datum an
-(siehe „Datum und Suche nach Datum“).
+Tippe ins Suchfeld: Vorschläge erscheinen für Tags, Personen und Ordner (ein
+Ordnername steht unter Ordner; unter Tags stehen nur Tags, die du von Hand
+vergeben hast, auch solche mit dem Namen eines Ordners). Mehrere gewählte
+werden zu Chips, die das Ergebnis eingrenzen; × entfernt einen, Alle entfernen
+beginnt neu. Deine Favoriten findest du mit dem ♥-Knopf neben Typ, oder tippe
+favorit (deutsch) bzw. favorite (englisch) und wähle ♥ Favoriten; das lässt
+sich mit allem anderen kombinieren, z. B. Favoriten einer Person oder eines
+Jahres. Bei eingeschalteten Karten (siehe „Orte und Karten“) bieten die
+Vorschläge auch deine Orte an. Ein Jahr oder ein Monat mit Jahr, etwa 1987
+oder Juni 1987, bietet am Ende der Liste eine Zeile unter Datum an (siehe
+„Datum und Suche nach Datum“).
 
 Typ bietet Fotos (Standbilder ohne Screenshots), Videos, Live Photos und
 Screenshots; hake beliebige an, ohne Haken wird alles gezeigt. Um Screenshots
@@ -413,7 +415,11 @@ Auswählen
 einfach tippen). „Alle auswählen“ an einer Monatsüberschrift nimmt den ganzen
 Monat; Alle auswählen in der Leiste unten nimmt alle gezeigten Fotos über alle
 Monate (zum Beispiel alle Fotos eines Tags, um den Tag auf einmal zu
-entfernen).
+entfernen). Die Auswahl gehört zu der Liste, in der du sie getroffen hast: Ein
+Klick auf einen anderen Tag, Ordner oder eine andere Seite in der Seitenleiste
+oder eine Suche beendet sie; sind Fotos ausgewählt, fragt shoebox vorher nach,
+beim Klick auf die Seite oder ins Suchfeld (Bleiben oder Gehen und Auswahl
+verwerfen / Suchen und Auswahl verwerfen).
 
 Taggen
 Tag hinzufügen … gibt der Auswahl deinen eigenen Tag. Tags leben im Index von
@@ -422,6 +428,14 @@ zuletzt benutzt hast (Zuletzt verwendet), dann die Am häufigsten benutzten;
 beim Tippen wird die Liste enger, die zuletzt benutzten bleiben oben. Das
 merkt sich shoebox im Index des Laufwerks (nie in den Fotodateien), also auf
 jedem Computer und Tablet gleich.
+
+Ein Tag kann auch ein Ordnername sein (der Ordner „Justin“ gibt allen seinen
+Fotos den Tag „Justin“, und du hast ihn vielleicht anderen Fotos von Hand
+gegeben). Unter so einem Tag in der Seitenleiste erscheint, solange er gezeigt
+wird, eine Zeile Nur manuelle Tags mit der Zahl der Fotos, die du selbst
+getaggt hast; ein Klick darauf zeigt nur diese (der Tag steht dann in orangem
+Text, sein Chip sagt „manuell“). Ein Klick auf den Tag selbst zeigt wieder
+alle seine Fotos.
 
 Datum
 Datum setzen … gibt der Auswahl ein eigenes Datum, zum Beispiel einem ganzen

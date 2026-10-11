@@ -526,3 +526,47 @@ fn tags_remember_when_they_were_last_used() {
     let tags = tag_list(addr, "");
     assert!(tags.iter().filter(|t| t["kind"] == "folder").all(|t| t.get("last_used").is_none()));
 }
+
+#[test]
+fn manual_tags_only_leaves_out_what_a_folder_name_gives() {
+    let lib = Library::new("tags-manual");
+    lib.scan();
+    let before = lib.snapshot();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let img1 = id_of(&lib, "2020-07 Urlaub Griechenland/IMG_0001.JPG");
+    let dsc = id_of(&lib, "Familie/Weihnachten/DSC_2001.jpg");
+    let png = id_of(&lib, "Familie/Screenshot.png");
+
+    // "Familie" is a folder tag of everything under it; one photo outside gets
+    // it by hand, and so does one inside (which has it both ways).
+    add(addr, &[img1, png], "Familie");
+    let tags = tag_list(addr, "");
+    let familie = find(&tags, "Familie").unwrap();
+    let id = familie["id"].as_i64().unwrap();
+    assert_eq!(familie["kind"], "both");
+    let all = timeline_ids(addr, &format!("?tag={id}"));
+    assert!(all.contains(&img1) && all.contains(&dsc) && all.contains(&png), "{all:?}");
+    assert_eq!(familie["count"].as_u64().unwrap(), all.len() as u64);
+    // The count of the manual ones, and the filter that shows them.
+    assert_eq!(familie["manual"], 2);
+    assert_eq!(timeline_ids(addr, &format!("?tag={id}&manual=1")), sorted(vec![img1, png]));
+    assert_eq!(timeline_ids(addr, &format!("?tag={id}&manual=0")), all);
+    // Within another search the same: counted over what it shows.
+    let within = tag_list(addr, &format!("?tag={id}&manual=1"));
+    assert!(find(&within, "Weihnachten").is_none(), "{within:?}");
+    // The suggestions (own=1) keep a tag that is also given by hand, even inside
+    // a search whose photos only have it from their folder, and leave out a tag
+    // that is only a folder name.
+    let weihnachten: i64 = lib.db().query_row("SELECT id FROM folders WHERE path_nfc = 'Familie/Weihnachten'", [], |r| r.get(0)).unwrap();
+    let narrowed = tag_list(addr, &format!("?folder={weihnachten}&own=1"));
+    assert!(find(&narrowed, "Familie").is_some(), "{narrowed:?}");
+    assert!(find(&narrowed, "Weihnachten").is_none(), "{narrowed:?}");
+    let plain = tag_list(addr, "?own=1");
+    assert!(find(&plain, "Familie").is_some() && find(&plain, "Weihnachten").is_none(), "{plain:?}");
+    // A tag that is only a folder name has none by hand.
+    assert_eq!(find(&tags, "Weihnachten").unwrap()["manual"], 0);
+
+    server.stop().unwrap();
+    assert_untouched(&before, &lib.snapshot());
+}

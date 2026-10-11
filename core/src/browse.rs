@@ -141,6 +141,9 @@ pub struct Query {
     /// Every one of these tags (AND); a tag also matches the other spellings
     /// of its name (folder tags keep their folder's exact spelling).
     pub tags: Vec<i64>,
+    /// The tags above count only where the user added them by hand, not where
+    /// a folder name gives them ("manual tags only").
+    pub manual_tags: bool,
     pub text: Option<String>,
     /// Only photos with a confirmed face of every one of these people
     /// (AND, 5c-3).
@@ -363,7 +366,7 @@ impl Snapshot {
         let folders = q.folder.map(|f| self.subtree(f));
         let mut tagged: Option<HashSet<i64>> = None;
         for &tag in &q.tags {
-            let ids = file_ids_with_tag_name(conn, tag)?;
+            let ids = file_ids_with_tag_name(conn, tag, q.manual_tags)?;
             tagged = Some(match tagged {
                 Some(t) => t.intersection(&ids).copied().collect(),
                 None => ids,
@@ -516,6 +519,8 @@ pub struct Tag {
     pub name: String,
     pub count: u64,
     pub kind: TagKind,
+    /// How many of the photos were given the tag by hand (0 for a folder tag).
+    pub manual: u64,
     /// When a photo was last given this own tag (Unix seconds); absent if
     /// never (or only before this was recorded).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -526,7 +531,8 @@ pub struct Tag {
 pub fn all_tags(conn: &Connection) -> Result<Vec<Tag>> {
     let mut stmt = conn.prepare(
         "SELECT t.id, t.name, count(DISTINCT f.id) AS n, max(ft.source = 'folder'), max(ft.source = 'user'),
-                max(CASE WHEN ft.source = 'user' THEN ft.added_at END) FROM tags t
+                max(CASE WHEN ft.source = 'user' THEN ft.added_at END),
+                count(DISTINCT CASE WHEN ft.source = 'user' THEN f.id END) FROM tags t
          JOIN file_tags ft ON ft.tag_id = t.id
          JOIN files f ON f.id = ft.file_id AND f.missing_since IS NULL AND f.kind != 'raw'
          GROUP BY t.id ORDER BY n DESC, t.name",
@@ -538,7 +544,7 @@ pub fn all_tags(conn: &Connection) -> Result<Vec<Tag>> {
                 (false, true) => TagKind::Own,
                 _ => TagKind::Folder,
             };
-            Ok(Tag { id: r.get(0)?, name: r.get(1)?, count: r.get::<_, i64>(2)? as u64, kind, last_used: r.get(5)? })
+            Ok(Tag { id: r.get(0)?, name: r.get(1)?, count: r.get::<_, i64>(2)? as u64, kind, manual: r.get::<_, i64>(6)? as u64, last_used: r.get(5)? })
         })?
         .collect::<rusqlite::Result<_>>()?;
     Ok(tags)
@@ -572,19 +578,19 @@ pub fn tag_names(conn: &Connection, ids: &[i64]) -> Result<Vec<TagName>> {
 }
 
 /// Files with this tag or another spelling of its name.
-fn file_ids_with_tag_name(conn: &Connection, tag: i64) -> Result<HashSet<i64>> {
+fn file_ids_with_tag_name(conn: &Connection, tag: i64, manual_only: bool) -> Result<HashSet<i64>> {
     let mut stmt = conn.prepare(
         "SELECT DISTINCT ft.file_id FROM file_tags ft JOIN tags t ON t.id = ft.tag_id
-         WHERE t.fold = (SELECT fold FROM tags WHERE id = ?1)",
+         WHERE t.fold = (SELECT fold FROM tags WHERE id = ?1) AND (?2 = 0 OR ft.source = 'user')",
     )?;
-    let ids = stmt.query_map([tag], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+    let ids = stmt.query_map(rusqlite::params![tag, manual_only], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
     Ok(ids)
 }
 
 /// Tags of the given files with how many of them carry each, most used
 /// first (suggestions that narrow a search). Tags in `skip` are left out.
 pub fn tags_within(conn: &Connection, files: &HashSet<i64>, skip: &[i64]) -> Result<Vec<Tag>> {
-    let mut counts: HashMap<i64, (String, HashSet<i64>, bool, bool)> = HashMap::new();
+    let mut counts: HashMap<i64, (String, HashSet<i64>, bool, bool, HashSet<i64>)> = HashMap::new();
     {
         let mut stmt = conn.prepare("SELECT ft.file_id, t.id, t.name, ft.source FROM file_tags ft JOIN tags t ON t.id = ft.tag_id")?;
         let mut rows = stmt.query([])?;
@@ -594,20 +600,23 @@ pub fn tags_within(conn: &Connection, files: &HashSet<i64>, skip: &[i64]) -> Res
             if !files.contains(&file) || skip.contains(&tag) {
                 continue;
             }
-            let e = counts.entry(tag).or_insert_with(|| (String::new(), HashSet::new(), false, false));
+            let e = counts.entry(tag).or_insert_with(|| (String::new(), HashSet::new(), false, false, HashSet::new()));
             if e.0.is_empty() {
                 e.0 = r.get(2)?;
             }
             e.1.insert(file);
             match r.get_ref(3)?.as_str()? {
                 "folder" => e.2 = true,
-                _ => e.3 = true,
+                _ => {
+                    e.3 = true;
+                    e.4.insert(file);
+                }
             }
         }
     }
     let mut tags: Vec<Tag> = counts
         .into_iter()
-        .map(|(id, (name, files, folder, own))| Tag {
+        .map(|(id, (name, files, folder, own, manual))| Tag {
             id,
             name,
             count: files.len() as u64,
@@ -616,6 +625,7 @@ pub fn tags_within(conn: &Connection, files: &HashSet<i64>, skip: &[i64]) -> Res
                 (false, true) => TagKind::Own,
                 _ => TagKind::Folder,
             },
+            manual: manual.len() as u64,
             last_used: None,
         })
         .collect();
