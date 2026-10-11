@@ -801,7 +801,7 @@
   "dates.err_future": "Dieses Datum liegt in der Zukunft.",
   "dates.lands_day": "Wird in der Gruppe {group} an diesem Tag gezeigt.",
   "dates.lands_month": "Wird in der Gruppe {group} nach den Fotos mit genauem Tag gezeigt.",
-  "dates.lands_year": "Wird in einer eigenen Gruppe {year} unter dem Januar {year} gezeigt.",
+  "dates.lands_year": "Wird in einer eigenen Gruppe „{year}“ unterhalb von „Januar {year}“ angezeigt.",
   "dates.hint": "Wird nur in shoebox gespeichert. Die Datei bleibt unverändert.",
   "dates.save": "Speichern",
   "dates.remove": "Schätzung entfernen",
