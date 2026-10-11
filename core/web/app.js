@@ -1990,7 +1990,9 @@ function moveDialog(ids, done) {
     post(LIBAPI + '/move', { ids: ids, folder: folder, keep_folder_tags: keep.checked }).then(function (r) {
       closeModal();
       if (done) done();
-      toast(tr('move.done', { count: trn('count.files', r.files.length), folder: r.folder }));
+      var gone = r.removed_folders || [];
+      toast(tr('move.done', { count: trn('count.files', r.files.length), folder: r.folder }) +
+        (gone.length ? '. ' + tr(gone.length === 1 ? 'move.folders_removed' : 'move.folders_removed_many', { folders: gone.join(', ') }) : ''));
       report(tr('move.skipped'), r.skipped);
       changed();
     }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });

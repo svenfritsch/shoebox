@@ -17,6 +17,9 @@ current status and next step. Update its status table when a phase moves.
   in `organize.rs`: rename only, never copy, never replace, and only files
   that still match the index. There is no import: photos are copied onto the
   drive in the file manager (which keeps their dates) and a scan finds them.
+- Moving photos (`organize::move_files_with`) also removes a folder the photos
+  left, only if `remove_dir` succeeds (nothing at all in it, hidden files
+  included), never the library root, and reports it (`removed_folders`).
 - After a scan, `arrivals::cleanup` (launcher button "Delete the new copies")
   may remove files the scan added whose content (full hash) was on the drive
   before that scan, through `duplicates::remove_copies` (the older copy stays;

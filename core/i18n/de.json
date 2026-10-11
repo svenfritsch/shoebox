@@ -234,6 +234,8 @@
   "move.choose": "Wähle einen Ordner.",
   "move.done": "{count} nach {folder} verschoben",
   "move.skipped": "Einige Fotos sind geblieben, wo sie waren",
+  "move.folders_removed": "Leerer Ordner entfernt: {folders}",
+  "move.folders_removed_many": "Leere Ordner entfernt: {folders}",
   "trash.text": "{count} (mit ihren RAW-, Live-Photo- und Sidecar-Dateien) in den shoebox-Papierkorb verschieben? Du kannst sie von dort zurückholen, bis der Papierkorb geleert wird.",
   "trash.done": "{count} in den Papierkorb verschoben",
   "trash.skipped": "Einige Fotos wurden nicht in den Papierkorb verschoben",

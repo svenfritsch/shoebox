@@ -480,6 +480,37 @@ pub struct Moved {
     /// Where they went.
     pub folder_id: i64,
     pub folder: String,
+    /// Folders the photos left that were empty afterwards and were removed
+    /// (NFC paths).
+    pub removed_folders: Vec<String>,
+}
+
+/// Remove the folders photos were just moved out of, if nothing at all is
+/// left in them (`remove_dir` refuses a folder with any entry, hidden files
+/// included). Never the library itself, never a folder that still has
+/// records in the index or subfolders there.
+fn remove_emptied_folders(conn: &Connection, root: &Path, folder_ids: &HashSet<i64>, out: &mut Moved) {
+    let mut found: Vec<(String, String)> = folder_ids
+        .iter()
+        .filter_map(|id| {
+            conn.query_row("SELECT path, path_nfc FROM folders WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?))).ok()
+        })
+        .filter(|(_, nfc): &(String, String)| !nfc.is_empty())
+        .collect();
+    // Deepest first, so the order of the report is stable.
+    found.sort_by(|a, b| b.1.cmp(&a.1));
+    for (raw, nfc) in found {
+        if fs::remove_dir(root.join(&raw)).is_err() {
+            continue;
+        }
+        let _ = conn.execute(
+            "DELETE FROM folders WHERE path_nfc = ?1
+                AND id NOT IN (SELECT folder_id FROM files)
+                AND id NOT IN (SELECT parent_id FROM folders WHERE parent_id IS NOT NULL)",
+            [&nfc],
+        );
+        out.removed_folders.push(nfc);
+    }
 }
 
 /// Move photos into a folder (NFC path, created if needed), each with its
@@ -497,6 +528,7 @@ pub fn move_files_with(conn: &Connection, root: &Path, ids: &[i64], folder: &str
     let dir = root.join(&folder_raw);
     let mut names = Names::load(&dir)?;
     let mut out = Moved { folder_id, folder: library::nfc(&folder_raw), ..Default::default() };
+    let mut left: HashSet<i64> = HashSet::new();
     for group in Group::all(conn, root, ids, &mut out.skipped)? {
         if group.files[0].folder_id == folder_id {
             continue; // already there
@@ -507,10 +539,14 @@ pub fn move_files_with(conn: &Connection, root: &Path, ids: &[i64], folder: &str
                 None => Ok(()),
             }
         });
+        // Whatever the outcome, the folder may have lost files.
+        left.extend(group.files.iter().map(|f| f.folder_id));
         if let Err(e) = result.and_then(|()| move_group(conn, root, &group, folder_id, &folder_raw, keep_folder_tags, &mut names, &mut out)) {
             out.skipped.push(format!("{}: {e:#}", group.files[0].path_nfc));
         }
     }
+    left.remove(&folder_id);
+    remove_emptied_folders(conn, root, &left, &mut out);
     Ok(out)
 }
 

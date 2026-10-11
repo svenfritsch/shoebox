@@ -475,3 +475,33 @@ fn png_is_turned_in_shoebox_only() {
     assert_eq!(lib.snapshot(), before);
     server.stop().unwrap();
 }
+
+#[test]
+fn moving_everything_out_of_a_folder_removes_the_empty_folder() {
+    let lib = Library::new("organize-empty-folder");
+    lib.jpeg("Alt/IMG_0001.JPG", 1);
+    lib.jpeg("Alt/IMG_0002.JPG", 2);
+    lib.jpeg("Halb/IMG_0003.JPG", 3);
+    lib.jpeg("Halb/IMG_0004.JPG", 4);
+    lib.write("Versteckt/IMG_0005.JPG.keep", b"x");
+    lib.jpeg("Versteckt/IMG_0005.JPG", 5);
+    lib.scan();
+    let server = start(&lib, None);
+    let addr = server.addr;
+
+    // The whole folder goes: it is removed and named in the answer.
+    let ids = [id_of(&lib, "Alt/IMG_0001.JPG"), id_of(&lib, "Alt/IMG_0002.JPG")];
+    let r = post(addr, "/api/move", &json!({ "ids": ids, "folder": "Neu" })).json();
+    assert_eq!(r["removed_folders"], json!(["Alt"]), "{r}");
+    assert!(!lib.path("Alt").exists());
+    assert!(lib.path("Neu/IMG_0001.JPG").exists());
+    let gone: i64 = lib.db().query_row("SELECT count(*) FROM folders WHERE path_nfc = 'Alt'", [], |r| r.get(0)).unwrap();
+    assert_eq!(gone, 0);
+
+    // Part of a folder, or a folder with another file in it, stays.
+    let r = post(addr, "/api/move", &json!({ "ids": [id_of(&lib, "Halb/IMG_0003.JPG")], "folder": "Neu" })).json();
+    assert_eq!(r["removed_folders"], json!([]), "{r}");
+    let r = post(addr, "/api/move", &json!({ "ids": [id_of(&lib, "Versteckt/IMG_0005.JPG")], "folder": "Neu" })).json();
+    assert_eq!(r["removed_folders"], json!([]), "{r}");
+    assert!(lib.path("Halb").exists() && lib.path("Versteckt/IMG_0005.JPG.keep").exists());
+}

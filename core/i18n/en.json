@@ -234,6 +234,8 @@
   "move.choose": "Choose a folder.",
   "move.done": "{count} moved to {folder}",
   "move.skipped": "Some photos stayed where they were",
+  "move.folders_removed": "Empty folder removed: {folders}",
+  "move.folders_removed_many": "Empty folders removed: {folders}",
   "trash.text": "Move {count} (with their RAW, Live Photo and sidecar files) to the shoebox trash? You can put them back from there until the trash is emptied.",
   "trash.done": "{count} moved to the trash",
   "trash.skipped": "Some photos were not moved to the trash",

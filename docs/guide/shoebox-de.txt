@@ -432,7 +432,9 @@ Verschieben … fragt nach einem Ordner. Neue Ordner werden angelegt, nichts
 wird überschrieben, RAW-, Live-Photo- und Sidecar-Dateien wandern mit. Die
 eigenen Tags der Fotos gehen immer mit. „Ordnertags behalten“ behält
 zusätzlich die Tags des alten Ordners als eigene Tags; Ordner-Tags folgen
-immer dem neuen Ordner.
+immer dem neuen Ordner. Ist ein Ordner nach dem Verschieben ganz leer (nicht
+einmal eine versteckte Datei darin), entfernt shoebox diesen leeren Ordner und
+sagt dir, welcher es war.
 
 Sammeln und exportieren
 Um Fotos für etwas zu sammeln (eine Druckbestellung, ein Album in InDesign,
