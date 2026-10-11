@@ -1913,12 +1913,10 @@ struct FileInfo {
     live: Option<i64>,
     /// Other versions of this photo (linked duplicates).
     linked: Vec<duplicates::Linked>,
-    /// Faces found by `shoebox recognize` (and drawn by hand), with who
-    /// they are or might be; "not a face" is left out. `null` if it has not
-    /// looked yet.
+    /// Faces found by `shoebox recognize`, drawn by hand, or confirmed by the
+    /// user and no longer detected (`kept`), with who they are or might be;
+    /// "not a face" is left out. `null` if it has not looked yet.
     faces: Option<Vec<people::FileFace>>,
-    /// Confirmed faces that are no longer found (after a model change).
-    faces_lost: Vec<people::FaceItem>,
     /// Quarter turns clockwise that shoebox shows the photo turned (HEIC,
     /// PNG; the file itself is as it was). Face boxes are in the file's
     /// orientation.
@@ -1958,7 +1956,7 @@ async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiRe
         };
         let faces = match key {
             Some(key) => people::file_faces(&conn, &key)?,
-            None => people::FileFaces { faces: None, lost: Vec::new() },
+            None => people::FileFaces { faces: None },
         };
         Ok(Json(FileInfo {
             details,
@@ -1967,7 +1965,6 @@ async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiRe
             live: item.and_then(|it| it.live),
             linked: duplicates::linked(&conn, id)?,
             faces: faces.faces,
-            faces_lost: faces.lost,
             view_turn,
             screenshot: item.is_some_and(|it| it.shot),
             screenshot_mark,

@@ -1323,7 +1323,7 @@ function drawFaces() {
     if (f.person && f.state !== 'ignored') {
       b.appendChild(el('span', 'face-name', f.person.name + (f.state === 'confirmed' ? '' : '?')));
     }
-    b.title = (f.species ? speciesName(f.species) + ', ' : '') + (f.score != null ? tr('face.score', { score: f.score.toFixed(2) }) : tr('face.drawn'));
+    b.title = (f.species ? speciesName(f.species) + ', ' : '') + (f.kept ? tr('face.kept') : f.score != null ? tr('face.score', { score: f.score.toFixed(2) }) : tr('face.drawn'));
     stage.appendChild(b);
   });
 }
@@ -4935,7 +4935,7 @@ function personFaceCard(face, tab) {
   };
   card.appendChild(a);
   var caption = face.similarity != null ? tr('person.alike', { pct: Math.round(face.similarity * 100) }) : Math.round(face.px) + ' px';
-  if (face.lost) caption = tr('person.lost');
+  if (face.kept) caption = tr('person.kept');
   else if (face.manual != null) caption = tr('face.drawn');
   card.appendChild(el('div', 'meta', caption));
   if (face.small) card.appendChild(el('span', 'tag', tr('facecheck.tag_small')));
@@ -4952,7 +4952,7 @@ function personFaceCard(face, tab) {
     act('✗', tr('person.not', { name: p.name }), 'no', function () { personAction('reject', [face.id]); });
   } else if (tab === 'rejected') {
     act('↺', tr('person.undo_not', { name: p.name }), 'undo', function () { personAction('unreject', [face.id]); });
-  } else if (!face.lost) {
+  } else if (!face.kept) {
     card.appendChild(menuButton(function () { return confirmedFaceMenu(face); }, tr('person.more_face')));
   }
   card.appendChild(acts);
@@ -5565,12 +5565,6 @@ function infoFaces(row, info) {
   if (!info.faces) box.appendChild(el('div', 'note', tr('info.faces_unlooked')));
   else if (!faces.length) box.appendChild(el('div', 'note', tr('info.no_faces')));
   faces.forEach(function (f, k) { box.appendChild(infoFace(info, f, k, pick)); });
-  (info.faces_lost || []).forEach(function (f) {
-    var line = el('div', 'pface lost');
-    line.appendChild(el('span', 'avatar small'));
-    line.appendChild(el('span', 'who', tr('info.face_lost', { name: f.person ? f.person.name : '?' })));
-    box.appendChild(line);
-  });
   if (pick.on) box.appendChild(infoPickBar(info, pickable, pick));
   var tools = el('div', 'ptools');
   if (faces.length) {
@@ -5694,6 +5688,7 @@ function infoFace(info, f, k, pick) {
     name.title = tr('info.photos_of', { name: f.person.name });
     name.onclick = function () { showPerson(f.person.id); };
     who.appendChild(name);
+    if (f.kept) who.appendChild(el('span', 'note', ' ' + tr('info.face_kept')));
   } else if (f.state === 'suggested' || f.state === 'maybe') {
     who.appendChild(el('span', 'guess', tr(f.state === 'maybe' ? 'info.guess_maybe' : 'info.guess', { name: f.person.name })));
     var yes = el('button', 'yes', '✓');
@@ -5722,6 +5717,7 @@ function infoFace(info, f, k, pick) {
   }
   if (f.species) who.appendChild(el('span', 'note', ' ' + petIcon(f.species) + ' ' + speciesName(f.species)));
   if (f.small) who.appendChild(el('span', 'note', ' ' + tr('facecheck.tag_small')));
+  if (f.kept) return line;
   line.appendChild(menuButton(function () {
     var items = [];
     if (f.manual != null) {

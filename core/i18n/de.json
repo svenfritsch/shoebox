@@ -509,7 +509,6 @@
   "person.missing": "Diese Person gibt es nicht (mehr).",
   "person.none": "Keine.",
   "person.alike": "{pct} % ähnlich",
-  "person.lost": "nicht mehr gefunden",
   "person.it_is": "Das ist {name}",
   "person.not": "Nicht {name}",
   "person.undo_not": "„Nicht {name}“ rückgängig machen",
@@ -557,7 +556,6 @@
   "unnamed.ignored": "{count} ignoriert",
   "info.faces_unlooked": "Noch nicht auf Gesichter untersucht (shoebox recognize).",
   "info.no_faces": "Keine Gesichter gefunden.",
-  "info.face_lost": "{name} (Gesicht nicht mehr gefunden)",
   "info.hide_boxes": "Rahmen ausblenden",
   "info.show_boxes": "Rahmen anzeigen",
   "info.people": "Personen",
@@ -832,9 +830,12 @@
   "forget.nothing": "Noch keine {what} gefunden und nichts von dir dazu.",
   "forget.auto": "Automatische Funde löschen",
   "forget.all": "Alles löschen, auch Namen",
-  "forget.auto_confirm": "Die {finds} {what}, die die Erkennung gefunden hat, werden vom Laufwerk gelöscht. Deine Namen, Bestätigungen und gezeichneten Rahmen bleiben unberührt, aber bis die Fotos erneut erkannt wurden, wird nichts vorgeschlagen und die Personenseiten zeigen nichts. Deine Fotos bleiben unberührt.",
+  "forget.auto_confirm": "Die {finds} {what}, die die Erkennung gefunden hat, werden vom Laufwerk gelöscht. Deine Namen, Bestätigungen und gezeichneten Rahmen bleiben unberührt: Bestätigte Gesichter bleiben auf ihren Fotos und bei ihrer Person, markiert als „nicht im Abgleich“. Bis die Fotos erneut erkannt wurden, ist die Liste „Unbenannt“ leer, und es wird nichts vorgeschlagen. Deine Fotos bleiben unberührt.",
   "forget.all_confirm": "Alles zu {what} wird vom Laufwerk gelöscht: die {finds} Funde, deine {decisions} Entscheidungen (bestätigt, abgelehnt, „kein Gesicht“, gezeichnete Rahmen) und {people} von dir benannte. Das lässt sich nicht rückgängig machen: In den Fotos steht nichts davon, du müsstest alle neu benennen. Deine Fotos bleiben unberührt.",
   "forget.done": "Gelöscht: {n}.",
   "cleanup.title": "Daten aufräumen",
-  "cleanup.hint": "Was die Erkennung gefunden hat, liegt auf dem Laufwerk im versteckten Ordner .shoebox. Hier kannst du es wieder vergessen. Deine Fotos werden nie angefasst."
+  "cleanup.hint": "Was die Erkennung gefunden hat, liegt auf dem Laufwerk im versteckten Ordner .shoebox. Hier kannst du es wieder vergessen. Deine Fotos werden nie angefasst.",
+  "person.kept": "nicht im Abgleich",
+  "info.face_kept": "(bestätigt; nicht im Abgleich)",
+  "face.kept": "Von dir bestätigt. Die Erkennung hat hier keine Gesichtsdaten, deshalb wird dieses Gesicht nicht zum Finden ähnlicher Gesichter benutzt."
 }

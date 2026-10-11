@@ -123,7 +123,12 @@ fn forgetting_finds_keeps_the_names_and_forgetting_everything_does_not() {
     assert_eq!(count(&lib, "SELECT count(*) FROM people WHERE name = 'Spooky'"), 1);
     assert_eq!(count(&lib, "SELECT count(*) FROM face_decisions WHERE species IS NOT NULL"), 1);
     assert_eq!(count(&lib, "SELECT count(*) FROM recog.neighbours n JOIN recog.faces f ON f.id = n.face WHERE f.species IS NOT NULL"), 0);
-    assert!(faces_of(addr, &lib, "Pets/s1.png").iter().all(|f| f["species"].is_null()));
+    // The pet Spooky is still on the photo, from the user's confirmed decision: with its
+    // box and name, but flagged as not used for matching.
+    let on_photo = faces_of(addr, &lib, "Pets/s1.png");
+    let kept = on_photo.iter().find(|f| f["kept"] == true).expect("the confirmed pet is shown");
+    assert_eq!((kept["person"]["name"].as_str(), kept["state"].as_str()), (Some("Spooky"), Some("confirmed")), "{kept}");
+    assert!(on_photo.iter().filter(|f| f["species"].is_string() && f["kept"].is_null()).count() == 0, "no detected pet is left");
 
     // The photos are recognized again: the pet is back and is still Spooky.
     drop(server);
@@ -134,6 +139,25 @@ fn forgetting_finds_keeps_the_names_and_forgetting_everything_does_not() {
     let again = faces_of(addr, &lib, "Pets/s1.png");
     let pet = again.iter().find(|f| f["species"].is_string()).expect("the pet is found again");
     assert_eq!(pet["person"]["name"], "Spooky", "{pet}");
+
+    // Forgetting only the automatic finds of the faces: the photo counts as not looked at any
+    // more, but Anna's confirmed face is still listed on it (and not as "not looked at").
+    ok(addr, "/api/recognition/forget", &json!({ "space": "faces" }));
+    let info = get(addr, &format!("/api/files/{}", id_of(&lib, "Anna/a1.png"))).json();
+    let shown = info["faces"].as_array().expect("faces are listed, not 'not looked at'");
+    let kept = shown.iter().find(|f| f["kept"] == true).expect("Anna's confirmed face is listed");
+    assert_eq!((kept["person"]["name"].as_str(), kept["state"].as_str()), (Some("Anna"), Some("confirmed")), "{info}");
+    assert!(shown.iter().all(|f| f["species"].is_string() || f["kept"] == true), "no detected face of a person is left: {info}");
+    let anna_photos = ids(&get(addr, "/api/timeline?person=1").json());
+    assert_eq!(anna_photos.len(), 1);
+    // Recognize again to bring the faces back, then go on with the full reset.
+    drop(server);
+    run_recognition(&lib);
+    let server = start(&lib, None);
+    let addr = server.addr;
+    wait_for_clusters(addr);
+    let back = faces_of(addr, &lib, "Anna/a1.png");
+    assert!(back.iter().any(|f| f["kept"].is_null() && f["person"]["name"] == "Anna"), "{back:?}");
 
     // Forget everything about the faces: Anna is gone, Spooky is not.
     let done = ok(addr, "/api/recognition/forget", &json!({ "space": "faces", "everything": true }));

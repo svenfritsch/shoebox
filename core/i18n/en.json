@@ -509,7 +509,6 @@
   "person.missing": "This person does not exist (any more).",
   "person.none": "None.",
   "person.alike": "{pct}% alike",
-  "person.lost": "no longer found",
   "person.it_is": "It is {name}",
   "person.not": "Not {name}",
   "person.undo_not": "Undo “not {name}”",
@@ -557,7 +556,6 @@
   "unnamed.ignored": "{count} ignored",
   "info.faces_unlooked": "Not looked at for faces yet (shoebox recognize).",
   "info.no_faces": "No faces found.",
-  "info.face_lost": "{name} (face no longer found)",
   "info.hide_boxes": "Hide boxes",
   "info.show_boxes": "Show boxes",
   "info.people": "People",
@@ -832,9 +830,12 @@
   "forget.nothing": "No {what} found yet, and nothing of yours about them.",
   "forget.auto": "Delete automatic finds",
   "forget.all": "Delete everything incl. names",
-  "forget.auto_confirm": "The {finds} {what} that recognition found are deleted from the drive. Your names, confirmations and drawn boxes are not touched, but until the photos have been recognized again nothing is suggested and the people pages show nothing. Your photos are not touched.",
+  "forget.auto_confirm": "The {finds} {what} that recognition found are deleted from the drive. Your names, confirmations and drawn boxes are not touched: confirmed faces stay on their photos and with their person, marked “not used for matching”. Until the photos have been recognized again, the Unnamed list is empty and nothing is suggested. Your photos are not touched.",
   "forget.all_confirm": "Everything about {what} is deleted from the drive: the {finds} finds, your {decisions} decisions (confirmed, rejected, “not a face”, drawn boxes) and {people} named by you. This cannot be undone: the photos hold none of it, so you would have to name them all again. Your photos are not touched.",
   "forget.done": "Deleted: {n}.",
   "cleanup.title": "Data cleanup",
-  "cleanup.hint": "What recognition found is kept on the drive, in the hidden .shoebox folder. Here you can forget it again. Your photos are never touched."
+  "cleanup.hint": "What recognition found is kept on the drive, in the hidden .shoebox folder. Here you can forget it again. Your photos are never touched.",
+  "person.kept": "not used for matching",
+  "info.face_kept": "(confirmed; not used for matching)",
+  "face.kept": "Confirmed by you. The recognizer has no face data here, so this face is not used to find similar faces."
 }

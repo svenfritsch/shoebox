@@ -557,13 +557,14 @@ Einstellungen → Daten aufräumen hat je eine Karte für erkannten Text,
 Gesichter und Haustiere; die Karten für Gesichter und Haustiere haben zwei
 Knöpfe. Automatische Funde löschen entfernt die Gesichter (oder Katzen und
 Hunde), die die Erkennung gefunden hat, vom Laufwerk. Deine Namen,
-Bestätigungen und gezeichneten Rahmen bleiben und greifen wieder, sobald die
-Fotos erneut erkannt wurden; bis dahin wird nichts vorgeschlagen und die
-Personenseiten sind leer. Alles löschen, auch Namen entfernt auch, was du
-getan hast: die benannten Personen, bestätigte und abgelehnte Gesichter, „kein
-Gesicht“ und gezeichnete Rahmen. Das lässt sich nicht rückgängig machen, weil
-in den Fotos nichts davon steht; ein Dialog sagt vorher, wie viele es sind.
-Deine Fotos werden nie angefasst.
+Bestätigungen und gezeichneten Rahmen bleiben und bestätigte Gesichter bleiben
+auf ihren Fotos und bei ihrer Person, markiert als nicht im Abgleich. Bis die
+Fotos erneut erkannt wurden, ist Unbenannt leer, und es wird nichts
+vorgeschlagen. Alles löschen, auch Namen entfernt auch, was du getan hast: die
+benannten Personen, bestätigte und abgelehnte Gesichter, „kein Gesicht“ und
+gezeichnete Rahmen. Das lässt sich nicht rückgängig machen, weil in den Fotos
+nichts davon steht; ein Dialog sagt vorher, wie viele es sind. Deine Fotos
+werden nie angefasst.
 
 Neue Fotos
 Die Erkennung startet nach einem Scan noch nicht von selbst. In der Zentrale
