@@ -35,6 +35,7 @@
   "launcher.app.idle": "Die Foto-App startet nur, wenn du diesen Knopf drückst. Scanne zuerst, wenn das Laufwerk neu ist.",
   "launcher.app.running": "Läuft für {roots} unter ",
   "launcher.app.running_end": ". Beende sie, um zu scannen, zu prüfen oder Ordner zu ändern.",
+  "launcher.app.offline": "Nicht angeschlossen: {names}. Laufwerk anschließen oder abhaken, dann die Foto-App starten.",
   "launcher.app.stopped": "Foto-App beendet.",
   "launcher.remove": "Entfernen",
   "launcher.remove_path": "{path} entfernen",

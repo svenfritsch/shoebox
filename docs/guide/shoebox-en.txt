@@ -159,12 +159,15 @@ Everything is on one page. Here is where things are.
    Scan, thumbnail and drive status at the bottom of the sidebar.
 
 A typical session
-Plug in the drive and double-click Start shoebox. Scan (quick when little has
-changed) and open the photo app. To add the photos of an event, copy their
-folder onto the drive in Finder (named like 2025-08 Holiday) and Scan again:
-if some files were on the drive already, the Control Panel offers to delete
-the new copies. Then tag and sort. Look at Duplicates now and then, and run
-the Backup check after every backup.
+Plug in the drive and double-click Start shoebox. The Control Panel remembers
+the folders you ticked last time; if one of those drives is not plugged in,
+its chip is dashed and Start photo app stays off, with the reason in red,
+until you plug the drive in or untick it. Scan (quick when little has changed)
+and open the photo app. To add the photos of an event, copy their folder onto
+the drive in Finder (named like 2025-08 Holiday) and Scan again: if some files
+were on the drive already, the Control Panel offers to delete the new copies.
+Then tag and sort. Look at Duplicates now and then, and run the Backup check
+after every backup.
 
 Get started in three steps
 --------------------------
