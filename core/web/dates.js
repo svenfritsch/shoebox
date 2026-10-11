@@ -257,7 +257,7 @@ function dateItems(rows) {
 
 // The rest of the filter, which the counts of the rows are made within.
 function datesWithin(f) {
-  return { tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null };
+  return { tag: f.tags, manual: f.manual ? 1 : null, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null };
 }
 
 function suggestDates(needle, prefix, within) {

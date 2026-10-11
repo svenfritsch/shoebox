@@ -36,7 +36,7 @@
 //! Finder while shoebox runs), the server runs the scan's index step in the
 //! background, which finds it again by its hashes.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Component, Path as FsPath, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
@@ -1568,6 +1568,7 @@ async fn all_tags(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> Ap
                     .entry(key)
                     .and_modify(|m| {
                         m.count += t.count;
+                        m.manual += t.manual;
                         m.last_used = m.last_used.max(t.last_used);
                     })
                     .or_insert(browse::Tag { id: 0, ..t });
@@ -1845,6 +1846,7 @@ fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
     Ok(browse::Query {
         folder: param(pairs, "folder").filter(|v| !v.is_empty()).map(number).transpose()?,
         tags: pairs.iter().filter(|(k, v)| k == "tag" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
+        manual_tags: param(pairs, "manual").is_some_and(|v| !v.is_empty() && v != "0"),
         text: param(pairs, "q").map(str::to_string).filter(|s| !s.trim().is_empty()),
         people: pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
         types: types_of(pairs)?,
@@ -1938,7 +1940,16 @@ async fn tags(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiRes
         } else {
             let snapshot = app.snapshot(&conn)?;
             let shown: HashSet<i64> = snapshot.query(&conn, &filter)?.iter().map(|it| it.id).collect();
-            browse::tags_within(&conn, &shown, &filter.tags)?
+            // Whether a tag is only a folder name is a fact about the drive, not
+            // about the photos shown: a tag given by hand elsewhere stays a tag.
+            let kinds: HashMap<i64, browse::TagKind> = browse::all_tags(&conn)?.into_iter().map(|t| (t.id, t.kind)).collect();
+            let mut within = browse::tags_within(&conn, &shown, &filter.tags)?;
+            for t in &mut within {
+                if let Some(&kind) = kinds.get(&t.id) {
+                    t.kind = kind;
+                }
+            }
+            within
         };
         let tags = all
             .into_iter()
