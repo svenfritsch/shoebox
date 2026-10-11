@@ -15,7 +15,7 @@ pub const FILE: &str = "library.db";
 const BACKUP_SUFFIX: &str = ".bak";
 
 /// Bump when the schema changes and add a step to `migrate`.
-const SCHEMA_VERSION: i32 = 13;
+const SCHEMA_VERSION: i32 = 14;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -483,6 +483,17 @@ fn migrate(conn: &Connection) -> Result<()> {
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V13)?;
         tx.pragma_update(None, "user_version", 13)?;
+        tx.commit()?;
+    }
+    if version < 14 {
+        let tx = conn.unchecked_transaction()?;
+        // When a photo was last given the own tag (Unix seconds): the tag
+        // fields offer the tags used last first. Older rows stay empty. A
+        // re-run (the tests lower user_version) must not add it twice.
+        if !has_column(&tx, "main", "file_tags", "added_at")? {
+            tx.execute_batch("ALTER TABLE file_tags ADD COLUMN added_at INTEGER;")?;
+        }
+        tx.pragma_update(None, "user_version", 14)?;
         tx.commit()?;
     }
     Ok(())

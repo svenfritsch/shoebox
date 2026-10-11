@@ -416,7 +416,11 @@ entfernen).
 
 Taggen
 Tag hinzufügen … gibt der Auswahl deinen eigenen Tag. Tags leben im Index von
-shoebox, nie in den Fotodateien.
+shoebox, nie in den Fotodateien. Im Tag-Feld stehen zuerst die Tags, die du
+zuletzt benutzt hast (Zuletzt verwendet), dann die Am häufigsten benutzten;
+beim Tippen wird die Liste enger, die zuletzt benutzten bleiben oben. Das
+merkt sich shoebox im Index des Laufwerks (nie in den Fotodateien), also auf
+jedem Computer und Tablet gleich.
 
 Datum
 Datum setzen … gibt der Auswahl ein eigenes Datum, zum Beispiel einem ganzen
@@ -471,6 +475,9 @@ Exportieren und Papierkorb.]
 und was mitkommt.]
 
 [Screenshot: Tag hinzufügen.]
+
+[Screenshot: Tag hinzufügen: zuerst die zuletzt benutzten Tags, dann die am
+häufigsten benutzten.]
 
 [Screenshot: In einen neuen Ereignisordner verschieben.]
 
@@ -682,11 +689,13 @@ benennen.
 
 2. Eine Karte benennen
    Den Namen einmal eintippen und Benennen drücken: Die ganze Karte ist
-   benannt. Beim Tippen erscheinen Personen, die es schon gibt (bei Tieren nur
-   Katzen und Hunde, und umgekehrt); sonst + Neue Person wählen (bei Tieren
-   steht dort + Neue Katze, + Neuer Hund oder + Neues Tier). Danach schlägt
-   shoebox weitere Gesichter vor (Sieht aus wie Mia): mit ✓ bestätigen oder
-   mit ✗ ablehnen.
+   benannt. Ein Klick ins Feld zeigt zuerst die zuletzt benannten Personen
+   (Zuletzt verwendet) und die mit den meisten Fotos, dann alle nach Gruppe;
+   beim Tippen erscheinen Personen, die es schon gibt (bei Tieren nur Katzen
+   und Hunde, und umgekehrt); sonst + Neue Person wählen (bei Tieren steht
+   dort + Neue Katze, + Neuer Hund oder + Neues Tier). Danach schlägt shoebox
+   weitere Gesichter vor (Sieht aus wie Mia): mit ✓ bestätigen oder mit ✗
+   ablehnen.
 
 3. Fremde und Fehlfunde
    Ignorieren ist für Fremde und für Gesichter auf Postern, Bildschirmen und
@@ -715,6 +724,9 @@ benennen.
 Ignorieren und Kein Gesicht.]
 
 [Screenshot: Auswählen: zwei Gesichter einer Karte angekreuzt.]
+
+[Screenshot: Eine Karte benennen: zuerst die zuletzt Benannten, dann die mit
+den meisten Fotos, dann alle nach Gruppe.]
 
 Mehrere Gesichter in einem Foto, und Gruppen
 --------------------------------------------
