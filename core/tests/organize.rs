@@ -523,4 +523,13 @@ fn moving_everything_out_of_a_folder_removes_the_empty_folder() {
     let back = post(addr, &format!("/api/trash/{batch}/restore"), &json!({}));
     assert_eq!(back.status, 200, "{}", String::from_utf8_lossy(&back.body));
     assert!(lib.path("Zum Papierkorb/IMG_0007.JPG").exists());
+
+    // The duplicates screen tidies up as well.
+    lib.write("Kopien/a.jpg", &fs::read(lib.path("Neu/IMG_0001.JPG")).unwrap());
+    lib.scan();
+    let keep = id_of(&lib, "Neu/IMG_0001.JPG");
+    let copy = id_of(&lib, "Kopien/a.jpg");
+    let r = post(addr, "/api/duplicates/remove", &json!({ "keep": [keep], "remove": [copy] })).json();
+    assert_eq!(r["trashed"]["removed_folders"], json!(["Kopien"]), "{r}");
+    assert!(!lib.path("Kopien").exists());
 }

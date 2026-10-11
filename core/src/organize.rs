@@ -492,7 +492,7 @@ pub struct Moved {
 /// refuses a folder that is not empty). Never the library itself, never a
 /// folder that still has records in the index or subfolders there. Returns
 /// the NFC paths removed.
-fn remove_emptied_folders(conn: &Connection, root: &Path, folder_ids: &HashSet<i64>) -> Vec<String> {
+pub(crate) fn remove_emptied_folders(conn: &Connection, root: &Path, folder_ids: &HashSet<i64>) -> Vec<String> {
     let mut removed = Vec::new();
     let mut found: Vec<(String, String)> = folder_ids
         .iter()
@@ -911,7 +911,7 @@ pub struct Trashed {
     pub files: Vec<String>,
     pub sidecars: u64,
     pub skipped: Vec<String>,
-    /// Folders left empty by `trash_files_tidy` and removed (NFC paths).
+    /// Folders left empty by `trash_files_tidy` (or `duplicates::remove_copies_tidy`) and removed (NFC paths).
     pub removed_folders: Vec<String>,
 }
 

@@ -554,12 +554,14 @@ they appear under look-alikes and you choose which to keep: Keep this one on a
 card ticks every other file of the group in one click (nothing moves until
 Move to trash), and small badges show which file has the most pixels or is the
 biggest file, and at least one file of every duplicate always remains. Tags
-and capture dates of a removed copy carry over. With more than one drive, the
-tab Across drives (in All drives and under Manage drives) lists photos that
-are on several drives: one picture, one row per copy with the disk name and
-folder. Tick the copies to remove, or pick a drive and Mark all to tick every
-copy on it; the last copy of a photo can never be ticked. Move to trash asks
-first and puts each copy in the trash of its own drive.
+and capture dates of a removed copy carry over. If a removed copy was the last
+thing in its folder, shoebox removes the empty folder and tells you which one.
+With more than one drive, the tab Across drives (in All drives and under
+Manage drives) lists photos that are on several drives: one picture, one row
+per copy with the disk name and folder. Tick the copies to remove, or pick a
+drive and Mark all to tick every copy on it; the last copy of a photo can
+never be ticked. Move to trash asks first and puts each copy in the trash of
+its own drive.
 
 Preselect
 Preselect (top right) ticks delete this copy by a rule and brings the groups

@@ -2236,18 +2236,19 @@ function trashCrossMarked() {
     { label: tr('app.cancel'), cls: 'quiet' },
     { label: tr('sel.trash'), cls: 'danger', focus: true, onclick: function (btn) {
       btn.disabled = true;
-      var done = 0, skipped = [];
+      var done = 0, skipped = [], folders = [];
       var send = function (i) {
         if (i >= libs.length) return Promise.resolve();
         return post('/api/lib/' + libs[i] + '/trash', { ids: perDrive[libs[i]] }).then(function (r) {
           done += r.files.length + r.sidecars;
           (r.skipped || []).forEach(function (x) { skipped.push(x); });
+          (r.removed_folders || []).forEach(function (x) { folders.push(x); });
           return send(i + 1);
         });
       };
       send(0).then(function () {
         closeModal();
-        toast(tr('dups.cross.done', { count: trn('count.files', done) }));
+        toast(tr('dups.cross.done', { count: trn('count.files', done) }) + removedFolders({ removed_folders: folders }));
         report(tr('trash.skipped'), skipped);
         crossState.reload();
       }).catch(function (e) { closeModal(); failed(e); crossState.reload(); });
@@ -2905,7 +2906,7 @@ function deleteMarked() {
   if (!jobs.length) return;
   var run = function (btn) {
     btn.disabled = true;
-    var done = { files: 0, tags: 0, dates: 0, skipped: [] }, conflicts = [];
+    var done = { files: 0, tags: 0, dates: 0, folders: [], skipped: [] }, conflicts = [];
     var send = function (job, i) {
       if (i >= jobs.length) return Promise.resolve();
       return post(LIBAPI + '/duplicates/remove', job).then(function (r) {
@@ -2933,6 +2934,7 @@ function collectRemoved(done, r) {
   done.files += r.trashed.files.length;
   done.tags += r.tags_added;
   done.dates += r.dates_set;
+  (r.trashed.removed_folders || []).forEach(function (f) { done.folders.push(f); });
   (r.trashed.skipped || []).forEach(function (s) { done.skipped.push(s); });
 }
 
@@ -2940,7 +2942,7 @@ function finishRemoved(done) {
   var text = [tr('dups.done.trashed', { count: trn('count.copies', done.files) })];
   if (done.tags) text.push(tr('dups.done.tags', { count: trn('count.tags', done.tags) }));
   if (done.dates) text.push(tr('dups.done.dates', { count: trn('count.capture_dates', done.dates) }));
-  toast(text.join(', '));
+  toast(text.join(', ') + removedFolders({ removed_folders: done.folders }));
   report(tr('dups.skipped'), done.skipped);
   dupState.marked = {};
   changed();
