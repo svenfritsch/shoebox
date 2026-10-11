@@ -60,6 +60,11 @@ await p.keyboard.press('Escape'); await wait(300);
 // Duplicates, from a clean state; tall so the whole page is in the shot.
 await p.click('#nav-dups'); await wait(7000);
 await p.setViewportSize({ width: 1280, height: 1500 }); await wait(800);
+// The Preselect menu open, then its "Smaller versions": that group comes to the
+// top with the messenger copy ticked.
+await p.click('.dup-pre summary'); await wait(400);
+await shot('duplicates-preselect', { clip: { x: 0, y: 0, width: 1280, height: 760 } });
+await p.locator('.dup-pre button', { hasText: de ? 'Kleinere Versionen' : 'Smaller versions' }).first().click(); await wait(1200);
 await shot('duplicates');
 await p.setViewportSize({ width: 1280, height: 860 });
 await p.click('#all'); await wait(800);

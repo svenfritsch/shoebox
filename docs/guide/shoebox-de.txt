@@ -605,8 +605,11 @@ hatte.]
 
 [Screenshot: Die Papierkorb-Seite.]
 
-[Screenshot: Duplikate: eine vorgewählte Messenger-Kopie neben ihrem
-Original.]
+[Screenshot: Das Menü Vorauswählen: jede Zeile zeigt, wie viele Dateien sie
+anhaken würde; erst „In den Papierkorb“ entfernt etwas.]
+
+[Screenshot: Duplikate nach Vorauswählen › Kleinere Versionen: die
+Messenger-Kopie ist angehakt und mit Geringere Qualität markiert.]
 
 Personen und Haustiere
 ----------------------

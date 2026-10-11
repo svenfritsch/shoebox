@@ -565,7 +565,11 @@ copies works either way and also goes to the trash.
 
 [Screenshot: The trash page.]
 
-[Screenshot: Duplicates: a pre-ticked messenger copy next to its original.]
+[Screenshot: The Preselect menu: every line shows how many files it would
+tick; nothing is removed before Move to trash.]
+
+[Screenshot: Duplicates after Preselect › Smaller versions: the messenger copy
+is ticked and marked Lower quality.]
 
 People and pets
 ---------------
