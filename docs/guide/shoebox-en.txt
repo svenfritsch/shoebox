@@ -698,10 +698,10 @@ yourself cannot be changed later; delete the box and draw it again. For a pet
 the detector found, ⋯ offers It's a cat, not a dog (or the other way round)
 when it took it for the wrong one. Videos are not scanned for faces, so their
 info panel says so. There you can still link a person: + Add person pauses the
-video and lets you drag a box anywhere on its picture. The box is only a
-marker, it does not have to sit on a face, and the person is linked to the
-whole clip. Their profile picture shows in the list, and the video is found
-when you filter the timeline by that person.
+video and lets you drag a box anywhere on its picture. The box is just a
+formality: it can go anywhere, nothing is drawn on the video afterwards, and
+the person is linked to the whole clip. Their profile picture shows in the
+list, and the video is found when you filter the timeline by that person.
 
 Groups
 Faces shows people by group. New group… makes one; Groups… renames, reorders

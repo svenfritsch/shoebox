@@ -1313,7 +1313,7 @@ function showItem() {
 function drawFaces() {
   var stage = $('stage');
   stage.querySelectorAll('.face-box').forEach(function (b) { b.remove(); });
-  var info = lb.details, img = stage.querySelector('img, video');
+  var info = lb.details, img = stage.querySelector('img');
   if ($('lb-panel').hidden || !info || !info.faces || !img || img.hidden) return;
   // In the common timeline the item's id carries the drive; the details have the drive's own id.
   var openId = state.data.ids[state.open];
@@ -5289,7 +5289,8 @@ function infoFaces(row, info) {
   });
   if (pick.on) box.appendChild(infoPickBar(info, pickable, pick));
   var tools = el('div', 'ptools');
-  if (faces.length) {
+  // A video's boxes are only a formality: nothing is drawn on it.
+  if (faces.length && info.kind !== 'video') {
     var show = el('button', '', tr(lb.showFaces ? 'info.hide_boxes' : 'info.show_boxes'));
     show.onclick = function () { lb.showFaces = !lb.showFaces; renderPanel(); };
     tools.appendChild(show);
@@ -5486,8 +5487,8 @@ function infoFacesChanged(id) {
 
 // "+ Add face": the panel steps aside, a box is dragged over the photo
 // (mouse, pen or finger), then named. On a video (never scanned for faces) the
-// box is only a marker that links the person to the whole clip; it is drawn
-// over the picture while the video is paused.
+// box is a formality: the person is linked to the whole clip and no box is
+// shown afterwards.
 function startDrawing() {
   var stage = $('stage'), img = stage.querySelector('img, video');
   if (!img || !lb.details) return;
@@ -5571,7 +5572,7 @@ function nameDrawnFace(info, frac) {
   var field, hint;
   var update = function () {
     Array.prototype.forEach.call(kinds.children, function (b) { b.classList.toggle('on', b.dataset.kind === kind); });
-    hint.textContent = tr(kind ? 'draw.note_pet' : 'draw.note');
+    hint.textContent = tr(info.kind === 'video' ? 'draw.note_video' : kind ? 'draw.note_pet' : 'draw.note');
     field.input.value = '';
     field.input.dispatchEvent(new Event('input'));
   };
