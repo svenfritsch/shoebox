@@ -78,7 +78,9 @@ current status and next step. Update its status table when a phase moves.
   `python3 scripts/third-party-licenses.py`. Do not call shoebox "open source"
   in texts. Icons are our own line drawings (`lineIcon` in `core/web/app.js`,
   the guide's symbols); never copy path data from an icon set (Material
-  Symbols, Feather, ...), which would need a licence entry. Open items before giving it to others: see "Before giving shoebox
+  Symbols, Feather, ...), which would need a licence entry. This includes
+  redrawing a Google icon ("sentiment satisfied", "add reaction") from its
+  path: ours are drawn from scratch (frame with an eye, checkbox, face with a plus). Open items before giving it to others: see "Before giving shoebox
   to others" in docs/plan.md.
 - UI text is never hard-coded: `tr()`/`trn()`/`data-i18n` with a key in both
   `core/i18n/en.json` and `de.json` (see docs/phase8.md; `core/tests/i18n.rs`

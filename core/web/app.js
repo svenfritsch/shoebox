@@ -421,6 +421,19 @@ function lineIcon(paths, fill) {
 var HEART_PATH = '<path stroke-width="2.2" d="M12 19.5C8 16.8 4 13.6 4 9.6 4 7.1 5.9 5.2 8.2 5.2c1.6 0 3 .9 3.8 2.3.8-1.4 2.2-2.3 3.8-2.3 2.3 0 4.2 1.9 4.2 4.4 0 4-4 7.2-8 9.9z"/>';
 var HEART_ON = lineIcon(HEART_PATH, true);
 var HEART_OFF = lineIcon(HEART_PATH);
+// The tools under the faces of the info panel and the select button of the top
+// bar: our own drawings (frame with an eye, checkbox, face with a plus).
+var FRAME_ICON = lineIcon('<path d="M3 9V6.5A2.5 2.5 0 0 1 5.5 4H9M15 4h3.5A2.5 2.5 0 0 1 21 6.5V9M3 15v2.5A2.5 2.5 0 0 0 5.5 20H9"/><path d="M12.5 17c1.2-2 3.3-3 4.5-3s3.3 1 4.5 3c-1.2 2-3.3 3-4.5 3s-3.3-1-4.5-3z"/><circle cx="17" cy="17" r="1.1"/>');
+var SELECT_ICON = lineIcon('<rect x="4" y="4" width="16" height="16" rx="3.5"/><path d="M8.5 12.2l2.5 2.5 4.8-5"/>');
+var ADD_FACE_ICON = lineIcon('<circle cx="11" cy="13" r="8"/><circle cx="8.3" cy="11.5" r=".6"/><circle cx="13.7" cy="11.5" r=".6"/><path d="M7.4 15.6a4.2 4.2 0 0 0 7.2 0"/><path d="M19 2.5v5M16.5 5h5"/>');
+// An icon-only button for the tools row: the tooltip is also its name.
+function toolButton(icon, label) {
+  var b = el('button', 'tool');
+  b.innerHTML = icon;
+  b.title = label;
+  b.setAttribute('aria-label', label);
+  return b;
+}
 
 function markFavFilter() {
   var on = !!state.filter.fav, b = $('fav-btn');
@@ -1643,7 +1656,8 @@ function renderPanelAll(info) {
     faces.appendChild(line);
   });
   if ((info.faces || []).length) {
-    var show = el('button', '', tr(lb.showFaces ? 'info.hide_boxes' : 'info.show_boxes'));
+    var show = toolButton(FRAME_ICON, tr(lb.showFaces ? 'info.hide_boxes' : 'info.show_boxes'));
+    show.classList.toggle('on', !!lb.showFaces);
     show.onclick = function () { lb.showFaces = !lb.showFaces; renderPanel(); };
     var tools = el('div', 'ptools');
     tools.appendChild(show);
@@ -2047,6 +2061,7 @@ function updateSelbar() {
   $('sel-move').disabled = $('sel-trash').disabled = $('sel-tag').disabled = $('sel-untag').disabled = $('sel-date').disabled = $('sel-export').disabled = !n;
 }
 
+$('select').innerHTML = SELECT_ICON;
 $('select').onclick = function () {
   if (state.filter.view) setFilter({ folder: null, tags: [], people: [], q: '' });
   if (state.selecting) endSelection(); else startSelection();
@@ -5651,24 +5666,27 @@ function infoFaces(row, info) {
   var tools = el('div', 'ptools');
   // A video's boxes are only a formality: nothing is drawn on it.
   if (faces.length && info.kind !== 'video') {
-    var show = el('button', '', tr(lb.showFaces ? 'info.hide_boxes' : 'info.show_boxes'));
+    var show = toolButton(FRAME_ICON, tr(lb.showFaces ? 'info.hide_boxes' : 'info.show_boxes'));
+    show.classList.toggle('on', !!lb.showFaces);
     show.onclick = function () { lb.showFaces = !lb.showFaces; renderPanel(); };
     tools.appendChild(show);
   }
-  if (pickable.length > 1 && !pick.on) {
-    var select = el('button', '', tr('info.select'));
-    select.title = tr('info.select_hint');
+  // Only a stack of faces nobody has confirmed yet is worth ticking together;
+  // one confirmed face is dealt with on its own (its ⋯ menu).
+  var unconfirmed = pickable.filter(function (f) { return f.state !== 'confirmed' && f.state !== 'ignored'; });
+  if (unconfirmed.length > 1 && !pick.on) {
+    var select = toolButton(SELECT_ICON, tr('info.select') + ': ' + tr('info.select_hint'));
     select.onclick = function () { pick.on = true; pick.ids = {}; renderPanel(); };
     tools.appendChild(select);
   }
   if (lb.details && state.data) {
     var isVideo = state.data.kinds[state.open] === 'v';
-    var add = el('button', '', tr('info.add_face'));
-    add.title = tr(isVideo ? 'info.add_person_hint' : 'info.add_face_hint');
+    var add = toolButton(ADD_FACE_ICON, tr('info.add_face') + ': ' + tr(isVideo ? 'info.add_person_hint' : 'info.add_face_hint'));
     add.onclick = startDrawing;
     if (lb.details.view_turn) {
       add.disabled = true;
       add.title = tr('info.add_face_turned');
+      add.setAttribute('aria-label', add.title);
     }
     tools.appendChild(add);
   }
