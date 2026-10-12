@@ -10,10 +10,11 @@
 //! tell which one was first: that is for the duplicates screen).
 //!
 //! `cleanup` takes those new copies off the library, on the user's request,
-//! the way the duplicates screen does (`duplicates::remove_copies`: the copy
+//! the way the duplicates screen does (`duplicates::remove_copies_tidy`: the copy
 //! goes to `.shoebox/trash` or is deleted for good, its tags and dates go to
 //! the copy that stays, and a backup check learns that it was removed on
-//! purpose). The older copy is never touched.
+//! purpose). The older copy is never touched. A folder the copies leave empty
+//! is removed (see `organize::remove_emptied_folders`).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -105,6 +106,8 @@ pub struct Cleanup {
     pub removed: Vec<String>,
     /// Why some stayed: changed since the scan, not safe any more, dates to decide, …
     pub skipped: Vec<String>,
+    /// Folders that were empty afterwards and were removed (NFC paths).
+    pub removed_folders: Vec<String>,
     pub forever: bool,
 }
 
@@ -138,7 +141,7 @@ pub fn cleanup(opts: &CleanupOptions) -> Result<Cleanup> {
             report::file(path, false, format!("kept: {why}"));
             continue;
         }
-        let removed = duplicates::remove_copies(&conn, &root, &[c.keeper], &[c.id], &HashMap::new())?;
+        let removed = duplicates::remove_copies_tidy(&conn, &root, &[c.keeper], &[c.id], &HashMap::new())?;
         if !removed.conflicts.is_empty() {
             let why = "its capture date differs from the other copy's: decide on the duplicates screen";
             out.skipped.push(format!("{path}: {why}"));
@@ -160,9 +163,13 @@ pub fn cleanup(opts: &CleanupOptions) -> Result<Cleanup> {
                 report::file(f, true, note);
             }
             out.removed.extend(removed.trashed.files);
+            out.removed_folders.extend(removed.trashed.removed_folders);
         }
     }
     say!("{} copies removed{}.", out.removed.len(), if opts.forever { " for good" } else { " (they are in the trash)" });
+    if !out.removed_folders.is_empty() {
+        say!("Empty folders removed: {}.", out.removed_folders.join(", "));
+    }
     Ok(out)
 }
 

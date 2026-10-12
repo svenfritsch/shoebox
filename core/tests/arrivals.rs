@@ -108,3 +108,18 @@ fn for_good_leaves_nothing_in_the_trash() {
     assert_eq!(lib.count("SELECT count(*) FROM trash"), 0);
     assert!(lib.path("Familie/Weihnachten/DSC_2001.jpg").exists());
 }
+
+#[test]
+fn cleanup_removes_a_folder_the_copies_leave_empty() {
+    let lib = Library::new("arrivals-folder");
+    lib.scan();
+    fs::create_dir_all(lib.path("Import 2024")).unwrap();
+    fs::copy(lib.path("Familie/Weihnachten/DSC_2001.jpg"), lib.path("Import 2024/DSC_kopie.jpg")).unwrap();
+    lib.write("Import 2024/.DS_Store", b"x");
+    lib.scan();
+    let done = cleanup(&lib, false);
+    assert_eq!(done.removed, ["Import 2024/DSC_kopie.jpg"]);
+    assert_eq!(done.removed_folders, ["Import 2024"]);
+    assert!(!lib.path("Import 2024").exists());
+    assert!(lib.path("Familie/Weihnachten").exists());
+}

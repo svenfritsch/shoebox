@@ -994,11 +994,19 @@ Decided: a **check box drop-down "Type"** next to the search box (option A),
 nothing else. No suggestions in the search box, no sidebar entries, no
 separate extensions (MP4 vs MOV); typing ".mp4" keeps working as before.
 
-- Entries: **Photos** (all stills, a Live Photo's still included),
-  **Videos** (stand-alone videos only: the clip of a Live Photo is folded into
-  its still and is never listed), **Live Photos** (the stills that have a
-  clip). Ticked types are OR; the filter is AND with folder, tags, people and
-  text. Nothing ticked means everything.
+- Entries: **Photos** (the stills that are neither screenshots nor Live
+  Photos), **Videos** (stand-alone videos only: the clip of a Live Photo is
+  folded into its still and is never listed), **Live Photos** (the stills that
+  have a clip), **Screenshots** (phase 11). The four never overlap: every item
+  is exactly one of them (`browse::MediaType`; until 2026-10 Photos included
+  the Live Photos). Ticked types are OR; the filter is AND with folder, tags,
+  people and text. Nothing ticked means everything.
+- The choice is also a chip in the search row (like the heart), with its own
+  drawn icon (camera, video camera, play circle, screenshot frame; four
+  squares for several); its ✕ and "Clear all" drop it. Every search with at
+  least one chip shows its count at the right of the chips ("48 photos · 3
+  videos", "No photos"), and the empty page adds "The search found no
+  matches."
 - **RAW gets no entry** (RAW stays hidden in the UI, see Decisions).
 - API: `type=photo|video|live` (repeatable) on the timeline, the tag and
   people suggestions and the common timeline `/api/all/timeline`; an unknown

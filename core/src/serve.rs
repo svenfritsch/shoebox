@@ -2423,7 +2423,7 @@ struct RemoveCopiesRequest {
 }
 
 async fn duplicates_remove(State(app): State<Arc<App>>, Json(req): Json<RemoveCopiesRequest>) -> ApiResult<Json<duplicates::Removed>> {
-    change(&app, move |app, conn| duplicates::remove_copies(conn, &app.root, &req.keep, &req.remove, &req.dates)).await.map(Json)
+    change(&app, move |app, conn| duplicates::remove_copies_tidy(conn, &app.root, &req.keep, &req.remove, &req.dates)).await.map(Json)
 }
 
 /// Folder names whose files count as copies, not originals.
@@ -2832,7 +2832,7 @@ struct IdsRequest {
 }
 
 async fn trash_files(State(app): State<Arc<App>>, Json(req): Json<IdsRequest>) -> ApiResult<Json<organize::Trashed>> {
-    change(&app, move |app, conn| organize::trash_files(conn, &app.root, &req.ids)).await.map(Json)
+    change(&app, move |app, conn| organize::trash_files_tidy(conn, &app.root, &req.ids)).await.map(Json)
 }
 
 async fn trash_list(State(app): State<Arc<App>>) -> ApiResult<Json<Vec<organize::TrashItem>>> {
