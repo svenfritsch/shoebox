@@ -56,7 +56,8 @@ def main():
         bad.append("the numbered dots of 'The screen at a glance' differ between en and de")
 
     assets = os.path.join(HERE, "assets")
-    if os.path.isdir(assets):
+    made = os.path.isdir(assets) and any(f.endswith(".jpg") for _, _, fs in os.walk(assets) for f in fs)
+    if made:
         for lang, (_, images, dots) in parsed.items():
             for src in dict.fromkeys(images):
                 if not os.path.isfile(os.path.join(HERE, src)):

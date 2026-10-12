@@ -10,7 +10,8 @@ The guide is two hand-written HTML files, `docs/guide/shoebox-en.html` and
 for the text. **Screenshots and the `.txt` copies are not in git**: CI makes
 them from the code of the commit (`.github/workflows/guide.yml`) and puts the
 finished guide into the run's artifact `guide` and into every release. You do
-not build shoebox or run a browser to update the guide.
+not build shoebox or run a browser to update the guide, and you never run the
+screenshot scripts outside CI.
 
 ## 1. Find every place that talks about the change
 
@@ -69,10 +70,9 @@ changes, CI makes new ones; you do nothing. Only these need you:
   change the `GLANCE` list in `screenshots.mjs` (one selector per dot, in the
   order of the legend).
 
-To look at the pictures before pushing, render only what you need, for
-example `LANGS=en PASSES=app docs/guide/screenshots.sh` (about a minute;
-needs a release build, Python with Pillow and numpy, and Playwright). The
-files land in `docs/guide/assets/` (ignored by git).
+Never run `screenshots.sh` yourself: it runs only in CI (it creates and
+deletes folders where real drives live, and refuses anywhere else). To see the
+pictures, push and open the `guide` artifact of the run.
 
 ## 4. Check, then say what changed
 

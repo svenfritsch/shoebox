@@ -2,13 +2,17 @@
 """A backup of the sample library that has drifted from it, for the screenshots
 of Manage drives and the comparison views.  usage: make-drives-pair.py ORIGINAL BACKUP
 
-BACKUP starts as a copy of ORIGINAL (dates kept), then life goes on: a few
+Only in CI, from screenshots.sh. BACKUP starts as a copy of ORIGINAL (dates kept), then life goes on: a few
 photos are new on the original (not on the backup yet), a few were deleted
 there (only on the backup) and two were edited on the original's side, so the
 backup holds other content at the same path (different on the backup)."""
-import os, shutil, sys
+import os, platform, shutil, sys
 from PIL import Image, ImageEnhance
 
+# It deletes and rewrites photos in the two folders it is given: only ever
+# the sample drives of screenshots.sh, only in the pipeline.
+if os.environ.get("GITHUB_ACTIONS") != "true" or platform.system() == "Darwin":
+    sys.exit("make-drives-pair.py runs only in CI, from screenshots.sh: it deletes photos in the folders it is given")
 orig, bak = sys.argv[1], sys.argv[2]
 shutil.copytree(orig, bak, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".shoebox"))
 files = sorted(os.path.relpath(os.path.join(d, f), orig) for d, _, fs in os.walk(orig) if ".shoebox" not in d

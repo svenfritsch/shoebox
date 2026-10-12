@@ -35,22 +35,19 @@ folder into the tarball, so a release always shows the screen of its own code.
 The screenshots are made with the fonts in `fonts.conf` (Inter for the Mac's
 system font, Noto for emoji), as in the Claude Code cloud containers.
 
-## Screenshots by hand
+## Screenshots
 
-Only to look at a change before pushing. They come from a sample library of
-drawn, synthetic pictures (comic people, a dog and a cat, created at
-/Volumes/Photos) with faces and pets from a mock recognizer, so no models are
-needed. Needs a built shoebox binary, Python with Pillow and numpy, and Node
-with Playwright 1.56 and a Chromium.
+Only in CI: `screenshots.sh` (and `make-drives-pair.py`, which it calls)
+refuse to run anywhere but on a GitHub Actions runner, and never on a Mac.
+They create and delete folders where drives live (`/Volumes/Photos`,
+`/mnt/Extreme SSD`, `/mnt/Backup Drive`): shoebox reads a drive's name from its
+path, and on a real computer those can be real drives with real photos. To see
+the screenshots of a change, push it and open the run's artifact `guide`.
 
-```sh
-scripts/build.sh                                    # release build for this machine
-docs/guide/screenshots.sh                           # all passes, both languages (~4 min)
-LANGS=en PASSES=app docs/guide/screenshots.sh       # just the photo app, English (~1 min)
-CHROME=/path/to/chrome docs/guide/screenshots.sh    # another Chromium
-```
-
-The passes (`screenshots.mjs <pass>`), each on a fresh copy of the library:
+They come from a sample library of drawn, synthetic pictures (comic people, a
+dog and a cat) with faces and pets from a mock recognizer, so no models are
+needed. The passes (`screenshots.mjs <pass>`), each on a fresh copy of the
+library; `LANGS` and `PASSES` limit a run (CI runs one language per job):
 
 | Pass | Screenshots |
 |------|-------------|
@@ -63,8 +60,7 @@ The passes (`screenshots.mjs <pass>`), each on a fresh copy of the library:
 (once per language; each pass gets a copy), `mock-recognizer.py` answers the
 recognizer protocol for it (docs/protocol.md), `make-drives-pair.py` makes a
 backup of that library that has drifted from it (photos not on the backup yet,
-only on the backup, different on the backup) for the `drives` pass, under
-`/Volumes` on macOS and `/mnt` on Linux. `shrink-shots.py` turns the PNGs into
-the 1800 px JPEGs in `assets/`. `screenshots.mjs` also writes
-`assets/<lang>/ui-overview.json`: where each control of "The screen at a
-glance" is, for `check.py`'s dot check.
+only on the backup, different on the backup) for the `drives` pass.
+`shrink-shots.py` turns the PNGs into the 1800 px JPEGs in `assets/`.
+`screenshots.mjs` also writes `assets/<lang>/ui-overview.json`: where each
+control of "The screen at a glance" is, for `check.py`'s dot check.

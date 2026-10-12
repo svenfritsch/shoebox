@@ -1,16 +1,18 @@
 #!/bin/sh
 # Make the guide's screenshots (docs/guide/assets/{en,de}/*.jpg) from a drawn
-# sample library (no real photos). CI does this for every pull request that
-# touches the UI and for every release (.github/workflows/guide.yml); run it
-# yourself only to look at a change before pushing.
+# sample library (no real photos).
+#
+# Runs ONLY in the pipeline (.github/workflows/guide.yml, on a GitHub Actions
+# runner): it creates and deletes folders where drives live (/Volumes/Photos,
+# /mnt/Extreme SSD, /mnt/Backup Drive), because shoebox reads a drive's name
+# from its path. On a real computer those can be real drives with real
+# photos, so the script refuses to run anywhere else, and never on a Mac.
 #
 #   docs/guide/screenshots.sh [path-to-shoebox]
 #
 # Needs a built shoebox binary (default: the host's release build), Python
 # with Pillow and numpy, and Node with Playwright and a Chromium (CHROME=path
-# to use another one). The sample library is created at /Volumes/Photos so the
-# paths in the screenshots look like a drive; this needs permission to create
-# /Volumes (and /mnt on Linux, for the two-drive pass).
+# to use another one).
 #
 # Environment:
 #   LANGS="en de"                         languages to make
@@ -18,6 +20,12 @@
 #   OUT=docs/guide/assets                 where the JPEGs go; a pass replaces
 #                                         only its own files
 set -eu
+if [ "${GITHUB_ACTIONS:-}" != true ] || [ "$(uname)" = Darwin ]; then
+    echo "screenshots.sh runs only in CI (.github/workflows/guide.yml): it creates and" >&2
+    echo "deletes folders where real drives live. Push, and take the screenshots from" >&2
+    echo "the run's artifact \"guide\"." >&2
+    exit 1
+fi
 HERE=$(cd "$(dirname "$0")" && pwd)
 BIN=${1:-$(cd "$HERE/../.." && pwd)/core/target/$(rustc -vV | sed -n 's/^host: //p')/release/shoebox}
 [ -x "$BIN" ] || { echo "no shoebox binary at $BIN (build it with scripts/build.sh)" >&2; exit 1; }
@@ -25,15 +33,14 @@ BIN=$(cd "$(dirname "$BIN")" && pwd)/$(basename "$BIN")
 LANGS=${LANGS:-en de}
 PASSES=${PASSES:-app launcher drives suggestions}
 OUT=${OUT:-$HERE/assets}
-mkdir -p "$OUT"; OUT=$(cd "$OUT" && pwd)
 LIB=/Volumes/Photos
-# Where this system keeps the drives (the disk name is read from the path).
-if [ "$(uname)" = Darwin ]; then DRIVES=/Volumes; else DRIVES=/mnt; fi
+# Where Linux keeps the drives (shoebox reads the disk name from the path).
+DRIVES=/mnt
 ORIG="$DRIVES/Extreme SSD/Photos"; BAK="$DRIVES/Backup Drive/Photos Backup"
 export NODE_PATH=${NODE_PATH:-$(npm root -g)}
 
-# These folders are made and deleted again. On a Mac they could be real
-# drives with real photos: never touch one that is there before we start.
+# These folders are made and deleted again. Even on a runner, never touch one
+# that is there before we start: it is not ours.
 for d in "$LIB" "$DRIVES/Extreme SSD" "$DRIVES/Backup Drive"; do
     if [ -e "$d" ]; then
         echo "$d exists (a real drive, or left over from a run that was killed?)." >&2
@@ -42,6 +49,7 @@ for d in "$LIB" "$DRIVES/Extreme SSD" "$DRIVES/Backup Drive"; do
     fi
 done
 
+mkdir -p "$OUT"; OUT=$(cd "$OUT" && pwd)
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/shoebox-guide.XXXXXX")
 pid=
 # A step that fails must not leave a server running (it would hold its port).
@@ -107,7 +115,7 @@ for lang in $LANGS; do
         drives)
             # Two drives, an original and its backup, for Manage drives and the
             # comparison views. The disk names come from the path, so the drives
-            # sit where this system looks for drives.
+            # sit where Linux keeps drives.
             rm -rf "$DRIVES/Extreme SSD" "$DRIVES/Backup Drive"
             mkdir -p "$(dirname "$ORIG")"; cp -Rp "$WORK/sample" "$ORIG"
             python3 "$HERE/make-drives-pair.py" "$ORIG" "$BAK" >/dev/null
