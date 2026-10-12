@@ -73,9 +73,15 @@ program in every release archive. After a change to `Cargo.lock` or to
 
 ## Video previews (optional)
 
-shoebox makes the grid previews of videos with `ffmpeg`. It is not bundled;
-put a static build next to the shoebox binary on the drive (or have one on
-PATH):
+Without anything extra, a video the server has no preview for gets one from
+the browser: the web UI grabs a frame the first time the video is on screen
+and sends it back; the server decodes it, encodes a preview of its own and
+keeps it in `thumbs.db` (only while that video has no preview). `ffmpeg` is
+optional: with it, `shoebox scan` makes every video preview up front, also for
+videos the browser cannot play (HEVC on a Windows PC without Microsoft's HEVC
+add-on, `.avi`, `.mkv`, `.mts`, `.mpg`), and replaces the browser's ones. It
+is not bundled; put a static build next to the shoebox binary on the drive (or
+have one on PATH):
 
 1. Download a static `ffmpeg` for the computer that runs shoebox:
    - macOS on Intel: [evermeet.cx/ffmpeg](https://evermeet.cx/ffmpeg/)
@@ -102,9 +108,9 @@ PATH):
    ffmpeg" note disappears from the status line in the web UI.
 
 shoebox only ever runs ffmpeg to read a video and pipe one frame to itself;
-it never writes next to the original. Without ffmpeg, or for a video ffmpeg
-cannot read, the web UI grabs a frame in the browser instead (not stored, so
-it costs a little time on each visit, and iPad Safari often refuses).
+it never writes next to the original. Planned: the system's own video
+framework first (AVFoundation on macOS, Media Foundation on Windows), so most
+Macs never need ffmpeg; see "Decoders per build" in docs/plan.md.
 Static ffmpeg builds are GPL; fine for your own drive, check the terms
 before passing the drive's binaries on.
 

@@ -37,7 +37,10 @@ whether to accept incoming connections the first time `--lan` is used.
   orientation is applied. HEIC is scaled by libheif. PNG uses `image`.
 - Videos: one frame at 10% of the length via `ffmpeg` (next to the binary or
   on PATH), piped to stdout; no temp files. Without ffmpeg, videos are left
-  for later and the web UI grabs a frame in the browser (session only).
+  for later and the web UI grabs a frame in the browser and sends it back
+  (`POST /api/files/{id}/poster`): re-encoded, kept with
+  `thumbs.source = 'browser'` while the video has no picture, replaced by a
+  later scan that has ffmpeg (see "Decoders per build" in plan.md).
   Getting ffmpeg: [README](../README.md#video-previews-optional).
 - A file whose thumbnail fails (damaged) gets a row with `jpeg = NULL` and
   the error, so it is not retried until its content changes. "ffmpeg not
@@ -67,6 +70,7 @@ iPads) is embedded with `rust-embed`.
 | `GET /api/tags?q=` | Tags by use, for search suggestions |
 | `GET /api/files/{id}` | Details for the info panel |
 | `GET /api/files/{id}/thumb` | Stored thumbnail, made on first request if missing; cached for good (URL carries the version) |
+| `POST /api/files/{id}/poster` | A video frame the browser grabbed (JPEG body, ≤ 512 KiB); decoded, shrunk and encoded again, stored only while the video has no picture |
 | `GET /api/files/{id}/view` | Original JPEG/PNG; HEIC rendered to a 2048 px JPEG on demand (not stored) |
 | `GET /api/files/{id}/original` | The original byte for byte, with range requests (video seeking); `?download=1` for a download |
 | `GET /api/info` | Counts, thumbnail progress, latest jobs, whether a scan is running |

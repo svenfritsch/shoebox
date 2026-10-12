@@ -426,7 +426,9 @@ body.selecting .sec .pick { display: inline; }
 .cluster .csugg { font-size: 13px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 .cluster .csugg b { font-weight: 600; }
 .cluster .crow { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
-.cluster .crow .pfield { flex: 1; min-width: 150px; }
+.cluster .crow .pfield { flex: 1 1 200px; min-width: 150px; max-width: 360px; }
+.cluster .cbar { position: sticky; bottom: 0; z-index: 4; align-items: center; margin: 0 -4px -4px; padding: 8px 4px; background: var(--panel); border-top: 1px solid var(--line); border-radius: 0 0 10px 10px; }
+.cluster.open .cbar { bottom: calc(0px + env(safe-area-inset-bottom)); }
 
 /* a field that names someone */
 .pfield { position: relative; }

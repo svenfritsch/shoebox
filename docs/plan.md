@@ -28,9 +28,9 @@ progress. Update the status section when a phase moves.
 | Core | Rust, one static binary per platform: scanner, SQLite, web server, UI |
 | Recognition | Separate, optional Python worker (`recognizer`), JSON lines over stdin/stdout |
 | Thumbnails | **Not** written into EXIF of originals (would change hashes and mtimes). Stored as BLOBs in `.shoebox/thumbs.db` (exFAT's 128 KB clusters would waste ~5× space with one file per thumbnail) |
-| HEIC | libheif + libde265 built from source as shared, decoder-only libraries (`scripts/build-deps.sh`), shipped as separate files next to the program so they can be replaced (LGPL) |
+| HEIC | libheif + libde265 built from source as shared, decoder-only libraries (`scripts/build-deps.sh`), the same on macOS, Linux and Windows so a drive gets the same previews and similarity hashes whichever computer scans it; shipped as separate files next to the program so they can be replaced (LGPL, see "Decoders per build") |
 | RAW | Indexed (hash, dates, duplicates, backup checks) but hidden in the UI; paired with JPEG/HEIC of the same stem and moved together |
-| Video | Yes. Metadata via `nom-exif`; poster frame via a static `ffmpeg` next to the binary or on `PATH`; playback streams the original (HTTP range requests), no transcoding |
+| Video | Yes. Metadata via `nom-exif`; playback streams the original (HTTP range requests), no transcoding. Poster frame: the system's video framework where there is one (planned: AVFoundation on macOS, Media Foundation on Windows), else an optional `ffmpeg` next to the binary or on `PATH`, else a frame the browser grabbed, re-encoded and stored (see "Decoders per build") |
 | Drive format | exFAT |
 | Scale | ~100,000 files, 150 GB today, up to 1 TB |
 | Repo | `core/` (Rust), `recognizer/` (Python), `scripts/`, `docker/`, `docs/` |
@@ -428,7 +428,8 @@ Done (see [phase2.md](phase2.md)):
   multi-threaded pass in `shoebox scan` (`--no-thumbs` skips it) and on
   demand by the server. Scaled JPEG decoding, EXIF orientation, video
   posters via ffmpeg piped to stdout. Without ffmpeg (or when it fails) the
-  web UI grabs a video frame itself (canvas, session only, never stored).
+  web UI grabs a video frame itself (canvas); since "Decoders per build"
+  step 1 the server re-encodes and keeps it (`thumbs.source = 'browser'`).
 - Keyboard: arrow keys move the focus in the grid; closing the viewer
   focuses the cell of the last item seen. Space opens the focused item and
   closes the viewer again.
@@ -1234,6 +1235,83 @@ trash. UI gating only: the trash API and the duplicates screens are unchanged.
 Real-hardware check: with the setting off there is no trash icon or button;
 tick it and both appear.
 
+## Decoders per build (HEIC, video posters, Windows)
+
+Decided after the dependency audit (October 2026). Goal: a drive scanned on a
+Mac, on Windows or on Linux gives the same result, with as little to install
+as possible.
+
+**HEIC: libheif + libde265 on all three builds.** ImageIO would remove them
+from the macOS build only; Linux and Windows need them anyway (Linux has no
+reliable system decoder, Windows decodes HEIC only with the Store add-ons
+"HEIF Image Extensions" and "HEVC Video Extensions", the latter paid unless
+the PC maker installed it). One decoder everywhere also keeps previews and
+`phash` the same whichever computer made them (both live on the drive and are
+reused). The LGPL asks that the user can swap in their own build of the
+libraries, not that shoebox works without them: ship them as separate files
+next to the program (`.dylib` / `.dll` / `.so`, copies, no symlinks), which
+closes the LGPL item under "Before giving shoebox to others".
+
+**Video posters, in this order; the first that gives a frame wins:**
+
+| | macOS | Windows | Linux |
+|---|---|---|---|
+| 1. System framework | AVFoundation (`objc2-av-foundation`): H.264, HEVC, ProRes in `.mov/.mp4/.m4v/.3gp` | Media Foundation (`windows` crate): H.264; HEVC only with the HEVC add-on | none |
+| 2. Optional `ffmpeg` | old camcorder formats (`.avi/.mkv/.mts/.mpg`) | HEVC without the add-on, old formats | everything |
+| 3. Browser frame, stored | whatever the viewing browser can play | same | same |
+
+ffmpeg has its own H.264 and HEVC decoders (software, LGPL part of
+libavcodec), so it needs no system add-on; its static builds are 80–100 MB and
+GPL, so it stays a download the user makes, never bundled. The guide says when
+it helps. Posters feed only the grid (no `phash`, no recognition), so it does
+not matter which step made one. Playing a video is the viewing browser's
+business, not the build's (Safari on the iPad plays HEVC whichever computer
+runs shoebox).
+
+**Stored browser frame (step 1 below).** `POST /api/files/{id}/poster` with a
+JPEG body (`image/jpeg`, at most 512 KiB): only a video, only while its
+content has no picture yet (none, or the reason it failed), only from a browser
+that is let in (this computer or a paired device; the write header as for every
+change). The bytes are never stored as sent: decoded with `image` (memory-safe,
+at most 2048 px a side), shrunk to `thumbs::EDGE` and encoded again, kept in
+`thumbs.db` with `source = 'browser'`. A scan with a poster maker at hand
+(ffmpeg today) replaces it; if that fails, the browser frame stays and the
+error is noted, so it is not tried on every scan. Worst case, a misbehaving
+paired device stores a wrong picture as one video's poster; nothing else reads
+it.
+
+**Windows build job (step 4).**
+1. libheif and libde265 with MSVC through cmake: the flags of
+   `build-deps.sh` carry over (Git Bash, cmake and Visual Studio are on the
+   runner); as DLLs, consistent C runtime (`/MD`); `core/build.rs` without
+   `-lstdc++` on Windows.
+2. `organize::rename_noreplace`: on Windows today it checks and then calls
+   `fs::rename`, which replaces an existing target there. Use `MoveFileExW`
+   without `MOVEFILE_REPLACE_EXISTING` (atomic refusal). Safety-critical.
+3. `fsinfo::filesystem_type` for Windows (`GetVolumeInformationW`, already
+   declared in `volume.rs`).
+4. Cross-system check: a drive scanned on a Mac shows no changed files on
+   Windows and the other way round (created and modified times on exFAT,
+   NFC/NFD, case).
+5. Package `shoebox-windows/` (`shoebox.exe`, the DLLs, `Start shoebox.bat`,
+   `recognizer/*.ps1`, never run so far); fixtures made by the Linux job and
+   handed over; release step.
+
+**Steps:**
+- [x] 1. Store the browser frame (all builds, no new dependency).
+- [x] 2. libheif and libde265 as separate library files on macOS and Linux
+      (`build-deps.sh` shared, `core/build.rs`, archive layout with
+      `sources/`, the launchers check for them and the macOS one removes
+      their quarantine mark too).
+- [ ] 3. AVFoundation posters on macOS.
+- [ ] 4. Windows build job (list above).
+- [ ] 5. Media Foundation posters on Windows.
+- [ ] 6. Audit leftover: `jpeg-decoder` without default features (drops
+      rayon and crossbeam, 7 crates; the thumbnail pass is parallel already).
+
+Each step updates the guide (both languages), the README's ffmpeg section and,
+for 2 and 4, `THIRD-PARTY-LICENSES.txt`.
+
 ## Before giving shoebox to others
 
 The release archive (`shoebox-macos.tar.gz`) carries `LICENSE.txt` (all rights
@@ -1259,10 +1337,13 @@ checked by the release job). Open:
          script on request, so the user can link again with their own build.
          Until step 1 is done, `THIRD-PARTY-LICENSES.txt` promises exactly
          this on request.
-      Alternative that avoids the libraries on macOS: decode HEIC with the
-      system (ImageIO); a larger change (behaviour, no Linux/Windows).
+      Decided: way 1 on all three builds ("Decoders per build", step 2).
+      ImageIO on macOS was considered and dropped: Linux and Windows need
+      libheif anyway, and one decoder keeps a drive's previews the same.
 - [ ] Check with a lawyer before shoebox goes to more than friends or is sold
-      (this is not legal advice).
+      (this is not legal advice). Include HEVC patents: libde265 is free
+      software but carries no patent licence (Apple's and Microsoft's own
+      decoders do; that is what the paid Windows add-on is).
 - [ ] When the repository goes private: the guide and README no longer link to
       GitHub (they do not any more); releases need the repository's own
       Actions minutes.
@@ -1299,3 +1380,11 @@ calibrated (list in [phase7.md](phase7.md)).
 Text in photos (phase 9) is planned, not built: start with the spike in step 1
 of "Phase 9 details" (OCR task in the worker, tried by hand on real photos),
 before any core change.
+
+Decoders per build: step 1 (stored browser frames) is built; check it on the
+iPad (Safari plays HEVC) and on a Mac without ffmpeg: scroll past a few
+videos, restart the photo app, the previews are there without a new grab.
+Step 2 (libheif and libde265 as separate library files) is built: on a Mac
+unpack the CI artifact (or a release), start it with `Start shoebox.command`
+and open a HEIC; the Intel build only runs on main (or Actions → build → Run
+workflow). AVFoundation posters come next, then the Windows build job.
