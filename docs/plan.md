@@ -1311,8 +1311,12 @@ it.
       again.
 - [ ] 4. Windows build job (list above).
 - [ ] 5. Media Foundation posters on Windows.
-- [ ] 6. Audit leftover: `jpeg-decoder` without default features (drops
-      rayon and crossbeam, 7 crates; the thumbnail pass is parallel already).
+- [x] ~~6. Audit leftover: `jpeg-decoder` without default features~~ —
+      dropped after measuring. Without rayon, jpeg-decoder falls back to a
+      worker that starts threads for every picture: a 12 MP JPEG decoded at
+      1/8 for a thumbnail took 17 ms instead of 13–16 ms, and with 8 decodes
+      at a time (as the scan runs them) 170–190 instead of 250–260 photos/s
+      (4 cores, October 2026). The 7 crates stay.
 
 Each step updates the guide (both languages), the README's ffmpeg section and,
 for 2 and 4, `THIRD-PARTY-LICENSES.txt`.
