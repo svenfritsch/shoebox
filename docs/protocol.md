@@ -192,8 +192,9 @@ exited 5 seconds later is killed.
    any executable that speaks this protocol (`shoebox-fake-recognizer` in
    tests).
 2. `recognizer/recognizer.py` next to the shoebox binary (the downloaded
-   folder), else in the library's `.shoebox/recognizer/` (also what an older
-   `.shoebox/bin/` layout means), run with the standalone Python in `recognizer/runtime/<platform>/bin/python3` if
+   folder); for a binary in the older `<drive>/.shoebox/bin/` layout also that
+   drive's `.shoebox/recognizer/`. Never the `.shoebox/` of another drive: a
+   drive from somebody else could bring a Python of its own. Run with the standalone Python in `recognizer/runtime/<platform>/bin/python3` if
    present, else `python3` from `PATH`.
 
 Without a worker, `shoebox recognize` reports that recognition is not

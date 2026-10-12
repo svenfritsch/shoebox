@@ -474,7 +474,8 @@ function drawPlaces() {
   geo.rects = {};
   geo.places.forEach(function (p) {
     var r = L.rectangle([[p.south, p.west], [p.north, p.east]], PLACE_STYLE).addTo(geo.map);
-    r.bindTooltip(p.name, { sticky: true });
+    // A text node, not the string: Leaflet puts a string in as HTML.
+    r.bindTooltip(document.createTextNode(p.name), { sticky: true });
     r.on('click', function (e) { if (geo.drawing) drawClick(e); else showView('locations', p.id); });
     geo.rects[p.id] = r;
   });

@@ -79,7 +79,7 @@ enum Command {
         #[arg(long)]
         db: Option<PathBuf>,
         /// Recognizer program or `recognizer.py` (default: $SHOEBOX_RECOGNIZER,
-        /// else the one in `<root>/.shoebox/recognizer/`).
+        /// else the one in `recognizer/` next to shoebox).
         #[arg(long)]
         recognizer: Option<PathBuf>,
         /// Look at most at this many photos.
@@ -147,7 +147,7 @@ enum Command {
         #[arg(long)]
         pin: Option<String>,
         /// Recognizer for faces drawn by hand, started when one is drawn
-        /// (default: $SHOEBOX_RECOGNIZER, else the one in `<root>/.shoebox/recognizer/`).
+        /// (default: $SHOEBOX_RECOGNIZER, else the one in `recognizer/` next to shoebox).
         #[arg(long)]
         recognizer: Option<PathBuf>,
     },

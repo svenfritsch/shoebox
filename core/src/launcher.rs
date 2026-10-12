@@ -950,15 +950,11 @@ struct AddonsRequest {
 }
 
 async fn addons(Json(req): Json<AddonsRequest>) -> Json<serde_json::Value> {
-    let program = recognize::installed(None);
-    let roots: Vec<serde_json::Value> = req
-        .roots
-        .iter()
-        .map(|r| {
-            let found = recognize::installed(Some(Path::new(r)));
-            serde_json::json!({ "root": r, "faces": found.faces, "pets": found.pets })
-        })
-        .collect();
+    // Only the add-ons next to the program run (see `recognize::worker_dirs`),
+    // so every drive has the same ones.
+    let program = recognize::installed();
+    let roots: Vec<serde_json::Value> =
+        req.roots.iter().map(|r| serde_json::json!({ "root": r, "faces": program.faces, "pets": program.pets })).collect();
     let dir = recognize::program_dir();
     Json(serde_json::json!({
         "installable": dir.is_some(),
