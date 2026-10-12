@@ -117,8 +117,17 @@ pub fn attach(conn: &Connection, db_path: &Path) -> Result<()> {
         tx.commit()?;
     }
     if version < 4 {
-        let tx = conn.unchecked_transaction()?;
-        tx.execute_batch(SCHEMA_V4)?;
+        // Another connection (the server next to a scan) may be doing the
+        // same: look and change under one write lock.
+        let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
+        let has_source: bool = tx.query_row(
+            "SELECT count(*) > 0 FROM pragma_table_info('thumbs', 'thumbs') WHERE name = 'source'",
+            [],
+            |r| r.get(0),
+        )?;
+        if !has_source {
+            tx.execute_batch(SCHEMA_V4)?;
+        }
         tx.pragma_update(Some("thumbs"), "user_version", 4)?;
         tx.commit()?;
     }
