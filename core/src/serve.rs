@@ -3,8 +3,13 @@
 //! Listens on localhost only, unless `--lan` is given; then other devices
 //! (an iPad on the same network) can connect after entering a PIN, which is
 //! printed at startup. Requests from this machine need no PIN, but only when
-//! they name it as `localhost` or an IP address: a web page that points its
-//! own domain at 127.0.0.1 (DNS rebinding) still has to log in.
+//! they name it as `localhost` or a loopback address (127.0.0.1, ::1): a web
+//! page that points its own domain at 127.0.0.1 (DNS rebinding), or a proxy on
+//! this machine that passes on another host, still has to log in.
+//!
+//! No response may be embedded by a page of another origin
+//! (`Cross-Origin-Resource-Policy: same-origin`): otherwise any website open
+//! while shoebox runs could show the photos through `<img>` or `<video>`.
 //!
 //! Browsing only reads originals: previews come from `thumbs.db` (missing
 //! ones are rendered on first request, under the guard), and originals are
@@ -1071,20 +1076,26 @@ impl Auth {
     }
 }
 
-/// A request from this machine that addresses it by IP or as localhost.
+/// A request from this machine that addresses it as localhost or by a
+/// loopback address.
 pub(crate) fn is_local(peer: IpAddr, host: Option<&str>) -> bool {
-    let peer_local = peer.is_loopback() || matches!(peer, IpAddr::V6(v6) if v6.to_ipv4_mapped().is_some_and(|v4| v4.is_loopback()));
-    peer_local && host.is_some_and(host_is_literal)
+    is_loopback(peer) && host.is_some_and(host_is_loopback)
 }
 
-/// `localhost` or an IP address, with or without a port.
-fn host_is_literal(host: &str) -> bool {
+fn is_loopback(ip: IpAddr) -> bool {
+    ip.is_loopback() || matches!(ip, IpAddr::V6(v6) if v6.to_ipv4_mapped().is_some_and(|v4| v4.is_loopback()))
+}
+
+/// `localhost`, `127.x.x.x` or `[::1]`, with or without a port. Not another
+/// address of this machine: a browser here that uses one connects from it, so
+/// only a proxy could bring such a host from a loopback peer.
+fn host_is_loopback(host: &str) -> bool {
     let name = if let Some(rest) = host.strip_prefix('[') {
         rest.split(']').next().unwrap_or("")
     } else {
         host.rsplit_once(':').map(|(h, _)| h).unwrap_or(host)
     };
-    name.eq_ignore_ascii_case("localhost") || name.parse::<IpAddr>().is_ok()
+    name.eq_ignore_ascii_case("localhost") || name.parse::<IpAddr>().is_ok_and(is_loopback)
 }
 
 pub(crate) fn host(headers: &HeaderMap) -> Option<&str> {
@@ -1151,8 +1162,12 @@ async fn guard(State(auth): State<Arc<Auth>>, ConnectInfo(peer): ConnectInfo<Soc
     h.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
     h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     h.insert(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
+    h.insert(CORP, HeaderValue::from_static("same-origin"));
     res
 }
+
+/// Keeps pages of other origins from embedding a response (see the module docs).
+pub(crate) const CORP: header::HeaderName = header::HeaderName::from_static("cross-origin-resource-policy");
 
 #[derive(Serialize)]
 struct SessionInfo {
@@ -2974,15 +2989,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_literal_hosts_count_as_local() {
+    fn only_loopback_hosts_count_as_local() {
         let lo: IpAddr = "127.0.0.1".parse().unwrap();
         let lan: IpAddr = "192.168.1.20".parse().unwrap();
         assert!(is_local(lo, Some("localhost:7878")));
+        assert!(is_local(lo, Some("LOCALHOST")));
         assert!(is_local(lo, Some("127.0.0.1:7878")));
+        assert!(is_local(lo, Some("127.0.0.1")));
         assert!(is_local("::1".parse().unwrap(), Some("[::1]:7878")));
+        assert!(is_local("::ffff:127.0.0.1".parse().unwrap(), Some("[::ffff:127.0.0.1]:7878")));
         assert!(!is_local(lo, Some("evil.example:7878")), "DNS rebinding");
+        assert!(!is_local(lo, Some("localhost.evil.example:7878")));
         assert!(!is_local(lo, None));
+        // Another address, from a loopback peer: only a proxy sends that.
+        assert!(!is_local(lo, Some("192.168.1.5:7878")));
+        assert!(!is_local(lo, Some("100.64.0.7")));
+        assert!(!is_local(lo, Some("[fe80::1]:7878")));
+        assert!(!is_local(lo, Some("0.0.0.0:7878")));
         assert!(!is_local(lan, Some("192.168.1.5:7878")));
+        assert!(!is_local(lan, Some("localhost:7878")));
     }
 
     #[test]
