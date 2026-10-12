@@ -113,9 +113,14 @@ fn only_this_computer_and_only_with_the_header() {
     let addr = launcher.addr;
     let evil = ("Host", "evil.example");
     let json_ct = ("Content-Type", "application/json");
-    // DNS rebinding: a name that is not localhost or a number.
+    // DNS rebinding: a name that is not localhost or a loopback address.
     assert_eq!(request(addr, "GET", "/raw/api/job", &[evil], b"").status, 403);
     assert_eq!(request(addr, "GET", "/raw/", &[evil], b"").status, 403);
+    // Another address of this machine: only a proxy brings it from a loopback peer.
+    assert_eq!(request(addr, "GET", "/raw/api/job", &[("Host", "192.168.1.5:7879")], b"").status, 403);
+    assert_eq!(request(addr, "GET", "/raw/api/job", &[("Host", "127.0.0.1:7879")], b"").status, 200);
+    // No other website may embed what the launcher sends.
+    assert_eq!(request(addr, "GET", "/raw/", &[], b"").header("cross-origin-resource-policy"), Some("same-origin"));
     // Changes need X-Shoebox.
     let body = br#"{"kind":"scan","root":"/"}"#;
     assert_eq!(bare_request(addr, "POST", "/raw/api/job", &[json_ct], body).status, 403);

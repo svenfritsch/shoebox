@@ -181,6 +181,15 @@ fn pin_login() {
     assert_eq!(request(addr, "GET", "/api/timeline", &[evil], b"").status, 401);
     assert_eq!(request(addr, "GET", "/api/files/1/original", &[evil], b"").status, 401);
     assert_eq!(request(addr, "GET", "/", &[evil], b"").status, 200, "the login page itself is public");
+    // Another address of this machine from a loopback peer: only a proxy sends
+    // that, and a proxy may be forwarding anyone.
+    let proxied = ("Host", "192.168.1.5:7878");
+    assert_eq!(request(addr, "GET", "/api/timeline", &[proxied], b"").status, 401);
+    // No other website may embed what the server sends (photos in <img>).
+    for (path, host) in [("/", "localhost"), ("/api/timeline", "localhost"), ("/api/files/1/thumb", "localhost"), ("/api/timeline", "photos.evil.example")] {
+        let r = request(addr, "GET", path, &[("Host", host)], b"");
+        assert_eq!(r.header("cross-origin-resource-policy"), Some("same-origin"), "{path} for {host}: {}", r.status);
+    }
     let session = request(addr, "GET", "/api/session", &[evil], b"").json();
     assert_eq!((session["authenticated"].as_bool(), session["pin_enabled"].as_bool()), (Some(false), Some(true)));
 

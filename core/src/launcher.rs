@@ -751,8 +751,8 @@ impl IntoResponse for ApiError {
     }
 }
 
-/// Only this computer, by name or number (not a name that resolves here by
-/// DNS rebinding), and changes only with the `X-Shoebox` header.
+/// Only this computer, as `localhost` or a loopback address (not a name that
+/// resolves here by DNS rebinding), and changes only with the `X-Shoebox` header.
 async fn guard(ConnectInfo(peer): ConnectInfo<SocketAddr>, req: Request, next: Next) -> Response {
     let safe = matches!(*req.method(), Method::GET | Method::HEAD);
     let mut res = if !serve::is_local(peer.ip(), serve::host(req.headers())) {
@@ -767,6 +767,7 @@ async fn guard(ConnectInfo(peer): ConnectInfo<SocketAddr>, req: Request, next: N
     h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     h.insert(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    h.insert(serve::CORP, HeaderValue::from_static("same-origin"));
     res
 }
 
