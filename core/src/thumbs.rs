@@ -162,13 +162,12 @@ pub fn render(lib_heif: &LibHeif, ffmpeg: Option<&Path>, src: &Source) -> Result
     fingerprint::read_unchanged(&src.path, src.size, src.mtime_ns, || match src.kind {
         Kind::Raw => Err("RAW files have no preview".into()),
         Kind::Video => {
-            let ffmpeg = ffmpeg.ok_or("ffmpeg not found")?;
-            let jpeg = media::video_poster(ffmpeg, &src.path, src.duration_ms, EDGE, 4).map_err(|e| format!("{e:#}"))?;
+            let jpeg = media::video_poster_jpeg(ffmpeg, &src.path, src.duration_ms, EDGE, QUALITY)?;
             let (width, height) = image::ImageReader::new(std::io::Cursor::new(&jpeg))
                 .with_guessed_format()
                 .ok()
                 .and_then(|r| r.into_dimensions().ok())
-                .ok_or("ffmpeg returned no image")?;
+                .ok_or("the video gave no image")?;
             Ok(Rendered { jpeg, width, height, phash: None, shot_pixels: None })
         }
         kind => {
@@ -293,14 +292,15 @@ pub fn load(conn: &Connection, key: &str) -> Result<Option<Result<Vec<u8>, Strin
 /// Errors that say nothing about the file itself; they are not stored, so a
 /// later run (with ffmpeg in place, or the file settled) tries again.
 pub fn is_transient(error: &str) -> bool {
-    error == "ffmpeg not found" || error.starts_with("changed ")
+    error == media::NO_POSTER_MAKER || error.starts_with("changed ")
 }
 
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct Stats {
     pub made: u64,
     pub failed: u64,
-    /// Videos left without a poster because ffmpeg is not available.
+    /// Videos left without a poster because this build has no system video
+    /// framework and there is no ffmpeg.
     pub no_ffmpeg: u64,
     /// Perceptual hashes filled in from existing thumbnails.
     pub phash_from_existing: u64,
@@ -315,19 +315,23 @@ pub struct Stats {
 pub fn generate(conn: &Connection, root: &Path) -> Result<Stats> {
     let mut stats = Stats::default();
     let ffmpeg = media::find_ffmpeg();
+    let poster_maker = media::SYSTEM_VIDEO_POSTERS || ffmpeg.is_some();
     // One file per content; the others with the same quick hash share it.
     // A video poster a browser made is made again here when there is
-    // something to make it with, unless that failed before.
+    // something to make it with, unless that failed before; a video the
+    // system framework could not read is tried again once ffmpeg is there.
     let pending: Vec<(String, Source)> = conn
         .prepare(
             "SELECT f.path, f.kind, f.size, f.mtime_ns, f.duration_ms, f.quick_hash
              FROM files f LEFT JOIN thumbs.thumbs t ON t.key = f.quick_hash
-             WHERE (t.key IS NULL OR (?1 AND f.kind = 'video' AND t.source = 'browser' AND t.error IS NULL))
+             WHERE (t.key IS NULL
+                    OR (?1 AND f.kind = 'video' AND t.source = 'browser' AND t.error IS NULL)
+                    OR (?2 AND f.kind = 'video' AND t.error LIKE '%' || ?3))
                AND f.missing_since IS NULL AND f.kind != 'raw'
              GROUP BY f.quick_hash
              ORDER BY max(coalesce(f.taken, '')) DESC, min(f.path_nfc)",
         )?
-        .query_map([ffmpeg.is_some()], |r| {
+        .query_map(rusqlite::params![poster_maker, ffmpeg.is_some(), media::NO_FFMPEG_SUFFIX], |r| {
             Ok((
                 r.get::<_, String>(0)?,
                 r.get::<_, String>(1)?,
@@ -356,7 +360,7 @@ pub fn generate(conn: &Connection, root: &Path) -> Result<Stats> {
         .collect::<rusqlite::Result<_>>()?;
 
     let (pending, videos_skipped): (Vec<_>, Vec<_>) =
-        pending.into_iter().partition(|(_, s)| s.kind != Kind::Video || ffmpeg.is_some());
+        pending.into_iter().partition(|(_, s)| s.kind != Kind::Video || poster_maker);
     stats.no_ffmpeg = videos_skipped.len() as u64;
     if stats.no_ffmpeg > 0 {
         say!("No ffmpeg next to shoebox or on PATH: {} videos get no poster for now.", stats.no_ffmpeg);

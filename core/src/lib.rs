@@ -5,6 +5,8 @@ pub mod pets;
 pub mod ann;
 pub mod arrivals;
 pub mod backup;
+#[cfg(target_os = "macos")]
+pub mod avposter;
 pub mod browse;
 pub mod classify;
 pub mod clusters;

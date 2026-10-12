@@ -30,7 +30,7 @@ progress. Update the status section when a phase moves.
 | Thumbnails | **Not** written into EXIF of originals (would change hashes and mtimes). Stored as BLOBs in `.shoebox/thumbs.db` (exFAT's 128 KB clusters would waste ~5× space with one file per thumbnail) |
 | HEIC | libheif + libde265 built from source as shared, decoder-only libraries (`scripts/build-deps.sh`), the same on macOS, Linux and Windows so a drive gets the same previews and similarity hashes whichever computer scans it; shipped as separate files next to the program so they can be replaced (LGPL, see "Decoders per build") |
 | RAW | Indexed (hash, dates, duplicates, backup checks) but hidden in the UI; paired with JPEG/HEIC of the same stem and moved together |
-| Video | Yes. Metadata via `nom-exif`; playback streams the original (HTTP range requests), no transcoding. Poster frame: the system's video framework where there is one (planned: AVFoundation on macOS, Media Foundation on Windows), else an optional `ffmpeg` next to the binary or on `PATH`, else a frame the browser grabbed, re-encoded and stored (see "Decoders per build") |
+| Video | Yes. Metadata via `nom-exif`; playback streams the original (HTTP range requests), no transcoding. Poster frame: the system's video framework where there is one (AVFoundation on macOS, `avposter.rs`; Media Foundation on Windows planned), else an optional `ffmpeg` next to the binary or on `PATH`, else a frame the browser grabbed, re-encoded and stored (see "Decoders per build") |
 | Drive format | exFAT |
 | Scale | ~100,000 files, 150 GB today, up to 1 TB |
 | Repo | `core/` (Rust), `recognizer/` (Python), `scripts/`, `docker/`, `docs/` |
@@ -1303,7 +1303,12 @@ it.
       (`build-deps.sh` shared, `core/build.rs`, archive layout with
       `sources/`, the launchers check for them and the macOS one removes
       their quarantine mark too).
-- [ ] 3. AVFoundation posters on macOS.
+- [x] 3. AVFoundation posters on macOS (`avposter.rs`: `AVAssetImageGenerator`
+      with the track's turn applied, at most `thumbs::EDGE`, drawn into an
+      sRGB bitmap; `media::video_poster_jpeg` tries it before ffmpeg). A
+      video it cannot read and no ffmpeg: the reason ends in `(no ffmpeg)`,
+      is stored (the browser frame fills in) and a scan that has ffmpeg tries
+      again.
 - [ ] 4. Windows build job (list above).
 - [ ] 5. Media Foundation posters on Windows.
 - [ ] 6. Audit leftover: `jpeg-decoder` without default features (drops
@@ -1387,4 +1392,7 @@ videos, restart the photo app, the previews are there without a new grab.
 Step 2 (libheif and libde265 as separate library files) is built: on a Mac
 unpack the CI artifact (or a release), start it with `Start shoebox.command`
 and open a HEIC; the Intel build only runs on main (or Actions → build → Run
-workflow). AVFoundation posters come next, then the Windows build job.
+workflow). Step 3 (AVFoundation posters) is built: on the Mac, without
+ffmpeg, scan a folder with iPhone videos (HEVC, portrait) and check the
+previews are upright; `shoebox probe` lists "videos: system video
+framework". The Windows build job comes next.
