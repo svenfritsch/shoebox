@@ -5284,7 +5284,7 @@ function singlesSection() {
     t.appendChild(faceImg(face, 'big'));
     var open = el('span', 'copen', '↗');
     open.title = tr('facecheck.open_photo');
-    open.onclick = function (ev) { ev.preventDefault(); ev.stopPropagation(); openFacePhoto(face); };
+    open.onclick = function (ev) { ev.preventDefault(); ev.stopPropagation(); openFacePhoto(face, st.faces); };
     t.appendChild(open);
     // Keyboard: Tab between thumbnails (or ←/→), Enter selects (the click
     // below), Space opens the photo and, in the viewer, closes it again.
@@ -5296,7 +5296,7 @@ function singlesSection() {
       if (ev.key === ' ') {
         ev.preventDefault();
         ev.stopPropagation(); // the viewer's own Space (close) must not see this one
-        openFacePhoto(face);
+        openFacePhoto(face, st.faces);
       } else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
         var next = ev.key === 'ArrowLeft' ? t.previousElementSibling : t.nextElementSibling;
         if (next) { ev.preventDefault(); next.focus(); }
@@ -5448,6 +5448,20 @@ function clusterCard(c) {
           return;
         }
         openFacePhoto(face, faces);
+      };
+      // Same keys as the single faces: Space opens the photo (and closes the
+      // viewer again), ←/→ move between thumbnails.
+      f.onkeydown = function (ev) {
+        if (!$('lightbox').hidden) return;
+        if (ev.altKey || ev.metaKey || ev.ctrlKey) return;
+        if (ev.key === ' ') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          f.click();
+        } else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
+          var next = ev.key === 'ArrowLeft' ? f.previousElementSibling : f.nextElementSibling;
+          if (next && next.classList.contains('cface')) { ev.preventDefault(); next.focus(); }
+        }
       };
       grid.appendChild(f);
     });
