@@ -52,6 +52,18 @@ except ImportError:
 HAVE_TEXT_MODELS = all(os.path.isfile(os.path.join(MODELS, f)) for f in recognizer.TEXT_FILES)
 
 
+class Boxes(unittest.TestCase):
+    def test_inside_is_the_share_of_the_first_box_in_the_second(self):
+        # The two frames of the same cat in a screenshot: IoU under PET_NMS, but
+        # most of the smaller one lies in the bigger one.
+        outer, inner = (67, 64, 323, 1043), (82, 527, 263, 656)
+        self.assertLess(recognizer.iou(outer, inner), recognizer.PET_NMS)
+        self.assertGreaterEqual(recognizer.inside(inner, outer), recognizer.PET_INSIDE)
+        # Two pets side by side are not one.
+        self.assertEqual(recognizer.inside((0, 0, 100, 100), (100, 0, 100, 100)), 0.0)
+        self.assertEqual(recognizer.inside((0, 0, 0, 0), (0, 0, 10, 10)), 0.0)
+
+
 @unittest.skipUnless(cv2 is not None and HAVE_MODELS, "needs opencv, numpy and recognizer/fetch-models.sh")
 class Protocol(unittest.TestCase):
     def setUp(self):
@@ -178,7 +190,8 @@ class Pets(unittest.TestCase):
         self.assertEqual(hello["tasks"]["faces"]["dim"], 128)
         self.assertNotEqual(info["model"], hello["tasks"]["faces"]["model"])
         reply = self.ask(proc, {"id": 1, "tasks": ["pets", "faces"], "image": self.jpeg(np.full((480, 640, 3), 200, np.uint8))})
-        self.assertEqual(reply, {"id": 1, "width": 640, "height": 480, "pets": [], "faces": []})
+        # The pets task also says where people are (none on a blank picture).
+        self.assertEqual(reply, {"id": 1, "width": 640, "height": 480, "pets": [], "people": [], "faces": []})
 
     def test_pets_without_the_flag_is_an_unknown_task(self):
         proc, _ = self.start()

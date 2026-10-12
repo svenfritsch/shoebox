@@ -29,6 +29,7 @@ var off = {};            // the ones that are not ticked (everything else is)
 var recentPaths = [];        // every folder ever added: offered in the drop-down again
 var backups = {};        // backup folder -> { of, at }: a backup check found it complete
 var drives = [];
+var drivesLoaded = false;
 var runningKind = '';    // the kind of the command that runs
 var busy = false;        // a command is running
 var serving = false;     // the photo app is running: only recognition may still run
@@ -67,13 +68,28 @@ function driveName(p) {
   return m ? m[1] : p.split(/[\\/]/).filter(Boolean).pop() || p;
 }
 
+// A drive under /Volumes that the list of connected drives does not have.
+function isOffline(p) {
+  return drivesLoaded && p.indexOf('/Volumes/') === 0 && !drives.some(function (d) { return d.path === p; });
+}
+
+// The photo app cannot start on a drive that is not there: the button stays
+// off, with the reason in red under it, until it is unticked or plugged in.
+function refreshStart() {
+  var off = tickedPaths().filter(isOffline);
+  var block = off.length > 0 && !serving;
+  $('start-app').disabled = block || (busy && BESIDE_APP.indexOf(runningKind) < 0);
+  $('app-offline').hidden = !block;
+  $('app-offline').textContent = block ? tr('launcher.app.offline', { names: off.map(driveName).join(', ') }) : '';
+}
+
 function renderChips() {
   var ul = $('path-chips');
   ul.textContent = '';
   paths.forEach(function (p) {
     var li = document.createElement('li');
     var known = drives.filter(function (d) { return d.path === p; })[0];
-    if (drives.length && !known && p.indexOf('/Volumes/') === 0) li.className = 'offline';
+    if (isOffline(p)) li.className = 'offline';
     if (off[p]) li.className += ' unticked';
     var cb = document.createElement('input');
     cb.type = 'checkbox'; cb.checked = !off[p];
@@ -108,6 +124,7 @@ function updateButtons() {
   document.querySelectorAll('.actions button').forEach(function (b) {
     b.disabled = n === 0 || (b.dataset.kind === 'backup' && n !== 2) || addonMissing(b.dataset.kind).length > 0;
   });
+  refreshStart();
   $('backup-hint').textContent = n === 0 ? tr('launcher.need_ticked') : n !== 2 ? tr('launcher.backup_need_two') : '';
   loadAddons();
 }
@@ -250,6 +267,7 @@ function renderDatalist() {
 function loadDrives() {
   return api('/api/drives').then(function (list) {
     drives = list;
+    drivesLoaded = true;
     var chips = $('drive-chips');
     chips.textContent = '';
     renderDatalist();
@@ -323,7 +341,7 @@ function applyLocks() {
   });
   renderAddons();
   $('opt-quick').disabled = $('opt-deep').disabled = busy || serving;
-  $('start-app').disabled = busy && BESIDE_APP.indexOf(runningKind) < 0;
+  refreshStart();
 }
 
 function pill(text, cls) {
@@ -603,6 +621,7 @@ function summaryOf(kind, r) {
 function appState() {
   return api('/api/app').then(function (s) {
     serving = !!s.running;
+    $('app-state').classList.remove('error');
     applyLocks();
     $('stop-app').hidden = !s.running;
     $('start-app').textContent = tr(s.running ? 'launcher.app.open' : 'launcher.app.start');
@@ -624,7 +643,7 @@ $('start-app').onclick = function () {
   var roots = tickedPaths();
   if (!roots.length) { $('root').focus(); $('root-hint').textContent = tr('launcher.need_ticked'); return; }
   // The server opens the browser itself when it starts the app.
-  api('/api/app', { roots: roots }).then(appState).catch(function (e) { $('app-state').textContent = e.message; });
+  api('/api/app', { roots: roots }).then(appState).catch(function (e) { $('app-state').textContent = e.message; $('app-state').classList.add('error'); });
 };
 $('stop-app').onclick = function () {
   api('/api/app/stop', {}).then(appState).then(function () { $('app-state').textContent = tr('launcher.app.stopped'); });

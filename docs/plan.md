@@ -35,7 +35,7 @@ progress. Update the status section when a phase moves.
 | Scale | ~100,000 files, 150 GB today, up to 1 TB |
 | Repo | `core/` (Rust), `recognizer/` (Python), `scripts/`, `docker/`, `docs/` |
 | Dev environment | Docker for Linux builds/tests; native macOS builds with rustup; GitHub Actions for both |
-| CI until v1.0 | macOS only (PRs: arm64; main/tags: universal + Rosetta). Linux, incl. the real recognizer, runs only when started by hand; releases ship `shoebox-macos` plus `recognizer/` and the guide (`docs/guide/`: HTML and text, English and German, in the `guide/` folder of the archive) |
+| CI until v1.0 | macOS only: `test` and `build` side by side with cached dependencies (PRs: arm64; main/tags: universal + Rosetta), skipped for docs-only PRs. Linux, incl. the real recognizer, runs only when started by hand. The guide's screenshots and `.txt` copies are not in git: `guide.yml` makes them on Linux for UI/guide PRs (artifact `guide`) and for releases; releases ship `shoebox-macos` plus `recognizer/` and that guide (English and German, in the `guide/` folder of the archive) |
 
 ## Architecture
 
@@ -79,9 +79,12 @@ what is installed for the computer and for each ticked drive
 (`recognize::installed`, by looking for files, never by starting the worker),
 and the Control Panel greys out Recognize / Recognize lying down (need Faces)
 and Recognize pets (needs Pets) with the reason. Lookup order
-(`recognize::worker_dirs`): `recognizer/` next to the program, then the drive's
-`.shoebox/recognizer/` (made by `install.sh <drive>`; the older
-`.shoebox/bin/` layout lands here too); `find_worker_for` takes the first folder that has the
+(`recognize::worker_dirs`): only `recognizer/` next to the program, plus, for a
+program in the older `<drive>/.shoebox/bin/` layout, that same drive's
+`.shoebox/recognizer/`. Never the `.shoebox/` of a drive the program does not
+run from (security audit 2026-10: a drive from somebody else could bring a
+Python of its own, which would run as the user; `install.sh <drive>` and
+`install.ps1 -Root` were removed with it). `find_worker_for` takes the first folder that has the
 models the run needs and the Python for this computer. The models are the
 same everywhere; the runtime is per `<os>-<arch>` (`recognizer/runtime/`), so
 another kind of Mac shows "Python and OpenCV: required" and the add-ons "models found, needs Python for this computer", and installing
@@ -198,19 +201,32 @@ offer is gone after the next scan. Those cases are for the duplicates screen.
 
 ### Dates shown for a photo
 
-The timeline and the info panel use, in this order: the capture date in the
-file (EXIF, video container); else the month in the name of the nearest event
-folder (shown as the 1st of that month); else, for a file outside any event
-folder, the earlier of its created and modification dates (a copy gets a new
-created date but keeps the old modification date). Event folder names start with
-year then month, 4 or 2 digits for the year (20YY), `-` or `.` between, and
-any of the gaps listed under event folder naming below. Only the capture date is the day the photo was taken: for the
-others the info panel shows an "estimated" mark next to the date (hover: "Not
-the date the photo was taken") and a tooltip on the mark says which fallback was used.
-The created date does not come before the folder because a copy made years
-later has a created date of its own (a scan of 1998 sits in `98.08 Urlaub`
-but was created the day it was copied to the drive).
-Nothing is ever written to the file (see the rules at the top).
+The timeline, the groups, the Year jump, date search and the info panel use, in
+this order, the first date that exists (phase 12, [phase12.md](phase12.md)):
+
+1. **The user's estimated date** (year, month or day, set in the info panel
+   or for a selection; `date_estimates` in `library.db`). It wins on every
+   photo, even one with a capture date in the file: a scan or a photo of a
+   print has an EXIF date of the day it was made.
+2. The capture date in the file (EXIF, video container; also a date a
+   duplicate clean-up carried over).
+3. The month in the name of the nearest event folder (shown as the 1st of that
+   month).
+4. For a file outside any event folder, the earlier of its created and
+   modification dates (a copy gets a new created date but keeps the old
+   modification date).
+
+Event folder names start with year then month, 4 or 2 digits for the year
+(20YY), `-` or `.` between, and any of the gaps listed under event folder naming
+below. Only a capture date in the file is the day the photo was taken: for the
+others the info panel shows an "estimated" mark next to the date (a date the
+user set shows "manual") and a tooltip on the mark says which fallback was used.
+When the user's date sits on top of a capture date, the row "EXIF" under the date
+shows the file's own; "Remove estimate" brings it back. The created date does
+not come before the folder because a copy made years later has a created date
+of its own (a scan of 1998 sits in `98.08 Urlaub` but was created the day it was
+copied to the drive). Nothing is ever written to the file (see the rules at the
+top).
 
 ### Event folder naming (a setting)
 
@@ -379,6 +395,9 @@ rot) and shows "last backup N days ago, M files new since".
 | 9 | Text in photos (OCR): documents, screenshots, street signs, shop fronts found by the words in them. A new task of the recognizer worker, results in `recognition.db` with an FTS5 index, a search term in the UI | **In progress** (branch `claude/phase9-text-search`): design and spike done (see "Phase 9 details"); built and tested on Linux: the worker task `text`, `install.sh --text` (and `install.ps1 -Text`, not run), the protocol text, the text pass in the core (`text.rs`, `recognition.db` v7, read order, `shoebox recognize --text` / `--text-only`), the Control Panel (Text add-on, "Recognize text" button) the guide (EN and DE), the FTS5 index (`recognition.db` v8) and the search terms `text:` and `name:` (chips, dropdown group, match strip, over all drives), the viewer button and foldable section with hide-a-line, the Text check page and limits, "Delete all recognized text", `shoebox text stats` and the status line; open: the edge-cut line rule (to verify on real photos), a run of the installer and the add-on on the old Intel Mac and on Windows, ignored words and tolerant matching (later) |
 | 10 | Locations: GPS positions from files, map in the photo info (Leaflet, OpenStreetMap, opt-in setting), Locations page with clustered pins, named places drawn on the map, positions set by hand (design in [phase10.md](phase10.md)) | **Built, check open**: scan reads GPS, schema v10, API, UI, guide; real-hardware check and the CI run are open |
 | 11 | Screenshots: a fourth entry in the Type drop-down, found from metadata and a pixel check (no new model); "Photos" then means stills that are not screenshots (design in [phase11.md](phase11.md)) | **Built with test pictures; threshold and real-hardware run open** (see [phase11.md](phase11.md)) |
+| 12 | Estimated capture date: a date of the user's own (year, month or day) for a photo, kept in `library.db` only, that wins over the file's date on the timeline; "Needs a date" worklist; search by date with the Date group and `date:` / `datum:` (design in [phase12.md](phase12.md)) | **Built except the real-hardware check**: core, info panel (pencil, dialog, EXIF row), "~", year-only group, selection with Undo, "Needs a date", date search (`date:` / `datum:`), guide in both languages |
+| 13 | Export: collect photos with a tag (Settings → Collection, bookmark button, shortcut C) or a selection and copy them into a new numbered folder (`001_IMG_3457.jpg`), optionally RAW partners and HEIC as JPEG, with a folder picker; re-export adds only what is new (design and mock-ups in [phase13.md](phase13.md)) | **Built, check open**: `export.rs`, local-only API, dialog with folder picker, collection button (C), settings, guide; real-hardware check (USB stick, Windows, macOS) open |
+| 14 | Backup comparison views: the backup check's lists get a "Show photos" button (Manage drives). "Only on backup" (on the backup) and "Only on original" (on the drive it copies) are filter chips on that drive's own timeline (`compare=backup|original`, worked out in `serve::forward` from the two indexes, offered in the search as "only on", "nur auf", "backup"); "different on the backup" opens the timeline of both drives of the pair in path order, so the two versions of a photo sit side by side, each with an Original or Backup badge (`/api/all/timeline?compare=different`). A chip a drive cannot show (a drive that is not half of a pair, All drives, nothing to show) is dropped with a note. Read only: nothing is written to either drive. Also: one drawn open-folder icon instead of the folder emoji; the backup card's progress bar had the header's `.bar` class and was drawn at the top of the window | **Done except the real-hardware run**; guide text updated, guide screenshots not regenerated yet |
 
 ### Phase 10: locations
 
@@ -648,7 +667,8 @@ picture is a second, separate kind of term:
 The two combine with AND like every other term (and with folder, people, type
 and favorites). The suggestion list shows the groups in this order: names,
 folders and tags (today's rows), people and pets, then the one text row, so
-nobody gets OCR hits by accident. A hit by text shows the matching line under
+nobody gets OCR hits by accident (phase 12 adds the group "Date" after that,
+only when what was typed is clearly a date; see [phase12.md](phase12.md)). A hit by text shows the matching line under
 the thumbnail; a hit by name shows nothing extra, as today.
 
 **Words and icons (decided with the mock-ups).** The old group name "In the
@@ -683,6 +703,7 @@ mixed in):
 | `name:IMG_62` | one group "File names": the row `[page] “IMG_62”` with its photo count | "draft" page icon (grey): `[page] IMG_62 ✕` | `name=IMG_62` |
 | `text:Rechnung` | one group "Recognized text": the row `[scanner] “Rechnung”` | "document scanner" icon (accent colour): `[scanner] Rechnung ✕` | `text=Rechnung` |
 | plain `Rechn` | today's groups (tags, folders, faces, pets) and, last, "Recognized text" | as today | `q=` |
+| `date:june` or `datum:juni` (phase 12) | one group "Date" (German "Datum"): the Junes of the library, newest first, with their photo counts | calendar icon: `June 1987 ✕` | `date=1987-06` |
 
 - `name:` matches the **file name only** (the last path segment, NFC,
   case- and diacritic-insensitive substring), not folders, tags or people. It
@@ -1262,11 +1283,19 @@ Decided: a **check box drop-down "Type"** next to the search box (option A),
 nothing else. No suggestions in the search box, no sidebar entries, no
 separate extensions (MP4 vs MOV); typing ".mp4" keeps working as before.
 
-- Entries: **Photos** (all stills, a Live Photo's still included),
-  **Videos** (stand-alone videos only: the clip of a Live Photo is folded into
-  its still and is never listed), **Live Photos** (the stills that have a
-  clip). Ticked types are OR; the filter is AND with folder, tags, people and
-  text. Nothing ticked means everything.
+- Entries: **Photos** (the stills that are neither screenshots nor Live
+  Photos), **Videos** (stand-alone videos only: the clip of a Live Photo is
+  folded into its still and is never listed), **Live Photos** (the stills that
+  have a clip), **Screenshots** (phase 11). The four never overlap: every item
+  is exactly one of them (`browse::MediaType`; until 2026-10 Photos included
+  the Live Photos). Ticked types are OR; the filter is AND with folder, tags,
+  people and text. Nothing ticked means everything.
+- The choice is also a chip in the search row (like the heart), with its own
+  drawn icon (camera, video camera, play circle, screenshot frame; four
+  squares for several); its ✕ and "Clear all" drop it. Every search with at
+  least one chip shows its count at the right of the chips ("48 photos · 3
+  videos", "No photos"), and the empty page adds "The search found no
+  matches."
 - **RAW gets no entry** (RAW stays hidden in the UI, see Decisions).
 - API: `type=photo|video|live` (repeatable) on the timeline, the tag and
   people suggestions and the common timeline `/api/all/timeline`; an unknown

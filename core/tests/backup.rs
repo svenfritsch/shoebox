@@ -325,3 +325,70 @@ fn the_backup_lists_open_files_in_the_file_manager_and_cards_know_their_facts() 
     assert_eq!(opened.lock().unwrap().len(), 2);
     server.stop().unwrap();
 }
+
+/// The timeline of a backup pair narrowed to what only one drive has
+/// (`compare=backup` / `compare=original`), and the photos that are different
+/// on the backup in one list of both drives (`compare=different`).
+#[test]
+fn the_timelines_can_be_narrowed_to_what_only_one_drive_of_a_pair_has() {
+    const SPAN: i64 = 1 << 40;
+    let (original, backup) = scenario("backup-compare");
+    let before = (original.snapshot(), backup.snapshot());
+    let server = start_many(&[&original, &backup], &[]);
+    let addr = server.addr;
+    let id = |lib: &Library| {
+        let name = lib.root.file_name().unwrap().to_str().unwrap().to_string();
+        get(addr, "/api/libraries").json().as_array().unwrap().iter().find(|l| l["name"] == name.as_str()).unwrap()["id"].as_str().unwrap().to_string()
+    };
+    let (i_orig, i_backup) = (id(&original), id(&backup));
+    let tl = |lib: &str, query: &str| get(addr, &format!("/raw/api/lib/{lib}/timeline?{query}"));
+
+    // Nothing is a backup yet: there is nothing to compare with.
+    assert_eq!(tl(&i_backup, "compare=backup").status, 400);
+    assert_eq!(get(addr, "/raw/api/all/timeline?compare=different").status, 400);
+    assert_eq!(post(addr, "/raw/api/all/role", &json!({ "library": i_backup, "role": "backup", "of": i_orig })).status, 200);
+
+    // On the backup: what only it has (the old DSC_2001 and the deleted Bild 1).
+    let only_backup = tl(&i_backup, "compare=backup").json();
+    assert_eq!(only_backup["count"], 2, "{only_backup}");
+    let mut want = vec![id_of(&backup, "Familie/Weihnachten/DSC_2001.jpg"), id_of(&backup, "Ordner mit Leerzeichen/Bild 1.jpeg")];
+    want.sort();
+    let mut got = ids(&only_backup);
+    got.sort();
+    assert_eq!(got, want);
+    // It combines with the other filters.
+    assert_eq!(tl(&i_backup, "compare=backup&q=bild").json()["count"], 1);
+    // Without the filter the whole drive.
+    assert!(tl(&i_backup, "").json()["count"].as_u64().unwrap() > 2);
+
+    // On the original: what is not on the backup at all yet.
+    let only_original = tl(&i_orig, "compare=original").json();
+    assert_eq!(ids(&only_original), vec![id_of(&original, "Neu/neu.jpg")]);
+
+    // Only the right side of the pair; an unknown value is no filter.
+    assert_eq!(tl(&i_orig, "compare=backup").status, 400);
+    assert_eq!(tl(&i_backup, "compare=original").status, 400);
+    assert!(tl(&i_orig, "compare=nonsense").json()["count"].as_u64().unwrap() > 1);
+
+    // Different on the backup: both versions of the edited photo, side by side.
+    let diff = get(addr, "/raw/api/all/timeline?compare=different").json();
+    assert_eq!(diff["count"], 2, "{diff}");
+    assert_eq!(diff["flat"], true);
+    let libs = diff["libs"].as_array().unwrap();
+    assert_eq!((libs[0]["role"].as_str(), libs[1]["role"].as_str()), (Some("unknown"), Some("backup")), "{libs:?}");
+    let got = ids(&diff);
+    assert_eq!(got, vec![id_of(&original, "Familie/Weihnachten/DSC_2001.jpg"), SPAN + id_of(&backup, "Familie/Weihnachten/DSC_2001.jpg")]);
+    // The badge in the info panel asks which photos only a drive has, whatever is open.
+    let only = get(addr, &format!("/raw/api/lib/{i_backup}/compare")).json();
+    assert_eq!(only["kind"], "backup");
+    assert_eq!(only["ids"].as_array().unwrap().len(), 2);
+    let only = get(addr, &format!("/raw/api/lib/{i_orig}/compare")).json();
+    assert_eq!((only["kind"].as_str(), only["ids"].clone()), (Some("original"), json!([id_of(&original, "Neu/neu.jpg")])));
+    // The normal common timeline leaves the backup out, as before.
+    let normal = get(addr, "/raw/api/all/timeline").json();
+    assert_eq!(normal["flat"], false);
+    assert_eq!(normal["libs"].as_array().unwrap().len(), 1);
+
+    server.stop().unwrap();
+    assert_eq!((original.snapshot(), backup.snapshot()), before, "only reading");
+}

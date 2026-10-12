@@ -17,10 +17,21 @@ current status and next step. Update its status table when a phase moves.
   in `organize.rs`: rename only, never copy, never replace, and only files
   that still match the index. There is no import: photos are copied onto the
   drive in the file manager (which keeps their dates) and a scan finds them.
+- Moving photos (`organize::move_files_with`) and trashing them from the photo
+  view or selection (`organize::trash_files_tidy`, `/api/trash`) or removing
+  copies on the duplicates screen or with "Delete the new copies"
+  (`duplicates::remove_copies_tidy`) also remove a
+  folder the photos left, only if nothing is in it but system bookkeeping files
+  (`classify::is_ignored`: `.DS_Store`, `._*`, `Thumbs.db`; those go with it) and
+  `remove_dir` succeeds (so never one with a subfolder or any other file),
+  never the library root, and report it (`removed_folders`). A restore from
+  the trash creates the folder again (`ensure_folder`); the trash keeps the
+  full path.
 - After a scan, `arrivals::cleanup` (launcher button "Delete the new copies")
   may remove files the scan added whose content (full hash) was on the drive
   before that scan, through `duplicates::remove_copies` (the older copy stays;
-  trash or, if asked, for good). Never anything but those new copies.
+  trash or, if asked, for good). Never anything but those new copies (and the
+  folder they leave empty, see above).
 - The one exception: turning a JPEG (`organize::rotate`) overwrites the two
   bytes of its EXIF Orientation tag in place, only when the file matches the
   index, and checks the full hash afterwards (old content plus those two
@@ -34,6 +45,22 @@ current status and next step. Update its status table when a phase moves.
   Each goes through `organize::trash_files` (a rename into the backup's own
   trash, only if the file still matches the backup's index), emptied again
   only if the user asked for "for good". Never anything on the original.
+- Export (`export.rs`, phase 13; the dialog is `core/web/export.js`) only
+  reads originals: it copies the photos asked for (plus, if ticked, their RAW
+  files and Live Photo videos) into a new folder the user chose, which must not
+  be inside the library. Every read is under the guard (the file matches the
+  index before, does not change while it is read; it is hashed while copied and
+  the copy is hashed again from the destination). Nothing is written next to an
+  original or into an index. An existing export folder is merged: never
+  replaced, nothing deleted, only files that are ours (a number and a name in
+  the set) get a new number. A destination on a drive that has a `.shoebox`
+  folder is allowed after a question (its next scan finds the copies). It only
+  answers to a browser on this computer (`/api/export/*`, `info.export`).
+  Collection tag and numbering are browser settings, like Maps.
+- The recognizer (Python) runs only from `recognizer/` next to the program
+  (`recognize::worker_dirs`; for a program in the older `<drive>/.shoebox/bin/`
+  layout also that drive's `.shoebox/recognizer/`), never from the `.shoebox/`
+  of another drive: a drive from somebody else could bring code of its own.
 - Moving to the trash from the photo view and the timeline selection is off by
   default: the library setting `allow_trash` (Settings, "Allow move to trash")
   shows the trash icon and the selection button.
@@ -41,11 +68,17 @@ current status and next step. Update its status table when a phase moves.
   browser as `shoebox-maps`, not per drive). The browser
   loads the tiles; shoebox never fetches or stores one. A position the user
   gives a photo lives in `library.db` (`geo_overrides`) only, never in the file.
+- Estimated dates (phase 12): a date the user gives a photo (`date_estimates`,
+  year, month or day) lives in `library.db` only, never in the file, and wins on
+  the timeline over the capture date in the file; the file's date is shown in the
+  info panel row "EXIF" and returns when the estimate is removed.
 - Licences: `LICENSE.txt` (all rights reserved, private use) and the generated
   `THIRD-PARTY-LICENSES.txt` go into the release archive. After a change to
   `Cargo.lock`, `scripts/build-deps.sh` or `core/web/vendor/` run
   `python3 scripts/third-party-licenses.py`. Do not call shoebox "open source"
-  in texts. Open items before giving it to others: see "Before giving shoebox
+  in texts. Icons are our own line drawings (`lineIcon` in `core/web/app.js`,
+  the guide's symbols); never copy path data from an icon set (Material
+  Symbols, Feather, ...), which would need a licence entry. Open items before giving it to others: see "Before giving shoebox
   to others" in docs/plan.md.
 - UI text is never hard-coded: `tr()`/`trn()`/`data-i18n` with a key in both
   `core/i18n/en.json` and `de.json` (see docs/phase8.md; `core/tests/i18n.rs`
@@ -57,17 +90,13 @@ current status and next step. Update its status table when a phase moves.
   that adds, removes or alters something a person can see or do (the photo app,
   the launcher, a button, a setting, what a command does, the safety rules
   above) updates both files in the same pull request, and removing a feature
-  removes it from the guide. Before finishing, grep both files for the old
-  behaviour and its UI names (`grep -n -i '<word>' docs/guide/shoebox-*.html`)
-  and read the guide's pages that touch it: the feature cards, the "at a
-  glance" legend (its numbered dots sit at fixed positions on `ui-overview`,
-  one dot per legend item, in the order of the screen), the typical session,
-  the launcher tasks, the sections on the feature, the FAQ and "Your photos are
-  safe". If the screen changed visibly, regenerate the screenshots
-  (`docs/guide/README.md`) and check that the dots still sit on the right
-  controls; the sample screenshots must not use a word that is a feature now
-  (the tag "Favorites" is the heart). Then run `python3 docs/guide/html2txt.py`
-  and commit the `.txt` files. Say in the pull request what changed in the
+  removes it from the guide. Follow the `guide` skill
+  (`.claude/skills/guide/SKILL.md`): which sections to read, how to keep both
+  languages in step, when a screenshot step or a dot needs you. Screenshots and
+  the `.txt` copies are not in git: CI makes them from the code
+  (`.github/workflows/guide.yml`, artifact `guide`, and every release), so do
+  not build shoebox or run a browser just for the guide. Run
+  `python3 docs/guide/check.py` and say in the pull request what changed in the
   guide, or that it is not affected. Look at `main` first: a pull request
   stacked on a branch that is already merged never reaches `main`.
 

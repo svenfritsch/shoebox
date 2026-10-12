@@ -15,7 +15,7 @@ pub const FILE: &str = "library.db";
 const BACKUP_SUFFIX: &str = ".bak";
 
 /// Bump when the schema changes and add a step to `migrate`.
-const SCHEMA_VERSION: i32 = 13;
+const SCHEMA_VERSION: i32 = 15;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -247,11 +247,11 @@ CREATE TABLE IF NOT EXISTS face_species (
 CREATE INDEX IF NOT EXISTS face_species_key ON face_species(key);
 ";
 
-/// v13 (phase 9): lines of text the user does not want to find a photo by.
+/// v15 (phase 9): lines of text the user does not want to find a photo by.
 /// By content and the folded text of the line (`text::index_form`), so the
 /// decision holds when the photo moves and when the text is read again; the
 /// text itself is a cache in `recognition.db` (`text.rs`).
-const SCHEMA_V13: &str = "
+const SCHEMA_V15: &str = "
 CREATE TABLE IF NOT EXISTS text_hidden (
     key  TEXT NOT NULL,           -- files.quick_hash
     norm TEXT NOT NULL,           -- recog.text_lines.text_norm
@@ -382,6 +382,19 @@ CREATE TABLE IF NOT EXISTS shot_marks (
 );
 ";
 
+/// v13 (phase 12): a date the user gave a photo (year, month or day), by content
+/// like `taken_overrides`. It wins on the timeline over the capture date in the
+/// file, which stays in `files.taken`. Nothing is written to a file.
+const SCHEMA_V13: &str = "
+CREATE TABLE IF NOT EXISTS date_estimates (
+    key   TEXT PRIMARY KEY,   -- files.quick_hash
+    year  INTEGER NOT NULL,
+    month INTEGER,            -- NULL: only the year is known
+    day   INTEGER,            -- NULL: month or year only; only with a month
+    at    INTEGER NOT NULL
+);
+";
+
 fn migrate(conn: &Connection) -> Result<()> {
     let version: i32 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
     if version > SCHEMA_VERSION {
@@ -483,6 +496,23 @@ fn migrate(conn: &Connection) -> Result<()> {
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V13)?;
         tx.pragma_update(None, "user_version", 13)?;
+        tx.commit()?;
+    }
+    if version < 14 {
+        let tx = conn.unchecked_transaction()?;
+        // When a photo was last given the own tag (Unix seconds): the tag
+        // fields offer the tags used last first. Older rows stay empty. A
+        // re-run (the tests lower user_version) must not add it twice.
+        if !has_column(&tx, "main", "file_tags", "added_at")? {
+            tx.execute_batch("ALTER TABLE file_tags ADD COLUMN added_at INTEGER;")?;
+        }
+        tx.pragma_update(None, "user_version", 14)?;
+        tx.commit()?;
+    }
+    if version < 15 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V15)?;
+        tx.pragma_update(None, "user_version", 15)?;
         tx.commit()?;
     }
     Ok(())

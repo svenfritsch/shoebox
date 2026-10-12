@@ -143,7 +143,8 @@ fn tag_ref(conn: &Connection, id: i64) -> Result<TagRef> {
 }
 
 /// Give files an own tag. Unknown ids are skipped; files that have it
-/// already (as an own tag) count as unchanged.
+/// already (as an own tag) count as unchanged, but the tag still counts as
+/// used just now (`added_at`), so the tag fields offer it first.
 pub fn add(conn: &Connection, ids: &[i64], name: &str) -> Result<Changed> {
     let name = check_name(name)?;
     let tx = conn.unchecked_transaction()?;
@@ -155,6 +156,13 @@ pub fn add(conn: &Connection, ids: &[i64], name: &str) -> Result<Changed> {
         )?;
         for id in ids {
             files += insert.execute(params![id, tag])? as u64;
+        }
+        let mut used = tx.prepare(
+            "UPDATE file_tags SET added_at = ?3 WHERE file_id = ?1 AND tag_id = ?2 AND source = 'user'",
+        )?;
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64;
+        for id in ids {
+            used.execute(params![id, tag, now])?;
         }
     }
     let tag = tag_ref(&tx, tag)?;
@@ -277,6 +285,9 @@ pub struct UserData {
     /// Positions the user gave and named places on the map (version 5).
     #[serde(flatten)]
     pub geo: crate::geo::UserGeo,
+    /// Estimated capture dates (version 6).
+    #[serde(flatten)]
+    pub dates: crate::dates::UserDates,
 }
 
 #[derive(Debug, Serialize)]
@@ -417,7 +428,7 @@ pub fn user_data(conn: &Connection) -> Result<UserData> {
     own_tags.sort_by_key(|t| t.name.to_lowercase());
     Ok(UserData {
         shoebox: env!("CARGO_PKG_VERSION"),
-        version: 5,
+        version: 6,
         written_at: db::now(),
         own_tags,
         taken_overrides: taken_overrides(conn)?,
@@ -426,6 +437,7 @@ pub fn user_data(conn: &Connection) -> Result<UserData> {
         text_hidden: text_hidden(conn)?,
         people: crate::people::user_data(conn)?,
         geo: crate::geo::user_data(conn)?,
+        dates: crate::dates::user_data(conn)?,
     })
 }
 

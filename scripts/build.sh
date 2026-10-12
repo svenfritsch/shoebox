@@ -4,8 +4,8 @@
 #   scripts/build.sh [rust-target] [test]   (default: the host target)
 #
 # With "test", runs the unit and integration tests for that target instead of a
-# release build (set SHOEBOX_FIXTURES to a make-fixtures.sh output to include
-# the real sample files).
+# release build, with cargo-nextest if it is installed (set SHOEBOX_FIXTURES to
+# a make-fixtures.sh output to include the real sample files).
 #
 # Static deps are built once per target into $DEPS_DIR (default: target/deps).
 set -eu
@@ -31,7 +31,13 @@ case "$TARGET" in
 esac
 
 if [ "${2:-}" = test ]; then
-    cargo test --manifest-path core/Cargo.toml --target "$TARGET"
+    # cargo-nextest (if installed, as on CI) runs every test in its own process
+    # and all test files at once; cargo test runs the files one after another.
+    if cargo nextest --version >/dev/null 2>&1; then
+        cargo nextest run --manifest-path core/Cargo.toml --target "$TARGET" --no-fail-fast
+    else
+        cargo test --manifest-path core/Cargo.toml --target "$TARGET"
+    fi
 else
     cargo build --release --manifest-path core/Cargo.toml --target "$TARGET"
     echo "built $TARGET_DIR/$TARGET/release/shoebox"

@@ -73,7 +73,8 @@ iPads) is embedded with `rust-embed`.
 
 - **Timeline order.** Capture date; without one, the month of the nearest
   `YYYY-MM Name` folder; failing that, the modification date (local time).
-  The info panel says which. Grouped by month in the UI.
+  The info panel says which. Grouped by month in the UI. (Phase 12 puts a date
+  the user gave a photo first, see "Dates shown for a photo" in plan.md.)
 - **Hidden:** RAW files (their JPEG/HEIC twin is shown) and missing files.
 - **Live Photos:** a video of at most 6 s with the same folder and name as a
   JPEG/HEIC is folded into the still ("LIVE" badge, played from the viewer).

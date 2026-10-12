@@ -349,13 +349,13 @@ impl WorkerCommand {
 /// else the first with a `recognizer.py`. A folder that has only the faces
 /// does not hide an install of the pets, and one installed on another kind of
 /// Mac (no `runtime/<os>-<arch>/` here) does not hide a complete one.
-pub fn find_worker(root: &Path, explicit: Option<&Path>) -> Option<WorkerCommand> {
-    find_worker_for(root, explicit, false, false)
+pub fn find_worker(explicit: Option<&Path>) -> Option<WorkerCommand> {
+    find_worker_for(explicit, false, false)
 }
 
 /// [`find_worker`] for a run that needs the pet models when `pets` is set and
 /// the text models when `text` is set (the face models only when neither is).
-pub fn find_worker_for(root: &Path, explicit: Option<&Path>, pets: bool, text: bool) -> Option<WorkerCommand> {
+pub fn find_worker_for(explicit: Option<&Path>, pets: bool, text: bool) -> Option<WorkerCommand> {
     let explicit = explicit
         .map(Path::to_path_buf)
         .or_else(|| std::env::var_os("SHOEBOX_RECOGNIZER").filter(|v| !v.is_empty()).map(PathBuf::from));
@@ -366,7 +366,7 @@ pub fn find_worker_for(root: &Path, explicit: Option<&Path>, pets: bool, text: b
         }
         return Some(WorkerCommand { program, args: Vec::new() });
     }
-    let dirs: Vec<PathBuf> = worker_dirs(Some(root)).into_iter().filter(|d| d.join("recognizer.py").is_file()).collect();
+    let dirs: Vec<PathBuf> = worker_dirs().into_iter().filter(|d| d.join("recognizer.py").is_file()).collect();
     let models = |d: &PathBuf| {
         let base = if pets {
             has_pets(d)
@@ -385,18 +385,21 @@ pub fn find_worker_for(root: &Path, explicit: Option<&Path>, pets: bool, text: b
     Some(WorkerCommand { program: python(dir)?, args: vec![dir.join("recognizer.py").into_os_string()] })
 }
 
-/// Where an installed recognizer is looked for, best first: `recognizer/` next
-/// to the shoebox program (the downloaded folder, on the computer or on a
-/// drive), then the drive's own `.shoebox/recognizer/` (made by
-/// `install.sh <drive>` or `install.ps1 -Root <drive>`; a program in the older `.shoebox/bin/` layout lands
-/// here too). The drive's only serves when nothing is installed next to the
-/// program, so a program folder on the computer is used for every drive.
-pub fn worker_dirs(root: Option<&Path>) -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = Vec::new();
-    if let Some(bin) = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)) {
-        dirs.push(bin.join("recognizer"));
-    }
-    dirs.extend(root.map(|r| r.join(db::DIR).join("recognizer")));
+/// Where an installed recognizer is looked for: only with the shoebox program
+/// that runs (see [`worker_dirs_of`]).
+pub fn worker_dirs() -> Vec<PathBuf> {
+    std::env::current_exe().map(|exe| worker_dirs_of(&exe)).unwrap_or_default()
+}
+
+/// The recognizer folders that belong to the program `exe`, best first:
+/// `recognizer/` next to it (the downloaded folder, on the computer or copied
+/// to a drive), and for a program in the older `<drive>/.shoebox/bin/` layout
+/// that drive's `.shoebox/recognizer/`. Never the `.shoebox/` of a drive the
+/// program does not run from: a drive from somebody else could bring a Python
+/// of its own, which would run as the user when they press Recognize.
+pub fn worker_dirs_of(exe: &Path) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = exe.parent().map(|bin| bin.join("recognizer")).into_iter().collect();
+    dirs.extend(crate::launcher::drive_of_binary(exe).map(|drive| drive.join(db::DIR).join("recognizer")));
     dirs
 }
 
@@ -418,8 +421,8 @@ fn has_text(dir: &Path) -> bool {
     TEXT_MODELS.iter().all(|m| dir.join("models").join(m).is_file())
 }
 
-/// What can be recognized for a library: the add-ons found by
-/// [`worker_dirs`]. Nothing is started; the files are looked at.
+/// What can be recognized: the add-ons found by [`worker_dirs`], the same for
+/// every drive. Nothing is started; the files are looked at.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Installed {
     /// The standalone Python and OpenCV for this kind of computer.
@@ -437,8 +440,8 @@ pub struct Installed {
     pub dir: Option<PathBuf>,
 }
 
-pub fn installed(root: Option<&Path>) -> Installed {
-    let dirs: Vec<PathBuf> = worker_dirs(root).into_iter().filter(|d| d.join("recognizer.py").is_file()).collect();
+pub fn installed() -> Installed {
+    let dirs: Vec<PathBuf> = worker_dirs().into_iter().filter(|d| d.join("recognizer.py").is_file()).collect();
     // Only a folder with the Python for this computer counts as installed:
     // the models work everywhere, the runtime is per kind of computer.
     let ready: Vec<&PathBuf> = dirs.iter().filter(|d| bundled_python(d).is_some()).collect();
@@ -594,7 +597,7 @@ pub fn install(dir: &Path, faces: bool, pets: bool, text: bool) -> Result<Instal
     if !status.success() {
         bail!("the installation failed ({status}); check the internet connection and try again");
     }
-    Ok(installed(None))
+    Ok(installed())
 }
 
 // ---------------------------------------------------------------- the worker
@@ -1396,11 +1399,10 @@ pub fn run(opts: &Options) -> Result<Stats> {
     if !db_path.is_file() {
         bail!("no index at {} (run `shoebox scan` first)", db_path.display());
     }
-    let cmd = find_worker_for(&root, opts.recognizer.as_deref(), opts.pets && !opts.text_only, opts.text).ok_or_else(|| {
+    let cmd = find_worker_for(opts.recognizer.as_deref(), opts.pets && !opts.text_only, opts.text).ok_or_else(|| {
         anyhow!(
-            "face recognition is not installed: no {} found, nor a recognizer/ folder next to shoebox \
-             (install the Faces add-on in the Control Panel, step 1, or see recognizer/README.md)",
-            root.join(db::DIR).join("recognizer").join("recognizer.py").display()
+            "face recognition is not installed: no recognizer/ folder next to shoebox \
+             (install the Faces add-on in the Control Panel, step 1, or see recognizer/README.md)"
         )
     })?;
     // Shared: a scan or `serve` may be running alongside.
@@ -2326,6 +2328,22 @@ mod tests {
 
     fn args_of(c: &Command) -> Vec<String> {
         c.get_args().map(|a| a.to_string_lossy().into_owned()).collect()
+    }
+
+    #[test]
+    fn the_recognizer_comes_only_from_the_program() {
+        // Downloaded folder, on the computer or copied to a drive: its recognizer/ only.
+        assert_eq!(worker_dirs_of(Path::new("/Users/a/shoebox-macos/shoebox")), [PathBuf::from("/Users/a/shoebox-macos/recognizer")]);
+        assert_eq!(
+            worker_dirs_of(Path::new("/Volumes/Fotos/shoebox-macos/shoebox")),
+            [PathBuf::from("/Volumes/Fotos/shoebox-macos/recognizer")],
+            "never the drive's own .shoebox/recognizer"
+        );
+        // The older layout: the program is inside the drive's .shoebox/bin/.
+        assert_eq!(
+            worker_dirs_of(Path::new("/Volumes/Fotos/.shoebox/bin/shoebox-macos")),
+            [PathBuf::from("/Volumes/Fotos/.shoebox/bin/recognizer"), PathBuf::from("/Volumes/Fotos/.shoebox/recognizer")]
+        );
     }
 
     #[test]

@@ -40,12 +40,12 @@ together). Then one of two ways:
 The Control Panel's step 1, **Add-ons**, installs Faces (~40 MB) and/or Pets
 (~140 MB), independent of each other, on top of Python and OpenCV (~200 MB per
 kind of computer, always installed with the first add-on). Where shoebox looks
-for them: `recognizer/` next to the program first, the drive's own
-`.shoebox/recognizer/` last. The models are the same on every computer; Python
+for them: only `recognizer/` next to the program (never a drive's own
+`.shoebox/`, which a drive from somebody else could fill). The models are the same on every computer; Python
 and OpenCV is per kind (`recognizer/runtime/<os>-<arch>/`), so a drive moved
 to another kind of Mac needs one more install there (the models are kept).
-Terminal users: `recognizer/install.sh [--faces] [--pets] [library-root]`, on
-Windows `recognizer\install.ps1 [-Faces] [-Pets] [-Root library-root]`
+Terminal users: `recognizer/install.sh [--faces] [--pets]`, on
+Windows `recognizer\install.ps1 [-Faces] [-Pets]`
 ([recognizer/README.md](recognizer/README.md)).
 
 ## Guide
@@ -54,7 +54,8 @@ A landing page and handbook as plain HTML and text, one per language (English
 and German). They come in the `guide/` folder of `shoebox-macos.tar.gz` from
 every release: open `guide/shoebox-en.html` or `guide/shoebox-de.html` in a
 browser (`shoebox-en.txt` / `shoebox-de.txt` hold the same text). Sources and
-how to edit them: [docs/guide/](docs/guide/README.md).
+how to edit them: [docs/guide/](docs/guide/README.md). The screenshots and the
+text copies are made by CI from the code of each release, not kept in git.
 
 ## License
 

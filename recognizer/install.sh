@@ -3,12 +3,12 @@
 # OpenCV, numpy and the models, so `shoebox recognize` finds it without
 # anything installed on the computer.
 #
-#   recognizer/install.sh [--faces] [--pets] [--text] [library-root]
+#   recognizer/install.sh [--faces] [--pets] [--text]
 #
-# Without a library root it installs into the folder that holds this script
-# (next to the shoebox program; every drive you recognize then uses it). With
-# one, into <library-root>/.shoebox/recognizer/ (travels with that drive; it only
-# serves when nothing is installed next to the program).
+# It installs into the folder that holds this script, next to the shoebox
+# program; every drive you recognize uses it. shoebox runs the recognizer only
+# from there, never from a drive's .shoebox folder (a drive from somebody else
+# could bring a Python of its own).
 #
 # The add-ons are independent: --faces (face models, ~40 MB), --pets (cat and
 # dog models, ~140 MB) and --text (read the words in photos: the rapidocr
@@ -28,13 +28,12 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 PETS=
 FACES=
 TEXT=
-ROOT=
 for arg in "$@"; do
     case "$arg" in
         --pets) PETS=1 ;;
         --faces) FACES=1 ;;
         --text) TEXT=1 ;;
-        *) ROOT=$arg ;;
+        *) echo "unknown argument $arg (the add-ons go next to the shoebox program, not onto a drive)" >&2; exit 1 ;;
     esac
 done
 if [ -z "$FACES$PETS$TEXT" ] && [ -t 0 ]; then
@@ -49,12 +48,7 @@ if [ -z "$FACES$PETS$TEXT" ] && [ -t 0 ]; then
     case "$answer" in [yYjJ]*) TEXT=1 ;; esac
 fi
 [ -n "$FACES$PETS$TEXT" ] || { echo "nothing to install: use --faces, --pets and/or --text" >&2; exit 1; }
-if [ -n "$ROOT" ]; then
-    DEST="$ROOT/.shoebox/recognizer"
-    [ -d "$ROOT/.shoebox" ] || { echo "$ROOT has no .shoebox folder (run shoebox scan first)" >&2; exit 1; }
-else
-    DEST=$HERE
-fi
+DEST=$HERE
 PBS_TAG=20251014
 PY=3.12.12
 
@@ -156,7 +150,6 @@ if [ -n "$TEXT" ] && [ -z "$TEXT_FAILED" ]; then
         echo "copied $f"
     done
 fi
-[ "$DEST" = "$HERE" ] || cp "$HERE/recognizer.py" "$DEST/recognizer.py"
 
 echo "Checking…"
 HELLO=$(printf '' | "$DEST/runtime/$PLATFORM/bin/python3" "$DEST/recognizer.py" ${PETS:+--pets} $TEXT_ARG 2>/dev/null | head -n 1)
@@ -168,8 +161,4 @@ if [ -n "$TEXT_FAILED" ]; then
     echo "Done, except Text: it is not available on this computer. Text read on another computer still works here." >&2
     exit 3
 fi
-if [ -n "$ROOT" ]; then
-    echo "Done. Run: shoebox recognize \"$ROOT\""
-else
-    echo "Done. Run Recognize in the shoebox launcher for any drive."
-fi
+echo "Done. Run Recognize in the shoebox launcher for any drive."

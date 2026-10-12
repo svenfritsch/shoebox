@@ -17,7 +17,7 @@ var OVERSCAN = 600; // px above and below the viewport that stay rendered
 var KIND_BADGE = { v: '▶', h: '', j: '', p: '' };
 
 var state = {
-  filter: { folder: null, tags: [], people: [], q: '', view: null, id: null, tab: null },
+  filter: { folder: null, tags: [], people: [], manual: false, q: '', view: null, id: null, tab: null },
   selecting: false,
   selected: {},      // id -> true
   anchor: null,      // index of the last photo clicked while selecting (Shift-click ranges)
@@ -116,6 +116,7 @@ $('login-form').addEventListener('submit', function (ev) {
 // ------------------------------------------------------------------ filters (in the URL hash)
 
 var TYPES = ['photo', 'video', 'live', 'screenshot'];
+var COMPARES = ['backup', 'original', 'different'];
 var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person', 'drives', 'settings', 'pets', 'locations', 'text'];
 // Pet search terms (`pet=` in the URL and the API): a species or any pet.
 var PET_TERMS = {
@@ -147,7 +148,7 @@ function prefixOf(v) {
 }
 
 function readHash() {
-  var f = { folder: null, tags: [], people: [], pets: [], texts: [], names: [], types: [], fav: false, place: null, q: '', view: null, id: null, tab: null };
+  var f = { folder: null, tags: [], people: [], pets: [], texts: [], names: [], types: [], fav: false, manual: false, place: null, dates: [], nodate: false, compare: '', q: '', view: null, id: null, tab: null };
   location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
     var i = kv.indexOf('=');
     if (i < 0) return;
@@ -163,7 +164,13 @@ function readHash() {
     if (k === 'text' && v.trim() && f.texts.indexOf(v) < 0) f.texts.push(v);
     if (k === 'name' && v.trim() && f.names.indexOf(v) < 0) f.names.push(v);
     if (k === 'fav') f.fav = v === '1';
+    if (k === 'manual') f.manual = v === '1';
     if (k === 'place') f.place = parseInt(v, 10) || null;
+    // Photos dated inside a year, month or day (several: all must match), and those that need a date.
+    if (k === 'date' && /^\d{4}(-\d{2}(-\d{2})?)?$/.test(v) && f.dates.indexOf(v) < 0) f.dates.push(v);
+    if (k === 'nodate') f.nodate = v === '1';
+    // Only on the backup / only on the original / different on the backup (Manage drives).
+    if (k === 'compare' && COMPARES.indexOf(v) >= 0) f.compare = v;
     if (k === 'q') f.q = v;
     if (k === 'view' && VIEWS.indexOf(v) >= 0) f.view = v;
     if (k === 'id') f.id = parseInt(v, 10) || null;
@@ -172,6 +179,7 @@ function readHash() {
   // Over all drives only these pages exist (the others belong to one drive).
   if (isAll() && f.view && f.view !== 'duplicates' && f.view !== 'drives') f.view = null;
   if (isAll()) f.place = null; // places belong to one drive
+  if (isAll() || !f.tags.length) f.manual = false; // "manual tags only" belongs to the tags of one drive
   return f;
 }
 
@@ -179,7 +187,7 @@ function readHash() {
 // folder, any number of tags and people (`tag`, `person` repeated in the
 // URL) and free text.
 function setFilter(f) {
-  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], text: f.texts || [], name: f.names || [], type: f.types || [], fav: f.fav ? 1 : null, place: f.place, q: f.q }).replace(/^\?/, '');
+  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], text: f.texts || [], name: f.names || [], type: f.types || [], fav: f.fav ? 1 : null, manual: f.manual && (f.tags || []).length ? 1 : null, place: f.place, date: f.dates || [], nodate: f.nodate ? 1 : null, compare: f.compare || null, q: f.q }).replace(/^\?/, '');
   if (h === location.hash.replace(/^#/, '')) { applyFilter(); return; }
   location.hash = h; // triggers hashchange -> applyFilter
 }
@@ -189,12 +197,31 @@ function withFilter(changes) {
   var f = state.filter;
   // A place picked on the Locations page goes with the search to the timeline.
   var place = f.view === 'locations' ? f.id : f.place;
-  return Object.assign({ folder: f.folder, tags: f.tags.slice(), people: f.people.slice(), pets: f.pets.slice(), texts: f.texts.slice(), names: f.names.slice(), types: f.types.slice(), fav: f.fav, place: place, q: f.q }, changes);
+  return Object.assign({ folder: f.folder, tags: f.tags.slice(), manual: f.manual && !('tags' in changes), people: f.people.slice(), pets: f.pets.slice(), texts: f.texts.slice(), names: f.names.slice(), types: f.types.slice(), fav: f.fav, place: place, dates: f.dates.slice(), nodate: f.nodate, compare: f.compare, q: f.q }, changes);
 }
 
 function showView(view, id, tab) { setFilter({ view: view, id: id, tab: tab, folder: null, tags: [], people: [], q: '' }); }
 
+// The hash the page is showing; navigating away from a selection asks first.
+var shownHash = location.hash, revertingHash = false;
+
 function applyFilter() {
+  if (revertingHash) { revertingHash = false; return; }
+  var moved = location.hash !== shownHash;
+  var wanted = location.hash;
+  // Another list while photos are selected: put the old page back and ask. Typing
+  // in the search box is not asked about (it would ask on every key).
+  if (moved && state.selecting && selectedIds().length && readHash().q === state.filter.q) {
+    revertingHash = true;
+    location.hash = shownHash;
+    var n = trn('count.photos', selectedIds().length);
+    openModal(tr('sel.leave_title'), tr('sel.leave_text', { count: n }), [
+      { label: tr('sel.leave_stay'), cls: 'quiet', focus: true },
+      { label: tr('sel.leave_go'), onclick: function () { endSelection(); location.hash = wanted; } },
+    ]);
+    return;
+  }
+  shownHash = location.hash;
   state.filter = readHash();
   $('search').value = state.filter.q;
   renderChips();
@@ -208,7 +235,9 @@ function applyFilter() {
   $('sizer').hidden = !!view;
   $('current-month').textContent = view && VIEW_LABELS[view] ? tr(VIEW_LABELS[view]) : '';
   var f = state.filter;
-  $('all').classList.toggle('active', !view && !f.folder && !f.tags.length && !f.people.length && !f.pets.length && !f.texts.length && !f.names.length && !f.place && !f.fav && !f.q);
+  $('all').classList.toggle('active', !view && !f.folder && !f.tags.length && !f.people.length && !f.pets.length && !f.texts.length && !f.names.length && !f.place && !f.fav && !f.dates.length && !f.nodate && !f.compare && !f.q);
+  $('nav-nodate').classList.toggle('active', !view && f.nodate);
+  if (isAll()) $('nav-nodate').hidden = true;
   $('nav-dups').classList.toggle('active', view === 'duplicates');
   $('nav-trash').classList.toggle('active', view === 'trash');
   $('nav-settings').classList.toggle('active', view === 'settings' || view === 'faces' || view === 'pets' || view === 'text');
@@ -218,8 +247,10 @@ function applyFilter() {
   document.body.classList.toggle('geo-view', view === 'locations');
   if (view !== 'locations') geoLeave();
   renderLocationsSection();
+  // Another tag, folder, search or page is another list: the selection (ids and
+  // bar) belongs to the one it was made in.
+  if (moved) endSelection();
   if (view) {
-    endSelection();
     $('empty').hidden = true;
     $('filters').hidden = true;
     $('scroller').scrollTop = 0;
@@ -237,8 +268,10 @@ function renderChips() {
   box.textContent = '';
   var f = state.filter;
   var add = function (label, clear, ic, title) {
-    var c = el('span', 'chip' + (ic ? ' ' + (ic === 'scan' ? 'text' : 'name') : ''), '');
-    if (ic) c.appendChild(icon(ic));
+    // `ic` is an icon element, or the name of one of our own icons (text and file name chips).
+    var named = typeof ic === 'string';
+    var c = el('span', 'chip' + (named ? ' ' + (ic === 'scan' ? 'text' : 'name') : ''), '');
+    if (ic) c.appendChild(named ? icon(ic) : ic);
     c.appendChild(document.createTextNode(label));
     if (title) c.title = title;
     var x = el('button', '', '✕');
@@ -249,7 +282,7 @@ function renderChips() {
   };
   if (f.folder && state.folderById[f.folder]) {
     var folder = state.folderById[f.folder];
-    add('📁 ' + (folder.path || folder.name), function () { setFilter(withFilter({ folder: null })); });
+    add(folder.path || folder.name, function () { setFilter(withFilter({ folder: null })); }, folderIcon());
     if (folder.path) {
       var edit = el('button', 'edit', '✎');
       edit.title = tr('chip.rename_folder');
@@ -258,7 +291,7 @@ function renderChips() {
     }
   }
   f.tags.forEach(function (id) {
-    add('# ' + (state.tagNames[id] || id), function () {
+    add('# ' + (state.tagNames[id] || id) + (f.manual ? ' · ' + tr('side.manual_only_short') : ''), function () {
       setFilter(withFilter({ tags: f.tags.filter(function (t) { return t !== id; }) }));
     });
   });
@@ -273,6 +306,8 @@ function renderChips() {
     });
   });
   if (f.fav) add('♥ ' + tr('fav.label'), function () { setFilter(withFilter({ fav: false })); });
+  // The Type drop-down's choice as a chip too, like the heart's.
+  if (f.types.length) add(f.types.length === 1 ? tr('types.' + f.types[0]) : f.types.map(typeLabel).join(', '), function () { setFilter(withFilter({ types: [] })); }, typeIcon(f.types));
   if (f.place) {
     var spot = placeOf(f.place);
     add('📍 ' + (spot ? spot.name : '…'), function () { setFilter(withFilter({ place: null })); });
@@ -287,6 +322,15 @@ function renderChips() {
   f.texts.forEach(function (term) {
     add(term, function () { setFilter(withFilter({ texts: f.texts.filter(function (n) { return n !== term; }) })); }, 'scan', tr('chip.text_hint', { term: term }));
   });
+  f.dates.forEach(function (term) {
+    add('📅 ' + dateTermLabel(term), function () { setFilter(withFilter({ dates: f.dates.filter(function (t) { return t !== term; }) })); });
+    box.lastChild.title = tr('dates.chip_hint', { date: dateTermLabel(term) });
+  });
+  if (f.nodate) add('📅 ' + (dates.needs ? tr('side.needs_date_n', { n: dates.needs }) : tr('side.needs_date')), function () { setFilter(withFilter({ nodate: false })); });
+  if (f.compare) {
+    add('⇄ ' + compareLabel(f.compare), function () { setFilter(withFilter({ compare: '' })); });
+    box.lastChild.classList.add('cmp');
+  }
   if (f.q) add('“' + f.q + '”', function () { setFilter(withFilter({ q: '' })); });
   var terms = box.children.length;
   if (terms) {
@@ -299,11 +343,44 @@ function renderChips() {
   if (terms >= 2) {
     var clear = el('button', 'chip clear', tr('chip.clear_all'));
     clear.title = tr('chip.clear_all_hint');
-    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], pets: [], texts: [], names: [], fav: false, place: null, q: '' }); };
+    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], pets: [], texts: [], names: [], types: [], fav: false, place: null, compare: '', q: '' }); };
     box.appendChild(clear);
   }
+  // How many the search finds, at the right; filled in when the timeline is in.
+  if (terms) {
+    box.appendChild(el('span', 'filter-count'));
+    showCount();
+  }
+  exportChip(box, f);
+  if (f.nodate) box.appendChild(el('p', 'filter-note', tr('side.needs_date_note')));
   personHead(box, f);
   box.hidden = !box.firstChild;
+}
+
+// "48 photos · 3 videos" for the list on screen, the number in bold; with one
+// type ticked in its own word ("356 Live Photos"), and "No photos" for none.
+// Only once the timeline for this very search has arrived (state.countFor).
+function showCount() {
+  var box = document.querySelector('#filters .filter-count');
+  if (!box) return;
+  box.textContent = '';
+  var d = state.data;
+  if (!d || state.countFor !== location.hash) return;
+  var types = state.filter.types;
+  var noun = types.length === 1 ? { photo: 'photos', video: 'videos', live: 'live', screenshot: 'screenshots' }[types[0]] : 'photos';
+  if (!d.count) { box.textContent = tr('filter.none.' + noun); return; }
+  var videos = 0;
+  for (var i = 0; i < d.count; i++) if (d.kinds[i] === 'v') videos++;
+  var parts = types.length === 1 ? [trn('count.' + noun, d.count)]
+    : [d.count - videos ? trn('count.photos', d.count - videos) : '', videos ? trn('count.videos', videos) : ''].filter(Boolean);
+  parts.forEach(function (text, k) {
+    if (k) box.appendChild(document.createTextNode(' · '));
+    var num = text.match(/^(.*?)([\d.,\u00a0\u202f']+)(.*)$/);
+    if (!num) { box.appendChild(document.createTextNode(text)); return; }
+    box.appendChild(document.createTextNode(num[1]));
+    box.appendChild(el('strong', '', num[2]));
+    box.appendChild(document.createTextNode(num[3]));
+  });
 }
 state.tagNames = {};
 state.personNames = {};
@@ -311,11 +388,28 @@ state.personSpecies = {}; // id -> cat, dog or pet, for people who are pets
 
 // ------------------------------------------------------------------ type filter
 
-// A check box drop-down: Photos (not screenshots), Videos (stand-alone only),
-// Live Photos and Screenshots.
+// A check box drop-down: Photos, Videos (stand-alone only), Live Photos and
+// Screenshots; every item is exactly one of them (browse::MediaType).
 // Any ticked type matches; it combines with the rest of the search.
 var typeBoxes = Array.prototype.slice.call($('types-menu').querySelectorAll('input'));
 function typeLabel(t) { return tr(t === 'live' ? 'types.live_short' : 'types.' + t); }
+
+// The Type chip's icon: one per type, the four squares for several.
+var TYPE_ICONS = {
+  photo: lineIcon('<rect x="3" y="7" width="18" height="13" rx="2.5"/><path d="M8.5 7l1.4-2.6h4.2L15.5 7"/><circle cx="12" cy="13.5" r="3.3"/>'),
+  video: lineIcon('<rect x="3" y="6.5" width="12" height="11" rx="2"/><path d="M15 10.5l5.5-3v9l-5.5-3z"/>'),
+  live: lineIcon('<circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l5.3-3.5z"/>'),
+  screenshot: lineIcon('<path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15"/>'),
+};
+var TYPE_ICON_MANY = lineIcon('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>');
+function typeIcon(types) {
+  var i = el('span', 'ficon');
+  i.setAttribute('aria-hidden', 'true');
+  i.innerHTML = types.length === 1 ? TYPE_ICONS[types[0]] : TYPE_ICON_MANY;
+  return i;
+}
+// The same icons in the drop-down, after each check box.
+typeBoxes.forEach(function (b) { b.parentNode.insertBefore(typeIcon([b.value]), b.nextSibling); });
 
 function markTypes() {
   markFavFilter();
@@ -352,8 +446,16 @@ function isFavTag(name) { return String(name).trim().toLowerCase() === FAV_TAG; 
 // What typing in a tag field means the heart (the server maps these to the tag too).
 var FAV_TYPED = [FAV_TAG, 'favorites', 'favourite', 'favourites', 'favorit', 'favoriten'];
 function meansFav(name) { return FAV_TYPED.indexOf(String(name).trim().toLowerCase()) >= 0; }
-var HEART_ON = '<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true"><path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>';
-var HEART_OFF = '<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" d="M12 20.4l-1.1-1C6 15.1 3 12.4 3 8.9 3 6.5 4.8 4.7 7.2 4.7c1.4 0 2.7.6 3.6 1.7l1.2 1.4 1.2-1.4c.9-1.1 2.2-1.7 3.6-1.7C19.2 4.7 21 6.5 21 8.9c0 3.5-3 6.2-7.9 10.5l-1.1 1z"/></svg>';
+// Our own drawn icons (no icon set): a 24 grid, round 2 px lines in the colour
+// of the text. The fill sits in the style so that rules like ".icon svg" do
+// not fill the outline.
+function lineIcon(paths, fill) {
+  return '<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" style="fill:' + (fill ? 'currentColor' : 'none') +
+    '" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + paths + '</svg>';
+}
+var HEART_PATH = '<path stroke-width="2.2" d="M12 19.5C8 16.8 4 13.6 4 9.6 4 7.1 5.9 5.2 8.2 5.2c1.6 0 3 .9 3.8 2.3.8-1.4 2.2-2.3 3.8-2.3 2.3 0 4.2 1.9 4.2 4.4 0 4-4 7.2-8 9.9z"/>';
+var HEART_ON = lineIcon(HEART_PATH, true);
+var HEART_OFF = lineIcon(HEART_PATH);
 
 function markFavFilter() {
   var on = !!state.filter.fav, b = $('fav-btn');
@@ -436,11 +538,25 @@ $('search').addEventListener('input', function () {
   var v = this.value;
   // On the Locations page typing looks for a place; the text only becomes a search with Enter.
   if (state.filter.view === 'locations' && geo.on) { suggest(v); return; }
+  // `date:` looks for a date; what follows is not a text search.
+  if (DATE_PREFIX.test(v)) { suggest(v); return; }
   // `text:` and `name:` are a term of their own: nothing is searched until Enter or a pick.
   if (!prefixOf(v)) searchTimer = setTimeout(function () { setFilter(withFilter({ q: v.trim() })); }, 300);
   suggest(v);
 });
-$('search').addEventListener('focus', function () { suggest(this.value); });
+$('search').addEventListener('focus', function () {
+  // A search shows another list: with photos selected, ask once when the box is
+  // entered (not on every key).
+  if (state.selecting && selectedIds().length && $('modal').hidden) {
+    this.blur();
+    openModal(tr('sel.leave_title'), tr('sel.search_text', { count: trn('count.photos', selectedIds().length) }), [
+      { label: tr('sel.leave_stay'), cls: 'quiet', focus: true },
+      { label: tr('sel.search_go'), onclick: function () { endSelection(); setTimeout(function () { $('search').focus(); }, 0); } },
+    ]);
+    return;
+  }
+  suggest(this.value);
+});
 $('search').addEventListener('blur', function () { setTimeout(closeSuggest, 150); });
 $('search').addEventListener('keydown', function (ev) {
   var open = !$('suggest').hidden && sugg.items.length;
@@ -453,6 +569,7 @@ $('search').addEventListener('keydown', function (ev) {
   } else if (ev.key === 'Enter') {
     ev.preventDefault();
     if (open && sugg.at >= 0) { pickSuggest(sugg.items[sugg.at]); return; }
+    if (DATE_PREFIX.test(this.value)) { if (sugg.items.length) pickSuggest(sugg.items[0]); return; }
     clearTimeout(searchTimer);
     closeSuggest();
     var pre = prefixOf(this.value);
@@ -471,6 +588,8 @@ $('search').addEventListener('keydown', function (ev) {
     else if (f.names.length) setFilter(withFilter({ names: f.names.slice(0, -1) }));
     else if (f.fav) setFilter(withFilter({ fav: false }));
     else if (f.place) setFilter(withFilter({ place: null }));
+    else if (f.nodate) setFilter(withFilter({ nodate: false }));
+    else if (f.dates.length) setFilter(withFilter({ dates: f.dates.slice(0, -1) }));
     else if (f.pets.length) setFilter(withFilter({ pets: f.pets.slice(0, -1) }));
     else if (f.people.length) setFilter(withFilter({ people: f.people.slice(0, -1) }));
     else if (f.tags.length) setFilter(withFilter({ tags: f.tags.slice(0, -1) }));
@@ -488,6 +607,103 @@ function favSuggestion(needle, f) {
   return [{ kind: 'fav', id: 'fav', label: tr('fav.label'), count: state.favCount }];
 }
 
+// ---- comparing the drives of a backup pair (Manage drives opens these views)
+
+function compareLabel(kind) { return tr(kind === 'backup' ? 'cmp.only_backup' : kind === 'original' ? 'cmp.only_original' : 'cmp.different'); }
+
+// The disk name of a drive (its folder's name only where that is all there is).
+function driveLabel(library) {
+  var d = ((drives.cmp && drives.cmp.drives) || []).filter(function (x) { return x.library === library; })[0];
+  if (d) return d.volume || d.name;
+  var l = drives.list.filter(function (x) { return x.id === library; })[0];
+  return l ? l.name : '';
+}
+
+// For the open drive, when it is one half of a backup pair: what only it has
+// (`kind` is the filter: `backup` on the backup, `original` on the drive it
+// copies), how many photos, and the other drive.
+function compareFor() {
+  if (isAll() || !drives.cmp || !drives.current) return null;
+  var id = drives.current.id, list = drives.cmp.backups;
+  var mine = list.filter(function (b) { return b.library === id; })[0];
+  if (mine) return mine.extra ? { kind: 'backup', count: mine.extra, other: mine.primary_library } : null;
+  var of = list.filter(function (b) { return b.primary_library === id; })[0];
+  return of && of.missing ? { kind: 'original', count: of.missing, other: of.library } : null;
+}
+
+// Counts of the drives and their backup checks, once per page load. A link
+// with a comparison the open drive cannot show is opened without it, and
+// the page says so.
+function loadCompare() {
+  drives.cmp = { backups: [], drives: [] };
+  if (drives.list.length < 2) { checkCompare(); return Promise.resolve(); }
+  return Promise.all([api('/api/all/backups?limit=0'), api('/api/all/drives')]).then(function (r) {
+    drives.cmp = { backups: r[0], drives: r[1] };
+  }).catch(function () {}).then(checkCompare).then(loadOnlyHere);
+}
+
+// Which photos of the open drive only it has (for the badge in the info panel, always).
+function loadOnlyHere() {
+  drives.only = {};
+  if (!compareFor()) return Promise.resolve();
+  return api(LIBAPI + '/compare').then(function (r) {
+    (r.ids || []).forEach(function (id) { drives.only[id] = true; });
+  }).catch(function () {});
+}
+
+function compareProblem(kind) {
+  var name = driveLabel(drives.current.id), backups = drives.cmp.backups;
+  var pair = backups.filter(function (b) { return b.primary_library; });
+  if (kind === 'different') {
+    if (!isAll()) return tr('cmp.gone_one', { name: name });
+    return pair.some(function (b) { return b.different; }) ? null : tr('cmp.gone_empty');
+  }
+  if (isAll()) return tr('cmp.gone_all');
+  var mine = backups.filter(function (b) { return b.library === drives.current.id; })[0];
+  var of = pair.filter(function (b) { return b.primary_library === drives.current.id; })[0];
+  if (kind === 'backup') {
+    if (!mine) return tr(of ? 'cmp.gone_original' : 'cmp.gone_nobackup', { name: name });
+    return mine.extra ? null : tr('cmp.gone_none', { name: name });
+  }
+  if (mine) return tr('cmp.gone_backup', { name: name });
+  if (!of) return tr('cmp.gone_nobackup', { name: name });
+  return of.missing ? null : tr('cmp.gone_none', { name: name });
+}
+
+function checkCompare() {
+  var kind = readHash().compare;
+  if (!kind) return;
+  var why = compareProblem(kind);
+  if (!why) return;
+  var h = location.hash.replace(/^#/, '').split('&').filter(function (kv) { return kv.indexOf('compare=') !== 0; }).join('&');
+  history.replaceState(null, '', location.pathname + location.search + (h ? '#' + h : ''));
+  toast(tr('cmp.removed', { filter: compareLabel(kind), reason: why }));
+}
+
+// The badge next to the name in the info panel for a photo that only this
+// drive of the pair has (whatever is open): the sentence is its tooltip.
+function compareBadge(fileId) {
+  var c = compareFor();
+  if (isAll() || !c || !drives.only || !drives.only[fileId]) return null;
+  var kind = c.kind;
+  var b = el('span', 'cmp-badge ' + kind, tr(kind === 'backup' ? 'cmp.only_backup' : 'cmp.not_backed_up'));
+  b.title = tr(kind === 'backup' ? 'cmp.tip_only_backup' : 'cmp.tip_not_backed_up', { drive: driveLabel(drives.current.id), other: driveLabel(c.other) });
+  return b;
+}
+
+// "Only on backup" / "Only on original" in the search (typed as "only on",
+// "nur auf" or "backup"), for a drive that is one half of a backup pair and
+// has such photos. The photos are compared by content with the other drive.
+function compareSuggestion(needle, f) {
+  var low = needle.toLowerCase(), c = compareFor();
+  if (!c || f.compare || low.length < 2) return [];
+  var label = compareLabel(c.kind);
+  // The label in this language and in the other one, and the word that is the same in both.
+  var words = [label.toLowerCase(), 'only on ' + c.kind, 'nur auf ' + c.kind, 'backup'];
+  if (!words.some(function (w) { return w.indexOf(low) === 0; })) return [];
+  return [{ kind: 'compare', id: c.kind, label: label, count: c.count }];
+}
+
 function suggest(text) {
   var seq = ++sugg.seq, f = state.filter;
   // On the Locations page the search finds places: picking one shows it.
@@ -495,16 +711,28 @@ function suggest(text) {
   if (f.view) { closeSuggest(); return; }
   var pre = prefixOf(text);
   if (pre) { showSuggest(pre.term ? [{ kind: pre.kind, id: pre.term, label: pre.term, prefixed: true, hint: pre.kind === 'text' ? tr('search.text_prefixed_hint') : tr('search.name_prefixed_hint') }] : [], pre.term ? null : (pre.kind === 'text' ? tr('search.prefix_empty_text') : tr('search.prefix_empty_name'))); return; }
+  // `date:` (or `datum:`): only dates, a month alone lists it in every year.
+  var typed = DATE_PREFIX.exec(text);
+  if (typed) {
+    if (isAll()) { closeSuggest(); return; }
+    var after = typed[1].trim();
+    suggestDates(after, true, datesWithin(f)).then(function (rows) {
+      if (seq !== sugg.seq) return;
+      showSuggest(dateItems(rows), after && rows.length ? '' : tr('dates.hint_prefix'));
+    });
+    return;
+  }
   if (isAll()) { suggestAll(text, seq); return; }
   var needle = text.trim();
-  var within = { q: needle, tag: f.tags, person: f.people, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place };
+  var within = { q: needle, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place };
   Promise.all([
-    api(LIBAPI + '/tags' + query(Object.assign({ limit: 8 }, within))),
+    api(LIBAPI + '/tags' + query(Object.assign({ limit: 8, own: 1 }, within))),
     api(LIBAPI + '/people/search' + query(Object.assign({ limit: 6 }, within))).catch(function () { return []; }),
     api(LIBAPI + '/pets/search' + query(within)).catch(function () { return []; }),
+    suggestDates(needle, false, datesWithin(f)),
   ]).then(function (r) {
     if (seq !== sugg.seq) return;
-    var items = favSuggestion(needle, f);
+    var items = compareSuggestion(needle, f).concat(favSuggestion(needle, f));
     items = items.concat(r[1].map(function (p) {
       state.personNames[p.id] = p.name;
       state.personSpecies[p.id] = p.species;
@@ -524,6 +752,8 @@ function suggest(text) {
         .forEach(function (fo) { items.push({ kind: 'folder', id: fo.id, label: fo.path, count: fo.count }); });
     }
     items = items.concat(textItems(needle));
+    // Last: a year, a month with a year or a day, when that is what was typed.
+    items = items.concat(dateItems(r[3]));
     showSuggest(items);
   }).catch(function () {});
 }
@@ -542,7 +772,7 @@ function suggestAll(text, seq) {
     lists.forEach(function (list) { list.forEach(function (h) { sum[h.species] = (sum[h.species] || 0) + h.photos; }); });
     return Object.keys(sum).sort(function (a, b) { return sum[b] - sum[a]; }).map(function (s) { return { species: s, photos: sum[s] }; });
   });
-  Promise.all([api('/api/all/tags' + query({ q: needle, limit: 8 })), people.catch(function () { return []; }), pets]).then(function (r) {
+  Promise.all([api('/api/all/tags' + query({ q: needle, limit: 8, own: 1 })), people.catch(function () { return []; }), pets]).then(function (r) {
     if (seq !== sugg.seq) return;
     var items = r[1].filter(function (p) { return f.people.indexOf(p.name) < 0 && (!low || p.name.toLowerCase().indexOf(low) >= 0); })
       .slice(0, 6).map(function (p) { return { kind: 'person', id: p.name, label: p.name, count: p.photos, person: { name: p.name, species: p.species } }; });
@@ -593,9 +823,9 @@ function showSuggest(items, hint) {
   items.forEach(function (it, i) {
     if (it.kind !== last) {
       var f = state.filter, narrowed = !isAll() && (f.tags.length || f.people.length || f.pets.length || f.texts.length || f.names.length || f.folder || f.place);
-      var head = it.kind === 'fav' ? tr('fav.label') : it.kind === 'tag' ? tr(narrowed ? 'search.tags_here' : 'search.tags')
+      var head = it.kind === 'fav' ? tr('fav.label') : it.kind === 'compare' ? tr('cmp.head') : it.kind === 'tag' ? tr(narrowed ? 'search.tags_here' : 'search.tags')
         : it.kind === 'person' ? tr(narrowed ? 'search.faces_here' : 'side.faces')
-          : it.kind === 'pet' ? tr(narrowed ? 'search.pets_here' : 'search.pets') : it.kind === 'place' ? tr('search.places')
+          : it.kind === 'pet' ? tr(narrowed ? 'search.pets_here' : 'search.pets') : it.kind === 'place' ? tr('search.places') : it.kind === 'date' ? tr('search.dates')
             : it.kind === 'text' ? tr('search.text') : it.kind === 'name' ? tr('search.names') : tr('search.folders');
       box.appendChild(el('div', 'head', head));
       last = it.kind;
@@ -606,10 +836,11 @@ function showSuggest(items, hint) {
     // People as in the sidebar: their picture, and the dog or cat for a pet.
     var label = el('span', 'label');
     if (it.kind === 'person') label.appendChild(avatar(it.person, 'tiny'));
+    if (it.kind === 'folder') label.appendChild(folderIcon());
     if (it.kind === 'text' || it.kind === 'name') label.appendChild(icon(it.kind === 'text' ? 'scan' : 'draft'));
-    label.appendChild(document.createTextNode((it.kind === 'text' || it.kind === 'name' ? '“' : it.kind === 'fav' ? '♥ ' : it.kind === 'pet' ? PET_TERMS[it.id].icon + ' '
+    label.appendChild(document.createTextNode((it.kind === 'text' || it.kind === 'name' ? '“' : it.kind === 'fav' ? '♥ ' : it.kind === 'compare' ? '⇄ ' : it.kind === 'pet' ? PET_TERMS[it.id].icon + ' '
       : it.kind === 'person' ? (petIcon(it.person && it.person.species) ? petIcon(it.person.species) + ' ' : '')
-        : ({ folder: '📁 ', place: '📍 ' }[it.kind] || '# ')) + it.label + (it.kind === 'text' || it.kind === 'name' ? '”' : '')));
+        : ({ place: '📍 ', date: '📅 ' }[it.kind] || (it.kind === 'folder' ? '' : '# '))) + it.label + (it.kind === 'text' || it.kind === 'name' ? '”' : '')));
     b.appendChild(label);
     b.appendChild(el('span', 'count', it.count === undefined ? '' : I18n.number(it.count)));
     b.onmousedown = function (ev) { ev.preventDefault(); }; // keep the focus in the box
@@ -636,9 +867,11 @@ function pickSuggest(it) {
   $('search').value = '';
   var f = state.filter;
   if (it.kind === 'fav') setFilter(withFilter({ fav: true, q: '' }));
+  else if (it.kind === 'compare') setFilter(withFilter({ compare: it.id, q: '' }));
   else if (it.kind === 'tag') setFilter(withFilter({ tags: f.tags.indexOf(it.id) < 0 ? f.tags.concat([it.id]) : f.tags, q: '' }));
   else if (it.kind === 'person') setFilter(withFilter({ people: f.people.indexOf(it.id) < 0 ? f.people.concat([it.id]) : f.people, q: '' }));
   else if (it.kind === 'pet') setFilter(withFilter({ pets: f.pets.indexOf(it.id) < 0 ? f.pets.concat([it.id]) : f.pets, q: '' }));
+  else if (it.kind === 'date') setFilter(withFilter({ dates: f.dates.indexOf(it.id) < 0 ? f.dates.concat([it.id]) : f.dates, q: '' }));
   else if (it.kind === 'place') pickPlace(it.id);
   else if (it.kind === 'text' || it.kind === 'name') {
     if (it.off) { toast(tr('search.text_unread')); return; }
@@ -646,24 +879,87 @@ function pickSuggest(it) {
   } else setFilter(withFilter({ folder: it.id, q: '' }));
 }
 
-// Suggestions for the tag fields (info panel, "Add tag…"): every tag.
+var RECENT_MAX = 4; // how many "Recently used" the suggestion lists show
+
+// Suggestions for the tag fields (info panel, "Add tag…"): with the field
+// empty the tags used last, then the most used; while typing the matches,
+// the recent ones first, then by use. A list under the field, not a
+// <datalist>, so it can have headings.
 var suggestSeq = 0;
-function suggestTags(text) {
-  var seq = ++suggestSeq;
-  if (!text.trim()) return;
-  api(LIBAPI + '/tags' + query({ q: text.trim(), limit: 12 })).then(function (tags) {
-    if (seq !== suggestSeq) return;
-    var list = $('tag-list');
+function attachTagSuggestions(input) {
+  var list = el('div', 'plist tlist');
+  list.setAttribute('role', 'listbox');
+  list.hidden = true;
+  var items = [], at = -1;
+  var close = function () { list.hidden = true; at = -1; };
+  var mark = function () {
+    Array.prototype.forEach.call(list.querySelectorAll('.item'), function (b, k) { b.classList.toggle('at', k === at); });
+  };
+  var choose = function (name) {
+    input.value = name;
+    close();
+    // The field's own Enter handling adds the tag.
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  };
+  var show = function (tags, text) {
     list.textContent = '';
-    tags.forEach(function (t) {
-      if (isFavTag(t.name)) return;
-      state.tagNames[t.id] = t.name;
-      var o = el('option');
-      o.value = t.name;
-      o.label = t.count + '';
-      list.appendChild(o);
-    });
-  }).catch(function () {});
+    items = [];
+    at = -1;
+    var low = fold(text);
+    tags = tags.filter(function (t) { return !isFavTag(t.name); });
+    // Tags a photo was last given (the index remembers when), newest first.
+    var last = tags.filter(function (t) { return t.last_used && (!low || fold(t.name).indexOf(low) >= 0); })
+      .sort(function (a, b) { return b.last_used - a.last_used; }).slice(0, RECENT_MAX);
+    var rest = tags.filter(function (t) { return last.indexOf(t) < 0; });
+    var section = function (title, ts) {
+      if (!ts.length) return;
+      if (title) list.appendChild(el('div', 'head', title));
+      ts.forEach(function (t) {
+        var b = el('button', 'item');
+        b.type = 'button';
+        b.appendChild(el('span', 'grow', t.name));
+        b.appendChild(el('span', 'count', I18n.number(t.count)));
+        b.onmousedown = function (ev) { ev.preventDefault(); };
+        b.onclick = function () { choose(t.name); };
+        items.push(t.name);
+        list.appendChild(b);
+      });
+    };
+    section(tr('suggest.recent'), last);
+    section(last.length ? tr(text ? 'suggest.more' : 'suggest.most_used') : '', rest);
+    list.hidden = !items.length || document.activeElement !== input;
+  };
+  var load = function () {
+    var seq = ++suggestSeq, text = input.value.trim();
+    // Own tags when empty (folder names are not what one types by hand).
+    api(LIBAPI + '/tags' + query(text ? { q: text, limit: 50 } : { own: 1, limit: 500 })).then(function (tags) {
+      if (seq !== suggestSeq) return;
+      tags.forEach(function (t) { state.tagNames[t.id] = t.name; });
+      show(tags, text);
+    }).catch(function () {});
+  };
+  // Put the list under the field as soon as the field is in the page.
+  var place = function () {
+    if (input.parentNode && list.previousSibling !== input) input.parentNode.insertBefore(list, input.nextSibling);
+  };
+  input.addEventListener('focus', function () { place(); load(); });
+  input.addEventListener('input', function () { place(); load(); });
+  input.addEventListener('blur', function () { setTimeout(close, 150); });
+  input.addEventListener('keydown', function (ev) {
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      if (!items.length) return;
+      ev.preventDefault();
+      list.hidden = false;
+      at = ev.key === 'ArrowDown' ? (at + 1) % items.length : (at + items.length - 1) % items.length;
+      mark();
+    } else if (ev.key === 'Enter' && at >= 0 && !list.hidden) {
+      input.value = items[at]; // before the field's own handler reads it
+      close();
+    } else if (ev.key === 'Escape' && !list.hidden) {
+      ev.stopImmediatePropagation(); // the first Escape closes the list only
+      close();
+    }
+  });
 }
 
 // ------------------------------------------------------------------ folders
@@ -697,8 +993,8 @@ function loadFolders() {
 }
 
 // Material "keyboard arrow" icons for the expand/collapse buttons.
-var ARROW_DOWN = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>';
-var ARROW_RIGHT = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M8.59 16.59 13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>';
+var ARROW_DOWN = lineIcon('<path d="M7 10l5 5 5-5"/>').replace(/1em/g, '20');
+var ARROW_RIGHT = lineIcon('<path d="M10 7l5 5-5 5"/>').replace(/1em/g, '20');
 function setArrow(btn, open) { btn.innerHTML = open ? ARROW_DOWN : ARROW_RIGHT; }
 
 function folderNode(f, depth) {
@@ -752,12 +1048,22 @@ function markActiveFolder() {
   Array.prototype.forEach.call(document.querySelectorAll('.tree .name'), function (b) {
     b.classList.toggle('active', String(active) === b.dataset.id);
   });
-  Array.prototype.forEach.call(document.querySelectorAll('#own-tags .name'), function (b) {
-    b.classList.toggle('active', state.filter.tags.indexOf(parseInt(b.dataset.tag, 10)) >= 0);
+  var fl = state.filter, manualOnly = fl.manual && fl.tags.length === 1;
+  Array.prototype.forEach.call(document.querySelectorAll('#own-tags .name[data-tag]'), function (b) {
+    var on = fl.tags.indexOf(parseInt(b.dataset.tag, 10)) >= 0;
+    // "Manual tags only" takes the fill; the tag keeps only its colour.
+    b.classList.toggle('active', on && !manualOnly);
+    b.classList.toggle('part', on && manualOnly);
+    var sub = b.parentNode.parentNode.querySelector('.row.sub');
+    if (sub) sub.hidden = !(on && fl.tags.length === 1);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('#own-tags .name[data-manual]'), function (b) {
+    b.classList.toggle('active', manualOnly && fl.tags[0] === parseInt(b.dataset.manual, 10));
   });
 }
 
-$('all').onclick = function () { setFilter({ folder: null, tags: [], people: [], q: '' }); };
+$('all').onclick = function () { setFilter({ folder: null, tags: [], people: [], compare: '', q: '' }); };
+$('nav-nodate').onclick = function () { setFilter({ folder: null, tags: [], people: [], compare: '', q: '', nodate: true }); };
 $('nav-dups').onclick = function () { showView('duplicates'); };
 $('nav-trash').onclick = function () { showView('trash'); };
 $('nav-drives').onclick = function () { showView('drives'); };
@@ -824,8 +1130,8 @@ function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
 function loadTimeline(resetScroll) {
   var seq = ++state.loadSeq;
   var f = state.filter;
-  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, q: f.q })
-    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, person: f.people, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, place: f.place, q: f.q });
+  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null, compare: f.compare === 'different' ? 'different' : null, q: f.q })
+    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null, compare: f.compare === 'different' ? null : f.compare || null, q: f.q });
   return api(url).then(function (data) {
     if (seq !== state.loadSeq) return;
     if (isAll()) allTimelineLoaded(data);
@@ -834,7 +1140,12 @@ function loadTimeline(resetScroll) {
     data.tags.forEach(function (t) { state.tagNames[t.id] = t.name; });
     data.people.forEach(function (p) { state.personNames[p.id] = p.name; });
     if (unnamed) renderChips(); // a link with tags this page has not seen yet
+    // A date change moves photos: the open one is found again by its id.
+    var openId = state.open >= 0 && state.data && state.data.ids ? state.data.ids[state.open] : null;
     state.data = data;
+    if (openId != null) { var again = data.ids.indexOf(openId); if (again >= 0) state.open = again; }
+    state.est = {};
+    (data.est || []).forEach(function (e) { state.est[e[0]] = e[1]; });
     state.favs = {};
     (data.favs || []).forEach(function (id) { state.favs[id] = true; });
     state.live = {};
@@ -848,6 +1159,8 @@ function loadTimeline(resetScroll) {
     scroller.scrollTop = keep;
     render();
     fillYears();
+    state.countFor = location.hash;
+    showCount();
     $('empty').hidden = data.count > 0;
   }).catch(function (e) { console.error(e); });
 }
@@ -855,6 +1168,8 @@ function loadTimeline(resetScroll) {
 // Month groups over the (already sorted) items.
 function groups() {
   var d = state.data, out = [];
+  // Pairs of versions in path order: one list, no months.
+  if (d.flat) return d.count ? [{ month: 0, start: 0, end: d.count, flat: true }] : [];
   for (var i = 0; i < d.count; i++) {
     var month = Math.floor(d.days[i] / 100);
     var g = out[out.length - 1];
@@ -880,11 +1195,15 @@ function relayout() {
   var width = sizer.clientWidth || 300;
   var target = width < 500 ? 96 : width < 900 ? 140 : 180;
   state.cols = Math.max(3, Math.round(width / target));
+  // Two versions of a photo sit side by side: whole pairs in a row.
+  if (state.data.flat && state.cols % 2) state.cols++;
   state.cell = width / state.cols;
   var y = 0;
   groups().forEach(function (g) {
-    state.rows.push({ type: 'h', top: y, h: HEADER_H, label: monthLabel(g.month), n: g.end - g.start, month: g.month, start: g.start, end: g.end });
-    y += HEADER_H;
+    if (!g.flat) {
+      state.rows.push({ type: 'h', top: y, h: HEADER_H, label: monthLabel(g.month), n: g.end - g.start, month: g.month, start: g.start, end: g.end });
+      y += HEADER_H;
+    }
     for (var i = g.start; i < g.end; i += state.cols) {
       state.rows.push({ type: 'r', top: y, h: state.cell, start: i, end: Math.min(i + state.cols, g.end) });
       y += state.cell;
@@ -980,6 +1299,11 @@ function buildRow(row) {
     if (badge) a.appendChild(el('span', 'badge', badge));
     var snip = state.snips && state.snips[d.ids[i]];
     if (snip) { var sn = el('span', 'snip', snip); sn.title = snip; a.appendChild(sn); }
+    if (state.est && state.est[d.ids[i]]) a.appendChild(estimateMark(state.est[d.ids[i]]));
+    if (d.flat && isAll()) {
+      var side = drives.allLibs[Math.floor(d.ids[i] / SPAN)];
+      if (side) a.appendChild(el('span', 'tb ' + (side.role === 'backup' ? 'bk' : 'orig'), tr(side.role === 'backup' ? 'cmp.badge_backup' : 'cmp.badge_original')));
+    }
     if (!isAll()) a.appendChild(heartButton(d.ids[i], 'fav'));
     else if (state.favs[d.ids[i]]) a.appendChild(heartButton(d.ids[i], 'fav', true));
     e.appendChild(a);
@@ -1253,6 +1577,7 @@ function showItem() {
   $('lb-live').hidden = !state.live[id];
   $('lb-fav').hidden = false;
   markLightboxHeart();
+  markCollectionButton();
   applyAllowTrash();
   var rot = $('lb-rotate');
   rot.hidden = isAll() || kind === 'v';
@@ -1290,6 +1615,7 @@ function showItem() {
   api(fileBase(id)).then(function (info) {
     if (state.open !== i) return;
     lb.details = info;
+    markCollectionButton();
     $('lb-title').textContent = formatDate(info) + ' · ' + info.name;
     if (!$('lb-panel').hidden) renderPanel();
     drawFaces();
@@ -1519,6 +1845,7 @@ function viewUrl(i) {
 }
 
 function formatDate(info) {
+  if (info.estimate) return formatEstimate(info.estimate);
   var s = info.taken || info.sort_date;
   if (!s) return '';
   var p = s.split(/[-T:]/).map(Number);
@@ -1549,7 +1876,8 @@ function renderPanelAll(info) {
   };
   row(tr('info.date'), formatDate(info));
   var driveName = lib.volume || lib.name;
-  row(tr('info.drive'), driveName);
+  var driveCell = row(tr('info.drive'), driveName);
+  if (driveCell && state.data.flat) driveCell.appendChild(el('span', 'cmp-badge ' + (lib.role === 'backup' ? 'backup' : 'original'), tr(lib.role === 'backup' ? 'cmp.badge_backup' : 'cmp.badge_original')));
   row(tr('info.path'), info.path);
   row(tr('info.size'), (info.width && info.height ? info.width + ' × ' + info.height + ' · ' : '') + formatBytes(info.size));
   row(tr('info.camera'), info.camera);
@@ -1563,7 +1891,10 @@ function renderPanelAll(info) {
   var tags = el('div', 'tags readonly');
   (info.tags || []).forEach(function (t) {
     if (t.source === 'user' && isFavTag(t.name)) return;
-    tags.appendChild(el('span', t.source === 'folder' ? 'folder' : 'own', (t.source === 'folder' ? '📁 ' : '') + t.name));
+    var tag = el('span', t.source === 'folder' ? 'folder' : 'own');
+    if (t.source === 'folder') tag.appendChild(folderIcon());
+    tag.appendChild(document.createTextNode(t.name));
+    tags.appendChild(tag);
   });
   if (tags.children.length) row(tr('info.tags'), tags);
   var faces = el('div', 'pfaces readonly');
@@ -1595,7 +1926,7 @@ function renderPanelAll(info) {
   open.onclick = function () { switchLibrary(lib.id, 'folder=' + info.folder_id); };
   actions.appendChild(open);
   if (state.reveal) {
-    var reveal = el('button', 'btn quiet', state.reveal);
+    var reveal = revealButton();
     reveal.onclick = function () { revealOn(lib.id, info.path); };
     actions.appendChild(reveal);
   }
@@ -1622,16 +1953,12 @@ function renderPanel() {
     dl.appendChild(dd);
     return dd;
   };
-  var date = row(tr('info.date'), formatDate(info) + (info.taken_offset ? ' (UTC' + info.taken_offset + ')' : ''));
-  if (date && info.date_source !== 'file') {
-    // Not the day the photo was taken: say so next to the date; which
-    // fallback was used is in the tooltip.
-    var badge = el('span', 'estimated', tr('info.estimated'));
-    badge.title = tr('info.estimated_hint') + '\n' + tr(info.date_source === 'created' ? 'info.no_date_created'
-      : info.date_source === 'folder' ? 'info.no_date_folder' : 'info.no_date_file');
-    date.appendChild(badge);
-  }
-  row(tr('info.name'), info.name);
+  infoDate(row, info);
+  // The drive is named whenever it is known, also with a single photo app per drive.
+  if (drives.current) row(tr('info.drive'), drives.current.volume || drives.current.name);
+  var nameCell = row(tr('info.name'), info.name);
+  var cmpBadge = compareBadge(info.id);
+  if (nameCell && cmpBadge) nameCell.appendChild(cmpBadge);
   var folder = info.path.indexOf('/') >= 0 ? info.path.slice(0, info.path.lastIndexOf('/')) : '';
   if (folder) {
     var fb = el('button', '', folder);
@@ -1774,6 +2101,7 @@ document.addEventListener('keydown', function (ev) {
   else if (ev.key === 'i') $('lb-info').onclick();
   else if ((ev.key === 't' || ev.key === 'T') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) toggleText();
   else if ((ev.key === 'f' || ev.key === 'F') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) toggleFavoriteOpen();
+  else if ((ev.key === 'c' || ev.key === 'C') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) toggleCollection();
   else if ((ev.key === 'r' || ev.key === 'R') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) rotateOpen(ev.shiftKey ? 1 : -1);
 });
 
@@ -1801,6 +2129,8 @@ function loadInfo() {
   return api(LIBAPI + '/info').then(function (info) {
     $('title').textContent = info.name;
     state.reveal = revealLabel(info.reveal);
+    state.exportOk = !!info.export;
+    applyExportOk();
     document.title = info.name + ' · shoebox';
     var parts = [
       trn('count.photos', info.photos),
@@ -1810,6 +2140,9 @@ function loadInfo() {
     $('nav-trash').textContent = info.trash ? tr('side.trash_n', { n: info.trash }) : tr('side.trash');
     trashCount = info.trash || 0;
     applyAllowTrash();
+    dates.needs = info.needs_date || 0;
+    if (state.filter && state.filter.nodate) renderChips();
+    $('nav-nodate').hidden = isAll() || (!dates.needs && !(state.filter && state.filter.nodate));
     if (info.thumbs_done < info.thumbs_total) {
       parts.push(tr('status.thumbs', { pct: Math.floor(100 * info.thumbs_done / info.thumbs_total) }));
     }
@@ -1884,7 +2217,8 @@ function toast(text) {
 
 // A small dialog. actions: [{label, cls, onclick(close)}]; onclick returns
 // false to keep the dialog open.
-function openModal(title, body, actions) {
+function openModal(title, body, actions, cls) {
+  document.querySelector('#modal .dialog').className = 'dialog' + (cls ? ' ' + cls : '');
   $('modal-title').textContent = title;
   var b = $('modal-body');
   b.textContent = '';
@@ -1986,7 +2320,7 @@ function updateSelbar() {
   var total = state.data && state.data.ids ? state.data.ids.length : 0;
   $('sel-all').textContent = tr(total && n >= total ? 'sel.none' : 'sel.all');
   $('sel-all').disabled = !total;
-  $('sel-move').disabled = $('sel-trash').disabled = $('sel-tag').disabled = $('sel-untag').disabled = !n;
+  $('sel-move').disabled = $('sel-trash').disabled = $('sel-tag').disabled = $('sel-untag').disabled = $('sel-date').disabled = $('sel-export').disabled = !n;
 }
 
 $('select').onclick = function () {
@@ -2004,8 +2338,16 @@ $('sel-move').onclick = function () { moveDialog(selectedIds(), endSelection); }
 $('sel-trash').onclick = function () { trashDialog(selectedIds(), endSelection); };
 $('sel-tag').onclick = function () { addTagDialog(selectedIds()); };
 $('sel-untag').onclick = function () { removeTagDialog(selectedIds()); };
+$('sel-export').onclick = function () { openExport(selectedIds(), ''); };
 
 // ------------------------------------------------------------------ move and trash
+
+// " Empty folder removed: X" for the end of a toast, or nothing.
+function removedFolders(r) {
+  var gone = r.removed_folders || [];
+  if (!gone.length) return '';
+  return '. ' + tr(gone.length === 1 ? 'move.folders_removed' : 'move.folders_removed_many', { folders: gone.join(', ') });
+}
 
 function moveDialog(ids, done) {
   var body = el('div');
@@ -2036,7 +2378,7 @@ function moveDialog(ids, done) {
     post(LIBAPI + '/move', { ids: ids, folder: folder, keep_folder_tags: keep.checked }).then(function (r) {
       closeModal();
       if (done) done();
-      toast(tr('move.done', { count: trn('count.files', r.files.length), folder: r.folder }));
+      toast(tr('move.done', { count: trn('count.files', r.files.length), folder: r.folder }) + removedFolders(r));
       report(tr('move.skipped'), r.skipped);
       changed();
     }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
@@ -2056,7 +2398,7 @@ function trashDialog(ids, done) {
         post(LIBAPI + '/trash', { ids: ids }).then(function (r) {
           closeModal();
           if (done) done();
-          toast(tr('trash.done', { count: trn('count.files', r.files.length + r.sidecars) }));
+          toast(tr('trash.done', { count: trn('count.files', r.files.length + r.sidecars) }) + removedFolders(r));
           report(tr('trash.skipped'), r.skipped);
           changed();
         }).catch(function (e) { closeModal(); failed(e); });
@@ -2092,7 +2434,7 @@ function renameFolder(folder) {
 // ------------------------------------------------------------------ duplicates page
 
 var DUP_KINDS_IDS = ['identical', 'resolution', 'edited', 'similar'];
-var dupState = { syncs: [], groups: [], shown: 0, marked: {}, seen: {}, sameFolder: null, lowerQuality: null, types: dupTypes() };
+var dupState = { syncs: [], groups: [], shown: 0, marked: {}, seen: {}, types: dupTypes() };
 var DUP_KINDS = [
   { id: 'identical', get label() { return tr('dups.kind.identical'); }, get hint() { return tr('dups.kind.identical.hint'); } },
   { id: 'resolution', get label() { return tr('dups.kind.resolution'); }, get hint() { return tr('dups.kind.resolution.hint'); } },
@@ -2124,7 +2466,7 @@ var dupTab = 'here';
 
 function addDupTabs(page) {
   if (drives.list.length < 2 || isAll()) return;
-  var tabs = el('div', 'tabs');
+  var tabs = el('div', 'tabs underline');
   [['here', tr('dups.tab.here')], ['across', tr('dups.tab.across')]].forEach(function (t) {
     var b = el('button', dupTab === t[0] ? 'on' : '', t[1]);
     b.onclick = function () { dupTab = t[0]; loadDuplicates(); };
@@ -2275,18 +2617,19 @@ function trashCrossMarked() {
     { label: tr('app.cancel'), cls: 'quiet' },
     { label: tr('sel.trash'), cls: 'danger', focus: true, onclick: function (btn) {
       btn.disabled = true;
-      var done = 0, skipped = [];
+      var done = 0, skipped = [], folders = [];
       var send = function (i) {
         if (i >= libs.length) return Promise.resolve();
         return post('/api/lib/' + libs[i] + '/trash', { ids: perDrive[libs[i]] }).then(function (r) {
           done += r.files.length + r.sidecars;
           (r.skipped || []).forEach(function (x) { skipped.push(x); });
+          (r.removed_folders || []).forEach(function (x) { folders.push(x); });
           return send(i + 1);
         });
       };
       send(0).then(function () {
         closeModal();
-        toast(tr('dups.cross.done', { count: trn('count.files', done) }));
+        toast(tr('dups.cross.done', { count: trn('count.files', done) }) + removedFolders({ removed_folders: folders }));
         report(tr('trash.skipped'), skipped);
         crossState.reload();
       }).catch(function (e) { closeModal(); failed(e); crossState.reload(); });
@@ -2369,11 +2712,9 @@ function loadDuplicatesHere() {
   page.appendChild(el('h2', '', tr('dups.title')));
   addDupTabs(page);
   page.appendChild(el('p', 'sub', tr('dups.looking')));
-  return Promise.all([api(LIBAPI + '/duplicates'), api(LIBAPI + '/duplicates/same-folder'), api(LIBAPI + '/duplicates/lower-quality')]).then(function (res) {
+  return api(LIBAPI + '/duplicates').then(function (res) {
     if (state.filter.view !== 'duplicates') return;
-    dupState.groups = res[0].groups;
-    dupState.sameFolder = res[1];
-    dupState.lowerQuality = res[2];
+    dupState.groups = res.groups;
     dupState.shown = 0;
     // Ticks survive a reload (a scan finishing meanwhile) for copies still listed.
     var still = {};
@@ -2429,8 +2770,9 @@ function markedCount() {
   return n;
 }
 
-// Left: which kinds to show (a drop-down with check boxes). Right: the two
-// buttons that clear without review.
+// Left: which kinds to show (a drop-down with check boxes). Right: the
+// Preselect menu, which only ticks; nothing is removed before Move to trash.
+var dupFilterCloser = false;
 function dupToolbar() {
   var bar = el('div', 'dup-top');
   var filter = el('details', 'dup-filter');
@@ -2464,33 +2806,28 @@ function dupToolbar() {
     menu.appendChild(label);
   });
   refreshLabel();
+  // A click anywhere else closes the menu (one listener, whichever toolbar is current).
+  if (!dupFilterCloser) {
+    dupFilterCloser = true;
+    document.addEventListener('click', function (e) {
+      document.querySelectorAll('.dup-filter[open]').forEach(function (open) {
+        if (!open.contains(e.target)) open.open = false;
+      });
+    });
+  }
   filter.appendChild(sum);
   filter.appendChild(menu);
   bar.appendChild(filter);
-  var sf = dupState.sameFolder, lq = dupState.lowerQuality;
-  var buttons = el('div', 'dup-buttons');
-  var same = el('button', 'btn', tr('dups.same_folder'));
-  same.title = sf && sf.copies
-    ? tr('dups.same_folder_hint', { count: trn('count.files', sf.copies) })
-    : tr('dups.same_folder_none');
-  same.disabled = !(sf && sf.copies);
-  same.onclick = removeSameFolder;
-  var low = el('button', 'btn', tr('dups.lower'));
-  low.title = lq && lq.copies
-    ? tr('dups.lower_hint', { count: trn('count.files', lq.copies) })
-    : tr('dups.lower_none');
-  low.disabled = !(lq && lq.copies);
-  low.onclick = removeLowerQuality;
-  buttons.appendChild(same);
-  buttons.appendChild(low);
-  bar.appendChild(buttons);
+  bar.appendChild(preselectMenu());
   return bar;
 }
 
-// What the page ticks by itself in a group: of every photo the files that
-// are surely worse (a smaller or stripped copy) or the same file again, never
-// the best one, and never a different shot that merely looks alike.
+// What the page ticks by itself: of an identical or same-photo group the
+// files that are surely worse (a smaller or stripped copy) or the same file
+// again, never the best one. Look-alikes and edits are never ticked by the
+// page: the person decides on those.
 function suggestedIds(g) {
+  if (g.kind !== 'identical' && g.kind !== 'resolution') return [];
   var pickOf = {};
   g.files.forEach(function (f) { if (f.pick) pickOf[f.row] = f; });
   return g.files.filter(function (f) {
@@ -2499,22 +2836,140 @@ function suggestedIds(g) {
   }).map(function (f) { return f.id; });
 }
 
-// The suggestion for all groups that are shown.
-function autoMarked() {
-  var auto = {};
-  var edits = onlyEditedShown();
-  visibleGroups().forEach(function (g) {
-    suggestedIds(g).forEach(function (id) { auto[id] = true; });
-    // On the "Original and edited" screen the button ticks the edited
-    // versions, so the originals stay.
-    if (edits) g.files.forEach(function (f) { if (isEdit(f)) auto[f.id] = true; });
-  });
-  return auto;
+// The format of a file by its extension, JPEG and HEIC spelled one way.
+function fileFormat(f) {
+  var e = (f.name.split('.').pop() || '').toLowerCase();
+  return e === 'jpeg' || e === 'jpe' ? 'jpg' : e === 'heif' ? 'heic' : e;
 }
 
-// True while "Original and edited" is the only kind that is shown.
-function onlyEditedShown() {
-  return DUP_KINDS_IDS.every(function (k) { return !!dupState.types[k] === (k === 'edited'); });
+// The HEIC and JPEG files of a group to tick so that `keep` stays wherever a
+// photo exists in both formats.
+function otherFormats(g, keep) {
+  var ids = [];
+  dupRows(g).forEach(function (row) {
+    if (!row.some(function (f) { return fileFormat(f) === keep; })) return;
+    row.forEach(function (f) {
+      var fmt = fileFormat(f);
+      if (fmt !== keep && (fmt === 'heic' || fmt === 'jpg')) ids.push(f.id);
+    });
+  });
+  return ids;
+}
+
+// The entries of the Preselect menu: what each ticks in a group (`ids`), and
+// the kind of group it is for (`kind`, and `also` for a second one; none:
+// every kind).
+var PRESELECT = [
+  { id: 'suggested', ids: suggestedIds },
+  { id: 'samefolder', kind: 'identical', ids: function (g) {
+    var buckets = {}, ids = [];
+    g.files.forEach(function (f) { var k = f.same + ':' + f.folder_id; (buckets[k] = buckets[k] || []).push(f); });
+    Object.keys(buckets).forEach(function (k) {
+      var b = buckets[k];
+      if (b.length < 2) return;
+      var keep = b.filter(function (f) { return f.pick; })[0] || b.filter(function (f) { return !f.copy_named; })[0] || b[0];
+      b.forEach(function (f) { if (f !== keep) ids.push(f.id); });
+    });
+    return ids;
+  } },
+  { id: 'smaller', kind: 'resolution', also: 'similar', ids: function (g) { return g.files.filter(function (f) { return f.keeper; }).map(function (f) { return f.id; }); } },
+  { id: 'heic', kind: 'resolution', ids: function (g) { return otherFormats(g, 'heic'); } },
+  { id: 'jpeg', kind: 'resolution', ids: function (g) { return otherFormats(g, 'jpg'); } },
+  { id: 'edited', kind: 'edited', ids: function (g) {
+    return g.files.some(function (f) { return !isEdit(f); }) ? g.files.filter(isEdit).map(function (f) { return f.id; }) : [];
+  } },
+  { id: 'originals', kind: 'edited', ids: function (g) {
+    return g.files.some(isEdit) ? g.files.filter(function (f) { return !isEdit(f); }).map(function (f) { return f.id; }) : [];
+  } },
+  { id: 'biggest', kind: 'similar', ids: function (g) {
+    var top = Math.max.apply(null, g.files.map(function (f) { return f.size; }));
+    var best = g.files.filter(function (f) { return f.size === top; });
+    return best.length === 1 ? g.files.filter(function (f) { return f !== best[0]; }).map(function (f) { return f.id; }) : [];
+  } },
+  { id: 'lastshot', kind: 'similar', ids: function (g) {
+    // The best file of the latest shot stays; a group is skipped when a shot
+    // has no capture date or two shots tie for the latest.
+    var shots = dupRows(g).map(function (row) { return row.filter(function (f) { return f.pick; })[0] || row[0]; });
+    if (shots.some(function (f) { return !f.taken; })) return [];
+    var latest = shots.map(function (f) { return f.taken; }).sort().pop();
+    var last = shots.filter(function (f) { return f.taken === latest; });
+    return last.length === 1 ? g.files.filter(function (f) { return f !== last[0]; }).map(function (f) { return f.id; }) : [];
+  } },
+];
+
+// The message of an entry (its label, or its tooltip with `_hint`).
+function preselectText(entry, hint) {
+  var texts = {
+    suggested: ['dups.pre.suggested', 'dups.pre.suggested_hint'],
+    samefolder: ['dups.pre.samefolder', 'dups.pre.samefolder_hint'],
+    smaller: ['dups.pre.smaller', 'dups.pre.smaller_hint'],
+    heic: ['dups.pre.heic', 'dups.pre.heic_hint'],
+    jpeg: ['dups.pre.jpeg', 'dups.pre.jpeg_hint'],
+    edited: ['dups.pre.edited', 'dups.pre.edited_hint'],
+    originals: ['dups.pre.originals', 'dups.pre.originals_hint'],
+    biggest: ['dups.pre.biggest', 'dups.pre.biggest_hint'],
+    lastshot: ['dups.pre.lastshot', 'dups.pre.lastshot_hint'],
+  };
+  return tr(texts[entry.id][hint ? 1 : 0]);
+}
+
+// Is a group of the kind this entry works on?
+function preselectKind(entry, g) {
+  return !entry.kind || g.kind === entry.kind || g.kind === entry.also;
+}
+
+// Files and groups an entry would tick among the groups that are shown.
+function preselectCount(entry) {
+  var files = 0, groups = 0;
+  visibleGroups().forEach(function (g) {
+    if (!preselectKind(entry, g)) return;
+    var n = entry.ids(g).length;
+    if (n) { files += n; groups++; }
+  });
+  return { files: files, groups: groups };
+}
+
+// Ticks what the entry names (replacing the ticks of the groups that are
+// shown) and brings those groups to the top. Nothing is removed.
+function applyPreselect(entry) {
+  Object.keys(shownMarked()).forEach(function (id) { delete dupState.marked[id]; });
+  var hit = [], rest = [];
+  dupState.groups.forEach(function (g) {
+    var ids = dupState.types[g.kind] && preselectKind(entry, g) ? entry.ids(g) : [];
+    ids.forEach(function (id) { dupState.marked[id] = true; });
+    (ids.length ? hit : rest).push(g);
+  });
+  dupState.groups = hit.concat(rest);
+  dupState.shown = 0;
+  renderDuplicates();
+  updateDupBar();
+  window.scrollTo(0, 0);
+}
+
+// The Preselect drop-down: one line per rule that finds something, with how
+// many files it would tick and a tooltip that says what it does. Rules that
+// find nothing among the groups that are shown are left out.
+function preselectMenu() {
+  var box = el('details', 'dup-filter dup-pre');
+  box.appendChild(el('summary', 'btn', tr('dups.pre')));
+  var menu = el('div', 'dup-filter-menu');
+  var heading = null, any = false;
+  PRESELECT.forEach(function (entry) {
+    var c = preselectCount(entry);
+    if (!c.files) return;
+    any = true;
+    if (entry.kind && entry.kind !== heading) {
+      heading = entry.kind;
+      menu.appendChild(el('div', 'dup-pre-head', DUP_KINDS.filter(function (k) { return k.id === entry.kind; })[0].label));
+    }
+    var b = el('button', 'btn quiet', preselectText(entry, false) + ' · ' + trn('count.files', c.files));
+    b.title = preselectText(entry, true);
+    b.onclick = function () { applyPreselect(entry); };
+    menu.appendChild(b);
+  });
+  if (!any) menu.appendChild(el('div', 'dup-pre-head', tr('dups.pre.none')));
+  box.appendChild(menu);
+  return box;
 }
 
 // Ticked files of the groups that are shown, as a set of ids.
@@ -2531,8 +2986,8 @@ function syncDupBoxes() {
   updateDupBar();
 }
 
-// The bar stays while there are duplicates: Preselect copies puts the page's
-// pre-selection back, Clear unticks everything, Move to trash deletes
+// The bar stays while there are duplicates: Clear unticks everything, Move
+// to trash deletes
 // whatever is ticked (also a single file after a Clear).
 function updateDupBar() {
   var bar = $('dup-bar');
@@ -2541,19 +2996,9 @@ function updateDupBar() {
   bar.hidden = groups.length === 0;
   bar.textContent = '';
   if (!groups.length) return;
-  var marked = shownMarked(), auto = autoMarked();
+  var marked = shownMarked();
   var n = Object.keys(marked).length;
   bar.appendChild(el('span', '', tr('dups.marked', { count: trn('count.copies', n) })));
-  var same = Object.keys(auto).length === n && Object.keys(auto).every(function (id) { return marked[id]; });
-  var preselect = el('button', 'btn quiet', tr(onlyEditedShown() ? 'dups.preselect_edited' : 'dups.preselect'));
-  preselect.title = tr(onlyEditedShown() ? 'dups.preselect_edited_hint' : 'dups.preselect_hint');
-  preselect.disabled = same;
-  preselect.onclick = function () {
-    Object.keys(marked).forEach(function (id) { delete dupState.marked[id]; });
-    Object.keys(auto).forEach(function (id) { dupState.marked[id] = true; });
-    syncDupBoxes();
-  };
-  bar.appendChild(preselect);
   var clear = el('button', 'btn quiet', tr('dups.clear'));
   clear.title = tr('dups.clear_hint');
   clear.disabled = n === 0;
@@ -2601,16 +3046,20 @@ function dupThumb(f, compare) {
 // "IMG_E1234" is the edited version of "IMG_1234" (iPhone).
 function isEdit(f) { return /^img_e\d+/i.test(f.name); }
 
-// The group's photos large and side by side; "Keep this one" trashes all the
-// others (the dialog closes), so the choice is one click.
+// The group's photos large and side by side. "Keep this one" ticks all the
+// others and closes the dialog; "Keep" marks photos to stay (several can) and
+// "Keep (N)" ticks all the others. Nothing is trashed here: Move to trash in
+// the bar does the removing for every group at once.
 function compareDialog(g, start, onKeep) {
   var back = el('div', 'modal');
   var dlg = el('div', 'dialog compare');
   dlg.appendChild(el('h2', '', tr('dups.compare_title')));
   var strip = el('div', 'compare-strip');
+  var kept = {};
   var close = function () { back.remove(); document.removeEventListener('keydown', onKey); };
   var onKey = function (e) { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKey);
+  var toggles = [];
   g.files.forEach(function (f) {
     var col = el('div', 'compare-col' + (f.id === start.id ? ' start' : ''));
     var img = el('img');
@@ -2622,16 +3071,45 @@ function compareDialog(g, start, onKeep) {
     if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
     meta.push((f.size / 1e6).toFixed(1) + ' MB');
     col.appendChild(el('div', 'meta', meta.join(' · ')));
+    var row = el('div', 'compare-buttons');
+    // Keep: mark this photo to stay; Keep (N) below ticks all the others.
+    var tog = el('button', 'btn quiet keep-toggle');
+    tog.title = tr('dups.keep_hint');
+    tog.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path class="tick" d="M7.5 12.5l3 3 6-7"/></svg>';
+    tog.appendChild(el('span', '', tr('dups.keep')));
+    tog.onclick = function () { if (kept[f.id]) delete kept[f.id]; else kept[f.id] = true; refresh(); };
+    toggles.push({ f: f, col: col, tog: tog });
+    row.appendChild(tog);
     var keep = el('button', 'btn', tr('dups.keep_this'));
-    keep.onclick = function () { close(); onKeep(f); };
-    col.appendChild(keep);
+    keep.onclick = function () { close(); onKeep([f]); };
+    row.appendChild(keep);
+    col.appendChild(row);
     strip.appendChild(col);
   });
   dlg.appendChild(strip);
   var row = el('div', 'actions');
+  var go = el('button', 'btn');
+  go.onclick = function () {
+    close();
+    onKeep(g.files.filter(function (f) { return kept[f.id]; }));
+  };
+  row.appendChild(go);
   var done = el('button', 'btn quiet', tr('app.close'));
   done.onclick = close;
   row.appendChild(done);
+  // Keep (N) counts the photos marked; one has to stay, so it needs at least one.
+  var refresh = function () {
+    var n = 0;
+    toggles.forEach(function (t) {
+      var on = !!kept[t.f.id];
+      if (on) n++;
+      t.tog.classList.toggle('on', on);
+      t.col.classList.toggle('kept', on);
+    });
+    go.textContent = tr('dups.keep') + ' (' + n + ')';
+    go.disabled = n === 0;
+  };
+  refresh();
   dlg.appendChild(row);
   back.onclick = function (e) { if (e.target === back) close(); };
   back.appendChild(dlg);
@@ -2646,8 +3124,9 @@ function groupNode(g) {
   title.title = kind.hint;
   head.appendChild(title);
   var ids = g.files.map(function (f) { return f.id; });
-  var decide = function (decision, label) {
+  var decide = function (decision, label, hint) {
     var b = el('button', 'btn quiet', label);
+    b.title = hint;
     b.onclick = function () {
       b.disabled = true;
       post(LIBAPI + '/duplicates/decide', { ids: ids, decision: decision }).then(function () {
@@ -2659,8 +3138,8 @@ function groupNode(g) {
     };
     head.appendChild(b);
   };
-  if (g.kind === 'similar') decide('distinct', tr('dups.btn_different'));
-  decide('linked', tr('dups.btn_keep'));
+  if (g.kind === 'similar') decide('distinct', tr('dups.btn_different'), tr('dups.btn_different_hint'));
+  decide('linked', tr('dups.btn_keep'), tr('dups.btn_keep_hint'));
   box.appendChild(head);
   box.appendChild(el('p', 'group-hint', g.kind === 'similar' || g.kind === 'edited'
     ? tr('dups.group_hint_series', { hint: kind.hint })
@@ -2682,16 +3161,26 @@ function groupNode(g) {
   // One card per file: the check box, where it is, what it is, its tags.
   // `thumb`: the card carries its own thumbnail (similar photos).
   var cards = [];
-  // "Keep this one" in the compare dialog: tick every other file, untick it,
-  // and move the others to the trash (after the usual confirmation).
-  var keepOnly = function (keep) {
+  var compare = function (f) { compareDialog(g, f, keepTicked); };
+  // The one-click choice on a card of a series: tick the other files and
+  // leave this one open. Nothing is trashed until "Move to trash".
+  // `keep`: the files that stay; every other file of the group is ticked.
+  var keepTicked = function (keep) {
+    var stay = {};
+    keep.forEach(function (f) { stay[f.id] = true; });
     cards.forEach(function (c) {
-      c.cb.checked = c.f.id !== keep.id;
+      c.cb.checked = !stay[c.f.id];
       c.cb.dispatchEvent(new Event('change'));
     });
-    deleteMarked(g);
   };
-  var compare = function (f) { compareDialog(g, f, keepOnly); };
+  // What tells the files of a series apart, on the card that leads: more
+  // pixels, a bigger file. Shown only where the files differ; never decides.
+  var most = function (key) {
+    var v = g.files.map(key), top = Math.max.apply(null, v);
+    return v.some(function (x) { return x !== top; }) ? top : null;
+  };
+  var topPixels = most(function (f) { return (f.width || 0) * (f.height || 0); });
+  var topSize = most(function (f) { return f.size; });
   var copyCard = function (f, showName, thumb) {
     var card = el('div', 'copy' + (thumb ? ' with-thumb' : ''));
     if (thumb) card.appendChild(dupThumb(f, compare));
@@ -2721,22 +3210,23 @@ function groupNode(g) {
     fb.onclick = function () { setFilter({ folder: f.folder_id, tags: [], q: '' }); };
     card.appendChild(fb);
     if (showName) card.appendChild(el('div', 'name', f.name));
+
     if (g.kind === 'edited') card.appendChild(el('div', 'badge', tr(isEdit(f) ? 'dups.badge_edited' : 'dups.badge_original')));
     var meta = [];
     if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
     meta.push((f.size / 1e6).toFixed(1) + ' MB');
     card.appendChild(el('div', 'meta', meta.join(' · ')));
-    if (f.keeper) card.appendChild(el('div', 'meta worse', tr('dups.lower_quality')));
+    if (f.keeper) card.appendChild(el('div', 'badge worse', tr('dups.lower_quality')));
     if (f.in_copies) card.appendChild(el('div', 'meta', tr('dups.in_copies')));
     card.appendChild(el('div', 'meta', f.taken ? formatDate({ taken: f.taken, date_source: 'file' }) : tr('dups.no_capture_date')));
-    if (f.tags && f.tags.length) {
-      var tags = el('div', 'tagline');
-      f.tags.forEach(function (t) {
-        var chip = el('span', 'chip' + (t.own ? ' own' : ''), (t.own ? '' : '📁 ') + t.name);
-        chip.title = tr(t.own ? 'dups.own_tag' : 'dups.folder_tag');
-        tags.appendChild(chip);
-      });
-      card.appendChild(tags);
+    if (thumb && topPixels !== null && (f.width || 0) * (f.height || 0) === topPixels) card.appendChild(el('div', 'badge', tr('dups.badge_pixels')));
+    if (thumb && topSize !== null && f.size === topSize) card.appendChild(el('div', 'badge', tr('dups.badge_bigger')));
+    if (thumb) {
+      // Pinned to the foot of the card, edge to edge.
+      var only = el('button', 'keep-one', tr('dups.keep_this'));
+      only.title = tr('dups.keep_this_hint');
+      only.onclick = function () { keepTicked([f]); };
+      card.appendChild(only);
     }
     return card;
   };
@@ -2784,11 +3274,9 @@ function groupNode(g) {
 
 // Sends the marked copies, one request per group. Capture dates that really
 // conflict are asked for afterwards, then those groups are sent again.
-// `only`: a single group (the compare dialog's "Keep this one").
-function deleteMarked(only) {
+function deleteMarked() {
   var jobs = [], total = 0;
   visibleGroups().forEach(function (g) {
-    if (only && only.files && g !== only) return;
     var remove = g.files.filter(function (f) { return dupState.marked[f.id]; }).map(function (f) { return f.id; });
     if (!remove.length) return;
     var keep = g.files.filter(function (f) { return !dupState.marked[f.id]; }).map(function (f) { return f.id; });
@@ -2799,7 +3287,7 @@ function deleteMarked(only) {
   if (!jobs.length) return;
   var run = function (btn) {
     btn.disabled = true;
-    var done = { files: 0, tags: 0, dates: 0, skipped: [] }, conflicts = [];
+    var done = { files: 0, tags: 0, dates: 0, folders: [], skipped: [] }, conflicts = [];
     var send = function (job, i) {
       if (i >= jobs.length) return Promise.resolve();
       return post(LIBAPI + '/duplicates/remove', job).then(function (r) {
@@ -2827,6 +3315,7 @@ function collectRemoved(done, r) {
   done.files += r.trashed.files.length;
   done.tags += r.tags_added;
   done.dates += r.dates_set;
+  (r.trashed.removed_folders || []).forEach(function (f) { done.folders.push(f); });
   (r.trashed.skipped || []).forEach(function (s) { done.skipped.push(s); });
 }
 
@@ -2834,7 +3323,7 @@ function finishRemoved(done) {
   var text = [tr('dups.done.trashed', { count: trn('count.copies', done.files) })];
   if (done.tags) text.push(tr('dups.done.tags', { count: trn('count.tags', done.tags) }));
   if (done.dates) text.push(tr('dups.done.dates', { count: trn('count.capture_dates', done.dates) }));
-  toast(text.join(', '));
+  toast(text.join(', ') + removedFolders({ removed_folders: done.folders }));
   report(tr('dups.skipped'), done.skipped);
   dupState.marked = {};
   changed();
@@ -2888,46 +3377,6 @@ function askDates(conflicts, done) {
       },
     }]);
   });
-}
-
-function removeLowerQuality() {
-  var lq = dupState.lowerQuality;
-  openModal(
-    tr('dups.lower.title'),
-    tr('dups.lower.text', { copies: trn('count.copies', lq.copies), photos: trn('count.photos', lq.groups) }),
-    [{ label: tr('app.cancel'), cls: 'quiet' }, {
-      label: tr('sel.trash'), cls: 'danger', focus: true, onclick: function (btn) {
-        btn.disabled = true;
-        post(LIBAPI + '/duplicates/lower-quality', {}).then(function (r) {
-          closeModal();
-          toast(tr('dups.lower.done', { copies: trn('count.copies', r.removed), tags: trn('count.tags', r.tags_added) }));
-          report(tr('dups.skipped'), r.skipped);
-          changed();
-        }).catch(function (e) { closeModal(); failed(e); });
-        return false;
-      },
-    }]
-  );
-}
-
-function removeSameFolder() {
-  var sf = dupState.sameFolder;
-  openModal(
-    tr('dups.same.title'),
-    tr('dups.same.text', { copies: trn('count.copies', sf.copies), photos: trn('count.photos', sf.groups) }),
-    [{ label: tr('app.cancel'), cls: 'quiet' }, {
-      label: tr('sel.trash'), cls: 'danger', focus: true, onclick: function (btn) {
-        btn.disabled = true;
-        post(LIBAPI + '/duplicates/same-folder', {}).then(function (r) {
-          closeModal();
-          toast(tr('dups.done.trashed', { count: trn('count.copies', r.removed) }));
-          report(tr('dups.skipped'), r.skipped);
-          changed();
-        }).catch(function (e) { closeModal(); failed(e); });
-        return false;
-      },
-    }]
-  );
 }
 
 // ------------------------------------------------------------------ trash page
@@ -3063,11 +3512,29 @@ function revealFile(id) {
   }).catch(failed);
 }
 
+// The one open-folder icon of the whole app (drawn, so it looks the same on
+// every system and takes the colour of the text around it). Never the emoji.
+var FOLDER_OPEN = lineIcon('<path d="M4 18V7a2 2 0 0 1 2-2h3.5l2 2H17a2 2 0 0 1 2 2v1.5"/><path d="M4 18l2.6-6.4a1.5 1.5 0 0 1 1.4-.9h12.3a1 1 0 0 1 .9 1.4L19 17.6a1.5 1.5 0 0 1-1.4.9H4z"/>');
+function folderIcon() {
+  var i = el('span', 'ficon');
+  i.setAttribute('aria-hidden', 'true');
+  i.innerHTML = FOLDER_OPEN;
+  return i;
+}
+
+// "Show in Finder" with the drawn open-folder icon at the left of the label.
+function revealButton() {
+  var b = el('button', 'btn quiet with-icon');
+  b.appendChild(folderIcon());
+  b.appendChild(el('span', '', state.reveal));
+  return b;
+}
+
 // Info panel, 5a: the buttons that show the file on the shoebox computer
 // and copy its path.
 function infoReveal(actions, info) {
   if (state.reveal) {
-    var reveal = el('button', 'btn quiet', state.reveal);
+    var reveal = revealButton();
     reveal.onclick = function () { revealFile(info.id); };
     actions.appendChild(reveal);
   }
@@ -3200,7 +3667,9 @@ function infoTags(row, info) {
     if (t.source === 'user' && isFavTag(t.name)) return; // the heart in the top bar
     var show = function () { closeLightbox(); setFilter({ folder: null, tags: [t.id], q: '' }); };
     if (t.source === 'folder') {
-      var b = el('button', '', '📁 ' + t.name);
+      var b = el('button', '');
+      b.appendChild(folderIcon());
+      b.appendChild(document.createTextNode(t.name));
       b.title = tr('tags.folder_hint');
       b.onclick = show;
       tags.appendChild(b);
@@ -3244,9 +3713,9 @@ function tagInput() {
   var input = el('input');
   input.type = 'text';
   input.placeholder = tr('tags.placeholder');
-  input.setAttribute('list', 'tag-list');
+  input.autocomplete = 'off';
   input.setAttribute('enterkeyhint', 'done');
-  input.addEventListener('input', function () { suggestTags(input.value); });
+  attachTagSuggestions(input);
   return input;
 }
 
@@ -3273,9 +3742,12 @@ function infoScreenshot(row, info) {
   box.appendChild(pick);
   box.appendChild(el('span', 'note', ' ' + tr(marked ? 'shot.yours' : 'shot.guess')));
   if (marked) {
-    var back = el('button', 'link', tr('shot.back'));
+    // An undo icon at the right of the row; the words are its tooltip.
+    var back = el('button', 'icon-btn shot-back');
+    back.innerHTML = lineIcon('<path d="M9 5L4.5 9.5 9 14"/><path d="M5 9.5h9a5 5 0 0 1 0 10h-3"/>');
+    back.title = tr('shot.back');
+    back.setAttribute('aria-label', tr('shot.back'));
     back.onclick = function () { set(null); };
-    box.appendChild(document.createTextNode(' '));
     box.appendChild(back);
   }
   row(tr('shot.label'), box);
@@ -3301,8 +3773,10 @@ function tagsChanged(id) {
   api(LIBAPI + '/files/' + id).then(function (info) {
     if (!lb.details || lb.details.id !== id) return;
     lb.details = info;
+    coll.busy = false;
+    markCollectionButton();
     renderPanel();
-  }).catch(function () {});
+  }).catch(function () { coll.busy = false; markCollectionButton(); });
 }
 
 function addTagDialog(ids) {
@@ -3389,6 +3863,18 @@ function loadOwnTags() {
       r.appendChild(name);
       r.appendChild(el('span', 'count', I18n.number(t.count)));
       li.appendChild(r);
+      // Under the active tag: only the photos given it by hand. Only a tag that is
+      // also a folder name has any other kind (a folder tag is not listed on its own).
+      if (t.kind === 'both' && t.manual > 0) {
+        var sr = el('div', 'row sub');
+        var sname = el('button', 'name', tr('side.manual_only'));
+        sname.dataset.manual = t.id;
+        sname.onclick = function () { if (!state.filter.manual) setFilter(withFilter({ manual: true })); };
+        sr.appendChild(sname);
+        sr.appendChild(el('span', 'count', I18n.number(t.manual)));
+        sr.hidden = true;
+        li.appendChild(sr);
+      }
       list.appendChild(li);
     });
     $('tags-section').hidden = !tags.length && !state.favCount;
@@ -3744,6 +4230,8 @@ function loadSettings() {
   page.appendChild(cleanupSection());
   page.appendChild(allowTrashSection());
   page.appendChild(mapsSection());
+  page.appendChild(collectionSection());
+  page.appendChild(exportSection());
   page.appendChild(eventPatternSection());
   page.appendChild(copyFoldersSection());
 }
@@ -4154,11 +4642,17 @@ function avatar(p, cls) {
     img.alt = '';
     img.loading = 'lazy';
     img.src = p.cover != null ? LIBAPI + '/faces/' + p.cover + '/crop' : LIBAPI + '/faces/manual/' + p.cover_manual + '/crop';
+    // A cover drawn on a video has no crop: show the initials.
+    img.onerror = function () { img.remove(); a.textContent = initials(p); };
     a.appendChild(img);
   } else {
-    a.textContent = p ? p.name.split(/\s+/).map(function (w) { return w.charAt(0); }).join('').slice(0, 2).toUpperCase() : '?';
+    a.textContent = initials(p);
   }
   return a;
+}
+
+function initials(p) {
+  return p ? p.name.split(/\s+/).map(function (w) { return w.charAt(0); }).join('').slice(0, 2).toUpperCase() : '?';
 }
 
 // A face cut out of its photo's thumbnail here in the browser, for faces that
@@ -4399,24 +4893,39 @@ function personField(done, opts) {
     list.textContent = '';
     items = [];
     at = -1;
+    var offered = function (p) {
+      return kindOf(p, kind()) && (!low || fold(p.name).indexOf(low) >= 0) && !(opts.except && opts.except.indexOf(p.id) >= 0);
+    };
+    var addItem = function (p) {
+      var it = { who: { person_id: p.id }, label: p.name };
+      if (fold(p.name) === low) exact = it;
+      var b = el('button', 'item');
+      b.type = 'button';
+      b.appendChild(avatar(p, 'tiny'));
+      b.appendChild(el('span', '', p.name));
+      b.onmousedown = function (ev) { ev.preventDefault(); };
+      b.onclick = function () { pick(it); };
+      items.push(it);
+      list.appendChild(b);
+    };
+    // First the people named last, then (field empty) the most photographed,
+    // then everyone by group; nobody twice.
+    var shown = {}, top = [], frequent = [];
+    top = people.list.filter(function (p) { return p.last_named && offered(p); })
+      .sort(function (a, b) { return b.last_named - a.last_named; }).slice(0, RECENT_MAX);
+    top.forEach(function (p) { shown[p.id] = true; });
+    if (!low) {
+      frequent = people.list.filter(function (p) { return offered(p) && !shown[p.id] && p.photos > 0; })
+        .sort(function (a, b) { return b.photos - a.photos || a.name.localeCompare(b.name); }).slice(0, RECENT_MAX);
+      frequent.forEach(function (p) { shown[p.id] = true; });
+    }
+    if (top.length) { list.appendChild(el('div', 'head', tr('suggest.recent'))); top.forEach(addItem); }
+    if (frequent.length) { list.appendChild(el('div', 'head', tr('suggest.most_photos'))); frequent.forEach(addItem); }
     groupedPeople().forEach(function (s) {
-      var ps = s.people.filter(function (p) {
-        return kindOf(p, kind()) && (!low || fold(p.name).indexOf(low) >= 0) && !(opts.except && opts.except.indexOf(p.id) >= 0);
-      });
+      var ps = s.people.filter(function (p) { return offered(p) && !shown[p.id]; });
       if (!ps.length) return;
       list.appendChild(el('div', 'head', s.name));
-      ps.forEach(function (p) {
-        var it = { who: { person_id: p.id }, label: p.name };
-        if (fold(p.name) === low) exact = it;
-        var b = el('button', 'item');
-        b.type = 'button';
-        b.appendChild(avatar(p, 'tiny'));
-        b.appendChild(el('span', '', p.name));
-        b.onmousedown = function (ev) { ev.preventDefault(); };
-        b.onclick = function () { pick(it); };
-        items.push(it);
-        list.appendChild(b);
-      });
+      ps.forEach(addItem);
     });
     if (opts.allowNew && text && !exact && isTaken(text)) {
       // A name is one person's, whatever the kind: not offered again as new.
@@ -5120,6 +5629,41 @@ var un = { shown: 0, total: 0, unnamed: 0, kind: 'all' };
 var UN_KINDS = [['all', 'unnamed.kind.all'], ['faces', 'unnamed.kind.faces'], ['pets', 'unnamed.kind.pets']];
 var PAGE_CLUSTERS = 30;
 
+// Size of the face circles: a browser setting for the whole application, like
+// the maps switch (nothing is kept on the drive or in the library).
+var FACE_SIZE = { min: 64, max: 150, step: 2, key: 'shoebox-face-size' };
+
+function faceSize() {
+  var n = 64;
+  try { n = parseInt(localStorage.getItem(FACE_SIZE.key), 10); } catch (e) { /* private window */ }
+  return isNaN(n) ? FACE_SIZE.min : Math.max(FACE_SIZE.min, Math.min(FACE_SIZE.max, n));
+}
+
+function faceSizeControl(page) {
+  var size = faceSize();
+  page.style.setProperty('--face-size', size + 'px');
+  var label = el('label', 'face-size');
+  label.title = tr('unnamed.size');
+  label.appendChild(el('span', 'dot s'));
+  var input = el('input');
+  input.type = 'range';
+  input.min = FACE_SIZE.min;
+  input.max = FACE_SIZE.max;
+  input.step = FACE_SIZE.step;
+  input.value = size;
+  input.setAttribute('aria-label', tr('unnamed.size'));
+  label.appendChild(input);
+  label.appendChild(el('span', 'dot l'));
+  var out = el('output', '', size + ' px');
+  label.appendChild(out);
+  input.oninput = function () {
+    page.style.setProperty('--face-size', input.value + 'px');
+    out.textContent = input.value + ' px';
+    try { localStorage.setItem(FACE_SIZE.key, input.value); } catch (e) { /* ignore */ }
+  };
+  return label;
+}
+
 function loadUnnamed() {
   var page = $('page');
   page.textContent = '';
@@ -5140,6 +5684,7 @@ function loadUnnamed() {
   kinds.onchange = function () { un.kind = kinds.value; loadUnnamed(); };
   var bar = el('div', 'toolbar');
   bar.appendChild(kinds);
+  bar.appendChild(faceSizeControl(page));
   page.appendChild(bar);
   var box = el('div', 'clusters');
   box.id = 'un-box';
@@ -5211,16 +5756,19 @@ function singlesSection() {
     t.appendChild(faceImg(face, 'big'));
     var open = el('span', 'copen', '↗');
     open.title = tr('facecheck.open_photo');
-    open.onclick = function (ev) { ev.preventDefault(); ev.stopPropagation(); openFacePhoto(face); };
+    open.onclick = function (ev) { ev.preventDefault(); ev.stopPropagation(); openFacePhoto(face, st.faces); };
     t.appendChild(open);
     // Keyboard: Tab between thumbnails (or ←/→), Enter selects (the click
     // below), Space opens the photo and, in the viewer, closes it again.
     t.onkeydown = function (ev) {
+      // While the viewer is open the thumbnail keeps the focus (to come back to);
+      // its keys belong to the viewer then, so Space can close it.
+      if (!$('lightbox').hidden) return;
       if (ev.altKey || ev.metaKey || ev.ctrlKey) return;
       if (ev.key === ' ') {
         ev.preventDefault();
         ev.stopPropagation(); // the viewer's own Space (close) must not see this one
-        openFacePhoto(face);
+        openFacePhoto(face, st.faces);
       } else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
         var next = ev.key === 'ArrowLeft' ? t.previousElementSibling : t.nextElementSibling;
         if (next) { ev.preventDefault(); next.focus(); }
@@ -5373,6 +5921,20 @@ function clusterCard(c) {
         }
         openFacePhoto(face, faces);
       };
+      // Same keys as the single faces: Space opens the photo (and closes the
+      // viewer again), ←/→ move between thumbnails.
+      f.onkeydown = function (ev) {
+        if (!$('lightbox').hidden) return;
+        if (ev.altKey || ev.metaKey || ev.ctrlKey) return;
+        if (ev.key === ' ') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          f.click();
+        } else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
+          var next = ev.key === 'ArrowLeft' ? f.previousElementSibling : f.nextElementSibling;
+          if (next && next.classList.contains('cface')) { ev.preventDefault(); next.focus(); }
+        }
+      };
       grid.appendChild(f);
     });
     if (c.size > faces.length) {
@@ -5391,7 +5953,9 @@ function clusterCard(c) {
   };
   var suggestion = el('div', 'csugg');
   card.appendChild(suggestion);
-  var row = el('div', 'crow');
+  // One toolbar, fixed to the bottom of the card: it stays in view while a long
+  // card scrolls and rests at the card's bottom edge at the end.
+  var row = el('div', 'crow cbar');
   var field = personField(function (who) { act('name', who); }, { allowNew: true, placeholder: tr('unnamed.who'), species: facesSpecies(c.faces) });
   row.appendChild(field);
   var nameBtn = el('button', 'btn', tr('person.name'));
@@ -5401,8 +5965,7 @@ function clusterCard(c) {
     act('name', who);
   };
   row.appendChild(nameBtn);
-  card.appendChild(row);
-  var tools = el('div', 'crow tools');
+  var tools = row;
   var ignore = el('button', 'btn quiet', tr('unnamed.ignore'));
   ignore.title = tr('unnamed.ignore_hint');
   ignore.onclick = function () { act('ignore', {}); };
@@ -5453,7 +6016,7 @@ function clusterCard(c) {
   tools.appendChild(notFace);
   tools.appendChild(change);
   tools.appendChild(pick);
-  card.appendChild(tools);
+  card.appendChild(row);
 
   var picked = function () { return Object.keys(card.picked).map(Number); };
   var update = function () {
@@ -5563,11 +6126,12 @@ function infoFaces(row, info) {
   if (!pickable.length) pick.on = false;
   box.classList.toggle('picking', pick.on);
   if (!info.faces) box.appendChild(el('div', 'note', tr('info.faces_unlooked')));
-  else if (!faces.length) box.appendChild(el('div', 'note', tr('info.no_faces')));
+  else if (!faces.length) box.appendChild(el('div', 'note', tr(info.kind === 'video' ? 'info.faces_video' : 'info.no_faces')));
   faces.forEach(function (f, k) { box.appendChild(infoFace(info, f, k, pick)); });
   if (pick.on) box.appendChild(infoPickBar(info, pickable, pick));
   var tools = el('div', 'ptools');
-  if (faces.length) {
+  // A video's boxes are only a formality: nothing is drawn on it.
+  if (faces.length && info.kind !== 'video') {
     var show = el('button', '', tr(lb.showFaces ? 'info.hide_boxes' : 'info.show_boxes'));
     show.onclick = function () { lb.showFaces = !lb.showFaces; renderPanel(); };
     tools.appendChild(show);
@@ -5578,9 +6142,10 @@ function infoFaces(row, info) {
     select.onclick = function () { pick.on = true; pick.ids = {}; renderPanel(); };
     tools.appendChild(select);
   }
-  if (lb.details && state.data && state.data.kinds[state.open] !== 'v') {
+  if (lb.details && state.data) {
+    var isVideo = state.data.kinds[state.open] === 'v';
     var add = el('button', '', tr('info.add_face'));
-    add.title = tr('info.add_face_hint');
+    add.title = tr(isVideo ? 'info.add_person_hint' : 'info.add_face_hint');
     add.onclick = startDrawing;
     if (lb.details.view_turn) {
       add.disabled = true;
@@ -5702,7 +6267,7 @@ function infoFace(info, f, k, pick) {
     who.appendChild(yes);
     who.appendChild(no);
   } else if (f.state === 'ignored') {
-    who.appendChild(el('span', 'note', tr('info.stranger')));
+    who.appendChild(el('span', 'note', tr(f.species ? 'info.stranger_pet' : 'info.stranger')));
   }
   if (f.state !== 'confirmed') {
     var add = el('button', 'add', tr(f.state === 'suggested' || f.state === 'maybe' ? 'info.other_person' : 'info.plus_name'));
@@ -5732,7 +6297,7 @@ function infoFace(info, f, k, pick) {
         post(LIBAPI + '/people/' + f.person.id + '/cover', { face: f.id }).then(function () { toast(tr('menu.picture_changed')); peopleChanged(); }).catch(failed);
       } });
     }
-    if (f.state !== 'ignored') items.push({ label: tr('info.ignore_stranger'), run: function () { send('ignore', { faces: ids }); } });
+    if (f.state !== 'ignored') items.push({ label: tr(f.species ? 'info.ignore_stranger_pet' : 'info.ignore_stranger'), run: function () { send('ignore', { faces: ids }); } });
     if (f.state) items.push({ label: tr('info.forget'), run: function () { send('undo', { faces: ids }); } });
     if (f.rejected && f.rejected.length) {
       f.rejected.forEach(function (pid) {
@@ -5764,11 +6329,19 @@ function infoFacesChanged(id) {
 // ---- drawing a missed face
 
 // "+ Add face": the panel steps aside, a box is dragged over the photo
-// (mouse, pen or finger), then named.
+// (mouse, pen or finger), then named. A video (never scanned for faces) gets
+// no drawing: a small box is placed in a corner (a little further along for
+// each person already there) and the dialog opens at once. The person is
+// linked to the whole clip and no box is ever shown.
 function startDrawing() {
-  var stage = $('stage'), img = stage.querySelector('img');
+  var stage = $('stage'), img = stage.querySelector('img, video');
   if (!img || !lb.details) return;
   stopDrawing();
+  if (img.tagName === 'VIDEO') {
+    var n = (lb.details.faces || []).length % 8;
+    nameDrawnFace(lb.details, [Math.round((0.02 + 0.1 * n) * 10000) / 10000, 0.02, 0.08, 0.08]);
+    return;
+  }
   var info = lb.details;
   var panel = $('lb-panel');
   lb.drawing = { panelWasOpen: !panel.hidden };
@@ -5847,10 +6420,11 @@ function nameDrawnFace(info, frac) {
   var field, hint;
   var update = function () {
     Array.prototype.forEach.call(kinds.children, function (b) { b.classList.toggle('on', b.dataset.kind === kind); });
-    hint.textContent = tr(kind ? 'draw.note_pet' : 'draw.note');
+    hint.textContent = tr(video ? 'draw.note_video' : kind ? 'draw.note_pet' : 'draw.note');
     field.input.value = '';
     field.input.dispatchEvent(new Event('input'));
   };
+  var video = info.kind === 'video';
   [['', '🧑', 'draw.kind.person'], ['cat', PET_ICON.cat, 'draw.kind.cat'], ['dog', PET_ICON.dog, 'draw.kind.dog']].forEach(function (k) {
     var b = el('button', '', k[1] + ' ' + tr(k[2]));
     b.type = 'button';
@@ -5873,10 +6447,10 @@ function nameDrawnFace(info, frac) {
   body.appendChild(hint);
   update();
   openModal(tr('draw.title'), body, [
-    { label: tr('draw.again'), cls: 'quiet', onclick: function () { var r = lb.drawing && lb.drawing.layer.querySelector('.draw-box'); if (r) r.hidden = true; } },
+    video ? null : { label: tr('draw.again'), cls: 'quiet', onclick: function () { var r = lb.drawing && lb.drawing.layer.querySelector('.draw-box'); if (r) r.hidden = true; } },
     { label: tr('app.cancel'), cls: 'quiet', onclick: function () { stopDrawing(); } },
     { label: tr('draw.save'), onclick: function () { var who = field.value(); if (!who) return false; save(who); return false; } },
-  ]);
+ ].filter(Boolean));
   field.input.focus();
 }
 
@@ -5905,6 +6479,9 @@ function switchLibrary(id, hash) {
   location.reload();
 }
 
+// A comparison stays on when another drive is picked: it is dropped there, with a note, if that drive cannot show it.
+function keepCompare() { return state.filter && state.filter.compare && !state.filter.view ? 'compare=' + state.filter.compare : ''; }
+
 function renderDriveList() {
   var multi = drives.list.length > 1;
   $('drives-box').hidden = !multi;
@@ -5917,7 +6494,7 @@ function renderDriveList() {
     ab.appendChild(el('span', 'dot'));
     ab.appendChild(el('span', 'name', tr('drives.all')));
     ab.title = tr('drives.all_hint');
-    ab.onclick = function () { if (!isAll()) switchLibrary('all', ''); };
+    ab.onclick = function () { if (!isAll()) switchLibrary('all', keepCompare()); };
     all.appendChild(ab);
     ul.appendChild(all);
   }
@@ -5929,7 +6506,7 @@ function renderDriveList() {
     if (!l.online) b.appendChild(el('span', 'tag', tr('drives.offline')));
     else if (l.role === 'backup') b.appendChild(el('span', 'tag', tr('drives.backup')));
     b.title = l.online ? l.name : l.reason ? tr('drives.not_connected_reason', { name: l.name, reason: l.reason }) : tr('drives.not_connected', { name: l.name });
-    b.onclick = function () { if (isAll() || l.id !== drives.current.id) switchLibrary(l.id); };
+    b.onclick = function () { if (isAll() || l.id !== drives.current.id) switchLibrary(l.id, keepCompare()); };
     li.appendChild(b);
     ul.appendChild(li);
   });
@@ -6005,7 +6582,7 @@ function loadDrivesPage() {
   page.textContent = '';
   page.appendChild(el('h2', '', tr('side.manage_drives')));
   page.appendChild(el('p', 'sub', tr('drives.page_sub')));
-  var cards = el('div', 'drive-cards'), tabs = el('div', 'tabs'), tabBox = el('div');
+  var cards = el('div', 'drive-cards'), tabs = el('div', 'tabs underline'), tabBox = el('div');
   page.appendChild(cards);
   page.appendChild(tabs);
   page.appendChild(tabBox);
@@ -6021,11 +6598,13 @@ function loadDrivesPage() {
       cards.appendChild(box);
       group.forEach(function (d) {
         var of = primaryOf[d.library] || d.suggested_backup_of;
+        // The drive it copies, by its disk name (its folder's name only where that is all there is).
+        var ofDisk = (list.filter(function (x) { return x.name === of; })[0] || {}).volume || of;
         var kind = !d.online ? 'off' : d.role === 'backup' ? 'bk' : d.role === 'unknown' ? 'undecided' : 'orig';
         var card = el('div', 'drive-card ' + kind);
         // The same row on every card says what the drive is.
         var strip = el('div', 'strip');
-        strip.appendChild(el('span', '', kind === 'off' ? tr('drives.offline') : kind === 'bk' ? (of ? tr('drives.strip_backup', { primary: of }) : tr('drives.role.backup')) : tr('drives.role.' + d.role)));
+        strip.appendChild(el('span', '', kind === 'off' ? tr('drives.offline') : kind === 'bk' ? (of ? tr('drives.strip_backup', { primary: ofDisk }) : tr('drives.role.backup')) : tr('drives.role.' + d.role)));
         if (d.online && !d.shown_in_all) strip.appendChild(el('span', 'r', tr('drives.not_in_timeline')));
         card.appendChild(strip);
         var body = el('div', 'body');
@@ -6058,7 +6637,9 @@ function loadDrivesPage() {
           renderBackup(slot, backups.filter(function (x) { return x.library === d.library; })[0], d);
           body.appendChild(slot);
         } else if (d.online) {
-          body.appendChild(el('div', 'sub', trn('count.files', d.files)));
+          var orig = el('div', 'backup-status');
+          renderOriginal(orig, d, backups.filter(function (x) { return x.primary_library === d.library; })[0]);
+          body.appendChild(orig);
         }
         if (d.online && d.role === 'unknown' && d.suggested_backup_of) {
           var bn = el('div', 'banner warn');
@@ -6102,8 +6683,15 @@ function loadDrivesPage() {
         var c = el('div', 'person-merged');
         c.appendChild(el('div', 'n', p.name));
         c.appendChild(el('div', 'sub', trn('count.photos', p.photos) + (p.group ? ' · ' + p.group : '')));
-        p.libraries.forEach(function (l) { c.appendChild(el('span', 'pill', l.name + ' · ' + l.faces)); });
-        var go = el('button', 'btn quiet', tr('drives.photos_everywhere'));
+        // The drive first (its disk name; the folder name only where that is all there is).
+        var pills = el('div', 'pills');
+        p.libraries.forEach(function (l) {
+          var pill = el('span', 'pill drive', (l.volume || l.name) + ' · ' + l.faces);
+          if (l.volume) pill.title = tr('drives.person_folder', { name: l.name });
+          pills.appendChild(pill);
+        });
+        c.appendChild(pills);
+        var go = el('button', 'btn quiet', tr('cmp.show_photos'));
         go.onclick = function () { switchLibrary('all', 'person=' + encodeURIComponent(p.name)); };
         c.appendChild(go);
         grid.appendChild(c);
@@ -6124,6 +6712,11 @@ function allTimelineLoaded(data) {
     $('scroller').insertBefore(note, $('filters'));
   }
   var out = data.left_out.map(function (x) { return x.name + ' (' + x.reason.split(';')[0] + ')'; });
+  if (data.flat && data.libs.length === 2) {
+    note.textContent = tr('cmp.pairs_note', { original: data.libs[0].volume || data.libs[0].name, backup: data.libs[1].volume || data.libs[1].name, n: I18n.number(data.count) });
+    $('status').textContent = tr('drives.status', { photos: trn('count.photos', data.count), drives: trn('count.drives', data.libs.length) });
+    return;
+  }
   note.textContent = tr('drives.note', { libs: data.libs.map(function (l) { return l.name; }).join(', ') }) + (out.length ? tr('drives.note_out', { out: out.join(', ') }) : '');
   $('status').textContent = tr('drives.status', { photos: trn('count.photos', data.count), drives: trn('count.drives', data.libs.length) });
 }
@@ -6156,7 +6749,7 @@ function renderBackup(slot, b, d) {
     t.appendChild(lead);
     t.appendChild(el('b', '', pct + ' %'));
     prog.appendChild(t);
-    var bar = el('div', 'bar');
+    var bar = el('div', 'meter');
     var fill = el('i');
     fill.style.width = pct + '%';
     bar.appendChild(fill);
@@ -6164,16 +6757,46 @@ function renderBackup(slot, b, d) {
     slot.appendChild(prog);
   }
   if (b.unhashed) slot.appendChild(el('div', 'sub', tr('drives.backup_unhashed', { files: trn('count.files', b.unhashed), primary: b.primary }).trim()));
-  var lists = [
-    [b.missing, 'drives.sum_missing', b.missing_files, b.primary_library, 'warn'],
-    [b.different, 'drives.sum_different', b.different_files, b.primary_library, 'warn'],
-    [b.extra, 'drives.sum_extra', b.extra_files, d.library, '']
-  ];
+  // "Show photos" opens the timeline with that comparison (the first one on
+  // both drives of the pair, in one list).
+  slot.appendChild(backupLists([
+    [b.different, 'drives.sum_different', b.different_files, b.primary_library, 'warn', function () { switchLibrary('all', 'compare=different'); }],
+    [b.extra, 'drives.sum_extra', b.extra_files, d.library, '', function () { switchLibrary(d.library, 'compare=backup'); }]
+  ], b));
+}
+
+// The original's card: how many files, and what is not on its backup yet.
+function renderOriginal(slot, d, b) {
+  slot.textContent = '';
+  // The count as in the backup's bar line (a bold number), so the cards line up.
+  var line = el('div', 'statline');
+  var t = el('div', 't');
+  var lead = el('span');
+  var text = trn('count.files', d.files), num = I18n.number(d.files), at = text.indexOf(num);
+  if (at >= 0) {
+    lead.appendChild(document.createTextNode(text.slice(0, at)));
+    lead.appendChild(el('b', '', num));
+    lead.appendChild(document.createTextNode(text.slice(at + num.length)));
+  } else lead.textContent = text;
+  t.appendChild(lead);
+  line.appendChild(t);
+  slot.appendChild(line);
+  if (b && b.missing) {
+    slot.appendChild(backupLists([
+      [b.missing, 'drives.sum_missing', b.missing_files, d.library, 'warn', function () { switchLibrary(d.library, 'compare=original'); }]
+    ], b));
+  }
+}
+
+function backupLists(lists, b) {
   var wrap = el('div', 'lists');
   lists.forEach(function (l) {
     if (!l[0]) return;
     var det = el('details');
     var sum = el('summary');
+    var go = el('button', 'btn quiet small go', tr('cmp.show_photos'));
+    go.onclick = function (ev) { ev.preventDefault(); ev.stopPropagation(); l[5](); };
+    sum.appendChild(go);
     sum.appendChild(el('b', l[4], I18n.number(l[0])));
     sum.appendChild(document.createTextNode(' ' + tr(l[1])));
     if (l[1] === 'drives.sum_extra') sum.appendChild(el('span', 'sub', ' ' + tr('drives.sum_extra_hint', { primary: b.primary })));
@@ -6184,11 +6807,12 @@ function renderBackup(slot, b, d) {
       li.appendChild(el('span', 'path', f.path));
       li.appendChild(el('span', 'size', formatBytes(f.size)));
       if (state.reveal && l[3]) {
-        var go = el('button', 'btn quiet reveal', '📂');
-        go.title = state.reveal;
-        go.setAttribute('aria-label', state.reveal);
-        go.onclick = function () { revealOn(l[3], f.path); };
-        li.appendChild(go);
+        var show = el('button', 'btn quiet reveal');
+        show.appendChild(folderIcon());
+        show.title = state.reveal;
+        show.setAttribute('aria-label', state.reveal);
+        show.onclick = function () { revealOn(l[3], f.path); };
+        li.appendChild(show);
       }
       ul.appendChild(li);
     });
@@ -6196,7 +6820,7 @@ function renderBackup(slot, b, d) {
     det.appendChild(ul);
     wrap.appendChild(det);
   });
-  slot.appendChild(wrap);
+  return wrap;
 }
 
 function refreshDrives() {
@@ -6232,7 +6856,7 @@ I18n.ready.then(function () {
     showLogin();
     return;
   }
-  return refreshDrives().then(function () {
+  return refreshDrives().then(loadCompare).then(function () {
     setInterval(refreshDrives, 10000);
     if (drives.current.online) { loadEventPattern(); loadAllowTrash(); }
     if (!drives.current.online) {

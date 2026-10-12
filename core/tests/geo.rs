@@ -183,7 +183,7 @@ fn places_are_rectangles_that_collect_their_photos() {
     // The backup of what the user made.
     server.stop().unwrap();
     let data: Value = serde_json::from_slice(&fs::read(lib.path(".shoebox/userdata.json")).unwrap()).unwrap();
-    assert_eq!(data["version"], 5);
+    assert_eq!(data["version"], 6);
     assert_eq!(data["places"][0]["name"], "Zuhause");
     assert_eq!(data["geo_overrides"][0]["files"][0], PLAIN);
     assert_eq!(lib.snapshot(), before, "originals untouched");

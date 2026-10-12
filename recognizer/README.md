@@ -11,18 +11,19 @@ boxes and embeddings out. It never touches the database or an original.
 - `fetch-models.sh [dir]`: download the ONNX models (checksummed) into
   `models/`; `SHOEBOX_NO_PETS=1` leaves out the two pet models
   (~140 MB).
-- `install.sh [--faces] [--pets] [library-root]`: standalone Python, OpenCV,
+- `install.sh [--faces] [--pets]`: standalone Python, OpenCV,
   numpy and the models of the add-ons asked for (Faces ~40 MB, Pets ~140 MB,
   independent; both are asked in a terminal when neither flag is given). The
-  runtime (~200 MB) is always installed. Without a path everything goes into
-  this folder (next to the shoebox program) and every drive you recognize uses
-  it; with a path into `<root>/.shoebox/recognizer/`, which travels with that
-  drive. `shoebox recognize` looks next to the program first and in the drive
-  last. Run it on each kind of computer that will run recognition: the models
+  runtime (~200 MB) is always installed. Everything goes into this folder
+  (next to the shoebox program) and every drive you recognize uses it.
+  `shoebox recognize` runs the recognizer only from here, never from a
+  drive's `.shoebox/` (a drive from somebody else could bring a Python of its
+  own); the one exception is a program in the older `<drive>/.shoebox/bin/`
+  layout, which uses its own drive's `.shoebox/recognizer/`. Run it on each kind of computer that will run recognition: the models
   are kept, only that computer's Python is added. People who do not use the
   terminal press **Install the selected add-ons** in the Control Panel (step 1,
   Add-ons), which runs this script.
-- `install.ps1 [-Faces] [-Pets] [-Root library-root]` and `fetch-models.ps1`:
+- `install.ps1 [-Faces] [-Pets]` and `fetch-models.ps1`:
   the same for Windows 10/11 on x86-64, in PowerShell (no extra tools: it uses
   `Invoke-WebRequest`, `Get-FileHash` and the system's `tar.exe`). The Control
   Panel runs `powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1`.
@@ -46,7 +47,6 @@ is the first of `dinov2_small.onnx` and
 `SHOEBOX_PET_BACKEND=onnxruntime|opencv` forces the runtime). DINOv2-small
 tells individual pets apart better but is not fetched automatically (it is
 on Hugging Face): download `onnx/model.onnx` from `onnx-community/dinov2-small`,
-save it as `models/dinov2_small.onnx` (next to `recognizer.py`, or in
-`.shoebox/recognizer/models/`), and run `shoebox recognize --pets` again;
+save it as `models/dinov2_small.onnx` (next to `recognizer.py`), and run `shoebox recognize --pets` again;
 the model id changes, so the pets are looked for again. Details and open
 points: [docs/phase7.md](../docs/phase7.md).

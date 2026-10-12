@@ -2,11 +2,12 @@
 # OpenCV, numpy and the models on Windows, so `shoebox recognize` finds it
 # without anything installed on the computer. The Windows twin of install.sh.
 #
-#   install.ps1 [-Faces] [-Pets] [-Text] [-Root library-root]
+#   install.ps1 [-Faces] [-Pets] [-Text]
 #
-# Without -Root it installs into the folder that holds this script (next to
-# shoebox.exe; every drive you recognize then uses it). With one, into
-# <library-root>\.shoebox\recognizer\ (travels with that drive).
+# It installs into the folder that holds this script, next to shoebox.exe;
+# every drive you recognize uses it. shoebox runs the recognizer only from
+# there, never from a drive's .shoebox folder (a drive from somebody else could
+# bring a Python of its own).
 #
 # -Faces (face models, ~40 MB), -Pets (cat and dog models, ~140 MB) and -Text
 # (read the words in photos: the rapidocr package with onnxruntime and its
@@ -20,8 +21,7 @@
 param(
     [switch]$Faces,
     [switch]$Pets,
-    [switch]$Text,
-    [string]$Root
+    [switch]$Text
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -65,14 +65,7 @@ try {
     }
     if (-not $Faces -and -not $Pets -and -not $Text) { Fail 'nothing to install: use -Faces, -Pets and/or -Text' }
 
-    if ($Root) {
-        if (-not (Test-Path -LiteralPath (Join-Path $Root '.shoebox') -PathType Container)) {
-            Fail "$Root has no .shoebox folder (run shoebox scan first)"
-        }
-        $Dest = Join-Path (Join-Path $Root '.shoebox') 'recognizer'
-    } else {
-        $Dest = $Here
-    }
+    $Dest = $Here
 
     # Must match Rust's std::env::consts::{OS, ARCH} (see core/src/recognize.rs).
     # OpenCV has no Windows wheels for ARM, so only 64-bit Intel/AMD.
@@ -187,7 +180,6 @@ try {
                 Write-Host "copied $f"
             }
         }
-        if ($Dest -ne $Here) { Copy-Item -LiteralPath (Join-Path $Here 'recognizer.py') -Destination (Join-Path $Dest 'recognizer.py') -Force }
 
         Write-Host 'Checking...'
         $bundled = Join-Path $target 'python.exe'
@@ -207,11 +199,7 @@ try {
         Write-Host 'Done, except Text: it is not available on this computer. Text read on another computer still works here.'
         exit 3
     }
-    if ($Root) {
-        Write-Host "Done. Run: shoebox recognize `"$Root`""
-    } else {
-        Write-Host 'Done. Run Recognize in the shoebox launcher for any drive.'
-    }
+    Write-Host 'Done. Run Recognize in the shoebox launcher for any drive.'
 } catch {
     Write-Host "ERROR: $($_.Exception.Message)"
     exit 1
