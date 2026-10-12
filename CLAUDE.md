@@ -77,8 +77,15 @@ current status and next step. Update its status table when a phase moves.
   `Cargo.lock`, `scripts/build-deps.sh` or `core/web/vendor/` run
   `python3 scripts/third-party-licenses.py`. Do not call shoebox "open source"
   in texts. Icons are our own line drawings (`lineIcon` in `core/web/app.js`,
-  the guide's symbols); never copy path data from an icon set (Material
-  Symbols, Feather, ...), which would need a licence entry. Open items before giving it to others: see "Before giving shoebox
+  the guide's symbols). Every icon is drawn by us and must look visibly
+  different from any existing icon set (Google Material Symbols, Feather,
+  Apple SF Symbols, ...), even when the idea comes from one: a different
+  construction (shapes, proportions, stroke ends, where parts sit), never a
+  trace, a copy of path data, or a small tweak of an original. If an icon
+  still looks like the well-known one, change it. Such an icon needs no
+  licence entry only because it is ours. Never paste an icon set's SVG into
+  the code or the guide.
+  Open items before giving it to others: see "Before giving shoebox
   to others" in docs/plan.md.
 - UI text is never hard-coded: `tr()`/`trn()`/`data-i18n` with a key in both
   `core/i18n/en.json` and `de.json` (see docs/phase8.md; `core/tests/i18n.rs`

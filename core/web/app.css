@@ -483,7 +483,11 @@ body.selecting .sec .pick { display: inline; }
 .lb-panel .pickhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
 .lb-panel .pickhead .link { background: none; border: 0; padding: 0; color: var(--accent); font-size: 13px; }
 .lb-panel .pickacts { display: flex; gap: 6px; flex-wrap: wrap; }
-.lb-panel .ptools { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.lb-panel .ptools { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.lb-panel .ptools .tool { width: 34px; height: 34px; padding: 0; border: 0; border-radius: 9px; background: rgba(255,255,255,.15); color: #eee; font-size: 19px; display: inline-flex; align-items: center; justify-content: center; }
+.lb-panel .ptools .tool:hover:not(:disabled) { background: rgba(255,255,255,.22); }
+.lb-panel .ptools .tool.on { background: var(--accent); color: #fff; }
+.lb-panel .ptools .tool:disabled { opacity: .45; cursor: default; }
 .lb-panel .pfield { width: 100%; }
 .lb-panel .pfield input { background: rgba(0,0,0,.3); color: #eee; border-color: rgba(255,255,255,.3); font-size: 16px; padding: 4px 10px; border-radius: 99px; }
 .lb-panel .plist { background: #222; border-color: rgba(255,255,255,.2); }
