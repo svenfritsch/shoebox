@@ -136,9 +136,11 @@ Alles ist auf einer Seite. So findest du dich zurecht.
 
 4. Typ
    Hake an, was gezeigt werden soll; ohne Haken wird alles gezeigt. Fotos:
-   Standbilder ohne Screenshots (fahre über das ⓘ). Videos: eigenständige
-   Videos. Live Photos: Fotos mit einem kurzen Clip. Screenshots: Bilder von
-   einem Handy- oder Computerbildschirm.
+   Standbilder, die weder Screenshots noch Live Photos sind (fahre über das
+   ⓘ). Videos: eigenständige Videos. Live Photos: Fotos mit einem kurzen Clip.
+   Screenshots: Bilder von einem Handy- oder Computerbildschirm. Jedes Bild
+   gehört zu genau einem davon. Was du anhakst, erscheint auch als Chip über
+   den Fotos.
 
 5. Jahr
    Direkt zu einem Jahr springen.
@@ -389,26 +391,33 @@ Tippe ins Suchfeld: Vorschläge erscheinen für Tags, Personen und Ordner (ein
 Ordnername steht unter Ordner; unter Tags stehen nur Tags, die du von Hand
 vergeben hast, auch solche mit dem Namen eines Ordners). Mehrere gewählte
 werden zu Chips, die das Ergebnis eingrenzen; × entfernt einen, Alle entfernen
-beginnt neu. Deine Favoriten findest du mit dem ♥-Knopf neben Typ, oder tippe
-favorit (deutsch) bzw. favorite (englisch) und wähle ♥ Favoriten; das lässt
-sich mit allem anderen kombinieren, z. B. Favoriten einer Person oder eines
-Jahres. Bei eingeschalteten Karten (siehe „Orte und Karten“) bieten die
-Vorschläge auch deine Orte an. Ein Jahr oder ein Monat mit Jahr, etwa 1987
-oder Juni 1987, bietet am Ende der Liste eine Zeile unter Datum an (siehe
-„Datum und Suche nach Datum“).
+beginnt neu. Rechts neben den Chips zeigt shoebox, wie viele die Suche findet,
+zum Beispiel 48 Fotos · 3 Videos; findet sie nichts, steht dort Keine Fotos,
+und die Seite sagt Hier ist nichts. Die Suche ergab keine Treffer. Deine
+Favoriten findest du mit dem ♥-Knopf neben Typ, oder tippe favorit (deutsch)
+bzw. favorite (englisch) und wähle ♥ Favoriten; das lässt sich mit allem
+anderen kombinieren, z. B. Favoriten einer Person oder eines Jahres. Bei
+eingeschalteten Karten (siehe „Orte und Karten“) bieten die Vorschläge auch
+deine Orte an. Ein Jahr oder ein Monat mit Jahr, etwa 1987 oder Juni 1987,
+bietet am Ende der Liste eine Zeile unter Datum an (siehe „Datum und Suche
+nach Datum“).
 
-Typ bietet Fotos (Standbilder ohne Screenshots), Videos, Live Photos und
-Screenshots; hake beliebige an, ohne Haken wird alles gezeigt. Um Screenshots
-aus der Zeitleiste zu nehmen, hake Fotos, Videos und Live Photos an, aber
-nicht Screenshots; um nur Screenshots zu sehen, hake nur Screenshots an.
-Shoebox erkennt einen Screenshot an der Datei (ein PNG ohne Kameradaten, ein
-Name wie Screenshot oder Bildschirmfoto, die Größe eines Handy- oder
-Computerbildschirms) und am Bild selbst (große einfarbige Flächen). Es kann
-sich in beide Richtungen irren: Im Info-Fenster eines Fotos ist Screenshot ein
-Auswahlfeld, das mit der Schätzung von Shoebox beginnt; wähle Ja oder Nein zum
-Korrigieren, das Rückgängig-Symbol rechts in der Zeile (Tooltip Zurück zu
-automatisch) kehrt zur Schätzung zurück. Deine Wahl wird in der Bibliothek
-gemerkt; die Fotodatei wird nie verändert.
+Typ bietet Fotos (Standbilder, die weder Screenshots noch Live Photos sind),
+Videos, Live Photos und Screenshots; hake beliebige an, ohne Haken wird alles
+gezeigt. Jedes Bild gehört zu genau einem der vier, Fotos und Live Photos
+überschneiden sich also nie: Hake beide an, um alle deine Fotos zu sehen. Was
+du anhakst, erscheint auch als Chip mit dem Symbol des Typs (vier Quadrate,
+wenn mehrere angehakt sind); sein × hebt den Filter auf, ebenso Alle
+entfernen. Um Screenshots aus der Zeitleiste zu nehmen, hake Fotos, Videos und
+Live Photos an, aber nicht Screenshots; um nur Screenshots zu sehen, hake nur
+Screenshots an. Shoebox erkennt einen Screenshot an der Datei (ein PNG ohne
+Kameradaten, ein Name wie Screenshot oder Bildschirmfoto, die Größe eines
+Handy- oder Computerbildschirms) und am Bild selbst (große einfarbige
+Flächen). Es kann sich in beide Richtungen irren: Im Info-Fenster eines Fotos
+ist Screenshot ein Auswahlfeld, das mit der Schätzung von Shoebox beginnt;
+wähle Ja oder Nein zum Korrigieren, das Rückgängig-Symbol rechts in der Zeile
+(Tooltip Zurück zu automatisch) kehrt zur Schätzung zurück. Deine Wahl wird in
+der Bibliothek gemerkt; die Fotodatei wird nie verändert.
 
 Auswählen
 ☑ drücken, dann Fotos anklicken (mit Umschalt für einen Bereich; am iPad

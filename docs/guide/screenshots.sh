@@ -27,6 +27,15 @@ for lang in en de; do
     sleep 2
     node screenshots.mjs app "$lang" "$out" http://localhost:7900/ "$LIB"
     kill $pid
+    # The suggestion lists (tag field, name field) want a fresh library.
+    rm -rf "$LIB"; mkdir -p "$LIB"
+    python3 make-sample-library.py "$LIB" "$lang" /tmp/shoebox-guide-ann.json
+    "$BIN" scan "$LIB" >/dev/null 2>&1
+    SHOEBOX_MOCK_ANN=/tmp/shoebox-guide-ann.json "$BIN" recognize "$LIB" --recognizer "$PWD/mock-recognizer.py" --pets >/dev/null 2>&1
+    "$BIN" serve "$LIB" --port 7900 >/dev/null 2>&1 & pid=$!
+    sleep 2
+    node screenshots.mjs suggestions "$lang" "$out" http://localhost:7900/ "$LIB"
+    kill $pid
     HOME=/tmp/shoebox-guide-home "$BIN" >/dev/null 2>&1 & pid=$!
     sleep 2
     node screenshots.mjs launcher "$lang" "$out" http://localhost:7879/ "$LIB"

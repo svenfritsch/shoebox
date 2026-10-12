@@ -102,10 +102,11 @@ pub struct Snapshot {
     children: HashMap<i64, Vec<i64>>,
 }
 
-/// What the type filter offers. Photos are the stills that are not
-/// screenshots (a Live Photo's still included), Screenshots the stills that
-/// are, Videos only stand-alone videos (the motion part of a Live Photo is
-/// folded into its still, never listed), Live the stills that have one.
+/// What the type filter offers. The four never overlap, so every item is
+/// exactly one of them: Live the stills that have a clip (the clip itself is
+/// folded into its still, never listed), Photos the other stills that are not
+/// screenshots, Screenshots the other stills that are, Videos only stand-alone
+/// videos.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaType {
     Photo,
@@ -127,8 +128,8 @@ impl MediaType {
 
     pub fn matches(self, it: &Item) -> bool {
         match self {
-            MediaType::Photo => it.kind != Kind::Video && !it.shot,
-            MediaType::Screenshot => it.kind != Kind::Video && it.shot,
+            MediaType::Photo => it.kind != Kind::Video && it.live.is_none() && !it.shot,
+            MediaType::Screenshot => it.kind != Kind::Video && it.live.is_none() && it.shot,
             MediaType::Video => it.kind == Kind::Video,
             MediaType::Live => it.live.is_some(),
         }
