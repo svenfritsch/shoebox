@@ -12,10 +12,14 @@ const de = lang === 'de';
 // Not 'Favorites': that word is the heart feature now.
 const TAG = 'Highlights';
 const HOLIDAY = de ? '2025-08 Urlaub' : '2025-08 Holiday';
-const shot = (name, opts = {}) => p.screenshot({ path: `${out}/${name}.png`, ...opts });
+const t0 = Date.now();
+const shot = async (name, opts = {}) => { await p.screenshot({ path: `${out}/${name}.png`, ...opts }); console.log(`  ${lang} ${name} ${((Date.now() - t0) / 1000).toFixed(1)}s`); };
 const wait = (ms = 600) => p.waitForTimeout(ms);
+// Until a toast has gone (it shows for 4 s) and the pictures on the page are loaded.
+const toastGone = () => p.waitForSelector('#toast', { state: 'hidden', timeout: 10000 });
+const imagesLoaded = () => p.waitForFunction(() => [...document.images].every((i) => i.complete), null, { timeout: 30000 });
 // A button by its label (core/i18n), not by its place: cards differ in which buttons they have.
-const { readFileSync } = await import('node:fs');
+const { readFileSync, writeFileSync } = await import('node:fs');
 const SELECT = JSON.parse(readFileSync(new URL(`../../core/i18n/${lang}.json`, import.meta.url), 'utf8'))['facecheck.select'];
 
 const GROUPS = de ? { family: 'Familie', friends: 'Freunde', colleagues: 'Kollegen', pets: 'Haustiere' } : { family: 'Family', friends: 'Friends', colleagues: 'Colleagues', pets: 'Pets' };
@@ -158,6 +162,16 @@ await p.goto(url); await p.waitForSelector('.cell'); await wait(1000);
 await p.evaluate(() => post(LIBAPI + '/allow-trash', { allow: true }));
 await p.goto(url); await p.waitForSelector('.cell'); await wait(2500);
 await shot('ui-overview');
+// Where the controls of "The screen at a glance" are, in the order of its
+// legend (one numbered dot each): check.py checks that the dots sit on them.
+const GLANCE = [['Folders menu', '#menu'], ['Search box', '#search'], ['Favorites', '#fav-btn'], ['Type', '#types-btn'],
+  ['Year', '#years'], ['Select', '#select'], ['Quick links', '.sidebar-head'], ['Folders', '#tree'],
+  ['Timeline', '#sizer'], ['Language', '#lang'], ['Status', '#status']];
+const boxes = await p.evaluate((sels) => sels.map((sel) => {
+  const e = document.querySelector(sel), r = e && e.getBoundingClientRect();
+  return r && r.width && r.height ? { x: r.x, y: r.y, w: r.width, h: Math.min(r.height, innerHeight - r.y) } : null;
+}), GLANCE.map((g) => g[1]));
+writeFileSync(`${out}/ui-overview.json`, JSON.stringify({ width: 1280, height: 860, names: GLANCE.map((g) => g[0]), boxes }, null, 1));
 
 // Viewer with the info panel (a landscape; newest first: 3 July, 3 May, then March).
 await p.locator('.cell').nth(6).click(); await wait(800);
@@ -171,7 +185,7 @@ await p.keyboard.press('Escape'); await wait(300);
 await p.keyboard.press('Escape'); await wait(300);
 
 // Duplicates, from a clean state; tall so the whole page is in the shot.
-await p.click('#nav-dups'); await wait(7000);
+await p.click('#nav-dups'); await p.waitForSelector('.dup-pre summary', { timeout: 60000 }); await imagesLoaded(); await wait(800);
 await p.setViewportSize({ width: 1280, height: 1500 }); await wait(800);
 // The Preselect menu open, then its "Smaller versions": that group comes to the
 // top with the messenger copy ticked.
@@ -226,7 +240,8 @@ await miaMenu.scrollIntoViewIfNeeded(); await wait(600);   // scrolling closes a
 await miaMenu.click(); await wait(500);
 await p.locator('.menu button').nth(3).click(); await wait(600);
 await shot('move-to-group');
-await p.locator('#modal-body button', { hasText: GROUPS.family }).first().click(); await wait(5500);   // the toast goes, the status line settles
+await p.locator('#modal-body button', { hasText: GROUPS.family }).first().click(); await wait(500);
+await toastGone(); await wait(800);   // the status line settles
 await p.evaluate(() => { document.getElementById('scroller').scrollTop = 0; }); await wait(500);
 await shot('people-overview');
 await p.setViewportSize({ width: 1280, height: 860 });
@@ -280,8 +295,7 @@ await p.click('#all'); await wait(600);
 await p.click('#select'); await p.locator('.cell').nth(0).click(); await wait(200);
 await p.click('#sel-trash'); await wait(500);
 await p.locator('#modal-actions button').last().click(); await wait(800);
-await p.click('#nav-trash'); await wait(1500);
-await wait(3500); await shot('trash');
+await p.click('#nav-trash'); await toastGone(); await imagesLoaded(); await wait(800); await shot('trash');
 
 await p.click('#nav-settings'); await wait(1000);
 await shot('settings');
