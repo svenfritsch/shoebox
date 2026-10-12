@@ -585,9 +585,11 @@ fn browser_frames_become_video_posters() {
     let send = |id: i64, body: &[u8]| request(addr, "POST", &format!("/api/files/{id}/poster"), &[("Content-Type", "image/jpeg")], body);
 
     // Refused: no write header, another host, not a video, not a picture.
+    // The first two are refused before the body is read, so they send one
+    // byte: a large body still arriving then makes macOS reset the connection.
     let path = format!("/api/files/{video}/poster");
-    assert_eq!(bare_request(addr, "POST", &path, &[], &frame).status, 403);
-    assert_eq!(request(addr, "POST", &path, &[("Host", "photos.evil.example")], &frame).status, 401);
+    assert_eq!(bare_request(addr, "POST", &path, &[], b"x").status, 403);
+    assert_eq!(request(addr, "POST", &path, &[("Host", "photos.evil.example")], b"x").status, 401);
     assert_eq!(send(photo, &frame).status, 404);
     assert_eq!(send(999_999, &frame).status, 404);
     assert_eq!(send(video, b"<script>").status, 400);
