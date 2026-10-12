@@ -1235,8 +1235,8 @@ function thumbFailed(id, kind) {
 }
 
 // Videos the server has no poster for (no ffmpeg, or ffmpeg could not read
-// them): grab a frame in the browser, two videos at a time. The frames are
-// kept for the session only; nothing is stored on the drive.
+// them): grab a frame in the browser, two videos at a time, and send it to
+// the server, which keeps a copy of its own as the video's poster.
 var frames = { cache: {}, queue: [], busy: 0 };
 
 function videoFrame(id, img, done) {
@@ -1276,7 +1276,10 @@ function grabFrame(job) {
       c.width = Math.max(1, Math.round(w * s));
       c.height = Math.max(1, Math.round(h * s));
       c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
-      c.toBlob(function (b) { finish(b ? URL.createObjectURL(b) : null); }, 'image/jpeg', 0.8);
+      c.toBlob(function (b) {
+        if (b) savePoster(job.id, b);
+        finish(b ? URL.createObjectURL(b) : null);
+      }, 'image/jpeg', 0.8);
     } catch (e) { finish(null); }
   }
   v.muted = true;
@@ -1289,6 +1292,16 @@ function grabFrame(job) {
     if (at > 0) { v.onseeked = draw; v.currentTime = at; } else if (v.readyState >= 2) draw(); else v.onloadeddata = draw;
   };
   v.src = fileBase(job.id) + '/original';
+}
+
+// Best effort: without it the frame is simply grabbed again next time.
+function savePoster(id, blob) {
+  fetch(fileBase(id) + '/poster', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'image/jpeg', 'X-Shoebox': '1' },
+    body: blob,
+  }).catch(function () {});
 }
 
 // Where item i sits in the layout.

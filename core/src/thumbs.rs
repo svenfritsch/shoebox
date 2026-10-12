@@ -40,7 +40,7 @@ const QUALITY: u8 = 80;
 pub const VIEW_EDGE: u32 = 2048;
 const VIEW_QUALITY: u8 = 85;
 
-const SCHEMA_VERSION: i32 = 3;
+const SCHEMA_VERSION: i32 = 4;
 const SCHEMA_V1: &str = "
 CREATE TABLE thumbs.thumbs (
     key     TEXT PRIMARY KEY,   -- files.quick_hash
@@ -66,6 +66,17 @@ CREATE TABLE IF NOT EXISTS thumbs.faces (
     PRIMARY KEY (key, x, y, w, h)
 ) WITHOUT ROWID;
 ";
+
+/// v4: where a picture came from. NULL: made by shoebox from the original;
+/// `browser`: a video frame a browser grabbed (`store_browser_poster`), which
+/// a scan with a poster maker at hand replaces.
+const SCHEMA_V4: &str = "ALTER TABLE thumbs.thumbs ADD COLUMN source TEXT;";
+/// `thumbs.source` of a video frame sent by a browser.
+const FROM_BROWSER: &str = "browser";
+/// Largest browser frame accepted, as sent (the UI sends ~20 KB).
+pub const BROWSER_POSTER_MAX_BYTES: usize = 512 * 1024;
+/// Largest side of a browser frame accepted before it is shrunk.
+const BROWSER_POSTER_MAX_EDGE: u32 = 2048;
 
 /// Location of `thumbs.db` for a library database.
 pub fn path_for(db_path: &Path) -> PathBuf {
@@ -103,6 +114,12 @@ pub fn attach(conn: &Connection, db_path: &Path) -> Result<()> {
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V3)?;
         tx.pragma_update(Some("thumbs"), "user_version", 3)?;
+        tx.commit()?;
+    }
+    if version < 4 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V4)?;
+        tx.pragma_update(Some("thumbs"), "user_version", 4)?;
         tx.commit()?;
     }
     Ok(())
@@ -183,13 +200,14 @@ fn encode(img: &DynamicImage, quality: u8, with_phash: bool) -> Result<Rendered>
 }
 
 /// Store a thumbnail (or the reason there is none) and the perceptual hash
-/// of every image with that content.
+/// of every image with that content. A failure does not replace a frame a
+/// browser sent; it is noted next to it, so the next scan does not try again.
 pub fn store(conn: &Connection, key: &str, result: &Result<Rendered, String>) -> Result<()> {
     match result {
         Ok(r) => {
             conn.execute(
-                "INSERT OR REPLACE INTO thumbs.thumbs (key, width, height, jpeg, error, made_at)
-                 VALUES (?1, ?2, ?3, ?4, NULL, ?5)",
+                "INSERT OR REPLACE INTO thumbs.thumbs (key, width, height, jpeg, error, made_at, source)
+                 VALUES (?1, ?2, ?3, ?4, NULL, ?5, NULL)",
                 params![key, r.width, r.height, r.jpeg, db::now()],
             )?;
             if let Some(p) = r.shot_pixels {
@@ -207,12 +225,51 @@ pub fn store(conn: &Connection, key: &str, result: &Result<Rendered, String>) ->
         }
         Err(e) => {
             conn.execute(
-                "INSERT OR REPLACE INTO thumbs.thumbs (key, jpeg, error, made_at) VALUES (?1, NULL, ?2, ?3)",
+                "INSERT INTO thumbs.thumbs (key, jpeg, error, made_at) VALUES (?1, NULL, ?2, ?3)
+                 ON CONFLICT (key) DO UPDATE SET
+                     jpeg = CASE WHEN source = 'browser' THEN jpeg END,
+                     width = CASE WHEN source = 'browser' THEN width END,
+                     height = CASE WHEN source = 'browser' THEN height END,
+                     error = excluded.error, made_at = excluded.made_at",
                 params![key, e, db::now()],
             )?;
         }
     }
     Ok(())
+}
+
+/// A video frame grabbed by a browser, made into a poster of our own: decoded
+/// (it must be a JPEG of sensible size), shrunk to `EDGE` and encoded again,
+/// so no byte the browser sent is stored.
+pub fn browser_poster(bytes: &[u8]) -> Result<Rendered> {
+    if bytes.len() > BROWSER_POSTER_MAX_BYTES {
+        bail!("the picture is larger than {} KiB", BROWSER_POSTER_MAX_BYTES / 1024);
+    }
+    let mut reader = image::ImageReader::with_format(std::io::Cursor::new(bytes), image::ImageFormat::Jpeg);
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(BROWSER_POSTER_MAX_EDGE);
+    limits.max_image_height = Some(BROWSER_POSTER_MAX_EDGE);
+    limits.max_alloc = Some(64 * 1024 * 1024);
+    reader.limits(limits);
+    let img = reader.decode().context("not a JPEG picture")?;
+    encode(&shrink(img, EDGE), QUALITY, false)
+}
+
+/// Keep a browser's frame as the poster of the video content `key`, only
+/// while that content has no picture (none yet, or only the reason it
+/// failed; that reason stays, so a scan does not try again). Returns whether
+/// it was stored.
+pub fn store_browser_poster(conn: &Connection, key: &str, poster: &Rendered) -> Result<bool> {
+    let n = conn.execute(
+        "INSERT INTO thumbs.thumbs (key, width, height, jpeg, error, made_at, source)
+         VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?6)
+         ON CONFLICT (key) DO UPDATE SET
+             width = excluded.width, height = excluded.height, jpeg = excluded.jpeg,
+             made_at = excluded.made_at, source = excluded.source
+         WHERE jpeg IS NULL",
+        params![key, poster.width, poster.height, poster.jpeg, db::now(), FROM_BROWSER],
+    )?;
+    Ok(n > 0)
 }
 
 /// A stored thumbnail: `Ok(jpeg)`, `Err(reason)` if rendering failed, or
@@ -250,15 +307,18 @@ pub fn generate(conn: &Connection, root: &Path) -> Result<Stats> {
     let mut stats = Stats::default();
     let ffmpeg = media::find_ffmpeg();
     // One file per content; the others with the same quick hash share it.
+    // A video poster a browser made is made again here when there is
+    // something to make it with, unless that failed before.
     let pending: Vec<(String, Source)> = conn
         .prepare(
             "SELECT f.path, f.kind, f.size, f.mtime_ns, f.duration_ms, f.quick_hash
              FROM files f LEFT JOIN thumbs.thumbs t ON t.key = f.quick_hash
-             WHERE t.key IS NULL AND f.missing_since IS NULL AND f.kind != 'raw'
+             WHERE (t.key IS NULL OR (?1 AND f.kind = 'video' AND t.source = 'browser' AND t.error IS NULL))
+               AND f.missing_since IS NULL AND f.kind != 'raw'
              GROUP BY f.quick_hash
              ORDER BY max(coalesce(f.taken, '')) DESC, min(f.path_nfc)",
         )?
-        .query_map([], |r| {
+        .query_map([ffmpeg.is_some()], |r| {
             Ok((
                 r.get::<_, String>(0)?,
                 r.get::<_, String>(1)?,
@@ -448,6 +508,81 @@ fn fill_shot_pixels(conn: &Connection) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn jpeg(w: u32, h: u32) -> Vec<u8> {
+        let img = DynamicImage::ImageRgb8(image::RgbImage::from_fn(w, h, |x, y| image::Rgb([x as u8, y as u8, 7])));
+        media::encode_jpeg(&img, 90).unwrap()
+    }
+
+    fn thumbs_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute("ATTACH DATABASE ':memory:' AS thumbs", []).unwrap();
+        conn.execute_batch(SCHEMA_V1).unwrap();
+        conn.execute_batch(SCHEMA_V4).unwrap();
+        conn
+    }
+
+    fn row(conn: &Connection, key: &str) -> (Option<Vec<u8>>, Option<String>, Option<String>) {
+        conn.query_row("SELECT jpeg, error, source FROM thumbs.thumbs WHERE key = ?1", [key], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn a_browser_frame_is_made_into_a_poster_of_our_own() {
+        let sent = jpeg(1000, 600);
+        let poster = browser_poster(&sent).unwrap();
+        assert_eq!((poster.width, poster.height), (EDGE, EDGE * 6 / 10));
+        assert_ne!(poster.jpeg, sent);
+        assert!(poster.phash.is_none() && poster.shot_pixels.is_none());
+        let small = browser_poster(&jpeg(200, 100)).unwrap();
+        assert_eq!((small.width, small.height), (200, 100));
+
+        assert!(browser_poster(b"not a picture").is_err());
+        assert!(browser_poster(&jpeg(3000, 10)).is_err(), "too wide");
+        let mut png = Vec::new();
+        DynamicImage::ImageRgb8(image::RgbImage::new(10, 10))
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        assert!(browser_poster(&png).is_err(), "only JPEG");
+        let mut huge = jpeg(100, 100);
+        huge.resize(BROWSER_POSTER_MAX_BYTES + 1, 0);
+        assert!(browser_poster(&huge).is_err(), "too many bytes");
+    }
+
+    #[test]
+    fn a_browser_poster_only_fills_a_gap() {
+        let conn = thumbs_db();
+        let poster = browser_poster(&jpeg(400, 300)).unwrap();
+
+        // No picture yet: kept.
+        assert!(store_browser_poster(&conn, "a", &poster).unwrap());
+        assert_eq!(row(&conn, "a"), (Some(poster.jpeg.clone()), None, Some("browser".into())));
+        // Already one: left alone.
+        assert!(!store_browser_poster(&conn, "a", &browser_poster(&jpeg(300, 300)).unwrap()).unwrap());
+        assert_eq!(row(&conn, "a").0, Some(poster.jpeg.clone()));
+
+        // A picture made by shoebox is never replaced.
+        let made = Rendered { jpeg: jpeg(10, 10), width: 10, height: 10, phash: None, shot_pixels: None };
+        store(&conn, "b", &Ok(made)).unwrap();
+        assert!(!store_browser_poster(&conn, "b", &poster).unwrap());
+        assert_eq!(row(&conn, "b").2, None);
+
+        // Over a failure: kept, and the reason stays so a scan does not retry.
+        store(&conn, "c", &Err("ffmpeg: invalid data".into())).unwrap();
+        assert!(store_browser_poster(&conn, "c", &poster).unwrap());
+        assert_eq!(row(&conn, "c"), (Some(poster.jpeg.clone()), Some("ffmpeg: invalid data".into()), Some("browser".into())));
+        assert_eq!(load(&conn, "c").unwrap(), Some(Ok(poster.jpeg.clone())));
+
+        // A later failure keeps the browser's frame and notes the reason ...
+        store(&conn, "a", &Err("ffmpeg: no frame".into())).unwrap();
+        assert_eq!(row(&conn, "a"), (Some(poster.jpeg.clone()), Some("ffmpeg: no frame".into()), Some("browser".into())));
+        // ... and a poster made by shoebox replaces it.
+        let made = jpeg(12, 12);
+        store(&conn, "a", &Ok(Rendered { jpeg: made.clone(), width: 12, height: 12, phash: None, shot_pixels: None })).unwrap();
+        assert_eq!(row(&conn, "a"), (Some(made), None, None));
+    }
 
     #[test]
     fn transient_errors_are_not_stored() {

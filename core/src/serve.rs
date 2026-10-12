@@ -37,6 +37,11 @@
 //! background (`clusters.rs`) after every such change, when the server
 //! starts, and when `recognition.db` got new faces.
 //!
+//! A video poster the server cannot make (no ffmpeg, or it failed) is grabbed
+//! by the browser and sent back (`POST /api/files/{id}/poster`); it is kept
+//! in `thumbs.db` only after decoding and encoding it again, and only while
+//! the video has no picture (see `thumbs::browser_poster`).
+//!
 //! Self-healing paths: when a file is not where the index says (moved in the
 //! Finder while shoebox runs), the server runs the scan's index step in the
 //! background, which finds it again by its hashes.
@@ -51,7 +56,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use axum::Json;
 use axum::Router;
-use axum::body::Body;
+use axum::body::{Body, Bytes};
 use axum::extract::{ConnectInfo, Path, Query, Request, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, Uri, header};
 use axum::middleware::{self, Next};
@@ -891,6 +896,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/timeline", get(timeline))
         .route("/api/files/{id}", get(file_details))
         .route("/api/files/{id}/thumb", get(thumb))
+        .route("/api/files/{id}/poster", post(poster_from_browser))
         .route("/api/files/{id}/view", get(view))
         .route("/api/files/{id}/original", get(original))
         .route("/api/files/{id}/reveal", post(reveal_file))
@@ -2171,6 +2177,38 @@ async fn thumb(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Re
         Ok(bytes) => turned_jpeg(&app, bytes, turn).await,
         Err(_) => Err(ApiError::NotFound),
     }
+}
+
+#[derive(Serialize)]
+struct PosterStored {
+    /// False when the video already had a picture; nothing was changed.
+    stored: bool,
+}
+
+/// A frame of a video the browser grabbed because the server had no poster
+/// for it. Kept as that video's poster after `thumbs::browser_poster` made
+/// a picture of our own from it.
+async fn poster_from_browser(State(app): State<Arc<App>>, Path(id): Path<i64>, body: Bytes) -> ApiResult<Json<PosterStored>> {
+    if body.len() > thumbs::BROWSER_POSTER_MAX_BYTES {
+        return Err(ApiError::BadRequest("the picture is too large".into()));
+    }
+    blocking(&app, move |app| {
+        let key: String = app
+            .conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT quick_hash FROM files WHERE id = ?1 AND missing_since IS NULL AND kind = 'video'",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or(ApiError::NotFound)?;
+        let poster = thumbs::browser_poster(&body).map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+        let stored = thumbs::store_browser_poster(&app.conn.lock().unwrap(), &key, &poster)?;
+        Ok(Json(PosterStored { stored }))
+    })
+    .await
 }
 
 /// A rendered picture, turned the way the user turned it in shoebox

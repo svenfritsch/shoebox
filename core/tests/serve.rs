@@ -561,3 +561,62 @@ fn the_page_takes_no_scripts_or_forms_from_elsewhere() {
     }
     server.stop().unwrap();
 }
+
+/// A frame the browser grabbed becomes the poster of a video the server has
+/// none for, re-encoded and only while there is no picture.
+#[test]
+fn browser_frames_become_video_posters() {
+    let lib = Library::new("browser-poster");
+    // Not a real video: neither ffmpeg (if present) nor anything else gets a
+    // frame out of it, as with a format only the browser can play.
+    lib.write("Familie/clip.mov", b"not really a video, but named like one");
+    lib.scan();
+    let before = lib.snapshot();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let video = id_of(&lib, "Familie/clip.mov");
+    let photo = id_of(&lib, "Familie/Weihnachten/DSC_2001.jpg");
+    assert_eq!(get(addr, &format!("/api/files/{video}/thumb")).status, 404);
+
+    let mut frame = Vec::new();
+    image::RgbImage::from_fn(1280, 720, |x, y| image::Rgb([(x / 5) as u8, (y / 3) as u8, 90]))
+        .write_to(&mut std::io::Cursor::new(&mut frame), image::ImageFormat::Jpeg)
+        .unwrap();
+    let send = |id: i64, body: &[u8]| request(addr, "POST", &format!("/api/files/{id}/poster"), &[("Content-Type", "image/jpeg")], body);
+
+    // Refused: no write header, another host, not a video, not a picture.
+    let path = format!("/api/files/{video}/poster");
+    assert_eq!(bare_request(addr, "POST", &path, &[], &frame).status, 403);
+    assert_eq!(request(addr, "POST", &path, &[("Host", "photos.evil.example")], &frame).status, 401);
+    assert_eq!(send(photo, &frame).status, 404);
+    assert_eq!(send(999_999, &frame).status, 404);
+    assert_eq!(send(video, b"<script>").status, 400);
+    assert_eq!(send(video, &vec![0xff; shoebox::thumbs::BROWSER_POSTER_MAX_BYTES + 1]).status, 400);
+
+    let r = send(video, &frame);
+    assert_eq!(r.status, 200);
+    assert_eq!(r.json()["stored"], true);
+    let thumb = get(addr, &format!("/api/files/{video}/thumb"));
+    assert_eq!(thumb.status, 200);
+    assert_ne!(thumb.body, frame, "stored as made by shoebox, not as sent");
+    let img = image::load_from_memory(&thumb.body).unwrap();
+    assert_eq!((img.width(), img.height()), (shoebox::thumbs::EDGE, shoebox::thumbs::EDGE * 9 / 16));
+
+    // Only once: a second frame changes nothing.
+    assert_eq!(send(video, &frame).json()["stored"], false);
+    assert_eq!(get(addr, &format!("/api/files/{video}/thumb")).body, thumb.body);
+    server.stop().unwrap();
+
+    // A scan keeps it (nothing gets a frame out of this file).
+    lib.scan();
+    let conn = with_thumbs(&lib);
+    let source: Option<String> = conn
+        .query_row(
+            "SELECT t.source FROM thumbs.thumbs t JOIN files f ON f.quick_hash = t.key WHERE f.path_nfc = 'Familie/clip.mov'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(source.as_deref(), Some("browser"));
+    assert_eq!(lib.snapshot(), before, "originals untouched");
+}
