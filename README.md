@@ -127,15 +127,23 @@ export PATH=/opt/homebrew/opt/rustup/bin:$PATH   # Homebrew's rustup is keg-only
 rustup target add x86_64-apple-darwin aarch64-apple-darwin
 scripts/build.sh x86_64-apple-darwin
 scripts/build.sh aarch64-apple-darwin
-mkdir -p dist && lipo -create -output dist/shoebox-macos \
-    core/target/x86_64-apple-darwin/release/shoebox \
-    core/target/aarch64-apple-darwin/release/shoebox
+mkdir -p dist && for f in shoebox libheif.1.dylib libde265.0.dylib; do
+    lipo -create -output "dist/$f" \
+        "core/target/x86_64-apple-darwin/release/$f" \
+        "core/target/aarch64-apple-darwin/release/$f"
+done
 ```
 
 Building needs CMake and Xcode's clang. The build never uses Homebrew's
-libheif: `scripts/build.sh` points the linker straight at the static libraries
-from `scripts/build-deps.sh`.
+libheif: `scripts/build.sh` points the linker straight at the libraries from
+`scripts/build-deps.sh`.
 
 HEIC support comes from libheif + libde265, built by `scripts/build-deps.sh`
-as static, decoder-only libraries (both LGPL; fine for personal use, check the
-LGPL terms before distributing binaries).
+as shared, decoder-only libraries. Both are LGPL, so they ship as separate
+files next to the program (`libheif.1.dylib`, `libde265.0.dylib`; on Linux
+`libheif.so.1`, `libde265.so.0`), where the program looks for them (rpath
+`@executable_path` / `$ORIGIN`) and where anyone can put a build of their own.
+`scripts/build.sh` copies them next to the release binary; debug builds and
+tests find them in the deps folder. The release archive also carries their
+source archives (`sources/`). Keep the program and the two libraries together:
+a program copied on its own does not start.

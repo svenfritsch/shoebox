@@ -69,16 +69,19 @@ contributors, available under the Open Database Licence (https://www.openstreetm
 shoebox does not store or ship any of it.
 
 
-2. Native libraries (linked statically into the binary)
---------------------------------------------------------
+2. Native libraries (separate files next to the program)
+---------------------------------------------------------
 
 libheif 1.23.5 (https://github.com/strukturag/libheif) and
 libde265 1.1.3 (https://github.com/strukturag/libde265) read HEIC photos.
 Both are licensed under the GNU Lesser General Public License, version 3 (text below).
 They are built from the unmodified upstream source releases by scripts/build-deps.sh and
-linked statically. As the LGPL (section 4(d)) requires, you can replace them with a
-version of your own: on request, the author provides what is needed to link shoebox
-again with a modified version of these libraries.
+ship as separate files next to the program: libheif.1.dylib and libde265.0.dylib on
+macOS (libheif.so.1 and libde265.so.0 on Linux). The program loads them from its own
+folder, so you can replace them with a build of your own, modified or not (LGPL section
+4(d)): build it as a shared library with the same interface and put it there under the
+same file name. Their source code is in the folder sources/ of the download; the author
+also sends it on request.
 Copyright (c) 2013-2026 Struktur AG and Dirk Farin and the other contributors of the projects.
 
 

@@ -1,26 +1,66 @@
 #!/usr/bin/env bash
-# Build libde265 + libheif as static, decoder-only libraries into a prefix.
+# Build libde265 + libheif as shared, decoder-only libraries into a prefix.
 #
 #   scripts/build-deps.sh <rust-target> <prefix>
+#   scripts/build-deps.sh --sources <dir>   (only fetch and check the source archives)
 #
 # Only the HEVC decoder (libde265) is compiled in: no encoders (x265 is GPL
-# and large), no AV1/JPEG2000 codecs, no plugin loading. The result is linked
-# statically into the shoebox binary, so it runs without any system libraries.
+# and large), no AV1/JPEG2000 codecs, no plugin loading. Both are LGPL and
+# ship as separate files next to the shoebox program (libheif.1.dylib and
+# libde265.0.dylib, or libheif.so.1 and libde265.so.0), so whoever has
+# shoebox can put in a build of their own (LGPL section 4(d)); the program
+# and libheif find them in their own folder (rpath @executable_path /
+# @loader_path, $ORIGIN). scripts/build.sh copies them next to the binary.
 #
 # On macOS the minimum OS version is taken from MACOSX_DEPLOYMENT_TARGET
 # (default 10.13) so the binary runs on older Intel Macs.
 set -eu
 
-TARGET=${1:?usage: build-deps.sh <rust-target> <prefix>}
-PREFIX=${2:?usage: build-deps.sh <rust-target> <prefix>}
-
 LIBDE265_VERSION=1.1.3
 LIBDE265_SHA256=554228bd17788c99a7e63b37ab5634722190e6e2bf60c1dcb01cef328e133905
 LIBHEIF_VERSION=1.23.5
 LIBHEIF_SHA256=fd9036064c4432f0550d15072ddf34956a248279ee9aeaff0fba3fa0f77d8f1a
+LIBDE265_URL="https://github.com/strukturag/libde265/releases/download/v$LIBDE265_VERSION/libde265-$LIBDE265_VERSION.tar.gz"
+LIBHEIF_URL="https://github.com/strukturag/libheif/releases/download/v$LIBHEIF_VERSION/libheif-$LIBHEIF_VERSION.tar.gz"
 
-if [ -f "$PREFIX/.done-$LIBDE265_VERSION-$LIBHEIF_VERSION" ] && [ -f "$PREFIX/lib/libheif.a" ] \
-    && [ -f "$PREFIX/lib/libde265.a" ]; then
+sha256() {
+    if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1
+    else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+
+download() { # url sha256 dir/file
+    if [ ! -f "$3" ]; then
+        curl -fsSL -o "$3" "$1"
+    fi
+    actual=$(sha256 "$3")
+    if [ "$actual" != "$2" ]; then
+        echo "checksum mismatch for $3: $actual" >&2
+        exit 1
+    fi
+}
+
+# The unmodified upstream sources, for the release archive (the LGPL wants
+# them to go along with the libraries).
+if [ "${1:-}" = --sources ]; then
+    DIR=${2:?usage: build-deps.sh --sources <dir>}
+    mkdir -p "$DIR"
+    download "$LIBDE265_URL" "$LIBDE265_SHA256" "$DIR/libde265-$LIBDE265_VERSION.tar.gz"
+    download "$LIBHEIF_URL" "$LIBHEIF_SHA256" "$DIR/libheif-$LIBHEIF_VERSION.tar.gz"
+    exit 0
+fi
+
+TARGET=${1:?usage: build-deps.sh <rust-target> <prefix>}
+PREFIX=${2:?usage: build-deps.sh <rust-target> <prefix>}
+
+case "$TARGET" in
+    *-apple-darwin) LIBS="libheif.1.dylib libde265.0.dylib"; ORIGIN=@loader_path ;;
+    *) LIBS="libheif.so.1 libde265.so.0"; ORIGIN='$ORIGIN' ;;
+esac
+
+DONE="$PREFIX/.done-shared-$LIBDE265_VERSION-$LIBHEIF_VERSION"
+built=yes
+for lib in $LIBS; do [ -f "$PREFIX/lib/$lib" ] || built=no; done
+if [ -f "$DONE" ] && [ "$built" = yes ]; then
     echo "deps already built in $PREFIX"
     exit 0
 fi
@@ -30,31 +70,20 @@ PREFIX=$(cd "$PREFIX" && pwd)
 WORK="$PREFIX/src"
 mkdir -p "$WORK"
 
-sha256() {
-    if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1
-    else shasum -a 256 "$1" | cut -d' ' -f1; fi
-}
-
 fetch() { # url sha256 file
-    if [ ! -f "$WORK/$3" ]; then
-        curl -fsSL -o "$WORK/$3" "$1"
-    fi
-    actual=$(sha256 "$WORK/$3")
-    if [ "$actual" != "$2" ]; then
-        echo "checksum mismatch for $3: $actual" >&2
-        exit 1
-    fi
+    download "$1" "$2" "$WORK/$3"
     tar xzf "$WORK/$3" -C "$WORK"
 }
 
-fetch "https://github.com/strukturag/libde265/releases/download/v$LIBDE265_VERSION/libde265-$LIBDE265_VERSION.tar.gz" \
-    "$LIBDE265_SHA256" "libde265-$LIBDE265_VERSION.tar.gz"
-fetch "https://github.com/strukturag/libheif/releases/download/v$LIBHEIF_VERSION/libheif-$LIBHEIF_VERSION.tar.gz" \
-    "$LIBHEIF_SHA256" "libheif-$LIBHEIF_VERSION.tar.gz"
+fetch "$LIBDE265_URL" "$LIBDE265_SHA256" "libde265-$LIBDE265_VERSION.tar.gz"
+fetch "$LIBHEIF_URL" "$LIBHEIF_SHA256" "libheif-$LIBHEIF_VERSION.tar.gz"
 
 # Arrays keep paths with spaces (e.g. "Application Support") intact.
-COMMON=(-DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+# Each library finds the other in its own folder (`$ORIGIN` is literal here:
+# the dynamic loader expands it).
+COMMON=(-DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DCMAKE_POSITION_INDEPENDENT_CODE=ON
         "-DCMAKE_INSTALL_PREFIX=$PREFIX" -DCMAKE_INSTALL_LIBDIR=lib "-DCMAKE_PREFIX_PATH=$PREFIX"
+        "-DCMAKE_INSTALL_RPATH=$ORIGIN" -DCMAKE_INSTALL_NAME_DIR=@rpath
         # Never pick up codecs from Homebrew or the system.
         -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH=OFF
         -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF)
@@ -82,8 +111,10 @@ export PKG_CONFIG_LIBDIR="$WORK/no-pkgconfig" PKG_CONFIG_PATH=""
 JOBS=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 
 # Always configure from scratch so no stale CMake cache (found libraries,
-# install prefix) survives from an earlier run.
+# install prefix) survives from an earlier run, and drop the static libraries
+# of older builds so the linker cannot pick them.
 rm -rf "$WORK/build-de265" "$WORK/build-heif"
+rm -f "$PREFIX"/lib/libheif.* "$PREFIX"/lib/libde265.* "$PREFIX"/.done-*
 
 cmake -S "$WORK/libde265-$LIBDE265_VERSION" -B "$WORK/build-de265" "${COMMON[@]}" \
     -DENABLE_SDL=OFF -DENABLE_DECODER=OFF -DENABLE_ENCODER=OFF
@@ -108,5 +139,16 @@ cmake -S "$WORK/libheif-$LIBHEIF_VERSION" -B "$WORK/build-heif" "${COMMON[@]}" "
 cmake --build "$WORK/build-heif" -j "$JOBS"
 cmake --install "$WORK/build-heif"
 
-touch "$PREFIX/.done-$LIBDE265_VERSION-$LIBHEIF_VERSION"
+# install_name_tool (rpath, install name) breaks the linker's ad-hoc
+# signature, and Apple Silicon refuses to load an unsigned library.
+# (The real files; libheif.1.dylib and the like are symlinks to them.)
+case "$TARGET" in
+    *-apple-darwin)
+        find "$PREFIX/lib" -maxdepth 1 -type f -name '*.dylib' -exec codesign --force --sign - {} \; ;;
+esac
+
+for lib in $LIBS; do
+    [ -f "$PREFIX/lib/$lib" ] || { echo "$lib was not built" >&2; exit 1; }
+done
+touch "$DONE"
 echo "deps installed to $PREFIX"
