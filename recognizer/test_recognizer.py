@@ -183,7 +183,8 @@ class Pets(unittest.TestCase):
         self.assertEqual(hello["tasks"]["faces"]["dim"], 128)
         self.assertNotEqual(info["model"], hello["tasks"]["faces"]["model"])
         reply = self.ask(proc, {"id": 1, "tasks": ["pets", "faces"], "image": self.jpeg(np.full((480, 640, 3), 200, np.uint8))})
-        self.assertEqual(reply, {"id": 1, "width": 640, "height": 480, "pets": [], "faces": []})
+        # The pets task also says where people are (none on a blank picture).
+        self.assertEqual(reply, {"id": 1, "width": 640, "height": 480, "pets": [], "people": [], "faces": []})
 
     def test_pets_without_the_flag_is_an_unknown_task(self):
         proc, _ = self.start()

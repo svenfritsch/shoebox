@@ -106,7 +106,8 @@ it is an unknown task. `shoebox recognize --pets` starts it that way.
 → {"id": 44, "tasks": ["pets"], "image": "<base64 JPEG>"}
 ← {"id": 44, "width": 1600, "height": 1200,
    "pets": [{"species": "cat", "bbox": [x, y, w, h], "score": 0.91,
-                "emb": "<base64 little-endian f32 × dim>"}]}
+                "emb": "<base64 little-endian f32 × dim>"}],
+   "people": [[x, y, w, h]]}
 ```
 
 - The hello lists `"pets": {"model": "yolox-s-2022nov+ppresnet50-2022jan", "dim": 2048}`.
@@ -122,6 +123,11 @@ it is an unknown task. `shoebox recognize --pets` starts it that way.
   its mirror image, so a pet looking left matches itself looking right.
   `emb` is L2-normalised.
 - Boxes with a shorter side under 48 px are left out.
+- `people` comes with every `pets` reply: the boxes of the people the same
+  detector found (COCO class person, score ≥ 0.4), in pixels of the image
+  sent, no embeddings. The core uses them to tell a pet's face (a "face"
+  inside a pet and outside every person) from a person's. A worker that
+  sends none (older) is fine.
 - The embedder is the first of `dinov2-small`, `ppresnet50-2022jan` whose
   file is in the models folder (`SHOEBOX_PET_EMBEDDER` forces one). It
   runs on onnxruntime if that is installed, else on OpenCV's own runner
