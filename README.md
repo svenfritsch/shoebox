@@ -40,12 +40,12 @@ together). Then one of two ways:
 The Control Panel's step 1, **Add-ons**, installs Faces (~40 MB) and/or Pets
 (~140 MB), independent of each other, on top of Python and OpenCV (~200 MB per
 kind of computer, always installed with the first add-on). Where shoebox looks
-for them: `recognizer/` next to the program first, the drive's own
-`.shoebox/recognizer/` last. The models are the same on every computer; Python
+for them: only `recognizer/` next to the program (never a drive's own
+`.shoebox/`, which a drive from somebody else could fill). The models are the same on every computer; Python
 and OpenCV is per kind (`recognizer/runtime/<os>-<arch>/`), so a drive moved
 to another kind of Mac needs one more install there (the models are kept).
-Terminal users: `recognizer/install.sh [--faces] [--pets] [library-root]`, on
-Windows `recognizer\install.ps1 [-Faces] [-Pets] [-Root library-root]`
+Terminal users: `recognizer/install.sh [--faces] [--pets]`, on
+Windows `recognizer\install.ps1 [-Faces] [-Pets]`
 ([recognizer/README.md](recognizer/README.md)).
 
 ## Guide

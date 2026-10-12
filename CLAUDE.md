@@ -57,6 +57,10 @@ current status and next step. Update its status table when a phase moves.
   folder is allowed after a question (its next scan finds the copies). It only
   answers to a browser on this computer (`/api/export/*`, `info.export`).
   Collection tag and numbering are browser settings, like Maps.
+- The recognizer (Python) runs only from `recognizer/` next to the program
+  (`recognize::worker_dirs`; for a program in the older `<drive>/.shoebox/bin/`
+  layout also that drive's `.shoebox/recognizer/`), never from the `.shoebox/`
+  of another drive: a drive from somebody else could bring code of its own.
 - Moving to the trash from the photo view and the timeline selection is off by
   default: the library setting `allow_trash` (Settings, "Allow move to trash")
   shows the trash icon and the selection button.

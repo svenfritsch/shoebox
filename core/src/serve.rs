@@ -563,7 +563,7 @@ impl App {
         if pending.total() == 0 {
             return Ok(());
         }
-        let Some(cmd) = recognize::find_worker_for(&self.root, self.recognizer.as_deref(), pending.pets > 0) else {
+        let Some(cmd) = recognize::find_worker_for(self.recognizer.as_deref(), pending.pets > 0) else {
             println!("{} faces and pets drawn by hand wait for the recognizer (not installed).", pending.total());
             return Ok(());
         };
@@ -2977,7 +2977,11 @@ async fn asset(uri: Uri) -> Response {
         (
             header::CONTENT_SECURITY_POLICY,
             HeaderValue::from_static(
-                "default-src 'self'; img-src 'self' data: blob: https://tile.openstreetmap.org; media-src 'self'; style-src 'self' 'unsafe-inline'",
+                // `form-action`, `base-uri` and `frame-ancestors` do not fall back
+                // to `default-src`: name them, so injected markup cannot post a
+                // form elsewhere or move the page's base.
+                "default-src 'self'; img-src 'self' data: blob: https://tile.openstreetmap.org; media-src 'self'; style-src 'self' 'unsafe-inline'; \
+                 object-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
             ),
         ),
     ];

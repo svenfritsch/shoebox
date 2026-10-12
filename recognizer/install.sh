@@ -3,12 +3,12 @@
 # OpenCV, numpy and the models, so `shoebox recognize` finds it without
 # anything installed on the computer.
 #
-#   recognizer/install.sh [--pets] [library-root]
+#   recognizer/install.sh [--faces] [--pets]
 #
-# Without a library root it installs into the folder that holds this script
-# (next to the shoebox program; every drive you recognize then uses it). With
-# one, into <library-root>/.shoebox/recognizer/ (travels with that drive; it only
-# serves when nothing is installed next to the program).
+# It installs into the folder that holds this script, next to the shoebox
+# program; every drive you recognize uses it. shoebox runs the recognizer only
+# from there, never from a drive's .shoebox folder (a drive from somebody else
+# could bring a Python of its own).
 #
 # The add-ons are independent: --faces (face models, ~40 MB) and --pets (cat and
 # dog models, ~140 MB); either or both, on top of the Python and OpenCV runtime
@@ -26,12 +26,11 @@ set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 PETS=
 FACES=
-ROOT=
 for arg in "$@"; do
     case "$arg" in
         --pets) PETS=1 ;;
         --faces) FACES=1 ;;
-        *) ROOT=$arg ;;
+        *) echo "unknown argument $arg (the add-ons go next to the shoebox program, not onto a drive)" >&2; exit 1 ;;
     esac
 done
 if [ -z "$FACES$PETS" ] && [ -t 0 ]; then
@@ -43,12 +42,7 @@ if [ -z "$FACES$PETS" ] && [ -t 0 ]; then
     case "$answer" in [yYjJ]*) PETS=1 ;; esac
 fi
 [ -n "$FACES$PETS" ] || { echo "nothing to install: use --faces and/or --pets" >&2; exit 1; }
-if [ -n "$ROOT" ]; then
-    DEST="$ROOT/.shoebox/recognizer"
-    [ -d "$ROOT/.shoebox" ] || { echo "$ROOT has no .shoebox folder (run shoebox scan first)" >&2; exit 1; }
-else
-    DEST=$HERE
-fi
+DEST=$HERE
 PBS_TAG=20251014
 PY=3.12.12
 
@@ -115,7 +109,6 @@ cp -RL "$TMP/python" "$DEST/runtime/$PLATFORM"
 echo "Models…"
 mkdir -p "$DEST/models"
 "$HERE/fetch-models.sh" ${FACES:+--faces} ${PETS:+--pets} "$DEST/models"
-[ "$DEST" = "$HERE" ] || cp "$HERE/recognizer.py" "$DEST/recognizer.py"
 
 echo "Checking…"
 HELLO=$(printf '' | "$DEST/runtime/$PLATFORM/bin/python3" "$DEST/recognizer.py" ${PETS:+--pets} 2>/dev/null | head -n 1)
@@ -123,8 +116,4 @@ case "$HELLO" in
     *shoebox-recognizer*) echo "  $HELLO" ;;
     *) echo "the recognizer did not start" >&2; exit 1 ;;
 esac
-if [ -n "$ROOT" ]; then
-    echo "Done. Run: shoebox recognize \"$ROOT\""
-else
-    echo "Done. Run Recognize in the shoebox launcher for any drive."
-fi
+echo "Done. Run Recognize in the shoebox launcher for any drive."

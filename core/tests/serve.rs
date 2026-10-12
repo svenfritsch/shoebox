@@ -546,3 +546,18 @@ fn several_libraries_share_one_server_and_an_unplugged_drive_is_only_offline() {
     server.stop().unwrap();
     assert_eq!((a.snapshot(), b.snapshot()), before);
 }
+
+#[test]
+fn the_page_takes_no_scripts_or_forms_from_elsewhere() {
+    let lib = Library::new("csp");
+    lib.scan_opts(false, false, false);
+    let server = start(&lib, None);
+    let page = get(server.addr, "/");
+    let csp = page.header("content-security-policy").unwrap_or_default().to_string();
+    // Markup that gets into the page by mistake (a name shown as HTML) can
+    // neither run nor send what is typed into it to another site.
+    for directive in ["default-src 'self'", "object-src 'none'", "form-action 'self'", "base-uri 'none'", "frame-ancestors 'none'"] {
+        assert!(csp.contains(directive), "{directive} missing in {csp}");
+    }
+    server.stop().unwrap();
+}

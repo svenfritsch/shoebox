@@ -79,9 +79,12 @@ what is installed for the computer and for each ticked drive
 (`recognize::installed`, by looking for files, never by starting the worker),
 and the Control Panel greys out Recognize / Recognize lying down (need Faces)
 and Recognize pets (needs Pets) with the reason. Lookup order
-(`recognize::worker_dirs`): `recognizer/` next to the program, then the drive's
-`.shoebox/recognizer/` (made by `install.sh <drive>`; the older
-`.shoebox/bin/` layout lands here too); `find_worker_for` takes the first folder that has the
+(`recognize::worker_dirs`): only `recognizer/` next to the program, plus, for a
+program in the older `<drive>/.shoebox/bin/` layout, that same drive's
+`.shoebox/recognizer/`. Never the `.shoebox/` of a drive the program does not
+run from (security audit 2026-10: a drive from somebody else could bring a
+Python of its own, which would run as the user; `install.sh <drive>` and
+`install.ps1 -Root` were removed with it). `find_worker_for` takes the first folder that has the
 models the run needs and the Python for this computer. The models are the
 same everywhere; the runtime is per `<os>-<arch>` (`recognizer/runtime/`), so
 another kind of Mac shows "Python and OpenCV: required" and the add-ons "models found, needs Python for this computer", and installing
