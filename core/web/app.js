@@ -277,6 +277,8 @@ function renderChips() {
     });
   });
   if (f.fav) add('♥ ' + tr('fav.label'), function () { setFilter(withFilter({ fav: false })); });
+  // The Type drop-down's choice as a chip too, like the heart's.
+  if (f.types.length) add(f.types.length === 1 ? tr('types.' + f.types[0]) : f.types.map(typeLabel).join(', '), function () { setFilter(withFilter({ types: [] })); }, typeIcon(f.types));
   if (f.place) {
     var spot = placeOf(f.place);
     add('📍 ' + (spot ? spot.name : '…'), function () { setFilter(withFilter({ place: null })); });
@@ -306,13 +308,44 @@ function renderChips() {
   if (terms >= 2) {
     var clear = el('button', 'chip clear', tr('chip.clear_all'));
     clear.title = tr('chip.clear_all_hint');
-    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], pets: [], fav: false, place: null, compare: '', q: '' }); };
+    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], pets: [], types: [], fav: false, place: null, compare: '', q: '' }); };
     box.appendChild(clear);
   }
+  // How many the search finds, at the right; filled in when the timeline is in.
+  if (terms) {
+    box.appendChild(el('span', 'filter-count'));
+    showCount();
+  }
+  exportChip(box, f);
   if (f.nodate) box.appendChild(el('p', 'filter-note', tr('side.needs_date_note')));
   personHead(box, f);
-  exportChip(box, f);
   box.hidden = !box.firstChild;
+}
+
+// "48 photos · 3 videos" for the list on screen, the number in bold; with one
+// type ticked in its own word ("356 Live Photos"), and "No photos" for none.
+// Only once the timeline for this very search has arrived (state.countFor).
+function showCount() {
+  var box = document.querySelector('#filters .filter-count');
+  if (!box) return;
+  box.textContent = '';
+  var d = state.data;
+  if (!d || state.countFor !== location.hash) return;
+  var types = state.filter.types;
+  var noun = types.length === 1 ? { photo: 'photos', video: 'videos', live: 'live', screenshot: 'screenshots' }[types[0]] : 'photos';
+  if (!d.count) { box.textContent = tr('filter.none.' + noun); return; }
+  var videos = 0;
+  for (var i = 0; i < d.count; i++) if (d.kinds[i] === 'v') videos++;
+  var parts = types.length === 1 ? [trn('count.' + noun, d.count)]
+    : [d.count - videos ? trn('count.photos', d.count - videos) : '', videos ? trn('count.videos', videos) : ''].filter(Boolean);
+  parts.forEach(function (text, k) {
+    if (k) box.appendChild(document.createTextNode(' · '));
+    var num = text.match(/^(.*?)([\d.,\u00a0\u202f']+)(.*)$/);
+    if (!num) { box.appendChild(document.createTextNode(text)); return; }
+    box.appendChild(document.createTextNode(num[1]));
+    box.appendChild(el('strong', '', num[2]));
+    box.appendChild(document.createTextNode(num[3]));
+  });
 }
 state.tagNames = {};
 state.personNames = {};
@@ -320,11 +353,28 @@ state.personSpecies = {}; // id -> cat, dog or pet, for people who are pets
 
 // ------------------------------------------------------------------ type filter
 
-// A check box drop-down: Photos (not screenshots), Videos (stand-alone only),
-// Live Photos and Screenshots.
+// A check box drop-down: Photos, Videos (stand-alone only), Live Photos and
+// Screenshots; every item is exactly one of them (browse::MediaType).
 // Any ticked type matches; it combines with the rest of the search.
 var typeBoxes = Array.prototype.slice.call($('types-menu').querySelectorAll('input'));
 function typeLabel(t) { return tr(t === 'live' ? 'types.live_short' : 'types.' + t); }
+
+// The Type chip's icon: one per type, the four squares for several.
+var TYPE_ICONS = {
+  photo: lineIcon('<rect x="3" y="7" width="18" height="13" rx="2.5"/><path d="M8.5 7l1.4-2.6h4.2L15.5 7"/><circle cx="12" cy="13.5" r="3.3"/>'),
+  video: lineIcon('<rect x="3" y="6.5" width="12" height="11" rx="2"/><path d="M15 10.5l5.5-3v9l-5.5-3z"/>'),
+  live: lineIcon('<circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l5.3-3.5z"/>'),
+  screenshot: lineIcon('<path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15"/>'),
+};
+var TYPE_ICON_MANY = lineIcon('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>');
+function typeIcon(types) {
+  var i = el('span', 'ficon');
+  i.setAttribute('aria-hidden', 'true');
+  i.innerHTML = types.length === 1 ? TYPE_ICONS[types[0]] : TYPE_ICON_MANY;
+  return i;
+}
+// The same icons in the drop-down, after each check box.
+typeBoxes.forEach(function (b) { b.parentNode.insertBefore(typeIcon([b.value]), b.nextSibling); });
 
 function markTypes() {
   markFavFilter();
@@ -361,8 +411,16 @@ function isFavTag(name) { return String(name).trim().toLowerCase() === FAV_TAG; 
 // What typing in a tag field means the heart (the server maps these to the tag too).
 var FAV_TYPED = [FAV_TAG, 'favorites', 'favourite', 'favourites', 'favorit', 'favoriten'];
 function meansFav(name) { return FAV_TYPED.indexOf(String(name).trim().toLowerCase()) >= 0; }
-var HEART_ON = '<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true"><path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>';
-var HEART_OFF = '<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" d="M12 20.4l-1.1-1C6 15.1 3 12.4 3 8.9 3 6.5 4.8 4.7 7.2 4.7c1.4 0 2.7.6 3.6 1.7l1.2 1.4 1.2-1.4c.9-1.1 2.2-1.7 3.6-1.7C19.2 4.7 21 6.5 21 8.9c0 3.5-3 6.2-7.9 10.5l-1.1 1z"/></svg>';
+// Our own drawn icons (no icon set): a 24 grid, round 2 px lines in the colour
+// of the text. The fill sits in the style so that rules like ".icon svg" do
+// not fill the outline.
+function lineIcon(paths, fill) {
+  return '<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" style="fill:' + (fill ? 'currentColor' : 'none') +
+    '" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + paths + '</svg>';
+}
+var HEART_PATH = '<path stroke-width="2.2" d="M12 19.5C8 16.8 4 13.6 4 9.6 4 7.1 5.9 5.2 8.2 5.2c1.6 0 3 .9 3.8 2.3.8-1.4 2.2-2.3 3.8-2.3 2.3 0 4.2 1.9 4.2 4.4 0 4-4 7.2-8 9.9z"/>';
+var HEART_ON = lineIcon(HEART_PATH, true);
+var HEART_OFF = lineIcon(HEART_PATH);
 
 function markFavFilter() {
   var on = !!state.filter.fav, b = $('fav-btn');
@@ -852,8 +910,8 @@ function loadFolders() {
 }
 
 // Material "keyboard arrow" icons for the expand/collapse buttons.
-var ARROW_DOWN = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>';
-var ARROW_RIGHT = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M8.59 16.59 13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>';
+var ARROW_DOWN = lineIcon('<path d="M7 10l5 5 5-5"/>').replace(/1em/g, '20');
+var ARROW_RIGHT = lineIcon('<path d="M10 7l5 5-5 5"/>').replace(/1em/g, '20');
 function setArrow(btn, open) { btn.innerHTML = open ? ARROW_DOWN : ARROW_RIGHT; }
 
 function folderNode(f, depth) {
@@ -1015,6 +1073,8 @@ function loadTimeline(resetScroll) {
     scroller.scrollTop = keep;
     render();
     fillYears();
+    state.countFor = location.hash;
+    showCount();
     $('empty').hidden = data.count > 0;
   }).catch(function (e) { console.error(e); });
 }
@@ -3178,11 +3238,11 @@ function revealFile(id) {
 
 // The one open-folder icon of the whole app (drawn, so it looks the same on
 // every system and takes the colour of the text around it). Never the emoji.
-var FOLDER_OPEN_PATH = 'M4 20q-.825 0-1.412-.587Q2 18.825 2 18V6q0-.825.588-1.412Q3.175 4 4 4h6l2 2h8q.825 0 1.413.588Q22 7.175 22 8H11.175l-2-2H4v12l2.4-8H23.85l-2.575 8.575q-.2.65-.737 1.038Q20 20 19.325 20ZM6.1 18H19.2l1.8-6H7.9Z';
+var FOLDER_OPEN = lineIcon('<path d="M4 18V7a2 2 0 0 1 2-2h3.5l2 2H17a2 2 0 0 1 2 2v1.5"/><path d="M4 18l2.6-6.4a1.5 1.5 0 0 1 1.4-.9h12.3a1 1 0 0 1 .9 1.4L19 17.6a1.5 1.5 0 0 1-1.4.9H4z"/>');
 function folderIcon() {
   var i = el('span', 'ficon');
   i.setAttribute('aria-hidden', 'true');
-  i.innerHTML = '<svg viewBox="0 0 24 24"><path d="' + FOLDER_OPEN_PATH + '"/></svg>';
+  i.innerHTML = FOLDER_OPEN;
   return i;
 }
 
@@ -3408,7 +3468,7 @@ function infoScreenshot(row, info) {
   if (marked) {
     // An undo icon at the right of the row; the words are its tooltip.
     var back = el('button', 'icon-btn shot-back');
-    back.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>';
+    back.innerHTML = lineIcon('<path d="M9 5L4.5 9.5 9 14"/><path d="M5 9.5h9a5 5 0 0 1 0 10h-3"/>');
     back.title = tr('shot.back');
     back.setAttribute('aria-label', tr('shot.back'));
     back.onclick = function () { set(null); };

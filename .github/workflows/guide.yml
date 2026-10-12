@@ -1,19 +1,133 @@
 name: guide
 
-# The guide (docs/guide) is plain HTML and text, so there is nothing to build.
-# This only checks, when the guide changes, that the .txt copies match the HTML
-# and that every image exists. The release job in build.yml repeats the check
-# and puts the guide into shoebox-macos.tar.gz.
+# The guide (docs/guide) is HTML written by hand. Its screenshots and its
+# plain-text copies are not kept in git: they are made here, from the code of
+# the same commit. A Linux shoebox binary serves a drawn sample library,
+# Playwright takes the screenshots (docs/guide/screenshots.sh), html2txt.py
+# writes the .txt copies and check.py checks that both languages match, that
+# every image exists and that the numbered dots of "The screen at a glance"
+# sit on their controls. The finished guide, ready to open, is the artifact
+# "guide" of the run (pull requests: look at the screenshots there). A
+# release (build.yml) calls this workflow and puts that folder into the
+# archive.
+#
+# Pull requests and main run it when the UI, its texts or the guide change; a
+# change to Rust code alone does not change the screenshots.
 on:
   push:
     branches: [main]
-    paths: ['docs/guide/**', '.github/workflows/guide.yml']
+    paths: ['core/web/**', 'core/i18n/**', 'docs/guide/**', '.github/workflows/guide.yml']
   pull_request:
-    paths: ['docs/guide/**', '.github/workflows/guide.yml']
+    paths: ['core/web/**', 'core/i18n/**', 'docs/guide/**', '.github/workflows/guide.yml']
+  workflow_call:
+  workflow_dispatch:
+
+concurrency:
+  group: guide-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  DEPS_DIR: ${{ github.workspace }}/.deps
+  CARGO_INCREMENTAL: 0
+  # keep in step with the Playwright that docs/guide/README.md names
+  PLAYWRIGHT_VERSION: 1.56.1
 
 jobs:
-  check:
+  # One job per language, side by side (each pass of screenshots.sh needs the
+  # same paths and ports, so one machine makes one language at a time).
+  screenshots:
+    strategy:
+      matrix:
+        lang: [en, de]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - run: python3 docs/guide/html2txt.py --check
+      - uses: actions/checkout@v7
+
+      # Text and structure first: a broken guide fails in seconds.
+      - name: Check en/de
+        run: python3 docs/guide/check.py
+
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+          save-if: ${{ github.ref == 'refs/heads/main' && matrix.lang == 'en' }}
+
+      - name: Cache static deps
+        uses: actions/cache@v6
+        with:
+          path: .deps
+          key: deps-linux-${{ hashFiles('scripts/build-deps.sh') }}
+
+      - name: Build
+        run: scripts/build.sh x86_64-unknown-linux-gnu
+
+      # The fonts the screenshots have always been made with: Inter stands in
+      # for the Mac's system font (the CSS asks for -apple-system first), Noto
+      # for the emoji.
+      - name: Fonts, Python and Playwright
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-inter fonts-noto-color-emoji
+          mkdir -p ~/.config/fontconfig/conf.d
+          cp docs/guide/fonts.conf ~/.config/fontconfig/conf.d/56-prefer-inter.conf
+          fc-cache -f >/dev/null
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet pillow numpy
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+          mkdir -p "$RUNNER_TEMP/pw" && cd "$RUNNER_TEMP/pw"
+          npm install --silent --no-save "playwright@$PLAYWRIGHT_VERSION"
+          npx playwright install --with-deps chromium
+          echo "NODE_PATH=$RUNNER_TEMP/pw/node_modules" >> "$GITHUB_ENV"
+
+      # The sample library lives at /Volumes/Photos (and the two-drive pass
+      # under /mnt), so the paths in the screenshots look like a drive.
+      - name: Screenshots
+        run: |
+          sudo mkdir -p /Volumes /mnt
+          sudo chown "$USER" /Volumes /mnt
+          LANGS=${{ matrix.lang }} docs/guide/screenshots.sh core/target/x86_64-unknown-linux-gnu/release/shoebox
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-${{ matrix.lang }}
+          path: docs/guide/assets/${{ matrix.lang }}/
+          retention-days: 3
+
+  # Both languages together: the text copies, all checks (images, dots) and
+  # the finished guide as the artifact "guide".
+  guide:
+    needs: screenshots
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: screenshots-en
+          path: docs/guide/assets/en
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: screenshots-de
+          path: docs/guide/assets/de
+
+      - name: Text copies and checks
+        run: |
+          python3 docs/guide/html2txt.py
+          python3 docs/guide/check.py
+
+      - name: Assemble
+        run: |
+          out="$RUNNER_TEMP/guide"
+          mkdir -p "$out/assets/en" "$out/assets/de"
+          cd docs/guide
+          cp shoebox-en.html shoebox-de.html shoebox-en.txt shoebox-de.txt "$out/"
+          for lang in en de; do cp assets/$lang/*.jpg "$out/assets/$lang/"; done
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: guide
+          path: ${{ runner.temp }}/guide/

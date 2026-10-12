@@ -35,7 +35,7 @@ progress. Update the status section when a phase moves.
 | Scale | ~100,000 files, 150 GB today, up to 1 TB |
 | Repo | `core/` (Rust), `recognizer/` (Python), `scripts/`, `docker/`, `docs/` |
 | Dev environment | Docker for Linux builds/tests; native macOS builds with rustup; GitHub Actions for both |
-| CI until v1.0 | macOS only (PRs: arm64; main/tags: universal + Rosetta). Linux, incl. the real recognizer, runs only when started by hand; releases ship `shoebox-macos` plus `recognizer/` and the guide (`docs/guide/`: HTML and text, English and German, in the `guide/` folder of the archive) |
+| CI until v1.0 | macOS only: `test` and `build` side by side with cached dependencies (PRs: arm64; main/tags: universal + Rosetta), skipped for docs-only PRs. Linux, incl. the real recognizer, runs only when started by hand. The guide's screenshots and `.txt` copies are not in git: `guide.yml` makes them on Linux for UI/guide PRs (artifact `guide`) and for releases; releases ship `shoebox-macos` plus `recognizer/` and that guide (English and German, in the `guide/` folder of the archive) |
 
 ## Architecture
 
@@ -994,11 +994,19 @@ Decided: a **check box drop-down "Type"** next to the search box (option A),
 nothing else. No suggestions in the search box, no sidebar entries, no
 separate extensions (MP4 vs MOV); typing ".mp4" keeps working as before.
 
-- Entries: **Photos** (all stills, a Live Photo's still included),
-  **Videos** (stand-alone videos only: the clip of a Live Photo is folded into
-  its still and is never listed), **Live Photos** (the stills that have a
-  clip). Ticked types are OR; the filter is AND with folder, tags, people and
-  text. Nothing ticked means everything.
+- Entries: **Photos** (the stills that are neither screenshots nor Live
+  Photos), **Videos** (stand-alone videos only: the clip of a Live Photo is
+  folded into its still and is never listed), **Live Photos** (the stills that
+  have a clip), **Screenshots** (phase 11). The four never overlap: every item
+  is exactly one of them (`browse::MediaType`; until 2026-10 Photos included
+  the Live Photos). Ticked types are OR; the filter is AND with folder, tags,
+  people and text. Nothing ticked means everything.
+- The choice is also a chip in the search row (like the heart), with its own
+  drawn icon (camera, video camera, play circle, screenshot frame; four
+  squares for several); its ✕ and "Clear all" drop it. Every search with at
+  least one chip shows its count at the right of the chips ("48 photos · 3
+  videos", "No photos"), and the empty page adds "The search found no
+  matches."
 - **RAW gets no entry** (RAW stays hidden in the UI, see Decisions).
 - API: `type=photo|video|live` (repeatable) on the timeline, the tag and
   people suggestions and the common timeline `/api/all/timeline`; an unknown

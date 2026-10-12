@@ -4,3 +4,7 @@ shoebox-probe-report.json
 __pycache__/
 /recognizer/models/
 docs/*screenshots*/
+/.deps/
+# made by CI (.github/workflows/guide.yml), not kept in git
+/docs/guide/assets/
+/docs/guide/shoebox-*.txt

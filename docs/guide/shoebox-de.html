@@ -1,7 +1,8 @@
 <!doctype html>
-<!-- The guide's source: edit this file, then run `python3 docs/guide/html2txt.py` to
-     refresh shoebox-de.txt. Keep shoebox-en.html and shoebox-de.html in step; UI
-     names come from core/i18n/en.json and de.json. See docs/guide/README.md. -->
+<!-- The guide's source: edit this file and shoebox-en.html / shoebox-de.html in step
+     (the `guide` skill, .claude/skills/guide/SKILL.md); UI names come from
+     core/i18n/en.json and de.json. Screenshots and the .txt copy are made by CI.
+     See docs/guide/README.md. -->
 <html lang="de">
 <head>
   <meta charset="utf-8">
@@ -281,7 +282,7 @@
       <p class="sub">Alles ist auf einer Seite. So findest du dich zurecht.</p>
       <div class="shotwrap">
         <img src="assets/de/ui-overview.jpg" alt="" loading="lazy" style="display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:.6rem;box-shadow:0 .2rem 1rem rgba(60,35,10,.16)">
-        <span class="dot" style="left:5.0%;top:8.9%" data-txt="skip">1</span>
+        <span class="dot" style="left:2.3%;top:6.2%" data-txt="skip">1</span>
         <span class="dot" style="left:55.5%;top:7.8%" data-txt="skip">2</span>
         <span class="dot" style="left:73.8%;top:7.8%" data-txt="skip">3</span>
         <span class="dot" style="left:78.8%;top:7.8%" data-txt="skip">4</span>
@@ -308,7 +309,7 @@
         </li>
         <li>
           <h3>Typ</h3>
-          <p>Hake an, was gezeigt werden soll; ohne Haken wird alles gezeigt. <b>Fotos</b>: Standbilder ohne Screenshots (fahre über das ⓘ). <b>Videos</b>: eigenständige Videos. <b>Live Photos</b>: Fotos mit einem kurzen Clip. <b>Screenshots</b>: Bilder von einem Handy- oder Computerbildschirm.</p>
+          <p>Hake an, was gezeigt werden soll; ohne Haken wird alles gezeigt. <b>Fotos</b>: Standbilder, die weder Screenshots noch Live Photos sind (fahre über das ⓘ). <b>Videos</b>: eigenständige Videos. <b>Live Photos</b>: Fotos mit einem kurzen Clip. <b>Screenshots</b>: Bilder von einem Handy- oder Computerbildschirm. Jedes Bild gehört zu genau einem davon. Was du anhakst, erscheint auch als Chip über den Fotos.</p>
         </li>
         <li>
           <h3>Jahr</h3>
@@ -469,8 +470,8 @@
         <div class="items">
           <div>
             <h3>Suchen</h3>
-            <p>Tippe ins Suchfeld: Vorschläge erscheinen für Tags, Personen und Ordner (ein Ordnername steht unter <b>Ordner</b>; unter <b>Tags</b> stehen nur Tags, die du von Hand vergeben hast, auch solche mit dem Namen eines Ordners). Mehrere gewählte werden zu Chips, die das Ergebnis eingrenzen; × entfernt einen, <b>Alle entfernen</b> beginnt neu. Deine Favoriten findest du mit dem <b>♥</b>-Knopf neben <b>Typ</b>, oder tippe <i>favorit</i> (deutsch) bzw. <i>favorite</i> (englisch) und wähle <b>♥ Favoriten</b>; das lässt sich mit allem anderen kombinieren, z. B. Favoriten einer Person oder eines Jahres. Bei eingeschalteten Karten (siehe „Orte und Karten“) bieten die Vorschläge auch deine <b>Orte</b> an. Ein Jahr oder ein Monat mit Jahr, etwa <i>1987</i> oder <i>Juni 1987</i>, bietet am Ende der Liste eine Zeile unter <b>Datum</b> an (siehe „Datum und Suche nach Datum“).</p>
-            <p><b>Typ</b> bietet <b>Fotos</b> (Standbilder ohne Screenshots), <b>Videos</b>, <b>Live Photos</b> und <b>Screenshots</b>; hake beliebige an, ohne Haken wird alles gezeigt. Um Screenshots aus der Zeitleiste zu nehmen, hake Fotos, Videos und Live Photos an, aber nicht Screenshots; um nur Screenshots zu sehen, hake nur <b>Screenshots</b> an. Shoebox erkennt einen Screenshot an der Datei (ein PNG ohne Kameradaten, ein Name wie <i>Screenshot</i> oder <i>Bildschirmfoto</i>, die Größe eines Handy- oder Computerbildschirms) und am Bild selbst (große einfarbige Flächen). Es kann sich in beide Richtungen irren: Im Info-Fenster eines Fotos ist <b>Screenshot</b> ein Auswahlfeld, das mit der Schätzung von Shoebox beginnt; wähle <i>Ja</i> oder <i>Nein</i> zum Korrigieren, das Rückgängig-Symbol rechts in der Zeile (Tooltip <i>Zurück zu automatisch</i>) kehrt zur Schätzung zurück. Deine Wahl wird in der Bibliothek gemerkt; die Fotodatei wird nie verändert.</p>
+            <p>Tippe ins Suchfeld: Vorschläge erscheinen für Tags, Personen und Ordner (ein Ordnername steht unter <b>Ordner</b>; unter <b>Tags</b> stehen nur Tags, die du von Hand vergeben hast, auch solche mit dem Namen eines Ordners). Mehrere gewählte werden zu Chips, die das Ergebnis eingrenzen; × entfernt einen, <b>Alle entfernen</b> beginnt neu. Rechts neben den Chips zeigt shoebox, wie viele die Suche findet, zum Beispiel <b>48 Fotos · 3 Videos</b>; findet sie nichts, steht dort <b>Keine Fotos</b>, und die Seite sagt <i>Hier ist nichts. Die Suche ergab keine Treffer.</i> Deine Favoriten findest du mit dem <b>♥</b>-Knopf neben <b>Typ</b>, oder tippe <i>favorit</i> (deutsch) bzw. <i>favorite</i> (englisch) und wähle <b>♥ Favoriten</b>; das lässt sich mit allem anderen kombinieren, z. B. Favoriten einer Person oder eines Jahres. Bei eingeschalteten Karten (siehe „Orte und Karten“) bieten die Vorschläge auch deine <b>Orte</b> an. Ein Jahr oder ein Monat mit Jahr, etwa <i>1987</i> oder <i>Juni 1987</i>, bietet am Ende der Liste eine Zeile unter <b>Datum</b> an (siehe „Datum und Suche nach Datum“).</p>
+            <p><b>Typ</b> bietet <b>Fotos</b> (Standbilder, die weder Screenshots noch Live Photos sind), <b>Videos</b>, <b>Live Photos</b> und <b>Screenshots</b>; hake beliebige an, ohne Haken wird alles gezeigt. Jedes Bild gehört zu genau einem der vier, Fotos und Live Photos überschneiden sich also nie: Hake beide an, um alle deine Fotos zu sehen. Was du anhakst, erscheint auch als Chip mit dem Symbol des Typs (vier Quadrate, wenn mehrere angehakt sind); sein × hebt den Filter auf, ebenso <b>Alle entfernen</b>. Um Screenshots aus der Zeitleiste zu nehmen, hake Fotos, Videos und Live Photos an, aber nicht Screenshots; um nur Screenshots zu sehen, hake nur <b>Screenshots</b> an. Shoebox erkennt einen Screenshot an der Datei (ein PNG ohne Kameradaten, ein Name wie <i>Screenshot</i> oder <i>Bildschirmfoto</i>, die Größe eines Handy- oder Computerbildschirms) und am Bild selbst (große einfarbige Flächen). Es kann sich in beide Richtungen irren: Im Info-Fenster eines Fotos ist <b>Screenshot</b> ein Auswahlfeld, das mit der Schätzung von Shoebox beginnt; wähle <i>Ja</i> oder <i>Nein</i> zum Korrigieren, das Rückgängig-Symbol rechts in der Zeile (Tooltip <i>Zurück zu automatisch</i>) kehrt zur Schätzung zurück. Deine Wahl wird in der Bibliothek gemerkt; die Fotodatei wird nie verändert.</p>
           </div>
           <div>
             <h3>Auswählen</h3>

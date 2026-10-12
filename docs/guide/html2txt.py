@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 """Write shoebox-en.txt and shoebox-de.txt from the guide's HTML files: the same
-text, plain, for reading in any editor and for the long run.
+text, plain, for reading in any editor and for the long run. They are not kept
+in git: CI makes them for the guide artifact and the release
+(.github/workflows/guide.yml).
 
-    python3 docs/guide/html2txt.py          rewrite the .txt files
-    python3 docs/guide/html2txt.py --check  fail if a .txt is out of date, or an
-                                            image is missing or not used (CI)
+    python3 docs/guide/html2txt.py
 
 Standard library only. Elements with data-txt="skip" (and svg, style, script,
 the head) are left out of the text."""
 import os
 import re
-import sys
 import textwrap
 from html.parser import HTMLParser
 
@@ -151,36 +150,12 @@ def convert(path):
 
 
 def main():
-    check = "--check" in sys.argv
-    bad = []
-    used = set()
     for lang in LANGS:
-        html = os.path.join(HERE, f"shoebox-{lang}.html")
+        text, _ = convert(os.path.join(HERE, f"shoebox-{lang}.html"))
         txt = os.path.join(HERE, f"shoebox-{lang}.txt")
-        text, images = convert(html)
-        for src in images:
-            used.add(src)
-            if not os.path.isfile(os.path.join(HERE, src)):
-                bad.append(f"shoebox-{lang}.html: missing image {src}")
-        if check:
-            have = open(txt, encoding="utf-8").read() if os.path.exists(txt) else None
-            if have != text:
-                bad.append(f"shoebox-{lang}.txt is out of date: run python3 docs/guide/html2txt.py")
-        else:
-            with open(txt, "w", encoding="utf-8") as f:
-                f.write(text)
-            print("wrote", txt)
-    if check:
-        # a screenshot nobody shows is fine (settings, people-overview), but the
-        # two languages must carry the same set of names
-        names = {l: sorted(os.listdir(os.path.join(HERE, "assets", l))) for l in LANGS}
-        if names["en"] != names["de"]:
-            bad.append("assets/en and assets/de differ in file names")
-        for b in bad:
-            print("error:", b, file=sys.stderr)
-        if bad:
-            sys.exit(1)
-        print("guide ok")
+        with open(txt, "w", encoding="utf-8") as f:
+            f.write(text)
+        print("wrote", txt)
 
 
 if __name__ == "__main__":
