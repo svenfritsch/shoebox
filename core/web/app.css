@@ -628,6 +628,8 @@ body.selecting .sec .pick { display: inline; }
 .avatar.pet-cat::after { content: '🐱'; }
 .avatar.pet-dog::after { content: '🐶'; }
 .avatar.pet-pet::after { content: '🐾'; }
+/* In the search suggestions a pet looks like a person: the pet icon before the name is the only difference (the ring would also be cut off by the label). */
+.suggest .avatar.pet { box-shadow: none; }
 .avatar.tiny.pet-cat::after, .avatar.tiny.pet-dog::after, .avatar.tiny.pet-pet::after { content: none; }
 .avatar.big.pet-cat::after, .avatar.big.pet-dog::after, .avatar.big.pet-pet::after { font-size: 28px; }
 
