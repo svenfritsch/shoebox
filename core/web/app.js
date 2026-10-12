@@ -5467,7 +5467,9 @@ function clusterCard(c) {
   };
   var suggestion = el('div', 'csugg');
   card.appendChild(suggestion);
-  var row = el('div', 'crow');
+  // One toolbar, fixed to the bottom of the card: it stays in view while a long
+  // card scrolls and rests at the card's bottom edge at the end.
+  var row = el('div', 'crow cbar');
   var field = personField(function (who) { act('name', who); }, { allowNew: true, placeholder: tr('unnamed.who'), species: facesSpecies(c.faces) });
   row.appendChild(field);
   var nameBtn = el('button', 'btn', tr('person.name'));
@@ -5477,8 +5479,7 @@ function clusterCard(c) {
     act('name', who);
   };
   row.appendChild(nameBtn);
-  card.appendChild(row);
-  var tools = el('div', 'crow tools');
+  var tools = row;
   var ignore = el('button', 'btn quiet', tr('unnamed.ignore'));
   ignore.title = tr('unnamed.ignore_hint');
   ignore.onclick = function () { act('ignore', {}); };
@@ -5529,7 +5530,7 @@ function clusterCard(c) {
   tools.appendChild(notFace);
   tools.appendChild(change);
   tools.appendChild(pick);
-  card.appendChild(tools);
+  card.appendChild(row);
 
   var picked = function () { return Object.keys(card.picked).map(Number); };
   var update = function () {
