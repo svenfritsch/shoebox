@@ -715,7 +715,7 @@ fn renumber(dir: &Path, renames: &[(String, String)]) -> Result<()> {
     for (i, (old, new)) in renames.iter().enumerate() {
         let Some(raw) = on_disk.get(old) else { continue };
         let temp = dir.join(format!("{TEMP}-{i}"));
-        fs::rename(dir.join(raw), &temp).with_context(|| format!("{old} cannot be renamed"))?;
+        organize::rename_noreplace(&dir.join(raw), &temp).with_context(|| format!("{old} cannot be renamed"))?;
         stage.push((temp, new.clone()));
     }
     for (temp, new) in stage {
@@ -723,7 +723,7 @@ fn renumber(dir: &Path, renames: &[(String, String)]) -> Result<()> {
         if to.exists() {
             bail!("{new} is in the way; the files in the folder keep temporary names starting with {TEMP}");
         }
-        fs::rename(&temp, &to).with_context(|| format!("{new} cannot be written"))?;
+        organize::rename_noreplace(&temp, &to).with_context(|| format!("{new} cannot be written"))?;
     }
     Ok(())
 }
@@ -758,7 +758,7 @@ fn export_one(heif: &LibHeif, root: &Path, dest: &Path, task: &Task, shared: &Sh
     });
     match result {
         Ok(Written::Done { no_exif }) => {
-            fs::rename(&part, &to).map_err(|e| format!("{} cannot be written: {e}", task.target))?;
+            organize::rename_noreplace(&part, &to).map_err(|e| format!("{} cannot be written: {e}", task.target))?;
             Ok(Written::Done { no_exif })
         }
         Ok(Written::Stopped) => {

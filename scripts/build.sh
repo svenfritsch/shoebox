@@ -18,6 +18,11 @@ DEPS=${DEPS_DIR:-$TARGET_DIR/deps}/$TARGET
 
 scripts/build-deps.sh "$TARGET" "$DEPS"
 
+# Windows (Git Bash): cargo and the linker want D:/... paths, not /d/...
+case "$TARGET" in
+    *-windows-msvc) DEPS=$(cygpath -m "$DEPS"); TARGET_DIR=$(cygpath -m "$TARGET_DIR") ;;
+esac
+
 # Point libheif-sys straight at our libraries instead of asking pkg-config,
 # which could return Homebrew's libheif and cannot handle spaces in paths.
 # core/build.rs adds the rpath (next to the program; for debug builds and
@@ -32,6 +37,10 @@ case "$TARGET" in
 esac
 
 if [ "${2:-}" = test ]; then
+    # Windows has no rpath: the tests (and the shoebox.exe they start) find
+    # the DLLs on PATH.
+    # (PATH itself takes Git Bash's /d/... form.)
+    case "$TARGET" in *-windows-msvc) PATH="$(cygpath -u "$DEPS")/bin:$PATH"; export PATH ;; esac
     # cargo-nextest (if installed, as on CI) runs every test in its own process
     # and all test files at once; cargo test runs the files one after another.
     if cargo nextest --version >/dev/null 2>&1; then
@@ -44,12 +53,13 @@ else
     # The program loads them from its own folder: real files, no symlinks
     # (exFAT), under the names it asks for.
     case "$TARGET" in
-        *-apple-darwin) libs="libheif.1.dylib libde265.0.dylib" ;;
-        *) libs="libheif.so.1 libde265.so.0" ;;
+        *-apple-darwin) libs="lib/libheif.1.dylib lib/libde265.0.dylib" ;;
+        *-windows-msvc) libs="bin/heif.dll bin/libde265.dll" ;;
+        *) libs="lib/libheif.so.1 lib/libde265.so.0" ;;
     esac
     for lib in $libs; do
-        rm -f "$TARGET_DIR/$TARGET/release/$lib"
-        cp -L "$DEPS/lib/$lib" "$TARGET_DIR/$TARGET/release/$lib"
+        rm -f "$TARGET_DIR/$TARGET/release/${lib#*/}"
+        cp -L "$DEPS/$lib" "$TARGET_DIR/$TARGET/release/${lib#*/}"
     done
     echo "built $TARGET_DIR/$TARGET/release/shoebox (with $libs next to it)"
 fi

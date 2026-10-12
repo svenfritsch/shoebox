@@ -137,11 +137,47 @@ impl Names {
 
 // ---------------------------------------------------------------- renaming
 
-/// `rename` that fails instead of replacing an existing `to`. Atomic where
-/// the platform and filesystem support it (Linux `renameat2`, macOS
-/// `renamex_np`); otherwise checked just before renaming. Callers check
-/// for collisions in other spellings themselves (`Names`).
+/// `rename` that fails instead of replacing an existing `to`, and never
+/// copies. Atomic where the platform and filesystem support it (Linux
+/// `renameat2`, macOS `renamex_np`, Windows `MoveFileExW` without the
+/// replace flag); otherwise checked just before renaming. Callers check for
+/// collisions in other spellings themselves (`Names`).
 pub(crate) fn rename_noreplace(from: &Path, to: &Path) -> io::Result<()> {
+    // `fs::rename` replaces an existing target on Windows; this does not.
+    #[cfg(windows)]
+    {
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn MoveFileExW(existing: *const u16, new: *const u16, flags: u32) -> i32;
+        }
+        let (f, t) = (wide_path(from), wide_path(to));
+        // Flags 0: no MOVEFILE_REPLACE_EXISTING, no MOVEFILE_COPY_ALLOWED
+        // (another drive fails instead of copying).
+        // SAFETY: both arguments are NUL-terminated UTF-16 strings.
+        if unsafe { MoveFileExW(f.as_ptr(), t.as_ptr(), 0) } != 0 {
+            return Ok(());
+        }
+        Err(io::Error::last_os_error())
+    }
+    #[cfg(not(windows))]
+    rename_noreplace_unix(from, to)
+}
+
+/// A path for the wide Windows API: backslashes, and past the old 260
+/// character limit the `\\?\` form (which takes the path as it is).
+#[cfg(windows)]
+fn wide_path(p: &Path) -> Vec<u16> {
+    use std::os::windows::ffi::OsStrExt;
+    let mut v: Vec<u16> = p.as_os_str().encode_wide().map(|c| if c == u16::from(b'/') { u16::from(b'\\') } else { c }).collect();
+    if v.len() >= 248 && v.get(1) == Some(&u16::from(b':')) {
+        v.splice(0..0, r"\\?\".encode_utf16());
+    }
+    v.push(0);
+    v
+}
+
+#[cfg(not(windows))]
+fn rename_noreplace_unix(from: &Path, to: &Path) -> io::Result<()> {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         use std::ffi::CString;
@@ -185,7 +221,7 @@ fn rename_into(from: &Path, dir: &Path, name: &str, names: &mut Names) -> Result
             let tmp = dir.join(format!(".shoebox-rename-{}", std::process::id()));
             rename_noreplace(from, &tmp).with_context(|| format!("rename {from_name}"))?;
             if let Err(e) = rename_noreplace(&tmp, &to) {
-                let _ = fs::rename(&tmp, from);
+                let _ = rename_noreplace(&tmp, from);
                 return Err(e).with_context(|| format!("rename {from_name} to {name}"));
             }
             names.remove(&existing);
