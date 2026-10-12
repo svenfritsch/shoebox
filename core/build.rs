@@ -1,38 +1,24 @@
-// libheif and libde265 are linked statically (see scripts/build.sh) and are
-// written in C++, so the platform's C++ runtime has to be linked too.
+// libheif and libde265 are shared libraries that ship next to the program
+// (scripts/build-deps.sh, LGPL: whoever has shoebox can swap in their own
+// build). The program finds them in its own folder; libheif brings the C++
+// runtime and libde265 its compiler runtime with it.
 //
-// On x86 macOS, libde265 picks its SSE/AVX2 kernels at runtime via
-// `__builtin_cpu_supports`, which lives in clang's compiler runtime
-// (libclang_rt.osx.a). Rust links with -nodefaultlibs, so we add it here.
-use std::path::Path;
-use std::process::Command;
+// Debug builds and tests run from core/target, so they also look in the
+// folder the libraries were built into (scripts/build.sh hands it over in
+// SYSTEM_DEPS_LIBHEIF_SEARCH_NATIVE). Release builds carry no build path.
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=SYSTEM_DEPS_LIBHEIF_SEARCH_NATIVE");
     let os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
-    let arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
-
-    match os.as_str() {
-        "macos" => {
-            println!("cargo:rustc-link-lib=c++");
-            if arch == "x86_64" {
-                link_clang_runtime();
-            }
-        }
-        "windows" => {}
-        // GNU ld resolves libraries in command-line order, so libstdc++ must
-        // come after libheif; link args are appended at the very end.
-        _ => println!("cargo:rustc-link-arg=-lstdc++"),
+    let next_to_program = match os.as_str() {
+        "macos" => "@executable_path",
+        "windows" => return, // Windows looks next to the .exe by itself
+        _ => "$ORIGIN",      // expanded by the dynamic loader, not a shell
+    };
+    println!("cargo:rustc-link-arg=-Wl,-rpath,{next_to_program}");
+    if std::env::var("PROFILE").as_deref() != Ok("release")
+        && let Ok(dir) = std::env::var("SYSTEM_DEPS_LIBHEIF_SEARCH_NATIVE")
+    {
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{dir}");
     }
-}
-
-fn link_clang_runtime() {
-    let output = Command::new("clang")
-        .arg("-print-file-name=lib/darwin/libclang_rt.osx.a")
-        .output()
-        .expect("clang not found (needed to locate libclang_rt.osx.a)");
-    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let lib = Path::new(&path);
-    assert!(lib.is_file(), "libclang_rt.osx.a not found at {path}");
-    println!("cargo:rustc-link-search=native={}", lib.parent().unwrap().display());
-    println!("cargo:rustc-link-lib=static=clang_rt.osx");
 }

@@ -11,9 +11,10 @@ name: build
 # recognizer.
 #
 # Compiled dependencies are cached per job by Swatinem/rust-cache; only runs
-# on main save the cache, pull requests start from main's. The static C
-# libraries (libheif, libde265) are cached separately in .deps, outside
-# core/target so that the Rust cache's clean-up never touches them.
+# on main save the cache, pull requests start from main's. The C libraries
+# (libheif, libde265) are cached separately in .deps, outside core/target so
+# that the Rust cache's clean-up never touches them. They ship as separate
+# files next to the program (LGPL), so every dist/ folder carries them.
 on:
   push:
     branches: [main]
@@ -126,18 +127,38 @@ jobs:
         if: env.FULL == 'true'
         run: |
           mkdir -p dist
-          lipo -create -output dist/shoebox-macos \
-            core/target/x86_64-apple-darwin/release/shoebox \
-            core/target/aarch64-apple-darwin/release/shoebox
-          lipo -info dist/shoebox-macos
-          otool -L dist/shoebox-macos
+          for f in shoebox libheif.1.dylib libde265.0.dylib; do
+            out=dist/$f; [ $f = shoebox ] && out=dist/shoebox-macos
+            lipo -create -output "$out" \
+              core/target/x86_64-apple-darwin/release/$f \
+              core/target/aarch64-apple-darwin/release/$f
+            lipo -info "$out"
+          done
           vtool -show-build -arch x86_64 dist/shoebox-macos | grep -E "minos|version"
+          vtool -show-build -arch x86_64 dist/libheif.1.dylib | grep -E "minos|version"
 
       - name: arm64 binary only (pull requests)
         if: env.FULL != 'true'
         run: |
           mkdir -p dist
           cp core/target/aarch64-apple-darwin/release/shoebox dist/shoebox-macos
+          cp core/target/aarch64-apple-darwin/release/libheif.1.dylib \
+            core/target/aarch64-apple-darwin/release/libde265.0.dylib dist/
+
+      # The program loads libheif from its own folder only, carries no build
+      # path, and everything is signed (Apple Silicon loads nothing unsigned).
+      - name: Check the libraries next to the program
+        run: |
+          otool -L dist/shoebox-macos dist/libheif.1.dylib
+          otool -L dist/shoebox-macos | grep -q '@rpath/libheif.1.dylib'
+          otool -L dist/libheif.1.dylib | grep -q '@rpath/libde265.0.dylib'
+          rpaths=$(otool -l dist/shoebox-macos | awk '/LC_RPATH/ {getline; getline; print $2}' | sort -u)
+          echo "rpaths: $rpaths"
+          [ "$rpaths" = "@executable_path" ]
+          if otool -L dist/shoebox-macos dist/*.dylib | grep -E '/(opt|usr/local)/'; then
+            echo "links a library from Homebrew" >&2; exit 1
+          fi
+          codesign --verify --verbose dist/shoebox-macos dist/libheif.1.dylib dist/libde265.0.dylib
 
       - name: Fixtures
         run: scripts/make-fixtures.sh "$RUNNER_TEMP/fixtures"
@@ -219,6 +240,9 @@ jobs:
         run: |
           mkdir -p dist
           cp core/target/x86_64-unknown-linux-gnu/release/shoebox dist/shoebox-linux
+          cp core/target/x86_64-unknown-linux-gnu/release/libheif.so.1 \
+            core/target/x86_64-unknown-linux-gnu/release/libde265.so.0 dist/
+          readelf -d dist/shoebox-linux dist/libheif.so.1 | grep -E 'NEEDED|RUNPATH|RPATH'
           dist/shoebox-linux probe "$RUNNER_TEMP/fixtures" --report dist/probe-linux.json
           cp -R "$RUNNER_TEMP/fixtures" "$RUNNER_TEMP/lib"
           dist/shoebox-linux scan "$RUNNER_TEMP/lib"
@@ -274,6 +298,10 @@ jobs:
             # inside its own folder per system the program is just "shoebox"
             cp artifacts/shoebox-$os/shoebox-$os "$pkg/shoebox"
             chmod +x "$pkg/shoebox"
+            # libheif and libde265 next to it (LGPL: replaceable), with their
+            # unmodified sources
+            cp artifacts/shoebox-$os/libheif.1.dylib artifacts/shoebox-$os/libde265.0.dylib "$pkg/"
+            scripts/build-deps.sh --sources "$pkg/sources"
             cp LICENSE.txt THIRD-PARTY-LICENSES.txt "$pkg/"
             cp "scripts/launchers/Start shoebox.command" "$pkg/"
             chmod +x "$pkg/Start shoebox.command"

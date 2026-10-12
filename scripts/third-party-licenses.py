@@ -85,15 +85,18 @@ def main():
     w("Map pictures shown by the optional maps are OpenStreetMap tiles. Map data (c) OpenStreetMap\n"
       "contributors, available under the Open Database Licence (https://www.openstreetmap.org/copyright).\n"
       "shoebox does not store or ship any of it.\n")
-    w("\n2. Native libraries (linked statically into the binary)\n" + "-" * 56 + "\n")
+    w("\n2. Native libraries (separate files next to the program)\n" + "-" * 57 + "\n")
     versions = dict(re.findall(r"^(LIBDE265|LIBHEIF)_VERSION=(\S+)", (ROOT / "scripts" / "build-deps.sh").read_text(), re.M))
     w(f"libheif {versions['LIBHEIF']} (https://github.com/strukturag/libheif) and\n"
       f"libde265 {versions['LIBDE265']} (https://github.com/strukturag/libde265) read HEIC photos.\n"
       "Both are licensed under the GNU Lesser General Public License, version 3 (text below).\n"
       "They are built from the unmodified upstream source releases by scripts/build-deps.sh and\n"
-      "linked statically. As the LGPL (section 4(d)) requires, you can replace them with a\n"
-      "version of your own: on request, the author provides what is needed to link shoebox\n"
-      "again with a modified version of these libraries.\n"
+      "ship as separate files next to the program: libheif.1.dylib and libde265.0.dylib on\n"
+      "macOS (libheif.so.1 and libde265.so.0 on Linux). The program loads them from its own\n"
+      "folder, so you can replace them with a build of your own, modified or not (LGPL section\n"
+      "4(d)): build it as a shared library with the same interface and put it there under the\n"
+      "same file name. Their source code is in the folder sources/ of the download; the author\n"
+      "also sends it on request.\n"
       "Copyright (c) 2013-2026 Struktur AG and Dirk Farin and the other contributors of the projects.\n\n")
     w(LGPL.read_text().strip() + "\n")
     w("\n3. Rust crates (linked into the binary)\n" + "-" * 40 + "\n")

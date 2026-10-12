@@ -12,8 +12,19 @@ if [ -z "$bin" ]; then
     echo "The program shoebox was not found next to this file. Keep the files of the downloaded folder together."
     echo "Press Return to close."; read -r _; exit 1
 fi
-# Downloads carry a quarantine mark that makes Gatekeeper block the program.
-xattr -d com.apple.quarantine "$bin" 2>/dev/null
+# libheif and libde265 (HEIC photos) are separate files next to the program.
+dir=$(dirname "$bin")
+for lib in libheif.1.dylib libde265.0.dylib; do
+    if [ ! -f "$dir/$lib" ]; then
+        echo "$lib was not found next to the program shoebox. Keep the files of the downloaded folder together."
+        echo "Press Return to close."; read -r _; exit 1
+    fi
+done
+# Downloads carry a quarantine mark that makes Gatekeeper block the program
+# and the libraries it loads.
+for f in "$bin" "$dir/libheif.1.dylib" "$dir/libde265.0.dylib"; do
+    xattr -d com.apple.quarantine "$f" 2>/dev/null
+done
 chmod +x "$bin" 2>/dev/null
 echo "Starting shoebox. Leave this window open while you use it; close it to stop."
 exec "$bin"
