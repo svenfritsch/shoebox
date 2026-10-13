@@ -1672,6 +1672,9 @@ checked by the release job). Open:
 
 Not covered during development; do them before giving shoebox to others.
 
+- [ ] CR2 metadata (phase 0): Canon `.CR2` files fail in the metadata reader
+      ("malformed ifd entry", 3 of 3 on the real drive), so RAW files have no
+      capture date. Fix the reader, rerun `shoebox probe` on a RAW folder.
 - [ ] Time-zone shift (phase 1): plug the drive into a Mac in another time
       zone (or change the Mac's time zone) and rescan. Files should count as
       "time-zone shift", not "changed".
