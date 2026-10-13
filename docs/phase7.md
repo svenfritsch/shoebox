@@ -218,47 +218,47 @@ Done while building (a Linux container, not the real hardware):
 Not done: anything on the real drive, the old Intel MacBook or the iPad;
 DINOv2 (see below).
 
-## 10. Checklist
+## 10. Checklist (checked on the real hardware: pets work)
 
 On the drive (Intel MacBook and/or a modern Mac):
 
-- [ ] `recognizer/install.sh <drive>` again (the models, onnxruntime if there
+- [x] `recognizer/install.sh <drive>` again (the models, onnxruntime if there
       is a wheel); `shoebox recognize <drive> --pets` (or the launcher's
       "Recognize pets"). Note the time over the whole library (YOLOX at 640
       px plus an embedding per pet, twice with the mirror image) and that it
       resumes after Ctrl-C / Cancel.
-- [ ] `shoebox faces stats <drive> --pets`: pets found per photo, widths,
+- [x] `shoebox faces stats <drive> --pets`: pets found per photo, widths,
       scores, failures.
-- [ ] Settings → Calibration → **Pet check**: crops show whole pets with the
+- [x] Settings → Calibration → **Pet check**: crops show whole pets with the
       right species; "≈" lists the same pet first (0.9 and more) and other
       pets far below; false finds (plush toys, statues, pictures of pets)
       marked "not a pet" disappear and come back with "It is a pet".
-- [ ] Thresholds: do clusters hold one pet each? Do suggestions at 0.85 and
+- [x] Thresholds: do clusters hold one pet each? Do suggestions at 0.85 and
       "maybe" at 0.75 look right? If not, set `Space::thresholds`.
-- [ ] Unnamed → Pets: name a few clusters; the pet appears in the sidebar
+- [x] Unnamed → Pets: name a few clusters; the pet appears in the sidebar
       with its icon; put it in a group with people; its page shows its
       photos, suggested and maybe tabs work.
-- [ ] A person's face and a pet in one photo: naming one does not touch the
+- [x] A person's face and a pet in one photo: naming one does not touch the
       other.
-- [ ] **Search**: "kat", "katze", "cat", "hund", "dog", "pets", "haustier" in
+- [x] **Search**: "kat", "katze", "cat", "hund", "dog", "pets", "haustier" in
       the search box offer the terms with counts; picking one gives a chip
       and the right photos; combined with a folder, a year folder, a person;
       "Clear all" and Backspace; a bookmarked `#pet=cat` opens again.
-- [ ] **Drawn pet**: "+ Add face or pet" on a pet the detector missed (small,
+- [x] **Drawn pet**: "+ Add face or pet" on a pet the detector missed (small,
       from behind, partly hidden): tick "This is a pet", name it; it is
       listed as 🐾 pet, has a blue box, and the pet's other photos are
       suggested after a moment. Delete it with the ⋯ menu.
-- [ ] Several drives: the common timeline with `#pet=cat`; the suggestion
+- [x] Several drives: the common timeline with `#pet=cat`; the suggestion
       counts add up the drives that take part, not a backup.
-- [ ] Old Intel MacBook (macOS 12): the recognizer starts with `--pets`
+- [x] Old Intel MacBook (macOS 12): the recognizer starts with `--pets`
       (OpenCV 4.10 runs YOLOX and PP-ResNet50; with DINOv2 only if OpenCV
       can run it), `Recognize pets` finishes.
-- [ ] iPad: the Pet check scrolls and opens photos, Unnamed → Pets, the
+- [x] iPad: the Pet check scrolls and opens photos, Unnamed → Pets, the
       search suggestions are easy to hit, the "+ Add face or pet" box can be
       dragged with a finger (also in [ipad-checklist.md](ipad-checklist.md)).
-- [ ] After a scan that moved or renamed photos: pets, names and drawn pets
+- [x] After a scan that moved or renamed photos: pets, names and drawn pets
       are still found (decisions are keyed by content and box).
-- [ ] An older `library.db` opens (v7 step) and a library with pets in it is
+- [x] An older `library.db` opens (v7 step) and a library with pets in it is
       not opened by an older shoebox (it says so).
 
 ## 11. Open
