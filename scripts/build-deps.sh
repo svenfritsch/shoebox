@@ -77,7 +77,8 @@ mkdir -p "$WORK"
 
 fetch() { # url sha256 file
     download "$1" "$2" "$WORK/$3"
-    tar xzf "$WORK/$3" -C "$WORK"
+    # From inside the folder: GNU tar takes "D:/..." for a remote host.
+    (cd "$WORK" && tar xzf "$3")
 }
 
 fetch "$LIBDE265_URL" "$LIBDE265_SHA256" "libde265-$LIBDE265_VERSION.tar.gz"
