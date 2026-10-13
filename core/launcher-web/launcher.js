@@ -69,8 +69,12 @@ function driveName(p) {
 }
 
 // A drive under /Volumes that the list of connected drives does not have.
+// A photo folder on a drive (/Volumes/X/Photos) is there when the drive
+// (/Volumes/X) is in the list.
 function isOffline(p) {
-  return drivesLoaded && p.indexOf('/Volumes/') === 0 && !drives.some(function (d) { return d.path === p; });
+  return drivesLoaded && p.indexOf('/Volumes/') === 0 && !drives.some(function (d) {
+    return d.path === p || p.indexOf(d.path.replace(/\/+$/, '') + '/') === 0;
+  });
 }
 
 // The photo app cannot start on a drive that is not there: the button stays
