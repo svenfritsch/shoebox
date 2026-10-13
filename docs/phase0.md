@@ -43,7 +43,7 @@ Previews go to the system temp folder, never into the photo folder.
 - [ ] Binary starts on the Intel Mac (no "unsupported macOS version", no missing library)
 - [ ] `filesystem: exfat` is detected
 - [ ] HEIC, JPEG and video: metadata and preview for (almost) every file
-- [ ] RAW: capture date found
+- [ ] RAW: capture date found (first run on the real drive: Canon CR2 gave "malformed ifd entry ... Incomplete"; fixed in `media::read_tiff_raw_exif`, to be confirmed on the 'Angie wedding' folder: `RAW 3 3 3`)
 - [ ] `GUARD OK`
 - [ ] Hash throughput noted (sets expectations for the first full scan)
 
