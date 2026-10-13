@@ -526,21 +526,26 @@ fn several_libraries_share_one_server_and_an_unplugged_drive_is_only_offline() {
     assert_eq!(get(addr, &route(&id_a, "timeline")).status, 200);
 
     // Unplug a running drive: only it goes offline. (A look at the drive is
-    // trusted for two seconds.)
-    let gone = b.root.with_extension("unplugged");
-    std::fs::rename(&b.root, &gone).unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(2300));
-    let r = get(addr, &route(&id_b, "timeline")); assert_eq!(r.status, 503, "{}", String::from_utf8_lossy(&r.body[..r.body.len().min(300)]));
-    let libs = lib_ids(addr);
-    assert_eq!(libs.iter().map(|l| l.2).collect::<Vec<_>>(), [true, false, false]);
-    assert_eq!(get(addr, &route(&id_a, "timeline")).status, 200);
-    assert_eq!(get(addr, &route(&id_a, "info")).status, 200);
+    // trusted for two seconds.) Simulated by renaming its folder, which
+    // Windows refuses while the server has the index in it open; a drive
+    // that was never there is offline there too (above).
+    if cfg!(not(windows)) {
+        let gone = b.root.with_extension("unplugged");
+        std::fs::rename(&b.root, &gone).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2300));
+        let r = get(addr, &route(&id_b, "timeline"));
+        assert_eq!(r.status, 503, "{}", String::from_utf8_lossy(&r.body[..r.body.len().min(300)]));
+        let libs = lib_ids(addr);
+        assert_eq!(libs.iter().map(|l| l.2).collect::<Vec<_>>(), [true, false, false]);
+        assert_eq!(get(addr, &route(&id_a, "timeline")).status, 200);
+        assert_eq!(get(addr, &route(&id_a, "info")).status, 200);
 
-    // Plug it in again: it opens by itself.
-    std::fs::rename(&gone, &b.root).unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(2300));
-    assert_eq!(get(addr, &route(&id_b, "timeline")).status, 200);
-    assert_eq!(lib_ids(addr).iter().map(|l| l.2).collect::<Vec<_>>(), [true, true, false]);
+        // Plug it in again: it opens by itself.
+        std::fs::rename(&gone, &b.root).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2300));
+        assert_eq!(get(addr, &route(&id_b, "timeline")).status, 200);
+        assert_eq!(lib_ids(addr).iter().map(|l| l.2).collect::<Vec<_>>(), [true, true, false]);
+    }
 
     // Changes on one library do not touch the other, and only read what they should.
     server.stop().unwrap();

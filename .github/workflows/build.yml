@@ -260,6 +260,70 @@ jobs:
           name: shoebox-linux
           path: dist/
 
+  # Windows (MSVC): started by hand, like Linux, until it is part of the
+  # release ("Decoders per build", step 4, in docs/plan.md). libheif and
+  # libde265 are DLLs next to shoebox.exe; the C runtime is linked in, so
+  # nothing needs to be installed on the PC.
+  windows:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+          save-if: false
+
+      - name: Cache deps
+        uses: actions/cache@v6
+        with:
+          path: .deps
+          key: deps-windows-${{ hashFiles('scripts/build-deps.sh') }}
+
+      - name: Tests
+        run: scripts/build.sh x86_64-pc-windows-msvc test
+
+      - name: Build
+        run: scripts/build.sh x86_64-pc-windows-msvc
+
+      # A JPEG and a real HEIC (pillow-heif can write one) in folders with a
+      # space and an umlaut, read by the program from a folder of its own.
+      - name: Probe, scan and verify
+        run: |
+          mkdir -p "dist/shoebox-windows"
+          r=core/target/x86_64-pc-windows-msvc/release
+          cp "$r/shoebox.exe" "$r/heif.dll" "$r/libde265.dll" "dist/shoebox-windows/"
+          python -m pip install --quiet pillow pillow-heif
+          python - "$RUNNER_TEMP/lib" <<'PY'
+          import sys, pathlib
+          from PIL import Image
+          import pillow_heif
+          pillow_heif.register_heif_opener()
+          root = pathlib.Path(sys.argv[1]) / "Ferien Grüße"
+          root.mkdir(parents=True, exist_ok=True)
+          img = Image.radial_gradient("L").resize((1200, 800)).convert("RGB")
+          img.save(root / "IMG_0001.JPG", quality=90)
+          img.save(root / "IMG_0002.HEIC", quality=60)
+          PY
+          dist/shoebox-windows/shoebox.exe probe "$RUNNER_TEMP/lib" --report dist/probe-windows.json
+          # Both pictures got a preview (the HEIC through heif.dll).
+          python -c "import json,sys; r=json.load(open('dist/probe-windows.json',encoding='utf-8')); bad=[f for f in r['files'] if not f['preview']]; print(r['filesystem'], len(r['files']), 'files'); sys.exit(1 if bad or len(r['files'])!=2 else 0)"
+          dist/shoebox-windows/shoebox.exe scan "$RUNNER_TEMP/lib"
+          dist/shoebox-windows/shoebox.exe scan "$RUNNER_TEMP/lib"
+          dist/shoebox-windows/shoebox.exe verify "$RUNNER_TEMP/lib"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: shoebox-windows
+          path: dist/
+
   # The guide (HTML, its plain-text copies and the screenshots) is made from
   # this commit by guide.yml and goes into the archive.
   guide:
