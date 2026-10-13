@@ -37,10 +37,11 @@
 //! background (`clusters.rs`) after every such change, when the server
 //! starts, and when `recognition.db` got new faces.
 //!
-//! A video poster the server cannot make (no ffmpeg, or it failed) is grabbed
-//! by the browser and sent back (`POST /api/files/{id}/poster`); it is kept
-//! in `thumbs.db` only after decoding and encoding it again, and only while
-//! the video has no picture (see `thumbs::browser_poster`).
+//! A video poster the server cannot make (no system video framework and no
+//! ffmpeg, or both failed) is grabbed by the browser and sent back
+//! (`POST /api/files/{id}/poster`); it is kept in `thumbs.db` only after
+//! decoding and encoding it again, and only while the video has no picture
+//! (see `thumbs::browser_poster`).
 //!
 //! Self-healing paths: when a file is not where the index says (moved in the
 //! Finder while shoebox runs), the server runs the scan's index step in the
@@ -1760,7 +1761,9 @@ struct Info {
     missing: u64,
     thumbs_done: u64,
     thumbs_total: u64,
-    ffmpeg: bool,
+    /// The server makes video posters itself (system framework or ffmpeg);
+    /// otherwise the browser does.
+    video_posters: bool,
     /// Latest job of each kind.
     jobs: Vec<JobInfo>,
     /// A scan (or another job) is running right now.
@@ -1848,7 +1851,7 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
             missing: missing as u64,
             thumbs_done: thumbs_done as u64,
             thumbs_total: thumbs_total as u64,
-            ffmpeg: app.ffmpeg.is_some(),
+            video_posters: media::SYSTEM_VIDEO_POSTERS || app.ffmpeg.is_some(),
             jobs,
             busy,
             index_version: format!("{data_version}.{generation}"),

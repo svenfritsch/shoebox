@@ -272,6 +272,46 @@ fn decode_heic(lib_heif: &LibHeif, src: &Path, edge: u32) -> Result<DynamicImage
     Ok(DynamicImage::ImageRgb8(buf))
 }
 
+/// Whether this build has the system's own video framework for posters
+/// (AVFoundation on macOS; Media Foundation on Windows is planned).
+pub const SYSTEM_VIDEO_POSTERS: bool = cfg!(target_os = "macos");
+
+/// The reason when there is nothing to make a poster with (no system
+/// framework in this build, no ffmpeg). Not stored: a later run with ffmpeg
+/// in place tries again.
+pub const NO_POSTER_MAKER: &str = "ffmpeg not found";
+/// Ends the reason when the system framework could not read a video and
+/// there was no ffmpeg to try next: a scan that has ffmpeg tries again.
+pub const NO_FFMPEG_SUFFIX: &str = "(no ffmpeg)";
+
+/// A video's poster: one frame about 10% in, at most `edge` pixels on its
+/// longer side, as JPEG of `quality` (0–100). From the system's video
+/// framework where this build has one, else (or when that cannot read the
+/// video) from ffmpeg. The video is only read; callers keep the guard.
+pub fn video_poster_jpeg(
+    ffmpeg: Option<&Path>,
+    src: &Path,
+    duration_ms: Option<u64>,
+    edge: u32,
+    quality: u8,
+) -> std::result::Result<Vec<u8>, String> {
+    #[cfg(target_os = "macos")]
+    let system = match crate::avposter::frame(src, duration_ms, edge) {
+        Ok(img) => return encode_jpeg(&img, quality).map_err(|e| format!("{e:#}")),
+        Err(e) => Some(e),
+    };
+    #[cfg(not(target_os = "macos"))]
+    let system: Option<String> = None;
+    // ffmpeg's -q:v runs from 2 (best) to 31.
+    let q = ((100 - quality.min(100)) / 5).clamp(2, 31);
+    match (ffmpeg, system) {
+        (Some(ff), None) => video_poster(ff, src, duration_ms, edge, q).map_err(|e| format!("{e:#}")),
+        (Some(ff), Some(sys)) => video_poster(ff, src, duration_ms, edge, q).map_err(|e| format!("{sys}; {e:#}")),
+        (None, Some(sys)) => Err(format!("{sys} {NO_FFMPEG_SUFFIX}")),
+        (None, None) => Err(NO_POSTER_MAKER.into()),
+    }
+}
+
 /// Find an `ffmpeg` binary: next to our own executable first, then on PATH.
 pub fn find_ffmpeg() -> Option<PathBuf> {
     let name = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
@@ -285,9 +325,10 @@ pub fn find_ffmpeg() -> Option<PathBuf> {
     std::env::split_paths(&path).map(|d| d.join(name)).find(|p| p.is_file())
 }
 
-/// Grab one frame at ~10% into the video as a JPEG preview.
-pub fn write_video_poster(ffmpeg: &Path, src: &Path, dst: &Path, duration_ms: Option<u64>, edge: u32) -> Result<()> {
-    std::fs::write(dst, video_poster(ffmpeg, src, duration_ms, edge, 3)?)?;
+/// Grab one frame at ~10% into the video as a JPEG preview
+/// (`video_poster_jpeg`).
+pub fn write_video_poster(ffmpeg: Option<&Path>, src: &Path, dst: &Path, duration_ms: Option<u64>, edge: u32) -> Result<()> {
+    std::fs::write(dst, video_poster_jpeg(ffmpeg, src, duration_ms, edge, 85).map_err(|e| anyhow!(e))?)?;
     Ok(())
 }
 
@@ -339,4 +380,26 @@ pub fn jpeg_missing_end_marker(path: &Path) -> std::io::Result<bool> {
     let mut tail = [0u8; 2];
     file.read_exact(&mut tail)?;
     Ok(tail != [0xFF, 0xD9])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_video_nothing_can_read_says_why() {
+        let dir = std::env::temp_dir().join(format!("shoebox-media-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let junk = dir.join("junk.mov");
+        std::fs::write(&junk, b"not a video").unwrap();
+        let error = video_poster_jpeg(None, &junk, None, 384, 80).unwrap_err();
+        if SYSTEM_VIDEO_POSTERS {
+            // Stored, and tried again by a scan that has ffmpeg.
+            assert!(error.ends_with(NO_FFMPEG_SUFFIX), "{error}");
+        } else {
+            // Not stored: nothing could make a poster at all.
+            assert_eq!(error, NO_POSTER_MAKER);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

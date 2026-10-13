@@ -32,6 +32,16 @@ unicode-normalization = "0.1.25"
 walkdir = "2.5.0"
 rusqlite = { version = "0.40.2", features = ["bundled", "backup"] }
 
+# Video posters from AVFoundation, the system's own video framework (macOS
+# only; see src/avposter.rs). Only the classes it uses are switched on.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.5"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSString", "NSURL", "NSError", "NSDictionary", "NSObjCRuntime"] }
+objc2-av-foundation = { version = "0.3.2", default-features = false, features = ["std", "AVAsset", "AVAssetImageGenerator", "objc2-core-media", "objc2-core-graphics", "objc2-core-foundation"] }
+objc2-core-media = { version = "0.3.2", default-features = false, features = ["std", "CMTime"] }
+objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["std", "CGBitmapContext", "CGColorSpace", "CGContext", "CGImage"] }
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFCGTypes", "CFString"] }
+
 # Optimise dependencies in debug and test builds too: decoding a picture with
 # an unoptimised `image` takes ~4x longer, which pushed the fake recognizer
 # past the 2 s reply timeout of the recognize tests on CI runners.

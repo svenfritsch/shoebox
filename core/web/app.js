@@ -1335,9 +1335,10 @@ function thumbFailed(id, kind) {
   };
 }
 
-// Videos the server has no poster for (no ffmpeg, or ffmpeg could not read
-// them): grab a frame in the browser, two videos at a time, and send it to
-// the server, which keeps a copy of its own as the video's poster.
+// Videos the server has no poster for (it has neither the system's video
+// framework nor ffmpeg, or they could not read the video): grab a frame in
+// the browser, two videos at a time, and send it to the server, which keeps
+// a copy of its own as the video's poster.
 var frames = { cache: {}, queue: [], busy: 0 };
 
 function videoFrame(id, img, done) {
@@ -2176,7 +2177,7 @@ function loadInfo() {
     var scan = info.jobs.filter(function (j) { return j.kind === 'scan'; })[0];
     if (info.busy) parts.push(tr('status.scanning'));
     else if (scan) parts.push(tr('status.last_scan', { date: I18n.date(new Date(scan.started_at * 1000)) }));
-    if (!info.ffmpeg && info.videos) parts.push(tr('status.no_ffmpeg'));
+    if (!info.video_posters && info.videos) parts.push(tr('status.no_ffmpeg'));
     var f = info.faces, c = info.clusters;
     if (f.running) parts.push(tr('status.finding_faces', { pct: Math.floor(100 * f.done / Math.max(f.total, 1)) }));
     else if (f.done && f.done < f.total) parts.push(tr('status.faces_todo', { count: trn('count.photos', f.total - f.done) }));
