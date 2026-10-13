@@ -134,6 +134,10 @@ jobs:
               core/target/aarch64-apple-darwin/release/$f
             lipo -info "$out"
           done
+          # The x86_64 linker does not sign (the arm64 one does), and lipo
+          # keeps each half as it is: sign the program ad hoc, as
+          # build-deps.sh does the libraries.
+          codesign --force --sign - dist/shoebox-macos
           vtool -show-build -arch x86_64 dist/shoebox-macos | grep -E "minos|version"
           vtool -show-build -arch x86_64 dist/libheif.1.dylib | grep -E "minos|version"
 
