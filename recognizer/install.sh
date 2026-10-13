@@ -3,16 +3,17 @@
 # OpenCV, numpy and the models, so `shoebox recognize` finds it without
 # anything installed on the computer.
 #
-#   recognizer/install.sh [--faces] [--pets]
+#   recognizer/install.sh [--faces] [--pets] [--text]
 #
 # It installs into the folder that holds this script, next to the shoebox
 # program; every drive you recognize uses it. shoebox runs the recognizer only
 # from there, never from a drive's .shoebox folder (a drive from somebody else
 # could bring a Python of its own).
 #
-# The add-ons are independent: --faces (face models, ~40 MB) and --pets (cat and
-# dog models, ~140 MB); either or both, on top of the Python and OpenCV runtime
-# (~200 MB). Without either, a terminal is asked; the Control Panel passes the
+# The add-ons are independent: --faces (face models, ~40 MB), --pets (cat and
+# dog models, ~140 MB) and --text (read the words in photos: the rapidocr
+# package with onnxruntime and its models, ~100 MB); any of them, on top of the
+# Python and OpenCV runtime (~200 MB). Without either, a terminal is asked; the Control Panel passes the
 # choice. Run it again later to add the other.
 #
 # Run it on each kind of computer that will run recognition (Intel Mac,
@@ -26,22 +27,27 @@ set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 PETS=
 FACES=
+TEXT=
 for arg in "$@"; do
     case "$arg" in
         --pets) PETS=1 ;;
         --faces) FACES=1 ;;
+        --text) TEXT=1 ;;
         *) echo "unknown argument $arg (the add-ons go next to the shoebox program, not onto a drive)" >&2; exit 1 ;;
     esac
 done
-if [ -z "$FACES$PETS" ] && [ -t 0 ]; then
+if [ -z "$FACES$PETS$TEXT" ] && [ -t 0 ]; then
     printf 'Find faces (people)? About 40 MB. [Y/n] '
     read -r answer || answer=
     case "$answer" in [nN]*) ;; *) FACES=1 ;; esac
     printf 'Find cats and dogs? About 140 MB. [y/N] '
     read -r answer || answer=
     case "$answer" in [yYjJ]*) PETS=1 ;; esac
+    printf 'Read the words in photos (text)? About 100 MB. [y/N] '
+    read -r answer || answer=
+    case "$answer" in [yYjJ]*) TEXT=1 ;; esac
 fi
-[ -n "$FACES$PETS" ] || { echo "nothing to install: use --faces and/or --pets" >&2; exit 1; }
+[ -n "$FACES$PETS$TEXT" ] || { echo "nothing to install: use --faces, --pets and/or --text" >&2; exit 1; }
 DEST=$HERE
 PBS_TAG=20251014
 PY=3.12.12
@@ -88,6 +94,31 @@ else
     echo "  none for this system; OpenCV runs the pet models instead"
 fi
 
+# The Text add-on: PP-OCR through the rapidocr-onnxruntime package, which
+# carries its three model files. onnxruntime is required for it (pip takes the
+# newest build this macOS can load: 1.19.2 on macOS 12 Intel). --no-deps and
+# the pure dependencies by name keep pip from adding a second OpenCV
+# (opencv-python) next to opencv-python-headless: two cv2 packages break each
+# other. A failure here must not spoil the other add-ons: it is reported at the
+# end (exit status 3, which the Control Panel knows), and Text shows as not
+# available on this computer.
+TEXT_FAILED=
+TEXT_ARG=
+if [ -n "$TEXT" ]; then
+    echo "Text recognition (rapidocr, onnxruntime)…"
+    if "$PYTHON" -m pip install --no-cache-dir --disable-pip-version-check --progress-bar "$PROGRESS" \
+           --only-binary :all: onnxruntime pyclipper shapely pyyaml six tqdm pillow \
+       && "$PYTHON" -m pip install --no-cache-dir --disable-pip-version-check --progress-bar "$PROGRESS" \
+           --only-binary :all: --no-deps rapidocr-onnxruntime \
+       && "$PYTHON" -c 'import onnxruntime, rapidocr_onnxruntime; print("  rapidocr, onnxruntime", onnxruntime.__version__)'; then
+        TEXT_ARG=--text
+        TEXT_MODELS=$("$PYTHON" -c 'import os, rapidocr_onnxruntime as r; print(os.path.join(os.path.dirname(r.__file__), "models"))')
+    else
+        TEXT_FAILED=1
+        echo "Text: this computer cannot run it (no onnxruntime or rapidocr build for this system)." >&2
+    fi
+fi
+
 
 echo "Copying to ${DEST}…"
 mkdir -p "$DEST/runtime"
@@ -108,12 +139,26 @@ cp -RL "$TMP/python" "$DEST/runtime/$PLATFORM"
 # e.g. when a second kind of Mac only needs its own Python.
 echo "Models…"
 mkdir -p "$DEST/models"
-"$HERE/fetch-models.sh" ${FACES:+--faces} ${PETS:+--pets} "$DEST/models"
+if [ -n "$FACES$PETS" ]; then
+    "$HERE/fetch-models.sh" ${FACES:+--faces} ${PETS:+--pets} "$DEST/models"
+fi
+# The text models come out of the rapidocr package, into the models folder, so
+# that "installed" is decided from files like the other add-ons.
+if [ -n "$TEXT" ] && [ -z "$TEXT_FAILED" ]; then
+    for f in ch_PP-OCRv4_det_infer.onnx ch_PP-OCRv4_rec_infer.onnx ch_ppocr_mobile_v2.0_cls_infer.onnx; do
+        cp "$TEXT_MODELS/$f" "$DEST/models/$f"
+        echo "copied $f"
+    done
+fi
 
 echo "Checking…"
-HELLO=$(printf '' | "$DEST/runtime/$PLATFORM/bin/python3" "$DEST/recognizer.py" ${PETS:+--pets} 2>/dev/null | head -n 1)
+HELLO=$(printf '' | "$DEST/runtime/$PLATFORM/bin/python3" "$DEST/recognizer.py" ${PETS:+--pets} $TEXT_ARG 2>/dev/null | head -n 1)
 case "$HELLO" in
     *shoebox-recognizer*) echo "  $HELLO" ;;
     *) echo "the recognizer did not start" >&2; exit 1 ;;
 esac
+if [ -n "$TEXT_FAILED" ]; then
+    echo "Done, except Text: it is not available on this computer. Text read on another computer still works here." >&2
+    exit 3
+fi
 echo "Done. Run Recognize in the shoebox launcher for any drive."

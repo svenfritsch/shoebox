@@ -123,6 +123,76 @@ for folder, shots in COMIC.items():
         annotations.append({"fp": fp.tolist(),
                             "faces": [{"who": w, "bbox": b} for w, b, _ in faces],
                             "pets": [{"who": w, "species": "dog" if w == "buddy" else "cat", "bbox": b} for w, b, _ in pets]})
+# Pictures with words in them, for the text search screenshots (only with
+# SHOEBOX_SAMPLE_TEXT=1, so the other screenshots keep their library): a scanned
+# invoice, a street sign and a phone screenshot. The lines are annotated for the
+# mock recognizer's `text` task (boxes as fractions of the picture).
+if os.environ.get("SHOEBOX_SAMPLE_TEXT") == "1":
+    from PIL import ImageDraw, ImageFont
+    import datetime
+    FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans%s.ttf"
+    tdir = os.path.join(out, "2024-03 Unterlagen" if lang == "de" else "2024-03 Paperwork")
+    os.makedirs(tdir, exist_ok=True)
+
+    def lines_on(im, rows, color, x0=None):
+        """Draw rows (text, size, bold, y) and return the annotated lines."""
+        d = ImageDraw.Draw(im)
+        found = []
+        for text, size, bold, y in rows:
+            font = ImageFont.truetype(FONT % ("-Bold" if bold else ""), size)
+            x = x0 if x0 is not None else (im.width - d.textlength(text, font=font)) / 2
+            d.text((x, y), text, font=font, fill=color)
+            l, t, r, b = d.textbbox((x, y), text, font=font)
+            found.append({"text": text, "score": 0.97, "bbox": [l / im.width, t / im.height, (r - l) / im.width, (b - t) / im.height]})
+        return found
+
+    def keep(im, path, found, when, exif=None):
+        if exif is not None:
+            im.save(path, quality=90, exif=exif)
+        else:
+            im.save(path)
+        fp = np.asarray(Image.open(path).convert("L").resize((16, 16), Image.BILINEAR), dtype=float).ravel()
+        annotations.append({"fp": fp.tolist(), "faces": [], "pets": [], "text": found})
+        t = when.timestamp()
+        os.utime(path, (t, t))
+
+    if lang == "de":
+        invoice = [("Stadtwerke Musterstadt", 70, True, 230), ("Rechnung Nr. 2024-118", 56, True, 420), ("Kundennummer 48 120 77", 40, False, 560),
+                   ("Zu zahlen: 86,40 EUR", 46, True, 700), ("Fällig am 30. März 2024", 40, False, 820)]
+        sign = [("Hauptstraße", 150, True, 380), ("Haltestelle 12", 70, False, 600)]
+        phone = ("Abfahrten", [("08:42  Gleis 3  Berlin Hbf", 62), ("09:15  Gleis 5  Hamburg", 62), ("10:03  Gleis 1  München", 62), ("10:48  Gleis 4  Köln", 62)])
+    else:
+        invoice = [("City Utilities Ltd.", 70, True, 230), ("Invoice No. 2024-118", 56, True, 420), ("Customer 48 120 77", 40, False, 560),
+                   ("Amount due: 86.40 EUR", 46, True, 700), ("Due on 30 March 2024", 40, False, 820)]
+        sign = [("Station Road", 150, True, 380), ("Bus stop 12", 70, False, 600)]
+        phone = ("Departures", [("08:42  Platform 3  Berlin", 62), ("09:15  Platform 5  Hamburg", 62), ("10:03  Platform 1  Munich", 62), ("10:48  Platform 4  Cologne", 62)])
+
+    paper = Image.new("RGB", (1240, 1754), (250, 249, 245))
+    ImageDraw.Draw(paper).rectangle([90, 120, 1150, 1634], outline=(200, 200, 195), width=3)
+    keep(paper, os.path.join(tdir, "scan-2024-03-12.jpg"), lines_on(paper, invoice, (30, 30, 40)), datetime.datetime(2024, 3, 12, 18, 5))
+
+    street = Image.new("RGB", (1600, 1067), (150, 190, 225))
+    dr = ImageDraw.Draw(street)
+    dr.rectangle([0, 800, 1600, 1067], fill=(120, 130, 120))
+    dr.rectangle([140, 260, 1460, 760], fill=(20, 70, 150), outline=(255, 255, 255), width=14)
+    ex = Image.Exif()
+    ex[0x0110] = "Sample Camera"
+    ex.get_ifd(0x8769)[0x9003] = "2024:03:09 14:20:00"
+    ex.get_ifd(0x8769)[0x9004] = "2024:03:09 14:20:00"
+    ex[0x0132] = "2024:03:09 14:20:00"
+    keep(street, os.path.join(tdir, "IMG_2041.jpg"), lines_on(street, sign, (255, 255, 255)), datetime.datetime(2024, 3, 9, 14, 20), exif=ex)
+
+    screen = Image.new("RGB", (1170, 2532), (245, 246, 250))
+    dd = ImageDraw.Draw(screen)
+    dd.rectangle([0, 0, 1170, 330], fill=(30, 60, 140))
+    rows = [(phone[0], 84, True, 190)]
+    for i, (t, size) in enumerate(phone[1]):
+        y = 460 + i * 250
+        dd.rectangle([40, y - 40, 1130, y + 150], fill=(255, 255, 255))
+        rows.append((t, size, False, y))
+    found = lines_on(screen, rows[:1], (255, 255, 255)) + lines_on(screen, rows[1:], (30, 30, 40), x0=80)
+    keep(screen, os.path.join(tdir, "Screenshot 2024-03-14 at 08.42.11.png"), found, datetime.datetime(2024, 3, 14, 8, 42))
+
 if len(sys.argv) > 3:
     json.dump(annotations, open(sys.argv[3], "w"))
 

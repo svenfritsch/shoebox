@@ -1,4 +1,4 @@
-// Screenshots for the guide. usage: node screenshots.mjs <app|launcher> <lang> <outdir> <url> <library-path>
+// Screenshots for the guide. usage: node screenshots.mjs <app|launcher|drives|suggestions|text> <lang> <outdir> <url> <library-path>
 // Needs Playwright with a Chromium (CHROME=path) and a freshly generated and
 // recognised sample library served by `shoebox serve` (see screenshots.sh).
 import { createRequire } from 'node:module';
@@ -154,6 +154,34 @@ if (mode === 'launcher') {
   await p.click('button[data-kind=scan]');
   await p.waitForSelector('#arrivals-box:not([hidden])', { timeout: 60000 }); await wait(1500);
   await p.locator('#progress-card').screenshot({ path: `${out}/scan-copies.png` });
+  await b.close(); process.exit(0);
+}
+
+// Text search (phase 9): the sample library has a folder of pictures with words
+// in them (SHOEBOX_SAMPLE_TEXT=1) that the mock recognizer "reads".
+if (mode === 'text') {
+  const word = de ? 'rechnung' : 'invoice';
+  await p.goto(url); await p.waitForSelector('.cell'); await wait(1500);
+  // The suggestions: the words in photos are a group of their own.
+  await p.setViewportSize({ width: 1280, height: 560 });
+  await p.fill('#search', word.slice(0, 4)); await wait(1200);
+  await shot('text-search-dropdown');
+  await p.fill('#search', ''); await p.keyboard.press('Escape'); await p.evaluate(() => document.activeElement && document.activeElement.blur());
+  // text: as a chip, the photos that have the word, with the matching line.
+  await p.goto(url + '#text=' + word); await p.waitForSelector('.cell .snip'); await wait(1500);
+  await shot('text-search-results');
+  // The viewer: the scanner button outlines the lines and opens the list.
+  await p.locator('.cell').first().click(); await wait(1200);
+  await p.setViewportSize({ width: 1280, height: 860 });
+  // Opened from a text search, the viewer shows the outlines and the list by itself.
+  await p.waitForSelector('#lb-text.on'); await wait(1500);
+  if (await p.locator('#lb-panel').isHidden()) { await p.keyboard.press('i'); await wait(1200); }
+  await shot('viewer-text');
+  await p.keyboard.press('Escape'); await wait(300);
+  // Settings: forgetting what was found (Data cleanup).
+  await p.goto(url + '#view=settings'); await p.waitForSelector('.settings-section'); await wait(1500);
+  await p.setViewportSize({ width: 1280, height: 1400 }); await wait(500);
+  await p.locator('.settings-section', { hasText: de ? 'Daten aufräumen' : 'Data cleanup' }).screenshot({ path: `${out}/settings-forget.png` });
   await b.close(); process.exit(0);
 }
 

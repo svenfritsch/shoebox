@@ -37,10 +37,11 @@
 //! background (`clusters.rs`) after every such change, when the server
 //! starts, and when `recognition.db` got new faces.
 //!
-//! A video poster the server cannot make (no ffmpeg, or it failed) is grabbed
-//! by the browser and sent back (`POST /api/files/{id}/poster`); it is kept
-//! in `thumbs.db` only after decoding and encoding it again, and only while
-//! the video has no picture (see `thumbs::browser_poster`).
+//! A video poster the server cannot make (no system video framework and no
+//! ffmpeg, or both failed) is grabbed by the browser and sent back
+//! (`POST /api/files/{id}/poster`); it is kept in `thumbs.db` only after
+//! decoding and encoding it again, and only while the video has no picture
+//! (see `thumbs::browser_poster`).
 //!
 //! Self-healing paths: when a file is not where the index says (moved in the
 //! Finder while shoebox runs), the server runs the scan's index step in the
@@ -90,6 +91,8 @@ use crate::thumbs::{self, Source};
 
 mod faces_api;
 mod people_api;
+mod forget_api;
+mod text_api;
 
 pub const DEFAULT_PORT: u16 = 7878;
 const SESSION_COOKIE: &str = "shoebox_session";
@@ -568,7 +571,7 @@ impl App {
         if pending.total() == 0 {
             return Ok(());
         }
-        let Some(cmd) = recognize::find_worker_for(self.recognizer.as_deref(), pending.pets > 0) else {
+        let Some(cmd) = recognize::find_worker_for(self.recognizer.as_deref(), pending.pets > 0, false) else {
             println!("{} faces and pets drawn by hand wait for the recognizer (not installed).", pending.total());
             return Ok(());
         };
@@ -894,6 +897,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/folders", get(folders))
         .route("/api/tags", get(tags))
         .route("/api/timeline", get(timeline))
+        .route("/api/count", get(count))
         .route("/api/files/{id}", get(file_details))
         .route("/api/files/{id}/thumb", get(thumb))
         .route("/api/files/{id}/poster", post(poster_from_browser))
@@ -929,6 +933,13 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/screenshots", post(screenshots_set))
         .route("/api/geo/points", get(geo_points))
         .route("/api/files/{id}/position", post(position_set))
+        .route("/api/files/{id}/text-hidden", post(text_api::hide))
+        .route("/api/recognition/forget", get(forget_api::counts).post(forget_api::forget))
+        .route("/api/text/stats", get(text_api::stats))
+        .route("/api/text/limits", get(text_api::limits_get).post(text_api::limits_set))
+        .route("/api/text/delete-all", post(text_api::delete_all))
+        .route("/api/text/check", get(text_api::check))
+        .route("/api/files/{id}/text-crop", get(text_api::crop))
         .route("/api/files/dates", post(dates_set))
         .route("/api/files/dates/check", post(dates_check))
         .route("/api/dates", get(dates_suggest))
@@ -1452,6 +1463,8 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
     let text = param(&pairs, "q").map(str::to_string).filter(|s| !s.trim().is_empty());
     let types = types_of(&pairs)?;
     let pet_terms = pets_of(&pairs)?;
+    let text_terms = terms_of(&pairs, "text");
+    let name_terms = terms_of(&pairs, "name");
     let fav = fav_of(&pairs);
     let dates = dates_of(&pairs)?;
     let needs_date = param(&pairs, "nodate").is_some_and(|v| !v.is_empty() && v != "0");
@@ -1471,6 +1484,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
             version: String,
             live: Option<i64>,
             fav: bool,
+            snip: Option<String>,
             est: Option<char>,
         }
         let mut rows: Vec<Row> = Vec::new();
@@ -1502,6 +1516,8 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
                 people: people_ids,
                 pets: pet_terms.clone(),
                 types: types.clone(),
+                in_text: text_terms.clone(),
+                names: name_terms.clone(),
                 fav,
                 dates: dates.clone(),
                 needs_date,
@@ -1509,8 +1525,15 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
                 ..Default::default()
             };
             let hearts = own_tags::favorite_ids(&conn)?;
-            for it in snapshot.query(&conn, &query)? {
+            let items = snapshot.query(&conn, &query)?;
+            let snips = if text_terms.is_empty() {
+                HashMap::new()
+            } else {
+                crate::text::snippets(&conn, &items.iter().map(|it| it.id).collect(), &text_terms)?
+            };
+            for it in items {
                 rows.push(Row {
+                    snip: snips.get(&it.id).cloned(),
                     fav: hearts.contains(&it.id),
                     sort: it.sort.clone(),
                     path: it.path_lower.clone(),
@@ -1544,9 +1567,13 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
             tags: Vec::new(),
             people: Vec::new(),
             favs: Vec::new(),
+            snips: Vec::new(),
             est: Vec::new(),
         };
         for r in rows {
+            if let Some(line) = r.snip {
+                t.snips.push((r.gid, line));
+            }
             if r.fav {
                 t.favs.push(r.gid);
             }
@@ -1734,7 +1761,9 @@ struct Info {
     missing: u64,
     thumbs_done: u64,
     thumbs_total: u64,
-    ffmpeg: bool,
+    /// The server makes video posters itself (system framework or ffmpeg);
+    /// otherwise the browser does.
+    video_posters: bool,
     /// Latest job of each kind.
     jobs: Vec<JobInfo>,
     /// A scan (or another job) is running right now.
@@ -1749,6 +1778,9 @@ struct Info {
     faces: recognize::Overview,
     /// Clusters and suggestions (5c-2).
     clusters: ClustersInfo,
+    /// The words read in photos (phase 9): how far, and whether a text search
+    /// has anything to find.
+    text: crate::text::Progress,
     /// Text of the "show in the file manager" button ("Show in Finder", …),
     /// only for requests from this computer; `null` for other devices.
     reveal: Option<&'static str>,
@@ -1819,7 +1851,7 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
             missing: missing as u64,
             thumbs_done: thumbs_done as u64,
             thumbs_total: thumbs_total as u64,
-            ffmpeg: app.ffmpeg.is_some(),
+            video_posters: media::SYSTEM_VIDEO_POSTERS || app.ffmpeg.is_some(),
             jobs,
             busy,
             index_version: format!("{data_version}.{generation}"),
@@ -1827,6 +1859,7 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
             needs_date,
             faces,
             clusters,
+            text: crate::text::progress(&conn)?,
             export: reveal.is_some(),
             reveal,
         }))
@@ -1872,6 +1905,8 @@ fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
         people: pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
         types: types_of(pairs)?,
         pets: pets_of(pairs)?,
+        in_text: terms_of(pairs, "text"),
+        names: terms_of(pairs, "name"),
         fav: fav_of(pairs),
         area: area_of(pairs)?,
         place: param(pairs, "place").filter(|v| !v.is_empty()).map(number).transpose()?,
@@ -1879,6 +1914,19 @@ fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
         needs_date: param(pairs, "nodate").is_some_and(|v| !v.is_empty() && v != "0"),
         ids: None,
     })
+}
+
+/// The search terms of a repeated parameter (`text=…`, `name=…`), each once,
+/// empty ones left out.
+fn terms_of(pairs: &Pairs, key: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for (_, v) in pairs.iter().filter(|(k, v)| k == key && !v.trim().is_empty()) {
+        let v = v.trim().to_string();
+        if !out.contains(&v) {
+            out.push(v);
+        }
+    }
+    out
 }
 
 /// `date=1987`, `date=1987-06`, `date=1987-06-14`, repeatable (all must match,
@@ -1954,6 +2002,8 @@ async fn tags(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiRes
             && filter.tags.is_empty()
             && filter.people.is_empty()
             && filter.pets.is_empty()
+            && filter.in_text.is_empty()
+            && filter.names.is_empty()
             && filter.place.is_none()
             && filter.area.is_none()
         {
@@ -2002,6 +2052,10 @@ struct Timeline {
     people: Vec<people::PersonRef>,
     /// Ids of the items with a heart.
     favs: Vec<i64>,
+    /// [id, line] of what a text search found in an item (the first matching
+    /// line of recognized text); only with `text=` in the filter.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    snips: Vec<(i64, String)>,
     /// [id, code] of the items whose date is not from the file: `m` set by the
     /// user, `f` the event folder's name, `c` the file's created date, `u` its
     /// modification date. For the "~" on the cell.
@@ -2023,7 +2077,6 @@ async fn timeline(State(app): State<Arc<App>>, axum::Extension(only): axum::Exte
         let tags = browse::tag_names(&conn, &query.tags)?;
         let people = people::person_names(&conn, &query.people)?;
         let hearts = own_tags::favorite_ids(&conn)?;
-        drop(conn);
         let mut t = Timeline {
             count: items.len(),
             ids: Vec::with_capacity(items.len()),
@@ -2034,8 +2087,15 @@ async fn timeline(State(app): State<Arc<App>>, axum::Extension(only): axum::Exte
             tags,
             people,
             favs: Vec::new(),
+            snips: Vec::new(),
             est: Vec::new(),
         };
+        if !query.in_text.is_empty() {
+            let ids: HashSet<i64> = items.iter().map(|it| it.id).collect();
+            let found = crate::text::snippets(&conn, &ids, &query.in_text)?;
+            t.snips = items.iter().filter_map(|it| found.get(&it.id).map(|l| (it.id, l.clone()))).collect();
+        }
+        drop(conn);
         for it in items {
             if hearts.contains(&it.id) {
                 t.favs.push(it.id);
@@ -2062,6 +2122,19 @@ async fn timeline(State(app): State<Arc<App>>, axum::Extension(only): axum::Exte
     .await
 }
 
+/// How many photos a filter shows, without the list: for the number beside a
+/// suggestion of the search box.
+async fn count(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<serde_json::Value>> {
+    let query = filter_of(&pairs)?;
+    blocking(&app, move |app| {
+        let conn = app.conn.lock().unwrap();
+        let snapshot = app.snapshot(&conn)?;
+        let n = snapshot.query(&conn, &query)?.len();
+        Ok(Json(serde_json::json!({ "count": n })))
+    })
+    .await
+}
+
 #[derive(Serialize)]
 struct FileInfo {
     #[serde(flatten)]
@@ -2071,12 +2144,10 @@ struct FileInfo {
     live: Option<i64>,
     /// Other versions of this photo (linked duplicates).
     linked: Vec<duplicates::Linked>,
-    /// Faces found by `shoebox recognize` (and drawn by hand), with who
-    /// they are or might be; "not a face" is left out. `null` if it has not
-    /// looked yet.
+    /// Faces found by `shoebox recognize`, drawn by hand, or confirmed by the
+    /// user and no longer detected (`kept`), with who they are or might be;
+    /// "not a face" is left out. `null` if it has not looked yet.
     faces: Option<Vec<people::FileFace>>,
-    /// Confirmed faces that are no longer found (after a model change).
-    faces_lost: Vec<people::FaceItem>,
     /// Quarter turns clockwise that shoebox shows the photo turned (HEIC,
     /// PNG; the file itself is as it was). Face boxes are in the file's
     /// orientation.
@@ -2088,6 +2159,10 @@ struct FileInfo {
     screenshot_mark: Option<bool>,
     /// Where it was taken (in the file, or given by the user).
     position: Option<crate::geo::Position>,
+    /// Lines of recognized text (phase 9) that the limits show, top to
+    /// bottom, hidden ones marked; boxes are fractions of the picture in the
+    /// file's orientation, like the face boxes. Empty if nothing was read.
+    text: Vec<crate::text::LineOut>,
 }
 
 async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Json<FileInfo>> {
@@ -2106,9 +2181,13 @@ async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiRe
             Some(key) => db::shot_mark(&conn, key)?,
             None => None,
         };
+        let text = match &key {
+            Some(key) => crate::text::lines_of(&conn, key)?,
+            None => Vec::new(),
+        };
         let faces = match key {
             Some(key) => people::file_faces(&conn, &key, details.kind == "video")?,
-            None => people::FileFaces { faces: None, lost: Vec::new() },
+            None => people::FileFaces { faces: None },
         };
         Ok(Json(FileInfo {
             details,
@@ -2117,11 +2196,11 @@ async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiRe
             live: item.and_then(|it| it.live),
             linked: duplicates::linked(&conn, id)?,
             faces: faces.faces,
-            faces_lost: faces.lost,
             view_turn,
             screenshot: item.is_some_and(|it| it.shot),
             screenshot_mark,
             position: crate::geo::position_of(&conn, id)?,
+            text,
         }))
     })
     .await

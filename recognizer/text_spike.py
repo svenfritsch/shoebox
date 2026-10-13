@@ -35,6 +35,18 @@ THRESHOLDS = (0.5, 0.6, 0.7, 0.8, 0.9)
 LONG_EDGE = 1600  # what the core would send the worker
 
 
+import re
+# Only German and English characters are kept (see docs/plan.md, phase 9).
+_NOT_ALLOWED = re.compile("[^A-Za-z0-9ÄÖÜäöüß\\s.,;:!?'\"„“”‘’«»()\\[\\]{}<>/\\\\|@#&%*+=~^_€§°²³µ$£–—·•-]")
+
+
+def keep_line(text):
+    """The line without characters outside the allow-list, or None if fewer than
+    two letters or digits are left."""
+    t = _NOT_ALLOWED.sub("", text).strip()
+    return t if len(re.findall("[A-Za-z0-9ÄÖÜäöüß]", t)) >= 2 else None
+
+
 def fold(s):
     """Lower case, no accents, ß as ss, only letters and digits (as the index will do)."""
     s = unicodedata.normalize("NFC", s).casefold().replace("ß", "ss")
@@ -132,7 +144,7 @@ def main():
         t0 = time.perf_counter()
         result, _ = engine(np.asarray(im)[:, :, ::-1])  # RapidOCR takes BGR
         dt = time.perf_counter() - t0
-        lines = [(r[1], float(r[2])) for r in (result or [])]
+        lines = [(k, float(r[2])) for r in (result or []) for k in [keep_line(r[1])] if k]
         rows.append((n, dt, lines, None))
 
     out = []

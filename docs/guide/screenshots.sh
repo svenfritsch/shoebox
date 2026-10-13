@@ -16,7 +16,7 @@
 #
 # Environment:
 #   LANGS="en de"                         languages to make
-#   PASSES="app launcher drives suggestions"  passes to run (see screenshots.mjs)
+#   PASSES="app launcher drives suggestions text"  passes to run (see screenshots.mjs)
 #   OUT=docs/guide/assets                 where the JPEGs go; a pass replaces
 #                                         only its own files
 set -eu
@@ -31,7 +31,7 @@ BIN=${1:-$(cd "$HERE/../.." && pwd)/core/target/$(rustc -vV | sed -n 's/^host: /
 [ -x "$BIN" ] || { echo "no shoebox binary at $BIN (build it with scripts/build.sh)" >&2; exit 1; }
 BIN=$(cd "$(dirname "$BIN")" && pwd)/$(basename "$BIN")
 LANGS=${LANGS:-en de}
-PASSES=${PASSES:-app launcher drives suggestions}
+PASSES=${PASSES:-app launcher drives suggestions text}
 OUT=${OUT:-$HERE/assets}
 LIB=/Volumes/Photos
 # Where Linux keeps the drives (shoebox reads the disk name from the path).
@@ -125,12 +125,24 @@ for lang in $LANGS; do
             shots drives http://localhost:7901/ "$ORIG"
             stop
             rm -rf "$DRIVES/Extreme SSD" "$DRIVES/Backup Drive" ;;
-        *) echo "unknown pass: $pass (app, launcher, drives, suggestions)" >&2; exit 1 ;;
+        text)
+            # The same library plus a folder of pictures with words in them
+            # (SHOEBOX_SAMPLE_TEXT=1), "read" by the mock recognizer's text task.
+            rm -rf "$WORK/sample-text"
+            SHOEBOX_SAMPLE_TEXT=1 python3 "$HERE/make-sample-library.py" "$WORK/sample-text" "$lang" "$WORK/ann-text.json" >/dev/null
+            rm -rf "$LIB"; mkdir -p "$(dirname "$LIB")"
+            cp -Rp "$WORK/sample-text" "$LIB"
+            "$BIN" scan "$LIB" >/dev/null 2>&1
+            SHOEBOX_MOCK_ANN="$WORK/ann-text.json" "$BIN" recognize "$LIB" --recognizer "$HERE/mock-recognizer.py" --pets --text >/dev/null 2>&1
+            start http://localhost:7900/ "$BIN" serve "$LIB" --port 7900
+            shots text http://localhost:7900/ "$LIB"
+            stop ;;
+        *) echo "unknown pass: $pass (app, launcher, drives, suggestions, text)" >&2; exit 1 ;;
         esac
     done
     # All passes: start from an empty folder, so a screenshot nobody makes any
     # more goes away. Some passes: replace only what they made.
-    if [ "$PASSES" = "app launcher drives suggestions" ]; then rm -rf "${OUT:?}/$lang"; fi
+    if [ "$PASSES" = "app launcher drives suggestions text" ]; then rm -rf "${OUT:?}/$lang"; fi
     mkdir -p "$OUT/$lang"
     python3 "$HERE/shrink-shots.py" "$png" "$OUT/$lang"
 done

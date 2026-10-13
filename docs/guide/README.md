@@ -55,6 +55,7 @@ library; `LANGS` and `PASSES` limit a run (CI runs one language per job):
 | `launcher` | the Control Panel, and a scan that finds new copies |
 | `drives` | Manage drives and the backup comparison views (two drives, an original and a drifted backup) |
 | `suggestions` | the tag and name suggestion lists |
+| `text` | words in photos: the search suggestions and results, the viewer's text list, Settings → Data cleanup (the library gets a folder of drawn documents, a street sign and a phone screenshot, `SHOEBOX_SAMPLE_TEXT=1`; the mock recognizer's `text` task "reads" them from the annotations) |
 
 `comic.py` draws the pictures, `make-sample-library.py` builds the library
 (once per language; each pass gets a copy), `mock-recognizer.py` answers the
