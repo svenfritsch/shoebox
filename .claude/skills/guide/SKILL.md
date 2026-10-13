@@ -31,6 +31,7 @@ sections (`<section id=...>`, same order in both files):
 | `why`, `features` | what sets shoebox apart, the feature cards | one card per feature; a new feature may need a card |
 | `glance` | "The screen at a glance": `ui-overview` with numbered dots and a legend | one dot per legend item, in the order of the screen; see step 3 |
 | `glance` (panel) | "A typical session" | the everyday flow; names of the launcher buttons |
+| `navigate` | "Finding your way around": top bar, sidebar, folding sections | where the screen shows where you are |
 | `start` | get started, Control Panel (launcher) tasks | launcher buttons and what they do |
 | `browse`, `find`, `dates` | viewer, search, select, tag, move, export, dates | keyboard shortcuts, menus |
 | `scanning` | scanning, duplicates, trash | the safety wording |
@@ -44,7 +45,7 @@ A removed feature leaves the guide entirely: cards, legend, sections, FAQ.
 
 ## 2. Edit both languages in step
 
-- Same sections, same paragraphs, same screenshots in the same order, same
+- Text and its screenshots sit together in a `topic` block (`<div class="topic has-shots">`: `.txt` and `.shots`), so a picture is always beside the paragraph that describes it. Same sections, same paragraphs, same screenshots in the same order, same
   dots. German uses the informal "du" (docs/phase8.md).
 - Inline styles only, no scripts, no build step. Elements with
   `data-txt="skip"` are left out of the text copy.
