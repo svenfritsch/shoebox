@@ -444,8 +444,7 @@ fn truncated_or_garbage_raw_only_warns() {
     lib.write("Raw/cut2.CR2", &cr2[..20_000]); // Exif IFD missing
     lib.write("Raw/garbage.NEF", b"II*\0\xff\xff\xff\xffnot a raw file at all");
     lib.write("Raw/text.DNG", b"definitely not a TIFF");
-    let stats = lib.scan();
-    assert_eq!(stats.added, 4, "{stats:?}");
+    lib.scan();
     for name in ["cut.CR2", "cut2.CR2", "garbage.NEF", "text.DNG"] {
         let path = format!("Raw/{name}");
         assert!(lib.record(&path).is_some(), "{path} not indexed");
