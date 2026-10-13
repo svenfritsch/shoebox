@@ -59,5 +59,5 @@ with the same placeholders, plural messages have an `.other` form, every
 | Confirm the GitHub Actions run is green (`core/tests/i18n.rs` could only be run on its own here) | Open |
 | Server-side texts (error messages, job labels in the launcher) | Open, optional (see above) |
 
-The German texts were written without a native review: read through them once
-in the UI.
+The German texts were reviewed by a native speaker (wording, grammar, one term
+per idea). Still to do: read them once in the UI on real hardware.
