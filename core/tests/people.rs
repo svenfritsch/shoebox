@@ -393,13 +393,16 @@ fn groups_merge_and_split() {
     let named = ok(addr, &format!("/api/clusters/{cid}/name"), &body);
     let dora = named["person"]["id"].as_i64().unwrap();
     // The reply says what is left of the card: its faces changed, so it has
-    // a new generation; the old one is refused.
+    // a new generation; the old one is refused. Its number is where it sits
+    // in the list now (which may move: cards of the same size have no fixed
+    // order), so the reply's number is used from here on.
     let left = &named["cluster"];
-    assert_eq!((left["id"].as_i64(), left["size"].as_u64()), (Some(cid), Some(2)), "{named}");
+    assert_eq!(left["size"].as_u64(), Some(2), "{named}");
     assert_ne!(left["generation"], generation);
-    let stale = post(addr, &format!("/api/clusters/{cid}/ignore"), &json!({ "faces": [faces[2]], "generation": generation }));
+    let left_id = left["id"].as_i64().unwrap();
+    let stale = post(addr, &format!("/api/clusters/{left_id}/ignore"), &json!({ "faces": [faces[2]], "generation": generation }));
     assert_eq!(stale.status, 409);
-    let ignored = ok(addr, &format!("/api/clusters/{cid}/ignore"), &json!({ "faces": [faces[2]], "generation": left["generation"] }));
+    let ignored = ok(addr, &format!("/api/clusters/{left_id}/ignore"), &json!({ "faces": [faces[2]], "generation": left["generation"] }));
     assert_eq!(ignored["cluster"]["size"], 1);
     // Every change groups the faces again in the background, which may
     // number the clusters anew: look once that is done (the app sends each
