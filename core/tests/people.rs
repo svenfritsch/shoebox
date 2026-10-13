@@ -401,12 +401,20 @@ fn groups_merge_and_split() {
     assert_eq!(stale.status, 409);
     let ignored = ok(addr, &format!("/api/clusters/{cid}/ignore"), &json!({ "faces": [faces[2]], "generation": left["generation"] }));
     assert_eq!(ignored["cluster"]["size"], 1);
-    // A face of another cluster is refused.
-    let anna_cluster = list["clusters"][1]["id"].as_i64().unwrap();
-    assert_eq!(post(addr, &format!("/api/clusters/{anna_cluster}/name"), &json!({ "name": "X", "faces": [faces[3]] })).status, 400);
-    let left = get(addr, &format!("/api/clusters/{cid}/faces")).json();
-    assert_eq!(left.as_array().unwrap().iter().map(|f| f["id"].as_i64().unwrap()).collect::<Vec<_>>(), [faces[3]]);
+    // Every change groups the faces again in the background, which may
+    // number the clusters anew: look once that is done (the app sends each
+    // cluster's generation, so an old number is refused, not mistaken).
     wait_for_clusters(addr);
+    let now = get(addr, "/api/clusters").json();
+    let has = |c: &Value, face: i64| c["faces"].as_array().unwrap().iter().any(|f| f["id"] == face);
+    let clusters = now["clusters"].as_array().unwrap();
+    let fourth = clusters.iter().find(|c| has(c, faces[3])).unwrap();
+    let left = get(addr, &format!("/api/clusters/{}/faces", fourth["id"])).json();
+    assert_eq!(left.as_array().unwrap().iter().map(|f| f["id"].as_i64().unwrap()).collect::<Vec<_>>(), [faces[3]]);
+    // A face of another cluster is refused.
+    let other = clusters.iter().find(|c| !has(c, faces[3])).unwrap();
+    let body = json!({ "name": "X", "faces": [faces[3]], "generation": other["generation"] });
+    assert_eq!(post(addr, &format!("/api/clusters/{}/name", other["id"]), &body).status, 400);
     // The fourth face is now suggested for Dora (identical to her faces).
     let rest = get(addr, "/api/clusters").json();
     assert_eq!(rest["unnamed"], 3);
