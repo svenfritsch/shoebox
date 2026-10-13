@@ -376,21 +376,21 @@ rot) and shows "last backup N days ago, M files new since".
 
 | Phase | Scope | Status |
 |---|---|---|
-| 0 | Toolchain + portability probe (`shoebox probe`) | **Done except the real-hardware run** (see below) |
-| 1 | Scanner + SQLite schema + incremental rescan + move detection + guard integration test. CLI: `shoebox scan`, `shoebox verify` | **Done except the real-hardware run** (see below) |
-| 2 | `thumbs.db` + perceptual hash, web UI (virtualised timeline grid, folder tree, tag search, video playback), LAN access with PIN. `shoebox serve` | **Done except the real-hardware run** (see below) |
-| 3 | Move (with RAW pairs, case-only renames), duplicates UI, self-healing paths | **Done except the real-hardware run** (see below) |
-| 4 | Worker protocol + Python recognizer (faces), worker supervision in Rust | **Done except the real-hardware run** (see below) |
-| 5a | Show in Finder / Explorer, copy path | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 5b | Own tags (add/remove, many photos at once, search), user data backup | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 5b-2 | Search by several tags at once (AND, chips); people join in with 5c-3 | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **5c-1 done**, checked on the real drive; **5c-2 and 5c-3 done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 5d | Duplicates UI: one row per photo, multi-select, bulk delete within a folder, tag and capture-date carry-over; Move dialog "keep folder tags"; trash dialog focus | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 5e | Lean `thumbs.db`: face crops only for faces without a decision and for each person's picture; right-click "Use as … picture" on a person's photos | **Done except the real-hardware run** (see [phase5.md](phase5.md)) |
-| 5f | "Type" check box drop-down (Photos, Videos, Live Photos) next to the search box | **Done except the real-hardware run** (see "Phase 5f details") |
-| 5g | Favorites: a heart in the viewer's top bar and in the top right corner of each timeline photo; a heart button next to the type filter and "♥ Favorites" as a search suggestion | **Done except the real-hardware run** (see "Favorites" below) |
-| 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | **In progress**: library id, launcher (cancel, saved folders, start scripts) and the multi-drive core (hub, offline, backup roles, common timeline, cross-drive duplicates and people) built; backup verification (`shoebox backup`, launcher button, All drives page) built; add-ons (launcher step 1: install Faces / Pets into `recognizer/` next to the program, which is on the drive when shoebox was copied there; Recognize buttons grey where the add-on is missing; a phase 9 text add-on follows the same pattern); real-hardware checks and Linux/Windows packaging open |
-| 7 | Pets: cats and dogs found (`shoebox recognize --pets`, launcher button "Recognize pets"), named, grouped and searched like people, also by kind ("all cats", "Katze", "Hund"); pets the detector missed can be drawn by hand; Settings → Calibration with the Face check and the new Pet check | **Built except the real-hardware run and DINOv2** (see [phase7.md](phase7.md)) |
+| 0 | Toolchain + portability probe (`shoebox probe`) | **Done**, checked on the real hardware (open items: "Checks for later") |
+| 1 | Scanner + SQLite schema + incremental rescan + move detection + guard integration test. CLI: `shoebox scan`, `shoebox verify` | **Done**, checked on the real hardware (open items: "Checks for later") |
+| 2 | `thumbs.db` + perceptual hash, web UI (virtualised timeline grid, folder tree, tag search, video playback), LAN access with PIN. `shoebox serve` | **Done**, checked on the real hardware |
+| 3 | Move (with RAW pairs, case-only renames), duplicates UI, self-healing paths | **Done**, checked on the real hardware |
+| 4 | Worker protocol + Python recognizer (faces), worker supervision in Rust | **Done**, checked on the real hardware |
+| 5a | Show in Finder / Explorer, copy path | **Done** (see [phase5.md](phase5.md)) |
+| 5b | Own tags (add/remove, many photos at once, search), user data backup | **Done** (see [phase5.md](phase5.md)) |
+| 5b-2 | Search by several tags at once (AND, chips); people join in with 5c-3 | **Done** (see [phase5.md](phase5.md)) |
+| 5c | Faces: check recognition (5c-1), people/groups/clustering (5c-2), sidebar + info panel UI (5c-3) | **Done**, checked on the real hardware (see [phase5.md](phase5.md)) |
+| 5d | Duplicates UI: one row per photo, multi-select, bulk delete within a folder, tag and capture-date carry-over; Move dialog "keep folder tags"; trash dialog focus | **Done** (see [phase5.md](phase5.md)) |
+| 5e | Lean `thumbs.db`: face crops only for faces without a decision and for each person's picture; right-click "Use as … picture" on a person's photos | **Done** (see [phase5.md](phase5.md)) |
+| 5f | "Type" check box drop-down (Photos, Videos, Live Photos) next to the search box | **Done** (see "Phase 5f details") |
+| 5g | Favorites: a heart in the viewer's top bar and in the top right corner of each timeline photo; a heart button next to the type filter and "♥ Favorites" as a search suggestion | **Done** (see "Favorites" below) |
+| 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | **Done on macOS**, checked on the real hardware (see [phase6.md](phase6.md)); open: Windows and Linux checks and packaging; moving files between drives, "keep both" and narrowing search counts are phase 15 (planned) |
+| 7 | Pets: cats and dogs found (`shoebox recognize --pets`, launcher button "Recognize pets"), named, grouped and searched like people, also by kind ("all cats", "Katze", "Hund"); pets the detector missed can be drawn by hand; Settings → Calibration with the Face check and the new Pet check | **Done**, checked on the real hardware; DINOv2 is still to be added (see [phase7.md](phase7.md)) |
 | 8 | UI translation, German and English, JSON message files (design and steps in [phase8.md](phase8.md)) | **Built, check open**: loader, key test, launcher and the whole photo app; the German texts have had a native review; the real-hardware check and the CI run are open |
 | 9 | Text in photos (OCR): documents, screenshots, street signs, shop fronts found by the words in them. A new task of the recognizer worker, results in `recognition.db` with an FTS5 index, a search term in the UI | **In progress** (branch `claude/phase9-text-search`): design and spike done (see "Phase 9 details"); built and tested on Linux: the worker task `text`, `install.sh --text` (and `install.ps1 -Text`, not run), the protocol text, the text pass in the core (`text.rs`, `recognition.db` v7, read order, `shoebox recognize --text` / `--text-only`), the Control Panel (Text add-on, "Recognize text" button) the guide (EN and DE), the FTS5 index (`recognition.db` v8) and the search terms `text:` and `name:` (chips, dropdown group, match strip, over all drives), the viewer button and foldable section with hide-a-line, the Text check page and limits, "Delete all recognized text", `shoebox text stats` and the status line; open: the edge-cut line rule (to verify on real photos), a run of the installer and the add-on on the old Intel Mac and on Windows, ignored words and tolerant matching (later) |
 | 10 | Locations: GPS positions from files, map in the photo info (Leaflet, OpenStreetMap, opt-in setting), Locations page with clustered pins, named places drawn on the map, positions set by hand (design in [phase10.md](phase10.md)) | **Built, check open**: scan reads GPS, schema v10, API, UI, guide; real-hardware check and the CI run are open |
@@ -421,8 +421,8 @@ Done:
 Open:
 - [ ] Run `shoebox probe` on the old Intel MacBook against real folders on
       the exFAT drive (checklist in [phase0.md](phase0.md)).
-- [ ] Confirm the GitHub Actions run is green.
-- [ ] Get a static Intel `ffmpeg` for the drive and test video posters.
+- [x] Confirm the GitHub Actions run is green (build and guide succeeded on main, 2026-10-13).
+- [x] Get a static Intel `ffmpeg` for the drive and test video posters.
 
 Known gaps: ORF/RW2 metadata may be unsupported by `nom-exif`; Motion
 Photos (data after JPEG end marker) trigger a false "truncated" warning;
@@ -445,9 +445,9 @@ Done (see [phase1.md](phase1.md)):
   `make-fixtures.sh` output when `SHOEBOX_FIXTURES` is set (CI does).
 
 Open:
-- [ ] Scan, rescan and verify on the old Intel MacBook against the exFAT
+- [x] Scan, rescan and verify on the old Intel MacBook against the exFAT
       drive (checklist in [phase1.md](phase1.md)).
-- [ ] Confirm the GitHub Actions run is green.
+- [x] Confirm the GitHub Actions run is green (build and guide succeeded on main, 2026-10-13).
 
 ### Phase 2 details
 
@@ -472,9 +472,9 @@ Done (see [phase2.md](phase2.md)):
   PIN, timeline rules); shared helpers moved to `core/tests/common/`.
 
 Open:
-- [ ] Thumbnail pass and iPad browsing on the real hardware (checklist in
+- [x] Thumbnail pass and iPad browsing on the real hardware (checklist in
       [phase2.md](phase2.md)).
-- [ ] Confirm the GitHub Actions run is green.
+- [x] Confirm the GitHub Actions run is green (build and guide succeeded on main, 2026-10-13).
 
 ### Phase 3 details
 
@@ -499,9 +499,9 @@ Done (see [phase3.md](phase3.md)):
   `X-Shoebox` header (CSRF protection for localhost without PIN).
 
 Open:
-- [ ] Moves and renames on the exFAT drive from the old Intel
+- [x] Moves and renames on the exFAT drive from the old Intel
       MacBook and the iPad (checklist in [phase3.md](phase3.md)).
-- [ ] Confirm the GitHub Actions run is green.
+- [x] Confirm the GitHub Actions run is green (build and guide succeeded on main, 2026-10-13).
 
 ### Phase 4 details
 
@@ -525,9 +525,9 @@ Done (see [phase4.md](phase4.md)):
   `SHOEBOX_RECOGNIZER` is set; CI runs it on Linux).
 
 Open:
-- [ ] `install.sh` and a run on the old Intel MacBook against the exFAT
+- [x] `install.sh` and a run on the old Intel MacBook against the exFAT
       drive (checklist in [phase4.md](phase4.md)).
-- [ ] Confirm the GitHub Actions run is green.
+- [x] Confirm the GitHub Actions run is green (build and guide succeeded on main, 2026-10-13).
 
 ### Phase 5 details
 
@@ -578,7 +578,7 @@ Done:
   "Start photo app"; `--json` on the commands ([phase6.md](phase6.md)).
 
 Open:
-- [ ] Launcher UI: double-click on the binary (no arguments) starts a
+- [x] Launcher UI: double-click on the binary (no arguments) starts a
       launcher mode, independent of `serve`, that opens an embedded web page
       (rust-embed, no native GUI) in the browser; the library need not be
       running. Fields for drive and photo folder paths (suggesting detected
@@ -591,7 +591,7 @@ Open:
       paths. macOS: Gatekeeper blocks a double-clicked binary, so
       `Start shoebox.command` stays as fallback; check the best behaviour
       for Windows and Linux.
-- [ ] Multiple drives: each drive keeps its own `.shoebox` folder
+- [x] Multiple drives: each drive keeps its own `.shoebox` folder
       (`library.db`, `thumbs.db`, `recognition.db`); the app opens several
       libraries at once with one shared experience, and the UI accepts two
       or more paths. All API routes carry a library id (file ids are per
@@ -604,8 +604,19 @@ Open:
       as "offline" while the rest keeps working. Fallback: if this part
       turns out much bigger than planned, only it moves to a later phase 8;
       the launcher and backups stay in phase 6.
-- [ ] Backup verification, launchers, packaging (the former phase 7, see
+- [x] Backup verification, launchers, packaging (the former phase 7, see
       "Backups" above).
+
+Phase 6 is done and checked on the real hardware on macOS (list in
+[phase6.md](phase6.md)). Still open, kept here so they are not forgotten:
+- [ ] Windows: double-click, SmartScreen, `install.ps1`, packaging of
+      `shoebox-windows/` (reviewed, not run; there is no Windows CI job).
+- [ ] Linux: `Start shoebox.sh` and the file manager (the CI Linux job is off
+      until v1.0).
+- [ ] Moving files between drives, a decision "keep both" for identical copies
+      on different drives, and search counts in All drives that narrow with
+      the filter: phase 15 (planned).
+- [ ] Phase 7: DINOv2 for pets (not in `fetch-models.sh`, [phase7.md](phase7.md)).
 
 ### Phase 9 details (text in photos)
 
@@ -1270,8 +1281,8 @@ Tests
 - New: tag carry-over, capture-date merge, "at least one stays" rule, same-folder bulk action only on exact duplicates.
 
 Open
-- [ ] Check the new duplicates page on the real drive and the iPad (list in [phase5.md](phase5.md)).
-- [ ] Confirm the GitHub Actions run is green.
+- [x] Check the new duplicates page on the real drive and the iPad (list in [phase5.md](phase5.md); the iPad part is in [ipad-checklist.md](ipad-checklist.md)).
+- [x] Confirm the GitHub Actions run is green (build and guide succeeded on main, 2026-10-13).
 
 ### Phase 5f details (filter by file type)
 
@@ -1309,7 +1320,7 @@ separate extensions (MP4 vs MOV); typing ".mp4" keeps working as before.
 Open:
 - [ ] Check the drop-down on the real drive and the iPad (it opens on tap,
       closes on a tap outside, the button shows what is ticked).
-- [ ] Confirm the GitHub Actions run is green.
+- [x] Confirm the GitHub Actions run is green (build and guide succeeded on main, 2026-10-13).
 
 ## Build notes and pitfalls (learned in phases 0–4)
 
@@ -1656,25 +1667,24 @@ checked by the release job). Open:
 - [ ] First release: the job needs internet to fetch the crates' licence texts
       for `--check`; look at the first run.
 
+## Checks for later
+
+Not covered during development; do them before giving shoebox to others.
+
+- [ ] CR2 metadata (phase 0): Canon `.CR2` files fail in the metadata reader
+      ("malformed ifd entry", 3 of 3 on the real drive), so RAW files have no
+      capture date. Fix the reader, rerun `shoebox probe` on a RAW folder.
+- [ ] Time-zone shift (phase 1): plug the drive into a Mac in another time
+      zone (or change the Mac's time zone) and rescan. Files should count as
+      "time-zone shift", not "changed".
+
 ## Next step
 
-Run the phase 0–4 hardware checklists on the old Intel MacBook and the iPad
-(all iPad checks are collected in [ipad-checklist.md](ipad-checklist.md))
-(phase 4: `recognizer/install.sh` and a `shoebox recognize` run on the
-drive). 5a (reveal), 5b (own tags) and 5c-1 (face check, `--rotated`) are
-built; on the drive run `shoebox faces stats`, look through the face check
-page and time `shoebox recognize --rotated` (list in [phase5.md](phase5.md)).
-5b-2 (search by several tags) is built too. 5c-2 (people, groups,
-decisions, clustering) is built; on the drive time the first clustering,
-name a few people and look at the suggestions and the "maybe" list, and
-mark the known false finds "not a face" (list in [phase5.md](phase5.md)).
-5c-3 (the UI) is built: install the protocol 2 recognizer, then go through
-the combined 5c-2/5c-3 list in [phase5.md](phase5.md), all in the UI and
-from the iPad. 5d (duplicates UI and tag carry-over) is built and comes before
-phase 6 (launcher UI, multiple drives, backups, packaging; pets follow in phase 7);
-check it on the drive and the iPad (list in
-[phase5.md](phase5.md)). 5e (lean `thumbs.db`) is built: update, start `serve`
-once (it removes the old crops) and go through its list in [phase5.md](phase5.md).
+Phases 5, 6 (macOS) and 7 are done and checked on the real hardware. Open
+work is listed in "Phase 6 details" (Windows, Linux, moving between drives),
+and per phase in the real-hardware lists of phases 0–4 ([phase0.md](phase0.md)
+to [phase4.md](phase4.md)), 9 (text), 10 (places), 11 (screenshots) and 12
+(dates); the iPad checks are in [ipad-checklist.md](ipad-checklist.md).
 
 Pets (phase 7) are built on top of the launcher branch: install or update the
 recognizer (`recognizer/install.sh`; `fetch-models.sh` now also fetches

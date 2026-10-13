@@ -126,9 +126,9 @@ iPads) is embedded with `rust-embed`.
 
 ## Still to check on real hardware
 
-- [ ] `shoebox scan` on the exFAT drive from the old Intel MacBook: time for
+- [x] `shoebox scan` on the exFAT drive from the old Intel MacBook: time for
       the thumbnail pass over the whole library, size of `thumbs.db`.
-- [ ] `shoebox serve --lan` on the MacBook, browse from the iPad: scrolling
+- [~] `shoebox serve --lan` on the MacBook, browse from the iPad (the timeline works; the rest of the list is in [ipad-checklist.md](ipad-checklist.md)): scrolling
       through ~100,000 items, search, viewer, HEIC, Live Photo playback,
       video seeking.
-- [ ] Videos with ffmpeg next to the binary (`.shoebox/bin/ffmpeg`).
+- [x] Videos with ffmpeg next to the program.
