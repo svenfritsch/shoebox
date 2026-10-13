@@ -499,7 +499,7 @@ Done (see [phase3.md](phase3.md)):
   `X-Shoebox` header (CSRF protection for localhost without PIN).
 
 Open:
-- [ ] Moves and renames on the exFAT drive from the old Intel
+- [x] Moves and renames on the exFAT drive from the old Intel
       MacBook and the iPad (checklist in [phase3.md](phase3.md)).
 - [ ] Confirm the GitHub Actions run is green.
 
