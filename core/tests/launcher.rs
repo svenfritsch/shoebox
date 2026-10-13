@@ -94,6 +94,10 @@ fn guard_commands_run_from_the_launcher_leave_originals_untouched() {
     let faces = run_job(addr, json!({ "kind": "faces_stats", "root": root }));
     assert_eq!(faces["ok"], true, "{faces}");
     assert!(faces["result"].is_null());
+    // The same for the overview of every kind: before any run, nothing started.
+    let overview = run_job(addr, json!({ "kind": "recognition_stats", "root": root }));
+    assert_eq!(overview["ok"], true, "{overview}");
+    assert_eq!(overview["result"]["started"], false, "{overview}");
 
     // Recognize without a worker fails with a message, and the launcher lives on.
     let recognize = run_job(addr, json!({ "kind": "recognize", "root": root, "limit": 1 }));
@@ -280,6 +284,41 @@ fn recognize_pets_runs_the_pets_pass_under_the_guard() {
     assert!(clustered > 0 && clustered <= photos, "clustered in a space of their own: {pets}");
     assert_eq!(pets["result"]["pets"]["model"], "fake-pets-1");
     assert_eq!(lib.snapshot(), before, "looking for pets changed an original");
+    launcher.stop().unwrap();
+}
+
+#[test]
+fn recognize_text_reads_only_the_words_under_the_guard() {
+    let _turn = serial();
+    let lib = Library::new("launcher-text");
+    image::RgbImage::from_pixel(64, 64, image::Rgb([200, 190, 180])).save(lib.path("letter.png")).unwrap();
+    image::RgbImage::from_pixel(64, 64, image::Rgb([120, 130, 140])).save(lib.path("menu.png")).unwrap();
+    lib.scan_opts(true, false, false);
+    let before = lib.snapshot();
+    unsafe { std::env::set_var("SHOEBOX_RECOGNIZER", env!("CARGO_BIN_EXE_shoebox-fake-recognizer")) };
+    let launcher = start_launcher();
+    let root = lib.root.display().to_string();
+
+    let text = run_job(launcher.addr, json!({ "kind": "recognize_text", "root": root }));
+    assert_eq!(text["ok"], true, "{text}");
+    let photos = lib.count("SELECT count(DISTINCT quick_hash) FROM files WHERE missing_since IS NULL AND kind IN ('jpeg', 'png', 'heic')");
+    assert!(photos >= 8, "{photos}");
+    // The fake reports six lines per picture, three of them are stored.
+    assert_eq!(text["result"]["text"]["looked"], photos, "{text}");
+    assert_eq!(text["result"]["text"]["faces"], photos * 3, "{text}");
+    assert_eq!(text["result"]["text"]["model"], "fake-text-1");
+    // Only the words: no faces, no pets, no clusters.
+    assert_eq!(text["result"]["looked"], 0, "{text}");
+    assert_eq!(text["result"]["faces"], 0);
+    assert!(text["result"]["pets"].is_null() && text["result"]["clusters"].is_null(), "{text}");
+    assert_eq!(lib.snapshot(), before, "reading the text changed an original");
+
+    // The Text add-on is part of what the Control Panel asks about.
+    let addons = lpost(launcher.addr, "/api/addons", &json!({ "roots": [root] }));
+    assert_eq!(addons.status, 200);
+    let a = addons.json();
+    assert!(a["text"].is_boolean() && a["text_models"].is_boolean(), "{a}");
+    assert!(a["roots"][0]["text"].is_boolean(), "{a}");
     launcher.stop().unwrap();
 }
 

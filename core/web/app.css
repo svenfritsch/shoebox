@@ -466,7 +466,6 @@ body.selecting .sec .pick { display: inline; }
 .lb-panel .pface button.add { background: none; border: 1px dashed rgba(255,255,255,.3); color: #ccc; }
 .lb-panel .pface .more-btn { background: none; color: #bbb; border-radius: 16px; padding: 0 6px; font-size: 18px; }
 .lb-panel .pface .note, .lb-panel .pfaces > .note { color: #999; font-size: 12px; }
-.lb-panel .pface.lost { color: #999; font-size: 12px; }
 .lb-panel .avatar { background: rgba(255,255,255,.12); }
 /* picking mode: rows are checkboxes, their own buttons step aside */
 .lb-panel .pfaces.picking .pface { padding: 4px 6px; margin: 0 -6px; border-radius: 10px; }
@@ -646,6 +645,11 @@ body.selecting .sec .pick { display: inline; }
 }
 .settings-card:hover, .settings-card:focus-visible { border-color: var(--accent); }
 .settings-card .title { font-weight: 600; font-size: 16px; }
+.settings-cards.cleanup { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); align-items: stretch; }
+.cleanup-card { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--cell-bg); }
+.cleanup-card .title { font-weight: 600; font-size: 16px; }
+.cleanup-card p { margin: 0; }
+.cleanup-card .btns { margin-top: auto; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding-top: 6px; }
 .page .back { margin: 0 0 4px; padding: 0; }
 .dialog .check { display: flex; align-items: center; gap: 6px; margin: 10px 0 4px; }
 .dialog .check input { width: 18px; height: 18px; }
@@ -800,6 +804,61 @@ body.geo-view #page { padding: 0; height: 100%; }
   background: var(--accent); color: #fff; font-size: 14px; display: flex; align-items: center; justify-content: center;
 }
 
+/* Text in photos (phase 9): the two search shortcuts, their chips, the line a text search found. */
+.ic { display: inline-block; width: 1.15em; height: 1.15em; vertical-align: -0.2em; margin-right: 5px; flex: none; }
+.ic svg { width: 100%; height: 100%; display: block; }
+.chip .ic { margin-right: 0; }
+.chip.text { border-color: var(--accent); }
+.chip.text .ic { color: var(--accent); }
+.chip.name .ic { color: var(--muted); }
+.suggest .item .ic { color: var(--accent); }
+.suggest .item.off { opacity: .55; }
+.suggest .hint { font-size: 12px; color: var(--muted); padding: 2px 12px 6px; }
+.cell .snip {
+  position: absolute; left: 6px; bottom: 6px; max-width: calc(100% - 12px); box-sizing: border-box; height: 18px; padding: 0 9px;
+  font-size: 11px; line-height: 18px; color: #fff; background: rgba(40, 40, 40, .55); border-radius: 9px;
+  backdrop-filter: blur(3px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* The estimate mark (a date that is not from the file) sits in the same corner, on the same row. */
+.cell:has(.est) .snip { left: 30px; max-width: calc(100% - 36px); }
+
+/* The viewer's text button and block (phase 9). */
+.lb-text .ic { width: 22px; height: 22px; margin: 0; vertical-align: -5px; }
+.lb-text { opacity: .5; border-radius: 8px; }
+.lb-text.on { opacity: 1; color: #e0a46d; background: rgba(224, 164, 109, .2); }
+.text-box { position: absolute; border: 2px solid #e0a46d; border-radius: 3px; background: rgba(224, 164, 109, .14); box-shadow: 0 0 0 1px rgba(0, 0, 0, .45); cursor: pointer; z-index: 1; }
+.text-box.hit { border-color: #ffd60a; border-width: 3px; background: rgba(255, 214, 10, .28); }
+.text-box.hot { border-color: #fff; border-width: 3px; box-shadow: 0 0 0 2px rgba(0, 0, 0, .6), 0 0 18px rgba(255, 255, 255, .5); }
+.lb-panel .txt-sec { align-self: stretch; min-width: 0; margin-top: 14px; border-top: 1px solid rgba(255, 255, 255, .12); padding-top: 8px; }
+.lb-panel .txt-head { display: flex; align-items: center; cursor: pointer; font-size: 13.5px; }
+.lb-panel .txt-head .chev { width: 16px; color: #aaa; }
+.lb-panel .txt-title { font-weight: 600; color: #ddd; white-space: nowrap; }
+.lb-panel .txt-count { margin-left: 6px; color: #999; font-size: 12px; flex: 1; }
+.lb-panel .txt-copy { flex: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; background: rgba(255, 255, 255, .12); color: #eee; border: 0; border-radius: 99px; padding: 3px 10px; font-size: 12.5px; }
+.lb-panel .txt-copy .ic { width: 14px; height: 14px; margin: 0; vertical-align: 0; }
+.lb-panel .txt-list { display: flex; flex-direction: column; gap: 2px; max-height: 300px; overflow-y: auto; margin-top: 8px; padding-right: 4px; }
+.lb-panel .txt-line { display: flex; gap: 6px; align-items: center; padding: 4px 8px; border-radius: 8px; font-size: 13.5px; }
+.lb-panel .txt-line:hover { background: rgba(255, 255, 255, .07); }
+.lb-panel .txt-line .tt { flex: 1; word-break: break-word; }
+.lb-panel .txt-line .x { background: none; border: 0; color: #999; font-size: 12px; padding: 0 4px; }
+.lb-panel .txt-line.hit { background: rgba(255, 214, 10, .12); }
+.lb-panel .txt-line mark { background: #ffd60a; color: #000; border-radius: 3px; padding: 0 1px; }
+.lb-panel .txt-line.gone .tt { text-decoration: line-through; color: #777; }
+.lb-panel .txt-note { color: #999; font-size: 12px; margin: 6px 0 0; }
+
+/* The Text check page and the settings block of the recognized text (phase 9). */
+.textcheck { max-width: 980px; }
+.tc-controls { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: center; margin: 10px 0 4px; }
+.tc-slider { display: flex; align-items: center; gap: 10px; }
+.tc-slider .tc-label { min-width: 9em; color: var(--muted); }
+.tc-slider input { width: 200px; accent-color: var(--accent); }
+.tc-slider .tc-value { min-width: 3.5em; font-variant-numeric: tabular-nums; }
+.tc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin-top: 10px; }
+.tc-card { border: 1px solid var(--line); border-radius: 10px; padding: 8px; background: var(--panel); display: flex; flex-direction: column; gap: 6px; }
+.tc-card.out { opacity: .72; }
+.tc-card img { width: 100%; height: 64px; object-fit: contain; background: var(--cell-bg); border-radius: 6px; }
+.tc-text { font-size: 13.5px; word-break: break-word; }
+.tc-meta { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 12px; }
 /* Export (phase 12): the dialog, the folder picker and the collection button */
 .dialog.wide { width: min(560px, 100%); }
 .dialog.picker { width: min(640px, 100%); }

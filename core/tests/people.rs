@@ -36,6 +36,8 @@ fn options(lib: &Library) -> recognize::Options {
         retry_failed: false,
         rotated: false,
         pets: false,
+        text: false,
+        text_only: false,
         timeouts: recognize::Timeouts {
             start: Duration::from_secs(10),
             reply: Duration::from_secs(2),
@@ -536,18 +538,22 @@ fn decisions_survive_a_model_change_a_move_and_a_lost_recognition_db() {
     let addr = server.addr;
     check(addr);
 
-    // A box that moved a little still matches; one far off is kept as "no
-    // longer found".
+    // A box that moved a little still matches; one far off stays the user's
+    // confirmed face, shown from its box and name (`kept`) but not used for matching.
     let db = lib.db();
     db.execute("UPDATE face_decisions SET x = x + 0.05, y = y + 0.03 WHERE decision = 'confirmed'", []).unwrap();
     assert_eq!(faces_of(addr, &lib, "Anna/a1.png")[0]["person"]["id"], anna);
     db.execute("UPDATE face_decisions SET x = 0.0, y = 0.0, w = 0.1, h = 0.1 WHERE decision = 'confirmed'", []).unwrap();
     let info = get(addr, &format!("/api/files/{}", id_of(&lib, "Anna/a1.png"))).json();
-    assert!(info["faces"][0]["state"].is_null(), "{info}");
-    let lost = info["faces_lost"].as_array().unwrap();
-    assert_eq!((lost.len(), lost[0]["lost"].as_bool(), lost[0]["person"]["id"].as_i64()), (1, Some(true), Some(anna)));
+    let faces = info["faces"].as_array().unwrap();
+    assert_eq!(faces.len(), 2, "the detected face and the kept one: {info}");
+    assert!(info.get("faces_lost").is_none());
+    let detected = faces.iter().find(|f| f["kept"].is_null()).unwrap();
+    assert!(detected["state"].is_null(), "{info}");
+    let kept = faces.iter().find(|f| f["kept"] == true).unwrap();
+    assert_eq!((kept["state"].as_str(), kept["person"]["id"].as_i64()), (Some("confirmed"), Some(anna)));
     let confirmed = person_faces(addr, anna, "confirmed");
-    assert_eq!((confirmed.len(), confirmed[0]["lost"].as_bool()), (1, Some(true)));
+    assert_eq!((confirmed.len(), confirmed[0]["kept"].as_bool()), (1, Some(true)));
     assert_eq!(get(addr, &format!("/api/people/{anna}")).json()["faces"], 1);
     assert_eq!(lib.snapshot().len(), before_files);
     server.stop().unwrap();
