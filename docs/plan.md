@@ -1280,22 +1280,32 @@ error is noted, so it is not tried on every scan. Worst case, a misbehaving
 paired device stores a wrong picture as one video's poster; nothing else reads
 it.
 
-**Windows build job (step 4).**
-1. libheif and libde265 with MSVC through cmake: the flags of
-   `build-deps.sh` carry over (Git Bash, cmake and Visual Studio are on the
-   runner); as DLLs, consistent C runtime (`/MD`); `core/build.rs` without
-   `-lstdc++` on Windows.
-2. `organize::rename_noreplace`: on Windows today it checks and then calls
-   `fs::rename`, which replaces an existing target there. Use `MoveFileExW`
-   without `MOVEFILE_REPLACE_EXISTING` (atomic refusal). Safety-critical.
-3. `fsinfo::filesystem_type` for Windows (`GetVolumeInformationW`, already
-   declared in `volume.rs`).
-4. Cross-system check: a drive scanned on a Mac shows no changed files on
-   Windows and the other way round (created and modified times on exFAT,
-   NFC/NFD, case).
-5. Package `shoebox-windows/` (`shoebox.exe`, the DLLs, `Start shoebox.bat`,
-   `recognizer/*.ps1`, never run so far); fixtures made by the Linux job and
-   handed over; release step.
+**Windows build job (step 4).** The `windows` job in `build.yml` (started
+by hand, like Linux) builds and tests on `windows-latest` and uploads
+`shoebox-windows` (`shoebox.exe`, `heif.dll`, `libde265.dll`).
+1. [x] libheif and libde265 with MSVC (Visual Studio generator, from Git
+   Bash): DLLs with the C runtime linked in (`/MT`), and `shoebox.exe` with
+   `crt-static` (`.cargo/config.toml` at the repository root: cargo reads
+   config from where it is started), so no Visual C++ Redistributable is
+   needed. libheif-sys only knows vcpkg on MSVC; it declares
+   `links = "heif"`, so `build.sh` replaces its build script with
+   `--config target.<t>.heif.rustc-link-*`. Paths go through `cygpath -m`
+   (and GNU tar takes `D:/...` for a host: unpack from inside the folder).
+2. [x] `organize::rename_noreplace`: `MoveFileExW` without
+   `MOVEFILE_REPLACE_EXISTING` (atomic refusal, never a copy to another
+   drive); before it checked and then called `fs::rename`, which replaces on
+   Windows. Export's renames use it too, on every system.
+3. [x] `fsinfo::filesystem_type` for Windows (`GetVolumeInformationW`).
+   Also found by the tests: `db::backup` flushed `library.db.bak` through a
+   read-only handle, which Windows refuses (Access is denied).
+4. [ ] Cross-system check on a real drive: scanned on a Mac, no changed files
+   on Windows and the other way round (created and modified times on exFAT,
+   NFC/NFD, case). The CI job scans its own folder only.
+5. [ ] Run the `shoebox-windows` artifact on a real PC (Start shoebox.bat, a
+   HEIC, the recognizer's `install.ps1`, never run so far); then package
+   `shoebox-windows/` in the release (with `sources/`,
+   `third-party-licenses.py` for the Windows target) and update the guide
+   ("macOS today · Linux & Windows next").
 
 **Steps:**
 - [x] 1. Store the browser frame (all builds, no new dependency).
@@ -1304,7 +1314,8 @@ it.
       `sources/`, the launchers check for them and the macOS one removes
       their quarantine mark too).
 - [ ] 3. AVFoundation posters on macOS.
-- [ ] 4. Windows build job (list above).
+- [ ] 4. Windows build job (list above: built and tested in CI; real-PC
+      check, cross-system check and release packaging open).
 - [ ] 5. Media Foundation posters on Windows.
 - [ ] 6. Audit leftover: `jpeg-decoder` without default features (drops
       rayon and crossbeam, 7 crates; the thumbnail pass is parallel already).
