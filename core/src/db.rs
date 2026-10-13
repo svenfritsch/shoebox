@@ -530,7 +530,8 @@ pub fn backup_schema(conn: &Connection, schema: &str, db_path: &Path) -> Result<
         rusqlite::backup::Backup::new_with_names(conn, schema, &mut out, "main")?.run_to_completion(256, std::time::Duration::ZERO, None)?;
         out.pragma_update(None, "journal_mode", "DELETE")?;
     }
-    std::fs::File::open(&tmp)?.sync_all()?;
+    // Opened for writing: Windows refuses to flush a file opened read-only.
+    std::fs::OpenOptions::new().write(true).open(&tmp)?.sync_all()?;
     std::fs::rename(&tmp, &dst).with_context(|| format!("write {}", dst.display()))?;
     Ok(dst)
 }
@@ -636,6 +637,8 @@ mod tests {
         let copy = Connection::open(&bak).unwrap();
         let n: i64 = copy.query_row("SELECT count(*) FROM jobs", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 1);
+        // Windows deletes no file that is still open.
+        drop((conn, copy));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -702,6 +705,7 @@ mod tests {
         let conn = open(&path).unwrap();
         let species: Option<String> = conn.query_row("SELECT species FROM face_decisions", [], |r| r.get(0)).unwrap();
         assert_eq!(species.as_deref(), Some("cat"));
+        drop(conn);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

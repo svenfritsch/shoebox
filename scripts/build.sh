@@ -50,12 +50,12 @@ if [ "${2:-}" = test ]; then
     # cargo-nextest (if installed, as on CI) runs every test in its own process
     # and all test files at once; cargo test runs the files one after another.
     if cargo nextest --version >/dev/null 2>&1; then
-        cargo "${CARGO_CONFIG[@]}" nextest run --manifest-path core/Cargo.toml --target "$TARGET" --no-fail-fast
+        cargo ${CARGO_CONFIG[@]+"${CARGO_CONFIG[@]}"} nextest run --manifest-path core/Cargo.toml --target "$TARGET" --no-fail-fast
     else
-        cargo "${CARGO_CONFIG[@]}" test --manifest-path core/Cargo.toml --target "$TARGET"
+        cargo ${CARGO_CONFIG[@]+"${CARGO_CONFIG[@]}"} test --manifest-path core/Cargo.toml --target "$TARGET" --no-fail-fast
     fi
 else
-    cargo "${CARGO_CONFIG[@]}" build --release --manifest-path core/Cargo.toml --target "$TARGET"
+    cargo ${CARGO_CONFIG[@]+"${CARGO_CONFIG[@]}"} build --release --manifest-path core/Cargo.toml --target "$TARGET"
     # The program loads them from its own folder: real files, no symlinks
     # (exFAT), under the names it asks for.
     case "$TARGET" in
