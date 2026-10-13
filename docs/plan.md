@@ -376,11 +376,11 @@ rot) and shows "last backup N days ago, M files new since".
 
 | Phase | Scope | Status |
 |---|---|---|
-| 0 | Toolchain + portability probe (`shoebox probe`) | **Done except the real-hardware run** (see below) |
-| 1 | Scanner + SQLite schema + incremental rescan + move detection + guard integration test. CLI: `shoebox scan`, `shoebox verify` | **Done except the real-hardware run** (see below) |
-| 2 | `thumbs.db` + perceptual hash, web UI (virtualised timeline grid, folder tree, tag search, video playback), LAN access with PIN. `shoebox serve` | **Done except the real-hardware run** (see below) |
-| 3 | Move (with RAW pairs, case-only renames), duplicates UI, self-healing paths | **Done except the real-hardware run** (see below) |
-| 4 | Worker protocol + Python recognizer (faces), worker supervision in Rust | **Done except the real-hardware run** (see below) |
+| 0 | Toolchain + portability probe (`shoebox probe`) | **Done**, checked on the real hardware (open items: "Checks for later") |
+| 1 | Scanner + SQLite schema + incremental rescan + move detection + guard integration test. CLI: `shoebox scan`, `shoebox verify` | **Done**, checked on the real hardware (open items: "Checks for later") |
+| 2 | `thumbs.db` + perceptual hash, web UI (virtualised timeline grid, folder tree, tag search, video playback), LAN access with PIN. `shoebox serve` | **Done**, checked on the real hardware |
+| 3 | Move (with RAW pairs, case-only renames), duplicates UI, self-healing paths | **Done**, checked on the real hardware |
+| 4 | Worker protocol + Python recognizer (faces), worker supervision in Rust | **Done**, checked on the real hardware |
 | 5a | Show in Finder / Explorer, copy path | **Done** (see [phase5.md](phase5.md)) |
 | 5b | Own tags (add/remove, many photos at once, search), user data backup | **Done** (see [phase5.md](phase5.md)) |
 | 5b-2 | Search by several tags at once (AND, chips); people join in with 5c-3 | **Done** (see [phase5.md](phase5.md)) |
@@ -389,7 +389,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 5e | Lean `thumbs.db`: face crops only for faces without a decision and for each person's picture; right-click "Use as … picture" on a person's photos | **Done** (see [phase5.md](phase5.md)) |
 | 5f | "Type" check box drop-down (Photos, Videos, Live Photos) next to the search box | **Done** (see "Phase 5f details") |
 | 5g | Favorites: a heart in the viewer's top bar and in the top right corner of each timeline photo; a heart button next to the type filter and "♥ Favorites" as a search suggestion | **Done** (see "Favorites" below) |
-| 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | **Done on macOS**, checked on the real hardware (see [phase6.md](phase6.md)); open: Windows and Linux checks and packaging; moving files between drives, "keep both" and narrowing search counts are planned separately |
+| 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | **Done on macOS**, checked on the real hardware (see [phase6.md](phase6.md)); open: Windows and Linux checks and packaging; moving files between drives, "keep both" and narrowing search counts are phase 15 (planned) |
 | 7 | Pets: cats and dogs found (`shoebox recognize --pets`, launcher button "Recognize pets"), named, grouped and searched like people, also by kind ("all cats", "Katze", "Hund"); pets the detector missed can be drawn by hand; Settings → Calibration with the Face check and the new Pet check | **Done**, checked on the real hardware; DINOv2 is still to be added (see [phase7.md](phase7.md)) |
 | 8 | UI translation, German and English, JSON message files (design and steps in [phase8.md](phase8.md)) | **Built, check open**: loader, key test, launcher and the whole photo app; the German texts have had a native review; the real-hardware check and the CI run are open |
 | 9 | Text in photos (OCR): documents, screenshots, street signs, shop fronts found by the words in them. A new task of the recognizer worker, results in `recognition.db` with an FTS5 index, a search term in the UI | **In progress** (branch `claude/phase9-text-search`): design and spike done (see "Phase 9 details"); built and tested on Linux: the worker task `text`, `install.sh --text` (and `install.ps1 -Text`, not run), the protocol text, the text pass in the core (`text.rs`, `recognition.db` v7, read order, `shoebox recognize --text` / `--text-only`), the Control Panel (Text add-on, "Recognize text" button) the guide (EN and DE), the FTS5 index (`recognition.db` v8) and the search terms `text:` and `name:` (chips, dropdown group, match strip, over all drives), the viewer button and foldable section with hide-a-line, the Text check page and limits, "Delete all recognized text", `shoebox text stats` and the status line; open: the edge-cut line rule (to verify on real photos), a run of the installer and the add-on on the old Intel Mac and on Windows, ignored words and tolerant matching (later) |
@@ -615,9 +615,8 @@ Phase 6 is done and checked on the real hardware on macOS (list in
       until v1.0).
 - [ ] Moving files between drives, a decision "keep both" for identical copies
       on different drives, and search counts in All drives that narrow with
-      the filter: being planned in its own session (phase 14 plan).
-- [ ] Phase 7: DINOv2 for pets (not in `fetch-models.sh`), a cat/dog choice
-      for drawn pets ([phase7.md](phase7.md)).
+      the filter: phase 15 (planned).
+- [ ] Phase 7: DINOv2 for pets (not in `fetch-models.sh`, [phase7.md](phase7.md)).
 
 ### Phase 9 details (text in photos)
 

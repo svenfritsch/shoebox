@@ -255,7 +255,7 @@ Done:
 Open:
 - [ ] Windows: double-click, SmartScreen, `install.ps1`, `shoebox-windows` packaging (no Windows CI job yet; reviewed, not run)
 - [ ] Linux: `Start shoebox.sh` and the file manager (the CI Linux job is off until v1.0)
-- [ ] Moving files between drives, "keep both" for identical copies on different drives, search counts that narrow with the filter in All drives: planned in a separate session, not built
+- [ ] Moving files between drives, "keep both" for identical copies on different drives, search counts that narrow with the filter in All drives: phase 15 (planned), not built
 
 ## Checked on real hardware (macOS, old Intel MacBook, exFAT drives)
 

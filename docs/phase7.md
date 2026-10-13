@@ -272,8 +272,8 @@ On the drive (Intel MacBook and/or a modern Mac):
       the neighbours in the Pet check and set its thresholds. Check whether
       OpenCV's runner (the old Mac) can run it; with onnxruntime it should.
       Then pin its SHA-256 in `fetch-models.sh`.
-- [ ] A species choice (cat / dog) for pets drawn by hand; today they are
-      "pet" and only found by "any pet".
+- [x] A species choice (person / cat / dog) for faces drawn by hand: the
+      draw dialog has it (`draw.kind.*`).
 - [ ] Pet terms in the all-drives suggestions are summed per request; for
       many drives a cache like the people list would be kinder.
 - [ ] Text search over photo content (CLIP) is a later phase of its own.
