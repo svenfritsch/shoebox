@@ -112,9 +112,8 @@ SQLite runs with a rollback journal (no WAL on an external exFAT drive) and
 
 ## Still to check on real hardware
 
-- [ ] `shoebox scan` + `shoebox verify` on the exFAT drive from the old Intel
+- [x] `shoebox scan` + `shoebox verify` on the exFAT drive from the old Intel
       MacBook: time for the first scan and for the full-hash pass, and a
       rescan that reports everything unchanged.
-- [ ] Plug the drive into a Mac in another time zone (or change the Mac's
-      time zone) and rescan: files should count as "time-zone shift", not
-      "changed".
+- [ ] Time-zone shift: moved to plan.md ("Checks for later"), not covered
+      during development.

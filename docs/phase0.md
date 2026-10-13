@@ -40,12 +40,12 @@ Previews go to the system temp folder, never into the photo folder.
 
 ## Success criteria
 
-- [ ] Binary starts on the Intel Mac (no "unsupported macOS version", no missing library)
-- [ ] `filesystem: exfat` is detected
-- [ ] HEIC, JPEG and video: metadata and preview for (almost) every file
-- [ ] RAW: capture date found
-- [ ] `GUARD OK`
-- [ ] Hash throughput noted (sets expectations for the first full scan)
+- [x] Binary starts on the Intel Mac (no "unsupported macOS version", no missing library)
+- [x] `filesystem: exfat` is detected
+- [x] HEIC, JPEG and video: metadata and preview for (almost) every file
+- [ ] RAW: capture date found. `.CR2` files are indexed (hash, dates, duplicates, backup) but hidden in the photo app by design (plan.md, "RAW"), so they are not searchable there; check the probe's output for the RAW folder, not the UI.
+- [ ] `GUARD OK`: the probe records size, modified and created date and the full hash of every file it reads, reads them all, then records them again. `GUARD OK` means nothing differed; `FAILED` lists the files and what changed. This is the rule that originals are never touched, tested on your real folders.
+- [ ] Hash throughput noted: the "Hashing…" line prints the bytes read, the seconds and MB/s. Divide the library size by that speed to estimate the first full scan (for example 500 GB at 100 MB/s is about 1.5 hours). It shows whether the old Mac or the drive is the slow part.
 
 Send back the terminal output. The JSON report contains file paths and camera
 models, so only share it if you're fine with that.

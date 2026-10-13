@@ -422,7 +422,7 @@ Open:
 - [ ] Run `shoebox probe` on the old Intel MacBook against real folders on
       the exFAT drive (checklist in [phase0.md](phase0.md)).
 - [ ] Confirm the GitHub Actions run is green.
-- [ ] Get a static Intel `ffmpeg` for the drive and test video posters.
+- [x] Get a static Intel `ffmpeg` for the drive and test video posters.
 
 Known gaps: ORF/RW2 metadata may be unsupported by `nom-exif`; Motion
 Photos (data after JPEG end marker) trigger a false "truncated" warning;
@@ -445,7 +445,7 @@ Done (see [phase1.md](phase1.md)):
   `make-fixtures.sh` output when `SHOEBOX_FIXTURES` is set (CI does).
 
 Open:
-- [ ] Scan, rescan and verify on the old Intel MacBook against the exFAT
+- [x] Scan, rescan and verify on the old Intel MacBook against the exFAT
       drive (checklist in [phase1.md](phase1.md)).
 - [ ] Confirm the GitHub Actions run is green.
 
@@ -472,7 +472,7 @@ Done (see [phase2.md](phase2.md)):
   PIN, timeline rules); shared helpers moved to `core/tests/common/`.
 
 Open:
-- [ ] Thumbnail pass and iPad browsing on the real hardware (checklist in
+- [x] Thumbnail pass and iPad browsing on the real hardware (checklist in
       [phase2.md](phase2.md)).
 - [ ] Confirm the GitHub Actions run is green.
 
@@ -1667,6 +1667,14 @@ checked by the release job). Open:
       Actions minutes.
 - [ ] First release: the job needs internet to fetch the crates' licence texts
       for `--check`; look at the first run.
+
+## Checks for later
+
+Not covered during development; do them before giving shoebox to others.
+
+- [ ] Time-zone shift (phase 1): plug the drive into a Mac in another time
+      zone (or change the Mac's time zone) and rescan. Files should count as
+      "time-zone shift", not "changed".
 
 ## Next step
 
