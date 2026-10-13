@@ -205,6 +205,8 @@ writeFileSync(`${out}/ui-overview.json`, JSON.stringify({ width: 1280, height: 8
 await p.locator('.cell').nth(6).click(); await wait(800);
 await p.keyboard.press('i'); await wait(800);
 await shot('viewer-info');
+// The panel alone, close up.
+await p.locator('.lb-panel').screenshot({ path: `${out}/viewer-info-panel.png` });
 // The pencil next to the date opens the dialog for a date of your own.
 await p.locator('.lb-panel .pen').click(); await wait(400);
 await p.fill('.dates-dialog input', '1987'); await p.selectOption('.dates-dialog select >> nth=0', '6'); await wait(300);
