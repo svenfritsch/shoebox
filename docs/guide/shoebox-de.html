@@ -125,6 +125,19 @@
     @media (min-width: 62rem) {
       .topic.has-shots { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); align-items: start }
     }
+    @media (min-width: 62rem) {
+      .topic.two .txt { display: grid; grid-template-columns: 1fr 1fr; gap: 0 2.5rem }
+      .topic.two .txt h3 { grid-column: 1 / -1 }
+      .topic.two .txt p { margin-top: 0 !important; max-width: none }
+    }
+    .typegrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 1rem; margin: 1.1rem 0 1.4rem; max-width: none }
+    .typegrid > div { background: var(--card); border: 1px solid var(--line); border-radius: .8rem; padding: .9rem 1.1rem }
+    .typegrid b { display: block; color: var(--brown); margin-bottom: .2rem }
+    .typegrid span { color: var(--muted); font-size: .95rem; line-height: 1.5 }
+    .topic .txt.wide > p, .topic .txt.wide > .typegrid { max-width: none }
+    .twocol { display: grid; gap: 0 2.5rem; margin-top: 1rem }
+    @media (min-width: 62rem) { .twocol { grid-template-columns: 1fr 1fr } }
+    .twocol h4:first-child { margin-top: 0 }
     .tbl { border-collapse: collapse; width: 100%; font-size: .95rem; margin: .4rem 0 .8rem }
     .tbl th, .tbl td { text-align: left; vertical-align: top; padding: .55rem .7rem; border-bottom: 1px solid var(--line) }
     .tbl th { color: var(--muted); font-size: .8rem; font-weight: 650 }
@@ -175,8 +188,6 @@
     <symbol id="i-bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3L5 14h6l-1 7 8-11h-6l1-7z"/></symbol>
     <symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6-5.6-6-10.5a6 6 0 0 1 12 0C18 15.4 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.2"/></symbol>
     <symbol id="i-cal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></symbol>
-    <symbol id="i-bookmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-6-4.500L6 21z"/><path d="M12 8v6M9 11h6"/></symbol>
-    <symbol id="i-export" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="12" height="12" rx="2"/><path d="M15 12h6m-2.500-2.500L21 12l-2.500 2.500"/></symbol>
     <symbol id="logo" viewBox="0 0 64 64"><rect x="6" y="22" width="52" height="34" rx="4" fill="#b07d4f"/><rect x="2" y="12" width="60" height="14" rx="4" fill="#d9a066"/><rect x="10" y="30" width="44" height="3" rx="1.5" fill="#fff" opacity=".35"/></symbol>
   </svg>
 
@@ -307,17 +318,10 @@
         </li>
         <li>
           <div class="ic-box">
-            <svg class="ic" aria-hidden="true"><use href="#i-bookmark"/></svg>
+            <svg class="ic" aria-hidden="true"><use href="#i-move"/></svg>
           </div>
-          <h3>Sammeln</h3>
-          <p>Fotos für eine Druckbestellung, ein Album oder ein Geburtstagsvideo mit einem Klick sammeln: Der Lesezeichen-Knopf in der Fotoansicht (oder die Taste C) setzt deinen Sammel-Tag auf das Foto.</p>
-        </li>
-        <li>
-          <div class="ic-box">
-            <svg class="ic" aria-hidden="true"><use href="#i-export"/></svg>
-          </div>
-          <h3>Exportieren</h3>
-          <p>Die ausgewählten Fotos in einen nummerierten Ordner auf deinem Computer oder einem USB-Stick kopieren, auf Wunsch samt RAW-Dateien und Live-Photo-Videos. Deine Originale bleiben, wie sie sind.</p>
+          <h3>Sammeln & exportieren</h3>
+          <p>Fotos für eine Druckbestellung, ein Album oder ein Geburtstagsvideo mit einem Klick sammeln und dann als nummerierten Ordner auf deinen Computer oder einen USB-Stick kopieren. Deine Originale bleiben, wie sie sind.</p>
         </li>
         <li>
           <div class="ic-box">
@@ -422,11 +426,17 @@
     <section id="navigate">
       <h2>Sich zurechtfinden</h2>
       <p class="sub">Obere Leiste, Seitenleiste und wie sie zeigen, wo du bist.</p>
-      <div class="topic">
+      <div class="topic has-shots">
         <div class="txt">
           <h3>Die obere Leiste</h3>
           <p>Die obere Leiste bleibt auf jeder Seite. Neben dem Laufwerksnamen zeigt sie, wo du bist: auf der Zeitleiste den Monat, den du gerade ansiehst, auf jeder anderen Seite (Duplikate, Papierkorb, Einstellungen, Gesichter, …) den Namen dieser Seite.</p>
           <p>Weiter rechts sitzen das Suchfeld, der <b>♥</b>-Knopf für Favoriten, der Filter <b>Typ</b>, das Menü <b>Jahr</b>, das zu einem Jahr springt, und <b>Auswählen ☑</b>. Auf schmalen Bildschirmen blendet <b>☰</b> links die Seitenleiste ein oder aus.</p>
+        </div>
+        <div class="shots">
+          <figure>
+            <img src="assets/de/navigation.jpg" alt="" loading="lazy">
+            <figcaption>Duplikate ist geöffnet: Die obere Leiste nennt die Seite, und die Seitenleiste zeigt, wo du bist.</figcaption>
+          </figure>
         </div>
       </div>
       <div class="topic">
@@ -573,10 +583,6 @@
           </ul>
         </div>
         <div class="shots">
-          <figure>
-            <img src="assets/de/viewer-info.jpg" alt="" loading="lazy">
-            <figcaption>Die Ansicht mit Infofeld.</figcaption>
-          </figure>
           <figure class="narrow">
             <img src="assets/de/viewer-info-panel.jpg" alt="" loading="lazy">
             <figcaption>Das Infofeld in Großaufnahme.</figcaption>
@@ -629,6 +635,12 @@
           <h4>Chips kombinieren</h4>
           <p>Alle Chips müssen zutreffen, jeder weitere Chip grenzt das Ergebnis also ein: Eine Person, ein Tag und ein Jahr zusammen zeigen nur die Fotos, die zu allen dreien passen. <b>×</b> entfernt einen Chip, <b>Alle entfernen</b> beginnt neu.</p>
           <p>Rechts neben den Chips zeigt shoebox, wie viele die Suche findet, zum Beispiel <b>48 Fotos · 3 Videos</b>. Findet sie nichts, steht dort <b>Keine Fotos</b>, und die Seite sagt <i>Hier ist nichts. Die Suche ergab keine Treffer.</i></p>
+          <figure>
+            <img src="assets/de/search-suggestions.jpg" alt="" loading="lazy">
+            <figcaption>Vorschläge beim Tippen.</figcaption>
+          </figure>
+        </div>
+        <div class="shots">
           <h4>Wonach du suchen kannst</h4>
           <table class="tbl usecases">
             <thead>
@@ -644,12 +656,6 @@
               <tr><td><code>Zuhause</code></td><td><span class="chip">📍 Zuhause<i class="x" data-txt="skip">✕</i></span></td><td>Fotos, die an einem benannten Ort entstanden sind (Karten an). Siehe „Orte und Karten“.</td></tr>
             </tbody>
           </table>
-        </div>
-        <div class="shots">
-          <figure>
-            <img src="assets/de/search-suggestions.jpg" alt="" loading="lazy">
-            <figcaption>Vorschläge beim Tippen.</figcaption>
-          </figure>
           <figure>
             <img src="assets/de/multitag-search.jpg" alt="" loading="lazy">
             <figcaption>Suche mit zwei Chips: eine Person und ein Tag.</figcaption>
@@ -657,12 +663,37 @@
         </div>
       </div>
       <div class="topic">
-        <div class="txt">
+        <div class="txt wide">
           <h3>Typ: Fotos, Videos, Live Photos, Screenshots</h3>
-          <p><b>Typ</b> bietet <b>Fotos</b> (Standbilder, die weder Screenshots noch Live Photos sind), <b>Videos</b>, <b>Live Photos</b> und <b>Screenshots</b>; hake beliebige an, ohne Haken wird alles gezeigt. Jedes Bild gehört zu genau einem der vier, Fotos und Live Photos überschneiden sich also nie: Hake beide an, um alle deine Fotos zu sehen.</p>
-          <p>Was du anhakst, erscheint auch als Chip mit dem Symbol des Typs (vier Quadrate, wenn mehrere angehakt sind); sein × hebt den Filter auf, ebenso <b>Alle entfernen</b>. Um Screenshots aus der Zeitleiste zu nehmen, hake Fotos, Videos und Live Photos an, aber nicht Screenshots; um nur Screenshots zu sehen, hake nur <b>Screenshots</b> an.</p>
-          <h4>Wenn shoebox falsch rät</h4>
-          <p>Shoebox erkennt einen Screenshot an der Datei (ein PNG ohne Kameradaten, ein Name wie <i>Screenshot</i> oder <i>Bildschirmfoto</i>, die Größe eines Handy- oder Computerbildschirms) und am Bild selbst (große einfarbige Flächen). Es kann sich in beide Richtungen irren: Im Info-Fenster eines Fotos ist <b>Screenshot</b> ein Auswahlfeld, das mit der Schätzung von Shoebox beginnt; wähle <i>Ja</i> oder <i>Nein</i> zum Korrigieren, das Rückgängig-Symbol rechts in der Zeile (Tooltip <i>Zurück zu automatisch</i>) kehrt zur Schätzung zurück. Deine Wahl wird in der Bibliothek gemerkt; die Fotodatei wird nie verändert.</p>
+          <p><b>Typ</b> grenzt die Zeitleiste auf eine Art von Bildern ein. Hake beliebige an; ohne Haken wird alles gezeigt.</p>
+          <div class="typegrid">
+            <div>
+              <b>Fotos</b>
+              <span>Standbilder, die weder Screenshots noch Live Photos sind.</span>
+            </div>
+            <div>
+              <b>Videos</b>
+              <span>Eigenständige Videos.</span>
+            </div>
+            <div>
+              <b>Live Photos</b>
+              <span>Fotos mit einem kurzen Clip.</span>
+            </div>
+            <div>
+              <b>Screenshots</b>
+              <span>Bilder von einem Handy- oder Computerbildschirm.</span>
+            </div>
+          </div>
+          <p>Jedes Bild gehört zu genau einem der vier, Fotos und Live Photos überschneiden sich also nie: Hake beide an, um alle deine Fotos zu sehen.</p>
+          <div class="twocol">
+            <div>
+              <p>Was du anhakst, erscheint auch als Chip mit dem Symbol des Typs (vier Quadrate, wenn mehrere angehakt sind); sein × hebt den Filter auf, ebenso <b>Alle entfernen</b>. Um Screenshots aus der Zeitleiste zu nehmen, hake Fotos, Videos und Live Photos an, aber nicht Screenshots; um nur Screenshots zu sehen, hake nur <b>Screenshots</b> an.</p>
+            </div>
+            <div>
+              <h4>Wenn shoebox falsch rät</h4>
+              <p>Shoebox erkennt einen Screenshot an der Datei (ein PNG ohne Kameradaten, ein Name wie <i>Screenshot</i> oder <i>Bildschirmfoto</i>, die Größe eines Handy- oder Computerbildschirms) und am Bild selbst (große einfarbige Flächen). Es kann sich in beide Richtungen irren: Im Info-Fenster eines Fotos ist <b>Screenshot</b> ein Auswahlfeld, das mit der Schätzung von Shoebox beginnt; wähle <i>Ja</i> oder <i>Nein</i> zum Korrigieren, das Rückgängig-Symbol rechts in der Zeile (Tooltip <i>Zurück zu automatisch</i>) kehrt zur Schätzung zurück. Deine Wahl wird in der Bibliothek gemerkt; die Fotodatei wird nie verändert.</p>
+            </div>
+          </div>
         </div>
       </div>
       <div class="topic has-shots">
@@ -696,7 +727,7 @@
           </figure>
         </div>
       </div>
-      <div class="topic">
+      <div class="topic two">
         <div class="txt">
           <h3>Sammeln: ein Schnell-Tag</h3>
           <p><b>Sammeln</b> ist ein Schnell-Tag, um Fotos für etwas zusammenzutragen: eine Druckbestellung, ein Album in InDesign, ein Video zum Geburtstag. Unter <b>Einstellungen → Sammlung</b> trägst du den Namen dieses Tags ein, zum Beispiel <i>druck-maerz</i>.</p>
@@ -975,7 +1006,7 @@
           </div>
         </li>
         <li>
-          <div class="topic">
+          <div class="topic two">
             <div class="txt">
               <h3>Fremde und Fehlfunde</h3>
               <p><b>Ignorieren</b> ist für Fremde und für Gesichter auf Postern, Bildschirmen und Bildern: Niemand muss sie benennen. <b>Kein Gesicht</b> (bei Haustieren <b>Kein Haustier</b>) ist für Fehlfunde, die gar kein Gesicht sind. shoebox findet nur Katzen und Hunde; ein Tier anderer Art (etwa eine Ziege) ist ein Fehlfund: <b>Kein Haustier</b>. Eine Katze oder ein Hund, der jemand anderem gehört, ist ein Fremder: <b>Ignorieren</b> (im Menü ⋯ steht <b>Ignorieren (Fremdes Haustier)</b>). Nichts wird gelöscht und kein Foto angefasst; shoebox merkt sich die Entscheidung nur in seiner eigenen Datenbank.</p>

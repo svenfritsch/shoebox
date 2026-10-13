@@ -201,6 +201,13 @@ const boxes = await p.evaluate((sels) => sels.map((sel) => {
 }), GLANCE.map((g) => g[1]));
 writeFileSync(`${out}/ui-overview.json`, JSON.stringify({ width: 1280, height: 860, names: GLANCE.map((g) => g[0]), boxes }, null, 1));
 
+// Finding your way: on another page the top bar names the page and the sidebar marks it.
+await p.setViewportSize({ width: 1280, height: 520 });
+await p.click('#nav-dups'); await wait(3000);
+await shot('navigation');
+await p.setViewportSize({ width: 1280, height: 860 });
+await p.goto(url); await p.waitForSelector('.cell'); await wait(1500);
+
 // Viewer with the info panel (a landscape; newest first: 3 July, 3 May, then March).
 await p.locator('.cell').nth(6).click(); await wait(800);
 await p.keyboard.press('i'); await wait(800);
