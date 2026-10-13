@@ -178,4 +178,4 @@ SHOEBOX_TEST_FACE=face.jpg python3 -m unittest -v recognizer/test_recognizer.py
 - [x] Interrupt a run (Ctrl-C) and start it again: it continues, but only
       after 2 minutes ("another `shoebox recognize` is running") and with a
       Python traceback. Fixed right after: Ctrl-C now ends the run cleanly.
-- [ ] `shoebox verify` after the run (was running at the time of writing).
+- [x] `shoebox verify` after the run (was running at the time of writing).

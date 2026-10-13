@@ -525,7 +525,7 @@ Done (see [phase4.md](phase4.md)):
   `SHOEBOX_RECOGNIZER` is set; CI runs it on Linux).
 
 Open:
-- [ ] `install.sh` and a run on the old Intel MacBook against the exFAT
+- [x] `install.sh` and a run on the old Intel MacBook against the exFAT
       drive (checklist in [phase4.md](phase4.md)).
 - [ ] Confirm the GitHub Actions run is green.
 
