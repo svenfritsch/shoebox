@@ -268,12 +268,17 @@ function renderDatalist() {
   });
 }
 
-// The list of connected drives is read again while the page is open (every few
+// The list of connected drives is read again while the page is open (every 15
 // seconds and when the window is used again): a drive that is plugged in or
 // mounted after the page opened, or while a command runs, must not keep the
-// photo app blocked as "not connected".
+// photo app blocked as "not connected". Reading it looks at every volume (and
+// its .shoebox folder), so only one read is under way at a time.
+var drivesReading = false;
 function loadDrives(quiet) {
+  if (drivesReading) return Promise.resolve();
+  drivesReading = true;
   return api('/api/drives').then(function (list) {
+    drivesReading = false;
     if (quiet === true && JSON.stringify(list) === JSON.stringify(drives)) return;
     drives = list;
     drivesLoaded = true;
@@ -291,7 +296,7 @@ function loadDrives(quiet) {
       ? tr('launcher.drives.has_lib')
       : tr('launcher.drives.none');
     renderChips();
-  }).catch(function (e) { if (quiet !== true) $('root-hint').textContent = String(e.message); });
+  }).catch(function (e) { drivesReading = false; if (quiet !== true) $('root-hint').textContent = String(e.message); });
 }
 
 function loadConfig() {
@@ -672,7 +677,7 @@ I18n.ready.then(function () {
   });
   sel.onchange = function () { I18n.setLang(sel.value); };
   loadConfig().then(function () { return loadDrives(); });
-  setInterval(function () { if (!document.hidden) loadDrives(true); }, 5000);
+  setInterval(function () { if (!document.hidden) loadDrives(true); }, 15000);
   window.addEventListener('focus', function () { loadDrives(true); });
   appState();
   poll();
