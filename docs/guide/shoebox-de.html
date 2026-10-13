@@ -202,7 +202,7 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-move"/></svg></div>
           <h3>Gemacht für den Datei-Manager</h3>
-          <p>Du ordnest im Finder oder Explorer, und ein schneller Scan übernimmt die Änderungen. Ordner zählen als Tags, und wenn du Fotos in shoebox verschiebst, wandern RAW-, Live-Photo- und Sidecar-Dateien mit.</p>
+          <p>Du ordnest im Finder oder Explorer, und ein schneller Scan übernimmt die Änderungen. Ordner zählen als Tags, und wenn du Fotos in shoebox verschiebst, wandern RAW-, Live-Photo- und Begleitdateien (Sidecar) mit.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-people"/></svg></div>
@@ -239,12 +239,12 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-move"/></svg></div>
           <h3>Verschieben & ordnen</h3>
-          <p>Fotos in einen Ordner verschieben (wird bei Bedarf angelegt). RAW-, Live-Photo- und Sidecar-Dateien wandern mit.</p>
+          <p>Fotos in einen Ordner verschieben (wird bei Bedarf angelegt). RAW-, Live-Photo- und Begleitdateien (Sidecar) wandern mit.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-tag"/></svg></div>
           <h3>Tags</h3>
-          <p>Eigene Tags für viele Fotos auf einmal. Auch Ordner zählen als Tags. Im Index gespeichert, nie in den Fotos.</p>
+          <p>Eigene Tags (Schlagwörter) für viele Fotos auf einmal. Auch Ordner zählen als Tags. Im Index gespeichert, nie in den Fotos. „Tag“ heißt auf Deutsch Schlagwort.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-move"/></svg></div>
@@ -343,7 +343,7 @@
       </ol>
       <div class="panel">
         <h3>Ein typischer Ablauf</h3>
-        <p>Laufwerk anstecken und <b>Start shoebox</b> doppelklicken. Die Zentrale merkt sich die Ordner, die du zuletzt angekreuzt hattest; ist eines dieser Laufwerke nicht angesteckt, ist sein Chip gestrichelt und <b>Foto-App starten</b> bleibt aus, mit dem Grund in Rot, bis du das Laufwerk ansteckst oder den Haken entfernst. <b>Scannen</b> (geht schnell, wenn sich wenig geändert hat) und die Foto-App öffnen. Für die Fotos eines Ereignisses den Ordner im Finder aufs Laufwerk kopieren (benannt wie <b>2025-08 Urlaub</b>) und erneut <b>scannen</b>: Waren einzelne Dateien schon auf dem Laufwerk, bietet die Zentrale an, die neuen Kopien zu löschen. Dann taggen und sortieren. Ab und zu die <b>Duplikate</b> ansehen und nach jedem Backup die <b>Backup-Prüfung</b> laufen lassen.</p>
+        <p>Laufwerk anstecken und <b>Start shoebox</b> doppelklicken. Die Zentrale merkt sich die Ordner, die du zuletzt angehakt hattest; ist eines dieser Laufwerke nicht angesteckt, ist sein Chip gestrichelt und <b>Foto-App starten</b> bleibt aus, mit dem Grund in Rot, bis du das Laufwerk ansteckst oder den Haken entfernst. <b>Scannen</b> (geht schnell, wenn sich wenig geändert hat) und die Foto-App öffnen. Für die Fotos eines Ereignisses den Ordner im Finder aufs Laufwerk kopieren (benannt wie <b>2025-08 Urlaub</b>) und erneut <b>scannen</b>: Waren einzelne Dateien schon auf dem Laufwerk, bietet die Zentrale an, die neuen Kopien zu löschen. Dann taggen und sortieren. Ab und zu die <b>Duplikate</b> ansehen und nach jedem Backup die <b>Backup-Prüfung</b> laufen lassen.</p>
       </div>
     </section>
 
@@ -365,8 +365,8 @@
             </li>
             <li>
               <h3>Erweiterungen, scannen, dann öffnen</h3>
-              <p>Nur wenn Personen, Haustiere oder die Wörter in deinen Fotos erkannt werden sollen: in Schritt 1, <b>Erweiterungen</b>, ankreuzen, was du willst (<b>Gesichter</b>, <b>Haustiere</b>, <b>Text</b> oder beliebig gemischt; jedes geht ohne die anderen), und <b>Ausgewählte Erweiterungen installieren</b> drücken. Die Zentrale listet, was geladen wird: das Programm Python und OpenCV (etwa 200 MB, einmal für alle Erweiterungen), Gesichter (etwa 40 MB), Haustiere (etwa 140 MB) und Text (etwa 100 MB). Internet nötig, einige Minuten. Erweiterungen lassen sich später ergänzen; ein Computer anderer Art (Intel oder Apple Silicon) braucht sie einmal auf diesem Computer. Python und OpenCV wird immer mit der ersten Erweiterung installiert (sein Kästchen ist angekreuzt und lässt sich nicht abwählen). Solange eine Erweiterung fehlt, bleibt ihr Erkennen-Knopf grau und sagt warum. Ein Klick auf die Überschrift <b>Erweiterungen</b> klappt den Schritt zu; er bleibt zu, sobald alles installiert ist. Dann Laufwerk hinzufügen (anklicken oder <code>/Volumes/MeinLaufwerk</code> tippen), <b>Scannen</b> drücken, dann <b>Foto-App starten</b>. Der erste Scan liest jede Datei einmal und dauert bei großen Laufwerken eine Weile; später werden nur Änderungen angesehen. Nach dem Scan listen die Reiter <b>Verschoben</b>, <b>Geändert</b>, <b>Fehlend</b> und <b>Schon auf dem Laufwerk</b> (jeweils mit Anzahl) genau auf, um welche Dateien es geht; bei neuen Dateien, die du schon hattest, steht die ältere Kopie gleich daneben.</p>
-              <p><b>Text</b> (die Wörter in deinen Fotos lesen: Dokumente, Bildschirmfotos, Straßenschilder, Speisekarten) geht so: in Schritt 1 <b>Text</b> ankreuzen, <b>Ausgewählte Erweiterungen installieren</b> drücken und warten, bis das Schild neben <b>Text</b> <b>installiert</b> sagt (einige Minuten, Internet nötig). Dann dein Laufwerk ankreuzen und in Schritt 3 <b>Text erkennen</b> drücken. Es liest deutsche und englische Buchstaben und lässt alles andere weg, und es liest nur: kein Foto wird verändert. Es ist langsam, etwa eine Sekunde pro Foto auf einem neueren Computer; eine Bibliothek mit 50.000 Fotos braucht also einen halben Tag, auf einem älteren Mac ein bis zwei Tage. Am besten abends starten. Du kannst <b>Abbrechen</b> drücken und später neu starten: Es macht dort weiter, wo es aufgehört hat, und liest zuerst Bildschirmfotos und Fotos ohne Kameradaten, weil dort die meisten Texte stehen. Die Wörter bleiben auf dem Laufwerk, im versteckten Ordner <code>.shoebox</code>, neben den Gesichtern. Wie du sie suchst, steht unter „Wörter in Fotos“. Wenn das Schild neben <b>Text</b> nicht auf <b>installiert</b> springt oder die Zentrale sagt, Text laufe auf diesem Computer nicht (bei einem sehr alten Mac möglich), ist alles andere, was du angekreuzt hast, trotzdem installiert: das Laufwerk an einen neueren Computer stecken, dort <b>Text</b> installieren und <b>Text erkennen</b> drücken. Die Wörter werden auf dem Laufwerk gespeichert, danach hat sie jeder Computer.</p>
+              <p>Nur wenn Personen, Haustiere oder die Wörter in deinen Fotos erkannt werden sollen: in Schritt 1, <b>Erweiterungen</b>, anhaken, was du willst (<b>Gesichter</b>, <b>Haustiere</b>, <b>Text</b> oder beliebig gemischt; jedes geht ohne die anderen), und <b>Ausgewählte Erweiterungen installieren</b> drücken. Die Zentrale listet, was geladen wird: das Programm Python und OpenCV (etwa 200 MB, einmal für alle Erweiterungen), Gesichter (etwa 40 MB), Haustiere (etwa 140 MB) und Text (etwa 100 MB). Internet nötig, einige Minuten. Erweiterungen lassen sich später ergänzen; ein Computer anderer Art (Intel oder Apple Silicon) braucht sie einmal auf diesem Computer. Python und OpenCV wird immer mit der ersten Erweiterung installiert (sein Kästchen ist angehakt und lässt sich nicht abwählen). Solange eine Erweiterung fehlt, bleibt ihr Erkennen-Knopf grau und sagt warum. Ein Klick auf die Überschrift <b>Erweiterungen</b> klappt den Schritt zu; er bleibt zu, sobald alles installiert ist. Dann Laufwerk hinzufügen (anklicken oder <code>/Volumes/MeinLaufwerk</code> tippen), <b>Scannen</b> drücken, dann <b>Foto-App starten</b>. Der erste Scan liest jede Datei einmal und dauert bei großen Laufwerken eine Weile; später werden nur Änderungen angesehen. Nach dem Scan listen die Reiter <b>Verschoben</b>, <b>Geändert</b>, <b>Fehlend</b> und <b>Schon auf dem Laufwerk</b> (jeweils mit Anzahl) genau auf, um welche Dateien es geht; bei neuen Dateien, die du schon hattest, steht die ältere Kopie gleich daneben.</p>
+              <p><b>Text</b> (die Wörter in deinen Fotos lesen: Dokumente, Screenshots, Straßenschilder, Speisekarten) geht so: in Schritt 1 <b>Text</b> anhaken, <b>Ausgewählte Erweiterungen installieren</b> drücken und warten, bis das Schild neben <b>Text</b> <b>installiert</b> sagt (einige Minuten, Internet nötig). Dann dein Laufwerk anhaken und in Schritt 3 <b>Text erkennen</b> drücken. Es liest deutsche und englische Buchstaben und lässt alles andere weg, und es liest nur: kein Foto wird verändert. Es ist langsam, etwa eine Sekunde pro Foto auf einem neueren Computer; eine Bibliothek mit 50.000 Fotos braucht also einen halben Tag, auf einem älteren Mac ein bis zwei Tage. Am besten abends starten. Du kannst <b>Abbrechen</b> drücken und später neu starten: Es macht dort weiter, wo es aufgehört hat, und liest zuerst Screenshots und Fotos ohne Kameradaten, weil dort die meisten Texte stehen. Die Wörter bleiben auf dem Laufwerk, im versteckten Ordner <code>.shoebox</code>, neben den Gesichtern. Wie du sie suchst, steht unter „Wörter in Fotos“. Wenn das Schild neben <b>Text</b> nicht auf <b>installiert</b> springt oder die Zentrale sagt, Text laufe auf diesem Computer nicht (bei einem sehr alten Mac möglich), ist alles andere, was du angehakt hast, trotzdem installiert: das Laufwerk an einen neueren Computer stecken, dort <b>Text</b> installieren und <b>Text erkennen</b> drücken. Die Wörter werden auf dem Laufwerk gespeichert, danach hat sie jeder Computer.</p>
             </li>
           </ol>
           <div class="panel">
@@ -383,9 +383,9 @@
                 <dt>Haustiere erkennen</dt>
                 <dd>Katzen und Hunde finden; sie erscheinen bei den Gesichtern. Braucht die Erweiterung „Haustiere“, nicht die für Gesichter.</dd>
                 <dt>Text erkennen</dt>
-                <dd>die Wörter in deinen Fotos lesen (Dokumente, Bildschirmfotos, Schilder, Speisekarten). Braucht die Erweiterung „Text“, nicht die für Gesichter. Es liest nur; kein Foto wird verändert. Langsam: man kann abbrechen, und es macht dort weiter, wo es aufgehört hat.</dd>
-                <dt>Erkennungs-Statistik</dt>
-                <dd>wie Gesichter, Haustiere und Text gelaufen sind: angesehene Fotos, Funde, benannte Personen, was noch zu tun ist. Liest nur.</dd>
+                <dd>die Wörter in deinen Fotos lesen (Dokumente, Screenshots, Schilder, Speisekarten). Braucht die Erweiterung „Text“, nicht die für Gesichter. Es liest nur; kein Foto wird verändert. Langsam: man kann abbrechen, und es macht dort weiter, wo es aufgehört hat.</dd>
+                <dt>Erkennungsstatistik</dt>
+                <dd>wie Gesichts-, Haustier- und Texterkennung gelaufen sind: angesehene Fotos, Funde, benannte Personen, was noch zu tun ist. Liest nur.</dd>
                 <dt>Backup-Prüfung</dt>
                 <dd>ist der 2. Ordner eine vollständige Kopie des 1.?</dd>
             </dl>
@@ -495,7 +495,7 @@
           </div>
           <div>
             <h3>Verschieben</h3>
-            <p><b>Verschieben …</b> fragt nach einem Ordner. Neue Ordner werden angelegt, nichts wird überschrieben, RAW-, Live-Photo- und Sidecar-Dateien wandern mit. Die eigenen Tags der Fotos gehen immer mit. „Ordnertags behalten“ behält zusätzlich die Tags des alten Ordners als eigene Tags; Ordner-Tags folgen immer dem neuen Ordner. Ist ein Ordner nach dem Verschieben leer (nur das, was dein Computer dort selbst ablegt, etwa <code>.DS_Store</code> oder <code>Thumbs.db</code>, ist noch darin), entfernt shoebox diesen leeren Ordner und sagt dir, welcher es war. Ein Ordner, in dem noch etwas anderes liegt, auch ein Unterordner, bleibt.</p>
+            <p><b>Verschieben …</b> fragt nach einem Ordner. Neue Ordner werden angelegt, nichts wird überschrieben, RAW-, Live-Photo- und Begleitdateien (Sidecar) wandern mit. Die eigenen Tags der Fotos gehen immer mit. „Ordnertags behalten“ behält zusätzlich die Tags des alten Ordners als eigene Tags; Ordner-Tags folgen immer dem neuen Ordner. Ist ein Ordner nach dem Verschieben leer (nur das, was dein Computer dort selbst ablegt, etwa <code>.DS_Store</code> oder <code>Thumbs.db</code>, ist noch darin), entfernt shoebox diesen leeren Ordner und sagt dir, welcher es war. Ein Ordner, in dem noch etwas anderes liegt, auch ein Unterordner, bleibt.</p>
           </div>
           <div>
             <h3>Sammeln und exportieren</h3>
@@ -598,7 +598,7 @@
           </div>
           <div>
             <h3>Duplikate</h3>
-            <p><b>Duplikate</b> zeigt vier Arten: identisch, dasselbe Foto mit anderen Pixelmaßen oder anderem Format (eine kleinere oder weitergeschickte Version, oder ein HEIC und das daraus gemachte JPEG), Original und bearbeitet sowie Ähnliche. Hake <b>diese Kopie löschen</b> bei dem an, was weg soll; die beste Datei bleibt. shoebox hakt nur an, was sicher ist: identische Dateien und eine Version mit weniger Pixeln (ein HEIC und sein JPEG werden zusammen gezeigt, aber keins wird vorab angehakt). Zwei Dateien im gleichen Format mit gleichen Pixelmaßen, aber verschiedenen Bytes, etwa ein Kamera-JPEG und ein aus der RAW-Datei entwickeltes JPEG (oft benannt wie <i>IMG_1 2.jpg</i>), werden nie vorab angehakt: sie erscheinen unter Ähnliche, und du wählst, welche bleibt: <b>Dieses behalten</b> auf einer Karte hakt alle anderen Dateien der Gruppe mit einem Klick an (erst <b>In den Papierkorb</b> verschiebt etwas), und kleine Marken zeigen, welche Datei die <b>meisten Pixel</b> hat oder die <b>größte Datei</b> ist, und von jedem Duplikat bleibt immer mindestens eine Datei. Tags und Aufnahmedatum einer entfernten Kopie gehen auf die übrige über. War die entfernte Kopie das Letzte in ihrem Ordner, entfernt shoebox den leeren Ordner und sagt dir, welcher es war. Bei mehr als einem Laufwerk zeigt der Reiter <b>Über Laufwerke hinweg</b> (in <b>Alle Laufwerke</b> und unter <b>Laufwerke verwalten</b>) Fotos, die auf mehreren Laufwerken liegen: ein Bild, eine Zeile pro Kopie mit Name des Datenträgers und Ordner. Hake die Kopien an, die weg sollen, oder wähle ein Laufwerk und <b>Alle markieren</b>, um jede Kopie darauf anzukreuzen; die letzte Kopie eines Fotos lässt sich nie ankreuzen. <b>In den Papierkorb</b> fragt vorher nach und legt jede Kopie in den Papierkorb ihres eigenen Laufwerks.</p>
+            <p><b>Duplikate</b> zeigt vier Arten: identisch, dasselbe Foto mit anderen Pixelmaßen oder anderem Format (eine kleinere oder weitergeschickte Version, oder ein HEIC und das daraus gemachte JPEG), Original und bearbeitet sowie Ähnliche. Hake <b>diese Kopie löschen</b> bei dem an, was weg soll; die beste Datei bleibt. shoebox hakt nur an, was sicher ist: identische Dateien und eine Version mit weniger Pixeln (ein HEIC und sein JPEG werden zusammen gezeigt, aber keins wird vorab angehakt). Zwei Dateien im gleichen Format mit gleichen Pixelmaßen, aber verschiedenen Bytes, etwa ein Kamera-JPEG und ein aus der RAW-Datei entwickeltes JPEG (oft benannt wie <i>IMG_1 2.jpg</i>), werden nie vorab angehakt: sie erscheinen unter Ähnliche, und du wählst, welche bleibt: <b>Dieses behalten</b> auf einer Karte hakt alle anderen Dateien der Gruppe mit einem Klick an (erst <b>In den Papierkorb</b> verschiebt etwas), und kleine Marken zeigen, welche Datei die <b>meisten Pixel</b> hat oder die <b>größte Datei</b> ist, und von jedem Duplikat bleibt immer mindestens eine Datei. Tags und Aufnahmedatum einer entfernten Kopie gehen auf die übrige über. War die entfernte Kopie das Letzte in ihrem Ordner, entfernt shoebox den leeren Ordner und sagt dir, welcher es war. Bei mehr als einem Laufwerk zeigt der Reiter <b>Über Laufwerke hinweg</b> (in <b>Alle Laufwerke</b> und unter <b>Laufwerke verwalten</b>) Fotos, die auf mehreren Laufwerken liegen: ein Bild, eine Zeile pro Kopie mit Name des Datenträgers und Ordner. Hake die Kopien an, die weg sollen, oder wähle ein Laufwerk und <b>Alle markieren</b>, um jede Kopie darauf anzuhaken; die letzte Kopie eines Fotos lässt sich nie anhaken. <b>In den Papierkorb</b> fragt vorher nach und legt jede Kopie in den Papierkorb ihres eigenen Laufwerks.</p>
             <div class="subs">
               <h4>Vorauswählen</h4>
               <p><b>Vorauswählen</b> (oben rechts) hakt <b>diese Kopie löschen</b> nach einer Regel an und bringt die angehakten Gruppen nach oben, damit du genau siehst, was markiert ist. Entfernt wird erst, wenn du <b>In den Papierkorb</b> drückst und bestätigst. Jede Zeile zeigt, wie viele Dateien sie anhaken würde, und ihr Tooltip sagt, was sie tut; eine Zeile ohne Treffer wird nicht aufgeführt.</p>
@@ -655,11 +655,11 @@
         <div class="items">
           <div>
             <h3>Finden</h3>
-            <p>Die Erweiterungen einmal installieren: in der Zentrale in Schritt 1 <b>Erweiterungen</b> ankreuzen, was du brauchst (<b>Gesichter</b>, und <b>Haustiere</b> für Katzen und Hunde), und <b>Ausgewählte Erweiterungen installieren</b> drücken. Sie liegen im Ordner <code>recognizer</code> neben dem shoebox-Programm: auf dem Laufwerk, wenn shoebox dort liegt, sonst auf deinem Computer für alle Laufwerke. Dann in der Zentrale <b>Gesichter erkennen</b> (und <b>Haustiere erkennen</b>) ausführen. In der Seitenleiste erscheint der Bereich <b>Gesichter</b>.</p>
+            <p>Die Erweiterungen einmal installieren: in der Zentrale in Schritt 1 <b>Erweiterungen</b> anhaken, was du brauchst (<b>Gesichter</b>, und <b>Haustiere</b> für Katzen und Hunde), und <b>Ausgewählte Erweiterungen installieren</b> drücken. Sie liegen im Ordner <code>recognizer</code> neben dem shoebox-Programm: auf dem Laufwerk, wenn shoebox dort liegt, sonst auf deinem Computer für alle Laufwerke. Dann in der Zentrale <b>Gesichter erkennen</b> (und <b>Haustiere erkennen</b>) ausführen. In der Seitenleiste erscheint der Bereich <b>Gesichter</b>.</p>
           </div>
           <div>
             <h3>Benennen</h3>
-            <p>Unter <b>Unbenannt</b> zeigt shoebox Karten mit ähnlichen Gesichtern. Einmal einen Namen eintippen, und die ganze Karte ist benannt; später Vorschläge bestätigen (✓) oder ablehnen (✗). Die nächsten beiden Seiten zeigen jeden Schritt, mit Gruppen und den Knöpfen für Fremde und Fehlfunde.</p>
+            <p>Unter <b>Unbenannt</b> zeigt shoebox Karten mit ähnlichen Gesichtern. Einmal einen Namen eintippen, und die ganze Karte ist benannt; später Vorschläge bestätigen (✓) oder ablehnen (✗). Die nächsten beiden Seiten zeigen jeden Schritt, mit Gruppen und den Knöpfen für Fremde und Fehlerkennungen.</p>
           </div>
           <div>
             <h3>In der Ansicht</h3>
@@ -707,13 +707,13 @@
             <p>Den Namen einmal eintippen und <b>Benennen</b> drücken: Die ganze Karte ist benannt. Ein Klick ins Feld zeigt zuerst die zuletzt benannten Personen (<b>Zuletzt verwendet</b>) und die mit den meisten Fotos, dann alle nach Gruppe; beim Tippen erscheinen Personen, die es schon gibt (bei Tieren nur Katzen und Hunde, und umgekehrt); sonst <b>+ Neue Person</b> wählen (bei Tieren steht dort <b>+ Neue Katze</b>, <b>+ Neuer Hund</b> oder <b>+ Neues Tier</b>). Danach schlägt shoebox weitere Gesichter vor (<i>Sieht aus wie Mia</i>): mit ✓ bestätigen oder mit ✗ ablehnen.</p>
           </li>
           <li>
-            <h3>Fremde und Fehlfunde</h3>
-            <p><b>Ignorieren</b> ist für Fremde und für Gesichter auf Postern, Bildschirmen und Bildern: Niemand muss sie benennen. <b>Kein Gesicht</b> (bei Haustieren <b>Kein Haustier</b>) ist für Fehlfunde, die gar kein Gesicht sind. shoebox findet nur Katzen und Hunde; ein Tier anderer Art (etwa eine Ziege) ist ein Fehlfund: <b>Kein Haustier</b>. Eine Katze oder ein Hund, der jemand anderem gehört, ist ein Fremder: <b>Ignorieren</b> (im Menü ⋯ steht <b>Ignorieren (Fremdes Haustier)</b>). Nichts wird gelöscht und kein Foto angefasst; shoebox merkt sich die Entscheidung nur in seiner eigenen Datenbank.</p>
-            <p>Manchmal hält die Erkennung eine Katze für einen Hund oder umgekehrt, und dann werden nur Namen der falschen Art angeboten. Das Tier oder die Tiere ankreuzen (<b>Auswählen</b>) und <b>Ist eine Katze, kein Hund</b> (oder <b>Ist ein Hund, keine Katze</b>) drücken, oder denselben Eintrag unter <b>⋯</b> am Tier im Infofeld eines Fotos wählen. Das Tier behält die bisherigen Entscheidungen und ist ab dann in der Namensliste, am Symbol und in der Suche eine Katze.</p>
+            <h3>Fremde und Fehlerkennungen</h3>
+            <p><b>Ignorieren</b> ist für Fremde und für Gesichter auf Postern, Bildschirmen und Bildern: Niemand muss sie benennen. <b>Kein Gesicht</b> (bei Haustieren <b>Kein Haustier</b>) ist für Fehlerkennungen, die gar kein Gesicht sind. shoebox findet nur Katzen und Hunde; ein Tier anderer Art (etwa eine Ziege) ist ein Fehlfund: <b>Kein Haustier</b>. Eine Katze oder ein Hund, der jemand anderem gehört, ist ein Fremder: <b>Ignorieren</b> (im Menü ⋯ steht <b>Ignorieren (Fremdes Haustier)</b>). Nichts wird gelöscht und kein Foto angefasst; shoebox merkt sich die Entscheidung nur in seiner eigenen Datenbank.</p>
+            <p>Manchmal hält die Erkennung eine Katze für einen Hund oder umgekehrt, und dann werden nur Namen der falschen Art angeboten. Das Tier oder die Tiere anhaken (<b>Auswählen</b>) und <b>Ist eine Katze, kein Hund</b> (oder <b>Ist ein Hund, keine Katze</b>) drücken, oder denselben Eintrag unter <b>⋯</b> am Tier im Infofeld eines Fotos wählen. Das Tier behält die bisherigen Entscheidungen und ist ab dann in der Namensliste, am Symbol und in der Suche eine Katze.</p>
           </li>
           <li>
             <h3>Nur einige Gesichter einer Karte</h3>
-            <p><b>Auswählen</b> lässt dich die Gesichter selbst ankreuzen. Die Knöpfe gelten dann nur für diese: <b>2 benennen</b>, <b>2 ignorieren</b>, <b>2 kein Gesicht</b>. Praktisch, wenn eine Karte zwei Personen mischt. Solange es an ist, heißt der Knopf <b>Aufheben</b>; damit beendest du das Auswählen und hebst die Auswahl auf.</p>
+            <p><b>Auswählen</b> lässt dich die Gesichter selbst anhaken. Die Knöpfe gelten dann nur für diese: <b>2 benennen</b>, <b>2 ignorieren</b>, <b>2 kein Gesicht</b>. Praktisch, wenn eine Karte zwei Personen mischt. Solange es an ist, heißt der Knopf <b>Aufheben</b>; damit beendest du das Auswählen und hebst die Auswahl auf.</p>
           </li>
         </ol>
         </div>
@@ -724,7 +724,7 @@
           </figure>
           <figure>
             <img src="assets/de/faces-select.jpg" alt="" loading="lazy">
-            <figcaption>Auswählen: zwei Gesichter einer Karte angekreuzt.</figcaption>
+            <figcaption>Auswählen: zwei Gesichter einer Karte angehakt.</figcaption>
           </figure>
           <figure>
             <img src="assets/de/name-suggestions.jpg" alt="" loading="lazy">
@@ -736,13 +736,13 @@
 
     <section id="groups">
       <h2>Mehrere Gesichter in einem Foto, und Gruppen</h2>
-      <p class="sub">Gesichter in der Ansicht ankreuzen. Personen in Gruppen wie Familie, Freunde und Kollegen sortieren.</p>
+      <p class="sub">Gesichter in der Ansicht anhaken. Personen in Gruppen wie Familie, Freunde und Kollegen sortieren.</p>
       <div class="cols">
         <div>
         <div class="items">
           <div>
             <h3>In einem Foto</h3>
-            <p>Ein Foto und sein Infofeld (ⓘ) öffnen. Unter <b>Gesichter</b> hat jedes Gesicht sein Bild und einen Namen oder <b>+ Name</b>. Unter der Liste stehen drei kleine Symbolknöpfe (darauf zeigen zeigt den Namen): der Rahmen mit Auge (<b>Rahmen anzeigen</b>), das Kästchen (<b>Auswählen</b>, nur sichtbar, solange mindestens zwei Gesichter noch nicht bestätigt sind) und das Gesicht mit Plus (<b>Gesicht oder Haustier hinzufügen</b>). <b>Auswählen</b> macht die Liste zu einer Checkliste: mehrere Gesichter ankreuzen (<b>Alle ohne Namen</b> kreuzt jedes Gesicht an, das niemand benannt hat), dann <b>Ignorieren</b> oder <b>Kein Gesicht</b> für alle auf einmal. <b>Gesicht oder Haustier hinzufügen</b> zeichnet einen Rahmen um ein übersehenes Gesicht oder Tier. Zuerst sagen, was es ist, <b>Person</b>, <b>Katze</b> oder <b>Hund</b>, dann benennen: Die Liste zeigt nur Namen dieser Art (keine Personen, wenn du eine Katze benennst), und <b>+ Neue Person</b>, <b>+ Neue Katze</b> oder <b>+ Neuer Hund</b> legt eine neue an. Die Art eines selbst gezeichneten Tiers lässt sich später nicht ändern; den Rahmen löschen und neu zeichnen. Bei einem Tier, das die Erkennung gefunden hat, bietet <b>⋯</b> <b>Ist eine Katze, kein Hund</b> (oder umgekehrt) an, wenn sie es für das falsche gehalten hat. <b>Videos</b> werden nicht nach Gesichtern durchsucht; ihr Infofeld sagt das. Eine Person kannst du trotzdem verknüpfen: Derselbe Knopf <b>+ Gesicht oder Haustier hinzufügen</b> öffnet denselben Dialog (Person, Katze oder Hund, dann der Name); es gibt keinen Rahmen zu ziehen, den kleinen Rahmen setzt shoebox selbst, und auf dem Video wird nichts gezeichnet. Die Person oder das Haustier gehört zum ganzen Clip. Ihr Profilbild erscheint in der Liste, und das Video wird gefunden, wenn du die Zeitleiste nach dieser Person filterst.</p>
+            <p>Ein Foto und sein Infofeld (ⓘ) öffnen. Unter <b>Gesichter</b> hat jedes Gesicht sein Bild und einen Namen oder <b>+ Name</b>. Unter der Liste stehen drei kleine Symbolknöpfe (darauf zeigen zeigt den Namen): der Rahmen mit Auge (<b>Rahmen anzeigen</b>), das Kästchen (<b>Auswählen</b>, nur sichtbar, solange mindestens zwei Gesichter noch nicht bestätigt sind) und das Gesicht mit Plus (<b>Gesicht oder Haustier hinzufügen</b>). <b>Auswählen</b> macht die Liste zu einer Checkliste: mehrere Gesichter anhaken (<b>Alle ohne Namen</b> hakt jedes Gesicht an, das niemand benannt hat), dann <b>Ignorieren</b> oder <b>Kein Gesicht</b> für alle auf einmal. <b>Gesicht oder Haustier hinzufügen</b> zeichnet einen Rahmen um ein übersehenes Gesicht oder Tier. Zuerst sagen, was es ist, <b>Person</b>, <b>Katze</b> oder <b>Hund</b>, dann benennen: Die Liste zeigt nur Namen dieser Art (keine Personen, wenn du eine Katze benennst), und <b>+ Neue Person</b>, <b>+ Neue Katze</b> oder <b>+ Neuer Hund</b> legt eine neue an. Die Art eines selbst gezeichneten Tiers lässt sich später nicht ändern; den Rahmen löschen und neu zeichnen. Bei einem Tier, das die Erkennung gefunden hat, bietet <b>⋯</b> <b>Ist eine Katze, kein Hund</b> (oder umgekehrt) an, wenn sie es für das falsche gehalten hat. <b>Videos</b> werden nicht nach Gesichtern durchsucht; ihr Infofeld sagt das. Eine Person kannst du trotzdem verknüpfen: Derselbe Knopf <b>+ Gesicht oder Haustier hinzufügen</b> öffnet denselben Dialog (Person, Katze oder Hund, dann der Name); es gibt keinen Rahmen zu ziehen, den kleinen Rahmen setzt shoebox selbst, und auf dem Video wird nichts gezeichnet. Die Person oder das Haustier gehört zum ganzen Clip. Ihr Profilbild erscheint in der Liste, und das Video wird gefunden, wenn du die Zeitleiste nach dieser Person filterst.</p>
           </div>
           <div>
             <h3>Gruppen</h3>
@@ -761,7 +761,7 @@
         <div>
           <figure>
             <img src="assets/de/info-select.jpg" alt="" loading="lazy">
-            <figcaption>Zwei Passanten in einem Foto angekreuzt: 2 ignorieren oder 2 kein Gesicht.</figcaption>
+            <figcaption>Zwei Passanten in einem Foto angehakt: 2 ignorieren oder 2 kein Gesicht.</figcaption>
           </figure>
           <figure>
             <img src="assets/de/people-overview.jpg" alt="" loading="lazy">
@@ -813,12 +813,12 @@
 
     <section id="text">
       <h2>Wörter in Fotos</h2>
-      <p class="sub">Optional: Fotos über die Wörter finden, die darin stehen, etwa ein Brief, ein Bildschirmfoto oder ein Straßenschild. Braucht die Erweiterung „Text“.</p>
+      <p class="sub">Optional: Fotos über die Wörter finden, die darin stehen, etwa ein Brief, ein Screenshot oder ein Straßenschild. Braucht die Erweiterung „Text“.</p>
       <div class="cols">
         <div class="items">
           <div>
             <h3>Die Wörter lesen</h3>
-            <p>In der Zentrale in Schritt 1 <b>Text</b> ankreuzen, <b>Ausgewählte Erweiterungen installieren</b> drücken, dann dein Laufwerk wählen und <b>Text erkennen</b> drücken (siehe „In drei Schritten loslegen“). Es liest deutsche und englische Buchstaben, liest nur (kein Foto wird verändert) und braucht eine Weile: am besten abends starten. Es liest zuerst Bildschirmfotos und Fotos ohne Kameradaten, weil dort die meisten Texte stehen, und macht nach einem Abbruch dort weiter, wo es aufgehört hat. Nach einem Scan drückst du es noch einmal, um die neuen Fotos zu lesen. Die Statuszeile unten in der Foto-App sagt <b>Text: N noch zu lesen</b>, solange Fotos warten. <b>Erkennungs-Statistik</b> in der Zentrale zeigt, wie weit Gesichter, Haustiere und Text sind (im Terminal: <code>shoebox stats</code>).</p>
+            <p>In der Zentrale in Schritt 1 <b>Text</b> anhaken, <b>Ausgewählte Erweiterungen installieren</b> drücken, dann dein Laufwerk wählen und <b>Text erkennen</b> drücken (siehe „In drei Schritten loslegen“). Es liest deutsche und englische Buchstaben, liest nur (kein Foto wird verändert) und braucht eine Weile: am besten abends starten. Es liest zuerst Screenshots und Fotos ohne Kameradaten, weil dort die meisten Texte stehen, und macht nach einem Abbruch dort weiter, wo es aufgehört hat. Nach einem Scan drückst du es noch einmal, um die neuen Fotos zu lesen. Die Statuszeile unten in der Foto-App sagt <b>Text: N noch zu lesen</b>, solange Fotos warten. <b>Erkennungsstatistik</b> in der Zentrale zeigt, wie weit Gesichter, Haustiere und Text sind (im Terminal: <code>shoebox stats</code>).</p>
           </div>
           <div>
             <h3>Die Wörter suchen</h3>
@@ -931,7 +931,7 @@
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg></div>
           <h3>Bewacht</h3>
-          <p>Jeder Scan wird kontrolliert: Größe, Daten und ein vollständiger Hash davor und danach. Jeder Unterschied ist ein Fehler.</p>
+          <p>Jeder Scan wird kontrolliert: Größe, Daten und eine vollständige Prüfsumme (Hash) davor und danach. Jeder Unterschied ist ein Fehler.</p>
         </li>
         <li>
           <div class="ic-box"><svg class="ic" aria-hidden="true"><use href="#i-bolt"/></svg></div>
