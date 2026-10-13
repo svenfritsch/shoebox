@@ -608,6 +608,18 @@ Open:
 - [x] Backup verification, launchers, packaging (the former phase 7, see
       "Backups" above).
 
+Phase 6 is done and checked on the real hardware on macOS (list in
+[phase6.md](phase6.md)). Still open, kept here so they are not forgotten:
+- [ ] Windows: double-click, SmartScreen, `install.ps1`, packaging of
+      `shoebox-windows/` (reviewed, not run; there is no Windows CI job).
+- [ ] Linux: `Start shoebox.sh` and the file manager (the CI Linux job is off
+      until v1.0).
+- [ ] Moving files between drives, a decision "keep both" for identical copies
+      on different drives, and search counts in All drives that narrow with
+      the filter: being planned in its own session (phase 14 plan).
+- [ ] Phase 7: DINOv2 for pets (not in `fetch-models.sh`), a cat/dog choice
+      for drawn pets ([phase7.md](phase7.md)).
+
 ### Phase 9 details (text in photos)
 
 Planned, nothing built (updated 2026-10-10 after merging main: Control Panel add-ons, phase 11 screenshots). Goal: type "Rechnung", "Hauptstraße" or a licence
@@ -1659,11 +1671,11 @@ checked by the release job). Open:
 
 ## Next step
 
-Phase 5 (5a–5g) is done and checked on the real hardware; its iPad checks
-are in [ipad-checklist.md](ipad-checklist.md). Run the phase 0–4 hardware
-checklists on the old Intel MacBook and the iPad (phase 4: `recognizer/install.sh`
-and a `shoebox recognize` run on the drive). Next is phase 6 (launcher UI,
-multiple drives, backups, packaging; pets follow in phase 7).
+Phases 5, 6 (macOS) and 7 are done and checked on the real hardware. Open
+work is listed in "Phase 6 details" (Windows, Linux, moving between drives),
+and per phase in the real-hardware lists of phases 0–4 ([phase0.md](phase0.md)
+to [phase4.md](phase4.md)), 9 (text), 10 (places), 11 (screenshots) and 12
+(dates); the iPad checks are in [ipad-checklist.md](ipad-checklist.md).
 
 Pets (phase 7) are built on top of the launcher branch: install or update the
 recognizer (`recognizer/install.sh`; `fetch-models.sh` now also fetches
