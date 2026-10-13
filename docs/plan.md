@@ -421,7 +421,7 @@ Done:
 Open:
 - [ ] Run `shoebox probe` on the old Intel MacBook against real folders on
       the exFAT drive (checklist in [phase0.md](phase0.md)).
-- [ ] Confirm the GitHub Actions run is green.
+- [x] Confirm the GitHub Actions run is green (build and guide succeeded on main, 2026-10-13).
 - [x] Get a static Intel `ffmpeg` for the drive and test video posters.
 
 Known gaps: ORF/RW2 metadata may be unsupported by `nom-exif`; Motion
@@ -447,7 +447,7 @@ Done (see [phase1.md](phase1.md)):
 Open:
 - [x] Scan, rescan and verify on the old Intel MacBook against the exFAT
       drive (checklist in [phase1.md](phase1.md)).
-- [ ] Confirm the GitHub Actions run is green.
+- [x] Confirm the GitHub Actions run is green (build and guide succeeded on main, 2026-10-13).
 
 ### Phase 2 details
 
@@ -474,7 +474,7 @@ Done (see [phase2.md](phase2.md)):
 Open:
 - [x] Thumbnail pass and iPad browsing on the real hardware (checklist in
       [phase2.md](phase2.md)).
-- [ ] Confirm the GitHub Actions run is green.
+- [x] Confirm the GitHub Actions run is green (build and guide succeeded on main, 2026-10-13).
 
 ### Phase 3 details
 
@@ -501,7 +501,7 @@ Done (see [phase3.md](phase3.md)):
 Open:
 - [x] Moves and renames on the exFAT drive from the old Intel
       MacBook and the iPad (checklist in [phase3.md](phase3.md)).
-- [ ] Confirm the GitHub Actions run is green.
+- [x] Confirm the GitHub Actions run is green (build and guide succeeded on main, 2026-10-13).
 
 ### Phase 4 details
 
@@ -527,7 +527,7 @@ Done (see [phase4.md](phase4.md)):
 Open:
 - [x] `install.sh` and a run on the old Intel MacBook against the exFAT
       drive (checklist in [phase4.md](phase4.md)).
-- [ ] Confirm the GitHub Actions run is green.
+- [x] Confirm the GitHub Actions run is green (build and guide succeeded on main, 2026-10-13).
 
 ### Phase 5 details
 
@@ -1283,7 +1283,7 @@ Tests
 
 Open
 - [x] Check the new duplicates page on the real drive and the iPad (list in [phase5.md](phase5.md); the iPad part is in [ipad-checklist.md](ipad-checklist.md)).
-- [ ] Confirm the GitHub Actions run is green.
+- [x] Confirm the GitHub Actions run is green (build and guide succeeded on main, 2026-10-13).
 
 ### Phase 5f details (filter by file type)
 
@@ -1321,7 +1321,7 @@ separate extensions (MP4 vs MOV); typing ".mp4" keeps working as before.
 Open:
 - [ ] Check the drop-down on the real drive and the iPad (it opens on tap,
       closes on a tap outside, the button shows what is ticked).
-- [ ] Confirm the GitHub Actions run is green.
+- [x] Confirm the GitHub Actions run is green (build and guide succeeded on main, 2026-10-13).
 
 ## Build notes and pitfalls (learned in phases 0–4)
 
