@@ -1,6 +1,6 @@
 # Phase 6: launcher UI, multiple drives, backups, packaging
 
-Status: planned. Overview and checklist in [plan.md](plan.md).
+Status: built and checked on the real hardware on macOS; Windows and Linux checks and moving between drives are open (checklist at the end). Overview in [plan.md](plan.md).
 
 Phase 7 is pets (formerly phase 6). Fallback: if the multiple-drive part gets
 much bigger than planned, only that part moves to a phase 8; launcher and
@@ -249,9 +249,44 @@ builds them (plan.md: CI until v1.0).
 ## Checklist
 
 Done:
-- [x] Library id in all API routes (one library; several come with section 3)
+- [x] Library id in all API routes
+- [x] Launcher UI (now the Control Panel), multiple drives, backup verification: built and checked on the real hardware (below)
 
 Open:
-- [ ] Launcher UI (section 2): first slice built, platform checks and polish open
-- [~] Multiple drives (section 3): hub, offline, roles, cross-drive duplicates and people built; common timeline built; moving between drives open
-- [x] Backup verification (section 4); packaging of Linux and Windows builds waits for their CI
+- [ ] Windows: double-click, SmartScreen, `install.ps1`, `shoebox-windows` packaging (no Windows CI job yet; reviewed, not run)
+- [ ] Linux: `Start shoebox.sh` and the file manager (the CI Linux job is off until v1.0)
+- [ ] Moving files between drives, "keep both" for identical copies on different drives, search counts that narrow with the filter in All drives: phase 15 (planned), not built
+
+## Checked on real hardware (macOS, old Intel MacBook, exFAT drives)
+
+Since the first slice the launcher became the Control Panel (add-ons, result
+tabs, Forget missing, Delete the new copies, Manage drives cards, backup
+cleanup); these checks were done against that state.
+
+Control Panel
+- [x] `Start shoebox.command` opens the Control Panel; the guide's steps match.
+- [x] Add-ons install (Python/OpenCV runtime, Faces, Pets); Recognize buttons
+  are grey where an add-on is missing; the runtime row on another computer.
+- [x] Scan, Verify, Face stats, Recognize, Rotated faces, Recognize pets:
+  progress, result tabs (moved, changed, missing, already on the drive), "only
+  problems", Cancel and continue.
+- [x] Several folders: chips, check boxes, remembered list, buttons enabled by
+  the number ticked.
+- [x] Locking while the photo app runs; Recognize may run beside it.
+- [x] "Delete the new copies" after a scan; the older copy stays.
+- [x] "Forget missing" after a scan or verify.
+
+Multiple drives
+- [x] Drives in the sidebar; offline and replug without a restart.
+- [x] "All drives": common timeline, a person with the same name on both
+  drives, read-only photo panel with Show in Finder and the jump to the
+  photo's own drive.
+- [x] Backup roles and the 90 % suggestion on real data.
+- [x] Duplicates "On this drive" and "Across drives" (tick boxes, Mark all).
+
+Backups
+- [x] Backup check: lists, "show both", "backup of …" chip.
+- [x] "Also re-read the backup drive" (`--deep`).
+- [x] Removing a copy on the original and "Delete duplicates from backup as
+  well": the file goes to the backup's own trash, the original is unchanged.
+- [x] `shoebox verify` on both drives afterwards.

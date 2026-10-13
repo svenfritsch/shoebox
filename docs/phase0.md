@@ -40,12 +40,21 @@ Previews go to the system temp folder, never into the photo folder.
 
 ## Success criteria
 
-- [ ] Binary starts on the Intel Mac (no "unsupported macOS version", no missing library)
-- [ ] `filesystem: exfat` is detected
-- [ ] HEIC, JPEG and video: metadata and preview for (almost) every file
-- [ ] RAW: capture date found (first run on the real drive: Canon CR2 gave "malformed ifd entry ... Incomplete"; fixed in `media::read_tiff_raw_exif`, to be confirmed on the 'Angie wedding' folder: `RAW 3 3 3`)
-- [ ] `GUARD OK`
-- [ ] Hash throughput noted (sets expectations for the first full scan)
+- [x] Binary starts on the Intel Mac (no "unsupported macOS version", no missing library)
+- [x] `filesystem: exfat` is detected
+- [x] HEIC, JPEG and video: metadata and preview for (almost) every file
+- [ ] RAW: capture date found. **Fails on real files**: 3 Canon `.CR2`
+      (IMG_5850, IMG_5940, _MG_0255, Angie wedding) give "malformed ifd
+      entry: parse ifd entry header failed: Incomplete(Size(34024))", so no
+      metadata and no capture date (Metadata 0 of 3, Date found 0 of 3).
+      They are still indexed, hashed and checked; only the date falls back.
+      Fixed in code (`media::read_tiff_raw_exif`: the head of the file is
+      parsed in memory, nom-exif failed on an Exif IFD beyond its first
+      buffer); open: rerun the probe on this folder, it should show
+      `RAW 3 3 3`. `.CR2` files are hidden in
+      the photo app by design (plan.md, "RAW").
+- [x] `GUARD OK` (50 files, old Intel MacBook, exFAT, 2026-10-13): the probe records size, modified and created date and the full hash of every file it reads, reads them all, then records them again. `GUARD OK` means nothing differed; `FAILED` lists the files and what changed. This is the rule that originals are never touched, tested on your real folders.
+- [x] Hash throughput noted (722 MB/s on 117.8 MB, which is too small a sample to trust: the files were probably in the Mac's cache; the real speed shows in the first full scan): the "Hashing…" line prints the bytes read, the seconds and MB/s. Divide the library size by that speed to estimate the first full scan (for example 500 GB at 100 MB/s is about 1.5 hours). It shows whether the old Mac or the drive is the slow part.
 
 Send back the terminal output. The JSON report contains file paths and camera
 models, so only share it if you're fine with that.

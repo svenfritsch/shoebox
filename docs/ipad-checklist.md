@@ -77,6 +77,10 @@ own lists for the MacBook and the drive.
 - [ ] "Move to group…" and "Merge into…" from a person's ⋯ menu (drag and
       drop is for a mouse).
 - [ ] Search: two people from the suggestions, as chips.
+- [ ] No action needs hover: naming a card, ✓/✗ in the info panel, drawing a
+      face with a finger, "Move to group…" and the person's ⋯ menus all
+      work by touch alone (from the combined 5c-2/5c-3 list in
+      [phase5.md](phase5.md)).
 
 ## Pets (phase 7, [phase7.md](phase7.md))
 

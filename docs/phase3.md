@@ -140,8 +140,11 @@ full_hash, deleted_at)`. Older databases are migrated on open.
 
 ## Still to check on real hardware
 
-- [ ] Moves and case-only folder renames on the exFAT drive from the old
-      Intel MacBook: timestamps (modified and created) unchanged, whether
-      `renamex_np(RENAME_EXCL)` works on exFAT or the fallback is used.
-- [ ] Duplicates page on the full library: time of the first load.
-- [ ] Self-healing: move a folder in the Finder while browsing.
+- [x] Moves and case-only folder renames on the exFAT drive from the old
+      Intel MacBook: modified and created dates unchanged (checked). Which
+      of `renamex_np(RENAME_EXCL)` or the fallback exFAT uses was not
+      noted; nothing depends on it.
+- [x] Duplicates page on the full library: loads right away; it shows a
+      "Show more" button at the bottom.
+- [x] Self-healing: a folder moved in the Finder was moved in shoebox a few
+      seconds later, without a rescan.
