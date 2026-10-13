@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # Build the shoebox binary for one Rust target, with libheif and libde265 as
 # separate libraries copied next to it.
 #
@@ -19,8 +19,14 @@ DEPS=${DEPS_DIR:-$TARGET_DIR/deps}/$TARGET
 scripts/build-deps.sh "$TARGET" "$DEPS"
 
 # Windows (Git Bash): cargo and the linker want D:/... paths, not /d/...
+# There libheif-sys only knows vcpkg, so its build script is replaced by
+# telling cargo directly what to link (it declares `links = "heif"`).
+CARGO_CONFIG=()
 case "$TARGET" in
-    *-windows-msvc) DEPS=$(cygpath -m "$DEPS"); TARGET_DIR=$(cygpath -m "$TARGET_DIR") ;;
+    *-windows-msvc)
+        DEPS=$(cygpath -m "$DEPS"); TARGET_DIR=$(cygpath -m "$TARGET_DIR")
+        CARGO_CONFIG=(--config "target.$TARGET.heif.rustc-link-lib=[\"heif\"]"
+                      --config "target.$TARGET.heif.rustc-link-search=[\"native=$DEPS/lib\"]") ;;
 esac
 
 # Point libheif-sys straight at our libraries instead of asking pkg-config,
@@ -44,12 +50,12 @@ if [ "${2:-}" = test ]; then
     # cargo-nextest (if installed, as on CI) runs every test in its own process
     # and all test files at once; cargo test runs the files one after another.
     if cargo nextest --version >/dev/null 2>&1; then
-        cargo nextest run --manifest-path core/Cargo.toml --target "$TARGET" --no-fail-fast
+        cargo "${CARGO_CONFIG[@]}" nextest run --manifest-path core/Cargo.toml --target "$TARGET" --no-fail-fast
     else
-        cargo test --manifest-path core/Cargo.toml --target "$TARGET"
+        cargo "${CARGO_CONFIG[@]}" test --manifest-path core/Cargo.toml --target "$TARGET"
     fi
 else
-    cargo build --release --manifest-path core/Cargo.toml --target "$TARGET"
+    cargo "${CARGO_CONFIG[@]}" build --release --manifest-path core/Cargo.toml --target "$TARGET"
     # The program loads them from its own folder: real files, no symlinks
     # (exFAT), under the names it asks for.
     case "$TARGET" in
