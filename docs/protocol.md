@@ -106,7 +106,8 @@ it is an unknown task. `shoebox recognize --pets` starts it that way.
 → {"id": 44, "tasks": ["pets"], "image": "<base64 JPEG>"}
 ← {"id": 44, "width": 1600, "height": 1200,
    "pets": [{"species": "cat", "bbox": [x, y, w, h], "score": 0.91,
-                "emb": "<base64 little-endian f32 × dim>"}]}
+                "emb": "<base64 little-endian f32 × dim>"}],
+   "people": [[x, y, w, h]]}
 ```
 
 - The hello lists `"pets": {"model": "yolox-s-2022nov+ppresnet50-2022jan", "dim": 2048}`.
@@ -122,6 +123,11 @@ it is an unknown task. `shoebox recognize --pets` starts it that way.
   its mirror image, so a pet looking left matches itself looking right.
   `emb` is L2-normalised.
 - Boxes with a shorter side under 48 px are left out.
+- `people` comes with every `pets` reply: the boxes of the people the same
+  detector found (COCO class person, score ≥ 0.4), in pixels of the image
+  sent, no embeddings. The core uses them to tell a pet's face (a "face"
+  inside a pet and outside every person) from a person's. A worker that
+  sends none (older) is fine.
 - The embedder is the first of `dinov2-small`, `ppresnet50-2022jan` whose
   file is in the models folder (`SHOEBOX_PET_EMBEDDER` forces one). It
   runs on onnxruntime if that is installed, else on OpenCV's own runner
@@ -130,6 +136,42 @@ it is an unknown task. `shoebox recognize --pets` starts it that way.
   brightness, blur, crop and size changes, and different pets 0.50–0.68,
   so the core uses far stricter thresholds than for faces
   (`core/src/pets.rs`).
+
+### `text`: words in the picture
+
+An optional task (still protocol 2: a core that does not ask never sees it).
+The worker only loads the text models when it is started with `--text`;
+without the flag the hello has no `text` and a request for it is an unknown
+task. With the text models alone (no face models installed) the worker does
+text and says nothing of faces, like with `--pets` alone; `--no-faces` leaves the
+face models out even where they are installed (a run that only reads text starts
+faster that way).
+
+```json
+→ {"id": 46, "tasks": ["text"], "image": "<base64 JPEG>"}
+← {"id": 46, "width": 1600, "height": 1200,
+   "text": [{"bbox": [x, y, w, h], "score": 0.97, "text": "Rechnung Nr. 2024-0412"}]}
+```
+
+- The hello lists `"text": {"model": "ppocr-v4-ch-en", "dim": 0}`. `model` is
+  stored with every result, so a different model redoes the text, never mixes
+  it; `dim` is 0 (there is no embedding).
+- One entry per **line** of text, top to bottom, then left to right; `bbox`
+  is the axis-aligned box around the line in pixels of the image sent (tilted
+  text gets its enclosing box), clamped to the picture; `score` is the
+  recogniser's confidence (0 to 1).
+- The worker reports **every** line it read, including junk, symbols and
+  characters of other scripts: the **core** filters (confidence, size, only
+  German and English characters, `ß` for the `β` the model prints), so the
+  rules live in one place and a change needs no new run of the models.
+- Engine: PP-OCRv4 (detection, angle classifier, recognition) from the
+  `rapidocr-onnxruntime` package on onnxruntime. The three model files
+  (`ch_PP-OCRv4_det_infer.onnx`, `ch_PP-OCRv4_rec_infer.onnx`,
+  `ch_ppocr_mobile_v2.0_cls_infer.onnx`) are in the models folder (copied there
+  by `install.sh --text`); the package must be importable by the worker's
+  Python. Missing files or package end the worker with a message on stderr.
+- The model reads Latin text well but prints `ä ö ü` without their marks and
+  `ß` as `β` or `B` (`docs/plan.md`, phase 9, spike results).
 
 ### `embed-pets`: pets drawn by hand
 
@@ -186,8 +228,9 @@ exited 5 seconds later is killed.
    any executable that speaks this protocol (`shoebox-fake-recognizer` in
    tests).
 2. `recognizer/recognizer.py` next to the shoebox binary (the downloaded
-   folder), else in the library's `.shoebox/recognizer/` (also what an older
-   `.shoebox/bin/` layout means), run with the standalone Python in `recognizer/runtime/<platform>/bin/python3` if
+   folder); for a binary in the older `<drive>/.shoebox/bin/` layout also that
+   drive's `.shoebox/recognizer/`. Never the `.shoebox/` of another drive: a
+   drive from somebody else could bring a Python of its own. Run with the standalone Python in `recognizer/runtime/<platform>/bin/python3` if
    present, else `python3` from `PATH`.
 
 Without a worker, `shoebox recognize` reports that recognition is not

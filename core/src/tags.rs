@@ -143,7 +143,8 @@ fn tag_ref(conn: &Connection, id: i64) -> Result<TagRef> {
 }
 
 /// Give files an own tag. Unknown ids are skipped; files that have it
-/// already (as an own tag) count as unchanged.
+/// already (as an own tag) count as unchanged, but the tag still counts as
+/// used just now (`added_at`), so the tag fields offer it first.
 pub fn add(conn: &Connection, ids: &[i64], name: &str) -> Result<Changed> {
     let name = check_name(name)?;
     let tx = conn.unchecked_transaction()?;
@@ -155,6 +156,13 @@ pub fn add(conn: &Connection, ids: &[i64], name: &str) -> Result<Changed> {
         )?;
         for id in ids {
             files += insert.execute(params![id, tag])? as u64;
+        }
+        let mut used = tx.prepare(
+            "UPDATE file_tags SET added_at = ?3 WHERE file_id = ?1 AND tag_id = ?2 AND source = 'user'",
+        )?;
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64;
+        for id in ids {
+            used.execute(params![id, tag, now])?;
         }
     }
     let tag = tag_ref(&tx, tag)?;
@@ -269,6 +277,8 @@ pub struct UserData {
     pub view_turns: Vec<ViewTurn>,
     /// Screenshot decisions (phase 11), by content.
     pub shot_marks: Vec<ShotMark>,
+    /// Lines of recognized text the user hid from the search (phase 9).
+    pub text_hidden: Vec<TextHidden>,
     /// Groups, people and face decisions (version 2).
     #[serde(flatten)]
     pub people: crate::people::UserPeople,
@@ -314,6 +324,26 @@ pub struct ShotMark {
     pub quick_hash: String,
     pub is_shot: bool,
     pub files: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TextHidden {
+    pub quick_hash: String,
+    /// The folded text of the line (`text::index_form`).
+    pub norm: String,
+    pub files: Vec<String>,
+}
+
+fn text_hidden(conn: &Connection) -> Result<Vec<TextHidden>> {
+    let mut out: Vec<TextHidden> = conn
+        .prepare("SELECT key, norm FROM text_hidden ORDER BY key, norm")?
+        .query_map([], |r| Ok(TextHidden { quick_hash: r.get(0)?, norm: r.get(1)?, files: Vec::new() }))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut stmt = conn.prepare("SELECT path_nfc FROM files WHERE quick_hash = ?1 AND missing_since IS NULL ORDER BY path_nfc")?;
+    for h in &mut out {
+        h.files = stmt.query_map([&h.quick_hash], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+    }
+    Ok(out)
 }
 
 fn shot_marks(conn: &Connection) -> Result<Vec<ShotMark>> {
@@ -404,6 +434,7 @@ pub fn user_data(conn: &Connection) -> Result<UserData> {
         taken_overrides: taken_overrides(conn)?,
         view_turns: view_turns(conn)?,
         shot_marks: shot_marks(conn)?,
+        text_hidden: text_hidden(conn)?,
         people: crate::people::user_data(conn)?,
         geo: crate::geo::user_data(conn)?,
         dates: crate::dates::user_data(conn)?,

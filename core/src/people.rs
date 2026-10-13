@@ -462,9 +462,12 @@ pub struct FaceItem {
     pub person: Option<PersonRef>,
     /// Of a suggestion.
     pub similarity: Option<f32>,
-    /// A decision no detected face matches any more.
+    /// A decision of the user that no detected face matches (the recognizer
+    /// found nothing there, or its finds were deleted): shown from the box
+    /// and the name in `library.db`, but without face data, so not used to
+    /// compare faces.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
-    pub lost: bool,
+    pub kept: bool,
     /// People this face is not.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub rejected: Vec<i64>,
@@ -622,13 +625,13 @@ impl View {
             state,
             person,
             similarity,
-            lost: false,
+            kept: false,
             rejected: self.m.states[i].rejected.clone(),
         }
     }
 
-    /// A decision no detected face matches: a hand-drawn face, or a
-    /// detected face that is no longer found.
+    /// A decision no detected face matches: a hand-drawn face, or a face
+    /// the user confirmed whose detection is gone (`kept`).
     fn unmatched_item(&self, d: usize) -> FaceItem {
         let row = &self.m.decisions[d];
         let (file, kind, version) = self.file_fields(&row.key);
@@ -655,7 +658,7 @@ impl View {
             state: Some(row.decision.as_str()),
             person: self.person(row.person),
             similarity: None,
-            lost: !row.manual,
+            kept: !row.manual,
             rejected: Vec::new(),
         }
     }
@@ -679,21 +682,24 @@ pub struct FileFace {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct FileFaces {
-    /// Faces to show (detected ones and hand-drawn ones); "not a face" is
-    /// left out. `None` if the photo has not been looked at.
+    /// Faces to show: detected ones, hand-drawn ones and confirmed ones whose
+    /// detection is gone (`kept`); "not a face" is left out. `None` if the
+    /// photo has not been looked at and has none of the user's either.
     pub faces: Option<Vec<FileFace>>,
-    /// Decisions about faces that are no longer found.
-    pub lost: Vec<FaceItem>,
 }
 
-/// The faces of one content, for the viewer and the info panel.
-pub fn file_faces(conn: &Connection, key: &str) -> Result<FileFaces> {
-    let Some(found) = recognize::faces_of(conn, key)? else {
-        return Ok(FileFaces { faces: None, lost: Vec::new() });
-    };
+/// The faces of one content, for the viewer and the info panel. A `video` is
+/// never looked at for faces, so it counts as looked at with nothing found:
+/// only boxes drawn by hand (and the user's confirmed faces) show.
+pub fn file_faces(conn: &Connection, key: &str, video: bool) -> Result<FileFaces> {
+    let found = recognize::faces_of(conn, key)?;
+    let looked = found.is_some() || video;
     let v = View::load_for(conn, Some(key))?;
-    let landmarks: HashMap<[u64; 4], Vec<[f64; 2]>> =
-        found.into_iter().map(|f| ([f.x, f.y, f.w, f.h].map(f64::to_bits), f.landmarks)).collect();
+    let landmarks: HashMap<[u64; 4], Vec<[f64; 2]>> = found
+        .unwrap_or_default()
+        .into_iter()
+        .map(|f| ([f.x, f.y, f.w, f.h].map(f64::to_bits), f.landmarks))
+        .collect();
     let mut faces: Vec<FileFace> = (0..v.m.faces.len())
         .filter(|&i| v.m.decided(i).is_none_or(|d| d.decision != Decision::NotFace))
         .filter(|&i| !v.pet_faces.contains(&v.m.faces[i].id))
@@ -702,17 +708,14 @@ pub fn file_faces(conn: &Connection, key: &str) -> Result<FileFaces> {
             landmarks: landmarks.get(&v.m.faces[i].b.map(f64::to_bits)).cloned().unwrap_or_default(),
         })
         .collect();
-    let mut lost = Vec::new();
     for d in v.unmatched() {
         let item = v.unmatched_item(d);
-        if item.manual.is_some() {
+        if item.manual.is_some() || item.state == Some("confirmed") {
             faces.push(FileFace { item, landmarks: Vec::new() });
-        } else if item.state == Some("confirmed") {
-            lost.push(item);
         }
     }
     faces.sort_by(|a, b| a.item.x.total_cmp(&b.item.x));
-    Ok(FileFaces { faces: Some(faces), lost })
+    Ok(FileFaces { faces: (looked || !faces.is_empty()).then_some(faces) })
 }
 
 // ---------------------------------------------------------------- names
@@ -844,6 +847,10 @@ pub struct Person {
     /// Faces suggested for this person, and offered as "maybe".
     pub suggested: u64,
     pub maybe: u64,
+    /// When a face was last confirmed as this person (Unix seconds), for the
+    /// name fields to offer who was named last first.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_named: Option<i64>,
     /// `cat`, `dog` or `pet` when most of the person's confirmed faces are
     /// pets (a pet); absent for everyone else.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -896,6 +903,7 @@ pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
         photos: HashSet<String>,
         suggested: u64,
         maybe: u64,
+        last_named: Option<i64>,
         largest: Option<(f64, i64)>,
         drawn: Option<(f64, i64)>,
     }
@@ -904,6 +912,7 @@ pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
         if let (Decision::Confirmed, Some(p)) = (d.decision, d.person) {
             let c = counts.entry(p).or_default();
             c.faces += 1;
+            c.last_named = c.last_named.max(Some(d.at));
             if v.is_present(&d.key) {
                 c.photos.insert(d.key.clone());
                 if d.manual && c.drawn.is_none_or(|(w, _)| d.b[2] > w) {
@@ -968,6 +977,7 @@ pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
                 photos: c.photos.len() as u64,
                 suggested: c.suggested,
                 maybe: c.maybe,
+                last_named: c.last_named,
                 species: v.person_species.get(&p.id).cloned(),
                 cover: if chosen.is_none() && chosen_manual.is_some() { None } else { cover },
                 cover_manual: if chosen.is_none() && chosen_manual.is_some() {

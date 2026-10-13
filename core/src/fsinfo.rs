@@ -42,7 +42,47 @@ pub fn filesystem_type(path: &Path) -> Option<String> {
     Some(name.to_string())
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(windows)]
+pub fn filesystem_type(path: &Path) -> Option<String> {
+    use std::os::windows::ffi::OsStrExt;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetVolumePathNameW(path: *const u16, volume: *mut u16, len: u32) -> i32;
+        fn GetVolumeInformationW(
+            root: *const u16,
+            name: *mut u16,
+            name_len: u32,
+            serial: *mut u32,
+            max_component: *mut u32,
+            flags: *mut u32,
+            fs_name: *mut u16,
+            fs_name_len: u32,
+        ) -> i32;
+    }
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let mut volume = [0u16; 1024];
+    let mut fs_name = [0u16; 64];
+    // SAFETY: the inputs are NUL-terminated, the buffers are as long as
+    // stated, and the other out-parameters are optional (null).
+    let ok = unsafe {
+        GetVolumePathNameW(wide.as_ptr(), volume.as_mut_ptr(), volume.len() as u32) != 0
+            && GetVolumeInformationW(
+                volume.as_ptr(),
+                std::ptr::null_mut(),
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                fs_name.as_mut_ptr(),
+                fs_name.len() as u32,
+            ) != 0
+    };
+    let end = fs_name.iter().position(|&c| c == 0).unwrap_or(fs_name.len());
+    // "exFAT", "NTFS", "FAT32": lower case like the other systems.
+    ok.then(|| String::from_utf16_lossy(&fs_name[..end]).to_lowercase())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
 pub fn filesystem_type(_path: &Path) -> Option<String> {
     None
 }

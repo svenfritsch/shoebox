@@ -3,7 +3,15 @@
 # Needs ffmpeg, heif-enc and exiftool (all in docker/Dockerfile.dev).
 #
 #   scripts/make-fixtures.sh <dir>
+#
+# It empties <dir> first, so it runs only where nothing real can be in the
+# way: in CI, in the Docker dev container (docker/dev.sh) or in a Claude Code
+# cloud sandbox, never directly on a Mac or another real computer.
 set -eu
+if [ "${GITHUB_ACTIONS:-}" != true ] && [ ! -f /.dockerenv ] && [ "${CLAUDE_CODE_REMOTE:-}" != true ]; then
+    echo "make-fixtures.sh runs only in CI, in the dev container (docker/dev.sh) or in a cloud sandbox: it empties the folder it is given." >&2
+    exit 1
+fi
 OUT=${1:?usage: make-fixtures.sh <dir>}
 rm -rf "$OUT"
 EVENT="$OUT/2020-07 Urlaub Griechenland"

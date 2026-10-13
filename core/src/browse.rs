@@ -102,10 +102,11 @@ pub struct Snapshot {
     children: HashMap<i64, Vec<i64>>,
 }
 
-/// What the type filter offers. Photos are the stills that are not
-/// screenshots (a Live Photo's still included), Screenshots the stills that
-/// are, Videos only stand-alone videos (the motion part of a Live Photo is
-/// folded into its still, never listed), Live the stills that have one.
+/// What the type filter offers. The four never overlap, so every item is
+/// exactly one of them: Live the stills that have a clip (the clip itself is
+/// folded into its still, never listed), Photos the other stills that are not
+/// screenshots, Screenshots the other stills that are, Videos only stand-alone
+/// videos.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaType {
     Photo,
@@ -127,8 +128,8 @@ impl MediaType {
 
     pub fn matches(self, it: &Item) -> bool {
         match self {
-            MediaType::Photo => it.kind != Kind::Video && !it.shot,
-            MediaType::Screenshot => it.kind != Kind::Video && it.shot,
+            MediaType::Photo => it.kind != Kind::Video && it.live.is_none() && !it.shot,
+            MediaType::Screenshot => it.kind != Kind::Video && it.live.is_none() && it.shot,
             MediaType::Video => it.kind == Kind::Video,
             MediaType::Live => it.live.is_some(),
         }
@@ -141,6 +142,9 @@ pub struct Query {
     /// Every one of these tags (AND); a tag also matches the other spellings
     /// of its name (folder tags keep their folder's exact spelling).
     pub tags: Vec<i64>,
+    /// The tags above count only where the user added them by hand, not where
+    /// a folder name gives them ("manual tags only").
+    pub manual_tags: bool,
     pub text: Option<String>,
     /// Only photos with a confirmed face of every one of these people
     /// (AND, 5c-3).
@@ -150,6 +154,12 @@ pub struct Query {
     /// Only photos with a pet of every one of these species (AND): `cat`,
     /// `dog` or `pet` (any); named or not (phase 7).
     pub pets: Vec<String>,
+    /// Words read in the picture (phase 9, `text.rs`), repeated: every word of
+    /// every term must be found in the photo's lines of text.
+    pub in_text: Vec<String>,
+    /// Parts of the file name (not folders, tags or people): every one must
+    /// be in the name, ignoring case and accents.
+    pub names: Vec<String>,
     /// Only favorites (photos with a heart).
     pub fav: bool,
     /// Only photos taken inside this area of the map (phase 10) ...
@@ -161,6 +171,9 @@ pub struct Query {
     /// Only photos that need a date: no capture date in the file and no date
     /// of the user's.
     pub needs_date: bool,
+    /// Only these files (the comparison with the other drive of a backup
+    /// pair: `multi::only_here`).
+    pub ids: Option<std::sync::Arc<HashSet<i64>>>,
 }
 
 impl Snapshot {
@@ -360,7 +373,7 @@ impl Snapshot {
         let folders = q.folder.map(|f| self.subtree(f));
         let mut tagged: Option<HashSet<i64>> = None;
         for &tag in &q.tags {
-            let ids = file_ids_with_tag_name(conn, tag)?;
+            let ids = file_ids_with_tag_name(conn, tag, q.manual_tags)?;
             tagged = Some(match tagged {
                 Some(t) => t.intersection(&ids).copied().collect(),
                 None => ids,
@@ -459,6 +472,25 @@ impl Snapshot {
                 None => ids,
             });
         }
+        // The photos whose recognized text has every word (phase 9).
+        let in_text: Option<HashSet<i64>> = match crate::text::keys_matching(conn, &q.in_text)? {
+            None => None,
+            Some(keys) => {
+                let mut ids = HashSet::new();
+                if !keys.is_empty() {
+                    let mut stmt = conn.prepare("SELECT id, quick_hash FROM files WHERE missing_since IS NULL")?;
+                    let mut rows = stmt.query([])?;
+                    while let Some(r) = rows.next()? {
+                        if keys.contains(&r.get::<_, String>(1)?) {
+                            ids.insert(r.get::<_, i64>(0)?);
+                        }
+                    }
+                }
+                Some(ids)
+            }
+        };
+        // Parts of the file name, folded like the text so "IMG_62" finds "img_6620.jpg".
+        let name_parts: Vec<String> = q.names.iter().map(|n| crate::text::fold(n)).filter(|n| !n.is_empty()).collect();
         let mut pet: Option<HashSet<i64>> = None;
         for species in &q.pets {
             let ids = files_of_pets(species)?;
@@ -483,8 +515,16 @@ impl Snapshot {
             .filter(|it| pet.as_ref().is_none_or(|p| p.contains(&it.id)))
             .filter(|it| folders.as_ref().is_none_or(|f| f.contains(&it.folder_id)))
             .filter(|it| fav.as_ref().is_none_or(|f| f.contains(&it.id)))
+            .filter(|it| in_text.as_ref().is_none_or(|t| t.contains(&it.id)))
+            .filter(|it| {
+                name_parts.is_empty() || {
+                    let name = crate::text::fold(it.path_lower.rsplit('/').next().unwrap_or(&it.path_lower));
+                    name_parts.iter().all(|p| name.contains(p.as_str()))
+                }
+            })
             .filter(|it| located.as_ref().is_none_or(|l| l.contains(&it.id)))
             .filter(|it| tagged.as_ref().is_none_or(|t| t.contains(&it.id)))
+            .filter(|it| q.ids.as_ref().is_none_or(|ids| ids.contains(&it.id)))
             .filter(|it| !q.needs_date || matches!(it.date_source, DateSource::Folder | DateSource::Created | DateSource::Modified))
             .filter(|it| {
                 let (y, m, d) = it.date_parts();
@@ -512,12 +552,20 @@ pub struct Tag {
     pub name: String,
     pub count: u64,
     pub kind: TagKind,
+    /// How many of the photos were given the tag by hand (0 for a folder tag).
+    pub manual: u64,
+    /// When a photo was last given this own tag (Unix seconds); absent if
+    /// never (or only before this was recorded).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_used: Option<i64>,
 }
 
 /// Every tag with the number of present files carrying it, most used first.
 pub fn all_tags(conn: &Connection) -> Result<Vec<Tag>> {
     let mut stmt = conn.prepare(
-        "SELECT t.id, t.name, count(DISTINCT f.id) AS n, max(ft.source = 'folder'), max(ft.source = 'user') FROM tags t
+        "SELECT t.id, t.name, count(DISTINCT f.id) AS n, max(ft.source = 'folder'), max(ft.source = 'user'),
+                max(CASE WHEN ft.source = 'user' THEN ft.added_at END),
+                count(DISTINCT CASE WHEN ft.source = 'user' THEN f.id END) FROM tags t
          JOIN file_tags ft ON ft.tag_id = t.id
          JOIN files f ON f.id = ft.file_id AND f.missing_since IS NULL AND f.kind != 'raw'
          GROUP BY t.id ORDER BY n DESC, t.name",
@@ -529,7 +577,7 @@ pub fn all_tags(conn: &Connection) -> Result<Vec<Tag>> {
                 (false, true) => TagKind::Own,
                 _ => TagKind::Folder,
             };
-            Ok(Tag { id: r.get(0)?, name: r.get(1)?, count: r.get::<_, i64>(2)? as u64, kind })
+            Ok(Tag { id: r.get(0)?, name: r.get(1)?, count: r.get::<_, i64>(2)? as u64, kind, manual: r.get::<_, i64>(6)? as u64, last_used: r.get(5)? })
         })?
         .collect::<rusqlite::Result<_>>()?;
     Ok(tags)
@@ -563,19 +611,19 @@ pub fn tag_names(conn: &Connection, ids: &[i64]) -> Result<Vec<TagName>> {
 }
 
 /// Files with this tag or another spelling of its name.
-fn file_ids_with_tag_name(conn: &Connection, tag: i64) -> Result<HashSet<i64>> {
+fn file_ids_with_tag_name(conn: &Connection, tag: i64, manual_only: bool) -> Result<HashSet<i64>> {
     let mut stmt = conn.prepare(
         "SELECT DISTINCT ft.file_id FROM file_tags ft JOIN tags t ON t.id = ft.tag_id
-         WHERE t.fold = (SELECT fold FROM tags WHERE id = ?1)",
+         WHERE t.fold = (SELECT fold FROM tags WHERE id = ?1) AND (?2 = 0 OR ft.source = 'user')",
     )?;
-    let ids = stmt.query_map([tag], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+    let ids = stmt.query_map(rusqlite::params![tag, manual_only], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
     Ok(ids)
 }
 
 /// Tags of the given files with how many of them carry each, most used
 /// first (suggestions that narrow a search). Tags in `skip` are left out.
 pub fn tags_within(conn: &Connection, files: &HashSet<i64>, skip: &[i64]) -> Result<Vec<Tag>> {
-    let mut counts: HashMap<i64, (String, HashSet<i64>, bool, bool)> = HashMap::new();
+    let mut counts: HashMap<i64, (String, HashSet<i64>, bool, bool, HashSet<i64>)> = HashMap::new();
     {
         let mut stmt = conn.prepare("SELECT ft.file_id, t.id, t.name, ft.source FROM file_tags ft JOIN tags t ON t.id = ft.tag_id")?;
         let mut rows = stmt.query([])?;
@@ -585,20 +633,23 @@ pub fn tags_within(conn: &Connection, files: &HashSet<i64>, skip: &[i64]) -> Res
             if !files.contains(&file) || skip.contains(&tag) {
                 continue;
             }
-            let e = counts.entry(tag).or_insert_with(|| (String::new(), HashSet::new(), false, false));
+            let e = counts.entry(tag).or_insert_with(|| (String::new(), HashSet::new(), false, false, HashSet::new()));
             if e.0.is_empty() {
                 e.0 = r.get(2)?;
             }
             e.1.insert(file);
             match r.get_ref(3)?.as_str()? {
                 "folder" => e.2 = true,
-                _ => e.3 = true,
+                _ => {
+                    e.3 = true;
+                    e.4.insert(file);
+                }
             }
         }
     }
     let mut tags: Vec<Tag> = counts
         .into_iter()
-        .map(|(id, (name, files, folder, own))| Tag {
+        .map(|(id, (name, files, folder, own, manual))| Tag {
             id,
             name,
             count: files.len() as u64,
@@ -607,6 +658,8 @@ pub fn tags_within(conn: &Connection, files: &HashSet<i64>, skip: &[i64]) -> Res
                 (false, true) => TagKind::Own,
                 _ => TagKind::Folder,
             },
+            manual: manual.len() as u64,
+            last_used: None,
         })
         .collect();
     tags.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.name.cmp(&b.name)));

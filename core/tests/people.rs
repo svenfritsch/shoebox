@@ -36,6 +36,8 @@ fn options(lib: &Library) -> recognize::Options {
         retry_failed: false,
         rotated: false,
         pets: false,
+        text: false,
+        text_only: false,
         timeouts: recognize::Timeouts {
             start: Duration::from_secs(10),
             reply: Duration::from_secs(2),
@@ -393,20 +395,31 @@ fn groups_merge_and_split() {
     let named = ok(addr, &format!("/api/clusters/{cid}/name"), &body);
     let dora = named["person"]["id"].as_i64().unwrap();
     // The reply says what is left of the card: its faces changed, so it has
-    // a new generation; the old one is refused.
+    // a new generation; the old one is refused. Its number is where it sits
+    // in the list now (which may move: cards of the same size have no fixed
+    // order), so the reply's number is used from here on.
     let left = &named["cluster"];
-    assert_eq!((left["id"].as_i64(), left["size"].as_u64()), (Some(cid), Some(2)), "{named}");
+    assert_eq!(left["size"].as_u64(), Some(2), "{named}");
     assert_ne!(left["generation"], generation);
-    let stale = post(addr, &format!("/api/clusters/{cid}/ignore"), &json!({ "faces": [faces[2]], "generation": generation }));
+    let left_id = left["id"].as_i64().unwrap();
+    let stale = post(addr, &format!("/api/clusters/{left_id}/ignore"), &json!({ "faces": [faces[2]], "generation": generation }));
     assert_eq!(stale.status, 409);
-    let ignored = ok(addr, &format!("/api/clusters/{cid}/ignore"), &json!({ "faces": [faces[2]], "generation": left["generation"] }));
+    let ignored = ok(addr, &format!("/api/clusters/{left_id}/ignore"), &json!({ "faces": [faces[2]], "generation": left["generation"] }));
     assert_eq!(ignored["cluster"]["size"], 1);
-    // A face of another cluster is refused.
-    let anna_cluster = list["clusters"][1]["id"].as_i64().unwrap();
-    assert_eq!(post(addr, &format!("/api/clusters/{anna_cluster}/name"), &json!({ "name": "X", "faces": [faces[3]] })).status, 400);
-    let left = get(addr, &format!("/api/clusters/{cid}/faces")).json();
-    assert_eq!(left.as_array().unwrap().iter().map(|f| f["id"].as_i64().unwrap()).collect::<Vec<_>>(), [faces[3]]);
+    // Every change groups the faces again in the background, which may
+    // number the clusters anew: look once that is done (the app sends each
+    // cluster's generation, so an old number is refused, not mistaken).
     wait_for_clusters(addr);
+    let now = get(addr, "/api/clusters").json();
+    let has = |c: &Value, face: i64| c["faces"].as_array().unwrap().iter().any(|f| f["id"] == face);
+    let clusters = now["clusters"].as_array().unwrap();
+    let fourth = clusters.iter().find(|c| has(c, faces[3])).unwrap();
+    let left = get(addr, &format!("/api/clusters/{}/faces", fourth["id"])).json();
+    assert_eq!(left.as_array().unwrap().iter().map(|f| f["id"].as_i64().unwrap()).collect::<Vec<_>>(), [faces[3]]);
+    // A face of another cluster is refused.
+    let other = clusters.iter().find(|c| !has(c, faces[3])).unwrap();
+    let body = json!({ "name": "X", "faces": [faces[3]], "generation": other["generation"] });
+    assert_eq!(post(addr, &format!("/api/clusters/{}/name", other["id"]), &body).status, 400);
     // The fourth face is now suggested for Dora (identical to her faces).
     let rest = get(addr, "/api/clusters").json();
     assert_eq!(rest["unnamed"], 3);
@@ -536,18 +549,22 @@ fn decisions_survive_a_model_change_a_move_and_a_lost_recognition_db() {
     let addr = server.addr;
     check(addr);
 
-    // A box that moved a little still matches; one far off is kept as "no
-    // longer found".
+    // A box that moved a little still matches; one far off stays the user's
+    // confirmed face, shown from its box and name (`kept`) but not used for matching.
     let db = lib.db();
     db.execute("UPDATE face_decisions SET x = x + 0.05, y = y + 0.03 WHERE decision = 'confirmed'", []).unwrap();
     assert_eq!(faces_of(addr, &lib, "Anna/a1.png")[0]["person"]["id"], anna);
     db.execute("UPDATE face_decisions SET x = 0.0, y = 0.0, w = 0.1, h = 0.1 WHERE decision = 'confirmed'", []).unwrap();
     let info = get(addr, &format!("/api/files/{}", id_of(&lib, "Anna/a1.png"))).json();
-    assert!(info["faces"][0]["state"].is_null(), "{info}");
-    let lost = info["faces_lost"].as_array().unwrap();
-    assert_eq!((lost.len(), lost[0]["lost"].as_bool(), lost[0]["person"]["id"].as_i64()), (1, Some(true), Some(anna)));
+    let faces = info["faces"].as_array().unwrap();
+    assert_eq!(faces.len(), 2, "the detected face and the kept one: {info}");
+    assert!(info.get("faces_lost").is_none());
+    let detected = faces.iter().find(|f| f["kept"].is_null()).unwrap();
+    assert!(detected["state"].is_null(), "{info}");
+    let kept = faces.iter().find(|f| f["kept"] == true).unwrap();
+    assert_eq!((kept["state"].as_str(), kept["person"]["id"].as_i64()), (Some("confirmed"), Some(anna)));
     let confirmed = person_faces(addr, anna, "confirmed");
-    assert_eq!((confirmed.len(), confirmed[0]["lost"].as_bool()), (1, Some(true)));
+    assert_eq!((confirmed.len(), confirmed[0]["kept"].as_bool()), (1, Some(true)));
     assert_eq!(get(addr, &format!("/api/people/{anna}")).json()["faces"], 1);
     assert_eq!(lib.snapshot().len(), before_files);
     server.stop().unwrap();

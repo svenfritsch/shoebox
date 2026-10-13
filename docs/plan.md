@@ -28,14 +28,14 @@ progress. Update the status section when a phase moves.
 | Core | Rust, one static binary per platform: scanner, SQLite, web server, UI |
 | Recognition | Separate, optional Python worker (`recognizer`), JSON lines over stdin/stdout |
 | Thumbnails | **Not** written into EXIF of originals (would change hashes and mtimes). Stored as BLOBs in `.shoebox/thumbs.db` (exFAT's 128 KB clusters would waste ~5× space with one file per thumbnail) |
-| HEIC | libheif + libde265 built from source as static, decoder-only libs (`scripts/build-deps.sh`). LGPL: fine for personal use, check before distributing |
+| HEIC | libheif + libde265 built from source as shared, decoder-only libraries (`scripts/build-deps.sh`), the same on macOS, Linux and Windows so a drive gets the same previews and similarity hashes whichever computer scans it; shipped as separate files next to the program so they can be replaced (LGPL, see "Decoders per build") |
 | RAW | Indexed (hash, dates, duplicates, backup checks) but hidden in the UI; paired with JPEG/HEIC of the same stem and moved together |
-| Video | Yes. Metadata via `nom-exif`; poster frame via a static `ffmpeg` next to the binary or on `PATH`; playback streams the original (HTTP range requests), no transcoding |
+| Video | Yes. Metadata via `nom-exif`; playback streams the original (HTTP range requests), no transcoding. Poster frame: the system's video framework where there is one (AVFoundation on macOS, `avposter.rs`; Media Foundation on Windows planned), else an optional `ffmpeg` next to the binary or on `PATH`, else a frame the browser grabbed, re-encoded and stored (see "Decoders per build") |
 | Drive format | exFAT |
 | Scale | ~100,000 files, 150 GB today, up to 1 TB |
 | Repo | `core/` (Rust), `recognizer/` (Python), `scripts/`, `docker/`, `docs/` |
 | Dev environment | Docker for Linux builds/tests; native macOS builds with rustup; GitHub Actions for both |
-| CI until v1.0 | macOS only (PRs: arm64; main/tags: universal + Rosetta). Linux, incl. the real recognizer, runs only when started by hand; releases ship `shoebox-macos` plus `recognizer/` and the guide (`docs/guide/`: HTML and text, English and German, in the `guide/` folder of the archive) |
+| CI until v1.0 | macOS only: `test` and `build` side by side with cached dependencies (PRs: arm64; main/tags: universal + Rosetta), skipped for docs-only PRs. Linux, incl. the real recognizer, runs only when started by hand. The guide's screenshots and `.txt` copies are not in git: `guide.yml` makes them on Linux for UI/guide PRs (artifact `guide`) and for releases; releases ship `shoebox-macos` plus `recognizer/` and that guide (English and German, in the `guide/` folder of the archive) |
 
 ## Architecture
 
@@ -79,9 +79,12 @@ what is installed for the computer and for each ticked drive
 (`recognize::installed`, by looking for files, never by starting the worker),
 and the Control Panel greys out Recognize / Recognize lying down (need Faces)
 and Recognize pets (needs Pets) with the reason. Lookup order
-(`recognize::worker_dirs`): `recognizer/` next to the program, then the drive's
-`.shoebox/recognizer/` (made by `install.sh <drive>`; the older
-`.shoebox/bin/` layout lands here too); `find_worker_for` takes the first folder that has the
+(`recognize::worker_dirs`): only `recognizer/` next to the program, plus, for a
+program in the older `<drive>/.shoebox/bin/` layout, that same drive's
+`.shoebox/recognizer/`. Never the `.shoebox/` of a drive the program does not
+run from (security audit 2026-10: a drive from somebody else could bring a
+Python of its own, which would run as the user; `install.sh <drive>` and
+`install.ps1 -Root` were removed with it). `find_worker_for` takes the first folder that has the
 models the run needs and the Python for this computer. The models are the
 same everywhere; the runtime is per `<os>-<arch>` (`recognizer/runtime/`), so
 another kind of Mac shows "Python and OpenCV: required" and the add-ons "models found, needs Python for this computer", and installing
@@ -277,6 +280,34 @@ recognize` resumes), with progress in the status line (`status.finding_faces`
 exists), and skips it when no recognizer is installed or a `recognize` run is
 going.
 
+### Recognition housekeeping: one Stats button, "forget" for faces and pets (planned)
+
+Two gaps found while building phase 9. **Built** (`forget.rs`, `overview.rs`): the Control Panel button "Recognition stats" (job `recognition_stats`, `shoebox stats [--json]`), and in Settings "Faces found" and "Pets found" with "Delete automatic finds" and "Delete everything incl. names" (`POST /api/recognition/forget`). Decided: the user's decisions are kept by content and box in `library.db`; after "automatic finds" a confirmed face stays on its photo (box, name, avatar) and with its person, flagged `kept` and labelled "not used for matching" (it has no face data, so it is no reference for suggestions); the Unnamed list and the suggestions are empty until the photos are recognized again, and then the decisions take hold of the new faces. The text below is the original plan:
+
+- **Stats for every kind.** The Control Panel has one button, "Face stats"
+  (`faces_stats`), and it reports faces only. There is no way to see how the
+  pets, the turned-photo pass or the text pass went except `shoebox text stats`
+  in a terminal (text) and the Calibration pages in the photo app. Rethink it as
+  one **Recognition stats** button: one summary per drive with a line for each
+  kind that was run (faces and persons, pets, turned photos, text): photos
+  read of photos total, finds, how many are confirmed or named, errors, model
+  and version, and what is still to read. The CLI follows: `shoebox recognize
+  --stats` (or `shoebox stats`) prints the same, `--json` for scripts;
+  `shoebox faces stats` and `shoebox text stats` stay. Strings in EN and DE,
+  guide launcher task list and test in `core/tests/launcher.rs`.
+- **"Forget" for faces and pets.** Same use case as "Delete all recognized
+  text" (Settings → Recognized text): a person may want the automatic finds
+  gone from the drive before lending it, or to start again after changing the
+  model. It differs in one way: a face or pet carries work the user did (names,
+  confirmed and rejected faces, drawn boxes, groups), which cannot be read
+  again. So two buttons, in Settings: **Delete automatic finds** (the faces and
+  pets the recognizer found and nobody confirmed, named or drew; the
+  embeddings, the clusters and the looked-at marks go, so "Recognize" reads the
+  photos again) and, behind a second confirmation that names the count, **Delete
+  everything incl. names** (a full reset). Hidden by default, nothing touches a
+  photo. Needs a decision before building: whether "automatic only" keeps the
+  suggestions of confirmed people (it would: confirmed faces stay).
+
 ### Scanner (phase 1)
 
 - Skip: `._*`, `.DS_Store`, `.Spotlight-V100`, `.Trashes`, `.fseventsd`,
@@ -362,10 +393,12 @@ rot) and shows "last backup N days ago, M files new since".
 | 6 | Launcher UI (double-click start page), multiple drives, backup verification, packaging. Multi-drive can move to phase 8 if it gets much bigger than planned (see [phase6.md](phase6.md)) | **In progress**: library id, launcher (cancel, saved folders, start scripts) and the multi-drive core (hub, offline, backup roles, common timeline, cross-drive duplicates and people) built; backup verification (`shoebox backup`, launcher button, All drives page) built; add-ons (launcher step 1: install Faces / Pets into `recognizer/` next to the program, which is on the drive when shoebox was copied there; Recognize buttons grey where the add-on is missing; a phase 9 text add-on follows the same pattern); real-hardware checks and Linux/Windows packaging open |
 | 7 | Pets: cats and dogs found (`shoebox recognize --pets`, launcher button "Recognize pets"), named, grouped and searched like people, also by kind ("all cats", "Katze", "Hund"); pets the detector missed can be drawn by hand; Settings → Calibration with the Face check and the new Pet check | **Built except the real-hardware run and DINOv2** (see [phase7.md](phase7.md)) |
 | 8 | UI translation, German and English, JSON message files (design and steps in [phase8.md](phase8.md)) | **Built, check open**: loader, key test, launcher and the whole photo app; the real-hardware check, a native read-through of the German texts and the CI run are open |
-| 9 | Text in photos (OCR): documents, screenshots, street signs, shop fronts found by the words in them. A new task of the recognizer worker, results in `recognition.db` with an FTS5 index, a search term in the UI | **Planned** (design below, no code yet) |
+| 9 | Text in photos (OCR): documents, screenshots, street signs, shop fronts found by the words in them. A new task of the recognizer worker, results in `recognition.db` with an FTS5 index, a search term in the UI | **In progress** (branch `claude/phase9-text-search`): design and spike done (see "Phase 9 details"); built and tested on Linux: the worker task `text`, `install.sh --text` (and `install.ps1 -Text`, not run), the protocol text, the text pass in the core (`text.rs`, `recognition.db` v7, read order, `shoebox recognize --text` / `--text-only`), the Control Panel (Text add-on, "Recognize text" button) the guide (EN and DE), the FTS5 index (`recognition.db` v8) and the search terms `text:` and `name:` (chips, dropdown group, match strip, over all drives), the viewer button and foldable section with hide-a-line, the Text check page and limits, "Delete all recognized text", `shoebox text stats` and the status line; open: the edge-cut line rule (to verify on real photos), a run of the installer and the add-on on the old Intel Mac and on Windows, ignored words and tolerant matching (later) |
 | 10 | Locations: GPS positions from files, map in the photo info (Leaflet, OpenStreetMap, opt-in setting), Locations page with clustered pins, named places drawn on the map, positions set by hand (design in [phase10.md](phase10.md)) | **Built, check open**: scan reads GPS, schema v10, API, UI, guide; real-hardware check and the CI run are open |
 | 11 | Screenshots: a fourth entry in the Type drop-down, found from metadata and a pixel check (no new model); "Photos" then means stills that are not screenshots (design in [phase11.md](phase11.md)) | **Built with test pictures; threshold and real-hardware run open** (see [phase11.md](phase11.md)) |
 | 12 | Estimated capture date: a date of the user's own (year, month or day) for a photo, kept in `library.db` only, that wins over the file's date on the timeline; "Needs a date" worklist; search by date with the Date group and `date:` / `datum:` (design in [phase12.md](phase12.md)) | **Built except the real-hardware check**: core, info panel (pencil, dialog, EXIF row), "~", year-only group, selection with Undo, "Needs a date", date search (`date:` / `datum:`), guide in both languages |
+| 13 | Export: collect photos with a tag (Settings → Collection, bookmark button, shortcut C) or a selection and copy them into a new numbered folder (`001_IMG_3457.jpg`), optionally RAW partners and HEIC as JPEG, with a folder picker; re-export adds only what is new (design and mock-ups in [phase13.md](phase13.md)) | **Built, check open**: `export.rs`, local-only API, dialog with folder picker, collection button (C), settings, guide; real-hardware check (USB stick, Windows, macOS) open |
+| 14 | Backup comparison views: the backup check's lists get a "Show photos" button (Manage drives). "Only on backup" (on the backup) and "Only on original" (on the drive it copies) are filter chips on that drive's own timeline (`compare=backup|original`, worked out in `serve::forward` from the two indexes, offered in the search as "only on", "nur auf", "backup"); "different on the backup" opens the timeline of both drives of the pair in path order, so the two versions of a photo sit side by side, each with an Original or Backup badge (`/api/all/timeline?compare=different`). A chip a drive cannot show (a drive that is not half of a pair, All drives, nothing to show) is dropped with a note. Read only: nothing is written to either drive. Also: one drawn open-folder icon instead of the folder emoji; the backup card's progress bar had the header's `.bar` class and was drawn at the top of the window | **Done except the real-hardware run**; guide text updated, guide screenshots not regenerated yet |
 
 ### Phase 10: locations
 
@@ -424,7 +457,8 @@ Done (see [phase2.md](phase2.md)):
   multi-threaded pass in `shoebox scan` (`--no-thumbs` skips it) and on
   demand by the server. Scaled JPEG decoding, EXIF orientation, video
   posters via ffmpeg piped to stdout. Without ffmpeg (or when it fails) the
-  web UI grabs a video frame itself (canvas, session only, never stored).
+  web UI grabs a video frame itself (canvas); since "Decoders per build"
+  step 1 the server re-encodes and keeps it (`thumbs.source = 'browser'`).
 - Keyboard: arrow keys move the focus in the grid; closing the viewer
   focuses the cell of the last item seen. Space opens the focused item and
   closes the viewer again.
@@ -600,7 +634,7 @@ worker, guard tests) is reused.
 | Topic | Decision | Why / alternatives rejected |
 |---|---|---|
 | Where | A task `text` of `recognizer.py` (protocol 3, additive), loaded only with `--text`, like `--pets` | Reuses the supervised worker and the "optional, app works without it" rule. A second binary or an OCR crate in the core would add a dependency and break the split "ML in the optional worker, state in the core" |
-| Engine | **PP-OCR (PaddleOCR) detection + recognition ONNX models**, run by onnxruntime if installed, else OpenCV's own runner (`cv2.dnn`, which also has `TextDetectionModel_DB` / `TextRecognitionModel`), exactly the runtime rule of the pets | Runs on the old Intel Mac (macOS 12, OpenCV 4.10) and on Linux with the same code, good on scene text *and* documents, small (about 15–25 MB of models), no extra Python packages. Rejected: **Tesseract** (extra native lib and language data per OS, weak on street signs and photos), **Apple Vision** (macOS only, no Linux/Windows, two code paths), **EasyOCR / PaddlePaddle** (PyTorch or Paddle runtime, hundreds of MB, will not run on the old Mac), **a cloud API** (violates "local only") |
+| Engine | **PP-OCR (PaddleOCR) detection + recognition**, the PP-OCRv4 ONNX models that ship inside the pip package **`rapidocr-onnxruntime`** (Apache-2.0), run by **onnxruntime**. The worker's `text` task is a thin wrapper around it; the add-on installer (`install.sh --text`) installs the package into the shared runtime, with `--no-deps` plus its pure dependencies (`onnxruntime`, `pyclipper`, `shapely`, `pyyaml`, `six`, `tqdm`), so it does **not** add a second OpenCV next to the `opencv-python-headless` of the Faces add-on (two `cv2` packages break each other) | Same code as the spike, nothing to download or checksum separately (models are in the wheel, and the wheel's hash can be pinned in the installer), small, Apache-2.0. See "Fallbacks if the engine does not run on a computer" below for the old Intel Mac. Rejected: **Tesseract**, **Apple Vision**, **EasyOCR / PaddlePaddle**, **a cloud API** (reasons as before) |
 | Languages | Latin script with German and English first: a recognizer model whose dictionary has ä ö ü ß and accents (PaddleOCR's `latin` model), not the English-only OpenCV-zoo CRNN (36 characters, no umlauts). Model id stored with each result; adding a script later means a second model id and a redo, never a mix | **To verify in step 1:** the exact model file, its licence (Apache-2.0 expected), the ONNX export, and that OpenCV 4.10 loads it. If it does not, fall back to onnxruntime only for this task and say so in `install.sh` |
 | Which photos | Images only (not RAW, no video in v1; a video's poster frame could be added later). Skip a photo cheaply: the detector runs first at 960 px, and the recogniser only runs on the boxes it found. A photo with no box stores "looked, no text" and is never redone | Most family photos have no text; detection alone is far cheaper than recognition, so the first pass over 100k photos is dominated by detection |
 | Orientation | v1: upright text only, plus the sideways/upside-down case through the existing `--rotated` idea as an option later (`text --rotated`, reusing the same rotation plumbing as faces). EXIF orientation is already applied by the core | Keeps the first pass fast; a document photographed 90° off is a known gap, listed under Open |
@@ -737,6 +771,134 @@ the same hash-to-ids lookup), and is intersected with the other sets. It is
 evaluated only when a text chip is present; typing in the box never queries
 the text index (the suggestion row needs no lookup).
 
+#### Fallbacks if the engine does not run on a computer
+
+The old Intel MacBook (macOS 12) is the machine that decides. What was
+checked from the build session (Linux server; nothing was run on a Mac):
+
+| Question | Result |
+|---|---|
+| Does the package have wheels for macOS 12 Intel with the Python 3.12 that `install.sh` uses? | **Yes.** Resolving `rapidocr-onnxruntime` for `macosx_12_0_x86_64`, cp312, picks `onnxruntime 1.19.2` (a `macosx_11_0_universal2` wheel; 1.20 and later need macOS 13, so pip falls back to 1.19.2 by itself, no pin needed), `opencv-python 4.10.0.84` (`macosx_12_0_x86_64`), and wheels for `numpy`, `pillow`, `pyclipper`, `shapely` and `pyyaml` (`macosx_10_13_x86_64`) |
+| Can OpenCV's own runner (`cv2.dnn`) replace onnxruntime as the engine? | **Not on the old Mac.** With the same PP-OCRv4 files, the detector runs under OpenCV 4.10 (the version the old Mac is limited to), but the recogniser fails there at every input width (`Reshape ... srcTotal == dstTotal`); it runs under OpenCV 5.0. The plan's earlier "OpenCV runner as the second runtime" is therefore dropped for this model; it stays an option only on computers with a newer OpenCV |
+| Does it run on the old Mac for real? | **Unknown until tried on it.** The spike script (`recognizer/text_spike.py`) is the test: `pip install rapidocr-onnxruntime` and run it |
+
+The ladder, in order, with what the user sees at each step:
+
+1. **Normal:** `install.sh --text` installs the package and onnxruntime; the
+   Add-ons list shows **Text: installed**; **Recognize text** is available.
+2. **Install or import fails on this computer** (no wheel, a Python/onnxruntime
+   mismatch, a blocked download): `install.sh --text` stops with one plain
+   sentence and the Add-ons list shows **Text: not available on this computer**
+   with the reason, never a stack trace. The rest of the app, including
+   Faces and Pets, is untouched. Searching text that was read elsewhere works
+   as usual.
+3. **Read the text on another computer.** `recognition.db` lives on the
+   drive, so the text can be read by **any computer** where the add-on works
+   (a newer Mac, a PC, Linux): plug the drive in there, run **Recognize text**,
+   and the old Mac then searches and shows all of it. This is the supported
+   fallback and needs no extra code: it is how drives and caches already work
+   (`recognition.db` is keyed by content, not by computer), plus a line in the
+   guide.
+4. **A different, lighter model for the old Mac** (only if step 1 fails there
+   and reading elsewhere is not enough): an older PP-OCR generation with a
+   CRNN-style recogniser, which OpenCV 4.10 can run (the OpenCV model zoo's
+   own text recogniser is of that kind), so no onnxruntime is needed. It would
+   be a second, separately named model (the model id is stored, nothing is
+   mixed) and probably reads less well. The model files and checksums could not
+   be fetched from the build session (blocked), so this step is **not
+   verified**; it is evaluated on the Mac with the spike script only if needed.
+
+#### Text in the viewer, and keeping unwanted text out of the index
+
+Mock-ups with four of the owner's photos (a road sign, a shopping list, a
+package, a flyer opened from a text search) were made in a chat session and
+are **not** committed (they show private photos); the design they show:
+
+- **Top bar button (the switch):** a **Recognized text** button (document
+  scanner icon) sits in the viewer's top bar right next to the heart. It
+  exists **only on photos that have recognized text** (after the filters
+  below); on others there is no button and no section. Off, it is dimmed
+  (about half opacity); on, it is lit in the accent colour with a soft
+  background. Clicking it **switches two things together**: the text is
+  outlined on the photo (the same overlay as the face boxes) **and** the
+  panel's Recognized text section unfolds (the info panel opens if it was
+  closed). Clicking it again removes the outlines and folds the section.
+  Key `t` does the same (free in the current shortcut list; check on build).
+- **Section in the info panel:** a foldable row, **folded by default**:
+  `▸ Recognized text  27 ........ [Copy all]`: arrow, name, line count, and the
+  **Copy all** button at the right end of the header (copies all lines, one per
+  row). Clicking the row (arrow or name) opens or folds only the list; the
+  outlines on the photo stay as they are, so the list can be read without the
+  outlines and the outlines shown without the list. Unfolded, the list has a
+  **maximum height (about 300 px) and scrolls** when there are many lines. A
+  line: the text as read; hovering outlines its box on the photo and clicking a
+  box scrolls to its line.
+- **Opened from a text search:** when the viewer is opened from a `text:`
+  chip, the top-bar button is **on** and the section unfolded: the matching
+  words are marked in the list (yellow) and only their boxes are outlined,
+  thick and yellow, while the other lines stay quiet. Opened any other way,
+  the button is off and the section folded.
+- **Hide a line:** every line has a ✕ ("Not text I want"). A hidden line is
+  struck through (↺ brings it back) and **leaves the search index for that
+  photo**. It is the user's decision, so it lives in `library.db` like face
+  decisions (keyed by content and box, survives moves and re-reads, included
+  in the user data backup), never in the file; the recognition cache can be
+  deleted and rebuilt without losing it. A note under the list says how many
+  lines are hidden.
+- Only lines at or above the confidence and size limits below are stored, so
+  the list shows what the search can find; nothing is ever written to the photo.
+- The text is selectable in the panel; there is no selecting text on the
+  picture itself.
+
+**"Deutsche" on the shopping-list photo (a question from the owner: should
+such text be in the index?).** In the test the word was read (0.99) and, with
+the limits planned so far, **it would have been indexed**: it is part of an
+envelope that lies at the top edge of the photo. It is not small: its box is
+5.4 % of the picture height, as tall as the handwritten list words (4.6–5.7 %),
+so a size limit cannot drop it. What distinguishes it is that it is cut off by
+the edge and tilted, and that it is not what the photo is about. Measured box
+heights (percent of the photo's height, long edge 1600 px) of lines that are
+wanted: handwritten words 4.6–5.7, headings 3–7, body text 1.7–2.6, the tiny
+seal text on a package 1.1–1.5, a road sign's small print 0.6–1.2 (read at
+0.82–0.93, partly wrong). Decisions:
+
+1. **Minimum size, default 1.0 % of the photo's height**, adjustable on the
+   Text check page (slider with the lines near the limit shown as crops, like
+   the Pet check). It removes the unreliable smallest lines (the 0.6 % "inas"
+   of a small sign, specks and icons) and nothing in these ten photos that the
+   owner would want; going to 1.5 % would also drop the package's test-seal
+   print, which is why it is a setting.
+2. **Lines cut by the edge are dropped by default** when their box touches the
+   photo's border and their score is below 0.97, as partly visible neighbours
+   ("Deutsche" at the top edge) are rarely what a person searches for. To be
+   verified on build against the 12 photos (does it drop "Deutsche" and
+   nothing wanted?); if it also drops wanted text (a sign cut by the frame),
+   the rule is removed and only decision 3 stays.
+3. **Hide a line** in the viewer (above): the decision for everything the
+   rules cannot know. A hidden line is remembered, so one click settles "I do
+   not want this word to find this photo" for good.
+4. A word the owner never wants indexed anywhere (a brand name on every
+   package) can be **ignored globally** later: Settings, Recognized text, a
+   list of ignored words, applied at search time. Not in v1.
+
+**Only German and English characters are kept (decided after the first mock-ups
+showed two lines of CJK symbols from a flyer's icons).** The engine's models
+also read Chinese characters; the core filters them out before anything is
+stored: characters outside an allow-list are removed from a line; the list is
+the Basic Latin letters and digits, the German umlauts and ß (ÄÖÜäöüß), spaces
+and ordinary punctuation and symbols (`. , ; : ! ? ' " „ " " ‘ ’ « » ( ) [ ] / \ | @ # & % * + = ~ ^ _ - – — · •`
+and `€ § ° ² ³ µ $ £`). The model prints `ß` as **`β`** (a Greek beta, seen in a real run of the
+installed add-on) or as a capital `B`; the core maps `β` to `ß` before the filter
+(otherwise the filter would remove it and "Straße" would become "Strae"), and
+the capital-B repair of the index applies on top. A line left with **fewer than two letters or digits** is
+dropped, so "田" and "门田" disappear and "11:33" stays. Other accented
+Latin letters (é, ñ, ç) are not in the list and are removed from a line that
+has them ("FOR SOMIÉ" is kept as "FOR SOMI"; the spike showed such letters
+mostly come back without their accent anyway). One function in `text.rs`
+applies it to what the worker returns, with unit tests; the worker may also
+filter, but the core's rule is the one that counts. Widening the list later
+(French, Italian) is one line and a re-filter, no re-read.
+
 #### What it costs: space, search speed, reading time
 
 These are **estimates for planning, not measurements**; step 1 (the spike)
@@ -777,7 +939,7 @@ searches, because the text index is not touched unless a text chip is
 present. Across several drives the query runs per drive in parallel and the
 results are merged by the common timeline.
 
-*Reading time (the real cost).* OCR is heavier than faces. Detection runs on
+*Reading time (the real cost; the spike rounds below measured it and revised this paragraph upwards).* OCR is heavier than faces. Detection runs on
 every photo, recognition only on photos where the detector found text.
 Guesses: old Intel MacBook (OpenCV runner) about 0.5 s detection per photo
 plus ~1 s more for the 15 % with text, so 50,000 photos take **~8–10 hours**;
@@ -863,15 +1025,138 @@ a cancelled run continues with the best candidates.
 
      On the old Intel Mac `pip` may need an older onnxruntime that still has a
      macOS 12 x86_64 wheel; the script prints the versions it ran with.
-   - *First finding (test pictures made on Linux, not your photos):* the
-     models bundled with that package are the Chinese+English PP-OCRv4 ones.
-     They read Latin text well (0.95+ confidence on clean rendered text,
-     ~0.3–0.8 s per photo on a server CPU) but **drop the German marks**:
-     "Müller" came back as "Muller", "München" as "Munchen", and "Hauptstraße"
-     as "HauptstraBe". Folding handles ä/ö/ü (the index folds them anyway), but
-     ß becomes "B", so "strasse" would not find it. The Latin recogniser model
-     (step 2 of the decisions) is therefore needed, or ß needs a fix-up rule;
-     the spike on your photos shows how often it matters.
+   - *Results, round 1 (run in the chat session on a Linux server CPU, not
+     the old Mac; 5 real photos pasted by the owner: a party invitation, a
+     mountain-pass road sign with bikes, a museum wall label, two photos of a
+     projected video with subtitles and a web page, all containing text; plus
+     4 crops of the pass photo as stand-ins for "no text"; chat images may be
+     recompressed, so read the rates as a lower bound).* Engine: PP-OCRv4
+     (Chinese+English models from `rapidocr-onnxruntime`), longest edge 1600 px.
+     - **Words found: 21 of 23 (91 %)** at every threshold from 0.5 to 0.9,
+       and most lines score 0.93–0.99, so the threshold barely matters on
+       clear text; 0.7 is a safe default. The two misses: the decorative
+       script heading "Geburtstag" (read as "gelurtsta", 0.77) and a word
+       with ß (below). Ordinary script ("Ich freue mich sehr auf euch!") came
+       back nearly right; the handwriting-like display font did not.
+     - **German marks are dropped, as feared:** ä ö ü come back as a o u
+       ("MÖCHTE" → "MOCHTE", "spüren" → "spuren", "Besucher*innen" fine) and ß
+       as "B" ("ausschlieBlich"). Folding in the index makes ä/ö/ü harmless
+       (a search for "möchte" and "mochte" both find it). ß needs either the
+       Latin recogniser or a small repair: a capital B between two lower-case
+       letters inside a word is read as ß before folding ("ausschlieBlich" →
+       "ausschließlich" → "ausschliesslich"). Decision: try the Latin model
+       first (step 2 of the decisions), keep the repair rule as the fallback.
+     - **Word gaps are lost in wide, small or condensed type:**
+       "ASKTHESPIDERTODAYCLICKHERETOREQUESTACONSULTATION", "Arewehere?",
+       "BESONDERENTAG GERNE", "undPartnerkommen!". Two consequences, both now
+       decisions: (1) the **trigram index stays** (substring search finds
+       "spider" inside the glued line; a word tokenizer would not); (2) a
+       query of several words is split and each word must be found
+       (AND), never searched as one phrase: "check out" must still find
+       "checkout" or "check out" whichever way it was read.
+     - **Small text in a wide photo is lost at 1600 px:** the small road sign
+       "Struttura Territoriale Lombardia" (and an engraved "SVIZZERA" on the
+       stone) were not read in the whole photo, but the sign alone was read
+       with 0.9+ when cropped. Big text (the road signs, subtitles, labels)
+       is reliable. Not a v1 problem; a later option is a second pass on
+       crops of the regions the detector found at low confidence, or a
+       larger send size for photos the first pass rates as text-rich.
+     - **No false text on real texture:** gravel and a bike with sticker-covered
+       poles: 0 lines. (The other two "no-text" crops still contained a small
+       sign and graffiti and were read correctly, so they are not true
+       negatives; real no-text photos are still needed, see below.)
+     - **Speed (this server):** 0.8–2.6 s per photo on these text-heavy photos
+       (mean 1.5 s; the invitation with 25 lines took 2.6 s), 0.2–0.5 s for
+       crops without text. With the assumed 15 % text photos that is about
+       0.55 s per photo on average, so 50,000 photos take **about 8 hours on
+       this server**; the old Mac will be slower, unmeasured. The earlier
+       estimate (8–10 h old Mac, 1.5–2 h modern) looks **optimistic for the
+       old Mac**; keep the read order (screenshots and no-camera photos first)
+       and the partial-results behaviour, which matter more now.
+     - **Storage:** these text-heavy photos give 12 lines and ~240 characters
+       each at ≥ 0.7, about 2 KB per photo; if only 15 % of 50,000 photos look
+       like that, 7,500 × 2 KB is **~15 MB** of rows plus the index, in line
+       with the ~25 MB estimate above (all 50,000 like these would be ~110 MB).
+     - **Round 2 (5 more photos, same machine): a handwritten shopping list,
+       a flyer with chalk-style headings, a photo of a computer screen with
+       moiré, a book cover, a phone screenshot of a train app.** Words found
+       **32 of 36 (89 %)**; both rounds together **53 of 59 (90 %)** over 10
+       photos. Details that change the plan:
+       - Neat **handwriting works**: all four list words read at 0.90–0.99
+         (round 1 had written it off as "should not work"). Decorative
+         chalk/script headings partly fail ("Geben Sie einem Kind Halt" came
+         back as "Half", "Ihnen" as "Mhnen"); the body text of the same flyer
+         was read at 0.94–0.99.
+       - The **phone screenshot** was read perfectly (scores 0.95–1.00, 27
+         lines), the **moiré screen photo** and the **book cover** nearly so
+         (cover: all 7 words; the sideways publisher name on the spine was
+         not read, as expected without a rotated pass). Small print and
+         browser tab titles are read too.
+       - **ß again, now with a rule to test:** "Haunstetterstraße" came back
+         "HaunstetterstraBe", "Neusäß" "NeusaB", "Größe" "GroBe", "großen"
+         "groBen". The repair rule (a capital B directly after a lower-case
+         letter becomes ß before folding) would fix all of them. It breaks
+         "eBay" (→ "eßay"), so the index keeps **both** forms: the text as
+         read, folded, and the repaired text, folded; a search for either
+         "strasse" or "strabe" finds the line.
+       - **Icons become junk lines:** "X" (0.58), "口" (0.74), "田" (0.98),
+         "pun" (0.82), "O", "=" . The quality filter therefore cannot be the
+         score alone: **drop lines with fewer than two letters or digits**
+         ("11:33" stays), and lines that are one non-Latin symbol.
+       - **Speed:** 1.06–2.49 s per photo (mean 1.58 s), 10 photos 1.5 s on
+         average, all of them text-heavy; same conclusion as round 1.
+       - **Storage:** 18 lines and ~300 characters per photo, ~3 KB each; the
+         estimate holds (7,500 text photos ≈ 22 MB).
+       - A sixth photo (a tofu package) was pasted while the run was going and
+         has **not** been run: images pasted in the middle of a turn are not
+         saved as files, so only the 10 above are measured. By eye its big
+         print is plain and its small print (nutrition and test seals) is the
+         kind that was lost at 1600 px elsewhere.
+     - **Round 3, five photos with no text on purpose** (a cat on a blanket
+       with crochet, a restaurant terrace with a sea view, a forest path, a
+       jellyfish on sand, beach huts on dunes): **0 lines at every threshold,
+       0 of 5 photos with false text.** That is the result that matters most
+       for trust in the search: plants, sand, textured wool, fences and a
+       table setting produced nothing. (The beach huts have small door
+       numbers; they were not read, which is fine.) Five photos is a small
+       sample; a false line is still possible on signs-like textures, which
+       is why the filter below stays.
+     - **Speed on photos without text is slower than assumed:** 0.52–1.66 s,
+       median 0.70 s, mean 0.84 s (the first photo carried a one-time cost),
+       not the 0.2–0.5 s of the crops. Revised estimate on this server with
+       15 % text photos: 0.85 × 0.70 s + 0.15 × 1.5 s ≈ 0.82 s on average,
+       so **50,000 photos take about 11 hours here**, and more on the old
+       Mac (unmeasured). The earlier "8 hours" and "1.5–2 h on a modern
+       machine" are too low; treat **half a day on a good machine and one to
+       two days on the old Intel Mac** as the working assumption until it is
+       measured there. It stays a resumable background job, in the read order
+       above. Two cheap savings to try in the build, both measurable with the
+       same script: send 1280 px instead of 1600 px for the detection step
+       (the recogniser still gets the full-resolution crops), and run the
+       detector alone first on a small copy and skip the recogniser when it
+       finds no box (the recogniser, not the detector, is what the no-text
+       photos should not pay for; this is how the pass is already designed,
+       but the timing above is for the whole engine, so the detector-only
+       share is still to be split out).
+     - **Round 4, the two photos that were lost in the chat: a tofu package
+       and a monitor on a wall.** The package (colourful, curved print, small
+       seals) gave **15 of 16 words**: even the small test-seal text was read
+       ("sehr gut", "Ausgabe01/2025", "OKO-TEST", "360 g"), with a few letters
+       wrong ("Naturlond", "Naburland", "gerauchert", "14sehrg"). The one miss
+       is exactly such a wrong letter. Consequence: a search for "naturland"
+       finds the photo through the correctly read big logo, but a search for a
+       word read wrongly everywhere misses; **tolerant matching** (a line
+       counts when most of the query's trigrams are found, say 70 %) is a
+       cheap later improvement, not needed for v1. The monitor photo (wall
+       and noise, one tiny green label) gave the label **read correctly**
+       ("NTSC", "HD720P", 0.96 and 0.99), the model name on the bezel
+       ("B226W", 0.85) and **no false text on the wall or the noise**.
+     - **Totals so far:** 12 photos with text, **70 of 77 expected words
+       (91 %)**; 5 photos without text and one near-empty one, **no false
+       text**; speed 0.5–2.6 s per photo on this server; storage ~3 KB per
+       text-heavy photo.
+     - **Still open:** the old-Mac timing, a sideways document, a license
+       plate and a dark night photo. None of them changes the design.
    - *Where it runs:* on the old Intel MacBook (the case that decides whether
      the first run is bearable) and once on a modern machine; the same folder
      both times. The two `text_spike_report.txt` files are pasted back into
@@ -883,12 +1168,19 @@ a cancelled run continues with the best candidates.
      decide: accept a long first run (as for faces; the order of the pass
      already puts the likely text first) or skip photos the cheap detector
      scores low.
-2. **Protocol 3** ([protocol.md](protocol.md)): hello lists `text` with its
-   model id; request task `text`; reply key `text: [{bbox, score, text}]`.
-   Additive: a protocol 2 worker is refused with the usual "update the
-   recognizer" message, as in earlier bumps. The fake worker returns
+2. **Worker task and protocol** ([protocol.md](protocol.md)), **built**: hello lists
+   `text` with its model id (`dim` 0); request task `text`; reply key `text:
+   [{bbox, score, text}]`. **Still protocol 2**, additive like `pets`: a core
+   that does not ask never sees it, and a core that asks checks the hello (no
+   bump, so an old Faces worker keeps working). `recognizer.py --text`,
+   `install.sh --text` (installs rapidocr and onnxruntime into the shared runtime
+   and copies the three model files into `models/`, so "installed" is decided
+   from files), tests in `test_recognizer.py` (plumbing without models, and the
+   real worker when `rapidocr-onnxruntime` and the models are there); the
+   installer was run on Linux end to end and read a test letter. `install.ps1`
+   (Windows) is not done. The fake worker returns
    deterministic lines (derived from the file hash), so the core is testable
-   without Python.
+   without Python (open).
 3. **Core storage and pass** (`core/src/text.rs`): `recognition.db` v6,
    normalisation (one function, used for both index and query, with unit
    tests for ß, umlauts, NFD input), `shoebox recognize --text`, pruning of
@@ -993,11 +1285,19 @@ Decided: a **check box drop-down "Type"** next to the search box (option A),
 nothing else. No suggestions in the search box, no sidebar entries, no
 separate extensions (MP4 vs MOV); typing ".mp4" keeps working as before.
 
-- Entries: **Photos** (all stills, a Live Photo's still included),
-  **Videos** (stand-alone videos only: the clip of a Live Photo is folded into
-  its still and is never listed), **Live Photos** (the stills that have a
-  clip). Ticked types are OR; the filter is AND with folder, tags, people and
-  text. Nothing ticked means everything.
+- Entries: **Photos** (the stills that are neither screenshots nor Live
+  Photos), **Videos** (stand-alone videos only: the clip of a Live Photo is
+  folded into its still and is never listed), **Live Photos** (the stills that
+  have a clip), **Screenshots** (phase 11). The four never overlap: every item
+  is exactly one of them (`browse::MediaType`; until 2026-10 Photos included
+  the Live Photos). Ticked types are OR; the filter is AND with folder, tags,
+  people and text. Nothing ticked means everything.
+- The choice is also a chip in the search row (like the heart), with its own
+  drawn icon (camera, video camera, play circle, screenshot frame; four
+  squares for several); its ✕ and "Clear all" drop it. Every search with at
+  least one chip shows its count at the right of the chips ("48 photos · 3
+  videos", "No photos"), and the empty page adds "The search found no
+  matches."
 - **RAW gets no entry** (RAW stays hidden in the UI, see Decisions).
 - API: `type=photo|video|live` (repeatable) on the timeline, the tag and
   people suggestions and the common timeline `/api/all/timeline`; an unknown
@@ -1028,12 +1328,23 @@ Open:
   `build-deps.sh` uses bash arrays for CMake args; never unquote paths.
 - **No pkg-config for libheif.** Homebrew's libheif leaked into the link once.
   `scripts/build.sh` sets `SYSTEM_DEPS_LIBHEIF_NO_PKG_CONFIG` and points
-  `SEARCH_NATIVE`/`LIB`/`INCLUDE` at our static build; `build-deps.sh` gives
-  pkg-config an empty search path and disables CMake system paths.
-- **C++ runtime.** `core/build.rs` links `c++` on macOS and passes
-  `-lstdc++` as a trailing link arg on Linux (GNU ld is order-sensitive).
-- **x86_64 macOS** needs `libclang_rt.osx.a` for libde265's runtime AVX2
-  detection (`__builtin_cpu_supports`); `build.rs` locates it via clang.
+  `SEARCH_NATIVE`/`LIB`/`INCLUDE` at our build; `build-deps.sh` gives
+  pkg-config an empty search path and disables CMake system paths. CI fails
+  if the program links anything from `/opt` or `/usr/local`.
+- **libheif and libde265 are shared libraries next to the program** (LGPL).
+  The release binary's only rpath is `@executable_path` (`$ORIGIN` on Linux);
+  debug builds and tests also get the deps folder (`core/build.rs`, by
+  `PROFILE`), so no build path ships. libheif finds libde265 through its own
+  rpath (`@loader_path` / `$ORIGIN`: on Linux a program's RUNPATH does not
+  apply to its libraries' libraries). They bring their C++ and compiler
+  runtimes themselves, so `build.rs` no longer links `c++`/`stdc++` or
+  `libclang_rt.osx.a` (which x86_64 libde265 needs for
+  `__builtin_cpu_supports`; clang adds it when it links the dylib).
+- **Re-sign after install_name_tool.** CMake's install rewrites the dylibs'
+  rpath and install name, which breaks their ad-hoc signature; Apple Silicon
+  refuses to load them then. `build-deps.sh` signs them again (`codesign -s -`).
+- **Real files, no symlinks.** CMake installs `libheif.1.dylib` as a symlink;
+  `build.sh` copies the file itself (exFAT, and the archive is copied by hand).
 - **HEIC EXIF**: `nom-exif` misses EXIF in some HEIC layouts; we extract the
   EXIF block with libheif and parse only the TIFF payload with `nom-exif`.
 - **Truncated JPEGs decode "successfully"** (grey bottom); check the FF D9
@@ -1211,6 +1522,103 @@ trash. UI gating only: the trash API and the duplicates screens are unchanged.
 Real-hardware check: with the setting off there is no trash icon or button;
 tick it and both appear.
 
+## Decoders per build (HEIC, video posters, Windows)
+
+Decided after the dependency audit (October 2026). Goal: a drive scanned on a
+Mac, on Windows or on Linux gives the same result, with as little to install
+as possible.
+
+**HEIC: libheif + libde265 on all three builds.** ImageIO would remove them
+from the macOS build only; Linux and Windows need them anyway (Linux has no
+reliable system decoder, Windows decodes HEIC only with the Store add-ons
+"HEIF Image Extensions" and "HEVC Video Extensions", the latter paid unless
+the PC maker installed it). One decoder everywhere also keeps previews and
+`phash` the same whichever computer made them (both live on the drive and are
+reused). The LGPL asks that the user can swap in their own build of the
+libraries, not that shoebox works without them: ship them as separate files
+next to the program (`.dylib` / `.dll` / `.so`, copies, no symlinks), which
+closes the LGPL item under "Before giving shoebox to others".
+
+**Video posters, in this order; the first that gives a frame wins:**
+
+| | macOS | Windows | Linux |
+|---|---|---|---|
+| 1. System framework | AVFoundation (`objc2-av-foundation`): H.264, HEVC, ProRes in `.mov/.mp4/.m4v/.3gp` | Media Foundation (`windows` crate): H.264; HEVC only with the HEVC add-on | none |
+| 2. Optional `ffmpeg` | old camcorder formats (`.avi/.mkv/.mts/.mpg`) | HEVC without the add-on, old formats | everything |
+| 3. Browser frame, stored | whatever the viewing browser can play | same | same |
+
+ffmpeg has its own H.264 and HEVC decoders (software, LGPL part of
+libavcodec), so it needs no system add-on; its static builds are 80–100 MB and
+GPL, so it stays a download the user makes, never bundled. The guide says when
+it helps. Posters feed only the grid (no `phash`, no recognition), so it does
+not matter which step made one. Playing a video is the viewing browser's
+business, not the build's (Safari on the iPad plays HEVC whichever computer
+runs shoebox).
+
+**Stored browser frame (step 1 below).** `POST /api/files/{id}/poster` with a
+JPEG body (`image/jpeg`, at most 512 KiB): only a video, only while its
+content has no picture yet (none, or the reason it failed), only from a browser
+that is let in (this computer or a paired device; the write header as for every
+change). The bytes are never stored as sent: decoded with `image` (memory-safe,
+at most 2048 px a side), shrunk to `thumbs::EDGE` and encoded again, kept in
+`thumbs.db` with `source = 'browser'`. A scan with a poster maker at hand
+(ffmpeg today) replaces it; if that fails, the browser frame stays and the
+error is noted, so it is not tried on every scan. Worst case, a misbehaving
+paired device stores a wrong picture as one video's poster; nothing else reads
+it.
+
+**Windows build job (step 4).** The `windows` job in `build.yml` (started
+by hand, like Linux) builds and tests on `windows-latest` and uploads
+`shoebox-windows` (`shoebox.exe`, `heif.dll`, `libde265.dll`).
+1. [x] libheif and libde265 with MSVC (Visual Studio generator, from Git
+   Bash): DLLs with the C runtime linked in (`/MT`), and `shoebox.exe` with
+   `crt-static` (`.cargo/config.toml` at the repository root: cargo reads
+   config from where it is started), so no Visual C++ Redistributable is
+   needed. libheif-sys only knows vcpkg on MSVC; it declares
+   `links = "heif"`, so `build.sh` replaces its build script with
+   `--config target.<t>.heif.rustc-link-*`. Paths go through `cygpath -m`
+   (and GNU tar takes `D:/...` for a host: unpack from inside the folder).
+2. [x] `organize::rename_noreplace`: `MoveFileExW` without
+   `MOVEFILE_REPLACE_EXISTING` (atomic refusal, never a copy to another
+   drive); before it checked and then called `fs::rename`, which replaces on
+   Windows. Export's renames use it too, on every system.
+3. [x] `fsinfo::filesystem_type` for Windows (`GetVolumeInformationW`).
+   Also found by the tests: `db::backup` flushed `library.db.bak` through a
+   read-only handle, which Windows refuses (Access is denied).
+4. [ ] Cross-system check on a real drive: scanned on a Mac, no changed files
+   on Windows and the other way round (created and modified times on exFAT,
+   NFC/NFD, case). The CI job scans its own folder only.
+5. [ ] Run the `shoebox-windows` artifact on a real PC (Start shoebox.bat, a
+   HEIC, the recognizer's `install.ps1`, never run so far); then package
+   `shoebox-windows/` in the release (with `sources/`,
+   `third-party-licenses.py` for the Windows target) and update the guide
+   ("macOS today · Linux & Windows next").
+
+**Steps:**
+- [x] 1. Store the browser frame (all builds, no new dependency).
+- [x] 2. libheif and libde265 as separate library files on macOS and Linux
+      (`build-deps.sh` shared, `core/build.rs`, archive layout with
+      `sources/`, the launchers check for them and the macOS one removes
+      their quarantine mark too).
+- [x] 3. AVFoundation posters on macOS (`avposter.rs`: `AVAssetImageGenerator`
+      with the track's turn applied, at most `thumbs::EDGE`, drawn into an
+      sRGB bitmap; `media::video_poster_jpeg` tries it before ffmpeg). A
+      video it cannot read and no ffmpeg: the reason ends in `(no ffmpeg)`,
+      is stored (the browser frame fills in) and a scan that has ffmpeg tries
+      again.
+- [ ] 4. Windows build job (list above: built and tested in CI; real-PC
+      check, cross-system check and release packaging open).
+- [ ] 5. Media Foundation posters on Windows.
+- [x] ~~6. Audit leftover: `jpeg-decoder` without default features~~ —
+      dropped after measuring. Without rayon, jpeg-decoder falls back to a
+      worker that starts threads for every picture: a 12 MP JPEG decoded at
+      1/8 for a thumbnail took 17 ms instead of 13–16 ms, and with 8 decodes
+      at a time (as the scan runs them) 170–190 instead of 250–260 photos/s
+      (4 cores, October 2026). The 7 crates stay.
+
+Each step updates the guide (both languages), the README's ffmpeg section and,
+for 2 and 4, `THIRD-PARTY-LICENSES.txt`.
+
 ## Before giving shoebox to others
 
 The release archive (`shoebox-macos.tar.gz`) carries `LICENSE.txt` (all rights
@@ -1219,8 +1627,11 @@ minutes are needed and goes private when development is done) and
 `THIRD-PARTY-LICENSES.txt` (generated by `scripts/third-party-licenses.py`,
 checked by the release job). Open:
 
-- [ ] **LGPL: recipients must be able to replace libheif and libde265.**
-      Both are LGPL-3.0 and linked **statically** into the binary. The LGPL
+- [x] **LGPL: recipients must be able to replace libheif and libde265.**
+      Done: they ship as separate files next to the program (way 1 below),
+      with their unmodified sources in `sources/` of the archive and the
+      LGPL text in `THIRD-PARTY-LICENSES.txt`. Before, both were linked
+      **statically** into the binary. The LGPL
       does not force shoebox open, but its section 4(d) wants whoever receives
       the program to be able to use a modified version of those libraries.
       With closed source that works in one of two ways:
@@ -1233,10 +1644,13 @@ checked by the release job). Open:
          script on request, so the user can link again with their own build.
          Until step 1 is done, `THIRD-PARTY-LICENSES.txt` promises exactly
          this on request.
-      Alternative that avoids the libraries on macOS: decode HEIC with the
-      system (ImageIO); a larger change (behaviour, no Linux/Windows).
+      Decided: way 1 on all three builds ("Decoders per build", step 2).
+      ImageIO on macOS was considered and dropped: Linux and Windows need
+      libheif anyway, and one decoder keeps a drive's previews the same.
 - [ ] Check with a lawyer before shoebox goes to more than friends or is sold
-      (this is not legal advice).
+      (this is not legal advice). Include HEVC patents: libde265 is free
+      software but carries no patent licence (Apple's and Microsoft's own
+      decoders do; that is what the paid Windows add-on is).
 - [ ] When the repository goes private: the guide and README no longer link to
       GitHub (they do not any more); releases need the repository's own
       Actions minutes.
@@ -1261,3 +1675,17 @@ calibrated (list in [phase7.md](phase7.md)).
 Text in photos (phase 9) is planned, not built: start with the spike in step 1
 of "Phase 9 details" (OCR task in the worker, tried by hand on real photos),
 before any core change.
+
+Decoders per build: step 1 (stored browser frames) is built; check it on the
+iPad (Safari plays HEVC) and on a Mac without ffmpeg: scroll past a few
+videos, restart the photo app, the previews are there without a new grab.
+Step 2 (libheif and libde265 as separate library files) is built: on a Mac
+unpack the CI artifact (or a release), start it with `Start shoebox.command`
+and open a HEIC; the Intel build only runs on main (or Actions → build → Run
+workflow). Step 3 (AVFoundation posters) is built: on the Mac, without
+ffmpeg, scan a folder with iPhone videos (HEVC, portrait) and check the
+previews are upright; `shoebox probe` lists "videos: system video
+framework". Step 4 (Windows) builds and passes the tests in CI (Actions →
+build → Run workflow, artifact `shoebox-windows`): next run it on a real PC
+and scan a drive a Mac scanned (items 4 and 5 of the Windows list), then
+package it in the release.

@@ -1,10 +1,20 @@
 name: build
 
-# Until v1.0 only macOS is built, to keep CI fast. Pull requests build and
-# test arm64 only; main, tags and manual runs also build x86_64 (the old
-# Intel MacBook), the universal binary and run it under Rosetta 2. Linux runs
-# only when started by hand (Actions → build → Run workflow); it is the one
-# job that tests the real recognizer.
+# Until v1.0 only macOS is built, to keep CI fast. Two macOS jobs run side by
+# side: `test` (debug build, unit and integration tests on the fixtures) and
+# `build` (release binary, probe/scan/verify on the fixtures, the artifact).
+# Pull requests build arm64 only; main, tags and manual runs also build x86_64
+# (the old Intel MacBook), the universal binary and run it under Rosetta 2.
+# A pull request that changes only docs (docs/**, *.md) skips both: skipped
+# jobs count as passed for required checks. Linux runs only when started by
+# hand (Actions → build → Run workflow); it is the one job that tests the real
+# recognizer.
+#
+# Compiled dependencies are cached per job by Swatinem/rust-cache; only runs
+# on main save the cache, pull requests start from main's. The C libraries
+# (libheif, libde265) are cached separately in .deps, outside core/target so
+# that the Rust cache's clean-up never touches them. They ship as separate
+# files next to the program (LGPL), so every dist/ folder carries them.
 on:
   push:
     branches: [main]
@@ -12,33 +22,99 @@ on:
   pull_request:
   workflow_dispatch:
 
-# A newer push to the same branch or PR cancels the run still going.
+# A newer push to the same branch or pull request cancels the run still going
+# (on main too: the cache is saved again by the next run that finishes). A
+# tag's run is the release and is never cancelled.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  DEPS_DIR: ${{ github.workspace }}/.deps
+  CARGO_INCREMENTAL: 0
 
 jobs:
-  macos:
+  # Does this pull request touch anything but docs? Push and manual runs
+  # always build.
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      code: ${{ github.event_name != 'pull_request' || steps.filter.outputs.code == 'true' }}
+    steps:
+      - uses: dorny/paths-filter@v4
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '!docs/**'
+              - '!**/*.md'
+
+  test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Cache static deps
+        uses: actions/cache@v6
+        with:
+          path: .deps
+          key: deps-macos-${{ hashFiles('scripts/build-deps.sh') }}
+
+      # Runs each test in its own process, all test files at once (cargo test
+      # runs the files one after the other).
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      - name: Tools for test fixtures
+        run: brew install ffmpeg libheif exiftool
+
+      - name: Fixtures
+        run: scripts/make-fixtures.sh "$RUNNER_TEMP/fixtures"
+
+      - name: Tests
+        run: SHOEBOX_FIXTURES="$RUNNER_TEMP/fixtures" scripts/build.sh aarch64-apple-darwin test
+
+  build:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     # Apple Silicon runner; the x86_64 binary is tested under Rosetta 2.
     runs-on: macos-latest
     env:
       FULL: ${{ github.event_name != 'pull_request' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Rust toolchain
         run: |
           rustup toolchain install stable --profile minimal
           rustup target add x86_64-apple-darwin aarch64-apple-darwin
 
-      - name: Tools for test fixtures
-        run: brew install ffmpeg libheif exiftool
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Cache static deps
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
-          path: core/target/deps
+          path: .deps
           key: deps-macos-${{ hashFiles('scripts/build-deps.sh') }}
+
+      - name: Tools for test fixtures
+        run: brew install ffmpeg libheif exiftool
 
       - name: Build x86_64 (macOS 10.13+)
         if: env.FULL == 'true'
@@ -51,24 +127,45 @@ jobs:
         if: env.FULL == 'true'
         run: |
           mkdir -p dist
-          lipo -create -output dist/shoebox-macos \
-            core/target/x86_64-apple-darwin/release/shoebox \
-            core/target/aarch64-apple-darwin/release/shoebox
-          lipo -info dist/shoebox-macos
-          otool -L dist/shoebox-macos
+          for f in shoebox libheif.1.dylib libde265.0.dylib; do
+            out=dist/$f; [ $f = shoebox ] && out=dist/shoebox-macos
+            lipo -create -output "$out" \
+              core/target/x86_64-apple-darwin/release/$f \
+              core/target/aarch64-apple-darwin/release/$f
+            lipo -info "$out"
+          done
+          # The x86_64 linker does not sign (the arm64 one does), and lipo
+          # keeps each half as it is: sign the program ad hoc, as
+          # build-deps.sh does the libraries.
+          codesign --force --sign - dist/shoebox-macos
           vtool -show-build -arch x86_64 dist/shoebox-macos | grep -E "minos|version"
+          vtool -show-build -arch x86_64 dist/libheif.1.dylib | grep -E "minos|version"
 
       - name: arm64 binary only (pull requests)
         if: env.FULL != 'true'
         run: |
           mkdir -p dist
           cp core/target/aarch64-apple-darwin/release/shoebox dist/shoebox-macos
+          cp core/target/aarch64-apple-darwin/release/libheif.1.dylib \
+            core/target/aarch64-apple-darwin/release/libde265.0.dylib dist/
+
+      # The program loads libheif from its own folder only, carries no build
+      # path, and everything is signed (Apple Silicon loads nothing unsigned).
+      - name: Check the libraries next to the program
+        run: |
+          otool -L dist/shoebox-macos dist/libheif.1.dylib
+          otool -L dist/shoebox-macos | grep -q '@rpath/libheif.1.dylib'
+          otool -L dist/libheif.1.dylib | grep -q '@rpath/libde265.0.dylib'
+          rpaths=$(otool -l dist/shoebox-macos | awk '/LC_RPATH/ {getline; getline; print $2}' | sort -u)
+          echo "rpaths: $rpaths"
+          [ "$rpaths" = "@executable_path" ]
+          if otool -L dist/shoebox-macos dist/*.dylib | grep -E '/(opt|usr/local)/'; then
+            echo "links a library from Homebrew" >&2; exit 1
+          fi
+          codesign --verify --verbose dist/shoebox-macos dist/libheif.1.dylib dist/libde265.0.dylib
 
       - name: Fixtures
         run: scripts/make-fixtures.sh "$RUNNER_TEMP/fixtures"
-
-      - name: Tests
-        run: SHOEBOX_FIXTURES="$RUNNER_TEMP/fixtures" scripts/build.sh aarch64-apple-darwin test
 
       - name: Probe, scan and verify fixtures (arm64, and x86_64 via Rosetta)
         run: |
@@ -85,7 +182,7 @@ jobs:
             arch -$arch dist/shoebox-macos verify "$RUNNER_TEMP/lib-$arch"
           done
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: shoebox-macos
           path: dist/
@@ -96,7 +193,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Packages
         run: |
@@ -106,10 +203,15 @@ jobs:
       - name: Rust toolchain
         run: rustup toolchain install stable --profile minimal
 
-      - name: Cache static deps
-        uses: actions/cache@v4
+      - uses: Swatinem/rust-cache@v2
         with:
-          path: core/target/deps
+          workspaces: core
+          save-if: false
+
+      - name: Cache static deps
+        uses: actions/cache@v6
+        with:
+          path: .deps
           key: deps-linux-${{ hashFiles('scripts/build-deps.sh') }}
 
       - name: Build
@@ -142,6 +244,9 @@ jobs:
         run: |
           mkdir -p dist
           cp core/target/x86_64-unknown-linux-gnu/release/shoebox dist/shoebox-linux
+          cp core/target/x86_64-unknown-linux-gnu/release/libheif.so.1 \
+            core/target/x86_64-unknown-linux-gnu/release/libde265.so.0 dist/
+          readelf -d dist/shoebox-linux dist/libheif.so.1 | grep -E 'NEEDED|RUNPATH|RPATH'
           dist/shoebox-linux probe "$RUNNER_TEMP/fixtures" --report dist/probe-linux.json
           cp -R "$RUNNER_TEMP/fixtures" "$RUNNER_TEMP/lib"
           dist/shoebox-linux scan "$RUNNER_TEMP/lib"
@@ -150,35 +255,109 @@ jobs:
           dist/shoebox-linux recognize "$RUNNER_TEMP/lib" --recognizer recognizer/recognizer.py --pets
           dist/shoebox-linux verify "$RUNNER_TEMP/lib"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: shoebox-linux
           path: dist/
+
+  # Windows (MSVC): started by hand, like Linux, until it is part of the
+  # release ("Decoders per build", step 4, in docs/plan.md). libheif and
+  # libde265 are DLLs next to shoebox.exe; the C runtime is linked in, so
+  # nothing needs to be installed on the PC.
+  windows:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+          save-if: false
+
+      - name: Cache deps
+        uses: actions/cache@v6
+        with:
+          path: .deps
+          key: deps-windows-${{ hashFiles('scripts/build-deps.sh') }}
+
+      - name: Tests
+        run: scripts/build.sh x86_64-pc-windows-msvc test
+
+      - name: Build
+        run: scripts/build.sh x86_64-pc-windows-msvc
+
+      # A JPEG and a real HEIC (pillow-heif can write one) in folders with a
+      # space and an umlaut, read by the program from a folder of its own.
+      - name: Probe, scan and verify
+        run: |
+          mkdir -p "dist/shoebox-windows"
+          r=core/target/x86_64-pc-windows-msvc/release
+          cp "$r/shoebox.exe" "$r/heif.dll" "$r/libde265.dll" "dist/shoebox-windows/"
+          python -m pip install --quiet pillow pillow-heif
+          python - "$RUNNER_TEMP/lib" <<'PY'
+          import sys, pathlib
+          from PIL import Image
+          import pillow_heif
+          pillow_heif.register_heif_opener()
+          root = pathlib.Path(sys.argv[1]) / "Ferien Grüße"
+          root.mkdir(parents=True, exist_ok=True)
+          img = Image.radial_gradient("L").resize((1200, 800)).convert("RGB")
+          img.save(root / "IMG_0001.JPG", quality=90)
+          img.save(root / "IMG_0002.HEIC", quality=60)
+          PY
+          dist/shoebox-windows/shoebox.exe probe "$RUNNER_TEMP/lib" --report dist/probe-windows.json
+          # Both pictures got a preview (the HEIC through heif.dll).
+          python -c "import json,sys; r=json.load(open('dist/probe-windows.json',encoding='utf-8')); bad=[f for f in r['files'] if not f['preview']]; print(r['filesystem'], len(r['files']), 'files'); sys.exit(1 if bad or len(r['files'])!=2 else 0)"
+          dist/shoebox-windows/shoebox.exe scan "$RUNNER_TEMP/lib"
+          dist/shoebox-windows/shoebox.exe scan "$RUNNER_TEMP/lib"
+          dist/shoebox-windows/shoebox.exe verify "$RUNNER_TEMP/lib"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: shoebox-windows
+          path: dist/
+
+  # The guide (HTML, its plain-text copies and the screenshots) is made from
+  # this commit by guide.yml and goes into the archive.
+  guide:
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/guide.yml
 
   # Push a tag like `v0.1.0-phase1` to publish the binaries as a GitHub
   # release. Workflow artifacts need a GitHub login, expire, and lose the
   # executable bit; release assets don't. The recognizer installer goes
   # along, so the drive can be set up without a clone of the repo, and so does
-  # the guide (docs/guide: HTML and plain text, English and German, with its
-  # screenshots), in the folder `guide` of the archive.
+  # the guide (English and German, HTML and plain text, with its screenshots)
+  # in the folder `guide` of the archive.
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [macos]
+    needs: [test, build, guide]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
-          path: artifacts
+          name: shoebox-macos
+          path: artifacts/shoebox-macos
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: guide
+          path: artifacts/guide
 
       - name: Package
         run: |
           mkdir -p release
-          # never ship a guide whose text copy is stale or whose images are missing
-          python3 docs/guide/html2txt.py --check
           # the notices for the libraries in the binary must match Cargo.lock and the vendored web libraries
           python3 scripts/third-party-licenses.py --check
           for os in macos; do
@@ -187,12 +366,15 @@ jobs:
             # inside its own folder per system the program is just "shoebox"
             cp artifacts/shoebox-$os/shoebox-$os "$pkg/shoebox"
             chmod +x "$pkg/shoebox"
+            # libheif and libde265 next to it (LGPL: replaceable), with their
+            # unmodified sources
+            cp artifacts/shoebox-$os/libheif.1.dylib artifacts/shoebox-$os/libde265.0.dylib "$pkg/"
+            scripts/build-deps.sh --sources "$pkg/sources"
             cp LICENSE.txt THIRD-PARTY-LICENSES.txt "$pkg/"
             cp "scripts/launchers/Start shoebox.command" "$pkg/"
             chmod +x "$pkg/Start shoebox.command"
             cp recognizer/README.md recognizer/install.sh recognizer/fetch-models.sh recognizer/recognizer.py "$pkg/recognizer/"
-            mkdir -p "$pkg/guide"
-            cp -R docs/guide/shoebox-en.html docs/guide/shoebox-de.html docs/guide/shoebox-en.txt docs/guide/shoebox-de.txt docs/guide/assets "$pkg/guide/"
+            cp -R artifacts/guide "$pkg/guide"
             chmod +x "$pkg/recognizer/install.sh" "$pkg/recognizer/fetch-models.sh"
             tar -C "$RUNNER_TEMP" -czf release/shoebox-$os.tar.gz shoebox-$os
           done

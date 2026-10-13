@@ -5,7 +5,7 @@
 
 var dates = { needs: 0 };
 
-var PENCIL = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+var PENCIL = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M5 19.5l.8-4L15.6 5.7a1.8 1.8 0 0 1 2.6 0l.1.1a1.8 1.8 0 0 1 0 2.6L8.5 18.2zM13.8 7.5l2.7 2.7"/></svg>';
 
 function monthName(m) { return I18n.date(new Date(2000, m - 1, 1), { month: 'long' }); }
 
@@ -28,7 +28,9 @@ var EST_TITLES = { m: 'dates.est_manual', f: 'dates.est_folder', c: 'dates.est_c
 
 // The small "~" on a cell whose date is not the capture date in the file.
 function estimateMark(code) {
-  var s = el('span', 'est', '~');
+  var s = el('span', 'est');
+  // Drawn rather than the "~" character, so that it sits in the middle of the circle.
+  s.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 7.5C3 4 4.5 4 6 6s3 2 4.5-1.5"/></svg>';
   s.title = tr(EST_TITLES[code]);
   return s;
 }
@@ -166,7 +168,7 @@ function buildDatesDialog(ids, info, check) {
     var group = formatEstimate({ year: v.year, month: v.month });
     lands.textContent = v.day ? tr('dates.lands_day', { group: group })
       : v.month ? tr('dates.lands_month', { group: group })
-        : tr('dates.lands_year', { year: v.year });
+        : tr('dates.lands_year', { year: String(v.year) });
   };
   [year, month, day].forEach(function (n) { n.addEventListener('input', render); n.addEventListener('change', render); });
 
@@ -255,7 +257,7 @@ function dateItems(rows) {
 
 // The rest of the filter, which the counts of the rows are made within.
 function datesWithin(f) {
-  return { tag: f.tags, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null };
+  return { tag: f.tags, manual: f.manual ? 1 : null, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null };
 }
 
 function suggestDates(needle, prefix, within) {

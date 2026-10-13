@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """A stand-in recognizer for the guide's screenshots (docs/protocol.md).
-It does not look at faces: it recognises the comic sample pictures by a small
+It does not look at faces or words: it recognises the comic sample pictures by a small
 fingerprint and answers with the boxes and identities that make-sample-library.py
 wrote to the file named by $SHOEBOX_MOCK_ANN. Any other picture has no faces."""
 import base64, io, json, os, sys, zlib
@@ -8,6 +8,8 @@ import numpy as np
 from PIL import Image
 
 pets_on = "--pets" in sys.argv
+text_on = "--text" in sys.argv
+faces_on = "--no-faces" not in sys.argv
 ann = json.load(open(os.environ["SHOEBOX_MOCK_ANN"]))
 FACE_DIM, PET_DIM = 128, 64
 
@@ -30,10 +32,13 @@ def match(im):
     return best if np.abs(np.array(best["fp"]) - fp).mean() < 6 else None
 
 
-hello = {"hello": "shoebox-recognizer", "protocol": 2, "version": "mock",
-         "tasks": {"faces": {"model": "mock-faces-1", "dim": FACE_DIM}}}
+hello = {"hello": "shoebox-recognizer", "protocol": 2, "version": "mock", "tasks": {}}
+if faces_on:
+    hello["tasks"]["faces"] = {"model": "mock-faces-1", "dim": FACE_DIM}
 if pets_on:
     hello["tasks"]["pets"] = {"model": "mock-pets-1", "dim": PET_DIM}
+if text_on:
+    hello["tasks"]["text"] = {"model": "mock-text-1", "dim": 0}
 print(json.dumps(hello), flush=True)
 
 for line in sys.stdin:
@@ -51,4 +56,8 @@ for line in sys.stdin:
     if "pets" in req["tasks"]:
         reply["pets"] = [{"species": p["species"], "bbox": p["bbox"], "score": 0.93, "emb": vec(p["who"], PET_DIM, salt, 0.12)}
                          for p in (a or {}).get("pets", [])]
+    if "text" in req["tasks"]:
+        # annotated as fractions; the protocol's boxes are pixels of the picture
+        reply["text"] = [{"bbox": [l["bbox"][0] * im.width, l["bbox"][1] * im.height, l["bbox"][2] * im.width, l["bbox"][3] * im.height],
+                          "score": l["score"], "text": l["text"]} for l in (a or {}).get("text", [])]
     print(json.dumps(reply), flush=True)

@@ -181,6 +181,15 @@ fn pin_login() {
     assert_eq!(request(addr, "GET", "/api/timeline", &[evil], b"").status, 401);
     assert_eq!(request(addr, "GET", "/api/files/1/original", &[evil], b"").status, 401);
     assert_eq!(request(addr, "GET", "/", &[evil], b"").status, 200, "the login page itself is public");
+    // Another address of this machine from a loopback peer: only a proxy sends
+    // that, and a proxy may be forwarding anyone.
+    let proxied = ("Host", "192.168.1.5:7878");
+    assert_eq!(request(addr, "GET", "/api/timeline", &[proxied], b"").status, 401);
+    // No other website may embed what the server sends (photos in <img>).
+    for (path, host) in [("/", "localhost"), ("/api/timeline", "localhost"), ("/api/files/1/thumb", "localhost"), ("/api/timeline", "photos.evil.example")] {
+        let r = request(addr, "GET", path, &[("Host", host)], b"");
+        assert_eq!(r.header("cross-origin-resource-policy"), Some("same-origin"), "{path} for {host}: {}", r.status);
+    }
     let session = request(addr, "GET", "/api/session", &[evil], b"").json();
     assert_eq!((session["authenticated"].as_bool(), session["pin_enabled"].as_bool()), (Some(false), Some(true)));
 
@@ -338,15 +347,21 @@ fn timeline_order_filters_and_search() {
         let videos = ids(&timeline("?type=video"));
         assert!(videos.contains(&id_of(&lib, "fixtures/2020-07 Urlaub Griechenland/VID_0003.mp4")));
         assert!(!videos.contains(&video) && !videos.contains(&still));
+        // The four types never overlap: a Live Photo is not also a photo.
+        assert!(!ids(&timeline("?type=photo")).contains(&still));
+        assert!(ids(&timeline("?type=photo&type=live")).contains(&still));
     }
 
-    // Type filter: Photos are the stills, Videos the videos, several are "or".
+    // Type filter: Photos are the stills, Videos the videos, several are "or";
+    // together the four are everything, each item once.
     let kinds_of = |t: &serde_json::Value| t["kinds"].as_str().unwrap().to_string();
     let photos = timeline("?type=photo");
     assert!(!kinds_of(&photos).contains('v') && !ids(&photos).is_empty());
     assert!(kinds_of(&timeline("?type=video")).chars().all(|c| c == 'v'));
     // (the fixture "Familie/Screenshot.png" is a screenshot: PNG, no camera, named so)
-    assert_eq!(ids(&timeline("?type=photo&type=video&type=screenshot")).len(), all_ids.len());
+    let counts: usize = ["photo", "video", "live", "screenshot"].iter().map(|t| ids(&timeline(&format!("?type={t}"))).len()).sum();
+    assert_eq!(counts, all_ids.len());
+    assert_eq!(ids(&timeline("?type=photo&type=video&type=live&type=screenshot")).len(), all_ids.len());
     assert!(!ids(&photos).contains(&screenshot) && ids(&timeline("?type=screenshot")).contains(&screenshot));
     // It combines with the other filters (and).
     let in_familie_photos = ids(&timeline(&format!("?folder={}&type=photo", folder_id("Familie"))));
@@ -372,9 +387,10 @@ fn screenshots_are_a_type_of_their_own() {
     image::RgbImage::from_pixel(600, 400, image::Rgb([240, 240, 240]))
         .save(lib.path("Handy/Bildschirmfoto 2024-03-02 um 10.11.12.jpg"))
         .unwrap();
-    // A noisy PNG (a scan, an export) of the same size is not.
+    // A noisy PNG (a scan, an export) that is not a display's size is not one
+    // (at exactly a display's size it would count, whatever the picture).
     let mut seed = 7u32;
-    image::RgbImage::from_fn(1170, 2532, |_, _| {
+    image::RgbImage::from_fn(1171, 2532, |_, _| {
         seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
         image::Rgb([(seed >> 24) as u8, (seed >> 16) as u8, (seed >> 8) as u8])
     })
@@ -398,8 +414,8 @@ fn screenshots_are_a_type_of_their_own() {
     let photos = ids(&timeline("?type=photo"));
     assert!(photos.contains(&scan) && photos.contains(&camera_free_jpeg));
     assert!(shots.iter().all(|s| !photos.contains(s)));
-    // (with the fixtures there are stand-alone videos too, which are neither)
-    assert_eq!(ids(&timeline("?type=photo&type=screenshot&type=video")).len(), ids(&timeline("")).len());
+    // (with the fixtures there are stand-alone videos and a Live Photo too, which are neither)
+    assert_eq!(ids(&timeline("?type=photo&type=screenshot&type=video&type=live")).len(), ids(&timeline("")).len());
     let info = get(addr, &format!("/api/files/{phone}")).json();
     assert_eq!((info["screenshot"].as_bool(), info["screenshot_mark"].is_null()), (Some(true), true));
 
@@ -510,23 +526,104 @@ fn several_libraries_share_one_server_and_an_unplugged_drive_is_only_offline() {
     assert_eq!(get(addr, &route(&id_a, "timeline")).status, 200);
 
     // Unplug a running drive: only it goes offline. (A look at the drive is
-    // trusted for two seconds.)
-    let gone = b.root.with_extension("unplugged");
-    std::fs::rename(&b.root, &gone).unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(2300));
-    let r = get(addr, &route(&id_b, "timeline")); assert_eq!(r.status, 503, "{}", String::from_utf8_lossy(&r.body[..r.body.len().min(300)]));
-    let libs = lib_ids(addr);
-    assert_eq!(libs.iter().map(|l| l.2).collect::<Vec<_>>(), [true, false, false]);
-    assert_eq!(get(addr, &route(&id_a, "timeline")).status, 200);
-    assert_eq!(get(addr, &route(&id_a, "info")).status, 200);
+    // trusted for two seconds.) Simulated by renaming its folder, which
+    // Windows refuses while the server has the index in it open; a drive
+    // that was never there is offline there too (above).
+    if cfg!(not(windows)) {
+        let gone = b.root.with_extension("unplugged");
+        std::fs::rename(&b.root, &gone).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2300));
+        let r = get(addr, &route(&id_b, "timeline"));
+        assert_eq!(r.status, 503, "{}", String::from_utf8_lossy(&r.body[..r.body.len().min(300)]));
+        let libs = lib_ids(addr);
+        assert_eq!(libs.iter().map(|l| l.2).collect::<Vec<_>>(), [true, false, false]);
+        assert_eq!(get(addr, &route(&id_a, "timeline")).status, 200);
+        assert_eq!(get(addr, &route(&id_a, "info")).status, 200);
 
-    // Plug it in again: it opens by itself.
-    std::fs::rename(&gone, &b.root).unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(2300));
-    assert_eq!(get(addr, &route(&id_b, "timeline")).status, 200);
-    assert_eq!(lib_ids(addr).iter().map(|l| l.2).collect::<Vec<_>>(), [true, true, false]);
+        // Plug it in again: it opens by itself.
+        std::fs::rename(&gone, &b.root).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2300));
+        assert_eq!(get(addr, &route(&id_b, "timeline")).status, 200);
+        assert_eq!(lib_ids(addr).iter().map(|l| l.2).collect::<Vec<_>>(), [true, true, false]);
+    }
 
     // Changes on one library do not touch the other, and only read what they should.
     server.stop().unwrap();
     assert_eq!((a.snapshot(), b.snapshot()), before);
+}
+
+#[test]
+fn the_page_takes_no_scripts_or_forms_from_elsewhere() {
+    let lib = Library::new("csp");
+    lib.scan_opts(false, false, false);
+    let server = start(&lib, None);
+    let page = get(server.addr, "/");
+    let csp = page.header("content-security-policy").unwrap_or_default().to_string();
+    // Markup that gets into the page by mistake (a name shown as HTML) can
+    // neither run nor send what is typed into it to another site.
+    for directive in ["default-src 'self'", "object-src 'none'", "form-action 'self'", "base-uri 'none'", "frame-ancestors 'none'"] {
+        assert!(csp.contains(directive), "{directive} missing in {csp}");
+    }
+    server.stop().unwrap();
+}
+
+/// A frame the browser grabbed becomes the poster of a video the server has
+/// none for, re-encoded and only while there is no picture.
+#[test]
+fn browser_frames_become_video_posters() {
+    let lib = Library::new("browser-poster");
+    // Not a real video: neither ffmpeg (if present) nor anything else gets a
+    // frame out of it, as with a format only the browser can play.
+    lib.write("Familie/clip.mov", b"not really a video, but named like one");
+    lib.scan();
+    let before = lib.snapshot();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let video = id_of(&lib, "Familie/clip.mov");
+    let photo = id_of(&lib, "Familie/Weihnachten/DSC_2001.jpg");
+    assert_eq!(get(addr, &format!("/api/files/{video}/thumb")).status, 404);
+
+    let mut frame = Vec::new();
+    image::RgbImage::from_fn(1280, 720, |x, y| image::Rgb([(x / 5) as u8, (y / 3) as u8, 90]))
+        .write_to(&mut std::io::Cursor::new(&mut frame), image::ImageFormat::Jpeg)
+        .unwrap();
+    let send = |id: i64, body: &[u8]| request(addr, "POST", &format!("/api/files/{id}/poster"), &[("Content-Type", "image/jpeg")], body);
+
+    // Refused: no write header, another host, not a video, not a picture.
+    // The first two are refused before the body is read, so they send one
+    // byte: a large body still arriving then makes macOS reset the connection.
+    let path = format!("/api/files/{video}/poster");
+    assert_eq!(bare_request(addr, "POST", &path, &[], b"x").status, 403);
+    assert_eq!(request(addr, "POST", &path, &[("Host", "photos.evil.example")], b"x").status, 401);
+    assert_eq!(send(photo, &frame).status, 404);
+    assert_eq!(send(999_999, &frame).status, 404);
+    assert_eq!(send(video, b"<script>").status, 400);
+    assert_eq!(send(video, &vec![0xff; shoebox::thumbs::BROWSER_POSTER_MAX_BYTES + 1]).status, 400);
+
+    let r = send(video, &frame);
+    assert_eq!(r.status, 200);
+    assert_eq!(r.json()["stored"], true);
+    let thumb = get(addr, &format!("/api/files/{video}/thumb"));
+    assert_eq!(thumb.status, 200);
+    assert_ne!(thumb.body, frame, "stored as made by shoebox, not as sent");
+    let img = image::load_from_memory(&thumb.body).unwrap();
+    assert_eq!((img.width(), img.height()), (shoebox::thumbs::EDGE, shoebox::thumbs::EDGE * 9 / 16));
+
+    // Only once: a second frame changes nothing.
+    assert_eq!(send(video, &frame).json()["stored"], false);
+    assert_eq!(get(addr, &format!("/api/files/{video}/thumb")).body, thumb.body);
+    server.stop().unwrap();
+
+    // A scan keeps it (nothing gets a frame out of this file).
+    lib.scan();
+    let conn = with_thumbs(&lib);
+    let source: Option<String> = conn
+        .query_row(
+            "SELECT t.source FROM thumbs.thumbs t JOIN files f ON f.quick_hash = t.key WHERE f.path_nfc = 'Familie/clip.mov'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(source.as_deref(), Some("browser"));
+    assert_eq!(lib.snapshot(), before, "originals untouched");
 }

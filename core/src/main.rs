@@ -70,7 +70,7 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Find the faces (and with --pets the cats and dogs) in every photo (with the optional recognizer, see
+    /// Find the faces (and with --pets the cats and dogs, with --text the words) in every photo (with the optional recognizer, see
     /// docs/protocol.md). Only reads originals; resumes where it stopped.
     Recognize {
         /// Library root (scanned before with `shoebox scan`).
@@ -79,7 +79,7 @@ enum Command {
         #[arg(long)]
         db: Option<PathBuf>,
         /// Recognizer program or `recognizer.py` (default: $SHOEBOX_RECOGNIZER,
-        /// else the one in `<root>/.shoebox/recognizer/`).
+        /// else the one in `recognizer/` next to shoebox).
         #[arg(long)]
         recognizer: Option<PathBuf>,
         /// Look at most at this many photos.
@@ -97,6 +97,14 @@ enum Command {
         /// models; resumes like the others). They show up among the faces.
         #[arg(long)]
         pets: bool,
+        /// Then read the words in the photos too (their own pass, with the text
+        /// models; resumes like the others). Screenshots first, then photos
+        /// without camera data, then the rest.
+        #[arg(long)]
+        text: bool,
+        /// Only read the words in the photos: no faces, no cats and dogs.
+        #[arg(long)]
+        text_only: bool,
         /// Print the result as JSON on standard output (the usual text goes to
         /// standard error).
         #[arg(long)]
@@ -127,6 +135,24 @@ enum Command {
         #[command(subcommand)]
         command: FacesCommand,
     },
+    /// How every kind of recognition went on a drive: faces, pets, text.
+    /// Only reads.
+    Stats {
+        /// Library root.
+        root: PathBuf,
+        /// Database to use instead of `<root>/.shoebox/library.db`.
+        #[arg(long)]
+        db: Option<PathBuf>,
+        /// Print the result as JSON on standard output (the usual text goes to
+        /// standard error).
+        #[arg(long)]
+        json: bool,
+    },
+    /// The words read in the photos by `shoebox recognize --text`.
+    Text {
+        #[command(subcommand)]
+        command: TextCommand,
+    },
     /// Browse the library in a web browser. Only reads originals; missing
     /// thumbnails are made as they are viewed.
     Serve {
@@ -147,7 +173,7 @@ enum Command {
         #[arg(long)]
         pin: Option<String>,
         /// Recognizer for faces drawn by hand, started when one is drawn
-        /// (default: $SHOEBOX_RECOGNIZER, else the one in `<root>/.shoebox/recognizer/`).
+        /// (default: $SHOEBOX_RECOGNIZER, else the one in `recognizer/` next to shoebox).
         #[arg(long)]
         recognizer: Option<PathBuf>,
     },
@@ -166,6 +192,23 @@ enum FacesCommand {
         /// Cats and dogs (`recognize --pets`) instead of people's faces.
         #[arg(long)]
         pets: bool,
+        /// Print the result as JSON on standard output (the usual text goes to
+        /// standard error).
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum TextCommand {
+    /// How reading the text went: photos read, with text, lines stored and
+    /// shown, lines you hid, the limits. Only reads.
+    Stats {
+        /// Library root.
+        root: PathBuf,
+        /// Database to use instead of `<root>/.shoebox/library.db`.
+        #[arg(long)]
+        db: Option<PathBuf>,
         /// Print the result as JSON on standard output (the usual text goes to
         /// standard error).
         #[arg(long)]
@@ -192,6 +235,8 @@ fn main() -> ExitCode {
             | Command::Recognize { json: true, .. }
             | Command::Backup { json: true, .. }
             | Command::Faces { command: FacesCommand::Stats { json: true, .. } }
+            | Command::Text { command: TextCommand::Stats { json: true, .. } }
+            | Command::Stats { json: true, .. }
     ) {
         report::text_to_stderr(true);
     }
@@ -215,7 +260,7 @@ fn main() -> ExitCode {
                 r.is_clean()
             })
         }
-        Command::Recognize { root, db, recognizer, limit, retry_failed, rotated, pets, json } => {
+        Command::Recognize { root, db, recognizer, limit, retry_failed, rotated, pets, text, text_only, json } => {
             recognize::run(&recognize::Options {
                 root,
                 db,
@@ -224,6 +269,8 @@ fn main() -> ExitCode {
                 retry_failed,
                 rotated,
                 pets,
+                text: text || text_only,
+                text_only,
                 timeouts: recognize::Timeouts::default(),
             })
             .map(|stats| {
@@ -244,6 +291,14 @@ fn main() -> ExitCode {
                 true
             })
         }
+        Command::Stats { root, db, json } => shoebox::overview::print_overview(&root, db.as_deref()).map(|o| {
+            json_out(json, &o);
+            true
+        }),
+        Command::Text { command: TextCommand::Stats { root, db, json } } => shoebox::text::print_stats(&root, db.as_deref()).map(|stats| {
+            json_out(json, &stats);
+            true
+        }),
         Command::Serve { root, more, db, port, lan, pin, recognizer } => {
             serve::run(&serve::Options { root, more_roots: more, db, port, lan, pin, reveal: None, recognizer }).map(|_| true)
         }

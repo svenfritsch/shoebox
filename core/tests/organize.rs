@@ -475,3 +475,61 @@ fn png_is_turned_in_shoebox_only() {
     assert_eq!(lib.snapshot(), before);
     server.stop().unwrap();
 }
+
+#[test]
+fn moving_everything_out_of_a_folder_removes_the_empty_folder() {
+    let lib = Library::new("organize-empty-folder");
+    lib.jpeg("Alt/IMG_0001.JPG", 1);
+    lib.jpeg("Alt/IMG_0002.JPG", 2);
+    lib.jpeg("Halb/IMG_0003.JPG", 3);
+    lib.jpeg("Halb/IMG_0004.JPG", 4);
+    lib.write("Versteckt/IMG_0005.JPG.keep", b"x");
+    lib.jpeg("Versteckt/IMG_0005.JPG", 5);
+    lib.jpeg("Mac/IMG_0006.JPG", 6);
+    lib.jpeg("Zum Papierkorb/IMG_0007.JPG", 7);
+    lib.scan();
+    let server = start(&lib, None);
+    let addr = server.addr;
+
+    // Bookkeeping files of the system do not keep a folder alive.
+    lib.write("Mac/.DS_Store", b"x");
+    lib.write("Mac/._IMG_0006.JPG", b"x");
+    let r = post(addr, "/api/move", &json!({ "ids": [id_of(&lib, "Mac/IMG_0006.JPG")], "folder": "Neu" })).json();
+    assert_eq!(r["removed_folders"], json!(["Mac"]), "{r}");
+    assert!(!lib.path("Mac").exists());
+
+    // The whole folder goes: it is removed and named in the answer.
+    let ids = [id_of(&lib, "Alt/IMG_0001.JPG"), id_of(&lib, "Alt/IMG_0002.JPG")];
+    let r = post(addr, "/api/move", &json!({ "ids": ids, "folder": "Neu" })).json();
+    assert_eq!(r["removed_folders"], json!(["Alt"]), "{r}");
+    assert!(!lib.path("Alt").exists());
+    assert!(lib.path("Neu/IMG_0001.JPG").exists());
+    let gone: i64 = lib.db().query_row("SELECT count(*) FROM folders WHERE path_nfc = 'Alt'", [], |r| r.get(0)).unwrap();
+    assert_eq!(gone, 0);
+
+    // Part of a folder, or a folder with another file in it, stays.
+    let r = post(addr, "/api/move", &json!({ "ids": [id_of(&lib, "Halb/IMG_0003.JPG")], "folder": "Neu" })).json();
+    assert_eq!(r["removed_folders"], json!([]), "{r}");
+    let r = post(addr, "/api/move", &json!({ "ids": [id_of(&lib, "Versteckt/IMG_0005.JPG")], "folder": "Neu" })).json();
+    assert_eq!(r["removed_folders"], json!([]), "{r}");
+    assert!(lib.path("Halb").exists() && lib.path("Versteckt/IMG_0005.JPG.keep").exists());
+
+    // Trashing the last photo removes the folder too; putting it back makes it again.
+    let id = id_of(&lib, "Zum Papierkorb/IMG_0007.JPG");
+    let t = post(addr, "/api/trash", &json!({ "ids": [id] })).json();
+    assert_eq!(t["removed_folders"], json!(["Zum Papierkorb"]), "{t}");
+    assert!(!lib.path("Zum Papierkorb").exists());
+    let batch = t["batches"][0].as_i64().unwrap();
+    let back = post(addr, &format!("/api/trash/{batch}/restore"), &json!({}));
+    assert_eq!(back.status, 200, "{}", String::from_utf8_lossy(&back.body));
+    assert!(lib.path("Zum Papierkorb/IMG_0007.JPG").exists());
+
+    // The duplicates screen tidies up as well.
+    lib.write("Kopien/a.jpg", &fs::read(lib.path("Neu/IMG_0001.JPG")).unwrap());
+    lib.scan();
+    let keep = id_of(&lib, "Neu/IMG_0001.JPG");
+    let copy = id_of(&lib, "Kopien/a.jpg");
+    let r = post(addr, "/api/duplicates/remove", &json!({ "keep": [keep], "remove": [copy] })).json();
+    assert_eq!(r["trashed"]["removed_folders"], json!(["Kopien"]), "{r}");
+    assert!(!lib.path("Kopien").exists());
+}

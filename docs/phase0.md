@@ -53,6 +53,8 @@ models, so only share it if you're fine with that.
 ## Verified so far (in Docker, Linux arm64)
 
 - Static libheif/libde265 link; binary depends only on system libc/libstdc++.
+  (Since then they are shared libraries next to the program, for the LGPL;
+  see "Build notes and pitfalls" in plan.md.)
 - Fixtures: JPEG, PNG, HEIC, Live Photo pair, MP4/MOV, TIFF-based RAW
   stand-in, decomposed umlaut folder name, truncated JPEG, `._*` files.
 - Same run on a real exFAT filesystem (loop-mounted): detected, guard OK.

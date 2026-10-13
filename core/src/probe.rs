@@ -86,10 +86,15 @@ pub fn run(opts: Options) -> Result<bool> {
     println!("  folder:      {}", root.display());
     println!("  filesystem:  {}", filesystem.as_deref().unwrap_or("unknown"));
     let ffmpeg = media::find_ffmpeg();
-    println!(
-        "  ffmpeg:      {}",
-        ffmpeg.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "not found (video previews skipped)".into())
-    );
+    let no_ffmpeg = if media::SYSTEM_VIDEO_POSTERS {
+        "not found (video previews from the system only)"
+    } else {
+        "not found (video previews skipped)"
+    };
+    println!("  ffmpeg:      {}", ffmpeg.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| no_ffmpeg.into()));
+    if media::SYSTEM_VIDEO_POSTERS {
+        println!("  videos:      system video framework, then ffmpeg");
+    }
     println!();
 
     // 1. Walk.
@@ -130,13 +135,11 @@ pub fn run(opts: Options) -> Result<bool> {
         let t = Instant::now();
         let preview_result = match kind {
             Kind::Raw => Err(None), // RAW files are indexed but never shown
-            Kind::Video => match &ffmpeg {
-                Some(ff) => {
-                    let duration = metadata.as_ref().and_then(|m| m.duration_ms);
-                    media::write_video_poster(ff, path, &thumb_path, duration, THUMB_EDGE).map_err(Some)
-                }
-                None => Err(None),
-            },
+            Kind::Video if !media::SYSTEM_VIDEO_POSTERS && ffmpeg.is_none() => Err(None),
+            Kind::Video => {
+                let duration = metadata.as_ref().and_then(|m| m.duration_ms);
+                media::write_video_poster(ffmpeg.as_deref(), path, &thumb_path, duration, THUMB_EDGE).map_err(Some)
+            }
             _ => media::write_image_thumb(&lib_heif, *kind, path, &thumb_path, THUMB_EDGE).map_err(Some),
         };
         let preview_ms = ms(t.elapsed());

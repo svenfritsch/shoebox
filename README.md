@@ -40,12 +40,12 @@ together). Then one of two ways:
 The Control Panel's step 1, **Add-ons**, installs Faces (~40 MB) and/or Pets
 (~140 MB), independent of each other, on top of Python and OpenCV (~200 MB per
 kind of computer, always installed with the first add-on). Where shoebox looks
-for them: `recognizer/` next to the program first, the drive's own
-`.shoebox/recognizer/` last. The models are the same on every computer; Python
+for them: only `recognizer/` next to the program (never a drive's own
+`.shoebox/`, which a drive from somebody else could fill). The models are the same on every computer; Python
 and OpenCV is per kind (`recognizer/runtime/<os>-<arch>/`), so a drive moved
 to another kind of Mac needs one more install there (the models are kept).
-Terminal users: `recognizer/install.sh [--faces] [--pets] [library-root]`, on
-Windows `recognizer\install.ps1 [-Faces] [-Pets] [-Root library-root]`
+Terminal users: `recognizer/install.sh [--faces] [--pets]`, on
+Windows `recognizer\install.ps1 [-Faces] [-Pets]`
 ([recognizer/README.md](recognizer/README.md)).
 
 ## Guide
@@ -54,7 +54,8 @@ A landing page and handbook as plain HTML and text, one per language (English
 and German). They come in the `guide/` folder of `shoebox-macos.tar.gz` from
 every release: open `guide/shoebox-en.html` or `guide/shoebox-de.html` in a
 browser (`shoebox-en.txt` / `shoebox-de.txt` hold the same text). Sources and
-how to edit them: [docs/guide/](docs/guide/README.md).
+how to edit them: [docs/guide/](docs/guide/README.md). The screenshots and the
+text copies are made by CI from the code of each release, not kept in git.
 
 ## License
 
@@ -72,9 +73,20 @@ program in every release archive. After a change to `Cargo.lock` or to
 
 ## Video previews (optional)
 
-shoebox makes the grid previews of videos with `ffmpeg`. It is not bundled;
-put a static build next to the shoebox binary on the drive (or have one on
-PATH):
+On macOS, `shoebox scan` (and the server) make video previews with
+AVFoundation, the system's own video framework: every video QuickTime can play
+(H.264, HEVC, ProRes in `.mov`, `.mp4`, `.m4v`, `.3gp`), turned upright, no
+ffmpeg needed (`core/src/avposter.rs`). Without anything extra, a video the
+server has no preview for still gets one from the browser: the web UI grabs a frame the first time the video is on screen
+and sends it back; the server decodes it, encodes a preview of its own and
+keeps it in `thumbs.db` (only while that video has no preview). `ffmpeg` is
+optional: it comes after AVFoundation; with it, `shoebox scan` makes every
+video preview up front, also for videos neither the Mac nor the browser can
+read (`.avi`, `.mkv`, `.mts`, `.mpg`; HEVC on a Windows PC without Microsoft's
+HEVC add-on), and replaces the browser's ones. On Linux it is the only way to
+get previews at scan time. It
+is not bundled; put a static build next to the shoebox binary on the drive (or
+have one on PATH):
 
 1. Download a static `ffmpeg` for the computer that runs shoebox:
    - macOS on Intel: [evermeet.cx/ffmpeg](https://evermeet.cx/ffmpeg/)
@@ -101,9 +113,8 @@ PATH):
    ffmpeg" note disappears from the status line in the web UI.
 
 shoebox only ever runs ffmpeg to read a video and pipe one frame to itself;
-it never writes next to the original. Without ffmpeg, or for a video ffmpeg
-cannot read, the web UI grabs a frame in the browser instead (not stored, so
-it costs a little time on each visit, and iPad Safari often refuses).
+it never writes next to the original. Order and reasons: "Decoders per build"
+in docs/plan.md (Media Foundation on Windows is planned).
 Static ffmpeg builds are GPL; fine for your own drive, check the terms
 before passing the drive's binaries on.
 
@@ -118,6 +129,11 @@ docker/dev.sh sh -c 'scripts/make-fixtures.sh /target/fixtures && SHOEBOX_FIXTUR
 docker/dev.sh sh -c 'scripts/make-fixtures.sh /target/fixtures && /target/*/release/shoebox probe /target/fixtures'
 ```
 
+Windows (`x86_64-pc-windows-msvc`): from Git Bash with Visual Studio and CMake,
+`scripts/build.sh x86_64-pc-windows-msvc` builds `shoebox.exe` and copies
+`heif.dll` and `libde265.dll` next to it (CI: the `windows` job, started by
+hand). The C runtime is linked in, so nothing needs to be installed on the PC.
+
 macOS binaries (universal: Intel macOS 10.13+ and Apple Silicon) are built by
 GitHub Actions (`.github/workflows/build.yml`), or locally with rustup:
 
@@ -126,15 +142,23 @@ export PATH=/opt/homebrew/opt/rustup/bin:$PATH   # Homebrew's rustup is keg-only
 rustup target add x86_64-apple-darwin aarch64-apple-darwin
 scripts/build.sh x86_64-apple-darwin
 scripts/build.sh aarch64-apple-darwin
-mkdir -p dist && lipo -create -output dist/shoebox-macos \
-    core/target/x86_64-apple-darwin/release/shoebox \
-    core/target/aarch64-apple-darwin/release/shoebox
+mkdir -p dist && for f in shoebox libheif.1.dylib libde265.0.dylib; do
+    lipo -create -output "dist/$f" \
+        "core/target/x86_64-apple-darwin/release/$f" \
+        "core/target/aarch64-apple-darwin/release/$f"
+done
 ```
 
 Building needs CMake and Xcode's clang. The build never uses Homebrew's
-libheif: `scripts/build.sh` points the linker straight at the static libraries
-from `scripts/build-deps.sh`.
+libheif: `scripts/build.sh` points the linker straight at the libraries from
+`scripts/build-deps.sh`.
 
 HEIC support comes from libheif + libde265, built by `scripts/build-deps.sh`
-as static, decoder-only libraries (both LGPL; fine for personal use, check the
-LGPL terms before distributing binaries).
+as shared, decoder-only libraries. Both are LGPL, so they ship as separate
+files next to the program (`libheif.1.dylib`, `libde265.0.dylib`; on Linux
+`libheif.so.1`, `libde265.so.0`), where the program looks for them (rpath
+`@executable_path` / `$ORIGIN`) and where anyone can put a build of their own.
+`scripts/build.sh` copies them next to the release binary; debug builds and
+tests find them in the deps folder. The release archive also carries their
+source archives (`sources/`). Keep the program and the two libraries together:
+a program copied on its own does not start.

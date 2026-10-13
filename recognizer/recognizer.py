@@ -6,6 +6,8 @@ pixels in, boxes and embeddings out. Never opens the library or the database.
 
     python3 recognizer.py            # what shoebox runs
     python3 recognizer.py --pets  # also loads the cat and dog models
+    python3 recognizer.py --text  # also loads the text (OCR) models
+    python3 recognizer.py --text --no-faces  # only the text models, not the face models
     echo '{"id": 1, "tasks": ["faces"], "path": "photo.jpg"}' | python3 recognizer.py
     echo '{"id": 2, "tasks": ["embed"], "path": "photo.jpg", "boxes": [[100, 80, 60, 70]]}' | python3 recognizer.py
 
@@ -16,6 +18,9 @@ file, or in $SHOEBOX_MODELS:
 and for --pets:
     object_detection_yolox_2022nov.onnx (YOLOX-S, COCO: cats and dogs)
     dinov2_small.onnx or image_classification_ppresnet50_2022jan.onnx (embedding)
+and for --text (PP-OCRv4 as shipped in the rapidocr-onnxruntime package, which
+must be importable; install.sh --text copies the three model files here):
+    ch_PP-OCRv4_det_infer.onnx, ch_PP-OCRv4_rec_infer.onnx, ch_ppocr_mobile_v2.0_cls_infer.onnx
 """
 
 import base64
@@ -24,7 +29,7 @@ import os
 import sys
 
 PROTOCOL = 2
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 
 DETECTOR = "face_detection_yunet_2023mar.onnx"
 EMBEDDER = "face_recognition_sface_2021dec.onnx"
@@ -63,6 +68,10 @@ COCO_PETS = {15: "cat", 16: "dog"}
 # hidden or far away, higher fewer plush toys.
 PET_SCORE = 0.35
 PET_NMS = 0.45
+# A pet box that lies at least this much inside a better-scoring one (share of
+# its own area) is the same pet found twice with a bigger or smaller frame:
+# plain NMS keeps both when their IoU stays under PET_NMS.
+PET_INSIDE = 0.8
 # COCO class 0, person. The pets task also reports where people are, so the
 # core can tell a pet's face (a "face" found inside a pet and outside every
 # person) from a person's.
@@ -165,6 +174,15 @@ def iou(a, b):
     inter = iw * ih
     union = aw * ah + bw * bh - inter
     return inter / union if union > 0 else 0.0
+
+
+def inside(a, b):
+    """The share of box `a` (x, y, w, h) that lies inside box `b`."""
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    iw = max(0.0, min(ax + aw, bx + bw) - max(ax, bx))
+    ih = max(0.0, min(ay + ah, by + bh) - max(ay, by))
+    return iw * ih / (aw * ah) if aw * ah > 0 else 0.0
 
 
 class Embed:
@@ -385,7 +403,13 @@ class Pets:
             [round(float(v), 2) for v in box]
             for _, box in self.pick(xy, wh, r, person, PEOPLE_SCORE)
         ]
-        return [(COCO_PETS[int(best[i])], sc, box) for i, (sc, box) in self.pick(xy, wh, r, score, PET_SCORE, True)]
+        found = []
+        for i, (sc, box) in self.pick(xy, wh, r, score, PET_SCORE, True):
+            # `pick` is best first, so a box inside an earlier one is the worse find.
+            if any(inside(box, kept) >= PET_INSIDE for _, _, kept in found):
+                continue
+            found.append((COCO_PETS[int(best[i])], sc, box))
+        return found
 
     def pick(self, xy, wh, r, score, threshold, with_index=False):
         """The boxes whose score reaches `threshold`, after non-maximum
@@ -449,6 +473,62 @@ class EmbedPets:
         return {"emb": emb}
 
 
+# Text in pictures (task "text", with --text): PP-OCR finds lines of text and
+# reads them. Optional: without --text the worker does not load it. The core
+# filters what comes back (confidence, size, German and English characters);
+# the worker reports every line it read.
+TEXT_FILES = (
+    "ch_PP-OCRv4_det_infer.onnx",
+    "ch_PP-OCRv4_rec_infer.onnx",
+    "ch_ppocr_mobile_v2.0_cls_infer.onnx",
+)
+TEXT_MODEL = "ppocr-v4-ch-en"
+
+
+class Text:
+    """Task "text": lines of text with boxes, as read.
+
+    `engine` is any callable taking a BGR picture and returning RapidOCR's
+    result, `([[quad, text, score], ...], elapsed)` (tests pass a fake)."""
+
+    model = TEXT_MODEL
+
+    def __init__(self, cv2, np, engine=None):
+        self.np = np
+        if engine is None:
+            engine = self.load()
+        self.engine = engine
+
+    @staticmethod
+    def load():
+        d = models_dir()
+        missing = [f for f in TEXT_FILES if not os.path.isfile(os.path.join(d, f))]
+        if missing:
+            raise SystemExit(f"recognizer: text models missing in {d}: {', '.join(missing)} (recognizer/install.sh --text)")
+        try:
+            from rapidocr_onnxruntime import RapidOCR
+        except ImportError as e:
+            raise SystemExit(f"recognizer: {e} (the Text add-on needs the rapidocr-onnxruntime package: recognizer/install.sh --text)")
+        det, rec, cls = (os.path.join(d, f) for f in TEXT_FILES)
+        return RapidOCR(det_model_path=det, rec_model_path=rec, cls_model_path=cls)
+
+    def __call__(self, img, req):
+        h, w = img.shape[:2]
+        result, _ = self.engine(img)
+        lines = []
+        for quad, text, score in result or []:
+            xs = [float(p[0]) for p in quad]
+            ys = [float(p[1]) for p in quad]
+            x0, y0 = max(0.0, min(xs)), max(0.0, min(ys))
+            x1, y1 = min(float(w), max(xs)), min(float(h), max(ys))
+            if x1 - x0 < 1 or y1 - y0 < 1 or not str(text).strip():
+                continue
+            lines.append({"bbox": [round(x0, 1), round(y0, 1), round(x1 - x0, 1), round(y1 - y0, 1)],
+                          "score": round(float(score), 3), "text": str(text)})
+        lines.sort(key=lambda l: (l["bbox"][1], l["bbox"][0]))
+        return lines
+
+
 def decode(cv2, np, req):
     if "image" in req:
         data = np.frombuffer(base64.b64decode(req["image"], validate=True), dtype=np.uint8)
@@ -496,10 +576,13 @@ def main():
     except AttributeError:
         pass
     want_pets = "--pets" in sys.argv[1:]
-    # The add-ons are independent: with the pet models alone (no face models
-    # installed) the worker does pets and says nothing of faces.
+    want_text = "--text" in sys.argv[1:]
+    # The add-ons are independent: with the pet or text models alone (no face
+    # models installed) the worker does those and says nothing of faces.
     have_faces = all(os.path.isfile(os.path.join(models_dir(), m)) for m in (DETECTOR, EMBEDDER))
-    faces = Faces(cv2, np) if have_faces or not want_pets else None
+    # `--no-faces`: a run that only reads text does not load the face models.
+    no_faces = "--no-faces" in sys.argv[1:]
+    faces = None if no_faces else (Faces(cv2, np) if have_faces or not (want_pets or want_text) else None)
     tasks = {"faces": faces, "embed": Embed(faces, cv2, np)} if faces else {}
     # The pet models are big and the drive may be slow: only loaded when
     # the core asks for pets (`recognizer.py --pets`).
@@ -507,6 +590,10 @@ def main():
     if pets is not None:
         tasks["pets"] = pets
         tasks["embed-pets"] = EmbedPets(pets)
+    # Text is only loaded when the core asks for it (`recognizer.py --text`).
+    text = Text(cv2, np) if want_text else None
+    if text is not None:
+        tasks["text"] = text
     hello = {
         "hello": "shoebox-recognizer",
         "protocol": PROTOCOL,
@@ -523,6 +610,9 @@ def main():
         # Pets drawn by hand are embedded with the same models, so they compare
         # with detected ones.
         hello["tasks"]["embed-pets"] = {"model": pets.model, "dim": pets.dim}
+    if text is not None:
+        # No embedding: dim 0.
+        hello["tasks"]["text"] = {"model": text.model, "dim": 0}
     out.write(json.dumps(hello) + "\n")
     out.flush()
 

@@ -15,7 +15,7 @@ pub const FILE: &str = "library.db";
 const BACKUP_SUFFIX: &str = ".bak";
 
 /// Bump when the schema changes and add a step to `migrate`.
-const SCHEMA_VERSION: i32 = 13;
+const SCHEMA_VERSION: i32 = 15;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -245,6 +245,19 @@ CREATE TABLE IF NOT EXISTS face_species (
     at      INTEGER NOT NULL      -- Unix seconds
 );
 CREATE INDEX IF NOT EXISTS face_species_key ON face_species(key);
+";
+
+/// v15 (phase 9): lines of text the user does not want to find a photo by.
+/// By content and the folded text of the line (`text::index_form`), so the
+/// decision holds when the photo moves and when the text is read again; the
+/// text itself is a cache in `recognition.db` (`text.rs`).
+const SCHEMA_V15: &str = "
+CREATE TABLE IF NOT EXISTS text_hidden (
+    key  TEXT NOT NULL,           -- files.quick_hash
+    norm TEXT NOT NULL,           -- recog.text_lines.text_norm
+    at   INTEGER NOT NULL,        -- Unix seconds
+    PRIMARY KEY (key, norm)
+);
 ";
 
 /// Whether `table` of `schema` has a column.
@@ -485,6 +498,23 @@ fn migrate(conn: &Connection) -> Result<()> {
         tx.pragma_update(None, "user_version", 13)?;
         tx.commit()?;
     }
+    if version < 14 {
+        let tx = conn.unchecked_transaction()?;
+        // When a photo was last given the own tag (Unix seconds): the tag
+        // fields offer the tags used last first. Older rows stay empty. A
+        // re-run (the tests lower user_version) must not add it twice.
+        if !has_column(&tx, "main", "file_tags", "added_at")? {
+            tx.execute_batch("ALTER TABLE file_tags ADD COLUMN added_at INTEGER;")?;
+        }
+        tx.pragma_update(None, "user_version", 14)?;
+        tx.commit()?;
+    }
+    if version < 15 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V15)?;
+        tx.pragma_update(None, "user_version", 15)?;
+        tx.commit()?;
+    }
     Ok(())
 }
 
@@ -519,7 +549,8 @@ pub fn backup_schema(conn: &Connection, schema: &str, db_path: &Path) -> Result<
         rusqlite::backup::Backup::new_with_names(conn, schema, &mut out, "main")?.run_to_completion(256, std::time::Duration::ZERO, None)?;
         out.pragma_update(None, "journal_mode", "DELETE")?;
     }
-    std::fs::File::open(&tmp)?.sync_all()?;
+    // Opened for writing: Windows refuses to flush a file opened read-only.
+    std::fs::OpenOptions::new().write(true).open(&tmp)?.sync_all()?;
     std::fs::rename(&tmp, &dst).with_context(|| format!("write {}", dst.display()))?;
     Ok(dst)
 }
@@ -625,6 +656,8 @@ mod tests {
         let copy = Connection::open(&bak).unwrap();
         let n: i64 = copy.query_row("SELECT count(*) FROM jobs", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 1);
+        // Windows deletes no file that is still open.
+        drop((conn, copy));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -691,6 +724,7 @@ mod tests {
         let conn = open(&path).unwrap();
         let species: Option<String> = conn.query_row("SELECT species FROM face_decisions", [], |r| r.get(0)).unwrap();
         assert_eq!(species.as_deref(), Some("cat"));
+        drop(conn);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

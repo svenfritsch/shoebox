@@ -324,5 +324,5 @@ fn an_older_index_gets_the_table_without_losing_anything() {
     lib.scan();
     assert_eq!(lib.count("SELECT count(*) FROM date_estimates"), 0);
     let v: i64 = lib.db().query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
-    assert_eq!(v, 13);
+    assert_eq!(v, 15);
 }
