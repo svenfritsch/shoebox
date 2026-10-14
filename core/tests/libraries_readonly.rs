@@ -28,7 +28,9 @@ fn nothing_that_changes_an_original_works_on_a_library_next_to_the_program() {
     // A scan works (it only reads) and finds the index next to the program.
     lib.scan();
     other.scan();
-    let conn = lib.db();
+    // `lib.db()` looks in <root>/.shoebox; the index of this library is elsewhere.
+    let conn = rusqlite::Connection::open(shoebox::db::default_path(&lib.root)).unwrap();
+    assert!(conn.path().unwrap().contains("libraries"));
     let ids: Vec<i64> = conn
         .prepare("SELECT id FROM files WHERE path_nfc LIKE '%.JPG' OR path_nfc LIKE '%.jpg' ORDER BY id")
         .unwrap()

@@ -57,6 +57,12 @@ current status and next step. Update its status table when a phase moves.
   folder is allowed after a question (its next scan finds the copies). It only
   answers to a browser on this computer (`/api/export/*`, `info.export`).
   Collection tag and numbering are browser settings, like Maps.
+- A library registered in `libraries.json` next to the program (phase 16,
+  [docs/phase16.md](docs/phase16.md); index in `libraries/<name>/`, not in the
+  root) is read-only: `libraries::ensure_writable(root)` is the first line of
+  every function that changes an original (move, rename, trash, restore,
+  rotate, remove copies), and nothing at all is written into its root, not
+  even `.shoebox`. A new function that changes originals must call it.
 - The recognizer (Python) runs only from `recognizer/` next to the program
   (`recognize::worker_dirs`; in the release that is `program/recognizer/`),
   never from the `.shoebox/` of a drive: a drive from somebody else could bring
