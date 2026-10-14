@@ -46,8 +46,16 @@ function savePaths() {
   }).catch(function () { /* the list still works */ });
 }
 
-function addPath(value) {
+// A folder as typed, without a trailing separator ("C:" stays "C:\\", "/" stays "/").
+function cleanPath(value) {
   value = value.trim();
+  var cut = value.replace(/[\\\/]+$/, '');
+  if (!cut) return value;
+  return /^[A-Za-z]:$/.test(cut) ? cut + '\\' : cut;
+}
+
+function addPath(value) {
+  value = cleanPath(value);
   if (!value || paths.indexOf(value) >= 0) return;
   paths.push(value);
   delete off[value];
@@ -103,7 +111,8 @@ function renderChips() {
       renderChips();
       savePaths();
     };
-    var name = document.createElement('span'); name.className = 'name'; name.textContent = p; name.title = p;
+    var name = document.createElement('span'); name.className = 'name'; name.textContent = p; name.title = p + ' · ' + tr('launcher.chip.edit');
+    name.ondblclick = function () { editChip(li, p); };
     li.appendChild(cb); li.appendChild(name);
     var mark = backups[p];
     if (mark) {
@@ -122,6 +131,31 @@ function renderChips() {
   });
   $('root').placeholder = tr(paths.length ? 'launcher.root.placeholder_more' : 'launcher.root.placeholder');
   updateButtons();
+}
+
+// Double-click a chip to change its path, for instance to add a folder to a drive.
+function editChip(li, p) {
+  var nameEl = li.querySelector('.name');
+  if (!nameEl) return;
+  var inp = document.createElement('input');
+  inp.value = p; inp.className = 'chip-edit'; inp.size = Math.max(24, p.length + 2);
+  inp.setAttribute('aria-label', tr('launcher.chip.edit'));
+  nameEl.replaceWith(inp);
+  inp.focus(); inp.select();
+  var done = false;
+  var finish = function (save) {
+    if (done) return;
+    done = true;
+    var v = cleanPath(inp.value);
+    if (save && v && v !== p && paths.indexOf(v) < 0) {
+      paths[paths.indexOf(p)] = v;
+      if (off[p]) { off[v] = true; delete off[p]; }
+      savePaths();
+    }
+    renderChips();
+  };
+  inp.onkeydown = function (ev) { if (ev.key === 'Enter') finish(true); else if (ev.key === 'Escape') finish(false); };
+  inp.onblur = function () { finish(true); };
 }
 
 function updateButtons() {
@@ -287,7 +321,7 @@ function loadDrives(quiet) {
       var b = document.createElement('button');
       b.type = 'button'; b.textContent = d.name; b.title = d.path;
       if (d.library) b.className = 'has-lib';
-      b.onclick = function () { addPath(d.path); };
+      b.onclick = function () { startPath(d.path); };
       chips.appendChild(b);
     });
     $('root-hint').textContent = drives.length
@@ -295,6 +329,16 @@ function loadDrives(quiet) {
       : tr('launcher.drives.none');
     renderChips();
   }).catch(function (e) { drivesReading = false; if (quiet !== true) $('root-hint').textContent = String(e.message); });
+}
+
+// A drive is rarely the photo folder itself: put its path in the box to finish
+// it (Enter alone adds the drive).
+function startPath(base) {
+  var sep = /\\|^[A-Za-z]:/.test(base) ? '\\' : '/';
+  var inp = $('root');
+  inp.value = base.replace(/[\\\/]+$/, '') + sep;
+  inp.focus();
+  inp.setSelectionRange(inp.value.length, inp.value.length);
 }
 
 function loadConfig() {
@@ -318,8 +362,8 @@ var libsInfo = { dir: null, writable: false };
 var libEdit = null;                      // { name, mode: 'rename' | 'root' | 'remove' | 'delete', check, error }
 var libsShown = '';
 
-// Our own drawing: a box with a lid that sits a little askew.
-var SHOEBOX_ICON = '<svg class="sbx" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10.5l1.2 7.5a2 2 0 0 0 2 1.7h7.6a2 2 0 0 0 2-1.7l1.2-7.5"/><rect x="3" y="6" width="18" height="4" rx="1.5" transform="rotate(-5 12 8)"/></svg>';
+// The photo app's own tab icon (core/web/index.html): a box with a lid.
+var SHOEBOX_ICON = '<svg class="sbx" viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="5" width="14" height="10" rx="1" fill="#b07d4f"/><rect x="0" y="2" width="16" height="4" rx="1" fill="#d9a066"/></svg>';
 
 function sameFolder(a, b) {
   var n = function (p) { return p.trim().replace(/[\\\/]+$/, ''); };
@@ -383,6 +427,109 @@ function renderLibs() {
   if (!$('manage-card').hidden) renderManage();
 }
 
+// ---- dialogs: everything else is greyed out behind them
+
+// actions: [{ label, cls, onclick(ctl) }]; ctl.close() and ctl.fail(message) are
+// for work that finishes later (return false to keep the dialog open meanwhile).
+function openDialog(title, body, actions, cls) {
+  var dlg = document.createElement('dialog');
+  dlg.className = 'dlg' + (cls ? ' ' + cls : '');
+  dlg.appendChild(el('h3', '', title));
+  dlg.appendChild(body);
+  var err = el('p', 'error'); err.hidden = true;
+  dlg.appendChild(err);
+  var ctl = { close: function () { dlg.close(); }, fail: function (m) { err.hidden = !m; err.textContent = m || ''; } };
+  var row = el('div', 'btnrow');
+  actions.forEach(function (a) {
+    row.appendChild(button(a.label, a.cls || '', function () { if (a.onclick(ctl) !== false) dlg.close(); }));
+  });
+  dlg.appendChild(row);
+  dlg.addEventListener('close', function () { dlg.remove(); });
+  document.body.appendChild(dlg);
+  dlg.showModal();
+  return dlg;
+}
+
+function folderIcon() {
+  var s = document.createElement('span');
+  s.innerHTML = '<svg class="fld" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 4.5a1 1 0 0 1 1-1h3.2l1.3 1.5h6.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z"/></svg>';
+  return s.firstChild;
+}
+
+var PLACE_NAMES = {
+  downloads: 'export.place_downloads',
+  desktop: 'export.place_desktop',
+  documents: 'export.place_documents',
+  pictures: 'export.place_pictures',
+  home: 'export.place_home',
+};
+
+// The computer's own folders, listed by the launcher (a browser cannot give a
+// page a real folder path). Same lists as the photo app's export dialog.
+function pickFolder(start, onChoose) {
+  var current = null;
+  var body = el('div');
+  var pk = el('div', 'x-pk'), nav = el('nav'), main = el('div', 'x-main'), crumbs = el('div', 'x-crumbs'), list = el('ul');
+  main.appendChild(crumbs); main.appendChild(list); pk.appendChild(nav); pk.appendChild(main);
+  body.appendChild(pk);
+  var selected = el('p', 'hint x-selected');
+  body.appendChild(selected);
+  var error = el('p', 'error'); error.hidden = true;
+  body.appendChild(error);
+  var navItems = [];
+  var addNav = function (label, path, extra) {
+    var d = el('div', '', label);
+    if (extra) d.appendChild(el('small', '', extra));
+    d.dataset.path = path;
+    d.onclick = function () { show(path); };
+    nav.appendChild(d);
+    navItems.push(d);
+  };
+  var show = function (path) {
+    return api('/api/folders?path=' + encodeURIComponent(path)).then(function (l) {
+      error.hidden = true;
+      current = l;
+      navItems.forEach(function (d) { d.classList.toggle('on', d.dataset.path === l.path); });
+      crumbs.textContent = '';
+      l.crumbs.forEach(function (c, i) {
+        if (i) crumbs.appendChild(document.createTextNode(' › '));
+        var a = el('button', 'link', c.name);
+        a.type = 'button';
+        a.onclick = function () { show(c.path); };
+        crumbs.appendChild(a);
+      });
+      list.textContent = '';
+      if (!l.folders.length) list.appendChild(el('li', 'x-none', tr('export.empty_folder')));
+      l.folders.forEach(function (f) {
+        var li = el('li');
+        var nm = el('span');
+        nm.appendChild(folderIcon());
+        nm.appendChild(document.createTextNode(f.name));
+        li.appendChild(nm);
+        if (f.library) li.appendChild(el('small', '', tr('export.shoebox_tag')));
+        li.onclick = function () { show(f.path); };
+        list.appendChild(li);
+      });
+      selected.textContent = tr('export.selected', { name: l.crumbs[l.crumbs.length - 1].name });
+    });
+  };
+  var cancel = { label: tr('launcher.libs.cancel'), onclick: function () {} };
+  openDialog(tr('launcher.pick.title'), body, [
+    cancel,
+    { label: tr('export.use_folder'), cls: 'primary', onclick: function () { if (!current) return false; onChoose(current.path); } },
+  ], 'wide');
+  api('/api/places').then(function (pl) {
+    nav.appendChild(el('h4', '', tr('export.places')));
+    pl.places.forEach(function (p) { addNav(tr(PLACE_NAMES[p.kind] || 'export.place_home'), p.path); });
+    if (pl.drives.length) {
+      nav.appendChild(el('h4', '', tr('export.drives')));
+      pl.drives.forEach(function (d) { addNav(d.name, d.path, d.library ? tr('export.shoebox_tag') : ''); });
+    }
+    var first = pl.places[0] ? pl.places[0].path : '/';
+    return (start && start.trim() ? show(start.trim()).catch(function () { return show(first); }) : show(first));
+  }).catch(function (e) { error.hidden = false; error.textContent = e.message; });
+}
+
 // ---- add a folder or server
 
 function baseName(p) {
@@ -425,6 +572,8 @@ function syncAdd() {
 document.querySelectorAll('input[name=where]').forEach(function (r) { r.onchange = syncAdd; });
 $('add-root').oninput = syncAdd;
 $('add-name').oninput = function () { addNameTouched = true; };
+$('add-pick').onclick = function () { pickFolder($('add-root').value, function (p) { $('add-root').value = p; syncAdd(); }); };
+$('root-pick').onclick = function () { pickFolder($('root').value, function (p) { addPath(p); }); };
 $('add-cancel').onclick = function () { $('add-card').hidden = true; };
 $('add-go').onclick = function () {
   var root = $('add-root').value.trim();
@@ -484,8 +633,8 @@ function renderManage() {
       var acts = el('div', 'acts');
       acts.appendChild(button(tr('launcher.libs.rename'), '', function () { editLib(l.name, 'rename'); }));
       acts.appendChild(button(tr('launcher.libs.change'), '', function () { editLib(l.name, 'root'); }));
-      acts.appendChild(button(tr('launcher.libs.remove'), '', function () { editLib(l.name, 'remove'); }));
-      acts.appendChild(button(tr('launcher.libs.delete'), 'danger', function () { editLib(l.name, 'delete'); }));
+      acts.appendChild(button(tr('launcher.libs.remove'), '', function () { confirmRemove(l); }));
+      acts.appendChild(button(tr('launcher.libs.delete'), 'danger', function () { confirmDelete(l); }));
       li.appendChild(acts);
       if (!l.online) li.appendChild(el('p', 'note warn', tr('launcher.libs.offline.note', { root: l.root })));
     } else {
@@ -494,6 +643,33 @@ function renderManage() {
     ul.appendChild(li);
   });
   box.appendChild(ul);
+}
+
+// The root of a library that goes away leaves the list of folders to scan too:
+// a scan of it would make a .shoebox folder in it.
+function forgetRoot(root) {
+  var p = paths.filter(function (x) { return sameFolder(x, root); })[0];
+  if (p) removePath(p);
+}
+
+function confirmRemove(l) {
+  openDialog(tr('launcher.libs.remove'), el('p', '', tr('launcher.libs.remove.confirm', { name: l.name })), [
+    { label: tr('launcher.libs.cancel'), onclick: function () {} },
+    { label: tr('launcher.libs.remove.go'), cls: 'primary', onclick: function (ctl) {
+      api('/api/libraries/remove', { name: l.name }).then(function () { forgetRoot(l.root); return loadLibs(); }).then(ctl.close).catch(function (e) { ctl.fail(e.message); });
+      return false;
+    } },
+  ]);
+}
+
+function confirmDelete(l) {
+  openDialog(tr('launcher.libs.delete.title', { name: l.name }), el('p', '', tr('launcher.libs.delete.text')), [
+    { label: tr('launcher.libs.cancel'), onclick: function () {} },
+    { label: tr('launcher.libs.delete.go'), cls: 'danger', onclick: function (ctl) {
+      api('/api/libraries/delete', { name: l.name }).then(function () { forgetRoot(l.root); return loadLibs(); }).then(ctl.close).catch(function (e) { ctl.fail(e.message); });
+      return false;
+    } },
+  ]);
 }
 
 function renderEdit(li, l, ed) {
@@ -515,6 +691,7 @@ function renderEdit(li, l, ed) {
       api('/api/libraries/root', { name: l.name, root: root.value, check: true }).then(function (r) { ed.check = r; ed.error = ''; renderManage(); })
         .catch(function (e) { ed.check = null; ed.error = e.message; renderManage(); });
     };
+    wrap2.appendChild(button(tr('launcher.pick.button'), '', function () { pickFolder(root.value, function (p) { root.value = p; check(); }); }));
     wrap2.appendChild(button(tr('launcher.libs.check'), '', check));
     li.appendChild(wrap2);
     var r = ed.check;
@@ -532,18 +709,6 @@ function renderEdit(li, l, ed) {
     };
     row.appendChild(cancel);
     row.appendChild(button(tr(r && r.checked > 0 && r.found === 0 ? 'launcher.libs.use_anyway' : 'launcher.libs.use'), 'primary', function () { save(!!(r && r.checked > 0 && r.found === 0)); }));
-  } else if (ed.mode === 'remove') {
-    li.appendChild(el('p', 'note', tr('launcher.libs.remove.confirm', { name: l.name })));
-    row.appendChild(cancel);
-    row.appendChild(button(tr('launcher.libs.remove.go'), 'primary', function () {
-      libCall('/api/libraries/remove', { name: l.name }, function () { removePath(paths.filter(function (p) { return sameFolder(p, l.root); })[0] || ''); });
-    }));
-  } else {
-    li.appendChild(el('p', 'note warn', tr('launcher.libs.delete.title', { name: l.name }) + ' ' + tr('launcher.libs.delete.text')));
-    row.appendChild(cancel);
-    row.appendChild(button(tr('launcher.libs.delete.go'), 'danger', function () {
-      libCall('/api/libraries/delete', { name: l.name }, function () { removePath(paths.filter(function (p) { return sameFolder(p, l.root); })[0] || ''); });
-    }));
   }
   if (ed.error) li.appendChild(el('p', 'error', ed.error));
   li.appendChild(row);

@@ -117,7 +117,7 @@ i.info { display: inline-block; width: 14px; height: 14px; margin-left: 6px; lin
 .chips button.lib.off span { color: var(--muted); }
 .badge.sep, .chips button.lib .badge.sep { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--accent); white-space: nowrap; margin: 0; }
 .chipbox li .badge.sep { color: var(--accent); }
-.sbx { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.sbx { width: 16px; height: 16px; flex: none; }
 .sheet { margin-top: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); box-shadow: 0 6px 24px rgba(0,0,0,.12); }
 .sheet h3 { margin: 0 0 4px; font-size: 16px; }
 .field { margin-top: 14px; }
@@ -145,3 +145,35 @@ i.info { display: inline-block; width: 14px; height: 14px; margin-left: 6px; lin
 .libs .state.off { color: var(--muted); border-style: dashed; }
 .libs .edit { display: flex; gap: 8px; margin-top: 10px; }
 .libs .edit input { flex: 1; }
+
+.rootrow { display: flex; gap: 8px; align-items: flex-start; }
+.rootrow .chipbox, .rootrow > input { flex: 1; min-width: 0; }
+.rootrow > button.quiet { margin-left: 0; white-space: nowrap; align-self: stretch; }
+.chip-edit { font: inherit; font-size: 14px; padding: 2px 8px; border: 1px solid var(--accent); border-radius: 999px; background: var(--bg); color: var(--text); min-width: 160px; }
+/* dialogs: the rest of the page is greyed out behind them */
+dialog.dlg { border: 1px solid var(--line); border-radius: 14px; background: var(--card); color: var(--text); padding: 20px; width: min(540px, calc(100vw - 32px)); box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+dialog.dlg.wide { width: min(760px, calc(100vw - 32px)); }
+dialog.dlg::backdrop { background: rgba(0,0,0,.5); }
+dialog.dlg h3 { margin: 0 0 10px; font-size: 17px; }
+dialog.dlg p { margin: 0; }
+dialog.dlg p.error { margin-top: 10px; }
+/* the folder picker, as in the photo app's export dialog */
+.x-pk { display: flex; border: 1px solid var(--line); border-radius: 8px; height: 300px; overflow: hidden; }
+.x-pk nav { width: 190px; flex: none; background: var(--bg); border-right: 1px solid var(--line); overflow-y: auto; padding: 6px 0; font-size: 14px; }
+.x-pk nav h4 { margin: 8px 14px 3px; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.x-pk nav div { padding: 5px 14px; display: flex; gap: 8px; align-items: baseline; cursor: pointer; }
+.x-pk nav div small { margin-left: auto; color: var(--muted); font-size: 11px; }
+.x-pk nav div.on { background: var(--accent); color: var(--accent-text); }
+.x-pk nav div.on small { color: var(--accent-text); }
+.x-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.x-crumbs { padding: 8px 12px; font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--line); overflow-x: auto; white-space: nowrap; }
+.x-crumbs button.link { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.x-crumbs button.link:hover { color: var(--accent); }
+.x-main ul { list-style: none; margin: 0; padding: 4px 0; flex: 1; overflow-y: auto; font-size: 14px; }
+.x-main li { padding: 5px 12px; display: flex; gap: 8px; align-items: baseline; cursor: pointer; }
+.x-main li:hover { background: var(--bg); }
+.x-main li small { margin-left: auto; color: var(--muted); font-size: 12px; }
+.x-main li.x-none { color: var(--muted); cursor: default; }
+.x-main li span { display: inline-flex; align-items: center; gap: 8px; }
+.fld { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linejoin: round; opacity: .7; }
+.x-selected { margin: 8px 0 0; }

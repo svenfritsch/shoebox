@@ -663,3 +663,20 @@ fn libraries_next_to_the_program_are_listed_added_renamed_moved_and_deleted_from
     let _ = std::fs::remove_dir_all(&home);
     let _ = std::fs::remove_dir_all(&wrong);
 }
+
+#[test]
+fn the_launcher_lists_places_and_folders_for_its_folder_picker() {
+    let _turn = serial();
+    let lib = Library::new("launcher-picker");
+    let launcher = start_launcher();
+    let addr = launcher.addr;
+    let places = lget(addr, "/api/places").json();
+    assert!(places["places"].is_array() && places["drives"].is_array(), "{places}");
+    let list = lget(addr, &format!("/api/folders?path={}", encode(&lib.root.display().to_string()))).json();
+    let names: Vec<&str> = list["folders"].as_array().unwrap().iter().map(|f| f["name"].as_str().unwrap()).collect();
+    assert!(names.contains(&"Familie") && names.contains(&"Ordner mit Leerzeichen"), "{names:?}");
+    assert!(!names.iter().any(|n| n.starts_with('.')), "hidden folders are not listed");
+    assert_eq!(lget(addr, "/api/folders?path=relative/path").status, 400);
+    assert_eq!(lget(addr, &format!("/api/folders?path={}", encode(&lib.path("Familie/notes.txt").display().to_string()))).status, 400, "a file is not a folder");
+    launcher.stop().unwrap();
+}

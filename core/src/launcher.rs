@@ -745,6 +745,8 @@ fn router(shared: Arc<Shared>) -> Router {
         .route("/api/job/cancel", post(job_cancel))
         .route("/api/config", get(config_get).post(config_set))
         .route("/api/reveal", post(reveal_files))
+        .route("/api/places", get(places_get))
+        .route("/api/folders", get(folders_get))
         .route("/api/libraries", get(libraries_get).post(libraries_add))
         .route("/api/libraries/rename", post(libraries_rename))
         .route("/api/libraries/root", post(libraries_root))
@@ -992,6 +994,17 @@ async fn drives() -> Json<Vec<Drive>> {
 // ---------------------------------------------------------------- libraries
 // Libraries whose index is kept next to the program (phase 16, docs/phase16.md):
 // the list in the Control Panel's step 1 and its "Manage…" panel.
+
+/// The folder picker of the page (the same lists the photo app's export dialog
+/// uses): the usual places and the drives, and the sub-folders of one folder.
+async fn places_get() -> Result<Json<crate::export::Places>, ApiError> {
+    blocking(|| Ok(crate::export::places())).await.map(Json)
+}
+
+async fn folders_get(axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>) -> Result<Json<crate::export::Listing>, ApiError> {
+    let path = q.get("path").cloned().unwrap_or_default();
+    blocking(move || crate::export::list_folders(Path::new(&path)).map_err(bad)).await.map(Json)
+}
 
 fn libs_home(shared: &Shared) -> Result<PathBuf, ApiError> {
     shared.home.clone().ok_or_else(|| ApiError::BadRequest("the program folder is not known".into()))
