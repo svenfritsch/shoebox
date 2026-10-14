@@ -57,6 +57,28 @@
     <p class="hint" data-i18n="launcher.drives.hint">Detected drives, click to add:</p>
     <div id="drive-chips" class="chips" data-i18n-aria-label="launcher.drives.detected" aria-label="Detected drives"></div>
     <p id="root-hint" class="hint"></p>
+
+    <div class="row-head" id="libs-head">
+      <p class="hint lbl"><span data-i18n="launcher.libs.title">Libraries kept next to the program</span> <i class="info" tabindex="0" role="img" data-i18n-title="launcher.libs.info" data-i18n-aria-label="launcher.libs.info">i</i></p>
+      <button type="button" id="libs-manage" class="quiet" data-i18n="launcher.libs.manage">Manage…</button>
+    </div>
+    <div id="lib-chips" class="chips"></div>
+
+    <div id="add-card" class="sheet" hidden>
+      <h3 data-i18n="launcher.libs.add.title">Add a folder or server</h3>
+      <div class="field"><label for="add-root" data-i18n="launcher.libs.add.folder">Folder</label>
+        <input id="add-root" data-i18n-placeholder="launcher.libs.add.folder_ph" placeholder="Path of the folder or server share" autocomplete="off" spellcheck="false"></div>
+      <div class="field"><label data-i18n="launcher.libs.add.keep">Where should the index be kept?</label>
+        <label class="choice on" id="choice-drive"><input type="radio" name="where" value="drive" checked><div><b data-i18n="launcher.libs.add.on_drive">On the drive (the usual way)</b><span data-i18n="launcher.libs.add.on_drive.desc"></span></div></label>
+        <label class="choice" id="choice-separate"><input type="radio" name="where" value="separate"><div><b data-i18n="launcher.libs.add.separate">Separate (next to the program)</b><span id="add-separate-desc"></span></div></label></div>
+      <div class="field" id="add-name-field" hidden><label for="add-name" data-i18n="launcher.libs.add.name">Name in shoebox</label>
+        <input id="add-name" autocomplete="off" spellcheck="false"><p class="hint" data-i18n="launcher.libs.add.name_hint"></p></div>
+      <p class="note" id="add-note" data-i18n="launcher.libs.add.note" hidden></p>
+      <p class="error" id="add-error" hidden></p>
+      <div class="btnrow"><button type="button" id="add-cancel" data-i18n="launcher.libs.cancel">Cancel</button><button type="button" id="add-go" class="primary" data-i18n="launcher.libs.add.go">Add</button></div>
+    </div>
+
+    <div id="manage-card" class="sheet" hidden></div>
   </section>
 
   </fieldset>

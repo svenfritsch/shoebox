@@ -112,6 +112,8 @@ function renderChips() {
       b.title = tr('launcher.backup_of.title', { path: mark.of, date: I18n.date(new Date(mark.at * 1000)) });
       li.appendChild(b);
     }
+    var lib = libOfPath(p);
+    if (lib) li.appendChild(sepBadge(lib.name));
     var x = document.createElement('button');
     x.type = 'button'; x.textContent = '×'; x.title = tr('launcher.remove'); x.setAttribute('aria-label', tr('launcher.remove_path', { path: p }));
     x.onclick = function () { removePath(p); };
@@ -305,6 +307,246 @@ function loadConfig() {
     renderChips();
     renderDatalist();
   }).catch(function () {});
+}
+
+// ---------------------------------------------------------------- libraries next to the program (phase 16)
+// A library can keep its index next to the program instead of in the folder:
+// nothing is written into the folder, so it is only read (docs/phase16.md).
+
+var libs = [];                           // /api/libraries: the registered libraries
+var libsInfo = { dir: null, writable: false };
+var libEdit = null;                      // { name, mode: 'rename' | 'root' | 'remove' | 'delete', check, error }
+var libsShown = '';
+
+// Our own drawing: a box with a lid that sits a little askew.
+var SHOEBOX_ICON = '<svg class="sbx" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10.5l1.2 7.5a2 2 0 0 0 2 1.7h7.6a2 2 0 0 0 2-1.7l1.2-7.5"/><rect x="3" y="6" width="18" height="4" rx="1.5" transform="rotate(-5 12 8)"/></svg>';
+
+function sameFolder(a, b) {
+  var n = function (p) { return p.trim().replace(/[\\\/]+$/, ''); };
+  return n(a) === n(b);
+}
+
+function libOfPath(p) {
+  return libs.filter(function (l) { return sameFolder(l.root, p); })[0];
+}
+
+function sepBadge(name) {
+  var b = document.createElement('span');
+  b.className = 'badge';
+  b.title = tr('launcher.libs.badge.title', { name: name });
+  b.innerHTML = SHOEBOX_ICON;
+  b.appendChild(document.createTextNode(tr('launcher.libs.badge')));
+  return b;
+}
+
+function libsDir() {
+  return libsInfo.dir ? libsInfo.dir.replace(/[\\\/]+$/, '') + (libsInfo.dir.indexOf('\\') >= 0 ? '\\libraries' : '/libraries') : '';
+}
+
+function el(tag, cls, text) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function button(text, cls, onclick) {
+  var b = el('button', cls, text);
+  b.type = 'button';
+  b.onclick = onclick;
+  return b;
+}
+
+function loadLibs(quiet) {
+  return api('/api/libraries').then(function (d) {
+    var shown = JSON.stringify(d);
+    if (quiet === true && shown === libsShown) return;
+    libsShown = shown;
+    libs = d.libraries || [];
+    libsInfo = { dir: d.dir, writable: !!d.writable };
+    renderLibs();
+    renderChips();
+  }).catch(function () { /* the list of drives still works */ });
+}
+
+function renderLibs() {
+  var box = $('lib-chips');
+  box.textContent = '';
+  libs.forEach(function (l) {
+    var b = button('', 'lib' + (l.online ? '' : ' off'), function () { addPath(l.root); });
+    b.title = l.root + (l.online ? '' : ' · ' + tr('launcher.libs.offline'));
+    b.appendChild(el('span', '', l.name));
+    b.appendChild(sepBadge(l.name));
+    box.appendChild(b);
+  });
+  box.appendChild(button(tr('launcher.libs.add'), 'quiet', openAdd));
+  if (!$('manage-card').hidden) renderManage();
+}
+
+// ---- add a folder or server
+
+function baseName(p) {
+  return p.trim().replace(/[\\\/]+$/, '').split(/[\\\/]/).pop() || '';
+}
+
+var addNameTouched = false;
+
+function openAdd() {
+  $('manage-card').hidden = true;
+  $('add-card').hidden = false;
+  $('add-root').value = '';
+  $('add-name').value = '';
+  addNameTouched = false;
+  $('add-error').hidden = true;
+  var ok = libsInfo.writable;
+  var radio = document.querySelector('input[name=where][value=separate]');
+  radio.disabled = !ok;
+  $('choice-separate').classList.toggle('disabled', !ok);
+  document.querySelector('input[name=where][value=drive]').checked = true;
+  $('add-separate-desc').textContent = tr('launcher.libs.add.separate.desc', { dir: libsDir() });
+  if (!ok) { $('add-error').hidden = false; $('add-error').textContent = tr('launcher.libs.add.unwritable', { dir: libsInfo.dir || '' }); }
+  syncAdd();
+  $('add-root').focus();
+}
+
+function chosenWhere() {
+  return document.querySelector('input[name=where]:checked').value;
+}
+
+function syncAdd() {
+  var sep = chosenWhere() === 'separate';
+  $('choice-drive').classList.toggle('on', !sep);
+  $('choice-separate').classList.toggle('on', sep);
+  $('add-name-field').hidden = !sep;
+  $('add-note').hidden = !sep;
+  if (sep && !addNameTouched) $('add-name').value = baseName($('add-root').value);
+}
+
+document.querySelectorAll('input[name=where]').forEach(function (r) { r.onchange = syncAdd; });
+$('add-root').oninput = syncAdd;
+$('add-name').oninput = function () { addNameTouched = true; };
+$('add-cancel').onclick = function () { $('add-card').hidden = true; };
+$('add-go').onclick = function () {
+  var root = $('add-root').value.trim();
+  if (!root) { $('add-root').focus(); return; }
+  if (chosenWhere() === 'drive') { addPath(root); $('add-card').hidden = true; return; }
+  api('/api/libraries', { root: root, name: $('add-name').value.trim() }).then(function (d) {
+    $('add-card').hidden = true;
+    addPath(d.root);
+    return loadLibs();
+  }).catch(function (e) { $('add-error').hidden = false; $('add-error').textContent = e.message; });
+};
+
+// ---- manage
+
+$('libs-manage').onclick = function () {
+  var open = $('manage-card').hidden;
+  $('add-card').hidden = true;
+  $('manage-card').hidden = !open;
+  libEdit = null;
+  if (open) { loadLibs().then(renderManage); renderManage(); }
+};
+
+function stateText(l) {
+  if (!l.online) return tr('launcher.libs.offline');
+  return tr('launcher.libs.online') + ' · ' + (l.photos == null ? tr('launcher.libs.unscanned') : trn('launcher.libs.photos', l.photos));
+}
+
+function editLib(name, mode) { libEdit = { name: name, mode: mode, check: null, error: '' }; renderManage(); }
+
+function libCall(path, body, done) {
+  api(path, body).then(function (d) { libEdit = null; done(d); return loadLibs().then(renderManage); })
+    .catch(function (e) { if (libEdit) libEdit.error = e.message; renderManage(); });
+}
+
+function renderManage() {
+  var box = $('manage-card');
+  if (box.hidden) return;
+  box.textContent = '';
+  var head = el('div', 'title-row');
+  head.appendChild(el('h3', '', tr('launcher.libs.title')));
+  head.appendChild(button(tr('launcher.libs.close'), 'quiet', function () { box.hidden = true; libEdit = null; }));
+  box.appendChild(head);
+  box.appendChild(el('p', 'hint', tr('launcher.libs.where', { dir: libsDir() })));
+  if (!libs.length) { box.appendChild(el('p', 'hint', tr('launcher.libs.none'))); return; }
+  var ul = el('ul', 'libs');
+  libs.forEach(function (l) {
+    var li = el('li');
+    var top = el('div', 'top');
+    var who = el('div');
+    who.appendChild(el('div', 'lname', l.name));
+    who.appendChild(el('div', 'lpath', l.root));
+    top.appendChild(who);
+    top.appendChild(el('span', 'state' + (l.online ? '' : ' off'), stateText(l)));
+    li.appendChild(top);
+    var ed = libEdit && libEdit.name === l.name ? libEdit : null;
+    if (!ed) {
+      var acts = el('div', 'acts');
+      acts.appendChild(button(tr('launcher.libs.rename'), '', function () { editLib(l.name, 'rename'); }));
+      acts.appendChild(button(tr('launcher.libs.change'), '', function () { editLib(l.name, 'root'); }));
+      acts.appendChild(button(tr('launcher.libs.remove'), '', function () { editLib(l.name, 'remove'); }));
+      acts.appendChild(button(tr('launcher.libs.delete'), 'danger', function () { editLib(l.name, 'delete'); }));
+      li.appendChild(acts);
+      if (!l.online) li.appendChild(el('p', 'note warn', tr('launcher.libs.offline.note', { root: l.root })));
+    } else {
+      renderEdit(li, l, ed);
+    }
+    ul.appendChild(li);
+  });
+  box.appendChild(ul);
+}
+
+function renderEdit(li, l, ed) {
+  var cancel = button(tr('launcher.libs.cancel'), '', function () { libEdit = null; renderManage(); });
+  var row = el('div', 'btnrow');
+  if (ed.mode === 'rename') {
+    var inp = el('input'); inp.value = l.name; inp.setAttribute('aria-label', tr('launcher.libs.name_label'));
+    var wrap = el('div', 'edit'); wrap.appendChild(inp); li.appendChild(wrap);
+    row.appendChild(cancel);
+    row.appendChild(button(tr('launcher.libs.save'), 'primary', function () {
+      libCall('/api/libraries/rename', { name: l.name, new_name: inp.value }, function () {});
+    }));
+    setTimeout(function () { inp.focus(); inp.select(); }, 0);
+  } else if (ed.mode === 'root') {
+    var root = el('input'); root.value = ed.value !== undefined ? ed.value : l.root; root.setAttribute('aria-label', tr('launcher.libs.root_label'));
+    var wrap2 = el('div', 'edit'); wrap2.appendChild(root);
+    var check = function () {
+      ed.value = root.value;
+      api('/api/libraries/root', { name: l.name, root: root.value, check: true }).then(function (r) { ed.check = r; ed.error = ''; renderManage(); })
+        .catch(function (e) { ed.check = null; ed.error = e.message; renderManage(); });
+    };
+    wrap2.appendChild(button(tr('launcher.libs.check'), '', check));
+    li.appendChild(wrap2);
+    var r = ed.check;
+    if (r) {
+      if (r.checked === 0) li.appendChild(el('p', 'note', tr('launcher.libs.check.new')));
+      else if (r.found === 0) li.appendChild(el('p', 'note warn', tr('launcher.libs.check.none', { checked: r.checked })));
+      else li.appendChild(el('p', 'note ok', tr('launcher.libs.check.ok', { found: r.found, checked: r.checked, total: r.total })));
+    }
+    var save = function (force) {
+      var old = l.root;
+      libCall('/api/libraries/root', { name: l.name, root: root.value, force: force }, function () {
+        paths = paths.map(function (p) { return sameFolder(p, old) ? root.value.trim() : p; });
+        renderChips(); savePaths();
+      });
+    };
+    row.appendChild(cancel);
+    row.appendChild(button(tr(r && r.checked > 0 && r.found === 0 ? 'launcher.libs.use_anyway' : 'launcher.libs.use'), 'primary', function () { save(!!(r && r.checked > 0 && r.found === 0)); }));
+  } else if (ed.mode === 'remove') {
+    li.appendChild(el('p', 'note', tr('launcher.libs.remove.confirm', { name: l.name })));
+    row.appendChild(cancel);
+    row.appendChild(button(tr('launcher.libs.remove.go'), 'primary', function () {
+      libCall('/api/libraries/remove', { name: l.name }, function () { removePath(paths.filter(function (p) { return sameFolder(p, l.root); })[0] || ''); });
+    }));
+  } else {
+    li.appendChild(el('p', 'note warn', tr('launcher.libs.delete.title', { name: l.name }) + ' ' + tr('launcher.libs.delete.text')));
+    row.appendChild(cancel);
+    row.appendChild(button(tr('launcher.libs.delete.go'), 'danger', function () {
+      libCall('/api/libraries/delete', { name: l.name }, function () { removePath(paths.filter(function (p) { return sameFolder(p, l.root); })[0] || ''); });
+    }));
+  }
+  if (ed.error) li.appendChild(el('p', 'error', ed.error));
+  li.appendChild(row);
 }
 
 // ---------------------------------------------------------------- commands
@@ -683,9 +925,9 @@ I18n.ready.then(function () {
     sel.appendChild(o);
   });
   sel.onchange = function () { I18n.setLang(sel.value); };
-  loadConfig().then(function () { return loadDrives(); });
-  setInterval(function () { if (!document.hidden) loadDrives(true); }, 15000);
-  window.addEventListener('focus', function () { loadDrives(true); });
+  loadConfig().then(function () { return Promise.all([loadDrives(), loadLibs()]); });
+  setInterval(function () { if (!document.hidden) { loadDrives(true); loadLibs(true); } }, 15000);
+  window.addEventListener('focus', function () { loadDrives(true); loadLibs(true); });
   appState();
   poll();
 });
