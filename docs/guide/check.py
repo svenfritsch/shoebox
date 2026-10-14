@@ -39,6 +39,12 @@ def parse(lang):
 
 def main():
     bad = []
+    # A merge that was committed with its conflict markers still in the file.
+    for lang in LANGS:
+        name = f"shoebox-{lang}.html"
+        for n, line in enumerate(open(os.path.join(HERE, name), encoding="utf-8"), 1):
+            if re.match(r"(<<<<<<<|=======$|>>>>>>>)", line):
+                bad.append(f"{name}:{n}: merge-conflict marker left in the file")
     parsed = {lang: parse(lang) for lang in LANGS}
     (en_sec, en_img, en_dots), (de_sec, de_img, de_dots) = parsed["en"], parsed["de"]
     if en_sec != de_sec:
