@@ -181,11 +181,13 @@ share, faces over the network as a tuned feature (works, slow).
   whether the registry also records the drive-letter form the user typed is
   not (it would only matter for display).
 - Default thread count for network roots (measure).
-- Should "next to the program" also be offered for a local folder (not a
-  server)? The design allows it; the Control Panel text says "folder or
-  server".
-- Licence: running it at a workplace is beyond "private use"
-  (`LICENSE.txt`); the lawyer item in plan.md covers it.
+- Decided: "next to the program" is offered for any folder, not only a
+  server. It always means read-only for shoebox (no move, trash, rotate,
+  rename); someone who wants to organise photos keeps the index on the drive.
+- Licence: the first user is a friend, on one work laptop, with the owner's
+  permission. `LICENSE.txt` stays as it is; the permission is a note to
+  the friend, not a licence change. Anything beyond friends still waits for
+  the lawyer item in plan.md.
 
 ## Origin
 
