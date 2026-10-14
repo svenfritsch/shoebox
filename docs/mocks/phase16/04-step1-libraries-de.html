@@ -1,0 +1,58 @@
+<!doctype html><html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../../../core/launcher-web/launcher.css">
+<style>
+/* what phase 16 adds to launcher.css */
+body{padding-top:4px}
+.badge.here{color:var(--accent);}
+.chips button.lib{display:inline-flex;gap:8px;align-items:center}
+.chips button.lib span{font-size:14px;color:var(--text);margin:0;display:inline}
+.chips button.lib .badge{font-size:11px;font-weight:600;color:var(--accent)}
+.chips button.off{border-style:dashed;color:var(--muted)}
+.chips button.off span{color:var(--muted)}
+.chips button.off .badge{color:var(--muted)}
+.row-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:14px}
+.row-head .hint{margin:0}
+button.quiet{margin-left:0;padding:6px 14px;font-size:14px}
+.field{margin-top:14px}
+.field .pathrow{display:flex;gap:8px}
+.field .pathrow button{white-space:nowrap}
+.choice{display:flex;gap:12px;align-items:flex-start;padding:12px;border:1px solid var(--line);border-radius:10px;margin-top:8px;color:var(--text);font-size:15px}
+.choice input{margin-top:4px}
+.choice.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.choice b{display:block} .choice span{display:block;color:var(--muted);font-size:13px;margin-top:2px}
+.note{margin-top:12px;padding:10px 12px;border-radius:10px;background:var(--bg);border:1px solid var(--line);font-size:14px}
+.note.warn{border-color:var(--bad);color:var(--bad)}
+.note.ok{color:var(--ok)}
+.btnrow{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.btnrow button{text-align:center}
+.libs{list-style:none;margin:10px 0 0;padding:0;border:1px solid var(--line);border-radius:10px}
+.libs li{padding:12px 14px;border-bottom:1px solid var(--line)}
+.libs li:last-child{border-bottom:0}
+.libs .top{display:flex;justify-content:space-between;gap:12px;align-items:center}
+.libs .name{font-weight:600} .libs .path{color:var(--muted);font-size:13px;word-break:break-all}
+.libs .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.libs .acts button{padding:4px 12px;font-size:13px;border-radius:8px}
+.libs .acts .danger{padding:4px 12px}
+.pill{padding:2px 10px;border-radius:999px;background:var(--bg);border:1px solid var(--line);font-size:13px;white-space:nowrap}
+.pill.ok{color:var(--ok)} .pill.off{color:var(--muted);border-style:dashed}
+.sheet{box-shadow:0 8px 30px rgba(0,0,0,.18)}
+.mocktag{font:12px system-ui;color:#fff;background:#8a6d00;display:inline-block;padding:2px 8px;border-radius:999px;margin:0 0 8px}
+</style></head><body><main>
+<p class="mocktag">MOCK 1 · Control Panel, step 1</p>
+<section class="card">
+  <h2>1 · Wo sind deine Fotos?</h2>
+  <label>Laufwerke oder Fotoordner (Pfad eintippen, mit Enter hinzufügen)</label>
+  <div class="chipbox"><ul>
+    <li><span class="name">Fotos (\\server\share\Fotos)</span><span class="badge here">Index neben dem Programm</span><button aria-label="remove">×</button></li>
+    <li><span class="name">Extreme SSD</span><span class="badge">✓</span><button aria-label="remove">×</button></li>
+  </ul><input placeholder="/Volumes/MyDrive"></div>
+  <p class="hint">Erkannte Laufwerke, zum Hinzufügen anklicken:</p>
+  <div class="chips"><button class="has-lib">Extreme SSD</button><button>Backup 2TB</button></div>
+  <div class="row-head"><p class="hint">Bibliotheken neben dem Programm:</p></div>
+  <div class="chips">
+    <button class="lib"><span>Fotos</span><span class="badge">Index neben dem Programm</span></button>
+    <button class="lib off"><span>Büro-Archiv</span><span class="badge">nicht verbunden</span></button>
+    <button class="quiet">＋ Ordner oder Server hinzufügen…</button>
+  </div>
+</section></main></body></html>
