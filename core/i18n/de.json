@@ -1057,7 +1057,7 @@
   "launcher.libs.add.on_drive": "Auf dem Laufwerk (der übliche Weg)",
   "launcher.libs.add.on_drive.desc": "Im hinzugefügten Ordner wird ein Ordner .shoebox angelegt. Er wandert mit dem Laufwerk mit. Fotos können in der Foto-App verschoben und gelöscht werden.",
   "launcher.libs.add.separate": "Separat (neben dem Programm)",
-  "launcher.libs.add.separate.desc": "In den Ordner wird nichts geschrieben, auch kein Ordner .shoebox. Der Index liegt auf diesem Computer, in {dir}. Gedacht für Server und freigegebene Ordner: Fotos können nur angesehen, nie verschoben, umbenannt oder gelöscht werden.",
+  "launcher.libs.add.separate.desc": "In den Ordner wird nichts geschrieben, auch kein Ordner .shoebox. Der Index liegt auf diesem Computer, in {dir}. Gedacht für Server und geteilte Ordner: Fotos können nur angesehen, nie verschoben, umbenannt oder gelöscht werden.",
   "launcher.libs.add.note": "shoebox liest nur: Es geht durch jeden Unterordner, findet die Fotos und führt seine Liste auf diesem Computer. Dokumente und andere Dateien werden übersprungen. Der erste Scan eines großen Servers kann Stunden dauern; du kannst abbrechen und später weitermachen.",
   "launcher.libs.add.go": "Hinzufügen",
   "launcher.libs.add.unwritable": "„Separat“ ist nicht möglich: shoebox kann nicht in {dir} schreiben. Verschiebe den shoebox-Ordner nach Dokumente oder auf den Desktop, oder lege den Index auf das Laufwerk.",
