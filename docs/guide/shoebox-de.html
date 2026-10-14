@@ -1153,70 +1153,12 @@
 
     <section id="drives">
       <h2>Laufwerke, Backups und das iPad</h2>
-<<<<<<< HEAD
-      <div class="cols">
-        <div>
-          <div class="items">
-            <div>
-              <h3>Mehrere Laufwerke</h3>
-              <p>shoebox mit mehr als einem Laufwerk starten, und jedes erscheint in der Seitenleiste. <b>Alle Laufwerke</b> zeigt eine gemeinsame Zeitleiste über alle. Sie ist zum Ansehen da: Favoriten zeigen ein ♥ (ausgegraut, nicht anklickbar), und die Infoleiste zeigt Tags, Favorit und Personen, ohne dass sich dort etwas ändern lässt (<b>Rahmen anzeigen</b> und das Zeigen auf eine Person, um ihr Gesicht zu sehen, funktionieren weiterhin). Die Leiste nennt das Laufwerk, auf dem das Foto liegt (den Namen des Datenträgers, wie in <b>Laufwerke verwalten</b>), und bietet <b>Im Finder zeigen</b> (unter Windows <b>Im Explorer zeigen</b>) und <b>Pfad kopieren</b>; <b>In der Zeitleiste von &lt;Laufwerk&gt; öffnen</b> wechselt zur eigenen Zeitleiste dieses Laufwerks, im Ordner des Fotos, um Tags, Personen oder Favoriten zu ändern. <b>Laufwerke verwalten</b>, neben Duplikate, Papierkorb und Einstellungen, öffnet eine Seite, die nicht vom angesehenen Laufwerk abhängt: deine Laufwerke als Karten und darunter zwei Reiter, <b>Personen über Laufwerke hinweg</b> und <b>Duplikate über Laufwerke hinweg</b>. Ein abgestecktes Laufwerk steht als offline da. Unter <b>Personen über Laufwerke hinweg</b> steht bei jeder Person, auf welchen Laufwerken sie vorkommt: mit dem Namen des Datenträgers und der Zahl der dort gefundenen Gesichter (der Ordner erscheint beim Darüberfahren), und wer auf den meisten Laufwerken ist, steht ganz vorn. Das Laufwerk, das du gerade ansiehst, ist in der Akzentfarbe ausgefüllt, ebenso die Seite darunter (Alle Fotos, Duplikate, Papierkorb, Einstellungen); so siehst du immer, welcher Papierkorb von welchem Laufwerk offen ist.</p>
-            </div>
-            <div>
-              <h3>Original- und Backup-Laufwerke</h3>
-              <p>Auf der Seite Laufwerke verwalten ist jedes Laufwerk eine Karte mit dem Namen der Festplatte und dem Ordner darauf (zum Beispiel <i>Extreme SSD · /Photos</i>). Mit dem Menü in der Karte sagst du, was das Laufwerk ist: <b>Original-Laufwerk</b> oder <b>Backup-Laufwerk</b>. shoebox schlägt ein Backup vor, wenn fast alles auf einem Laufwerk auch auf einem anderen ist, bis du dich entscheidest. Ein Backup hat einen blauen Rahmen, steht direkt hinter seinem Original und trägt <b>Backup von </b><i>Name der Festplatte</i> und <b>Nicht in der gemeinsamen Zeitleiste</b>. Es zeigt, wie viel vom Original auf dem Backup ist, und zwei Listen: Dateien, die <b>auf dem Backup anders</b> sind (gleicher Pfad, anderer Inhalt, zum Beispiel nach einer Bearbeitung), und Dateien <b>nur auf dem Backup</b>. Die dritte Liste, Dateien, die <b>noch nicht auf dem Backup</b> sind, steht in der Karte des Originals. Alle Listen sind zunächst zugeklappt; klapp eine auf, um ihre Dateien zu sehen, und das Ordner-Symbol neben einer Datei zeigt sie im Finder (unter Windows im Explorer). Jede Liste hat einen Knopf <b>Fotos anzeigen ›</b>. Bei <b>nur auf dem Backup</b> und <b>noch nicht auf dem Backup</b> öffnet er die eigene Zeitleiste des Laufwerks mit einem Filter-Chip, <b>Nur auf Backup</b> oder <b>Nur auf Original</b>; bei <b>auf dem Backup anders</b> öffnet er eine Zeitleiste beider Laufwerke mit einem Abzeichen <b>Original</b> und <b>Backup</b> auf jedem Foto, die zwei Versionen eines Fotos nebeneinander. Der Chip funktioniert wie jeder andere: Die Suche (Dateinamen, Tags, Personen) und die übrigen Filter schränken ihn weiter ein, <b>✕</b> entfernt ihn, und wer <i>nur auf</i> oder <i>backup</i> tippt, bekommt ihn vorgeschlagen. Wählst du ein Laufwerk, zu dem er nicht passt (ein Original-Laufwerk bei <b>Nur auf Backup</b>, Alle Laufwerke), wird der Chip entfernt, und ein Hinweis sagt warum. In der Info-Leiste des Fotos steht neben dem Namen ein Abzeichen <b>Nur auf Backup</b> oder <b>Nicht auf Backup</b>; zeig darauf für die Erklärung. Die Leiste unten in einer Karte sagt, wann das Laufwerk zuletzt gescannt wurde und wann zuletzt neue Dateien darauf angekommen sind (beim Backup: <b>Letztes Backup</b>); zeig auf ein Datum für die genaue Uhrzeit.</p>
-              <figure>
-                <img src="assets/de/drives-overview.jpg" alt="" loading="lazy">
-                <figcaption>Laufwerke verwalten: ein Original und sein Backup. Jede Liste hat einen Knopf „Fotos anzeigen“.</figcaption>
-              </figure>
-              <figure>
-                <img src="assets/de/drives-only-backup.jpg" alt="" loading="lazy">
-                <figcaption>„Fotos anzeigen“ bei „nur auf dem Backup“: die eigene Zeitleiste des Backups mit dem Chip <b>Nur auf Backup</b>.</figcaption>
-              </figure>
-              <figure>
-                <img src="assets/de/drives-different.jpg" alt="" loading="lazy">
-                <figcaption>Auf dem Backup anders: beide Versionen eines Fotos nebeneinander, jede mit einem Abzeichen Original oder Backup.</figcaption>
-              </figure>
-              <figure class="narrow">
-                <img src="assets/de/drives-badge.jpg" alt="" loading="lazy">
-                <figcaption>Die Info-Leiste eines Fotos, das es nur auf dem Backup gibt: Das Abzeichen steht neben dem Namen.</figcaption>
-              </figure>
-            </div>
-            <div>
-              <h3>Backup-Prüfung</h3>
-              <p>Erst das Original wählen, dann das Backup. shoebox vergleicht die beiden Indizes (kein Foto wird gelesen) und listet, was noch nicht auf dem Backup ist, was abweicht und was nur auf dem Backup liegt. <i>Auch das Backup neu lesen</i> findet Bitfäule.</p>
-            </div>
-            <div>
-              <h3>Deine Tags und Namen sind gesichert</h3>
-              <p>Alles, was du selbst hinzufügst (eigene Tags, Personen, Gruppen, deine ✓- und ✗-Entscheidungen, gezeichnete Gesichter), liegt im Index, nie in einem Foto. Während du arbeitest, legt shoebox außerdem eine Sicherheitskopie des Index an, <code>library.db.bak</code>, und eine lesbare Liste von allem, <code>userdata.json</code>, beide im Ordner <code>.shoebox</code> auf dem Laufwerk. Sie wandern mit dem Laufwerk, ein Backup des Laufwerks enthält sie also auch. <code>userdata.json</code> lässt sich mit jedem Texteditor öffnen. Ist der Index einmal beschädigt, verweist <b>Prüfen</b> im Launcher auf die Sicherheitskopie.</p>
-            </div>
-            <div>
-              <h3>iPad & andere Geräte</h3>
-              <p>Im Terminal: <code>shoebox serve /Volumes/MeinLaufwerk --lan</code>. Es zeigt eine Adresse und eine PIN; die Adresse in Safari im selben WLAN öffnen und die PIN einmal eingeben. In der Ansicht wischen, zum Auswählen tippen.</p>
-            </div>
-          </div>
-          <div class="panel">
-            <h3>Kommandozeile (optional)</h3>
-            <dl class="cli">
-              <dt><code>shoebox scan &lt;Ordner&gt;</code></dt>
-              <dd>neue, verschobene und geänderte Dateien indexieren</dd>
-              <dt><code>shoebox verify &lt;Ordner&gt;</code></dt>
-              <dd>Dateien neu lesen und mit dem Index vergleichen</dd>
-              <dt><code>shoebox recognize &lt;Ordner&gt; [--pets] [--text]</code></dt>
-              <dd>Gesichter (und Haustiere, und mit <code>--text</code> die Wörter in den Fotos lesen; <code>--text-only</code> liest nur die Wörter) finden</dd>
-              <dt><code>shoebox backup &lt;Original&gt; &lt;Backup&gt;</code></dt>
-              <dd>ist das Backup vollständig?</dd>
-              <dt><code>shoebox serve &lt;Ordner&gt; [--lan] [--pin …]</code></dt>
-              <dd>die Foto-App öffnen</dd>
-            </dl>
-          </div>
-=======
       <div class="topic">
         <div class="txt">
           <h3>Mehrere Laufwerke</h3>
           <p>shoebox mit mehr als einem Laufwerk starten, und jedes erscheint in der Seitenleiste. <b>Alle Laufwerke</b> zeigt eine gemeinsame Zeitleiste über alle. Sie ist zum Ansehen da: Favoriten zeigen ein ♥ (ausgegraut, nicht anklickbar), und die Infoleiste zeigt Tags, Favorit und Personen, ohne dass sich dort etwas ändern lässt (<b>Rahmen anzeigen</b> und das Zeigen auf eine Person, um ihr Gesicht zu sehen, funktionieren weiterhin). Die Leiste nennt das Laufwerk, auf dem das Foto liegt (den Namen des Datenträgers, wie in <b>Laufwerke verwalten</b>), und bietet <b>Im Finder zeigen</b> (unter Windows <b>Im Explorer zeigen</b>) und <b>Pfad kopieren</b>; <b>In der Zeitleiste von &lt;Laufwerk&gt; öffnen</b> wechselt zur eigenen Zeitleiste dieses Laufwerks, im Ordner des Fotos, um Tags, Personen oder Favoriten zu ändern.</p>
           <p><b>Laufwerke verwalten</b>, neben Duplikate, Papierkorb und Einstellungen, öffnet eine Seite, die nicht vom angesehenen Laufwerk abhängt: deine Laufwerke als Karten und darunter zwei Reiter, <b>Personen über Laufwerke hinweg</b> und <b>Duplikate über Laufwerke hinweg</b>. Ein abgestecktes Laufwerk steht als offline da.</p>
           <p>Unter <b>Personen über Laufwerke hinweg</b> steht bei jeder Person, auf welchen Laufwerken sie vorkommt: mit dem Namen des Datenträgers und der Zahl der dort gefundenen Gesichter (der Ordner erscheint beim Darüberfahren), und wer auf den meisten Laufwerken ist, steht ganz vorn. Das Laufwerk, das du gerade ansiehst, ist in der Akzentfarbe ausgefüllt, ebenso die Seite darunter (Alle Fotos, Duplikate, Papierkorb, Einstellungen); so siehst du immer, welcher Papierkorb von welchem Laufwerk offen ist.</p>
->>>>>>> origin/main
         </div>
       </div>
       <div class="topic has-shots">
@@ -1252,6 +1194,12 @@
         <div class="txt">
           <h3>Backup-Prüfung</h3>
           <p>Erst das Original wählen, dann das Backup. shoebox vergleicht die beiden Indizes (kein Foto wird gelesen) und listet, was noch nicht auf dem Backup ist, was abweicht und was nur auf dem Backup liegt. <i>Auch das Backup neu lesen</i> findet Bitfäule.</p>
+        </div>
+      </div>
+      <div class="topic">
+        <div class="txt">
+          <h3>Deine Tags und Namen sind gesichert</h3>
+          <p>Alles, was du selbst hinzufügst (eigene Tags, Personen, Gruppen, deine ✓- und ✗-Entscheidungen, gezeichnete Gesichter), liegt im Index, nie in einem Foto. Während du arbeitest, legt shoebox außerdem eine Sicherheitskopie des Index an, <code>library.db.bak</code>, und eine lesbare Liste von allem, <code>userdata.json</code>, beide im Ordner <code>.shoebox</code> auf dem Laufwerk. Sie wandern mit dem Laufwerk, ein Backup des Laufwerks enthält sie also auch. <code>userdata.json</code> lässt sich mit jedem Texteditor öffnen. Ist der Index einmal beschädigt, verweist <b>Prüfen</b> im Launcher auf die Sicherheitskopie.</p>
         </div>
       </div>
       <div class="topic has-shots">
