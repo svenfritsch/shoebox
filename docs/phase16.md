@@ -1,6 +1,6 @@
 # Phase 16: index next to the program (server libraries)
 
-Status: **steps 1, 2 and 4 built** (registry, index path, read-only enforcement in the core, launcher API, Control Panel); the photo app's hidden buttons and the CLI are open. Overview in [plan.md](plan.md).
+Status: **steps 1 to 6 built** except the CLI and the layout of the add and Manage areas (tabs or fold-open sections, mock-ups in `docs/mocks/phase16/layout/`, waiting for a decision). Overview in [plan.md](plan.md).
 
 ## Why
 
@@ -166,20 +166,25 @@ without flags.
 1. [x] `libraries::index_db` (called by `db::default_path`), the registry (`libraries.json`, read/write,
        atomic), a test for every caller that now goes through it; behaviour
        with no registry entry is byte-for-byte as today.
-2. [~] Read-only enforcement: `libraries::ensure_writable(root)` is the first line of
+2. [x] Read-only enforcement: `libraries::ensure_writable(root)` is the first line of
        every function that changes an original (`organize::{rename_folder,
        move_files_with, rotate, turn, trash_files, restore, empty_trash}`,
-       `duplicates::remove_copies`); `core/tests/libraries_readonly.rs` checks each
-       refuses and that nothing changes. Open: `info.read_only` and hiding the
-       buttons in the photo app.
+       `duplicates::remove_copies`) and of `POST /api/allow-trash`; `info.read_only` and
+       `/api/allow-trash` (`allow` is false, `read_only` true) tell the photo app, which hides
+       Move (selection bar and info panel), Rotate, the folder rename pencil and the duplicates
+       delete buttons (`body.read-only`) and disables the "Allow move to trash" checkbox with a
+       hint. `core/tests/libraries_readonly.rs` checks each function refuses and a real serve
+       session (info, trash setting, move, trash, rotate refused, nothing written).
 3. [ ] CLI (`--index-next-to-program`, `libraries`).
 4. [x] Control Panel: the row with badge (our own shoebox icon + "separate" / "separat") and
        an info marker like the photo app's, the add dialog, the Manage panel (rename,
        change folder with a check, remove, delete the index); API `/api/libraries*`
        in `launcher.rs`; strings in `en.json` / `de.json`; `core/tests/launcher.rs`.
-       Left out of v1: a folder picker ("Choose…"), the launcher has none yet.
-5. [x] Tree-snapshot guard test for scan and verify (`core/tests/libraries.rs`); still to add
-       for a serve session and an export.
+       The folder picker is the photo app's (`export::places` / `list_folders`, routes
+       `/api/places` and `/api/folders` in the launcher). A click on a detected drive starts a
+       path in the box, a double-click on a chip edits it. Remove and delete the index are modal dialogs.
+5. [x] Tree-snapshot guard tests: scan and verify (`core/tests/libraries.rs`) and a serve
+       session (`libraries_readonly.rs`); an export of such a library is still to add.
 6. [x] Guide, both languages (Get started, Safety, FAQ; the Drives section waits for the conflict markers on main to be resolved) (Get started: the two places for the index;
        Safety: nothing written to the folder; Control Panel; FAQ "my photos are
        on a server"), then `python3 docs/guide/check.py`.

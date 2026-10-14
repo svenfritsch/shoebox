@@ -283,7 +283,7 @@ function renderChips() {
   if (f.folder && state.folderById[f.folder]) {
     var folder = state.folderById[f.folder];
     add(folder.path || folder.name, function () { setFilter(withFilter({ folder: null })); }, folderIcon());
-    if (folder.path) {
+    if (folder.path && !readOnly) {
       var edit = el('button', 'edit', '✎');
       edit.title = tr('chip.rename_folder');
       edit.onclick = function () { renameFolder(folder); };
@@ -2015,7 +2015,7 @@ function renderPanel() {
   infoReveal(actions, info);
   var move = el('button', 'btn quiet', tr('sel.move'));
   move.onclick = function () { moveDialog([info.id], function () { closeLightbox(); }); };
-  actions.appendChild(move);
+  if (!readOnly) actions.appendChild(move);
   panel.appendChild(actions);
   panel.appendChild(infoGeo(info));
 }
@@ -2025,6 +2025,9 @@ function renderPanel() {
 // selection bar's button only show then.
 var allowTrash = false;
 var trashCount = 0;
+// A library whose index is kept next to the program (phase 16) is only read:
+// no move, rotate, rename or delete; the CSS hides the buttons (body.read-only).
+var readOnly = false;
 
 function applyAllowTrash() {
   // The trash page stays reachable while something is in it (or while it is open).
@@ -2050,7 +2053,7 @@ $('lb-trash').onclick = function () {
 // clockwise.
 function rotateOpen(turns) {
   var d = state.data, i = state.open;
-  if (!d || i < 0 || isAll() || d.kinds[i] === 'v' || d.kinds[i] === 'r' || lb.rotating) return;
+  if (readOnly || !d || i < 0 || isAll() || d.kinds[i] === 'v' || d.kinds[i] === 'r' || lb.rotating) return;
   lb.rotating = true;
   var id = d.ids[i];
   post(fileBase(id) + '/rotate', { turns: turns }).then(function (r) {
@@ -2159,6 +2162,8 @@ function loadInfo() {
     state.reveal = revealLabel(info.reveal);
     state.exportOk = !!info.export;
     applyExportOk();
+    readOnly = !!info.read_only;
+    document.body.classList.toggle('read-only', readOnly);
     document.title = info.name + ' · shoebox';
     var parts = [
       trn('count.photos', info.photos),
@@ -4460,6 +4465,7 @@ function allowTrashSection() {
   var box = el('input');
   box.type = 'checkbox';
   box.checked = allowTrash;
+  box.disabled = readOnly;
   box.onchange = function () {
     var want = box.checked;
     post(LIBAPI + '/allow-trash', { allow: want }).then(function (r) {
@@ -4471,7 +4477,7 @@ function allowTrashSection() {
   label.appendChild(box);
   label.appendChild(document.createTextNode(' ' + tr('settings.allow_trash_label')));
   sec.appendChild(label);
-  sec.appendChild(el('p', 'hint', tr('settings.allow_trash_hint')));
+  sec.appendChild(el('p', 'hint', tr(readOnly ? 'settings.allow_trash_readonly' : 'settings.allow_trash_hint')));
   return sec;
 }
 

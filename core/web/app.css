@@ -958,3 +958,6 @@ body.geo-view #page { padding: 0; height: 100%; }
 .person-merged .pills { display: flex; flex-wrap: wrap; gap: 4px; }
 .person-merged .pills .pill { margin-right: 0; }
 .person-merged > .btn { margin-top: auto; align-self: flex-start; }
+
+/* a library whose index is kept next to the program is only read (phase 16) */
+body.read-only #sel-move, body.read-only #lb-rotate, body.read-only .copy label.check, body.read-only .dup-bar .btn.danger { display: none; }

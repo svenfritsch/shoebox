@@ -1063,5 +1063,6 @@
   "launcher.libs.add.unwritable": "„Separat“ ist nicht möglich: shoebox kann nicht in {dir} schreiben. Verschiebe den shoebox-Ordner nach Dokumente oder auf den Desktop, oder lege den Index auf das Laufwerk.",
   "launcher.pick.button": "Auswählen…",
   "launcher.pick.title": "Ordner auswählen",
-  "launcher.chip.edit": "Doppelklicken, um den Pfad zu ändern"
+  "launcher.chip.edit": "Doppelklicken, um den Pfad zu ändern",
+  "settings.allow_trash_readonly": "Diese Bibliothek ist schreibgeschützt (ihr Index liegt neben dem Programm), deshalb können Fotos nicht in den Papierkorb verschoben werden."
 }

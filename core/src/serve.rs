@@ -1786,6 +1786,9 @@ struct Info {
     reveal: Option<&'static str>,
     /// Export (phase 12) saves into this computer's folders: only for requests from this computer.
     export: bool,
+    /// The library keeps its index next to the program (phase 16): shoebox
+    /// changes nothing in it, so the UI hides move, rotate, rename and delete.
+    read_only: bool,
 }
 
 async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: HeaderMap) -> ApiResult<Json<Info>> {
@@ -1861,6 +1864,7 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
             clusters,
             text: crate::text::progress(&conn)?,
             export: reveal.is_some(),
+            read_only: crate::libraries::is_read_only(&app.root),
             reveal,
         }))
     })
@@ -2594,7 +2598,9 @@ const ALLOW_TRASH_KEY: &str = "allow_trash";
 async fn allow_trash_get(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
     blocking(&app, |app| {
         let conn = app.conn.lock().unwrap();
-        Ok(Json(serde_json::json!({ "allow": db::setting(&conn, ALLOW_TRASH_KEY)?.as_deref() == Some("1") })))
+        // A read-only library never offers the trash, whatever the setting says.
+        let read_only = crate::libraries::is_read_only(&app.root);
+        Ok(Json(serde_json::json!({ "allow": !read_only && db::setting(&conn, ALLOW_TRASH_KEY)?.as_deref() == Some("1"), "read_only": read_only })))
     })
     .await
 }
@@ -2605,6 +2611,7 @@ struct AllowTrashRequest {
 }
 
 async fn allow_trash_set(State(app): State<Arc<App>>, Json(req): Json<AllowTrashRequest>) -> ApiResult<Json<serde_json::Value>> {
+    crate::libraries::ensure_writable(&app.root).map_err(bad)?;
     change(&app, move |_, conn| {
         db::set_setting(conn, ALLOW_TRASH_KEY, req.allow.then_some("1"))?;
         Ok(req.allow)
