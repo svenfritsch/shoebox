@@ -373,3 +373,83 @@ fn verify_does_not_fail_a_copy_whose_content_is_still_there() {
     assert!(report.is_clean(), "{report:?}");
     assert_eq!(report.relocated, 1);
 }
+
+/// A Canon-style CR2 stand-in: TIFF header with the `CR\x02\0` marker, IFD0
+/// with Model and an Exif pointer far beyond the first buffer nom-exif loads,
+/// DateTimeOriginal in that Exif IFD, then fake pixel data.
+fn fake_cr2(date: &[u8; 20]) -> Vec<u8> {
+    fn entry(tag: u16, format: u16, count: u32, value: u32) -> Vec<u8> {
+        let mut v = Vec::new();
+        v.extend_from_slice(&tag.to_le_bytes());
+        v.extend_from_slice(&format.to_le_bytes());
+        v.extend_from_slice(&count.to_le_bytes());
+        v.extend_from_slice(&value.to_le_bytes());
+        v
+    }
+    const EXIF_OFFSET: usize = 34_000;
+    let model = b"Canon EOS 5D Mark III\0";
+    let model_offset = 16 + 2 + 3 * 12 + 4;
+    let mut b = b"II*\0".to_vec();
+    b.extend_from_slice(&16u32.to_le_bytes());
+    b.extend_from_slice(b"CR\x02\0");
+    b.extend_from_slice(&0u32.to_le_bytes());
+    b.extend_from_slice(&3u16.to_le_bytes());
+    b.extend(entry(0x110, 2, model.len() as u32, model_offset as u32));
+    b.extend(entry(0x112, 3, 1, 1));
+    b.extend(entry(0x8769, 4, 1, EXIF_OFFSET as u32));
+    b.extend_from_slice(&0u32.to_le_bytes());
+    b.extend_from_slice(model);
+    b.resize(EXIF_OFFSET, 0);
+    b.extend_from_slice(&1u16.to_le_bytes());
+    b.extend(entry(0x9003, 2, date.len() as u32, (EXIF_OFFSET + 2 + 12 + 4) as u32));
+    b.extend_from_slice(&0u32.to_le_bytes());
+    b.extend_from_slice(date);
+    b.extend(std::iter::repeat(0x55).take(200_000));
+    b
+}
+
+fn taken_and_error(lib: &Library, path: &str) -> (Option<String>, Option<String>, Option<String>) {
+    lib.db()
+        .query_row(
+            "SELECT taken, camera, meta_error FROM files WHERE path_nfc = ?1",
+            [path],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap()
+}
+
+#[test]
+fn cr2_with_exif_beyond_the_first_bytes_gets_its_capture_date() {
+    let lib = Library::new("cr2-date");
+    lib.write("Familie/Angie/IMG_5850.CR2", &fake_cr2(b"2021:05:09 14:30:05\0"));
+    let before = lib.snapshot();
+    lib.scan();
+    let (taken, camera, error) = taken_and_error(&lib, "Familie/Angie/IMG_5850.CR2");
+    assert_eq!(error, None);
+    assert_eq!(taken.as_deref(), Some("2021-05-09T14:30:05"));
+    assert_eq!(camera.as_deref(), Some("Canon EOS 5D Mark III"));
+    // Guard: the original is untouched by reading it.
+    let after = lib.snapshot();
+    for (path, (stamp, hash)) in &before {
+        assert_eq!(stamp, &after[path].0, "{}", path.display());
+        assert_eq!(hash, &after[path].1, "{}", path.display());
+    }
+}
+
+#[test]
+fn truncated_or_garbage_raw_only_warns() {
+    let lib = Library::new("raw-broken");
+    let cr2 = fake_cr2(b"2021:05:09 14:30:05\0");
+    lib.write("Raw/cut.CR2", &cr2[..60]); // header and IFD0 cut off
+    lib.write("Raw/cut2.CR2", &cr2[..20_000]); // Exif IFD missing
+    lib.write("Raw/garbage.NEF", b"II*\0\xff\xff\xff\xffnot a raw file at all");
+    lib.write("Raw/text.DNG", b"definitely not a TIFF");
+    lib.scan();
+    for name in ["cut.CR2", "cut2.CR2", "garbage.NEF", "text.DNG"] {
+        let path = format!("Raw/{name}");
+        assert!(lib.record(&path).is_some(), "{path} not indexed");
+        assert_eq!(taken_and_error(&lib, &path).0, None, "{path}");
+    }
+    // Garbage with a TIFF header is a per-file warning.
+    assert!(taken_and_error(&lib, "Raw/garbage.NEF").2.is_some());
+}
