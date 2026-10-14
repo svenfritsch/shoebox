@@ -1,6 +1,6 @@
 # Phase 16: index next to the program (server libraries)
 
-Status: **steps 1 and 2 built** (registry, index path, read-only enforcement in the core); the server routes' hidden buttons, the CLI and the Control Panel are open. Overview in [plan.md](plan.md).
+Status: **steps 1, 2 and 4 built** (registry, index path, read-only enforcement in the core, launcher API, Control Panel); the photo app's hidden buttons and the CLI are open. Overview in [plan.md](plan.md).
 
 ## Why
 
@@ -173,11 +173,14 @@ without flags.
        refuses and that nothing changes. Open: `info.read_only` and hiding the
        buttons in the photo app.
 3. [ ] CLI (`--index-next-to-program`, `libraries`).
-4. [ ] Control Panel: list, add form, edit, remove; strings in `en.json` /
-       `de.json`; `core/tests/launcher.rs`.
+4. [x] Control Panel: the row with badge (our own shoebox icon + "separate" / "separat") and
+       an info marker like the photo app's, the add dialog, the Manage panel (rename,
+       change folder with a check, remove, delete the index); API `/api/libraries*`
+       in `launcher.rs`; strings in `en.json` / `de.json`; `core/tests/launcher.rs`.
+       Left out of v1: a folder picker ("Choose…"), the launcher has none yet.
 5. [x] Tree-snapshot guard test for scan and verify (`core/tests/libraries.rs`); still to add
        for a serve session and an export.
-6. [ ] Guide, both languages (Get started: the two places for the index;
+6. [x] Guide, both languages (Get started, Safety, FAQ; the Drives section waits for the conflict markers on main to be resolved) (Get started: the two places for the index;
        Safety: nothing written to the folder; Control Panel; FAQ "my photos are
        on a server"), then `python3 docs/guide/check.py`.
 7. [ ] Check on a real share from a real Windows PC (needs the Windows build

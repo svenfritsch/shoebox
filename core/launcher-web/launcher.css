@@ -115,8 +115,9 @@ i.info { display: inline-block; width: 14px; height: 14px; margin-left: 6px; lin
 .chips button.lib span { display: inline; font-size: 14px; color: var(--text); margin: 0; }
 .chips button.lib.off { border-style: dashed; }
 .chips button.lib.off span { color: var(--muted); }
-.badge.lib, .chips .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--accent); white-space: nowrap; }
-.sbx { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.badge.sep, .chips button.lib .badge.sep { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--accent); white-space: nowrap; margin: 0; }
+.chipbox li .badge.sep { color: var(--accent); }
+.sbx { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .sheet { margin-top: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); box-shadow: 0 6px 24px rgba(0,0,0,.12); }
 .sheet h3 { margin: 0 0 4px; font-size: 16px; }
 .field { margin-top: 14px; }

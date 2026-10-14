@@ -332,7 +332,7 @@ function libOfPath(p) {
 
 function sepBadge(name) {
   var b = document.createElement('span');
-  b.className = 'badge';
+  b.className = 'badge sep';
   b.title = tr('launcher.libs.badge.title', { name: name });
   b.innerHTML = SHOEBOX_ICON;
   b.appendChild(document.createTextNode(tr('launcher.libs.badge')));

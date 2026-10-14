@@ -484,6 +484,7 @@
               <h3>Erweiterungen, scannen, dann öffnen</h3>
               <p>Nur wenn Personen, Haustiere oder die Wörter in deinen Fotos erkannt werden sollen: in Schritt 1, <b>Erweiterungen</b>, anhaken, was du willst (<b>Gesichter</b>, <b>Haustiere</b>, <b>Text</b> oder beliebig gemischt; jedes geht ohne die anderen), und <b>Ausgewählte Erweiterungen installieren</b> drücken. Die Zentrale listet, was geladen wird: das Programm Python und OpenCV (etwa 200 MB, einmal für alle Erweiterungen), Gesichter (etwa 40 MB), Haustiere (etwa 140 MB) und Text (etwa 100 MB). Internet nötig, einige Minuten. Python und OpenCV wird immer mit der ersten Erweiterung installiert (sein Kästchen ist angehakt und lässt sich nicht abwählen). Solange eine Erweiterung fehlt, bleibt ihr Erkennen-Knopf grau und sagt warum.</p>
               <p>Dann Laufwerk hinzufügen (anklicken oder <code>/Volumes/MeinLaufwerk</code> tippen, unter Windows <code>E:\</code>), <b>Scannen</b> drücken, dann <b>Foto-App starten</b>. Die Zentrale merkt sich die Laufwerke, die du zuletzt angehakt hattest; ist eines nicht angesteckt, ist sein Chip gestrichelt und <b>Foto-App starten</b> bleibt aus, mit dem Grund in Rot, bis du es ansteckst oder den Haken entfernst.</p>
+              <p><b>Fotos auf einem Server, oder ein Ordner, den du nur ansehen willst?</b> Unter den Laufwerken listet <b>Bibliotheken neben dem Programm</b> Ordner, deren Index neben dem Programm liegt (mit <b>separat</b> markiert) statt im Ordner selbst. Auf <b>+ Ordner oder Server hinzufügen…</b> drücken, den Pfad eintippen (zum Beispiel <code>\\server\freigabe\Fotos</code> oder <code>/Volumes/Server/Fotos</code>), <b>Separat (neben dem Programm)</b> wählen und <b>Hinzufügen</b> drücken, dann wie gewohnt <b>Scannen</b>. shoebox geht durch jeden Unterordner, findet die Fotos und führt seine Liste in einem Ordner <b>libraries</b> neben dem Programm. In den Ordner wird nichts geschrieben, auch kein Ordner <b>.shoebox</b>, und seine Fotos können nur angesehen, nie verschoben, umbenannt oder gelöscht werden. Mit <b>Verwalten…</b> benennst du eine Bibliothek um, gibst ihr einen anderen Ordner (der Index bleibt erhalten), nimmst sie aus der Liste oder löschst ihren Index (deine Tags, Datumsangaben und Namen dazu gehen mit; die Fotos bleiben unberührt). Der erste Scan eines großen Servers kann Stunden dauern; du kannst abbrechen und später weitermachen.</p>
               <p>Der erste Scan liest jede Datei einmal und dauert bei großen Laufwerken eine Weile; später werden nur Änderungen angesehen. Nach dem Scan listen die Reiter <b>Verschoben</b>, <b>Geändert</b>, <b>Fehlend</b> und <b>Schon auf dem Laufwerk</b> (jeweils mit Anzahl) genau auf, um welche Dateien es geht; bei neuen Dateien, die du schon hattest, steht die ältere Kopie gleich daneben.</p>
               <p><b>Text</b> (die Wörter in deinen Fotos lesen: Dokumente, Screenshots, Straßenschilder, Speisekarten) funktioniert genauso und ist unter „Wörter in Fotos“ erklärt: <b>Text</b> anhaken, installieren, dann in Schritt 3 <b>Text erkennen</b> drücken. Es liest nur, es ist langsam, und du kannst abbrechen und später weitermachen.</p>
             </li>
@@ -1156,70 +1157,12 @@
 
     <section id="drives">
       <h2>Laufwerke, Backups und das iPad</h2>
-<<<<<<< HEAD
-      <div class="cols">
-        <div>
-          <div class="items">
-            <div>
-              <h3>Mehrere Laufwerke</h3>
-              <p>shoebox mit mehr als einem Laufwerk starten, und jedes erscheint in der Seitenleiste. <b>Alle Laufwerke</b> zeigt eine gemeinsame Zeitleiste über alle. Sie ist zum Ansehen da: Favoriten zeigen ein ♥ (ausgegraut, nicht anklickbar), und die Infoleiste zeigt Tags, Favorit und Personen, ohne dass sich dort etwas ändern lässt (<b>Rahmen anzeigen</b> und das Zeigen auf eine Person, um ihr Gesicht zu sehen, funktionieren weiterhin). Die Leiste nennt das Laufwerk, auf dem das Foto liegt (den Namen des Datenträgers, wie in <b>Laufwerke verwalten</b>), und bietet <b>Im Finder zeigen</b> (unter Windows <b>Im Explorer zeigen</b>) und <b>Pfad kopieren</b>; <b>In der Zeitleiste von &lt;Laufwerk&gt; öffnen</b> wechselt zur eigenen Zeitleiste dieses Laufwerks, im Ordner des Fotos, um Tags, Personen oder Favoriten zu ändern. <b>Laufwerke verwalten</b>, neben Duplikate, Papierkorb und Einstellungen, öffnet eine Seite, die nicht vom angesehenen Laufwerk abhängt: deine Laufwerke als Karten und darunter zwei Reiter, <b>Personen über Laufwerke hinweg</b> und <b>Duplikate über Laufwerke hinweg</b>. Ein abgestecktes Laufwerk steht als offline da. Unter <b>Personen über Laufwerke hinweg</b> steht bei jeder Person, auf welchen Laufwerken sie vorkommt: mit dem Namen des Datenträgers und der Zahl der dort gefundenen Gesichter (der Ordner erscheint beim Darüberfahren), und wer auf den meisten Laufwerken ist, steht ganz vorn. Das Laufwerk, das du gerade ansiehst, ist in der Akzentfarbe ausgefüllt, ebenso die Seite darunter (Alle Fotos, Duplikate, Papierkorb, Einstellungen); so siehst du immer, welcher Papierkorb von welchem Laufwerk offen ist.</p>
-            </div>
-            <div>
-              <h3>Original- und Backup-Laufwerke</h3>
-              <p>Auf der Seite Laufwerke verwalten ist jedes Laufwerk eine Karte mit dem Namen der Festplatte und dem Ordner darauf (zum Beispiel <i>Extreme SSD · /Photos</i>). Mit dem Menü in der Karte sagst du, was das Laufwerk ist: <b>Original-Laufwerk</b> oder <b>Backup-Laufwerk</b>. shoebox schlägt ein Backup vor, wenn fast alles auf einem Laufwerk auch auf einem anderen ist, bis du dich entscheidest. Ein Backup hat einen blauen Rahmen, steht direkt hinter seinem Original und trägt <b>Backup von </b><i>Name der Festplatte</i> und <b>Nicht in der gemeinsamen Zeitleiste</b>. Es zeigt, wie viel vom Original auf dem Backup ist, und zwei Listen: Dateien, die <b>auf dem Backup anders</b> sind (gleicher Pfad, anderer Inhalt, zum Beispiel nach einer Bearbeitung), und Dateien <b>nur auf dem Backup</b>. Die dritte Liste, Dateien, die <b>noch nicht auf dem Backup</b> sind, steht in der Karte des Originals. Alle Listen sind zunächst zugeklappt; klapp eine auf, um ihre Dateien zu sehen, und das Ordner-Symbol neben einer Datei zeigt sie im Finder (unter Windows im Explorer). Jede Liste hat einen Knopf <b>Fotos anzeigen ›</b>. Bei <b>nur auf dem Backup</b> und <b>noch nicht auf dem Backup</b> öffnet er die eigene Zeitleiste des Laufwerks mit einem Filter-Chip, <b>Nur auf Backup</b> oder <b>Nur auf Original</b>; bei <b>auf dem Backup anders</b> öffnet er eine Zeitleiste beider Laufwerke mit einem Abzeichen <b>Original</b> und <b>Backup</b> auf jedem Foto, die zwei Versionen eines Fotos nebeneinander. Der Chip funktioniert wie jeder andere: Die Suche (Dateinamen, Tags, Personen) und die übrigen Filter schränken ihn weiter ein, <b>✕</b> entfernt ihn, und wer <i>nur auf</i> oder <i>backup</i> tippt, bekommt ihn vorgeschlagen. Wählst du ein Laufwerk, zu dem er nicht passt (ein Original-Laufwerk bei <b>Nur auf Backup</b>, Alle Laufwerke), wird der Chip entfernt, und ein Hinweis sagt warum. In der Info-Leiste des Fotos steht neben dem Namen ein Abzeichen <b>Nur auf Backup</b> oder <b>Nicht auf Backup</b>; zeig darauf für die Erklärung. Die Leiste unten in einer Karte sagt, wann das Laufwerk zuletzt gescannt wurde und wann zuletzt neue Dateien darauf angekommen sind (beim Backup: <b>Letztes Backup</b>); zeig auf ein Datum für die genaue Uhrzeit.</p>
-              <figure>
-                <img src="assets/de/drives-overview.jpg" alt="" loading="lazy">
-                <figcaption>Laufwerke verwalten: ein Original und sein Backup. Jede Liste hat einen Knopf „Fotos anzeigen“.</figcaption>
-              </figure>
-              <figure>
-                <img src="assets/de/drives-only-backup.jpg" alt="" loading="lazy">
-                <figcaption>„Fotos anzeigen“ bei „nur auf dem Backup“: die eigene Zeitleiste des Backups mit dem Chip <b>Nur auf Backup</b>.</figcaption>
-              </figure>
-              <figure>
-                <img src="assets/de/drives-different.jpg" alt="" loading="lazy">
-                <figcaption>Auf dem Backup anders: beide Versionen eines Fotos nebeneinander, jede mit einem Abzeichen Original oder Backup.</figcaption>
-              </figure>
-              <figure class="narrow">
-                <img src="assets/de/drives-badge.jpg" alt="" loading="lazy">
-                <figcaption>Die Info-Leiste eines Fotos, das es nur auf dem Backup gibt: Das Abzeichen steht neben dem Namen.</figcaption>
-              </figure>
-            </div>
-            <div>
-              <h3>Backup-Prüfung</h3>
-              <p>Erst das Original wählen, dann das Backup. shoebox vergleicht die beiden Indizes (kein Foto wird gelesen) und listet, was noch nicht auf dem Backup ist, was abweicht und was nur auf dem Backup liegt. <i>Auch das Backup neu lesen</i> findet Bitfäule.</p>
-            </div>
-            <div>
-              <h3>Deine Tags und Namen sind gesichert</h3>
-              <p>Alles, was du selbst hinzufügst (eigene Tags, Personen, Gruppen, deine ✓- und ✗-Entscheidungen, gezeichnete Gesichter), liegt im Index, nie in einem Foto. Während du arbeitest, legt shoebox außerdem eine Sicherheitskopie des Index an, <code>library.db.bak</code>, und eine lesbare Liste von allem, <code>userdata.json</code>, beide im Ordner <code>.shoebox</code> auf dem Laufwerk. Sie wandern mit dem Laufwerk, ein Backup des Laufwerks enthält sie also auch. <code>userdata.json</code> lässt sich mit jedem Texteditor öffnen. Ist der Index einmal beschädigt, verweist <b>Prüfen</b> im Launcher auf die Sicherheitskopie.</p>
-            </div>
-            <div>
-              <h3>iPad & andere Geräte</h3>
-              <p>Im Terminal: <code>shoebox serve /Volumes/MeinLaufwerk --lan</code>. Es zeigt eine Adresse und eine PIN; die Adresse in Safari im selben WLAN öffnen und die PIN einmal eingeben. In der Ansicht wischen, zum Auswählen tippen.</p>
-            </div>
-          </div>
-          <div class="panel">
-            <h3>Kommandozeile (optional)</h3>
-            <dl class="cli">
-              <dt><code>shoebox scan &lt;Ordner&gt;</code></dt>
-              <dd>neue, verschobene und geänderte Dateien indexieren</dd>
-              <dt><code>shoebox verify &lt;Ordner&gt;</code></dt>
-              <dd>Dateien neu lesen und mit dem Index vergleichen</dd>
-              <dt><code>shoebox recognize &lt;Ordner&gt; [--pets] [--text]</code></dt>
-              <dd>Gesichter (und Haustiere, und mit <code>--text</code> die Wörter in den Fotos lesen; <code>--text-only</code> liest nur die Wörter) finden</dd>
-              <dt><code>shoebox backup &lt;Original&gt; &lt;Backup&gt;</code></dt>
-              <dd>ist das Backup vollständig?</dd>
-              <dt><code>shoebox serve &lt;Ordner&gt; [--lan] [--pin …]</code></dt>
-              <dd>die Foto-App öffnen</dd>
-            </dl>
-          </div>
-=======
       <div class="topic">
         <div class="txt">
           <h3>Mehrere Laufwerke</h3>
           <p>shoebox mit mehr als einem Laufwerk starten, und jedes erscheint in der Seitenleiste. <b>Alle Laufwerke</b> zeigt eine gemeinsame Zeitleiste über alle. Sie ist zum Ansehen da: Favoriten zeigen ein ♥ (ausgegraut, nicht anklickbar), und die Infoleiste zeigt Tags, Favorit und Personen, ohne dass sich dort etwas ändern lässt (<b>Rahmen anzeigen</b> und das Zeigen auf eine Person, um ihr Gesicht zu sehen, funktionieren weiterhin). Die Leiste nennt das Laufwerk, auf dem das Foto liegt (den Namen des Datenträgers, wie in <b>Laufwerke verwalten</b>), und bietet <b>Im Finder zeigen</b> (unter Windows <b>Im Explorer zeigen</b>) und <b>Pfad kopieren</b>; <b>In der Zeitleiste von &lt;Laufwerk&gt; öffnen</b> wechselt zur eigenen Zeitleiste dieses Laufwerks, im Ordner des Fotos, um Tags, Personen oder Favoriten zu ändern.</p>
           <p><b>Laufwerke verwalten</b>, neben Duplikate, Papierkorb und Einstellungen, öffnet eine Seite, die nicht vom angesehenen Laufwerk abhängt: deine Laufwerke als Karten und darunter zwei Reiter, <b>Personen über Laufwerke hinweg</b> und <b>Duplikate über Laufwerke hinweg</b>. Ein abgestecktes Laufwerk steht als offline da.</p>
           <p>Unter <b>Personen über Laufwerke hinweg</b> steht bei jeder Person, auf welchen Laufwerken sie vorkommt: mit dem Namen des Datenträgers und der Zahl der dort gefundenen Gesichter (der Ordner erscheint beim Darüberfahren), und wer auf den meisten Laufwerken ist, steht ganz vorn. Das Laufwerk, das du gerade ansiehst, ist in der Akzentfarbe ausgefüllt, ebenso die Seite darunter (Alle Fotos, Duplikate, Papierkorb, Einstellungen); so siehst du immer, welcher Papierkorb von welchem Laufwerk offen ist.</p>
->>>>>>> origin/main
         </div>
       </div>
       <div class="topic has-shots">
@@ -1295,7 +1238,7 @@
             <svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg>
           </div>
           <h3>Nur lesen</h3>
-          <p>Metadaten, Vorschaubilder, Tags und von dir festgelegte Aufnahmeorte und Daten liegen im Index auf dem Laufwerk (<code>.shoebox/library.db</code>), nie in einem Foto. Aufnahme- und Erstellungsdatum ändern sich nie: ein Datum, das du einem Foto gibst, lebt nur in shoebox, und das Datum der Datei bleibt, wie es war.</p>
+          <p>Metadaten, Vorschaubilder, Tags und von dir festgelegte Aufnahmeorte und Daten liegen im Index auf dem Laufwerk (<code>.shoebox/library.db</code>), nie in einem Foto. Aufnahme- und Erstellungsdatum ändern sich nie: ein Datum, das du einem Foto gibst, lebt nur in shoebox, und das Datum der Datei bleibt, wie es war. Ein Ordner, dessen Index neben dem Programm liegt, wird nur gelesen: in ihn wird gar nichts geschrieben, und seine Fotos können nicht verschoben, umbenannt oder gelöscht werden.</p>
         </li>
         <li>
           <div class="ic-box">
@@ -1338,6 +1281,8 @@
         <p><b>Es gibt keinen Exportieren-Knopf.</b> Der Export speichert in die Ordner des Computers, auf dem shoebox läuft, und wird deshalb nur in einem Browser auf diesem Computer angeboten, nicht auf einem iPad. Ist ein Tag in der Suche, sitzt der Knopf neben dem Chip des Tags; für andere Fotos ☑ drücken, auswählen und in der Leiste <b>Exportieren …</b> benutzen.</p>
         <p><b>macOS meldet, „libheif.1.dylib“ (oder „shoebox“) kann nicht geöffnet werden, da Apple darin nicht nach Schadsoftware suchen kann.</b> shoebox wurde direkt gestartet, nicht mit <b>Start shoebox.command</b>. Auf <b>OK</b> klicken und stattdessen <b>Start shoebox.command</b> doppelklicken: Es nimmt den Download-Vermerk von den Dateien in <b>program</b> und startet dann shoebox.</p>
         <p><b>Ein Laufwerk steht auf offline.</b> Wieder anstecken; shoebox findet es beim Neuladen.</p>
+        <p><b>Meine Fotos liegen auf einem Server.</b> Füge den Ordner in Schritt 2 der Zentrale mit <b>+ Ordner oder Server hinzufügen…</b> hinzu und lege seinen Index <b>neben das Programm</b> (siehe „In drei Schritten loslegen“). Der Server wird nur gelesen.</p>
+        <p><b>„Separat (neben dem Programm)“ lässt sich nicht wählen.</b> shoebox muss seinen Ordner <b>libraries</b> neben sich anlegen, was in einem Ordner wie Programme nicht erlaubt ist. Verschiebe den shoebox-Ordner nach Dokumente oder auf den Desktop.</p>
         <p><b>Ein Foto steht an der falschen Stelle der Zeitleiste.</b> Sein Datum kommt aus der Datei, dem Namen seines Ereignisordners oder den Dateidaten, und bei einem Scan oder einem über einen Messenger geschickten Bild stimmt es oft nicht. Öffne das Infofeld und drücke den Stift neben dem Datum, um ein eigenes zu setzen; siehe „Datum und Suche nach Datum“.</p>
         <p><b>Eine Karte ist leer oder sagt Offline.</b> Karten brauchen das Internet. Verbindung prüfen und das Foto noch einmal öffnen; alles andere funktioniert wie zuvor.</p>
       </div>

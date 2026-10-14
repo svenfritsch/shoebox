@@ -484,6 +484,7 @@
               <h3>Add-ons, scan, then open</h3>
               <p>Only if you want people, pets or the words in your photos recognized: in step 1, <b>Add-ons</b>, tick what you want (<b>Faces</b>, <b>Pets</b>, <b>Text</b>, or any mix; each works without the others) and press <b>Install the selected add-ons</b>. The Control Panel lists what is downloaded: the Python and OpenCV program (about 200 MB, once, for all add-ons), Faces (about 40 MB), Pets (about 140 MB) and Text (about 100 MB). Internet needed, a few minutes. Python and OpenCV is always installed with the first add-on (its box is ticked and cannot be unticked). Until an add-on is installed, its recognize button stays grey and says why.</p>
               <p>Then add your drive (click it, or type <code>/Volumes/MyDrive</code>, on Windows <code>E:\</code>), press <b>Scan</b>, then <b>Start photo app</b>. The Control Panel remembers the drives you ticked last time; if one of them is not plugged in, its chip is dashed and <b>Start photo app</b> stays off, with the reason in red, until you plug it in or untick it.</p>
+              <p><b>Photos on a server, or a folder you only want to look at?</b> Under the drives, <b>Libraries kept next to the program</b> lists folders whose index is kept next to the program (marked <b>separate</b>) instead of inside the folder. Press <b>+ Add a folder or server…</b>, type the path (for example <code>\\server\share\Photos</code> or <code>/Volumes/Server/Photos</code>), choose <b>Separate (next to the program)</b> and press <b>Add</b>, then <b>Scan</b> as usual. shoebox walks through every subfolder, finds the photos and keeps its list in a <b>libraries</b> folder next to the program. Nothing is written into the folder, not even a <b>.shoebox</b> folder, and its photos can only be looked at, never moved, renamed or deleted. <b>Manage…</b> lets you rename a library, point it to another folder (the index is kept), take it off the list, or delete its index (your tags, dates and names for it go with it; the photos are not touched). The first scan of a big server can take hours; you can cancel and continue later.</p>
               <p>The first scan reads every file once and takes a while on a big drive; later scans only look at what changed. When it finishes, the tabs <b>Moved</b>, <b>Changed</b>, <b>Missing</b> and <b>Already on the drive</b> (each with its count) list exactly which files they mean; for new files you already had, the tab shows the older copy right next to each one.</p>
               <p><b>Text</b> (reading the words in your photos: documents, screenshots, street signs, menus) works the same way and is explained in “Words in photos”: tick <b>Text</b>, install it, then press <b>Recognize text</b> in step 3. It only reads, it is slow, and you can cancel and continue later.</p>
             </li>
@@ -1156,70 +1157,12 @@
 
     <section id="drives">
       <h2>Drives, backups and the iPad</h2>
-<<<<<<< HEAD
-      <div class="cols">
-        <div>
-          <div class="items">
-            <div>
-              <h3>Several drives</h3>
-              <p>Start shoebox with more than one drive and each one appears in the sidebar. <b>All drives</b> gives you one common timeline across all of them. It is for looking: photos that are favorites show a ♥ (greyed out, you cannot click it), and the info panel shows tags, favorite and people, but none of it can be changed there (<b>Show boxes</b> and pointing at a person to see their face still work). The panel names the drive the photo is on (its disk name, as in <b>Manage drives</b>) and has <b>Show in Finder</b> (<b>Show in Explorer</b> on Windows) and <b>Copy path</b>; <b>Open in &lt;drive&gt;'s timeline</b> switches to that drive's own timeline, at the photo's folder, to change tags, people or favorites. <b>Manage drives</b>, next to Duplicates, Trash and Settings, opens a page that does not depend on the drive you are looking at: your drives as cards, and two tabs below them, <b>People across drives</b> and <b>Duplicates across drives</b>. A drive that is unplugged is shown as offline. Under <b>People across drives</b> each person shows the drives they are on by disk name with the number of faces found there (point at one to see its folder), and the people who are on the most drives come first. The drive you are looking at is filled in with the accent colour, and so is the page you have open under it (All photos, Duplicates, Trash, Settings), so you can always see which drive's trash you are in.</p>
-            </div>
-            <div>
-              <h3>Original and backup drives</h3>
-              <p>On the Manage drives page every drive is a card with its disk name and the folder on it (for example <i>Extreme SSD · /Photos</i>). Say what each drive is with the menu in the card: <b>Original drive</b> or <b>Backup drive</b>. shoebox suggests a backup when almost everything on a drive is on another one, until you decide. A backup has a blue outline, sits right after its original and says <b>Backup of </b><i>disk name</i> and <b>Not in common timeline</b>. It shows how much of the original is on the backup, and two lists: files <b>different on the backup</b> (the same path with other content, for example after an edit) and files <b>only on the backup</b>. The original's card has the third list, files <b>not on the backup yet</b>. All lists start folded; open one to see its files, and the folder icon next to a file shows it in Finder (Explorer on Windows). Every list has a <b>Show photos ›</b> button. For <b>only on the backup</b> and <b>not on the backup yet</b> it opens that drive's own timeline with a filter chip, <b>Only on backup</b> or <b>Only on original</b>; for <b>different on the backup</b> it opens a timeline of both drives with an <b>Original</b> and a <b>Backup</b> badge on every photo, the two versions of a photo side by side. The chip works like any other: the search (file names, tags, people) and the other filters narrow it down, <b>✕</b> removes it, and typing <i>only on</i> or <i>backup</i> offers it. When you pick a drive it does not fit (an original drive for <b>Only on backup</b>, All drives), the chip is removed and a note says why. In the photo's info panel a badge next to the name says <b>Only on backup</b> or <b>Not backed up</b>; point at it for the explanation. The bar at the bottom of a card says when the drive was last scanned and when new files last arrived on it (on a backup: <b>Last backup</b>); point at a date for the exact time.</p>
-              <figure>
-                <img src="assets/en/drives-overview.jpg" alt="" loading="lazy">
-                <figcaption>Manage drives: an original and its backup. Every list has a Show photos button.</figcaption>
-              </figure>
-              <figure>
-                <img src="assets/en/drives-only-backup.jpg" alt="" loading="lazy">
-                <figcaption>Show photos on “only on the backup”: the backup's own timeline with the <b>Only on backup</b> chip.</figcaption>
-              </figure>
-              <figure>
-                <img src="assets/en/drives-different.jpg" alt="" loading="lazy">
-                <figcaption>Different on the backup: both versions of a photo side by side, each with an Original or Backup badge.</figcaption>
-              </figure>
-              <figure class="narrow">
-                <img src="assets/en/drives-badge.jpg" alt="" loading="lazy">
-                <figcaption>The info panel of a photo that only the backup has: the badge sits next to the name.</figcaption>
-              </figure>
-            </div>
-            <div>
-              <h3>Backup check</h3>
-              <p>Choose the original first and the backup second. shoebox compares the two indexes (no photo is read) and lists what is not on the backup yet, what differs and what exists only on the backup. <i>Also re-read the backup</i> finds bit rot.</p>
-            </div>
-            <div>
-              <h3>Your tags and names are saved</h3>
-              <p>Everything you add yourself (own tags, people, groups, your ✓ and ✗ decisions, drawn faces) is kept in the index, never in a photo. While you work, shoebox also keeps a safety copy of the index, <code>library.db.bak</code>, and a readable list of it all, <code>userdata.json</code>, in the <code>.shoebox</code> folder on the drive. They travel with the drive, so a backup of the drive has them too. Open <code>userdata.json</code> in any text editor to see what you have made. If the index is ever damaged, <b>Verify</b> in the launcher points you to the safety copy.</p>
-            </div>
-            <div>
-              <h3>iPad & other devices</h3>
-              <p>In Terminal: <code>shoebox serve /Volumes/MyDrive --lan</code>. It prints an address and a PIN; open the address in Safari on the same Wi-Fi and enter the PIN once. Swipe in the viewer, tap to select.</p>
-            </div>
-          </div>
-          <div class="panel">
-            <h3>Command line (optional)</h3>
-            <dl class="cli">
-              <dt><code>shoebox scan &lt;folder&gt;</code></dt>
-              <dd>index new, moved and changed files</dd>
-              <dt><code>shoebox verify &lt;folder&gt;</code></dt>
-              <dd>re-read files and compare with the index</dd>
-              <dt><code>shoebox recognize &lt;folder&gt; [--pets] [--text]</code></dt>
-              <dd>find faces (and pets, and with <code>--text</code> read the words in the photos; <code>--text-only</code> reads only the words)</dd>
-              <dt><code>shoebox backup &lt;original&gt; &lt;backup&gt;</code></dt>
-              <dd>is the backup complete?</dd>
-              <dt><code>shoebox serve &lt;folder&gt; [--lan] [--pin …]</code></dt>
-              <dd>open the photo app</dd>
-            </dl>
-          </div>
-=======
       <div class="topic">
         <div class="txt">
           <h3>Several drives</h3>
           <p>Start shoebox with more than one drive and each one appears in the sidebar. <b>All drives</b> gives you one common timeline across all of them. It is for looking: photos that are favorites show a ♥ (greyed out, you cannot click it), and the info panel shows tags, favorite and people, but none of it can be changed there (<b>Show boxes</b> and pointing at a person to see their face still work). The panel names the drive the photo is on (its disk name, as in <b>Manage drives</b>) and has <b>Show in Finder</b> (<b>Show in Explorer</b> on Windows) and <b>Copy path</b>; <b>Open in &lt;drive&gt;'s timeline</b> switches to that drive's own timeline, at the photo's folder, to change tags, people or favorites.</p>
           <p><b>Manage drives</b>, next to Duplicates, Trash and Settings, opens a page that does not depend on the drive you are looking at: your drives as cards, and two tabs below them, <b>People across drives</b> and <b>Duplicates across drives</b>. A drive that is unplugged is shown as offline.</p>
           <p>Under <b>People across drives</b> each person shows the drives they are on by disk name with the number of faces found there (point at one to see its folder), and the people who are on the most drives come first. The drive you are looking at is filled in with the accent colour, and so is the page you have open under it (All photos, Duplicates, Trash, Settings), so you can always see which drive's trash you are in.</p>
->>>>>>> origin/main
         </div>
       </div>
       <div class="topic has-shots">
@@ -1295,7 +1238,7 @@
             <svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg>
           </div>
           <h3>Read-only</h3>
-          <p>Metadata, thumbnails, tags, locations and dates you set are kept in the index on the drive (<code>.shoebox/library.db</code>), never inside a photo. Capture dates and created dates never change: a date you give a photo lives in shoebox only, and the file’s own date stays as it was.</p>
+          <p>Metadata, thumbnails, tags, locations and dates you set are kept in the index on the drive (<code>.shoebox/library.db</code>), never inside a photo. Capture dates and created dates never change: a date you give a photo lives in shoebox only, and the file’s own date stays as it was. A folder whose index is kept next to the program is only read: nothing at all is written into it, and its photos cannot be moved, renamed or deleted.</p>
         </li>
         <li>
           <div class="ic-box">
@@ -1338,6 +1281,8 @@
         <p><b>There is no Export button.</b> Export saves into the folders of the computer shoebox runs on, so it is only offered in a browser on that computer, not on an iPad. With a tag in the search the button sits next to the tag’s chip; for other photos press ☑, select, and use <b>Export…</b> in the bar.</p>
         <p><b>macOS says “libheif.1.dylib” (or “shoebox”) cannot be opened because Apple cannot check it for malicious software.</b> shoebox was started directly, not with <b>Start shoebox.command</b>. Press <b>OK</b> and double-click <b>Start shoebox.command</b> instead: it takes the download mark off the files in <b>program</b>, then starts shoebox.</p>
         <p><b>A drive shows as offline.</b> Plug it in again; shoebox picks it up when you reload.</p>
+        <p><b>My photos are on a server.</b> Add the folder with <b>+ Add a folder or server…</b> in step 2 of the Control Panel and keep its index <b>next to the program</b> (see “Get started in three steps”). The server is only read.</p>
+        <p><b>“Separate (next to the program)” cannot be chosen.</b> shoebox has to write its <b>libraries</b> folder next to itself, which is not allowed in a folder like Program Files. Move the shoebox folder to Documents or the Desktop.</p>
         <p><b>A photo is in the wrong place on the timeline.</b> Its date comes from the file, the name of its event folder or the file’s dates, and a scan or a picture sent through a messenger often has the wrong one. Open the info panel and press the pencil next to the date to give it your own; see “Dates and searching by date”.</p>
         <p><b>A map is empty or says Offline.</b> Maps need the internet. Check the connection and open the photo again; without it everything else works as before.</p>
       </div>
