@@ -173,9 +173,11 @@ CREATE INDEX IF NOT EXISTS face_decisions_key ON face_decisions(key);
 CREATE INDEX IF NOT EXISTS face_decisions_person ON face_decisions(person_id);
 ";
 
-/// Default database location for a library root.
+/// Default database location for a library root: in the program's
+/// `libraries/<name>/` if the root is registered there (phase 16), else the
+/// root's own `.shoebox/`.
 pub fn default_path(root: &Path) -> PathBuf {
-    root.join(DIR).join(FILE)
+    crate::libraries::index_db(root).unwrap_or_else(|| root.join(DIR).join(FILE))
 }
 
 /// Open for a command that owns the index (scan, verify): also marks jobs
