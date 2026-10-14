@@ -183,6 +183,16 @@ pub fn is_read_only(root: &Path) -> bool {
     entry_for(root).is_some()
 }
 
+/// Called first by everything that would change an original (move, rename,
+/// trash, restore, rotate, remove copies): a library registered next to the
+/// program is never changed.
+pub fn ensure_writable(root: &Path) -> Result<()> {
+    match entry_for(root) {
+        Some((_, e)) => bail!("{} is read-only for shoebox (its index is kept next to the program), nothing in it is changed", e.name),
+        None => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,6 +1,6 @@
 # Phase 16: index next to the program (server libraries)
 
-Status: **design, nothing built.** Overview in [plan.md](plan.md).
+Status: **steps 1 and 2 built** (registry, index path, read-only enforcement in the core); the server routes' hidden buttons, the CLI and the Control Panel are open. Overview in [plan.md](plan.md).
 
 ## Why
 
@@ -154,15 +154,20 @@ without flags.
 
 ## Steps
 
-1. [ ] `library::index_path`, the registry (`libraries.json`, read/write,
+1. [x] `libraries::index_db` (called by `db::default_path`), the registry (`libraries.json`, read/write,
        atomic), a test for every caller that now goes through it; behaviour
        with no registry entry is byte-for-byte as today.
-2. [ ] Read-only enforcement for a library next to the program (server side
-       first, then the hidden buttons), tests that every mutating route refuses.
+2. [~] Read-only enforcement: `libraries::ensure_writable(root)` is the first line of
+       every function that changes an original (`organize::{rename_folder,
+       move_files_with, rotate, turn, trash_files, restore, empty_trash}`,
+       `duplicates::remove_copies`); `core/tests/libraries_readonly.rs` checks each
+       refuses and that nothing changes. Open: `info.read_only` and hiding the
+       buttons in the photo app.
 3. [ ] CLI (`--index-next-to-program`, `libraries`).
 4. [ ] Control Panel: list, add form, edit, remove; strings in `en.json` /
        `de.json`; `core/tests/launcher.rs`.
-5. [ ] Tree-snapshot guard tests (nothing written to the root).
+5. [x] Tree-snapshot guard test for scan and verify (`core/tests/libraries.rs`); still to add
+       for a serve session and an export.
 6. [ ] Guide, both languages (Get started: the two places for the index;
        Safety: nothing written to the folder; Control Panel; FAQ "my photos are
        on a server"), then `python3 docs/guide/check.py`.
