@@ -38,20 +38,30 @@ button.quiet{margin-left:0;padding:6px 14px;font-size:14px}
 .pill.ok{color:var(--ok)} .pill.off{color:var(--muted);border-style:dashed}
 .sheet{box-shadow:0 8px 30px rgba(0,0,0,.18)}
 .mocktag{font:12px system-ui;color:#fff;background:#8a6d00;display:inline-block;padding:2px 8px;border-radius:999px;margin:0 0 8px}
-</style></head><body><main>
+
+.lbl{display:inline-flex;align-items:center;gap:6px}
+.info{position:static;display:inline-flex;width:20px;height:20px;color:var(--muted);cursor:help}
+.info svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.info svg .dot{fill:currentColor;stroke:none}
+.info:hover{color:var(--accent)}
+.tip{display:none;position:absolute;left:0;top:34px;z-index:5;width:min(460px,100%);padding:10px 12px;border-radius:10px;background:var(--text);color:var(--card);font-size:13px;line-height:1.4;font-weight:400;text-align:left;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+.info:hover .tip,.tipopen .tip{display:block}
+.tipopen .info{color:var(--accent)}
+.row-head,.title-row{position:relative}
+</style></head><body class="tipopen"><main>
 <p class="mocktag">MOCK 1 · Control Panel, step 1</p>
 <section class="card">
   <h2>1 · Wo sind deine Fotos?</h2>
   <label>Laufwerke oder Fotoordner (Pfad eintippen, mit Enter hinzufügen)</label>
   <div class="chipbox"><ul>
-    <li><span class="name">Fotos (\\server\share\Fotos)</span><span class="badge here">Index neben dem Programm</span><button aria-label="remove">×</button></li>
+    <li><span class="name">Fotos (\\server\share\Fotos)</span><span class="badge here">nicht auf dem Laufwerk</span><button aria-label="remove">×</button></li>
     <li><span class="name">Extreme SSD</span><span class="badge">✓</span><button aria-label="remove">×</button></li>
   </ul><input placeholder="/Volumes/MyDrive"></div>
   <p class="hint">Erkannte Laufwerke, zum Hinzufügen anklicken:</p>
   <div class="chips"><button class="has-lib">Extreme SSD</button><button>Backup 2TB</button></div>
-  <div class="row-head"><p class="hint">Bibliotheken neben dem Programm:</p></div>
+  <div class="row-head"><p class="hint lbl">Bibliotheken neben dem Programm / nicht auf dem Laufwerk <span class="info" tabindex="0" aria-label="Bibliotheken neben dem Programm / nicht auf dem Laufwerk"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5.2" y="5.2" width="13.6" height="13.6" rx="3.6" transform="rotate(45 12 12)"/><circle class="dot" cx="12" cy="8.6" r="1.2"/><path d="M12 11.6v4.6"/></svg><span class="tip">Nicht auf dem Laufwerk: Der Ordner .shoebox wird nicht im Stammordner des Laufwerks angelegt. Stattdessen entsteht neben dem Programm ein Ordner „libraries“, in dem der Index jeder Bibliothek liegt. In deinen Fotoordner wird nichts geschrieben.</span></span></p><button class="quiet">Verwalten…</button></div>
   <div class="chips">
-    <button class="lib"><span>Fotos</span><span class="badge">Index neben dem Programm</span></button>
+    <button class="lib"><span>Fotos</span><span class="badge">nicht auf dem Laufwerk</span></button>
     <button class="lib off"><span>Büro-Archiv</span><span class="badge">nicht verbunden</span></button>
     <button class="quiet">＋ Ordner oder Server hinzufügen…</button>
   </div>

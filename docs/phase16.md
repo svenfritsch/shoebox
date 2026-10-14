@@ -110,15 +110,24 @@ Step 2 "Select drives" lists, in this order:
 
 1. the drives found (as today);
 2. the libraries from `libraries.json`, each with its name, root path and a
-   small badge ("next to the program" / "neben dem Programm"), greyed with
-   "offline" when the root cannot be read (share not connected), exactly like
-   a missing drive.
+   small badge **"not on drive" / "nicht auf dem Laufwerk"**, greyed with
+   "not connected" when the root cannot be read (share not connected), exactly
+   like a missing drive. The row is headed "Libraries kept next to the program
+   / not on drive" ("Bibliotheken neben dem Programm / nicht auf dem
+   Laufwerk") with an info icon (our own drawing, a rounded diamond with an
+   i) whose tooltip says that the `.shoebox` folder is not created in the
+   drive's root, a `libraries` folder is added next to the program instead, and
+   nothing is written into the photo folder. At the end of the row sit the
+   buttons **Manage…** ("Verwalten…"), which opens the management panel under
+   the row, and "+ Add a folder or server…". Mock-ups:
+   [docs/mocks/phase16/](mocks/phase16/) (approved wording: the user chose "not
+   on drive").
 
 An "Add a folder or server…" form (path field + folder picker where the
 browser can give one, as for export) gets a choice:
 
 - **Keep the index on the drive** (default; today's behaviour);
-- **Keep the index next to the program** (asks for a name; shown only when the
+- **Not on the drive (next to the program)** (asks for a name; shown only when the
   program folder is writable, otherwise the row says why: "the program folder
   is read-only, move shoebox out of Program Files").
 
