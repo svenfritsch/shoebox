@@ -197,6 +197,14 @@ pub fn ensure_home_writable(home: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The program folder can be written to (checked without making anything stay).
+pub fn home_writable(home: &Path) -> bool {
+    let probe = home.join(".shoebox-write-test");
+    let ok = std::fs::write(&probe, b"").is_ok();
+    let _ = std::fs::remove_file(&probe);
+    ok
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Status {
     pub name: String,

@@ -33,7 +33,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 
 use crate::report::{self, Event};
-use crate::{faces, recognize, scan, serve, verify};
+use crate::{faces, libraries, recognize, scan, serve, verify};
 
 /// Tried first; the next ones if it is taken.
 pub const DEFAULT_PORT: u16 = 7879;
@@ -51,6 +51,9 @@ pub struct Options {
     pub config: Option<PathBuf>,
     /// Opens a file in the file manager (default: `reveal::reveal`); tests pass their own.
     pub reveal: Option<serve::RevealFn>,
+    /// The program folder that holds `libraries.json` and `libraries/`
+    /// (default: `libraries::home()`); tests pass their own.
+    pub home: Option<PathBuf>,
 }
 
 pub struct Launcher {
@@ -97,6 +100,7 @@ pub fn start(opts: &Options) -> Result<Launcher> {
         config: opts.config.clone().or_else(config_path),
         reveal: opts.reveal.clone().unwrap_or_else(|| -> serve::RevealFn { Arc::new(|p: &Path| crate::reveal::reveal(p)) }),
         config_lock: Mutex::new(()),
+        home: opts.home.clone().or_else(libraries::home),
     });
     let router = router(shared.clone());
     let (tx, rx) = oneshot::channel::<()>();
@@ -121,7 +125,7 @@ pub fn start(opts: &Options) -> Result<Launcher> {
 
 /// `shoebox` without arguments: run until the window is closed with Ctrl-C.
 pub fn run() -> Result<()> {
-    let launcher = start(&Options { port: DEFAULT_PORT, open_browser: true, config: None, reveal: None })?;
+    let launcher = start(&Options { port: DEFAULT_PORT, open_browser: true, config: None, reveal: None, home: None })?;
     println!("shoebox {} launcher: {}", env!("CARGO_PKG_VERSION"), launcher.url);
     println!("Leave this window open while you use shoebox; close it to stop.");
     launcher.wait()
@@ -319,6 +323,8 @@ struct Shared {
     reveal: serve::RevealFn,
     /// Serialises read-modify-write of the config file.
     config_lock: Mutex<()>,
+    /// The program folder (`libraries.json`, `libraries/`).
+    home: Option<PathBuf>,
 }
 
 struct AppRunning {
@@ -739,6 +745,11 @@ fn router(shared: Arc<Shared>) -> Router {
         .route("/api/job/cancel", post(job_cancel))
         .route("/api/config", get(config_get).post(config_set))
         .route("/api/reveal", post(reveal_files))
+        .route("/api/libraries", get(libraries_get).post(libraries_add))
+        .route("/api/libraries/rename", post(libraries_rename))
+        .route("/api/libraries/root", post(libraries_root))
+        .route("/api/libraries/remove", post(libraries_remove))
+        .route("/api/libraries/delete", post(libraries_delete))
         .fallback(asset)
         .layer(middleware::from_fn(guard))
         .with_state(shared)
@@ -976,6 +987,146 @@ async fn addons(Json(req): Json<AddonsRequest>) -> Json<serde_json::Value> {
 
 async fn drives() -> Json<Vec<Drive>> {
     Json(tokio::task::spawn_blocking(detect_drives).await.unwrap_or_default())
+}
+
+// ---------------------------------------------------------------- libraries
+// Libraries whose index is kept next to the program (phase 16, docs/phase16.md):
+// the list in the Control Panel's step 1 and its "Manage…" panel.
+
+fn libs_home(shared: &Shared) -> Result<PathBuf, ApiError> {
+    shared.home.clone().ok_or_else(|| ApiError::BadRequest("the program folder is not known".into()))
+}
+
+/// Changing the list while a job or the photo app uses the indexes would pull
+/// the folders out from under them.
+fn libs_idle(shared: &Shared) -> Result<(), ApiError> {
+    if shared.job.lock().unwrap().running {
+        return Err(ApiError::Conflict("a job is running; wait until it is finished".into()));
+    }
+    if shared.app.lock().unwrap().is_some() {
+        return Err(ApiError::Conflict("the photo app is running; stop it first".into()));
+    }
+    Ok(())
+}
+
+/// Run file system work (a share can be slow) off the async threads.
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, ApiError> + Send + 'static) -> Result<T, ApiError> {
+    tokio::task::spawn_blocking(f).await.map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))?
+}
+
+fn bad(e: anyhow::Error) -> ApiError {
+    ApiError::BadRequest(format!("{e:#}"))
+}
+
+async fn libraries_get(State(shared): State<Arc<Shared>>) -> Result<Json<serde_json::Value>, ApiError> {
+    blocking(move || {
+        let Some(home) = shared.home.clone() else {
+            return Ok(serde_json::json!({ "dir": null, "writable": false, "libraries": [] }));
+        };
+        Ok(serde_json::json!({
+            "dir": home,
+            "writable": libraries::home_writable(&home),
+            "libraries": libraries::list(&home).map_err(ApiError::Internal)?,
+        }))
+    })
+    .await
+    .map(Json)
+}
+
+#[derive(Deserialize)]
+struct LibraryAdd {
+    root: String,
+    #[serde(default)]
+    name: String,
+}
+
+async fn libraries_add(State(shared): State<Arc<Shared>>, Json(req): Json<LibraryAdd>) -> Result<Json<serde_json::Value>, ApiError> {
+    blocking(move || {
+        let home = libs_home(&shared)?;
+        libs_idle(&shared)?;
+        let root = PathBuf::from(req.root.trim());
+        if req.root.trim().is_empty() || !root.is_dir() {
+            return Err(ApiError::BadRequest(format!("{:?} is not a folder on this computer", req.root.trim())));
+        }
+        libraries::ensure_home_writable(&home).map_err(bad)?;
+        let name = if req.name.trim().is_empty() { libraries::suggest_name(&libraries::load(&home).map_err(bad)?, &root) } else { req.name };
+        let entry = libraries::add(&home, &name, &root).map_err(bad)?;
+        Ok(serde_json::json!({ "name": entry.name, "root": entry.root }))
+    })
+    .await
+    .map(Json)
+}
+
+#[derive(Deserialize)]
+struct LibraryRename {
+    name: String,
+    new_name: String,
+}
+
+async fn libraries_rename(State(shared): State<Arc<Shared>>, Json(req): Json<LibraryRename>) -> Result<Json<serde_json::Value>, ApiError> {
+    blocking(move || {
+        let home = libs_home(&shared)?;
+        libs_idle(&shared)?;
+        let entry = libraries::rename(&home, &req.name, &req.new_name).map_err(bad)?;
+        Ok(serde_json::json!({ "name": entry.name, "root": entry.root }))
+    })
+    .await
+    .map(Json)
+}
+
+#[derive(Deserialize)]
+struct LibraryRoot {
+    name: String,
+    root: String,
+    /// Only look: report how many of the indexed files are in the folder.
+    #[serde(default)]
+    check: bool,
+    /// Take the folder although none of the sampled files is in it.
+    #[serde(default)]
+    force: bool,
+}
+
+async fn libraries_root(State(shared): State<Arc<Shared>>, Json(req): Json<LibraryRoot>) -> Result<Json<serde_json::Value>, ApiError> {
+    blocking(move || {
+        let home = libs_home(&shared)?;
+        let root = PathBuf::from(req.root.trim());
+        let check = if req.check {
+            libraries::check_root(&home, &req.name, &root).map_err(bad)?
+        } else {
+            libs_idle(&shared)?;
+            libraries::set_root(&home, &req.name, &root, req.force).map_err(bad)?
+        };
+        Ok(serde_json::json!({ "checked": check.checked, "found": check.found, "total": check.total, "saved": !req.check }))
+    })
+    .await
+    .map(Json)
+}
+
+#[derive(Deserialize)]
+struct LibraryName {
+    name: String,
+}
+
+async fn libraries_remove(State(shared): State<Arc<Shared>>, Json(req): Json<LibraryName>) -> Result<Json<serde_json::Value>, ApiError> {
+    blocking(move || {
+        let home = libs_home(&shared)?;
+        libs_idle(&shared)?;
+        libraries::remove(&home, &req.name).map_err(bad)?;
+        Ok(serde_json::json!({ "removed": req.name }))
+    })
+    .await
+    .map(Json)
+}
+
+async fn libraries_delete(State(shared): State<Arc<Shared>>, Json(req): Json<LibraryName>) -> Result<Json<serde_json::Value>, ApiError> {
+    blocking(move || {
+        let home = libs_home(&shared)?;
+        libs_idle(&shared)?;
+        libraries::delete_index(&home, &req.name).map_err(bad)?;
+        Ok(serde_json::json!({ "deleted": req.name }))
+    })
+    .await
+    .map(Json)
 }
 
 // ---------------------------------------------------------------- page
