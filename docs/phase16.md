@@ -1,6 +1,6 @@
 # Phase 16: index next to the program (server libraries)
 
-Status: **steps 1 to 6 built** except the CLI. The Control Panel layout is decided and built: tabs (mock-ups in `docs/mocks/phase16/layout/`, T1 and T2 are the chosen ones). Overview in [plan.md](plan.md).
+Status: **steps 1 to 6 built**; open: a guard test for an export of such a library and the check on a real share from Windows. The Control Panel layout is decided and built: tabs (mock-ups in `docs/mocks/phase16/layout/`, T1 and T2 are the chosen ones). Overview in [plan.md](plan.md).
 
 ## Why
 
@@ -173,14 +173,17 @@ without flags.
        delete buttons (`body.read-only`) and disables the "Allow move to trash" checkbox with a
        hint. `core/tests/libraries_readonly.rs` checks each function refuses and a real serve
        session (info, trash setting, move, trash, rotate refused, nothing written).
-3. [ ] CLI (`--index-next-to-program`, `libraries`).
-4. [x] Control Panel: the row with badge (our own shoebox icon + "separate" / "separat") and
-       an info marker like the photo app's, the add dialog, the Manage panel (rename,
-       change folder with a check, remove, delete the index); API `/api/libraries*`
-       in `launcher.rs`; strings in `en.json` / `de.json`; `core/tests/launcher.rs`.
-       The folder picker is the photo app's (`export::places` / `list_folders`, routes
-       `/api/places` and `/api/folders` in the launcher). A click on a detected drive starts a
-       path in the box, a double-click on a chip edits it. Remove and delete the index are modal dialogs.
+3. [x] CLI: `shoebox libraries [--json]` (list), `libraries add <folder> [--name N]`, `rename`,
+       `root <name> <new folder> [--force]` (checks a sample first), `remove`,
+       `delete <name> --yes`; `shoebox scan <root> --index-next-to-program [--name N]`
+       (registers the folder, then scans; excludes `--db`). A plain `scan`, `verify`, `serve` of a
+       registered root finds its index through the registry. `core/tests/libraries.rs` runs the
+       whole set and checks nothing is written into the folder.
+4. [x] Control Panel: three tabs (Photo folders, Add a folder or server, Manage libraries), the
+       badge with the photo app's tab icon and "separate" / "separat", an info marker like the
+       photo app's, a folder picker reused from the export dialog, modal confirmations; API
+       `/api/libraries*`, `/api/places`, `/api/folders` in `launcher.rs`; strings in `en.json` /
+       `de.json`; `core/tests/launcher.rs`. Details in "Control Panel" above.
 5. [x] Tree-snapshot guard tests: scan and verify (`core/tests/libraries.rs`) and a serve
        session (`libraries_readonly.rs`); an export of such a library is still to add.
 6. [x] Guide, both languages (Get started, Safety, FAQ; the Drives section waits for the conflict markers on main to be resolved) (Get started: the two places for the index;

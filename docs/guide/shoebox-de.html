@@ -1223,6 +1223,10 @@
         <dl class="cli">
           <dt><code>shoebox scan &lt;Ordner&gt;</code></dt>
           <dd>neue, verschobene und geänderte Dateien indexieren</dd>
+          <dt><code>shoebox scan &lt;Ordner&gt; --index-next-to-program [--name &lt;Name&gt;]</code></dt>
+          <dd>einen Ordner scannen, den du nur lesen willst, zum Beispiel auf einem Server: In ihn wird nichts geschrieben, sein Index liegt neben dem Programm</dd>
+          <dt><code>shoebox libraries</code></dt>
+          <dd>listet die Bibliotheken neben dem Programm (<code>--json</code> für Skripte); <code>add &lt;Ordner&gt;</code>, <code>rename &lt;Name&gt; &lt;neu&gt;</code>, <code>root &lt;Name&gt; &lt;neuer Ordner&gt;</code> (die Freigabe ist umgezogen), <code>remove &lt;Name&gt;</code> und <code>delete &lt;Name&gt; --yes</code> (löscht ihren Index) tun dasselbe wie die Reiter der Zentrale</dd>
           <dt><code>shoebox verify &lt;Ordner&gt;</code></dt>
           <dd>Dateien neu lesen und mit dem Index vergleichen</dd>
           <dt><code>shoebox recognize &lt;Ordner&gt; [--pets] [--text]</code></dt>

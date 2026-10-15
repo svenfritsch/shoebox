@@ -1223,6 +1223,10 @@
         <dl class="cli">
           <dt><code>shoebox scan &lt;folder&gt;</code></dt>
           <dd>index new, moved and changed files</dd>
+          <dt><code>shoebox scan &lt;folder&gt; --index-next-to-program [--name &lt;name&gt;]</code></dt>
+          <dd>scan a folder you only want to read, for example on a server: nothing is written into it, its index is kept next to the program</dd>
+          <dt><code>shoebox libraries</code></dt>
+          <dd>list the libraries kept next to the program (<code>--json</code> for scripts); <code>add &lt;folder&gt;</code>, <code>rename &lt;name&gt; &lt;new&gt;</code>, <code>root &lt;name&gt; &lt;new folder&gt;</code> (the share moved), <code>remove &lt;name&gt;</code> and <code>delete &lt;name&gt; --yes</code> (deletes its index) do the same as the Control Panel’s tabs</dd>
           <dt><code>shoebox verify &lt;folder&gt;</code></dt>
           <dd>re-read files and compare with the index</dd>
           <dt><code>shoebox recognize &lt;folder&gt; [--pets] [--text]</code></dt>
