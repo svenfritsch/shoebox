@@ -1,8 +1,9 @@
-# Phase 17: the release folder, and Windows release by hand
+# Phase 17: the release folder, and Windows and Linux releases by hand
 
 Status: **release folder done** (macOS release, launchers, guide; from the next
-tag). **Windows workflow: plan, nothing built.** Overview in
-[plan.md](plan.md); the Windows build itself is "Decoders per build", step 4.
+tag). **Windows and Linux by hand: built** (`release-by-hand.yml`), not run yet;
+no cloud-folder check yet. Overview in [plan.md](plan.md); the Windows build
+itself is "Decoders per build", step 4.
 
 ## Part 1: the release folder (done)
 
@@ -36,45 +37,69 @@ shoebox-macos/
 | Guide | Get started describes the three things, Open Anyway (macOS 15 dropped right-click → Open), ffmpeg into `program/`; a FAQ entry for the libheif message |
 | Check | The release job fails if anything but the three is on top |
 
-## Part 2: Windows release by hand
+## Part 2: Windows and Linux releases by hand
 
-### Goal
+### How to use it
 
-The automatic release (a `v*` tag) stays macOS only. The owner can add a
-Windows archive to an existing release afterwards with one click in GitHub:
-Actions → *release-windows* → Run workflow → a tag. The same workflow, started
-without a tag, makes a complete test folder as an artifact, so a friend can try
-Windows before anything is published.
+The automatic release (a pushed `v*` tag, `build.yml`) stays macOS only. Windows
+and Linux are added afterwards, each on its own:
 
-### Today
+1. Push the tag as always; `build.yml` makes the release with
+   `shoebox-macos.tar.gz` and `SHA256SUMS`.
+2. Actions → **release by hand** → Run workflow. "Use workflow from": `main`.
+   **System**: `windows` or `linux`. **Tag**: the release's tag (`v0.7.5`).
+3. The run builds and tests the code of that tag, packs the folder and adds
+   `shoebox-windows.zip` (or `shoebox-linux.tar.gz`) and its line in
+   `SHA256SUMS` to that release. A second run replaces what the first added;
+   nothing else in the release changes.
 
-- `build.yml` has a `windows` job (manual only): builds and tests on
-  `windows-latest`, probes, scans and verifies a small folder, uploads
-  `shoebox-windows` in the Part 1 layout: `Start shoebox.bat`, and `program/`
-  with `shoebox.exe`, `heif.dll`, `libde265.dll` and `recognizer/`
-  (`install.ps1`, `fetch-models.ps1`, `recognizer.py`, `README.md`). No
-  licences, no guide, no sources.
-  Before, the artifact had the program and the DLLs only; a `recognizer`
-  folder copied from the macOS download has no `install.ps1`, so the Control
-  Panel said the folder was not next to the program (it looks for
-  `recognizer\install.ps1` next to `shoebox.exe`).
-- The `release` job packs `shoebox-macos` only and runs
-  `gh release create --prerelease` on a tag.
-- `scripts/third-party-licenses.py` knows only the two macOS targets
-  (`TARGETS`), so the Windows build has no licence notice yet.
+With the tag left empty, the run builds the branch it was started from and the
+folder is only the artifact `shoebox-windows` (or `shoebox-linux`) of the run,
+to try it on a real PC before anything is published.
+
+A run of `build.yml` started by hand on a tag no longer tries to make a release
+(it would fail: the release exists): the `guide` and `release` jobs run only for
+a pushed tag.
+
+### What a release then holds
+
+```
+shoebox-macos.tar.gz      (tag push)
+shoebox-windows.zip       (release by hand, windows)
+shoebox-linux.tar.gz      (release by hand, linux)
+SHA256SUMS                (one line per archive)
+```
+
+```
+shoebox-windows/                     shoebox-linux/
+  Start shoebox.bat                    Start shoebox.sh
+  guide/                               guide/
+  program/                             program/
+    shoebox.exe                          shoebox
+    heif.dll, libde265.dll               libheif.so.1, libde265.so.0
+    recognizer/  install.ps1,            recognizer/  install.sh,
+      fetch-models.ps1,                    fetch-models.sh,
+      recognizer.py, README.md             recognizer.py, README.md
+    sources/  (libheif, libde265)        sources/
+    LICENSE.txt                          LICENSE.txt
+    THIRD-PARTY-LICENSES.txt             THIRD-PARTY-LICENSES.txt
+```
 
 ### Decisions
 
 | Topic | Decision |
 |---|---|
-| Trigger | A new workflow file `.github/workflows/release-windows.yml`, `workflow_dispatch` only, input `tag` (optional). The macOS pipeline is not touched |
-| With a tag | Check out that tag, build, pack, **add** `shoebox-windows.zip` to the release of that tag (`gh release upload --clobber`, `contents: write`) and add its line to `SHA256SUMS`. The release must exist; if it does not the run stops with a message. The other assets are never changed or deleted |
-| Without a tag | Same build and packing, result only as the workflow artifact `shoebox-windows` (a zip a person can send). Nothing is published |
-| Guide | Not rebuilt: taken from the `guide/` folder in the release's `shoebox-macos.tar.gz`. Without a tag, from the latest release, or left out with a note if none exists |
-| Package | One folder `shoebox-windows/` laid out like the macOS one (Part 1): `Start shoebox.bat`, `guide/`, and `program/` with `shoebox.exe`, `heif.dll`, `libde265.dll`, `recognizer/` (`install.ps1`, `fetch-models.ps1`, `recognizer.py`, `README.md`), `LICENSE.txt`, `THIRD-PARTY-LICENSES.txt`, `sources/` (libheif, libde265). Zip, not tar: Explorer opens it. A zip keeps no executable bit, which Windows does not need |
-| Reuse | The build and probe steps move into a reusable workflow (`workflow_call`) or are copied from the `windows` job; one place only, so the manual `windows` job in `build.yml` and the release workflow cannot drift apart. Decide when writing it |
-| Old tags | The tag must contain the Windows build scripts and `Start shoebox.bat`. For an older tag the workflow checks for them first and stops with a clear message |
-| Release marked | The release stays a pre-release as created by the tag run. The workflow adds a line to the release notes only if the owner asks |
+| Workflow | `.github/workflows/release-by-hand.yml`, `workflow_dispatch` only, inputs `system` (`windows` / `linux`) and `tag` (optional). The Windows and Linux jobs moved there from `build.yml`, so they exist in one place and are started one at a time |
+| Jobs | `check` (the release exists; the tag has `scripts/package.sh`, else it is older than this workflow and the run stops with a message), `windows` or `linux` (build, tests, probe/scan/verify; uploads the raw build for one day), `package` (on Ubuntu: guide, licence check, `scripts/package.sh`, archive, artifact, upload). `contents: write` only for `package` |
+| With a tag | Checks out the tag, builds and **adds** the archive with `gh release upload --clobber`; `SHA256SUMS` is downloaded, this archive's line replaced, uploaded again. The release must exist. Other assets are never changed or deleted |
+| Without a tag | Builds the branch it was started from; the result is only the workflow artifact (the folder; GitHub zips it for the download). Nothing is published |
+| Guide | Not rebuilt: the `guide/` folder of the same release's `shoebox-macos.tar.gz` (without a tag: of the newest release, pre-releases included). A tag whose release has no guide stops the run; without a tag the folder goes without one, with a warning |
+| Package | `scripts/package.sh <system> <build dir> <guide> <out>`, the same script the macOS release uses (Part 1 layout, checks that only the three things are on top). Windows: zip (Explorer opens it; no executable bit needed). Linux: tar.gz (keeps the executable bit) |
+| Licences | `scripts/third-party-licenses.py` covers all four targets (both Macs, Windows, Linux): one `THIRD-PARTY-LICENSES.txt` for every archive, checked (`--check`) by every release job |
+| Linux | x86-64, built on Ubuntu 24.04, so it needs glibc 2.39 or newer (Ubuntu 24.04, Debian 13, Fedora 40 and later). The Linux run also tests the real recognizer under the guard, as the old manual job did |
+| Probe report | The probe of the test folder writes its report to the runner's temp folder, not into the artifact: it is only the input of the "both pictures got a preview" check (Windows), nothing a person needs. The same for the macOS build |
+| Names | No tag in the file name (`shoebox-windows.zip`, as `shoebox-macos.tar.gz`): a release holds one build per system |
+| Release marked | The release stays a pre-release as created by the tag run |
 
 ### No cloud-synced folders (Windows and macOS)
 
@@ -100,24 +125,15 @@ allowed**, on Windows and on macOS, whatever the cloud.
 
 ### Steps
 
-1. [ ] Licences for Windows: add `x86_64-pc-windows-msvc` to `TARGETS` in
-       `scripts/third-party-licenses.py`, run it, commit the changed
-       `THIRD-PARTY-LICENSES.txt` (CLAUDE.md: also after a change to
-       `Cargo.lock`, `build-deps.sh` or `core/web/vendor/`). Check that the
-       macOS `--check` still passes. Until this is done the workflow runs
-       without `--check` for the Windows target and says so in its log.
-2. [ ] Packing script `scripts/package-windows.sh` (bash, runs in Git Bash on
-       the runner; also usable on Linux for a dry run with a fake exe): builds
-       the folder above (the Part 1 layout) from `core/target/…/release`, `scripts/launchers`,
-       `recognizer/` and the sources, from files only (no network except
-       `build-deps.sh --sources`). The `windows` job's Package step already
-       copies `Start shoebox.bat` and `recognizer/`; the script takes it over.
-3. [ ] `release-windows.yml`: inputs, tag check, checkout of the tag, build
-       and tests (as the `windows` job), probe/scan/verify of the small
-       folder, package, then either upload to the release or upload the
-       artifact. Permissions: `contents: write` only for the upload step.
-4. [ ] `build.yml`: the manual `windows` job calls the same steps (or is
-       replaced by this workflow); the header comment explains the two ways.
+1. [x] Licences for Windows and Linux: both targets in `TARGETS` of
+       `scripts/third-party-licenses.py`, `THIRD-PARTY-LICENSES.txt` written
+       again (the native-library part names the Windows and Linux file names
+       and `program/sources/`).
+2. [x] Packing script `scripts/package.sh` for all three systems; the macOS
+       release job uses it too.
+3. [x] `release-by-hand.yml` (above).
+4. [x] `build.yml`: the manual `windows` and `linux` jobs are gone (moved);
+       `guide` and `release` run only for a pushed tag.
 5. [ ] No cloud-synced folders (see above): a `cloud` module with the check
        for Windows and macOS (unit tests with fake sync roots and paths), the
        Control Panel message and refusal for the program folder and for a
@@ -125,30 +141,31 @@ allowed**, on Windows and on macOS, whatever the cloud.
        texts in `en.json` and `de.json`, the CLAUDE.md rule, the guide (both
        languages: where to put the folder, why no cloud). Checked on a real
        PC with OneDrive and on a Mac with iCloud Drive.
-6. [ ] `docs/plan.md`: "Decoders per build" step 4/5 and the Phase 6 Windows
-       items point here; the status row below moves when it is built.
-7. [ ] Guide, both languages, once a Windows archive is really offered
-       ("macOS today · Linux & Windows next", Get started, the SmartScreen
-       note, `Start shoebox.bat`, `install.ps1`); `python3 docs/guide/check.py`.
-       The guide describes what exists, so this waits for the first real
-       Windows release.
+6. [x] `docs/plan.md`: the status row, "Decoders per build" and the Phase 6
+       Windows items point here.
+7. [ ] Guide, both languages, once a Windows or Linux archive is really
+       offered ("macOS today · Linux & Windows next", Get started, the
+       SmartScreen note, `Start shoebox.bat`, `install.ps1`, the Linux start);
+       `python3 docs/guide/check.py`. The guide describes what exists, so this
+       waits for the first real Windows release. Until then the guide in those
+       archives is the macOS one.
 8. [ ] Run it: first without a tag, test the zip on a real Windows PC (start,
        a HEIC, a scan, export, the refusal from a OneDrive folder), then with
-       a tag.
+       a tag. The same for Linux.
 
 ### Not in this phase
 
 Code signing (SmartScreen will warn: "Windows protected your PC", More info →
 Run anyway; a certificate costs money and is a separate decision), an
-installer (MSI/Setup.exe), Linux, Windows ARM, Media Foundation posters
-("Decoders per build" step 5), making the Windows build part of the
-automatic release.
+installer (MSI/Setup.exe), Linux packages (deb, rpm, AppImage), Windows and
+Linux on ARM, Media Foundation posters ("Decoders per build" step 5), making
+Windows or Linux part of the automatic release.
+
+Known on Linux: `Start shoebox.sh` runs a copy of the program from a temporary
+folder when the drive is mounted `noexec`; that copy does not find
+`program/recognizer/` (the add-ons) or an `ffmpeg` next to the program.
 
 ### Open questions
 
-- Reusable workflow versus copy (see "Reuse").
-- Whether the zip name carries the tag (`shoebox-windows-v0.3.0.zip`) or not
-  (`shoebox-windows.zip`, as `shoebox-macos.tar.gz`). The macOS name has no
-  tag, so the same here unless a release would hold two builds.
 - Whether the antivirus of a company laptop lets an unsigned program run; only
   a real laptop can tell. Ask the first user to report it.

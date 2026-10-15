@@ -61,8 +61,9 @@ current status and next step. Update its status table when a phase moves.
   (`recognize::worker_dirs`; in the release that is `program/recognizer/`),
   never from the `.shoebox/` of a drive: a drive from somebody else could bring
   code of its own.
-- The release folder has only three things on top: `Start shoebox.command`,
-  `guide/` and `program/` (everything else). User data never goes into
+- The release folder has only three things on top: the start file
+  (`Start shoebox.command`, `.bat`, `.sh`), `guide/` and `program/`
+  (everything else; `scripts/package.sh` makes it for every system). User data never goes into
   `program/` (see "The release folder" in docs/plan.md).
 - Moving to the trash from the photo view and the timeline selection is off by
   default: the library setting `allow_trash` (Settings, "Allow move to trash")

@@ -35,7 +35,7 @@ progress. Update the status section when a phase moves.
 | Scale | ~100,000 files, 150 GB today, up to 1 TB |
 | Repo | `core/` (Rust), `recognizer/` (Python), `scripts/`, `docker/`, `docs/` |
 | Dev environment | Docker for Linux builds/tests; native macOS builds with rustup; GitHub Actions for both |
-| CI until v1.0 | macOS only: `test` and `build` side by side with cached dependencies (PRs: arm64; main/tags: universal + Rosetta), skipped for docs-only PRs. Linux, incl. the real recognizer, runs only when started by hand. The guide's screenshots and `.txt` copies are not in git: `guide.yml` makes them on Linux for UI/guide PRs (artifact `guide`) and for releases; releases ship `shoebox-macos` plus `recognizer/` and that guide (English and German, in the `guide/` folder of the archive) |
+| CI until v1.0 | macOS only: `test` and `build` side by side with cached dependencies (PRs: arm64; main/tags: universal + Rosetta), skipped for docs-only PRs. Windows and Linux (Linux incl. the real recognizer) are built only by hand, one at a time, with `release-by-hand.yml`, which can add them to a release (phase 17). The guide's screenshots and `.txt` copies are not in git: `guide.yml` makes them on Linux for UI/guide PRs (artifact `guide`) and for releases; releases ship `shoebox-macos` plus `recognizer/` and that guide (English and German, in the `guide/` folder of the archive) |
 
 ## Architecture
 
@@ -88,6 +88,10 @@ v0.7.4). Everything the program looks up "next to itself" (`recognizer/`,
 phase 16 `libraries/` folder sits beside `program/`, so `program/` can be
 replaced by a newer one.
 
+`scripts/package.sh` makes this folder for every system: the tag release
+(`build.yml`) for macOS, `release-by-hand.yml` for Windows (`shoebox-windows.zip`)
+and Linux (`shoebox-linux.tar.gz`), both added to an existing release (phase 17).
+
 ### The shoebox folder and the add-ons (Control Panel)
 
 The release is one folder per system (`shoebox-macos/`, see "The release
@@ -137,11 +141,11 @@ Python version in step. Runtime: python-build-standalone `x86_64-pc-windows-msvc
 `python.exe` at its top (no symlinks there, so a plain copy works on exFAT/NTFS);
 only x86-64 (OpenCV has no ARM Windows wheel). Cancel kills the whole process tree
 (`taskkill /T`). Status: reviewed, **not run on Windows**; the Rust side and the
-checksum test run on Linux. The manual `windows` job in `build.yml` packs
-`shoebox-windows/` with `Start shoebox.bat` on top and `program/` with
-`shoebox.exe`, the DLLs and `recognizer/` (with `install.ps1` and
-`fetch-models.ps1`); the release still
-packs macOS only, and its `recognizer/` has the `.sh` scripts only (phase 17).
+checksum test run on Linux. `release-by-hand.yml` (phase 17, started by hand
+with system `windows`) packs `shoebox-windows/` with `Start shoebox.bat` on top
+and `program/` with `shoebox.exe`, the DLLs and `recognizer/` (with
+`install.ps1` and `fetch-models.ps1`), and with a tag adds
+`shoebox-windows.zip` to that release.
 
 **What this means for phase 9 (text in photos)** — the text add-on follows the
 same pattern, so the phase 9 PR must:
@@ -428,7 +432,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 12 | Estimated capture date: a date of the user's own (year, month or day) for a photo, kept in `library.db` only, that wins over the file's date on the timeline; "Needs a date" worklist; search by date with the Date group and `date:` / `datum:` (design in [phase12.md](phase12.md)) | **Built except the real-hardware check**: core, info panel (pencil, dialog, EXIF row), "~", year-only group, selection with Undo, "Needs a date", date search (`date:` / `datum:`), guide in both languages |
 | 13 | Export: collect photos with a tag (Settings → Collection, bookmark button, shortcut C) or a selection and copy them into a new numbered folder (`001_IMG_3457.jpg`), optionally RAW partners and HEIC as JPEG, with a folder picker; re-export adds only what is new (design and mock-ups in [phase13.md](phase13.md)) | **Built, check open**: `export.rs`, local-only API, dialog with folder picker, collection button (C), settings, guide; real-hardware check (USB stick, Windows, macOS) open |
 | 14 | Backup comparison views: the backup check's lists get a "Show photos" button (Manage drives). "Only on backup" (on the backup) and "Only on original" (on the drive it copies) are filter chips on that drive's own timeline (`compare=backup|original`, worked out in `serve::forward` from the two indexes, offered in the search as "only on", "nur auf", "backup"); "different on the backup" opens the timeline of both drives of the pair in path order, so the two versions of a photo sit side by side, each with an Original or Backup badge (`/api/all/timeline?compare=different`). A chip a drive cannot show (a drive that is not half of a pair, All drives, nothing to show) is dropped with a note. Read only: nothing is written to either drive. Also: one drawn open-folder icon instead of the folder emoji; the backup card's progress bar had the header's `.bar` class and was drawn at the top of the window | **Done except the real-hardware run**; guide text updated, guide screenshots not regenerated yet |
-| 17 | Release folder with three things on top (`Start shoebox.command`, `guide/`, `program/` with everything else; "The release folder" above), the older `.shoebox/bin/` layout removed. Then Windows release by hand: a manual workflow (`release-windows.yml`, input: a tag) builds the Windows folder (`shoebox.exe`, DLLs, `Start shoebox.bat`, recognizer scripts, licences, guide) and adds `shoebox-windows.zip` to that tag's release; without a tag it only makes the zip as an artifact for testing. The automatic release stays macOS only. Also: shoebox refuses a program folder or a library inside a cloud-synced folder (OneDrive, iCloud Drive, Dropbox, Google Drive, …) on Windows and macOS (plan in [phase17.md](phase17.md)) | Release folder **done** (macOS release, launchers, guide; from the next tag). Windows: **plan**; built so far: the manual `windows` artifact in the same layout, with `Start shoebox.bat` and `program/recognizer/` with the `.ps1` scripts. Needs the Windows target in `third-party-licenses.py` first |
+| 17 | Release folder with three things on top (`Start shoebox.command`, `guide/`, `program/` with everything else; "The release folder" above), the older `.shoebox/bin/` layout removed. Then Windows and Linux releases by hand: `release-by-hand.yml` (inputs: system, tag) builds one system in the same layout (`scripts/package.sh`, the guide taken from the release's macOS archive) and adds `shoebox-windows.zip` or `shoebox-linux.tar.gz` to that tag's release; without a tag only an artifact for testing. The automatic release stays macOS only. Also: shoebox refuses a program folder or a library inside a cloud-synced folder (OneDrive, iCloud Drive, Dropbox, Google Drive, …) on Windows and macOS (plan in [phase17.md](phase17.md)) | Release folder **done** (macOS release, launchers, guide; from the next tag). Windows and Linux by hand (`release-by-hand.yml`): **built**, not run yet. Cloud-folder check: **plan** |
 
 ### Phase 10: locations
 
@@ -641,10 +645,10 @@ Open:
 Phase 6 is done and checked on the real hardware on macOS (list in
 [phase6.md](phase6.md)). Still open, kept here so they are not forgotten:
 - [ ] Windows: double-click, SmartScreen, `install.ps1`, packaging of
-      `shoebox-windows/` in the release (phase 17; the manual CI artifact
-      has the starter and the recognizer scripts).
-- [ ] Linux: `Start shoebox.sh` and the file manager (the CI Linux job is off
-      until v1.0).
+      `shoebox-windows/` in the release (phase 17: built in
+      `release-by-hand.yml`, not run on a real PC yet).
+- [ ] Linux: `Start shoebox.sh` and the file manager (`release-by-hand.yml`
+      builds and packs it; not tried on a real Linux PC).
 - [ ] Moving files between drives, a decision "keep both" for identical copies
       on different drives, and search counts in All drives that narrow with
       the filter: phase 15 (planned).
@@ -1615,10 +1619,12 @@ error is noted, so it is not tried on every scan. Worst case, a misbehaving
 paired device stores a wrong picture as one video's poster; nothing else reads
 it.
 
-**Windows build job (step 4).** The `windows` job in `build.yml` (started
-by hand, like Linux) builds and tests on `windows-latest` and uploads
-`shoebox-windows` (`Start shoebox.bat`; `program/` with `shoebox.exe`,
-`heif.dll`, `libde265.dll`, `recognizer/` with `install.ps1`).
+**Windows build job (step 4).** The `windows` job of `release-by-hand.yml`
+(started by hand, system `windows`; phase 17) builds and tests on
+`windows-latest`; the run's `shoebox-windows` folder (or, with a tag, the
+release's `shoebox-windows.zip`) has `Start shoebox.bat` and `program/` with
+`shoebox.exe`, `heif.dll`, `libde265.dll` and `recognizer/` with
+`install.ps1`.
 1. [x] libheif and libde265 with MSVC (Visual Studio generator, from Git
    Bash): DLLs with the C runtime linked in (`/MT`), and `shoebox.exe` with
    `crt-static` (`.cargo/config.toml` at the repository root: cargo reads
@@ -1655,8 +1661,9 @@ by hand, like Linux) builds and tests on `windows-latest` and uploads
       video it cannot read and no ffmpeg: the reason ends in `(no ffmpeg)`,
       is stored (the browser frame fills in) and a scan that has ffmpeg tries
       again.
-- [ ] 4. Windows build job (list above: built and tested in CI; real-PC
-      check, cross-system check and release packaging open).
+- [ ] 4. Windows build job (list above: built and tested in CI, packed for
+      the release by `release-by-hand.yml`; real-PC check and cross-system
+      check open).
 - [ ] 5. Media Foundation posters on Windows.
 - [x] ~~6. Audit leftover: `jpeg-decoder` without default features~~ —
       dropped after measuring. Without rayon, jpeg-decoder falls back to a
@@ -1746,9 +1753,9 @@ workflow). Step 3 (AVFoundation posters) is built: on the Mac, without
 ffmpeg, scan a folder with iPhone videos (HEVC, portrait) and check the
 previews are upright; `shoebox probe` lists "videos: system video
 framework". Step 4 (Windows) builds and passes the tests in CI (Actions →
-build → Run workflow, artifact `shoebox-windows`): next run it on a real PC
-and scan a drive a Mac scanned (items 4 and 5 of the Windows list), then
-package it in the release.
+release by hand → Run workflow, system `windows`, no tag: artifact
+`shoebox-windows`): next run it on a real PC and scan a drive a Mac scanned
+(items 4 and 5 of the Windows list), then run it again with the release's tag.
 
 Canon CR2 metadata (phase 0, found on the real drive): nom-exif reads a file
 incrementally and fails with "parse ifd entry header failed: Incomplete" on a

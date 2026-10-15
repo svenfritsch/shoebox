@@ -135,8 +135,8 @@ docker/dev.sh sh -c 'scripts/make-fixtures.sh /target/fixtures && /target/*/rele
 
 Windows (`x86_64-pc-windows-msvc`): from Git Bash with Visual Studio and CMake,
 `scripts/build.sh x86_64-pc-windows-msvc` builds `shoebox.exe` and copies
-`heif.dll` and `libde265.dll` next to it (CI: the `windows` job, started by
-hand). The C runtime is linked in, so nothing needs to be installed on the PC.
+`heif.dll` and `libde265.dll` next to it (CI: `release-by-hand.yml`, started
+by hand with system `windows`, which can also add it to a release). The C runtime is linked in, so nothing needs to be installed on the PC.
 
 macOS binaries (universal: Intel macOS 10.13+ and Apple Silicon) are built by
 GitHub Actions (`.github/workflows/build.yml`), or locally with rustup:

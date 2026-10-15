@@ -1,0 +1,297 @@
+name: release by hand
+
+# Windows and Linux, one at a time, only when started by hand:
+# Actions → release by hand → Run workflow (from main), pick the system, and
+#
+# - with a tag (e.g. v0.7.5): build the code of that tag and add
+#   shoebox-windows.zip or shoebox-linux.tar.gz, and its line in SHA256SUMS,
+#   to the release of that tag. The release must exist: the tag push makes it
+#   (build.yml, macOS). Nothing else in the release is changed; a second run
+#   replaces the archive it added before.
+# - without a tag: build the branch it was started from; the folder is only
+#   the artifact of the run (to try it on a real PC before anything is
+#   published).
+#
+# The folder is the same as macOS's (scripts/package.sh, docs/plan.md "The
+# release folder"). Its guide is not made again: it is taken from
+# shoebox-macos.tar.gz of that release (without a tag: of the latest release).
+# The Linux run is also the one that tests the real recognizer (OpenCV,
+# models) under the guard.
+on:
+  workflow_dispatch:
+    inputs:
+      system:
+        description: System to build
+        type: choice
+        options: [windows, linux]
+        required: true
+      tag:
+        description: Release tag to add it to (e.g. v0.7.5); empty = only an artifact
+        type: string
+        required: false
+        default: ''
+
+concurrency:
+  group: release-by-hand-${{ inputs.system }}-${{ inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  DEPS_DIR: ${{ github.workspace }}/.deps
+  CARGO_INCREMENTAL: 0
+  TAG: ${{ inputs.tag }}
+
+jobs:
+  # Before anything is built: the release exists and its tag already has the
+  # packing script (an older tag cannot be built here).
+  check:
+    runs-on: ubuntu-24.04
+    outputs:
+      ref: ${{ steps.ref.outputs.ref }}
+    steps:
+      - name: Release
+        id: ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$TAG" ]; then
+            echo "ref=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+            echo "No tag: the result is only the artifact of this run."
+            exit 0
+          fi
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null; then
+            echo "::error::There is no release $TAG. Push the tag first (build.yml makes the release), then run this again."
+            exit 1
+          fi
+          echo "ref=refs/tags/$TAG" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.ref.outputs.ref }}
+
+      - name: The tag can be packed
+        run: |
+          for f in scripts/package.sh "scripts/launchers/Start shoebox.bat" recognizer/install.ps1; do
+            if [ ! -f "$f" ]; then
+              echo "::error::$f is not in ${TAG:-this commit}: it is older than the Windows and Linux release. Tag a newer commit."
+              exit 1
+            fi
+          done
+
+  # Windows (MSVC): libheif and libde265 are DLLs next to shoebox.exe; the C
+  # runtime is linked in, so nothing needs to be installed on the PC.
+  windows:
+    needs: check
+    if: inputs.system == 'windows'
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.check.outputs.ref }}
+
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+          save-if: false
+
+      - name: Cache deps
+        uses: actions/cache@v6
+        with:
+          path: .deps
+          key: deps-windows-${{ hashFiles('scripts/build-deps.sh') }}
+
+      - name: Tests
+        run: scripts/build.sh x86_64-pc-windows-msvc test
+
+      - name: Build
+        run: scripts/build.sh x86_64-pc-windows-msvc
+
+      # A JPEG and a real HEIC (pillow-heif can write one) in folders with a
+      # space and an umlaut, read by the program from a folder of its own.
+      # The probe report is only for the check below; it is not shipped.
+      - name: Probe, scan and verify
+        run: |
+          mkdir -p build
+          r=core/target/x86_64-pc-windows-msvc/release
+          cp "$r/shoebox.exe" "$r/heif.dll" "$r/libde265.dll" build/
+          python -m pip install --quiet pillow pillow-heif
+          python - "$RUNNER_TEMP/lib" <<'PY'
+          import sys, pathlib
+          from PIL import Image
+          import pillow_heif
+          pillow_heif.register_heif_opener()
+          root = pathlib.Path(sys.argv[1]) / "Ferien Grüße"
+          root.mkdir(parents=True, exist_ok=True)
+          img = Image.radial_gradient("L").resize((1200, 800)).convert("RGB")
+          img.save(root / "IMG_0001.JPG", quality=90)
+          img.save(root / "IMG_0002.HEIC", quality=60)
+          PY
+          build/shoebox.exe probe "$RUNNER_TEMP/lib" --report "$RUNNER_TEMP/probe.json"
+          # Both pictures got a preview (the HEIC through heif.dll).
+          python -c "import json,sys; r=json.load(open(sys.argv[1],encoding='utf-8')); bad=[f for f in r['files'] if not f['preview']]; print(r['filesystem'], len(r['files']), 'files'); sys.exit(1 if bad or len(r['files'])!=2 else 0)" "$RUNNER_TEMP/probe.json"
+          build/shoebox.exe scan "$RUNNER_TEMP/lib"
+          build/shoebox.exe scan "$RUNNER_TEMP/lib"
+          build/shoebox.exe verify "$RUNNER_TEMP/lib"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: build-windows
+          path: build/
+          retention-days: 1
+
+  # Linux (x86-64, built on Ubuntu 24.04: needs glibc 2.39 or newer). Also
+  # runs the real recognizer.
+  linux:
+    needs: check
+    if: inputs.system == 'linux'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.check.outputs.ref }}
+
+      - name: Packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ffmpeg libheif-examples libheif-plugin-x265 libimage-exiftool-perl
+
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+          save-if: false
+
+      - name: Cache static deps
+        uses: actions/cache@v6
+        with:
+          path: .deps
+          key: deps-linux-${{ hashFiles('scripts/build-deps.sh') }}
+
+      - name: Build
+        run: scripts/build.sh x86_64-unknown-linux-gnu
+
+      - name: Fixtures
+        run: scripts/make-fixtures.sh "$RUNNER_TEMP/fixtures"
+
+      # The real recognizer (OpenCV, models) for its own tests and for the
+      # Rust test that runs it under the guard; a photo of a face from the
+      # OpenCV samples checks detection and embeddings.
+      - name: Recognizer
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet opencv-python-headless numpy
+          recognizer/fetch-models.sh
+          curl -fsSL -o "$RUNNER_TEMP/face.jpg" https://raw.githubusercontent.com/opencv/opencv/4.x/samples/data/messi5.jpg
+          # A dog (Darknet's sample) checks the pets task.
+          curl -fsSL -o "$RUNNER_TEMP/dog.jpg" https://raw.githubusercontent.com/pjreddie/darknet/master/data/dog.jpg
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+          SHOEBOX_TEST_FACE="$RUNNER_TEMP/face.jpg" SHOEBOX_TEST_PET="$RUNNER_TEMP/dog.jpg" \
+            "$RUNNER_TEMP/venv/bin/python" -m unittest -v recognizer/test_recognizer.py
+
+      - name: Tests
+        run: |
+          SHOEBOX_FIXTURES="$RUNNER_TEMP/fixtures" SHOEBOX_RECOGNIZER="$PWD/recognizer/recognizer.py" \
+            SHOEBOX_TEST_FACE="$RUNNER_TEMP/face.jpg" scripts/build.sh x86_64-unknown-linux-gnu test
+
+      - name: Probe, scan and verify fixtures
+        run: |
+          mkdir -p build
+          r=core/target/x86_64-unknown-linux-gnu/release
+          cp "$r/shoebox" build/shoebox-linux
+          cp "$r/libheif.so.1" "$r/libde265.so.0" build/
+          readelf -d build/shoebox-linux build/libheif.so.1 | grep -E 'NEEDED|RUNPATH|RPATH'
+          build/shoebox-linux probe "$RUNNER_TEMP/fixtures" --report "$RUNNER_TEMP/probe.json"
+          cp -R "$RUNNER_TEMP/fixtures" "$RUNNER_TEMP/lib"
+          build/shoebox-linux scan "$RUNNER_TEMP/lib"
+          build/shoebox-linux scan "$RUNNER_TEMP/lib"
+          build/shoebox-linux verify "$RUNNER_TEMP/lib"
+          build/shoebox-linux recognize "$RUNNER_TEMP/lib" --recognizer recognizer/recognizer.py --pets
+          build/shoebox-linux verify "$RUNNER_TEMP/lib"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: build-linux
+          path: build/
+          retention-days: 1
+
+  # The folder a person downloads, then (with a tag) into the release.
+  package:
+    needs: [check, windows, linux]
+    if: always() && needs.check.result == 'success' && (needs.windows.result == 'success' || needs.linux.result == 'success')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      SYSTEM: ${{ inputs.system }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.check.outputs.ref }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-${{ inputs.system }}
+          path: artifacts/build
+
+      # The guide of the macOS archive of the same release (without a tag: of
+      # the newest release; "latest" would skip pre-releases, and all of them
+      # are), so all systems of a release carry the same guide.
+      - name: Guide
+        run: |
+          mkdir -p artifacts/mac
+          from=${TAG:-$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName')}
+          echo "guide from release: ${from:-none}"
+          if [ -n "$from" ] && gh release download "$from" --repo "$GITHUB_REPOSITORY" --pattern shoebox-macos.tar.gz --dir artifacts/mac \
+              && tar -C artifacts/mac -xzf artifacts/mac/shoebox-macos.tar.gz shoebox-macos/guide; then
+            echo "GUIDE=artifacts/mac/shoebox-macos/guide" >> "$GITHUB_ENV"
+          elif [ -n "$TAG" ]; then
+            echo "::error::The release $TAG has no shoebox-macos.tar.gz with a guide."
+            exit 1
+          else
+            echo "::warning::No release with a guide found: the folder has no guide."
+            echo "GUIDE=" >> "$GITHUB_ENV"
+          fi
+
+      - name: Package
+        run: |
+          python3 scripts/third-party-licenses.py --check
+          scripts/package.sh "$SYSTEM" artifacts/build "$GUIDE" "$RUNNER_TEMP/out"
+          mkdir -p release
+          if [ "$SYSTEM" = windows ]; then
+            # zip, not tar: Explorer opens it (Windows needs no executable bit)
+            name=shoebox-windows.zip
+            (cd "$RUNNER_TEMP/out" && zip -qr "$GITHUB_WORKSPACE/release/$name" shoebox-windows)
+          else
+            name=shoebox-linux.tar.gz
+            tar -C "$RUNNER_TEMP/out" -czf "release/$name" shoebox-linux
+          fi
+          echo "NAME=$name" >> "$GITHUB_ENV"
+
+      # Without a tag, the artifact is the folder itself (GitHub zips it for
+      # the download).
+      - uses: actions/upload-artifact@v7
+        with:
+          name: shoebox-${{ inputs.system }}
+          path: ${{ runner.temp }}/out/
+
+      - name: Add to the release
+        if: inputs.tag != ''
+        run: |
+          gh release upload "$TAG" "release/$NAME" --clobber --repo "$GITHUB_REPOSITORY"
+          # SHA256SUMS: the lines of the other archives stay, this one's is replaced.
+          if gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS --dir sums; then
+            grep -v "  $NAME\$" sums/SHA256SUMS > release/SHA256SUMS || true
+          fi
+          (cd release && sha256sum "$NAME" >> SHA256SUMS && cat SHA256SUMS)
+          gh release upload "$TAG" release/SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
