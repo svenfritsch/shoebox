@@ -51,7 +51,7 @@ pub struct Options {
     pub config: Option<PathBuf>,
     /// Opens a file in the file manager (default: `reveal::reveal`); tests pass their own.
     pub reveal: Option<serve::RevealFn>,
-    /// The program folder that holds `libraries.json` and `libraries/`
+    /// The shoebox folder that holds `libraries/` (with `libraries.json`)
     /// (default: `libraries::home()`); tests pass their own.
     pub home: Option<PathBuf>,
 }
@@ -323,7 +323,7 @@ struct Shared {
     reveal: serve::RevealFn,
     /// Serialises read-modify-write of the config file.
     config_lock: Mutex<()>,
-    /// The program folder (`libraries.json`, `libraries/`).
+    /// The shoebox folder (`libraries/`, with `libraries.json`).
     home: Option<PathBuf>,
 }
 

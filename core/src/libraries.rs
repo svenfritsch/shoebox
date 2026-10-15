@@ -2,9 +2,11 @@
 //!
 //! A library on a drive keeps its index in `<root>/.shoebox/`. A folder on a
 //! server (or any folder the user does not want to write into) can instead
-//! keep it in `<program folder>/libraries/<name>/`; `libraries.json` next to
-//! the program says which root belongs to which name. Nothing is ever written
-//! into the root of such a library (see docs/phase16.md).
+//! keep it in `<shoebox folder>/libraries/<name>/`; `libraries/libraries.json`
+//! says which root belongs to which name. The shoebox folder is the downloaded
+//! one, beside `program/` (never inside it: `program/` is replaced by a newer
+//! one). Nothing is ever written into the root of such a library (see
+//! docs/phase16.md).
 
 use std::path::{Path, PathBuf};
 
@@ -14,11 +16,13 @@ use unicode_normalization::UnicodeNormalization;
 
 use crate::{db, organize};
 
-/// The registry file, in the program folder.
+/// The registry file, in `libraries/`.
 pub const FILE: &str = "libraries.json";
-/// One folder per library below this one, in the program folder.
+/// One folder per library below this one, in the shoebox folder.
 pub const DIR: &str = "libraries";
-/// Test and portable override of the program folder.
+/// The folder of the release that holds the program and everything it needs.
+pub const PROGRAM_DIR: &str = "program";
+/// Test and portable override of the shoebox folder.
 pub const HOME_ENV: &str = "SHOEBOX_HOME";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,18 +47,43 @@ impl Default for Registry {
     }
 }
 
-/// The program folder: the one that holds `shoebox` / `shoebox.exe` (or
-/// `$SHOEBOX_HOME`).
+/// The shoebox folder, which holds `libraries/` (or `$SHOEBOX_HOME`).
 pub fn home() -> Option<PathBuf> {
     if let Some(h) = std::env::var_os(HOME_ENV).filter(|h| !h.is_empty()) {
         return Some(PathBuf::from(h));
     }
-    std::env::current_exe().ok()?.parent().map(Path::to_path_buf)
+    home_of(&std::env::current_exe().ok()?)
+}
+
+/// The shoebox folder of the program `exe`: the one above `program/` in the
+/// release (`shoebox-macos/program/shoebox` → `shoebox-macos/`), else the
+/// program's own folder (a build in `core/target/...`).
+pub fn home_of(exe: &Path) -> Option<PathBuf> {
+    let bin = exe.parent()?;
+    match bin.parent() {
+        Some(top) if bin.file_name().is_some_and(|n| n == PROGRAM_DIR) => Some(top.to_path_buf()),
+        _ => Some(bin.to_path_buf()),
+    }
+}
+
+/// `libraries/libraries.json` in `home`.
+fn registry_path(home: &Path) -> PathBuf {
+    home.join(DIR).join(FILE)
+}
+
+/// A library name: a folder name (`organize::check_name`) that is not the
+/// registry's own file name.
+fn check_library_name(name: &str) -> Result<String> {
+    let name = organize::check_name(name)?;
+    if name_key(&name) == FILE {
+        bail!("{name} is the name of shoebox's own list of libraries, choose another");
+    }
+    Ok(name)
 }
 
 /// The registry in `home`; empty if there is no file yet.
 pub fn load(home: &Path) -> Result<Registry> {
-    let path = home.join(FILE);
+    let path = registry_path(home);
     let text = match std::fs::read_to_string(&path) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Registry::default()),
@@ -69,9 +98,10 @@ pub fn load(home: &Path) -> Result<Registry> {
 
 /// Write the registry to a temporary file and rename it over the old one.
 pub fn save(home: &Path, reg: &Registry) -> Result<()> {
-    std::fs::create_dir_all(home).with_context(|| format!("create {}", home.display()))?;
-    let path = home.join(FILE);
-    let tmp = home.join(format!("{FILE}.tmp"));
+    let dir = home.join(DIR);
+    std::fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
+    let path = registry_path(home);
+    let tmp = dir.join(format!("{FILE}.tmp"));
     std::fs::write(&tmp, serde_json::to_string_pretty(reg)?).with_context(|| format!("write {}", tmp.display()))?;
     std::fs::rename(&tmp, &path).with_context(|| format!("replace {}", path.display()))?;
     Ok(())
@@ -145,7 +175,7 @@ pub fn suggest_name(reg: &Registry, root: &Path) -> String {
 /// Add a library to the registry of `home` (the index folder is made by the
 /// first scan, not here). Refuses a name or a root that is already there.
 pub fn add(home: &Path, name: &str, root: &Path) -> Result<Entry> {
-    let name = organize::check_name(name)?;
+    let name = check_library_name(name)?;
     let mut reg = load(home)?;
     if reg.find_name(&name).is_some() {
         bail!("there is already a library called {name}");
@@ -246,7 +276,7 @@ fn entry_named<'a>(reg: &'a mut Registry, name: &str) -> Result<&'a mut Entry> {
 
 /// A new name for a library: its folder under `libraries/` is renamed too.
 pub fn rename(home: &Path, name: &str, new_name: &str) -> Result<Entry> {
-    let new_name = organize::check_name(new_name)?;
+    let new_name = check_library_name(new_name)?;
     let mut reg = load(home)?;
     let old = entry_named(&mut reg, name)?.clone();
     if name_key(&old.name) != name_key(&new_name) && reg.find_name(&new_name).is_some() {
@@ -548,11 +578,33 @@ mod tests {
     }
 
     #[test]
+    fn the_shoebox_folder_is_above_program() {
+        // The release: libraries/ beside program/, never inside it.
+        assert_eq!(home_of(Path::new("/Users/a/shoebox-macos/program/shoebox")), Some(PathBuf::from("/Users/a/shoebox-macos")));
+        // A build: its own folder.
+        assert_eq!(home_of(Path::new("/src/shoebox/core/target/release/shoebox")), Some(PathBuf::from("/src/shoebox/core/target/release")));
+    }
+
+    #[test]
+    fn the_registry_lives_in_libraries_and_its_name_is_taken() {
+        let home = home();
+        let root = home.join("Fotos");
+        std::fs::create_dir_all(&root).unwrap();
+        add(&home, "Fotos", &root).unwrap();
+        assert!(home.join("libraries/libraries.json").is_file());
+        assert!(!home.join("libraries.json").exists(), "nothing else on top");
+        assert!(add(&home, "Libraries.JSON", &home).is_err());
+        assert!(rename(&home, "Fotos", "libraries.json").is_err());
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
     fn broken_or_newer_file_is_an_error() {
         let home = home();
-        std::fs::write(home.join(FILE), "{ nope").unwrap();
+        std::fs::create_dir_all(home.join(DIR)).unwrap();
+        std::fs::write(registry_path(&home), "{ nope").unwrap();
         assert!(load(&home).is_err());
-        std::fs::write(home.join(FILE), r#"{"version":2,"libraries":[]}"#).unwrap();
+        std::fs::write(registry_path(&home), r#"{"version":2,"libraries":[]}"#).unwrap();
         assert!(load(&home).is_err());
         std::fs::remove_dir_all(&home).unwrap();
     }

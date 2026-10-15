@@ -25,14 +25,19 @@ it is added:
 
 | | On the drive (today, default) | Next to the program (new) |
 |---|---|---|
-| Index folder | `<root>/.shoebox/` | `<program folder>/libraries/<name>/` |
-| Travels with | the drive | the computer / the program folder |
+| Index folder | `<root>/.shoebox/` | `<shoebox folder>/libraries/<name>/` |
+| Travels with | the drive | the computer / the shoebox folder |
 | Writes into the library folder | `.shoebox/` (and the trash on request) | **nothing** |
 | Moves, trash, rotate | as today (trash off by default) | **off, not switchable**: this library is read-only for shoebox |
-| Found by the launcher | `.shoebox` exists in a drive's top folder | entry in `libraries.json` |
+| Found by the launcher | `.shoebox` exists in a drive's top folder | entry in `libraries/libraries.json` |
 
-"Program folder" is `recognize::program_dir()`, the folder that holds
-`shoebox` / `shoebox.exe` and `recognizer/` (the same place the add-ons use).
+"Shoebox folder" is `libraries::home()`: the downloaded folder
+(`shoebox-macos/`, `shoebox-windows/`), the one with `Start shoebox` and
+`program/` in it (phase 17, "The release folder" in plan.md). `libraries/` sits
+beside `program/`, never inside it: `program/` holds only what a newer release
+replaces, and the indexes are the user's tags, dates and names. For a program
+that is not in a folder called `program` (a build in `core/target/...`) it is
+the program's own folder; `$SHOEBOX_HOME` overrides both (tests).
 The two modes of the release (on the drive, on the computer) both keep working;
 a program on a drive may also have libraries next to it, but the normal use is
 the program on the computer.
@@ -41,10 +46,11 @@ the program on the computer.
 
 ```
 shoebox-windows/                 (or shoebox-macos/)
-  shoebox.exe
-  recognizer/                    ← add-ons, as today
-  libraries.json                 ← the registry
-  libraries/
+  Start shoebox.bat
+  guide/
+  program/                       ← shoebox.exe, recognizer/ (add-ons), ...: replaced by an update
+  libraries/                     ← made with the first library
+    libraries.json               ← the registry
     Server Fotos/                ← one folder per library, the name is the key
       library.db
       thumbs.db
@@ -120,7 +126,7 @@ the card (decided with the mock-ups in `docs/mocks/phase16/layout/`):
   one line that points to the next tab.
 - **Add a folder or server** (always there): folder (with Choose…), where the
   index is kept (**On the drive**, the usual way, or **Separate (next to the
-  program)**; the latter is greyed out with the reason when the program folder
+  program)**; the latter is greyed out with the reason when the shoebox folder
   cannot be written to), and, for Separate only, a name and the note that
   shoebox only reads. Adding returns to Photo folders.
 - **Manage libraries (n)**: only while n > 0 (it goes away with the last
@@ -203,7 +209,8 @@ share, faces over the network as a tuned feature (works, slow).
 
 ## Open questions
 
-- Name of the folder and the file (`libraries/`, `libraries.json`) is decided;
+- Name of the folder and the file (`libraries/`, `libraries/libraries.json`;
+  a library cannot be called `libraries.json`) is decided;
   whether the registry also records the drive-letter form the user typed is
   not (it would only matter for display).
 - Default thread count for network roots (measure).

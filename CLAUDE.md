@@ -57,7 +57,7 @@ current status and next step. Update its status table when a phase moves.
   folder is allowed after a question (its next scan finds the copies). It only
   answers to a browser on this computer (`/api/export/*`, `info.export`).
   Collection tag and numbering are browser settings, like Maps.
-- A library registered in `libraries.json` next to the program (phase 16,
+- A library registered in `libraries/libraries.json` next to the program folder (phase 16,
   [docs/phase16.md](docs/phase16.md); index in `libraries/<name>/`, not in the
   root) is read-only: `libraries::ensure_writable(root)` is the first line of
   every function that changes an original (move, rename, trash, restore,
@@ -72,7 +72,8 @@ current status and next step. Update its status table when a phase moves.
   code of its own.
 - The release folder has only three things on top: the start file
   (`Start shoebox.command`, `.bat`, `.sh`), `guide/` and `program/`
-  (everything else; `scripts/package.sh` makes it for every system). User data never goes into
+  (everything else; `scripts/package.sh` makes it for every system), plus
+  `libraries/` once a library is kept next to the program (phase 16). User data never goes into
   `program/` (see "The release folder" in docs/plan.md).
 - Moving to the trash from the photo view and the timeline selection is off by
   default: the library setting `allow_trash` (Settings, "Allow move to trash")
