@@ -263,7 +263,10 @@ jobs:
   # Windows (MSVC): started by hand, like Linux, until it is part of the
   # release ("Decoders per build", step 4, in docs/plan.md). libheif and
   # libde265 are DLLs next to shoebox.exe; the C runtime is linked in, so
-  # nothing needs to be installed on the PC.
+  # nothing needs to be installed on the PC. The artifact's shoebox-windows/
+  # is laid out like the macOS release (Start shoebox.bat on top, program/ with
+  # shoebox.exe, the DLLs and recognizer/ with install.ps1), so it can be tried
+  # as is (no licences, sources or guide yet: phase 17).
   windows:
     if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
@@ -297,9 +300,9 @@ jobs:
       # space and an umlaut, read by the program from a folder of its own.
       - name: Probe, scan and verify
         run: |
-          mkdir -p "dist/shoebox-windows"
+          mkdir -p "dist/shoebox-windows/program"
           r=core/target/x86_64-pc-windows-msvc/release
-          cp "$r/shoebox.exe" "$r/heif.dll" "$r/libde265.dll" "dist/shoebox-windows/"
+          cp "$r/shoebox.exe" "$r/heif.dll" "$r/libde265.dll" "dist/shoebox-windows/program/"
           python -m pip install --quiet pillow pillow-heif
           python - "$RUNNER_TEMP/lib" <<'PY'
           import sys, pathlib
@@ -312,12 +315,24 @@ jobs:
           img.save(root / "IMG_0001.JPG", quality=90)
           img.save(root / "IMG_0002.HEIC", quality=60)
           PY
-          dist/shoebox-windows/shoebox.exe probe "$RUNNER_TEMP/lib" --report dist/probe-windows.json
+          dist/shoebox-windows/program/shoebox.exe probe "$RUNNER_TEMP/lib" --report dist/probe-windows.json
           # Both pictures got a preview (the HEIC through heif.dll).
           python -c "import json,sys; r=json.load(open('dist/probe-windows.json',encoding='utf-8')); bad=[f for f in r['files'] if not f['preview']]; print(r['filesystem'], len(r['files']), 'files'); sys.exit(1 if bad or len(r['files'])!=2 else 0)"
-          dist/shoebox-windows/shoebox.exe scan "$RUNNER_TEMP/lib"
-          dist/shoebox-windows/shoebox.exe scan "$RUNNER_TEMP/lib"
-          dist/shoebox-windows/shoebox.exe verify "$RUNNER_TEMP/lib"
+          dist/shoebox-windows/program/shoebox.exe scan "$RUNNER_TEMP/lib"
+          dist/shoebox-windows/program/shoebox.exe scan "$RUNNER_TEMP/lib"
+          dist/shoebox-windows/program/shoebox.exe verify "$RUNNER_TEMP/lib"
+
+      # The folder as a person gets it: the double-click starter on top, the
+      # recognizer with the Windows installer next to shoebox.exe in program/
+      # (the Control Panel installs add-ons only when it finds
+      # recognizer\install.ps1 there).
+      - name: Package
+        run: |
+          pkg=dist/shoebox-windows
+          cp "scripts/launchers/Start shoebox.bat" "$pkg/"
+          mkdir -p "$pkg/program/recognizer"
+          cp recognizer/README.md recognizer/install.ps1 recognizer/fetch-models.ps1 recognizer/recognizer.py "$pkg/program/recognizer/"
+          ls -R "$pkg"
 
       - uses: actions/upload-artifact@v7
         with:

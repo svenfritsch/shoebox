@@ -50,8 +50,14 @@ Windows before anything is published.
 
 - `build.yml` has a `windows` job (manual only): builds and tests on
   `windows-latest`, probes, scans and verifies a small folder, uploads
-  `shoebox-windows` with `shoebox.exe`, `heif.dll` and `libde265.dll` only. No
-  `Start shoebox.bat`, no recognizer scripts, no licences, no guide, no sources.
+  `shoebox-windows` in the Part 1 layout: `Start shoebox.bat`, and `program/`
+  with `shoebox.exe`, `heif.dll`, `libde265.dll` and `recognizer/`
+  (`install.ps1`, `fetch-models.ps1`, `recognizer.py`, `README.md`). No
+  licences, no guide, no sources.
+  Before, the artifact had the program and the DLLs only; a `recognizer`
+  folder copied from the macOS download has no `install.ps1`, so the Control
+  Panel said the folder was not next to the program (it looks for
+  `recognizer\install.ps1` next to `shoebox.exe`).
 - The `release` job packs `shoebox-macos` only and runs
   `gh release create --prerelease` on a tag.
 - `scripts/third-party-licenses.py` knows only the two macOS targets
@@ -70,6 +76,28 @@ Windows before anything is published.
 | Old tags | The tag must contain the Windows build scripts and `Start shoebox.bat`. For an older tag the workflow checks for them first and stops with a clear message |
 | Release marked | The release stays a pre-release as created by the tag run. The workflow adds a line to the release notes only if the owner asks |
 
+### No cloud-synced folders (Windows and macOS)
+
+Found on the first Windows PC: the program folder was in
+`C:\Users\…\OneDrive\Dokumente\…` and the add-on install failed. A sync client
+holds new files open while it uploads them, so the installer's copy and rename
+of the Python runtime (thousands of files, ~200 MB) can be refused, and every
+file shoebox writes would be uploaded (the runtime, the models, `library.db`,
+the thumbnails) and could later be turned into an online-only placeholder
+under it. shoebox must not sync: **a shoebox in a cloud-synced folder is not
+allowed**, on Windows and on macOS, whatever the cloud.
+
+| Topic | Decision |
+|---|---|
+| What is refused | (1) The shoebox folder: the one with `program/` (`shoebox.exe` / `shoebox` and its `recognizer/`) and, with phase 16, `libraries/`. (2) A library: a drive or folder with `.shoebox/` (or one being set up as a library). Both are checked against every sync root found, including a sync root inside them |
+| Clouds | Any sync client, not a fixed list. Windows: OneDrive (personal and work, also when Documents and Desktop are moved into it, as on that PC), Dropbox, Google Drive, iCloud for Windows, Box. macOS: iCloud Drive (also "Desktop & Documents Folders" in iCloud), OneDrive, Dropbox, Google Drive, Box |
+| Detection, Windows | Ask Windows: `CfGetSyncRootInfoByPath` (Cloud Files API) answers for every client that registers a sync root (OneDrive, Dropbox, iCloud, Box, newer Google Drive); also the sync roots under `HKLM\…\Explorer\SyncRootManager`. Fallbacks: the `OneDrive`, `OneDriveConsumer`, `OneDriveCommercial` variables, Dropbox's `info.json`, `%USERPROFILE%\iCloudDrive`, and a Google Drive virtual drive (its volume label/file system, `fsinfo::filesystem_type`). To verify on a real PC which of these each client sets |
+| Detection, macOS | Paths: `~/Library/Mobile Documents/` (iCloud Drive) and `~/Library/CloudStorage/` (File Provider clients: OneDrive, Dropbox, Google Drive, Box). `~/Desktop` and `~/Documents` when "Desktop & Documents Folders" is on (to find out how to read that setting reliably; candidate: `NSFileManager isUbiquitousItemAtURL`). Also the URL resource values for ubiquitous items. To verify on a real Mac |
+| What the person sees | Program folder: the Control Panel opens with only one message: the cloud's name and the folder, why it is not allowed, and where to move the folder (`C:\shoebox` or the photo drive on Windows, the Applications folder or the photo drive on a Mac); nothing can be scanned or installed. `Start shoebox.bat` / `.command` print the same before they start the program. A library: the drive is listed but cannot be opened, with the same kind of message. Text through `tr()` in `en.json` and `de.json` |
+| Not refused | Export: the destination is the person's own copy (sharing a collection through Dropbox is a reason to export), nothing of shoebox is in it. Reading originals from a cloud folder is not a case: originals are always in a library |
+| Unknown clients | A sync client that registers nowhere is not found; the guide names the rule, not only the known clients |
+| Rules | When it is built, a line in the rules of CLAUDE.md and in the guide's safety section (both languages) |
+
 ### Steps
 
 1. [ ] Licences for Windows: add `x86_64-pc-windows-msvc` to `TARGETS` in
@@ -82,22 +110,31 @@ Windows before anything is published.
        the runner; also usable on Linux for a dry run with a fake exe): builds
        the folder above (the Part 1 layout) from `core/target/…/release`, `scripts/launchers`,
        `recognizer/` and the sources, from files only (no network except
-       `build-deps.sh --sources`).
+       `build-deps.sh --sources`). The `windows` job's Package step already
+       copies `Start shoebox.bat` and `recognizer/`; the script takes it over.
 3. [ ] `release-windows.yml`: inputs, tag check, checkout of the tag, build
        and tests (as the `windows` job), probe/scan/verify of the small
        folder, package, then either upload to the release or upload the
        artifact. Permissions: `contents: write` only for the upload step.
 4. [ ] `build.yml`: the manual `windows` job calls the same steps (or is
        replaced by this workflow); the header comment explains the two ways.
-5. [ ] `docs/plan.md`: "Decoders per build" step 4/5 and the Phase 6 Windows
+5. [ ] No cloud-synced folders (see above): a `cloud` module with the check
+       for Windows and macOS (unit tests with fake sync roots and paths), the
+       Control Panel message and refusal for the program folder and for a
+       library, the check in `Start shoebox.bat` and `Start shoebox.command`,
+       texts in `en.json` and `de.json`, the CLAUDE.md rule, the guide (both
+       languages: where to put the folder, why no cloud). Checked on a real
+       PC with OneDrive and on a Mac with iCloud Drive.
+6. [ ] `docs/plan.md`: "Decoders per build" step 4/5 and the Phase 6 Windows
        items point here; the status row below moves when it is built.
-6. [ ] Guide, both languages, once a Windows archive is really offered
+7. [ ] Guide, both languages, once a Windows archive is really offered
        ("macOS today · Linux & Windows next", Get started, the SmartScreen
        note, `Start shoebox.bat`, `install.ps1`); `python3 docs/guide/check.py`.
        The guide describes what exists, so this waits for the first real
        Windows release.
-7. [ ] Run it: first without a tag, test the zip on a real Windows PC (start,
-       a HEIC, a scan, export), then with a tag.
+8. [ ] Run it: first without a tag, test the zip on a real Windows PC (start,
+       a HEIC, a scan, export, the refusal from a OneDrive folder), then with
+       a tag.
 
 ### Not in this phase
 
