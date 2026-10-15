@@ -1,6 +1,6 @@
 # Phase 16: index next to the program (server libraries)
 
-Status: **steps 1 to 6 built** except the CLI and the layout of the add and Manage areas (tabs or fold-open sections, mock-ups in `docs/mocks/phase16/layout/`, waiting for a decision). Overview in [plan.md](plan.md).
+Status: **steps 1 to 6 built** except the CLI. The Control Panel layout is decided and built: tabs (mock-ups in `docs/mocks/phase16/layout/`, T1 and T2 are the chosen ones). Overview in [plan.md](plan.md).
 
 ## Why
 
@@ -106,37 +106,35 @@ Most of the work is a single function. From the grep of `<root>/.shoebox`:
 
 ## Control Panel
 
-Step 2 "Select drives" lists, in this order:
+Step 2 "Where are your photos?" is three **tabs**, so nothing sits in a box inside
+the card (decided with the mock-ups in `docs/mocks/phase16/layout/`):
 
-1. the drives found (as today);
-2. the libraries from `libraries.json`, each with its name, root path and a
-   small badge **"not on drive" / "nicht auf dem Laufwerk"**, greyed with
-   "not connected" when the root cannot be read (share not connected), exactly
-   like a missing drive. The row is headed "Libraries kept next to the program
-   / not on drive" ("Bibliotheken neben dem Programm / nicht auf dem
-   Laufwerk") with an info icon (our own drawing, a rounded diamond with an
-   i) whose tooltip says that the `.shoebox` folder is not created in the
-   drive's root, a `libraries` folder is added next to the program instead, and
-   nothing is written into the photo folder. At the end of the row sit the
-   buttons **Manage…** ("Verwalten…"), which opens the management panel under
-   the row, and "+ Add a folder or server…". Mock-ups:
-   [docs/mocks/phase16/](mocks/phase16/) (approved wording: the user chose "not
-   on drive").
+- **Photo folders**: the chosen folders (chips, editable by double-click), a
+  "Choose…" folder picker (the photo app's export picker: `/api/places`,
+  `/api/folders`), the detected drives (a click starts a path in the box; Enter
+  alone adds the drive) and, only once a library exists, the row "Libraries
+  kept next to the program" with an info marker (the photo app's circle-i, native
+  tooltip) and one chip per library: name and a badge with the photo app's tab
+  icon and **"separate" / "separat"**, dashed and "not connected" when the root
+  cannot be read, like a missing drive. With no library the row is replaced by
+  one line that points to the next tab.
+- **Add a folder or server** (always there): folder (with Choose…), where the
+  index is kept (**On the drive**, the usual way, or **Separate (next to the
+  program)**; the latter is greyed out with the reason when the program folder
+  cannot be written to), and, for Separate only, a name and the note that
+  shoebox only reads. Adding returns to Photo folders.
+- **Manage libraries (n)**: only while n > 0 (it goes away with the last
+  library). Per library: state ("connected · 48,212 photos", "not scanned yet",
+  "not connected"), Rename (moves the index folder), Change folder (checks a
+  sample of the indexed files against the new folder first; the index is
+  kept), Remove from the list (the index folder stays) and Delete the index.
+  Remove and delete are modal dialogs (the page is greyed out behind them);
+  deleting says that tags, dates, places and names go with the index. Both also
+  take the folder out of the list of chosen folders, so a later scan cannot
+  write a `.shoebox` into it.
 
-An "Add a folder or server…" form (path field + folder picker where the
-browser can give one, as for export) gets a choice:
-
-- **Keep the index on the drive** (default; today's behaviour);
-- **Not on the drive (next to the program)** (asks for a name; shown only when the
-  program folder is writable, otherwise the row says why: "the program folder
-  is read-only, move shoebox out of Program Files").
-
-Editing an entry: rename (renames the folder under `libraries/`), change the
-root path (checked: at least one file of the index must be found under the new
-root, otherwise a warning and "use it anyway"), remove from the list
-("Remove from the list" leaves the index folder; "Delete the index" asks and
-removes it). The same list feeds the photo app's drive picker, so what the
-Control Panel offers is what `serve` opens.
+The Control Panel's own tab icon is the photo app's box with a small gear on it,
+so the two windows can be told apart.
 
 CLI: `shoebox scan <root> --index-next-to-program [--name N]`,
 `shoebox libraries` (list, `--json`), `shoebox libraries remove <name>`. A
