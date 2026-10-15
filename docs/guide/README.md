@@ -9,7 +9,8 @@ The guide is plain HTML, one file per language, written by hand:
 | `assets/en/`, `assets/de/` | the screenshots, named for what they show (`ui-overview.jpg`, `launcher-overview.jpg`, ...) | no, made by CI |
 
 Users find it in the release: `shoebox-macos.tar.gz` unpacks to a folder with
-`shoebox` (the program), `Start shoebox.command`, `recognizer/` and `guide/`. Open
+`Start shoebox.command`, `guide/` and `program/` (the program and everything
+it needs). Open
 `guide/shoebox-en.html` (or `-de`) in any browser; the images sit next to it.
 
 ## Editing

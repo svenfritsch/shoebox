@@ -227,9 +227,8 @@ exited 5 seconds later is killed.
 1. `--recognizer <program>` or the `SHOEBOX_RECOGNIZER` environment variable:
    any executable that speaks this protocol (`shoebox-fake-recognizer` in
    tests).
-2. `recognizer/recognizer.py` next to the shoebox binary (the downloaded
-   folder); for a binary in the older `<drive>/.shoebox/bin/` layout also that
-   drive's `.shoebox/recognizer/`. Never the `.shoebox/` of another drive: a
+2. `recognizer/recognizer.py` next to the shoebox binary (`program/` in the
+   downloaded folder). Never the `.shoebox/` of a drive: a
    drive from somebody else could bring a Python of its own. Run with the standalone Python in `recognizer/runtime/<platform>/bin/python3` if
    present, else `python3` from `PATH`.
 

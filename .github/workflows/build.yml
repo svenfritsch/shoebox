@@ -334,8 +334,14 @@ jobs:
   # release. Workflow artifacts need a GitHub login, expire, and lose the
   # executable bit; release assets don't. The recognizer installer goes
   # along, so the drive can be set up without a clone of the repo, and so does
-  # the guide (English and German, HTML and plain text, with its screenshots)
-  # in the folder `guide` of the archive.
+  # the guide (English and German, HTML and plain text, with its screenshots).
+  #
+  # The archive holds one folder with three things on top, so a person sees
+  # what to double-click and nothing else (docs/plan.md, "The release folder"):
+  #   shoebox-macos/
+  #     Start shoebox.command
+  #     guide/
+  #     program/   shoebox, libheif/libde265, recognizer/, sources/, licences
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [test, build, guide]
@@ -361,21 +367,24 @@ jobs:
           # the notices for the libraries in the binary must match Cargo.lock and the vendored web libraries
           python3 scripts/third-party-licenses.py --check
           for os in macos; do
-            pkg="$RUNNER_TEMP/shoebox-$os"
-            mkdir -p "$pkg/recognizer"
+            top="$RUNNER_TEMP/shoebox-$os"
+            prog="$top/program"
+            mkdir -p "$prog/recognizer"
             # inside its own folder per system the program is just "shoebox"
-            cp artifacts/shoebox-$os/shoebox-$os "$pkg/shoebox"
-            chmod +x "$pkg/shoebox"
+            cp artifacts/shoebox-$os/shoebox-$os "$prog/shoebox"
+            chmod +x "$prog/shoebox"
             # libheif and libde265 next to it (LGPL: replaceable), with their
             # unmodified sources
-            cp artifacts/shoebox-$os/libheif.1.dylib artifacts/shoebox-$os/libde265.0.dylib "$pkg/"
-            scripts/build-deps.sh --sources "$pkg/sources"
-            cp LICENSE.txt THIRD-PARTY-LICENSES.txt "$pkg/"
-            cp "scripts/launchers/Start shoebox.command" "$pkg/"
-            chmod +x "$pkg/Start shoebox.command"
-            cp recognizer/README.md recognizer/install.sh recognizer/fetch-models.sh recognizer/recognizer.py "$pkg/recognizer/"
-            cp -R artifacts/guide "$pkg/guide"
-            chmod +x "$pkg/recognizer/install.sh" "$pkg/recognizer/fetch-models.sh"
+            cp artifacts/shoebox-$os/libheif.1.dylib artifacts/shoebox-$os/libde265.0.dylib "$prog/"
+            scripts/build-deps.sh --sources "$prog/sources"
+            cp LICENSE.txt THIRD-PARTY-LICENSES.txt "$prog/"
+            cp recognizer/README.md recognizer/install.sh recognizer/fetch-models.sh recognizer/recognizer.py "$prog/recognizer/"
+            chmod +x "$prog/recognizer/install.sh" "$prog/recognizer/fetch-models.sh"
+            cp "scripts/launchers/Start shoebox.command" "$top/"
+            chmod +x "$top/Start shoebox.command"
+            cp -R artifacts/guide "$top/guide"
+            # nothing else on top
+            [ "$(ls -A "$top" | LC_ALL=C sort | tr '\n' '|')" = "Start shoebox.command|guide|program|" ]
             tar -C "$RUNNER_TEMP" -czf release/shoebox-$os.tar.gz shoebox-$os
           done
           (cd release && sha256sum *.tar.gz > SHA256SUMS)

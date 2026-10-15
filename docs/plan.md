@@ -45,30 +45,63 @@ progress. Update the status section when a phase moves.
 /Volumes/<drive>/
   <library>/                     ← user's folders; read-only for shoebox
   .shoebox/
-    bin/shoebox-macos            ← older layout (the release now ships the folder below)
     library.db                   ← SQLite index (+ rotating backup copy)
     thumbs.db                    ← preview BLOBs keyed by quick hash, face crops only for undecided faces and people's pictures
     recognition.db               ← faces (boxes + embeddings) keyed by quick hash
-    recognizer/                  ← optional (recognizer/install.sh)
-      runtime/<os>-<arch>/       ← standalone Python (copies, no symlinks: exFAT)
-      recognizer.py
-      models/                    ← ONNX: YuNet, SFace, pet detector, CLIP
-  Start shoebox.command          ← launcher scripts per OS
+  shoebox-macos/                 ← the release folder, if shoebox lives on the drive (below)
 ```
+
+The older layout with the program in `.shoebox/bin/` and the add-ons in
+`.shoebox/recognizer/` is gone (phase 17): nobody uses it, and the launchers
+and the recognizer lookup no longer know it.
+
+### The release folder
+
+One folder per system, with only three things on top, so a person without a
+technical background sees what to double-click and nothing else:
+
+```
+shoebox-macos/
+  Start shoebox.command          ← the only thing to double-click (.sh / .bat on Linux / Windows)
+  guide/                         ← shoebox-en.html, shoebox-de.html, their .txt, assets/
+  program/                       ← everything else; nobody needs to open it
+    shoebox                      ← shoebox.exe on Windows
+    libheif.1.dylib              ← next to the program (@executable_path), LGPL: replaceable
+    libde265.0.dylib
+    recognizer/                  ← install.sh, fetch-models.sh, recognizer.py, README.md
+      runtime/<os>-<arch>/       ← after an add-on install: standalone Python (copies, no symlinks: exFAT)
+      models/                    ← after an add-on install: ONNX models
+    sources/                     ← libheif and libde265 source archives (LGPL)
+    LICENSE.txt
+    THIRD-PARTY-LICENSES.txt
+    ffmpeg                       ← optional, put there by the user
+  libraries/                     ← phase 16: indexes kept next to the program (user data, never inside program/)
+```
+
+The launcher looks for `program/shoebox` only, checks the two libraries
+beside it, and on macOS takes the quarantine mark off the files in `program/`
+and `program/recognizer/` before it starts the program: a program started
+directly from a browser download is blocked by Gatekeeper when it loads
+`libheif.1.dylib` ("cannot check it for malicious software"; seen with
+v0.7.4). Everything the program looks up "next to itself" (`recognizer/`,
+`ffmpeg`, the libraries) is inside `program/`. User data never is: the
+phase 16 `libraries/` folder sits beside `program/`, so `program/` can be
+replaced by a newer one.
 
 ### The shoebox folder and the add-ons (Control Panel)
 
-The release is one folder per system (`shoebox-macos/`): the program
-`shoebox`, `Start shoebox.command`, `recognizer/` (installer, `recognizer.py`,
-later its `runtime/` and `models/`) and `guide/`. Two ways to use it, both
-supported by the same lookup:
+The release is one folder per system (`shoebox-macos/`, see "The release
+folder" above): `Start shoebox.command`, `guide/`, and `program/` with the
+program, `recognizer/` (installer, `recognizer.py`, later its `runtime/` and
+`models/`) and the rest. Two ways to use it, both supported by the same
+lookup:
 
 - **On the drive**: the whole folder is copied to the drive's top folder
   (`/Volumes/X/shoebox-macos/`); other systems get their own folder beside it
-  (`shoebox-windows/`). Add-ons then live in `shoebox-macos/recognizer/` on the
+  (`shoebox-windows/`). Add-ons then live in `shoebox-macos/program/recognizer/` on the
   drive and travel with it. `.shoebox/` is made by the first scan, never by hand.
 - **On the computer**: the folder stays where the user put it; add-ons live in
-  its `recognizer/` and serve every drive; drives are added by path.
+  its `program/recognizer/` and serve every drive; drives are added by path.
 
 Add-ons are installed from the Control Panel (step 1, "Add-ons"; job
 `install_addons` runs `recognizer/install.sh --faces/--pets/--text`, on Windows `install.ps1`) into
@@ -79,10 +112,8 @@ what is installed for the computer and for each ticked drive
 (`recognize::installed`, by looking for files, never by starting the worker),
 and the Control Panel greys out Recognize / Recognize lying down (need Faces)
 and Recognize pets (needs Pets) with the reason. Lookup order
-(`recognize::worker_dirs`): only `recognizer/` next to the program, plus, for a
-program in the older `<drive>/.shoebox/bin/` layout, that same drive's
-`.shoebox/recognizer/`. Never the `.shoebox/` of a drive the program does not
-run from (security audit 2026-10: a drive from somebody else could bring a
+(`recognize::worker_dirs`): only `recognizer/` next to the program. Never the
+`.shoebox/` of a drive (security audit 2026-10: a drive from somebody else could bring a
 Python of its own, which would run as the user; `install.sh <drive>` and
 `install.ps1 -Root` were removed with it). `find_worker_for` takes the first folder that has the
 models the run needs and the Python for this computer. The models are the
@@ -398,7 +429,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 12 | Estimated capture date: a date of the user's own (year, month or day) for a photo, kept in `library.db` only, that wins over the file's date on the timeline; "Needs a date" worklist; search by date with the Date group and `date:` / `datum:` (design in [phase12.md](phase12.md)) | **Built except the real-hardware check**: core, info panel (pencil, dialog, EXIF row), "~", year-only group, selection with Undo, "Needs a date", date search (`date:` / `datum:`), guide in both languages |
 | 13 | Export: collect photos with a tag (Settings → Collection, bookmark button, shortcut C) or a selection and copy them into a new numbered folder (`001_IMG_3457.jpg`), optionally RAW partners and HEIC as JPEG, with a folder picker; re-export adds only what is new (design and mock-ups in [phase13.md](phase13.md)) | **Built, check open**: `export.rs`, local-only API, dialog with folder picker, collection button (C), settings, guide; real-hardware check (USB stick, Windows, macOS) open |
 | 14 | Backup comparison views: the backup check's lists get a "Show photos" button (Manage drives). "Only on backup" (on the backup) and "Only on original" (on the drive it copies) are filter chips on that drive's own timeline (`compare=backup|original`, worked out in `serve::forward` from the two indexes, offered in the search as "only on", "nur auf", "backup"); "different on the backup" opens the timeline of both drives of the pair in path order, so the two versions of a photo sit side by side, each with an Original or Backup badge (`/api/all/timeline?compare=different`). A chip a drive cannot show (a drive that is not half of a pair, All drives, nothing to show) is dropped with a note. Read only: nothing is written to either drive. Also: one drawn open-folder icon instead of the folder emoji; the backup card's progress bar had the header's `.bar` class and was drawn at the top of the window | **Done except the real-hardware run**; guide text updated, guide screenshots not regenerated yet |
-| 17 | Windows release by hand: a manual workflow (`release-windows.yml`, input: a tag) builds the Windows folder (`shoebox.exe`, DLLs, `Start shoebox.bat`, recognizer scripts, licences, guide) and adds `shoebox-windows.zip` to that tag's release; without a tag it only makes the zip as an artifact for testing. The automatic release stays macOS only (plan in [phase17.md](phase17.md)) | **Plan only**, nothing built; needs the Windows target in `third-party-licenses.py` first |
+| 17 | Release folder with three things on top (`Start shoebox.command`, `guide/`, `program/` with everything else; "The release folder" above), the older `.shoebox/bin/` layout removed. Then Windows release by hand: a manual workflow (`release-windows.yml`, input: a tag) builds the Windows folder (`shoebox.exe`, DLLs, `Start shoebox.bat`, recognizer scripts, licences, guide) and adds `shoebox-windows.zip` to that tag's release; without a tag it only makes the zip as an artifact for testing. The automatic release stays macOS only (plan in [phase17.md](phase17.md)) | Release folder **done** (macOS release, launchers, guide; from the next tag). Windows workflow: **plan only**; needs the Windows target in `third-party-licenses.py` first |
 
 ### Phase 10: locations
 

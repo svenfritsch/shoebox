@@ -898,23 +898,9 @@ pub struct Drive {
     pub library: bool,
 }
 
-/// Where the binary sits inside `<drive>/.shoebox/bin/`, the drive itself:
-/// the best suggestion when it was started from the drive.
-pub fn drive_of_binary(exe: &Path) -> Option<PathBuf> {
-    let bin = exe.parent()?;
-    let shoebox = bin.parent()?;
-    if bin.file_name()? == "bin" && shoebox.file_name()? == crate::db::DIR {
-        return shoebox.parent().map(Path::to_path_buf);
-    }
-    None
-}
-
-/// Mounted drives and the one the binary was started from.
+/// Mounted drives.
 pub fn detect_drives() -> Vec<Drive> {
     let mut found: Vec<PathBuf> = Vec::new();
-    if let Some(d) = std::env::current_exe().ok().and_then(|e| drive_of_binary(&e)) {
-        found.push(d);
-    }
     let mut dirs: Vec<PathBuf> = Vec::new();
     if cfg!(target_os = "macos") {
         dirs.push("/Volumes".into());

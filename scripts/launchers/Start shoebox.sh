@@ -1,17 +1,14 @@
 #!/bin/sh
 # Linux: run this file (right-click > "Run as a Program", or from a terminal).
-# Keep it next to the program "shoebox" (the downloaded folder).
+# Keep it next to the folder "program" (the downloaded folder).
 here=$(cd "$(dirname "$0")" && pwd)
-bin=
-for candidate in "$here/shoebox" "$here/.shoebox/bin/shoebox-linux" "$here/shoebox-linux"; do
-    [ -f "$candidate" ] && bin=$candidate && break
-done
-if [ -z "$bin" ]; then
-    echo "The program shoebox was not found next to this file."
+dir=$here/program
+bin=$dir/shoebox
+if [ ! -f "$bin" ]; then
+    echo "The program shoebox was not found in the folder \"program\" next to this file."
     printf 'Press Return to close. '; read -r _; exit 1
 fi
 # libheif and libde265 (HEIC photos) are separate files next to the program.
-dir=$(dirname "$bin")
 for lib in libheif.so.1 libde265.so.0; do
     if [ ! -f "$dir/$lib" ]; then
         echo "$lib was not found next to the program shoebox. Keep the files of the downloaded folder together."

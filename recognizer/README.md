@@ -15,11 +15,10 @@ boxes and embeddings out. It never touches the database or an original.
   numpy and the models of the add-ons asked for (Faces ~40 MB, Pets ~140 MB,
   independent; both are asked in a terminal when neither flag is given). The
   runtime (~200 MB) is always installed. Everything goes into this folder
-  (next to the shoebox program) and every drive you recognize uses it.
-  `shoebox recognize` runs the recognizer only from here, never from a
-  drive's `.shoebox/` (a drive from somebody else could bring a Python of its
-  own); the one exception is a program in the older `<drive>/.shoebox/bin/`
-  layout, which uses its own drive's `.shoebox/recognizer/`. Run it on each kind of computer that will run recognition: the models
+  (next to the shoebox program, `program/recognizer/` in the release) and
+  every drive you recognize uses it. `shoebox recognize` runs the recognizer
+  only from here, never from a drive's `.shoebox/` (a drive from somebody else
+  could bring a Python of its own). Run it on each kind of computer that will run recognition: the models
   are kept, only that computer's Python is added. People who do not use the
   terminal press **Install the selected add-ons** in the Control Panel (step 1,
   Add-ons), which runs this script.
