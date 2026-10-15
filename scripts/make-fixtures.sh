@@ -50,6 +50,19 @@ ffmpeg -v error -f lavfi -i "testsrc2=size=600x400:duration=1" -frames:v 1 -y "$
 exiftool -q -overwrite_original "-DateTimeOriginal=2020:07:17 12:00:00" "-Model=Test RAW" "$EVENT/IMG_0004.tif"
 mv "$EVENT/IMG_0004.tif" "$EVENT/IMG_0004.DNG"
 
+# Canon-style CR2 stand-in: TIFF header with the CR\x02\x00 marker, the Exif IFD
+# (DateTimeOriginal) at offset 34000, past the bytes nom-exif loads first.
+python3 - "$EVENT/IMG_0005.CR2" <<'PY'
+import struct, sys
+def ent(t, f, c, v): return struct.pack('<HHII', t, f, c, v)
+date, model, exif_off = b"2020:07:18 09:15:00\0", b"Canon EOS Test\0", 34000
+b = b"II*\0" + struct.pack('<I', 16) + b"CR\x02\x00" + struct.pack('<I', 0)
+b += struct.pack('<H', 3) + ent(0x110, 2, len(model), 16 + 2 + 36 + 4) + ent(0x112, 3, 1, 1) + ent(0x8769, 4, 1, exif_off) + struct.pack('<I', 0) + model
+b += b"\0" * (exif_off - len(b))
+b += struct.pack('<H', 1) + ent(0x9003, 2, len(date), exif_off + 18) + struct.pack('<I', 0) + date + b"\x55" * 200000
+open(sys.argv[1], 'wb').write(b)
+PY
+
 # PNG screenshot without EXIF.
 ffmpeg -v error -f lavfi -i "testsrc2=size=1170x2532:duration=1" -frames:v 1 -y "$TOPIC/Screenshot.png"
 

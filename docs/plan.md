@@ -1711,3 +1711,11 @@ framework". Step 4 (Windows) builds and passes the tests in CI (Actions →
 build → Run workflow, artifact `shoebox-windows`): next run it on a real PC
 and scan a drive a Mac scanned (items 4 and 5 of the Windows list), then
 package it in the release.
+
+Canon CR2 metadata (phase 0, found on the real drive): nom-exif reads a file
+incrementally and fails with "parse ifd entry header failed: Incomplete" on a
+TIFF-based RAW whose Exif IFD lies beyond the bytes loaded so far. Fixed in
+`media::read_tiff_raw_exif` (head of the file read and parsed in memory, prefix
+grows 256 KiB, 8 MiB, 64 MiB); tests in `core/tests/scan.rs`, fixture
+`IMG_0005.CR2` in `scripts/make-fixtures.sh`. Open: confirm on the 'Angie
+wedding' folder (`shoebox probe` should show `RAW 3 3 3`).

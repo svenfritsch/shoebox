@@ -51,6 +51,13 @@ pub fn read_metadata(parser: &mut MediaParser, kind: Kind, path: &Path) -> Resul
     if kind == Kind::Heic {
         return read_heic_metadata(parser, path);
     }
+    if kind == Kind::Raw {
+        if let Some(exif) = read_tiff_raw_exif(parser, path)? {
+            let mut meta = Metadata::default();
+            apply_exif(&mut meta, &exif);
+            return Ok(meta);
+        }
+    }
     let source = MediaSource::open(path).context("open")?;
     let mut meta = Metadata::default();
     match source.kind() {
@@ -77,6 +84,40 @@ pub fn read_metadata(parser: &mut MediaParser, kind: Kind, path: &Path) -> Resul
         }
     }
     Ok(meta)
+}
+
+/// Prefix sizes tried for a TIFF-based RAW file, smallest first.
+const RAW_HEAD_STEPS: [u64; 3] = [256 << 10, 8 << 20, 64 << 20];
+
+/// EXIF of a TIFF-based RAW file (CR2, NEF, ARW, DNG, ORF, RW2, PEF, SRW).
+/// nom-exif reads such a file incrementally and fails ("parse ifd entry header
+/// failed: Incomplete") when the Exif sub-IFD or an entry's value lies beyond
+/// what it has loaded so far, as it does in a Canon CR2. So the head of the
+/// file is read here (read-only, nothing is written) and handed over in
+/// memory; the prefix grows only if the first one was not enough. `Ok(None)`
+/// means: not a TIFF-based file (CR3, RAF, ...) or no EXIF, use the normal path.
+fn read_tiff_raw_exif(parser: &mut MediaParser, path: &Path) -> Result<Option<nom_exif::Exif>> {
+    use std::io::Read;
+    let mut last_err = None;
+    for (i, &limit) in RAW_HEAD_STEPS.iter().enumerate() {
+        let mut head = Vec::new();
+        std::fs::File::open(path)
+            .and_then(|f| f.take(limit).read_to_end(&mut head))
+            .context("read")?;
+        if !(head.starts_with(b"II*\0") || head.starts_with(b"MM\0*")) {
+            return Ok(None);
+        }
+        let whole = (head.len() as u64) < limit;
+        match parser.parse_exif(MediaSource::from_memory(head)?) {
+            Ok(iter) => return Ok(Some(iter.into())),
+            Err(nom_exif::Error::ExifNotFound) => return Ok(None),
+            Err(e) => last_err = Some(e),
+        }
+        if whole || i + 1 == RAW_HEAD_STEPS.len() {
+            break;
+        }
+    }
+    Err(last_err.map(Into::into).unwrap_or_else(|| anyhow!("no EXIF")))
 }
 
 fn apply_exif(meta: &mut Metadata, exif: &nom_exif::Exif) {
