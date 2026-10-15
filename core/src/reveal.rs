@@ -63,11 +63,18 @@ pub fn command_for(platform: Platform, path: &Path) -> (OsString, Vec<OsString>)
         // `--` so that a name starting with a dash is never read as an option.
         Platform::Mac => ("open".into(), vec!["-R".into(), "--".into(), path.as_os_str().to_owned()]),
         Platform::Windows => {
-            // One argument: explorer wants `/select,` and the path together.
-            // Canonical paths on Windows start with `\\?\`, which it rejects.
-            let text = path.to_string_lossy();
-            let plain = text.strip_prefix(r"\\?\").unwrap_or(&text);
-            ("explorer.exe".into(), vec![format!("/select,{plain}").into()])
+            // explorer.exe reads its command line itself, not by the C rules:
+            // it wants `/select,` and the path in quotes as one piece, given
+            // as is (see `reveal`). Backslashes only: the index keeps `/`
+            // between folders, and with `E:\Fotos\2020/a.jpg` it opens the
+            // Documents folder instead. Canonical paths start with `\\?\`,
+            // which it rejects. A name cannot contain `"` on Windows.
+            let text = path.to_string_lossy().replace('/', "\\");
+            let plain = match text.strip_prefix(r"\\?\UNC\") {
+                Some(share) => format!(r"\\{share}"),
+                None => text.strip_prefix(r"\\?\").unwrap_or(&text).to_owned(),
+            };
+            ("explorer.exe".into(), vec![format!("/select,\"{plain}\"").into()])
         }
         Platform::Other => {
             let folder = path.parent().unwrap_or(path);
@@ -81,8 +88,19 @@ pub fn command_for(platform: Platform, path: &Path) -> (OsString, Vec<OsString>)
 /// so its status says nothing).
 pub fn reveal(path: &Path) -> Result<()> {
     let (program, args) = command(path);
-    let mut child = Command::new(&program)
-        .args(&args)
+    let mut cmd = Command::new(&program);
+    // On Windows the argument goes to explorer exactly as `command` made it:
+    // `args` would put quotes around all of `/select,"…"` when the path has a space.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        for arg in &args {
+            cmd.raw_arg(arg);
+        }
+    }
+    #[cfg(not(windows))]
+    cmd.args(&args);
+    let mut child = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -109,7 +127,16 @@ mod tests {
     fn windows_selects_the_file_with_one_argument() {
         let (program, args) = command_for(Platform::Windows, Path::new(r"\\?\E:\Fotos\a b.jpg"));
         assert_eq!(program, "explorer.exe");
-        assert_eq!(args, [r"/select,E:\Fotos\a b.jpg"]);
+        assert_eq!(args, [r#"/select,"E:\Fotos\a b.jpg""#]);
+    }
+
+    #[test]
+    fn windows_gets_backslashes_only() {
+        // The drive's folder joined with a path from the index.
+        let (_, args) = command_for(Platform::Windows, Path::new(r"E:\Fotos\2020 Urlaub/Grüße/IMG_1.JPG"));
+        assert_eq!(args, [r#"/select,"E:\Fotos\2020 Urlaub\Grüße\IMG_1.JPG""#]);
+        let (_, args) = command_for(Platform::Windows, Path::new(r"\\?\UNC\nas\fotos\2020/a.jpg"));
+        assert_eq!(args, [r#"/select,"\\nas\fotos\2020\a.jpg""#]);
     }
 
     #[test]
