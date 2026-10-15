@@ -435,6 +435,38 @@ pub fn cli_delete(name: &str, yes: bool) -> Result<()> {
     Ok(())
 }
 
+/// The registered library whose folder `path` is (or is inside), if any:
+/// nothing may be written there either (an export, for instance, must not
+/// save into the folder it only reads).
+pub fn read_only_root_of(path: &Path) -> Option<Entry> {
+    read_only_root_in(&home()?, path)
+}
+
+/// `read_only_root_of` for the registry of a given program folder.
+pub fn read_only_root_in(home: &Path, path: &Path) -> Option<Entry> {
+    let reg = load(home).ok()?;
+    if reg.libraries.is_empty() {
+        return None;
+    }
+    // The nearest folder that exists, resolved (a link, /var -> /private/var).
+    let mut at = path.to_path_buf();
+    let real = loop {
+        if let Ok(r) = at.canonicalize() {
+            break r;
+        }
+        if !at.pop() {
+            return None;
+        }
+    };
+    let here = norm_root(&real.to_string_lossy());
+    reg.libraries.into_iter().find(|e| {
+        let root = std::fs::canonicalize(&e.root).map(|r| r.to_string_lossy().into_owned()).unwrap_or_else(|_| e.root.clone());
+        let root = norm_root(&root);
+        let sep = if root.contains('\\') { '\\' } else { '/' };
+        here == root || here.starts_with(&format!("{}{sep}", root.trim_end_matches(sep)))
+    })
+}
+
 /// Called first by everything that would change an original (move, rename,
 /// trash, restore, rotate, remove copies): a library registered next to the
 /// program is never changed.
@@ -481,6 +513,28 @@ mod tests {
         assert!(add(&home, "a/b", &home).is_err());
         assert_eq!(index_dir(&home, &e), home.join("libraries").join("Server Fotos"));
         assert!(load(&home).unwrap().find_root(&photos.join("..").join("photos")).is_some());
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn a_path_inside_a_library_folder_is_found() {
+        let home = self::home();
+        let photos = home.join("photos");
+        std::fs::create_dir_all(photos.join("sub")).unwrap();
+        std::fs::create_dir_all(home.join("photos2")).unwrap();
+        // No registry yet: nothing is read-only.
+        assert!(read_only_root_in(&home, &photos).is_none());
+        add(&home, "P", &photos).unwrap();
+        let name = |p: &Path| read_only_root_in(&home, p).map(|e| e.name);
+        assert_eq!(name(&photos).as_deref(), Some("P"));
+        assert_eq!(name(&photos.join("sub")).as_deref(), Some("P"));
+        // A folder that does not exist yet, below the library, counts too (an export's new folder).
+        assert_eq!(name(&photos.join("sub").join("new")).as_deref(), Some("P"));
+        // Its spelling does not matter: a link, a trailing "..".
+        assert_eq!(name(&photos.join("sub").join("..")).as_deref(), Some("P"));
+        // Outside: the program folder itself, and a folder that only shares a name prefix.
+        assert!(name(&home).is_none());
+        assert!(name(&home.join("photos2")).is_none());
         std::fs::remove_dir_all(&home).unwrap();
     }
 

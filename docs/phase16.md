@@ -1,6 +1,6 @@
 # Phase 16: index next to the program (server libraries)
 
-Status: **steps 1 to 6 built**; open: a guard test for an export of such a library and the check on a real share from Windows. The Control Panel layout is decided and built: tabs (mock-ups in `docs/mocks/phase16/layout/`, T1 and T2 are the chosen ones). Overview in [plan.md](plan.md).
+Status: **steps 1 to 6 built**; open: the check on a real share from Windows. The Control Panel layout is decided and built: tabs (mock-ups in `docs/mocks/phase16/layout/`, T1 and T2 are the chosen ones). Overview in [plan.md](plan.md).
 
 ## Why
 
@@ -184,8 +184,11 @@ without flags.
        photo app's, a folder picker reused from the export dialog, modal confirmations; API
        `/api/libraries*`, `/api/places`, `/api/folders` in `launcher.rs`; strings in `en.json` /
        `de.json`; `core/tests/launcher.rs`. Details in "Control Panel" above.
-5. [x] Tree-snapshot guard tests: scan and verify (`core/tests/libraries.rs`) and a serve
-       session (`libraries_readonly.rs`); an export of such a library is still to add.
+5. [x] Tree-snapshot guard tests: scan and verify (`core/tests/libraries.rs`), a serve session
+       and an export (`libraries_readonly.rs`). The export test found a hole: nothing stopped an
+       export from saving into the library's own folder (the only warning looked for a
+       `.shoebox` folder, which such a library does not have). `export::destination` now refuses
+       a destination inside any registered library (`libraries::read_only_root_of`).
 6. [x] Guide, both languages (Get started, Safety, FAQ; the Drives section waits for the conflict markers on main to be resolved) (Get started: the two places for the index;
        Safety: nothing written to the folder; Control Panel; FAQ "my photos are
        on a server"), then `python3 docs/guide/check.py`.

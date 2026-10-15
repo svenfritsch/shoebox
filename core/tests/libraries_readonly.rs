@@ -144,3 +144,96 @@ fn a_library_on_a_drive_is_not_read_only_in_the_photo_app() {
     assert_eq!(post(addr, "/api/allow-trash", &json!({ "allow": true })).status, 200);
     server.stop();
 }
+
+/// Every file and folder below `root`, relative, sorted.
+fn entries(root: &std::path::Path) -> Vec<String> {
+    let mut v: Vec<String> = walkdir::WalkDir::new(root)
+        .min_depth(1)
+        .into_iter()
+        .map(|e| e.unwrap().path().strip_prefix(root).unwrap().display().to_string())
+        .collect();
+    v.sort();
+    v
+}
+
+fn wait_for_export(addr: std::net::SocketAddr) -> serde_json::Value {
+    let end = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        let s = get(addr, "/api/export/status").json();
+        if s["state"] != "running" {
+            return s;
+        }
+        assert!(std::time::Instant::now() < end, "the export does not end");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn exporting_from_a_read_only_library_copies_out_and_never_into_its_folder() {
+    let home = home();
+    let lib = Library::new("readonly-export");
+    libraries::add(home, "Server export", &lib.root).unwrap();
+    lib.scan();
+    let ids: Vec<i64> = {
+        let conn = rusqlite::Connection::open(shoebox::db::default_path(&lib.root)).unwrap();
+        conn.prepare("SELECT id FROM files WHERE kind = 'jpeg' ORDER BY id").unwrap().query_map([], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect()
+    };
+    assert!(ids.len() >= 3, "{ids:?}");
+    let before = lib.snapshot();
+    let listing = entries(&lib.root);
+
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let request = |parent: &std::path::Path, name: &str| {
+        json!({ "ids": ids, "parent": parent.display().to_string(), "name": name, "options": { "number": true, "raw": true, "live": true, "heic_to_jpeg": false } })
+    };
+
+    // Into the library's own folder, its top or a folder below it: refused, by the check and by the start,
+    // and nothing is made there.
+    for parent in [lib.root.clone(), lib.path("Familie"), lib.path("Familie/Weihnachten")] {
+        for route in ["/api/export/check", "/api/export/start"] {
+            let r = post(addr, route, &request(&parent, "copies"));
+            let said = String::from_utf8_lossy(&r.body).to_string();
+            assert_eq!(r.status, 400, "{route} into {}: {said}", parent.display());
+            assert!(said.contains("read-only"), "{said}");
+        }
+    }
+    assert_eq!(entries(&lib.root), listing, "something was made in the library's folder");
+
+    // Anywhere else it works: the copies are identical and the library stays as it was.
+    let out = std::env::temp_dir().join(format!("shoebox-it-{}-readonly-export-out", std::process::id()));
+    let _ = std::fs::remove_dir_all(&out);
+    std::fs::create_dir_all(&out).unwrap();
+    let req = request(&out, "from-server");
+    let check = post(addr, "/api/export/check", &req);
+    assert_eq!(check.status, 200, "{}", String::from_utf8_lossy(&check.body));
+    assert_eq!(check.json()["shoebox"], serde_json::Value::Null, "the destination is not a shoebox drive");
+    assert_eq!(post(addr, "/api/export/start", &req).status, 200);
+    let status = wait_for_export(addr);
+    assert_eq!(status["state"], "done", "{status}");
+    assert_eq!(status["copied"].as_u64().unwrap() as usize, ids.len(), "{status}");
+    let copies: Vec<_> = std::fs::read_dir(out.join("from-server")).unwrap().map(|e| e.unwrap().path()).collect();
+    assert_eq!(copies.len(), ids.len());
+    for copy in &copies {
+        // "001_IMG_0001.JPG" is the copy of the original named IMG_0001.JPG.
+        let name = copy.file_name().unwrap().to_string_lossy().split_once('_').map(|(_, n)| n.to_string()).unwrap();
+        let original = walkdir::WalkDir::new(&lib.root).into_iter().map(|e| e.unwrap()).find(|e| e.file_name().to_string_lossy() == name).unwrap_or_else(|| panic!("no original for {name}"));
+        assert_eq!(std::fs::read(copy).unwrap(), std::fs::read(original.path()).unwrap(), "{name}");
+    }
+
+    // Exporting again into the same folder (a merge) does not touch the library either.
+    assert_eq!(post(addr, "/api/export/start", &req).status, 200);
+    assert_eq!(wait_for_export(addr)["state"], "done");
+    server.stop();
+
+    // The guard: nothing in the library's folder changed or was added, not even a .shoebox folder.
+    let after = lib.snapshot();
+    assert_eq!(before.len(), after.len());
+    for (path, (stamp, hash)) in &before {
+        assert_eq!(&after[path].0, stamp, "changed: {}", path.display());
+        assert_eq!(&after[path].1, hash, "changed: {}", path.display());
+    }
+    assert_eq!(entries(&lib.root), listing);
+    assert!(!lib.root.join(".shoebox").exists());
+    let _ = std::fs::remove_dir_all(&out);
+}
