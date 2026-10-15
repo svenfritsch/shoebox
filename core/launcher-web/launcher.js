@@ -122,12 +122,9 @@ function renderChips() {
   updateButtons();
 }
 
-// Every action works on the ticked folders; the backup check on exactly two.
 function updateButtons() {
   var n = tickedPaths().length;
-  document.querySelectorAll('.actions button').forEach(function (b) {
-    b.disabled = n === 0 || (b.dataset.kind === 'backup' && n !== 2) || addonMissing(b.dataset.kind).length > 0;
-  });
+  refreshActions();
   refreshStart();
   $('backup-hint').textContent = n === 0 ? tr('launcher.need_ticked') : n !== 2 ? tr('launcher.backup_need_two') : '';
   loadAddons();
@@ -196,9 +193,8 @@ function renderAddons() {
   if (addonMissing('recognize_pets').length) why.push(tr('launcher.addons.need_pets'));
   if (addonMissing('recognize_text').length) why.push(tr('launcher.addons.need_text'));
   $('addon-need').textContent = why.join(' ');
-  document.querySelectorAll('.actions button').forEach(function (b) {
-    if (addonMissing(b.dataset.kind).length) b.disabled = true;
-  });
+  // Both ways: a button whose add-on was just installed can be pressed again.
+  refreshActions();
 }
 
 // The add-ons ticked that are not installed yet.
@@ -348,11 +344,22 @@ function poll() {
 // photo app can be started while recognition runs.
 var BESIDE_APP = ['recognize', 'recognize_pets', 'recognize_rotated', 'recognize_text', 'recognition_stats'];
 
+// Every action works on the ticked folders (the backup check on exactly two)
+// and needs the add-on it runs (`addons`). One rule for every caller, so a
+// change to any of these (a tick, a job ending, the photo app, an install)
+// turns a button on as well as off.
+function refreshActions() {
+  var n = tickedPaths().length;
+  document.querySelectorAll('.actions button').forEach(function (b) {
+    var kind = b.dataset.kind;
+    b.disabled = n === 0 || (kind === 'backup' && n !== 2) || busy
+      || (serving && BESIDE_APP.indexOf(kind) < 0) || addonMissing(kind).length > 0;
+  });
+}
+
 function applyLocks() {
   $('controls').disabled = busy || serving;
-  document.querySelectorAll('.actions button').forEach(function (b) {
-    b.disabled = busy || (serving && BESIDE_APP.indexOf(b.dataset.kind) < 0) || addonMissing(b.dataset.kind).length > 0;
-  });
+  refreshActions();
   renderAddons();
   $('opt-quick').disabled = $('opt-deep').disabled = busy || serving;
   refreshStart();
