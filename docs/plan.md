@@ -106,12 +106,10 @@ Python version in step. Runtime: python-build-standalone `x86_64-pc-windows-msvc
 `python.exe` at its top (no symlinks there, so a plain copy works on exFAT/NTFS);
 only x86-64 (OpenCV has no ARM Windows wheel). Cancel kills the whole process tree
 (`taskkill /T`). Status: reviewed, **not run on Windows**; the Rust side and the
-checksum test run on Linux. Windows packaging (`shoebox-windows/` with
-`shoebox.exe`, `Start shoebox.bat`, `recognizer/`) still waits for a Windows build
-in CI: `scripts/build-deps.sh` (libheif and libde265 via cmake, sh) and
-`scripts/build.sh` are POSIX-only, there is no `windows-latest` job, and the
-release job packs macOS only. Once such a job exists, copy `*.ps1` along with
-`*.sh` in the release step.
+checksum test run on Linux. The manual `windows` job in `build.yml` packs
+`shoebox-windows/` with `shoebox.exe`, the DLLs, `Start shoebox.bat` and
+`recognizer/` (with `install.ps1` and `fetch-models.ps1`); the release still
+packs macOS only, and its `recognizer/` has the `.sh` scripts only (phase 17).
 
 **What this means for phase 9 (text in photos)** — the text add-on follows the
 same pattern, so the phase 9 PR must:
@@ -398,7 +396,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 12 | Estimated capture date: a date of the user's own (year, month or day) for a photo, kept in `library.db` only, that wins over the file's date on the timeline; "Needs a date" worklist; search by date with the Date group and `date:` / `datum:` (design in [phase12.md](phase12.md)) | **Built except the real-hardware check**: core, info panel (pencil, dialog, EXIF row), "~", year-only group, selection with Undo, "Needs a date", date search (`date:` / `datum:`), guide in both languages |
 | 13 | Export: collect photos with a tag (Settings → Collection, bookmark button, shortcut C) or a selection and copy them into a new numbered folder (`001_IMG_3457.jpg`), optionally RAW partners and HEIC as JPEG, with a folder picker; re-export adds only what is new (design and mock-ups in [phase13.md](phase13.md)) | **Built, check open**: `export.rs`, local-only API, dialog with folder picker, collection button (C), settings, guide; real-hardware check (USB stick, Windows, macOS) open |
 | 14 | Backup comparison views: the backup check's lists get a "Show photos" button (Manage drives). "Only on backup" (on the backup) and "Only on original" (on the drive it copies) are filter chips on that drive's own timeline (`compare=backup|original`, worked out in `serve::forward` from the two indexes, offered in the search as "only on", "nur auf", "backup"); "different on the backup" opens the timeline of both drives of the pair in path order, so the two versions of a photo sit side by side, each with an Original or Backup badge (`/api/all/timeline?compare=different`). A chip a drive cannot show (a drive that is not half of a pair, All drives, nothing to show) is dropped with a note. Read only: nothing is written to either drive. Also: one drawn open-folder icon instead of the folder emoji; the backup card's progress bar had the header's `.bar` class and was drawn at the top of the window | **Done except the real-hardware run**; guide text updated, guide screenshots not regenerated yet |
-| 17 | Windows release by hand: a manual workflow (`release-windows.yml`, input: a tag) builds the Windows folder (`shoebox.exe`, DLLs, `Start shoebox.bat`, recognizer scripts, licences, guide) and adds `shoebox-windows.zip` to that tag's release; without a tag it only makes the zip as an artifact for testing. The automatic release stays macOS only (plan in [phase17.md](phase17.md)) | **Plan only**, nothing built; needs the Windows target in `third-party-licenses.py` first |
+| 17 | Windows release by hand: a manual workflow (`release-windows.yml`, input: a tag) builds the Windows folder (`shoebox.exe`, DLLs, `Start shoebox.bat`, recognizer scripts, licences, guide) and adds `shoebox-windows.zip` to that tag's release; without a tag it only makes the zip as an artifact for testing. The automatic release stays macOS only (plan in [phase17.md](phase17.md)) | **Plan**; built so far: the manual `windows` artifact holds `Start shoebox.bat` and `recognizer/` with the `.ps1` scripts. Needs the Windows target in `third-party-licenses.py` first |
 
 ### Phase 10: locations
 
@@ -611,7 +609,8 @@ Open:
 Phase 6 is done and checked on the real hardware on macOS (list in
 [phase6.md](phase6.md)). Still open, kept here so they are not forgotten:
 - [ ] Windows: double-click, SmartScreen, `install.ps1`, packaging of
-      `shoebox-windows/` (reviewed, not run; there is no Windows CI job).
+      `shoebox-windows/` in the release (phase 17; the manual CI artifact
+      has the starter and the recognizer scripts).
 - [ ] Linux: `Start shoebox.sh` and the file manager (the CI Linux job is off
       until v1.0).
 - [ ] Moving files between drives, a decision "keep both" for identical copies
@@ -1580,7 +1579,8 @@ it.
 
 **Windows build job (step 4).** The `windows` job in `build.yml` (started
 by hand, like Linux) builds and tests on `windows-latest` and uploads
-`shoebox-windows` (`shoebox.exe`, `heif.dll`, `libde265.dll`).
+`shoebox-windows` (`shoebox.exe`, `heif.dll`, `libde265.dll`,
+`Start shoebox.bat`, `recognizer/` with `install.ps1`).
 1. [x] libheif and libde265 with MSVC (Visual Studio generator, from Git
    Bash): DLLs with the C runtime linked in (`/MT`), and `shoebox.exe` with
    `crt-static` (`.cargo/config.toml` at the repository root: cargo reads

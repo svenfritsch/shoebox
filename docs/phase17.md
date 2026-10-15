@@ -15,8 +15,13 @@ Windows before anything is published.
 
 - `build.yml` has a `windows` job (manual only): builds and tests on
   `windows-latest`, probes, scans and verifies a small folder, uploads
-  `shoebox-windows` with `shoebox.exe`, `heif.dll` and `libde265.dll` only. No
-  `Start shoebox.bat`, no recognizer scripts, no licences, no guide, no sources.
+  `shoebox-windows` with `shoebox.exe`, `heif.dll`, `libde265.dll`,
+  `Start shoebox.bat` and `recognizer/` (`install.ps1`, `fetch-models.ps1`,
+  `recognizer.py`, `README.md`). No licences, no guide, no sources.
+  Before, the artifact had the program and the DLLs only; a `recognizer`
+  folder copied from the macOS download has no `install.ps1`, so the Control
+  Panel said the folder was not next to the program (it looks for
+  `recognizer\install.ps1` next to `shoebox.exe`).
 - The `release` job packs `shoebox-macos` only and runs
   `gh release create --prerelease` on a tag.
 - `scripts/third-party-licenses.py` knows only the two macOS targets
@@ -47,7 +52,8 @@ Windows before anything is published.
        the runner; also usable on Linux for a dry run with a fake exe): builds
        the folder above from `core/target/…/release`, `scripts/launchers`,
        `recognizer/` and the sources, from files only (no network except
-       `build-deps.sh --sources`).
+       `build-deps.sh --sources`). The `windows` job's Package step already
+       copies `Start shoebox.bat` and `recognizer/`; the script takes it over.
 3. [ ] `release-windows.yml`: inputs, tag check, checkout of the tag, build
        and tests (as the `windows` job), probe/scan/verify of the small
        folder, package, then either upload to the release or upload the

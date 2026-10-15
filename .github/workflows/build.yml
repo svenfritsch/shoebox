@@ -263,7 +263,9 @@ jobs:
   # Windows (MSVC): started by hand, like Linux, until it is part of the
   # release ("Decoders per build", step 4, in docs/plan.md). libheif and
   # libde265 are DLLs next to shoebox.exe; the C runtime is linked in, so
-  # nothing needs to be installed on the PC.
+  # nothing needs to be installed on the PC. The artifact's shoebox-windows/
+  # also holds Start shoebox.bat and recognizer/ with install.ps1, so it can be
+  # tried as is (no licences, sources or guide yet: phase 17).
   windows:
     if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
@@ -318,6 +320,17 @@ jobs:
           dist/shoebox-windows/shoebox.exe scan "$RUNNER_TEMP/lib"
           dist/shoebox-windows/shoebox.exe scan "$RUNNER_TEMP/lib"
           dist/shoebox-windows/shoebox.exe verify "$RUNNER_TEMP/lib"
+
+      # The folder as a person gets it: the double-click starter and the
+      # recognizer with the Windows installer next to shoebox.exe (the Control
+      # Panel installs add-ons only when it finds recognizer\install.ps1 there).
+      - name: Package
+        run: |
+          pkg=dist/shoebox-windows
+          cp "scripts/launchers/Start shoebox.bat" "$pkg/"
+          mkdir -p "$pkg/recognizer"
+          cp recognizer/README.md recognizer/install.ps1 recognizer/fetch-models.ps1 recognizer/recognizer.py "$pkg/recognizer/"
+          ls -R "$pkg"
 
       - uses: actions/upload-artifact@v7
         with:
