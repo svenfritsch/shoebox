@@ -1,8 +1,9 @@
 # Phase 17: the release folder, and Windows and Linux releases by hand
 
 Status: **release folder done** (macOS release, launchers, guide; from the next
-tag). **Windows and Linux by hand: built** (`release-by-hand.yml`), not run yet;
-no cloud-folder check yet. Overview in [plan.md](plan.md); the Windows build
+tag). **Windows: checked on a real PC** (2026-10-15, fixes in #125) and in the
+guide. **`release-by-hand.yml`: built**, not run on GitHub yet; Linux not tried
+on a real PC; no cloud-folder check yet. Overview in [plan.md](plan.md); the Windows build
 itself is "Decoders per build", step 4.
 
 ## Part 1: the release folder (done)
@@ -143,15 +144,16 @@ allowed**, on Windows and on macOS, whatever the cloud.
        PC with OneDrive and on a Mac with iCloud Drive.
 6. [x] `docs/plan.md`: the status row, "Decoders per build" and the Phase 6
        Windows items point here.
-7. [ ] Guide, both languages, once a Windows or Linux archive is really
-       offered ("macOS today · Linux & Windows next", Get started, the
-       SmartScreen note, `Start shoebox.bat`, `install.ps1`, the Linux start);
-       `python3 docs/guide/check.py`. The guide describes what exists, so this
-       waits for the first real Windows release. Until then the guide in those
-       archives is the macOS one.
-8. [ ] Run it: first without a tag, test the zip on a real Windows PC (start,
-       a HEIC, a scan, export, the refusal from a OneDrive folder), then with
-       a tag. The same for Linux.
+7. [x] Guide, both languages, for Windows: "macOS and Windows today · Linux
+       next", Get started (`shoebox-windows.zip`, Extract All, the folder,
+       `E:\` for a drive, no cloud-synced folder such as OneDrive,
+       `C:\shoebox`), the start with `Start shoebox.bat` and SmartScreen
+       (More info → Run anyway), the black window for the iPad PIN. Linux
+       follows once it is tried on a real PC.
+8. [ ] Run it. Windows on a real PC: [x] done on 2026-10-15 (start,
+       SmartScreen, add-on install, recognize, Show in Explorer; the fixes
+       are in #125). Open: a run of `release-by-hand.yml` with a tag; the
+       refusal from a OneDrive folder (step 5); Linux on a real PC.
 
 ### Not in this phase
 
