@@ -99,7 +99,10 @@ try {
         # Ready-made wheels only: never compile OpenCV from source.
         $code = Invoke-Native $python @('-m', 'pip', 'install', '--no-cache-dir', '--disable-pip-version-check', '--progress-bar', 'off', '--only-binary', ':all:', 'opencv-python-headless', 'numpy')
         if ($code -ne 0) { Fail 'pip could not install OpenCV; check the internet connection and try again' }
-        $code = Invoke-Native $python @('-c', 'import cv2, numpy; print("  OpenCV", cv2.__version__, "numpy", numpy.__version__)')
+        # Python code for -c quotes its strings with '' (one ' in PowerShell), never
+        # with double quotes: Windows PowerShell 5.1 drops those inside an argument
+        # to a program, and Python then gets only `import cv2, numpy; print(`.
+        $code = Invoke-Native $python @('-c', 'import cv2, numpy; print(''  OpenCV'', cv2.__version__, ''numpy'', numpy.__version__)')
         if ($code -ne 0) {
             Fail 'OpenCV does not start. Install "Microsoft Visual C++ Redistributable 2015-2022 (x64)" from microsoft.com and try again'
         }
@@ -113,7 +116,7 @@ try {
         $onnx = $LASTEXITCODE
         $ErrorActionPreference = $previous
         if ($onnx -eq 0) {
-            [void](Invoke-Native $python @('-c', 'import onnxruntime; print("  onnxruntime", onnxruntime.__version__)'))
+            [void](Invoke-Native $python @('-c', 'import onnxruntime; print(''  onnxruntime'', onnxruntime.__version__)'))
         } else {
             Write-Host '  none for this system; OpenCV runs the pet models instead'
         }
@@ -131,11 +134,11 @@ try {
             $pipBase = @('-m', 'pip', 'install', '--no-cache-dir', '--disable-pip-version-check', '--progress-bar', 'off', '--only-binary', ':all:')
             $code = Invoke-Native $python ($pipBase + @('onnxruntime', 'pyclipper', 'shapely', 'pyyaml', 'six', 'tqdm', 'pillow'))
             if ($code -eq 0) { $code = Invoke-Native $python ($pipBase + @('--no-deps', 'rapidocr-onnxruntime')) }
-            if ($code -eq 0) { $code = Invoke-Native $python @('-c', 'import onnxruntime, rapidocr_onnxruntime; print("  rapidocr, onnxruntime", onnxruntime.__version__)') }
+            if ($code -eq 0) { $code = Invoke-Native $python @('-c', 'import onnxruntime, rapidocr_onnxruntime; print(''  rapidocr, onnxruntime'', onnxruntime.__version__)') }
             if ($code -eq 0) {
                 $previous = $ErrorActionPreference
                 $ErrorActionPreference = 'Continue'
-                $textModels = (& $python -c 'import os, rapidocr_onnxruntime as r; print(os.path.join(os.path.dirname(r.__file__), "models"))' 2>$null | Select-Object -First 1)
+                $textModels = (& $python -c 'import os, rapidocr_onnxruntime as r; print(os.path.join(os.path.dirname(r.__file__), ''models''))' 2>$null | Select-Object -First 1)
                 $ErrorActionPreference = $previous
                 $textArg = '--text'
             } else {

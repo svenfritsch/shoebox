@@ -984,6 +984,13 @@ fn windows_installer_matches_the_shell_one() {
     let (install_sh, install_ps1) = (read("install.sh"), read("install.ps1"));
     assert!(install_sh.contains("PBS_TAG=20251014") && install_ps1.contains("$PbsTag = '20251014'"));
     assert!(install_sh.contains("PY=3.12.12") && install_ps1.contains("$Py = '3.12.12'"));
+    // Windows PowerShell 5.1 drops the double quotes inside an argument to a
+    // program, so Python code given to `-c` quotes its strings with '' only.
+    let with_code: Vec<&str> = install_ps1.lines().filter(|l| l.contains("'-c'") || l.contains(" -c '")).collect();
+    assert_eq!(with_code.len(), 4);
+    for line in with_code {
+        assert!(!line.contains('"'), "a double quote in Python code for -c: {line}");
+    }
 }
 
 // ---------------------------------------------------------------- text (phase 9)

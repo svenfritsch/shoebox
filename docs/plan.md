@@ -1336,6 +1336,12 @@ Open:
 
 - **Spaces in paths.** The repo may live under a path with spaces.
   `build-deps.sh` uses bash arrays for CMake args; never unquote paths.
+- **No double quotes in arguments from Windows PowerShell 5.1.** It drops
+  the `"` inside an argument it passes to a program, so
+  `python -c 'print("x")'` reached Python as `print(x)` split in two (on the
+  first PC: "SyntaxError: '(' was never closed", reported as "OpenCV does not
+  start"). Python code for `-c` in `install.ps1` quotes with `''`;
+  `core/tests/recognize.rs` checks it.
 - **No pkg-config for libheif.** Homebrew's libheif leaked into the link once.
   `scripts/build.sh` sets `SYSTEM_DEPS_LIBHEIF_NO_PKG_CONFIG` and points
   `SEARCH_NATIVE`/`LIB`/`INCLUDE` at our build; `build-deps.sh` gives
