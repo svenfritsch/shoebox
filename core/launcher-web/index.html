@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="launcher.title">shoebox launcher</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='5' width='14' height='10' rx='1' fill='%23b07d4f'/%3E%3Crect x='0' y='2' width='16' height='4' rx='1' fill='%23d9a066'/%3E%3Ccircle cx='11.2' cy='11.2' r='4.3' fill='%23fff'/%3E%3Cg transform='translate%2811.2 11.2%29' fill='%233b3b3b'%3E%3Ccircle r='2.6'/%3E%3Crect x='-.7' y='-3.95' width='1.4' height='2' transform='rotate%280%29'/%3E%3Crect x='-.7' y='-3.95' width='1.4' height='2' transform='rotate%2845%29'/%3E%3Crect x='-.7' y='-3.95' width='1.4' height='2' transform='rotate%2890%29'/%3E%3Crect x='-.7' y='-3.95' width='1.4' height='2' transform='rotate%28135%29'/%3E%3Crect x='-.7' y='-3.95' width='1.4' height='2' transform='rotate%28180%29'/%3E%3Crect x='-.7' y='-3.95' width='1.4' height='2' transform='rotate%28225%29'/%3E%3Crect x='-.7' y='-3.95' width='1.4' height='2' transform='rotate%28270%29'/%3E%3Crect x='-.7' y='-3.95' width='1.4' height='2' transform='rotate%28315%29'/%3E%3Ccircle r='1' fill='%23fff'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='5' width='14' height='10' rx='1' fill='%23b07d4f'/%3E%3Crect x='0' y='2' width='16' height='4' rx='1' fill='%23d9a066'/%3E%3Cg transform='translate%2810.8 10.6%29' fill='%232f2f2f'%3E%3Ccircle r='2.7'/%3E%3Crect x='-.7' y='-3.9' width='1.4' height='2' transform='rotate%280%29'/%3E%3Crect x='-.7' y='-3.9' width='1.4' height='2' transform='rotate%2845%29'/%3E%3Crect x='-.7' y='-3.9' width='1.4' height='2' transform='rotate%2890%29'/%3E%3Crect x='-.7' y='-3.9' width='1.4' height='2' transform='rotate%28135%29'/%3E%3Crect x='-.7' y='-3.9' width='1.4' height='2' transform='rotate%28180%29'/%3E%3Crect x='-.7' y='-3.9' width='1.4' height='2' transform='rotate%28225%29'/%3E%3Crect x='-.7' y='-3.9' width='1.4' height='2' transform='rotate%28270%29'/%3E%3Crect x='-.7' y='-3.9' width='1.4' height='2' transform='rotate%28315%29'/%3E%3Ccircle r='1.05' fill='%23b07d4f'/%3E%3C/g%3E%3C/svg%3E">
 <link rel="stylesheet" href="launcher.css">
 <script src="i18n/i18n.js"></script>
 </head>
@@ -49,40 +49,48 @@
   <fieldset id="controls">
   <section class="card">
     <h2 data-i18n="launcher.step1">1 · Where are your photos?</h2>
-    <label for="root" data-i18n="launcher.root.label">Drives or photo folders (type a path, press Enter to add it)</label>
-    <div class="rootrow">
-      <div class="chipbox" id="chipbox">
-        <ul id="path-chips" data-i18n-aria-label="launcher.root.chosen" aria-label="Chosen folders"></ul>
-        <input id="root" list="drives" data-i18n-placeholder="launcher.root.placeholder" placeholder="/Volumes/MyDrive" autocomplete="off" spellcheck="false">
+    <div class="tabs" id="libs-tabs" role="tablist">
+      <button type="button" role="tab" id="tab-folders" data-tab="folders" aria-selected="true" aria-controls="panel-folders" data-i18n="launcher.tab.folders">Photo folders</button>
+      <button type="button" role="tab" id="tab-add" data-tab="add" aria-selected="false" aria-controls="panel-add" data-i18n="launcher.tab.add">Add a folder or server</button>
+      <button type="button" role="tab" id="tab-manage" data-tab="manage" aria-selected="false" aria-controls="panel-manage" hidden></button>
+    </div>
+
+    <div id="panel-folders" role="tabpanel" aria-labelledby="tab-folders">
+      <label for="root" data-i18n="launcher.root.label">Drives or photo folders (type a path, press Enter to add it)</label>
+      <div class="rootrow">
+        <div class="chipbox" id="chipbox">
+          <ul id="path-chips" data-i18n-aria-label="launcher.root.chosen" aria-label="Chosen folders"></ul>
+          <input id="root" list="drives" data-i18n-placeholder="launcher.root.placeholder" placeholder="/Volumes/MyDrive" autocomplete="off" spellcheck="false">
+        </div>
+        <button type="button" id="root-pick" class="quiet" data-i18n="launcher.pick.button">Choose…</button>
       </div>
-      <button type="button" id="root-pick" class="quiet" data-i18n="launcher.pick.button">Choose…</button>
-    </div>
-    <datalist id="drives"></datalist>
-    <p class="hint" data-i18n="launcher.drives.hint">Detected drives, click to add:</p>
-    <div id="drive-chips" class="chips" data-i18n-aria-label="launcher.drives.detected" aria-label="Detected drives"></div>
-    <p id="root-hint" class="hint"></p>
+      <datalist id="drives"></datalist>
+      <p class="hint" data-i18n="launcher.drives.hint">Detected drives, click to add:</p>
+      <div id="drive-chips" class="chips" data-i18n-aria-label="launcher.drives.detected" aria-label="Detected drives"></div>
+      <p id="root-hint" class="hint"></p>
 
-    <div class="row-head" id="libs-head">
-      <p class="hint lbl"><span data-i18n="launcher.libs.title">Libraries kept next to the program</span> <i class="info" tabindex="0" role="img" data-i18n-title="launcher.libs.info" data-i18n-aria-label="launcher.libs.info">i</i></p>
-      <button type="button" id="libs-manage" class="quiet" data-i18n="launcher.libs.manage">Manage…</button>
+      <div id="libs-head" hidden>
+        <p class="hint lbl"><span data-i18n="launcher.libs.title">Libraries kept next to the program</span> <i class="info" tabindex="0" role="img" data-i18n-title="launcher.libs.info" data-i18n-aria-label="launcher.libs.info">i</i></p>
+        <div id="lib-chips" class="chips"></div>
+      </div>
+      <p id="libs-none" class="hint" data-i18n="launcher.libs.hint_none">Photos on a server, or a folder you only want to look at? Use the tab “Add a folder or server”.</p>
     </div>
-    <div id="lib-chips" class="chips"></div>
 
-    <div id="add-card" class="sheet" hidden>
-      <h3 data-i18n="launcher.libs.add.title">Add a folder or server</h3>
-      <div class="field"><label for="add-root" data-i18n="launcher.libs.add.folder">Folder</label>
+    <div id="panel-add" role="tabpanel" aria-labelledby="tab-add" hidden>
+      <div class="field first"><label for="add-root" data-i18n="launcher.libs.add.folder">Folder</label>
         <div class="rootrow"><input id="add-root" data-i18n-placeholder="launcher.libs.add.folder_ph" placeholder="Path of the folder or server share" autocomplete="off" spellcheck="false"><button type="button" id="add-pick" class="quiet" data-i18n="launcher.pick.button">Choose…</button></div></div>
       <div class="field"><label data-i18n="launcher.libs.add.keep">Where should the index be kept?</label>
         <label class="choice on" id="choice-drive"><input type="radio" name="where" value="drive" checked><div><b data-i18n="launcher.libs.add.on_drive">On the drive (the usual way)</b><span data-i18n="launcher.libs.add.on_drive.desc"></span></div></label>
         <label class="choice" id="choice-separate"><input type="radio" name="where" value="separate"><div><b data-i18n="launcher.libs.add.separate">Separate (next to the program)</b><span id="add-separate-desc"></span></div></label></div>
       <div class="field" id="add-name-field" hidden><label for="add-name" data-i18n="launcher.libs.add.name">Name in shoebox</label>
         <input id="add-name" autocomplete="off" spellcheck="false"><p class="hint" data-i18n="launcher.libs.add.name_hint"></p></div>
+      <p class="note warn" id="add-unwritable" hidden></p>
       <p class="note" id="add-note" data-i18n="launcher.libs.add.note" hidden></p>
       <p class="error" id="add-error" hidden></p>
       <div class="btnrow"><button type="button" id="add-cancel" data-i18n="launcher.libs.cancel">Cancel</button><button type="button" id="add-go" class="primary" data-i18n="launcher.libs.add.go">Add</button></div>
     </div>
 
-    <div id="manage-card" class="sheet" hidden></div>
+    <div id="panel-manage" role="tabpanel" aria-labelledby="tab-manage" hidden></div>
   </section>
 
   </fieldset>

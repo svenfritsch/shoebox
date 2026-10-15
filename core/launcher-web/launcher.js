@@ -423,9 +423,41 @@ function renderLibs() {
     b.appendChild(sepBadge(l.name));
     box.appendChild(b);
   });
-  box.appendChild(button(tr('launcher.libs.add'), 'quiet', openAdd));
-  if (!$('manage-card').hidden) renderManage();
+  $('libs-head').hidden = !libs.length;
+  $('libs-none').hidden = libs.length > 0;
+  renderLibTabs();
+  renderManage();
+  syncWritable();
 }
+
+// ---- tabs: Photo folders, Add a folder or server, and (once there is a library) Manage libraries
+
+var libTab = 'folders';
+var libsReloadedFor = -1;   // the job whose end already refreshed the list
+
+function showLibTab(name) {
+  if (name === 'manage' && !libs.length) name = 'folders';
+  libTab = name;
+  ['folders', 'add', 'manage'].forEach(function (t) {
+    $('panel-' + t).hidden = t !== name;
+    $('tab-' + t).setAttribute('aria-selected', t === name ? 'true' : 'false');
+  });
+}
+
+function renderLibTabs() {
+  var m = $('tab-manage');
+  m.hidden = !libs.length;
+  m.textContent = tr('launcher.tab.manage', { n: libs.length });
+  if (libTab === 'manage' && !libs.length) showLibTab('folders');
+}
+
+document.querySelectorAll('#libs-tabs button').forEach(function (b) {
+  b.onclick = function () {
+    showLibTab(b.dataset.tab);
+    if (b.dataset.tab === 'add') $('add-root').focus();
+    if (b.dataset.tab === 'manage') loadLibs(true);
+  };
+});
 
 // ---- dialogs: everything else is greyed out behind them
 
@@ -538,22 +570,25 @@ function baseName(p) {
 
 var addNameTouched = false;
 
-function openAdd() {
-  $('manage-card').hidden = true;
-  $('add-card').hidden = false;
+// "Separate" needs a program folder that can be written to; otherwise it is
+// greyed out with the reason.
+function syncWritable() {
+  var ok = libsInfo.writable;
+  document.querySelector('input[name=where][value=separate]').disabled = !ok;
+  $('choice-separate').classList.toggle('disabled', !ok);
+  $('add-separate-desc').textContent = tr('launcher.libs.add.separate.desc', { dir: libsDir() });
+  $('add-unwritable').hidden = ok;
+  $('add-unwritable').textContent = ok ? '' : tr('launcher.libs.add.unwritable', { dir: libsInfo.dir || '' });
+  if (!ok && chosenWhere() === 'separate') { document.querySelector('input[name=where][value=drive]').checked = true; syncAdd(); }
+}
+
+function resetAdd() {
   $('add-root').value = '';
   $('add-name').value = '';
   addNameTouched = false;
   $('add-error').hidden = true;
-  var ok = libsInfo.writable;
-  var radio = document.querySelector('input[name=where][value=separate]');
-  radio.disabled = !ok;
-  $('choice-separate').classList.toggle('disabled', !ok);
   document.querySelector('input[name=where][value=drive]').checked = true;
-  $('add-separate-desc').textContent = tr('launcher.libs.add.separate.desc', { dir: libsDir() });
-  if (!ok) { $('add-error').hidden = false; $('add-error').textContent = tr('launcher.libs.add.unwritable', { dir: libsInfo.dir || '' }); }
   syncAdd();
-  $('add-root').focus();
 }
 
 function chosenWhere() {
@@ -574,27 +609,19 @@ $('add-root').oninput = syncAdd;
 $('add-name').oninput = function () { addNameTouched = true; };
 $('add-pick').onclick = function () { pickFolder($('add-root').value, function (p) { $('add-root').value = p; syncAdd(); }); };
 $('root-pick').onclick = function () { pickFolder($('root').value, function (p) { addPath(p); }); };
-$('add-cancel').onclick = function () { $('add-card').hidden = true; };
+$('add-cancel').onclick = function () { resetAdd(); showLibTab('folders'); };
 $('add-go').onclick = function () {
   var root = $('add-root').value.trim();
   if (!root) { $('add-root').focus(); return; }
-  if (chosenWhere() === 'drive') { addPath(root); $('add-card').hidden = true; return; }
+  if (chosenWhere() === 'drive') { addPath(root); resetAdd(); showLibTab('folders'); return; }
   api('/api/libraries', { root: root, name: $('add-name').value.trim() }).then(function (d) {
-    $('add-card').hidden = true;
     addPath(d.root);
-    return loadLibs();
+    resetAdd();
+    return loadLibs().then(function () { showLibTab('folders'); });
   }).catch(function (e) { $('add-error').hidden = false; $('add-error').textContent = e.message; });
 };
 
 // ---- manage
-
-$('libs-manage').onclick = function () {
-  var open = $('manage-card').hidden;
-  $('add-card').hidden = true;
-  $('manage-card').hidden = !open;
-  libEdit = null;
-  if (open) { loadLibs().then(renderManage); renderManage(); }
-};
 
 function stateText(l) {
   if (!l.online) return tr('launcher.libs.offline');
@@ -609,15 +636,10 @@ function libCall(path, body, done) {
 }
 
 function renderManage() {
-  var box = $('manage-card');
-  if (box.hidden) return;
+  var box = $('panel-manage');
   box.textContent = '';
-  var head = el('div', 'title-row');
-  head.appendChild(el('h3', '', tr('launcher.libs.title')));
-  head.appendChild(button(tr('launcher.libs.close'), 'quiet', function () { box.hidden = true; libEdit = null; }));
-  box.appendChild(head);
-  box.appendChild(el('p', 'hint', tr('launcher.libs.where', { dir: libsDir() })));
-  if (!libs.length) { box.appendChild(el('p', 'hint', tr('launcher.libs.none'))); return; }
+  if (!libs.length) return;
+  box.appendChild(el('p', 'hint first', tr('launcher.libs.where', { dir: libsDir() })));
   var ul = el('ul', 'libs');
   libs.forEach(function (l) {
     var li = el('li');
@@ -787,6 +809,8 @@ function render(job) {
   showForget(job);
   if (job.kind === 'backup' && !job.running && reloadedFor !== job.id) { reloadedFor = job.id; loadConfig(); }
   if (job.kind === 'install_addons' && !job.running && addonsFor !== job.id) { addonsFor = job.id; loadAddons(); }
+  // A finished scan or recognition changes the photo counts of the libraries.
+  if (!job.running && libsReloadedFor !== job.id) { libsReloadedFor = job.id; loadLibs(true); }
   $('progress-card').hidden = false;
   var name = kindName(job.kind);
   busy = job.running;

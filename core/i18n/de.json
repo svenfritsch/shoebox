@@ -1018,10 +1018,6 @@
   "launcher.libs.info": "Separate Bibliotheken: Der Ordner .shoebox wird nicht im Laufwerk oder Ordner angelegt. Stattdessen entsteht neben dem Programm ein Ordner „libraries“, in dem der Index jeder Bibliothek liegt. In deinen Fotoordner wird nichts geschrieben; die Fotos darin können nur angesehen, nie verschoben, umbenannt oder gelöscht werden.",
   "launcher.libs.badge": "separat",
   "launcher.libs.badge.title": "{name}: Der Index liegt neben dem Programm, in diesen Ordner wird nichts geschrieben",
-  "launcher.libs.manage": "Verwalten…",
-  "launcher.libs.close": "Schließen",
-  "launcher.libs.add": "+ Ordner oder Server hinzufügen…",
-  "launcher.libs.none": "Noch keine. Füge einen Ordner oder Server hinzu, dessen Index neben dem Programm liegen soll.",
   "launcher.libs.where": "Ihre Indizes liegen in {dir}. shoebox liest deine Fotoordner nur und ändert nichts darin.",
   "launcher.libs.online": "verbunden",
   "launcher.libs.photos.one": "{n} Foto",
@@ -1048,7 +1044,6 @@
   "launcher.libs.delete.title": "Den Index von „{name}“ löschen?",
   "launcher.libs.delete.text": "Die Fotos werden nicht angefasst. Was shoebox über sie weiß, wird von diesem Computer gelöscht: die Liste der Fotos, die Vorschaubilder und alles, was du in shoebox hinzugefügt hast, etwa Tags, Datumsangaben, Orte sowie benannte Personen und Haustiere.",
   "launcher.libs.delete.go": "Index löschen",
-  "launcher.libs.add.title": "Ordner oder Server hinzufügen",
   "launcher.libs.add.folder": "Ordner",
   "launcher.libs.add.folder_ph": "Pfad des Ordners oder der Server-Freigabe",
   "launcher.libs.add.name": "Name in shoebox",
@@ -1064,5 +1059,9 @@
   "launcher.pick.button": "Auswählen…",
   "launcher.pick.title": "Ordner auswählen",
   "launcher.chip.edit": "Doppelklicken, um den Pfad zu ändern",
-  "settings.allow_trash_readonly": "Diese Bibliothek ist schreibgeschützt (ihr Index liegt neben dem Programm), deshalb können Fotos nicht in den Papierkorb verschoben werden."
+  "settings.allow_trash_readonly": "Diese Bibliothek ist schreibgeschützt (ihr Index liegt neben dem Programm), deshalb können Fotos nicht in den Papierkorb verschoben werden.",
+  "launcher.tab.folders": "Fotoordner",
+  "launcher.tab.add": "Ordner oder Server hinzufügen",
+  "launcher.tab.manage": "Bibliotheken verwalten ({n})",
+  "launcher.libs.hint_none": "Fotos auf einem Server oder ein Ordner, den du nur ansehen willst? Nimm den Reiter „Ordner oder Server hinzufügen“."
 }

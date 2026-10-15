@@ -1018,10 +1018,6 @@
   "launcher.libs.info": "Separate libraries: the .shoebox folder is not created inside the drive or folder. Instead, a libraries folder is added next to the program, and the index of each library is kept there. Nothing is written into your photo folder; its photos can only be looked at, never moved, renamed or deleted.",
   "launcher.libs.badge": "separate",
   "launcher.libs.badge.title": "{name}: the index is kept next to the program, nothing is written into this folder",
-  "launcher.libs.manage": "Manage…",
-  "launcher.libs.close": "Close",
-  "launcher.libs.add": "+ Add a folder or server…",
-  "launcher.libs.none": "None yet. Add a folder or a server to keep its index next to the program.",
   "launcher.libs.where": "Their indexes are kept in {dir}. shoebox only reads your photo folders and never changes anything in them.",
   "launcher.libs.online": "connected",
   "launcher.libs.photos.one": "{n} photo",
@@ -1048,7 +1044,6 @@
   "launcher.libs.delete.title": "Delete the index of “{name}”?",
   "launcher.libs.delete.text": "The photos are not touched. What shoebox knows about them is deleted from this computer: the list of photos, previews and everything you added in shoebox, such as tags, dates, places, and people and pets you named.",
   "launcher.libs.delete.go": "Delete the index",
-  "launcher.libs.add.title": "Add a folder or server",
   "launcher.libs.add.folder": "Folder",
   "launcher.libs.add.folder_ph": "Path of the folder or server share",
   "launcher.libs.add.name": "Name in shoebox",
@@ -1064,5 +1059,9 @@
   "launcher.pick.button": "Choose…",
   "launcher.pick.title": "Choose a folder",
   "launcher.chip.edit": "Double-click to change the path",
-  "settings.allow_trash_readonly": "This library is read-only (its index is kept next to the program), so photos cannot be moved to the trash."
+  "settings.allow_trash_readonly": "This library is read-only (its index is kept next to the program), so photos cannot be moved to the trash.",
+  "launcher.tab.folders": "Photo folders",
+  "launcher.tab.add": "Add a folder or server",
+  "launcher.tab.manage": "Manage libraries ({n})",
+  "launcher.libs.hint_none": "Photos on a server, or a folder you only want to look at? Use the tab “Add a folder or server”."
 }
