@@ -25,11 +25,12 @@ OUT = ROOT / "THIRD-PARTY-LICENSES.txt"
 LGPL = ROOT / "scripts" / "licenses" / "LGPL-3.0.txt"
 
 
-TARGETS = ["x86_64-apple-darwin", "aarch64-apple-darwin"]  # what the release ships
+# What the releases ship: macOS (the tag release), Windows and Linux (release-by-hand.yml).
+TARGETS = ["x86_64-apple-darwin", "aarch64-apple-darwin", "x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"]
 
 
 def crates():
-    """The crates built into the macOS binaries (normal dependencies only)."""
+    """The crates built into the binaries of every target (normal dependencies only)."""
     found = {}
     for target in TARGETS:
         meta = json.loads(subprocess.run(
@@ -92,10 +93,11 @@ def main():
       "Both are licensed under the GNU Lesser General Public License, version 3 (text below).\n"
       "They are built from the unmodified upstream source releases by scripts/build-deps.sh and\n"
       "ship as separate files next to the program: libheif.1.dylib and libde265.0.dylib on\n"
-      "macOS (libheif.so.1 and libde265.so.0 on Linux). The program loads them from its own\n"
+      "macOS, heif.dll and libde265.dll on Windows, libheif.so.1 and libde265.so.0 on Linux.\n"
+      "The program loads them from its own\n"
       "folder, so you can replace them with a build of your own, modified or not (LGPL section\n"
       "4(d)): build it as a shared library with the same interface and put it there under the\n"
-      "same file name. Their source code is in the folder sources/ of the download; the author\n"
+      "same file name. Their source code is in the folder program/sources/ of the download; the author\n"
       "also sends it on request.\n"
       "Copyright (c) 2013-2026 Struktur AG and Dirk Farin and the other contributors of the projects.\n\n")
     w(LGPL.read_text().strip() + "\n")
@@ -104,7 +106,7 @@ def main():
     for text, labels in sorted(groups.items(), key=lambda kv: kv[1][0]):
         w("=" * 78 + "\n" + "\n".join(labels) + "\n" + "-" * 78 + "\n" + text + "\n\n")
     w("\n4. Downloaded on request, not part of the archive\n" + "-" * 51 + "\n")
-    w("The optional recognizer (recognizer/install.sh, fetch-models.sh) downloads Python\n"
+    w("The optional recognizer (recognizer/install.sh and fetch-models.sh, on Windows the .ps1) downloads Python\n"
       "(python-build-standalone), OpenCV and the models from the OpenCV Model Zoo\n"
       "(github.com/opencv/opencv_zoo) onto your drive. Each comes under its own licence,\n"
       "which you find with the download (the model folders of opencv_zoo carry a LICENSE).\n")

@@ -1,10 +1,9 @@
 @echo off
-rem Windows: double-click. Keep this file next to shoebox.exe (the downloaded folder).
+rem Windows: double-click. Keep this file next to the folder "program" (the downloaded folder).
 set "HERE=%~dp0"
-set "BIN=%HERE%shoebox.exe"
-if not exist "%BIN%" set "BIN=%HERE%.shoebox\bin\shoebox.exe"
+set "BIN=%HERE%program\shoebox.exe"
 if not exist "%BIN%" (
-    echo shoebox.exe was not found next to this file.
+    echo shoebox.exe was not found in the folder "program" next to this file.
     pause
     exit /b 1
 )

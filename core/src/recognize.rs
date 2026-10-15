@@ -391,16 +391,13 @@ pub fn worker_dirs() -> Vec<PathBuf> {
     std::env::current_exe().map(|exe| worker_dirs_of(&exe)).unwrap_or_default()
 }
 
-/// The recognizer folders that belong to the program `exe`, best first:
-/// `recognizer/` next to it (the downloaded folder, on the computer or copied
-/// to a drive), and for a program in the older `<drive>/.shoebox/bin/` layout
-/// that drive's `.shoebox/recognizer/`. Never the `.shoebox/` of a drive the
-/// program does not run from: a drive from somebody else could bring a Python
-/// of its own, which would run as the user when they press Recognize.
+/// The recognizer folder that belongs to the program `exe`: `recognizer/` next
+/// to it (in the downloaded folder's `program/`, on the computer or copied to a
+/// drive). Never the `.shoebox/` of a drive: a drive from somebody else could
+/// bring a Python of its own, which would run as the user when they press
+/// Recognize.
 pub fn worker_dirs_of(exe: &Path) -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = exe.parent().map(|bin| bin.join("recognizer")).into_iter().collect();
-    dirs.extend(crate::launcher::drive_of_binary(exe).map(|drive| drive.join(db::DIR).join("recognizer")));
-    dirs
+    exe.parent().map(|bin| bin.join("recognizer")).into_iter().collect()
 }
 
 const FACE_MODELS: [&str; 2] = ["face_detection_yunet_2023mar.onnx", "face_recognition_sface_2021dec.onnx"];
@@ -2333,16 +2330,20 @@ mod tests {
     #[test]
     fn the_recognizer_comes_only_from_the_program() {
         // Downloaded folder, on the computer or copied to a drive: its recognizer/ only.
-        assert_eq!(worker_dirs_of(Path::new("/Users/a/shoebox-macos/shoebox")), [PathBuf::from("/Users/a/shoebox-macos/recognizer")]);
         assert_eq!(
-            worker_dirs_of(Path::new("/Volumes/Fotos/shoebox-macos/shoebox")),
-            [PathBuf::from("/Volumes/Fotos/shoebox-macos/recognizer")],
+            worker_dirs_of(Path::new("/Users/a/shoebox-macos/program/shoebox")),
+            [PathBuf::from("/Users/a/shoebox-macos/program/recognizer")]
+        );
+        assert_eq!(
+            worker_dirs_of(Path::new("/Volumes/Fotos/shoebox-macos/program/shoebox")),
+            [PathBuf::from("/Volumes/Fotos/shoebox-macos/program/recognizer")],
             "never the drive's own .shoebox/recognizer"
         );
-        // The older layout: the program is inside the drive's .shoebox/bin/.
+        // A program left in the drive's .shoebox/bin/ (an old layout) gets no
+        // other folder either.
         assert_eq!(
             worker_dirs_of(Path::new("/Volumes/Fotos/.shoebox/bin/shoebox-macos")),
-            [PathBuf::from("/Volumes/Fotos/.shoebox/bin/recognizer"), PathBuf::from("/Volumes/Fotos/.shoebox/recognizer")]
+            [PathBuf::from("/Volumes/Fotos/.shoebox/bin/recognizer")]
         );
     }
 

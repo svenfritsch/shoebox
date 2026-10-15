@@ -187,13 +187,6 @@ fn the_photo_app_starts_only_when_asked() {
 }
 
 #[test]
-fn the_drive_is_found_from_where_the_binary_sits() {
-    let exe = Path::new("/Volumes/Fotos/.shoebox/bin/shoebox-macos");
-    assert_eq!(launcher::drive_of_binary(exe).as_deref(), Some(Path::new("/Volumes/Fotos")));
-    assert_eq!(launcher::drive_of_binary(Path::new("/usr/local/bin/shoebox")), None);
-}
-
-#[test]
 fn several_folders_run_one_after_the_other_with_a_result_each() {
     let _turn = serial();
     let a = Library::new("launcher-many-a");

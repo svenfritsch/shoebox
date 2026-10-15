@@ -6,9 +6,9 @@ name: build
 # Pull requests build arm64 only; main, tags and manual runs also build x86_64
 # (the old Intel MacBook), the universal binary and run it under Rosetta 2.
 # A pull request that changes only docs (docs/**, *.md) skips both: skipped
-# jobs count as passed for required checks. Linux runs only when started by
-# hand (Actions → build → Run workflow); it is the one job that tests the real
-# recognizer.
+# jobs count as passed for required checks. Windows and Linux are built only
+# by hand, each on its own, in release-by-hand.yml (which can add them to a
+# release); the Linux run is the one that tests the real recognizer.
 #
 # Compiled dependencies are cached per job by Swatinem/rust-cache; only runs
 # on main save the cache, pull requests start from main's. The C libraries
@@ -175,7 +175,7 @@ jobs:
             archs="arm64 x86_64"
           fi
           for arch in $archs; do
-            arch -$arch dist/shoebox-macos probe "$RUNNER_TEMP/fixtures" --report dist/probe-$arch.json
+            arch -$arch dist/shoebox-macos probe "$RUNNER_TEMP/fixtures" --report "$RUNNER_TEMP/probe-$arch.json"
             rm -rf "$RUNNER_TEMP/lib-$arch" && cp -R "$RUNNER_TEMP/fixtures" "$RUNNER_TEMP/lib-$arch"
             arch -$arch dist/shoebox-macos scan "$RUNNER_TEMP/lib-$arch"
             arch -$arch dist/shoebox-macos scan "$RUNNER_TEMP/lib-$arch"
@@ -187,157 +187,29 @@ jobs:
           name: shoebox-macos
           path: dist/
 
-  # Off until v1.0 unless started by hand; then also add it back to the
-  # release job below.
-  linux:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ffmpeg libheif-examples libheif-plugin-x265 libimage-exiftool-perl
-
-      - name: Rust toolchain
-        run: rustup toolchain install stable --profile minimal
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: core
-          save-if: false
-
-      - name: Cache static deps
-        uses: actions/cache@v6
-        with:
-          path: .deps
-          key: deps-linux-${{ hashFiles('scripts/build-deps.sh') }}
-
-      - name: Build
-        run: scripts/build.sh x86_64-unknown-linux-gnu
-
-      - name: Fixtures
-        run: scripts/make-fixtures.sh "$RUNNER_TEMP/fixtures"
-
-      # The real recognizer (OpenCV, models) for its own tests and for the
-      # Rust test that runs it under the guard; a photo of a face from the
-      # OpenCV samples checks detection and embeddings.
-      - name: Recognizer
-        run: |
-          python3 -m venv "$RUNNER_TEMP/venv"
-          "$RUNNER_TEMP/venv/bin/pip" install --quiet opencv-python-headless numpy
-          recognizer/fetch-models.sh
-          curl -fsSL -o "$RUNNER_TEMP/face.jpg" https://raw.githubusercontent.com/opencv/opencv/4.x/samples/data/messi5.jpg
-          # A dog (Darknet's sample) checks the pets task.
-          curl -fsSL -o "$RUNNER_TEMP/dog.jpg" https://raw.githubusercontent.com/pjreddie/darknet/master/data/dog.jpg
-          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
-          SHOEBOX_TEST_FACE="$RUNNER_TEMP/face.jpg" SHOEBOX_TEST_PET="$RUNNER_TEMP/dog.jpg" \
-            "$RUNNER_TEMP/venv/bin/python" -m unittest -v recognizer/test_recognizer.py
-
-      - name: Tests
-        run: |
-          SHOEBOX_FIXTURES="$RUNNER_TEMP/fixtures" SHOEBOX_RECOGNIZER="$PWD/recognizer/recognizer.py" \
-            SHOEBOX_TEST_FACE="$RUNNER_TEMP/face.jpg" scripts/build.sh x86_64-unknown-linux-gnu test
-
-      - name: Probe, scan and verify fixtures
-        run: |
-          mkdir -p dist
-          cp core/target/x86_64-unknown-linux-gnu/release/shoebox dist/shoebox-linux
-          cp core/target/x86_64-unknown-linux-gnu/release/libheif.so.1 \
-            core/target/x86_64-unknown-linux-gnu/release/libde265.so.0 dist/
-          readelf -d dist/shoebox-linux dist/libheif.so.1 | grep -E 'NEEDED|RUNPATH|RPATH'
-          dist/shoebox-linux probe "$RUNNER_TEMP/fixtures" --report dist/probe-linux.json
-          cp -R "$RUNNER_TEMP/fixtures" "$RUNNER_TEMP/lib"
-          dist/shoebox-linux scan "$RUNNER_TEMP/lib"
-          dist/shoebox-linux scan "$RUNNER_TEMP/lib"
-          dist/shoebox-linux verify "$RUNNER_TEMP/lib"
-          dist/shoebox-linux recognize "$RUNNER_TEMP/lib" --recognizer recognizer/recognizer.py --pets
-          dist/shoebox-linux verify "$RUNNER_TEMP/lib"
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: shoebox-linux
-          path: dist/
-
-  # Windows (MSVC): started by hand, like Linux, until it is part of the
-  # release ("Decoders per build", step 4, in docs/plan.md). libheif and
-  # libde265 are DLLs next to shoebox.exe; the C runtime is linked in, so
-  # nothing needs to be installed on the PC.
-  windows:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Rust toolchain
-        run: rustup toolchain install stable --profile minimal
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: core
-          save-if: false
-
-      - name: Cache deps
-        uses: actions/cache@v6
-        with:
-          path: .deps
-          key: deps-windows-${{ hashFiles('scripts/build-deps.sh') }}
-
-      - name: Tests
-        run: scripts/build.sh x86_64-pc-windows-msvc test
-
-      - name: Build
-        run: scripts/build.sh x86_64-pc-windows-msvc
-
-      # A JPEG and a real HEIC (pillow-heif can write one) in folders with a
-      # space and an umlaut, read by the program from a folder of its own.
-      - name: Probe, scan and verify
-        run: |
-          mkdir -p "dist/shoebox-windows"
-          r=core/target/x86_64-pc-windows-msvc/release
-          cp "$r/shoebox.exe" "$r/heif.dll" "$r/libde265.dll" "dist/shoebox-windows/"
-          python -m pip install --quiet pillow pillow-heif
-          python - "$RUNNER_TEMP/lib" <<'PY'
-          import sys, pathlib
-          from PIL import Image
-          import pillow_heif
-          pillow_heif.register_heif_opener()
-          root = pathlib.Path(sys.argv[1]) / "Ferien Grüße"
-          root.mkdir(parents=True, exist_ok=True)
-          img = Image.radial_gradient("L").resize((1200, 800)).convert("RGB")
-          img.save(root / "IMG_0001.JPG", quality=90)
-          img.save(root / "IMG_0002.HEIC", quality=60)
-          PY
-          dist/shoebox-windows/shoebox.exe probe "$RUNNER_TEMP/lib" --report dist/probe-windows.json
-          # Both pictures got a preview (the HEIC through heif.dll).
-          python -c "import json,sys; r=json.load(open('dist/probe-windows.json',encoding='utf-8')); bad=[f for f in r['files'] if not f['preview']]; print(r['filesystem'], len(r['files']), 'files'); sys.exit(1 if bad or len(r['files'])!=2 else 0)"
-          dist/shoebox-windows/shoebox.exe scan "$RUNNER_TEMP/lib"
-          dist/shoebox-windows/shoebox.exe scan "$RUNNER_TEMP/lib"
-          dist/shoebox-windows/shoebox.exe verify "$RUNNER_TEMP/lib"
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: shoebox-windows
-          path: dist/
-
   # The guide (HTML, its plain-text copies and the screenshots) is made from
   # this commit by guide.yml and goes into the archive.
   guide:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     uses: ./.github/workflows/guide.yml
 
   # Push a tag like `v0.1.0-phase1` to publish the binaries as a GitHub
   # release. Workflow artifacts need a GitHub login, expire, and lose the
   # executable bit; release assets don't. The recognizer installer goes
   # along, so the drive can be set up without a clone of the repo, and so does
-  # the guide (English and German, HTML and plain text, with its screenshots)
-  # in the folder `guide` of the archive.
+  # the guide (English and German, HTML and plain text, with its screenshots).
+  #
+  # The archive holds one folder with three things on top, so a person sees
+  # what to double-click and nothing else (docs/plan.md, "The release folder";
+  # scripts/package.sh):
+  #   shoebox-macos/
+  #     Start shoebox.command
+  #     guide/
+  #     program/   shoebox, libheif/libde265, recognizer/, sources/, licences
+  # Only a pushed tag: a run started by hand on a tag would try to create a
+  # release that already exists (Windows and Linux: release-by-hand.yml).
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: [test, build, guide]
     runs-on: ubuntu-24.04
     permissions:
@@ -360,24 +232,9 @@ jobs:
           mkdir -p release
           # the notices for the libraries in the binary must match Cargo.lock and the vendored web libraries
           python3 scripts/third-party-licenses.py --check
-          for os in macos; do
-            pkg="$RUNNER_TEMP/shoebox-$os"
-            mkdir -p "$pkg/recognizer"
-            # inside its own folder per system the program is just "shoebox"
-            cp artifacts/shoebox-$os/shoebox-$os "$pkg/shoebox"
-            chmod +x "$pkg/shoebox"
-            # libheif and libde265 next to it (LGPL: replaceable), with their
-            # unmodified sources
-            cp artifacts/shoebox-$os/libheif.1.dylib artifacts/shoebox-$os/libde265.0.dylib "$pkg/"
-            scripts/build-deps.sh --sources "$pkg/sources"
-            cp LICENSE.txt THIRD-PARTY-LICENSES.txt "$pkg/"
-            cp "scripts/launchers/Start shoebox.command" "$pkg/"
-            chmod +x "$pkg/Start shoebox.command"
-            cp recognizer/README.md recognizer/install.sh recognizer/fetch-models.sh recognizer/recognizer.py "$pkg/recognizer/"
-            cp -R artifacts/guide "$pkg/guide"
-            chmod +x "$pkg/recognizer/install.sh" "$pkg/recognizer/fetch-models.sh"
-            tar -C "$RUNNER_TEMP" -czf release/shoebox-$os.tar.gz shoebox-$os
-          done
+          # the folder a person gets (scripts/package.sh, the same for every system)
+          scripts/package.sh macos artifacts/shoebox-macos artifacts/guide "$RUNNER_TEMP"
+          tar -C "$RUNNER_TEMP" -czf release/shoebox-macos.tar.gz shoebox-macos
           (cd release && sha256sum *.tar.gz > SHA256SUMS)
 
       - name: Publish

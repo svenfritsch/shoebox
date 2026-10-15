@@ -58,9 +58,13 @@ current status and next step. Update its status table when a phase moves.
   answers to a browser on this computer (`/api/export/*`, `info.export`).
   Collection tag and numbering are browser settings, like Maps.
 - The recognizer (Python) runs only from `recognizer/` next to the program
-  (`recognize::worker_dirs`; for a program in the older `<drive>/.shoebox/bin/`
-  layout also that drive's `.shoebox/recognizer/`), never from the `.shoebox/`
-  of another drive: a drive from somebody else could bring code of its own.
+  (`recognize::worker_dirs`; in the release that is `program/recognizer/`),
+  never from the `.shoebox/` of a drive: a drive from somebody else could bring
+  code of its own.
+- The release folder has only three things on top: the start file
+  (`Start shoebox.command`, `.bat`, `.sh`), `guide/` and `program/`
+  (everything else; `scripts/package.sh` makes it for every system). User data never goes into
+  `program/` (see "The release folder" in docs/plan.md).
 - Moving to the trash from the photo view and the timeline selection is off by
   default: the library setting `allow_trash` (Settings, "Allow move to trash")
   shows the trash icon and the selection button.

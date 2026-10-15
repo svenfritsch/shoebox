@@ -22,25 +22,29 @@ Plan and status: [docs/plan.md](docs/plan.md); usage per phase in `docs/`
 
 ## Install and set up
 
-Unpack `shoebox-macos.tar.gz` (one folder, `shoebox-macos/`: the program
-`shoebox`, `Start shoebox.command`, `recognizer/`, `guide/`; keep the files
-together). Then one of two ways:
+Unpack `shoebox-macos.tar.gz` (one folder, `shoebox-macos/`, with three
+things on top: `Start shoebox.command`, `guide/`, and `program/` with the
+program `shoebox`, its two libraries, `recognizer/`, `sources/` and the
+licences; keep the folder together). Always start it with
+`Start shoebox.command`: it takes the browser's quarantine mark off the files
+in `program/`, without which macOS blocks the program when it loads
+`libheif.1.dylib`. Then one of two ways:
 
 - **On the drive.** Copy the whole `shoebox-macos` folder into the top folder
   of the photo drive (`/Volumes/MyDrive/shoebox-macos/`, next to the photo
   folders) and double-click `Start shoebox.command` in it. Do not create
   `.shoebox` yourself; the first scan makes it. Add-ons go into
-  `shoebox-macos/recognizer/` on the drive and travel with it. Other systems
+  `shoebox-macos/program/recognizer/` on the drive and travel with it. Other systems
   get their own folder beside it (`shoebox-windows/`, each with its own add-ons).
 - **On the computer.** Move the whole unpacked folder somewhere permanent
   (Documents, not Downloads), double-click `Start shoebox.command`, and add
-  the drives by path in the Control Panel. Add-ons go into its `recognizer/`
-  and serve every drive.
+  the drives by path in the Control Panel. Add-ons go into its
+  `program/recognizer/` and serve every drive.
 
 The Control Panel's step 1, **Add-ons**, installs Faces (~40 MB) and/or Pets
 (~140 MB), independent of each other, on top of Python and OpenCV (~200 MB per
 kind of computer, always installed with the first add-on). Where shoebox looks
-for them: only `recognizer/` next to the program (never a drive's own
+for them: only `recognizer/` next to the program, `program/recognizer/` (never a drive's own
 `.shoebox/`, which a drive from somebody else could fill). The models are the same on every computer; Python
 and OpenCV is per kind (`recognizer/runtime/<os>-<arch>/`), so a drive moved
 to another kind of Mac needs one more install there (the models are kept).
@@ -96,9 +100,9 @@ have one on PATH):
      has native arm64 builds.
    - Linux: [johnvansickle.com/ffmpeg](https://johnvansickle.com/ffmpeg/)
      (`ffmpeg-release-amd64-static.tar.xz`).
-2. Copy the `ffmpeg` binary next to the shoebox program (the unpacked
-   `shoebox-macos/` folder, or `.shoebox/bin/` next to `shoebox-macos` /
-   `shoebox-linux` in the older layout). The name must be exactly `ffmpeg`.
+2. Copy the `ffmpeg` binary next to the shoebox program (the folder
+   `program/` in the unpacked `shoebox-macos/`). The name must be exactly
+   `ffmpeg`.
 3. On macOS, in Terminal:
 
    ```sh
@@ -131,8 +135,8 @@ docker/dev.sh sh -c 'scripts/make-fixtures.sh /target/fixtures && /target/*/rele
 
 Windows (`x86_64-pc-windows-msvc`): from Git Bash with Visual Studio and CMake,
 `scripts/build.sh x86_64-pc-windows-msvc` builds `shoebox.exe` and copies
-`heif.dll` and `libde265.dll` next to it (CI: the `windows` job, started by
-hand). The C runtime is linked in, so nothing needs to be installed on the PC.
+`heif.dll` and `libde265.dll` next to it (CI: `release-by-hand.yml`, started
+by hand with system `windows`, which can also add it to a release). The C runtime is linked in, so nothing needs to be installed on the PC.
 
 macOS binaries (universal: Intel macOS 10.13+ and Apple Silicon) are built by
 GitHub Actions (`.github/workflows/build.yml`), or locally with rustup:
