@@ -346,6 +346,95 @@ pub fn delete_index(home: &Path, name: &str) -> Result<()> {
     Ok(())
 }
 
+// ---------------------------------------------------------------- command line
+// `shoebox libraries ...` and `shoebox scan --index-next-to-program` (src/main.rs).
+
+fn cli_home() -> Result<PathBuf> {
+    home().context("the folder of the shoebox program is not known")
+}
+
+/// `shoebox scan <root> --index-next-to-program`: the root is registered first
+/// unless it already is (then its name stays and `name` is ignored).
+pub fn register_for_scan(root: &Path, name: Option<&str>) -> Result<()> {
+    let home = cli_home()?;
+    let root = root.canonicalize().with_context(|| format!("cannot open {}", root.display()))?;
+    let reg = load(&home)?;
+    if let Some(e) = reg.find_root(&root) {
+        crate::say!("{} is already a library ({}); its index is in {}", root.display(), e.name, index_dir(&home, e).display());
+        return Ok(());
+    }
+    ensure_home_writable(&home)?;
+    let name = match name {
+        Some(n) => n.to_string(),
+        None => suggest_name(&reg, &root),
+    };
+    let e = add(&home, &name, &root)?;
+    crate::say!("Added {} as library {}; its index will be kept in {}", root.display(), e.name, index_dir(&home, &e).display());
+    Ok(())
+}
+
+/// `shoebox libraries`: the list, as text (to the report) and for `--json`.
+pub fn cli_list() -> Result<serde_json::Value> {
+    let home = cli_home()?;
+    let list = list(&home)?;
+    if list.is_empty() {
+        crate::say!("No libraries kept next to the program yet. Add one with `shoebox libraries add <folder>`");
+        crate::say!("or scan a folder with `shoebox scan <folder> --index-next-to-program`.");
+    } else {
+        crate::say!("Libraries kept next to the program, in {}:", home.join(DIR).display());
+        for l in &list {
+            let state = if l.online { "connected" } else { "not connected" };
+            let photos = l.photos.map(|n| format!("{n} photos")).unwrap_or_else(|| "not scanned yet".to_string());
+            crate::say!("  {:<24} {:<14} {:<18} {}", l.name, state, photos, l.root);
+        }
+    }
+    Ok(serde_json::json!({ "dir": home, "libraries": list }))
+}
+
+pub fn cli_add(root: &Path, name: Option<&str>) -> Result<()> {
+    let home = cli_home()?;
+    ensure_home_writable(&home)?;
+    let name = match name {
+        Some(n) => n.to_string(),
+        None => suggest_name(&load(&home)?, root),
+    };
+    let e = add(&home, &name, root)?;
+    crate::say!("Added {} as library {}; its index will be kept in {}", e.root, e.name, index_dir(&home, &e).display());
+    crate::say!("Scan it with `shoebox scan {:?}`; nothing is written into the folder.", e.root);
+    Ok(())
+}
+
+pub fn cli_rename(name: &str, new_name: &str) -> Result<()> {
+    let e = rename(&cli_home()?, name, new_name)?;
+    crate::say!("{name} is now called {}.", e.name);
+    Ok(())
+}
+
+pub fn cli_root(name: &str, root: &Path, force: bool) -> Result<()> {
+    let c = set_root(&cli_home()?, name, root, force)?;
+    if c.checked == 0 {
+        crate::say!("{name} now points to {} (its index has no photos yet, so the folder could not be checked).", root.display());
+    } else {
+        crate::say!("{name} now points to {}: {} of {} photos checked were found there. The index is kept, no new scan is needed.", root.display(), c.found, c.checked);
+    }
+    Ok(())
+}
+
+pub fn cli_remove(name: &str) -> Result<()> {
+    remove(&cli_home()?, name)?;
+    crate::say!("{name} is off the list. Its index folder is still in {}.", cli_home()?.join(DIR).display());
+    Ok(())
+}
+
+pub fn cli_delete(name: &str, yes: bool) -> Result<()> {
+    if !yes {
+        bail!("this deletes the index of {name} (the list of photos, previews and everything added in shoebox: tags, dates, places, people and pets named); the photos are not touched. Add --yes to do it");
+    }
+    delete_index(&cli_home()?, name)?;
+    crate::say!("The index of {name} is deleted. The photos were not touched.");
+    Ok(())
+}
+
 /// Called first by everything that would change an original (move, rename,
 /// trash, restore, rotate, remove copies): a library registered next to the
 /// program is never changed.

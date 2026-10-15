@@ -83,3 +83,85 @@ fn a_root_that_is_not_registered_still_gets_its_own_shoebox_folder() {
 
     let _ = fs::remove_dir_all(&home);
 }
+
+fn run(home: &Path, args: &[&str]) -> std::process::Output {
+    let args: Vec<&std::ffi::OsStr> = args.iter().map(|a| a.as_ref()).collect();
+    shoebox(home, &args)
+}
+
+fn text(o: &std::process::Output) -> String {
+    format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr))
+}
+
+#[test]
+fn the_libraries_command_lists_adds_scans_renames_moves_removes_and_deletes() {
+    let lib = Library::new("libraries-cli");
+    let home = std::env::temp_dir().join(format!("shoebox-it-{}-libraries-cli-home", std::process::id()));
+    let _ = fs::remove_dir_all(&home);
+    fs::create_dir_all(&home).unwrap();
+    let root = lib.root.display().to_string();
+    let before = tree(&lib.root);
+
+    // Nothing yet; the list says how to add one, and is valid JSON when asked.
+    let none = run(&home, &["libraries"]);
+    assert!(none.status.success() && text(&none).contains("No libraries"), "{}", text(&none));
+    let json: serde_json::Value = serde_json::from_slice(&run(&home, &["libraries", "--json"]).stdout).unwrap();
+    assert_eq!(json["libraries"].as_array().unwrap().len(), 0);
+
+    // `scan --index-next-to-program` registers the folder (named after it) and scans it; nothing is written into it.
+    let scanned = run(&home, &["scan", &root, "--index-next-to-program", "--name", "Server Fotos", "--no-thumbs"]);
+    assert!(scanned.status.success(), "{}", text(&scanned));
+    assert!(!lib.root.join(".shoebox").exists());
+    assert_eq!(before, tree(&lib.root));
+    assert!(home.join("libraries/Server Fotos/library.db").is_file());
+    // A second scan, without the flag, finds the index by the registry.
+    assert!(run(&home, &["scan", &root, "--no-thumbs"]).status.success());
+    assert!(run(&home, &["verify", &root]).status.success());
+    assert!(!lib.root.join(".shoebox").exists());
+    let listed: serde_json::Value = serde_json::from_slice(&run(&home, &["libraries", "--json"]).stdout).unwrap();
+    assert_eq!(listed["libraries"][0]["name"], "Server Fotos");
+    assert_eq!(listed["libraries"][0]["online"], true);
+    assert!(listed["libraries"][0]["photos"].as_u64().unwrap() >= 5, "{listed}");
+
+    // --db and --index-next-to-program exclude each other, --name needs the flag.
+    assert!(!run(&home, &["scan", &root, "--db", "x.db", "--index-next-to-program"]).status.success());
+    assert!(!run(&home, &["scan", &root, "--name", "X"]).status.success());
+    // The same folder again, by add or by scan, is not a second library.
+    assert!(!run(&home, &["libraries", "add", &root]).status.success());
+    let again = run(&home, &["scan", &root, "--index-next-to-program", "--no-thumbs"]);
+    assert!(again.status.success() && text(&again).contains("already a library"), "{}", text(&again));
+    assert_eq!(libraries::load(&home).unwrap().libraries.len(), 1);
+
+    // Rename moves the index folder; a bad name is refused.
+    assert!(run(&home, &["libraries", "rename", "Server Fotos", "Büro"]).status.success());
+    assert!(home.join("libraries/Büro/library.db").is_file() && !home.join("libraries/Server Fotos").exists());
+    assert!(!run(&home, &["libraries", "rename", "Büro", "a/b"]).status.success());
+
+    // Another folder: a folder without the photos is refused (unless --force), the right one is taken.
+    let wrong = std::env::temp_dir().join(format!("shoebox-it-{}-libraries-cli-wrong", std::process::id()));
+    fs::create_dir_all(&wrong).unwrap();
+    let w = wrong.display().to_string();
+    let refused = run(&home, &["libraries", "root", "Büro", &w]);
+    assert!(!refused.status.success() && text(&refused).contains("none of the"), "{}", text(&refused));
+    assert!(run(&home, &["libraries", "root", "Büro", &root]).status.success());
+    assert!(run(&home, &["libraries", "root", "Büro", &w, "--force"]).status.success());
+    // Back to the real folder needs no --force: the indexed photos are all there.
+    let back = run(&home, &["libraries", "root", "Büro", &root]);
+    assert!(back.status.success() && text(&back).contains("were found there"), "{}", text(&back));
+
+    // Remove keeps the index folder; delete needs --yes and removes it.
+    assert!(run(&home, &["libraries", "remove", "Büro"]).status.success());
+    assert!(home.join("libraries/Büro/library.db").is_file());
+    assert!(run(&home, &["libraries", "add", &root, "--name", "Zwei"]).status.success());
+    let no = run(&home, &["libraries", "delete", "Zwei"]);
+    assert!(!no.status.success() && text(&no).contains("--yes"), "{}", text(&no));
+    assert!(libraries::load(&home).unwrap().find_name("Zwei").is_some());
+    assert!(run(&home, &["libraries", "delete", "Zwei", "--yes"]).status.success());
+    assert!(!home.join("libraries/Zwei").exists() && libraries::load(&home).unwrap().libraries.is_empty());
+    assert!(!run(&home, &["libraries", "delete", "Nope", "--yes"]).status.success());
+
+    // All along, nothing in the library folder changed.
+    assert_eq!(before, tree(&lib.root));
+    let _ = fs::remove_dir_all(&home);
+    let _ = fs::remove_dir_all(&wrong);
+}
