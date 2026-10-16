@@ -35,11 +35,9 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use crate::classify::Kind;
-use crate::{db, fingerprint, library, media, organize};
+use crate::{db, fingerprint, library, live, media, organize};
 use crate::volume::{display_path, library_name};
 
-/// A Live Photo's video is at most this long (as in the timeline).
-const LIVE_MAX_MS: i64 = 6_000;
 /// Quality of a JPEG made from a HEIC.
 const JPEG_QUALITY: u8 = 95;
 /// Copy in pieces of this size, so Stop is quick.
@@ -73,6 +71,16 @@ struct Src {
     size: u64,
     mtime_ns: i64,
     full_hash: Option<String>,
+    /// The capture date as the file says it (`files.taken`, `taken_offset`),
+    /// to tell a Live Photo's video from another one with the same name.
+    taken: Option<String>,
+    taken_offset: Option<String>,
+}
+
+impl Src {
+    fn moment(&self) -> live::Moment<'_> {
+        live::Moment { taken: self.taken.as_deref(), offset: self.taken_offset.as_deref(), mtime_ns: self.mtime_ns }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -94,6 +102,8 @@ fn src_of(r: &rusqlite::Row, at: usize) -> rusqlite::Result<Option<(Src, Option<
             size: r.get::<_, i64>(at + 3)? as u64,
             mtime_ns: r.get(at + 4)?,
             full_hash: r.get(at + 5)?,
+            taken: r.get(at + 7)?,
+            taken_offset: r.get(at + 8)?,
         },
         r.get(at + 6)?,
     )))
@@ -110,7 +120,7 @@ fn load(conn: &Connection, ids: &[i64]) -> Result<(Vec<Entry>, Vec<String>)> {
     let mut seen = HashSet::new();
     let mut found: Vec<(String, String, Entry, i64)> = Vec::new();
     let mut stmt = conn.prepare(&format!(
-        "SELECT path, name, kind, size, mtime_ns, full_hash, duration_ms,
+        "SELECT path, name, kind, size, mtime_ns, full_hash, duration_ms, taken, taken_offset,
                 coalesce({taken}, strftime('%Y-%m-%dT%H:%M:%S', mtime_ns / 1000000000, 'unixepoch', 'localtime')),
                 folder_id, lower(path_nfc),
                 coalesce((SELECT quarters FROM view_turns v WHERE v.key = files.quick_hash), 0)
@@ -123,7 +133,7 @@ fn load(conn: &Connection, ids: &[i64]) -> Result<(Vec<Entry>, Vec<String>)> {
         }
         let row = stmt.query_row([id], |r| {
             let Some((main, _)) = src_of(r, 0)? else { return Ok(None) };
-            Ok(Some((main, r.get::<_, String>(7)?, r.get::<_, i64>(8)?, r.get::<_, String>(9)?, r.get::<_, i32>(10)?)))
+            Ok(Some((main, r.get::<_, String>(9)?, r.get::<_, i64>(10)?, r.get::<_, String>(11)?, r.get::<_, i32>(12)?)))
         });
         match row {
             Ok(Some((main, taken, folder, path_lower, turn))) => {
@@ -135,11 +145,12 @@ fn load(conn: &Connection, ids: &[i64]) -> Result<(Vec<Entry>, Vec<String>)> {
     }
     found.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
 
-    // Partners: same folder, same stem. One look at each folder.
+    // Partners: same folder, same stem; a Live Photo's video also taken at
+    // the same moment (`live.rs`). One look at each folder.
     let folders: HashSet<i64> = found.iter().map(|f| f.3).collect();
-    let mut partners: HashMap<(i64, String), (Option<Src>, Option<Src>)> = HashMap::new();
+    let mut partners: HashMap<(i64, String), (Option<Src>, Vec<Src>)> = HashMap::new();
     let mut by_folder = conn.prepare(
-        "SELECT path, name, kind, size, mtime_ns, full_hash, duration_ms FROM files
+        "SELECT path, name, kind, size, mtime_ns, full_hash, duration_ms, taken, taken_offset FROM files
          WHERE folder_id = ?1 AND missing_since IS NULL AND kind IN ('raw', 'video')",
     )?;
     for folder in folders {
@@ -149,7 +160,7 @@ fn load(conn: &Connection, ids: &[i64]) -> Result<(Vec<Entry>, Vec<String>)> {
             let slot = partners.entry((folder, organize::fold(stem_of(&src.name)))).or_default();
             match src.kind {
                 Kind::Raw if slot.0.is_none() => slot.0 = Some(src),
-                Kind::Video if slot.1.is_none() && duration.is_some_and(|d| d <= LIVE_MAX_MS) => slot.1 = Some(src),
+                Kind::Video if live::is_clip(src.kind, duration) => slot.1.push(src),
                 _ => {}
             }
         }
@@ -157,11 +168,11 @@ fn load(conn: &Connection, ids: &[i64]) -> Result<(Vec<Entry>, Vec<String>)> {
     let entries = found
         .into_iter()
         .map(|(_, _, mut e, folder)| {
-            if let Some((raw, live)) = partners.get(&(folder, organize::fold(stem_of(&e.main.name)))) {
+            if let Some((raw, clips)) = partners.get(&(folder, organize::fold(stem_of(&e.main.name)))) {
                 e.raw = raw.clone();
                 // Only a still has a Live Photo video.
-                if matches!(e.main.kind, Kind::Jpeg | Kind::Heic) {
-                    e.live = live.clone();
+                if live::is_still(e.main.kind) {
+                    e.live = clips.iter().find(|c| live::same_moment(e.main.moment(), c.moment())).cloned();
                 }
             }
             e

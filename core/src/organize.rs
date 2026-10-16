@@ -9,7 +9,8 @@
 //!   do, so nothing lands on an existing name in another spelling.
 //!   Case-only renames go through a temporary name.
 //! - A photo moves together with the files of the same name in its folder
-//!   (RAW, Live Photo video, XMP/AAE sidecars), all or none.
+//!   (RAW, Live Photo video, XMP/AAE sidecars), all or none. A video goes
+//!   with a photo only as its Live Photo video (`live.rs`).
 //! - The disk changes first, then the index. If shoebox stops in between,
 //!   the next scan recognises the move.
 //! - "Deleting" moves files into `.shoebox/trash/` on the same drive; only
@@ -34,6 +35,7 @@ use crate::classify;
 use crate::db;
 use crate::fingerprint::{self, Stamp};
 use crate::library::{self, RelPath};
+use crate::live;
 use crate::media;
 use crate::orientation;
 use crate::scan::{self, Found};
@@ -408,10 +410,35 @@ struct Rec {
     quick_hash: String,
     full_hash: Option<String>,
     missing: bool,
+    /// What tells a Live Photo's video from another one with the same name.
+    duration_ms: Option<i64>,
+    taken: Option<String>,
+    taken_offset: Option<String>,
 }
 
-const REC_COLUMNS: &str =
-    "id, path, path_nfc, folder_id, kind, size, mtime_ns, quick_hash, full_hash, missing_since IS NOT NULL";
+impl Rec {
+    fn kind(&self) -> Option<classify::Kind> {
+        classify::Kind::parse(&self.kind)
+    }
+
+    fn moment(&self) -> live::Moment<'_> {
+        live::Moment { taken: self.taken.as_deref(), offset: self.taken_offset.as_deref(), mtime_ns: self.mtime_ns }
+    }
+
+    fn is_video(&self) -> bool {
+        self.kind() == Some(classify::Kind::Video)
+    }
+
+    /// Whether `self` is a still and `clip` its Live Photo video.
+    fn is_live_with(&self, clip: &Rec) -> bool {
+        self.kind().is_some_and(live::is_still)
+            && clip.kind().is_some_and(|k| live::is_clip(k, clip.duration_ms))
+            && live::same_moment(self.moment(), clip.moment())
+    }
+}
+
+const REC_COLUMNS: &str = "id, path, path_nfc, folder_id, kind, size, mtime_ns, quick_hash, full_hash,
+     missing_since IS NOT NULL, duration_ms, taken, taken_offset";
 
 fn rec(r: &rusqlite::Row) -> rusqlite::Result<Rec> {
     Ok(Rec {
@@ -425,6 +452,9 @@ fn rec(r: &rusqlite::Row) -> rusqlite::Result<Rec> {
         quick_hash: r.get(7)?,
         full_hash: r.get(8)?,
         missing: r.get(9)?,
+        duration_ms: r.get(10)?,
+        taken: r.get(11)?,
+        taken_offset: r.get(12)?,
     })
 }
 
@@ -434,6 +464,10 @@ fn load(conn: &Connection, id: i64) -> Result<Option<Rec>> {
 
 /// A photo and what belongs to it: indexed files with the same name stem in
 /// the same folder (RAW, Live Photo video, other formats), and sidecars.
+/// A video and a photo with the same name belong together only as a Live
+/// Photo (`live.rs`: short, taken at the same moment); a camera's
+/// `IMG_0139.JPG` and a phone's `IMG_0139.MOV` go their own ways, and the
+/// sidecars stay with the photo.
 struct Group {
     /// The chosen file first.
     files: Vec<Rec>,
@@ -443,16 +477,36 @@ struct Group {
 
 fn group_of(conn: &Connection, root: &Path, first: Rec) -> Result<Group> {
     let want = fold(stem(file_name(&first.path)));
-    let mut files: Vec<Rec> = conn
+    let same_stem: Vec<Rec> = conn
         .prepare(&format!("SELECT {REC_COLUMNS} FROM files WHERE folder_id = ?1 AND id != ?2 AND missing_since IS NULL"))?
         .query_map(params![first.folder_id, first.id], rec)?
         .filter(|r| r.as_ref().map_or(true, |r| fold(stem(file_name(&r.path))) == want))
         .collect::<rusqlite::Result<_>>()?;
+    let (videos, others): (Vec<Rec>, Vec<Rec>) = same_stem.into_iter().partition(Rec::is_video);
+    let mut files = Vec::new();
+    let mut left_photos = false;
+    if first.is_video() {
+        // The photos only if one of them is the still of this video.
+        files.extend(videos);
+        if others.iter().any(|o| o.is_live_with(&first)) {
+            files.extend(others);
+        } else {
+            left_photos = !others.is_empty();
+        }
+    } else {
+        // A video only if it is the Live Photo video of one of the stills.
+        let stills: Vec<&Rec> = std::iter::once(&first).chain(&others).collect();
+        files.extend(videos.into_iter().filter(|v| stills.iter().any(|s| s.is_live_with(v))));
+        files.extend(others);
+    }
     files.sort_by(|a, b| a.path_nfc.cmp(&b.path_nfc));
     files.insert(0, first);
 
     let dir_raw = parent(&files[0].path).to_string();
     let mut sidecars = Vec::new();
+    if left_photos {
+        return Ok(Group { files, sidecars });
+    }
     if let Ok(entries) = fs::read_dir(root.join(&dir_raw)) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();

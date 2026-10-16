@@ -1510,6 +1510,16 @@ Open:
 - **Cluster numbers change after every decision.** Clusters are a cache
   recomputed from scratch, so actions on a card carry the cluster's own
   `generation` (a hash of its faces), not its number or a list-wide one.
+- **A Live Photo is name and moment, not name alone.** Cameras and phones
+  count the same way, so a Canon `IMG_0139.JPG` and an iPhone `IMG_0139.MOV`
+  from another year can share a folder; pairing by folder and stem played the
+  wrong video and hid it from the timeline (and moving or trashing one took
+  the other along). `live.rs` is the one rule (timeline, export, move/trash
+  groups): same folder and stem, video at most 6 s, and the files' own
+  capture dates (`files.taken`, not a user's date) within 10 s; with both
+  time zones known as instants, else allowing whole quarter hours up to 14 h
+  (a container date in UTC next to a JPEG without offset); without a capture
+  date on one side, the modification times. Tests in `core/tests/live.rs`.
 - **Git push** uses SSH via the 1Password agent with the "GitHub" key pinned
   in this repo's `core.sshCommand` (the keychain's HTTPS login belongs to a
   different account, `svenfritschpeers`).

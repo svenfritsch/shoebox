@@ -9,7 +9,8 @@
 //! modification dates (a copy gets a new created date but keeps the old
 //! modification date); the info panel marks every date but a capture date as
 //! estimated. RAW files are not shown (their JPEG/HEIC twin is), and
-//! the short video of a Live Photo is folded into its still.
+//! the short video of a Live Photo (same name, taken at the same moment:
+//! `live.rs`) is folded into its still.
 
 use std::collections::{HashMap, HashSet};
 
@@ -22,10 +23,7 @@ use crate::classify::Kind;
 use crate::dates::{self, Estimate, Precision};
 use crate::db;
 use crate::library;
-
-/// Videos at most this long that share folder and name with a still are the
-/// motion part of a Live Photo.
-const LIVE_MAX_MS: i64 = 6_000;
+use crate::live;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -226,6 +224,9 @@ impl Snapshot {
             stem: String,
             path_lower: String,
             taken: Option<String>,
+            /// The capture date as the file says it, for Live Photos.
+            file_taken: Option<String>,
+            file_offset: Option<String>,
             mtime_ns: i64,
             created_ns: Option<i64>,
             duration_ms: Option<i64>,
@@ -243,7 +244,8 @@ impl Snapshot {
                         width, height, camera, shot_pixels,
                         (SELECT year FROM date_estimates e WHERE e.key = files.quick_hash),
                         (SELECT month FROM date_estimates e WHERE e.key = files.quick_hash),
-                        (SELECT day FROM date_estimates e WHERE e.key = files.quick_hash)
+                        (SELECT day FROM date_estimates e WHERE e.key = files.quick_hash),
+                        taken, taken_offset
                  FROM files WHERE missing_since IS NULL AND kind != 'raw'",
                 db::TAKEN
             ))?;
@@ -263,6 +265,8 @@ impl Snapshot {
                         None => None,
                     },
                     taken: r.get(5)?,
+                    file_taken: r.get(19)?,
+                    file_offset: r.get(20)?,
                     mtime_ns: r.get(6)?,
                     created_ns: r.get(7)?,
                     duration_ms: r.get(8)?,
@@ -281,21 +285,26 @@ impl Snapshot {
             }
         }
 
-        // Live Photos: a still and a short video with the same folder and stem.
-        let mut stills: HashMap<(i64, &str), i64> = HashMap::new();
+        // Live Photos: a still and a short video with the same folder and
+        // stem, taken at the same moment (`live.rs`).
+        fn moment(r: &Row) -> live::Moment<'_> {
+            live::Moment { taken: r.file_taken.as_deref(), offset: r.file_offset.as_deref(), mtime_ns: r.mtime_ns }
+        }
+        let mut stills: HashMap<(i64, &str), Vec<&Row>> = HashMap::new();
         for r in &rows {
-            if matches!(r.kind, Kind::Jpeg | Kind::Heic) {
-                stills.insert((r.folder_id, r.stem.as_str()), r.id);
+            if live::is_still(r.kind) {
+                stills.entry((r.folder_id, r.stem.as_str())).or_default().push(r);
             }
         }
         let mut live: HashMap<i64, i64> = HashMap::new();
         let mut hidden: HashSet<i64> = HashSet::new();
         for r in &rows {
-            if r.kind == Kind::Video
-                && r.duration_ms.is_some_and(|d| d <= LIVE_MAX_MS)
-                && let Some(&still) = stills.get(&(r.folder_id, r.stem.as_str()))
+            if live::is_clip(r.kind, r.duration_ms)
+                && let Some(still) = stills
+                    .get(&(r.folder_id, r.stem.as_str()))
+                    .and_then(|s| s.iter().find(|s| live::same_moment(moment(s), moment(r))))
             {
-                live.entry(still).or_insert(r.id);
+                live.entry(still.id).or_insert(r.id);
                 hidden.insert(r.id);
             }
         }
