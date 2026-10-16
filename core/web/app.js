@@ -2104,6 +2104,9 @@ $('lb-live').onclick = function () {
   if (!video) return;
   var stage = $('stage');
   var still = stage.querySelector('img');
+  // Pressed again while the motion plays: back to the still.
+  var playing = stage.querySelector('video');
+  if (playing) { stopMedia(); playing.remove(); if (still) still.hidden = false; return; }
   var v = el('video');
   v.autoplay = true;
   v.playsInline = true;
@@ -2112,6 +2115,32 @@ $('lb-live').onclick = function () {
   if (still) still.hidden = true;
   stage.appendChild(v);
 };
+
+// p: a movie pauses or plays on, a Live Photo plays its motion (or stops it,
+// like the LIVE button). Space stays open/close on every item.
+function playOpen() {
+  var d = state.data, i = state.open;
+  if (!d || i < 0) return;
+  if (d.kinds[i] === 'v') {
+    var v = $('stage').querySelector('video');
+    if (!v) return;
+    if (v.paused || v.ended) v.play().catch(function () {});
+    else v.pause();
+  } else if (!$('lb-live').hidden) $('lb-live').onclick();
+}
+
+// t: the info panel's tag field with its list of tags (the arrow keys pick
+// one, Enter adds it; Esc closes the list, a second Esc leaves the field).
+// Opens the panel if it is closed.
+function tagOpen() {
+  if (!lb.details || isAll()) return;
+  var p = $('lb-panel');
+  if (p.hidden) { p.hidden = false; renderPanel(); }
+  var input = p.querySelector('.tags input');
+  if (input) { input.focus(); return; }
+  var add = p.querySelector('.tags button.add');
+  if (add) add.click();
+}
 
 document.addEventListener('keydown', function (ev) {
   if (!$('modal').hidden) {
@@ -2143,6 +2172,7 @@ document.addEventListener('keydown', function (ev) {
   }
   // Space closes the viewer, except on a focused video (play/pause).
   var onVideo = document.activeElement && document.activeElement.tagName === 'VIDEO';
+  var plain = !ev.metaKey && !ev.ctrlKey && !ev.altKey && !/^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName);
   if (ev.key === 'Escape' || (ev.key === ' ' && !onVideo)) {
     ev.preventDefault();
     closeLightbox();
@@ -2150,7 +2180,12 @@ document.addEventListener('keydown', function (ev) {
   else if (ev.key === 'ArrowLeft') step(-1);
   else if (ev.key === 'ArrowRight') step(1);
   else if (ev.key === 'i') $('lb-info').onclick();
-  else if ((ev.key === 't' || ev.key === 'T') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) toggleText();
+  else if ((ev.key === 'p' || ev.key === 'P') && plain) { ev.preventDefault(); playOpen(); }
+  else if ((ev.key === 't' || ev.key === 'T') && plain) {
+    ev.preventDefault(); // the letter must not land in the field that gets the focus
+    tagOpen();
+  }
+  else if ((ev.key === 'w' || ev.key === 'W') && plain) toggleText();
   else if ((ev.key === 'f' || ev.key === 'F') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) toggleFavoriteOpen();
   else if ((ev.key === 'c' || ev.key === 'C') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) toggleCollection();
   else if ((ev.key === 'r' || ev.key === 'R') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) rotateOpen(ev.shiftKey ? 1 : -1);
@@ -3801,6 +3836,7 @@ function infoTags(row, info) {
     tags.appendChild(chip);
   });
   var add = el('button', 'add', tr('tags.add'));
+  add.title = tr('tags.add_key_hint');
   add.onclick = function () {
     var input = tagInput();
     input.onkeydown = function (ev) {

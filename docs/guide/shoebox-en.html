@@ -570,6 +570,7 @@
         <div class="txt">
           <h3>Viewer and info panel</h3>
           <p>Click a photo to open it. <b>←</b> and <b>→</b> step through the photos and <b>Esc</b> closes the viewer. <b>ⓘ</b> (or the key <b>i</b>) opens the info panel.</p>
+          <p>Videos start playing as soon as they open; <b>p</b> pauses them and plays them on. On a Live Photo, <b>LIVE ▶</b> in the top bar (or <b>p</b>) plays its motion once; pressed again while it plays, it goes back to the still picture.</p>
           <h4>What the info panel holds</h4>
           <ul>
             <li><b>Date</b>, with its mark and a pencil to set your own (see “Dates and searching by date”).</li>
@@ -609,11 +610,15 @@
             <dt>i</dt>
             <dd>show / hide the info panel</dd>
             <dt>Space</dt>
-            <dd>open / close the viewer (on a photo picked with the arrow keys)</dd>
+            <dd>open / close the viewer (on a photo picked with the arrow keys), also on a video: to pause one, press <b>p</b></dd>
+            <dt>p</dt>
+            <dd>video: pause / play; Live Photo: play its motion / back to the still picture</dd>
             <dt>f</dt>
             <dd>add to / remove from favorites</dd>
             <dt>t</dt>
-            <dd>recognized text: outline the lines and show the list / hide them (only on photos that have text)</dd>
+            <dd>add a tag: opens the info panel and the tag field with its list; the arrow keys pick a tag, Enter adds it; Esc closes the list, a second Esc leaves the field</dd>
+            <dt>w</dt>
+            <dd>recognized text (words): outline the lines and show the list / hide them (only on photos that have text)</dd>
             <dt>r · Shift+R</dt>
             <dd>rotate left / right</dd>
             <dt>Esc</dt>
@@ -722,6 +727,7 @@
         <div class="txt">
           <h3>Tag</h3>
           <p><b>Add tag…</b> puts your own tag on the selection. Tags live in shoebox’s index, never in the photo files. In the tag field the tags you used last come first (<b>Recently used</b>), then the <b>Most used</b>; typing narrows the list and keeps recent tags on top. Shoebox remembers this in the drive’s index (never in the photo files), so it is the same on every computer and tablet.</p>
+          <p>For the photo open in the viewer, <b>+ Tag</b> in the info panel adds a tag, and so does the key <b>t</b> (it opens the info panel if needed): the same list appears, <b>↑</b> and <b>↓</b> pick a tag, <b>Enter</b> adds it, or type a new name.</p>
           <h4>Tags that are also folder names</h4>
           <p>A tag can also be a folder name (the folder “Justin” gives all its photos the tag “Justin”, and you may have given it by hand to others). Under such a tag in the sidebar, while it is the one shown, a row <b>Manual tags only</b> appears with the number of photos you tagged yourself; click it to see just those (the tag then shows in orange text, and its chip says “manual”). Click the tag itself to see all of its photos again.</p>
         </div>
@@ -1147,7 +1153,7 @@
       <div class="topic has-shots">
         <div class="txt">
           <h3>In the viewer</h3>
-          <p>On a photo that has recognized text, a scanner button appears in the top bar next to the ♥, dimmed; photos without text do not show it. Press it, or the key <b>t</b>: the lines are outlined on the photo and a section <b>Recognized text</b> opens in the info panel, a list that scrolls when there are many lines, with <b>Copy all</b> at the right end of its header. Pressing the button again removes the outlines and folds the list; a click on the header only folds or unfolds the list. After a text search the outlines are on by themselves and the words you searched for are marked. The ✕ beside a line hides it from the search (for text you do not want found); <b>Show again</b> brings it back.</p>
+          <p>On a photo that has recognized text, a scanner button appears in the top bar next to the ♥, dimmed; photos without text do not show it. Press it, or the key <b>w</b> (for words): the lines are outlined on the photo and a section <b>Recognized text</b> opens in the info panel, a list that scrolls when there are many lines, with <b>Copy all</b> at the right end of its header. Pressing the button again removes the outlines and folds the list; a click on the header only folds or unfolds the list. After a text search the outlines are on by themselves and the words you searched for are marked. The ✕ beside a line hides it from the search (for text you do not want found); <b>Show again</b> brings it back.</p>
         </div>
         <div class="shots">
           <figure>
