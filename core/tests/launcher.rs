@@ -511,7 +511,16 @@ fn a_result_can_be_shown_on_both_drives_but_only_inside_the_jobs_folders() {
     let before = original.snapshot();
     // Before any job there is nothing to show.
     assert_eq!(lpost(addr, "/api/reveal", &json!({ "items": [{ "root": o, "path": "Neu/neu.jpg" }] })).status, 400);
-    run_job(addr, json!({ "kind": "backup", "roots": [o, b] }));
+    let finished = run_job(addr, json!({ "kind": "backup", "roots": [o, b] }));
+    // What the browser is told is what it sends back (on Windows the canonical
+    // `\\?\E:\…` is shown as `E:\…`; the server canonicalises both sides).
+    let told: Vec<String> = finished["roots"].as_array().unwrap().iter().map(|r| r.as_str().unwrap().to_string()).collect();
+    assert_eq!(told.len(), 2);
+    assert!(told.iter().all(|r| !r.starts_with(r"\\?\")), "{told:?}");
+    let again = lpost(addr, "/api/reveal", &json!({ "items": [{ "root": told[0], "path": "Neu/neu.jpg" }] }));
+    assert_eq!(again.json()["opened"], 1, "the root as shown matches the job's folder");
+    assert!(finished["results"].as_array().unwrap().iter().all(|r| !r["root"].as_str().unwrap().starts_with(r"\\?\")));
+    opened.lock().unwrap().clear();
     let shown = lpost(addr, "/api/reveal", &json!({ "items": [{ "root": o, "path": "Neu/neu.jpg" }, { "root": b, "path": "Neu/neu.jpg" }] }));
     assert_eq!(shown.json()["opened"], 1, "only the original has the file");
     assert_eq!(opened.lock().unwrap().len(), 1);

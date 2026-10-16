@@ -512,10 +512,10 @@ pub fn places() -> Places {
             let path = if cfg!(target_os = "linux") { xdg_dir(&home, xdg) } else { None }
                 .unwrap_or_else(|| home.join(folder));
             if path.is_dir() {
-                places.push(Place { kind, path: path.display().to_string() });
+                places.push(Place { kind, path: display_path(&path) });
             }
         }
-        places.push(Place { kind: "home", path: home.display().to_string() });
+        places.push(Place { kind: "home", path: display_path(&home) });
     }
     let drives = crate::launcher::detect_drives()
         .into_iter()
