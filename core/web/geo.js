@@ -196,9 +196,22 @@ function infoGeo(info) {
 
 // Give a photo without a position one: a pin on the map or latitude and
 // longitude typed, both always there and kept in step. Saved in shoebox only.
-function locationDialog(info) {
-  var pos = info.position;
+// From the selection bar (`info` null) the position goes to all of `ids`;
+// the ones with a position in their file keep it, the dialog says how many.
+function locationDialog(info, ids) {
+  if (info) { buildLocationDialog(info, [info.id], null); return; }
+  post(LIBAPI + '/files/positions/check', { ids: ids }).then(function (check) {
+    buildLocationDialog(null, ids, check);
+  }).catch(failed);
+}
+
+function buildLocationDialog(info, ids, check) {
+  var pos = info ? info.position : null;
   var body = el('div', 'geo-dialog');
+  if (check && check.with_file) {
+    body.appendChild(el('p', 'hint', tr(check.with_file === check.total ? 'geo.batch_file_all' : 'geo.batch_file_some', { n: check.with_file, total: check.total })));
+  }
+  if (check && check.with_user) body.appendChild(el('p', 'hint', tr('geo.batch_user', { n: check.with_user })));
   var pick = el('div', 'geo-pick');
   var mapBox = el('div', 'geo-pickmap');
   pick.appendChild(mapBox);
@@ -234,7 +247,7 @@ function locationDialog(info) {
     lat.input.classList.toggle('bad', latBad);
     lon.input.classList.toggle('bad', lonBad);
     error.textContent = latBad ? tr('geo.bad_lat') : lonBad ? tr('geo.bad_lon') : '';
-    if (save) save.disabled = v[0] === null || v[1] === null;
+    if (save) save.disabled = v[0] === null || v[1] === null || (check && check.with_file === check.total);
     return v;
   };
   var place = function (la, lo, fromMap) {
@@ -264,6 +277,15 @@ function locationDialog(info) {
     var v = check();
     if (v[0] === null || v[1] === null) return false;
     btn.disabled = true;
+    if (!info) {
+      post(LIBAPI + '/files/positions', { ids: ids, lat: v[0], lon: v[1] }).then(function (r) {
+        closeModal();
+        toast(tr('geo.saved_many', { count: trn('count.photos', r.set) }));
+        loadPlaces();
+        if (state.filter.place) reloadAll();
+      }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
+      return false;
+    }
     post(fileBase(info.id) + '/position', { lat: v[0], lon: v[1] }).then(function () {
       closeModal();
       toast(tr('geo.saved'));
@@ -284,7 +306,7 @@ function locationDialog(info) {
     } });
   }
   actions.push({ label: tr('geo.save'), onclick: go });
-  var buttons = openModal(tr('geo.dialog_title'), body, actions);
+  var buttons = openModal(info ? tr('geo.dialog_title') : tr('geo.dialog_title_many', { count: trn('count.photos', ids.length) }), body, actions);
   save = buttons[buttons.length - 1];
   check();
   lat.input.focus();

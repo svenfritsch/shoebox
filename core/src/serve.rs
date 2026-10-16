@@ -933,6 +933,8 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/screenshots", post(screenshots_set))
         .route("/api/geo/points", get(geo_points))
         .route("/api/files/{id}/position", post(position_set))
+        .route("/api/files/positions", post(positions_set))
+        .route("/api/files/positions/check", post(positions_check))
         .route("/api/files/{id}/text-hidden", post(text_api::hide))
         .route("/api/recognition/forget", get(forget_api::counts).post(forget_api::forget))
         .route("/api/text/stats", get(text_api::stats))
@@ -2821,6 +2823,28 @@ async fn position_set(State(app): State<Arc<App>>, Path(id): Path<i64>, Json(req
     })
     .await
     .map(|position| Json(serde_json::json!({ "position": position })))
+}
+
+#[derive(Deserialize)]
+struct PositionsRequest {
+    ids: Vec<i64>,
+    lat: f64,
+    lon: f64,
+}
+
+/// Give the selected photos one position; the ones with a position in their
+/// file keep it (the answer counts them).
+async fn positions_set(State(app): State<Arc<App>>, Json(req): Json<PositionsRequest>) -> ApiResult<Json<crate::geo::PositionsSet>> {
+    change(&app, move |_, conn| crate::geo::set_positions(conn, &req.ids, req.lat, req.lon)).await.map(Json)
+}
+
+/// What a location dialog for these photos should say.
+async fn positions_check(State(app): State<Arc<App>>, Json(req): Json<DatesCheckRequest>) -> ApiResult<Json<crate::geo::PositionsCheck>> {
+    blocking(&app, move |app| {
+        let conn = app.conn.lock().unwrap();
+        crate::geo::check_positions(&conn, &req.ids).map(Json).map_err(|e| ApiError::BadRequest(format!("{e:#}")))
+    })
+    .await
 }
 
 #[derive(Deserialize)]
