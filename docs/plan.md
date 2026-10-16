@@ -1523,6 +1523,16 @@ Open:
 - **Git push** uses SSH via the 1Password agent with the "GitHub" key pinned
   in this repo's `core.sshCommand` (the keychain's HTTPS login belongs to a
   different account, `svenfritschpeers`).
+- **Windows paths.** Roots are canonical (`\\?\E:\`): no file name at the top
+  of a drive, and Explorer does not take the prefix. A library is named by
+  `volume::library_name` (folder name; at the top of a drive the volume label,
+  as on a Mac), never by `file_name()`; the id and `backup_of` hang on it.
+  Paths shown or sent to the browser go through `volume::display_path`; file
+  access and comparisons keep the canonical path (the server canonicalises what
+  the browser sends back). The launcher compares `E:\`, `e:/` and `E:` as one
+  place (`winKey`), macOS/Linux paths as written. Names that Windows keeps for
+  devices (`CON`, `NUL`, `COM1`...) are refused on every system
+  (`organize::is_reserved_device_name`).
 
 ## Rotate (lightbox)
 

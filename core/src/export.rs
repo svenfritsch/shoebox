@@ -36,6 +36,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::classify::Kind;
 use crate::{db, fingerprint, library, live, media, organize};
+use crate::volume::{display_path, library_name};
 
 /// Quality of a JPEG made from a HEIC.
 const JPEG_QUALITY: u8 = 95;
@@ -253,6 +254,7 @@ pub fn check_folder_name(name: &str) -> Result<String> {
     if name == "." || name == ".." || name.chars().any(bad_char) || name.ends_with('.') {
         bail!("the folder name cannot have these characters: \\ / : * ? \" < > | (or end with a dot)");
     }
+    organize::check_not_reserved(name)?;
     if name.chars().count() > 200 {
         bail!("the folder name is too long");
     }
@@ -521,10 +523,10 @@ pub fn places() -> Places {
             let path = if cfg!(target_os = "linux") { xdg_dir(&home, xdg) } else { None }
                 .unwrap_or_else(|| home.join(folder));
             if path.is_dir() {
-                places.push(Place { kind, path: path.display().to_string() });
+                places.push(Place { kind, path: display_path(&path) });
             }
         }
-        places.push(Place { kind: "home", path: home.display().to_string() });
+        places.push(Place { kind: "home", path: display_path(&home) });
     }
     let drives = crate::launcher::detect_drives()
         .into_iter()
@@ -578,33 +580,33 @@ pub fn list_folders(path: &Path) -> Result<Listing> {
     if !path.is_absolute() {
         bail!("not a full path");
     }
-    let meta = fs::metadata(path).with_context(|| format!("{} cannot be opened", path.display()))?;
+    let meta = fs::metadata(path).with_context(|| format!("{} cannot be opened", display_path(path)))?;
     if !meta.is_dir() {
-        bail!("{} is not a folder", path.display());
+        bail!("{} is not a folder", display_path(path));
     }
     let mut folders = Vec::new();
-    for entry in fs::read_dir(path).with_context(|| format!("{} cannot be read", path.display()))?.flatten() {
+    for entry in fs::read_dir(path).with_context(|| format!("{} cannot be read", display_path(path)))?.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         if name.starts_with('.') || !fs::metadata(entry.path()).is_ok_and(|m| m.is_dir()) {
             continue;
         }
         let p = entry.path();
-        folders.push(Folder { name: library::nfc(&name), library: p.join(db::DIR).is_dir(), path: p.display().to_string() });
+        folders.push(Folder { name: library::nfc(&name), library: p.join(db::DIR).is_dir(), path: display_path(&p) });
     }
     folders.sort_by_key(|f| f.name.to_lowercase());
     let mut crumbs: Vec<Crumb> = path
         .ancestors()
         .map(|a| Crumb {
-            name: a.file_name().map(|n| library::nfc(&n.to_string_lossy())).unwrap_or_else(|| a.display().to_string()),
-            path: a.display().to_string(),
+            name: library::nfc(&library_name(a)),
+            path: display_path(a),
         })
         .collect();
     crumbs.reverse();
     Ok(Listing {
-        path: path.display().to_string(),
+        path: display_path(path),
         crumbs,
         folders,
-        shoebox: shoebox_drive(path).map(|d| d.display().to_string()),
+        shoebox: shoebox_drive(path).map(|d| display_path(&d)),
         free: free_space(path),
     })
 }
@@ -660,7 +662,7 @@ impl Shared {
     /// Mark an export as started (before its thread runs).
     pub fn begin(&self, dest: &Path) {
         self.stop.store(false, Ordering::SeqCst);
-        *self.progress.lock().unwrap() = Progress { state: "running", dest: dest.display().to_string(), ..Progress::default() };
+        *self.progress.lock().unwrap() = Progress { state: "running", dest: display_path(dest), ..Progress::default() };
     }
 
     fn update(&self, f: impl FnOnce(&mut Progress)) {
@@ -672,10 +674,10 @@ impl Shared {
 pub fn run(root: &Path, plan: Plan, dest: &Path, shared: &Shared) {
     let heif = LibHeif::new();
     shared.update(|p| {
-        *p = Progress { state: "running", dest: dest.display().to_string(), total: plan.tasks.len(), ..Progress::default() };
+        *p = Progress { state: "running", dest: display_path(dest), total: plan.tasks.len(), ..Progress::default() };
     });
     let outcome = (|| -> Result<bool> {
-        fs::create_dir_all(dest).with_context(|| format!("{} cannot be made", dest.display()))?;
+        fs::create_dir_all(dest).with_context(|| format!("{} cannot be made", display_path(dest)))?;
         renumber(dest, &plan.renames)?;
         shared.update(|p| p.renamed = plan.renames.len());
         for task in &plan.tasks {
@@ -963,6 +965,11 @@ mod tests {
         assert!(check_folder_name("a:b").is_err());
         assert!(check_folder_name("..").is_err());
         assert!(check_folder_name("end.").is_err());
+        for reserved in ["CON", "nul", "Com1", "lpt9", "aux.txt", "PRN ", "con .x"] {
+            assert!(check_folder_name(reserved).is_err(), "{reserved}");
+        }
+        assert!(check_folder_name("console").is_ok());
+        assert!(check_folder_name("COM10").is_ok());
     }
 
     #[test]
