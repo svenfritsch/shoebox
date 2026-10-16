@@ -78,6 +78,49 @@ fn folder_of<'a>(parts: impl Iterator<Item = &'a str>) -> String {
     format!("/{}", joined.join("/")).nfc().collect()
 }
 
+/// The name a library goes by (drive cards, All drives, its id in the routes
+/// and `backup_of`): the folder's own name, and for the top of a drive, which
+/// has none on Windows (`E:\`), the volume's name, so a drive is called the
+/// same on a Mac and on a PC. A Mac's `/Volumes/Fotos` stays "Fotos".
+pub fn library_name(root: &Path) -> String {
+    library_name_for(Platform::current(), &root.to_string_lossy(), windows_label)
+}
+
+/// `library_name` for a platform and a way to look up a Windows volume label.
+pub fn library_name_for(platform: Platform, path: &str, label: impl Fn(char) -> Option<String>) -> String {
+    if platform == Platform::Windows {
+        let plain = path.strip_prefix(r"\\?\").unwrap_or(path);
+        let last = plain.rsplit(['\\', '/']).find(|c| !c.is_empty());
+        let bare_letter = last.is_some_and(|l| l.len() == 2 && l.ends_with(':') && l.starts_with(|c: char| c.is_ascii_alphabetic()));
+        if !bare_letter && let Some(last) = last {
+            return last.to_string();
+        }
+        return placement_for(platform, path, label).map(|p| p.volume).unwrap_or_else(|| display_str(path));
+    }
+    match Path::new(path).file_name() {
+        Some(n) => n.to_string_lossy().into_owned(),
+        None => placement_for(platform, path, label).map(|p| p.volume).unwrap_or_else(|| path.to_string()),
+    }
+}
+
+/// A path for people and for the browser: canonical Windows paths carry a
+/// `\\?\` prefix (`\\?\E:\Fotos`, `\\?\UNC\server\share`) that Explorer's address bar
+/// does not take. Comparisons and file access keep the canonical path.
+pub fn display_path(path: impl AsRef<Path>) -> String {
+    display_str(&path.as_ref().display().to_string())
+}
+
+/// `display_path` for text.
+pub fn display_str(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{rest}");
+    }
+    match path.strip_prefix(r"\\?\") {
+        Some(rest) if rest.len() >= 2 && rest.as_bytes()[0].is_ascii_alphabetic() && rest.as_bytes()[1] == b':' => rest.to_string(),
+        _ => path.to_string(),
+    }
+}
+
 #[cfg(windows)]
 fn windows_label(letter: char) -> Option<String> {
     #[link(name = "kernel32")]
@@ -166,5 +209,33 @@ mod tests {
     fn names_are_nfc() {
         let decomposed = "/Volumes/Ko\u{308}ln/Bilder";
         assert_eq!(placement_for(Platform::Mac, decomposed, |_| None), p("K\u{f6}ln", "/Bilder"));
+    }
+
+    #[test]
+    fn library_names() {
+        let label = |c: char| (c == 'E').then(|| "Extreme SSD".to_string());
+        // The top of a drive takes the volume's name, with or without the `\\?\`.
+        assert_eq!(library_name_for(Platform::Windows, r"\\?\E:\", label), "Extreme SSD");
+        assert_eq!(library_name_for(Platform::Windows, r"E:\", label), "Extreme SSD");
+        assert_eq!(library_name_for(Platform::Windows, "E:", label), "Extreme SSD");
+        assert_eq!(library_name_for(Platform::Windows, r"\\?\F:\", label), "F:");
+        // A folder, a share: its own name.
+        assert_eq!(library_name_for(Platform::Windows, r"\\?\E:\Fotos", label), "Fotos");
+        assert_eq!(library_name_for(Platform::Windows, r"E:\Fotos\", label), "Fotos");
+        assert_eq!(library_name_for(Platform::Windows, r"\\?\UNC\server\share", label), "share");
+        // Unchanged elsewhere (the id depends on it).
+        assert_eq!(library_name_for(Platform::Mac, "/Volumes/Fotos", label), "Fotos");
+        assert_eq!(library_name_for(Platform::Other, "/media/anna/Backup", label), "Backup");
+        assert_eq!(library_name_for(Platform::Mac, "/", label), "/");
+    }
+
+    #[test]
+    fn display_paths() {
+        assert_eq!(display_str(r"\\?\E:\Fotos"), r"E:\Fotos");
+        assert_eq!(display_str(r"\\?\E:\"), r"E:\");
+        assert_eq!(display_str(r"\\?\UNC\server\share\Fotos"), r"\\server\share\Fotos");
+        assert_eq!(display_str(r"E:\Fotos"), r"E:\Fotos");
+        assert_eq!(display_str("/Volumes/Fotos"), "/Volumes/Fotos");
+        assert_eq!(display_str(r"\\?\Volume{1}\x"), r"\\?\Volume{1}\x");
     }
 }

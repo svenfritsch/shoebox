@@ -34,6 +34,7 @@ use tokio::sync::oneshot;
 
 use crate::report::{self, Event};
 use crate::{faces, libraries, recognize, scan, serve, verify};
+use crate::volume::{display_path, library_name};
 
 /// Tried first; the next ones if it is taken.
 pub const DEFAULT_PORT: u16 = 7879;
@@ -606,7 +607,7 @@ fn request_roots(req: &JobRequest) -> Result<Vec<PathBuf>, ApiError> {
 }
 
 fn short_name(root: &Path) -> String {
-    root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| root.display().to_string())
+    library_name(root)
 }
 
 /// Recognition may run while the photo app is open: `serve` opens the
@@ -641,8 +642,8 @@ fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
         *job = JobState {
             id,
             kind: req.kind.clone(),
-            root: roots[0].display().to_string(),
-            roots: roots.iter().map(|r| r.display().to_string()).collect(),
+            root: display_path(&roots[0]),
+            roots: roots.iter().map(display_path).collect(),
             running: true,
             started_at: now_secs(),
             ..JobState::default()
@@ -668,22 +669,22 @@ fn start_job(shared: &Arc<Shared>, req: JobRequest) -> Result<u64, ApiError> {
                 }
                 {
                     let mut job = shared.job.lock().unwrap();
-                    job.current_root = Some(root.display().to_string());
+                    job.current_root = Some(display_path(&root));
                     job.progress = None;
                     job.prefix = if many { format!("{}: ", short_name(&root)) } else { String::new() };
                 }
                 if many {
-                    crate::say!("== {} ==", root.display());
+                    crate::say!("== {} ==", display_path(&root));
                 }
                 let outcome = run_command(&req, group);
                 let mut job = shared.job.lock().unwrap();
                 let entry = match outcome {
-                    Ok((result, clean)) => RootResult { root: root.display().to_string(), ok: clean, result: Some(result), error: None },
+                    Ok((result, clean)) => RootResult { root: display_path(&root), ok: clean, result: Some(result), error: None },
                     Err(e) if e.is::<report::Cancelled>() || e.is::<recognize::Interrupted>() => {
                         job.cancelled = true;
-                        RootResult { root: root.display().to_string(), ok: false, result: None, error: Some(format!("{e:#}")) }
+                        RootResult { root: display_path(&root), ok: false, result: None, error: Some(format!("{e:#}")) }
                     }
-                    Err(e) => RootResult { root: root.display().to_string(), ok: false, result: None, error: Some(format!("{e:#}")) },
+                    Err(e) => RootResult { root: display_path(&root), ok: false, result: None, error: Some(format!("{e:#}")) },
                 };
                 job.results.push(entry);
             }
@@ -884,7 +885,7 @@ async fn app_state(State(shared): State<Arc<Shared>>) -> Json<serde_json::Value>
         Some(a) => serde_json::json!({
             "running": true,
             "url": a.url,
-            "roots": a.roots.iter().map(|r| r.display().to_string()).collect::<Vec<_>>(),
+            "roots": a.roots.iter().map(display_path).collect::<Vec<_>>(),
         }),
         None => serde_json::json!({ "running": false }),
     })
@@ -947,9 +948,9 @@ pub fn detect_drives() -> Vec<Drive> {
         .into_iter()
         .filter(|p| seen.insert(p.clone()))
         .map(|p| Drive {
-            name: p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.display().to_string()),
+            name: library_name(&p),
             library: p.join(crate::db::DIR).is_dir(),
-            path: p.display().to_string(),
+            path: display_path(&p),
         })
         .collect()
 }

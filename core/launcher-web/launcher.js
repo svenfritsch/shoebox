@@ -76,11 +76,32 @@ function driveName(p) {
   return m ? m[1] : p.split(/[\\/]/).filter(Boolean).pop() || p;
 }
 
-// A drive under /Volumes that the list of connected drives does not have.
-// A photo folder on a drive (/Volumes/X/Photos) is there when the drive
-// (/Volumes/X) is in the list.
+// Windows paths with a drive letter: `E:\`, `e:\`, `E:` and `E:/` are one
+// place. The key has the letter in capitals, `\` as separator and no trailing
+// one ("E:" for the top of the drive); null for any other path (macOS and
+// Linux compare as written, a volume can be case-sensitive there).
+function winKey(p) {
+  if (!/^[A-Za-z]:([\\\/]|$)/.test(p)) return null;
+  var rest = p.slice(2).replace(/\//g, '\\').replace(/\\+$/, '');
+  return p.charAt(0).toUpperCase() + ':' + rest;
+}
+
+function samePath(a, b) {
+  var ka = winKey(a), kb = winKey(b);
+  return ka !== null && kb !== null ? ka === kb : a === b;
+}
+
+// A drive that the list of connected drives does not have: under /Volumes
+// (macOS), or with a letter that no listed drive has (Windows). A photo folder
+// on a drive (/Volumes/X/Photos, E:\Photos) is there when the drive
+// (/Volumes/X, E:\) is in the list.
 function isOffline(p) {
-  return drivesLoaded && p.indexOf('/Volumes/') === 0 && !drives.some(function (d) {
+  if (!drivesLoaded) return false;
+  var key = winKey(p);
+  if (key !== null) {
+    return !drives.some(function (d) { var k = winKey(d.path); return k !== null && k.charAt(0) === key.charAt(0); });
+  }
+  return p.indexOf('/Volumes/') === 0 && !drives.some(function (d) {
     return d.path === p || p.indexOf(d.path.replace(/\/+$/, '') + '/') === 0;
   });
 }
@@ -100,7 +121,7 @@ function renderChips() {
   ul.textContent = '';
   paths.forEach(function (p) {
     var li = document.createElement('li');
-    var known = drives.filter(function (d) { return d.path === p; })[0];
+    var known = drives.filter(function (d) { return samePath(d.path, p); })[0];
     if (isOffline(p)) li.className = 'offline';
     if (off[p]) li.className += ' unticked';
     var cb = document.createElement('input');
@@ -284,7 +305,7 @@ $('root').addEventListener('keydown', function (ev) {
 // A suggestion picked from the list is a finished path: add it right away.
 $('root').addEventListener('change', function () {
   var v = $('root').value.trim();
-  if (v && (drives.some(function (d) { return d.path === v; }) || recentPaths.indexOf(v) >= 0)) { addPath(v); $('root').value = ''; }
+  if (v && (drives.some(function (d) { return samePath(d.path, v); }) || recentPaths.indexOf(v) >= 0)) { addPath(v); $('root').value = ''; }
 });
 $('chipbox').addEventListener('click', function (ev) { if (ev.target === this) $('root').focus(); });
 

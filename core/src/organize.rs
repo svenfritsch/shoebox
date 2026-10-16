@@ -51,6 +51,26 @@ const FORBIDDEN: &[char] = &['/', '\\', ':', '*', '?', '"', '<', '>', '|'];
 
 // ---------------------------------------------------------------- names
 
+/// Names Windows keeps for devices (`CON`, `NUL`, `COM1`, ...), with or
+/// without an extension (`con.txt`) and with spaces before the dot. A folder
+/// like that made on a Mac cannot be opened on a PC, and the drive moves
+/// between systems, so they are refused everywhere.
+pub fn is_reserved_device_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or("").trim_end_matches(' ').to_ascii_uppercase();
+    matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || ["COM", "LPT"].iter().any(|p| {
+            stem.strip_prefix(p).is_some_and(|n| matches!(n, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "\u{b9}" | "\u{b2}" | "\u{b3}"))
+        })
+}
+
+/// `Ok` unless `name` is one of those device names.
+pub fn check_not_reserved(name: &str) -> Result<()> {
+    if is_reserved_device_name(name) {
+        bail!("{name} is a reserved Windows name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), a PC cannot open it");
+    }
+    Ok(())
+}
+
 /// A file or folder name typed by the user, trimmed and NFC-normalised.
 /// Refuses names that would be hidden, skipped by the scanner, or invalid
 /// on exFAT.
@@ -71,6 +91,7 @@ pub fn check_name(name: &str) -> Result<String> {
     if name.ends_with('.') {
         bail!("names cannot end with a dot");
     }
+    check_not_reserved(&name)?;
     if classify::is_ignored(&name) {
         bail!("{name} is a reserved name");
     }
@@ -1240,12 +1261,34 @@ mod tests {
     fn names_are_checked() {
         assert_eq!(check_name("  Urlaub ").unwrap(), "Urlaub");
         assert_eq!(check_name("O\u{308}sterreich").unwrap(), "\u{d6}sterreich");
-        for bad in ["", " ", "a/b", "a:b", ".hidden", "dots.", "._x", ".shoebox", "Thumbs.db", "tab\there"] {
+        for bad in ["", " ", "a/b", "a:b", ".hidden", "dots.", "._x", ".shoebox", "Thumbs.db", "tab\there", "CON", "nul", "Com1", "LPT9", "aux.txt", "PRN .x"] {
             assert!(check_name(bad).is_err(), "{bad:?}");
+        }
+        for fine in ["console", "COM10", "LPT0", "Nullen", "con-trast"] {
+            assert!(check_name(fine).is_ok(), "{fine:?}");
         }
         assert_eq!(check_folder_path("/Familie / 2020-07 Urlaub/").unwrap(), "Familie/2020-07 Urlaub");
         assert_eq!(check_folder_path("").unwrap(), "");
         assert!(check_folder_path("a/../b").is_err());
+    }
+
+    #[test]
+    fn device_names_are_refused_everywhere() {
+        for reserved in ["CON", "prn", "Aux", "NUL", "com1", "COM9", "lpt1", "LPT9", "con.txt", "Nul.tar.gz", "CON .x", "COM\u{b2}", "LPT\u{b3}"] {
+            assert!(is_reserved_device_name(reserved), "{reserved:?}");
+            assert!(check_not_reserved(reserved).is_err(), "{reserved:?}");
+            assert!(check_name(reserved).is_err(), "{reserved:?}");
+            // Any part of a folder path counts, not only the last.
+            assert!(check_folder_path(&format!("Familie/{reserved}")).is_err(), "{reserved:?}");
+            assert!(check_folder_path(&format!("{reserved}/2020")).is_err(), "{reserved:?}");
+        }
+        for fine in ["console", "COM0", "COM10", "LPT0", "Nullen", "my.con", "a.con.txt", "", "Auxiliary"] {
+            assert!(!is_reserved_device_name(fine), "{fine:?}");
+            assert!(check_not_reserved(fine).is_ok(), "{fine:?}");
+        }
+        assert_eq!(check_folder_path("Familie/Console/2020").unwrap(), "Familie/Console/2020");
+        let message = check_not_reserved("CON").unwrap_err().to_string();
+        assert!(message.starts_with("CON is a reserved Windows name"), "{message}");
     }
 
     #[test]

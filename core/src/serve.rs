@@ -297,7 +297,7 @@ impl Slot {
     fn new(root: &FsPath, db: Option<PathBuf>) -> Result<Slot> {
         // The drive may be missing: the name comes from the path as given.
         let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-        let name = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| root.display().to_string());
+        let name = volume::library_name(&root);
         let db = db.map(std::path::absolute).transpose()?;
         Ok(Slot { id: library_id(&name), name, root, db, live: Mutex::new(Live::default()) })
     }
@@ -373,15 +373,15 @@ impl App {
     /// Open one library (its index, thumbnails and faces) and start its
     /// background work.
     fn open(root: &FsPath, db_path: PathBuf, shared: &Arc<Shared>) -> Result<Arc<App>> {
-        let root = root.canonicalize().with_context(|| format!("cannot open {}", root.display()))?;
+        let root = root.canonicalize().with_context(|| format!("cannot open {}", volume::display_path(&root)))?;
         if !db_path.is_file() {
-            bail!("no index at {} (run `shoebox scan` first)", db_path.display());
+            bail!("no index at {} (run `shoebox scan` first)", volume::display_path(&db_path));
         }
         let conn = db::open_shared(&db_path)?;
         thumbs::attach(&conn, &db_path)?;
         recognize::attach(&conn, &db_path)?;
 
-        let name = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| root.display().to_string());
+        let name = volume::library_name(&root);
         // Older versions kept a crop of every face looked at, and some people
         // have no picture of their own yet.
         let (covers, pruned) = people_api::tidy(&conn);
@@ -2695,11 +2695,11 @@ async fn export_check(
         let plan = export::plan(&app.conn.lock().unwrap(), &req.ids, req.options, &dest).map_err(bad)?;
         let shoebox = export::shoebox_drive(&dest).map(|drive| {
             let same = export::drive_of_index(&app.db_path).is_some_and(|own| own == drive);
-            let name = drive.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| drive.display().to_string());
-            serde_json::json!({ "name": library::nfc(&name), "path": drive.display().to_string(), "same_drive": same })
+            let name = volume::library_name(&drive);
+            serde_json::json!({ "name": library::nfc(&name), "path": volume::display_path(&drive), "same_drive": same })
         });
         Ok(Json(serde_json::json!({
-            "dest": dest.display().to_string(),
+            "dest": volume::display_path(&dest),
             "exists": dest.is_dir(),
             "counts": plan.counts,
             "skipped": plan.skipped,
