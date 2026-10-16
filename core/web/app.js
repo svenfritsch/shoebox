@@ -5058,7 +5058,9 @@ function personField(done, opts) {
   };
   input.addEventListener('focus', render);
   input.addEventListener('input', render);
-  input.addEventListener('blur', function () { setTimeout(function () { list.hidden = true; }, 150); });
+  // Not when the field has the focus again by then: picking Cat or Dog in the
+  // "Add face" dialog takes it away and gives it straight back.
+  input.addEventListener('blur', function () { setTimeout(function () { if (document.activeElement !== input) list.hidden = true; }, 150); });
   input.addEventListener('keydown', function (ev) {
     ev.stopPropagation(); // arrows, Space and Escape belong to the field, not the viewer
     if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
