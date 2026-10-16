@@ -22,6 +22,7 @@ pub mod geo;
 pub mod launcher;
 pub mod libraries;
 pub mod library;
+pub mod live;
 pub mod media;
 pub mod multi;
 pub mod organize;
