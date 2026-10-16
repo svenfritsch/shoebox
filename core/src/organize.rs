@@ -276,6 +276,7 @@ pub struct RenamedFolder {
 
 /// Rename or move a folder (with everything in it) to a new NFC path.
 pub fn rename_folder(conn: &Connection, root: &Path, folder_id: i64, new_path: &str) -> Result<RenamedFolder> {
+    crate::libraries::ensure_writable(root)?;
     let (old_raw, old_nfc): (String, String) = conn
         .query_row("SELECT path, path_nfc FROM folders WHERE id = ?1", [folder_id], |r| Ok((r.get(0)?, r.get(1)?)))
         .optional()?
@@ -576,6 +577,7 @@ pub fn move_files(conn: &Connection, root: &Path, ids: &[i64], folder: &str) -> 
 /// follow the new folder; with `keep_folder_tags` the tags of the old folder
 /// stay on the photos as own tags too.
 pub fn move_files_with(conn: &Connection, root: &Path, ids: &[i64], folder: &str, keep_folder_tags: bool) -> Result<Moved> {
+    crate::libraries::ensure_writable(root)?;
     let folder = check_folder_path(folder)?;
     let (folder_id, folder_raw) = ensure_folder(conn, root, &folder)?;
     let dir = root.join(&folder_raw);
@@ -699,6 +701,7 @@ const ROTATE_MAX_BYTES: u64 = 256 << 20;
 /// old bytes are put back. The modification time is the file system's own
 /// doing, as in the Finder; the creation time must not change.
 pub fn rotate(conn: &Connection, root: &Path, id: i64, quarters: i32) -> Result<Rotated> {
+    crate::libraries::ensure_writable(root)?;
     let quarters = quarters.rem_euclid(4);
     if quarters == 0 {
         bail!("nothing to turn");
@@ -775,6 +778,7 @@ pub fn rotate(conn: &Connection, root: &Path, id: i64, quarters: i32) -> Result<
 /// anything to a PNG, means writing a new file; Apple's Preview does that and
 /// re-encodes the picture. shoebox does not touch such originals.
 pub fn turn(conn: &Connection, root: &Path, id: i64, turns: i32) -> Result<Rotated> {
+    crate::libraries::ensure_writable(root)?;
     let rec = load(conn, id)?.ok_or_else(|| anyhow!("not in the index"))?;
     let kind = classify::Kind::parse(&rec.kind).ok_or_else(|| anyhow!("{}: unknown kind", rec.path_nfc))?;
     match media::content_kind(kind, &root.join(&rec.path)) {
@@ -970,6 +974,7 @@ pub fn trash_files_tidy(conn: &Connection, root: &Path, ids: &[i64]) -> Result<T
 /// records go (with tags and duplicate decisions); the trash table keeps
 /// what is needed to put them back, own tags included.
 pub fn trash_files(conn: &Connection, root: &Path, ids: &[i64]) -> Result<Trashed> {
+    crate::libraries::ensure_writable(root)?;
     let mut out = Trashed::default();
     for group in Group::all(conn, root, ids, &mut out.skipped)? {
         let first = group.files[0].path_nfc.clone();
@@ -1130,6 +1135,7 @@ pub struct Restored {
 /// Put one batch back where it was, with the files' own tags. Fails without
 /// moving anything if one of the places is taken by now.
 pub fn restore(conn: &Connection, root: &Path, batch: i64) -> Result<Restored> {
+    crate::libraries::ensure_writable(root)?;
     let rows = trash_rows(conn, Some(batch))?;
     if rows.is_empty() {
         bail!("nothing in the trash with that number");
@@ -1172,6 +1178,7 @@ pub fn restore(conn: &Connection, root: &Path, batch: i64) -> Result<Restored> {
 
 /// Delete for good: one batch, or everything in the trash.
 pub fn empty_trash(conn: &Connection, root: &Path, batch: Option<i64>) -> Result<u64> {
+    crate::libraries::ensure_writable(root)?;
     let rows = trash_rows(conn, batch)?;
     let mut batches = HashSet::new();
     let tx = conn.unchecked_transaction()?;

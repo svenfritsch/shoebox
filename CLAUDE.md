@@ -57,13 +57,23 @@ current status and next step. Update its status table when a phase moves.
   folder is allowed after a question (its next scan finds the copies). It only
   answers to a browser on this computer (`/api/export/*`, `info.export`).
   Collection tag and numbering are browser settings, like Maps.
+- A library registered in `libraries/libraries.json` next to the program folder (phase 16,
+  [docs/phase16.md](docs/phase16.md); index in `libraries/<name>/`, not in the
+  root) is read-only: `libraries::ensure_writable(root)` is the first line of
+  every function that changes an original (move, rename, trash, restore,
+  rotate, remove copies), and nothing at all is written into its root, not
+  even `.shoebox`: an export refuses a destination inside such a folder
+  (`libraries::read_only_root_of`, called by `export::destination`). A new
+  function that changes originals or writes into a library folder must go
+  through one of the two.
 - The recognizer (Python) runs only from `recognizer/` next to the program
   (`recognize::worker_dirs`; in the release that is `program/recognizer/`),
   never from the `.shoebox/` of a drive: a drive from somebody else could bring
   code of its own.
 - The release folder has only three things on top: the start file
   (`Start shoebox.command`, `.bat`, `.sh`), `guide/` and `program/`
-  (everything else; `scripts/package.sh` makes it for every system). User data never goes into
+  (everything else; `scripts/package.sh` makes it for every system), plus
+  `libraries/` once a library is kept next to the program (phase 16). User data never goes into
   `program/` (see "The release folder" in docs/plan.md).
 - Moving to the trash from the photo view and the timeline selection is off by
   default: the library setting `allow_trash` (Settings, "Allow move to trash")

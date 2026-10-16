@@ -21,7 +21,7 @@ fn serial() -> std::sync::MutexGuard<'static, ()> {
 }
 
 fn start_launcher() -> launcher::Launcher {
-    launcher::start(&launcher::Options { port: 0, open_browser: false, config: None, reveal: None }).unwrap()
+    launcher::start(&launcher::Options { port: 0, open_browser: false, config: None, reveal: None, home: None }).unwrap()
 }
 
 /// The launcher's routes are not library routes: `/raw` sends them as written.
@@ -219,7 +219,7 @@ fn the_remembered_folders_are_a_json_file() {
     let dir = std::env::temp_dir().join(format!("shoebox-launcher-config-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let file = dir.join("nested").join("launcher.json");
-    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(file.clone()), reveal: None }).unwrap();
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(file.clone()), reveal: None, home: None }).unwrap();
     let addr = launcher.addr;
 
     assert_eq!(lget(addr, "/api/config").json(), json!({ "paths": [] }), "no file yet");
@@ -234,13 +234,13 @@ fn the_remembered_folders_are_a_json_file() {
     launcher.stop().unwrap();
 
     // The next start offers them again; a broken file is just empty.
-    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(file.clone()), reveal: None }).unwrap();
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(file.clone()), reveal: None, home: None }).unwrap();
     assert_eq!(lget(launcher.addr, "/api/config").json()["paths"][0], "/Volumes/Fotos");
     launcher.stop().unwrap();
     std::fs::write(&file, b"{ not json").unwrap();
     assert_eq!(launcher::Config::load(&file).paths.len(), 0);
     // Changing it needs the header like everything else.
-    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(file), reveal: None }).unwrap();
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(file), reveal: None, home: None }).unwrap();
     let json_ct = ("Content-Type", "application/json");
     assert_eq!(bare_request(launcher.addr, "POST", "/raw/api/config", &[json_ct], br#"{"paths":["/x"]}"#).status, 403);
     launcher.stop().unwrap();
@@ -445,7 +445,7 @@ fn ticked_folders_history_and_backup_marks_are_remembered() {
     std::fs::create_dir_all(&dir).unwrap();
     // A mark the launcher wrote earlier stays when the page saves its list.
     std::fs::write(&file, br#"{"paths":[],"backups":{"/b":{"of":"/a","at":5}}}"#).unwrap();
-    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(file.clone()), reveal: None }).unwrap();
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(file.clone()), reveal: None, home: None }).unwrap();
     let addr = launcher.addr;
 
     let saved = lpost(addr, "/api/config", &json!({ "paths": ["/a", "/b", "/c"], "checked": ["/c", "/a", "/gone"] })).json();
@@ -470,7 +470,7 @@ fn a_clean_backup_check_marks_the_backup_and_a_failed_one_takes_it_away() {
     let backup = Library::new("launcher-mark-copy");
     original.scan();
     backup.scan();
-    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(file.clone()), reveal: None }).unwrap();
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(file.clone()), reveal: None, home: None }).unwrap();
     let addr = launcher.addr;
     let (o, b) = (original.root.display().to_string(), backup.root.display().to_string());
 
@@ -504,7 +504,7 @@ fn a_result_can_be_shown_on_both_drives_but_only_inside_the_jobs_folders() {
         sink.lock().unwrap().push(p.to_path_buf());
         Ok(())
     });
-    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(std::env::temp_dir().join(format!("shoebox-reveal-{}.json", std::process::id()))), reveal: Some(reveal) }).unwrap();
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(std::env::temp_dir().join(format!("shoebox-reveal-{}.json", std::process::id()))), reveal: Some(reveal), home: None }).unwrap();
     let addr = launcher.addr;
     let (o, b) = (original.root.display().to_string(), backup.root.display().to_string());
 
@@ -539,7 +539,7 @@ fn the_backup_check_lists_removed_copies_and_the_cleanup_job_takes_them_off_the_
     let (original, backup) = (&libs[0], &libs[1]);
     shoebox::duplicates::remove_copies(&original.db(), &original.root, &[id_of(original, photo)], &[id_of(original, "Kochen/braten.jpg")], &Default::default()).unwrap();
     shoebox::organize::empty_trash(&original.db(), &original.root, None).unwrap();
-    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(std::env::temp_dir().join(format!("shoebox-clean-{}.json", std::process::id()))), reveal: None }).unwrap();
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: Some(std::env::temp_dir().join(format!("shoebox-clean-{}.json", std::process::id()))), reveal: None, home: None }).unwrap();
     let addr = launcher.addr;
     let (o, b) = (original.root.display().to_string(), backup.root.display().to_string());
 
@@ -569,7 +569,7 @@ fn the_scan_reports_copies_of_old_files_and_the_cleanup_job_removes_them() {
     let photo = "Familie/Weihnachten/DSC_2001.jpg";
     let lib = Library::new("launcher-arrivals");
     let _ = std::fs::remove_dir_all(lib.path("fixtures"));
-    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: None, reveal: None }).unwrap();
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: None, reveal: None, home: None }).unwrap();
     let addr = launcher.addr;
     let root = lib.root.display().to_string();
 
@@ -592,4 +592,127 @@ fn the_scan_reports_copies_of_old_files_and_the_cleanup_job_removes_them() {
     expected.retain(|p, _| !p.ends_with("Neu/kopie.jpg"));
     assert_eq!(lib.snapshot(), expected, "only the new copy went");
     launcher.stop().unwrap();
+}
+
+#[test]
+fn libraries_next_to_the_program_are_listed_added_renamed_moved_and_deleted_from_the_control_panel() {
+    let _turn = serial();
+    let lib = Library::new("launcher-libraries");
+    let home = std::env::temp_dir().join(format!("shoebox-launcher-{}-home", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&home).unwrap();
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: None, reveal: None, home: Some(home.clone()) }).unwrap();
+    let addr = launcher.addr;
+    let root = lib.root.display().to_string();
+
+    let none = lget(addr, "/api/libraries").json();
+    assert_eq!(none["libraries"].as_array().unwrap().len(), 0);
+    assert_eq!(none["writable"], true);
+    assert_eq!(none["dir"], home.display().to_string());
+
+    // Add: the name defaults to the folder's name, a folder that is not there is refused.
+    assert_eq!(lpost(addr, "/api/libraries", &json!({ "root": home.join("nope").display().to_string() })).status, 400);
+    let added = lpost(addr, "/api/libraries", &json!({ "root": root }));
+    assert_eq!(added.status, 200, "{}", String::from_utf8_lossy(&added.body));
+    let name = added.json()["name"].as_str().unwrap().to_string();
+    assert!(name.starts_with("shoebox-it-"), "{name}");
+    assert_eq!(lpost(addr, "/api/libraries", &json!({ "root": root })).status, 400, "the same root twice");
+    let listed = lget(addr, "/api/libraries").json();
+    assert_eq!(listed["libraries"][0]["online"], true);
+    assert_eq!(listed["libraries"][0]["photos"], Value::Null, "not scanned yet");
+
+    // A scan of that root (through the registry) keeps its index next to the program, and the list shows the count.
+    let before = lib.snapshot();
+    // SAFETY: the tests of this file that read this variable take turns (`serial`).
+    unsafe { std::env::set_var(shoebox::libraries::HOME_ENV, &home) };
+    let scan = run_job(addr, json!({ "kind": "scan", "root": root }));
+    unsafe { std::env::remove_var(shoebox::libraries::HOME_ENV) };
+    assert_eq!(scan["ok"], true, "{scan}");
+    assert!(!lib.root.join(".shoebox").exists(), "the scan wrote into the root");
+    assert_eq!(before.len(), lib.snapshot().len());
+    let listed = lget(addr, "/api/libraries").json();
+    assert!(listed["libraries"][0]["photos"].as_u64().unwrap() >= 5, "{listed}");
+
+    // Rename moves the index folder.
+    let renamed = lpost(addr, "/api/libraries/rename", &json!({ "name": name, "new_name": "Server Fotos" }));
+    assert_eq!(renamed.status, 200, "{}", String::from_utf8_lossy(&renamed.body));
+    assert!(home.join("libraries/Server Fotos/library.db").is_file());
+    assert_eq!(lpost(addr, "/api/libraries/rename", &json!({ "name": "Server Fotos", "new_name": "a/b" })).status, 400);
+
+    // Change folder: look first, then take it. A folder without the files is refused.
+    let wrong = std::env::temp_dir().join(format!("shoebox-launcher-{}-wrong", std::process::id()));
+    std::fs::create_dir_all(&wrong).unwrap();
+    assert_eq!(lpost(addr, "/api/libraries/root", &json!({ "name": "Server Fotos", "root": wrong.display().to_string() })).status, 400);
+    let seen = lpost(addr, "/api/libraries/root", &json!({ "name": "Server Fotos", "root": root, "check": true })).json();
+    assert_eq!(seen["saved"], false);
+    assert_eq!(seen["found"], seen["checked"]);
+    assert!(seen["checked"].as_u64().unwrap() >= 5);
+
+    // Remove keeps the index folder; delete removes it.
+    assert_eq!(lpost(addr, "/api/libraries/remove", &json!({ "name": "Server Fotos" })).status, 200);
+    assert!(home.join("libraries/Server Fotos/library.db").is_file());
+    assert_eq!(lget(addr, "/api/libraries").json()["libraries"].as_array().unwrap().len(), 0);
+    let again = lpost(addr, "/api/libraries", &json!({ "root": root, "name": "Neu" }));
+    assert_eq!(again.status, 200);
+    assert_eq!(lpost(addr, "/api/libraries/delete", &json!({ "name": "Neu" })).status, 200);
+    assert!(!home.join("libraries/Neu").exists());
+    // Changes need the write header like every other change.
+    assert_eq!(bare_request(addr, "POST", "/raw/api/libraries/remove", &[("Content-Type", "application/json")], br#"{"name":"x"}"#).status, 403);
+
+    launcher.stop().unwrap();
+    let _ = std::fs::remove_dir_all(&home);
+    let _ = std::fs::remove_dir_all(&wrong);
+}
+
+#[test]
+fn the_launcher_lists_places_and_folders_for_its_folder_picker() {
+    let _turn = serial();
+    let lib = Library::new("launcher-picker");
+    let launcher = start_launcher();
+    let addr = launcher.addr;
+    let places = lget(addr, "/api/places").json();
+    assert!(places["places"].is_array() && places["drives"].is_array(), "{places}");
+    let list = lget(addr, &format!("/api/folders?path={}", encode(&lib.root.display().to_string()))).json();
+    let names: Vec<&str> = list["folders"].as_array().unwrap().iter().map(|f| f["name"].as_str().unwrap()).collect();
+    assert!(names.contains(&"Familie") && names.contains(&"Ordner mit Leerzeichen"), "{names:?}");
+    assert!(!names.iter().any(|n| n.starts_with('.')), "hidden folders are not listed");
+    assert_eq!(lget(addr, "/api/folders?path=relative/path").status, 400);
+    assert_eq!(lget(addr, &format!("/api/folders?path={}", encode(&lib.path("Familie/notes.txt").display().to_string()))).status, 400, "a file is not a folder");
+    launcher.stop().unwrap();
+}
+
+#[test]
+fn a_library_cannot_be_added_when_the_program_folder_cannot_hold_libraries() {
+    let _turn = serial();
+    let lib = Library::new("launcher-libraries-unwritable");
+    let home = std::env::temp_dir().join(format!("shoebox-launcher-{}-unwritable-home", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&home).unwrap();
+    // `libraries` is a file: nothing can be made there (a read-only folder acts the same, as root cannot be refused in a test).
+    std::fs::write(home.join("libraries"), b"").unwrap();
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: None, reveal: None, home: Some(home.clone()) }).unwrap();
+    let addr = launcher.addr;
+    let r = lpost(addr, "/api/libraries", &json!({ "root": lib.root.display().to_string() }));
+    let said = String::from_utf8_lossy(&r.body).to_string();
+    assert_eq!(r.status, 400, "{said}");
+    assert!(said.contains("cannot write"), "{said}");
+    assert!(!lib.root.join(".shoebox").exists());
+    launcher.stop().unwrap();
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn a_damaged_list_of_libraries_is_reported_to_the_control_panel() {
+    let _turn = serial();
+    let home = std::env::temp_dir().join(format!("shoebox-launcher-{}-damaged-home", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(home.join("libraries")).unwrap();
+    std::fs::write(home.join("libraries/libraries.json"), "{ not json").unwrap();
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: None, reveal: None, home: Some(home.clone()) }).unwrap();
+    let r = lget(launcher.addr, "/api/libraries");
+    let said = String::from_utf8_lossy(&r.body).to_string();
+    assert_eq!(r.status, 500, "{said}");
+    assert!(said.contains("libraries.json"), "{said}");
+    launcher.stop().unwrap();
+    let _ = std::fs::remove_dir_all(&home);
 }

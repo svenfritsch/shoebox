@@ -173,9 +173,11 @@ CREATE INDEX IF NOT EXISTS face_decisions_key ON face_decisions(key);
 CREATE INDEX IF NOT EXISTS face_decisions_person ON face_decisions(person_id);
 ";
 
-/// Default database location for a library root.
+/// Default database location for a library root: in the program's
+/// `libraries/<name>/` if the root is registered there (phase 16), else the
+/// root's own `.shoebox/`.
 pub fn default_path(root: &Path) -> PathBuf {
-    root.join(DIR).join(FILE)
+    crate::libraries::index_db(root).unwrap_or_else(|| root.join(DIR).join(FILE))
 }
 
 /// Open for a command that owns the index (scan, verify): also marks jobs
@@ -204,6 +206,8 @@ pub fn open_existing(path: &Path) -> Result<Connection> {
 /// Open alongside other processes (the web server runs while a scan may be
 /// writing), leaving their `running` jobs alone.
 pub fn open_shared(path: &Path) -> Result<Connection> {
+    // A damaged list of libraries would hide which folders are only read (phase 16).
+    crate::libraries::check_registry()?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
     }

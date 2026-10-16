@@ -858,6 +858,7 @@ pub fn remove_copies(
     remove: &[i64],
     dates: &HashMap<i64, String>,
 ) -> Result<Removed> {
+    crate::libraries::ensure_writable(root)?;
     if keep.is_empty() {
         bail!("at least one copy has to stay");
     }

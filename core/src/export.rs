@@ -605,6 +605,12 @@ pub fn destination(parent: &str, name: &str) -> Result<PathBuf> {
     if !parent.is_absolute() || !parent.is_dir() {
         bail!("choose the folder to save in");
     }
+    // A library whose index is kept next to the program is only read: no copies into its folder.
+    // (With a damaged list of libraries nobody can tell which folders those are.)
+    crate::libraries::check_registry()?;
+    if let Some(lib) = crate::libraries::read_only_root_of(parent) {
+        bail!("{} is read-only for shoebox (its index is kept next to the program), nothing can be saved in it: choose a folder outside it", lib.name);
+    }
     Ok(parent.join(name))
 }
 
