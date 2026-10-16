@@ -20,6 +20,7 @@ pub mod forget;
 pub mod fsinfo;
 pub mod geo;
 pub mod launcher;
+pub mod libraries;
 pub mod library;
 pub mod media;
 pub mod multi;

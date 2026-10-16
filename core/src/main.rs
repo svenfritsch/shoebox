@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use shoebox::{backup, faces, launcher, probe, recognize, report, scan, serve, verify};
+use shoebox::{backup, faces, launcher, libraries, probe, recognize, report, scan, serve, verify};
 
 #[derive(Parser)]
 #[command(name = "shoebox", version, about = "Local photo library on an external drive")]
@@ -35,8 +35,17 @@ enum Command {
         /// Library root (the drive or the folder that holds the photos).
         root: PathBuf,
         /// Database to use instead of `<root>/.shoebox/library.db`.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "index_next_to_program")]
         db: Option<PathBuf>,
+        /// Keep the index next to the program (in `libraries/<name>/`) and write
+        /// nothing into the library root; the folder is read-only for shoebox.
+        /// Registers the folder first (see `shoebox libraries`).
+        #[arg(long)]
+        index_next_to_program: bool,
+        /// Name of the library with `--index-next-to-program` (default: the
+        /// folder's name).
+        #[arg(long, requires = "index_next_to_program")]
+        name: Option<String>,
         /// Skip computing full hashes (the next scan catches up).
         #[arg(long)]
         quick: bool,
@@ -130,6 +139,18 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Libraries whose index is kept next to the program instead of in the
+    /// folder (a server, a shared or read-only folder): list, add, rename,
+    /// point to another folder, remove, delete the index. Without a command:
+    /// the list.
+    Libraries {
+        #[command(subcommand)]
+        command: Option<LibrariesCommand>,
+        /// Print the list as JSON on standard output (the usual text goes to
+        /// standard error).
+        #[arg(long)]
+        json: bool,
+    },
     /// Faces found by `shoebox recognize`.
     Faces {
         #[command(subcommand)]
@@ -176,6 +197,39 @@ enum Command {
         /// (default: $SHOEBOX_RECOGNIZER, else the one in `recognizer/` next to shoebox).
         #[arg(long)]
         recognizer: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum LibrariesCommand {
+    /// Add a folder; nothing is written into it. Scan it afterwards.
+    Add {
+        /// The folder with the photos.
+        root: PathBuf,
+        /// A name for the library (default: the folder's name).
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Give a library another name (its index folder is renamed too).
+    Rename { name: String, new_name: String },
+    /// Point a library at another folder (the share moved, the drive letter
+    /// changed). The index is kept; a folder that holds none of the indexed
+    /// photos is refused unless --force.
+    Root {
+        name: String,
+        new_root: PathBuf,
+        #[arg(long)]
+        force: bool,
+    },
+    /// Take a library off the list; its index folder stays.
+    Remove { name: String },
+    /// Delete the index of a library and take it off the list (the photos are
+    /// not touched; tags, dates and names added in shoebox go with it).
+    Delete {
+        name: String,
+        /// Really do it.
+        #[arg(long)]
+        yes: bool,
     },
 }
 
@@ -234,6 +288,7 @@ fn main() -> ExitCode {
             | Command::Verify { json: true, .. }
             | Command::Recognize { json: true, .. }
             | Command::Backup { json: true, .. }
+            | Command::Libraries { json: true, .. }
             | Command::Faces { command: FacesCommand::Stats { json: true, .. } }
             | Command::Text { command: TextCommand::Stats { json: true, .. } }
             | Command::Stats { json: true, .. }
@@ -247,13 +302,26 @@ fn main() -> ExitCode {
             report,
             limit,
         }),
-        Command::Scan { root, db, quick, no_thumbs, forget_missing, json } => {
-            scan::run(&scan::Options { root, db, full_hash: !quick, thumbs: !no_thumbs, forget_missing })
+        Command::Scan { root, db, index_next_to_program, name, quick, no_thumbs, forget_missing, json } => {
+            let registered = if index_next_to_program { libraries::register_for_scan(&root, name.as_deref()) } else { Ok(()) };
+            registered
+                .and_then(|()| scan::run(&scan::Options { root, db, full_hash: !quick, thumbs: !no_thumbs, forget_missing }))
                 .map(|stats| {
                     json_out(json, &stats);
                     true
                 })
         }
+        Command::Libraries { command, json } => match command {
+            None => libraries::cli_list().map(|v| {
+                json_out(json, &v);
+                true
+            }),
+            Some(LibrariesCommand::Add { root, name }) => libraries::cli_add(&root, name.as_deref()).map(|()| true),
+            Some(LibrariesCommand::Rename { name, new_name }) => libraries::cli_rename(&name, &new_name).map(|()| true),
+            Some(LibrariesCommand::Root { name, new_root, force }) => libraries::cli_root(&name, &new_root, force).map(|()| true),
+            Some(LibrariesCommand::Remove { name }) => libraries::cli_remove(&name).map(|()| true),
+            Some(LibrariesCommand::Delete { name, yes }) => libraries::cli_delete(&name, yes).map(|()| true),
+        },
         Command::Verify { root, db, quick, limit, json } => {
             verify::run(&verify::Options { root, db, quick, limit }).map(|r| {
                 json_out(json, &r);

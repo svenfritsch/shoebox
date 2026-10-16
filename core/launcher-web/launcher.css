@@ -105,3 +105,77 @@ header { position: relative; }
 .summary-line { color: var(--muted); font-size: 14px; }
 .addons input:disabled + b, .addons input:disabled { opacity: 1; }
 .addons .pill.req { color: var(--bad, #b3261e); font-weight: 600; }
+
+/* libraries kept next to the program (phase 16) */
+i.info { display: inline-block; width: 14px; height: 14px; margin-left: 6px; line-height: 13px; text-align: center; border: 1px solid var(--muted); border-radius: 50%; font-size: 10px; font-style: normal; cursor: help; vertical-align: 1px; color: var(--muted); }
+#libs-tabs { margin-top: 0; margin-bottom: 14px; }
+#libs-head { margin-top: 14px; }
+#libs-head .hint, #libs-none { margin-top: 14px; }
+#libs-head .hint { margin-top: 0; }
+button.quiet.inline { margin-left: 0; padding: 6px 14px; font-size: 14px; }
+.chips button.lib { display: inline-flex; gap: 8px; align-items: center; }
+.chips button.lib span { display: inline; font-size: 14px; color: var(--text); margin: 0; }
+.chips button.lib.off { border-style: dashed; }
+.chips button.lib.off span { color: var(--muted); }
+.badge.sep, .chips button.lib .badge.sep { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--accent); white-space: nowrap; margin: 0; }
+.chipbox li .badge.sep { color: var(--accent); }
+.sbx { width: 16px; height: 16px; flex: none; }
+.field { margin-top: 14px; }
+.field.first { margin-top: 0; }
+.choice { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; margin-top: 8px; color: var(--text); font-size: 15px; cursor: pointer; }
+.choice input { margin-top: 4px; }
+.choice.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.choice.disabled { opacity: .55; cursor: not-allowed; }
+.choice b { display: block; font-weight: 600; }
+.choice span { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+.note { margin: 12px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); font-size: 14px; }
+.note.warn { border-color: var(--bad); color: var(--bad); }
+.note.ok { color: var(--ok); }
+.btnrow { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.btnrow button { text-align: center; }
+.libs { list-style: none; margin: 10px 0 0; padding: 0; }
+.libs li { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.libs li:last-child { border-bottom: 0; }
+.libs .top { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.libs .lname { font-weight: 600; }
+.libs .lpath { color: var(--muted); font-size: 13px; word-break: break-all; }
+.libs .acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.libs .acts button { padding: 4px 12px; font-size: 13px; border-radius: 8px; }
+.libs .acts button.danger { padding: 4px 12px; }
+.libs .state { padding: 2px 10px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); font-size: 13px; white-space: nowrap; color: var(--ok); }
+.libs .state.off { color: var(--muted); border-style: dashed; }
+.libs .edit { display: flex; gap: 8px; margin-top: 10px; }
+.libs .edit input { flex: 1; }
+
+.rootrow { display: flex; gap: 8px; align-items: flex-start; }
+.rootrow .chipbox, .rootrow > input { flex: 1; min-width: 0; }
+.rootrow > button.quiet { margin-left: 0; white-space: nowrap; align-self: stretch; }
+.chip-edit { font: inherit; font-size: 14px; padding: 2px 8px; border: 1px solid var(--accent); border-radius: 999px; background: var(--bg); color: var(--text); min-width: 160px; }
+/* dialogs: the rest of the page is greyed out behind them */
+dialog.dlg { border: 1px solid var(--line); border-radius: 14px; background: var(--card); color: var(--text); padding: 20px; width: min(540px, calc(100vw - 32px)); box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+dialog.dlg.wide { width: min(760px, calc(100vw - 32px)); }
+dialog.dlg::backdrop { background: rgba(0,0,0,.5); }
+dialog.dlg h3 { margin: 0 0 10px; font-size: 17px; }
+dialog.dlg p { margin: 0; }
+dialog.dlg p.error { margin-top: 10px; }
+/* the folder picker, as in the photo app's export dialog */
+.x-pk { display: flex; border: 1px solid var(--line); border-radius: 8px; height: 300px; overflow: hidden; }
+.x-pk nav { width: 190px; flex: none; background: var(--bg); border-right: 1px solid var(--line); overflow-y: auto; padding: 6px 0; font-size: 14px; }
+.x-pk nav h4 { margin: 8px 14px 3px; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.x-pk nav div { padding: 5px 14px; display: flex; gap: 8px; align-items: baseline; cursor: pointer; }
+.x-pk nav div small { margin-left: auto; color: var(--muted); font-size: 11px; }
+.x-pk nav div.on { background: var(--accent); color: var(--accent-text); }
+.x-pk nav div.on small { color: var(--accent-text); }
+.x-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.x-crumbs { padding: 8px 12px; font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--line); overflow-x: auto; white-space: nowrap; }
+.x-crumbs button.link { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.x-crumbs button.link:hover { color: var(--accent); }
+.x-main ul { list-style: none; margin: 0; padding: 4px 0; flex: 1; overflow-y: auto; font-size: 14px; }
+.x-main li { padding: 5px 12px; display: flex; gap: 8px; align-items: baseline; cursor: pointer; }
+.x-main li:hover { background: var(--bg); }
+.x-main li small { margin-left: auto; color: var(--muted); font-size: 12px; }
+.x-main li.x-none { color: var(--muted); cursor: default; }
+.x-main li span { display: inline-flex; align-items: center; gap: 8px; }
+.fld { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linejoin: round; opacity: .7; }
+.x-selected { margin: 8px 0 0; }
+.hint.first { margin-top: 0; }
