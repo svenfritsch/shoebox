@@ -433,8 +433,47 @@ rot) and shows "last backup N days ago, M files new since".
 | 12 | Estimated capture date: a date of the user's own (year, month or day) for a photo, kept in `library.db` only, that wins over the file's date on the timeline; "Needs a date" worklist; search by date with the Date group and `date:` / `datum:` (design in [phase12.md](phase12.md)) | **Built except the real-hardware check**: core, info panel (pencil, dialog, EXIF row), "~", year-only group, selection with Undo, "Needs a date", date search (`date:` / `datum:`), guide in both languages |
 | 13 | Export: collect photos with a tag (Settings → Collection, bookmark button, shortcut C) or a selection and copy them into a new numbered folder (`001_IMG_3457.jpg`), optionally RAW partners and HEIC as JPEG, with a folder picker; re-export adds only what is new (design and mock-ups in [phase13.md](phase13.md)) | **Built, check open**: `export.rs`, local-only API, dialog with folder picker, collection button (C), settings, guide; real-hardware check (USB stick, Windows, macOS) open |
 | 14 | Backup comparison views: the backup check's lists get a "Show photos" button (Manage drives). "Only on backup" (on the backup) and "Only on original" (on the drive it copies) are filter chips on that drive's own timeline (`compare=backup|original`, worked out in `serve::forward` from the two indexes, offered in the search as "only on", "nur auf", "backup"); "different on the backup" opens the timeline of both drives of the pair in path order, so the two versions of a photo sit side by side, each with an Original or Backup badge (`/api/all/timeline?compare=different`). A chip a drive cannot show (a drive that is not half of a pair, All drives, nothing to show) is dropped with a note. Read only: nothing is written to either drive. Also: one drawn open-folder icon instead of the folder emoji; the backup card's progress bar had the header's `.bar` class and was drawn at the top of the window | **Done except the real-hardware run**; guide text updated, guide screenshots not regenerated yet |
+| 15 | Your data between drives: search suggestion counts in All drives that narrow with the filter, and "Carry over data" (Manage drives): tags, hearts, people, dates and places of photos on one shoebox drive are added to the same photos (matched by content) on another, five check boxes ticked by default; later a second source, `userdata.json` (15b); "Ignore folders" for duplicates across drives (15c). No moving of photos, no "keep both" (design in [phase15.md](phase15.md)) | **Planned**: plan written, nothing built; open questions in [phase15.md](phase15.md) section 10 |
 | 16 | Index next to the program: a library (a folder on a server or NAS) keeps its `library.db`, `thumbs.db` and `recognition.db` in `<shoebox folder>/libraries/<name>/` (beside `program/`, phase 17) instead of `<root>/.shoebox/`; `libraries/libraries.json` is the registry (name, root path, changeable) and feeds the Control Panel's drive list; nothing is written to the scanned folder (design in [phase16.md](phase16.md)) | **Design only**, nothing built; the Windows real-PC check comes first |
 | 17 | Release folder with three things on top (`Start shoebox.command`, `guide/`, `program/` with everything else; "The release folder" above), the older `.shoebox/bin/` layout removed. Then Windows and Linux releases by hand: `release-by-hand.yml` (inputs: system, tag) builds one system in the same layout (`scripts/package.sh`, the guide taken from the release's macOS archive) and adds `shoebox-windows.zip` or `shoebox-linux.tar.gz` to that tag's release; without a tag only an artifact for testing. The automatic release stays macOS only. Also: shoebox refuses a program folder or a library inside a cloud-synced folder (OneDrive, iCloud Drive, Dropbox, Google Drive, …) on Windows and macOS (plan in [phase17.md](phase17.md)) | Release folder **done** (macOS release, launchers, guide; from the next tag). Windows: **checked on a real PC** (start, SmartScreen, add-ons, recognize, Show in Explorer; fixes in #125), guide updated. `release-by-hand.yml` (Windows and Linux): **built**, not run on GitHub yet; Linux not tried on a real PC. Cloud-folder check: **plan** |
+| 18 | Identical photos once in the common timeline (All drives): a photo with the same file name and the same full hash on more than one drive is shown once (a switch, on by default), the other copies listed in the info panel ("Also on"), search counts count it once; read only (design in [phase18.md](phase18.md)) | **Planned**: plan written, nothing built; open questions in [phase18.md](phase18.md) section 5 |
+
+### Phase 15 details (your data between drives)
+
+Full plan, use cases and tests: [phase15.md](phase15.md). Summary:
+- Photos are not moved by shoebox: copying is Finder's or Explorer's job (or the
+  export's). What stays behind is the user's data in the source drive's
+  `library.db`. **Carry over data** reads the other drive's index (read-only,
+  `ATTACH`) and adds to the target's index, by content hash and not by name or
+  folder: tags, hearts, people (decisions, person by name), dates (corrected and
+  estimated) and places (by hand). Five check boxes, all ticked by default.
+  Existing target data wins; one transaction; run again is a no-op; no photo
+  is touched; backups are refused.
+- Not offered yet but named: other marks (turned views, screenshot marks,
+  hidden text lines).
+- 15b (own PR): the same apply code with a second reader, `userdata.json`, for
+  a source drive that is gone or erased (also a restore after a lost
+  `library.db`).
+- 15c (own PR): "Ignore folders", a list of folder names (kept by the browser)
+  that hides photos from the Across drives duplicates when any copy lies
+  in such a folder (a folder anywhere in the path, found on one drive is
+  enough, the other drive's folder may have another name). The names are typed
+  into a chips input (the chips sit inside the field) that suggests folder names
+  from the list with the number of photos each would hide. Only a filter, nothing
+  stored per photo.
+- Search counts in All drives take the active filter, so they equal the result.
+- Dropped: "keep both" per photo; moving photos between drives inside shoebox.
+
+
+### Phase 18 details (identical photos once)
+
+Full plan: [phase18.md](phase18.md). In All drives a photo is shown once when
+another drive has a file with the same name (last path component, NFC, case-folded)
+and the same full hash; both must match, anything else (renamed copies, same name
+with other content, no hash yet) stays as it is. A switch turns it off. Which copy
+shows: the first drive in the list. The info panel lists the other copies. Counts
+in the search suggestions (phase 15a) count identical photos once. Single-drive
+timelines and the backup comparison are not merged. Nothing is written.
 
 ### Phase 10: locations
 
