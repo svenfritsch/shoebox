@@ -163,11 +163,11 @@ Built:
   (the existing groups and decisions) and "Across drives" (same content on
   different drives, side by side, with "Move to trash" per copy and a note
   for drives left out as backups). In "All drives" only the second exists.
-- Not yet done: moving files between drives, a decision "keep both" for
+- Not yet done (counts and carrying data over are planned in [phase15.md](phase15.md); moving files stays in the file manager): a decision "keep both" for
   copies on different drives, the 90 % threshold on real data, counts in the
   search suggestions that narrow with the filter (they are per name, over all
   drives). Identical photos on two separate drives show twice in the common
-  timeline.
+  timeline (planned in [phase18.md](phase18.md)).
 
 - Every drive keeps its own `.shoebox` folder with `library.db`, `thumbs.db`
   and `recognition.db`. The app opens several libraries at once with one
