@@ -51,6 +51,18 @@ const FORBIDDEN: &[char] = &['/', '\\', ':', '*', '?', '"', '<', '>', '|'];
 
 // ---------------------------------------------------------------- names
 
+/// Names Windows keeps for devices (`CON`, `NUL`, `COM1`, ...), with or
+/// without an extension (`con.txt`) and with spaces before the dot. A folder
+/// like that made on a Mac cannot be opened on a PC, and the drive moves
+/// between systems, so they are refused everywhere.
+pub fn is_reserved_device_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or("").trim_end_matches(' ').to_ascii_uppercase();
+    matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || ["COM", "LPT"].iter().any(|p| {
+            stem.strip_prefix(p).is_some_and(|n| matches!(n, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "\u{b9}" | "\u{b2}" | "\u{b3}"))
+        })
+}
+
 /// A file or folder name typed by the user, trimmed and NFC-normalised.
 /// Refuses names that would be hidden, skipped by the scanner, or invalid
 /// on exFAT.
@@ -70,6 +82,9 @@ pub fn check_name(name: &str) -> Result<String> {
     }
     if name.ends_with('.') {
         bail!("names cannot end with a dot");
+    }
+    if is_reserved_device_name(&name) {
+        bail!("{name} is a reserved Windows name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), a PC cannot open it");
     }
     if classify::is_ignored(&name) {
         bail!("{name} is a reserved name");
@@ -1233,8 +1248,11 @@ mod tests {
     fn names_are_checked() {
         assert_eq!(check_name("  Urlaub ").unwrap(), "Urlaub");
         assert_eq!(check_name("O\u{308}sterreich").unwrap(), "\u{d6}sterreich");
-        for bad in ["", " ", "a/b", "a:b", ".hidden", "dots.", "._x", ".shoebox", "Thumbs.db", "tab\there"] {
+        for bad in ["", " ", "a/b", "a:b", ".hidden", "dots.", "._x", ".shoebox", "Thumbs.db", "tab\there", "CON", "nul", "Com1", "LPT9", "aux.txt", "PRN .x"] {
             assert!(check_name(bad).is_err(), "{bad:?}");
+        }
+        for fine in ["console", "COM10", "LPT0", "Nullen", "con-trast"] {
+            assert!(check_name(fine).is_ok(), "{fine:?}");
         }
         assert_eq!(check_folder_path("/Familie / 2020-07 Urlaub/").unwrap(), "Familie/2020-07 Urlaub");
         assert_eq!(check_folder_path("").unwrap(), "");
