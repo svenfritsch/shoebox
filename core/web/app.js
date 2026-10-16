@@ -5005,6 +5005,9 @@ function personField(done, opts) {
   var list = el('div', 'plist');
   list.id = 'plist-' + (++pfieldSeq);
   list.setAttribute('role', 'listbox');
+  // Not a Tab stop either (a browser makes a scrolling box without one of its
+  // own; it would take the focus and then fold away).
+  list.tabIndex = -1;
   list.hidden = true;
   input.setAttribute('role', 'combobox');
   input.setAttribute('aria-autocomplete', 'list');
