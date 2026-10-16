@@ -812,6 +812,8 @@ body.geo-view #page { padding: 0; height: 100%; }
 .dialog .kinds button:last-child { border-radius: 0 8px 8px 0; }
 .dialog .kinds button + button { border-left: 0; }
 .dialog .kinds button.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+/* Above its neighbours, so the whole focus ring shows. */
+.dialog .kinds button:focus-visible { position: relative; z-index: 1; outline: 2px solid var(--fg); outline-offset: 2px; }
 .dialog .pfield + .hint { margin-top: 12px; }
 
 /* Duplicates across drives: one picture, one row per copy */

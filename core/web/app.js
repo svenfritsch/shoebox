@@ -2309,6 +2309,23 @@ $('modal').addEventListener('mousedown', function (ev) { modalPressed = ev.targe
 $('modal').addEventListener('touchstart', function (ev) { modalPressed = ev.target === this; }, { passive: true });
 $('modal').addEventListener('click', function (ev) { if (ev.target === this && modalPressed) closeModal(); modalPressed = false; });
 
+// Tab stays in an open dialog: from the last control to the first and back,
+// never on to the page behind it. Capturing, so it also works from fields
+// that keep their keys to themselves.
+document.addEventListener('keydown', function (ev) {
+  if (ev.key !== 'Tab' || $('modal').hidden) return;
+  var dialog = document.querySelector('#modal .dialog');
+  var all = Array.prototype.filter.call(dialog.querySelectorAll('button, input, select, textarea, a[href], [tabindex]'), function (e) {
+    return e.tabIndex >= 0 && !e.disabled && e.getClientRects().length;
+  });
+  if (!all.length) return;
+  var first = all[0], last = all[all.length - 1], at = document.activeElement;
+  if (!dialog.contains(at) || (ev.shiftKey ? at === first : at === last)) {
+    ev.preventDefault();
+    (ev.shiftKey ? last : first).focus();
+  }
+}, true);
+
 // Shows what did not work, if anything.
 function report(title, lines) {
   if (!lines || !lines.length) return;
@@ -4971,7 +4988,11 @@ function kindOf(p, species) {
 // that makes naming quick); picking one calls done({person_id} or {name},
 // label). opts: allowNew (offer a new person of the typed name), except
 // (ids to leave out), placeholder, species (a species, or a function giving
-// it when the list is drawn: the new one is then a "cat", "dog" or "pet").
+// it when the list is drawn: the new one is then a "cat", "dog" or "pet"),
+// onEscape (Escape with the list closed; in a dialog it closes the dialog).
+// For the keyboard it is a combobox: the arrows move through the list while
+// the focus stays in the field, so Tab goes on to the dialog's buttons.
+var pfieldSeq = 0;
 function personField(done, opts) {
   opts = opts || {};
   var wrap = el('div', 'pfield');
@@ -4982,21 +5003,57 @@ function personField(done, opts) {
   input.setAttribute('autocapitalize', 'words');
   input.setAttribute('enterkeyhint', 'done');
   var list = el('div', 'plist');
+  list.id = 'plist-' + (++pfieldSeq);
   list.setAttribute('role', 'listbox');
   list.hidden = true;
+  input.setAttribute('role', 'combobox');
+  input.setAttribute('aria-autocomplete', 'list');
+  input.setAttribute('aria-controls', list.id);
+  input.setAttribute('aria-expanded', 'false');
   wrap.appendChild(input);
   wrap.appendChild(list);
   var items = [], at = -1;
+  var setOpen = function (open) {
+    list.hidden = !open;
+    input.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (!open) input.removeAttribute('aria-activedescendant');
+  };
   // Only the kind of face being named is offered: people for faces, cats for
   // a cat, dogs for a dog.
   var kind = function () { return typeof opts.species === 'function' ? opts.species() : opts.species || ''; };
   var pick = function (it) {
-    list.hidden = true;
+    setOpen(false);
     input.value = it.label;
     done(it.who, it.label);
   };
   var mark = function () {
-    Array.prototype.forEach.call(list.querySelectorAll('.item'), function (b, k) { b.classList.toggle('at', k === at); });
+    Array.prototype.forEach.call(list.querySelectorAll('.item'), function (b, k) {
+      b.classList.toggle('at', k === at);
+      b.setAttribute('aria-selected', k === at ? 'true' : 'false');
+      if (k === at) { input.setAttribute('aria-activedescendant', b.id); b.scrollIntoView({ block: 'nearest' }); }
+    });
+  };
+  // An option of the list: a button for mouse and touch, out of the Tab order.
+  var option = function (cls, text) {
+    var b = el('button', cls, text);
+    b.type = 'button';
+    b.tabIndex = -1;
+    b.id = list.id + '-' + items.length;
+    b.setAttribute('role', 'option');
+    b.setAttribute('aria-selected', 'false');
+    b.onmousedown = function (ev) { ev.preventDefault(); };
+    return b;
+  };
+  // A titled part of the list (a group of options for screen readers).
+  var group = function (title) {
+    var g = el('div');
+    g.setAttribute('role', 'group');
+    var h = el('div', 'head', title);
+    h.id = list.id + '-g' + list.childNodes.length;
+    g.setAttribute('aria-labelledby', h.id);
+    g.appendChild(h);
+    list.appendChild(g);
+    return g;
   };
   var isTaken = function (text) {
     return people.list.some(function (p) { return fold(p.name) === fold(text) && !(opts.except && opts.except.indexOf(p.id) >= 0); });
@@ -5006,20 +5063,24 @@ function personField(done, opts) {
     list.textContent = '';
     items = [];
     at = -1;
+    input.removeAttribute('aria-activedescendant');
     var offered = function (p) {
       return kindOf(p, kind()) && (!low || fold(p.name).indexOf(low) >= 0) && !(opts.except && opts.except.indexOf(p.id) >= 0);
     };
-    var addItem = function (p) {
+    var addItem = function (into, p) {
       var it = { who: { person_id: p.id }, label: p.name };
       if (fold(p.name) === low) exact = it;
-      var b = el('button', 'item');
-      b.type = 'button';
+      var b = option('item');
       b.appendChild(avatar(p, 'tiny'));
       b.appendChild(el('span', '', p.name));
-      b.onmousedown = function (ev) { ev.preventDefault(); };
       b.onclick = function () { pick(it); };
       items.push(it);
-      list.appendChild(b);
+      into.appendChild(b);
+    };
+    var section = function (title, ps) {
+      if (!ps.length) return;
+      var g = group(title);
+      ps.forEach(function (p) { addItem(g, p); });
     };
     // First the people named last, then (field empty) the most photographed,
     // then everyone by group; nobody twice.
@@ -5032,41 +5093,39 @@ function personField(done, opts) {
         .sort(function (a, b) { return b.photos - a.photos || a.name.localeCompare(b.name); }).slice(0, RECENT_MAX);
       frequent.forEach(function (p) { shown[p.id] = true; });
     }
-    if (top.length) { list.appendChild(el('div', 'head', tr('suggest.recent'))); top.forEach(addItem); }
-    if (frequent.length) { list.appendChild(el('div', 'head', tr('suggest.most_photos'))); frequent.forEach(addItem); }
+    section(tr('suggest.recent'), top);
+    section(tr('suggest.most_photos'), frequent);
     groupedPeople().forEach(function (s) {
-      var ps = s.people.filter(function (p) { return offered(p) && !shown[p.id]; });
-      if (!ps.length) return;
-      list.appendChild(el('div', 'head', s.name));
-      ps.forEach(addItem);
+      section(s.name, s.people.filter(function (p) { return offered(p) && !shown[p.id]; }));
     });
     if (opts.allowNew && text && !exact && isTaken(text)) {
       // A name is one person's, whatever the kind: not offered again as new.
-      list.appendChild(el('div', 'head', tr('people.name_taken', { name: text })));
+      var taken = el('div', 'head', tr('people.name_taken', { name: text }));
+      taken.setAttribute('role', 'option');
+      taken.setAttribute('aria-disabled', 'true');
+      list.appendChild(taken);
     } else if (opts.allowNew && text && !exact) {
       var it = { who: { name: text }, label: text };
       var sp = kind();
-      var b = el('button', 'item new', tr(sp ? 'people.new.' + (PET_ICON[sp] ? sp : 'pet') : 'people.new_person', { name: text }));
-      b.type = 'button';
-      b.onmousedown = function (ev) { ev.preventDefault(); };
+      var b = option('item new', tr(sp ? 'people.new.' + (PET_ICON[sp] ? sp : 'pet') : 'people.new_person', { name: text }));
       b.onclick = function () { pick(it); };
       items.push(it);
       list.appendChild(b);
     }
     wrap.exact = exact;
-    list.hidden = !list.childNodes.length || document.activeElement !== input;
+    setOpen(list.childNodes.length > 0 && document.activeElement === input);
   };
   input.addEventListener('focus', render);
   input.addEventListener('input', render);
   // Not when the field has the focus again by then: picking Cat or Dog in the
   // "Add face" dialog takes it away and gives it straight back.
-  input.addEventListener('blur', function () { setTimeout(function () { if (document.activeElement !== input) list.hidden = true; }, 150); });
+  input.addEventListener('blur', function () { setTimeout(function () { if (document.activeElement !== input) setOpen(false); }, 150); });
   input.addEventListener('keydown', function (ev) {
     ev.stopPropagation(); // arrows, Space and Escape belong to the field, not the viewer
     if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
       if (!items.length) return;
       ev.preventDefault();
-      list.hidden = false;
+      setOpen(true);
       at = ev.key === 'ArrowDown' ? (at + 1) % items.length : (at + items.length - 1) % items.length;
       mark();
     } else if (ev.key === 'Enter') {
@@ -5076,8 +5135,9 @@ function personField(done, opts) {
       else if (wrap.exact) pick(wrap.exact);
       else if (text && opts.allowNew && !isTaken(text)) pick({ who: { name: text }, label: text });
     } else if (ev.key === 'Escape') {
-      if (!list.hidden) { list.hidden = true; return; }
+      if (!list.hidden) { setOpen(false); return; }
       if (opts.onEscape) opts.onEscape();
+      else if ($('modal').contains(input)) closeModal(); // as Escape anywhere else in a dialog
     }
   });
   wrap.input = input;
@@ -6529,26 +6589,51 @@ function stopDrawing() {
 
 function nameDrawnFace(info, frac) {
   var body = el('div');
-  body.appendChild(el('p', '', tr('unnamed.who')));
+  var question = el('p', '', tr('unnamed.who'));
+  question.id = 'draw-who';
+  body.appendChild(question);
   // What was drawn: a person's face, or a cat or a dog the detector missed (a
   // pet is embedded as a whole, a face by its eyes, nose and mouth). Whoever
   // draws a pet knows which one it is, and nothing changes it later.
   var kind = '';
+  // For the keyboard a radio group: one Tab stop, the arrows change the kind.
   var kinds = el('div', 'kinds');
+  kinds.setAttribute('role', 'radiogroup');
+  kinds.setAttribute('aria-labelledby', question.id);
   var field, hint;
   var update = function () {
-    Array.prototype.forEach.call(kinds.children, function (b) { b.classList.toggle('on', b.dataset.kind === kind); });
+    Array.prototype.forEach.call(kinds.children, function (b) {
+      var on = b.dataset.kind === kind;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+      b.tabIndex = on ? 0 : -1;
+    });
     hint.textContent = tr(video ? 'draw.note_video' : kind ? 'draw.note_pet' : 'draw.note');
     field.input.value = '';
     field.input.dispatchEvent(new Event('input'));
   };
   var video = info.kind === 'video';
   [['', '🧑', 'draw.kind.person'], ['cat', PET_ICON.cat, 'draw.kind.cat'], ['dog', PET_ICON.dog, 'draw.kind.dog']].forEach(function (k) {
-    var b = el('button', '', k[1] + ' ' + tr(k[2]));
+    var b = el('button');
+    var icon = el('span', '', k[1] + ' ');
+    icon.setAttribute('aria-hidden', 'true');
+    b.appendChild(icon);
+    b.appendChild(document.createTextNode(tr(k[2])));
     b.type = 'button';
+    b.setAttribute('role', 'radio');
     b.dataset.kind = k[0];
     b.onclick = function () { kind = k[0]; update(); field.input.focus(); };
     kinds.appendChild(b);
+  });
+  kinds.addEventListener('keydown', function (ev) {
+    var step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[ev.key];
+    if (!step) return;
+    ev.preventDefault();
+    var bs = Array.prototype.slice.call(kinds.children);
+    var next = bs[(bs.indexOf(document.activeElement) + step + bs.length) % bs.length];
+    kind = next.dataset.kind;
+    update();
+    next.focus();
   });
   var save = function (who) {
     post(LIBAPI + '/faces/manual', Object.assign({ file: info.id, box: frac, species: kind || undefined }, who)).then(function () {
@@ -6562,6 +6647,8 @@ function nameDrawnFace(info, frac) {
   body.appendChild(kinds);
   body.appendChild(field);
   hint = el('p', 'hint');
+  hint.id = 'draw-note';
+  field.input.setAttribute('aria-describedby', hint.id);
   body.appendChild(hint);
   update();
   openModal(tr('draw.title'), body, [
