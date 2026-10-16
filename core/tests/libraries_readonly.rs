@@ -119,7 +119,7 @@ fn the_photo_app_says_a_library_is_read_only_and_every_change_it_could_make_is_r
     // Looking works: the timeline and a thumbnail.
     assert_eq!(get(addr, "/api/timeline").status, 200);
     assert_eq!(get(addr, &format!("/api/files/{}/thumb", ids[0])).status, 200);
-    server.stop();
+    let _ = server.stop();
 
     // Nothing in the root was touched or made, by the server or by the refused calls.
     let after = lib.snapshot();
@@ -142,7 +142,7 @@ fn a_library_on_a_drive_is_not_read_only_in_the_photo_app() {
     assert_eq!(get(addr, "/api/info").json()["read_only"], false);
     assert_eq!(get(addr, "/api/allow-trash").json()["read_only"], false);
     assert_eq!(post(addr, "/api/allow-trash", &json!({ "allow": true })).status, 200);
-    server.stop();
+    let _ = server.stop();
 }
 
 /// Every file and folder below `root`, relative, sorted.
@@ -172,11 +172,22 @@ fn wait_for_export(addr: std::net::SocketAddr) -> serde_json::Value {
 fn exporting_from_a_read_only_library_copies_out_and_never_into_its_folder() {
     let home = home();
     let lib = Library::new("readonly-export");
+    // A RAW partner next to a JPEG (the CI fixtures have such pairs, and Live Photo videos): it only
+    // comes along when the export asks for partners, which this one does not.
+    lib.write("2020-07 Urlaub Griechenland/IMG_0001.CR2", b"not really a raw file, but named like one");
     libraries::add(home, "Server export", &lib.root).unwrap();
     lib.scan();
-    let ids: Vec<i64> = {
+    // The JPEGs to export, with their paths (the library may hold more, with the fixtures of CI).
+    let (ids, paths): (Vec<i64>, Vec<String>) = {
         let conn = rusqlite::Connection::open(shoebox::db::default_path(&lib.root)).unwrap();
-        conn.prepare("SELECT id FROM files WHERE kind = 'jpeg' ORDER BY id").unwrap().query_map([], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect()
+        let rows: Vec<(i64, String)> = conn
+            .prepare("SELECT id, path FROM files WHERE kind = 'jpeg' ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        rows.into_iter().unzip()
     };
     assert!(ids.len() >= 3, "{ids:?}");
     let before = lib.snapshot();
@@ -185,7 +196,7 @@ fn exporting_from_a_read_only_library_copies_out_and_never_into_its_folder() {
     let server = start(&lib, None);
     let addr = server.addr;
     let request = |parent: &std::path::Path, name: &str| {
-        json!({ "ids": ids, "parent": parent.display().to_string(), "name": name, "options": { "number": true, "raw": true, "live": true, "heic_to_jpeg": false } })
+        json!({ "ids": ids, "parent": parent.display().to_string(), "name": name, "options": { "number": true, "raw": false, "live": false, "heic_to_jpeg": false } })
     };
 
     // Into the library's own folder, its top or a folder below it: refused, by the check and by the start,
@@ -213,18 +224,25 @@ fn exporting_from_a_read_only_library_copies_out_and_never_into_its_folder() {
     assert_eq!(status["state"], "done", "{status}");
     assert_eq!(status["copied"].as_u64().unwrap() as usize, ids.len(), "{status}");
     let copies: Vec<_> = std::fs::read_dir(out.join("from-server")).unwrap().map(|e| e.unwrap().path()).collect();
-    assert_eq!(copies.len(), ids.len());
+    assert_eq!(copies.len(), ids.len(), "{copies:?}");
+    assert!(copies.iter().all(|c| !c.to_string_lossy().to_lowercase().ends_with(".cr2")), "the RAW partner came along: {copies:?}");
     for copy in &copies {
-        // "001_IMG_0001.JPG" is the copy of the original named IMG_0001.JPG.
+        // "001_IMG_0001.JPG" is the copy of an original named IMG_0001.JPG (folders may repeat a name):
+        // its bytes are those of one of the originals with that name.
         let name = copy.file_name().unwrap().to_string_lossy().split_once('_').map(|(_, n)| n.to_string()).unwrap();
-        let original = walkdir::WalkDir::new(&lib.root).into_iter().map(|e| e.unwrap()).find(|e| e.file_name().to_string_lossy() == name).unwrap_or_else(|| panic!("no original for {name}"));
-        assert_eq!(std::fs::read(copy).unwrap(), std::fs::read(original.path()).unwrap(), "{name}");
+        let candidates: Vec<Vec<u8>> = paths
+            .iter()
+            .filter(|p| p.rsplit('/').next() == Some(name.as_str()))
+            .map(|p| std::fs::read(lib.root.join(p)).unwrap())
+            .collect();
+        assert!(!candidates.is_empty(), "no original for {name}");
+        assert!(candidates.contains(&std::fs::read(copy).unwrap()), "{name} differs from its original");
     }
 
     // Exporting again into the same folder (a merge) does not touch the library either.
     assert_eq!(post(addr, "/api/export/start", &req).status, 200);
     assert_eq!(wait_for_export(addr)["state"], "done");
-    server.stop();
+    let _ = server.stop();
 
     // The guard: nothing in the library's folder changed or was added, not even a .shoebox folder.
     let after = lib.snapshot();
