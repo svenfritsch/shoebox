@@ -123,6 +123,77 @@ pub fn clear_position(conn: &Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
+/// What a location dialog for several photos says: how many have a position
+/// in their file (they keep it) and how many one the user gave (it is replaced).
+#[derive(Debug, Default, Serialize, PartialEq)]
+pub struct PositionsCheck {
+    pub total: usize,
+    pub with_file: usize,
+    pub with_user: usize,
+}
+
+/// One row per id: the content key and whether the file has its own position.
+fn position_rows(conn: &Connection, ids: &[i64]) -> Result<Vec<(String, bool)>> {
+    ids.iter()
+        .map(|&id| {
+            conn.query_row("SELECT quick_hash, lat IS NOT NULL AND lon IS NOT NULL FROM files WHERE id = ?1", [id], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .optional()?
+            .ok_or_else(|| anyhow::anyhow!("no such file"))
+        })
+        .collect()
+}
+
+/// Counts for `PositionsCheck`; an unknown id is refused.
+pub fn check_positions(conn: &Connection, ids: &[i64]) -> Result<PositionsCheck> {
+    let mut out = PositionsCheck { total: ids.len(), ..Default::default() };
+    for (key, own) in position_rows(conn, ids)? {
+        if own {
+            out.with_file += 1;
+        } else if conn
+            .query_row("SELECT 1 FROM geo_overrides WHERE key = ?1", [&key], |_| Ok(()))
+            .optional()?
+            .is_some()
+        {
+            out.with_user += 1;
+        }
+    }
+    Ok(out)
+}
+
+/// The answer to giving several photos one position: how many got it and how
+/// many kept the one in their file.
+#[derive(Debug, Serialize, PartialEq)]
+pub struct PositionsSet {
+    pub set: usize,
+    pub kept: usize,
+}
+
+/// Give several photos one position, like `set_position` for each: a photo
+/// whose file has a position keeps it (and is counted, not refused). All or
+/// nothing.
+pub fn set_positions(conn: &Connection, ids: &[i64], lat: f64, lon: f64) -> Result<PositionsSet> {
+    let (lat, lon) = check_position(lat, lon)?;
+    let tx = conn.unchecked_transaction()?;
+    let mut out = PositionsSet { set: 0, kept: 0 };
+    let at = db::now();
+    for (key, own) in position_rows(&tx, ids)? {
+        if own {
+            out.kept += 1;
+            continue;
+        }
+        tx.execute(
+            "INSERT INTO geo_overrides (key, lat, lon, at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(key) DO UPDATE SET lat = ?2, lon = ?3, at = ?4",
+            params![key, lat, lon, at],
+        )?;
+        out.set += 1;
+    }
+    tx.commit()?;
+    Ok(out)
+}
+
 /// Every file with a position: id, latitude, longitude. Missing files are
 /// left out; the caller keeps the ones it shows (no RAW, no Live Photo clip).
 pub fn positions(conn: &Connection) -> Result<Vec<(i64, f64, f64)>> {

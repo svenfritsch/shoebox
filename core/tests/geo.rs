@@ -130,6 +130,64 @@ fn positions_come_from_the_file_or_from_the_user() {
 }
 
 #[test]
+fn several_photos_get_one_position() {
+    let lib = Library::new("geo-positions-many");
+    jpeg_with_gps(&lib, GPS_PHOTO, 21);
+    lib.jpeg("Neu/a.jpg", 40);
+    lib.jpeg("Neu/b.jpg", 41);
+    lib.scan();
+    let before = lib.snapshot();
+    let gps = id_of(&lib, GPS_PHOTO);
+    let plain = id_of(&lib, PLAIN);
+    let a = id_of(&lib, "Neu/a.jpg");
+    let b = id_of(&lib, "Neu/b.jpg");
+    let server = start(&lib, None);
+    let addr = server.addr;
+    assert_eq!(post(addr, &format!("/api/files/{plain}/position"), &json!({ "lat": 1.0, "lon": 2.0 })).status, 200);
+
+    // The dialog learns which ones keep the position in their file and which
+    // have one of the user's that would be replaced.
+    let r = post(addr, "/api/files/positions/check", &json!({ "ids": [gps, plain, a, b] }));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    assert_eq!(r.json(), json!({ "total": 4, "with_file": 1, "with_user": 1 }));
+    let r = post(addr, "/api/files/positions/check", &json!({ "ids": [] }));
+    assert_eq!(r.json(), json!({ "total": 0, "with_file": 0, "with_user": 0 }));
+    assert_eq!(post(addr, "/api/files/positions/check", &json!({ "ids": [999999] })).status, 400);
+
+    // Only photos with a position in their file: nothing is set, nothing refused.
+    let r = post(addr, "/api/files/positions", &json!({ "ids": [gps], "lat": 3.0, "lon": 4.0 }));
+    assert_eq!(r.json(), json!({ "set": 0, "kept": 1 }));
+    assert_eq!(details(addr, gps)["position"]["source"], "file");
+
+    // Bad numbers and unknown photos are refused, nothing is stored.
+    assert_eq!(post(addr, "/api/files/positions", &json!({ "ids": [a, b], "lat": 91.0, "lon": 0.0 })).status, 400);
+    assert_eq!(post(addr, "/api/files/positions", &json!({ "ids": [a, 999999], "lat": 3.0, "lon": 4.0 })).status, 400);
+    assert!(details(addr, a)["position"].is_null());
+
+    let r = post(addr, "/api/files/positions", &json!({ "ids": [gps, plain, a, b], "lat": 37.97, "lon": 23.72 }));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    assert_eq!(r.json(), json!({ "set": 3, "kept": 1 }));
+    assert_eq!(details(addr, gps)["position"]["source"], "file");
+    for id in [plain, a, b] {
+        let d = details(addr, id);
+        assert_eq!((d["position"]["source"].as_str(), d["position"]["lat"].as_f64()), (Some("user"), Some(37.97)), "{id}");
+    }
+    let mut got = area_ids(addr, "area=37,23,38,24");
+    got.sort();
+    let mut want = vec![plain, a, b];
+    want.sort();
+    assert_eq!(got, want);
+
+    // Every change needs the header.
+    let body = json!({ "ids": [a], "lat": 1.0, "lon": 2.0 }).to_string();
+    let r = bare_request(addr, "POST", "/api/files/positions", &[("Content-Type", "application/json")], body.as_bytes());
+    assert_eq!(r.status, 403);
+
+    server.stop().unwrap();
+    assert_eq!(lib.snapshot(), before, "originals untouched");
+}
+
+#[test]
 fn places_are_rectangles_that_collect_their_photos() {
     let lib = Library::new("geo-places");
     jpeg_with_gps(&lib, GPS_PHOTO, 21);

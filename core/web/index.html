@@ -72,16 +72,20 @@
   </main>
 </div>
 
-<div id="selbar" class="selbar" hidden>
-  <span id="sel-count"></span>
-  <button id="sel-all" class="btn quiet" data-i18n="sel.all">Select all</button>
-  <button id="sel-move" class="btn" data-i18n="sel.move">Move…</button>
-  <button id="sel-tag" class="btn" data-i18n="sel.tag">Add tag…</button>
-  <button id="sel-untag" class="btn" data-i18n="sel.untag">Remove tag…</button>
-  <button id="sel-export" class="btn" data-i18n="sel.export" hidden>Export…</button>
-  <button id="sel-date" class="btn" data-i18n="sel.date">Set date…</button>
-  <button id="sel-trash" class="btn" data-i18n="sel.trash">Move to trash</button>
-  <button id="sel-done" class="btn quiet" data-i18n="sel.done">Done</button>
+<div id="selbar" class="selbar tools" role="toolbar" aria-keyshortcuts="B" data-i18n-aria-label="sel.bar" aria-label="Selection" hidden>
+  <button id="sel-done" class="ib" data-icon="close" data-i18n-aria-label="sel.done" aria-keyshortcuts="Escape"><span class="tip" data-i18n="sel.done_hint">Done (Esc)</span></button>
+  <span id="sel-count" class="sel-count" aria-live="polite"></span>
+  <button id="sel-all" class="sel-all" data-i18n="sel.all">Select all</button>
+  <span class="sep break" aria-hidden="true"></span>
+  <button id="sel-tag" class="ib" data-icon="tag" data-i18n-aria-label="sel.tag"><span class="tip" data-i18n="sel.tag">Add tag…</span></button>
+  <button id="sel-untag" class="ib" data-icon="untag" data-i18n-aria-label="sel.untag"><span class="tip" data-i18n="sel.untag">Remove tag…</span></button>
+  <button id="sel-date" class="ib" data-icon="date" data-i18n-aria-label="sel.date"><span class="tip" data-i18n="sel.date">Set date…</span></button>
+  <button id="sel-geo" class="ib" data-icon="geo" data-i18n-aria-label="geo.set"><span class="tip" data-i18n="geo.set">Set location…</span></button>
+  <span class="sep" aria-hidden="true"></span>
+  <button id="sel-move" class="ib" data-icon="move" data-i18n-aria-label="sel.move"><span class="tip" data-i18n="sel.move">Move…</span></button>
+  <button id="sel-export" class="ib" data-icon="export" data-i18n-aria-label="sel.export" hidden><span class="tip" data-i18n="sel.export">Export…</span></button>
+  <span id="sel-trash-sep" class="sep" aria-hidden="true"></span>
+  <button id="sel-trash" class="ib danger" data-icon="trash" data-i18n-aria-label="sel.trash"><span class="tip" data-i18n="sel.trash">Move to trash</span></button>
 </div>
 
 <div id="modal" class="modal" hidden>
@@ -105,7 +109,7 @@
     <button id="lb-text" class="icon lb-text" aria-pressed="false" hidden data-i18n-title="lb.text_hint" data-i18n-aria-label="lb.text_hint" title="Recognized text (t)" aria-label="Recognized text (t)"></button>
     <button id="lb-coll" class="icon coll" aria-pressed="false" hidden></button>
     <button id="lb-rotate" class="icon" data-i18n-title="lb.rotate_hint" data-i18n-aria-label="lb.rotate" title="Rotate left (r) · Option-click or Shift+R: right" aria-label="Rotate left">↺</button>
-    <button id="lb-trash" class="icon" data-i18n-title="lb.trash_hint" data-i18n-aria-label="sel.trash" title="Move to trash" aria-label="Move to trash" hidden><svg viewBox="0 0 24 24" aria-hidden="true" style="fill:none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg></button>
+    <button id="lb-trash" class="icon" data-i18n-title="lb.trash_hint" data-i18n-aria-label="sel.trash" title="Move to trash" aria-label="Move to trash" hidden></button>
     <a id="lb-download" class="icon" data-i18n-title="lb.download" data-i18n-aria-label="lb.download" title="Download original" aria-label="Download original">⤓</a>
     <button id="lb-info" class="icon" data-i18n-title="lb.info_hint" data-i18n-aria-label="lb.info" title="Info (i)" aria-label="Info">ⓘ</button>
   </div>

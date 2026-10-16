@@ -461,6 +461,21 @@ var HEART_OFF = lineIcon(HEART_PATH);
 var FRAME_ICON = lineIcon('<path d="M3 9V6.5A2.5 2.5 0 0 1 5.5 4H9M15 4h3.5A2.5 2.5 0 0 1 21 6.5V9M3 15v2.5A2.5 2.5 0 0 0 5.5 20H9"/><path d="M12.5 17c1.2-2 3.3-3 4.5-3s3.3 1 4.5 3c-1.2 2-3.3 3-4.5 3s-3.3-1-4.5-3z"/><circle cx="17" cy="17" r="1.1"/>');
 var SELECT_ICON = lineIcon('<rect x="4" y="4" width="16" height="16" rx="3.5"/><path d="M8.5 12.2l2.5 2.5 4.8-5"/>');
 var ADD_FACE_ICON = lineIcon('<circle cx="11" cy="13" r="8"/><circle cx="8.3" cy="11.5" r=".6"/><circle cx="13.7" cy="11.5" r=".6"/><path d="M7.4 15.6a4.2 4.2 0 0 0 7.2 0"/><path d="M19 2.5v5M16.5 5h5"/>');
+// The selection bar's tools (our own drawings): a cross, a label pointing
+// left with a plus or a minus, a calendar page with the "~" of an estimated
+// date, a tack in the ground, an arrow into a folder, a photo with an arrow
+// curving out of it, and the photo view's trash can.
+var TRASH_ICON = lineIcon('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>');
+var SEL_ICONS = {
+  close: lineIcon('<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>'),
+  tag: lineIcon('<path d="M2 14l4.3-5H14.5A1.5 1.5 0 0 1 16 10.5v7a1.5 1.5 0 0 1-1.5 1.5H6.3z"/><circle cx="6.6" cy="14" r=".6"/><path d="M19 2.5v6.5M15.75 5.75h6.5"/>'),
+  untag: lineIcon('<path d="M2 14l4.3-5H14.5A1.5 1.5 0 0 1 16 10.5v7a1.5 1.5 0 0 1-1.5 1.5H6.3z"/><circle cx="6.6" cy="14" r=".6"/><path d="M15.75 5.75h6.5"/>'),
+  date: lineIcon('<path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5z"/><path d="M8.5 3.5v5M15.5 3.5v5" stroke-width="2.2"/><path d="M7.5 14.5c1.5-2.3 3-2.3 4.5 0s3 2.3 4.5 0"/>'),
+  geo: lineIcon('<circle cx="12" cy="7.5" r="4"/><path d="M12 11.5v7.5"/><ellipse cx="12" cy="19" rx="6" ry="2"/>'),
+  move: lineIcon('<path d="M6 9.5V7a2 2 0 0 1 2-2h3l2 2h6a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V17.5"/><path d="M2 13.5h10M9 10.5l3 3-3 3"/>'),
+  export: lineIcon('<rect x="3" y="10" width="12.5" height="10" rx="2.5"/><path d="M3.5 18.5l3.5-3.5 3 3 1.5-1.5 3.5 3.5"/><path d="M10 10C10.5 6 14 4 19.5 4.5"/><path d="M16.8 1.8l2.9 2.7-2.6 3.2"/>'),
+  trash: TRASH_ICON
+};
 // An icon-only button for the tools row: the tooltip is also its name.
 function toolButton(icon, label) {
   var b = el('button', 'tool');
@@ -2031,7 +2046,7 @@ function applyAllowTrash() {
   $('nav-trash').hidden = !allowTrash && !trashCount && state.filter.view !== 'trash';
   var d = state.data, i = state.open;
   $('lb-trash').hidden = !allowTrash || isAll() || i < 0 || !d;
-  $('sel-trash').hidden = !allowTrash;
+  $('sel-trash').hidden = $('sel-trash-sep').hidden = !allowTrash;
 }
 
 function loadAllowTrash() {
@@ -2102,6 +2117,11 @@ document.addEventListener('keydown', function (ev) {
   }
   if ($('lightbox').hidden) {
     if (ev.key === 'Escape' && state.selecting) endSelection();
+    if (state.selecting && (ev.key === 'b' || ev.key === 'B') && !ev.altKey && !ev.metaKey && !ev.ctrlKey && !/^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName)) {
+      ev.preventDefault();
+      toggleSelbarFocus();
+      return;
+    }
     var cell = document.activeElement;
     if (!cell || !cell.classList.contains('cell') || ev.altKey || ev.metaKey || ev.ctrlKey) return;
     if (/^Arrow(Left|Right|Up|Down)$/.test(ev.key)) {
@@ -2259,6 +2279,8 @@ function openModal(title, body, actions, cls) {
     a.appendChild(btn);
     return btn;
   });
+  // The focus goes back where it came from when the dialog closes (keyboard use).
+  if ($('modal').hidden) openModal.opener = document.activeElement;
   $('modal').hidden = false;
   var input = b.querySelector('input:not([type=file])');
   var preferred = actions.findIndex(function (act) { return act.focus; });
@@ -2268,6 +2290,9 @@ function openModal(title, body, actions, cls) {
 
 function closeModal() {
   $('modal').hidden = true;
+  var opener = openModal.opener;
+  openModal.opener = null;
+  if (opener && opener.isConnected && opener.getClientRects().length) opener.focus();
   if (closeModal.onclose) { var f = closeModal.onclose; closeModal.onclose = null; f(); }
 }
 
@@ -2300,6 +2325,8 @@ function startSelection() {
 }
 
 function endSelection() {
+  // Closed from the keyboard inside the bar: the focus goes back to the select button.
+  if ($('selbar').contains(document.activeElement)) $('select').focus();
   state.selecting = false;
   state.selected = {};
   state.anchor = null;
@@ -2342,14 +2369,64 @@ function updateSelbar() {
   $('selbar').hidden = !state.selecting;
   var hint = tr(window.matchMedia('(pointer: fine)').matches ? 'sel.hint_mouse' : 'sel.hint_touch');
   $('sel-count').textContent = n ? trn('count.photos', n) : hint;
+  $('sel-count').classList.toggle('hint', !n);
   Array.prototype.forEach.call(document.querySelectorAll('.sec .pick'), function (b) {
     b.textContent = tr(state.data && allSelected(parseInt(b.dataset.start, 10), parseInt(b.dataset.end, 10)) ? 'grid.deselect' : 'grid.select_all');
   });
   var total = state.data && state.data.ids ? state.data.ids.length : 0;
   $('sel-all').textContent = tr(total && n >= total ? 'sel.none' : 'sel.all');
   $('sel-all').disabled = !total;
-  $('sel-move').disabled = $('sel-trash').disabled = $('sel-tag').disabled = $('sel-untag').disabled = $('sel-date').disabled = $('sel-export').disabled = !n;
+  // Dimmed, not disabled: the tools stay in the keyboard order and keep their
+  // label, so the bar does not jump while photos are picked.
+  ['sel-tag', 'sel-untag', 'sel-date', 'sel-geo', 'sel-move', 'sel-export', 'sel-trash'].forEach(function (id) {
+    $(id).setAttribute('aria-disabled', n ? 'false' : 'true');
+  });
+  var stop = $('selbar').querySelector('button[tabindex="0"]');
+  if (selbarTools().indexOf(stop) < 0) selbarFocus($('sel-done'));
 }
+
+// The bar is one toolbar for the keyboard: Tab enters and leaves it, the arrow
+// keys (and Home, End) go from tool to tool. The last tool used keeps the place.
+function selbarTools() {
+  return Array.prototype.filter.call($('selbar').querySelectorAll('button'), function (b) { return !b.hidden && !b.disabled; });
+}
+
+// B goes from the photos to the bar and back (the photos are many tab stops).
+var selbarReturn = null;
+function toggleSelbarFocus() {
+  var bar = $('selbar');
+  if (bar.contains(document.activeElement)) {
+    if (selbarReturn && selbarReturn.isConnected) selbarReturn.focus();
+    return;
+  }
+  selbarReturn = document.activeElement;
+  var stop = bar.querySelector('button[tabindex="0"]');
+  if (stop) stop.focus();
+}
+
+function selbarFocus(b) {
+  Array.prototype.forEach.call($('selbar').querySelectorAll('button'), function (t) { t.tabIndex = t === b ? 0 : -1; });
+}
+
+Array.prototype.forEach.call($('selbar').querySelectorAll('[data-icon]'), function (b) {
+  b.insertAdjacentHTML('afterbegin', SEL_ICONS[b.dataset.icon]);
+});
+$('lb-trash').innerHTML = TRASH_ICON;
+selbarFocus($('sel-done'));
+$('selbar').addEventListener('focusin', function (ev) { if (ev.target.tagName === 'BUTTON') selbarFocus(ev.target); });
+$('selbar').addEventListener('keydown', function (ev) {
+  var tools = selbarTools(), at = tools.indexOf(document.activeElement);
+  if (at < 0) return;
+  var to = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: tools.length - 1 }[ev.key];
+  if (to === undefined) return;
+  ev.preventDefault();
+  tools[(to + tools.length) % tools.length].focus();
+});
+// A dimmed tool does nothing (nothing is selected yet).
+$('selbar').addEventListener('click', function (ev) {
+  var b = ev.target.closest('button');
+  if (b && b.getAttribute('aria-disabled') === 'true') { ev.stopImmediatePropagation(); ev.preventDefault(); }
+}, true);
 
 $('select').innerHTML = SELECT_ICON;
 $('select').onclick = function () {
@@ -2368,6 +2445,7 @@ $('sel-trash').onclick = function () { trashDialog(selectedIds(), endSelection);
 $('sel-tag').onclick = function () { addTagDialog(selectedIds()); };
 $('sel-untag').onclick = function () { removeTagDialog(selectedIds()); };
 $('sel-export').onclick = function () { openExport(selectedIds(), ''); };
+$('sel-geo').onclick = function () { locationDialog(null, selectedIds()); };
 
 // ------------------------------------------------------------------ move and trash
 
