@@ -206,6 +206,8 @@ pub fn open_existing(path: &Path) -> Result<Connection> {
 /// Open alongside other processes (the web server runs while a scan may be
 /// writing), leaving their `running` jobs alone.
 pub fn open_shared(path: &Path) -> Result<Connection> {
+    // A damaged list of libraries would hide which folders are only read (phase 16).
+    crate::libraries::check_registry()?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
     }

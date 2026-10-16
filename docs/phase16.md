@@ -200,6 +200,34 @@ without flags.
        on a server"), then `python3 docs/guide/check.py`.
 7. [ ] Check on a real share from a real Windows PC (needs the Windows build
        check of "Decoders per build", step 4/5, first).
+8. [x] Fail closed: with a list of libraries that cannot be read, a folder kept next to the
+       program would look like an ordinary one (found by trying it: a scan then made a
+       `.shoebox` folder inside the server folder and the read-only rules were off).
+       `libraries::check_registry()` now comes first in `db::open_shared` (every scan, verify,
+       recognize, serve), `ensure_writable`, `export::destination` and `serve::start`; the
+       Control Panel shows the error where the list would be.
+
+## What is tested (use case, test)
+
+| Use case | Test |
+|---|---|
+| Scan, rescan, verify of a folder kept next to the program write nothing into it | `libraries.rs`: `a_registered_library_keeps_its_index_…` |
+| A folder that is not registered keeps its own `.shoebox` | `libraries.rs`: `a_root_that_is_not_registered_…` |
+| Every `shoebox libraries …` command, `scan --index-next-to-program`, refusals | `libraries.rs`: `the_libraries_command_…` |
+| The share moved (another path or drive letter): the index follows, nothing new or missing | `libraries.rs`: `a_library_that_moved_…` |
+| Offline share: listed "not connected" with its count, a scan stops cleanly, it comes back | same test |
+| Backup check between two such libraries only reads | `libraries.rs`: `a_backup_check_between_two_…` |
+| Move, trash, restore, rotate, rename folder, remove copies refused; nothing changes | `libraries_readonly.rs`: `nothing_that_changes_an_original_…` |
+| The photo app: `read_only`, trash setting, move/trash/rotate refused, looking works | `libraries_readonly.rs`: `the_photo_app_says_…` |
+| A plain library next to a read-only one in one server: each as it is | `libraries_readonly.rs`: `a_read_only_library_next_to_a_normal_one_…`, `a_library_on_a_drive_is_not_…` |
+| Export from such a library works; export into its folder refused | `libraries_readonly.rs`: `exporting_from_a_read_only_library_…` |
+| "Delete the new copies" removes nothing | `libraries_readonly.rs`: `deleting_the_new_copies_…` |
+| Damaged list of libraries: everything stops, nothing is written, mended list works | `libraries_damaged.rs` (fails without the fix, checked) |
+| Launcher API: list, add, rename, change folder, remove, delete, picker, damaged list, program folder that cannot hold `libraries/` | `launcher.rs` |
+| The registry (file, names, roots, folder above `program/`), the path check | unit tests in `libraries.rs` |
+| The Control Panel's tabs, picker, chips, dialogs, Manage, Move hidden in the photo app | driven in a real browser while building (headless Chromium); **not in CI** |
+| Windows paths: `\\server\share` and drive letters | the spellings are unit-tested; **not run on Windows** (step 7) |
+| Backup cleanup (`backup::cleanup`) refusing a read-only backup | covered by the guard in `trash_files` (tested); not driven end to end |
 
 ## Not in scope
 

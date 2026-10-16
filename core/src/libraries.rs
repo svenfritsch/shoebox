@@ -200,6 +200,23 @@ pub fn entry_for(root: &Path) -> Option<(PathBuf, Entry)> {
     Some((home, entry))
 }
 
+/// The list of libraries can be read (or there is none yet). Whoever opens an
+/// index, changes an original or saves an export asks first: with a damaged
+/// list a folder kept next to the program would look like an ordinary one, be
+/// scanned into a `.shoebox` folder of its own inside it, and the read-only
+/// rules would be off. So everything stops until the list is mended.
+pub fn check_registry() -> Result<()> {
+    let Some(home) = home() else { return Ok(()) };
+    load(&home).map(|_| ()).with_context(|| {
+        format!(
+            "the list of libraries kept next to the program cannot be read, so nothing is scanned, opened or changed until it is mended: \
+             fix {0} (or move it away; the indexes in {1} stay, and `shoebox libraries add <folder> --name <name>` puts a library back)",
+            registry_path(&home).display(),
+            home.join(DIR).display()
+        )
+    })
+}
+
 /// The index database of a library registered next to the program, if
 /// `root` is one.
 pub fn index_db(root: &Path) -> Option<PathBuf> {
@@ -501,6 +518,7 @@ pub fn read_only_root_in(home: &Path, path: &Path) -> Option<Entry> {
 /// trash, restore, rotate, remove copies): a library registered next to the
 /// program is never changed.
 pub fn ensure_writable(root: &Path) -> Result<()> {
+    check_registry()?;
     match entry_for(root) {
         Some((_, e)) => bail!("{} is read-only for shoebox (its index is kept next to the program), nothing in it is changed", e.name),
         None => Ok(()),

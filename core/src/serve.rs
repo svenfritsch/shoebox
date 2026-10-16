@@ -182,6 +182,8 @@ pub fn run(opts: &Options) -> Result<()> {
 /// Bind and serve in a background thread. With `ctrl_c`, the server also
 /// stops on Ctrl-C.
 pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
+    // The photo app does not start on a damaged list of libraries (phase 16).
+    crate::libraries::check_registry()?;
     let pin = match (&opts.pin, opts.lan) {
         (Some(p), _) if p.trim().len() < 4 => bail!("the PIN needs at least 4 characters"),
         (Some(p), _) => Some(p.trim().to_string()),

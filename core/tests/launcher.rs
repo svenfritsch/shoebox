@@ -680,3 +680,39 @@ fn the_launcher_lists_places_and_folders_for_its_folder_picker() {
     assert_eq!(lget(addr, &format!("/api/folders?path={}", encode(&lib.path("Familie/notes.txt").display().to_string()))).status, 400, "a file is not a folder");
     launcher.stop().unwrap();
 }
+
+#[test]
+fn a_library_cannot_be_added_when_the_program_folder_cannot_hold_libraries() {
+    let _turn = serial();
+    let lib = Library::new("launcher-libraries-unwritable");
+    let home = std::env::temp_dir().join(format!("shoebox-launcher-{}-unwritable-home", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&home).unwrap();
+    // `libraries` is a file: nothing can be made there (a read-only folder acts the same, as root cannot be refused in a test).
+    std::fs::write(home.join("libraries"), b"").unwrap();
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: None, reveal: None, home: Some(home.clone()) }).unwrap();
+    let addr = launcher.addr;
+    let r = lpost(addr, "/api/libraries", &json!({ "root": lib.root.display().to_string() }));
+    let said = String::from_utf8_lossy(&r.body).to_string();
+    assert_eq!(r.status, 400, "{said}");
+    assert!(said.contains("cannot write"), "{said}");
+    assert!(!lib.root.join(".shoebox").exists());
+    launcher.stop().unwrap();
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn a_damaged_list_of_libraries_is_reported_to_the_control_panel() {
+    let _turn = serial();
+    let home = std::env::temp_dir().join(format!("shoebox-launcher-{}-damaged-home", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(home.join("libraries")).unwrap();
+    std::fs::write(home.join("libraries/libraries.json"), "{ not json").unwrap();
+    let launcher = launcher::start(&launcher::Options { port: 0, open_browser: false, config: None, reveal: None, home: Some(home.clone()) }).unwrap();
+    let r = lget(launcher.addr, "/api/libraries");
+    let said = String::from_utf8_lossy(&r.body).to_string();
+    assert_eq!(r.status, 500, "{said}");
+    assert!(said.contains("libraries.json"), "{said}");
+    launcher.stop().unwrap();
+    let _ = std::fs::remove_dir_all(&home);
+}

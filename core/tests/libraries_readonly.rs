@@ -255,3 +255,48 @@ fn exporting_from_a_read_only_library_copies_out_and_never_into_its_folder() {
     assert!(!lib.root.join(".shoebox").exists());
     let _ = std::fs::remove_dir_all(&out);
 }
+
+#[test]
+fn a_read_only_library_next_to_a_normal_one_is_read_only_alone() {
+    let home = home();
+    let plain = Library::new("readonly-several-plain");
+    let kept = Library::new("readonly-several-kept");
+    libraries::add(home, "Several kept", &kept.root).unwrap();
+    plain.scan();
+    kept.scan();
+    let server = start_many(&[&plain, &kept], &[]);
+    let addr = server.addr;
+    let list = get(addr, "/api/libraries").json();
+    let list = list.as_array().unwrap_or_else(|| panic!("{list}"));
+    assert_eq!(list.len(), 2, "{list:?}");
+    for l in list {
+        let id = l["id"].as_str().unwrap();
+        let name = l["name"].as_str().unwrap();
+        let info = get(addr, &format!("/raw/api/lib/{id}/info")).json();
+        let expect = kept.root.file_name().unwrap().to_string_lossy() == name;
+        assert_eq!(info["read_only"], expect, "{name}: {info}");
+    }
+    let _ = server.stop();
+}
+
+#[test]
+fn deleting_the_new_copies_of_a_read_only_library_removes_nothing() {
+    let home = home();
+    let lib = Library::new("readonly-arrivals");
+    libraries::add(home, "Arrivals", &lib.root).unwrap();
+    lib.scan();
+    // A copy of a photo it already has arrives; the next scan notes it as a new copy of old content.
+    let original = lib.path("Familie/Weihnachten/DSC_2001.jpg");
+    let copy = lib.path("Familie/Weihnachten/DSC_2001 copy.jpg");
+    std::fs::copy(&original, &copy).unwrap();
+    lib.scan();
+    let before = lib.snapshot();
+    let done = shoebox::arrivals::cleanup(&shoebox::arrivals::CleanupOptions { root: lib.root.clone(), forever: true });
+    // Either it refuses outright or it removes nothing: the copy is still there, the folder is as it was.
+    if let Ok(c) = &done {
+        assert!(c.removed.is_empty(), "{c:?}");
+    }
+    assert!(copy.is_file(), "the new copy was removed from a read-only library");
+    assert_eq!(lib.snapshot().len(), before.len());
+    assert!(!lib.root.join(".shoebox").exists());
+}

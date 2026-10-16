@@ -408,9 +408,14 @@ function loadLibs(quiet) {
     libsShown = shown;
     libs = d.libraries || [];
     libsInfo = { dir: d.dir, writable: !!d.writable };
+    $('libs-error').hidden = true;
     renderLibs();
     renderChips();
-  }).catch(function () { /* the list of drives still works */ });
+  }).catch(function (e) {
+    // The list of drives still works; a damaged list of libraries says so (the server's message names the file).
+    $('libs-error').hidden = false;
+    $('libs-error').textContent = e.message;
+  });
 }
 
 function renderLibs() {

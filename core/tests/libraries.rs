@@ -165,3 +165,76 @@ fn the_libraries_command_lists_adds_scans_renames_moves_removes_and_deletes() {
     let _ = fs::remove_dir_all(&home);
     let _ = fs::remove_dir_all(&wrong);
 }
+
+#[test]
+fn a_library_that_moved_keeps_its_index_and_an_offline_one_is_listed_not_connected() {
+    let lib = Library::new("libraries-moved");
+    let home = std::env::temp_dir().join(format!("shoebox-it-{}-libraries-moved-home", std::process::id()));
+    let _ = fs::remove_dir_all(&home);
+    fs::create_dir_all(&home).unwrap();
+    let root = lib.root.display().to_string();
+    assert!(run(&home, &["scan", &root, "--index-next-to-program", "--name", "Srv", "--no-thumbs"]).status.success());
+
+    // The share is now somewhere else (a copy with the same relative paths and the same times).
+    let moved = std::env::temp_dir().join(format!("shoebox-it-{}-libraries-moved-new", std::process::id()));
+    let _ = fs::remove_dir_all(&moved);
+    copy_dir(&lib.root, &moved);
+    for e in walkdir::WalkDir::new(&lib.root).into_iter().map(|e| e.unwrap()).filter(|e| e.file_type().is_file()) {
+        let rel = e.path().strip_prefix(&lib.root).unwrap();
+        set_mtime(&moved.join(rel), shoebox::fingerprint::stamp(e.path()).unwrap().mtime_ns as i128);
+    }
+    let new_root = moved.display().to_string();
+    let pointed = run(&home, &["libraries", "root", "Srv", &new_root]);
+    assert!(pointed.status.success(), "{}", text(&pointed));
+
+    // Nothing is found new, changed, moved or missing: the index followed the folder.
+    let scan = run(&home, &["scan", &new_root, "--no-thumbs", "--json"]);
+    assert!(scan.status.success(), "{}", text(&scan));
+    let stats: serde_json::Value = serde_json::from_slice(&scan.stdout).unwrap();
+    for key in ["added", "changed", "moved", "missing"] {
+        assert_eq!(stats[key], 0, "{key}: {stats}");
+    }
+    assert!(stats["unchanged"].as_u64().unwrap() >= 5, "{stats}");
+    assert!(!moved.join(".shoebox").exists());
+    assert!(run(&home, &["verify", &new_root]).status.success());
+
+    // The share goes offline: listed as not connected, the photo count stays, a scan stops cleanly.
+    let gone = moved.with_extension("gone");
+    let _ = fs::remove_dir_all(&gone);
+    fs::rename(&moved, &gone).unwrap();
+    let list: serde_json::Value = serde_json::from_slice(&run(&home, &["libraries", "--json"]).stdout).unwrap();
+    assert_eq!(list["libraries"][0]["online"], false, "{list}");
+    assert!(list["libraries"][0]["photos"].as_u64().unwrap() >= 5, "{list}");
+    let offline = run(&home, &["scan", &new_root, "--no-thumbs"]);
+    assert!(!offline.status.success());
+    assert!(!moved.exists(), "a scan of an offline share made its folder");
+    // It comes back: all as before.
+    fs::rename(&gone, &moved).unwrap();
+    let list: serde_json::Value = serde_json::from_slice(&run(&home, &["libraries", "--json"]).stdout).unwrap();
+    assert_eq!(list["libraries"][0]["online"], true);
+
+    let _ = fs::remove_dir_all(&home);
+    let _ = fs::remove_dir_all(&moved);
+}
+
+#[test]
+fn a_backup_check_between_two_libraries_kept_next_to_the_program_only_reads() {
+    let original = Library::new("libraries-backup-original");
+    let backup = Library::new("libraries-backup-copy");
+    let home = std::env::temp_dir().join(format!("shoebox-it-{}-libraries-backup-home", std::process::id()));
+    let _ = fs::remove_dir_all(&home);
+    fs::create_dir_all(&home).unwrap();
+    let (a, b) = (original.root.display().to_string(), backup.root.display().to_string());
+    for (root, name) in [(&a, "Original"), (&b, "Copy")] {
+        let scanned = run(&home, &["scan", root, "--index-next-to-program", "--name", name, "--no-thumbs"]);
+        assert!(scanned.status.success(), "{}", text(&scanned));
+    }
+    let (before_a, before_b) = (tree(&original.root), tree(&backup.root));
+    let check = run(&home, &["backup", &a, &b, "--json"]);
+    assert!(check.status.success(), "{}", text(&check));
+    let report: serde_json::Value = serde_json::from_slice(&check.stdout).unwrap();
+    assert_eq!(report["ok"], true, "{report}");
+    assert_eq!((before_a, before_b), (tree(&original.root), tree(&backup.root)));
+    assert!(!original.root.join(".shoebox").exists() && !backup.root.join(".shoebox").exists());
+    let _ = fs::remove_dir_all(&home);
+}
