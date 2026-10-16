@@ -22,6 +22,7 @@ use serde::Serialize;
 
 use crate::multi::{self, BackupReport};
 use crate::say;
+use crate::volume::{display_path, library_name};
 use crate::{db, organize, report, verify};
 
 pub struct Options {
@@ -45,12 +46,12 @@ pub struct Check {
 }
 
 fn index_of(root: &std::path::Path) -> Result<(PathBuf, String)> {
-    let root = root.canonicalize().with_context(|| format!("cannot open {}", crate::volume::display_path(&root)))?;
+    let root = root.canonicalize().with_context(|| format!("cannot open {}", display_path(&root)))?;
     let db = db::default_path(&root);
     if !db.is_file() {
-        bail!("no index at {} (run `shoebox scan` on that drive first)", crate::volume::display_path(&db));
+        bail!("no index at {} (run `shoebox scan` on that drive first)", display_path(&db));
     }
-    let name = crate::volume::library_name(&root);
+    let name = library_name(&root);
     Ok((db, name))
 }
 
@@ -153,7 +154,7 @@ pub fn cleanup(opts: &CleanupOptions) -> Result<Cleanup> {
     if pdb == bdb {
         bail!("the backup must be another drive than the one it copies");
     }
-    let backup_root = opts.backup.canonicalize().with_context(|| format!("cannot open {}", crate::volume::display_path(&opts.backup)))?;
+    let backup_root = opts.backup.canonicalize().with_context(|| format!("cannot open {}", display_path(&opts.backup)))?;
     say!("Looking for copies removed from {pname} that {bname} still has…");
     let pair = multi::open_pair_read_only(&pdb, &bdb)?;
     let (_, candidates) = multi::removable_on_backup(&pair, usize::MAX)?;

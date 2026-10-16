@@ -36,6 +36,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::classify::Kind;
 use crate::{db, fingerprint, library, media, organize};
+use crate::volume::{display_path, library_name};
 
 /// A Live Photo's video is at most this long (as in the timeline).
 const LIVE_MAX_MS: i64 = 6_000;
@@ -242,9 +243,7 @@ pub fn check_folder_name(name: &str) -> Result<String> {
     if name == "." || name == ".." || name.chars().any(bad_char) || name.ends_with('.') {
         bail!("the folder name cannot have these characters: \\ / : * ? \" < > | (or end with a dot)");
     }
-    if crate::organize::is_reserved_device_name(name) {
-        bail!("{name} is a reserved Windows name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), a PC cannot open it");
-    }
+    organize::check_not_reserved(name)?;
     if name.chars().count() > 200 {
         bail!("the folder name is too long");
     }
@@ -570,33 +569,33 @@ pub fn list_folders(path: &Path) -> Result<Listing> {
     if !path.is_absolute() {
         bail!("not a full path");
     }
-    let meta = fs::metadata(path).with_context(|| format!("{} cannot be opened", crate::volume::display_path(path)))?;
+    let meta = fs::metadata(path).with_context(|| format!("{} cannot be opened", display_path(path)))?;
     if !meta.is_dir() {
-        bail!("{} is not a folder", crate::volume::display_path(path));
+        bail!("{} is not a folder", display_path(path));
     }
     let mut folders = Vec::new();
-    for entry in fs::read_dir(path).with_context(|| format!("{} cannot be read", crate::volume::display_path(path)))?.flatten() {
+    for entry in fs::read_dir(path).with_context(|| format!("{} cannot be read", display_path(path)))?.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         if name.starts_with('.') || !fs::metadata(entry.path()).is_ok_and(|m| m.is_dir()) {
             continue;
         }
         let p = entry.path();
-        folders.push(Folder { name: library::nfc(&name), library: p.join(db::DIR).is_dir(), path: crate::volume::display_path(&p) });
+        folders.push(Folder { name: library::nfc(&name), library: p.join(db::DIR).is_dir(), path: display_path(&p) });
     }
     folders.sort_by_key(|f| f.name.to_lowercase());
     let mut crumbs: Vec<Crumb> = path
         .ancestors()
         .map(|a| Crumb {
-            name: library::nfc(&crate::volume::library_name(a)),
-            path: crate::volume::display_path(a),
+            name: library::nfc(&library_name(a)),
+            path: display_path(a),
         })
         .collect();
     crumbs.reverse();
     Ok(Listing {
-        path: crate::volume::display_path(path),
+        path: display_path(path),
         crumbs,
         folders,
-        shoebox: shoebox_drive(path).map(|d| crate::volume::display_path(&d)),
+        shoebox: shoebox_drive(path).map(|d| display_path(&d)),
         free: free_space(path),
     })
 }
@@ -646,7 +645,7 @@ impl Shared {
     /// Mark an export as started (before its thread runs).
     pub fn begin(&self, dest: &Path) {
         self.stop.store(false, Ordering::SeqCst);
-        *self.progress.lock().unwrap() = Progress { state: "running", dest: crate::volume::display_path(dest), ..Progress::default() };
+        *self.progress.lock().unwrap() = Progress { state: "running", dest: display_path(dest), ..Progress::default() };
     }
 
     fn update(&self, f: impl FnOnce(&mut Progress)) {
@@ -658,10 +657,10 @@ impl Shared {
 pub fn run(root: &Path, plan: Plan, dest: &Path, shared: &Shared) {
     let heif = LibHeif::new();
     shared.update(|p| {
-        *p = Progress { state: "running", dest: crate::volume::display_path(dest), total: plan.tasks.len(), ..Progress::default() };
+        *p = Progress { state: "running", dest: display_path(dest), total: plan.tasks.len(), ..Progress::default() };
     });
     let outcome = (|| -> Result<bool> {
-        fs::create_dir_all(dest).with_context(|| format!("{} cannot be made", crate::volume::display_path(dest)))?;
+        fs::create_dir_all(dest).with_context(|| format!("{} cannot be made", display_path(dest)))?;
         renumber(dest, &plan.renames)?;
         shared.update(|p| p.renamed = plan.renames.len());
         for task in &plan.tasks {

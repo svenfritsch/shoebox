@@ -63,6 +63,14 @@ pub fn is_reserved_device_name(name: &str) -> bool {
         })
 }
 
+/// `Ok` unless `name` is one of those device names.
+pub fn check_not_reserved(name: &str) -> Result<()> {
+    if is_reserved_device_name(name) {
+        bail!("{name} is a reserved Windows name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), a PC cannot open it");
+    }
+    Ok(())
+}
+
 /// A file or folder name typed by the user, trimmed and NFC-normalised.
 /// Refuses names that would be hidden, skipped by the scanner, or invalid
 /// on exFAT.
@@ -83,9 +91,7 @@ pub fn check_name(name: &str) -> Result<String> {
     if name.ends_with('.') {
         bail!("names cannot end with a dot");
     }
-    if is_reserved_device_name(&name) {
-        bail!("{name} is a reserved Windows name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), a PC cannot open it");
-    }
+    check_not_reserved(&name)?;
     if classify::is_ignored(&name) {
         bail!("{name} is a reserved name");
     }
@@ -1257,6 +1263,25 @@ mod tests {
         assert_eq!(check_folder_path("/Familie / 2020-07 Urlaub/").unwrap(), "Familie/2020-07 Urlaub");
         assert_eq!(check_folder_path("").unwrap(), "");
         assert!(check_folder_path("a/../b").is_err());
+    }
+
+    #[test]
+    fn device_names_are_refused_everywhere() {
+        for reserved in ["CON", "prn", "Aux", "NUL", "com1", "COM9", "lpt1", "LPT9", "con.txt", "Nul.tar.gz", "CON .x", "COM\u{b2}", "LPT\u{b3}"] {
+            assert!(is_reserved_device_name(reserved), "{reserved:?}");
+            assert!(check_not_reserved(reserved).is_err(), "{reserved:?}");
+            assert!(check_name(reserved).is_err(), "{reserved:?}");
+            // Any part of a folder path counts, not only the last.
+            assert!(check_folder_path(&format!("Familie/{reserved}")).is_err(), "{reserved:?}");
+            assert!(check_folder_path(&format!("{reserved}/2020")).is_err(), "{reserved:?}");
+        }
+        for fine in ["console", "COM0", "COM10", "LPT0", "Nullen", "my.con", "a.con.txt", "", "Auxiliary"] {
+            assert!(!is_reserved_device_name(fine), "{fine:?}");
+            assert!(check_not_reserved(fine).is_ok(), "{fine:?}");
+        }
+        assert_eq!(check_folder_path("Familie/Console/2020").unwrap(), "Familie/Console/2020");
+        let message = check_not_reserved("CON").unwrap_err().to_string();
+        assert!(message.starts_with("CON is a reserved Windows name"), "{message}");
     }
 
     #[test]
