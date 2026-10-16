@@ -570,6 +570,7 @@
         <div class="txt">
           <h3>Ansicht und Infofeld</h3>
           <p>Klicke ein Foto an, um es zu öffnen. <b>←</b> und <b>→</b> blättern durch die Fotos, <b>Esc</b> schließt die Ansicht. <b>ⓘ</b> (oder die Taste <b>i</b>) öffnet das Infofeld.</p>
+          <p>Videos laufen los, sobald sie offen sind; <b>p</b> hält sie an und spielt sie weiter. Bei einem Live Photo spielt <b>LIVE ▶</b> in der oberen Leiste (oder <b>p</b>) die Bewegung einmal ab; drückst du es während des Abspielens noch einmal, kommt wieder das Standbild.</p>
           <h4>Was im Infofeld steht</h4>
           <ul>
             <li><b>Datum</b>, mit seiner Markierung und einem Stift, um ein eigenes zu setzen (siehe „Datum und Suche nach Datum“).</li>
@@ -609,11 +610,15 @@
             <dt>i</dt>
             <dd>Infofeld ein- / ausblenden</dd>
             <dt>Leertaste</dt>
-            <dd>Ansicht öffnen / schließen (bei einem per Pfeiltasten gewählten Foto)</dd>
+            <dd>Ansicht öffnen / schließen (bei einem per Pfeiltasten gewählten Foto), auch bei einem Video: anhalten mit <b>p</b></dd>
+            <dt>p</dt>
+            <dd>Video: anhalten / abspielen; Live Photo: Bewegung abspielen / zurück zum Standbild</dd>
             <dt>f</dt>
             <dd>zu Favoriten hinzufügen / entfernen</dd>
             <dt>t</dt>
-            <dd>erkannter Text: Zeilen umranden und Liste zeigen / ausblenden (nur bei Fotos mit Text)</dd>
+            <dd>Tag hinzufügen: öffnet das Infofeld und das Tag-Feld mit seiner Liste; die Pfeiltasten wählen einen Tag, Enter fügt ihn hinzu; Esc schließt die Liste, ein zweites Esc verlässt das Feld</dd>
+            <dt>w</dt>
+            <dd>erkannter Text (Wörter): Zeilen umranden und Liste zeigen / ausblenden (nur bei Fotos mit Text)</dd>
             <dt>r · Umschalt+R</dt>
             <dd>nach links / rechts drehen</dd>
             <dt>Esc</dt>
@@ -722,6 +727,7 @@
         <div class="txt">
           <h3>Taggen</h3>
           <p><b>Tag hinzufügen …</b> gibt der Auswahl deinen eigenen Tag. Tags leben im Index von shoebox, nie in den Fotodateien. Im Tag-Feld stehen zuerst die Tags, die du zuletzt benutzt hast (<b>Zuletzt verwendet</b>), dann die <b>Am häufigsten</b> benutzten; beim Tippen wird die Liste enger, die zuletzt benutzten bleiben oben. Das merkt sich shoebox im Index des Laufwerks (nie in den Fotodateien), also auf jedem Computer und Tablet gleich.</p>
+          <p>Beim Foto, das in der Ansicht offen ist, fügt <b>+ Tag</b> im Infofeld einen Tag hinzu, ebenso die Taste <b>t</b> (sie öffnet das Infofeld, wenn nötig): Es erscheint dieselbe Liste, <b>↑</b> und <b>↓</b> wählen einen Tag, <b>Enter</b> fügt ihn hinzu, oder du tippst einen neuen Namen.</p>
           <h4>Tags, die auch Ordnernamen sind</h4>
           <p>Ein Tag kann auch ein Ordnername sein (der Ordner „Justin“ gibt allen seinen Fotos den Tag „Justin“, und du hast ihn vielleicht anderen Fotos von Hand gegeben). Unter so einem Tag in der Seitenleiste erscheint, solange er gezeigt wird, eine Zeile <b>Nur manuelle Tags</b> mit der Zahl der Fotos, die du selbst getaggt hast; ein Klick darauf zeigt nur diese (der Tag steht dann in orangem Text, sein Chip sagt „manuell“). Ein Klick auf den Tag selbst zeigt wieder alle seine Fotos.</p>
         </div>
@@ -1147,7 +1153,7 @@
       <div class="topic has-shots">
         <div class="txt">
           <h3>In der Ansicht</h3>
-          <p>Bei einem Foto mit erkanntem Text erscheint in der oberen Leiste neben dem ♥ ein Scanner-Knopf, abgedunkelt; Fotos ohne Text zeigen ihn nicht. Drück ihn oder die Taste <b>t</b>: Die Zeilen werden auf dem Foto umrandet, und im Infofeld öffnet sich der Abschnitt <b>Erkannter Text</b>, eine Liste, die scrollt, wenn es viele Zeilen sind, mit <b>Alles kopieren</b> am rechten Ende der Kopfzeile. Drückst du den Knopf erneut, verschwinden die Umrandungen und die Liste klappt zu; ein Klick auf die Kopfzeile klappt nur die Liste auf oder zu. Nach einer Textsuche sind die Umrandungen von selbst an, und die gesuchten Wörter sind markiert. Das ✕ neben einer Zeile nimmt sie aus der Suche (für Text, der nicht gefunden werden soll); <b>Wieder zeigen</b> holt sie zurück.</p>
+          <p>Bei einem Foto mit erkanntem Text erscheint in der oberen Leiste neben dem ♥ ein Scanner-Knopf, abgedunkelt; Fotos ohne Text zeigen ihn nicht. Drück ihn oder die Taste <b>w</b> (für Wörter): Die Zeilen werden auf dem Foto umrandet, und im Infofeld öffnet sich der Abschnitt <b>Erkannter Text</b>, eine Liste, die scrollt, wenn es viele Zeilen sind, mit <b>Alles kopieren</b> am rechten Ende der Kopfzeile. Drückst du den Knopf erneut, verschwinden die Umrandungen und die Liste klappt zu; ein Klick auf die Kopfzeile klappt nur die Liste auf oder zu. Nach einer Textsuche sind die Umrandungen von selbst an, und die gesuchten Wörter sind markiert. Das ✕ neben einer Zeile nimmt sie aus der Suche (für Text, der nicht gefunden werden soll); <b>Wieder zeigen</b> holt sie zurück.</p>
         </div>
         <div class="shots">
           <figure>
