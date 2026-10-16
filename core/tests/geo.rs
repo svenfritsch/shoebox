@@ -150,6 +150,14 @@ fn several_photos_get_one_position() {
     let r = post(addr, "/api/files/positions/check", &json!({ "ids": [gps, plain, a, b] }));
     assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
     assert_eq!(r.json(), json!({ "total": 4, "with_file": 1, "with_user": 1 }));
+    let r = post(addr, "/api/files/positions/check", &json!({ "ids": [] }));
+    assert_eq!(r.json(), json!({ "total": 0, "with_file": 0, "with_user": 0 }));
+    assert_eq!(post(addr, "/api/files/positions/check", &json!({ "ids": [999999] })).status, 400);
+
+    // Only photos with a position in their file: nothing is set, nothing refused.
+    let r = post(addr, "/api/files/positions", &json!({ "ids": [gps], "lat": 3.0, "lon": 4.0 }));
+    assert_eq!(r.json(), json!({ "set": 0, "kept": 1 }));
+    assert_eq!(details(addr, gps)["position"]["source"], "file");
 
     // Bad numbers and unknown photos are refused, nothing is stored.
     assert_eq!(post(addr, "/api/files/positions", &json!({ "ids": [a, b], "lat": 91.0, "lon": 0.0 })).status, 400);

@@ -2117,6 +2117,11 @@ document.addEventListener('keydown', function (ev) {
   }
   if ($('lightbox').hidden) {
     if (ev.key === 'Escape' && state.selecting) endSelection();
+    if (state.selecting && (ev.key === 'b' || ev.key === 'B') && !ev.altKey && !ev.metaKey && !ev.ctrlKey && !/^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName)) {
+      ev.preventDefault();
+      toggleSelbarFocus();
+      return;
+    }
     var cell = document.activeElement;
     if (!cell || !cell.classList.contains('cell') || ev.altKey || ev.metaKey || ev.ctrlKey) return;
     if (/^Arrow(Left|Right|Up|Down)$/.test(ev.key)) {
@@ -2274,6 +2279,8 @@ function openModal(title, body, actions, cls) {
     a.appendChild(btn);
     return btn;
   });
+  // The focus goes back where it came from when the dialog closes (keyboard use).
+  if ($('modal').hidden) openModal.opener = document.activeElement;
   $('modal').hidden = false;
   var input = b.querySelector('input:not([type=file])');
   var preferred = actions.findIndex(function (act) { return act.focus; });
@@ -2283,6 +2290,9 @@ function openModal(title, body, actions, cls) {
 
 function closeModal() {
   $('modal').hidden = true;
+  var opener = openModal.opener;
+  openModal.opener = null;
+  if (opener && opener.isConnected && opener.getClientRects().length) opener.focus();
   if (closeModal.onclose) { var f = closeModal.onclose; closeModal.onclose = null; f(); }
 }
 
@@ -2379,6 +2389,19 @@ function updateSelbar() {
 // keys (and Home, End) go from tool to tool. The last tool used keeps the place.
 function selbarTools() {
   return Array.prototype.filter.call($('selbar').querySelectorAll('button'), function (b) { return !b.hidden && !b.disabled; });
+}
+
+// B goes from the photos to the bar and back (the photos are many tab stops).
+var selbarReturn = null;
+function toggleSelbarFocus() {
+  var bar = $('selbar');
+  if (bar.contains(document.activeElement)) {
+    if (selbarReturn && selbarReturn.isConnected) selbarReturn.focus();
+    return;
+  }
+  selbarReturn = document.activeElement;
+  var stop = bar.querySelector('button[tabindex="0"]');
+  if (stop) stop.focus();
 }
 
 function selbarFocus(b) {

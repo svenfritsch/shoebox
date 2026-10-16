@@ -207,9 +207,10 @@ function locationDialog(info, ids) {
 
 function buildLocationDialog(info, ids, check) {
   var pos = info ? info.position : null;
+  var nothingToSet = !!check && check.with_file === check.total;
   var body = el('div', 'geo-dialog');
   if (check && check.with_file) {
-    body.appendChild(el('p', 'hint', tr(check.with_file === check.total ? 'geo.batch_file_all' : 'geo.batch_file_some', { n: check.with_file, total: check.total })));
+    body.appendChild(el('p', 'hint', tr(nothingToSet ? 'geo.batch_file_all' : 'geo.batch_file_some', { n: check.with_file, total: check.total })));
   }
   if (check && check.with_user) body.appendChild(el('p', 'hint', tr('geo.batch_user', { n: check.with_user })));
   var pick = el('div', 'geo-pick');
@@ -247,7 +248,7 @@ function buildLocationDialog(info, ids, check) {
     lat.input.classList.toggle('bad', latBad);
     lon.input.classList.toggle('bad', lonBad);
     error.textContent = latBad ? tr('geo.bad_lat') : lonBad ? tr('geo.bad_lon') : '';
-    if (save) save.disabled = v[0] === null || v[1] === null || (check && check.with_file === check.total);
+    if (save) save.disabled = v[0] === null || v[1] === null || nothingToSet;
     return v;
   };
   var place = function (la, lo, fromMap) {

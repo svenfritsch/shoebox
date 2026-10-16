@@ -145,6 +145,7 @@ fn position_rows(conn: &Connection, ids: &[i64]) -> Result<Vec<(String, bool)>> 
         .collect()
 }
 
+/// Counts for `PositionsCheck`; an unknown id is refused.
 pub fn check_positions(conn: &Connection, ids: &[i64]) -> Result<PositionsCheck> {
     let mut out = PositionsCheck { total: ids.len(), ..Default::default() };
     for (key, own) in position_rows(conn, ids)? {

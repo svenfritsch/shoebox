@@ -2839,7 +2839,7 @@ async fn positions_set(State(app): State<Arc<App>>, Json(req): Json<PositionsReq
 }
 
 /// What a location dialog for these photos should say.
-async fn positions_check(State(app): State<Arc<App>>, Json(req): Json<DatesCheckRequest>) -> ApiResult<Json<crate::geo::PositionsCheck>> {
+async fn positions_check(State(app): State<Arc<App>>, Json(req): Json<IdsRequest>) -> ApiResult<Json<crate::geo::PositionsCheck>> {
     blocking(&app, move |app| {
         let conn = app.conn.lock().unwrap();
         crate::geo::check_positions(&conn, &req.ids).map(Json).map_err(|e| ApiError::BadRequest(format!("{e:#}")))
@@ -2888,13 +2888,8 @@ async fn dates_set(State(app): State<Arc<App>>, Json(req): Json<DatesRequest>) -
     .map(Json)
 }
 
-#[derive(Deserialize)]
-struct DatesCheckRequest {
-    ids: Vec<i64>,
-}
-
 /// What a date dialog for these photos should say.
-async fn dates_check(State(app): State<Arc<App>>, Json(req): Json<DatesCheckRequest>) -> ApiResult<Json<dates::Check>> {
+async fn dates_check(State(app): State<Arc<App>>, Json(req): Json<IdsRequest>) -> ApiResult<Json<dates::Check>> {
     blocking(&app, move |app| {
         let conn = app.conn.lock().unwrap();
         dates::check(&conn, &req.ids).map(Json).map_err(|e| ApiError::BadRequest(format!("{e:#}")))
