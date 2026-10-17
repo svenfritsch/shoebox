@@ -1,6 +1,8 @@
 # Phase 18: identical photos once in the common timeline
 
-**Planned, nothing built.** Phase 16 is not used; phase 17 is the Windows release (main).
+**Built** (branch `claude/phase18-identical-once`). Phase 16 is not used; phase 17 is the Windows release (main).
+Decided with the user before building: no switch (section 5), and a date the
+user gave decides which copy is shown.
 Closes the last line of "Not yet done" in [phase6.md](phase6.md) section 3:
 *identical photos on two separate drives show twice in the common timeline*.
 Raised in [phase15.md](phase15.md) open question 7.
@@ -35,92 +37,112 @@ search box must match what the result shows.
 | A file has no full hash yet (just scanned) | Cannot be called identical; shown as it is until hashing has run |
 | Same name, different content (two cameras, `IMG_0001.jpg`) | Different photos, both shown |
 | Same content, different name | Both shown (use case C) |
-| The two copies disagree on the date (one has an estimated date) | The shown copy's date decides; the info panel says where the other copy is |
-| One copy has the heart, the tag or the face decision | Filters are applied per drive first, then identical results are merged; the shown copy is one that matches the filter. The heart and tags shown are those of the shown copy |
+| The two copies disagree on the date (one has a corrected or estimated date) | The copy with the date the user gave is shown, so the photo sits where the user put it; the info panel says where the other copy is |
+| One copy has the heart, the tag or the face decision | Filters are applied per drive first, then identical results are merged; the shown copy is one that matches the filter. The heart shows if any copy has one (All drives is read only, so there is no question which copy a click changes); tags and people in the info panel are those of the shown copy |
 | A backup drive | Not part of the common timeline already, so nothing changes |
-| The user wants to see both (to compare or to find a stray) | A switch turns the merging off |
+| The user wants to see both (to compare or to find a stray) | **Duplicates across drives** (Manage drives) lists every copy, renamed ones too; the "Also on" row names the others and opens them. No switch |
 
 ## 2. Solution
 
-A switch in the All drives timeline: **Show identical photos once**, **on by
-default** (it is the fix; off shows every copy as today).
+The All drives timeline always shows identical photos once. There is no switch
+(section 5, question 2).
 
 - **Identical** means: same **file name** (last path component, NFC, case-folded,
   never the folder) **and** the same **full hash**, both known. Nothing else
   (not a picture hash, not size alone, not name alone).
-- **Which copy is shown**: the one on the drive that comes first in the drive
-  list; among copies on the same drive, the first by path. Always the same copy,
-  so the timeline does not jump between reloads.
+- **Which copy is shown** (`multi::shown_first`), among the copies the filter
+  left:
+  1. the one with a date the user gave (`taken_overrides` or `date_estimates`);
+     if several have one, the one given last (largest `at`);
+  2. else the one on the drive that comes first in the drive list;
+  3. among copies on the same drive, the first by path.
+
+  Always the same copy, so the timeline does not jump between reloads.
+- **Heart**: the shown photo has the heart when any copy on a drive of the
+  timeline has it. With the heart filter the copy that has it is shown.
 - **Where the others are**: the info panel of a shown photo gets a row **Also
   on** with one line per other copy (`SSD-LENA · Urlaub Kroatien`), each a
-  button that opens that photo on its own drive (like the existing button that
+  button that opens that folder on its own drive (like the existing button that
   opens the photo's drive).
-- **Status line**: "4,310 photos · 502 identical copies hidden" (the second part
-  only while the switch is on and something is hidden).
-- **Counts**: the search suggestions (phase 15a) count each identical photo once
-  while the switch is on, so a count still equals what the result shows.
+- **Status line**: "4,310 photos on 2 drives · … · 502 identical copies hidden"
+  (the last part only when something is hidden).
+- **Counts**: the search suggestions (phase 15a) count each identical photo
+  once, with and without a filter, so a count equals what the result shows.
 - **Not merged**: the single-drive timelines (a folder there must show all its
   files) and the backup comparison view (`compare=different`, `flat`), which
-  exists to show both copies. See open question 1 for single drives.
+  exists to show both copies.
 - **Read only**: nothing is written anywhere; no schema change.
 
 ### 2.1 How
 
-`GET /api/all/timeline` gets `once=1` (the browser sends it from the switch,
-`shoebox-once`, default on). After the per-drive queries and before sorting, the
-server looks up `(name_fold, full_hash)` for the rows it has (one query per drive
-over `files`, kept in a map by file id), keeps the first row of every
-`(name_fold, full_hash)` key in drive order, and answers `hidden` (how many it
-dropped). Rows without a hash are kept. The `live` link of a kept row is its
-own. A new `GET /api/all/files/{gid}/copies` gives the "Also on" lines (the other
-files with the same name and hash on the online non-backup drives).
+`App::copy_facts` (cached like the snapshot, by index version) maps every file
+that is there and has a full hash to its `(name_fold, full_hash)` key and the
+`at` of a date the user gave (`multi::copy_facts`). `GET /api/all/timeline`,
+after the per-drive queries and before sorting, keeps one row per key
+(`multi::shown_first`), sets the heart from any copy, and answers `hidden`
+(how many it dropped). Rows without a hash are kept. The `live` link of a kept
+row is its own.
 
-`/api/all/tags` and `/api/all/people` take the same `once` and count distinct
-`(name_fold, full_hash)` keys per name instead of adding up per drive.
+`GET /api/all/copies?library=<id>&file=<id>` gives the "Also on" lines: the
+other files with the same key on the drives of the timeline (online, not
+backups), with drive, disk name, folder id and path.
+
+`/api/all/tags` and `/api/all/people` count distinct photos (`multi::Photo`: the
+key, or the file itself when it has none) per name over the photos the
+timeline shows, instead of adding up per drive. Tags go through
+`browse::tag_files_within` (`tags_within` with the files).
 
 ### 2.2 UI
 
-- A toggle in the All drives header next to the type filter, an icon of two
-  overlapping photos, tooltip `once.tip`. State in `localStorage`
-  (`shoebox-once`), on by default.
-- Texts (`once.*`, EN and DE in `core/i18n/`): `label` "Identical photos once",
-  `tip` "A photo with the same name and the same content on more than one drive is
-  shown once. Photos with different names count as different.", `hidden`
-  "{count} identical copies hidden", `also` "Also on".
-- Info panel row `once.also`, as above.
+- No toggle.
+- Texts (EN and DE in `core/i18n/`): `info.also_on` "Also on",
+  `info.also_on_hint` (tooltip of a line), `count.hidden_copies` "{n} identical
+  copies hidden".
+- Info panel row `info.also_on` after the Drive row, filled when
+  `/api/all/copies` answers (cached per photo until the timeline reloads).
 
 ## 3. Guide
 
-(EN and DE, per the `guide` skill.) All drives timeline: the switch, what
-"identical" means (name and content), where the other copies are, the status
-line, and that nothing is deleted or changed. Remove the guide's remark that
+(EN and DE, per the `guide` skill.) All drives timeline: what
+"identical" means (name and content), which copy is shown, where the other
+copies are, the status line, and that nothing is deleted or changed. Remove the guide's remark that
 identical photos show twice, if there is one. `python3 docs/guide/check.py`.
 
 ## 4. Tests
 
-`core/tests/multi.rs` (two temp drives, as in the existing tests):
-- same name and content in different folders on two drives: one row, `hidden` = 1;
-  the shown copy is the one on the first drive;
+`core/tests/multi.rs`, `identical_photos_show_once_in_the_common_timeline`
+(two drives and a backup):
+- same name and content in different folders: one row, `hidden` counts it; the
+  shown copy is the one on the first drive; the same on every reload;
 - same content, other name: two rows; same name, other content: two rows;
 - a missing full hash: two rows;
-- `once` off or missing: both rows, as today;
-- a tag or heart only on the second drive's copy with the tag filter: the photo
-  shows once; counts for the tag equal the result's length;
-- `compare=different` and a backup are not merged;
-- `/api/all/files/{gid}/copies` lists the other copies and nothing from a backup;
-- case and Unicode in names (`IMG_1.JPG` vs `img_1.jpg`, decomposed umlauts).
+- case and Unicode in names (`IMG_1.JPG` vs `img_1.jpg`, decomposed umlaut);
+- a tag only on the second drive's copy: the photo shows once (that copy);
+  tag and person counts equal the result's length;
+- a heart on the second copy shows on the first; the heart filter shows the
+  second;
+- a date given on the second copy makes it the shown one, at that date; a
+  newer date on the first makes the first win again;
+- `/api/all/copies` lists the other copies (also by case), nothing from a
+  backup, nothing for a renamed copy, 404 for an unknown drive;
+- no original changed.
 
-`core/tests/i18n.rs` for the keys. Real data: the couple's two drives.
+The existing tests (`compare=different` in `backup.rs`, the suggestions in
+`multi.rs`) still pass. `core/tests/i18n.rs` for the keys. Real data: the
+couple's two drives.
 
-## 5. Open questions (with my recommendation)
+## 5. Open questions (decided)
 
-1. **Single-drive timelines too?** The same name and content can lie in two
-   folders of one drive (`Weihnachten/IMG_1.jpg` and `Kochen/IMG_1.jpg`).
-   *Recommend no*: in a folder every file must show, and the Duplicates screen is
-   the tool for that. Only All drives merges.
-2. **On by default?** *Recommend on*, with the switch remembered.
-3. **Which copy is shown.** First drive in the list (as planned), or the one with
-   most user data (tags, hearts, people)? *Recommend the first drive*: simple and
-   stable; the "Also on" row is there for the rest.
-4. **Same content, different name** (use case C): stays two photos. *Recommend
-   keep it that way*; a later "also merge renamed copies" can follow if wanted.
+1. **Single-drive timelines too?** No: in a folder every file must show, and
+   the Duplicates screen is the tool for that. Only All drives merges (copies
+   with the same name and content in two folders of one drive are merged there
+   too, the first by path shown).
+2. **A switch?** No. Comparing copies is what **Duplicates across drives** is
+   for (it also finds renamed copies), the "Also on" row says where the others
+   are and opens them, and All drives is read only, so there is nothing to do
+   on a particular copy there.
+3. **Which copy is shown.** The one with a date the user gave (the last given),
+   else the first drive. A corrected or estimated date says where the photo
+   belongs; showing the other copy would put it back at the old date.
+4. **Same content, different name** (use case C): stays two photos; a later
+   "also merge renamed copies" can follow if wanted.
