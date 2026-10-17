@@ -13,12 +13,16 @@ name: guide
 #
 # Pull requests and main run it when the UI, its texts or the guide change; a
 # change to Rust code alone does not change the screenshots.
+#
+# The same build and Playwright also run the photo app's browser tests
+# (core/tests/browser: keyboard use of the grid, the viewer, the selection
+# bar and dialogs), once, in the English job, before the screenshots.
 on:
   push:
     branches: [main]
-    paths: ['core/web/**', 'core/i18n/**', 'docs/guide/**', '.github/workflows/guide.yml']
+    paths: ['core/web/**', 'core/i18n/**', 'core/tests/browser/**', 'docs/guide/**', '.github/workflows/guide.yml']
   pull_request:
-    paths: ['core/web/**', 'core/i18n/**', 'docs/guide/**', '.github/workflows/guide.yml']
+    paths: ['core/web/**', 'core/i18n/**', 'core/tests/browser/**', 'docs/guide/**', '.github/workflows/guide.yml']
   workflow_call:
   workflow_dispatch:
 
@@ -81,6 +85,12 @@ jobs:
           npm install --silent --no-save "playwright@$PLAYWRIGHT_VERSION"
           npx playwright install --with-deps chromium
           echo "NODE_PATH=$RUNNER_TEMP/pw/node_modules" >> "$GITHUB_ENV"
+
+      # Its own small library in a temporary folder; the language does not
+      # matter, so only one job runs them.
+      - name: Browser tests
+        if: matrix.lang == 'en'
+        run: core/tests/browser/run.sh core/target/x86_64-unknown-linux-gnu/release/shoebox
 
       # The sample library lives at /Volumes/Photos (and the two-drive pass
       # under /mnt), so the paths in the screenshots look like a drive.

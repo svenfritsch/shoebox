@@ -146,6 +146,9 @@ docker/dev.sh bash -c 'scripts/make-fixtures.sh /target/fixtures && /target/*/re
 # the real recognizer too (after recognizer/fetch-models.sh; the image has OpenCV)
 docker/dev.sh bash -c 'python3 -m unittest -v recognizer/test_recognizer.py'
 docker/dev.sh bash -c 'SHOEBOX_RECOGNIZER=$PWD/recognizer/recognizer.py DEPS_DIR=/target/deps scripts/build.sh "" test'
+# browser tests of the photo app (keyboard use), on the host, Linux or macOS: needs
+# the host's release build (scripts/build.sh), Pillow, Node with Playwright and a Chromium
+core/tests/browser/run.sh
 
 # macOS (Homebrew rustup is keg-only)
 export PATH=/opt/homebrew/opt/rustup/bin:$PATH
