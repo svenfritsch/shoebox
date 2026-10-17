@@ -204,11 +204,23 @@ function infoGeo(info) {
 
 // Give a photo without a position one: a pin on the map or latitude and
 // longitude typed, both always there and kept in step. Saved in shoebox only.
-// From the selection bar (`info` null) the same dialog gives the position to
-// all of `ids`; the ones with a position in their file keep it.
+// From the selection bar (`info` null) the position goes to all of `ids`;
+// the ones with a position in their file keep it, the dialog says how many.
 function locationDialog(info, ids) {
+  if (info) { buildLocationDialog(info, [info.id], null); return; }
+  post(LIBAPI + '/files/positions/check', { ids: ids }).then(function (check) {
+    buildLocationDialog(null, ids, check);
+  }).catch(failed);
+}
+
+function buildLocationDialog(info, ids, check) {
   var pos = info ? info.position : null;
+  var nothingToSet = !!check && check.with_file === check.total;
   var body = el('div', 'geo-dialog');
+  if (check && check.with_file) {
+    body.appendChild(el('p', 'hint', nothingToSet ? trn('geo.batch_file_all', check.total, { total: check.total }) : trn('geo.batch_file_some', check.with_file, { total: check.total })));
+  }
+  if (check && check.with_user) body.appendChild(el('p', 'hint', trn('geo.batch_user', check.with_user)));
   var pick = el('div', 'geo-pick');
   var mapBox = el('div', 'geo-pickmap');
   pick.appendChild(mapBox);
@@ -244,7 +256,7 @@ function locationDialog(info, ids) {
     lat.input.classList.toggle('bad', latBad);
     lon.input.classList.toggle('bad', lonBad);
     error.textContent = latBad ? tr('geo.bad_lat') : lonBad ? tr('geo.bad_lon') : '';
-    if (save) save.disabled = v[0] === null || v[1] === null;
+    if (save) save.disabled = v[0] === null || v[1] === null || nothingToSet;
     return v;
   };
   var place = function (la, lo, fromMap) {
