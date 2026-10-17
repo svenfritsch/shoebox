@@ -682,6 +682,32 @@ again. Built:
   clicked to this one, in the order shown). The duplicates page has no
   range: its boxes keep at least one copy per group.
 
+### 5c feedback: chains of look-alikes (after phase 7)
+
+Splitting at 100 left chained cards under 100 alone: a card grew from
+neighbour to neighbour at 0.60, and the 0.60 was measured on pairs, not on
+chains. Pets showed it first (one card of 82 cats with three or more pets in
+it, `docs/phase7.md`). Now (`clusters::join`): the closest pairs are joined
+first, faces suggested (≥ 0.55) for two different people never share a card,
+and two parts are joined only when their average similarity (every face of
+one with every face of the other) is at least `clusters::COHESION_SIM` = 0.55,
+the level where no wrong match was seen. The 0.60 for neighbours and the split
+at 100 stay.
+
+`shoebox recognize` prints the clusters by size ("Clusters of faces: of 1 face
+…, 2 faces …, 3-5 …, 6-20 …, more …"). To compare with the chains of before
+on the same library, run it once with `SHOEBOX_FACE_COHESION=off` (or another
+number, e.g. `0.50`); the photo app must be closed, and it uses its own
+setting again at its next start.
+
+To check on the real drive:
+- [ ] `shoebox recognize <drive>` with and without `SHOEBOX_FACE_COHESION=off`:
+      note both size lines. Hoped for: the big cards become cards of 3-20,
+      not many more single faces.
+- [ ] Unnamed: are the cards one person each now (small children too)? How
+      many cards does one person get? If too many singles and pairs, try
+      0.50; if cards still mix people, 0.60.
+
 ## 5d: duplicates UI and tag carry-over
 
 Built, one commit per step. Scope and rules are in "Phase 5d details" in

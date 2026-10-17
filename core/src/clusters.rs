@@ -18,17 +18,21 @@
 //!   are kept in `recog.neighbours`, so a run that is stopped resumes, and
 //!   after a `recognize` run only the new faces need theirs.
 //! - Clusters, from scratch every time: faces without a decision that are
-//!   neighbours end up in one cluster. Faces with a decision (confirmed,
-//!   ignored, not a face) never take part.
+//!   neighbours end up in one cluster (`join`, the closest pairs first).
+//!   Faces with a decision (confirmed, ignored, not a face) never take part.
+//!   Two exceptions: faces suggested for two different people are never
+//!   joined, and two parts are joined only when they are similar on average
+//!   (`Thresholds::cohesion`), so look-alikes do not chain into one big card.
 //! - A cluster of more than `MAX_CLUSTER` faces is split with a stricter
 //!   similarity (0.62, 0.64, …) until every piece fits.
-//! - Suggestions: every face without a decision is compared with the
-//!   confirmed faces of every person (best match, so confirmed faces from
-//!   several ages bridge the gap a single reference cannot), never with a
-//!   person it was rejected for: from `people::SUGGEST_SIM` suggested,
-//!   from `people::MAYBE_SIM` offered as "maybe". Faces drawn by hand count
-//!   as confirmed faces when the worker found landmarks in their box
-//!   (`recog.drawn.aligned`); a plain crop's embedding is too unreliable.
+//! - Suggestions, before the clusters: every face without a decision is
+//!   compared with the confirmed faces of every person (best match, so
+//!   confirmed faces from several ages bridge the gap a single reference
+//!   cannot), never with a person it was rejected for: from
+//!   `people::SUGGEST_SIM` suggested, from `people::MAYBE_SIM` offered as
+//!   "maybe". Faces drawn by hand count as confirmed faces when the worker
+//!   found landmarks in their box (`recog.drawn.aligned`); a plain crop's
+//!   embedding is too unreliable.
 //!
 //! Nothing here is user data: deleting `recognition.db` loses no decision.
 
@@ -51,6 +55,13 @@ use crate::recognize::{Interrupted, KINDS};
 /// grows from neighbour to neighbour, and on the real drive everything at
 /// 0.60 and above was the same person.
 pub const CLUSTER_SIM: f32 = 0.60;
+/// … and two parts of a cluster of faces are joined only when they are at
+/// least this similar on average (`Thresholds::cohesion`), so a chain of
+/// look-alikes (a mother, her children, other fair children) does not end up
+/// on one card. The suggest similarity: on the real drive the highest wrong
+/// match seen was 0.54. `SHOEBOX_FACE_COHESION` sets another (a number, or
+/// `off` for the chains of before), to compare on a real library.
+pub const COHESION_SIM: f32 = 0.55;
 /// No card holds more faces than this: nobody can look through 2,500 faces
 /// to find the odd one out. A larger cluster (one that chained from
 /// neighbour to neighbour, say a mother, her children and other fair
@@ -85,7 +96,51 @@ pub struct Summary {
     /// Faces suggested for someone, and offered as "maybe".
     pub suggested: u64,
     pub maybe: u64,
+    /// The clusters by size, to judge the thresholds on a real library.
+    pub sizes: Sizes,
     pub seconds: f64,
+}
+
+/// Clusters of 1, 2, 3–5, 6–20 and more faces.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct Sizes {
+    pub one: u64,
+    pub two: u64,
+    pub three_to_five: u64,
+    pub six_to_twenty: u64,
+    pub more: u64,
+}
+
+impl Sizes {
+    fn add(&mut self, len: usize) {
+        match len {
+            0 => {}
+            1 => self.one += 1,
+            2 => self.two += 1,
+            3..=5 => self.three_to_five += 1,
+            6..=20 => self.six_to_twenty += 1,
+            _ => self.more += 1,
+        }
+    }
+}
+
+impl std::fmt::Display for Sizes {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "of 1 face {}, 2 faces {}, 3-5 {}, 6-20 {}, more {}",
+            self.one, self.two, self.three_to_five, self.six_to_twenty, self.more
+        )
+    }
+}
+
+/// `COHESION_SIM`, or what `SHOEBOX_FACE_COHESION` says (`off`: none).
+fn face_cohesion(default: Option<f32>) -> Option<f32> {
+    match std::env::var("SHOEBOX_FACE_COHESION") {
+        Ok(v) if v.trim() == "off" => None,
+        Ok(v) => v.trim().parse().ok().or(default),
+        Err(_) => default,
+    }
 }
 
 /// Whether a clustering job is running right now (in any process).
@@ -131,11 +186,13 @@ pub fn run_printing(conn: &Connection, stop: &dyn Fn() -> bool) -> Result<Summar
         "Clusters: {} faces large enough, {} without a decision in {} clusters; {} suggested, {} maybe ({:.1} s).",
         s.faces, s.unnamed, s.clusters, s.suggested, s.maybe, s.seconds
     );
+    println!("Clusters of faces: {}.", s.sizes);
     if let Some(a) = &s.pets {
         println!(
             "Clusters: {} cats and dogs large enough, {} without a decision in {} clusters; {} suggested, {} maybe.",
             a.faces, a.unnamed, a.clusters, a.suggested, a.maybe
         );
+        println!("Clusters of pets: {}.", a.sizes);
     }
     Ok(s)
 }
@@ -236,7 +293,10 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
     for space in [Space::Faces, Space::Pets] {
         let Some(model) = current_model_of(conn, space)? else { continue };
         let all = eligible(conn, space, &model, &hidden)?;
-        let th = space.thresholds(&model);
+        let mut th = space.thresholds(&model);
+        if space == Space::Faces {
+            th.cohesion = face_cohesion(th.cohesion);
+        }
         parts.push(Part { space, model, th, all, todo: Vec::new() });
     }
 
@@ -293,6 +353,7 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
             ..Summary::default()
         };
         for (c, group) in analysis.groups.iter().enumerate() {
+            summary.sizes.add(group.len());
             for &i in group {
                 let s = analysis.suggestion.get(&i);
                 rows.push((part.all.ids[i], numbered + c as i64 + 1, s.map(|s| s.0), s.map(|s| s.1 as f64)));
@@ -338,59 +399,9 @@ fn analyse(conn: &Connection, m: &Matched, state_of: &HashMap<i64, usize>, part:
     let decided = |i: usize| state_of.get(&all.ids[i]).and_then(|&s| m.decided(s));
     let open: Vec<bool> = (0..n).map(|i| decided(i).is_none()).collect();
 
-    // Clusters: neighbours without a decision, joined. Similarities are
-    // computed again (cheap), so a list can never join faces that are not
-    // close.
-    let mut parent: Vec<usize> = (0..n).collect();
-    let mut edges: Vec<(usize, usize, f32)> = Vec::new();
-    {
-        let mut stmt = conn.prepare("SELECT face, list FROM recog.neighbours")?;
-        let mut rows = stmt.query([])?;
-        while let Some(r) = rows.next()? {
-            let Some(&i) = pos.get(&r.get::<_, i64>(0)?) else { continue };
-            if !open[i] {
-                continue;
-            }
-            let bytes: Vec<u8> = r.get(1)?;
-            for other in decode(&bytes) {
-                let Some(&j) = pos.get(&other) else { continue };
-                let sim = if open[j] { ann::dot(all.row(i), all.row(j)) } else { 0.0 };
-                if sim >= part.th.cluster {
-                    edges.push((i, j, sim));
-                    let (a, b) = (root(&mut parent, i), root(&mut parent, j));
-                    if a != b {
-                        parent[a.max(b)] = a.min(b);
-                    }
-                }
-            }
-        }
-    }
-    let mut members: HashMap<usize, Vec<usize>> = HashMap::new();
-    for i in (0..n).filter(|&i| open[i]) {
-        members.entry(root(&mut parent, i)).or_default().push(i);
-    }
-    let mut groups: Vec<Vec<usize>> = Vec::new();
-    let mut big_edges: HashMap<usize, Vec<(usize, usize, f32)>> = HashMap::new();
-    if members.values().any(|m| m.len() > MAX_CLUSTER) {
-        for &(i, j, sim) in &edges {
-            let r = root(&mut parent, i);
-            if members[&r].len() > MAX_CLUSTER {
-                big_edges.entry(r).or_default().push((i, j, sim));
-            }
-        }
-    }
-    for (r, m) in members {
-        if m.len() > MAX_CLUSTER {
-            split(m, big_edges.remove(&r).unwrap_or_default(), part.th.cluster, &mut groups);
-        } else {
-            groups.push(m);
-        }
-    }
-    drop(edges);
-    groups.sort_by(|a, b| b.len().cmp(&a.len()).then(a[0].cmp(&b[0])));
-
     // Suggestions: the most similar confirmed faces of every person (of
     // this space), and the faces or pets drawn by hand that were aligned.
+    // First, because a cluster never joins faces suggested for two people.
     let mut ref_person: Vec<i64> = Vec::new();
     let mut ref_data: Vec<f32> = Vec::new();
     for i in 0..n {
@@ -420,7 +431,109 @@ fn analyse(conn: &Connection, m: &Matched, state_of: &HashMap<i64, usize>, part:
     };
     let suggestion: HashMap<usize, (i64, f32)> =
         open_list.iter().zip(suggestions).filter_map(|(&i, s)| s.map(|s| (i, s))).collect();
+
+    // Clusters: neighbours without a decision, joined. Similarities are
+    // computed again (cheap), so a list can never join faces that are not
+    // close.
+    let mut edges: Vec<(usize, usize, f32)> = Vec::new();
+    {
+        let mut stmt = conn.prepare("SELECT face, list FROM recog.neighbours")?;
+        let mut rows = stmt.query([])?;
+        while let Some(r) = rows.next()? {
+            let Some(&i) = pos.get(&r.get::<_, i64>(0)?) else { continue };
+            if !open[i] {
+                continue;
+            }
+            let bytes: Vec<u8> = r.get(1)?;
+            for other in decode(&bytes) {
+                let Some(&j) = pos.get(&other) else { continue };
+                let sim = if open[j] { ann::dot(all.row(i), all.row(j)) } else { 0.0 };
+                if sim >= part.th.cluster && i != j {
+                    edges.push((i.min(j), i.max(j), sim));
+                }
+            }
+        }
+    }
+    let label: Vec<Option<i64>> =
+        (0..n).map(|i| suggestion.get(&i).filter(|s| s.1 >= part.th.suggest).map(|s| s.0)).collect();
+    let cohesion = part.th.cohesion.map(|min| (all.data.as_slice(), all.dim, min));
+    let mut parent = join(n, &mut edges, &label, cohesion);
+    let mut members: HashMap<usize, Vec<usize>> = HashMap::new();
+    for i in (0..n).filter(|&i| open[i]) {
+        members.entry(root(&mut parent, i)).or_default().push(i);
+    }
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    let mut big_edges: HashMap<usize, Vec<(usize, usize, f32)>> = HashMap::new();
+    if members.values().any(|m| m.len() > MAX_CLUSTER) {
+        for &(i, j, sim) in &edges {
+            let r = root(&mut parent, i);
+            // An edge that was not taken may lead into another cluster.
+            if r == root(&mut parent, j) && members[&r].len() > MAX_CLUSTER {
+                big_edges.entry(r).or_default().push((i, j, sim));
+            }
+        }
+    }
+    for (r, m) in members {
+        if m.len() > MAX_CLUSTER {
+            split(m, big_edges.remove(&r).unwrap_or_default(), part.th.cluster, &mut groups);
+        } else {
+            groups.push(m);
+        }
+    }
+    drop(edges);
+    groups.sort_by(|a, b| b.len().cmp(&a.len()).then(a[0].cmp(&b[0])));
     Ok(Analysis { groups, suggestion })
+}
+
+/// Join `n` faces along `edges` (pairs at least the cluster similarity
+/// apart), the most similar pair first, and return the union-find parents.
+/// Two parts are not joined when
+/// - faces in them are suggested (`label`, at least the suggest similarity)
+///   for two different people: two pets that look alike to the model end up
+///   on two cards, not on one card that says "Looks like Spucky (44 of 82)"
+///   while Judy is in it as well;
+/// - with `cohesion` (embeddings, their length, the least average), the
+///   average similarity of every face of one part with every face of the
+///   other is below it. For L2-normalised embeddings that average is the dot
+///   product of the parts' sums divided by both sizes, so it costs one
+///   product per edge. A chain of look-alikes (each close to the next, the
+///   ends far apart) stops growing where the parts no longer fit together.
+///
+/// Sorts `edges` (and drops the doubles).
+fn join(n: usize, edges: &mut Vec<(usize, usize, f32)>, label: &[Option<i64>], cohesion: Option<(&[f32], usize, f32)>) -> Vec<usize> {
+    edges.sort_by(|a, b| b.2.total_cmp(&a.2).then((a.0, a.1).cmp(&(b.0, b.1))));
+    edges.dedup_by(|a, b| (a.0, a.1) == (b.0, b.1));
+    let mut parent: Vec<usize> = (0..n).collect();
+    let mut label = label.to_vec();
+    let mut size = vec![1usize; n];
+    let (mut sum, dim, least) = match cohesion {
+        Some((data, dim, least)) => (data.to_vec(), dim, least),
+        None => (Vec::new(), 0, f32::MIN),
+    };
+    for &(i, j, _) in edges.iter() {
+        let (a, b) = (root(&mut parent, i), root(&mut parent, j));
+        if a == b {
+            continue;
+        }
+        if matches!((label[a], label[b]), (Some(p), Some(q)) if p != q) {
+            continue;
+        }
+        let (keep, gone) = (a.min(b), a.max(b));
+        if dim > 0 {
+            let average = ann::dot(&sum[a * dim..(a + 1) * dim], &sum[b * dim..(b + 1) * dim]) / (size[a] * size[b]) as f32;
+            if average < least {
+                continue;
+            }
+            let (low, high) = sum.split_at_mut(gone * dim);
+            for (s, v) in low[keep * dim..(keep + 1) * dim].iter_mut().zip(&high[..dim]) {
+                *s += v;
+            }
+        }
+        parent[gone] = keep;
+        size[keep] += size[gone];
+        label[keep] = label[keep].or(label[gone]);
+    }
+    parent
 }
 
 /// Union-find: the root of `i`, flattening the path.
@@ -576,6 +689,71 @@ mod tests {
     fn sizes(mut out: Vec<Vec<usize>>) -> Vec<usize> {
         out.sort_by_key(|g| std::cmp::Reverse(g.len()));
         out.iter().map(Vec::len).collect()
+    }
+
+    fn clusters(n: usize, mut edges: Vec<(usize, usize, f32)>, label: &[Option<i64>], cohesion: Option<(&[f32], usize, f32)>) -> Vec<Vec<usize>> {
+        let mut parent = join(n, &mut edges, label, cohesion);
+        let mut groups: HashMap<usize, Vec<usize>> = HashMap::new();
+        for i in 0..n {
+            groups.entry(root(&mut parent, i)).or_default().push(i);
+        }
+        let mut out: Vec<Vec<usize>> = groups.into_values().collect();
+        out.sort();
+        out
+    }
+
+    /// Without suggestions or cohesion (faces), neighbours chain as before.
+    #[test]
+    fn neighbours_chain_into_one_cluster() {
+        let edges = vec![(0, 1, 0.7), (1, 2, 0.65), (2, 3, 0.61), (4, 5, 0.9)];
+        assert_eq!(clusters(6, edges, &[None; 6], None), vec![vec![0, 1, 2, 3], vec![4, 5]]);
+    }
+
+    /// Two pets suggested for Spucky and Judy, linked by a look-alike: the
+    /// strongest links win and the two never share a card.
+    #[test]
+    fn faces_suggested_for_two_people_are_never_joined() {
+        let label = [Some(1), None, None, Some(2), None];
+        // 0 (Spucky) - 1 - 2 - 3 (Judy), and 4 close to Judy.
+        let edges = vec![(0, 1, 0.95), (1, 2, 0.91), (2, 3, 0.93), (3, 4, 0.92), (1, 4, 0.90)];
+        let out = clusters(5, edges, &label, None);
+        assert_eq!(out, vec![vec![0, 1], vec![2, 3, 4]]);
+        // The same without suggestions: one chain.
+        let edges = vec![(0, 1, 0.95), (1, 2, 0.91), (2, 3, 0.93), (3, 4, 0.92), (1, 4, 0.90)];
+        assert_eq!(clusters(5, edges, &[None; 5], None).len(), 1);
+    }
+
+    /// A unit vector at `deg` degrees in the plane: neighbours on a circle
+    /// are close, the ends of an arc far apart.
+    fn at(deg: f32) -> [f32; 2] {
+        let r = deg.to_radians();
+        [r.cos(), r.sin()]
+    }
+
+    /// 82 look-alikes in a chain (each 0.95 to the next, the ends opposite):
+    /// joined link by link they are one card; with cohesion they fall into
+    /// pieces of a few that look alike as a whole.
+    #[test]
+    fn a_chain_of_look_alikes_falls_into_small_clusters_with_cohesion() {
+        let step = 0.95f32.acos().to_degrees();
+        let data: Vec<f32> = (0..82).flat_map(|k| at(k as f32 * step)).collect();
+        let edges: Vec<_> = (0..81).map(|k| (k, k + 1, ann::dot(&data[k * 2..k * 2 + 2], &data[k * 2 + 2..k * 2 + 4]))).collect();
+        assert_eq!(clusters(82, edges.clone(), &[None; 82], None).len(), 1);
+        let out = clusters(82, edges, &[None; 82], Some((&data, 2, 0.875)));
+        assert!(out.len() >= 10, "{} clusters", out.len());
+        // Cut greedily, a chain may leave one at an end on its own.
+        assert!(out.iter().filter(|g| g.len() == 1).count() <= 2, "{out:?}");
+        for g in &out {
+            assert!(g.len() <= 8, "{g:?}");
+            // Every pair in a piece at least the cohesion similar on average.
+            let mut total = 0.0;
+            for &i in g {
+                for &j in g {
+                    total += ann::dot(&data[i * 2..i * 2 + 2], &data[j * 2..j * 2 + 2]);
+                }
+            }
+            assert!(total / (g.len() * g.len()) as f32 >= 0.875, "{g:?}");
+        }
     }
 
     /// Three tight groups of 60 joined by weak links make one chained
