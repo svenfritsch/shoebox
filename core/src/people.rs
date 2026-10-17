@@ -1281,6 +1281,20 @@ pub struct ClusterRef {
 
 /// Apply `action` to detected faces (`recog.faces` ids; unknown ids are
 /// skipped) in one transaction.
+/// `Stale` if any of these faces has a decision (or is a person's face taken
+/// for a pet's, which the Unnamed page does not show either): an action meant
+/// for faces nobody has decided on must not overwrite one made elsewhere.
+pub fn ensure_undecided(conn: &Connection, faces: &[i64]) -> Result<()> {
+    let v = View::load(conn)?;
+    let wanted: HashSet<i64> = faces.iter().copied().collect();
+    let decided = (0..v.m.faces.len())
+        .any(|i| wanted.contains(&v.m.faces[i].id) && (v.m.decided(i).is_some() || v.pet_faces.contains(&v.m.faces[i].id)));
+    if decided {
+        return Err(Stale.into());
+    }
+    Ok(())
+}
+
 pub fn decide(conn: &Connection, faces: &[i64], action: &Action) -> Result<Decided> {
     let tx = conn.unchecked_transaction()?;
     let assign_to = match action {

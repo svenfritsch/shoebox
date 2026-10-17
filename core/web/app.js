@@ -2248,6 +2248,7 @@ function loadInfo() {
     if (c.running && c.total) parts.push(tr('status.grouping_pct', { pct: Math.floor(100 * c.done / Math.max(c.total, 1)) }));
     else if (c.running || c.stale) parts.push(tr('status.grouping'));
     facesInfo(info);
+    facesStream();
     $('status').textContent = parts.join(' · ');
 
     // Reload when a scan changed the index (but not while it is still busy).
@@ -2270,8 +2271,9 @@ function reloadAll() {
   loadPlaces();
   // The unnamed clusters and a person's faces change their cards in place
   // after each action; loading them again would lose the place and what is
-  // typed in other cards.
-  if (state.filter.view === 'unnamed' || state.filter.view === 'person') return;
+  // typed in other cards (the Unnamed page is refreshed in place instead).
+  if (state.filter.view === 'unnamed') { scheduleUnnamedRefresh(); return; }
+  if (state.filter.view === 'person') return;
   if (state.filter.view) loadView(state.filter.view);
   else loadTimeline(false);
 }
@@ -4739,7 +4741,7 @@ function copyFoldersSection() {
 // decision on the server; the browser keeps nothing. Every action has a
 // visible button (no hover-only actions), so it all works by touch.
 
-var people = { list: [], byId: {}, groups: [], open: {}, info: null, watch: null };
+var people = { list: [], byId: {}, groups: [], open: {}, info: null, watch: null, stream: null, streamUrl: null, told: null };
 
 function fold(s) { return String(s).normalize('NFC').toLowerCase(); }
 
@@ -4778,19 +4780,57 @@ function facesInfo(info) {
     if (state.filter.view === 'person') loadPersonCounts();
   }
   if (busy) watchClusters();
+  // Faces grouped anew in the background (after a decision, a recognize run):
+  // the Unnamed page takes the new cards and suggestions.
+  if (before && clustersSignature(before) !== clustersSignature(info) && state.filter.view === 'unnamed') scheduleUnnamedRefresh();
   renderFacesSection();
 }
 
-// Look at the status more often while the clusters are being recomputed.
+function clustersSignature(info) {
+  var c = info.clusters;
+  return [c.unnamed, c.clusters, c.suggested, c.people, c.finished_at, c.stale, c.running, c.embedding].join(',');
+}
+
+// While the clusters are being recomputed the server says when something
+// changed (`facesStream`); only without that stream (it could not connect)
+// does the page look every 1.5 s.
 function watchClusters() {
-  if (people.watch) return;
+  if (people.watch || streamOpen()) return;
   people.watch = setTimeout(function () { people.watch = null; loadInfo(); }, 1500);
 }
 
-// After a change to people or decisions.
+function streamOpen() {
+  return !!people.stream && people.stream.readyState === 1 && people.streamUrl === LIBAPI + '/events';
+}
+
+// Server-sent events of the library shown: "faces" when clusters are asked
+// for, being recomputed or done, or faces drawn by hand are being embedded.
+// The status and the Unnamed page follow from `/api/info` (`facesInfo`). The
+// browser reconnects by itself (an iPad waking up); a stream the server ended
+// for good (a drive unplugged) is opened again at the next status check.
+function facesStream() {
+  if (!window.EventSource || !LIBAPI) return;
+  var url = LIBAPI + '/events';
+  if (people.stream && people.streamUrl === url && people.stream.readyState !== 2) return;
+  if (people.stream) people.stream.close();
+  var es = new EventSource(url);
+  people.stream = es;
+  people.streamUrl = url;
+  es.addEventListener('faces', function () {
+    clearTimeout(people.told);
+    people.told = setTimeout(loadInfo, 50);
+  });
+  // Connected again: what happened meanwhile is in the status.
+  es.onopen = function () { if (people.watch) { clearTimeout(people.watch); people.watch = null; } loadInfo(); };
+  es.onerror = function () { if (es.readyState === 2 && people.info) facesInfo(people.info); };
+}
+
+// After a change to people or decisions (the Unnamed page follows at once,
+// also when the change was made in the viewer over it).
 function peopleChanged() {
   loadPeople();
   loadInfo();
+  if (state.filter.view === 'unnamed') scheduleUnnamedRefresh();
 }
 
 function cropUrl(face) {
@@ -5839,7 +5879,9 @@ function nameFacesDialog(faces, done) {
 
 // ---- unnamed clusters
 
-var un = { shown: 0, total: 0, unnamed: 0, kind: 'all' };
+// box, more, singles: the page's parts, for `refreshUnnamed`; epoch counts
+// the actions and loads started, so a refresh that crossed one is redone.
+var un = { shown: 0, total: 0, unnamed: 0, kind: 'all', box: null, more: null, singles: null, epoch: 0, timer: null };
 var UN_KINDS = [['all', 'unnamed.kind.all'], ['faces', 'unnamed.kind.faces'], ['pets', 'unnamed.kind.pets']];
 var PAGE_CLUSTERS = 30;
 
@@ -5911,7 +5953,51 @@ function loadUnnamed() {
   var singles = singlesSection();
   page.appendChild(singles.section);
   page.appendChild(singles.bar);
+  un.box = box;
+  un.more = more;
+  un.singles = singles;
   return Promise.all([moreClusters(box, more), singles.load()]);
+}
+
+// Bring the Unnamed page up to date in place: the cards and single faces shown
+// so far are asked for again; a card whose faces are the same (same
+// generation) stays as it is (what is typed, what is selected, opened) and only
+// takes the new suggestion; cards and faces that are gone leave, new ones come
+// in where they belong. Waits while an action is under way.
+function scheduleUnnamedRefresh(delay) {
+  clearTimeout(un.timer);
+  un.timer = setTimeout(refreshUnnamed, delay == null ? 50 : delay);
+}
+
+function refreshUnnamed() {
+  un.timer = null;
+  if (state.filter.view !== 'unnamed' || !un.box || !document.body.contains(un.box)) return;
+  if (document.querySelector('#page .cluster.busy, #page .singles-bar.busy')) { scheduleUnnamedRefresh(500); return; }
+  var epoch = un.epoch, box = un.box, more = un.more, singles = un.singles;
+  var kind = un.kind === 'all' ? null : un.kind;
+  Promise.all([
+    api(LIBAPI + '/clusters' + query({ size: 'large', offset: 0, limit: Math.max(un.shown, PAGE_CLUSTERS), samples: 8, kind: kind })),
+    api(LIBAPI + '/clusters' + query({ size: 'small', offset: 0, limit: Math.max(singles.shown(), SINGLES_PAGE), samples: 2, kind: kind })),
+  ]).then(function (r) {
+    if (state.filter.view !== 'unnamed' || box !== un.box) return;
+    if (epoch !== un.epoch) { scheduleUnnamedRefresh(); return; }
+    var large = r[0];
+    var cards = {};
+    Array.prototype.forEach.call(box.children, function (card) { if (card.cluster) cards[card.cluster.generation] = card; });
+    var keep = large.clusters.map(function (c) {
+      var card = cards[c.generation];
+      if (card) { delete cards[c.generation]; card.sync(c); } else card = clusterCard(c);
+      return card;
+    });
+    Object.keys(cards).forEach(function (g) { cards[g].remove(); });
+    keep.forEach(function (card, k) { if (box.children[k] !== card) box.insertBefore(card, box.children[k] || null); });
+    un.total = large.total;
+    un.unnamed = large.unnamed;
+    un.shown = large.clusters.length;
+    more.hidden = un.shown >= un.total;
+    unnamedSummary();
+    singles.sync(r[1]);
+  }).catch(function () { /* the next change or status check tries again */ });
 }
 
 // Clusters of one or two faces are not worth a card each: their faces are
@@ -6005,6 +6091,7 @@ function singlesSection() {
   };
   var load = function () {
     more.disabled = true;
+    un.epoch++;
     return api(LIBAPI + '/clusters' + query({ size: 'small', offset: st.shown, limit: SINGLES_PAGE, samples: 2, kind: un.kind === 'all' ? null : un.kind })).then(function (r) {
       if (state.filter.view !== 'unnamed') return;
       st.total = r.total;
@@ -6025,8 +6112,10 @@ function singlesSection() {
     var ids = chosen.map(function (f) { return f.id; });
     var pets = chosen.every(function (f) { return f.species; });
     bar.classList.add('busy');
-    var request = action === 'assign' ? post(LIBAPI + '/faces/assign', Object.assign({ faces: ids }, who))
-      : post(LIBAPI + '/faces/' + action, { faces: ids });
+    un.epoch++;
+    // open: refused (409) if one of them was decided elsewhere in the meantime.
+    var request = action === 'assign' ? post(LIBAPI + '/faces/assign', Object.assign({ faces: ids, open: true }, who))
+      : post(LIBAPI + '/faces/' + action, { faces: ids, open: true });
     request.then(function (r) {
       bar.classList.remove('busy');
       var n = pets ? animalCount(facesSpecies(chosen), ids.length) : trn('count.faces', ids.length);
@@ -6041,7 +6130,11 @@ function singlesSection() {
       field.input.value = '';
       update();
       peopleChanged();
-    }).catch(function (e) { bar.classList.remove('busy'); failed(e); loadUnnamed(); });
+    }).catch(function (e) {
+      bar.classList.remove('busy');
+      if (e.status === 409) toast(tr('unnamed.regrouped')); else failed(e);
+      refreshUnnamed();
+    });
   };
   change.onclick = function () {
     var chosen = picked(), to = otherSpecies(chosen);
@@ -6067,7 +6160,27 @@ function singlesSection() {
     st.anchor = null;
     update();
   };
-  return { section: section, bar: bar, load: load };
+  // The faces as the server lists them now (`refreshUnnamed`): tiles of faces
+  // that are gone leave (and their ticks), new ones come in, the others stay.
+  var sync = function (r) {
+    var list = [];
+    r.clusters.forEach(function (c) { c.faces.forEach(function (face) { list.push(face); }); });
+    var now = {};
+    list.forEach(function (face) { now[face.id] = true; });
+    Object.keys(st.picked).forEach(function (id) { if (!now[id]) delete st.picked[id]; });
+    if (st.anchor != null && !now[st.anchor]) st.anchor = null;
+    var tiles = {};
+    list.forEach(function (face) { tiles[face.id] = st.tiles[face.id] || tile(face); });
+    Object.keys(st.tiles).forEach(function (id) { if (!tiles[id]) st.tiles[id].remove(); });
+    st.tiles = tiles;
+    list.forEach(function (face, k) { if (grid.children[k] !== tiles[face.id]) grid.insertBefore(tiles[face.id], grid.children[k] || null); });
+    st.faces = list;
+    st.total = r.total;
+    st.count = r.unnamed;
+    st.shown = r.clusters.length;
+    update();
+  };
+  return { section: section, bar: bar, load: load, sync: sync, shown: function () { return st.shown; } };
 }
 
 function unnamedSummary() {
@@ -6081,6 +6194,7 @@ function unnamedSummary() {
 
 function moreClusters(box, more) {
   more.disabled = true;
+  un.epoch++;
   return api(LIBAPI + '/clusters' + query({ size: 'large', offset: un.shown, limit: PAGE_CLUSTERS, samples: 8, kind: un.kind === 'all' ? null : un.kind })).then(function (r) {
     if (state.filter.view !== 'unnamed') return;
     un.total = r.total;
@@ -6095,6 +6209,7 @@ function moreClusters(box, more) {
 
 function clusterCard(c) {
   var card = el('div', 'cluster');
+  card.cluster = c;
   card.picked = {};
   card.picking = false;
   var head = el('div', 'chead');
@@ -6281,8 +6396,26 @@ function clusterCard(c) {
   var stale = function (e) {
     if (e.status === 409) {
       toast(tr('unnamed.regrouped'));
-      loadUnnamed();
+      refreshUnnamed();
     } else failed(e);
+  };
+  // The same faces, listed again (`refreshUnnamed`): a new number and
+  // suggestion; what is typed and selected stays.
+  card.sync = function (n) {
+    c.id = n.id;
+    c.size = n.size;
+    c.suggestion = n.suggestion;
+    if (expanded || card.picking) {
+      api(LIBAPI + '/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
+        faces = list;
+        renderFaces();
+        update();
+      }).catch(function () {});
+    } else {
+      faces = n.faces.slice();
+      renderFaces();
+    }
+    update();
   };
   // Name, ignore or "not a face": the whole card, or the faces selected in
   // it. The card's generation makes sure only the faces shown are meant.
@@ -6294,6 +6427,7 @@ function clusterCard(c) {
       body.faces = some;
     }
     card.classList.add('busy');
+    un.epoch++;
     post(LIBAPI + '/clusters/' + c.id + '/' + action, body).then(function (r) {
       card.classList.remove('busy');
       var n = petCard ? animalCount(facesSpecies(c.faces), r.faces) : trn('count.faces', r.faces);

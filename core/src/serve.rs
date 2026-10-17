@@ -61,12 +61,13 @@ use axum::body::{Body, Bytes};
 use axum::extract::{ConnectInfo, Path, Query, Request, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, Uri, header};
 use axum::middleware::{self, Next};
+use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use libheif_rs::LibHeif;
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use tokio::sync::{Semaphore, oneshot};
+use tokio::sync::{Semaphore, oneshot, watch};
 use tower::ServiceExt;
 use tower_http::services::ServeFile;
 
@@ -196,6 +197,7 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
         recognizer: opts.recognizer.clone(),
         ffmpeg: media::find_ffmpeg(),
         workers: std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2),
+        closing: watch::channel(false).0,
     });
 
     // The first library must be there; the others may be unplugged.
@@ -224,6 +226,7 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
         urls.extend(lan_address().map(|ip| format!("http://{ip}:{}/", addr.port())));
     }
     let router = hub_router(hub.clone());
+    let closing = hub.clone();
 
     let (tx, rx) = oneshot::channel::<()>();
     let thread = std::thread::Builder::new().name("shoebox-serve".into()).spawn(move || -> Result<()> {
@@ -239,6 +242,7 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
                 } else {
                     let _ = rx.await;
                 }
+                closing.shared.closing.send_replace(true);
             };
             axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>())
                 .with_graceful_shutdown(stop)
@@ -269,6 +273,9 @@ struct Shared {
     recognizer: Option<PathBuf>,
     ffmpeg: Option<PathBuf>,
     workers: usize,
+    /// Set when the server begins to stop: the event streams end, so the
+    /// graceful shutdown does not wait for them forever.
+    closing: watch::Sender<bool>,
 }
 
 /// One library: open when its drive is there, offline when it is not.
@@ -410,6 +417,8 @@ impl App {
             faces_seen: AtomicI64::new(-1),
             embed: Mutex::new(embed_tx),
             embedding: AtomicBool::new(false),
+            events: watch::channel(0).0,
+            closing: shared.closing.subscribe(),
             recognizer: shared.recognizer.clone(),
             stopping: AtomicBool::new(false),
             ffmpeg: shared.ffmpeg.clone(),
@@ -462,6 +471,12 @@ struct App {
     embed: Mutex<mpsc::Sender<()>>,
     /// It is embedding right now (the recognizer is running).
     embedding: AtomicBool,
+    /// Counts the changes to the faces' state (clusters wanted, being
+    /// recomputed, done; embedding): `/api/events` tells the browser at once,
+    /// so it does not have to ask.
+    events: watch::Sender<u64>,
+    /// The server is stopping (`Shared::closing`).
+    closing: watch::Receiver<bool>,
     recognizer: Option<PathBuf>,
     /// The server is stopping: background work ends early.
     stopping: AtomicBool,
@@ -524,6 +539,13 @@ impl App {
     fn request_clusters(&self) {
         let n = self.clusters_wanted.fetch_add(1, Ordering::SeqCst) + 1;
         let _ = self.clusters.lock().unwrap().send(n);
+        self.faces_changed();
+    }
+
+    /// Tell the browsers listening on `/api/events` that the faces' state
+    /// changed (they ask for `/api/info` then).
+    fn faces_changed(&self) {
+        self.events.send_modify(|n| *n += 1);
     }
 
     /// The clustering itself, on a connection of its own. Skipped while
@@ -536,7 +558,16 @@ impl App {
         }
         let seen = faces_fingerprint(&conn)?;
         let stopping = || self.stopping.load(Ordering::SeqCst);
-        match clusters::run(&conn, &stopping, &mut |_, _| {}) {
+        // Running now, and how far (the status line shows it), at most once a second.
+        self.faces_changed();
+        let mut told = Instant::now();
+        let mut progress = |_, _| {
+            if told.elapsed() >= Duration::from_secs(1) {
+                told = Instant::now();
+                self.faces_changed();
+            }
+        };
+        match clusters::run(&conn, &stopping, &mut progress) {
             Ok(s) => {
                 self.faces_seen.store(seen, Ordering::SeqCst);
                 if s.listed > 0 {
@@ -580,6 +611,7 @@ impl App {
         // The pet models are only loaded when a pet is waiting.
         let cmd = if pending.pets > 0 { cmd.with_pets() } else { cmd };
         self.embedding.store(true, Ordering::SeqCst);
+        self.faces_changed();
         let result = (|| -> Result<recognize::DrawnStats> {
             let mut worker = recognize::Worker::start(cmd, recognize::Timeouts::default())?;
             let stopping = || self.stopping.load(Ordering::SeqCst);
@@ -588,6 +620,7 @@ impl App {
             result
         })();
         self.embedding.store(false, Ordering::SeqCst);
+        self.faces_changed();
         match result {
             Ok(s) => {
                 println!("Faces and pets drawn by hand: {} embedded ({} faces without landmarks), {} failed.", s.embedded, s.plain, s.failed);
@@ -697,6 +730,7 @@ fn spawn_clusterer(app: Weak<App>, requests: mpsc::Receiver<u64>) {
                 eprintln!("could not group the faces: {e:#}");
             }
             app.clusters_done.fetch_max(wanted, Ordering::SeqCst);
+            app.faces_changed();
         }
     });
 }
@@ -896,6 +930,7 @@ async fn compare_ids(hub: &Arc<Hub>, library: &str, backup: bool) -> ApiResult<A
 fn router(app: Arc<App>) -> Router {
     Router::new()
         .route("/api/info", get(info))
+        .route("/api/events", get(events))
         .route("/api/folders", get(folders))
         .route("/api/tags", get(tags))
         .route("/api/timeline", get(timeline))
@@ -1793,6 +1828,28 @@ struct Info {
     /// The library keeps its index next to the program (phase 16): shoebox
     /// changes nothing in it, so the UI hides move, rotate, rename and delete.
     read_only: bool,
+}
+
+/// Server-sent events: `faces` whenever the faces' state changes (clusters
+/// asked for, being recomputed, done; faces drawn by hand being embedded), so
+/// the browser updates the Unnamed page and the status line without asking
+/// again and again. The data is a counter; what changed is in `/api/info`.
+/// The stream ends with the library (a drive unplugged) or the server.
+async fn events(State(app): State<Arc<App>>) -> impl IntoResponse {
+    let state = (app.events.subscribe(), app.closing.clone());
+    drop(app);
+    let stream = futures_util::stream::unfold(state, |(mut changes, mut closing)| async move {
+        let changed = tokio::select! {
+            changed = changes.changed() => changed.is_ok(),
+            _ = closing.wait_for(|c| *c) => false,
+        };
+        if !changed {
+            return None;
+        }
+        let n = *changes.borrow_and_update();
+        Some((Ok::<_, std::convert::Infallible>(Event::default().event("faces").data(n.to_string())), (changes, closing)))
+    });
+    Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
 async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: HeaderMap) -> ApiResult<Json<Info>> {

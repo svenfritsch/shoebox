@@ -318,6 +318,37 @@ On the drive (Intel MacBook and/or a modern Mac):
   "Not a face" is for detector mistakes. Neither trains anything: only
   confirmed faces are references.
 
+## Follow-up: one big card of pets, hardly any small ones
+
+Reported on the real drive: Unnamed → Pets showed one card of 82 tabby cats
+("Looks like Spucky (44 of 82)", with at least a few of Judy in it, each of
+them suggested as Judy in the info panel), many single finds, and hardly any
+card of 3 to 5. Cause: clusters were joined link by link (single linkage), so
+look-alike cats chained from neighbour to neighbour, and 82 is below
+`MAX_CLUSTER`, so nothing split it.
+
+`clusters::join` now joins the neighbour pairs the most similar first, and
+skips a pair when
+- the two parts hold faces suggested (at least the suggest similarity) for
+  two different people: the suggestions are computed before the clusters,
+  so Spucky's and Judy's look-alikes end up on two cards. This holds for
+  people's faces too;
+- in a space with a `cohesion` (`Thresholds::cohesion`, pets only), the
+  average similarity of every face of one part with every face of the other
+  is below it (one dot product of the parts' sums per pair, the embeddings
+  being L2-normalised). PP-ResNet50 0.875 (halfway between suggest and
+  cluster), DINOv2 0.65. People's faces got it too afterwards, at 0.55
+  (`clusters::COHESION_SIM`, see "5c feedback: chains of look-alikes" in
+  [phase5.md](phase5.md)).
+
+To check on the real drive (the clusters are recomputed at the next start of
+the photo app or after the next recognize run):
+- [ ] Unnamed → Pets: the big card is gone; cards of a few pets each, none
+      mixing Spucky's and Judy's suggestions.
+- [ ] Not too many more single finds than before. If the cards are now too
+      small, lower the cohesion towards 0.85 in `Space::thresholds`; if they
+      still mix pets, raise it towards 0.90.
+
 ## Follow-up: single faces on the Unnamed page
 
 Clusters of one or two faces are no longer cards. `GET /api/clusters` takes

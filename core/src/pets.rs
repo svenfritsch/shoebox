@@ -127,6 +127,15 @@ pub struct Thresholds {
     pub suggest: f32,
     /// Between this and `suggest`: only offered as "maybe".
     pub maybe: f32,
+    /// If set, two parts of a cluster are joined only when they are at least
+    /// this similar on average (every face of one with every face of the
+    /// other), not only through their closest pair. Without it a cluster
+    /// grows from neighbour to neighbour: cats with a similar coat chained
+    /// into one card of 82
+    /// with three or more pets in it, and next to it hardly anything but
+    /// single finds; and people's faces chained a mother, her children and
+    /// babies into one cluster of 2,566 (phase 5).
+    pub cohesion: Option<f32>,
 }
 
 impl Space {
@@ -169,13 +178,22 @@ impl Space {
     pub fn thresholds(self, model: &str) -> Thresholds {
         match self {
             Space::Faces => {
-                Thresholds { cluster: crate::clusters::CLUSTER_SIM, suggest: people::SUGGEST_SIM, maybe: people::MAYBE_SIM }
+                Thresholds {
+                cluster: crate::clusters::CLUSTER_SIM,
+                suggest: people::SUGGEST_SIM,
+                maybe: people::MAYBE_SIM,
+                cohesion: Some(crate::clusters::COHESION_SIM),
             }
-            Space::Pets if model.ends_with("+dinov2-small") => Thresholds { cluster: 0.70, suggest: 0.60, maybe: 0.45 },
+            }
+            Space::Pets if model.ends_with("+dinov2-small") => {
+                Thresholds { cluster: 0.70, suggest: 0.60, maybe: 0.45, cohesion: Some(0.65) }
+            }
             // PP-ResNet50, and any embedder we do not know: strict, so
             // strangers are not joined (a new embedder starts safe, and the
-            // check page shows where to set it).
-            Space::Pets => Thresholds { cluster: 0.90, suggest: 0.85, maybe: 0.75 },
+            // check page shows where to set it). Cohesion halfway between
+            // suggest and cluster: a card holds together as a whole about as
+            // well as a pet with its suggestion.
+            Space::Pets => Thresholds { cluster: 0.90, suggest: 0.85, maybe: 0.75, cohesion: Some(0.875) },
         }
     }
 }
@@ -196,7 +214,7 @@ mod tests {
     #[test]
     fn faces_keep_their_calibrated_numbers() {
         let t = Space::Faces.thresholds("anything");
-        assert_eq!((t.cluster, t.suggest, t.maybe), (0.60, 0.55, 0.35));
+        assert_eq!((t.cluster, t.suggest, t.maybe, t.cohesion), (0.60, 0.55, 0.35, Some(0.55)));
         assert!(Space::Faces.too_small(29.0) && !Space::Faces.too_small(30.0));
         assert!(Space::Pets.too_small(63.0) && !Space::Pets.too_small(64.0));
     }
@@ -206,6 +224,8 @@ mod tests {
         for model in ["yolox-s-2022nov+ppresnet50-2022jan", "yolox-s-2022nov+dinov2-small", "something-new"] {
             let t = Space::Pets.thresholds(model);
             assert!(t.maybe < t.suggest && t.suggest < t.cluster, "{model}");
+            let cohesion = t.cohesion.expect("pets are joined as a whole, not link by link");
+            assert!(t.suggest <= cohesion && cohesion < t.cluster, "{model}");
             assert!(t.maybe >= 0.45, "{model}: lower than the baseline of unrelated pets");
         }
         // Strangers score up to 0.68 with ResNet features: below every threshold.

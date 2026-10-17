@@ -682,6 +682,73 @@ again. Built:
   clicked to this one, in the order shown). The duplicates page has no
   range: its boxes keep at least one copy per group.
 
+### 5c feedback: chains of look-alikes (after phase 7)
+
+Splitting at 100 left chained cards under 100 alone: a card grew from
+neighbour to neighbour at 0.60, and the 0.60 was measured on pairs, not on
+chains. Pets showed it first (one card of 82 cats with three or more pets in
+it, `docs/phase7.md`). Now (`clusters::join`): the closest pairs are joined
+first, faces suggested (≥ 0.55) for two different people never share a card,
+and two parts are joined only when their average similarity (every face of
+one with every face of the other) is at least `clusters::COHESION_SIM` = 0.55,
+the level where no wrong match was seen. The 0.60 for neighbours and the split
+at 100 stay.
+
+`shoebox recognize` prints the clusters by size ("Clusters of faces: of 1 face
+…, 2 faces …, 3-5 …, 6-20 …, more …"). To compare with the chains of before
+on the same library, run it once with `SHOEBOX_FACE_COHESION=off` (or another
+number, e.g. `0.50`); the photo app must be closed, and it uses its own
+setting again at its next start.
+
+To check on the real drive:
+- [ ] `shoebox recognize <drive>` with and without `SHOEBOX_FACE_COHESION=off`:
+      note both size lines. Hoped for: the big cards become cards of 3-20,
+      not many more single faces.
+- [ ] Unnamed: are the cards one person each now (small children too)? How
+      many cards does one person get? If too many singles and pairs, try
+      0.50; if cards still mix people, 0.60.
+
+### 5c feedback: the Unnamed page stays up to date
+
+A face named in the viewer over the Unnamed page stayed on its card or in the
+single faces until the page was loaded again, and could be picked and named a
+second time. Now:
+- **The page follows on its own** (`refreshUnnamed` in `app.js`), driven by
+  events, not by polling: after the server answers a change to people or
+  decisions made in this browser (the page's own buttons, the viewer's info
+  panel, a person's page), and when a regrouping in the background finishes.
+  The cards and single faces shown so far are asked for again and reconciled
+  in place. A card with the same faces (same generation) stays as it is, with
+  what is typed, what is selected and whether it is opened, and only takes
+  the new suggestion; cards and faces that are gone leave (and their ticks),
+  new ones come in. It waits while an action is under way. Measured: a face
+  named in the viewer leaves the page about 0.1 s after the server's answer.
+- **The server says when the faces changed** (server-sent events,
+  `GET /api/events` of a library): an event `faces` when clusters are asked
+  for, while they are recomputed (at most once a second, for the status
+  line's percentage), when they are done, and when faces drawn by hand are
+  being embedded. The browser (`facesStream`) then loads `/api/info`, and
+  `facesInfo` refreshes the Unnamed page, the people and the status. This
+  replaced asking every 1.5 s while a regrouping ran; that is only the
+  fallback when the stream cannot connect (a drive just unplugged; the stream
+  is opened again at the next status check). The browser reconnects a broken
+  stream by itself (an iPad waking up) and then loads the status once. The
+  streams end when the server begins to stop (`Shared::closing`), otherwise
+  the graceful shutdown would wait for them. Only one browser works on a
+  shoebox at a time, so nothing else is watched; the status line's own check
+  every 20 s (scan and recognition progress) is unchanged.
+- **The server refuses what is out of date**: actions on a card already carry
+  its generation (409 if its faces changed). The single faces' bar now sends
+  `open: true` with `/api/faces/assign|ignore|not-face`: if one of the faces
+  has a decision by now, nothing is done and the reply is a 409
+  (`people::ensure_undecided`); the page says the faces were regrouped and
+  shows them as they are.
+
+To check on the real drive:
+- [ ] Open a face from Unnamed (↗ or a card), name it in the info panel,
+      close the viewer: it is gone from Unnamed without reloading.
+- [ ] A name typed into one card stays while another card is named.
+
 ## 5d: duplicates UI and tag carry-over
 
 Built, one commit per step. Scope and rules are in "Phase 5d details" in

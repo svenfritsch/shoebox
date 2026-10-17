@@ -1411,6 +1411,12 @@ Open:
   for different pets (SFace: well under 0.35), so thresholds belong to
   the model (`Space::thresholds`), never to a constant shared with faces.
 
+- **An open response keeps `serve` from stopping.** The graceful shutdown
+  waits for every request, and an event stream (`/api/events`) never ends on
+  its own: such a stream must end on `Shared::closing` (set when stopping
+  begins), as `serve::events` does. `core/tests/people.rs` stops a server
+  with a stream open.
+
 - **Spaces in paths.** The repo may live under a path with spaces.
   `build-deps.sh` uses bash arrays for CMake args; never unquote paths.
 - **No double quotes in arguments from Windows PowerShell 5.1.** It drops

@@ -426,10 +426,18 @@ pub(super) struct FacesRequest {
     name: Option<String>,
     /// Species: `cat` or `dog`.
     species: Option<String>,
+    /// Only faces nobody has decided on (the Unnamed page): if one of them
+    /// was named, ignored or marked in the meantime (in the viewer, on
+    /// another device), nothing is done and the reply is a 409.
+    #[serde(default)]
+    open: bool,
 }
 
 async fn on_faces(app: Arc<App>, req: FacesRequest, action: Action) -> ApiResult<Json<people::Decided>> {
     people_change(&app, move |conn| {
+        if req.open {
+            people::ensure_undecided(conn, &req.faces)?;
+        }
         let mut done = people::decide(conn, &req.faces, &action)?;
         if matches!(action, Action::Undo) {
             done.faces += people::delete_manual(conn, &req.manual)?;
