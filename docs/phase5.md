@@ -708,6 +708,37 @@ To check on the real drive:
       many cards does one person get? If too many singles and pairs, try
       0.50; if cards still mix people, 0.60.
 
+### 5c feedback: the Unnamed page stays up to date
+
+A face named in the viewer over the Unnamed page stayed on its card or in the
+single faces until the page was loaded again, and could be picked and named a
+second time. Now:
+- **The page follows on its own** (`refreshUnnamed` in `app.js`), driven by
+  events, not by polling: after the server answers a change to people or
+  decisions made in this browser (the page's own buttons, the viewer's info
+  panel, a person's page), and when a regrouping in the background finishes
+  (`facesInfo`: the clusters' state in `/api/info` changed; that is watched
+  every 1.5 s only while a regrouping runs). The cards and single faces shown
+  so far are asked for again and reconciled in place. A card with the same
+  faces (same generation) stays as it is, with what is typed, what is selected
+  and whether it is opened, and only takes the new suggestion; cards and faces
+  that are gone leave (and their ticks), new ones come in. It waits while an
+  action is under way. Measured: a face named in the viewer leaves the page
+  about 0.1 s after the server's answer. Only one browser works on a shoebox
+  at a time, so nothing polls for changes made elsewhere (the status line's
+  check every 20 s would still catch them).
+- **The server refuses what is out of date**: actions on a card already carry
+  its generation (409 if its faces changed). The single faces' bar now sends
+  `open: true` with `/api/faces/assign|ignore|not-face`: if one of the faces
+  has a decision by now, nothing is done and the reply is a 409
+  (`people::ensure_undecided`); the page says the faces were regrouped and
+  shows them as they are.
+
+To check on the real drive:
+- [ ] Open a face from Unnamed (↗ or a card), name it in the info panel,
+      close the viewer: it is gone from Unnamed without reloading.
+- [ ] A name typed into one card stays while another card is named.
+
 ## 5d: duplicates UI and tag carry-over
 
 Built, one commit per step. Scope and rules are in "Phase 5d details" in

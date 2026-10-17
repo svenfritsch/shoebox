@@ -255,6 +255,19 @@ fn suggest_maybe_confirm_and_reject_under_the_guard() {
     let b2 = face_id(addr, &lib, "Ben/b2.png");
     assert_eq!(ok(addr, "/api/faces/assign", &json!({ "faces": [b2], "name": " ben " }))["person"]["id"], ben);
 
+    // The Unnamed page acts only on faces nobody has decided on (`open`): a
+    // face named in the meantime (in the viewer, on another device) is
+    // refused with a 409 and nothing changes, not even for the other faces.
+    let open_face = face_id(addr, &lib, "Mix/far.png");
+    for action in ["assign", "ignore", "not-face"] {
+        let body = json!({ "faces": [open_face, b1], "name": "Someone else", "open": true });
+        let stale = post(addr, &format!("/api/faces/{action}"), &body);
+        assert_eq!(stale.status, 409, "{action}: {}", String::from_utf8_lossy(&stale.body));
+    }
+    assert_eq!(faces_of(addr, &lib, "Ben/b1.png")[0]["person"]["id"], ben, "still Ben's");
+    assert!(faces_of(addr, &lib, "Mix/far.png")[0]["state"].is_null(), "untouched too");
+    assert!(!get(addr, "/api/people").json().as_array().unwrap().iter().any(|p| p["name"] == "Someone else"));
+
     // Photos of a person, for the timeline.
     let mut timeline = ids(&get(addr, &format!("/api/timeline?person={anna}")).json());
     timeline.sort();
