@@ -35,7 +35,7 @@ use crate::{db, people, recognize, tags};
 
 /// Tables of `library.db` whose rows are carried (one box each, `people` with
 /// `face_decisions`). A new table must be in this list or in
-/// `NOT_CARRIED_TABLES`: `core/tests/carry.rs` fails otherwise, so a new kind
+/// `NOT_CARRIED_TABLES`: `core/tests/transfer.rs` fails otherwise, so a new kind
 /// of user data is decided about on purpose.
 pub const CARRIED_TABLES: &[&str] = &["file_tags", "face_decisions", "people", "taken_overrides", "date_estimates", "geo_overrides", "tags"];
 

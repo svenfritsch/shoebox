@@ -8,7 +8,7 @@ use std::fs;
 
 use common::*;
 use serde_json::json;
-use shoebox::carry::{self, Boxes, Counts};
+use shoebox::transfer::{self, Boxes, Counts};
 use shoebox::tags;
 
 /// A library with only what the test writes itself.
@@ -123,15 +123,15 @@ fn data_is_carried_by_content_to_the_same_photos_under_other_names() {
     let before_db = fs::read(db_path(&a)).unwrap();
     let before_files = a.snapshot();
 
-    let set = carry::read_drive(&db_path(&a)).unwrap();
+    let set = transfer::read_drive(&db_path(&a)).unwrap();
     let conn = open(&b);
     // The plan says what will happen, without doing it.
     let expected = Counts { tags: 3, hearts: 1, people: 2, new_people: 1, dates: 2, places: 1, photos: 3 };
-    assert_eq!(carry::plan(&conn, &set, Boxes::all()).unwrap(), expected);
+    assert_eq!(transfer::plan(&conn, &set, Boxes::all()).unwrap(), expected);
     assert_eq!(b.count("SELECT count(*) FROM people"), 0);
     assert_eq!(b.count("SELECT count(*) FROM face_decisions"), 0);
 
-    assert_eq!(carry::apply(&conn, &set, Boxes::all()).unwrap(), expected);
+    assert_eq!(transfer::apply(&conn, &set, Boxes::all()).unwrap(), expected);
 
     // Tags: "Papa" on both identical copies; the photo only on the source gets nothing.
     assert_eq!(own_tag_rows(&b, "fjord", Some("Familie/2026/IMG_1.jpg")), 1);
@@ -162,7 +162,7 @@ fn data_is_carried_by_content_to_the_same_photos_under_other_names() {
         lib.count("SELECT (SELECT count(*) FROM file_tags) + (SELECT count(*) FROM face_decisions) + (SELECT count(*) FROM taken_overrides) + (SELECT count(*) FROM date_estimates) + (SELECT count(*) FROM geo_overrides) + (SELECT count(*) FROM people) + (SELECT count(*) FROM tags)")
     };
     let rows_before = rows(&b);
-    let again = carry::apply(&conn, &set, Boxes::all()).unwrap();
+    let again = transfer::apply(&conn, &set, Boxes::all()).unwrap();
     assert_eq!(again, Counts::default());
     assert!(again.is_nothing());
     assert_eq!(rows(&b), rows_before);
@@ -177,11 +177,11 @@ fn a_box_that_is_not_ticked_changes_nothing() {
     let a = source("carry-boxes-a");
     let b = target("carry-boxes-b");
     make_data(&a);
-    let set = carry::read_drive(&db_path(&a)).unwrap();
+    let set = transfer::read_drive(&db_path(&a)).unwrap();
     let conn = open(&b);
 
     let only_hearts = Boxes { tags: false, hearts: true, people: false, dates: false, places: false };
-    let done = carry::apply(&conn, &set, only_hearts).unwrap();
+    let done = transfer::apply(&conn, &set, only_hearts).unwrap();
     assert_eq!(done, Counts { hearts: 1, photos: 1, ..Counts::default() });
     assert_eq!(own_tag_rows(&b, "favorite", None), 1);
     assert_eq!(own_tag_rows(&b, "fjord", None) + own_tag_rows(&b, "papa", None), 0);
@@ -191,7 +191,7 @@ fn a_box_that_is_not_ticked_changes_nothing() {
 
     // The rest follows when ticked; the heart is not counted twice.
     let rest = Boxes { hearts: false, ..Boxes::all() };
-    let done = carry::apply(&conn, &set, rest).unwrap();
+    let done = transfer::apply(&conn, &set, rest).unwrap();
     assert_eq!((done.tags, done.hearts, done.people, done.dates, done.places), (3, 0, 2, 2, 1));
 }
 
@@ -216,9 +216,9 @@ fn what_the_target_already_has_wins() {
         )
         .unwrap();
     }
-    let set = carry::read_drive(&db_path(&a)).unwrap();
+    let set = transfer::read_drive(&db_path(&a)).unwrap();
     let conn = open(&b);
-    let done = carry::apply(&conn, &set, Boxes::all()).unwrap();
+    let done = transfer::apply(&conn, &set, Boxes::all()).unwrap();
     // Tags: only "Papa" on the two copies; dates: only the estimate; people: only the ignored face.
     assert_eq!((done.tags, done.hearts, done.people, done.new_people, done.dates, done.places), (2, 1, 1, 0, 1, 1));
     assert_eq!(own_tag_rows(&b, "fjord", None), 1);
@@ -239,8 +239,8 @@ fn people_are_found_by_name_and_a_person_of_another_spelling_is_the_same() {
         conn.execute("INSERT INTO groups (name, position) VALUES ('Familie', 1)", []).unwrap();
         conn.execute("INSERT INTO people (name, group_id) VALUES ('ANNA', (SELECT id FROM groups WHERE name = 'Familie'))", []).unwrap();
     }
-    let set = carry::read_drive(&db_path(&a)).unwrap();
-    let done = carry::apply(&open(&b), &set, Boxes::all()).unwrap();
+    let set = transfer::read_drive(&db_path(&a)).unwrap();
+    let done = transfer::apply(&open(&b), &set, Boxes::all()).unwrap();
     assert_eq!(done.new_people, 0);
     assert_eq!(b.count("SELECT count(*) FROM people"), 1);
     assert_eq!(b.count("SELECT count(*) FROM face_decisions WHERE person_id = (SELECT id FROM people WHERE name = 'ANNA')"), 1);
@@ -276,8 +276,8 @@ fn photos_are_matched_by_content_not_by_name_missing_files_count_on_the_source_o
     fs::remove_file(b.path("Neu/war-da.jpg")).unwrap();
     b.scan_opts(true, false, false);
 
-    let set = carry::read_drive(&db_path(&a)).unwrap();
-    let done = carry::apply(&open(&b), &set, Boxes::all()).unwrap();
+    let set = transfer::read_drive(&db_path(&a)).unwrap();
+    let done = transfer::apply(&open(&b), &set, Boxes::all()).unwrap();
     assert_eq!(done.tags, 2);
     assert_eq!(own_tag_rows(&b, "gleich", Some("Neu/anderer-name.jpg")), 1);
     assert_eq!(own_tag_rows(&b, "geloescht", Some("Neu/auch-da.jpg")), 1);
@@ -293,8 +293,8 @@ fn a_photo_without_a_full_hash_is_matched_by_size_and_quick_hash() {
     b.jpeg("Familie/IMG_1.jpg", 20);
     b.scan_opts(false, false, false);
     assert!(b.record("Familie/IMG_1.jpg").unwrap().1.is_none(), "no full hash yet");
-    let set = carry::read_drive(&db_path(&a)).unwrap();
-    let done = carry::apply(&open(&b), &set, Boxes::all()).unwrap();
+    let set = transfer::read_drive(&db_path(&a)).unwrap();
+    let done = transfer::apply(&open(&b), &set, Boxes::all()).unwrap();
     assert_eq!(done.tags, 1);
     assert_eq!(own_tag_rows(&b, "fjord", Some("Familie/IMG_1.jpg")), 1);
 }
@@ -304,12 +304,12 @@ fn a_failure_half_way_leaves_the_target_unchanged() {
     let a = source("carry-atomic-a");
     let b = target("carry-atomic-b");
     make_data(&a);
-    let set = carry::read_drive(&db_path(&a)).unwrap();
+    let set = transfer::read_drive(&db_path(&a)).unwrap();
     let tables = ["file_tags", "tags", "people", "face_decisions", "taken_overrides", "date_estimates", "geo_overrides"];
     let counts = |lib: &Library| tables.iter().map(|t| lib.count(&format!("SELECT count(*) FROM {t}"))).collect::<Vec<_>>();
     let before = counts(&b);
     let conn = open(&b);
-    let result = carry::apply_with(&conn, &set, Boxes::all(), &mut |written| {
+    let result = transfer::apply_with(&conn, &set, Boxes::all(), &mut |written| {
         if written >= 4 {
             anyhow::bail!("the drive was unplugged");
         }
@@ -318,12 +318,12 @@ fn a_failure_half_way_leaves_the_target_unchanged() {
     assert!(result.is_err());
     assert_eq!(counts(&b), before, "all or nothing");
     // Run again: it works, because nothing was left half done.
-    assert_eq!(carry::apply(&conn, &set, Boxes::all()).unwrap().photos, 3);
+    assert_eq!(transfer::apply(&conn, &set, Boxes::all()).unwrap().photos, 3);
 }
 
 /// A new table in `library.db` must be decided about: carried, or listed as
-/// not carried. This fails until it is in `carry::CARRIED_TABLES` or
-/// `carry::NOT_CARRIED_TABLES`.
+/// not carried. This fails until it is in `transfer::CARRIED_TABLES` or
+/// `transfer::NOT_CARRIED_TABLES`.
 #[test]
 fn every_table_of_the_index_is_carried_or_listed_as_not_carried() {
     let lib = bare("carry-schema");
@@ -338,12 +338,12 @@ fn every_table_of_the_index_is_carried_or_listed_as_not_carried() {
         .unwrap();
     assert!(names.len() > 10, "{names:?}");
     for name in &names {
-        let carried = carry::CARRIED_TABLES.contains(&name.as_str());
-        let listed = carry::NOT_CARRIED_TABLES.contains(&name.as_str());
-        assert!(carried || listed, "table {name} is neither carried nor listed as not carried (core/src/carry.rs)");
+        let carried = transfer::CARRIED_TABLES.contains(&name.as_str());
+        let listed = transfer::NOT_CARRIED_TABLES.contains(&name.as_str());
+        assert!(carried || listed, "table {name} is neither carried nor listed as not carried (core/src/transfer.rs)");
         assert!(!(carried && listed), "table {name} is in both lists");
     }
-    for name in carry::CARRIED_TABLES.iter().chain(carry::NOT_CARRIED_TABLES) {
+    for name in transfer::CARRIED_TABLES.iter().chain(transfer::NOT_CARRIED_TABLES) {
         assert!(names.iter().any(|n| n == name), "{name} is listed but there is no such table");
     }
 }
@@ -448,10 +448,10 @@ fn a_drive_that_may_be_a_backup_is_refused_until_the_user_decides() {
 #[test]
 fn a_drive_that_was_emptied_is_recognised_so_the_dialog_can_warn() {
     let a = source("carry-emptied-a");
-    assert!(!carry::looks_emptied(&db_path(&a)).unwrap());
+    assert!(!transfer::looks_emptied(&db_path(&a)).unwrap());
     for p in [FJORD, PAPA, DROHNE] {
         fs::remove_file(a.path(p)).unwrap();
     }
     a.scan_opts(true, false, false);
-    assert!(carry::looks_emptied(&db_path(&a)).unwrap(), "3 of 4 files are gone");
+    assert!(transfer::looks_emptied(&db_path(&a)).unwrap(), "3 of 4 files are gone");
 }

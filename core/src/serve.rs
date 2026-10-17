@@ -71,7 +71,7 @@ use tower::ServiceExt;
 use tower_http::services::ServeFile;
 
 use crate::browse::{self, Snapshot};
-use crate::carry;
+use crate::transfer;
 use crate::classify::Kind;
 use crate::clusters;
 use crate::dates;
@@ -1822,7 +1822,7 @@ struct CarryHint {
     to: String,
     from_name: String,
     to_name: String,
-    counts: carry::Counts,
+    counts: transfer::Counts,
 }
 
 /// For every ordered pair of drives that can take part (not backups, not drives
@@ -1835,7 +1835,7 @@ async fn all_carry(State(hub): State<Arc<Hub>>) -> ApiResult<Json<Vec<CarryHint>
         let (usable, _) = multi::eligibility(&o.drives, &o.roles);
         let mut sets = Vec::new();
         for &i in &usable {
-            sets.push(carry::read_drive(&o.drives[i].db)?);
+            sets.push(transfer::read_drive(&o.drives[i].db)?);
         }
         let mut out = Vec::new();
         for (a, &from) in usable.iter().enumerate() {
@@ -1843,7 +1843,7 @@ async fn all_carry(State(hub): State<Arc<Hub>>) -> ApiResult<Json<Vec<CarryHint>
                 if a == b {
                     continue;
                 }
-                let counts = carry::plan(&o.apps[to].conn.lock().unwrap(), &sets[a], carry::Boxes::all())?;
+                let counts = transfer::plan(&o.apps[to].conn.lock().unwrap(), &sets[a], transfer::Boxes::all())?;
                 if !counts.is_nothing() {
                     out.push(CarryHint {
                         from: o.drives[from].id.clone(),
@@ -1869,7 +1869,7 @@ struct CarryRequest {
     to: String,
     /// Which kinds to carry (default: all five).
     #[serde(default)]
-    boxes: Option<carry::Boxes>,
+    boxes: Option<transfer::Boxes>,
 }
 
 /// Both drives of a carry over, if they are there and may take part: a backup
@@ -1905,9 +1905,9 @@ async fn carry_pair(hub: &Arc<Hub>, req: &CarryRequest) -> ApiResult<(Arc<App>, 
 async fn all_carry_plan(State(hub): State<Arc<Hub>>, Json(req): Json<CarryRequest>) -> ApiResult<Json<serde_json::Value>> {
     let (from, to) = carry_pair(&hub, &req).await?;
     let out = tokio::task::spawn_blocking(move || -> ApiResult<serde_json::Value> {
-        let set = carry::read_drive(&from.db_path)?;
-        let counts = carry::plan(&to.conn.lock().unwrap(), &set, carry::Boxes::all())?;
-        let emptied = carry::looks_emptied(&from.db_path)?;
+        let set = transfer::read_drive(&from.db_path)?;
+        let counts = transfer::plan(&to.conn.lock().unwrap(), &set, transfer::Boxes::all())?;
+        let emptied = transfer::looks_emptied(&from.db_path)?;
         Ok(serde_json::json!({ "from": from.name, "to": to.name, "counts": counts, "source_emptied": emptied }))
     })
     .await
@@ -1922,8 +1922,8 @@ async fn all_carry_apply(State(hub): State<Arc<Hub>>, Json(req): Json<CarryReque
     let boxes = req.boxes.unwrap_or_default();
     let from_db = from.db_path.clone();
     let counts = change(&to, move |_, conn| {
-        let set = carry::read_drive(&from_db)?;
-        let counts = carry::apply(conn, &set, boxes)?;
+        let set = transfer::read_drive(&from_db)?;
+        let counts = transfer::apply(conn, &set, boxes)?;
         if counts.people > 0 {
             // New people get their picture, like after any naming.
             people_api::tidy(conn);

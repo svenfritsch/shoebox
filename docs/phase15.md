@@ -49,7 +49,7 @@ and merges only identical **name and hash**.
 | # | Step | Notes |
 |---|---|---|
 | 1 | **15a-1 Counts that narrow** | `/api/all/tags` and `/api/all/people` take the timeline's filter; UI passes it. Section 5.1 and 9; `core/tests/multi.rs` |
-| 2 | **15a-2 Carry over data** | `core/src/carry.rs`, API (`/api/all/carry`, `/plan`, hints), Manage drives button and dialog with the five boxes, the export's `export.carry_hint` line, `carry.*` keys in `en.json` and `de.json`, `core/tests/carry.rs`, `core/tests/serve.rs`, guide (EN and DE), a line in the CLAUDE.md rules (reads another drive's index, writes only this drive's index), run `python3 scripts/third-party-licenses.py` only if dependencies change (none planned) |
+| 2 | **15a-2 Carry over data** | `core/src/transfer.rs`, API (`/api/all/carry`, `/plan`, hints), Manage drives button and dialog with the five boxes, the export's `export.carry_hint` line, `carry.*` keys in `en.json` and `de.json`, `core/tests/transfer.rs`, `core/tests/serve.rs`, guide (EN and DE), a line in the CLAUDE.md rules (reads another drive's index, writes only this drive's index), run `python3 scripts/third-party-licenses.py` only if dependencies change (none planned) |
 | 3 | **15b Data from a file** | own PR: a second reader for `userdata.json`, "From a file…" in the dialog, a file picker (extend the export's folder picker), versions 1 to 6 of the file; guide |
 | 4 | **15c Ignore folders** | own PR: `chipsInput` (generic) in `core/web/app.js`, `ignore` argument in `multi::cross_duplicates`, `hidden_groups`, `/api/all/duplicates/folders`, "Ignore this folder" on each row, `dups.ignore.*` keys, the browser setting `shoebox-dup-ignore`, tests in `core/tests/multi.rs`, guide, screenshot step |
 | 5 | **Phase 18** | own PR, after 15a-1: see [phase18.md](phase18.md); it also changes the counts of step 1 |
@@ -145,7 +145,7 @@ missing do not receive data.
 
 ## 4. How it works
 
-`core/src/carry.rs`, one module, two halves so 15b can reuse the second:
+`core/src/transfer.rs`, one module, two halves so 15b can reuse the second:
 
 1. **Read** a `CarrySet` (per box: items keyed by hashes) from a source. 15a
    has one reader: the other drive's `library.db`, opened read-only with
@@ -211,7 +211,7 @@ For when the source drive is gone, erased or lost its index.
 each file's path and hashes and is written automatically; nothing reads it back
 yet.
 
-- A second reader for `carry.rs`: `CarrySet` from a `userdata.json` (the file on
+- A second reader for `transfer.rs`: `CarrySet` from a `userdata.json` (the file on
   the source drive, or a copy saved elsewhere), same dialog with **From a
   file…** in the drop-down, same apply, same tests with a file instead of a drive.
 - It also gives the file a purpose it lacks today: restoring tags and decisions
@@ -432,8 +432,8 @@ sees every day. The ignore list only quiets the duplicates screen.
 1. **Counts** (small): filtered `/api/all/tags` and `/api/all/people`, UI passes
    the filter. `core/tests/multi.rs`: for a filter the summed counts equal the
    timeline's length; a drive lacking a name adds nothing; empty tags drop out.
-2. **Carry over** (15a): `carry.rs`, API, dialog, hints, export line, guide.
-   `core/tests/carry.rs` (two temp drives, helpers as in `multi.rs`):
+2. **Carry over** (15a): `transfer.rs`, API, dialog, hints, export line, guide.
+   `core/tests/transfer.rs` (two temp drives, helpers as in `multi.rs`):
    - match by full hash across different names and folders; quick hash + size
      when a hash is missing; missing source files used; missing target files not;
    - each box alone: unticked boxes change nothing; folder tags never carried;
