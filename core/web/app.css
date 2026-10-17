@@ -212,7 +212,6 @@ body.selecting #select { color: var(--accent); }
 .count-line .names { position: relative; white-space: nowrap; }
 .count-line .names b { color: var(--fg); font-weight: 600; }
 .names-info { display: inline-flex; vertical-align: -.2em; margin-left: 2px; padding: 1px; border: 0; border-radius: 50%; background: none; color: var(--muted); font-size: 1.05em; cursor: pointer; }
-.names-info:hover, .names-info[aria-expanded="true"] { color: var(--accent); }
 .names-info:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .names-pop {
   /* above the map in the dialog (Leaflet panes and controls go up to 1000) */
