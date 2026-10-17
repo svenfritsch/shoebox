@@ -2677,6 +2677,243 @@ function renameFolder(folder) {
   input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go(buttons[1]); });
 }
 
+// ------------------------------------------------------------------ chips input
+// One bordered field that looks like a text input, with its values as chips
+// inside it and, if `suggest` is given, a list of suggestions under it. It
+// knows nothing about what the values are: everything specific is passed in.
+//   values        chips to start with (strings)
+//   placeholder   shown only while there is no chip and no text
+//   label         aria-label of the field
+//   removeLabel   function (value): aria-label of a chip's ✕
+//   normalize     function (text): chip value or null (default: trim, NFC, empty is null)
+//   same          function (a, b): when two values are one (default: NFC, ignoring case)
+//   suggest       function (text, taken): rows [{ value, label, detail }] or a Promise of them
+//   renderRow     function (row, text): node of one row (default: label with the typed part bold)
+//   freeRow       function (text): text of the last row ("Add “xyz”"); null: only suggested values
+//                 can become chips; left out: typed text becomes a chip without a row
+//   noneText      function (text): a line shown when text was typed and nothing matches
+//   delay, maxRows, onChange(values)
+// Returns { el, values(), set(list), add(value), focus(), destroy() }.
+var chipsSeq = 0;
+
+function chipsInput(o) {
+  var values = (o.values || []).slice();
+  var normalize = o.normalize || function (t) { t = String(t).normalize('NFC').trim(); return t || null; };
+  var same = o.same || function (a, b) { return a.normalize('NFC').toLowerCase() === b.normalize('NFC').toLowerCase(); };
+  var delay = o.delay == null ? 120 : o.delay, maxRows = o.maxRows || 8;
+  var freeText = o.freeRow !== null;
+  var id = 'chips-' + (++chipsSeq);
+
+  var wrap = el('div', 'chips-wrap');
+  var field = el('div', 'chips-field');
+  var input = el('input', 'chips-text');
+  input.type = 'text';
+  input.setAttribute('enterkeyhint', 'done');
+  input.setAttribute('autocomplete', 'off');
+  input.setAttribute('autocapitalize', 'off');
+  input.setAttribute('autocorrect', 'off');
+  input.spellcheck = false;
+  if (o.label) input.setAttribute('aria-label', o.label);
+  var list = null, rows = [], at = -1, ask = 0, timer = null;
+  if (o.suggest) {
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-autocomplete', 'list');
+    input.setAttribute('aria-expanded', 'false');
+    input.setAttribute('aria-controls', id);
+    list = el('div', 'chips-list');
+    list.id = id;
+    list.setAttribute('role', 'listbox');
+    list.hidden = true;
+  }
+
+  var has = function (v) { return values.some(function (x) { return same(x, v); }); };
+  var closeList = function () {
+    ask++;
+    clearTimeout(timer);
+    if (!list) return;
+    list.hidden = true;
+    list.classList.remove('up');
+    rows = [];
+    at = -1;
+    input.setAttribute('aria-expanded', 'false');
+    input.removeAttribute('aria-activedescendant');
+  };
+  var mark = function (i) {
+    at = i;
+    rows.forEach(function (r, k) {
+      r.node.classList.toggle('at', k === i);
+      r.node.setAttribute('aria-selected', k === i ? 'true' : 'false');
+    });
+    if (i >= 0) {
+      input.setAttribute('aria-activedescendant', rows[i].node.id);
+      rows[i].node.scrollIntoView({ block: 'nearest' });
+    } else {
+      input.removeAttribute('aria-activedescendant');
+    }
+  };
+  var draw = function () {
+    Array.prototype.slice.call(field.querySelectorAll('.chip')).forEach(function (c) { field.removeChild(c); });
+    values.forEach(function (v, i) {
+      var chip = el('span', 'chip', v);
+      var x = el('button', '', '✕');
+      x.type = 'button';
+      if (o.removeLabel) x.setAttribute('aria-label', o.removeLabel(v));
+      x.onclick = function (ev) { ev.stopPropagation(); remove(i); input.focus(); };
+      chip.appendChild(x);
+      field.insertBefore(chip, input);
+    });
+    input.placeholder = values.length ? '' : (o.placeholder || '');
+  };
+  var changed = function () { draw(); if (o.onChange) o.onChange(values.slice()); };
+  var add = function (text) {
+    var v = normalize(text);
+    if (v == null || has(v)) return false;
+    values.push(v);
+    changed();
+    return true;
+  };
+  var remove = function (i) {
+    values.splice(i, 1);
+    changed();
+    if (list && document.activeElement === input) refill();
+  };
+
+  // Puts the list under the field, or over it when the window has no room below.
+  var place = function () {
+    list.classList.remove('up');
+    var r = field.getBoundingClientRect(), h = list.offsetHeight;
+    if (r.bottom + h + 12 > window.innerHeight && r.top > h + 12) list.classList.add('up');
+  };
+  var show = function (found, text) {
+    list.textContent = '';
+    rows = [];
+    at = -1;
+    var typed = normalize(text);
+    var shown = (found || []).filter(function (r) { return !has(r.value); }).slice(0, maxRows);
+    shown.forEach(function (r) { rows.push({ value: r.value, node: null, row: r }); });
+    if (typed != null && o.freeRow && !has(typed) && !shown.some(function (r) { return same(r.value, typed); })) {
+      rows.push({ value: typed, node: null, free: true });
+    }
+    if (!shown.length && typed != null && o.noneText) list.appendChild(el('div', 'chips-none', o.noneText(text)));
+    rows.forEach(function (r, i) {
+      var node;
+      if (r.free) {
+        node = el('div', 'chips-row add', o.freeRow(text));
+      } else if (o.renderRow) {
+        node = o.renderRow(r.row, text);
+      } else {
+        node = el('div', 'chips-row');
+        var label = String(r.row.label == null ? r.row.value : r.row.label), t = text.trim();
+        var k = t ? label.toLowerCase().indexOf(t.toLowerCase()) : -1;
+        var main = el('span', 'main');
+        if (k >= 0) {
+          main.appendChild(document.createTextNode(label.slice(0, k)));
+          main.appendChild(el('b', '', label.slice(k, k + t.length)));
+          main.appendChild(document.createTextNode(label.slice(k + t.length)));
+        } else {
+          main.textContent = label;
+        }
+        node.appendChild(main);
+        if (r.row.detail) node.appendChild(el('small', '', r.row.detail));
+      }
+      node.id = id + '-' + i;
+      node.setAttribute('role', 'option');
+      node.setAttribute('aria-selected', 'false');
+      // The field keeps the focus, so a click does not end the typing.
+      node.addEventListener('mousedown', function (ev) { ev.preventDefault(); });
+      node.addEventListener('click', function () { pick(i); });
+      r.node = node;
+      list.appendChild(node);
+    });
+    list.hidden = !list.children.length;
+    input.setAttribute('aria-expanded', list.hidden ? 'false' : 'true');
+    if (!list.hidden) place();
+  };
+  var refill = function () {
+    var mine = ++ask, text = input.value;
+    Promise.resolve(o.suggest(text, values.slice())).then(function (found) {
+      // An answer to an earlier question is out of date.
+      if (mine !== ask || document.activeElement !== input) return;
+      show(found, text);
+    }).catch(function () { if (mine === ask) closeList(); });
+  };
+  var pick = function (i) {
+    var r = rows[i];
+    if (!r) return;
+    add(r.value);
+    input.value = '';
+    refill();
+    input.focus();
+  };
+  // Typed text becomes chips; commas and line breaks split it.
+  var commit = function () {
+    var parts = input.value.split(/[,\n\r]+/);
+    input.value = '';
+    if (!freeText) return;
+    parts.forEach(add);
+  };
+
+  input.addEventListener('keydown', function (ev) {
+    var open = list && !list.hidden;
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      if (open && at >= 0) pick(at);
+      else if (input.value.trim() && freeText) { commit(); if (list) refill(); }
+    } else if (ev.key === ',' && freeText) {
+      ev.preventDefault();
+      commit();
+      if (list) refill();
+    } else if (ev.key === 'Backspace' && !input.value && values.length) {
+      remove(values.length - 1);
+    } else if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      if (!list) return;
+      ev.preventDefault();
+      if (!open) { refill(); return; }
+      var n = rows.length;
+      if (n) mark(ev.key === 'ArrowDown' ? (at + 1) % n : (at <= 0 ? n - 1 : at - 1));
+    } else if (ev.key === 'Escape' && open) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      closeList();
+    }
+  });
+  input.addEventListener('input', function () {
+    if (/[,\n\r]/.test(input.value) && freeText) commit();
+    if (!list) return;
+    clearTimeout(timer);
+    timer = setTimeout(refill, delay);
+  });
+  // A single-line field drops line breaks from pasted text, so they are read here.
+  input.addEventListener('paste', function (ev) {
+    var text = ev.clipboardData ? ev.clipboardData.getData('text') : '';
+    if (!freeText || !/[,\n\r]/.test(text)) return;
+    ev.preventDefault();
+    (input.value + text).split(/[,\n\r]+/).forEach(add);
+    input.value = '';
+    if (list) refill();
+  });
+  input.addEventListener('focus', function () { if (list) refill(); });
+  input.addEventListener('blur', function () {
+    // Typed text is never lost.
+    if (input.value.trim() && freeText) commit();
+    closeList();
+  });
+  field.addEventListener('click', function (ev) { if (ev.target === field) input.focus(); });
+
+  field.appendChild(input);
+  wrap.appendChild(field);
+  if (list) wrap.appendChild(list);
+  draw();
+  return {
+    el: wrap,
+    values: function () { return values.slice(); },
+    set: function (next) { values = next.slice(); draw(); },
+    add: function (v) { return add(v); },
+    focus: function () { input.focus(); },
+    destroy: function () { clearTimeout(timer); ask++; if (wrap.parentNode) wrap.parentNode.removeChild(wrap); },
+  };
+}
+
 // ------------------------------------------------------------------ duplicates page
 
 var DUP_KINDS_IDS = ['identical', 'resolution', 'edited', 'similar'];
@@ -2740,7 +2977,7 @@ function loadDuplicatesAcross() {
 // the link back to the drive roles is left out: they are right above.
 // Same content, so one picture per photo and one row per copy; ticked copies
 // (key `drive:id`) go to the trash of their own drive, one copy per photo stays.
-var crossState = { groups: [], marked: {}, syncs: [], reload: null, bar: null, pick: null };
+var crossState = { groups: [], marked: {}, syncs: [], reload: null, bar: null, pick: null, ignore: null, labels: {} };
 
 function crossKey(f) { return f.library + ':' + f.id; }
 
@@ -2758,39 +2995,116 @@ function crossLabels(groups) {
   return label;
 }
 
+// "Ignore folders": folder names that are on several drives on purpose. A photo
+// with a copy in a folder of such a name is left out of the list (the server
+// does it, `ignore` in the request). Kept by this browser, like the Maps setting.
+var DUP_IGNORE_KEY = 'shoebox-dup-ignore';
+
+function dupIgnoreNames() {
+  try {
+    var saved = JSON.parse(localStorage.getItem(DUP_IGNORE_KEY) || '[]');
+    return Array.isArray(saved) ? saved.filter(function (n) { return typeof n === 'string' && n.trim(); }) : [];
+  } catch (e) { return []; }
+}
+
+function saveDupIgnoreNames(names) {
+  try { localStorage.setItem(DUP_IGNORE_KEY, JSON.stringify(names)); } catch (e) { /* storage may be blocked */ }
+}
+
+function dupIgnoreQuery(names, first) {
+  return names.map(function (n, i) { return (i || first ? '&' : '') + 'ignore=' + encodeURIComponent(n); }).join('');
+}
+
+// The field with the note under it. `onChange` runs after every change of the
+// names; `note.set(hidden)` writes how many photos are left out.
+function ignoreFoldersField(onChange) {
+  var box = el('div', 'ignore-folders');
+  var head = el('label', 'lbl', tr('dups.ignore.label'));
+  var hidden = 0;
+  var note = el('p', 'note');
+  var drawNote = function () {
+    note.textContent = field.values().length ? tr('dups.ignore.note', { count: trn('count.photos', hidden) }) : tr('dups.ignore.hint');
+  };
+  var driveLabels = function (r) {
+    return r.drives.map(function (d) { return crossState.labels[d.library] || d.volume || d.name; }).join(', ');
+  };
+  var field = chipsInput({
+    values: dupIgnoreNames(),
+    placeholder: tr('dups.ignore.placeholder'),
+    label: tr('dups.ignore.label'),
+    removeLabel: function (v) { return tr('dups.ignore.remove', { name: v }); },
+    suggest: function (text, taken) {
+      return api('/api/all/duplicates/folders?q=' + encodeURIComponent(text) + dupIgnoreQuery(taken, true)).then(function (rows) {
+        return rows.map(function (r) {
+          return { value: r.name, label: r.name, detail: trn('count.photos', r.photos) + ' · ' + tr('dups.ignore.suggest_on', { drives: driveLabels(r) }) };
+        });
+      });
+    },
+    freeRow: function (text) { return tr('dups.ignore.suggest_add', { name: text.trim() }); },
+    noneText: function () { return tr('dups.ignore.suggest_none'); },
+    onChange: function (names) { saveDupIgnoreNames(names); drawNote(); onChange(names); },
+  });
+  head.addEventListener('click', function () { field.focus(); });
+  box.appendChild(head);
+  box.appendChild(field.el);
+  box.appendChild(note);
+  drawNote();
+  return {
+    el: box,
+    add: function (name) { return field.add(name); },
+    names: function () { return field.values(); },
+    setHidden: function (n) { hidden = n; drawNote(); },
+  };
+}
+
 function renderDuplicatesAcross(page, alive, embedded) {
-  var sub = el('p', 'sub', tr('dups.looking'));
-  page.appendChild(sub);
   crossState.reload = embedded
     ? function () { page.textContent = ''; return renderDuplicatesAcross(page, alive, true); }
     : loadDuplicatesAcross;
-  return api('/api/all/duplicates?limit=200').then(function (r) {
-    if (!alive()) return;
-    sub.textContent = r.total_groups
-      ? tr('dups.across.some', { count: trn('count.photos_exist', r.total_groups), drives: r.compared.join(', ') })
-      : r.compared.length > 1 ? tr('dups.across.none_in', { drives: r.compared.join(', ') }) : tr('dups.across.none');
-    r.excluded.forEach(function (x) {
-      var b = el('div', 'banner');
-      b.appendChild(document.createTextNode(tr('dups.excluded', { name: x.name, reason: x.reason })));
-      if (!embedded) {
-        var go = el('button', 'link', tr('dups.decide'));
-        go.onclick = function () { showView('drives'); };
-        b.appendChild(go);
-      }
-      page.appendChild(b);
-    });
-    crossState.groups = r.groups;
-    crossState.marked = {};
-    crossState.syncs = [];
-    var labels = crossLabels(r.groups);
-    r.groups.forEach(function (g) { page.appendChild(crossGroupNode(g, labels)); });
-    if (r.total_groups > r.groups.length) page.appendChild(el('p', 'sub', tr('dups.first_of', { shown: r.groups.length, total: r.total_groups })));
-    var bar = el('div', 'dup-bar');
-    bar.hidden = !r.groups.length;
-    page.appendChild(bar);
-    crossState.bar = bar;
-    updateCrossBar(labels);
-  }).catch(failed);
+  var asked = 0;
+  var fill;
+  var ignore = ignoreFoldersField(function () { fill(); });
+  crossState.ignore = ignore;
+  page.appendChild(ignore.el);
+  var sub = el('p', 'sub', tr('dups.looking'));
+  page.appendChild(sub);
+  var box = el('div');
+  page.appendChild(box);
+  // The list again, e.g. after a name was added or taken away; the field stays.
+  fill = function () {
+    var mine = ++asked;
+    return api('/api/all/duplicates?limit=200' + dupIgnoreQuery(ignore.names(), true)).then(function (r) {
+      if (!alive() || mine !== asked) return;
+      box.textContent = '';
+      ignore.setHidden(r.hidden_groups || 0);
+      sub.textContent = r.total_groups
+        ? tr('dups.across.some', { count: trn('count.photos_exist', r.total_groups), drives: r.compared.join(', ') })
+        : r.compared.length > 1 ? tr('dups.across.none_in', { drives: r.compared.join(', ') }) : tr('dups.across.none');
+      r.excluded.forEach(function (x) {
+        var b = el('div', 'banner');
+        b.appendChild(document.createTextNode(tr('dups.excluded', { name: x.name, reason: x.reason })));
+        if (!embedded) {
+          var go = el('button', 'link', tr('dups.decide'));
+          go.onclick = function () { showView('drives'); };
+          b.appendChild(go);
+        }
+        box.appendChild(b);
+      });
+      crossState.groups = r.groups;
+      crossState.marked = {};
+      crossState.syncs = [];
+      var labels = crossLabels(r.groups);
+      crossState.labels = labels;
+      r.groups.forEach(function (g) { box.appendChild(crossGroupNode(g, labels)); });
+      if (r.total_groups > r.groups.length) box.appendChild(el('p', 'sub', tr('dups.first_of', { shown: r.groups.length, total: r.total_groups })));
+      var bar = el('div', 'dup-bar');
+      bar.hidden = !r.groups.length;
+      box.appendChild(bar);
+      crossState.bar = bar;
+      updateCrossBar(labels);
+    }).catch(failed);
+  };
+  return fill();
 }
 
 function crossMarkedCount() {
@@ -2939,6 +3253,15 @@ function crossGroupNode(g, labels) {
     fb.onclick = function () { switchLibrary(f.library, 'q=' + encodeURIComponent(baseName(f))); };
     var line = el('div');
     line.appendChild(fb);
+    // The folder the copy lies in, by name: any photo with a copy in a folder of that name is left out.
+    var leaf = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')).split('/').pop() : '';
+    if (leaf && crossState.ignore) {
+      var ib = el('button', 'folder ignore-this', tr('dups.ignore.add'));
+      ib.title = tr('dups.ignore.add_hint', { name: leaf });
+      ib.onclick = function () { crossState.ignore.add(leaf); };
+      line.appendChild(el('span', 'meta', ' · '));
+      line.appendChild(ib);
+    }
     where.appendChild(line);
     row.appendChild(where);
     row.appendChild(state);
@@ -3767,6 +4090,14 @@ function folderIcon() {
   i.innerHTML = FOLDER_OPEN;
   return i;
 }
+// A page with its corner folded over, for a file in the picker (our own drawing).
+var FILE_PAGE = lineIcon('<path d="M6.5 4.5A1.5 1.5 0 0 1 8 3h6l4.5 4.5V19.5A1.5 1.5 0 0 1 17 21H8a1.5 1.5 0 0 1-1.5-1.5z"/><path d="M14 3.5V7a1 1 0 0 0 1 1h3.5"/>');
+function fileIcon() {
+  var i = el('span', 'ficon');
+  i.setAttribute('aria-hidden', 'true');
+  i.innerHTML = FILE_PAGE;
+  return i;
+}
 
 // "Show in Finder" with the drawn open-folder icon at the left of the label.
 function revealButton() {
@@ -4475,6 +4806,7 @@ function loadSettings() {
   sec.appendChild(cards);
   page.appendChild(sec);
   page.appendChild(cleanupSection());
+  page.appendChild(transferSection());
   page.appendChild(allowTrashSection());
   page.appendChild(mapsSection());
   page.appendChild(collectionSection());
@@ -4667,6 +4999,28 @@ function renderTextCheck(body, s, check) {
     }).catch(function (e) { dyn.textContent = e.message; });
   };
   fill(s, check);
+}
+
+// Settings: Carry over data to this drive (phase 15b), also with one drive
+// only: from a userdata.json (a drive that is gone, or this drive's own after
+// its index was lost), or from another drive as on Manage drives. Shown where
+// there is something to take from: another drive, or this computer's files.
+function transferSection() {
+  var sec = el('section', 'settings-section');
+  sec.hidden = true;
+  sec.appendChild(el('h3', '', tr('transfer.title')));
+  sec.appendChild(el('p', 'hint', tr('transfer.settings_hint')));
+  var btn = el('button', 'btn', tr('transfer.button'));
+  sec.appendChild(btn);
+  api('/api/all/drives').then(function (list) {
+    var me = list.filter(function (x) { return x.library === drives.current.id; })[0];
+    if (!me || !me.online || !me.shown_in_all) return;
+    var others = list.some(function (x) { return x.online && x.shown_in_all && x.library !== me.library; });
+    if (!others && !state.exportOk) return;
+    btn.onclick = function () { transferDialog(list, me, null); };
+    sec.hidden = false;
+  }).catch(function () {});
+  return sec;
 }
 
 // Settings: whether photos can be moved to the trash from the photo view and
@@ -7039,19 +7393,35 @@ function footCell(label, t, hint) {
 // people, dates, places) to the same photos on another one, matched by content.
 // Nothing on the source changes and no photo is touched; what the target has
 // stays. `list` is /api/all/drives, `to` the receiving drive's entry and
-// `preferred` the id of the drive to start with.
-function transferDialog(list, to, preferred) {
+// `preferred` the id of the drive to start with. The source can also be a
+// userdata.json on this computer (phase 15b): `file` is the one chosen
+// ({path, folder}); only a browser on this computer can choose one.
+function transferDialog(list, to, preferred, file) {
   var label = function (x) { return x.volume || x.name; };
   var sources = list.filter(function (x) { return x.online && x.shown_in_all && x.library !== to.library; });
-  if (!sources.length) return;
+  var canFile = !!state.exportOk;
+  if (!sources.length && !canFile) return;
+  // No other drive: the only source is a file, so choose it first.
+  if (!sources.length && !file) { transferFilePicker(list, to, null); return; }
   var body = el('div', 'transfer');
   var from = el('select');
   sources.forEach(function (x) {
     var o = el('option', '', label(x));
     o.value = x.library;
-    if (x.library === preferred) o.selected = true;
+    if (x.library === preferred && !file) o.selected = true;
     from.appendChild(o);
   });
+  if (file) {
+    var chosen = el('option', '', file.name);
+    chosen.value = '#chosen';
+    chosen.selected = true;
+    from.appendChild(chosen);
+  }
+  if (canFile) {
+    var other = el('option', '', tr('transfer.from_file'));
+    other.value = '#file';
+    from.appendChild(other);
+  }
   var pick = el('p', 'transfer-from');
   pick.appendChild(el('span', '', tr('transfer.from') + ' '));
   pick.appendChild(from);
@@ -7060,13 +7430,20 @@ function transferDialog(list, to, preferred) {
   var note = el('p', 'hint');
   [pick, explain, boxes, note].forEach(function (n) { body.appendChild(n); });
   var kinds = [['tags', 'transfer.tags', 'count.photos'], ['hearts', 'transfer.hearts', 'count.photos'], ['people', 'transfer.people', 'count.faces'], ['dates', 'transfer.dates', 'count.photos'], ['places', 'transfer.places', 'count.photos']];
-  var checks = {}, seq = 0, go = null, anything = false;
+  var checks = {}, seq = 0, go = null, anything = false, last = from.value;
+  // What the routes are told about the source.
+  var source = function () { return from.value === '#chosen' ? { file: file.path, to: to.library } : { from: from.value, to: to.library }; };
   var sync = function () {
     go.disabled = !anything || !kinds.some(function (k) { return checks[k[0]] && checks[k[0]].checked; });
   };
   var show = function (p) {
-    var f = sources.filter(function (x) { return x.library === from.value; })[0];
-    explain.textContent = tr('transfer.explain', { from: label(f), to: label(to) });
+    if (p.file) {
+      var when = I18n.dateTime(new Date(p.written_at * 1000), { dateStyle: 'medium', timeStyle: 'short' });
+      explain.textContent = tr('transfer.explain_file', { file: p.file, date: when, to: label(to) });
+    } else {
+      var f = sources.filter(function (x) { return x.library === from.value; })[0];
+      explain.textContent = tr('transfer.explain', { from: label(f), to: label(to) });
+    }
     boxes.textContent = '';
     anything = false;
     kinds.forEach(function (k) {
@@ -7083,30 +7460,41 @@ function transferDialog(list, to, preferred) {
       boxes.appendChild(line);
       if (n) anything = true;
     });
-    note.textContent = !anything ? tr('transfer.none', { to: label(to) }) : p.source_emptied ? tr('transfer.before_wipe', { from: label(f) }) : '';
+    note.textContent = !anything ? tr(p.file ? 'transfer.none_file' : 'transfer.none', { to: label(to) })
+      : p.source_emptied ? tr('transfer.before_wipe', { from: label(sources.filter(function (x) { return x.library === from.value; })[0]) }) : '';
     sync();
   };
   var load = function () {
     var mine = ++seq;
     go.disabled = true;
-    post('/api/all/transfer/plan', { from: from.value, to: to.library }).then(function (p) {
+    post('/api/all/transfer/plan', source()).then(function (p) {
       if (mine === seq) show(p);
-    }).catch(function (e) { if (mine === seq) { closeModal(); failed(e); } });
+    }).catch(function (e) {
+      if (mine !== seq) return;
+      // A file that cannot be read: say why and let another source be chosen.
+      if (from.value === '#chosen') { explain.textContent = ''; boxes.textContent = ''; note.textContent = e.message; anything = false; sync(); return; }
+      closeModal(); failed(e);
+    });
   };
-  from.onchange = load;
+  from.onchange = function () {
+    if (from.value === '#file') { from.value = last; transferFilePicker(list, to, file); return; }
+    last = from.value;
+    load();
+  };
   var buttons = openModal(tr('transfer.title'), body, [
     { label: tr('app.cancel'), cls: 'quiet' },
     {
       label: tr('transfer.go'),
       onclick: function (btn) {
-        var chosen = {};
-        kinds.forEach(function (k) { chosen[k[0]] = !!(checks[k[0]] && checks[k[0]].checked); });
+        var req = source();
+        req.boxes = {};
+        kinds.forEach(function (k) { req.boxes[k[0]] = !!(checks[k[0]] && checks[k[0]].checked); });
         btn.disabled = true;
-        post('/api/all/transfer', { from: from.value, to: to.library, boxes: chosen }).then(function (r) {
+        post('/api/all/transfer', req).then(function (r) {
           closeModal();
           toast(r.counts.photos ? tr('transfer.done', { photos: trn('count.photos', r.counts.photos) }) : tr('transfer.nothing_new', { to: label(to) }));
           allPeople.at = 0;
-          loadDrivesPage();
+          if (state.filter && state.filter.view === 'drives') loadDrivesPage();
           refreshDrives();
         }).catch(function (e) { btn.disabled = false; failed(e); });
         return false;
@@ -7115,6 +7503,29 @@ function transferDialog(list, to, preferred) {
   ]);
   go = buttons[1];
   load();
+}
+
+// Choose the userdata.json to carry over from, in this computer's folders;
+// then back to the dialog with it (or, on Cancel, with what was there before).
+function transferFilePicker(list, to, file) {
+  var base = '/api/lib/' + to.library;
+  var others = list.some(function (x) { return x.online && x.shown_in_all && x.library !== to.library; });
+  api(base + '/export/places').then(function (places) {
+    pathPicker({
+      title: tr('transfer.pick_title'),
+      hint: tr('transfer.pick_hint'),
+      base: base,
+      places: places,
+      start: file ? file.folder : null,
+      files: true,
+      use: tr('transfer.use_file'),
+      onPick: function (path, folder) {
+        var name = path.split(/[\\/]/).pop();
+        transferDialog(list, to, null, { path: path, folder: folder, name: name });
+      },
+      onCancel: function () { if (file || others) transferDialog(list, to, null, file); else closeModal(); },
+    });
+  }).catch(failed);
 }
 
 function loadDrivesPage() {
@@ -7192,8 +7603,9 @@ function loadDrivesPage() {
           body.appendChild(bn);
         }
         // Carry over data: only between drives that take part (not backups, not
-        // drives that may be one), and only where there is another drive to take from.
-        if (d.online && d.shown_in_all && list.some(function (x) { return x.online && x.shown_in_all && x.library !== d.library; })) {
+        // drives that may be one), and only where there is another drive or,
+        // on this computer, a userdata.json to take from.
+        if (d.online && d.shown_in_all && (state.exportOk || list.some(function (x) { return x.online && x.shown_in_all && x.library !== d.library; }))) {
           var mine = hints.filter(function (h) { return h.to === d.library; }).sort(function (a, b) { return b.counts.photos - a.counts.photos; });
           var transfer = el('div', 'transfer-note');
           if (mine.length) {

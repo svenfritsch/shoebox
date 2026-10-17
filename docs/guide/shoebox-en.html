@@ -874,11 +874,20 @@
           <p>Two files in the same format with the same pixel dimensions but different bytes, such as a camera JPEG and a JPEG developed from the RAW (often named like <i>IMG_1 2.jpg</i>), are never pre-ticked: they appear under look-alikes and you choose which to keep (see <b>Keep this one</b> below). Small badges show which file has the <b>most pixels</b> or is the <b>biggest file</b>.</p>
           <p>Tags and capture dates of a removed copy carry over. If a removed copy was the last thing in its folder, shoebox removes the empty folder and tells you which one.</p>
           <p>With more than one drive, the tab <b>Across drives</b> (in <b>All drives</b> and under <b>Manage drives</b>) lists photos that are on several drives: one picture, one row per copy with the disk name and folder. Tick the copies to remove, or pick a drive and <b>Mark all</b> to tick every copy on it; the last copy of a photo can never be ticked. <b>Move to trash</b> asks first and puts each copy in the trash of its own drive.</p>
+          <p><b>Ignore folders.</b> Some folders are on several drives on purpose, for example holiday photos two people share. Type the folder’s name in the field <b>Ignore folders</b> above the list and press Enter (a comma works too): it becomes a chip inside the field. While you type, shoebox suggests folder names from the list with the number of photos each would hide and the drives it is on; arrow keys and Enter pick one, Esc closes the suggestions. Or press <b>Ignore this folder</b> on a copy’s row. A photo with a copy in a folder of that name is left out of the list with all its copies, even when the other drive’s folder has another name, and the line under the field says how many photos are hidden. Remove a chip (✕, or Backspace in the empty field) and they are back. The names are kept in this browser; nothing in your photos or the drives is changed.</p>
         </div>
         <div class="shots">
           <figure>
             <img src="assets/en/duplicates.jpg" alt="" loading="lazy">
             <figcaption>Duplicates after Preselect › Smaller versions: the messenger copy is ticked and marked Lower quality.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/en/across-suggest.jpg" alt="" loading="lazy">
+            <figcaption>All drives › Duplicates: in the field <b>Ignore folders</b> shoebox suggests folder names with their photo counts and drives; the hike folder is on both drives.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/en/across-ignore.jpg" alt="" loading="lazy">
+            <figcaption>The hike folder picked: its five photos are left out of the list, and the line under the field says so.</figcaption>
           </figure>
         </div>
       </div>
@@ -1193,6 +1202,7 @@
           <p>You scanned a drive again, or copied its photos to a new one, and the tags, hearts and people you made are missing there? On <b>Manage drives</b> a drive that has such data on another drive shows a line and the button <b>Carry over data…</b>. Choose where it comes from (<b>From</b>) and tick what to bring: <b>Tags</b>, <b>Hearts</b>, <b>People</b>, <b>Dates</b> (dates you corrected or estimated) and <b>Places</b> (places you gave by hand). Each box shows how many photos it concerns; one with nothing to carry is greyed out.</p>
           <p>Photos are matched by their content, not by their path, so a photo that was renamed or sits in another folder is still found. Only photos on both drives take part. Folder tags are not carried (the new drive has its own folders), people are matched by name, and faces you already decided on the target drive stay as you decided them. What the target drive already has always stays: nothing is overwritten and nothing is deleted. You can repeat it safely.</p>
           <p>The other drive is only read and no photo is touched; the data is written into this drive's index only. Do it <b>before you erase</b> the source drive: afterwards its data is gone. Backups are not changed by this. After an export onto another shoebox drive, the result says the same.</p>
+          <p><b>From a file.</b> When the other drive is gone or erased, or this drive lost its index, the data can come from a <code>userdata.json</code> instead (see “Your tags and names are saved” below). Under <b>From</b> choose <b>A file (userdata.json)…</b> and pick the file in this computer's folders: every drive keeps one in its <code>.shoebox</code> folder, and a copy you kept somewhere else works the same. The dialog says when the file was written. With only one drive, the same button is in <b>Settings → Carry over data</b>. The file is only read and the same rules apply. Choosing a file works only in a browser on this computer, not on the iPad.</p>
         </div>
       </div>
       <div class="topic has-shots">
@@ -1233,7 +1243,7 @@
       <div class="topic">
         <div class="txt">
           <h3>Your tags and names are saved</h3>
-          <p>Everything you add yourself (own tags, people, groups, your ✓ and ✗ decisions, drawn faces) is kept in the index, never in a photo. While you work, shoebox also keeps a safety copy of the index, <code>library.db.bak</code>, and a readable list of it all, <code>userdata.json</code>, in the <code>.shoebox</code> folder on the drive. They travel with the drive, so a backup of the drive has them too. Open <code>userdata.json</code> in any text editor to see what you have made. If the index is ever damaged, <b>Verify</b> in the launcher points you to the safety copy.</p>
+          <p>Everything you add yourself (own tags, people, groups, your ✓ and ✗ decisions, drawn faces) is kept in the index, never in a photo. While you work, shoebox also keeps a safety copy of the index, <code>library.db.bak</code>, and a readable list of it all, <code>userdata.json</code>, in the <code>.shoebox</code> folder on the drive. They travel with the drive, so a backup of the drive has them too. Open <code>userdata.json</code> in any text editor to see what you have made. If the index is ever damaged, <b>Verify</b> in the launcher points you to the safety copy. If it is lost, scan the drive again and use <b>Carry over data</b> with its <code>userdata.json</code> to bring your tags, hearts, people, dates and places back. Copy the file somewhere else first: shoebox writes it anew after your next change.</p>
         </div>
       </div>
       <div class="topic has-shots">
@@ -1292,7 +1302,7 @@
             <svg class="ic" aria-hidden="true"><use href="#i-bolt"/></svg>
           </div>
           <h3>Only on your command</h3>
-          <p>Originals change only through your actions: move, rename, trash. Always a rename, never a copy, and only if the file still matches the index. The only other thing shoebox removes is a new copy of a file the drive already had, and only when you press the button after a scan. Export only reads your originals. Carry over data reads another drive’s index and writes only this drive’s index.</p>
+          <p>Originals change only through your actions: move, rename, trash. Always a rename, never a copy, and only if the file still matches the index. The only other thing shoebox removes is a new copy of a file the drive already had, and only when you press the button after a scan. Export only reads your originals. Carry over data reads another drive’s index, or a <code>userdata.json</code> you choose, and writes only this drive’s index.</p>
         </li>
         <li>
           <div class="ic-box">

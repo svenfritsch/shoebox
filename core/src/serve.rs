@@ -828,6 +828,7 @@ fn hub_router(hub: Arc<Hub>) -> Router {
         .route("/api/all/tags", get(all_tags))
         .route("/api/all/duplicates", get(all_duplicates))
         .route("/api/all/copies", get(all_copies))
+        .route("/api/all/duplicates/folders", get(all_duplicate_folders))
         .route("/api/all/drives", get(all_drives))
         .route("/api/all/role", post(all_set_role))
         .route("/api/all/transfer", get(all_transfer).post(all_transfer_apply))
@@ -1413,27 +1414,30 @@ async fn overview(hub: &Arc<Hub>) -> ApiResult<Overview> {
     .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))?
 }
 
+/// The disk a drive's folder is on (names of two folders can be alike).
+fn volume_of(apps: &[Arc<App>], library: &str) -> Option<String> {
+    apps.iter().find(|a| library_id(&a.name) == library).and_then(|a| volume::placement(&a.root)).map(|p| p.volume)
+}
+
 /// Contents on more than one drive, leaving out backups (and drives that
-/// look like one until the user decides).
-async fn all_duplicates(State(hub): State<Arc<Hub>>, Query(q): Query<LimitQuery>) -> ApiResult<Json<multi::CrossDuplicates>> {
+/// look like one until the user decides). `ignore` (repeatable) is a folder
+/// name: a content with a copy in a folder of that name is left out.
+async fn all_duplicates(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<multi::CrossDuplicates>> {
     let o = overview(&hub).await?;
-    let limit = q.limit.unwrap_or(500).min(5000);
+    let limit = param(&pairs, "limit").and_then(|v| v.parse::<usize>().ok()).unwrap_or(500).min(5000);
+    let ignore = terms_of(&pairs, "ignore");
     let result = tokio::task::spawn_blocking(move || {
-        let mut result = multi::cross_duplicates(&o.drives, &o.roles, limit)?;
-        // The disk name tells two folders of the same name apart.
+        let mut result = multi::cross_duplicates(&o.drives, &o.roles, &ignore, limit)?;
         let mut volumes: std::collections::HashMap<String, Option<String>> = std::collections::HashMap::new();
         for g in &mut result.groups {
             for f in &mut g.files {
-                let v = volumes.entry(f.library.clone()).or_insert_with(|| {
-                    o.apps.iter().find(|a| library_id(&a.name) == f.library).and_then(|a| volume::placement(&a.root)).map(|p| p.volume)
-                });
-                f.volume = v.clone();
+                f.volume = volumes.entry(f.library.clone()).or_insert_with(|| volume_of(&o.apps, &f.library)).clone();
             }
         }
         Ok::<_, anyhow::Error>(result)
     })
-        .await
-        .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
     Ok(Json(result))
 }
 
@@ -1474,6 +1478,25 @@ async fn all_copies(State(hub): State<Arc<Hub>>, Query(q): Query<CopiesQuery>) -
     .await
     .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
     Ok(Json(list))
+}
+
+/// Folder names for the "Ignore folders" field: `q` (what was typed), `ignore`
+/// (the names already chosen, repeatable), `limit` (default 8).
+async fn all_duplicate_folders(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<multi::FolderName>>> {
+    let o = overview(&hub).await?;
+    let limit = param(&pairs, "limit").and_then(|v| v.parse::<usize>().ok()).unwrap_or(8).min(50);
+    let ignore = terms_of(&pairs, "ignore");
+    let text = param(&pairs, "q").unwrap_or("").to_string();
+    let rows = tokio::task::spawn_blocking(move || {
+        let mut rows = multi::duplicate_folders(&o.drives, &o.roles, &ignore, &text, limit)?;
+        for d in rows.iter_mut().flat_map(|r| r.drives.iter_mut()) {
+            d.volume = volume_of(&o.apps, &d.library);
+        }
+        Ok::<_, anyhow::Error>(rows)
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+    Ok(Json(rows))
 }
 
 #[derive(Serialize)]
@@ -2012,24 +2035,56 @@ async fn all_transfer(State(hub): State<Arc<Hub>>) -> ApiResult<Json<Vec<Transfe
 
 #[derive(Deserialize)]
 struct TransferRequest {
-    /// The drive whose data is carried (its id) and the drive that receives it.
-    from: String,
+    /// Where the data comes from: another drive (its id), or a `userdata.json`
+    /// on this computer (its full path, phase 15b).
+    #[serde(default)]
+    from: Option<String>,
+    #[serde(default)]
+    file: Option<String>,
+    /// The drive that receives it.
     to: String,
     /// Which kinds to carry (default: all five).
     #[serde(default)]
     boxes: Option<transfer::Boxes>,
 }
 
-/// Both drives of a carry over, if they are there and may take part: a backup
-/// is refused as source and as target, and so is a drive that looks like one
-/// until the user has decided.
-async fn transfer_pair(hub: &Arc<Hub>, req: &TransferRequest) -> ApiResult<(Arc<App>, Arc<App>)> {
-    if req.from == req.to {
-        return Err(ApiError::BadRequest("choose two different drives".into()));
+/// Where a carry over takes its data from.
+enum TransferSource {
+    Drive(Arc<App>),
+    File(PathBuf),
+}
+
+impl TransferSource {
+    /// Read the data; a file that is not a userdata.json is the request's fault.
+    fn read(&self) -> ApiResult<transfer::TransferSet> {
+        match self {
+            TransferSource::Drive(app) => Ok(transfer::read_drive(&app.db_path)?),
+            TransferSource::File(path) => Ok(transfer::read_userdata(path).map_err(bad)?.0),
+        }
     }
+}
+
+/// Both ends of a carry over, if they are there and may take part: a backup is
+/// refused as source and as target, and so is a drive that looks like one
+/// until the user has decided. A file can only be read for a browser on this
+/// computer: it is one of this computer's files, chosen in its folders.
+async fn transfer_pair(hub: &Arc<Hub>, req: &TransferRequest, peer: SocketAddr, headers: &HeaderMap) -> ApiResult<(TransferSource, Arc<App>)> {
+    let ids: Vec<&String> = match (&req.from, &req.file) {
+        (Some(from), None) => {
+            if from == &req.to {
+                return Err(ApiError::BadRequest("choose two different drives".into()));
+            }
+            vec![from, &req.to]
+        }
+        (None, Some(_)) => {
+            local_only(peer, headers)?;
+            vec![&req.to]
+        }
+        _ => return Err(ApiError::BadRequest("say where the data comes from: a drive or a file".into())),
+    };
     let o = overview(hub).await?;
     let mut found = Vec::new();
-    for id in [&req.from, &req.to] {
+    for id in ids {
         let slot = hub.slots.iter().find(|s| &s.id == id).ok_or(ApiError::NotFound)?;
         let Some(i) = o.drives.iter().position(|d| &d.id == id) else {
             return Err(ApiError::Offline { library: slot.name.clone(), reason: "plug it in to carry data over".into() });
@@ -2043,20 +2098,56 @@ async fn transfer_pair(hub: &Arc<Hub>, req: &TransferRequest) -> ApiResult<(Arc<
         found.push(o.apps[i].clone());
     }
     let to = found.pop().ok_or(ApiError::NotFound)?;
-    let from = found.pop().ok_or(ApiError::NotFound)?;
-    Ok((from, to))
+    let source = match (found.pop(), &req.file) {
+        (Some(from), _) => TransferSource::Drive(from),
+        (None, Some(file)) => {
+            let path = PathBuf::from(file);
+            if !path.is_absolute() {
+                return Err(ApiError::BadRequest("choose the file".into()));
+            }
+            TransferSource::File(path)
+        }
+        (None, None) => return Err(ApiError::NotFound),
+    };
+    Ok((source, to))
 }
 
 /// What carrying over would do right now, for the dialog's check boxes; reads
-/// both indexes, writes nothing. `source_emptied`: more than half of the
-/// source's files are gone from it (carry over before erasing a drive).
-async fn all_transfer_plan(State(hub): State<Arc<Hub>>, Json(req): Json<TransferRequest>) -> ApiResult<Json<serde_json::Value>> {
-    let (from, to) = transfer_pair(&hub, &req).await?;
+/// both sides, writes nothing. `source_emptied`: more than half of the source
+/// drive's files are gone from it (carry over before erasing a drive). For a
+/// file: its name, folder and when shoebox wrote it.
+async fn all_transfer_plan(
+    State(hub): State<Arc<Hub>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(req): Json<TransferRequest>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let (source, to) = transfer_pair(&hub, &req, peer, &headers).await?;
     let out = tokio::task::spawn_blocking(move || -> ApiResult<serde_json::Value> {
-        let set = transfer::read_drive(&from.db_path)?;
-        let counts = transfer::plan(&to.conn.lock().unwrap(), &set, transfer::Boxes::all())?;
-        let emptied = transfer::looks_emptied(&from.db_path)?;
-        Ok(serde_json::json!({ "from": from.name, "to": to.name, "counts": counts, "source_emptied": emptied }))
+        match &source {
+            TransferSource::Drive(from) => {
+                let set = source.read()?;
+                let counts = transfer::plan(&to.conn.lock().unwrap(), &set, transfer::Boxes::all())?;
+                let emptied = transfer::looks_emptied(&from.db_path)?;
+                Ok(serde_json::json!({ "from": from.name, "to": to.name, "counts": counts, "source_emptied": emptied }))
+            }
+            TransferSource::File(path) => {
+                let (set, info) = transfer::read_userdata(path).map_err(bad)?;
+                let counts = transfer::plan(&to.conn.lock().unwrap(), &set, transfer::Boxes::all())?;
+                let name = path.file_name().map(|n| library::nfc(&n.to_string_lossy())).unwrap_or_default();
+                let folder = path.parent().map(volume::display_path).unwrap_or_default();
+                Ok(serde_json::json!({
+                    "file": volume::display_path(path),
+                    "file_name": name,
+                    "folder": folder,
+                    "written_at": info.written_at,
+                    "version": info.version,
+                    "to": to.name,
+                    "counts": counts,
+                    "source_emptied": false,
+                }))
+            }
+        }
     })
     .await
     .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
@@ -2064,13 +2155,22 @@ async fn all_transfer_plan(State(hub): State<Arc<Hub>>, Json(req): Json<Transfer
 }
 
 /// Carry the ticked kinds of data over: one transaction on the receiving
-/// drive's `library.db`; the source drive and every photo stay as they are.
-async fn all_transfer_apply(State(hub): State<Arc<Hub>>, Json(req): Json<TransferRequest>) -> ApiResult<Json<serde_json::Value>> {
-    let (from, to) = transfer_pair(&hub, &req).await?;
+/// drive's `library.db`; the source (drive or file) and every photo stay as
+/// they are.
+async fn all_transfer_apply(
+    State(hub): State<Arc<Hub>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(req): Json<TransferRequest>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let (source, to) = transfer_pair(&hub, &req, peer, &headers).await?;
     let boxes = req.boxes.unwrap_or_default();
-    let from_db = from.db_path.clone();
+    let from = match &source {
+        TransferSource::Drive(app) => app.name.clone(),
+        TransferSource::File(path) => volume::display_path(path),
+    };
+    let set = tokio::task::spawn_blocking(move || source.read()).await.map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
     let counts = change(&to, move |_, conn| {
-        let set = transfer::read_drive(&from_db)?;
         let counts = transfer::apply(conn, &set, boxes)?;
         if counts.people > 0 {
             // New people get their picture, like after any naming.
@@ -2082,7 +2182,7 @@ async fn all_transfer_apply(State(hub): State<Arc<Hub>>, Json(req): Json<Transfe
     if counts.people > 0 {
         to.request_clusters();
     }
-    Ok(Json(serde_json::json!({ "from": from.name, "to": to.name, "counts": counts })))
+    Ok(Json(serde_json::json!({ "from": from, "to": to.name, "counts": counts })))
 }
 
 #[derive(Deserialize)]
@@ -3044,7 +3144,13 @@ async fn export_folders(
 ) -> ApiResult<Json<export::Listing>> {
     local_only(peer, &headers)?;
     let path = pairs.iter().find(|(k, _)| k == "path").map(|(_, v)| v.clone()).unwrap_or_default();
-    blocking(&app, move |_| export::list_folders(FsPath::new(&path)).map(Json).map_err(bad)).await
+    // `files=json`: also the `.json` files, to choose a userdata.json (Carry over data).
+    let json = pairs.iter().any(|(k, v)| k == "files" && v == "json");
+    blocking(&app, move |_| {
+        let path = FsPath::new(&path);
+        if json { export::list_json(path) } else { export::list_folders(path) }.map(Json).map_err(bad)
+    })
+    .await
 }
 
 #[derive(Deserialize)]

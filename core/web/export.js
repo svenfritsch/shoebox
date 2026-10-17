@@ -464,13 +464,31 @@ function exportResult(s) {
 
 // ------------------------------------------------------------------ the folder picker
 
-// The computer's own folders, listed by the server (a browser cannot give a
-// web page a real folder). Drives with a shoebox library are marked: saving
-// there is allowed, with a question first.
+// The export's picker: where the new folder goes.
 function exportPicker() {
-  var current = null;
+  pathPicker({
+    title: tr('export.pick_title'),
+    hint: tr('export.pick_hint'),
+    base: LIBAPI,
+    places: ex.places,
+    start: ex.parent,
+    use: tr('export.use_folder'),
+    onPick: function (path) { ex.parent = path; renderExport(); },
+    onCancel: renderExport,
+  });
+}
+
+// The computer's own folders, listed by the server (a browser cannot give a
+// web page a real folder or file). Drives with a shoebox library are marked.
+// `opts`: title, hint, base (the API of the drive that lists them), places
+// (its /export/places), start (a folder), use (the button's label), onPick
+// (with the folder's, or the file's, path) and onCancel. With `files` the
+// `.json` files are listed too, and one of them is what is picked (Carry over
+// data from a userdata.json).
+function pathPicker(opts) {
+  var current = null, chosen = null, useBtn = null;
   var body = el('div');
-  body.appendChild(el('p', 'hint', tr('export.pick_hint')));
+  body.appendChild(el('p', 'hint', opts.hint));
   var pk = el('div', 'x-pk');
   var nav = el('nav');
   var main = el('div', 'x-main');
@@ -496,18 +514,24 @@ function exportPicker() {
     navItems.push(d);
   };
   nav.appendChild(el('h4', '', tr('export.places')));
-  ex.places.places.forEach(function (p) { addNav(tr(PLACE_NAMES[p.kind] || 'export.place_home'), p.path); });
-  if (ex.places.drives.length) {
+  opts.places.places.forEach(function (p) { addNav(tr(PLACE_NAMES[p.kind] || 'export.place_home'), p.path); });
+  if (opts.places.drives.length) {
     nav.appendChild(el('h4', '', tr('export.drives')));
-    ex.places.drives.forEach(function (d) {
+    opts.places.drives.forEach(function (d) {
       var extra = d.library ? tr('export.shoebox_tag') : d.free != null ? tr('export.free', { size: formatBytes(d.free) }) : '';
       addNav(d.name, d.path, extra);
     });
   }
 
+  var choose = function (f, li) {
+    chosen = f;
+    Array.prototype.forEach.call(list.children, function (x) { x.classList.toggle('on', x === li); });
+    selected.textContent = f ? tr('export.selected', { name: f.name }) : '';
+    if (useBtn) useBtn.disabled = !f;
+  };
   var show = function (path) {
     error.textContent = '';
-    api(LIBAPI + '/export/folders' + query({ path: path })).then(function (l) {
+    api(opts.base + '/export/folders' + query({ path: path, files: opts.files ? 'json' : null })).then(function (l) {
       current = l;
       navItems.forEach(function (d) { d.classList.toggle('on', d.dataset.path === l.path); });
       crumbs.textContent = '';
@@ -519,7 +543,8 @@ function exportPicker() {
       });
       if (l.shoebox) crumbs.appendChild(el('span', 'x-tag', tr('export.shoebox_tag')));
       list.textContent = '';
-      if (!l.folders.length) list.appendChild(el('li', 'x-none', tr('export.empty_folder')));
+      var files = opts.files ? l.files || [] : [];
+      if (!l.folders.length && !files.length) list.appendChild(el('li', 'x-none', tr(opts.files ? 'transfer.pick_empty' : 'export.empty_folder')));
       l.folders.forEach(function (f) {
         var li = el('li');
         var nm = el('span', '');
@@ -530,21 +555,34 @@ function exportPicker() {
         li.onclick = function () { show(f.path); };
         list.appendChild(li);
       });
-      selected.textContent = tr('export.selected', { name: l.crumbs[l.crumbs.length - 1].name });
+      files.forEach(function (f) {
+        var li = el('li');
+        var nm = el('span', '');
+        nm.appendChild(fileIcon());
+        nm.appendChild(document.createTextNode(f.name));
+        li.appendChild(nm);
+        li.appendChild(el('small', '', formatBytes(f.size)));
+        li.onclick = function () { choose(f, li); };
+        li.ondblclick = function () { choose(f, li); opts.onPick(f.path, l.path); };
+        list.appendChild(li);
+      });
+      if (opts.files) choose(null);
+      else selected.textContent = tr('export.selected', { name: l.crumbs[l.crumbs.length - 1].name });
     }).catch(function (e) { error.textContent = e.message; });
   };
 
-  var back = function () { renderExport(); return false; };
-  openModal(tr('export.pick_title'), body, [
-    { label: tr('app.cancel'), cls: 'quiet', onclick: back },
+  var buttons = openModal(opts.title, body, [
+    { label: tr('app.cancel'), cls: 'quiet', onclick: function () { opts.onCancel(); return false; } },
     {
-      label: tr('export.use_folder'),
+      label: opts.use,
       onclick: function () {
-        if (!current) return false;
-        ex.parent = current.path;
-        return back();
+        if (opts.files ? !chosen : !current) return false;
+        if (opts.files) opts.onPick(chosen.path, current.path); else opts.onPick(current.path);
+        return false;
       },
     },
   ], 'picker');
-  show(ex.parent && ex.parent.length ? ex.parent : (ex.places.places[0] ? ex.places.places[0].path : '/'));
+  useBtn = buttons[1];
+  if (opts.files) useBtn.disabled = true;
+  show(opts.start && opts.start.length ? opts.start : (opts.places.places[0] ? opts.places.places[0].path : '/'));
 }

@@ -678,3 +678,128 @@ fn identical_photos_show_once_in_the_common_timeline() {
     server.stop().unwrap();
     assert_eq!((a.snapshot(), b.snapshot(), backup.snapshot()), before, "only reading");
 }
+
+/// Two drives that share five photos in folders that are named alike on one
+/// drive only, on both, or not at all (seed → folders of the copies on A and B):
+/// 1 `Noah/2025-07 Kroatien` and `Lena/Urlaub Kroatien`, 2 `Gemeinsam/Festival`
+/// on both, 3 `Downloads` and `Lena/Handy 2025`, 4 `Downloads` and
+/// `2025-07 Kroatien`, 5 `O\u{308}sa` (NFD) and `Other`. Each has photos of its own.
+fn shared_folders(test: &str) -> (Library, Library) {
+    let (a, b) = (bare_library(&format!("{test}-a")), bare_library(&format!("{test}-b")));
+    a.jpeg("Noah/2025-07 Kroatien/a.jpg", 1);
+    b.jpeg("Lena/Urlaub Kroatien/a.jpg", 1);
+    a.jpeg("Gemeinsam/Festival/b.jpg", 2);
+    b.jpeg("Gemeinsam/Festival/b.jpg", 2);
+    a.jpeg("Downloads/c.jpg", 3);
+    b.jpeg("Lena/Handy 2025/c.jpg", 3);
+    a.jpeg("Downloads/d.jpg", 4);
+    b.jpeg("2025-07 Kroatien/d.jpg", 4);
+    a.jpeg("O\u{308}sa/e.jpg", 5);
+    b.jpeg("Other/e.jpg", 5);
+    for seed in 20..25 {
+        a.jpeg(&format!("Eigene/a{seed}.jpg"), seed);
+        b.jpeg(&format!("Eigene/b{seed}.jpg"), seed + 20);
+    }
+    a.scan_opts(true, false, false);
+    b.scan_opts(true, false, false);
+    (a, b)
+}
+
+fn ignore_query(names: &[&str]) -> String {
+    names.iter().map(|n| format!("&ignore={}", encode(n))).collect()
+}
+
+#[test]
+fn a_photo_with_a_copy_in_an_ignored_folder_is_left_out_with_all_its_copies() {
+    let (a, b) = shared_folders("multi-ignore");
+    let before = (a.snapshot(), b.snapshot());
+    let server = start_many(&[&a, &b], &[]);
+    let addr = server.addr;
+    let dups = |names: &[&str]| get(addr, &format!("/raw/api/all/duplicates?limit=200{}", ignore_query(names))).json();
+
+    // Nothing ignored: all five, as before.
+    let all = dups(&[]);
+    assert_eq!((all["total_groups"].as_u64(), all["hidden_groups"].as_u64()), (Some(5), Some(0)), "{all}");
+    assert_eq!(all["groups"].as_array().unwrap().len(), 5);
+
+    // Seeds 1 and 4: one copy lies in `2025-07 Kroatien`, the other copy's folder is named otherwise.
+    let kroatien = dups(&["2025-07 Kroatien"]);
+    assert_eq!((kroatien["total_groups"].as_u64(), kroatien["hidden_groups"].as_u64()), (Some(3), Some(2)), "{kroatien}");
+    let paths: Vec<&str> = kroatien["groups"].as_array().unwrap().iter().flat_map(|g| g["files"].as_array().unwrap()).map(|f| f["path"].as_str().unwrap()).collect();
+    assert!(paths.iter().all(|p| !p.ends_with("/a.jpg") && !p.ends_with("/d.jpg")), "{paths:?}");
+
+    // The name of the other drive's folder hides the same photo; a folder above the photo counts.
+    assert_eq!(dups(&["Urlaub Kroatien"])["hidden_groups"], 1);
+    assert_eq!(dups(&["Noah"])["hidden_groups"], 1);
+    // Several names, in any case and form: `Downloads` has seeds 3 and 4, `O\u{308}sa` seed 5.
+    let some = dups(&["downloads", "\u{d6}SA", "  "]);
+    assert_eq!((some["total_groups"].as_u64(), some["hidden_groups"].as_u64()), (Some(2), Some(3)), "{some}");
+    // A name that is no folder, a file's name and a part of a path hide nothing.
+    for name in ["Festiva", "a.jpg", "Gemeinsam/Festival", "Eigene2"] {
+        assert_eq!(dups(&[name])["hidden_groups"], 0, "{name}");
+    }
+    // The limit counts what is left.
+    let few = dups(&["2025-07 Kroatien"]);
+    assert_eq!(few["groups"].as_array().unwrap().len(), 3);
+    let one = get(addr, &format!("/raw/api/all/duplicates?limit=1{}", ignore_query(&["2025-07 Kroatien"]))).json();
+    assert_eq!((one["groups"].as_array().unwrap().len(), one["total_groups"].as_u64()), (1, Some(3)));
+    server.stop().unwrap();
+
+    // It is a filter: no photo and no index changed.
+    assert_eq!((a.snapshot(), b.snapshot()), before);
+}
+
+#[test]
+fn folder_names_are_offered_with_the_photos_they_would_hide() {
+    let (a, b) = shared_folders("multi-ignore-names");
+    let backup = bare_library("multi-ignore-names-bk");
+    backup.jpeg("Sicherung/a.jpg", 1);
+    backup.scan_opts(true, false, false);
+    let server = start_many(&[&a, &b, &backup], &[]);
+    let addr = server.addr;
+    let (ia, ib, ic) = (lib_id(addr, &a), lib_id(addr, &b), lib_id(addr, &backup));
+    assert_eq!(post(addr, "/raw/api/all/role", &json!({ "library": ic, "role": "backup" })).status, 200);
+    let folders = |query: &str| -> Vec<(String, u64, Vec<String>)> {
+        get(addr, &format!("/raw/api/all/duplicates/folders?{query}"))
+            .json()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| {
+                let drives = f["drives"].as_array().unwrap().iter().map(|d| d["library"].as_str().unwrap().to_string()).collect();
+                (f["name"].as_str().unwrap().to_string(), f["photos"].as_u64().unwrap(), drives)
+            })
+            .collect()
+    };
+    let names = |rows: &[(String, u64, Vec<String>)]| rows.iter().map(|r| r.0.clone()).collect::<Vec<_>>();
+
+    // Names on both drives first, then more photos, then alphabetical. A backup adds nothing.
+    let all = folders("limit=50");
+    assert_eq!(
+        names(&all),
+        ["2025-07 Kroatien", "Festival", "Gemeinsam", "Downloads", "Lena", "Handy 2025", "Noah", "\u{d6}sa", "Other", "Urlaub Kroatien"],
+        "{all:?}"
+    );
+    let row = |name: &str| all.iter().find(|r| r.0 == name).unwrap().clone();
+    let mut both = vec![ia.clone(), ib.clone()];
+    both.sort();
+    assert_eq!((row("2025-07 Kroatien").1, row("2025-07 Kroatien").2), (2, both));
+    assert_eq!((row("Downloads").1, row("Downloads").2), (2, vec![ia.clone()]));
+    assert_eq!((row("Lena").1, row("Lena").2), (2, vec![ib.clone()]));
+    // The default is 8 rows, `limit` asks for fewer.
+    assert_eq!(folders("").len(), 8);
+    assert_eq!(names(&folders("limit=2")), ["2025-07 Kroatien", "Festival"]);
+
+    // Names already ignored are not offered, and the counts are what is still visible.
+    let rest = folders(&format!("limit=50{}", ignore_query(&["2025-07 Kroatien"])));
+    assert_eq!(names(&rest), ["Festival", "Gemeinsam", "Downloads", "Handy 2025", "Lena", "\u{d6}sa", "Other"], "{rest:?}");
+    assert_eq!(rest.iter().find(|r| r.0 == "Lena").unwrap().1, 1);
+
+    // What was typed: names that start with it first, then names that contain it; accents, case and form do not matter.
+    assert_eq!(names(&folders("limit=3&q=o")), ["\u{d6}sa", "Other", "2025-07 Kroatien"]);
+    assert_eq!(names(&folders("q=OSA")), ["\u{d6}sa"]);
+    assert_eq!(names(&folders(&format!("q={}", encode("o\u{308}sa")))), ["\u{d6}sa"]);
+    assert_eq!(names(&folders("q=kroatien")), ["2025-07 Kroatien", "Urlaub Kroatien"]);
+    assert!(folders("q=nothing+like+it").is_empty());
+    server.stop().unwrap();
+}

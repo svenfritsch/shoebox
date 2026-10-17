@@ -90,7 +90,10 @@ current status and next step. Update its status table when a phase moves.
   drive's `library.db` read-only and writes only the target drive's
   `library.db` (own tags, hearts, people and face decisions, corrected or
   estimated dates, hand-given places), matched by content. Target data always
-  wins, one transaction, never a backup, no photo touched. A new table in
+  wins, one transaction, never a backup, no photo touched. Phase 15b: the source
+  can instead be a `userdata.json` the user picks on this computer
+  (`transfer::read_userdata`, only a `.json` file, so never an original; every
+  entry checked like typed input; only for a browser on this computer). A new table in
   `library.db` must be listed in `transfer::TRANSFERRED_TABLES` or `NOT_TRANSFERRED_TABLES`.
 - Licences: `LICENSE.txt` (all rights reserved, private use) and the generated
   `THIRD-PARTY-LICENSES.txt` go into the release archive. After a change to

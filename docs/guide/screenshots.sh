@@ -4,7 +4,7 @@
 #
 # Runs ONLY in the pipeline (.github/workflows/guide.yml, on a GitHub Actions
 # runner): it creates and deletes folders where drives live (/Volumes/Photos,
-# /mnt/Extreme SSD, /mnt/Backup Drive), because shoebox reads a drive's name
+# /mnt/Extreme SSD, /mnt/Backup Drive, /mnt/Travel SSD), because shoebox reads a drive's name
 # from its path. On a real computer those can be real drives with real
 # photos, so the script refuses to run anywhere else, and never on a Mac.
 #
@@ -16,7 +16,7 @@
 #
 # Environment:
 #   LANGS="en de"                         languages to make
-#   PASSES="app launcher drives suggestions text"  passes to run (see screenshots.mjs)
+#   PASSES="app launcher drives across suggestions text"  passes to run (see screenshots.mjs)
 #   OUT=docs/guide/assets                 where the JPEGs go; a pass replaces
 #                                         only its own files
 set -eu
@@ -31,17 +31,17 @@ BIN=${1:-$(cd "$HERE/../.." && pwd)/core/target/$(rustc -vV | sed -n 's/^host: /
 [ -x "$BIN" ] || { echo "no shoebox binary at $BIN (build it with scripts/build.sh)" >&2; exit 1; }
 BIN=$(cd "$(dirname "$BIN")" && pwd)/$(basename "$BIN")
 LANGS=${LANGS:-en de}
-PASSES=${PASSES:-app launcher drives suggestions text}
+PASSES=${PASSES:-app launcher drives across suggestions text}
 OUT=${OUT:-$HERE/assets}
 LIB=/Volumes/Photos
 # Where Linux keeps the drives (shoebox reads the disk name from the path).
 DRIVES=/mnt
-ORIG="$DRIVES/Extreme SSD/Photos"; BAK="$DRIVES/Backup Drive/Photos Backup"
+ORIG="$DRIVES/Extreme SSD/Photos"; BAK="$DRIVES/Backup Drive/Photos Backup"; TRAVEL="$DRIVES/Travel SSD/Travel"
 export NODE_PATH=${NODE_PATH:-$(npm root -g)}
 
 # These folders are made and deleted again. Even on a runner, never touch one
 # that is there before we start: it is not ours.
-for d in "$LIB" "$DRIVES/Extreme SSD" "$DRIVES/Backup Drive"; do
+for d in "$LIB" "$DRIVES/Extreme SSD" "$DRIVES/Backup Drive" "$DRIVES/Travel SSD"; do
     if [ -e "$d" ]; then
         echo "$d exists (a real drive, or left over from a run that was killed?)." >&2
         echo "Not touching it; remove or unmount it yourself first." >&2
@@ -55,7 +55,7 @@ pid=
 # A step that fails must not leave a server running (it would hold its port).
 cleanup() {
     [ -z "$pid" ] || kill "$pid" 2>/dev/null || true
-    rm -rf "$WORK" "$LIB" "$DRIVES/Extreme SSD" "$DRIVES/Backup Drive"
+    rm -rf "$WORK" "$LIB" "$DRIVES/Extreme SSD" "$DRIVES/Backup Drive" "$DRIVES/Travel SSD"
 }
 trap cleanup EXIT
 trap 'exit 1' INT TERM
@@ -125,6 +125,19 @@ for lang in $LANGS; do
             shots drives http://localhost:7901/ "$ORIG"
             stop
             rm -rf "$DRIVES/Extreme SSD" "$DRIVES/Backup Drive" ;;
+        across)
+            # Two drives of their own that share photos (the hike folder under the
+            # same name, a trip under another name, two stray copies), for the
+            # duplicates across drives in All drives.
+            rm -rf "$DRIVES/Extreme SSD" "$DRIVES/Travel SSD"
+            mkdir -p "$(dirname "$ORIG")" "$(dirname "$TRAVEL")"; cp -Rp "$WORK/sample" "$ORIG"
+            python3 "$HERE/make-drives-across.py" "$ORIG" "$TRAVEL" "$lang" >/dev/null
+            "$BIN" scan "$ORIG" >/dev/null 2>&1
+            "$BIN" scan "$TRAVEL" >/dev/null 2>&1
+            start http://localhost:7901/ "$BIN" serve "$ORIG" "$TRAVEL" --port 7901
+            shots across http://localhost:7901/ "$ORIG"
+            stop
+            rm -rf "$DRIVES/Extreme SSD" "$DRIVES/Travel SSD" ;;
         text)
             # The same library plus a folder of pictures with words in them
             # (SHOEBOX_SAMPLE_TEXT=1), "read" by the mock recognizer's text task.
@@ -137,12 +150,12 @@ for lang in $LANGS; do
             start http://localhost:7900/ "$BIN" serve "$LIB" --port 7900
             shots text http://localhost:7900/ "$LIB"
             stop ;;
-        *) echo "unknown pass: $pass (app, launcher, drives, suggestions, text)" >&2; exit 1 ;;
+        *) echo "unknown pass: $pass (app, launcher, drives, across, suggestions, text)" >&2; exit 1 ;;
         esac
     done
     # All passes: start from an empty folder, so a screenshot nobody makes any
     # more goes away. Some passes: replace only what they made.
-    if [ "$PASSES" = "app launcher drives suggestions text" ]; then rm -rf "${OUT:?}/$lang"; fi
+    if [ "$PASSES" = "app launcher drives across suggestions text" ]; then rm -rf "${OUT:?}/$lang"; fi
     mkdir -p "$OUT/$lang"
     python3 "$HERE/shrink-shots.py" "$png" "$OUT/$lang"
 done

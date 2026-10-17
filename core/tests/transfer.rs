@@ -455,3 +455,232 @@ fn a_drive_that_was_emptied_is_recognised_so_the_dialog_can_warn() {
     a.scan_opts(true, false, false);
     assert!(transfer::looks_emptied(&db_path(&a)).unwrap(), "3 of 4 files are gone");
 }
+
+// ---------------------------------------------------------------- from a file (phase 15b)
+
+/// Where a copy of a `userdata.json` is kept, outside every library.
+fn kept_aside(test: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("shoebox-it-{}-{test}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+/// The source drive writes its `userdata.json`, as the server does after every change.
+fn write_userdata(a: &Library) -> std::path::PathBuf {
+    tags::write_user_data(&open(a), &db_path(a)).unwrap()
+}
+
+#[test]
+fn a_userdata_json_carries_the_same_as_its_drive() {
+    let a = source("transfer-file-a");
+    let b = target("transfer-file-b");
+    make_data(&a);
+    let file = write_userdata(&a);
+    let before = fs::read(&file).unwrap();
+
+    let (set, info) = transfer::read_userdata(&file).unwrap();
+    assert_eq!(info.version, tags::USERDATA_VERSION);
+    assert!(info.written_at > 0);
+    let conn = open(&b);
+    let expected = Counts { tags: 3, hearts: 1, people: 2, new_people: 1, dates: 2, places: 1, photos: 3 };
+    assert_eq!(transfer::plan(&conn, &set, Boxes::all()).unwrap(), expected);
+    assert_eq!(transfer::apply(&conn, &set, Boxes::all()).unwrap(), expected);
+
+    assert_eq!(own_tag_rows(&b, "fjord", Some("Familie/2026/IMG_1.jpg")), 1);
+    assert_eq!(own_tag_rows(&b, "papa", None), 2, "both identical copies");
+    assert_eq!(own_tag_rows(&b, "favorite", Some("Familie/2026/IMG_1.jpg")), 1);
+    assert_eq!(b.count("SELECT count(*) FROM people WHERE name = 'Anna' AND group_id IS NULL"), 1);
+    assert_eq!(
+        b.count(&format!(
+            "SELECT count(*) FROM face_decisions WHERE key = '{}' AND decision = 'confirmed' AND manual = 1 AND at = 5 AND person_id = (SELECT id FROM people WHERE name = 'Anna')",
+            b.record_key("Familie/2026/IMG_1.jpg")
+        )),
+        1
+    );
+    assert_eq!(b.count("SELECT count(*) FROM face_decisions WHERE decision = 'ignored' AND person_id IS NULL"), 1);
+    assert_eq!(b.count("SELECT count(*) FROM taken_overrides WHERE taken = '1999-12-31T23:59:00'"), 1);
+    assert_eq!(b.count("SELECT count(*) FROM date_estimates WHERE year = 1987 AND month = 6 AND day IS NULL"), 1);
+    assert_eq!(b.count("SELECT count(*) FROM geo_overrides WHERE lat = 69.6 AND lon = 18.9"), 1);
+
+    // A second run adds nothing; the file is only read.
+    assert!(transfer::apply(&conn, &set, Boxes::all()).unwrap().is_nothing());
+    assert_eq!(fs::read(&file).unwrap(), before);
+}
+
+#[test]
+fn a_lost_index_gets_its_data_back_from_a_copy_of_its_userdata_json() {
+    let a = source("transfer-restore");
+    make_data(&a);
+    let aside = kept_aside("transfer-restore-copy");
+    let copy = aside.join("userdata.json");
+    fs::copy(write_userdata(&a), &copy).unwrap();
+    let before = a.snapshot();
+
+    // The index is lost; a scan makes a new one, without the user's data.
+    for name in ["library.db", "library.db.bak", "userdata.json"] {
+        let _ = fs::remove_file(a.path(&format!(".shoebox/{name}")));
+    }
+    a.scan_opts(true, false, false);
+    assert_eq!(own_tag_rows(&a, "fjord", None), 0);
+
+    let (set, _) = transfer::read_userdata(&copy).unwrap();
+    let done = transfer::apply(&open(&a), &set, Boxes::all()).unwrap();
+    // Everything is back, the photo that was only on this drive included.
+    assert_eq!((done.tags, done.hearts, done.people, done.dates, done.places), (3, 1, 3, 2, 1));
+    assert_eq!(own_tag_rows(&a, "drohne", Some(DROHNE)), 1);
+    assert_eq!(a.count(&format!("SELECT count(*) FROM face_decisions WHERE key = '{}'", a.record_key("Solo/nur-a.jpg"))), 1);
+    assert_eq!(a.snapshot(), before, "no photo changed");
+    let _ = fs::remove_dir_all(&aside);
+}
+
+#[test]
+fn every_version_of_the_file_is_read_and_what_does_not_pass_is_left_out() {
+    let b = target("transfer-file-versions");
+    let k1 = b.record_key("Familie/2026/IMG_1.jpg");
+    let k2 = b.record_key("Familie/2026/IMG_2.jpg");
+    let full1 = b.record("Familie/2026/IMG_1.jpg").unwrap().1.unwrap();
+    let other = "f".repeat(64);
+
+    // Version 1: own tags only, no lists of the later versions.
+    let v1 = json!({
+        "shoebox": "0.1.0", "version": 1, "written_at": 1_700_000_000,
+        "own_tags": [
+            { "name": "Fjord", "files": [{ "path": "a.jpg", "quick_hash": k1, "full_hash": full1 }] },
+            // Another content under the same quick hash: not this photo.
+            { "name": "Bearbeitet", "files": [{ "path": "b.jpg", "quick_hash": k1, "full_hash": other }] },
+            // In the source's trash: not carried.
+            { "name": "Weg", "files": [{ "path": "c.jpg", "quick_hash": k2, "full_hash": null, "in_trash": true }] },
+            { "name": "Favoriten", "files": [{ "path": "a.jpg", "quick_hash": k1, "full_hash": null }] },
+            { "name": "   ", "files": [{ "path": "a.jpg", "quick_hash": k1 }] },
+            { "name": "Kaputt", "files": [{ "path": "a.jpg", "quick_hash": "../../etc" }] }
+        ]
+    });
+    let (set, info) = transfer::parse_userdata(v1.to_string().as_bytes()).unwrap();
+    assert_eq!((info.version, info.written_at), (1, 1_700_000_000));
+    assert_eq!(set.tags.len(), 2, "the blank name and the bad hash are left out");
+    assert_eq!(set.hearts.len(), 1, "Favoriten is the heart");
+    let done = transfer::apply(&open(&b), &set, Boxes::all()).unwrap();
+    assert_eq!((done.tags, done.hearts, done.photos), (1, 1, 1));
+    assert_eq!(own_tag_rows(&b, "fjord", Some("Familie/2026/IMG_1.jpg")), 1);
+    assert_eq!(own_tag_rows(&b, "bearbeitet", None) + own_tag_rows(&b, "weg", None), 0);
+
+    // Version 6 with entries that cannot be right: each is left out alone.
+    let v6 = json!({
+        "shoebox": "0.9.0", "version": 6, "written_at": 1_700_000_100,
+        "groups": [], "people": [], "places": [], "view_turns": [], "shot_marks": [], "text_hidden": [],
+        "face_decisions": [
+            { "person": "Bea", "decision": "confirmed", "key": k2, "box": [0.1, 0.1, 0.2, 0.2], "at": 0, "files": [] },
+            { "person": "Cleo", "decision": "maybe", "key": k2, "box": [0.5, 0.5, 0.2, 0.2], "at": 7, "files": [] },
+            { "person": "Dora", "decision": "confirmed", "key": k2, "box": [0.5, 0.5, 0.0, 0.2], "at": 7, "files": [] },
+            { "person": "Ella", "decision": "confirmed", "key": k2, "box": [0.7, 0.7, 0.1, 0.1], "at": 7, "species": "horse", "files": [] },
+            { "person": "Finn", "decision": "confirmed", "key": k2, "box": [0.7, 0.1, 0.1, 0.1], "at": 7, "files": [{ "path": "x.jpg", "full_hash": null, "in_trash": true }] },
+            { "person": "Gabi", "decision": "ignored", "key": k1, "box": [0.3, 0.3, 0.1, 0.1], "at": 8, "files": [] }
+        ],
+        "taken_overrides": [
+            { "quick_hash": k1, "taken": "2001-02-03T04:05:06", "taken_offset": "+01:00", "files": [] },
+            { "quick_hash": k2, "taken": "gestern", "taken_offset": null, "files": [] }
+        ],
+        "date_estimates": [
+            { "quick_hash": k2, "year": 3000, "month": null, "day": null, "files": [] }
+        ],
+        "geo_overrides": [
+            { "quick_hash": k1, "lat": 48.1, "lon": 11.5, "files": [] },
+            { "quick_hash": k2, "lat": 200.0, "lon": 11.5, "files": [] }
+        ],
+        "something_new": { "ignored": true }
+    });
+    let (set, _) = transfer::parse_userdata(v6.to_string().as_bytes()).unwrap();
+    assert_eq!(set.decisions.len(), 2, "Bea and the ignored face");
+    assert!(set.decisions.iter().all(|d| d.person.as_deref() != Some("Gabi")), "an ignored face names nobody");
+    assert_eq!(set.decisions.iter().find(|d| d.person.as_deref() == Some("Bea")).unwrap().at, 1_700_000_100, "no time: when the file was written");
+    assert_eq!((set.dates.len(), set.places.len()), (1, 1));
+    let done = transfer::apply(&open(&b), &set, Boxes::all()).unwrap();
+    assert_eq!((done.people, done.new_people, done.dates, done.places), (2, 1, 1, 1));
+    assert_eq!(b.count("SELECT count(*) FROM people"), 1);
+    assert_eq!(b.count(&format!("SELECT count(*) FROM taken_overrides WHERE key = '{k1}' AND taken_offset = '+01:00'")), 1);
+
+    // Not a userdata.json, or one from a newer shoebox.
+    for bad in [&b"not json"[..], br#"{"version": 1}"#, br#"{"shoebox": "x", "version": 0}"#, br#"[1, 2]"#] {
+        assert!(transfer::parse_userdata(bad).is_err(), "{}", String::from_utf8_lossy(bad));
+    }
+    let newer = json!({ "shoebox": "9.0.0", "version": tags::USERDATA_VERSION + 1, "written_at": 1 });
+    let err = transfer::parse_userdata(newer.to_string().as_bytes()).unwrap_err().to_string();
+    assert!(err.contains("newer"), "{err}");
+}
+
+#[test]
+fn only_a_json_file_is_opened() {
+    let b = target("transfer-file-kind");
+    // A photo is never opened as a source, whatever it holds.
+    let err = transfer::read_userdata(&b.path("Familie/2026/IMG_1.jpg")).unwrap_err().to_string();
+    assert!(err.contains("userdata.json"), "{err}");
+    assert!(transfer::read_userdata(&b.path("missing.json")).is_err());
+    assert!(transfer::read_userdata(&b.path(".shoebox")).is_err(), "a folder is not a file");
+}
+
+#[test]
+fn the_routes_take_a_file_from_this_computer_only() {
+    let a = source("transfer-file-api-a");
+    let b = target("transfer-file-api-b");
+    make_data(&a);
+    let aside = kept_aside("transfer-file-api-copy");
+    let copy = aside.join("userdata (Reise).json");
+    fs::copy(write_userdata(&a), &copy).unwrap();
+    fs::write(aside.join("notes.txt"), b"x").unwrap();
+    let file = copy.display().to_string();
+
+    // One drive is enough: the data comes from the file.
+    let server = start(&b, Some("4711"));
+    let addr = server.addr;
+    let ib = lib_id(addr, &b);
+
+    // The picker lists the .json files and the .shoebox folders.
+    let list = get(addr, &format!("/api/export/folders?path={}&files=json", encode(&aside.display().to_string()))).json();
+    let files: Vec<&str> = list["files"].as_array().unwrap().iter().map(|f| f["name"].as_str().unwrap()).collect();
+    assert_eq!(files, ["userdata (Reise).json"]);
+    let root = get(addr, &format!("/api/export/folders?path={}&files=json", encode(&b.root.display().to_string()))).json();
+    assert!(root["folders"].as_array().unwrap().iter().any(|f| f["name"] == ".shoebox"));
+    let plain = get(addr, &format!("/api/export/folders?path={}", encode(&b.root.display().to_string()))).json();
+    assert!(plain["folders"].as_array().unwrap().iter().all(|f| f["name"] != ".shoebox"), "the export's picker is unchanged");
+    assert_eq!(plain["files"].as_array().unwrap().len(), 0);
+
+    let plan = post(addr, "/raw/api/all/transfer/plan", &json!({ "file": file, "to": ib }));
+    assert_eq!(plan.status, 200, "{}", String::from_utf8_lossy(&plan.body));
+    let plan = plan.json();
+    assert_eq!(plan["counts"]["photos"], 3);
+    assert_eq!(plan["file_name"], "userdata (Reise).json");
+    assert_eq!(plan["version"], tags::USERDATA_VERSION);
+    assert_eq!(own_tag_rows(&b, "fjord", None), 0, "the plan writes nothing");
+
+    // Neither or both sources, a relative path, a file that is not one.
+    assert_eq!(post(addr, "/raw/api/all/transfer/plan", &json!({ "to": ib })).status, 400);
+    assert_eq!(post(addr, "/raw/api/all/transfer/plan", &json!({ "from": ib, "file": file, "to": ib })).status, 400);
+    assert_eq!(post(addr, "/raw/api/all/transfer/plan", &json!({ "file": "userdata.json", "to": ib })).status, 400);
+    let photo = b.path("Familie/2026/IMG_1.jpg").display().to_string();
+    assert_eq!(post(addr, "/raw/api/all/transfer", &json!({ "file": photo, "to": ib })).status, 400);
+    let txt = aside.join("notes.txt").display().to_string();
+    assert_eq!(post(addr, "/raw/api/all/transfer", &json!({ "file": txt, "to": ib })).status, 400);
+
+    // A device on the network may not have this computer's files read.
+    let evil = ("Host", "photos.evil.example");
+    let ct = ("Content-Type", "application/json");
+    let login = request(addr, "POST", "/raw/api/login", &[evil, ct], br#"{"pin":"4711"}"#);
+    let cookie = login.header("set-cookie").unwrap().split(';').next().unwrap().to_string();
+    let lan = [evil, ("Cookie", cookie.as_str()), ct];
+    let body = json!({ "file": file, "to": ib }).to_string();
+    for path in ["/raw/api/all/transfer/plan", "/raw/api/all/transfer"] {
+        assert_eq!(request(addr, "POST", path, &lan, body.as_bytes()).status, 403, "{path}");
+    }
+    assert_eq!(own_tag_rows(&b, "fjord", None), 0);
+
+    let done = post(addr, "/raw/api/all/transfer", &json!({ "file": file, "to": ib, "boxes": { "people": false } }));
+    assert_eq!(done.status, 200, "{}", String::from_utf8_lossy(&done.body));
+    let done = done.json();
+    assert_eq!(done["counts"]["tags"], 3);
+    assert_eq!(done["counts"]["people"], 0);
+    assert_eq!(own_tag_rows(&b, "papa", None), 2);
+    assert_eq!(b.count("SELECT count(*) FROM face_decisions"), 0, "people were not ticked");
+    server.stop().unwrap();
+    let _ = fs::remove_dir_all(&aside);
+}

@@ -874,11 +874,20 @@
           <p>Zwei Dateien im gleichen Format mit gleichen Pixelmaßen, aber verschiedenen Bytes, etwa ein Kamera-JPEG und ein aus der RAW-Datei entwickeltes JPEG (oft benannt wie <i>IMG_1 2.jpg</i>), werden nie vorab angehakt: sie erscheinen unter Ähnliche, und du wählst, welche bleibt (siehe <b>Dieses behalten</b> unten). Kleine Marken zeigen, welche Datei die <b>meisten Pixel</b> hat oder die <b>größte Datei</b> ist.</p>
           <p>Tags und Aufnahmedatum einer entfernten Kopie gehen auf die übrige über. War die entfernte Kopie das Letzte in ihrem Ordner, entfernt shoebox den leeren Ordner und sagt dir, welcher es war.</p>
           <p>Bei mehr als einem Laufwerk zeigt der Reiter <b>Über Laufwerke hinweg</b> (in <b>Alle Laufwerke</b> und unter <b>Laufwerke verwalten</b>) Fotos, die auf mehreren Laufwerken liegen: ein Bild, eine Zeile pro Kopie mit Name des Datenträgers und Ordner. Hake die Kopien an, die weg sollen, oder wähle ein Laufwerk und <b>Alle markieren</b>, um jede Kopie darauf anzuhaken; die letzte Kopie eines Fotos lässt sich nie anhaken. <b>In den Papierkorb</b> fragt vorher nach und legt jede Kopie in den Papierkorb ihres eigenen Laufwerks.</p>
+          <p><b>Ordner ignorieren.</b> Manche Ordner liegen mit Absicht auf mehreren Laufwerken, zum Beispiel Urlaubsfotos, die zwei Personen teilen. Tippe den Namen des Ordners in das Feld <b>Ordner ignorieren</b> über der Liste und drücke die Eingabetaste (ein Komma geht auch): Er wird zu einem Chip im Feld. Beim Tippen schlägt shoebox Ordnernamen aus der Liste vor, mit der Zahl der Fotos, die jeder ausblenden würde, und den Laufwerken, auf denen er liegt; Pfeiltasten und Eingabetaste wählen einen aus, Esc schließt die Vorschläge. Oder drücke bei einer Kopie auf <b>Diesen Ordner ignorieren</b>. Ein Foto mit einer Kopie in einem Ordner dieses Namens fehlt dann mit allen seinen Kopien in der Liste, auch wenn der Ordner auf dem anderen Laufwerk anders heißt, und die Zeile unter dem Feld sagt, wie viele Fotos ausgeblendet sind. Entferne einen Chip (✕, oder Rücktaste im leeren Feld), und sie sind wieder da. Die Namen merkt sich dieser Browser; an deinen Fotos und den Laufwerken ändert sich nichts.</p>
         </div>
         <div class="shots">
           <figure>
             <img src="assets/de/duplicates.jpg" alt="" loading="lazy">
             <figcaption>Duplikate nach Vorauswählen › Kleinere Versionen: die Messenger-Kopie ist angehakt und mit Geringere Qualität markiert.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/de/across-suggest.jpg" alt="" loading="lazy">
+            <figcaption>Alle Laufwerke › Duplikate: Im Feld <b>Ordner ignorieren</b> schlägt shoebox Ordnernamen mit Fotozahl und Laufwerken vor; der Wanderordner liegt auf beiden Laufwerken.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/de/across-ignore.jpg" alt="" loading="lazy">
+            <figcaption>Der Wanderordner ist gewählt: Seine fünf Fotos fehlen in der Liste, und die Zeile unter dem Feld sagt es.</figcaption>
           </figure>
         </div>
       </div>
@@ -1193,6 +1202,7 @@
           <p>Du hast ein Laufwerk neu gescannt oder seine Fotos auf ein neues kopiert, und die Tags, Herzen und Personen, die du gemacht hast, fehlen dort? Auf <b>Laufwerke verwalten</b> zeigt ein Laufwerk, zu dessen Fotos auf einem anderen Laufwerk Daten liegen, eine Zeile und den Knopf <b>Daten übernehmen…</b>. Wähle, woher die Daten kommen (<b>Von</b>), und hake an, was mitkommen soll: <b>Tags</b>, <b>Herzen</b>, <b>Personen</b>, <b>Datumsangaben</b> (Daten, die du korrigiert oder geschätzt hast) und <b>Orte</b> (Orte, die du von Hand gesetzt hast). Jedes Kästchen zeigt, wie viele Fotos es betrifft; eines ohne etwas zu übernehmen ist ausgegraut.</p>
           <p>Die Fotos werden über ihren Inhalt zugeordnet, nicht über den Pfad; ein umbenanntes oder in einen anderen Ordner verschobenes Foto wird also trotzdem gefunden. Nur Fotos, die auf beiden Laufwerken liegen, nehmen teil. Ordner-Tags werden nicht übernommen (das neue Laufwerk hat seine eigenen Ordner), Personen werden über den Namen zugeordnet, und Gesichter, über die du auf dem Ziel schon entschieden hast, bleiben, wie du sie entschieden hast. Was das Ziel schon hat, bleibt immer: nichts wird überschrieben, nichts gelöscht. Du kannst es gefahrlos wiederholen.</p>
           <p>Das andere Laufwerk wird nur gelesen, kein Foto wird angefasst; die Daten werden nur in den Index dieses Laufwerks geschrieben. Mach das, <b>bevor du</b> das Quelllaufwerk <b>löschst</b>: danach sind seine Daten weg. Backups werden dadurch nicht verändert. Nach einem Export auf ein anderes shoebox-Laufwerk sagt das Ergebnis dasselbe.</p>
+          <p><b>Aus einer Datei.</b> Ist das andere Laufwerk nicht mehr da oder gelöscht, oder hat dieses Laufwerk seinen Index verloren, können die Daten stattdessen aus einer <code>userdata.json</code> kommen (siehe „Deine Tags und Namen sind gesichert“ unten). Wähle unter <b>Von</b> den Eintrag <b>Einer Datei (userdata.json)…</b> und such die Datei in den Ordnern dieses Computers aus: Jedes Laufwerk hat eine in seinem Ordner <code>.shoebox</code>, und eine Kopie, die du woanders aufbewahrt hast, geht genauso. Der Dialog sagt, wann die Datei geschrieben wurde. Mit nur einem Laufwerk findest du denselben Knopf unter <b>Einstellungen → Daten übernehmen</b>. Die Datei wird nur gelesen, und es gelten dieselben Regeln. Eine Datei wählen geht nur im Browser auf diesem Computer, nicht auf dem iPad.</p>
         </div>
       </div>
       <div class="topic has-shots">
@@ -1233,7 +1243,7 @@
       <div class="topic">
         <div class="txt">
           <h3>Deine Tags und Namen sind gesichert</h3>
-          <p>Alles, was du selbst hinzufügst (eigene Tags, Personen, Gruppen, deine ✓- und ✗-Entscheidungen, gezeichnete Gesichter), liegt im Index, nie in einem Foto. Während du arbeitest, legt shoebox außerdem eine Sicherheitskopie des Index an, <code>library.db.bak</code>, und eine lesbare Liste von allem, <code>userdata.json</code>, beide im Ordner <code>.shoebox</code> auf dem Laufwerk. Sie wandern mit dem Laufwerk, ein Backup des Laufwerks enthält sie also auch. <code>userdata.json</code> lässt sich mit jedem Texteditor öffnen. Ist der Index einmal beschädigt, verweist <b>Prüfen</b> im Launcher auf die Sicherheitskopie.</p>
+          <p>Alles, was du selbst hinzufügst (eigene Tags, Personen, Gruppen, deine ✓- und ✗-Entscheidungen, gezeichnete Gesichter), liegt im Index, nie in einem Foto. Während du arbeitest, legt shoebox außerdem eine Sicherheitskopie des Index an, <code>library.db.bak</code>, und eine lesbare Liste von allem, <code>userdata.json</code>, beide im Ordner <code>.shoebox</code> auf dem Laufwerk. Sie wandern mit dem Laufwerk, ein Backup des Laufwerks enthält sie also auch. <code>userdata.json</code> lässt sich mit jedem Texteditor öffnen. Ist der Index einmal beschädigt, verweist <b>Prüfen</b> im Launcher auf die Sicherheitskopie. Ist er verloren, scanne das Laufwerk neu und hol mit <b>Daten übernehmen</b> und seiner <code>userdata.json</code> deine Tags, Herzen, Personen, Datumsangaben und Orte zurück. Kopiere die Datei vorher an einen anderen Ort: shoebox schreibt sie nach deiner nächsten Änderung neu.</p>
         </div>
       </div>
       <div class="topic has-shots">
@@ -1292,7 +1302,7 @@
             <svg class="ic" aria-hidden="true"><use href="#i-bolt"/></svg>
           </div>
           <h3>Nur auf deinen Befehl</h3>
-          <p>Originale ändern sich nur durch deine Aktionen: verschieben, umbenennen, Papierkorb. Immer ein Umbenennen, nie ein Kopieren, und nur wenn die Datei noch zum Index passt. Das Einzige, was shoebox sonst entfernt, ist eine neue Kopie einer Datei, die das Laufwerk schon hatte, und nur, wenn du nach einem Scan den Knopf drückst. Exportieren liest nur deine Originale. Daten übernehmen liest den Index eines anderen Laufwerks und schreibt nur in den Index dieses Laufwerks.</p>
+          <p>Originale ändern sich nur durch deine Aktionen: verschieben, umbenennen, Papierkorb. Immer ein Umbenennen, nie ein Kopieren, und nur wenn die Datei noch zum Index passt. Das Einzige, was shoebox sonst entfernt, ist eine neue Kopie einer Datei, die das Laufwerk schon hatte, und nur, wenn du nach einem Scan den Knopf drückst. Exportieren liest nur deine Originale. Daten übernehmen liest den Index eines anderen Laufwerks oder eine <code>userdata.json</code>, die du wählst, und schreibt nur in den Index dieses Laufwerks.</p>
         </li>
         <li>
           <div class="ic-box">

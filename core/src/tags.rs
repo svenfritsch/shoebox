@@ -30,6 +30,9 @@ use crate::library;
 pub const MAX_NAME: usize = 100;
 /// Written next to `library.db`.
 pub const USERDATA_FILE: &str = "userdata.json";
+/// Format of `userdata.json`. Every version so far only added lists, so a
+/// reader of this version reads all older ones (`transfer::read_userdata`).
+pub const USERDATA_VERSION: u32 = 6;
 
 /// A tag name typed by the user: trimmed, NFC, not empty, no control
 /// characters.
@@ -428,7 +431,7 @@ pub fn user_data(conn: &Connection) -> Result<UserData> {
     own_tags.sort_by_key(|t| t.name.to_lowercase());
     Ok(UserData {
         shoebox: env!("CARGO_PKG_VERSION"),
-        version: 6,
+        version: USERDATA_VERSION,
         written_at: db::now(),
         own_tags,
         taken_overrides: taken_overrides(conn)?,
