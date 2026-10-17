@@ -85,14 +85,7 @@ jobs:
         run: scripts/make-fixtures.sh "$RUNNER_TEMP/fixtures"
 
       - name: Tests
-        run: |
-          set -o pipefail
-          SHOEBOX_FIXTURES="$RUNNER_TEMP/fixtures" scripts/build.sh aarch64-apple-darwin test 2>&1 | tee "$RUNNER_TEMP/test.log"
-
-      - name: DEBUG failing tests as annotations
-        if: failure()
-        run: |
-          grep -E 'FAIL|panicked|assertion|left:|right:|Error' "$RUNNER_TEMP/test.log" | head -40 | while IFS= read -r l; do echo "::error::${l:0:400}"; done
+        run: SHOEBOX_FIXTURES="$RUNNER_TEMP/fixtures" scripts/build.sh aarch64-apple-darwin test
 
   build:
     needs: changes
