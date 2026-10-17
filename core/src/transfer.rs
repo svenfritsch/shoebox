@@ -515,14 +515,15 @@ fn run(conn: &Connection, set: &TransferSet, boxes: Boxes, write: bool, step: &m
                     if let Some(&id) = person_ids.get(&fold) {
                         Some(id)
                     } else if write {
-                        match people::create_person(conn, name, None) {
-                            Ok(p) => {
-                                person_ids.insert(fold, p.id);
-                                counts.new_people += 1;
-                                Some(p.id)
-                            }
-                            Err(_) => continue,
-                        }
+                        // Plain SQL: `people::create_person` reads the faces
+                        // back from the recognition database, which a bare
+                        // connection to library.db does not have attached.
+                        let Ok(name) = people::check_name(name) else { continue };
+                        conn.execute("INSERT INTO people (name) VALUES (?1)", [&name])?;
+                        let id = conn.last_insert_rowid();
+                        person_ids.insert(fold, id);
+                        counts.new_people += 1;
+                        Some(id)
                     } else {
                         if would_create.insert(fold) {
                             counts.new_people += 1;
