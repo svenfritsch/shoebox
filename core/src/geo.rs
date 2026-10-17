@@ -123,16 +123,8 @@ pub fn clear_position(conn: &Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
-/// What a location dialog for several photos says: how many have a position
-/// in their file (they keep it) and how many one the user gave (it is replaced).
-#[derive(Debug, Default, Serialize, PartialEq)]
-pub struct PositionsCheck {
-    pub total: usize,
-    pub with_file: usize,
-    pub with_user: usize,
-}
-
-/// One row per id: the content key and whether the file has its own position.
+/// One row per id: the content key and whether the file has its own position;
+/// an unknown id is refused.
 fn position_rows(conn: &Connection, ids: &[i64]) -> Result<Vec<(String, bool)>> {
     ids.iter()
         .map(|&id| {
@@ -143,23 +135,6 @@ fn position_rows(conn: &Connection, ids: &[i64]) -> Result<Vec<(String, bool)>> 
             .ok_or_else(|| anyhow::anyhow!("no such file"))
         })
         .collect()
-}
-
-/// Counts for `PositionsCheck`; an unknown id is refused.
-pub fn check_positions(conn: &Connection, ids: &[i64]) -> Result<PositionsCheck> {
-    let mut out = PositionsCheck { total: ids.len(), ..Default::default() };
-    for (key, own) in position_rows(conn, ids)? {
-        if own {
-            out.with_file += 1;
-        } else if conn
-            .query_row("SELECT 1 FROM geo_overrides WHERE key = ?1", [&key], |_| Ok(()))
-            .optional()?
-            .is_some()
-        {
-            out.with_user += 1;
-        }
-    }
-    Ok(out)
 }
 
 /// The answer to giving several photos one position: how many got it and how

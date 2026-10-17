@@ -121,8 +121,15 @@ function writeMapsSetting(on) {
   try { localStorage.setItem('shoebox-maps', on ? '1' : '0'); } catch (e) { /* ignore */ }
 }
 
+// Set location in the selection bar is there only with maps on (a photo's
+// info panel keeps its own button, for typing coordinates).
+function applyMapsSetting() {
+  $('sel-geo').hidden = !geo.on;
+}
+
 function loadGeo() {
   geo.on = readMapsSetting();
+  applyMapsSetting();
   return loadPlaces().catch(function () {}); // also with maps off: a place in the search keeps its name
 }
 
@@ -136,6 +143,7 @@ function mapsSection() {
   box.onchange = function () {
     geo.on = box.checked;
     writeMapsSetting(geo.on);
+    applyMapsSetting();
     if (geo.on) loadPlaces(); else renderLocationsSection();
     toast(tr('settings.maps_saved'));
   };
@@ -196,23 +204,11 @@ function infoGeo(info) {
 
 // Give a photo without a position one: a pin on the map or latitude and
 // longitude typed, both always there and kept in step. Saved in shoebox only.
-// From the selection bar (`info` null) the position goes to all of `ids`;
-// the ones with a position in their file keep it, the dialog says how many.
+// From the selection bar (`info` null) the same dialog gives the position to
+// all of `ids`; the ones with a position in their file keep it.
 function locationDialog(info, ids) {
-  if (info) { buildLocationDialog(info, [info.id], null); return; }
-  post(LIBAPI + '/files/positions/check', { ids: ids }).then(function (check) {
-    buildLocationDialog(null, ids, check);
-  }).catch(failed);
-}
-
-function buildLocationDialog(info, ids, check) {
   var pos = info ? info.position : null;
-  var nothingToSet = !!check && check.with_file === check.total;
   var body = el('div', 'geo-dialog');
-  if (check && check.with_file) {
-    body.appendChild(el('p', 'hint', tr(nothingToSet ? 'geo.batch_file_all' : 'geo.batch_file_some', { n: check.with_file, total: check.total })));
-  }
-  if (check && check.with_user) body.appendChild(el('p', 'hint', tr('geo.batch_user', { n: check.with_user })));
   var pick = el('div', 'geo-pick');
   var mapBox = el('div', 'geo-pickmap');
   pick.appendChild(mapBox);
@@ -248,7 +244,7 @@ function buildLocationDialog(info, ids, check) {
     lat.input.classList.toggle('bad', latBad);
     lon.input.classList.toggle('bad', lonBad);
     error.textContent = latBad ? tr('geo.bad_lat') : lonBad ? tr('geo.bad_lon') : '';
-    if (save) save.disabled = v[0] === null || v[1] === null || nothingToSet;
+    if (save) save.disabled = v[0] === null || v[1] === null;
     return v;
   };
   var place = function (la, lo, fromMap) {

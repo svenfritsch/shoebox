@@ -145,15 +145,6 @@ fn several_photos_get_one_position() {
     let addr = server.addr;
     assert_eq!(post(addr, &format!("/api/files/{plain}/position"), &json!({ "lat": 1.0, "lon": 2.0 })).status, 200);
 
-    // The dialog learns which ones keep the position in their file and which
-    // have one of the user's that would be replaced.
-    let r = post(addr, "/api/files/positions/check", &json!({ "ids": [gps, plain, a, b] }));
-    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
-    assert_eq!(r.json(), json!({ "total": 4, "with_file": 1, "with_user": 1 }));
-    let r = post(addr, "/api/files/positions/check", &json!({ "ids": [] }));
-    assert_eq!(r.json(), json!({ "total": 0, "with_file": 0, "with_user": 0 }));
-    assert_eq!(post(addr, "/api/files/positions/check", &json!({ "ids": [999999] })).status, 400);
-
     // Only photos with a position in their file: nothing is set, nothing refused.
     let r = post(addr, "/api/files/positions", &json!({ "ids": [gps], "lat": 3.0, "lon": 4.0 }));
     assert_eq!(r.json(), json!({ "set": 0, "kept": 1 }));
