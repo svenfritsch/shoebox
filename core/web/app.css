@@ -589,6 +589,11 @@ body.selecting .sec .pick { display: inline; }
 .drive-card .where { display: flex; align-items: baseline; gap: 6px; font-size: 12px; color: var(--muted); margin-top: -6px; overflow-wrap: anywhere; }
 .drive-card .where b { color: var(--fg); font-weight: 600; }
 .drive-card .banner { border: 0; background: none; padding: 0; margin: 0; }
+.drive-card .carry-note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.carry-from { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
+.carry-boxes { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+.carry-box { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.carry-box.off { opacity: .5; cursor: default; }
 .drive-card .prog .t { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 12px; color: var(--muted); }
 .drive-card .prog .t b { color: var(--fg); }
 .drive-card .meter { height: 8px; border-radius: 9px; background: var(--panel); overflow: hidden; }

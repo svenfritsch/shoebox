@@ -1072,5 +1072,21 @@
   "launcher.tab.folders": "Fotoordner",
   "launcher.tab.add": "Ordner oder Server hinzufügen",
   "launcher.tab.manage": "Bibliotheken verwalten ({n})",
-  "launcher.libs.hint_none": "Fotos auf einem Server oder ein Ordner, den du nur ansehen willst? Nimm den Reiter „Ordner oder Server hinzufügen“."
+  "launcher.libs.hint_none": "Fotos auf einem Server oder ein Ordner, den du nur ansehen willst? Nimm den Reiter „Ordner oder Server hinzufügen“.",
+  "carry.button": "Daten übernehmen…",
+  "carry.hint": "Auf {from} liegen Daten zu {photos}, die hier fehlen.",
+  "carry.title": "Daten übernehmen",
+  "carry.from": "Von",
+  "carry.explain": "Fotos, die auf beiden Laufwerken liegen, bekommen, was du auf {from} gemacht hast: Tags, Herzen, Personen, Datumsangaben und Orte. Auf {from} ändert sich nichts, kein Foto wird angefasst, und was {to} schon hat, bleibt.",
+  "carry.tags": "Tags ({n})",
+  "carry.hearts": "Herzen ({n})",
+  "carry.people": "Personen ({n})",
+  "carry.dates": "Datumsangaben ({n})",
+  "carry.places": "Orte ({n})",
+  "carry.none": "Nichts zu übernehmen: {to} hat schon alles, oder kein Foto liegt auf beiden Laufwerken.",
+  "carry.before_wipe": "Mach das, bevor du {from} löschst: danach sind die Daten weg.",
+  "carry.go": "Übernehmen",
+  "carry.done": "Fertig: {photos} haben Tags, Herzen, Personen, Datumsangaben oder Orte bekommen.",
+  "carry.nothing_new": "Nichts Neues: {to} hatte schon alles.",
+  "export.carry_hint": "Scanne {drive} und nutze dann auf „Laufwerke verwalten“ die Funktion „Daten übernehmen“, um Tags, Herzen, Personen, Datumsangaben und Orte zu übertragen."
 }

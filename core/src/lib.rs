@@ -8,6 +8,7 @@ pub mod backup;
 #[cfg(target_os = "macos")]
 pub mod avposter;
 pub mod browse;
+pub mod carry;
 pub mod classify;
 pub mod clusters;
 pub mod dates;

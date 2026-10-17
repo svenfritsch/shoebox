@@ -634,7 +634,7 @@
       <div class="topic has-shots">
         <div class="txt">
           <h3>Search</h3>
-          <p>Click the search box and start typing. Suggestions appear in groups, for example <b>Tags</b>, <b>People</b> and <b>Folders</b> (and your <b>places</b> when maps are on, see “Locations and maps”). Pick one and it becomes a <b>chip</b> above the photos.</p>
+          <p>Click the search box and start typing. Suggestions appear in groups, for example <b>Tags</b>, <b>People</b> and <b>Folders</b> (and your <b>places</b> when maps are on, see “Locations and maps”). Pick one and it becomes a <b>chip</b> above the photos. In <b>All drives</b> the numbers next to the suggestions count only the photos that fit the chips you already have, just as on a single drive.</p>
           <div class="chips"><span class="chip">👤 Mia<i class="x" data-txt="skip">✕</i></span><span class="chip"># Holiday<i class="x" data-txt="skip">✕</i></span><span class="chip"><svg viewBox="0 0 24 24" width="1.15em" height="1.15em" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>June 1987<i class="x" data-txt="skip">✕</i></span><span class="count">48 photos · 3 videos</span></div>
           <h4>Combine chips</h4>
           <p>All chips must match, so every chip you add narrows the result: a person, a tag and a year together show only the photos that fit all three. <b>×</b> removes a chip, <b>Clear all</b> starts over.</p>
@@ -771,7 +771,7 @@
           <p><b>Convert HEIC to JPEG</b> is for print shops and programs that cannot read HEIC; the JPEG keeps the capture date and the camera data. For photos that have a <b>RAW</b> file, or the video of a <b>Live Photo</b>, a tick box takes those along. Videos are copied as they are.</p>
           <h4>Exporting again</h4>
           <p>Exporting again into the same folder only adds what is new: a file that is already there (same name without the number, same size) is skipped, and the numbers of the others are changed to the new order. Nothing in the folder is ever deleted.</p>
-          <p>If you choose a drive that has a shoebox library of its own, shoebox asks first, because that drive’s next scan will find the copies and add them as new photos without their tags.</p>
+          <p>If you choose a drive that has a shoebox library of its own, shoebox asks first, because that drive’s next scan will find the copies and add them as new photos without their tags. After that scan, <b>Carry over data…</b> on Manage drives brings the tags, hearts, people, dates and places over.</p>
           <p>Every original is read under the same check as a scan and every copy is compared with it afterwards; the originals are never changed.</p>
         </div>
         <div class="shots">
@@ -1186,6 +1186,14 @@
           <p>Under <b>People across drives</b> each person shows the drives they are on by disk name with the number of faces found there (point at one to see its folder), and the people who are on the most drives come first. The drive you are looking at is filled in with the accent colour, and so is the page you have open under it (All photos, Duplicates, Trash, Settings), so you can always see which drive's trash you are in.</p>
         </div>
       </div>
+      <div class="topic">
+        <div class="txt">
+          <h3>Carry over data</h3>
+          <p>You scanned a drive again, or copied its photos to a new one, and the tags, hearts and people you made are missing there? On <b>Manage drives</b> a drive that has such data on another drive shows a line and the button <b>Carry over data…</b>. Choose where it comes from (<b>From</b>) and tick what to bring: <b>Tags</b>, <b>Hearts</b>, <b>People</b>, <b>Dates</b> (dates you corrected or estimated) and <b>Places</b> (places you gave by hand). Each box shows how many photos it concerns; one with nothing to carry is greyed out.</p>
+          <p>Photos are matched by their content, not by their path, so a photo that was renamed or sits in another folder is still found. Only photos on both drives take part. Folder tags are not carried (the new drive has its own folders), people are matched by name, and faces you already decided on the target drive stay as you decided them. What the target drive already has always stays: nothing is overwritten and nothing is deleted. You can repeat it safely.</p>
+          <p>The other drive is only read and no photo is touched; the data is written into this drive's index only. Do it <b>before you erase</b> the source drive: afterwards its data is gone. Backups are not changed by this. After an export onto another shoebox drive, the result says the same.</p>
+        </div>
+      </div>
       <div class="topic has-shots">
         <div class="txt">
           <h3>Original and backup drives</h3>
@@ -1283,7 +1291,7 @@
             <svg class="ic" aria-hidden="true"><use href="#i-bolt"/></svg>
           </div>
           <h3>Only on your command</h3>
-          <p>Originals change only through your actions: move, rename, trash. Always a rename, never a copy, and only if the file still matches the index. The only other thing shoebox removes is a new copy of a file the drive already had, and only when you press the button after a scan. Export only reads your originals.</p>
+          <p>Originals change only through your actions: move, rename, trash. Always a rename, never a copy, and only if the file still matches the index. The only other thing shoebox removes is a new copy of a file the drive already had, and only when you press the button after a scan. Export only reads your originals. Carry over data reads another drive’s index and writes only this drive’s index.</p>
         </li>
         <li>
           <div class="ic-box">

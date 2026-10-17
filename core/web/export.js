@@ -375,7 +375,11 @@ function exportWarn(c) {
 
 function exportStart() {
   var req = exportRequest();
+  // A drive with a shoebox library of its own (not the one the photos came from):
+  // its next scan finds the copies, and Carry over data brings their tags and so on.
+  var landed = ex.check && ex.check.shoebox && !ex.check.shoebox.same_drive ? ex.check.shoebox.name : null;
   post(LIBAPI + '/export/start', req).then(function () {
+    exportLanded = landed;
     writeSetting(PARENT_KEY, ex.parent);
     clearTimeout(ex.timer);
     closeModal.onclose = null;
@@ -418,8 +422,13 @@ function exportProgress() {
   poll();
 }
 
+// The drive with a library the last export wrote to, until its result is shown.
+var exportLanded = null;
+
 function exportResult(s) {
   var body = el('div');
+  var landed = exportLanded;
+  exportLanded = null;
   if (s.state === 'failed') {
     body.appendChild(el('div', 'x-note', s.error || ''));
   } else {
@@ -435,6 +444,7 @@ function exportResult(s) {
     if (s.renamed) parts.push(tr('export.done_renumbered', { count: trn('count.files', s.renamed) }));
     body.appendChild(el('p', 'hint', parts.join(' · ')));
     if (s.no_exif) body.appendChild(el('p', 'hint', tr('export.no_exif', { count: trn('count.photos', s.no_exif) })));
+    if (landed && (s.copied || s.already)) body.appendChild(el('p', 'hint', tr('export.carry_hint', { drive: landed })));
   }
   if (s.failed && s.failed.length) {
     body.appendChild(el('p', '', tr('export.some_failed', { count: trn('count.files', s.failed.length) })));
