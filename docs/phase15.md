@@ -1,6 +1,6 @@
 # Phase 15: your data between drives
 
-**15a built** (15a-1 and 15a-2, one PR), **15b built** (its own PR, section 6 "As built"); 15c and phase 18 are still planned. One deviation: a date is carried only when the target has neither a corrected nor an estimated date for that photo. Closes two of the three "not yet done" items in
+**15a built** (15a-1 and 15a-2, one PR), **15b built** (its own PR, section 6 "As built"), **15c built** (its own PR, section 6b "As built"); only phase 18 is still planned. One deviation: a date is carried only when the target has neither a corrected nor an estimated date for that photo. Closes two of the three "not yet done" items in
 [phase6.md](phase6.md) section 3 in a smaller way than first drawn up:
 
 - **15a** (this plan): counts in the All drives search suggestions that narrow
@@ -44,14 +44,14 @@ no "show hidden" switch; the field is a chips input with the chips inside, and
 in; the dropdown sits under the field and follows it; phase 18 is its own phase
 and merges only identical **name and hash**.
 
-**Steps** (1 to 3 are built: 15a in #133, 15b in its own PR; the rest is still to do)
+**Steps** (1 to 4 are built: 15a in #133, 15b and 15c in their own PRs; phase 18 and the real-hardware check are still to do)
 
 | # | Step | Notes |
 |---|---|---|
 | 1 | **15a-1 Counts that narrow** | `/api/all/tags` and `/api/all/people` take the timeline's filter; UI passes it. Section 5.1 and 9; `core/tests/multi.rs` |
 | 2 | **15a-2 Carry over data** | `core/src/transfer.rs`, API (`/api/all/transfer`, `/plan`, hints), Manage drives button and dialog with the five boxes, the export's `export.transfer_hint` line, `transfer.*` keys in `en.json` and `de.json`, `core/tests/transfer.rs`, `core/tests/serve.rs`, guide (EN and DE), a line in the CLAUDE.md rules (reads another drive's index, writes only this drive's index), run `python3 scripts/third-party-licenses.py` only if dependencies change (none planned) |
 | 3 | **15b Data from a file** | **Built** (own PR, section 6 "As built"): `transfer::read_userdata`, `file` in `/api/all/transfer*`, "A file (userdata.json)…" in the dialog, the export's picker made generic (`pathPicker`, `files=json`), Settings → Carry over data, versions 1 to 6, tests in `core/tests/transfer.rs`, guide |
-| 4 | **15c Ignore folders** | own PR: `chipsInput` (generic) in `core/web/app.js`, `ignore` argument in `multi::cross_duplicates`, `hidden_groups`, `/api/all/duplicates/folders`, "Ignore this folder" on each row, `dups.ignore.*` keys, the browser setting `shoebox-dup-ignore`, tests in `core/tests/multi.rs`, guide, screenshot step |
+| 4 | **15c Ignore folders** | **Built** (own PR, section 6b "As built"): `chipsInput` (generic) in `core/web/app.js`, `ignore` argument in `multi::cross_duplicates`, `hidden_groups`, `/api/all/duplicates/folders`, "Ignore this folder" on each row, `dups.ignore.*` keys, the browser setting `shoebox-dup-ignore`, tests in `core/tests/multi.rs`, guide, screenshot step |
 | 5 | **Phase 18** | own PR, after 15a-1: see [phase18.md](phase18.md); it also changes the counts of step 1 |
 | 6 | **Guide for every step** | both languages in step, `docs/guide/check.py`, say in each PR what changed in the guide |
 | 7 | **Real-hardware check** | two real exFAT drives: a Finder copy, then Carry over; the couple's drives for 15c and 18 |
@@ -435,6 +435,35 @@ remembering it. Mock-up:
 Not solved by it, and raised in open question 7: the **common timeline** still
 shows a shared photo twice, once per drive, which is what the couple actually
 sees every day. The ignore list only quiets the duplicates screen.
+
+**As built (15c):**
+
+- `multi::cross_duplicates(drives, roles, ignore, limit)` takes the names and
+  answers `hidden_groups`; the limit counts what is left. `multi::duplicate_folders`
+  and `GET /api/all/duplicates/folders?q=&ignore=&limit=` (default 8, at most 50)
+  answer `[{name, photos, drives: [{library, name, volume}]}]` over all groups.
+  Names are compared with `db::tag_fold` (NFC, ignoring case) and only whole
+  folder names in the directory part of a path match, never the file name. Suggestions are
+  matched with `text::fold` (also without accents), prefix matches first, then
+  names on more than one drive, more photos, alphabetical by the folded name.
+- The list is a browser setting, `shoebox-dup-ignore` (a JSON array in
+  `localStorage`), sent as repeated `ignore=` parameters. It is on the Across
+  drives list wherever it is shown (Duplicates in All drives, Manage drives).
+- `chipsInput(options)` in `core/web/app.js` is generic as drawn above, with two additions: `noneText`
+  (the "no folder of that name" line) and a `paste` handler (a single-line field
+  drops line breaks from pasted text, so they are split there). `freeRow: null`
+  means only suggested values can become chips.
+- Each copy row has a visible "Ignore this folder" button for the folder the copy
+  lies in. The field's note says how many photos are hidden; with no chip it is a
+  short hint instead.
+- Checks: `core/tests/multi.rs` (the any-copy rule, a differently named folder on the other drive,
+  ancestors, NFC and case, file names never match, the limit, suggestions with
+  counts, order, typing, accents, a backup adds nothing, no file or index changed)
+  and a Playwright run by hand over two drives (picking with the keyboard, comma, Backspace, blur,
+  paste, reload, the list flipping above the field). Not covered by a test: more than 200
+  groups (the suggestions do not use the list's limit), and the Settings lists of copy
+  folders have not moved to `chipsInput`. No screenshot step: the guide's drives sample is an original and its
+  backup, which this list leaves out.
 
 ## 7. Not planned, and why
 
