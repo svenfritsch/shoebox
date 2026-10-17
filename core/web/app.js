@@ -120,9 +120,9 @@ var COMPARES = ['backup', 'original', 'different'];
 var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person', 'drives', 'settings', 'pets', 'locations', 'text'];
 // Pet search terms (`pet=` in the URL and the API): a species or any pet.
 var PET_TERMS = {
-  cat: { icon: '🐱', get label() { return tr('pet.term.cat'); } },
-  dog: { icon: '🐶', get label() { return tr('pet.term.dog'); } },
-  pet: { icon: '🐾', get label() { return tr('pet.term.pet'); } },
+  cat: { get label() { return tr('pet.term.cat'); } },
+  dog: { get label() { return tr('pet.term.dog'); } },
+  pet: { get label() { return tr('pet.term.pet'); } },
 };
 
 // Line icons of the text search: the document scanner for words read in
@@ -131,9 +131,21 @@ var ICONS = {
   scan: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><rect x="7" y="6.5" width="10" height="11" rx="2"/><path d="M9.5 10h5M9.5 12.5h5M9.5 15h5"/></svg>',
   draft: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M14 3v5h5"/></svg>',
   copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
+  // A single pawn: one person.
+  person: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="7" r="3"/><path d="M7.5 20v-2.5c0-3 1.7-5 4.5-5s4.5 2 4.5 5V20z"/></svg>',
+  // A sitting cat with its tail up.
+  cat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 4.5l1.3 1.8h3.4l1.3-1.8v4.2a3.3 3.3 0 0 1-6 0z"/><path d="M8.7 11.5C6.5 13 5.5 15.5 5.5 18c0 1.2.8 2 2 2h6.5c2.6 0 4.5-1.6 4.5-3.5V8.5"/><path d="M18.5 8.5a1.5 1.5 0 0 1 3 0"/></svg>',
+  // A paw print: dogs, and pets in general.
+  paw: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="11.5" r="1.7" fill="currentColor"/><circle cx="9.3" cy="7" r="1.7" fill="currentColor"/><circle cx="14.7" cy="7" r="1.7" fill="currentColor"/><circle cx="18.5" cy="11.5" r="1.7" fill="currentColor"/><path d="M8.3 17.5c0-2.2 1.7-4 3.7-4s3.7 1.8 3.7 4c0 1.5-1 2.2-2.2 2.2-.6 0-1-.3-1.5-.3s-.9.3-1.5.3c-1.2 0-2.2-.7-2.2-2.2z"/></svg>',
+  // The map marker of the selection bar, without its plus.
+  place: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21C9.5 18.2 6 14.8 6 10.8a6 6 0 0 1 12 0c0 4-3.5 7.4-6 10.2z"/><circle cx="12" cy="10.8" r="1.4" fill="currentColor"/></svg>',
+  // The calendar page of the selection bar (a date of your own).
+  date: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5z"/><path d="M8.5 3.5v5M15.5 3.5v5" stroke-width="2.2"/><path d="M7.5 14.5c1.5-2.3 3-2.3 4.5 0s3 2.3 4.5 0"/></svg>',
   // Three pawns, the middle one taller: a group of people.
   group: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="9.5" r="2"/><path d="M2.5 20v-1.5C2.5 16 3.8 14.5 5.5 14.5S8.5 16 8.5 18.5V20z"/><circle cx="18.5" cy="9.5" r="2"/><path d="M15.5 20v-1.5c0-2.5 1.3-4 3-4s3 1.5 3 4V20z"/><circle cx="12" cy="6.5" r="2.4"/><path d="M8.5 20v-2.5c0-3 1.5-5 3.5-5s3.5 2 3.5 5V20z"/></svg>',
 };
+// The icon of a species in chips and suggestions: the sitting cat, else the paw.
+function speciesIcon(species) { return icon(species === 'cat' ? 'cat' : 'paw'); }
 function icon(name, cls) {
   var s = document.createElement('span');
   s.className = 'ic' + (cls ? ' ' + cls : '');
@@ -300,9 +312,10 @@ function renderChips() {
     });
   });
   f.people.forEach(function (id) {
-    add((petIcon(state.personSpecies[id]) || '👤') + ' ' + (state.personNames[id] || id), function () {
+    var kind = state.personSpecies[id];
+    add((state.personNames[id] || id), function () {
       setFilter(withFilter({ people: f.people.filter(function (p) { return p !== id; }) }));
-    });
+    }, kind ? speciesIcon(kind) : icon('person'));
   });
   f.groups.forEach(function (id) {
     add(state.groupNames[id] || id, function () {
@@ -310,16 +323,16 @@ function renderChips() {
     }, icon('group'), tr('chip.group_hint', { name: state.groupNames[id] || id }));
   });
   f.pets.forEach(function (species) {
-    add(PET_TERMS[species].icon + ' ' + PET_TERMS[species].label, function () {
+    add(PET_TERMS[species].label, function () {
       setFilter(withFilter({ pets: f.pets.filter(function (p) { return p !== species; }) }));
-    });
+    }, speciesIcon(species));
   });
   if (f.fav) add('♥ ' + tr('fav.label'), function () { setFilter(withFilter({ fav: false })); });
   // The Type drop-down's choice as a chip too, like the heart's.
   if (f.types.length) add(f.types.length === 1 ? tr('types.' + f.types[0]) : f.types.map(typeLabel).join(', '), function () { setFilter(withFilter({ types: [] })); }, typeIcon(f.types));
   if (f.place) {
     var spot = placeOf(f.place);
-    add('📍 ' + (spot ? spot.name : '…'), function () { setFilter(withFilter({ place: null })); });
+    add(spot ? spot.name : '…', function () { setFilter(withFilter({ place: null })); }, icon('place'));
     var onMap = el('button', 'edit', '🗺');
     onMap.title = tr('chip.show_on_map');
     onMap.onclick = function () { showView('locations', f.place); };
@@ -332,10 +345,10 @@ function renderChips() {
     add(term, function () { setFilter(withFilter({ texts: f.texts.filter(function (n) { return n !== term; }) })); }, 'scan', tr('chip.text_hint', { term: term }));
   });
   f.dates.forEach(function (term) {
-    add('📅 ' + dateTermLabel(term), function () { setFilter(withFilter({ dates: f.dates.filter(function (t) { return t !== term; }) })); });
+    add(dateTermLabel(term), function () { setFilter(withFilter({ dates: f.dates.filter(function (t) { return t !== term; }) })); }, icon('date'));
     box.lastChild.title = tr('dates.chip_hint', { date: dateTermLabel(term) });
   });
-  if (f.nodate) add('📅 ' + (dates.needs ? tr('side.needs_date_n', { n: dates.needs }) : tr('side.needs_date')), function () { setFilter(withFilter({ nodate: false })); });
+  if (f.nodate) add(dates.needs ? tr('side.needs_date_n', { n: dates.needs }) : tr('side.needs_date'), function () { setFilter(withFilter({ nodate: false })); }, icon('date'));
   if (f.compare) {
     add('⇄ ' + compareLabel(f.compare), function () { setFilter(withFilter({ compare: '' })); });
     box.lastChild.classList.add('cmp');
@@ -886,13 +899,15 @@ function showSuggest(items, hint) {
     // People as in the sidebar: their picture, and the dog or cat for a pet.
     var label = el('span', 'label');
     if (it.kind === 'person') label.appendChild(avatar(it.person, 'tiny'));
+    if (it.kind === 'person' && it.person && it.person.species) label.appendChild(speciesIcon(it.person.species));
     if (it.kind === 'group') label.appendChild(icon('group'));
+    if (it.kind === 'pet') label.appendChild(speciesIcon(it.id));
+    if (it.kind === 'place') label.appendChild(icon('place'));
+    if (it.kind === 'date') label.appendChild(icon('date'));
     if (it.kind === 'folder') label.appendChild(folderIcon());
     if (it.kind === 'text' || it.kind === 'name') label.appendChild(icon(it.kind === 'text' ? 'scan' : 'draft'));
-    label.appendChild(document.createTextNode((it.kind === 'text' || it.kind === 'name' ? '“' : it.kind === 'fav' ? '♥ ' : it.kind === 'compare' ? '⇄ ' : it.kind === 'pet' ? PET_TERMS[it.id].icon + ' '
-      : it.kind === 'group' ? ''
-      : it.kind === 'person' ? (petIcon(it.person && it.person.species) ? petIcon(it.person.species) + ' ' : '')
-        : ({ place: '📍 ', date: '📅 ' }[it.kind] || (it.kind === 'folder' ? '' : '# '))) + it.label + (it.kind === 'text' || it.kind === 'name' ? '”' : '')));
+    label.appendChild(document.createTextNode((it.kind === 'text' || it.kind === 'name' ? '“' : it.kind === 'fav' ? '♥ ' : it.kind === 'compare' ? '⇄ ' : (it.kind === 'pet' || it.kind === 'group' || it.kind === 'person' || it.kind === 'place' || it.kind === 'date') ? ''
+        : it.kind === 'folder' ? '' : '# ') + it.label + (it.kind === 'text' || it.kind === 'name' ? '”' : '')));
     b.appendChild(label);
     b.appendChild(el('span', 'count', it.count === undefined ? '' : I18n.number(it.count)));
     b.onmousedown = function (ev) { ev.preventDefault(); }; // keep the focus in the box
