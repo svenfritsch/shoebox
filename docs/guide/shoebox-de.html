@@ -634,7 +634,7 @@
       <div class="topic has-shots">
         <div class="txt">
           <h3>Suchen</h3>
-          <p>Klicke ins Suchfeld und fang an zu tippen. Vorschläge erscheinen in Gruppen, zum Beispiel <b>Tags</b>, <b>Personen</b> und <b>Ordner</b> (und deine <b>Orte</b>, wenn Karten eingeschaltet sind, siehe „Orte und Karten“). Wähle einen aus, und er wird zu einem <b>Chip</b> über den Fotos.</p>
+          <p>Klicke ins Suchfeld und fang an zu tippen. Vorschläge erscheinen in Gruppen, zum Beispiel <b>Tags</b>, <b>Personen</b> und <b>Ordner</b> (und deine <b>Orte</b>, wenn Karten eingeschaltet sind, siehe „Orte und Karten“). Wähle einen aus, und er wird zu einem <b>Chip</b> über den Fotos. In <b>Alle Laufwerke</b> zählen die Zahlen neben den Vorschlägen nur die Fotos, die zu den Chips passen, die du schon hast, genau wie auf einem einzelnen Laufwerk.</p>
           <div class="chips"><span class="chip">👤 Mia<i class="x" data-txt="skip">✕</i></span><span class="chip"># Urlaub<i class="x" data-txt="skip">✕</i></span><span class="chip"><svg viewBox="0 0 24 24" width="1.15em" height="1.15em" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>Juni 1987<i class="x" data-txt="skip">✕</i></span><span class="count">48 Fotos · 3 Videos</span></div>
           <h4>Chips kombinieren</h4>
           <p>Alle Chips müssen zutreffen, jeder weitere Chip grenzt das Ergebnis also ein: Eine Person, ein Tag und ein Jahr zusammen zeigen nur die Fotos, die zu allen dreien passen. <b>×</b> entfernt einen Chip, <b>Alle entfernen</b> beginnt neu.</p>
@@ -771,7 +771,7 @@
           <p><b>HEIC in JPEG umwandeln</b> ist für Druckereien und Programme, die HEIC nicht lesen können; das JPEG behält Aufnahmedatum und Kameradaten. Haben Fotos eine <b>RAW</b>-Datei oder das Video eines <b>Live Photos</b>, nimmt ein Häkchen diese mit. Videos werden unverändert kopiert.</p>
           <h4>Erneut exportieren</h4>
           <p>Ein erneuter Export in denselben Ordner fügt nur Neues hinzu: Eine Datei, die schon da ist (gleicher Name ohne die Nummer, gleiche Größe), wird übersprungen, und die Nummern der übrigen werden auf die neue Reihenfolge angepasst. Im Ordner wird nie etwas gelöscht.</p>
-          <p>Wählst du ein Laufwerk, das eine eigene shoebox-Bibliothek hat, fragt shoebox vorher nach, denn der nächste Scan dieses Laufwerks findet die Kopien und nimmt sie als neue Fotos ohne ihre Tags auf.</p>
+          <p>Wählst du ein Laufwerk, das eine eigene shoebox-Bibliothek hat, fragt shoebox vorher nach, denn der nächste Scan dieses Laufwerks findet die Kopien und nimmt sie als neue Fotos ohne ihre Tags auf. Nach diesem Scan holt <b>Daten übernehmen…</b> auf Laufwerke verwalten Tags, Herzen, Personen, Datumsangaben und Orte herüber.</p>
           <p>Jedes Original wird mit derselben Kontrolle wie bei einem Scan gelesen und jede Kopie danach damit verglichen; die Originale werden nie verändert.</p>
         </div>
         <div class="shots">
@@ -1186,6 +1186,14 @@
           <p>Unter <b>Personen über Laufwerke hinweg</b> steht bei jeder Person, auf welchen Laufwerken sie vorkommt: mit dem Namen des Datenträgers und der Zahl der dort gefundenen Gesichter (der Ordner erscheint beim Darüberfahren), und wer auf den meisten Laufwerken ist, steht ganz vorn. Das Laufwerk, das du gerade ansiehst, ist in der Akzentfarbe ausgefüllt, ebenso die Seite darunter (Alle Fotos, Duplikate, Papierkorb, Einstellungen); so siehst du immer, welcher Papierkorb von welchem Laufwerk offen ist.</p>
         </div>
       </div>
+      <div class="topic">
+        <div class="txt">
+          <h3>Daten übernehmen</h3>
+          <p>Du hast ein Laufwerk neu gescannt oder seine Fotos auf ein neues kopiert, und die Tags, Herzen und Personen, die du gemacht hast, fehlen dort? Auf <b>Laufwerke verwalten</b> zeigt ein Laufwerk, zu dessen Fotos auf einem anderen Laufwerk Daten liegen, eine Zeile und den Knopf <b>Daten übernehmen…</b>. Wähle, woher die Daten kommen (<b>Von</b>), und hake an, was mitkommen soll: <b>Tags</b>, <b>Herzen</b>, <b>Personen</b>, <b>Datumsangaben</b> (Daten, die du korrigiert oder geschätzt hast) und <b>Orte</b> (Orte, die du von Hand gesetzt hast). Jedes Kästchen zeigt, wie viele Fotos es betrifft; eines ohne etwas zu übernehmen ist ausgegraut.</p>
+          <p>Die Fotos werden über ihren Inhalt zugeordnet, nicht über den Pfad; ein umbenanntes oder in einen anderen Ordner verschobenes Foto wird also trotzdem gefunden. Nur Fotos, die auf beiden Laufwerken liegen, nehmen teil. Ordner-Tags werden nicht übernommen (das neue Laufwerk hat seine eigenen Ordner), Personen werden über den Namen zugeordnet, und Gesichter, über die du auf dem Ziel schon entschieden hast, bleiben, wie du sie entschieden hast. Was das Ziel schon hat, bleibt immer: nichts wird überschrieben, nichts gelöscht. Du kannst es gefahrlos wiederholen.</p>
+          <p>Das andere Laufwerk wird nur gelesen, kein Foto wird angefasst; die Daten werden nur in den Index dieses Laufwerks geschrieben. Mach das, <b>bevor du</b> das Quelllaufwerk <b>löschst</b>: danach sind seine Daten weg. Backups werden dadurch nicht verändert. Nach einem Export auf ein anderes shoebox-Laufwerk sagt das Ergebnis dasselbe.</p>
+        </div>
+      </div>
       <div class="topic has-shots">
         <div class="txt">
           <h3>Original- und Backup-Laufwerke</h3>
@@ -1283,7 +1291,7 @@
             <svg class="ic" aria-hidden="true"><use href="#i-bolt"/></svg>
           </div>
           <h3>Nur auf deinen Befehl</h3>
-          <p>Originale ändern sich nur durch deine Aktionen: verschieben, umbenennen, Papierkorb. Immer ein Umbenennen, nie ein Kopieren, und nur wenn die Datei noch zum Index passt. Das Einzige, was shoebox sonst entfernt, ist eine neue Kopie einer Datei, die das Laufwerk schon hatte, und nur, wenn du nach einem Scan den Knopf drückst. Exportieren liest nur deine Originale.</p>
+          <p>Originale ändern sich nur durch deine Aktionen: verschieben, umbenennen, Papierkorb. Immer ein Umbenennen, nie ein Kopieren, und nur wenn die Datei noch zum Index passt. Das Einzige, was shoebox sonst entfernt, ist eine neue Kopie einer Datei, die das Laufwerk schon hatte, und nur, wenn du nach einem Scan den Knopf drückst. Exportieren liest nur deine Originale. Daten übernehmen liest den Index eines anderen Laufwerks und schreibt nur in den Index dieses Laufwerks.</p>
         </li>
         <li>
           <div class="ic-box">

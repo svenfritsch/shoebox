@@ -72,6 +72,7 @@ use tower::ServiceExt;
 use tower_http::services::ServeFile;
 
 use crate::browse::{self, Snapshot};
+use crate::transfer;
 use crate::classify::Kind;
 use crate::clusters;
 use crate::dates;
@@ -811,6 +812,8 @@ fn hub_router(hub: Arc<Hub>) -> Router {
         .route("/api/all/duplicates", get(all_duplicates))
         .route("/api/all/drives", get(all_drives))
         .route("/api/all/role", post(all_set_role))
+        .route("/api/all/transfer", get(all_transfer).post(all_transfer_apply))
+        .route("/api/all/transfer/plan", post(all_transfer_plan))
         .route("/api/all/backups", get(all_backups))
         .route("/api/all/reveal", post(all_reveal))
         // Not a route with parameters: those would leak into the `Path`
@@ -1294,15 +1297,38 @@ struct AllPeople {
     offline: Vec<String>,
 }
 
-/// People over all drives: the same name is the same person.
-async fn all_people(State(hub): State<Arc<Hub>>) -> ApiResult<Json<AllPeople>> {
+/// People over all drives: the same name is the same person. With a filter
+/// (the timeline's, by name) `photos` counts only the photos the list shows
+/// and people who would show nothing are left out, as on a single drive.
+async fn all_people(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<AllPeople>> {
     let apps = online_apps(&hub).await;
     let offline = hub.slots.iter().filter(|s| !apps.iter().any(|a| a.name == s.name)).map(|s| s.name.clone()).collect();
+    let filter = AllFilter::of(&pairs, false)?;
     let people = tokio::task::spawn_blocking(move || -> ApiResult<Vec<multi::MergedPerson>> {
         let mut per_drive = Vec::new();
         for app in &apps {
             let conn = app.conn.lock().unwrap();
-            per_drive.push((library_id(&app.name), app.name.clone(), people::people(&conn, true)?, people::groups(&conn)?));
+            let mut list = people::people(&conn, true)?;
+            if !filter.is_empty() {
+                // A drive without one of the names has nothing that matches.
+                let Some(query) = filter.query_for(&conn)? else { continue };
+                let snapshot = app.snapshot(&conn)?;
+                let shown: HashSet<i64> = snapshot.query(&conn, &query)?.iter().map(|it| it.id).collect();
+                let mut files_per_key: HashMap<String, u64> = HashMap::new();
+                let mut stmt = conn.prepare("SELECT id, quick_hash FROM files WHERE missing_since IS NULL")?;
+                let mut rows = stmt.query([])?;
+                while let Some(r) = rows.next()? {
+                    if shown.contains(&r.get::<_, i64>(0)?) {
+                        *files_per_key.entry(r.get(1)?).or_default() += 1;
+                    }
+                }
+                let keys = people::keys_by_person(&conn)?;
+                for p in &mut list {
+                    p.photos = keys.get(&p.id).into_iter().flatten().map(|k| files_per_key.get(k).copied().unwrap_or(0)).sum();
+                }
+                list.retain(|p| p.photos > 0);
+            }
+            per_drive.push((library_id(&app.name), app.name.clone(), list, people::groups(&conn)?));
         }
         let mut people = multi::merge_people(&per_drive);
         // The disk name tells the drives apart; the folder name often does not.
@@ -1461,6 +1487,95 @@ struct LibraryRef {
     role: multi::Role,
 }
 
+/// The filter of a request over all drives, by name (the drives share names,
+/// not ids). The timeline and the search suggestions (`/api/all/tags`,
+/// `/api/all/people`) read it the same way, so a count in a suggestion is what
+/// the list then shows.
+struct AllFilter {
+    tag_names: Vec<String>,
+    person_names: Vec<String>,
+    text: Option<String>,
+    types: Vec<browse::MediaType>,
+    pets: Vec<String>,
+    in_text: Vec<String>,
+    names: Vec<String>,
+    fav: bool,
+    dates: Vec<dates::Term>,
+    needs_date: bool,
+}
+
+impl AllFilter {
+    /// `with_text`: `q` is free text (the timeline). The suggestions pass false:
+    /// there `q` is the word being typed, not part of the filter.
+    fn of(pairs: &Pairs, with_text: bool) -> ApiResult<AllFilter> {
+        Ok(AllFilter {
+            tag_names: pairs.iter().filter(|(k, v)| k == "tag" && !v.is_empty()).map(|(_, v)| v.clone()).collect(),
+            person_names: pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| v.clone()).collect(),
+            text: param(pairs, "q").map(str::to_string).filter(|s| with_text && !s.trim().is_empty()),
+            types: types_of(pairs)?,
+            pets: pets_of(pairs)?,
+            in_text: terms_of(pairs, "text"),
+            names: terms_of(pairs, "name"),
+            fav: fav_of(pairs),
+            dates: dates_of(pairs)?,
+            needs_date: param(pairs, "nodate").is_some_and(|v| !v.is_empty() && v != "0"),
+        })
+    }
+
+    /// Nothing narrows the list.
+    fn is_empty(&self) -> bool {
+        self.tag_names.is_empty()
+            && self.person_names.is_empty()
+            && self.text.is_none()
+            && self.types.is_empty()
+            && self.pets.is_empty()
+            && self.in_text.is_empty()
+            && self.names.is_empty()
+            && !self.fav
+            && self.dates.is_empty()
+            && !self.needs_date
+    }
+
+    /// The query for one drive, with the names turned into its own ids. `None`
+    /// when the drive lacks one of the tags or people: nothing on it matches
+    /// all of them.
+    fn query_for(&self, conn: &Connection) -> ApiResult<Option<browse::Query>> {
+        let mut tags = Vec::new();
+        for name in &self.tag_names {
+            match db::find_tag(conn, name)? {
+                Some(id) => tags.push(id),
+                None => return Ok(None),
+            }
+        }
+        let known_people = if self.person_names.is_empty() { Vec::new() } else { people::people(conn, true)? };
+        let people_ids: Vec<i64> = self
+            .person_names
+            .iter()
+            .filter_map(|n| {
+                let key = db::tag_fold(n);
+                known_people.iter().find(|p| db::tag_fold(&p.name) == key).map(|p| p.id)
+            })
+            .collect();
+        if people_ids.len() != self.person_names.len() {
+            return Ok(None);
+        }
+        Ok(Some(browse::Query {
+            folder: None,
+            tags,
+            text: self.text.clone(),
+            people: people_ids,
+            pets: self.pets.clone(),
+            types: self.types.clone(),
+            in_text: self.in_text.clone(),
+            names: self.names.clone(),
+            fav: self.fav,
+            dates: self.dates.clone(),
+            needs_date: self.needs_date,
+            ..Default::default()
+        }))
+    }
+}
+
 /// One timeline over the drives that are there and not backups. Filters name
 /// things instead of numbering them (`tag=Winter`, `person=Anna`, `q=…`):
 /// ids differ from drive to drive, names are what the drives share. A drive
@@ -1497,16 +1612,8 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
     }
     let flat = different.is_some();
     let apps: Vec<Arc<App>> = eligible.iter().map(|&i| o.apps[i].clone()).collect();
-    let tag_names: Vec<String> = pairs.iter().filter(|(k, v)| k == "tag" && !v.is_empty()).map(|(_, v)| v.clone()).collect();
-    let person_names: Vec<String> = pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| v.clone()).collect();
-    let text = param(&pairs, "q").map(str::to_string).filter(|s| !s.trim().is_empty());
-    let types = types_of(&pairs)?;
-    let pet_terms = pets_of(&pairs)?;
-    let text_terms = terms_of(&pairs, "text");
-    let name_terms = terms_of(&pairs, "name");
-    let fav = fav_of(&pairs);
-    let dates = dates_of(&pairs)?;
-    let needs_date = param(&pairs, "nodate").is_some_and(|v| !v.is_empty() && v != "0");
+    let filter = AllFilter::of(&pairs, true)?;
+    let text_terms = filter.in_text.clone();
     let libs: Vec<LibraryRef> = apps
         .iter()
         .zip(&eligible)
@@ -1529,40 +1636,9 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
         let mut rows: Vec<Row> = Vec::new();
         for (d, app) in apps.iter().enumerate() {
             let conn = app.conn.lock().unwrap();
-            let mut tags = Vec::new();
-            for name in &tag_names {
-                match db::find_tag(&conn, name)? {
-                    Some(id) => tags.push(id),
-                    None => break,
-                }
-            }
-            let known_people = if person_names.is_empty() { Vec::new() } else { people::people(&conn, true)? };
-            let people_ids: Vec<i64> = person_names
-                .iter()
-                .filter_map(|n| {
-                    let key = db::tag_fold(n);
-                    known_people.iter().find(|p| db::tag_fold(&p.name) == key).map(|p| p.id)
-                })
-                .collect();
-            if tags.len() != tag_names.len() || people_ids.len() != person_names.len() {
-                continue;
-            }
+            let Some(mut query) = filter.query_for(&conn)? else { continue };
             let snapshot = app.snapshot(&conn)?;
-            let query = browse::Query {
-                folder: None,
-                tags,
-                text: text.clone(),
-                people: people_ids,
-                pets: pet_terms.clone(),
-                types: types.clone(),
-                in_text: text_terms.clone(),
-                names: name_terms.clone(),
-                fav,
-                dates: dates.clone(),
-                needs_date,
-                ids: different.as_ref().map(|sets| sets[d].clone()),
-                ..Default::default()
-            };
+            query.ids = different.as_ref().map(|sets| sets[d].clone());
             let hearts = own_tags::favorite_ids(&conn)?;
             let items = snapshot.query(&conn, &query)?;
             let snips = if text_terms.is_empty() {
@@ -1635,7 +1711,10 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
 }
 
 /// Tags over the drives that take part, by name (spellings fold together),
-/// most used first. For the search suggestions of the common timeline.
+/// most used first. For the search suggestions of the common timeline. With a
+/// filter (the timeline's: `tag`, `person`, `type`, `fav`, `date`, ... by name)
+/// it counts only the photos the list shows and leaves out tags that would
+/// show nothing, as the single drive's suggestions do; `q` is the word typed.
 async fn all_tags(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<browse::Tag>>> {
     let o = overview(&hub).await?;
     let (eligible, _) = multi::eligibility(&o.drives, &o.roles);
@@ -1643,10 +1722,30 @@ async fn all_tags(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> Ap
     let needle = param(&pairs, "q").map(db::tag_fold).unwrap_or_default();
     let own = param(&pairs, "own").is_some_and(|v| v != "0");
     let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(50);
+    let filter = AllFilter::of(&pairs, false)?;
     let tags = tokio::task::spawn_blocking(move || -> ApiResult<Vec<browse::Tag>> {
         let mut merged: std::collections::BTreeMap<String, browse::Tag> = std::collections::BTreeMap::new();
         for app in &apps {
-            for t in browse::all_tags(&app.conn.lock().unwrap())? {
+            let conn = app.conn.lock().unwrap();
+            let list = if filter.is_empty() {
+                browse::all_tags(&conn)?
+            } else {
+                // A drive without one of the names has nothing that matches.
+                let Some(query) = filter.query_for(&conn)? else { continue };
+                let snapshot = app.snapshot(&conn)?;
+                let shown: HashSet<i64> = snapshot.query(&conn, &query)?.iter().map(|it| it.id).collect();
+                // Whether a tag is only a folder name is a fact about the drive,
+                // not about the photos shown (as on a single drive).
+                let kinds: HashMap<i64, browse::TagKind> = browse::all_tags(&conn)?.into_iter().map(|t| (t.id, t.kind)).collect();
+                let mut within = browse::tags_within(&conn, &shown, &query.tags)?;
+                for t in &mut within {
+                    if let Some(&kind) = kinds.get(&t.id) {
+                        t.kind = kind;
+                    }
+                }
+                within
+            };
+            for t in list {
                 let key = db::tag_fold(&t.name);
                 if !key.contains(&needle) || (own && t.kind == browse::TagKind::Folder) {
                     continue;
@@ -1749,6 +1848,128 @@ async fn all_set_role(State(hub): State<Arc<Hub>>, Json(req): Json<RoleRequest>)
     .await?;
     *hub.roles.lock().unwrap() = None;
     Ok(Json(serde_json::json!({ "library": req.library, "role": req.role })))
+}
+
+/// What carrying one drive's data over to another would do (phase 15a).
+#[derive(Serialize)]
+struct TransferHint {
+    from: String,
+    to: String,
+    from_name: String,
+    to_name: String,
+    counts: transfer::Counts,
+}
+
+/// For every ordered pair of drives that can take part (not backups, not drives
+/// that look like one until the user decides): what is on the first that the
+/// second lacks, by content, from the two indexes. Pairs with nothing to carry
+/// are left out. Read only.
+async fn all_transfer(State(hub): State<Arc<Hub>>) -> ApiResult<Json<Vec<TransferHint>>> {
+    let o = overview(&hub).await?;
+    let hints = tokio::task::spawn_blocking(move || -> ApiResult<Vec<TransferHint>> {
+        let (usable, _) = multi::eligibility(&o.drives, &o.roles);
+        let mut sets = Vec::new();
+        for &i in &usable {
+            sets.push(transfer::read_drive(&o.drives[i].db)?);
+        }
+        let mut out = Vec::new();
+        for (a, &from) in usable.iter().enumerate() {
+            for (b, &to) in usable.iter().enumerate() {
+                if a == b {
+                    continue;
+                }
+                let counts = transfer::plan(&o.apps[to].conn.lock().unwrap(), &sets[a], transfer::Boxes::all())?;
+                if !counts.is_nothing() {
+                    out.push(TransferHint {
+                        from: o.drives[from].id.clone(),
+                        to: o.drives[to].id.clone(),
+                        from_name: o.drives[from].name.clone(),
+                        to_name: o.drives[to].name.clone(),
+                        counts,
+                    });
+                }
+            }
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+    Ok(Json(hints))
+}
+
+#[derive(Deserialize)]
+struct TransferRequest {
+    /// The drive whose data is carried (its id) and the drive that receives it.
+    from: String,
+    to: String,
+    /// Which kinds to carry (default: all five).
+    #[serde(default)]
+    boxes: Option<transfer::Boxes>,
+}
+
+/// Both drives of a carry over, if they are there and may take part: a backup
+/// is refused as source and as target, and so is a drive that looks like one
+/// until the user has decided.
+async fn transfer_pair(hub: &Arc<Hub>, req: &TransferRequest) -> ApiResult<(Arc<App>, Arc<App>)> {
+    if req.from == req.to {
+        return Err(ApiError::BadRequest("choose two different drives".into()));
+    }
+    let o = overview(hub).await?;
+    let mut found = Vec::new();
+    for id in [&req.from, &req.to] {
+        let slot = hub.slots.iter().find(|s| &s.id == id).ok_or(ApiError::NotFound)?;
+        let Some(i) = o.drives.iter().position(|d| &d.id == id) else {
+            return Err(ApiError::Offline { library: slot.name.clone(), reason: "plug it in to carry data over".into() });
+        };
+        if o.drives[i].role == multi::Role::Backup {
+            return Err(ApiError::BadRequest(format!("{} is a backup. Backups are not changed by the photo app.", slot.name)));
+        }
+        if o.roles[i].suggested_backup_of.is_some() {
+            return Err(ApiError::BadRequest(format!("Decide first whether {} is a backup.", slot.name)));
+        }
+        found.push(o.apps[i].clone());
+    }
+    let to = found.pop().ok_or(ApiError::NotFound)?;
+    let from = found.pop().ok_or(ApiError::NotFound)?;
+    Ok((from, to))
+}
+
+/// What carrying over would do right now, for the dialog's check boxes; reads
+/// both indexes, writes nothing. `source_emptied`: more than half of the
+/// source's files are gone from it (carry over before erasing a drive).
+async fn all_transfer_plan(State(hub): State<Arc<Hub>>, Json(req): Json<TransferRequest>) -> ApiResult<Json<serde_json::Value>> {
+    let (from, to) = transfer_pair(&hub, &req).await?;
+    let out = tokio::task::spawn_blocking(move || -> ApiResult<serde_json::Value> {
+        let set = transfer::read_drive(&from.db_path)?;
+        let counts = transfer::plan(&to.conn.lock().unwrap(), &set, transfer::Boxes::all())?;
+        let emptied = transfer::looks_emptied(&from.db_path)?;
+        Ok(serde_json::json!({ "from": from.name, "to": to.name, "counts": counts, "source_emptied": emptied }))
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+    Ok(Json(out))
+}
+
+/// Carry the ticked kinds of data over: one transaction on the receiving
+/// drive's `library.db`; the source drive and every photo stay as they are.
+async fn all_transfer_apply(State(hub): State<Arc<Hub>>, Json(req): Json<TransferRequest>) -> ApiResult<Json<serde_json::Value>> {
+    let (from, to) = transfer_pair(&hub, &req).await?;
+    let boxes = req.boxes.unwrap_or_default();
+    let from_db = from.db_path.clone();
+    let counts = change(&to, move |_, conn| {
+        let set = transfer::read_drive(&from_db)?;
+        let counts = transfer::apply(conn, &set, boxes)?;
+        if counts.people > 0 {
+            // New people get their picture, like after any naming.
+            people_api::tidy(conn);
+        }
+        Ok(counts)
+    })
+    .await?;
+    if counts.people > 0 {
+        to.request_clusters();
+    }
+    Ok(Json(serde_json::json!({ "from": from.name, "to": to.name, "counts": counts })))
 }
 
 #[derive(Deserialize)]

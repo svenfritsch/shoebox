@@ -1,6 +1,6 @@
 # Phase 15: your data between drives
 
-**Planned, nothing built.** Closes two of the three "not yet done" items in
+**15a built** (15a-1 and 15a-2, one PR; 15b, 15c and phase 18 are still planned). One deviation: a date is carried only when the target has neither a corrected nor an estimated date for that photo. Closes two of the three "not yet done" items in
 [phase6.md](phase6.md) section 3 in a smaller way than first drawn up:
 
 - **15a** (this plan): counts in the All drives search suggestions that narrow
@@ -49,7 +49,7 @@ and merges only identical **name and hash**.
 | # | Step | Notes |
 |---|---|---|
 | 1 | **15a-1 Counts that narrow** | `/api/all/tags` and `/api/all/people` take the timeline's filter; UI passes it. Section 5.1 and 9; `core/tests/multi.rs` |
-| 2 | **15a-2 Carry over data** | `core/src/carry.rs`, API (`/api/all/carry`, `/plan`, hints), Manage drives button and dialog with the five boxes, the export's `export.carry_hint` line, `carry.*` keys in `en.json` and `de.json`, `core/tests/carry.rs`, `core/tests/serve.rs`, guide (EN and DE), a line in the CLAUDE.md rules (reads another drive's index, writes only this drive's index), run `python3 scripts/third-party-licenses.py` only if dependencies change (none planned) |
+| 2 | **15a-2 Carry over data** | `core/src/transfer.rs`, API (`/api/all/transfer`, `/plan`, hints), Manage drives button and dialog with the five boxes, the export's `export.transfer_hint` line, `transfer.*` keys in `en.json` and `de.json`, `core/tests/transfer.rs`, `core/tests/serve.rs`, guide (EN and DE), a line in the CLAUDE.md rules (reads another drive's index, writes only this drive's index), run `python3 scripts/third-party-licenses.py` only if dependencies change (none planned) |
 | 3 | **15b Data from a file** | own PR: a second reader for `userdata.json`, "From a file…" in the dialog, a file picker (extend the export's folder picker), versions 1 to 6 of the file; guide |
 | 4 | **15c Ignore folders** | own PR: `chipsInput` (generic) in `core/web/app.js`, `ignore` argument in `multi::cross_duplicates`, `hidden_groups`, `/api/all/duplicates/folders`, "Ignore this folder" on each row, `dups.ignore.*` keys, the browser setting `shoebox-dup-ignore`, tests in `core/tests/multi.rs`, guide, screenshot step |
 | 5 | **Phase 18** | own PR, after 15a-1: see [phase18.md](phase18.md); it also changes the counts of step 1 |
@@ -145,12 +145,12 @@ missing do not receive data.
 
 ## 4. How it works
 
-`core/src/carry.rs`, one module, two halves so 15b can reuse the second:
+`core/src/transfer.rs`, one module, two halves so 15b can reuse the second:
 
-1. **Read** a `CarrySet` (per box: items keyed by hashes) from a source. 15a
+1. **Read** a `TransferSet` (per box: items keyed by hashes) from a source. 15a
    has one reader: the other drive's `library.db`, opened read-only with
    `ATTACH` as `multi.rs` already does. Only the five boxes' tables are read.
-2. **Apply** a `CarrySet` to the target for the ticked boxes: matching, then
+2. **Apply** a `TransferSet` to the target for the ticked boxes: matching, then
    inserts in **one transaction** on the target's `library.db` (`INSERT OR
    IGNORE` for content-keyed rows; tags added if not there). Idempotent: a
    second run reports 0 and writes nothing.
@@ -162,12 +162,12 @@ files and index are byte-identical afterwards.
 
 API (the drives are `{id}`s as in `/api/all/*`):
 
-- `GET /api/all/carry` the **hints**: for each ordered pair of online library
+- `GET /api/all/transfer` the **hints**: for each ordered pair of online library
   drives (neither a backup nor suspected) with matching photos: how many photos
   on the target would get something and per box how many items. Hash join over
   the attached indexes, no file access.
-- `POST /api/all/carry/plan {from, to}` the counts per box (the dialog).
-- `POST /api/all/carry {from, to, boxes}` applies; answers the counts done.
+- `POST /api/all/transfer/plan {from, to}` the counts per box (the dialog).
+- `POST /api/all/transfer {from, to, boxes}` applies; answers the counts done.
   503 `offline` for a drive of the pair that is not there; 400 for a backup.
 - After applying: the target's caches that show tags and people are refreshed
   like after any tag edit, and the clusters/suggestions job is asked for.
@@ -178,16 +178,16 @@ API (the drives are `{id}`s as in `/api/all/*`):
   Where hints exist, the card shows a line: "TRAVEL has data for 212 photos
   here. [Carry over data…]". The button opens the dialog with a **From** drop-down
   (the other usable drives; preselected when the hint names one).
-- **Dialog** (`carry.*` in `core/i18n/en.json` and `de.json`):
-  - `carry.title` "Carry over data" / "Daten übernehmen"
-  - `carry.explain` "Photos that are on both drives get what you made on {from}: {boxes}. Nothing on {from} changes, no photo is touched, and what {to} already has stays."
-  - boxes `carry.tags` "Tags (212 photos)", `carry.hearts` "Hearts (40)", `carry.people` "People (58 faces)", `carry.dates` "Dates (14)", `carry.places` "Places (9)", all ticked
-  - `carry.none` "Nothing to carry over: {to} has everything already, or no photo is on both drives."
-  - `carry.before_wipe` "Do this before you erase {from}: afterwards its data is gone." (shown when the source looks emptied: more than half of its files missing)
-  - `carry.done` "Done: {n} photos got tags, hearts, people, dates or places." with `carry.nothing_new`
-  - `carry.backup` "{name} is a backup. Backups are not changed by the photo app." and `carry.undecided` "Decide first whether {name} is a backup."
+- **Dialog** (`transfer.*` in `core/i18n/en.json` and `de.json`):
+  - `transfer.title` "Carry over data" / "Daten übernehmen"
+  - `transfer.explain` "Photos that are on both drives get what you made on {from}: {boxes}. Nothing on {from} changes, no photo is touched, and what {to} already has stays."
+  - boxes `transfer.tags` "Tags (212 photos)", `transfer.hearts` "Hearts (40)", `transfer.people` "People (58 faces)", `transfer.dates` "Dates (14)", `transfer.places` "Places (9)", all ticked
+  - `transfer.none` "Nothing to carry over: {to} has everything already, or no photo is on both drives."
+  - `transfer.before_wipe` "Do this before you erase {from}: afterwards its data is gone." (shown when the source looks emptied: more than half of its files missing)
+  - `transfer.done` "Done: {n} photos got tags, hearts, people, dates or places." with `transfer.nothing_new`
+  - `transfer.backup` "{name} is a backup. Backups are not changed by the photo app." and `transfer.undecided` "Decide first whether {name} is a backup."
 - **Export** (phase 13): when the destination is a shoebox drive, the finished
-  dialog adds one line, `export.carry_hint` "Scan {drive}, then use Carry over
+  dialog adds one line, `export.transfer_hint` "Scan {drive}, then use Carry over
   data on Manage drives to bring tags, hearts, people, dates and places."
   No checkbox in the export dialog.
 - **All drives search**: no new text. The suggestions re-ask when a chip changes.
@@ -211,7 +211,7 @@ For when the source drive is gone, erased or lost its index.
 each file's path and hashes and is written automatically; nothing reads it back
 yet.
 
-- A second reader for `carry.rs`: `CarrySet` from a `userdata.json` (the file on
+- A second reader for `transfer.rs`: `TransferSet` from a `userdata.json` (the file on
   the source drive, or a copy saved elsewhere), same dialog with **From a
   file…** in the drop-down, same apply, same tests with a file instead of a drive.
 - It also gives the file a purpose it lacks today: restoring tags and decisions
@@ -432,8 +432,8 @@ sees every day. The ignore list only quiets the duplicates screen.
 1. **Counts** (small): filtered `/api/all/tags` and `/api/all/people`, UI passes
    the filter. `core/tests/multi.rs`: for a filter the summed counts equal the
    timeline's length; a drive lacking a name adds nothing; empty tags drop out.
-2. **Carry over** (15a): `carry.rs`, API, dialog, hints, export line, guide.
-   `core/tests/carry.rs` (two temp drives, helpers as in `multi.rs`):
+2. **Carry over** (15a): `transfer.rs`, API, dialog, hints, export line, guide.
+   `core/tests/transfer.rs` (two temp drives, helpers as in `multi.rs`):
    - match by full hash across different names and folders; quick hash + size
      when a hash is missing; missing source files used; missing target files not;
    - each box alone: unticked boxes change nothing; folder tags never carried;
@@ -448,7 +448,7 @@ sees every day. The ignore list only quiets the duplicates screen.
      (`core/tests/serve.rs`);
    - a schema test lists the tables read and fails when a new content-keyed
      table is neither carried nor listed as "not carried";
-   - `core/tests/i18n.rs` checks the `carry.*` keys.
+   - `core/tests/i18n.rs` checks the `transfer.*` keys.
 3. **15b**: own PR (section 6).
 4. **15c**: own PR (section 6b).
 5. Real hardware: two real exFAT drives, a Finder copy, then Carry over.

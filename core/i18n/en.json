@@ -1078,5 +1078,21 @@
   "launcher.tab.folders": "Photo folders",
   "launcher.tab.add": "Add a folder or server",
   "launcher.tab.manage": "Manage libraries ({n})",
-  "launcher.libs.hint_none": "Photos on a server, or a folder you only want to look at? Use the tab “Add a folder or server”."
+  "launcher.libs.hint_none": "Photos on a server, or a folder you only want to look at? Use the tab “Add a folder or server”.",
+  "transfer.button": "Carry over data…",
+  "transfer.hint": "{from} has data for {photos} here.",
+  "transfer.title": "Carry over data",
+  "transfer.from": "From",
+  "transfer.explain": "Photos that are on both drives get what you made on {from}: tags, hearts, people, dates and places. Nothing on {from} changes, no photo is touched, and what {to} already has stays.",
+  "transfer.tags": "Tags ({n})",
+  "transfer.hearts": "Hearts ({n})",
+  "transfer.people": "People ({n})",
+  "transfer.dates": "Dates ({n})",
+  "transfer.places": "Places ({n})",
+  "transfer.none": "Nothing to carry over: {to} has everything already, or no photo is on both drives.",
+  "transfer.before_wipe": "Do this before you erase {from}: afterwards its data is gone.",
+  "transfer.go": "Carry over",
+  "transfer.done": "Done: {photos} got tags, hearts, people, dates or places.",
+  "transfer.nothing_new": "Nothing new: {to} had it all already.",
+  "export.transfer_hint": "Scan {drive}, then use “Carry over data” on Manage drives to bring tags, hearts, people, dates and places."
 }

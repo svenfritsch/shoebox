@@ -423,3 +423,109 @@ fn the_common_timeline_shows_dates_the_user_gave_and_filters_by_them() {
     assert_eq!(get(addr, "/raw/api/all/timeline?date=87").status, 400);
     server.stop().unwrap();
 }
+
+/// A library with only the photos the test writes itself.
+fn bare_library(test: &str) -> Library {
+    let lib = Library::new(test);
+    for entry in std::fs::read_dir(&lib.root).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            std::fs::remove_dir_all(&path).unwrap();
+        } else {
+            std::fs::remove_file(&path).unwrap();
+        }
+    }
+    lib
+}
+
+fn tag_counts(addr: std::net::SocketAddr, query: &str) -> std::collections::BTreeMap<String, u64> {
+    get(addr, &format!("/raw/api/all/tags?own=1&limit=100{query}"))
+        .json()
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| (t["name"].as_str().unwrap().to_string(), t["count"].as_u64().unwrap()))
+        .collect()
+}
+
+fn person_photos(addr: std::net::SocketAddr, query: &str, name: &str) -> Option<u64> {
+    get(addr, &format!("/raw/api/all/people{query}"))
+        .json()["people"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["name"] == name)
+        .map(|p| p["photos"].as_u64().unwrap())
+}
+
+/// Phase 15a: in All drives the suggestions narrow with the filter, as on a
+/// single drive: counts are the photos the list then shows, and tags and
+/// people that would show nothing are left out.
+#[test]
+fn suggestions_over_all_drives_narrow_with_the_filter() {
+    let a = bare_library("multi-narrow-a");
+    let b = bare_library("multi-narrow-b");
+    for (lib, files) in [(&a, [("x/a1.jpg", 40u8), ("x/a2.jpg", 41), ("x/a3.jpg", 42)].as_slice()), (&b, [("y/b1.jpg", 50), ("y/b2.jpg", 51)].as_slice())] {
+        for (path, seed) in files {
+            lib.jpeg(path, *seed);
+        }
+        lib.scan_opts(true, false, false);
+    }
+    let tag = |lib: &Library, path: &str, name: &str| {
+        let conn = shoebox::db::open_shared(&lib.path(".shoebox/library.db")).unwrap();
+        shoebox::tags::add(&conn, &[id_of(lib, path)], name).unwrap();
+    };
+    for (path, name) in [("x/a1.jpg", "Ski"), ("x/a1.jpg", "Winter"), ("x/a2.jpg", "Winter"), ("x/a3.jpg", "Sommer")] {
+        tag(&a, path, name);
+    }
+    for (path, name) in [("y/b1.jpg", "Ski"), ("y/b1.jpg", "Winter"), ("y/b2.jpg", "Strand")] {
+        tag(&b, path, name);
+    }
+    // Anna is on one photo of each drive.
+    for (lib, path) in [(&a, "x/a1.jpg"), (&b, "y/b2.jpg")] {
+        let conn = lib.db();
+        conn.execute("INSERT INTO people (name) VALUES ('Anna')", []).unwrap();
+        conn.execute(
+            "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at)
+             VALUES (?1, 0.1, 0.1, 0.2, 0.2, (SELECT id FROM people WHERE name = 'Anna'), 'confirmed', 1, 1)",
+            [lib.record_key(path)],
+        )
+        .unwrap();
+    }
+    let server = start_many(&[&a, &b], &[]);
+    let addr = server.addr;
+    let count_of = |q: &str| get(addr, &format!("/raw/api/all/timeline{q}")).json()["count"].as_u64().unwrap();
+
+    // No filter: every tag counted over both drives.
+    let all = tag_counts(addr, "");
+    assert_eq!((all["Winter"], all["Ski"], all["Sommer"], all["Strand"]), (3, 2, 1, 1));
+    assert_eq!(person_photos(addr, "", "Anna"), Some(2));
+
+    // With a tag: only the photos that have it, and only tags that appear on them.
+    let ski = tag_counts(addr, "&tag=Ski");
+    assert_eq!(ski.into_iter().collect::<Vec<_>>(), vec![("Winter".to_string(), 2)], "the tag itself, Sommer and Strand are left out");
+    // Anna is on a1 (Ski) on one drive, and on b2 (no Ski) on the other: only the first counts.
+    assert_eq!(person_photos(addr, "?tag=Ski", "Anna"), Some(1));
+    assert_eq!(person_photos(addr, "?tag=Sommer", "Anna"), None, "Anna is on no photo with Sommer");
+    // With a person: a drive that has her contributes its photos of her.
+    let anna = tag_counts(addr, "&person=Anna");
+    assert_eq!(anna.into_iter().collect::<Vec<_>>(), vec![("Ski".to_string(), 1), ("Strand".to_string(), 1), ("Winter".to_string(), 1)]);
+    // A tag only one drive has: the other contributes nothing.
+    assert_eq!(person_photos(addr, "?tag=Strand", "Anna"), Some(1));
+    assert!(tag_counts(addr, "&tag=Strand").is_empty(), "nothing else on that photo");
+    assert!(tag_counts(addr, "&tag=Sommer").is_empty());
+    // The typed word still narrows by name.
+    assert_eq!(tag_counts(addr, "&q=win").into_iter().collect::<Vec<_>>(), vec![("Winter".to_string(), 3)]);
+
+    // A count always equals what the list then shows.
+    for filter in ["", "&tag=Ski", "&tag=Winter", "&person=Anna", "&tag=Winter&person=Anna"] {
+        let base = filter.trim_start_matches('&');
+        for (name, n) in tag_counts(addr, filter) {
+            let q = if base.is_empty() { format!("?tag={name}") } else { format!("?{base}&tag={name}") };
+            assert_eq!(count_of(&q), n, "{name} within {filter:?}");
+        }
+    }
+    assert_eq!(person_photos(addr, "?tag=Winter", "Anna"), Some(count_of("?tag=Winter&person=Anna")));
+    assert_eq!(person_photos(addr, "?tag=Strand", "Anna"), Some(count_of("?tag=Strand&person=Anna")));
+    server.stop().unwrap();
+}
