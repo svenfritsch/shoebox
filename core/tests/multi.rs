@@ -264,6 +264,23 @@ fn one_timeline_over_the_drives_by_tag_person_and_text_but_without_backups() {
     assert_ne!(from[0], from[1], "one from each drive");
     // A name only one drive knows: only that drive's photos (all the filters must match).
     assert_eq!(get(addr, "/raw/api/all/timeline?person=Anna&person=Nobody").json()["count"], 0);
+    // A group by name (any of its people; the same name, whatever the case, is one group).
+    for (id, name) in [(&ia, "Family"), (&ib, "family")] {
+        let people = get(addr, &format!("/raw/api/lib/{id}/people")).json();
+        let anna = people.as_array().unwrap().iter().find(|p| p["name"] == "Anna").unwrap()["id"].clone();
+        let r = post(addr, &format!("/raw/api/lib/{id}/groups"), &json!({ "name": name, "person_id": anna }));
+        assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    }
+    let family = get(addr, "/raw/api/all/timeline?group=FAMILY").json();
+    let from: std::collections::BTreeSet<i64> = ids_of(&family).iter().map(|g| g / SPAN).collect();
+    assert_eq!((family["count"].as_u64(), from.len()), (Some(2), 2), "{family}");
+    assert_eq!(get(addr, "/raw/api/all/timeline?group=Family&person=Anna").json()["count"], 2);
+    assert_eq!(get(addr, "/raw/api/all/timeline?group=Nobody").json()["count"], 0);
+    let hits = get(addr, "/raw/api/all/groups?q=fam").json();
+    assert_eq!(hits.as_array().unwrap().len(), 1, "{hits}");
+    assert_eq!(hits[0]["photos"], 2);
+    assert_eq!(get(addr, "/raw/api/all/groups?q=zzz").json(), json!([]));
+    assert_eq!(get(addr, "/raw/api/all/groups?q=&group=Family").json(), json!([]), "a group in the search is not offered again");
     // A tag by name (the folder `Familie/Weihnachten` exists on every drive).
     let xmas = get(addr, "/raw/api/all/timeline?tag=weihnachten").json();
     assert_eq!(xmas["count"], 3);
