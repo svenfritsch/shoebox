@@ -35,7 +35,7 @@ progress. Update the status section when a phase moves.
 | Scale | ~100,000 files, 150 GB today, up to 1 TB |
 | Repo | `core/` (Rust), `recognizer/` (Python), `scripts/`, `docker/`, `docs/` |
 | Dev environment | Docker for Linux builds/tests; native macOS builds with rustup; GitHub Actions for both |
-| CI until v1.0 | macOS only: `test` and `build` side by side with cached dependencies (PRs: arm64; main/tags: universal + Rosetta), skipped for docs-only PRs. Windows and Linux (Linux incl. the real recognizer) are built only by hand, one at a time, with `release-by-hand.yml`, which can add them to a release (phase 17). The guide's screenshots and `.txt` copies are not in git: `guide.yml` makes them on Linux for UI/guide PRs (artifact `guide`) and for releases; releases ship `shoebox-macos` plus `recognizer/` and that guide (English and German, in the `guide/` folder of the archive) |
+| CI until v1.0 | macOS only: `test` and `build` side by side with cached dependencies (PRs: arm64; main/tags: universal + Rosetta), skipped for docs-only PRs. Windows and Linux (Linux incl. the real recognizer) are built only by hand, one at a time, with `release-by-hand.yml`, which can add them to a release (phase 17). The guide's screenshots and `.txt` copies are not in git: `guide.yml` makes them on Linux for UI/guide PRs (artifact `guide`) and for releases; the same job runs the photo app's browser tests (`core/tests/browser/run.sh`, Playwright: keyboard use of the grid, viewer, selection bar and dialogs); releases ship `shoebox-macos` plus `recognizer/` and that guide (English and German, in the `guide/` folder of the archive) |
 
 ## Architecture
 
@@ -537,6 +537,9 @@ Done (see [phase2.md](phase2.md)):
 - Keyboard: arrow keys move the focus in the grid; closing the viewer
   focuses the cell of the last item seen. Space opens the focused item and
   closes the viewer again.
+  Checked in the browser by `core/tests/browser/keyboard.mjs`, together with
+  the selection bar (one Tab stop, arrows, Home, End, B) and dialogs (Tab
+  stays in, the focus returns when they close).
 - Perceptual hash (64-bit DCT) from the same decode in `files.phash`.
 - `shoebox serve` (axum, UI embedded with rust-embed): virtualised timeline
   grid grouped by month, folder tree, search over paths and tags, viewer
