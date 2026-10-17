@@ -123,13 +123,9 @@ pub fn clear_position(conn: &Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
-/// At most this many file names per line of the location dialog; the count
-/// says how many there are in all.
-const MAX_NAMES: usize = 20;
-
 /// What a location dialog for several photos says: how many have a position
 /// in their file (they keep it) and how many one the user gave (it is
-/// replaced), with the names of the first `MAX_NAMES` of each, sorted.
+/// replaced), with the first names of each (`db::dialog_names`).
 #[derive(Debug, Default, Serialize, PartialEq)]
 pub struct PositionsCheck {
     pub total: usize,
@@ -169,10 +165,8 @@ pub fn check_positions(conn: &Connection, ids: &[i64]) -> Result<PositionsCheck>
             out.with_user_names.push(name);
         }
     }
-    for names in [&mut out.with_file_names, &mut out.with_user_names] {
-        names.sort();
-        names.truncate(MAX_NAMES);
-    }
+    out.with_file_names = db::dialog_names(out.with_file_names);
+    out.with_user_names = db::dialog_names(out.with_user_names);
     Ok(out)
 }
 

@@ -559,6 +559,18 @@ pub fn backup_schema(conn: &Connection, schema: &str, db_path: &Path) -> Result<
     Ok(dst)
 }
 
+/// At most this many file names per line of a dialog that counts photos (the
+/// date and the location dialog for a selection); the count says how many
+/// there are in all.
+pub const DIALOG_NAMES: usize = 20;
+
+/// The names a dialog line lists: sorted, the first `DIALOG_NAMES`.
+pub fn dialog_names(mut names: Vec<String>) -> Vec<String> {
+    names.sort();
+    names.truncate(DIALOG_NAMES);
+    names
+}
+
 pub fn now() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }

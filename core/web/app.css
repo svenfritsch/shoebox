@@ -208,8 +208,10 @@ body.selecting #select { color: var(--accent); }
 .sel-all { flex: none; border: 0; border-radius: 8px; padding: 6px 8px; background: none; color: var(--accent); }
 .sel-all:hover:not(:disabled) { background: var(--line); }
 .sel-all:disabled { opacity: .5; cursor: default; }
-/* A count in the location dialog: bold, with an info button that lists the photos. */
-.count-line .names { position: relative; white-space: nowrap; }
+/* A count in the date or location dialog for a selection: bold, with an info button that lists the photos. */
+/* The list opens under the whole line, so a sentence that wraps stays readable. */
+.count-line { position: relative; }
+.count-line .names { white-space: nowrap; }
 .count-line .names b { color: var(--fg); font-weight: 600; }
 .names-info { display: inline-flex; vertical-align: -.2em; margin-left: 2px; padding: 1px; border: 0; border-radius: 50%; background: none; color: var(--muted); font-size: 1.05em; cursor: pointer; }
 .names-info:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
