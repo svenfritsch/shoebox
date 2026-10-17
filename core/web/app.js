@@ -2001,8 +2001,9 @@ function renderPanel() {
     return dd;
   };
   infoDate(row, info);
-  // The drive is named whenever it is known, also with a single photo app per drive.
-  if (drives.current) row(tr('info.drive'), drives.current.volume || drives.current.name);
+  // The drive is named only when there is more than one (offline ones count: the
+  // program was started with several); with a single drive the row says nothing new.
+  if (drives.current && drives.list.length > 1) row(tr('info.drive'), drives.current.volume || drives.current.name);
   var nameCell = row(tr('info.name'), info.name);
   var cmpBadge = compareBadge(info.id);
   if (nameCell && cmpBadge) nameCell.appendChild(cmpBadge);
