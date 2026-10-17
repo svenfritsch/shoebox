@@ -530,6 +530,155 @@ fn suggestions_over_all_drives_narrow_with_the_filter() {
     server.stop().unwrap();
 }
 
+/// Phase 18: in All drives a photo with the same file name and the same
+/// content on more than one drive is shown once; anything else stays.
+#[test]
+fn identical_photos_show_once_in_the_common_timeline() {
+    let a = bare_library("multi-once-a");
+    let b = bare_library("multi-once-b");
+    let backup = bare_library("multi-once-backup");
+    for (lib, files) in [
+        (
+            &a,
+            vec![
+                ("2025-07 Kroatien/IMG_4021.jpg".to_string(), 60u8),
+                ("x/Strand.jpg".into(), 61),
+                ("x/IMG_0001.jpg".into(), 62),
+                ("c/IMG_1.JPG".into(), 64),
+                ("u/M\u{e4}dchen.jpg".into(), 65),
+                ("h/IMG_9.jpg".into(), 66),
+            ],
+        ),
+        (
+            &b,
+            vec![
+                ("Urlaub Kroatien/IMG_4021.jpg".to_string(), 60u8),
+                ("y/IMG_5000.jpg".into(), 61),
+                ("y/IMG_0001.jpg".into(), 63),
+                ("d/img_1.jpg".into(), 64),
+                ("u/Ma\u{308}dchen.jpg".into(), 65),
+                ("h/IMG_9.jpg".into(), 66),
+            ],
+        ),
+        (&backup, vec![("Kroatien/IMG_4021.jpg".to_string(), 60u8), ("z/other.jpg".into(), 70)]),
+    ] {
+        for (path, seed) in files {
+            lib.jpeg(&path, seed);
+        }
+        lib.scan_opts(true, false, false);
+    }
+    // Not hashed yet on b: cannot be called identical.
+    b.db().execute("UPDATE files SET full_hash = NULL WHERE name = 'IMG_9.jpg'", []).unwrap();
+    let tag = |lib: &Library, path: &str, name: &str| {
+        let conn = shoebox::db::open_shared(&lib.path(".shoebox/library.db")).unwrap();
+        shoebox::tags::add(&conn, &[id_of(lib, path)], name).unwrap();
+    };
+    tag(&a, "2025-07 Kroatien/IMG_4021.jpg", "Meer");
+    tag(&b, "Urlaub Kroatien/IMG_4021.jpg", "Meer");
+    tag(&b, "Urlaub Kroatien/IMG_4021.jpg", "Boot");
+    // Anna is on the photo on both drives (faces are kept by content).
+    for (lib, path) in [(&a, "2025-07 Kroatien/IMG_4021.jpg"), (&b, "Urlaub Kroatien/IMG_4021.jpg")] {
+        let conn = lib.db();
+        conn.execute("INSERT INTO people (name) VALUES ('Anna')", []).unwrap();
+        conn.execute(
+            "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at)
+             VALUES (?1, 0.1, 0.1, 0.2, 0.2, (SELECT id FROM people WHERE name = 'Anna'), 'confirmed', 1, 1)",
+            [lib.record_key(path)],
+        )
+        .unwrap();
+    }
+    let before = (a.snapshot(), b.snapshot(), backup.snapshot());
+    let server = start_many(&[&a, &b, &backup], &[]);
+    let addr = server.addr;
+    let (ia, ib, i_backup) = (lib_id(addr, &a), lib_id(addr, &b), lib_id(addr, &backup));
+    assert_eq!(post(addr, "/raw/api/all/role", &json!({ "library": i_backup, "role": "backup" })).status, 200);
+    let timeline = |q: &str| get(addr, &format!("/raw/api/all/timeline{q}")).json();
+    let gid = |t: &serde_json::Value, lib: &str, id: i64| {
+        let d = t["libs"].as_array().unwrap().iter().position(|l| l["id"] == lib).unwrap() as i64;
+        d * SPAN + id
+    };
+    let (ka, kb) = (id_of(&a, "2025-07 Kroatien/IMG_4021.jpg"), id_of(&b, "Urlaub Kroatien/IMG_4021.jpg"));
+
+    // Twelve files, three of them copies by name and content (the Kroatien
+    // photo, IMG_1 in another case, Mädchen in another Unicode form).
+    let all = timeline("");
+    assert_eq!((all["count"].as_u64(), all["hidden"].as_u64()), (Some(9), Some(3)), "{all}");
+    let shown = ids(&all);
+    // Which copy: the first drive in the list (nobody gave a date).
+    let first = all["libs"][0]["id"].as_str().unwrap().to_string();
+    let kroatien = if first == ia { gid(&all, &ia, ka) } else { gid(&all, &ib, kb) };
+    assert!(shown.contains(&kroatien), "{shown:?}");
+    // Renamed copies, the same name with other content, and a file without a
+    // full hash all stay.
+    for (lib, l, path) in [
+        (&a, &ia, "x/Strand.jpg"),
+        (&b, &ib, "y/IMG_5000.jpg"),
+        (&a, &ia, "x/IMG_0001.jpg"),
+        (&b, &ib, "y/IMG_0001.jpg"),
+        (&a, &ia, "h/IMG_9.jpg"),
+        (&b, &ib, "h/IMG_9.jpg"),
+    ] {
+        assert!(shown.contains(&gid(&all, l, id_of(lib, path))), "{path} on {l}");
+    }
+    // The same every time.
+    assert_eq!(ids(&timeline("")), shown);
+
+    // Searches: the photo once, whichever drive has the tag; the counts in the
+    // suggestions equal what the list shows.
+    assert_eq!(timeline("?tag=Meer")["count"], 1);
+    let boot = timeline("?tag=Boot");
+    assert_eq!(ids(&boot), vec![gid(&boot, &ib, kb)], "only b's copy has the tag");
+    let tags = tag_counts(addr, "");
+    assert_eq!((tags["Meer"], tags["Boot"]), (1, 1), "{tags:?}");
+    assert_eq!(tag_counts(addr, "&tag=Meer")["Boot"], timeline("?tag=Meer&tag=Boot")["count"].as_u64().unwrap());
+    assert_eq!(person_photos(addr, "", "Anna"), Some(1));
+    assert_eq!(timeline("?person=Anna")["count"], 1);
+    assert_eq!(person_photos(addr, "?tag=Meer", "Anna"), Some(1));
+
+    // A heart on one copy shows on the copy that is shown; the heart filter
+    // shows the copy that has it.
+    let conn = shoebox::db::open_shared(&b.path(".shoebox/library.db")).unwrap();
+    shoebox::tags::set_favorite(&conn, &[kb], true).unwrap();
+    drop(conn);
+    let all = timeline("");
+    let favs: Vec<i64> = all["favs"].as_array().unwrap().iter().map(|v| v.as_i64().unwrap()).collect();
+    assert_eq!(favs, vec![kroatien]);
+    let hearts = timeline("?fav=1");
+    assert_eq!(ids(&hearts), vec![gid(&hearts, &ib, kb)]);
+
+    // A date the user gave wins: the copy that has it is shown, at that date.
+    let r = post(addr, &format!("/raw/api/lib/{ib}/files/dates"), &json!({ "ids": [kb], "year": 1990, "month": 5 }));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    let all = timeline("");
+    assert_eq!(all["hidden"], 3);
+    let at = ids(&all).iter().position(|&g| g == gid(&all, &ib, kb)).expect("b's dated copy is shown");
+    assert_eq!(all["days"][at], 19900500);
+    assert!(!ids(&all).contains(&gid(&all, &ia, ka)));
+    // Both have one: the one given last wins.
+    let r = post(addr, &format!("/raw/api/lib/{ia}/files/dates"), &json!({ "ids": [ka], "year": 1991 }));
+    assert_eq!(r.status, 200);
+    a.db().execute("UPDATE date_estimates SET at = at + 100", []).unwrap();
+    let all = timeline("");
+    let at = ids(&all).iter().position(|&g| g == gid(&all, &ia, ka)).expect("a's newer date wins");
+    assert_eq!(all["days"][at], 19910000);
+
+    // "Also on": the other copies on the drives that take part, never the backup's.
+    let copies = get(addr, &format!("/raw/api/all/copies?library={ia}&file={ka}")).json();
+    let copies = copies.as_array().unwrap();
+    assert_eq!(copies.len(), 1, "{copies:?}");
+    assert_eq!((copies[0]["library"].as_str(), copies[0]["id"].as_i64(), copies[0]["path"].as_str()), (Some(ib.as_str()), Some(kb), Some("Urlaub Kroatien/IMG_4021.jpg")));
+    let back = get(addr, &format!("/raw/api/all/copies?library={ib}&file={kb}")).json();
+    assert_eq!(back[0]["id"], ka);
+    let c1 = get(addr, &format!("/raw/api/all/copies?library={ib}&file={}", id_of(&b, "d/img_1.jpg"))).json();
+    assert_eq!(c1[0]["path"], "c/IMG_1.JPG", "the same name in another case");
+    let none = get(addr, &format!("/raw/api/all/copies?library={ia}&file={}", id_of(&a, "x/Strand.jpg"))).json();
+    assert_eq!(none.as_array().unwrap().len(), 0, "a renamed copy is not the same photo");
+    assert_eq!(get(addr, "/raw/api/all/copies?library=00000000&file=1").status, 404);
+
+    server.stop().unwrap();
+    assert_eq!((a.snapshot(), b.snapshot(), backup.snapshot()), before, "only reading");
+}
+
 /// Two drives that share five photos in folders that are named alike on one
 /// drive only, on both, or not at all (seed → folders of the copies on A and B):
 /// 1 `Noah/2025-07 Kroatien` and `Lena/Urlaub Kroatien`, 2 `Gemeinsam/Festival`
