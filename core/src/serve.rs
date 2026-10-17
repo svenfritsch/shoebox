@@ -810,6 +810,7 @@ fn hub_router(hub: Arc<Hub>) -> Router {
         .route("/api/all/timeline", get(all_timeline))
         .route("/api/all/tags", get(all_tags))
         .route("/api/all/duplicates", get(all_duplicates))
+        .route("/api/all/duplicates/folders", get(all_duplicate_folders))
         .route("/api/all/drives", get(all_drives))
         .route("/api/all/role", post(all_set_role))
         .route("/api/all/transfer", get(all_transfer).post(all_transfer_apply))
@@ -1378,28 +1379,50 @@ async fn overview(hub: &Arc<Hub>) -> ApiResult<Overview> {
     .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))?
 }
 
+/// The disk a drive's folder is on (names of two folders can be alike).
+fn volume_of(apps: &[Arc<App>], library: &str) -> Option<String> {
+    apps.iter().find(|a| library_id(&a.name) == library).and_then(|a| volume::placement(&a.root)).map(|p| p.volume)
+}
+
 /// Contents on more than one drive, leaving out backups (and drives that
-/// look like one until the user decides).
-async fn all_duplicates(State(hub): State<Arc<Hub>>, Query(q): Query<LimitQuery>) -> ApiResult<Json<multi::CrossDuplicates>> {
+/// look like one until the user decides). `ignore` (repeatable) is a folder
+/// name: a content with a copy in a folder of that name is left out.
+async fn all_duplicates(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<multi::CrossDuplicates>> {
     let o = overview(&hub).await?;
-    let limit = q.limit.unwrap_or(500).min(5000);
+    let limit = param(&pairs, "limit").and_then(|v| v.parse::<usize>().ok()).unwrap_or(500).min(5000);
+    let ignore = terms_of(&pairs, "ignore");
     let result = tokio::task::spawn_blocking(move || {
-        let mut result = multi::cross_duplicates(&o.drives, &o.roles, limit)?;
-        // The disk name tells two folders of the same name apart.
+        let mut result = multi::cross_duplicates(&o.drives, &o.roles, &ignore, limit)?;
         let mut volumes: std::collections::HashMap<String, Option<String>> = std::collections::HashMap::new();
         for g in &mut result.groups {
             for f in &mut g.files {
-                let v = volumes.entry(f.library.clone()).or_insert_with(|| {
-                    o.apps.iter().find(|a| library_id(&a.name) == f.library).and_then(|a| volume::placement(&a.root)).map(|p| p.volume)
-                });
-                f.volume = v.clone();
+                f.volume = volumes.entry(f.library.clone()).or_insert_with(|| volume_of(&o.apps, &f.library)).clone();
             }
         }
         Ok::<_, anyhow::Error>(result)
     })
-        .await
-        .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
     Ok(Json(result))
+}
+
+/// Folder names for the "Ignore folders" field: `q` (what was typed), `ignore`
+/// (the names already chosen, repeatable), `limit` (default 8).
+async fn all_duplicate_folders(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<multi::FolderName>>> {
+    let o = overview(&hub).await?;
+    let limit = param(&pairs, "limit").and_then(|v| v.parse::<usize>().ok()).unwrap_or(8).min(50);
+    let ignore = terms_of(&pairs, "ignore");
+    let text = param(&pairs, "q").unwrap_or("").to_string();
+    let rows = tokio::task::spawn_blocking(move || {
+        let mut rows = multi::duplicate_folders(&o.drives, &o.roles, &ignore, &text, limit)?;
+        for d in rows.iter_mut().flat_map(|r| r.drives.iter_mut()) {
+            d.volume = volume_of(&o.apps, &d.library);
+        }
+        Ok::<_, anyhow::Error>(rows)
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+    Ok(Json(rows))
 }
 
 #[derive(Serialize)]

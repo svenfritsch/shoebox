@@ -1023,3 +1023,25 @@ body.geo-view #page { padding: 0; height: 100%; }
 
 /* a library whose index is kept next to the program is only read (phase 16) */
 body.read-only #sel-move, body.read-only #lb-rotate, body.read-only .copy label.check, body.read-only .dup-bar .btn.danger { display: none; }
+
+/* Chips input (phase 15c): the values sit as chips inside one bordered field; the list of suggestions hangs from the field's bottom edge and follows it when the chips wrap onto more lines. */
+.chips-wrap { position: relative; }
+.chips-field { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 40px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); cursor: text; }
+.chips-field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(224, 164, 109, .22); }
+.chips-field .chip { max-width: 100%; overflow-wrap: anywhere; }
+.chips-text { flex: 1 1 120px; min-width: 80px; padding: 4px 2px; border: 0; outline: 0; background: transparent; color: var(--fg); font: inherit; }
+.chips-list { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 20; max-height: 60vh; overflow-y: auto; padding: 4px 0; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 30px rgba(0, 0, 0, .2); font-size: 14px; }
+.chips-list.up { top: auto; bottom: calc(100% + 4px); }
+.chips-row { display: flex; gap: 10px; align-items: baseline; padding: 7px 12px; cursor: pointer; }
+.chips-row.at, .chips-row:hover { background: var(--panel); }
+.chips-row .main { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chips-row b { font-weight: 700; }
+.chips-row small { margin-left: auto; color: var(--muted); font-size: 12px; text-align: right; }
+.chips-row.add { border-top: 1px solid var(--line); color: var(--accent); }
+.chips-none { padding: 7px 12px; color: var(--muted); font-size: 13px; }
+
+/* Ignore folders on the Across drives list */
+.ignore-folders { margin: 0 0 14px; }
+.ignore-folders .lbl { display: block; margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.ignore-folders .note { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+.copy-row .ignore-this { margin-left: 0; }

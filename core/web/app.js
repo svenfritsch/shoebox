@@ -2653,6 +2653,243 @@ function renameFolder(folder) {
   input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go(buttons[1]); });
 }
 
+// ------------------------------------------------------------------ chips input
+// One bordered field that looks like a text input, with its values as chips
+// inside it and, if `suggest` is given, a list of suggestions under it. It
+// knows nothing about what the values are: everything specific is passed in.
+//   values        chips to start with (strings)
+//   placeholder   shown only while there is no chip and no text
+//   label         aria-label of the field
+//   removeLabel   function (value): aria-label of a chip's ✕
+//   normalize     function (text): chip value or null (default: trim, NFC, empty is null)
+//   same          function (a, b): when two values are one (default: NFC, ignoring case)
+//   suggest       function (text, taken): rows [{ value, label, detail }] or a Promise of them
+//   renderRow     function (row, text): node of one row (default: label with the typed part bold)
+//   freeRow       function (text): text of the last row ("Add “xyz”"); null: only suggested values
+//                 can become chips; left out: typed text becomes a chip without a row
+//   noneText      function (text): a line shown when text was typed and nothing matches
+//   delay, maxRows, onChange(values)
+// Returns { el, values(), set(list), add(value), focus(), destroy() }.
+var chipsSeq = 0;
+
+function chipsInput(o) {
+  var values = (o.values || []).slice();
+  var normalize = o.normalize || function (t) { t = String(t).normalize('NFC').trim(); return t || null; };
+  var same = o.same || function (a, b) { return a.normalize('NFC').toLowerCase() === b.normalize('NFC').toLowerCase(); };
+  var delay = o.delay == null ? 120 : o.delay, maxRows = o.maxRows || 8;
+  var freeText = o.freeRow !== null;
+  var id = 'chips-' + (++chipsSeq);
+
+  var wrap = el('div', 'chips-wrap');
+  var field = el('div', 'chips-field');
+  var input = el('input', 'chips-text');
+  input.type = 'text';
+  input.setAttribute('enterkeyhint', 'done');
+  input.setAttribute('autocomplete', 'off');
+  input.setAttribute('autocapitalize', 'off');
+  input.setAttribute('autocorrect', 'off');
+  input.spellcheck = false;
+  if (o.label) input.setAttribute('aria-label', o.label);
+  var list = null, rows = [], at = -1, ask = 0, timer = null;
+  if (o.suggest) {
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-autocomplete', 'list');
+    input.setAttribute('aria-expanded', 'false');
+    input.setAttribute('aria-controls', id);
+    list = el('div', 'chips-list');
+    list.id = id;
+    list.setAttribute('role', 'listbox');
+    list.hidden = true;
+  }
+
+  var has = function (v) { return values.some(function (x) { return same(x, v); }); };
+  var closeList = function () {
+    ask++;
+    clearTimeout(timer);
+    if (!list) return;
+    list.hidden = true;
+    list.classList.remove('up');
+    rows = [];
+    at = -1;
+    input.setAttribute('aria-expanded', 'false');
+    input.removeAttribute('aria-activedescendant');
+  };
+  var mark = function (i) {
+    at = i;
+    rows.forEach(function (r, k) {
+      r.node.classList.toggle('at', k === i);
+      r.node.setAttribute('aria-selected', k === i ? 'true' : 'false');
+    });
+    if (i >= 0) {
+      input.setAttribute('aria-activedescendant', rows[i].node.id);
+      rows[i].node.scrollIntoView({ block: 'nearest' });
+    } else {
+      input.removeAttribute('aria-activedescendant');
+    }
+  };
+  var draw = function () {
+    Array.prototype.slice.call(field.querySelectorAll('.chip')).forEach(function (c) { field.removeChild(c); });
+    values.forEach(function (v, i) {
+      var chip = el('span', 'chip', v);
+      var x = el('button', '', '✕');
+      x.type = 'button';
+      if (o.removeLabel) x.setAttribute('aria-label', o.removeLabel(v));
+      x.onclick = function (ev) { ev.stopPropagation(); remove(i); input.focus(); };
+      chip.appendChild(x);
+      field.insertBefore(chip, input);
+    });
+    input.placeholder = values.length ? '' : (o.placeholder || '');
+  };
+  var changed = function () { draw(); if (o.onChange) o.onChange(values.slice()); };
+  var add = function (text) {
+    var v = normalize(text);
+    if (v == null || has(v)) return false;
+    values.push(v);
+    changed();
+    return true;
+  };
+  var remove = function (i) {
+    values.splice(i, 1);
+    changed();
+    if (list && document.activeElement === input) refill();
+  };
+
+  // Puts the list under the field, or over it when the window has no room below.
+  var place = function () {
+    list.classList.remove('up');
+    var r = field.getBoundingClientRect(), h = list.offsetHeight;
+    if (r.bottom + h + 12 > window.innerHeight && r.top > h + 12) list.classList.add('up');
+  };
+  var show = function (found, text) {
+    list.textContent = '';
+    rows = [];
+    at = -1;
+    var typed = normalize(text);
+    var shown = (found || []).filter(function (r) { return !has(r.value); }).slice(0, maxRows);
+    shown.forEach(function (r) { rows.push({ value: r.value, node: null, row: r }); });
+    if (typed != null && o.freeRow && !has(typed) && !shown.some(function (r) { return same(r.value, typed); })) {
+      rows.push({ value: typed, node: null, free: true });
+    }
+    if (!shown.length && typed != null && o.noneText) list.appendChild(el('div', 'chips-none', o.noneText(text)));
+    rows.forEach(function (r, i) {
+      var node;
+      if (r.free) {
+        node = el('div', 'chips-row add', o.freeRow(text));
+      } else if (o.renderRow) {
+        node = o.renderRow(r.row, text);
+      } else {
+        node = el('div', 'chips-row');
+        var label = String(r.row.label == null ? r.row.value : r.row.label), t = text.trim();
+        var k = t ? label.toLowerCase().indexOf(t.toLowerCase()) : -1;
+        var main = el('span', 'main');
+        if (k >= 0) {
+          main.appendChild(document.createTextNode(label.slice(0, k)));
+          main.appendChild(el('b', '', label.slice(k, k + t.length)));
+          main.appendChild(document.createTextNode(label.slice(k + t.length)));
+        } else {
+          main.textContent = label;
+        }
+        node.appendChild(main);
+        if (r.row.detail) node.appendChild(el('small', '', r.row.detail));
+      }
+      node.id = id + '-' + i;
+      node.setAttribute('role', 'option');
+      node.setAttribute('aria-selected', 'false');
+      // The field keeps the focus, so a click does not end the typing.
+      node.addEventListener('mousedown', function (ev) { ev.preventDefault(); });
+      node.addEventListener('click', function () { pick(i); });
+      r.node = node;
+      list.appendChild(node);
+    });
+    list.hidden = !list.children.length;
+    input.setAttribute('aria-expanded', list.hidden ? 'false' : 'true');
+    if (!list.hidden) place();
+  };
+  var refill = function () {
+    var mine = ++ask, text = input.value;
+    Promise.resolve(o.suggest(text, values.slice())).then(function (found) {
+      // An answer to an earlier question is out of date.
+      if (mine !== ask || document.activeElement !== input) return;
+      show(found, text);
+    }).catch(function () { if (mine === ask) closeList(); });
+  };
+  var pick = function (i) {
+    var r = rows[i];
+    if (!r) return;
+    add(r.value);
+    input.value = '';
+    refill();
+    input.focus();
+  };
+  // Typed text becomes chips; commas and line breaks split it.
+  var commit = function () {
+    var parts = input.value.split(/[,\n\r]+/);
+    input.value = '';
+    if (!freeText) return;
+    parts.forEach(add);
+  };
+
+  input.addEventListener('keydown', function (ev) {
+    var open = list && !list.hidden;
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      if (open && at >= 0) pick(at);
+      else if (input.value.trim() && freeText) { commit(); if (list) refill(); }
+    } else if (ev.key === ',' && freeText) {
+      ev.preventDefault();
+      commit();
+      if (list) refill();
+    } else if (ev.key === 'Backspace' && !input.value && values.length) {
+      remove(values.length - 1);
+    } else if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      if (!list) return;
+      ev.preventDefault();
+      if (!open) { refill(); return; }
+      var n = rows.length;
+      if (n) mark(ev.key === 'ArrowDown' ? (at + 1) % n : (at <= 0 ? n - 1 : at - 1));
+    } else if (ev.key === 'Escape' && open) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      closeList();
+    }
+  });
+  input.addEventListener('input', function () {
+    if (/[,\n\r]/.test(input.value) && freeText) commit();
+    if (!list) return;
+    clearTimeout(timer);
+    timer = setTimeout(refill, delay);
+  });
+  // A single-line field drops line breaks from pasted text, so they are read here.
+  input.addEventListener('paste', function (ev) {
+    var text = ev.clipboardData ? ev.clipboardData.getData('text') : '';
+    if (!freeText || !/[,\n\r]/.test(text)) return;
+    ev.preventDefault();
+    (input.value + text).split(/[,\n\r]+/).forEach(add);
+    input.value = '';
+    if (list) refill();
+  });
+  input.addEventListener('focus', function () { if (list) refill(); });
+  input.addEventListener('blur', function () {
+    // Typed text is never lost.
+    if (input.value.trim() && freeText) commit();
+    closeList();
+  });
+  field.addEventListener('click', function (ev) { if (ev.target === field) input.focus(); });
+
+  field.appendChild(input);
+  wrap.appendChild(field);
+  if (list) wrap.appendChild(list);
+  draw();
+  return {
+    el: wrap,
+    values: function () { return values.slice(); },
+    set: function (next) { values = next.slice(); draw(); },
+    add: function (v) { return add(v); },
+    focus: function () { input.focus(); },
+    destroy: function () { clearTimeout(timer); ask++; if (wrap.parentNode) wrap.parentNode.removeChild(wrap); },
+  };
+}
+
 // ------------------------------------------------------------------ duplicates page
 
 var DUP_KINDS_IDS = ['identical', 'resolution', 'edited', 'similar'];
@@ -2716,7 +2953,7 @@ function loadDuplicatesAcross() {
 // the link back to the drive roles is left out: they are right above.
 // Same content, so one picture per photo and one row per copy; ticked copies
 // (key `drive:id`) go to the trash of their own drive, one copy per photo stays.
-var crossState = { groups: [], marked: {}, syncs: [], reload: null, bar: null, pick: null };
+var crossState = { groups: [], marked: {}, syncs: [], reload: null, bar: null, pick: null, ignore: null, labels: {} };
 
 function crossKey(f) { return f.library + ':' + f.id; }
 
@@ -2734,39 +2971,116 @@ function crossLabels(groups) {
   return label;
 }
 
+// "Ignore folders": folder names that are on several drives on purpose. A photo
+// with a copy in a folder of such a name is left out of the list (the server
+// does it, `ignore` in the request). Kept by this browser, like the Maps setting.
+var DUP_IGNORE_KEY = 'shoebox-dup-ignore';
+
+function dupIgnoreNames() {
+  try {
+    var saved = JSON.parse(localStorage.getItem(DUP_IGNORE_KEY) || '[]');
+    return Array.isArray(saved) ? saved.filter(function (n) { return typeof n === 'string' && n.trim(); }) : [];
+  } catch (e) { return []; }
+}
+
+function saveDupIgnoreNames(names) {
+  try { localStorage.setItem(DUP_IGNORE_KEY, JSON.stringify(names)); } catch (e) { /* storage may be blocked */ }
+}
+
+function dupIgnoreQuery(names, first) {
+  return names.map(function (n, i) { return (i || first ? '&' : '') + 'ignore=' + encodeURIComponent(n); }).join('');
+}
+
+// The field with the note under it. `onChange` runs after every change of the
+// names; `note.set(hidden)` writes how many photos are left out.
+function ignoreFoldersField(onChange) {
+  var box = el('div', 'ignore-folders');
+  var head = el('label', 'lbl', tr('dups.ignore.label'));
+  var hidden = 0;
+  var note = el('p', 'note');
+  var drawNote = function () {
+    note.textContent = field.values().length ? tr('dups.ignore.note', { count: trn('count.photos', hidden) }) : tr('dups.ignore.hint');
+  };
+  var driveLabels = function (r) {
+    return r.drives.map(function (d) { return crossState.labels[d.library] || d.volume || d.name; }).join(', ');
+  };
+  var field = chipsInput({
+    values: dupIgnoreNames(),
+    placeholder: tr('dups.ignore.placeholder'),
+    label: tr('dups.ignore.label'),
+    removeLabel: function (v) { return tr('dups.ignore.remove', { name: v }); },
+    suggest: function (text, taken) {
+      return api('/api/all/duplicates/folders?q=' + encodeURIComponent(text) + dupIgnoreQuery(taken, true)).then(function (rows) {
+        return rows.map(function (r) {
+          return { value: r.name, label: r.name, detail: trn('count.photos', r.photos) + ' · ' + tr('dups.ignore.suggest_on', { drives: driveLabels(r) }) };
+        });
+      });
+    },
+    freeRow: function (text) { return tr('dups.ignore.suggest_add', { name: text.trim() }); },
+    noneText: function () { return tr('dups.ignore.suggest_none'); },
+    onChange: function (names) { saveDupIgnoreNames(names); drawNote(); onChange(names); },
+  });
+  head.addEventListener('click', function () { field.focus(); });
+  box.appendChild(head);
+  box.appendChild(field.el);
+  box.appendChild(note);
+  drawNote();
+  return {
+    el: box,
+    add: function (name) { return field.add(name); },
+    names: function () { return field.values(); },
+    setHidden: function (n) { hidden = n; drawNote(); },
+  };
+}
+
 function renderDuplicatesAcross(page, alive, embedded) {
-  var sub = el('p', 'sub', tr('dups.looking'));
-  page.appendChild(sub);
   crossState.reload = embedded
     ? function () { page.textContent = ''; return renderDuplicatesAcross(page, alive, true); }
     : loadDuplicatesAcross;
-  return api('/api/all/duplicates?limit=200').then(function (r) {
-    if (!alive()) return;
-    sub.textContent = r.total_groups
-      ? tr('dups.across.some', { count: trn('count.photos_exist', r.total_groups), drives: r.compared.join(', ') })
-      : r.compared.length > 1 ? tr('dups.across.none_in', { drives: r.compared.join(', ') }) : tr('dups.across.none');
-    r.excluded.forEach(function (x) {
-      var b = el('div', 'banner');
-      b.appendChild(document.createTextNode(tr('dups.excluded', { name: x.name, reason: x.reason })));
-      if (!embedded) {
-        var go = el('button', 'link', tr('dups.decide'));
-        go.onclick = function () { showView('drives'); };
-        b.appendChild(go);
-      }
-      page.appendChild(b);
-    });
-    crossState.groups = r.groups;
-    crossState.marked = {};
-    crossState.syncs = [];
-    var labels = crossLabels(r.groups);
-    r.groups.forEach(function (g) { page.appendChild(crossGroupNode(g, labels)); });
-    if (r.total_groups > r.groups.length) page.appendChild(el('p', 'sub', tr('dups.first_of', { shown: r.groups.length, total: r.total_groups })));
-    var bar = el('div', 'dup-bar');
-    bar.hidden = !r.groups.length;
-    page.appendChild(bar);
-    crossState.bar = bar;
-    updateCrossBar(labels);
-  }).catch(failed);
+  var asked = 0;
+  var fill;
+  var ignore = ignoreFoldersField(function () { fill(); });
+  crossState.ignore = ignore;
+  page.appendChild(ignore.el);
+  var sub = el('p', 'sub', tr('dups.looking'));
+  page.appendChild(sub);
+  var box = el('div');
+  page.appendChild(box);
+  // The list again, e.g. after a name was added or taken away; the field stays.
+  fill = function () {
+    var mine = ++asked;
+    return api('/api/all/duplicates?limit=200' + dupIgnoreQuery(ignore.names(), true)).then(function (r) {
+      if (!alive() || mine !== asked) return;
+      box.textContent = '';
+      ignore.setHidden(r.hidden_groups || 0);
+      sub.textContent = r.total_groups
+        ? tr('dups.across.some', { count: trn('count.photos_exist', r.total_groups), drives: r.compared.join(', ') })
+        : r.compared.length > 1 ? tr('dups.across.none_in', { drives: r.compared.join(', ') }) : tr('dups.across.none');
+      r.excluded.forEach(function (x) {
+        var b = el('div', 'banner');
+        b.appendChild(document.createTextNode(tr('dups.excluded', { name: x.name, reason: x.reason })));
+        if (!embedded) {
+          var go = el('button', 'link', tr('dups.decide'));
+          go.onclick = function () { showView('drives'); };
+          b.appendChild(go);
+        }
+        box.appendChild(b);
+      });
+      crossState.groups = r.groups;
+      crossState.marked = {};
+      crossState.syncs = [];
+      var labels = crossLabels(r.groups);
+      crossState.labels = labels;
+      r.groups.forEach(function (g) { box.appendChild(crossGroupNode(g, labels)); });
+      if (r.total_groups > r.groups.length) box.appendChild(el('p', 'sub', tr('dups.first_of', { shown: r.groups.length, total: r.total_groups })));
+      var bar = el('div', 'dup-bar');
+      bar.hidden = !r.groups.length;
+      box.appendChild(bar);
+      crossState.bar = bar;
+      updateCrossBar(labels);
+    }).catch(failed);
+  };
+  return fill();
 }
 
 function crossMarkedCount() {
@@ -2915,6 +3229,15 @@ function crossGroupNode(g, labels) {
     fb.onclick = function () { switchLibrary(f.library, 'q=' + encodeURIComponent(baseName(f))); };
     var line = el('div');
     line.appendChild(fb);
+    // The folder the copy lies in, by name: any photo with a copy in a folder of that name is left out.
+    var leaf = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')).split('/').pop() : '';
+    if (leaf && crossState.ignore) {
+      var ib = el('button', 'folder ignore-this', tr('dups.ignore.add'));
+      ib.title = tr('dups.ignore.add_hint', { name: leaf });
+      ib.onclick = function () { crossState.ignore.add(leaf); };
+      line.appendChild(el('span', 'meta', ' · '));
+      line.appendChild(ib);
+    }
     where.appendChild(line);
     row.appendChild(where);
     row.appendChild(state);

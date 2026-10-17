@@ -231,6 +231,8 @@ pub struct CrossDuplicates {
     /// Contents that are on at least two drives (up to the limit asked for).
     pub groups: Vec<DuplicateGroup>,
     pub total_groups: u64,
+    /// Contents left out because a copy lies in an ignored folder.
+    pub hidden_groups: u64,
     /// Drives that took part.
     pub compared: Vec<String>,
     /// Backups, and drives that may be one (not decided): no suggestions.
@@ -262,19 +264,12 @@ pub fn eligibility(drives: &[Drive], roles: &[DriveRole]) -> (Vec<usize>, Vec<Ex
     (eligible, excluded)
 }
 
-/// Contents that exist on two or more drives that are not backups of each
-/// other. Offline drives are not passed in.
-pub fn cross_duplicates(drives: &[Drive], roles: &[DriveRole], limit: usize) -> Result<CrossDuplicates> {
-    let (eligible_at, excluded) = eligibility(drives, roles);
-    let eligible: Vec<&Drive> = eligible_at.iter().map(|&i| &drives[i]).collect();
-    let mut result = CrossDuplicates {
-        compared: eligible.iter().map(|d| d.name.clone()).collect(),
-        excluded,
-        ..CrossDuplicates::default()
-    };
+/// Copy of a content on a drive: (drive position, file id, path, kind, version).
+type Copy = (usize, i64, String, String, String);
 
-    // hash → (size, files), files unique by (drive, id)
-    type Copy = (usize, i64, String, String, String);
+/// Every content that is on at least two eligible drives, by full hash, with
+/// its copies (unique by drive and file).
+fn cross_groups<'a>(eligible: &[&'a Drive]) -> Result<BTreeMap<String, (u64, BTreeSet<Copy>)>> {
     let mut groups: BTreeMap<String, (u64, BTreeSet<Copy>)> = BTreeMap::new();
     for i in 0..eligible.len() {
         for j in i + 1..eligible.len() {
@@ -301,6 +296,49 @@ pub fn cross_duplicates(drives: &[Drive], roles: &[DriveRole], limit: usize) -> 
             }
         }
     }
+    Ok(groups)
+}
+
+/// The folders a file lies in, every one above it too (`a/b/c.jpg` is in `a`
+/// and `b`), as they are written. A file at the top level is in none.
+fn folders_of(path: &str) -> impl Iterator<Item = &str> {
+    let dir = path.rsplit_once('/').map_or("", |(dir, _)| dir);
+    dir.split('/').filter(|n| !n.is_empty())
+}
+
+/// Folder names to ignore, in the form they are compared (`db::tag_fold`:
+/// NFC, ignoring case); empty names are dropped.
+fn ignore_set(ignore: &[String]) -> HashSet<String> {
+    ignore.iter().map(|n| db::tag_fold(n)).filter(|n| !n.is_empty()).collect()
+}
+
+/// Whether any copy of a content lies in a folder with an ignored name. A
+/// photo with one such copy is left out with all its copies: the other drive's
+/// folder may be called something else.
+fn ignored(files: &BTreeSet<Copy>, ignore: &HashSet<String>) -> bool {
+    !ignore.is_empty() && files.iter().any(|f| folders_of(&f.2).any(|n| ignore.contains(&db::tag_fold(n))))
+}
+
+/// Contents that exist on two or more drives that are not backups of each
+/// other. Offline drives are not passed in. A content with a copy in a folder
+/// whose name is in `ignore` is left out (and counted in `hidden_groups`); the
+/// limit counts what is left.
+pub fn cross_duplicates(drives: &[Drive], roles: &[DriveRole], ignore: &[String], limit: usize) -> Result<CrossDuplicates> {
+    let (eligible_at, excluded) = eligibility(drives, roles);
+    let eligible: Vec<&Drive> = eligible_at.iter().map(|&i| &drives[i]).collect();
+    let mut result = CrossDuplicates {
+        compared: eligible.iter().map(|d| d.name.clone()).collect(),
+        excluded,
+        ..CrossDuplicates::default()
+    };
+
+    let mut groups = cross_groups(&eligible)?;
+    let ignore = ignore_set(ignore);
+    if !ignore.is_empty() {
+        let before = groups.len();
+        groups.retain(|_, (_, files)| !ignored(files, &ignore));
+        result.hidden_groups = (before - groups.len()) as u64;
+    }
     result.total_groups = groups.len() as u64;
     result.groups = groups
         .into_iter()
@@ -323,6 +361,76 @@ pub fn cross_duplicates(drives: &[Drive], roles: &[DriveRole], limit: usize) -> 
         })
         .collect();
     Ok(result)
+}
+
+/// A folder name found in the paths of the duplicates across drives.
+#[derive(Debug, Clone, Serialize)]
+pub struct FolderName {
+    pub name: String,
+    /// The photos on the list that ignoring this name would hide: those with a
+    /// copy in a folder of that name.
+    pub photos: u64,
+    /// The drives that have a folder of that name.
+    pub drives: Vec<FolderDrive>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FolderDrive {
+    pub library: String,
+    pub name: String,
+    /// The disk the drive's folder is on (filled in by the server).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume: Option<String>,
+}
+
+/// Folder names to offer for "Ignore folders": every folder in the paths of the
+/// photos still on the list (names in `ignore` are applied first, so counts are
+/// what is still visible, and are not offered), over all of them and not only
+/// the first ones shown. With `text` only names that contain it (NFC, ignoring
+/// case and accents), those that start with it first. Names on more than one
+/// drive come first, then by photos, then alphabetical.
+pub fn duplicate_folders(drives: &[Drive], roles: &[DriveRole], ignore: &[String], text: &str, limit: usize) -> Result<Vec<FolderName>> {
+    let (eligible_at, _) = eligibility(drives, roles);
+    let eligible: Vec<&Drive> = eligible_at.iter().map(|&i| &drives[i]).collect();
+    let ignore = ignore_set(ignore);
+    // folded name → (as first written, photos, drives)
+    let mut names: BTreeMap<String, (String, u64, BTreeMap<String, String>)> = BTreeMap::new();
+    for (_, (_, files)) in cross_groups(&eligible)? {
+        if ignored(&files, &ignore) {
+            continue;
+        }
+        let mut seen: HashSet<String> = HashSet::new();
+        for f in &files {
+            for n in folders_of(&f.2) {
+                let key = db::tag_fold(n);
+                let entry = names.entry(key.clone()).or_insert_with(|| (crate::library::nfc(n.trim()), 0, BTreeMap::new()));
+                entry.2.insert(eligible[f.0].id.clone(), eligible[f.0].name.clone());
+                if seen.insert(key) {
+                    entry.1 += 1;
+                }
+            }
+        }
+    }
+    let needle = crate::text::fold(text);
+    let mut rows: Vec<(bool, String, FolderName)> = names
+        .into_values()
+        .filter_map(|(name, photos, drives)| {
+            let folded = crate::text::fold(&name);
+            if !folded.contains(&needle) {
+                return None;
+            }
+            let drives = drives.into_iter().map(|(library, name)| FolderDrive { library, name, volume: None }).collect();
+            Some((folded.starts_with(&needle), folded, FolderName { name, photos, drives }))
+        })
+        .collect();
+    rows.sort_by(|(pa, fa, a), (pb, fb, b)| {
+        pb.cmp(pa)
+            .then(b.drives.len().min(2).cmp(&a.drives.len().min(2)))
+            .then(b.photos.cmp(&a.photos))
+            .then_with(|| fa.cmp(fb))
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    Ok(rows.into_iter().take(limit).map(|(_, _, f)| f).collect())
 }
 
 /// A person by name over all drives.
