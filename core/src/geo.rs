@@ -123,21 +123,29 @@ pub fn clear_position(conn: &Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
+/// At most this many file names per line of the location dialog; the count
+/// says how many there are in all.
+const MAX_NAMES: usize = 20;
+
 /// What a location dialog for several photos says: how many have a position
-/// in their file (they keep it) and how many one the user gave (it is replaced).
+/// in their file (they keep it) and how many one the user gave (it is
+/// replaced), with the names of the first `MAX_NAMES` of each, sorted.
 #[derive(Debug, Default, Serialize, PartialEq)]
 pub struct PositionsCheck {
     pub total: usize,
     pub with_file: usize,
     pub with_user: usize,
+    pub with_file_names: Vec<String>,
+    pub with_user_names: Vec<String>,
 }
 
-/// One row per id: the content key and whether the file has its own position.
-fn position_rows(conn: &Connection, ids: &[i64]) -> Result<Vec<(String, bool)>> {
+/// One row per id: the content key, whether the file has its own position,
+/// and the file name.
+fn position_rows(conn: &Connection, ids: &[i64]) -> Result<Vec<(String, bool, String)>> {
     ids.iter()
         .map(|&id| {
-            conn.query_row("SELECT quick_hash, lat IS NOT NULL AND lon IS NOT NULL FROM files WHERE id = ?1", [id], |r| {
-                Ok((r.get(0)?, r.get(1)?))
+            conn.query_row("SELECT quick_hash, lat IS NOT NULL AND lon IS NOT NULL, name FROM files WHERE id = ?1", [id], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
             })
             .optional()?
             .ok_or_else(|| anyhow::anyhow!("no such file"))
@@ -148,16 +156,22 @@ fn position_rows(conn: &Connection, ids: &[i64]) -> Result<Vec<(String, bool)>> 
 /// Counts for `PositionsCheck`; an unknown id is refused.
 pub fn check_positions(conn: &Connection, ids: &[i64]) -> Result<PositionsCheck> {
     let mut out = PositionsCheck { total: ids.len(), ..Default::default() };
-    for (key, own) in position_rows(conn, ids)? {
+    for (key, own, name) in position_rows(conn, ids)? {
         if own {
             out.with_file += 1;
+            out.with_file_names.push(name);
         } else if conn
             .query_row("SELECT 1 FROM geo_overrides WHERE key = ?1", [&key], |_| Ok(()))
             .optional()?
             .is_some()
         {
             out.with_user += 1;
+            out.with_user_names.push(name);
         }
+    }
+    for names in [&mut out.with_file_names, &mut out.with_user_names] {
+        names.sort();
+        names.truncate(MAX_NAMES);
     }
     Ok(out)
 }
@@ -178,7 +192,7 @@ pub fn set_positions(conn: &Connection, ids: &[i64], lat: f64, lon: f64) -> Resu
     let tx = conn.unchecked_transaction()?;
     let mut out = PositionsSet { set: 0, kept: 0 };
     let at = db::now();
-    for (key, own) in position_rows(&tx, ids)? {
+    for (key, own, _) in position_rows(&tx, ids)? {
         if own {
             out.kept += 1;
             continue;

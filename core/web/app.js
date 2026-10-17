@@ -463,17 +463,17 @@ var SELECT_ICON = lineIcon('<rect x="4" y="4" width="16" height="16" rx="3.5"/><
 var ADD_FACE_ICON = lineIcon('<circle cx="11" cy="13" r="8"/><circle cx="8.3" cy="11.5" r=".6"/><circle cx="13.7" cy="11.5" r=".6"/><path d="M7.4 15.6a4.2 4.2 0 0 0 7.2 0"/><path d="M19 2.5v5M16.5 5h5"/>');
 // The selection bar's tools (our own drawings): a cross, a label pointing
 // left with a plus or a minus, a calendar page with the "~" of an estimated
-// date, a tack in the ground, an arrow into a folder, a photo with an arrow
-// curving out of it, and the photo view's trash can.
+// date, a map marker with a plus, an arrow into a folder, an arrow up out of
+// a tray, and the photo view's trash can.
 var TRASH_ICON = lineIcon('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>');
 var SEL_ICONS = {
   close: lineIcon('<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>'),
   tag: lineIcon('<path d="M2 14l4.3-5H14.5A1.5 1.5 0 0 1 16 10.5v7a1.5 1.5 0 0 1-1.5 1.5H6.3z"/><circle cx="6.6" cy="14" r=".6"/><path d="M19 2.5v6.5M15.75 5.75h6.5"/>'),
   untag: lineIcon('<path d="M2 14l4.3-5H14.5A1.5 1.5 0 0 1 16 10.5v7a1.5 1.5 0 0 1-1.5 1.5H6.3z"/><circle cx="6.6" cy="14" r=".6"/><path d="M15.75 5.75h6.5"/>'),
   date: lineIcon('<path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5z"/><path d="M8.5 3.5v5M15.5 3.5v5" stroke-width="2.2"/><path d="M7.5 14.5c1.5-2.3 3-2.3 4.5 0s3 2.3 4.5 0"/>'),
-  geo: lineIcon('<circle cx="12" cy="7.5" r="4"/><path d="M12 11.5v7.5"/><ellipse cx="12" cy="19" rx="6" ry="2"/>'),
+  geo: lineIcon('<path d="M10 21C7.5 18.2 4 14.8 4 10.8a6 6 0 0 1 12 0c0 4-3.5 7.4-6 10.2z"/><circle cx="10" cy="10.8" r="1.4" fill="currentColor"/><path d="M19.5 1.5v6M16.5 4.5h6"/>'),
   move: lineIcon('<path d="M6 9.5V7a2 2 0 0 1 2-2h3l2 2h6a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V17.5"/><path d="M2 13.5h10M9 10.5l3 3-3 3"/>'),
-  export: lineIcon('<rect x="3" y="10" width="12.5" height="10" rx="2.5"/><path d="M3.5 18.5l3.5-3.5 3 3 1.5-1.5 3.5 3.5"/><path d="M10 10C10.5 6 14 4 19.5 4.5"/><path d="M16.8 1.8l2.9 2.7-2.6 3.2"/>'),
+  export: lineIcon('<path d="M4 13.5v4A2.5 2.5 0 0 0 6.5 20h11a2.5 2.5 0 0 0 2.5-2.5v-4"/><path d="M12 15.5V4.5M8 8.5l4-4 4 4"/>'),
   trash: TRASH_ICON
 };
 // An icon-only button for the tools row: the tooltip is also its name.

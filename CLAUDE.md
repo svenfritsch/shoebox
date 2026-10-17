@@ -96,7 +96,13 @@ current status and next step. Update its status table when a phase moves.
   Apple SF Symbols, ...), even when the idea comes from one: a different
   construction (shapes, proportions, stroke ends, where parts sit), never a
   trace, a copy of path data, or a small tweak of an original. If an icon
-  still looks like the well-known one, change it. Such an icon needs no
+  still looks like the well-known one, change it. The exception: plain
+  everyday shapes that every icon set has in some form (a cross, a plus, a
+  trash can, a map marker, a tray with an arrow going up) may look like
+  theirs, as long as we draw the path ourselves; the selection bar's Export
+  (tray with an arrow) and Set location (marker with a plus) are such
+  icons. Anything with a more distinctive design still needs a different
+  construction. Such an icon needs no
   licence entry only because it is ours. Never paste an icon set's SVG into
   the code or the guide.
   Open items before giving it to others: see "Before giving shoebox
