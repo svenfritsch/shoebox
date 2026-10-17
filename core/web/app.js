@@ -1924,6 +1924,7 @@ function renderPanelAll(info) {
   var driveName = lib.volume || lib.name;
   var driveCell = row(tr('info.drive'), driveName);
   if (driveCell && state.data.flat) driveCell.appendChild(el('span', 'cmp-badge ' + (lib.role === 'backup' ? 'backup' : 'original'), tr(lib.role === 'backup' ? 'cmp.badge_backup' : 'cmp.badge_original')));
+  if (!state.data.flat) alsoOnRow(dl, dl.lastChild, lib.id, id % SPAN);
   row(tr('info.path'), info.path);
   row(tr('info.size'), (info.width && info.height ? info.width + ' × ' + info.height + ' · ' : '') + formatBytes(info.size));
   row(tr('info.camera'), info.camera);
@@ -1983,6 +1984,29 @@ function renderPanelAll(info) {
   actions.appendChild(copy);
   panel.appendChild(actions);
   drawFaces();
+}
+
+// Phase 18: the other copies of the shown photo (same name, same content) on
+// the drives of the common timeline, each a way into that drive's folder. Put
+// in after `before` once the server answered.
+var otherCopies = {};
+function alsoOnRow(dl, before, library, file) {
+  var key = library + ':' + file;
+  var got = otherCopies[key] || (otherCopies[key] = api('/api/all/copies' + query({ library: library, file: file })));
+  got.then(function (list) {
+    if (!list.length) return;
+    var dd = el('dd');
+    list.forEach(function (c) {
+      var cut = c.path.lastIndexOf('/');
+      var b = el('button', 'link also-on', (c.volume || c.name) + (cut > 0 ? ' · ' + c.path.slice(0, cut) : ''));
+      b.title = tr('info.also_on_hint');
+      b.onclick = function () { switchLibrary(c.library, 'folder=' + c.folder_id); };
+      dd.appendChild(b);
+    });
+    var next = before ? before.nextSibling : null;
+    dl.insertBefore(el('dt', '', tr('info.also_on')), next);
+    dl.insertBefore(dd, next);
+  }).catch(function () { delete otherCopies[key]; });
 }
 
 function renderPanel() {
@@ -7235,6 +7259,7 @@ function loadDrivesPage() {
 // The common timeline came in: which drives its ids refer to, and what is left out.
 function allTimelineLoaded(data) {
   drives.allLibs = data.libs;
+  otherCopies = {};
   var note = $('all-note');
   if (!note) {
     note = el('div', 'note-bar');
@@ -7248,7 +7273,8 @@ function allTimelineLoaded(data) {
     return;
   }
   note.textContent = tr('drives.note', { libs: data.libs.map(function (l) { return l.name; }).join(', ') }) + (out.length ? tr('drives.note_out', { out: out.join(', ') }) : '');
-  $('status').textContent = tr('drives.status', { photos: trn('count.photos', data.count), drives: trn('count.drives', data.libs.length) });
+  $('status').textContent = tr('drives.status', { photos: trn('count.photos', data.count), drives: trn('count.drives', data.libs.length) })
+    + (data.hidden ? ' · ' + trn('count.hidden_copies', data.hidden) : '');
 }
 
 // "Show in Finder" for a file on one of the drives (named by drive and path).

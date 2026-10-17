@@ -534,6 +534,7 @@ body.selecting .sec .pick { display: inline; }
 .lb-panel .pickbar.busy { opacity: .6; pointer-events: none; }
 .lb-panel .pickhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
 .lb-panel .pickhead .link { background: none; border: 0; padding: 0; color: var(--accent); font-size: 13px; }
+.lb-panel .also-on { display: block; text-align: left; font-size: inherit; overflow-wrap: anywhere; }
 .lb-panel .pickacts { display: flex; gap: 6px; flex-wrap: wrap; }
 .lb-panel .ptools { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 .lb-panel .ptools .tool { width: 34px; height: 34px; padding: 0; border: 0; border-radius: 9px; background: rgba(255,255,255,.15); color: #eee; font-size: 19px; display: inline-flex; align-items: center; justify-content: center; }

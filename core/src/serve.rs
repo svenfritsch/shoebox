@@ -407,6 +407,7 @@ impl App {
             conn: Mutex::new(conn),
             snapshot: Mutex::new(None),
             duplicates: Mutex::new(None),
+            copies: Mutex::new(None),
             generation: AtomicU64::new(0),
             writing: Mutex::new(()),
             dirty: AtomicBool::new(false),
@@ -448,6 +449,8 @@ struct App {
     /// Timeline and folders, rebuilt when the index changed.
     snapshot: Mutex<Option<(IndexVersion, Arc<Snapshot>)>>,
     duplicates: Mutex<Option<(IndexVersion, Arc<Vec<duplicates::Group>>)>>,
+    /// Name and full hash of every file, for the common timeline (phase 18).
+    copies: Mutex<Option<(IndexVersion, Arc<HashMap<i64, multi::CopyFacts>>)>>,
     /// Counts this server's own changes; `PRAGMA data_version` only sees
     /// other connections' commits.
     generation: AtomicU64,
@@ -511,6 +514,20 @@ impl App {
         let s = Arc::new(Snapshot::load(conn)?);
         *cache = Some((version, s.clone()));
         Ok(s)
+    }
+
+    /// What makes a file the same photo as one on another drive (phase 18).
+    fn copy_facts(&self, conn: &Connection) -> Result<Arc<HashMap<i64, multi::CopyFacts>>> {
+        let version = self.version(conn)?;
+        let mut cache = self.copies.lock().unwrap();
+        if let Some((v, c)) = cache.as_ref()
+            && *v == version
+        {
+            return Ok(c.clone());
+        }
+        let c = Arc::new(multi::copy_facts(conn)?);
+        *cache = Some((version, c.clone()));
+        Ok(c)
     }
 
     /// Ask for a search for moved files (at most one runs at a time).
@@ -810,6 +827,7 @@ fn hub_router(hub: Arc<Hub>) -> Router {
         .route("/api/all/timeline", get(all_timeline))
         .route("/api/all/tags", get(all_tags))
         .route("/api/all/duplicates", get(all_duplicates))
+        .route("/api/all/copies", get(all_copies))
         .route("/api/all/drives", get(all_drives))
         .route("/api/all/role", post(all_set_role))
         .route("/api/all/transfer", get(all_transfer).post(all_transfer_apply))
@@ -1297,40 +1315,57 @@ struct AllPeople {
     offline: Vec<String>,
 }
 
-/// People over all drives: the same name is the same person. With a filter
-/// (the timeline's, by name) `photos` counts only the photos the list shows
-/// and people who would show nothing are left out, as on a single drive.
+/// People over all drives: the same name is the same person. `photos` counts
+/// the photos the common timeline shows of them, identical copies once. With
+/// a filter (the timeline's, by name) only those the list then shows, and
+/// people who would show nothing are left out, as on a single drive.
 async fn all_people(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<AllPeople>> {
     let apps = online_apps(&hub).await;
     let offline = hub.slots.iter().filter(|s| !apps.iter().any(|a| a.name == s.name)).map(|s| s.name.clone()).collect();
     let filter = AllFilter::of(&pairs, false)?;
     let people = tokio::task::spawn_blocking(move || -> ApiResult<Vec<multi::MergedPerson>> {
         let mut per_drive = Vec::new();
-        for app in &apps {
+        // By name (as `merge_people` matches them): the photos the list shows
+        // of the person, a photo on two drives once (phase 18).
+        let mut photos_of: HashMap<String, HashSet<multi::Photo>> = HashMap::new();
+        for (d, app) in apps.iter().enumerate() {
             let conn = app.conn.lock().unwrap();
             let mut list = people::people(&conn, true)?;
+            // A drive without one of the names has nothing that matches.
+            let Some(query) = filter.query_for(&conn)? else { continue };
+            let snapshot = app.snapshot(&conn)?;
+            let shown: HashSet<i64> = snapshot.query(&conn, &query)?.iter().map(|it| it.id).collect();
+            let copies = app.copy_facts(&conn)?;
+            // Faces are kept by content: the files shown of each content key.
+            let mut files_per_key: HashMap<String, Vec<i64>> = HashMap::new();
+            let mut stmt = conn.prepare("SELECT id, quick_hash FROM files WHERE missing_since IS NULL")?;
+            let mut rows = stmt.query([])?;
+            while let Some(r) = rows.next()? {
+                let id: i64 = r.get(0)?;
+                if shown.contains(&id) {
+                    files_per_key.entry(r.get(1)?).or_default().push(id);
+                }
+            }
+            let keys = people::keys_by_person(&conn)?;
+            for p in &mut list {
+                let files: Vec<i64> = keys.get(&p.id).into_iter().flatten().filter_map(|k| files_per_key.get(k)).flatten().copied().collect();
+                if !filter.is_empty() {
+                    p.photos = files.len() as u64;
+                }
+                photos_of
+                    .entry(crate::library::nfc(p.name.trim()).to_lowercase())
+                    .or_default()
+                    .extend(files.iter().map(|&id| multi::photo(&copies, d, id)));
+            }
             if !filter.is_empty() {
-                // A drive without one of the names has nothing that matches.
-                let Some(query) = filter.query_for(&conn)? else { continue };
-                let snapshot = app.snapshot(&conn)?;
-                let shown: HashSet<i64> = snapshot.query(&conn, &query)?.iter().map(|it| it.id).collect();
-                let mut files_per_key: HashMap<String, u64> = HashMap::new();
-                let mut stmt = conn.prepare("SELECT id, quick_hash FROM files WHERE missing_since IS NULL")?;
-                let mut rows = stmt.query([])?;
-                while let Some(r) = rows.next()? {
-                    if shown.contains(&r.get::<_, i64>(0)?) {
-                        *files_per_key.entry(r.get(1)?).or_default() += 1;
-                    }
-                }
-                let keys = people::keys_by_person(&conn)?;
-                for p in &mut list {
-                    p.photos = keys.get(&p.id).into_iter().flatten().map(|k| files_per_key.get(k).copied().unwrap_or(0)).sum();
-                }
                 list.retain(|p| p.photos > 0);
             }
             per_drive.push((library_id(&app.name), app.name.clone(), list, people::groups(&conn)?));
         }
         let mut people = multi::merge_people(&per_drive);
+        for p in &mut people {
+            p.photos = photos_of.get(&p.name.to_lowercase()).map_or(0, |s| s.len() as u64);
+        }
         // The disk name tells the drives apart; the folder name often does not.
         for p in &mut people {
             for l in &mut p.libraries {
@@ -1400,6 +1435,45 @@ async fn all_duplicates(State(hub): State<Arc<Hub>>, Query(q): Query<LimitQuery>
         .await
         .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
     Ok(Json(result))
+}
+
+#[derive(Deserialize)]
+struct CopiesQuery {
+    library: String,
+    file: i64,
+}
+
+/// The other copies of a photo in the common timeline (phase 18): files with
+/// the same name and the same full hash on the drives that take part (not
+/// backups). For the info panel's "Also on" row; read only.
+async fn all_copies(State(hub): State<Arc<Hub>>, Query(q): Query<CopiesQuery>) -> ApiResult<Json<Vec<multi::OtherCopy>>> {
+    let o = overview(&hub).await?;
+    let list = tokio::task::spawn_blocking(move || -> ApiResult<Vec<multi::OtherCopy>> {
+        let app = o.apps.iter().find(|a| library_id(&a.name) == q.library).ok_or(ApiError::NotFound)?;
+        let key = {
+            let conn = app.conn.lock().unwrap();
+            app.copy_facts(&conn)?.get(&q.file).map(|c| c.key.clone())
+        };
+        let Some(key) = key else { return Ok(Vec::new()) };
+        let (eligible, _) = multi::eligibility(&o.drives, &o.roles);
+        let mut out = Vec::new();
+        for &i in &eligible {
+            let a = &o.apps[i];
+            let id = library_id(&a.name);
+            let files = multi::files_with_key(&a.conn.lock().unwrap(), &key)?;
+            let volume = if files.is_empty() { None } else { volume::placement(&a.root).map(|p| p.volume) };
+            for (file, folder_id, path) in files {
+                if id == q.library && file == q.file {
+                    continue;
+                }
+                out.push(multi::OtherCopy { library: id.clone(), name: a.name.clone(), volume: volume.clone(), id: file, folder_id, path });
+            }
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+    Ok(Json(list))
 }
 
 #[derive(Serialize)]
@@ -1476,6 +1550,8 @@ struct AllTimeline {
     /// In path order, so the two versions of a photo sit side by side (the
     /// UI shows no month headings): `compare=different`.
     flat: bool,
+    /// Copies left out because the same photo is shown once (phase 18).
+    hidden: usize,
 }
 
 #[derive(Serialize)]
@@ -1620,7 +1696,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
         .map(|(a, &i)| LibraryRef { id: library_id(&a.name), name: a.name.clone(), volume: volume::placement(&a.root).map(|p| p.volume), role: o.drives[i].role })
         .collect();
 
-    let timeline = tokio::task::spawn_blocking(move || -> ApiResult<Timeline> {
+    let timeline = tokio::task::spawn_blocking(move || -> ApiResult<(Timeline, usize)> {
         struct Row {
             sort: String,
             path: String,
@@ -1632,14 +1708,22 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
             fav: bool,
             snip: Option<String>,
             est: Option<char>,
+            drive: usize,
+            copy: Option<multi::CopyFacts>,
         }
         let mut rows: Vec<Row> = Vec::new();
+        // Photos with a heart on any drive, by the key of their copies.
+        let mut fav_keys: HashSet<multi::CopyKey> = HashSet::new();
         for (d, app) in apps.iter().enumerate() {
             let conn = app.conn.lock().unwrap();
+            let hearts = own_tags::favorite_ids(&conn)?;
+            let copies = if flat { None } else { Some(app.copy_facts(&conn)?) };
+            if let Some(copies) = &copies {
+                fav_keys.extend(hearts.iter().filter_map(|id| copies.get(id)).map(|c| c.key.clone()));
+            }
             let Some(mut query) = filter.query_for(&conn)? else { continue };
             let snapshot = app.snapshot(&conn)?;
             query.ids = different.as_ref().map(|sets| sets[d].clone());
-            let hearts = own_tags::favorite_ids(&conn)?;
             let items = snapshot.query(&conn, &query)?;
             let snips = if text_terms.is_empty() {
                 HashMap::new()
@@ -1664,7 +1748,34 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
                     version: it.version.clone(),
                     live: it.live.map(|v| d as i64 * ID_SPAN + v),
                     est: estimate_code(it.date_source),
+                    drive: d,
+                    copy: copies.as_ref().and_then(|c| c.get(&it.id).cloned()),
                 });
+            }
+        }
+        // Identical photos once (phase 18): of the copies the filter left, one
+        // stays (`multi::shown_first`), with a heart if any copy has one.
+        let mut hidden = 0;
+        if !flat {
+            let mut best: HashMap<&multi::CopyKey, usize> = HashMap::new();
+            for (i, r) in rows.iter().enumerate() {
+                let Some(c) = &r.copy else { continue };
+                let b = best.entry(&c.key).or_insert(i);
+                let o = &rows[*b];
+                if multi::shown_first((c.dated_at, r.drive, &r.path), (o.copy.as_ref().and_then(|c| c.dated_at), o.drive, &o.path)).is_lt() {
+                    *b = i;
+                }
+            }
+            let keep: HashSet<usize> = best.into_values().collect();
+            let before = rows.len();
+            let mut i = 0;
+            rows.retain(|r| {
+                i += 1;
+                r.copy.is_none() || keep.contains(&(i - 1))
+            });
+            hidden = before - rows.len();
+            for r in &mut rows {
+                r.fav |= r.copy.as_ref().is_some_and(|c| fav_keys.contains(&c.key));
             }
         }
         if flat {
@@ -1703,15 +1814,17 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
                 t.live.push([r.gid, v]);
             }
         }
-        Ok(t)
+        Ok((t, hidden))
     })
     .await
     .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
-    Ok(Json(AllTimeline { timeline, libs, left_out, flat }))
+    let (timeline, hidden) = timeline;
+    Ok(Json(AllTimeline { timeline, libs, left_out, flat, hidden }))
 }
 
 /// Tags over the drives that take part, by name (spellings fold together),
-/// most used first. For the search suggestions of the common timeline. With a
+/// most used first. For the search suggestions of the common timeline: counts
+/// are photos the timeline shows, identical copies once (phase 18). With a
 /// filter (the timeline's: `tag`, `person`, `type`, `fav`, `date`, ... by name)
 /// it counts only the photos the list shows and leaves out tags that would
 /// show nothing, as the single drive's suggestions do; `q` is the word typed.
@@ -1724,42 +1837,42 @@ async fn all_tags(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> Ap
     let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(50);
     let filter = AllFilter::of(&pairs, false)?;
     let tags = tokio::task::spawn_blocking(move || -> ApiResult<Vec<browse::Tag>> {
-        let mut merged: std::collections::BTreeMap<String, browse::Tag> = std::collections::BTreeMap::new();
-        for app in &apps {
+        // By name: the tag, the photos that carry it and those that carry it
+        // as an own tag. A photo on two drives is one photo (phase 18).
+        type Merged = (browse::Tag, HashSet<multi::Photo>, HashSet<multi::Photo>);
+        let mut merged: std::collections::BTreeMap<String, Merged> = std::collections::BTreeMap::new();
+        for (d, app) in apps.iter().enumerate() {
             let conn = app.conn.lock().unwrap();
-            let list = if filter.is_empty() {
-                browse::all_tags(&conn)?
-            } else {
-                // A drive without one of the names has nothing that matches.
-                let Some(query) = filter.query_for(&conn)? else { continue };
-                let snapshot = app.snapshot(&conn)?;
-                let shown: HashSet<i64> = snapshot.query(&conn, &query)?.iter().map(|it| it.id).collect();
-                // Whether a tag is only a folder name is a fact about the drive,
-                // not about the photos shown (as on a single drive).
-                let kinds: HashMap<i64, browse::TagKind> = browse::all_tags(&conn)?.into_iter().map(|t| (t.id, t.kind)).collect();
-                let mut within = browse::tags_within(&conn, &shown, &query.tags)?;
-                for t in &mut within {
-                    if let Some(&kind) = kinds.get(&t.id) {
-                        t.kind = kind;
+            // A drive without one of the names has nothing that matches.
+            let Some(query) = filter.query_for(&conn)? else { continue };
+            let snapshot = app.snapshot(&conn)?;
+            let shown: HashSet<i64> = snapshot.query(&conn, &query)?.iter().map(|it| it.id).collect();
+            let copies = app.copy_facts(&conn)?;
+            // Whether a tag is only a folder name is a fact about the drive,
+            // not about the photos shown (as on a single drive).
+            let facts: HashMap<i64, browse::Tag> = browse::all_tags(&conn)?.into_iter().map(|t| (t.id, t)).collect();
+            for t in browse::tag_files_within(&conn, &shown, &query.tags)? {
+                let mut tag = t.tag;
+                if let Some(f) = facts.get(&tag.id) {
+                    tag.kind = f.kind;
+                    if filter.is_empty() {
+                        tag.last_used = f.last_used;
                     }
                 }
-                within
-            };
-            for t in list {
-                let key = db::tag_fold(&t.name);
-                if !key.contains(&needle) || (own && t.kind == browse::TagKind::Folder) {
+                let key = db::tag_fold(&tag.name);
+                if !key.contains(&needle) || (own && tag.kind == browse::TagKind::Folder) {
                     continue;
                 }
-                merged
-                    .entry(key)
-                    .and_modify(|m| {
-                        m.count += t.count;
-                        m.manual += t.manual;
-                        m.last_used = m.last_used.max(t.last_used);
-                    })
-                    .or_insert(browse::Tag { id: 0, ..t });
+                let m = merged.entry(key).or_insert_with(|| (browse::Tag { id: 0, last_used: None, ..tag.clone() }, HashSet::new(), HashSet::new()));
+                m.0.last_used = m.0.last_used.max(tag.last_used);
+                m.1.extend(t.files.iter().map(|&id| multi::photo(&copies, d, id)));
+                m.2.extend(t.manual.iter().map(|&id| multi::photo(&copies, d, id)));
             }
         }
+        let merged: std::collections::BTreeMap<String, browse::Tag> = merged
+            .into_iter()
+            .map(|(k, (tag, photos, manual))| (k, browse::Tag { count: photos.len() as u64, manual: manual.len() as u64, ..tag }))
+            .collect();
         let mut list: Vec<browse::Tag> = merged.into_values().collect();
         list.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.name.cmp(&b.name)));
         list.truncate(limit);

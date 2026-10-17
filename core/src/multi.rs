@@ -11,7 +11,7 @@
 //! other drive does not is *suggested* as a backup and left out of the
 //! duplicates until the user confirms or says "separate".
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -396,6 +396,94 @@ pub fn merge_people(per_drive: &[(String, String, Vec<crate::people::Person>, Ve
         b.libraries.len().cmp(&a.libraries.len()).then_with(|| b.faces.cmp(&a.faces)).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
     list
+}
+
+// ---------------------------------------------------------------- identical photos once (phase 18)
+
+/// What makes copies the same photo in the common timeline: the same file
+/// name (NFC, ignoring case, never the folder) and the same full hash. Nothing
+/// else: renamed copies and other content with the same name stay apart.
+pub type CopyKey = (String, String);
+
+/// A file that has a full hash and is there: its key, and when the user last
+/// gave it a date (corrected or estimated), if ever.
+#[derive(Debug, Clone)]
+pub struct CopyFacts {
+    pub key: CopyKey,
+    pub dated_at: Option<i64>,
+}
+
+pub fn copy_key(name: &str, full_hash: &str) -> CopyKey {
+    (crate::library::nfc(name).to_lowercase(), full_hash.to_string())
+}
+
+/// Every file of one drive that can be the same photo as a file elsewhere.
+/// A file without a full hash (not hashed yet) is never left out of the
+/// timeline as a copy.
+pub fn copy_facts(conn: &Connection) -> Result<HashMap<i64, CopyFacts>> {
+    let mut stmt = conn.prepare(
+        "SELECT f.id, f.name, f.full_hash,
+                (SELECT o.at FROM taken_overrides o WHERE o.key = f.quick_hash),
+                (SELECT e.at FROM date_estimates e WHERE e.key = f.quick_hash)
+         FROM files f WHERE f.full_hash IS NOT NULL AND f.missing_since IS NULL",
+    )?;
+    let mut out = HashMap::new();
+    let mut rows = stmt.query([])?;
+    while let Some(r) = rows.next()? {
+        let name: String = r.get(1)?;
+        let hash: String = r.get(2)?;
+        let dated_at = r.get::<_, Option<i64>>(3)?.max(r.get::<_, Option<i64>>(4)?);
+        out.insert(r.get(0)?, CopyFacts { key: copy_key(&name, &hash), dated_at });
+    }
+    Ok(out)
+}
+
+/// One photo of the common timeline, for counting: the key of its copies, or
+/// the file itself (drive, id) when it has none.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Photo {
+    Copies(CopyKey),
+    Own(usize, i64),
+}
+
+pub fn photo(facts: &HashMap<i64, CopyFacts>, drive: usize, id: i64) -> Photo {
+    match facts.get(&id) {
+        Some(f) => Photo::Copies(f.key.clone()),
+        None => Photo::Own(drive, id),
+    }
+}
+
+/// Which copy of a photo the timeline shows: the one with the date the user
+/// set last (it decides where the photo belongs), else the first drive in the
+/// list, then the first path. The same copy every time, so nothing jumps.
+pub fn shown_first(a: (Option<i64>, usize, &str), b: (Option<i64>, usize, &str)) -> std::cmp::Ordering {
+    b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)).then_with(|| a.2.cmp(b.2))
+}
+
+/// One other copy of a photo, for the info panel's "Also on" row.
+#[derive(Debug, Clone, Serialize)]
+pub struct OtherCopy {
+    pub library: String,
+    pub name: String,
+    /// The disk name (filled in by the server, which knows the paths).
+    pub volume: Option<String>,
+    pub id: i64,
+    pub folder_id: i64,
+    pub path: String,
+}
+
+/// The files of one drive with this key (there, with a full hash).
+pub fn files_with_key(conn: &Connection, key: &CopyKey) -> Result<Vec<(i64, i64, String)>> {
+    let mut stmt = conn.prepare("SELECT id, folder_id, path, name FROM files WHERE full_hash = ?1 AND missing_since IS NULL ORDER BY path_nfc")?;
+    let mut out = Vec::new();
+    let mut rows = stmt.query([&key.1])?;
+    while let Some(r) = rows.next()? {
+        let name: String = r.get(3)?;
+        if copy_key(&name, &key.1) == *key {
+            out.push((r.get(0)?, r.get(1)?, r.get(2)?));
+        }
+    }
+    Ok(out)
 }
 
 // ---------------------------------------------------------------- backups
