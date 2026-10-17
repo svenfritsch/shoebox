@@ -121,15 +121,8 @@ function writeMapsSetting(on) {
   try { localStorage.setItem('shoebox-maps', on ? '1' : '0'); } catch (e) { /* ignore */ }
 }
 
-// Set location in the selection bar is there only with maps on (a photo's
-// info panel keeps its own button, for typing coordinates).
-function applyMapsSetting() {
-  $('sel-geo').hidden = !geo.on;
-}
-
 function loadGeo() {
   geo.on = readMapsSetting();
-  applyMapsSetting();
   return loadPlaces().catch(function () {}); // also with maps off: a place in the search keeps its name
 }
 
@@ -143,7 +136,6 @@ function mapsSection() {
   box.onchange = function () {
     geo.on = box.checked;
     writeMapsSetting(geo.on);
-    applyMapsSetting();
     if (geo.on) loadPlaces(); else renderLocationsSection();
     toast(tr('settings.maps_saved'));
   };
