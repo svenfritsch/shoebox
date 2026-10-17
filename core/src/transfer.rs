@@ -10,10 +10,10 @@
 //!
 //! Two halves, so a later reader of `userdata.json` (15b) can reuse the second:
 //!
-//! 1. **Read** a [`CarrySet`] from a source: [`read_drive`] opens the other
+//! 1. **Read** a [`TransferSet`] from a source: [`read_drive`] opens the other
 //!    drive's `library.db` read-only and reads only the tables of the five
 //!    boxes.
-//! 2. **Apply** a `CarrySet` to the target for the ticked [`Boxes`]: matching,
+//! 2. **Apply** a `TransferSet` to the target for the ticked [`Boxes`]: matching,
 //!    then inserts in **one transaction** on the target's `library.db`
 //!    ([`apply`]). Carry over only adds: what the target already has wins, and a
 //!    second run adds nothing ([`plan`] counts without writing).
@@ -22,7 +22,7 @@
 //! guard is needed. Never carried: thumbnails and recognition results (the
 //! target builds them), decisions about duplicates inside the source drive
 //! (they refer to its file ids), the source's trash, named places (about the
-//! drive, not a photo) and the "other marks" listed in `NOT_CARRIED_TABLES`.
+//! drive, not a photo) and the "other marks" listed in `NOT_TRANSFERRED_TABLES`.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -35,16 +35,16 @@ use crate::{db, people, recognize, tags};
 
 /// Tables of `library.db` whose rows are carried (one box each, `people` with
 /// `face_decisions`). A new table must be in this list or in
-/// `NOT_CARRIED_TABLES`: `core/tests/transfer.rs` fails otherwise, so a new kind
+/// `NOT_TRANSFERRED_TABLES`: `core/tests/transfer.rs` fails otherwise, so a new kind
 /// of user data is decided about on purpose.
-pub const CARRIED_TABLES: &[&str] = &["file_tags", "face_decisions", "people", "taken_overrides", "date_estimates", "geo_overrides", "tags"];
+pub const TRANSFERRED_TABLES: &[&str] = &["file_tags", "face_decisions", "people", "taken_overrides", "date_estimates", "geo_overrides", "tags"];
 
 /// Tables that are not carried, and why: the drive's own bookkeeping, things
 /// the target builds itself, things about the drive and not a photo, and the
 /// "other marks" (`view_turns`, `shot_marks`, `text_hidden`, `face_species`):
 /// the same kind of content-keyed rows, not offered yet. A sixth box adds one
-/// of them to `CARRIED_TABLES`.
-pub const NOT_CARRIED_TABLES: &[&str] = &[
+/// of them to `TRANSFERRED_TABLES`.
+pub const NOT_TRANSFERRED_TABLES: &[&str] = &[
     "folders",
     "files",
     "jobs",
@@ -142,7 +142,7 @@ pub struct PlaceItem {
 
 /// Everything of the five boxes that a source holds.
 #[derive(Debug, Clone, Default)]
-pub struct CarrySet {
+pub struct TransferSet {
     /// The source's files by quick hash: what the content-keyed items below
     /// (decisions, dates, places) are matched by. Only keys that have an item.
     pub contents: HashMap<String, Vec<Content>>,
@@ -183,7 +183,7 @@ fn has_table(conn: &Connection, name: &str) -> Result<bool> {
 
 /// Read what a drive's `library.db` holds, read-only. The file is never
 /// changed (and the drive may be in use by its own server meanwhile).
-pub fn read_drive(db_path: &Path) -> Result<CarrySet> {
+pub fn read_drive(db_path: &Path) -> Result<TransferSet> {
     let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
     let conn = Connection::open_with_flags(db_path, flags).with_context(|| format!("open {}", db_path.display()))?;
     conn.busy_timeout(std::time::Duration::from_secs(10))?;
@@ -202,9 +202,9 @@ pub fn looks_emptied(db_path: &Path) -> Result<bool> {
     Ok(total > 0 && missing * 2 > total)
 }
 
-/// Read a `CarrySet` from an open `library.db` (read access is enough).
-pub fn read(conn: &Connection) -> Result<CarrySet> {
-    let mut set = CarrySet::default();
+/// Read a `TransferSet` from an open `library.db` (read access is enough).
+pub fn read(conn: &Connection) -> Result<TransferSet> {
+    let mut set = TransferSet::default();
 
     // Own tags and hearts: by the content of the file that carries them. The
     // source's missing files count (their records are kept until forgotten).
@@ -359,7 +359,7 @@ fn matching(target: &Target, c: &Content) -> Vec<usize> {
 }
 
 /// The target files that match any of the contents with this key.
-fn matching_key(target: &Target, set: &CarrySet, key: &str) -> Vec<usize> {
+fn matching_key(target: &Target, set: &TransferSet, key: &str) -> Vec<usize> {
     let mut out: Vec<usize> = Vec::new();
     for c in set.contents.get(key).into_iter().flatten() {
         for i in matching(target, c) {
@@ -402,27 +402,27 @@ fn give_tag(
 }
 
 /// Count what carrying `set` over would do on this drive, without writing.
-pub fn plan(conn: &Connection, set: &CarrySet, boxes: Boxes) -> Result<Counts> {
+pub fn plan(conn: &Connection, set: &TransferSet, boxes: Boxes) -> Result<Counts> {
     run(conn, set, boxes, false, &mut |_| Ok(()))
 }
 
 /// Carry `set` over to this drive: all ticked boxes in one transaction, or
 /// nothing.
-pub fn apply(conn: &Connection, set: &CarrySet, boxes: Boxes) -> Result<Counts> {
+pub fn apply(conn: &Connection, set: &TransferSet, boxes: Boxes) -> Result<Counts> {
     apply_with(conn, set, boxes, &mut |_| Ok(()))
 }
 
 /// Like [`apply`]; `step` is called with the number of rows written so far
 /// after every row, and an error from it undoes everything (the tests use it
 /// to prove that a failure half way leaves the target unchanged).
-pub fn apply_with(conn: &Connection, set: &CarrySet, boxes: Boxes, step: &mut dyn FnMut(u64) -> Result<()>) -> Result<Counts> {
+pub fn apply_with(conn: &Connection, set: &TransferSet, boxes: Boxes, step: &mut dyn FnMut(u64) -> Result<()>) -> Result<Counts> {
     let tx = conn.unchecked_transaction()?;
     let counts = run(&tx, set, boxes, true, step)?;
     tx.commit()?;
     Ok(counts)
 }
 
-fn run(conn: &Connection, set: &CarrySet, boxes: Boxes, write: bool, step: &mut dyn FnMut(u64) -> Result<()>) -> Result<Counts> {
+fn run(conn: &Connection, set: &TransferSet, boxes: Boxes, write: bool, step: &mut dyn FnMut(u64) -> Result<()>) -> Result<Counts> {
     let target = load_target(conn)?;
     let mut counts = Counts::default();
     let mut touched: HashSet<i64> = HashSet::new();

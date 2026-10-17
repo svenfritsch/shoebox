@@ -86,12 +86,12 @@ current status and next step. Update its status table when a phase moves.
   year, month or day) lives in `library.db` only, never in the file, and wins on
   the timeline over the capture date in the file; the file's date is shown in the
   info panel row "EXIF" and returns when the estimate is removed.
-- Carry over data (phase 15a, `transfer.rs`, `/api/all/carry*`): reads another
+- Carry over data (phase 15a, `transfer.rs`, `/api/all/transfer*`): reads another
   drive's `library.db` read-only and writes only the target drive's
   `library.db` (own tags, hearts, people and face decisions, corrected or
   estimated dates, hand-given places), matched by content. Target data always
   wins, one transaction, never a backup, no photo touched. A new table in
-  `library.db` must be listed in `transfer::CARRIED_TABLES` or `NOT_CARRIED_TABLES`.
+  `library.db` must be listed in `transfer::TRANSFERRED_TABLES` or `NOT_TRANSFERRED_TABLES`.
 - Licences: `LICENSE.txt` (all rights reserved, private use) and the generated
   `THIRD-PARTY-LICENSES.txt` go into the release archive. After a change to
   `Cargo.lock`, `scripts/build-deps.sh` or `core/web/vendor/` run

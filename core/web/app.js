@@ -6830,11 +6830,11 @@ function footCell(label, t, hint) {
 // Nothing on the source changes and no photo is touched; what the target has
 // stays. `list` is /api/all/drives, `to` the receiving drive's entry and
 // `preferred` the id of the drive to start with.
-function carryDialog(list, to, preferred) {
+function transferDialog(list, to, preferred) {
   var label = function (x) { return x.volume || x.name; };
   var sources = list.filter(function (x) { return x.online && x.shown_in_all && x.library !== to.library; });
   if (!sources.length) return;
-  var body = el('div', 'carry');
+  var body = el('div', 'transfer');
   var from = el('select');
   sources.forEach(function (x) {
     var o = el('option', '', label(x));
@@ -6842,26 +6842,26 @@ function carryDialog(list, to, preferred) {
     if (x.library === preferred) o.selected = true;
     from.appendChild(o);
   });
-  var pick = el('p', 'carry-from');
-  pick.appendChild(el('span', '', tr('carry.from') + ' '));
+  var pick = el('p', 'transfer-from');
+  pick.appendChild(el('span', '', tr('transfer.from') + ' '));
   pick.appendChild(from);
   var explain = el('p', '');
-  var boxes = el('div', 'carry-boxes');
+  var boxes = el('div', 'transfer-boxes');
   var note = el('p', 'hint');
   [pick, explain, boxes, note].forEach(function (n) { body.appendChild(n); });
-  var kinds = [['tags', 'carry.tags', 'count.photos'], ['hearts', 'carry.hearts', 'count.photos'], ['people', 'carry.people', 'count.faces'], ['dates', 'carry.dates', 'count.photos'], ['places', 'carry.places', 'count.photos']];
+  var kinds = [['tags', 'transfer.tags', 'count.photos'], ['hearts', 'transfer.hearts', 'count.photos'], ['people', 'transfer.people', 'count.faces'], ['dates', 'transfer.dates', 'count.photos'], ['places', 'transfer.places', 'count.photos']];
   var checks = {}, seq = 0, go = null, anything = false;
   var sync = function () {
     go.disabled = !anything || !kinds.some(function (k) { return checks[k[0]] && checks[k[0]].checked; });
   };
   var show = function (p) {
     var f = sources.filter(function (x) { return x.library === from.value; })[0];
-    explain.textContent = tr('carry.explain', { from: label(f), to: label(to) });
+    explain.textContent = tr('transfer.explain', { from: label(f), to: label(to) });
     boxes.textContent = '';
     anything = false;
     kinds.forEach(function (k) {
       var n = p.counts[k[0]];
-      var line = el('label', 'carry-box' + (n ? '' : ' off'));
+      var line = el('label', 'transfer-box' + (n ? '' : ' off'));
       var cb = el('input');
       cb.type = 'checkbox';
       cb.checked = !!n;
@@ -6873,28 +6873,28 @@ function carryDialog(list, to, preferred) {
       boxes.appendChild(line);
       if (n) anything = true;
     });
-    note.textContent = !anything ? tr('carry.none', { to: label(to) }) : p.source_emptied ? tr('carry.before_wipe', { from: label(f) }) : '';
+    note.textContent = !anything ? tr('transfer.none', { to: label(to) }) : p.source_emptied ? tr('transfer.before_wipe', { from: label(f) }) : '';
     sync();
   };
   var load = function () {
     var mine = ++seq;
     go.disabled = true;
-    post('/api/all/carry/plan', { from: from.value, to: to.library }).then(function (p) {
+    post('/api/all/transfer/plan', { from: from.value, to: to.library }).then(function (p) {
       if (mine === seq) show(p);
     }).catch(function (e) { if (mine === seq) { closeModal(); failed(e); } });
   };
   from.onchange = load;
-  var buttons = openModal(tr('carry.title'), body, [
+  var buttons = openModal(tr('transfer.title'), body, [
     { label: tr('app.cancel'), cls: 'quiet' },
     {
-      label: tr('carry.go'),
+      label: tr('transfer.go'),
       onclick: function (btn) {
         var chosen = {};
         kinds.forEach(function (k) { chosen[k[0]] = !!(checks[k[0]] && checks[k[0]].checked); });
         btn.disabled = true;
-        post('/api/all/carry', { from: from.value, to: to.library, boxes: chosen }).then(function (r) {
+        post('/api/all/transfer', { from: from.value, to: to.library, boxes: chosen }).then(function (r) {
           closeModal();
-          toast(r.counts.photos ? tr('carry.done', { photos: trn('count.photos', r.counts.photos) }) : tr('carry.nothing_new', { to: label(to) }));
+          toast(r.counts.photos ? tr('transfer.done', { photos: trn('count.photos', r.counts.photos) }) : tr('transfer.nothing_new', { to: label(to) }));
           allPeople.at = 0;
           loadDrivesPage();
           refreshDrives();
@@ -6919,7 +6919,7 @@ function loadDrivesPage() {
   var role = function (d, value, of) {
     post('/api/all/role', { library: d.library, role: value, of: of || null }).then(function () { toast(tr('drives.role_toast', { name: d.name, role: tr('drives.role.' + value) })); loadDrivesPage(); refreshDrives(); }).catch(failed);
   };
-  Promise.all([api('/api/all/drives'), api('/api/all/backups'), api('/api/all/carry').catch(function () { return []; })]).then(function (res) {
+  Promise.all([api('/api/all/drives'), api('/api/all/backups'), api('/api/all/transfer').catch(function () { return []; })]).then(function (res) {
     var list = res[0], backups = res[1], hints = res[2];
     var primaryOf = {};
     backups.forEach(function (b) { if (b.primary) primaryOf[b.library] = b.primary; });
@@ -6985,15 +6985,15 @@ function loadDrivesPage() {
         // drives that may be one), and only where there is another drive to take from.
         if (d.online && d.shown_in_all && list.some(function (x) { return x.online && x.shown_in_all && x.library !== d.library; })) {
           var mine = hints.filter(function (h) { return h.to === d.library; }).sort(function (a, b) { return b.counts.photos - a.counts.photos; });
-          var carry = el('div', 'carry-note');
+          var transfer = el('div', 'transfer-note');
           if (mine.length) {
             var src = list.filter(function (x) { return x.library === mine[0].from; })[0];
-            carry.appendChild(el('span', '', tr('carry.hint', { from: (src && src.volume) || mine[0].from_name, photos: trn('count.photos', mine[0].counts.photos) }) + ' '));
+            transfer.appendChild(el('span', '', tr('transfer.hint', { from: (src && src.volume) || mine[0].from_name, photos: trn('count.photos', mine[0].counts.photos) }) + ' '));
           }
-          var cb = el('button', 'btn' + (mine.length ? '' : ' quiet'), tr('carry.button'));
-          cb.onclick = function () { carryDialog(list, d, mine.length ? mine[0].from : null); };
-          carry.appendChild(cb);
-          body.appendChild(carry);
+          var cb = el('button', 'btn' + (mine.length ? '' : ' quiet'), tr('transfer.button'));
+          cb.onclick = function () { transferDialog(list, d, mine.length ? mine[0].from : null); };
+          transfer.appendChild(cb);
+          body.appendChild(transfer);
         }
         card.appendChild(body);
         if (d.online) {

@@ -444,7 +444,7 @@ function exportResult(s) {
     if (s.renamed) parts.push(tr('export.done_renumbered', { count: trn('count.files', s.renamed) }));
     body.appendChild(el('p', 'hint', parts.join(' · ')));
     if (s.no_exif) body.appendChild(el('p', 'hint', tr('export.no_exif', { count: trn('count.photos', s.no_exif) })));
-    if (landed && (s.copied || s.already)) body.appendChild(el('p', 'hint', tr('export.carry_hint', { drive: landed })));
+    if (landed && (s.copied || s.already)) body.appendChild(el('p', 'hint', tr('export.transfer_hint', { drive: landed })));
   }
   if (s.failed && s.failed.length) {
     body.appendChild(el('p', '', tr('export.some_failed', { count: trn('count.files', s.failed.length) })));

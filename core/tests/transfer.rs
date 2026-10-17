@@ -117,8 +117,8 @@ fn own_tag_rows(lib: &Library, fold: &str, path: Option<&str>) -> i64 {
 
 #[test]
 fn data_is_carried_by_content_to_the_same_photos_under_other_names() {
-    let a = source("carry-basic-a");
-    let b = target("carry-basic-b");
+    let a = source("transfer-basic-a");
+    let b = target("transfer-basic-b");
     make_data(&a);
     let before_db = fs::read(db_path(&a)).unwrap();
     let before_files = a.snapshot();
@@ -174,8 +174,8 @@ fn data_is_carried_by_content_to_the_same_photos_under_other_names() {
 
 #[test]
 fn a_box_that_is_not_ticked_changes_nothing() {
-    let a = source("carry-boxes-a");
-    let b = target("carry-boxes-b");
+    let a = source("transfer-boxes-a");
+    let b = target("transfer-boxes-b");
     make_data(&a);
     let set = transfer::read_drive(&db_path(&a)).unwrap();
     let conn = open(&b);
@@ -197,8 +197,8 @@ fn a_box_that_is_not_ticked_changes_nothing() {
 
 #[test]
 fn what_the_target_already_has_wins() {
-    let a = source("carry-wins-a");
-    let b = target("carry-wins-b");
+    let a = source("transfer-wins-a");
+    let b = target("transfer-wins-b");
     make_data(&a);
     {
         let conn = open(&b);
@@ -230,8 +230,8 @@ fn what_the_target_already_has_wins() {
 
 #[test]
 fn people_are_found_by_name_and_a_person_of_another_spelling_is_the_same() {
-    let a = source("carry-names-a");
-    let b = target("carry-names-b");
+    let a = source("transfer-names-a");
+    let b = target("transfer-names-b");
     make_data(&a);
     // The target knows Anna as "ANNA", with a group and a picture of its own.
     {
@@ -249,13 +249,13 @@ fn people_are_found_by_name_and_a_person_of_another_spelling_is_the_same() {
 
 #[test]
 fn photos_are_matched_by_content_not_by_name_missing_files_count_on_the_source_only() {
-    let a = bare("carry-match-a");
+    let a = bare("transfer-match-a");
     a.jpeg("Reise/gleich.jpg", 40);
     a.jpeg("Reise/geloescht.jpg", 41);
     a.jpeg("Reise/bearbeitet.jpg", 42);
     a.jpeg("Reise/weg-auf-b.jpg", 43);
     a.scan_opts(true, false, false);
-    let b = bare("carry-match-b");
+    let b = bare("transfer-match-b");
     b.jpeg("Neu/anderer-name.jpg", 40);
     b.jpeg("Neu/auch-da.jpg", 41);
     // The same name as on the source, but edited: another content.
@@ -287,9 +287,9 @@ fn photos_are_matched_by_content_not_by_name_missing_files_count_on_the_source_o
 
 #[test]
 fn a_photo_without_a_full_hash_is_matched_by_size_and_quick_hash() {
-    let a = source("carry-quick-a");
+    let a = source("transfer-quick-a");
     make_data(&a);
-    let b = bare("carry-quick-b");
+    let b = bare("transfer-quick-b");
     b.jpeg("Familie/IMG_1.jpg", 20);
     b.scan_opts(false, false, false);
     assert!(b.record("Familie/IMG_1.jpg").unwrap().1.is_none(), "no full hash yet");
@@ -301,8 +301,8 @@ fn a_photo_without_a_full_hash_is_matched_by_size_and_quick_hash() {
 
 #[test]
 fn a_failure_half_way_leaves_the_target_unchanged() {
-    let a = source("carry-atomic-a");
-    let b = target("carry-atomic-b");
+    let a = source("transfer-atomic-a");
+    let b = target("transfer-atomic-b");
     make_data(&a);
     let set = transfer::read_drive(&db_path(&a)).unwrap();
     let tables = ["file_tags", "tags", "people", "face_decisions", "taken_overrides", "date_estimates", "geo_overrides"];
@@ -322,11 +322,11 @@ fn a_failure_half_way_leaves_the_target_unchanged() {
 }
 
 /// A new table in `library.db` must be decided about: carried, or listed as
-/// not carried. This fails until it is in `transfer::CARRIED_TABLES` or
-/// `transfer::NOT_CARRIED_TABLES`.
+/// not carried. This fails until it is in `transfer::TRANSFERRED_TABLES` or
+/// `transfer::NOT_TRANSFERRED_TABLES`.
 #[test]
 fn every_table_of_the_index_is_carried_or_listed_as_not_carried() {
-    let lib = bare("carry-schema");
+    let lib = bare("transfer-schema");
     lib.scan_opts(true, false, false);
     let conn = lib.db();
     let names: Vec<String> = conn
@@ -338,29 +338,29 @@ fn every_table_of_the_index_is_carried_or_listed_as_not_carried() {
         .unwrap();
     assert!(names.len() > 10, "{names:?}");
     for name in &names {
-        let carried = transfer::CARRIED_TABLES.contains(&name.as_str());
-        let listed = transfer::NOT_CARRIED_TABLES.contains(&name.as_str());
+        let carried = transfer::TRANSFERRED_TABLES.contains(&name.as_str());
+        let listed = transfer::NOT_TRANSFERRED_TABLES.contains(&name.as_str());
         assert!(carried || listed, "table {name} is neither carried nor listed as not carried (core/src/transfer.rs)");
         assert!(!(carried && listed), "table {name} is in both lists");
     }
-    for name in transfer::CARRIED_TABLES.iter().chain(transfer::NOT_CARRIED_TABLES) {
+    for name in transfer::TRANSFERRED_TABLES.iter().chain(transfer::NOT_TRANSFERRED_TABLES) {
         assert!(names.iter().any(|n| n == name), "{name} is listed but there is no such table");
     }
 }
 
 #[test]
-fn the_routes_give_hints_plans_and_carry_over_and_refuse_backups() {
-    let a = source("carry-api-a");
-    let b = target("carry-api-b");
+fn the_routes_give_hints_plans_and_transfer_and_refuse_backups() {
+    let a = source("transfer-api-a");
+    let b = target("transfer-api-b");
     make_data(&a);
     let before = (a.snapshot(), b.snapshot());
-    let gone = std::env::temp_dir().join(format!("shoebox-it-{}-carry-api-unplugged", std::process::id()));
+    let gone = std::env::temp_dir().join(format!("shoebox-it-{}-transfer-api-unplugged", std::process::id()));
     let server = start_many(&[&a, &b], &[gone.as_path()]);
     let addr = server.addr;
     let (ia, ib) = (lib_id(addr, &a), lib_id(addr, &b));
 
     // Hints: one pair, from the travel drive to the family drive, nothing back.
-    let hints = get(addr, "/raw/api/all/carry").json();
+    let hints = get(addr, "/raw/api/all/transfer").json();
     let hints = hints.as_array().unwrap();
     assert_eq!(hints.len(), 1, "{hints:?}");
     assert_eq!((hints[0]["from"].as_str().unwrap(), hints[0]["to"].as_str().unwrap()), (ia.as_str(), ib.as_str()));
@@ -368,7 +368,7 @@ fn the_routes_give_hints_plans_and_carry_over_and_refuse_backups() {
     assert_eq!(hints[0]["counts"]["tags"], 3);
 
     // The plan for the dialog; nothing is written yet.
-    let plan = post(addr, "/raw/api/all/carry/plan", &json!({ "from": ia, "to": ib }));
+    let plan = post(addr, "/raw/api/all/transfer/plan", &json!({ "from": ia, "to": ib }));
     assert_eq!(plan.status, 200, "{}", String::from_utf8_lossy(&plan.body));
     let plan = plan.json();
     assert_eq!(plan["counts"]["hearts"], 1);
@@ -379,37 +379,37 @@ fn the_routes_give_hints_plans_and_carry_over_and_refuse_backups() {
     // Changes need the X-Shoebox header like every other change.
     let body = format!(r#"{{"from":"{ia}","to":"{ib}"}}"#);
     let json_ct = ("Content-Type", "application/json");
-    assert_eq!(bare_request(addr, "POST", "/raw/api/all/carry", &[json_ct], body.as_bytes()).status, 403);
+    assert_eq!(bare_request(addr, "POST", "/raw/api/all/transfer", &[json_ct], body.as_bytes()).status, 403);
 
     // Carry over (all boxes when none are named).
-    let done = post(addr, "/raw/api/all/carry", &json!({ "from": ia, "to": ib }));
+    let done = post(addr, "/raw/api/all/transfer", &json!({ "from": ia, "to": ib }));
     assert_eq!(done.status, 200, "{}", String::from_utf8_lossy(&done.body));
     assert_eq!(done.json()["counts"]["photos"], 3);
     assert_eq!(own_tag_rows(&b, "fjord", None), 1);
     assert_eq!(own_tag_rows(&b, "papa", None), 2);
     // Once done there is nothing left to do, and no hint.
-    assert_eq!(post(addr, "/raw/api/all/carry", &json!({ "from": ia, "to": ib })).json()["counts"]["photos"], 0);
-    assert_eq!(get(addr, "/raw/api/all/carry").json().as_array().unwrap().len(), 0);
+    assert_eq!(post(addr, "/raw/api/all/transfer", &json!({ "from": ia, "to": ib })).json()["counts"]["photos"], 0);
+    assert_eq!(get(addr, "/raw/api/all/transfer").json().as_array().unwrap().len(), 0);
     // The new person shows in All drives.
     let people = get(addr, "/raw/api/all/people").json();
     assert!(people["people"].as_array().unwrap().iter().any(|p| p["name"] == "Anna"));
 
     // The same drive twice, an unknown drive and a drive that is not plugged in.
-    assert_eq!(post(addr, "/raw/api/all/carry", &json!({ "from": ia, "to": ia })).status, 400);
-    assert_eq!(post(addr, "/raw/api/all/carry", &json!({ "from": ia, "to": "00000000" })).status, 404);
+    assert_eq!(post(addr, "/raw/api/all/transfer", &json!({ "from": ia, "to": ia })).status, 400);
+    assert_eq!(post(addr, "/raw/api/all/transfer", &json!({ "from": ia, "to": "00000000" })).status, 404);
     let drives = get(addr, "/raw/api/all/drives").json();
     let off = drives.as_array().unwrap().iter().find(|d| d["online"] == false).unwrap()["library"].as_str().unwrap().to_string();
-    assert_eq!(post(addr, "/raw/api/all/carry", &json!({ "from": off, "to": ib })).status, 503);
-    assert_eq!(post(addr, "/raw/api/all/carry/plan", &json!({ "from": ia, "to": off })).status, 503);
+    assert_eq!(post(addr, "/raw/api/all/transfer", &json!({ "from": off, "to": ib })).status, 503);
+    assert_eq!(post(addr, "/raw/api/all/transfer/plan", &json!({ "from": ia, "to": off })).status, 503);
     assert!(!gone.exists(), "nothing was created where the missing drive should be");
 
     // A backup is refused, as source and as target.
     assert_eq!(post(addr, "/raw/api/all/role", &json!({ "library": ib, "role": "backup" })).status, 200);
-    let refused = post(addr, "/raw/api/all/carry", &json!({ "from": ia, "to": ib }));
+    let refused = post(addr, "/raw/api/all/transfer", &json!({ "from": ia, "to": ib }));
     assert_eq!(refused.status, 400);
     assert!(refused.json()["error"].as_str().unwrap().contains("backup"));
-    assert_eq!(post(addr, "/raw/api/all/carry", &json!({ "from": ib, "to": ia })).status, 400);
-    assert_eq!(post(addr, "/raw/api/all/carry/plan", &json!({ "from": ia, "to": ib })).status, 400);
+    assert_eq!(post(addr, "/raw/api/all/transfer", &json!({ "from": ib, "to": ia })).status, 400);
+    assert_eq!(post(addr, "/raw/api/all/transfer/plan", &json!({ "from": ia, "to": ib })).status, 400);
     server.stop().unwrap();
 
     // Photos did not change on either drive.
@@ -420,8 +420,8 @@ fn the_routes_give_hints_plans_and_carry_over_and_refuse_backups() {
 fn a_drive_that_may_be_a_backup_is_refused_until_the_user_decides() {
     // Two drives with exactly the same content: one of them is a backup, and
     // only the user can tell which.
-    let one = bare("carry-undecided-a");
-    let two = bare("carry-undecided-b");
+    let one = bare("transfer-undecided-a");
+    let two = bare("transfer-undecided-b");
     for lib in [&one, &two] {
         lib.jpeg("Bilder/eins.jpg", 60);
         lib.jpeg("Bilder/zwei.jpg", 61);
@@ -431,15 +431,15 @@ fn a_drive_that_may_be_a_backup_is_refused_until_the_user_decides() {
     let server = start_many(&[&one, &two], &[]);
     let addr = server.addr;
     let (i1, i2) = (lib_id(addr, &one), lib_id(addr, &two));
-    assert_eq!(get(addr, "/raw/api/all/carry").json().as_array().unwrap().len(), 0, "no hints for drives that may be backups");
-    let refused = post(addr, "/raw/api/all/carry", &json!({ "from": i1, "to": i2 }));
+    assert_eq!(get(addr, "/raw/api/all/transfer").json().as_array().unwrap().len(), 0, "no hints for drives that may be backups");
+    let refused = post(addr, "/raw/api/all/transfer", &json!({ "from": i1, "to": i2 }));
     assert_eq!(refused.status, 400);
     assert!(refused.json()["error"].as_str().unwrap().contains("Decide first"));
     // Said "separate" for both: they take part.
     for id in [&i1, &i2] {
         assert_eq!(post(addr, "/raw/api/all/role", &json!({ "library": id, "role": "separate" })).status, 200);
     }
-    let done = post(addr, "/raw/api/all/carry", &json!({ "from": i1, "to": i2 }));
+    let done = post(addr, "/raw/api/all/transfer", &json!({ "from": i1, "to": i2 }));
     assert_eq!(done.status, 200, "{}", String::from_utf8_lossy(&done.body));
     assert_eq!(done.json()["counts"]["tags"], 1);
     server.stop().unwrap();
@@ -447,7 +447,7 @@ fn a_drive_that_may_be_a_backup_is_refused_until_the_user_decides() {
 
 #[test]
 fn a_drive_that_was_emptied_is_recognised_so_the_dialog_can_warn() {
-    let a = source("carry-emptied-a");
+    let a = source("transfer-emptied-a");
     assert!(!transfer::looks_emptied(&db_path(&a)).unwrap());
     for p in [FJORD, PAPA, DROHNE] {
         fs::remove_file(a.path(p)).unwrap();

@@ -778,8 +778,8 @@ fn hub_router(hub: Arc<Hub>) -> Router {
         .route("/api/all/duplicates", get(all_duplicates))
         .route("/api/all/drives", get(all_drives))
         .route("/api/all/role", post(all_set_role))
-        .route("/api/all/carry", get(all_carry).post(all_carry_apply))
-        .route("/api/all/carry/plan", post(all_carry_plan))
+        .route("/api/all/transfer", get(all_transfer).post(all_transfer_apply))
+        .route("/api/all/transfer/plan", post(all_transfer_plan))
         .route("/api/all/backups", get(all_backups))
         .route("/api/all/reveal", post(all_reveal))
         // Not a route with parameters: those would leak into the `Path`
@@ -1817,7 +1817,7 @@ async fn all_set_role(State(hub): State<Arc<Hub>>, Json(req): Json<RoleRequest>)
 
 /// What carrying one drive's data over to another would do (phase 15a).
 #[derive(Serialize)]
-struct CarryHint {
+struct TransferHint {
     from: String,
     to: String,
     from_name: String,
@@ -1829,9 +1829,9 @@ struct CarryHint {
 /// that look like one until the user decides): what is on the first that the
 /// second lacks, by content, from the two indexes. Pairs with nothing to carry
 /// are left out. Read only.
-async fn all_carry(State(hub): State<Arc<Hub>>) -> ApiResult<Json<Vec<CarryHint>>> {
+async fn all_transfer(State(hub): State<Arc<Hub>>) -> ApiResult<Json<Vec<TransferHint>>> {
     let o = overview(&hub).await?;
-    let hints = tokio::task::spawn_blocking(move || -> ApiResult<Vec<CarryHint>> {
+    let hints = tokio::task::spawn_blocking(move || -> ApiResult<Vec<TransferHint>> {
         let (usable, _) = multi::eligibility(&o.drives, &o.roles);
         let mut sets = Vec::new();
         for &i in &usable {
@@ -1845,7 +1845,7 @@ async fn all_carry(State(hub): State<Arc<Hub>>) -> ApiResult<Json<Vec<CarryHint>
                 }
                 let counts = transfer::plan(&o.apps[to].conn.lock().unwrap(), &sets[a], transfer::Boxes::all())?;
                 if !counts.is_nothing() {
-                    out.push(CarryHint {
+                    out.push(TransferHint {
                         from: o.drives[from].id.clone(),
                         to: o.drives[to].id.clone(),
                         from_name: o.drives[from].name.clone(),
@@ -1863,7 +1863,7 @@ async fn all_carry(State(hub): State<Arc<Hub>>) -> ApiResult<Json<Vec<CarryHint>
 }
 
 #[derive(Deserialize)]
-struct CarryRequest {
+struct TransferRequest {
     /// The drive whose data is carried (its id) and the drive that receives it.
     from: String,
     to: String,
@@ -1875,7 +1875,7 @@ struct CarryRequest {
 /// Both drives of a carry over, if they are there and may take part: a backup
 /// is refused as source and as target, and so is a drive that looks like one
 /// until the user has decided.
-async fn carry_pair(hub: &Arc<Hub>, req: &CarryRequest) -> ApiResult<(Arc<App>, Arc<App>)> {
+async fn transfer_pair(hub: &Arc<Hub>, req: &TransferRequest) -> ApiResult<(Arc<App>, Arc<App>)> {
     if req.from == req.to {
         return Err(ApiError::BadRequest("choose two different drives".into()));
     }
@@ -1902,8 +1902,8 @@ async fn carry_pair(hub: &Arc<Hub>, req: &CarryRequest) -> ApiResult<(Arc<App>, 
 /// What carrying over would do right now, for the dialog's check boxes; reads
 /// both indexes, writes nothing. `source_emptied`: more than half of the
 /// source's files are gone from it (carry over before erasing a drive).
-async fn all_carry_plan(State(hub): State<Arc<Hub>>, Json(req): Json<CarryRequest>) -> ApiResult<Json<serde_json::Value>> {
-    let (from, to) = carry_pair(&hub, &req).await?;
+async fn all_transfer_plan(State(hub): State<Arc<Hub>>, Json(req): Json<TransferRequest>) -> ApiResult<Json<serde_json::Value>> {
+    let (from, to) = transfer_pair(&hub, &req).await?;
     let out = tokio::task::spawn_blocking(move || -> ApiResult<serde_json::Value> {
         let set = transfer::read_drive(&from.db_path)?;
         let counts = transfer::plan(&to.conn.lock().unwrap(), &set, transfer::Boxes::all())?;
@@ -1917,8 +1917,8 @@ async fn all_carry_plan(State(hub): State<Arc<Hub>>, Json(req): Json<CarryReques
 
 /// Carry the ticked kinds of data over: one transaction on the receiving
 /// drive's `library.db`; the source drive and every photo stay as they are.
-async fn all_carry_apply(State(hub): State<Arc<Hub>>, Json(req): Json<CarryRequest>) -> ApiResult<Json<serde_json::Value>> {
-    let (from, to) = carry_pair(&hub, &req).await?;
+async fn all_transfer_apply(State(hub): State<Arc<Hub>>, Json(req): Json<TransferRequest>) -> ApiResult<Json<serde_json::Value>> {
+    let (from, to) = transfer_pair(&hub, &req).await?;
     let boxes = req.boxes.unwrap_or_default();
     let from_db = from.db_path.clone();
     let counts = change(&to, move |_, conn| {
