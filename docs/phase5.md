@@ -716,17 +716,27 @@ second time. Now:
 - **The page follows on its own** (`refreshUnnamed` in `app.js`), driven by
   events, not by polling: after the server answers a change to people or
   decisions made in this browser (the page's own buttons, the viewer's info
-  panel, a person's page), and when a regrouping in the background finishes
-  (`facesInfo`: the clusters' state in `/api/info` changed; that is watched
-  every 1.5 s only while a regrouping runs). The cards and single faces shown
-  so far are asked for again and reconciled in place. A card with the same
-  faces (same generation) stays as it is, with what is typed, what is selected
-  and whether it is opened, and only takes the new suggestion; cards and faces
-  that are gone leave (and their ticks), new ones come in. It waits while an
-  action is under way. Measured: a face named in the viewer leaves the page
-  about 0.1 s after the server's answer. Only one browser works on a shoebox
-  at a time, so nothing polls for changes made elsewhere (the status line's
-  check every 20 s would still catch them).
+  panel, a person's page), and when a regrouping in the background finishes.
+  The cards and single faces shown so far are asked for again and reconciled
+  in place. A card with the same faces (same generation) stays as it is, with
+  what is typed, what is selected and whether it is opened, and only takes
+  the new suggestion; cards and faces that are gone leave (and their ticks),
+  new ones come in. It waits while an action is under way. Measured: a face
+  named in the viewer leaves the page about 0.1 s after the server's answer.
+- **The server says when the faces changed** (server-sent events,
+  `GET /api/events` of a library): an event `faces` when clusters are asked
+  for, while they are recomputed (at most once a second, for the status
+  line's percentage), when they are done, and when faces drawn by hand are
+  being embedded. The browser (`facesStream`) then loads `/api/info`, and
+  `facesInfo` refreshes the Unnamed page, the people and the status. This
+  replaced asking every 1.5 s while a regrouping ran; that is only the
+  fallback when the stream cannot connect (a drive just unplugged; the stream
+  is opened again at the next status check). The browser reconnects a broken
+  stream by itself (an iPad waking up) and then loads the status once. The
+  streams end when the server begins to stop (`Shared::closing`), otherwise
+  the graceful shutdown would wait for them. Only one browser works on a
+  shoebox at a time, so nothing else is watched; the status line's own check
+  every 20 s (scan and recognition progress) is unchanged.
 - **The server refuses what is out of date**: actions on a card already carry
   its generation (409 if its faces changed). The single faces' bar now sends
   `open: true` with `/api/faces/assign|ignore|not-face`: if one of the faces

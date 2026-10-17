@@ -268,6 +268,12 @@ fn suggest_maybe_confirm_and_reject_under_the_guard() {
     assert!(faces_of(addr, &lib, "Mix/far.png")[0]["state"].is_null(), "untouched too");
     assert!(!get(addr, "/api/people").json().as_array().unwrap().iter().any(|p| p["name"] == "Someone else"));
 
+    // The browser is told when the faces changed (server-sent events), no
+    // polling: a decision asks for new clusters, and the stream says so.
+    let mut events = event_stream(addr);
+    ok(addr, "/api/faces/assign", &json!({ "faces": [b2], "name": "Ben" }));
+    wait_for_event(&mut events, "event: faces");
+
     // Photos of a person, for the timeline.
     let mut timeline = ids(&get(addr, &format!("/api/timeline?person={anna}")).json());
     timeline.sort();
@@ -290,8 +296,42 @@ fn suggest_maybe_confirm_and_reject_under_the_guard() {
     assert_eq!(info["clusters"]["people"], 2);
 
     assert_eq!(lib.snapshot(), before, "people changed an original");
-    server.stop().unwrap();
+    // A browser still listening does not keep the server from stopping.
+    let (done, stopped) = std::sync::mpsc::channel();
+    std::thread::spawn(move || done.send(server.stop().is_ok()).unwrap());
+    assert_eq!(stopped.recv_timeout(Duration::from_secs(10)), Ok(true), "the server did not stop with an event stream open");
+    drop(events);
     assert!(lib.verify(false).is_clean());
+}
+
+/// `/api/events` of the server at `addr`, its head read.
+fn event_stream(addr: std::net::SocketAddr) -> std::net::TcpStream {
+    use std::io::{Read, Write};
+    let id = get(addr, "/api/libraries").json()[0]["id"].as_str().unwrap().to_string();
+    let mut s = std::net::TcpStream::connect(addr).unwrap();
+    s.write_all(format!("GET /api/lib/{id}/events HTTP/1.1\r\nHost: localhost\r\nAccept: text/event-stream\r\n\r\n").as_bytes()).unwrap();
+    s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+    let mut head = Vec::new();
+    let mut byte = [0u8];
+    while !head.ends_with(b"\r\n\r\n") {
+        s.read_exact(&mut byte).unwrap();
+        head.push(byte[0]);
+    }
+    let head = String::from_utf8_lossy(&head);
+    assert!(head.starts_with("HTTP/1.1 200") && head.contains("text/event-stream"), "{head}");
+    s
+}
+
+/// Read the stream until `line` comes (within 10 s).
+fn wait_for_event(s: &mut std::net::TcpStream, line: &str) {
+    use std::io::Read;
+    let mut seen = Vec::new();
+    let mut buf = [0u8; 512];
+    while !String::from_utf8_lossy(&seen).contains(line) {
+        let n = s.read(&mut buf).unwrap_or_else(|e| panic!("no {line:?} in {:?}: {e}", String::from_utf8_lossy(&seen)));
+        assert!(n > 0, "the stream ended: {:?}", String::from_utf8_lossy(&seen));
+        seen.extend_from_slice(&buf[..n]);
+    }
 }
 
 /// "Not a face" hides a false find everywhere, survives a new recognize

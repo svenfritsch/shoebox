@@ -2213,6 +2213,7 @@ function loadInfo() {
     if (c.running && c.total) parts.push(tr('status.grouping_pct', { pct: Math.floor(100 * c.done / Math.max(c.total, 1)) }));
     else if (c.running || c.stale) parts.push(tr('status.grouping'));
     facesInfo(info);
+    facesStream();
     $('status').textContent = parts.join(' · ');
 
     // Reload when a scan changed the index (but not while it is still busy).
@@ -4687,7 +4688,7 @@ function copyFoldersSection() {
 // decision on the server; the browser keeps nothing. Every action has a
 // visible button (no hover-only actions), so it all works by touch.
 
-var people = { list: [], byId: {}, groups: [], open: {}, info: null, watch: null };
+var people = { list: [], byId: {}, groups: [], open: {}, info: null, watch: null, stream: null, streamUrl: null, told: null };
 
 function fold(s) { return String(s).normalize('NFC').toLowerCase(); }
 
@@ -4737,10 +4738,38 @@ function clustersSignature(info) {
   return [c.unnamed, c.clusters, c.suggested, c.people, c.finished_at, c.stale, c.running, c.embedding].join(',');
 }
 
-// Look at the status more often while the clusters are being recomputed.
+// While the clusters are being recomputed the server says when something
+// changed (`facesStream`); only without that stream (it could not connect)
+// does the page look every 1.5 s.
 function watchClusters() {
-  if (people.watch) return;
+  if (people.watch || streamOpen()) return;
   people.watch = setTimeout(function () { people.watch = null; loadInfo(); }, 1500);
+}
+
+function streamOpen() {
+  return !!people.stream && people.stream.readyState === 1 && people.streamUrl === LIBAPI + '/events';
+}
+
+// Server-sent events of the library shown: "faces" when clusters are asked
+// for, being recomputed or done, or faces drawn by hand are being embedded.
+// The status and the Unnamed page follow from `/api/info` (`facesInfo`). The
+// browser reconnects by itself (an iPad waking up); a stream the server ended
+// for good (a drive unplugged) is opened again at the next status check.
+function facesStream() {
+  if (!window.EventSource || !LIBAPI) return;
+  var url = LIBAPI + '/events';
+  if (people.stream && people.streamUrl === url && people.stream.readyState !== 2) return;
+  if (people.stream) people.stream.close();
+  var es = new EventSource(url);
+  people.stream = es;
+  people.streamUrl = url;
+  es.addEventListener('faces', function () {
+    clearTimeout(people.told);
+    people.told = setTimeout(loadInfo, 50);
+  });
+  // Connected again: what happened meanwhile is in the status.
+  es.onopen = function () { if (people.watch) { clearTimeout(people.watch); people.watch = null; } loadInfo(); };
+  es.onerror = function () { if (es.readyState === 2 && people.info) facesInfo(people.info); };
 }
 
 // After a change to people or decisions (the Unnamed page follows at once,
