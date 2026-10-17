@@ -1,4 +1,4 @@
-// Screenshots for the guide. usage: node screenshots.mjs <app|launcher|drives|suggestions|text> <lang> <outdir> <url> <library-path>
+// Screenshots for the guide. usage: node screenshots.mjs <app|launcher|drives|across|suggestions|text> <lang> <outdir> <url> <library-path>
 // Needs Playwright with a Chromium (CHROME=path) and a freshly generated and
 // recognised sample library served by `shoebox serve` (see screenshots.sh).
 import { createRequire } from 'node:module';
@@ -129,6 +129,32 @@ if (mode === 'drives') {
   await p.locator('.drive-card.bk .lists summary .go').first().click(); await p.waitForSelector('.cell'); await wait(1800);
   await p.setViewportSize({ width: 1280, height: 560 });
   await shot('drives-different');
+  await b.close(); process.exit(0);
+}
+
+if (mode === 'across') {
+  // Two drives of their own that share photos, in All drives: the Duplicates page, tab
+  // Across drives, with the Ignore folders field: its suggestions, then one folder ignored.
+  const HIKE = de ? '2024-09 Wanderung' : '2024-09 Hike';
+  await p.goto(url); await p.waitForSelector('.cell'); await wait(1000);
+  await p.evaluate(async () => {
+    const libs = await api('/api/libraries');
+    for (const l of libs) await post('/api/all/role', { library: l.id, role: 'separate' });
+    localStorage.setItem('shoebox-library', 'all');
+    localStorage.removeItem('shoebox-dup-ignore');
+  });
+  await p.setViewportSize({ width: 1280, height: 780 });
+  await p.goto(url + '#view=duplicates'); await p.reload();
+  await p.waitForSelector('.group.cross'); await imagesLoaded(); await wait(800);
+  const field = p.locator('.chips-text');
+  await field.click(); await p.waitForSelector('.chips-row'); await wait(500);
+  await shot('across-suggest');
+  // The first row is the hike folder (on both drives); pick it with the keys.
+  await field.press('ArrowDown'); await field.press('Enter');
+  await p.waitForFunction((n) => document.querySelectorAll('.chips-field .chip').length === 1 && document.querySelector('.chips-field .chip').textContent.startsWith(n), HIKE);
+  await p.waitForFunction(() => document.querySelectorAll('.group.cross').length === 6); await imagesLoaded();
+  await field.press('Escape'); await wait(600);
+  await shot('across-ignore');
   await b.close(); process.exit(0);
 }
 

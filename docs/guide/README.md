@@ -38,10 +38,10 @@ system font, Noto for emoji), as in the Claude Code cloud containers.
 
 ## Screenshots
 
-Only in CI: `screenshots.sh` (and `make-drives-pair.py`, which it calls)
+Only in CI: `screenshots.sh` (and `make-drives-pair.py` and `make-drives-across.py`, which it calls)
 refuse to run anywhere but on a GitHub Actions runner, and never on a Mac.
 They create and delete folders where drives live (`/Volumes/Photos`,
-`/mnt/Extreme SSD`, `/mnt/Backup Drive`): shoebox reads a drive's name from its
+`/mnt/Extreme SSD`, `/mnt/Backup Drive`, `/mnt/Travel SSD`): shoebox reads a drive's name from its
 path, and on a real computer those can be real drives with real photos. To see
 the screenshots of a change, push it and open the run's artifact `guide`.
 
@@ -55,6 +55,7 @@ library; `LANGS` and `PASSES` limit a run (CI runs one language per job):
 | `app` | the photo app: overview, viewer, duplicates, people, tags, search, export, trash, settings, iPad |
 | `launcher` | the Control Panel, and a scan that finds new copies |
 | `drives` | Manage drives and the backup comparison views (two drives, an original and a drifted backup) |
+| `across` | the duplicates across drives in All drives with Ignore folders: the suggestions and one folder ignored (two separate drives that share photos, `make-drives-across.py`) |
 | `suggestions` | the tag and name suggestion lists |
 | `text` | words in photos: the search suggestions and results, the viewer's text list, Settings → Data cleanup (the library gets a folder of drawn documents, a street sign and a phone screenshot, `SHOEBOX_SAMPLE_TEXT=1`; the mock recognizer's `text` task "reads" them from the annotations) |
 
@@ -62,7 +63,8 @@ library; `LANGS` and `PASSES` limit a run (CI runs one language per job):
 (once per language; each pass gets a copy), `mock-recognizer.py` answers the
 recognizer protocol for it (docs/protocol.md), `make-drives-pair.py` makes a
 backup of that library that has drifted from it (photos not on the backup yet,
-only on the backup, different on the backup) for the `drives` pass.
+only on the backup, different on the backup) for the `drives` pass, and
+`make-drives-across.py` a second, separate drive that shares some of its photos for the `across` pass.
 `shrink-shots.py` turns the PNGs into the 1800 px JPEGs in `assets/`.
 `screenshots.mjs` also writes `assets/<lang>/ui-overview.json`: where each
 control of "The screen at a glance" is, for `check.py`'s dot check.
