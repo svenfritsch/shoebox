@@ -174,20 +174,26 @@ pub struct Check {
     /// user's wins on the timeline.
     pub with_exif: usize,
     pub with_estimate: usize,
+    /// The first names of those with a capture date (`db::dialog_names`).
+    pub with_exif_names: Vec<String>,
 }
 
 /// What a dialog for these photos should say.
 pub fn check(conn: &Connection, ids: &[i64]) -> Result<Check> {
-    let mut out = Check { total: 0, with_exif: 0, with_estimate: 0 };
+    let mut out = Check { total: 0, with_exif: 0, with_estimate: 0, with_exif_names: Vec::new() };
     for &id in ids {
-        let has_exif: bool = conn
-            .query_row("SELECT taken IS NOT NULL FROM files WHERE id = ?1", [id], |r| r.get(0))
+        let (has_exif, name): (bool, String) = conn
+            .query_row("SELECT taken IS NOT NULL, name FROM files WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?)))
             .optional()?
             .ok_or_else(|| anyhow!("no such file"))?;
         out.total += 1;
-        out.with_exif += has_exif as usize;
+        if has_exif {
+            out.with_exif += 1;
+            out.with_exif_names.push(name);
+        }
         out.with_estimate += get(conn, id)?.is_some() as usize;
     }
+    out.with_exif_names = db::dialog_names(out.with_exif_names);
     Ok(out)
 }
 

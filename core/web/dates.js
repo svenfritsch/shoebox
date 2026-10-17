@@ -95,9 +95,9 @@ function buildDatesDialog(ids, info, check) {
   var current = info ? info.estimate : null;
   var body = el('div', 'dates-dialog');
   if (!info && check.with_exif) {
-    body.appendChild(el('p', 'hint', check.with_exif === check.total
-      ? trn('dates.batch_all', check.total, { total: check.total })
-      : trn('dates.batch_some', check.with_exif, { total: check.total })));
+    body.appendChild(check.with_exif === check.total
+      ? countLine('dates.batch_all', check.total, { total: check.total }, 'total', check.with_exif_names)
+      : countLine('dates.batch_some', check.with_exif, { total: check.total }, 'n', check.with_exif_names));
   }
   var fields = el('div', 'dates-fields');
   var field = function (key, node) {

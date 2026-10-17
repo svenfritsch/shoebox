@@ -194,55 +194,6 @@ function infoGeo(info) {
 
 // ------------------------------------------------------------------ set a location
 
-// A line of the location dialog with its number in bold and, right after it,
-// an info button that shows which photos it means (the first names; the
-// server sends at most 20). Pointer, keyboard focus and a tap all open it.
-var INFO_ICON = lineIcon('<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><circle cx="12" cy="7.8" r=".5"/>');
-var countLines = 0;
-function countLine(key, n, vars, bold, names) {
-  var line = el('p', 'hint count-line');
-  var count = bold === 'n' ? n : vars[bold];
-  var sentinel = '\u0001';
-  var marked = Object.assign({}, vars);
-  marked[bold] = sentinel;
-  var parts = trn(key, n, marked).split(sentinel);
-  line.appendChild(document.createTextNode(parts[0]));
-  if (parts.length > 1) {
-    line.appendChild(namesBadge(count, names));
-    line.appendChild(document.createTextNode(parts.slice(1).join('')));
-  }
-  return line;
-}
-
-function namesBadge(count, names) {
-  var wrap = el('span', 'names');
-  wrap.appendChild(el('b', '', String(count)));
-  var btn = el('button', 'names-info');
-  btn.type = 'button';
-  btn.innerHTML = INFO_ICON;
-  btn.setAttribute('aria-label', tr('geo.names_show'));
-  btn.setAttribute('aria-expanded', 'false');
-  var pop = el('div', 'names-pop');
-  pop.id = 'names-pop-' + (++countLines);
-  pop.setAttribute('role', 'tooltip');
-  pop.hidden = true;
-  var list = el('ul');
-  names.forEach(function (name) { list.appendChild(el('li', '', name)); });
-  if (count > names.length) list.appendChild(el('li', 'more', trn('geo.names_more', count - names.length)));
-  pop.appendChild(list);
-  btn.setAttribute('aria-describedby', pop.id);
-  var pinned = false;
-  var show = function (on) { pop.hidden = !on; btn.setAttribute('aria-expanded', on ? 'true' : 'false'); };
-  wrap.addEventListener('mouseenter', function () { show(true); });
-  wrap.addEventListener('mouseleave', function () { if (!pinned && document.activeElement !== btn) show(false); });
-  btn.addEventListener('focus', function () { show(true); });
-  btn.addEventListener('blur', function () { pinned = false; show(false); });
-  btn.onclick = function () { pinned = !pinned; show(pinned || wrap.matches(':hover')); };
-  wrap.appendChild(btn);
-  wrap.appendChild(pop);
-  return wrap;
-}
-
 // Give a photo without a position one: a pin on the map or latitude and
 // longitude typed, both always there and kept in step. Saved in shoebox only.
 // From the selection bar (`info` null) the position goes to all of `ids`;

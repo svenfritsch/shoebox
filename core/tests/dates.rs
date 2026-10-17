@@ -263,6 +263,8 @@ fn copies_share_a_date_and_undo_puts_back_what_was_there() {
     set_taken(&lib, b, Some("2019-01-01T00:00:00"));
     let c = post(addr, "/api/files/dates/check", &json!({ "ids": [a, b, copy] })).json();
     assert_eq!((c["total"].as_i64(), c["with_exif"].as_i64(), c["with_estimate"].as_i64()), (Some(3), Some(1), Some(2)));
+    // The info button next to the count lists the names of those with a date in the file.
+    assert_eq!(c["with_exif_names"], json!([details(addr, b)["name"]]));
     server.stop().unwrap();
 }
 
