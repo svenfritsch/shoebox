@@ -3743,6 +3743,14 @@ function folderIcon() {
   i.innerHTML = FOLDER_OPEN;
   return i;
 }
+// A page with its corner folded over, for a file in the picker (our own drawing).
+var FILE_PAGE = lineIcon('<path d="M6.5 4.5A1.5 1.5 0 0 1 8 3h6l4.5 4.5V19.5A1.5 1.5 0 0 1 17 21H8a1.5 1.5 0 0 1-1.5-1.5z"/><path d="M14 3.5V7a1 1 0 0 0 1 1h3.5"/>');
+function fileIcon() {
+  var i = el('span', 'ficon');
+  i.setAttribute('aria-hidden', 'true');
+  i.innerHTML = FILE_PAGE;
+  return i;
+}
 
 // "Show in Finder" with the drawn open-folder icon at the left of the label.
 function revealButton() {
@@ -4451,6 +4459,7 @@ function loadSettings() {
   sec.appendChild(cards);
   page.appendChild(sec);
   page.appendChild(cleanupSection());
+  page.appendChild(transferSection());
   page.appendChild(allowTrashSection());
   page.appendChild(mapsSection());
   page.appendChild(collectionSection());
@@ -4643,6 +4652,28 @@ function renderTextCheck(body, s, check) {
     }).catch(function (e) { dyn.textContent = e.message; });
   };
   fill(s, check);
+}
+
+// Settings: Carry over data to this drive (phase 15b), also with one drive
+// only: from a userdata.json (a drive that is gone, or this drive's own after
+// its index was lost), or from another drive as on Manage drives. Shown where
+// there is something to take from: another drive, or this computer's files.
+function transferSection() {
+  var sec = el('section', 'settings-section');
+  sec.hidden = true;
+  sec.appendChild(el('h3', '', tr('transfer.title')));
+  sec.appendChild(el('p', 'hint', tr('transfer.settings_hint')));
+  var btn = el('button', 'btn', tr('transfer.button'));
+  sec.appendChild(btn);
+  api('/api/all/drives').then(function (list) {
+    var me = list.filter(function (x) { return x.library === drives.current.id; })[0];
+    if (!me || !me.online || !me.shown_in_all) return;
+    var others = list.some(function (x) { return x.online && x.shown_in_all && x.library !== me.library; });
+    if (!others && !state.exportOk) return;
+    btn.onclick = function () { transferDialog(list, me, null); };
+    sec.hidden = false;
+  }).catch(function () {});
+  return sec;
 }
 
 // Settings: whether photos can be moved to the trash from the photo view and
@@ -7015,19 +7046,35 @@ function footCell(label, t, hint) {
 // people, dates, places) to the same photos on another one, matched by content.
 // Nothing on the source changes and no photo is touched; what the target has
 // stays. `list` is /api/all/drives, `to` the receiving drive's entry and
-// `preferred` the id of the drive to start with.
-function transferDialog(list, to, preferred) {
+// `preferred` the id of the drive to start with. The source can also be a
+// userdata.json on this computer (phase 15b): `file` is the one chosen
+// ({path, folder}); only a browser on this computer can choose one.
+function transferDialog(list, to, preferred, file) {
   var label = function (x) { return x.volume || x.name; };
   var sources = list.filter(function (x) { return x.online && x.shown_in_all && x.library !== to.library; });
-  if (!sources.length) return;
+  var canFile = !!state.exportOk;
+  if (!sources.length && !canFile) return;
+  // No other drive: the only source is a file, so choose it first.
+  if (!sources.length && !file) { transferFilePicker(list, to, null); return; }
   var body = el('div', 'transfer');
   var from = el('select');
   sources.forEach(function (x) {
     var o = el('option', '', label(x));
     o.value = x.library;
-    if (x.library === preferred) o.selected = true;
+    if (x.library === preferred && !file) o.selected = true;
     from.appendChild(o);
   });
+  if (file) {
+    var chosen = el('option', '', file.name);
+    chosen.value = '#chosen';
+    chosen.selected = true;
+    from.appendChild(chosen);
+  }
+  if (canFile) {
+    var other = el('option', '', tr('transfer.from_file'));
+    other.value = '#file';
+    from.appendChild(other);
+  }
   var pick = el('p', 'transfer-from');
   pick.appendChild(el('span', '', tr('transfer.from') + ' '));
   pick.appendChild(from);
@@ -7036,13 +7083,20 @@ function transferDialog(list, to, preferred) {
   var note = el('p', 'hint');
   [pick, explain, boxes, note].forEach(function (n) { body.appendChild(n); });
   var kinds = [['tags', 'transfer.tags', 'count.photos'], ['hearts', 'transfer.hearts', 'count.photos'], ['people', 'transfer.people', 'count.faces'], ['dates', 'transfer.dates', 'count.photos'], ['places', 'transfer.places', 'count.photos']];
-  var checks = {}, seq = 0, go = null, anything = false;
+  var checks = {}, seq = 0, go = null, anything = false, last = from.value;
+  // What the routes are told about the source.
+  var source = function () { return from.value === '#chosen' ? { file: file.path, to: to.library } : { from: from.value, to: to.library }; };
   var sync = function () {
     go.disabled = !anything || !kinds.some(function (k) { return checks[k[0]] && checks[k[0]].checked; });
   };
   var show = function (p) {
-    var f = sources.filter(function (x) { return x.library === from.value; })[0];
-    explain.textContent = tr('transfer.explain', { from: label(f), to: label(to) });
+    if (p.file) {
+      var when = I18n.dateTime(new Date(p.written_at * 1000), { dateStyle: 'medium', timeStyle: 'short' });
+      explain.textContent = tr('transfer.explain_file', { file: p.file, date: when, to: label(to) });
+    } else {
+      var f = sources.filter(function (x) { return x.library === from.value; })[0];
+      explain.textContent = tr('transfer.explain', { from: label(f), to: label(to) });
+    }
     boxes.textContent = '';
     anything = false;
     kinds.forEach(function (k) {
@@ -7059,30 +7113,41 @@ function transferDialog(list, to, preferred) {
       boxes.appendChild(line);
       if (n) anything = true;
     });
-    note.textContent = !anything ? tr('transfer.none', { to: label(to) }) : p.source_emptied ? tr('transfer.before_wipe', { from: label(f) }) : '';
+    note.textContent = !anything ? tr(p.file ? 'transfer.none_file' : 'transfer.none', { to: label(to) })
+      : p.source_emptied ? tr('transfer.before_wipe', { from: label(sources.filter(function (x) { return x.library === from.value; })[0]) }) : '';
     sync();
   };
   var load = function () {
     var mine = ++seq;
     go.disabled = true;
-    post('/api/all/transfer/plan', { from: from.value, to: to.library }).then(function (p) {
+    post('/api/all/transfer/plan', source()).then(function (p) {
       if (mine === seq) show(p);
-    }).catch(function (e) { if (mine === seq) { closeModal(); failed(e); } });
+    }).catch(function (e) {
+      if (mine !== seq) return;
+      // A file that cannot be read: say why and let another source be chosen.
+      if (from.value === '#chosen') { explain.textContent = ''; boxes.textContent = ''; note.textContent = e.message; anything = false; sync(); return; }
+      closeModal(); failed(e);
+    });
   };
-  from.onchange = load;
+  from.onchange = function () {
+    if (from.value === '#file') { from.value = last; transferFilePicker(list, to, file); return; }
+    last = from.value;
+    load();
+  };
   var buttons = openModal(tr('transfer.title'), body, [
     { label: tr('app.cancel'), cls: 'quiet' },
     {
       label: tr('transfer.go'),
       onclick: function (btn) {
-        var chosen = {};
-        kinds.forEach(function (k) { chosen[k[0]] = !!(checks[k[0]] && checks[k[0]].checked); });
+        var req = source();
+        req.boxes = {};
+        kinds.forEach(function (k) { req.boxes[k[0]] = !!(checks[k[0]] && checks[k[0]].checked); });
         btn.disabled = true;
-        post('/api/all/transfer', { from: from.value, to: to.library, boxes: chosen }).then(function (r) {
+        post('/api/all/transfer', req).then(function (r) {
           closeModal();
           toast(r.counts.photos ? tr('transfer.done', { photos: trn('count.photos', r.counts.photos) }) : tr('transfer.nothing_new', { to: label(to) }));
           allPeople.at = 0;
-          loadDrivesPage();
+          if (state.filter && state.filter.view === 'drives') loadDrivesPage();
           refreshDrives();
         }).catch(function (e) { btn.disabled = false; failed(e); });
         return false;
@@ -7091,6 +7156,29 @@ function transferDialog(list, to, preferred) {
   ]);
   go = buttons[1];
   load();
+}
+
+// Choose the userdata.json to carry over from, in this computer's folders;
+// then back to the dialog with it (or, on Cancel, with what was there before).
+function transferFilePicker(list, to, file) {
+  var base = '/api/lib/' + to.library;
+  var others = list.some(function (x) { return x.online && x.shown_in_all && x.library !== to.library; });
+  api(base + '/export/places').then(function (places) {
+    pathPicker({
+      title: tr('transfer.pick_title'),
+      hint: tr('transfer.pick_hint'),
+      base: base,
+      places: places,
+      start: file ? file.folder : null,
+      files: true,
+      use: tr('transfer.use_file'),
+      onPick: function (path, folder) {
+        var name = path.split(/[\\/]/).pop();
+        transferDialog(list, to, null, { path: path, folder: folder, name: name });
+      },
+      onCancel: function () { if (file || others) transferDialog(list, to, null, file); else closeModal(); },
+    });
+  }).catch(failed);
 }
 
 function loadDrivesPage() {
@@ -7168,8 +7256,9 @@ function loadDrivesPage() {
           body.appendChild(bn);
         }
         // Carry over data: only between drives that take part (not backups, not
-        // drives that may be one), and only where there is another drive to take from.
-        if (d.online && d.shown_in_all && list.some(function (x) { return x.online && x.shown_in_all && x.library !== d.library; })) {
+        // drives that may be one), and only where there is another drive or,
+        // on this computer, a userdata.json to take from.
+        if (d.online && d.shown_in_all && (state.exportOk || list.some(function (x) { return x.online && x.shown_in_all && x.library !== d.library; }))) {
           var mine = hints.filter(function (h) { return h.to === d.library; }).sort(function (a, b) { return b.counts.photos - a.counts.photos; });
           var transfer = el('div', 'transfer-note');
           if (mine.length) {

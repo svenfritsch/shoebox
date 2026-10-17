@@ -1096,5 +1096,13 @@
   "transfer.go": "Übernehmen",
   "transfer.done": "Fertig: {photos} haben Tags, Herzen, Personen, Datumsangaben oder Orte bekommen.",
   "transfer.nothing_new": "Nichts Neues: {to} hatte schon alles.",
+  "transfer.from_file": "Einer Datei (userdata.json)…",
+  "transfer.explain_file": "Fotos auf {to}, die in {file} (geschrieben {date}) stehen, bekommen, was auf dem Laufwerk dieser Datei gemacht wurde: Tags, Herzen, Personen, Datumsangaben und Orte. Die Datei wird nur gelesen, kein Foto wird angefasst, und was {to} schon hat, bleibt.",
+  "transfer.none_file": "Nichts zu übernehmen: {to} hat schon alles, oder keines der Fotos aus der Datei liegt hier.",
+  "transfer.pick_title": "userdata.json auswählen",
+  "transfer.pick_hint": "Jedes shoebox-Laufwerk hat eine userdata.json in seinem Ordner .shoebox. Wähle diese Datei oder eine Kopie davon, die du woanders aufbewahrt hast.",
+  "transfer.pick_empty": "Hier sind keine Ordner und keine .json-Dateien.",
+  "transfer.use_file": "Diese Datei wählen",
+  "transfer.settings_hint": "Tags, Herzen, Personen, Datumsangaben und Orte zu denselben Fotos auf diesem Laufwerk holen: von einem anderen Laufwerk oder aus einer userdata.json, wenn das andere Laufwerk nicht mehr da ist oder dieses Laufwerk seinen Index verloren hat.",
   "export.transfer_hint": "Scanne {drive} und nutze dann auf „Laufwerke verwalten“ die Funktion „Daten übernehmen“, um Tags, Herzen, Personen, Datumsangaben und Orte zu übertragen."
 }

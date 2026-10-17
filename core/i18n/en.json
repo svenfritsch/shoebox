@@ -1096,5 +1096,13 @@
   "transfer.go": "Carry over",
   "transfer.done": "Done: {photos} got tags, hearts, people, dates or places.",
   "transfer.nothing_new": "Nothing new: {to} had it all already.",
+  "transfer.from_file": "A file (userdata.json)…",
+  "transfer.explain_file": "Photos on {to} that are listed in {file} (written {date}) get what was made on that file's drive: tags, hearts, people, dates and places. The file is only read, no photo is touched, and what {to} already has stays.",
+  "transfer.none_file": "Nothing to carry over: {to} has everything already, or none of the file's photos is here.",
+  "transfer.pick_title": "Choose a userdata.json",
+  "transfer.pick_hint": "Every shoebox drive keeps a userdata.json in its .shoebox folder. Choose that file, or a copy of it you kept somewhere else.",
+  "transfer.pick_empty": "No folders or .json files here.",
+  "transfer.use_file": "Use this file",
+  "transfer.settings_hint": "Bring tags, hearts, people, dates and places to the same photos on this drive: from another drive, or from a userdata.json when the other drive is gone or this drive lost its index.",
   "export.transfer_hint": "Scan {drive}, then use “Carry over data” on Manage drives to bring tags, hearts, people, dates and places."
 }

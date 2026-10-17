@@ -1192,6 +1192,7 @@
           <p>You scanned a drive again, or copied its photos to a new one, and the tags, hearts and people you made are missing there? On <b>Manage drives</b> a drive that has such data on another drive shows a line and the button <b>Carry over data…</b>. Choose where it comes from (<b>From</b>) and tick what to bring: <b>Tags</b>, <b>Hearts</b>, <b>People</b>, <b>Dates</b> (dates you corrected or estimated) and <b>Places</b> (places you gave by hand). Each box shows how many photos it concerns; one with nothing to carry is greyed out.</p>
           <p>Photos are matched by their content, not by their path, so a photo that was renamed or sits in another folder is still found. Only photos on both drives take part. Folder tags are not carried (the new drive has its own folders), people are matched by name, and faces you already decided on the target drive stay as you decided them. What the target drive already has always stays: nothing is overwritten and nothing is deleted. You can repeat it safely.</p>
           <p>The other drive is only read and no photo is touched; the data is written into this drive's index only. Do it <b>before you erase</b> the source drive: afterwards its data is gone. Backups are not changed by this. After an export onto another shoebox drive, the result says the same.</p>
+          <p><b>From a file.</b> When the other drive is gone or erased, or this drive lost its index, the data can come from a <code>userdata.json</code> instead (see “Your tags and names are saved” below). Under <b>From</b> choose <b>A file (userdata.json)…</b> and pick the file in this computer's folders: every drive keeps one in its <code>.shoebox</code> folder, and a copy you kept somewhere else works the same. The dialog says when the file was written. With only one drive, the same button is in <b>Settings → Carry over data</b>. The file is only read and the same rules apply. Choosing a file works only in a browser on this computer, not on the iPad.</p>
         </div>
       </div>
       <div class="topic has-shots">
@@ -1232,7 +1233,7 @@
       <div class="topic">
         <div class="txt">
           <h3>Your tags and names are saved</h3>
-          <p>Everything you add yourself (own tags, people, groups, your ✓ and ✗ decisions, drawn faces) is kept in the index, never in a photo. While you work, shoebox also keeps a safety copy of the index, <code>library.db.bak</code>, and a readable list of it all, <code>userdata.json</code>, in the <code>.shoebox</code> folder on the drive. They travel with the drive, so a backup of the drive has them too. Open <code>userdata.json</code> in any text editor to see what you have made. If the index is ever damaged, <b>Verify</b> in the launcher points you to the safety copy.</p>
+          <p>Everything you add yourself (own tags, people, groups, your ✓ and ✗ decisions, drawn faces) is kept in the index, never in a photo. While you work, shoebox also keeps a safety copy of the index, <code>library.db.bak</code>, and a readable list of it all, <code>userdata.json</code>, in the <code>.shoebox</code> folder on the drive. They travel with the drive, so a backup of the drive has them too. Open <code>userdata.json</code> in any text editor to see what you have made. If the index is ever damaged, <b>Verify</b> in the launcher points you to the safety copy. If it is lost, scan the drive again and use <b>Carry over data</b> with its <code>userdata.json</code> to bring your tags, hearts, people, dates and places back. Copy the file somewhere else first: shoebox writes it anew after your next change.</p>
         </div>
       </div>
       <div class="topic has-shots">
@@ -1291,7 +1292,7 @@
             <svg class="ic" aria-hidden="true"><use href="#i-bolt"/></svg>
           </div>
           <h3>Only on your command</h3>
-          <p>Originals change only through your actions: move, rename, trash. Always a rename, never a copy, and only if the file still matches the index. The only other thing shoebox removes is a new copy of a file the drive already had, and only when you press the button after a scan. Export only reads your originals. Carry over data reads another drive’s index and writes only this drive’s index.</p>
+          <p>Originals change only through your actions: move, rename, trash. Always a rename, never a copy, and only if the file still matches the index. The only other thing shoebox removes is a new copy of a file the drive already had, and only when you press the button after a scan. Export only reads your originals. Carry over data reads another drive’s index, or a <code>userdata.json</code> you choose, and writes only this drive’s index.</p>
         </li>
         <li>
           <div class="ic-box">

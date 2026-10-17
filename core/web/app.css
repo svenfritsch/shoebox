@@ -950,6 +950,8 @@ body.geo-view #page { padding: 0; height: 100%; }
 .x-main li:hover { background: var(--panel); }
 .x-main li small { margin-left: auto; color: var(--muted); font-size: 12px; }
 .x-main li.x-none { color: var(--muted); cursor: default; }
+.x-main li.on, .x-main li.on:hover { background: var(--accent); color: #fff; }
+.x-main li.on small { color: #fff; }
 .x-selected { margin: 8px 0 0; }
 .export-chip { margin-left: auto; }
 .iconbox { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); vertical-align: middle; }
