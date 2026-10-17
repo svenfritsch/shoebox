@@ -1,6 +1,6 @@
 # Phase 15: your data between drives
 
-**Planned, nothing built.** Closes two of the three "not yet done" items in
+**15a built** (15a-1 and 15a-2, one PR; 15b, 15c and phase 18 are still planned). One deviation: a date is carried only when the target has neither a corrected nor an estimated date for that photo. Closes two of the three "not yet done" items in
 [phase6.md](phase6.md) section 3 in a smaller way than first drawn up:
 
 - **15a** (this plan): counts in the All drives search suggestions that narrow
