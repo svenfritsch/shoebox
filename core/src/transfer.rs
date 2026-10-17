@@ -8,18 +8,20 @@
 //! (the full hash; the size and quick hash while a full hash is missing), never
 //! by name or folder.
 //!
-//! Two halves, so a later reader of `userdata.json` (15b) can reuse the second:
+//! Two halves:
 //!
 //! 1. **Read** a [`TransferSet`] from a source: [`read_drive`] opens the other
 //!    drive's `library.db` read-only and reads only the tables of the five
-//!    boxes.
+//!    boxes; [`read_userdata`] (15b) reads a `userdata.json`, the file every
+//!    drive keeps next to its index, for a drive that is gone, erased or lost
+//!    its index.
 //! 2. **Apply** a `TransferSet` to the target for the ticked [`Boxes`]: matching,
 //!    then inserts in **one transaction** on the target's `library.db`
 //!    ([`apply`]). Carry over only adds: what the target already has wins, and a
 //!    second run adds nothing ([`plan`] counts without writing).
 //!
 //! Nothing is written to the source, and no photo is read or written, so no
-//! guard is needed. Never carried: thumbnails and recognition results (the
+//! guard is needed (a file source must be a `.json`, which is never a photo). Never carried: thumbnails and recognition results (the
 //! target builds them), decisions about duplicates inside the source drive
 //! (they refer to its file ids), the source's trash, named places (about the
 //! drive, not a photo) and the "other marks" listed in `NOT_TRANSFERRED_TABLES`.
@@ -27,11 +29,11 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OpenFlags, params};
 use serde::{Deserialize, Serialize};
 
-use crate::{db, people, recognize, tags};
+use crate::{dates, db, geo, people, pets, recognize, tags};
 
 /// Tables of `library.db` whose rows are carried (one box each, `people` with
 /// `face_decisions`). A new table must be in this list or in
@@ -91,13 +93,14 @@ impl Default for Boxes {
     }
 }
 
-/// A photo's content as the source's index knows it. The target's file is the
-/// same photo when the full hashes are equal, or, if either has none yet, when
-/// size and quick hash are equal.
+/// A photo's content as the source knows it. The target's file is the same
+/// photo when the full hashes are equal, or, if either has none, when size and
+/// quick hash are equal. `userdata.json` has no sizes; the quick hash covers
+/// the size anyway.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Content {
     pub quick: String,
-    pub size: u64,
+    pub size: Option<u64>,
     pub full: Option<String>,
 }
 
@@ -219,7 +222,7 @@ pub fn read(conn: &Connection) -> Result<TransferSet> {
         let mut rows = stmt.query([])?;
         let mut hearted: HashSet<Content> = HashSet::new();
         while let Some(r) = rows.next()? {
-            let content = Content { quick: r.get(0)?, size: r.get::<_, i64>(1)? as u64, full: r.get(2)? };
+            let content = Content { quick: r.get(0)?, size: Some(r.get::<_, i64>(1)? as u64), full: r.get(2)? };
             let name: String = r.get(3)?;
             if tags::means_favorite(&name) {
                 if hearted.insert(content.clone()) {
@@ -300,7 +303,7 @@ pub fn read(conn: &Connection) -> Result<TransferSet> {
             if !keys.contains(&quick) {
                 continue;
             }
-            let content = Content { quick: quick.clone(), size: r.get::<_, i64>(1)? as u64, full: r.get(2)? };
+            let content = Content { quick: quick.clone(), size: Some(r.get::<_, i64>(1)? as u64), full: r.get(2)? };
             let list = set.contents.entry(quick).or_default();
             if !list.contains(&content) {
                 list.push(content);
@@ -310,9 +313,284 @@ pub fn read(conn: &Connection) -> Result<TransferSet> {
     Ok(set)
 }
 
+// ---------------------------------------------------------------- userdata.json
+
+/// The largest `userdata.json` read. A drive with 100,000 tagged photos writes
+/// some tens of MB.
+pub const MAX_USERDATA_BYTES: u64 = 256 * 1024 * 1024;
+
+/// What the dialog says about a file source.
+#[derive(Debug, Clone, Serialize)]
+pub struct FileInfo {
+    /// Format version (1 to `tags::USERDATA_VERSION`).
+    pub version: u32,
+    /// When shoebox wrote it (Unix seconds).
+    pub written_at: i64,
+}
+
+// The parts of `userdata.json` that are read. Every list may be missing (an
+// older version), and anything else in the file is ignored.
+
+#[derive(Deserialize)]
+struct UdFile {
+    shoebox: String,
+    version: u32,
+    #[serde(default)]
+    written_at: i64,
+    #[serde(default)]
+    own_tags: Vec<UdTag>,
+    #[serde(default)]
+    face_decisions: Vec<UdDecision>,
+    #[serde(default)]
+    taken_overrides: Vec<UdTaken>,
+    #[serde(default)]
+    date_estimates: Vec<UdEstimate>,
+    #[serde(default)]
+    geo_overrides: Vec<UdGeo>,
+}
+
+#[derive(Deserialize)]
+struct UdTag {
+    name: String,
+    #[serde(default)]
+    files: Vec<UdTagged>,
+}
+
+#[derive(Deserialize)]
+struct UdTagged {
+    #[serde(default)]
+    quick_hash: Option<String>,
+    #[serde(default)]
+    full_hash: Option<String>,
+    #[serde(default)]
+    in_trash: bool,
+}
+
+#[derive(Deserialize)]
+struct UdDecision {
+    #[serde(default)]
+    person: Option<String>,
+    decision: String,
+    #[serde(default)]
+    manual: bool,
+    key: String,
+    #[serde(rename = "box")]
+    b: [f64; 4],
+    #[serde(default)]
+    at: i64,
+    #[serde(default)]
+    species: Option<String>,
+    #[serde(default)]
+    files: Vec<UdDecisionFile>,
+}
+
+#[derive(Deserialize)]
+struct UdDecisionFile {
+    #[serde(default)]
+    full_hash: Option<String>,
+    #[serde(default)]
+    in_trash: bool,
+}
+
+#[derive(Deserialize)]
+struct UdTaken {
+    quick_hash: String,
+    taken: String,
+    #[serde(default)]
+    taken_offset: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct UdEstimate {
+    quick_hash: String,
+    year: i32,
+    #[serde(default)]
+    month: Option<u32>,
+    #[serde(default)]
+    day: Option<u32>,
+}
+
+#[derive(Deserialize)]
+struct UdGeo {
+    quick_hash: String,
+    lat: f64,
+    lon: f64,
+}
+
+/// A hash as shoebox writes it: 64 hex digits (BLAKE3).
+fn is_hash(s: &str) -> bool {
+    s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// `+02:00`, `-05:30` (an offset as the scan stores it).
+fn is_offset(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 6 && (b[0] == b'+' || b[0] == b'-') && b[1..3].iter().all(u8::is_ascii_digit) && b[3] == b':' && b[4..6].iter().all(u8::is_ascii_digit)
+}
+
+/// A face box: fractions of the picture.
+fn is_box(b: &[f64; 4]) -> bool {
+    b.iter().all(|v| v.is_finite() && (-0.5..=1.5).contains(v)) && b[2] > 0.0 && b[3] > 0.0
+}
+
+/// Read a `userdata.json` (versions 1 to `tags::USERDATA_VERSION`): the file
+/// a drive keeps next to its index, or a copy of it. Only files called
+/// `….json` are opened, so this never reads a photo. The file comes from
+/// anywhere, so every entry is checked as if typed; what does not pass is
+/// left out.
+pub fn read_userdata(path: &Path) -> Result<(TransferSet, FileInfo)> {
+    let is_json = path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("json"));
+    if !is_json {
+        bail!("choose a userdata.json file");
+    }
+    let meta = std::fs::metadata(path).with_context(|| format!("{} cannot be opened", path.display()))?;
+    if !meta.is_file() {
+        bail!("{} is not a file", path.display());
+    }
+    if meta.len() > MAX_USERDATA_BYTES {
+        bail!("{} is too large for a userdata.json", path.display());
+    }
+    let bytes = std::fs::read(path).with_context(|| format!("{} cannot be read", path.display()))?;
+    parse_userdata(&bytes)
+}
+
+/// [`read_userdata`] for the file's contents.
+pub fn parse_userdata(bytes: &[u8]) -> Result<(TransferSet, FileInfo)> {
+    let file: UdFile = serde_json::from_slice(bytes).map_err(|_| anyhow::anyhow!("this is not a userdata.json written by shoebox"))?;
+    if file.shoebox.is_empty() || file.version == 0 {
+        bail!("this is not a userdata.json written by shoebox");
+    }
+    if file.version > tags::USERDATA_VERSION {
+        bail!("this userdata.json was written by a newer shoebox (version {}): use that version", file.shoebox);
+    }
+    let at = file.written_at.max(0);
+    let mut set = TransferSet::default();
+    // The full hashes known for a quick hash: what the content-keyed items
+    // are matched by, as the source's index would have it.
+    let mut fulls: HashMap<String, Vec<String>> = HashMap::new();
+    let mut know = |quick: &str, full: &Option<String>| {
+        if let Some(full) = full.as_deref().filter(|f| is_hash(f)) {
+            let list = fulls.entry(quick.to_string()).or_default();
+            if !list.iter().any(|f| f == full) {
+                list.push(full.to_string());
+            }
+        }
+    };
+
+    // Own tags and hearts. Files in the source's trash are left out, as on a
+    // drive (their tags are kept by its trash, not carried).
+    let mut hearted: HashSet<Content> = HashSet::new();
+    for tag in &file.own_tags {
+        let Ok(name) = tags::check_name(&tag.name) else { continue };
+        let heart = tags::means_favorite(&name);
+        for f in &tag.files {
+            let Some(quick) = f.quick_hash.as_deref().filter(|q| is_hash(q)) else { continue };
+            if f.in_trash {
+                continue;
+            }
+            know(quick, &f.full_hash);
+            let content = Content { quick: quick.to_string(), size: None, full: f.full_hash.clone().filter(|h| is_hash(h)) };
+            if heart {
+                if hearted.insert(content.clone()) {
+                    set.hearts.push(content);
+                }
+            } else {
+                set.tags.push(TagItem { content, name: name.clone(), at: None });
+            }
+        }
+    }
+
+    // Face decisions; a decision whose photo is only in the source's trash is
+    // left out.
+    for d in &file.face_decisions {
+        if !is_hash(&d.key) || !is_box(&d.b) {
+            continue;
+        }
+        if !d.files.is_empty() && d.files.iter().all(|f| f.in_trash) {
+            continue;
+        }
+        let decision = match serde_json::from_value::<people::Decision>(serde_json::Value::String(d.decision.clone())) {
+            Ok(decision) => decision,
+            Err(_) => continue,
+        };
+        let person = match (&d.person, decision) {
+            // These two never name a person.
+            (_, people::Decision::Ignored | people::Decision::NotFace) => None,
+            (Some(name), _) => match people::check_name(name) {
+                Ok(name) => Some(name),
+                Err(_) => continue,
+            },
+            (None, _) => None,
+        };
+        if d.species.as_deref().is_some_and(|s| !pets::is_species(s)) {
+            continue;
+        }
+        for f in d.files.iter().filter(|f| !f.in_trash) {
+            know(&d.key, &f.full_hash);
+        }
+        set.decisions.push(DecisionItem {
+            key: d.key.clone(),
+            b: d.b,
+            person,
+            decision: decision.as_str().to_string(),
+            manual: d.manual,
+            at: if d.at > 0 { d.at } else { at },
+            species: d.species.clone(),
+        });
+    }
+
+    // Dates: a corrected capture date and an estimate, by content.
+    let mut dated: HashMap<String, DateItem> = HashMap::new();
+    for t in &file.taken_overrides {
+        let valid = chrono::NaiveDateTime::parse_from_str(&t.taken, "%Y-%m-%dT%H:%M:%S").is_ok();
+        if !is_hash(&t.quick_hash) || !valid || t.taken_offset.as_deref().is_some_and(|o| !is_offset(o)) {
+            continue;
+        }
+        let item = dated.entry(t.quick_hash.clone()).or_insert_with(|| DateItem { key: t.quick_hash.clone(), taken: None, estimate: None, at });
+        item.taken = Some((t.taken.clone(), t.taken_offset.clone()));
+    }
+    let today = dates::today();
+    for e in &file.date_estimates {
+        let estimate = dates::Estimate { year: e.year, month: e.month, day: e.day };
+        if !is_hash(&e.quick_hash) || estimate.checked(today).is_err() {
+            continue;
+        }
+        let item = dated.entry(e.quick_hash.clone()).or_insert_with(|| DateItem { key: e.quick_hash.clone(), taken: None, estimate: None, at });
+        item.estimate = Some((e.year as i64, e.month.map(i64::from), e.day.map(i64::from)));
+    }
+    let mut list: Vec<DateItem> = dated.into_values().collect();
+    list.sort_by(|a, b| a.key.cmp(&b.key));
+    set.dates = list;
+
+    // Positions given by hand.
+    for g in &file.geo_overrides {
+        if !is_hash(&g.quick_hash) || geo::check_position(g.lat, g.lon).is_err() {
+            continue;
+        }
+        set.places.push(PlaceItem { key: g.quick_hash.clone(), lat: g.lat, lon: g.lon, at });
+    }
+
+    // What the content-keyed items match: the full hashes the file knows for
+    // their quick hash, or the quick hash alone (which covers the size).
+    let keys: HashSet<String> = set
+        .decisions
+        .iter()
+        .map(|d| d.key.clone())
+        .chain(set.dates.iter().map(|d| d.key.clone()))
+        .chain(set.places.iter().map(|p| p.key.clone()))
+        .collect();
+    for key in keys {
+        let contents = match fulls.get(&key) {
+            Some(list) => list.iter().map(|f| Content { quick: key.clone(), size: None, full: Some(f.clone()) }).collect(),
+            None => vec![Content { quick: key.clone(), size: None, full: None }],
+        };
+        set.contents.insert(key, contents);
+    }
+    Ok((set, FileInfo { version: file.version, written_at: file.written_at }))
+}
+
 struct TargetFile {
     id: i64,
-    quick: String,
     size: u64,
     full: Option<String>,
     /// The file itself has a position (EXIF), which wins over one given by hand.
@@ -332,8 +610,8 @@ fn load_target(conn: &Connection) -> Result<Target> {
     let mut rows = stmt.query([])?;
     while let Some(r) = rows.next()? {
         let quick: String = r.get(1)?;
-        by_quick.entry(quick.clone()).or_default().push(files.len());
-        files.push(TargetFile { id: r.get(0)?, quick, size: r.get::<_, i64>(2)? as u64, full: r.get(3)?, has_position: r.get::<_, i64>(4)? != 0 });
+        by_quick.entry(quick).or_default().push(files.len());
+        files.push(TargetFile { id: r.get(0)?, size: r.get::<_, i64>(2)? as u64, full: r.get(3)?, has_position: r.get::<_, i64>(4)? != 0 });
     }
     Ok(Target { files, by_quick })
 }
@@ -348,7 +626,7 @@ fn matching(target: &Target, c: &Content) -> Vec<usize> {
         .copied()
         .filter(|&i| {
             let f = &target.files[i];
-            f.size == c.size
+            c.size.is_none_or(|size| size == f.size)
                 && match (&c.full, &f.full) {
                     (Some(a), Some(b)) => a == b,
                     // No full hash yet on one side: size and quick hash decide.

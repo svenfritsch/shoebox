@@ -565,11 +565,21 @@ pub struct Folder {
     pub library: bool,
 }
 
+/// A `.json` file, listed when a `userdata.json` is chosen (phase 15b).
+#[derive(Debug, Serialize)]
+pub struct FileEntry {
+    pub name: String,
+    pub path: String,
+    pub size: u64,
+}
+
 #[derive(Debug, Serialize)]
 pub struct Listing {
     pub path: String,
     pub crumbs: Vec<Crumb>,
     pub folders: Vec<Folder>,
+    /// Only when files were asked for.
+    pub files: Vec<FileEntry>,
     /// The drive with a library this folder is on, if any.
     pub shoebox: Option<String>,
     pub free: Option<u64>,
@@ -577,6 +587,17 @@ pub struct Listing {
 
 /// The sub-folders of `path` (no files, no hidden folders).
 pub fn list_folders(path: &Path) -> Result<Listing> {
+    list(path, false)
+}
+
+/// The sub-folders and `.json` files of `path`, for choosing a `userdata.json`
+/// (Carry over data, phase 15b). The one hidden folder shown is `.shoebox`,
+/// where every drive keeps its `userdata.json`.
+pub fn list_json(path: &Path) -> Result<Listing> {
+    list(path, true)
+}
+
+fn list(path: &Path, json: bool) -> Result<Listing> {
     if !path.is_absolute() {
         bail!("not a full path");
     }
@@ -585,15 +606,22 @@ pub fn list_folders(path: &Path) -> Result<Listing> {
         bail!("{} is not a folder", display_path(path));
     }
     let mut folders = Vec::new();
+    let mut files = Vec::new();
     for entry in fs::read_dir(path).with_context(|| format!("{} cannot be read", display_path(path)))?.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if name.starts_with('.') || !fs::metadata(entry.path()).is_ok_and(|m| m.is_dir()) {
+        let Ok(meta) = fs::metadata(entry.path()) else { continue };
+        if name.starts_with('.') && !(json && name == db::DIR && meta.is_dir()) {
             continue;
         }
         let p = entry.path();
-        folders.push(Folder { name: library::nfc(&name), library: p.join(db::DIR).is_dir(), path: display_path(&p) });
+        if meta.is_dir() {
+            folders.push(Folder { name: library::nfc(&name), library: p.join(db::DIR).is_dir(), path: display_path(&p) });
+        } else if json && meta.is_file() && p.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("json")) {
+            files.push(FileEntry { name: library::nfc(&name), path: display_path(&p), size: meta.len() });
+        }
     }
     folders.sort_by_key(|f| f.name.to_lowercase());
+    files.sort_by_key(|f| f.name.to_lowercase());
     let mut crumbs: Vec<Crumb> = path
         .ancestors()
         .map(|a| Crumb {
@@ -606,6 +634,7 @@ pub fn list_folders(path: &Path) -> Result<Listing> {
         path: display_path(path),
         crumbs,
         folders,
+        files,
         shoebox: shoebox_drive(path).map(|d| display_path(&d)),
         free: free_space(path),
     })
