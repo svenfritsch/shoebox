@@ -44,8 +44,9 @@ const nameEveryone = () => p.evaluate(async (g) => {
   }
   const members = { [g.family]: ['Rosa', 'Ben'], [g.friends]: ['Lena', 'Jonas', 'Sam'], [g.colleagues]: ['Priya', 'Marco', 'Chen'], [g.pets]: ['Whiskers', 'Buddy'] };
   for (const [name, who] of Object.entries(members)) {
-    const grp = await post(LIBAPI + '/groups', { name });
-    for (const w of who) await post(LIBAPI + '/people/' + ids[w] + '/group', { group_id: grp.id });
+    // A group starts with its first person.
+    const grp = await post(LIBAPI + '/groups', { name, person_id: ids[who[0]] });
+    for (const w of who.slice(1)) await post(LIBAPI + '/people/' + ids[w] + '/group', { group_id: grp.id });
   }
 }, GROUPS);
 
@@ -294,7 +295,7 @@ await p.click('#nav-people'); await wait(2000);
 await p.setViewportSize({ width: 1280, height: 1020 }); await wait(500);
 
 // Groups: the list with rename, order and delete ...
-await p.locator('#page button.btn.quiet').nth(1).click(); await wait(600);
+await p.locator('#page button.btn.quiet').nth(0).click(); await wait(600);
 await shot('groups-dialog');
 await p.locator('#modal-actions button').last().click(); await wait(600);
 // ... and putting a person into one from the person's ⋯ menu.
@@ -308,6 +309,9 @@ await toastGone(); await wait(800);   // the status line settles
 await p.evaluate(() => { document.getElementById('scroller').scrollTop = 0; }); await wait(500);
 await shot('people-overview');
 await p.setViewportSize({ width: 1280, height: 860 });
+// A group in the sidebar: the photos of everyone in it.
+await p.locator('#people-tree button.name[data-group]').first().click(); await wait(1500);
+await shot('group-timeline');
 await p.click('#all'); await wait(800);
 // A photo with both of them, with the info panel.
 await p.locator('.cell').nth(5).click(); await wait(1000);

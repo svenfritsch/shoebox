@@ -807,6 +807,7 @@ fn hub_router(hub: Arc<Hub>) -> Router {
         .route("/api/libraries", get(libraries))
         // Over all drives (see `multi.rs`).
         .route("/api/all/people", get(all_people))
+        .route("/api/all/groups", get(all_groups))
         .route("/api/all/timeline", get(all_timeline))
         .route("/api/all/tags", get(all_tags))
         .route("/api/all/duplicates", get(all_duplicates))
@@ -1015,6 +1016,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/people/{id}/cover", post(people_api::set_cover))
         .route("/api/people/search", get(people_api::search))
         .route("/api/pets/search", get(people_api::pets_search))
+        .route("/api/groups/search", get(people_api::groups_search))
         .route("/api/groups", get(people_api::groups).post(people_api::create_group))
         .route("/api/groups/reorder", post(people_api::reorder_groups))
         .route("/api/groups/{id}/rename", post(people_api::rename_group))
@@ -1345,6 +1347,53 @@ async fn all_people(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> 
     Ok(Json(AllPeople { people, offline }))
 }
 
+/// A group over all drives, by name, with the photos it would show within the
+/// filter (the same name on two drives is one group).
+#[derive(Serialize)]
+struct AllGroup {
+    name: String,
+    photos: u64,
+}
+
+/// The groups whose name contains `q` that would show photos within the
+/// filter, for the search box over all drives; groups in the filter are left
+/// out, most photos first.
+async fn all_groups(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<AllGroup>>> {
+    let apps = online_apps(&hub).await;
+    let filter = AllFilter::of(&pairs, false)?;
+    let needle = param(&pairs, "q").map(db::tag_fold).unwrap_or_default();
+    let hits = tokio::task::spawn_blocking(move || -> ApiResult<Vec<AllGroup>> {
+        let mut by_name: Vec<(String, AllGroup)> = Vec::new();
+        for app in &apps {
+            let conn = app.conn.lock().unwrap();
+            let Some(query) = filter.query_for(&conn)? else { continue };
+            let snapshot = app.snapshot(&conn)?;
+            for g in people::groups(&conn)? {
+                let key = db::tag_fold(&g.name);
+                if !key.contains(&needle) || filter.group_names.iter().any(|n| db::tag_fold(n) == key) {
+                    continue;
+                }
+                let mut with = query.clone();
+                with.groups.push(g.id);
+                let photos = snapshot.query(&conn, &with)?.len() as u64;
+                if photos == 0 {
+                    continue;
+                }
+                match by_name.iter_mut().find(|(k, _)| *k == key) {
+                    Some((_, hit)) => hit.photos += photos,
+                    None => by_name.push((key, AllGroup { name: g.name, photos })),
+                }
+            }
+        }
+        let mut hits: Vec<AllGroup> = by_name.into_iter().map(|(_, h)| h).collect();
+        hits.sort_by(|a, b| b.photos.cmp(&a.photos).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+        Ok(hits)
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+    Ok(Json(hits))
+}
+
 #[derive(Deserialize)]
 struct LimitQuery {
     limit: Option<usize>,
@@ -1517,6 +1566,7 @@ struct LibraryRef {
 struct AllFilter {
     tag_names: Vec<String>,
     person_names: Vec<String>,
+    group_names: Vec<String>,
     text: Option<String>,
     types: Vec<browse::MediaType>,
     pets: Vec<String>,
@@ -1534,6 +1584,7 @@ impl AllFilter {
         Ok(AllFilter {
             tag_names: pairs.iter().filter(|(k, v)| k == "tag" && !v.is_empty()).map(|(_, v)| v.clone()).collect(),
             person_names: pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| v.clone()).collect(),
+            group_names: pairs.iter().filter(|(k, v)| k == "group" && !v.is_empty()).map(|(_, v)| v.clone()).collect(),
             text: param(pairs, "q").map(str::to_string).filter(|s| with_text && !s.trim().is_empty()),
             types: types_of(pairs)?,
             pets: pets_of(pairs)?,
@@ -1549,6 +1600,7 @@ impl AllFilter {
     fn is_empty(&self) -> bool {
         self.tag_names.is_empty()
             && self.person_names.is_empty()
+            && self.group_names.is_empty()
             && self.text.is_none()
             && self.types.is_empty()
             && self.pets.is_empty()
@@ -1560,7 +1612,7 @@ impl AllFilter {
     }
 
     /// The query for one drive, with the names turned into its own ids. `None`
-    /// when the drive lacks one of the tags or people: nothing on it matches
+    /// when the drive lacks one of the tags, people or groups: nothing on it matches
     /// all of them.
     fn query_for(&self, conn: &Connection) -> ApiResult<Option<browse::Query>> {
         let mut tags = Vec::new();
@@ -1582,11 +1634,24 @@ impl AllFilter {
         if people_ids.len() != self.person_names.len() {
             return Ok(None);
         }
+        let known_groups = if self.group_names.is_empty() { Vec::new() } else { people::groups(conn)? };
+        let group_ids: Vec<i64> = self
+            .group_names
+            .iter()
+            .filter_map(|n| {
+                let key = db::tag_fold(n);
+                known_groups.iter().find(|g| db::tag_fold(&g.name) == key).map(|g| g.id)
+            })
+            .collect();
+        if group_ids.len() != self.group_names.len() {
+            return Ok(None);
+        }
         Ok(Some(browse::Query {
             folder: None,
             tags,
             text: self.text.clone(),
             people: people_ids,
+            groups: group_ids,
             pets: self.pets.clone(),
             types: self.types.clone(),
             in_text: self.in_text.clone(),
@@ -1704,6 +1769,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
             live: Vec::new(),
             tags: Vec::new(),
             people: Vec::new(),
+            groups: Vec::new(),
             favs: Vec::new(),
             snips: Vec::new(),
             est: Vec::new(),
@@ -2279,8 +2345,9 @@ fn types_of(pairs: &Pairs) -> ApiResult<Vec<browse::MediaType>> {
 }
 
 /// The timeline filter of a request: `folder`, `tag` (several, all must
-/// match), `type` (several, any matches), `q` (free text) and `person` (several, all must match: photos
-/// with a confirmed face of each).
+/// match), `type` (several, any matches), `q` (free text), `person` (several, all must match: photos
+/// with a confirmed face of each) and `group` (several, all must match: photos
+/// with a confirmed face of anyone in each).
 fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
     let number = |v: &str| v.parse::<i64>().map_err(|_| ApiError::BadRequest(format!("not a number: {v}")));
     Ok(browse::Query {
@@ -2289,6 +2356,7 @@ fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
         manual_tags: param(pairs, "manual").is_some_and(|v| !v.is_empty() && v != "0"),
         text: param(pairs, "q").map(str::to_string).filter(|s| !s.trim().is_empty()),
         people: pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
+        groups: pairs.iter().filter(|(k, v)| k == "group" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
         types: types_of(pairs)?,
         pets: pets_of(pairs)?,
         in_text: terms_of(pairs, "text"),
@@ -2387,6 +2455,7 @@ async fn tags(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiRes
         let all = if filter.folder.is_none()
             && filter.tags.is_empty()
             && filter.people.is_empty()
+            && filter.groups.is_empty()
             && filter.pets.is_empty()
             && filter.in_text.is_empty()
             && filter.names.is_empty()
@@ -2436,6 +2505,8 @@ struct Timeline {
     tags: Vec<browse::TagName>,
     /// Names of the people in the filter, for their chips.
     people: Vec<people::PersonRef>,
+    /// Names of the groups in the filter, for their chips.
+    groups: Vec<people::GroupRef>,
     /// Ids of the items with a heart.
     favs: Vec<i64>,
     /// [id, line] of what a text search found in an item (the first matching
@@ -2462,6 +2533,7 @@ async fn timeline(State(app): State<Arc<App>>, axum::Extension(only): axum::Exte
         let items = snapshot.query(&conn, &query)?;
         let tags = browse::tag_names(&conn, &query.tags)?;
         let people = people::person_names(&conn, &query.people)?;
+        let groups = people::group_names(&conn, &query.groups)?;
         let hearts = own_tags::favorite_ids(&conn)?;
         let mut t = Timeline {
             count: items.len(),
@@ -2472,6 +2544,7 @@ async fn timeline(State(app): State<Arc<App>>, axum::Extension(only): axum::Exte
             live: Vec::new(),
             tags,
             people,
+            groups,
             favs: Vec::new(),
             snips: Vec::new(),
             est: Vec::new(),

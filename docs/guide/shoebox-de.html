@@ -634,10 +634,10 @@
       <div class="topic has-shots">
         <div class="txt">
           <h3>Suchen</h3>
-          <p>Klicke ins Suchfeld und fang an zu tippen. Vorschläge erscheinen in Gruppen, zum Beispiel <b>Tags</b>, <b>Personen</b> und <b>Ordner</b> (und deine <b>Orte</b>, wenn Karten eingeschaltet sind, siehe „Orte und Karten“). Wähle einen aus, und er wird zu einem <b>Chip</b> über den Fotos. In <b>Alle Laufwerke</b> zählen die Zahlen neben den Vorschlägen nur die Fotos, die zu den Chips passen, die du schon hast, genau wie auf einem einzelnen Laufwerk.</p>
+          <p>Klicke ins Suchfeld und fang an zu tippen. Vorschläge erscheinen in Gruppen, zum Beispiel <b>Tags</b>, <b>Personen</b>, <b>Gruppen</b> und <b>Ordner</b> (und deine <b>Orte</b>, wenn Karten eingeschaltet sind, siehe „Orte und Karten“). Wähle einen aus, und er wird zu einem <b>Chip</b> über den Fotos. In <b>Alle Laufwerke</b> zählen die Zahlen neben den Vorschlägen nur die Fotos, die zu den Chips passen, die du schon hast, genau wie auf einem einzelnen Laufwerk.</p>
           <div class="chips"><span class="chip">👤 Mia<i class="x" data-txt="skip">✕</i></span><span class="chip"># Urlaub<i class="x" data-txt="skip">✕</i></span><span class="chip"><svg viewBox="0 0 24 24" width="1.15em" height="1.15em" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>Juni 1987<i class="x" data-txt="skip">✕</i></span><span class="count">48 Fotos · 3 Videos</span></div>
           <h4>Chips kombinieren</h4>
-          <p>Alle Chips müssen zutreffen, jeder weitere Chip grenzt das Ergebnis also ein: Eine Person, ein Tag und ein Jahr zusammen zeigen nur die Fotos, die zu allen dreien passen. <b>×</b> entfernt einen Chip, <b>Alle entfernen</b> beginnt neu.</p>
+          <p>Alle Chips müssen zutreffen, jeder weitere Chip grenzt das Ergebnis also ein: Eine Person, ein Tag und ein Jahr zusammen zeigen nur die Fotos, die zu allen dreien passen. <b>×</b> entfernt einen Chip, <b>Alle entfernen</b> beginnt neu. Nur ein <b>Gruppen</b>-Chip macht es anders: Er zeigt die Fotos von <i>irgendjemandem</i> in der Gruppe (siehe „Mehrere Gesichter in einem Foto, und Gruppen“) und grenzt dann ein wie jeder andere Chip.</p>
           <p>Rechts neben den Chips zeigt shoebox, wie viele die Suche findet, zum Beispiel <b>48 Fotos · 3 Videos</b>. Findet sie nichts, steht dort <b>Keine Fotos</b>, und die Seite sagt <i>Hier ist nichts. Die Suche ergab keine Treffer.</i></p>
           <figure>
             <img src="assets/de/search-suggestions.jpg" alt="" loading="lazy">
@@ -1050,7 +1050,7 @@
       <div class="topic has-shots">
         <div class="txt">
           <h3>Gruppen</h3>
-          <p><b>Gesichter</b> zeigt die Personen nach Gruppen. <b>Neue Gruppe …</b> legt eine an; <b>Gruppen …</b> benennt Gruppen um, ordnet sie und löscht sie; zum Ordnen ziehst du eine Zeile am Punktegriff links (oder fokussierst den Griff und drückst Alt+↑/↓). Eine Person ist höchstens in einer Gruppe, und das Löschen einer Gruppe löscht niemanden.</p>
+          <p><b>Gesichter</b> zeigt die Personen nach Gruppen. Eine Gruppe entsteht immer bei einer Person: dort auf <b>⋯</b> und dann <b>Neue Gruppe …</b>, und die Person ist ihr erstes Mitglied. Eine Gruppe ist nie leer, sie verschwindet also, wenn ihre letzte Person sie verlässt. <b>Gruppen …</b> benennt Gruppen um, ordnet sie und löscht sie; zum Ordnen ziehst du eine Zeile am Punktegriff links (oder fokussierst den Griff und drückst Alt+↑/↓). Eine Person ist höchstens in einer Gruppe, und das Löschen einer Gruppe löscht niemanden.</p>
         </div>
         <div class="shots">
           <figure>
@@ -1066,12 +1066,24 @@
       <div class="topic has-shots">
         <div class="txt">
           <h3>Personen in Gruppen legen</h3>
-          <p>Bei einer Person auf <b>⋯</b> klicken und <b>In Gruppe verschieben …</b> wählen, oder die Person in der Seitenleiste auf eine Gruppe ziehen. Haustiere funktionieren genauso: Eine Gruppe <i>Haustiere</i> kann den Hund und die Katze enthalten.</p>
+          <p>Bei einer Person auf <b>⋯</b> klicken und <b>In Gruppe verschieben …</b> (oder <b>Neue Gruppe …</b> für eine neue) wählen, oder die Person in der Seitenleiste auf eine Gruppe ziehen. Haustiere funktionieren genauso: Eine Gruppe <i>Haustiere</i> kann den Hund und die Katze enthalten.</p>
         </div>
         <div class="shots">
           <figure>
             <img src="assets/de/move-to-group.jpg" alt="" loading="lazy">
             <figcaption>In Gruppe verschieben … im ⋯-Menü einer Person.</figcaption>
+          </figure>
+        </div>
+      </div>
+      <div class="topic has-shots">
+        <div class="txt">
+          <h3>Eine ganze Gruppe auf einmal sehen</h3>
+          <p>Klicke in der Seitenleiste auf eine Gruppe: Sie klappt ihre Personen auf, und die Fotos zeigen alle darin, es erscheinen also ein Foto von Rosa und ein Foto von Ben, nicht nur die Fotos mit beiden. Oder tippe den Namen der Gruppe ins Suchfeld und wähle sie unter <b>Gruppen</b>; sie wird zu einem Chip mit dem Gruppensymbol. Haustiere in der Gruppe zählen mit. Eine Person daneben setzen grenzt es wieder ein.</p>
+        </div>
+        <div class="shots">
+          <figure>
+            <img src="assets/de/group-timeline.jpg" alt="" loading="lazy">
+            <figcaption>Eine Gruppe in der Seitenleiste: die Fotos von allen darin.</figcaption>
           </figure>
         </div>
       </div>

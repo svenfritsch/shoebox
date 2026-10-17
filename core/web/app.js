@@ -131,6 +131,8 @@ var ICONS = {
   scan: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><rect x="7" y="6.5" width="10" height="11" rx="2"/><path d="M9.5 10h5M9.5 12.5h5M9.5 15h5"/></svg>',
   draft: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M14 3v5h5"/></svg>',
   copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
+  // Three pawns, the middle one taller: a group of people.
+  group: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="9.5" r="2"/><path d="M2.5 20v-1.5C2.5 16 3.8 14.5 5.5 14.5S8.5 16 8.5 18.5V20z"/><circle cx="18.5" cy="9.5" r="2"/><path d="M15.5 20v-1.5c0-2.5 1.3-4 3-4s3 1.5 3 4V20z"/><circle cx="12" cy="6.5" r="2.4"/><path d="M8.5 20v-2.5c0-3 1.5-5 3.5-5s3.5 2 3.5 5V20z"/></svg>',
 };
 function icon(name, cls) {
   var s = document.createElement('span');
@@ -148,7 +150,7 @@ function prefixOf(v) {
 }
 
 function readHash() {
-  var f = { folder: null, tags: [], people: [], pets: [], texts: [], names: [], types: [], fav: false, manual: false, place: null, dates: [], nodate: false, compare: '', q: '', view: null, id: null, tab: null };
+  var f = { folder: null, tags: [], people: [], groups: [], pets: [], texts: [], names: [], types: [], fav: false, manual: false, place: null, dates: [], nodate: false, compare: '', q: '', view: null, id: null, tab: null };
   location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
     var i = kv.indexOf('=');
     if (i < 0) return;
@@ -158,6 +160,8 @@ function readHash() {
     var all = isAll();
     if (k === 'tag') { var t = all ? v : parseInt(v, 10); if (t && f.tags.indexOf(t) < 0) f.tags.push(t); }
     if (k === 'person') { var pp = all ? v : parseInt(v, 10); if (pp && f.people.indexOf(pp) < 0) f.people.push(pp); }
+    // A group: the photos of any of its people.
+    if (k === 'group') { var gg = all ? v : parseInt(v, 10); if (gg && f.groups.indexOf(gg) < 0) f.groups.push(gg); }
     if (k === 'type' && TYPES.indexOf(v) >= 0 && f.types.indexOf(v) < 0) f.types.push(v);
     // A kind of pet (all cats, all dogs, any pet): the same on every drive.
     if (k === 'pet' && PET_TERMS[v] && f.pets.indexOf(v) < 0) f.pets.push(v);
@@ -187,7 +191,7 @@ function readHash() {
 // folder, any number of tags and people (`tag`, `person` repeated in the
 // URL) and free text.
 function setFilter(f) {
-  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], text: f.texts || [], name: f.names || [], type: f.types || [], fav: f.fav ? 1 : null, manual: f.manual && (f.tags || []).length ? 1 : null, place: f.place, date: f.dates || [], nodate: f.nodate ? 1 : null, compare: f.compare || null, q: f.q }).replace(/^\?/, '');
+  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], group: f.groups || [], pet: f.pets || [], text: f.texts || [], name: f.names || [], type: f.types || [], fav: f.fav ? 1 : null, manual: f.manual && (f.tags || []).length ? 1 : null, place: f.place, date: f.dates || [], nodate: f.nodate ? 1 : null, compare: f.compare || null, q: f.q }).replace(/^\?/, '');
   if (h === location.hash.replace(/^#/, '')) { applyFilter(); return; }
   location.hash = h; // triggers hashchange -> applyFilter
 }
@@ -197,7 +201,7 @@ function withFilter(changes) {
   var f = state.filter;
   // A place picked on the Locations page goes with the search to the timeline.
   var place = f.view === 'locations' ? f.id : f.place;
-  return Object.assign({ folder: f.folder, tags: f.tags.slice(), manual: f.manual && !('tags' in changes), people: f.people.slice(), pets: f.pets.slice(), texts: f.texts.slice(), names: f.names.slice(), types: f.types.slice(), fav: f.fav, place: place, dates: f.dates.slice(), nodate: f.nodate, compare: f.compare, q: f.q }, changes);
+  return Object.assign({ folder: f.folder, tags: f.tags.slice(), manual: f.manual && !('tags' in changes), people: f.people.slice(), groups: f.groups.slice(), pets: f.pets.slice(), texts: f.texts.slice(), names: f.names.slice(), types: f.types.slice(), fav: f.fav, place: place, dates: f.dates.slice(), nodate: f.nodate, compare: f.compare, q: f.q }, changes);
 }
 
 function showView(view, id, tab) { setFilter({ view: view, id: id, tab: tab, folder: null, tags: [], people: [], q: '' }); }
@@ -235,7 +239,7 @@ function applyFilter() {
   $('sizer').hidden = !!view;
   $('current-month').textContent = view && VIEW_LABELS[view] ? tr(VIEW_LABELS[view]) : '';
   var f = state.filter;
-  $('all').classList.toggle('active', !view && !f.folder && !f.tags.length && !f.people.length && !f.pets.length && !f.texts.length && !f.names.length && !f.place && !f.fav && !f.dates.length && !f.nodate && !f.compare && !f.q);
+  $('all').classList.toggle('active', !view && !f.folder && !f.tags.length && !f.people.length && !f.groups.length && !f.pets.length && !f.texts.length && !f.names.length && !f.place && !f.fav && !f.dates.length && !f.nodate && !f.compare && !f.q);
   $('nav-nodate').classList.toggle('active', !view && f.nodate);
   if (isAll()) $('nav-nodate').hidden = true;
   $('nav-dups').classList.toggle('active', view === 'duplicates');
@@ -300,6 +304,11 @@ function renderChips() {
       setFilter(withFilter({ people: f.people.filter(function (p) { return p !== id; }) }));
     });
   });
+  f.groups.forEach(function (id) {
+    add(state.groupNames[id] || id, function () {
+      setFilter(withFilter({ groups: f.groups.filter(function (g) { return g !== id; }) }));
+    }, icon('group'), tr('chip.group_hint', { name: state.groupNames[id] || id }));
+  });
   f.pets.forEach(function (species) {
     add(PET_TERMS[species].icon + ' ' + PET_TERMS[species].label, function () {
       setFilter(withFilter({ pets: f.pets.filter(function (p) { return p !== species; }) }));
@@ -343,7 +352,7 @@ function renderChips() {
   if (terms >= 2) {
     var clear = el('button', 'chip clear', tr('chip.clear_all'));
     clear.title = tr('chip.clear_all_hint');
-    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], pets: [], texts: [], names: [], types: [], fav: false, place: null, compare: '', q: '' }); };
+    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], groups: [], pets: [], texts: [], names: [], types: [], fav: false, place: null, compare: '', q: '' }); };
     box.appendChild(clear);
   }
   // How many the search finds, at the right; filled in when the timeline is in.
@@ -385,6 +394,7 @@ function showCount() {
 state.tagNames = {};
 state.personNames = {};
 state.personSpecies = {}; // id -> cat, dog or pet, for people who are pets
+state.groupNames = {}; // id -> name of a group (its own name over all drives)
 
 // ------------------------------------------------------------------ type filter
 
@@ -619,6 +629,7 @@ $('search').addEventListener('keydown', function (ev) {
     else if (f.nodate) setFilter(withFilter({ nodate: false }));
     else if (f.dates.length) setFilter(withFilter({ dates: f.dates.slice(0, -1) }));
     else if (f.pets.length) setFilter(withFilter({ pets: f.pets.slice(0, -1) }));
+    else if (f.groups.length) setFilter(withFilter({ groups: f.groups.slice(0, -1) }));
     else if (f.people.length) setFilter(withFilter({ people: f.people.slice(0, -1) }));
     else if (f.tags.length) setFilter(withFilter({ tags: f.tags.slice(0, -1) }));
     else if (f.folder) setFilter(withFilter({ folder: null }));
@@ -752,12 +763,13 @@ function suggest(text) {
   }
   if (isAll()) { suggestAll(text, seq); return; }
   var needle = text.trim();
-  var within = { q: needle, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place };
+  var within = { q: needle, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place };
   Promise.all([
     api(LIBAPI + '/tags' + query(Object.assign({ limit: 8, own: 1 }, within))),
     api(LIBAPI + '/people/search' + query(Object.assign({ limit: 6 }, within))).catch(function () { return []; }),
     api(LIBAPI + '/pets/search' + query(within)).catch(function () { return []; }),
     suggestDates(needle, false, datesWithin(f)),
+    api(LIBAPI + '/groups/search' + query(Object.assign({ limit: 4 }, within))).catch(function () { return []; }),
   ]).then(function (r) {
     if (seq !== sugg.seq) return;
     var items = compareSuggestion(needle, f).concat(favSuggestion(needle, f));
@@ -766,6 +778,10 @@ function suggest(text) {
       state.personSpecies[p.id] = p.species;
       return { kind: 'person', id: p.id, label: p.name, count: p.photos, person: p };
     }));
+    r[4].forEach(function (g) {
+      state.groupNames[g.id] = g.name;
+      items.push({ kind: 'group', id: g.id, label: g.name, count: g.photos });
+    });
     r[2].forEach(function (p) { items.push({ kind: 'pet', id: p.species, label: PET_TERMS[p.species].label, count: p.photos }); });
     r[0].forEach(function (t) {
       if (isFavTag(t.name)) return; // the heart, offered above
@@ -792,7 +808,7 @@ function suggestAll(text, seq) {
   var needle = text.trim(), low = needle.toLowerCase(), f = state.filter;
   // The suggestions narrow with the filter, as on a single drive: counts are
   // the photos the list would show, and what would show nothing is left out.
-  var within = { tag: f.tags, person: f.people, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null };
+  var within = { tag: f.tags, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null };
   var wkey = query(within);
   var people = Date.now() - allPeople.at < 30000 && allPeople.key === wkey ? Promise.resolve(allPeople.list)
     : api('/api/all/people' + wkey).then(function (r) { allPeople = { at: Date.now(), key: wkey, list: r.people }; return r.people; });
@@ -804,10 +820,12 @@ function suggestAll(text, seq) {
     lists.forEach(function (list) { list.forEach(function (h) { sum[h.species] = (sum[h.species] || 0) + h.photos; }); });
     return Object.keys(sum).sort(function (a, b) { return sum[b] - sum[a]; }).map(function (s) { return { species: s, photos: sum[s] }; });
   });
-  Promise.all([api('/api/all/tags' + query(Object.assign({ q: needle, limit: 8, own: 1 }, within))), people.catch(function () { return []; }), pets]).then(function (r) {
+  var groups = api('/api/all/groups' + query(Object.assign({ q: needle }, within))).catch(function () { return []; });
+  Promise.all([api('/api/all/tags' + query(Object.assign({ q: needle, limit: 8, own: 1 }, within))), people.catch(function () { return []; }), pets, groups]).then(function (r) {
     if (seq !== sugg.seq) return;
     var items = r[1].filter(function (p) { return f.people.indexOf(p.name) < 0 && (!low || p.name.toLowerCase().indexOf(low) >= 0); })
       .slice(0, 6).map(function (p) { return { kind: 'person', id: p.name, label: p.name, count: p.photos, person: { name: p.name, species: p.species } }; });
+    r[3].slice(0, 4).forEach(function (g) { state.groupNames[g.name] = g.name; items.push({ kind: 'group', id: g.name, label: g.name, count: g.photos }); });
     r[2].forEach(function (p) { items.push({ kind: 'pet', id: p.species, label: PET_TERMS[p.species].label, count: p.photos }); });
     items = favSuggestion(needle, f).concat(items);
     r[0].filter(function (t) { return f.tags.indexOf(t.name) < 0 && !isFavTag(t.name); }).forEach(function (t) {
@@ -836,7 +854,7 @@ function addTerm(kind, term) {
 // How many photos a text or name suggestion would show, beside it.
 function fillCount(it, i, seq) {
   var f = state.filter;
-  var p = { tag: f.tags, person: f.people, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place };
+  var p = { tag: f.tags, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place };
   p[it.kind] = (it.kind === 'text' ? f.texts : f.names).concat([it.id]);
   api(LIBAPI + '/count' + query(p)).then(function (r) {
     if (seq !== sugg.seq) return;
@@ -854,9 +872,9 @@ function showSuggest(items, hint) {
   var last = null;
   items.forEach(function (it, i) {
     if (it.kind !== last) {
-      var f = state.filter, narrowed = f.tags.length || f.people.length || f.pets.length || f.texts.length || f.names.length || f.folder || f.place;
+      var f = state.filter, narrowed = f.tags.length || f.people.length || f.groups.length || f.pets.length || f.texts.length || f.names.length || f.folder || f.place;
       var head = it.kind === 'fav' ? tr('fav.label') : it.kind === 'compare' ? tr('cmp.head') : it.kind === 'tag' ? tr(narrowed ? 'search.tags_here' : 'search.tags')
-        : it.kind === 'person' ? tr(narrowed ? 'search.faces_here' : 'side.faces')
+        : it.kind === 'person' ? tr(narrowed ? 'search.faces_here' : 'side.faces') : it.kind === 'group' ? tr('search.groups')
           : it.kind === 'pet' ? tr(narrowed ? 'search.pets_here' : 'search.pets') : it.kind === 'place' ? tr('search.places') : it.kind === 'date' ? tr('search.dates')
             : it.kind === 'text' ? tr('search.text') : it.kind === 'name' ? tr('search.names') : tr('search.folders');
       box.appendChild(el('div', 'head', head));
@@ -868,9 +886,11 @@ function showSuggest(items, hint) {
     // People as in the sidebar: their picture, and the dog or cat for a pet.
     var label = el('span', 'label');
     if (it.kind === 'person') label.appendChild(avatar(it.person, 'tiny'));
+    if (it.kind === 'group') label.appendChild(icon('group'));
     if (it.kind === 'folder') label.appendChild(folderIcon());
     if (it.kind === 'text' || it.kind === 'name') label.appendChild(icon(it.kind === 'text' ? 'scan' : 'draft'));
     label.appendChild(document.createTextNode((it.kind === 'text' || it.kind === 'name' ? '“' : it.kind === 'fav' ? '♥ ' : it.kind === 'compare' ? '⇄ ' : it.kind === 'pet' ? PET_TERMS[it.id].icon + ' '
+      : it.kind === 'group' ? ''
       : it.kind === 'person' ? (petIcon(it.person && it.person.species) ? petIcon(it.person.species) + ' ' : '')
         : ({ place: '📍 ', date: '📅 ' }[it.kind] || (it.kind === 'folder' ? '' : '# '))) + it.label + (it.kind === 'text' || it.kind === 'name' ? '”' : '')));
     b.appendChild(label);
@@ -902,6 +922,7 @@ function pickSuggest(it) {
   else if (it.kind === 'compare') setFilter(withFilter({ compare: it.id, q: '' }));
   else if (it.kind === 'tag') setFilter(withFilter({ tags: f.tags.indexOf(it.id) < 0 ? f.tags.concat([it.id]) : f.tags, q: '' }));
   else if (it.kind === 'person') setFilter(withFilter({ people: f.people.indexOf(it.id) < 0 ? f.people.concat([it.id]) : f.people, q: '' }));
+  else if (it.kind === 'group') setFilter(withFilter({ groups: f.groups.indexOf(it.id) < 0 ? f.groups.concat([it.id]) : f.groups, q: '' }));
   else if (it.kind === 'pet') setFilter(withFilter({ pets: f.pets.indexOf(it.id) < 0 ? f.pets.concat([it.id]) : f.pets, q: '' }));
   else if (it.kind === 'date') setFilter(withFilter({ dates: f.dates.indexOf(it.id) < 0 ? f.dates.concat([it.id]) : f.dates, q: '' }));
   else if (it.kind === 'place') pickPlace(it.id);
@@ -1115,7 +1136,7 @@ function sectionHasActive(id) {
   if (id === 'folders-section') return !f.view && f.folder != null;
   if (id === 'tags-section') return !f.view && f.tags.length > 0;
   if (id === 'locations-section') return f.view === 'locations';
-  return f.view === 'people' || f.view === 'unnamed' || f.view === 'person' || (!f.view && f.people.length > 0);
+  return f.view === 'people' || f.view === 'unnamed' || f.view === 'person' || (!f.view && (f.people.length > 0 || f.groups.length > 0));
 }
 
 // A section holding the current selection cannot be folded (a safeguard).
@@ -1162,15 +1183,16 @@ function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
 function loadTimeline(resetScroll) {
   var seq = ++state.loadSeq;
   var f = state.filter;
-  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null, compare: f.compare === 'different' ? 'different' : null, q: f.q })
-    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null, compare: f.compare === 'different' ? null : f.compare || null, q: f.q });
+  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null, compare: f.compare === 'different' ? 'different' : null, q: f.q })
+    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null, compare: f.compare === 'different' ? null : f.compare || null, q: f.q });
   return api(url).then(function (data) {
     if (seq !== state.loadSeq) return;
     if (isAll()) allTimelineLoaded(data);
     state.anchor = null; // indices change with the new list
-    var unnamed = !isAll() && (f.tags.some(function (id) { return !state.tagNames[id]; }) || f.people.some(function (id) { return !state.personNames[id]; }));
+    var unnamed = !isAll() && (f.tags.some(function (id) { return !state.tagNames[id]; }) || f.people.some(function (id) { return !state.personNames[id]; }) || f.groups.some(function (id) { return !state.groupNames[id]; }));
     data.tags.forEach(function (t) { state.tagNames[t.id] = t.name; });
     data.people.forEach(function (p) { state.personNames[p.id] = p.name; });
+    (data.groups || []).forEach(function (g) { state.groupNames[g.id] = g.name; });
     if (unnamed) renderChips(); // a link with tags this page has not seen yet
     // A date change moves photos: the open one is found again by its id.
     var openId = state.open >= 0 && state.data && state.data.ids ? state.data.ids[state.open] : null;
@@ -5161,8 +5183,12 @@ function loadPeople() {
     people.groups = r[1];
     people.byId = {};
     r[0].forEach(function (p) { people.byId[p.id] = p; state.personNames[p.id] = p.name; state.personSpecies[p.id] = p.species; });
+    r[1].forEach(function (g) { state.groupNames[g.id] = g.name; });
     renderFacesSection();
     renderChips();
+    // A group in the search that is gone (its last person left): the search drops it.
+    var f = state.filter, there = function (id) { return r[1].some(function (g) { return g.id === id; }); };
+    if (!isAll() && f.groups && !f.groups.every(there)) setFilter(withFilter({ groups: f.groups.filter(there) }));
   }).catch(function () {});
 }
 
@@ -5321,6 +5347,8 @@ function faceImg(face, cls) {
 }
 
 function showPerson(id) { closeLightboxQuietly(); setFilter({ folder: null, tags: [], people: [id], q: '' }); }
+// The photos of anyone in the group.
+function showGroup(id) { closeLightboxQuietly(); setFilter({ folder: null, tags: [], people: [], groups: [id], q: '' }); }
 
 function closeLightboxQuietly() { if (!$('lightbox').hidden) closeLightbox(); }
 
@@ -5377,10 +5405,15 @@ function renderFacesSection() {
     var toggle = el('button', 'toggle');
     if (s.people.length) setArrow(toggle, !!people.open[key]);
     var name = el('button', 'name', s.name);
-    name.title = tr(s.people.length ? 'people.group_toggle' : 'people.group_empty');
+    name.title = tr(s.people.length ? (s.id == null ? 'people.group_toggle' : 'people.group_show') : 'people.group_empty');
     var flip = function () { people.open[key] = !people.open[key]; renderFacesSection(); };
     toggle.onclick = flip;
-    name.onclick = flip;
+    if (s.id == null) name.onclick = flip;
+    else {
+      // A group shows the photos of all its people and unfolds; the arrow only folds and unfolds.
+      name.dataset.group = s.id;
+      name.onclick = function () { people.open[key] = true; showGroup(s.id); renderFacesSection(); };
+    }
     row.appendChild(toggle);
     row.appendChild(name);
     row.appendChild(el('span', 'count', String(s.people.length)));
@@ -5423,6 +5456,7 @@ function markFacesSection() {
   $('nav-people').classList.toggle('active', f.view === 'people');
   Array.prototype.forEach.call(document.querySelectorAll('#people-tree .name'), function (b) {
     var on = b.dataset.view ? f.view === b.dataset.view
+      : b.dataset.group ? !f.view && f.groups.length === 1 && !f.people.length && f.groups[0] === parseInt(b.dataset.group, 10)
       : b.dataset.person ? (!f.view && f.people.indexOf(parseInt(b.dataset.person, 10)) >= 0) || (f.view === 'person' && f.id === parseInt(b.dataset.person, 10))
       : false;
     b.classList.toggle('active', on);
@@ -5693,13 +5727,15 @@ function deletePersonDialog(p) {
   ]);
 }
 
-function newGroup(then) {
-  nameDialog(tr('people.new_group'), '', tr('people.create'), function (name) {
-    return post(LIBAPI + '/groups', { name: name }).then(function (g) {
+// A new group always starts with a person (their page: "New group…"): the
+// person is its first member, so there is never an empty group.
+function newGroup(p) {
+  nameDialog(tr('people.new_group', { name: p.name }), '', tr('people.create'), function (name) {
+    return post(LIBAPI + '/groups', { name: name, person_id: p.id }).then(function (g) {
       toast(tr('people.group_created', { name: g.name }));
+      peopleChanged();
       return loadPeople().then(function () {
-        if (then) then(g);
-        else if (state.filter.view === 'people') loadPeoplePage();
+        if (state.filter.view === 'people') loadPeoplePage();
       });
     });
   });
@@ -5719,7 +5755,7 @@ function moveToGroupDialog(p) {
   body.appendChild(list);
   body.appendChild(el('p', 'hint', tr('people.group_hint')));
   openModal(tr('people.to_group_title'), body, [
-    { label: tr('people.new_group_btn'), cls: 'quiet', onclick: function () { setTimeout(function () { newGroup(function (g) { setGroup(p, g.id); }); }, 0); } },
+    { label: tr('people.new_group_btn'), cls: 'quiet', onclick: function () { setTimeout(function () { newGroup(p); }, 0); } },
     { label: tr('app.cancel'), cls: 'quiet' },
   ]);
 }
@@ -5840,7 +5876,6 @@ function groupsDialog() {
   };
   render();
   openModal(tr('people.groups_title'), body, [
-    { label: tr('people.new_group_btn'), cls: 'quiet', onclick: function () { setTimeout(function () { newGroup(function () { groupsDialog(); }); }, 0); } },
     { label: tr('app.done'), onclick: function () { if (state.filter.view === 'people') loadPeoplePage(); } },
   ]);
 }
@@ -5851,6 +5886,7 @@ function personMenuItems(p) {
     { label: tr('people.menu.review'), run: function () { showView('person', p.id, p.suggested ? 'suggested' : p.maybe ? 'maybe' : 'confirmed'); } },
     { label: tr('people.menu.rename'), run: function () { renamePerson(p); } },
     { label: tr('people.menu.move'), run: function () { moveToGroupDialog(p); } },
+    { label: tr('people.menu.new_group'), run: function () { newGroup(p); } },
     { label: tr('people.menu.merge'), run: function () { mergeDialog(p); } },
   ].concat(p.faces === 0 ? [{ label: tr('people.menu.delete'), run: function () { deletePersonDialog(p); } }] : []);
 }
@@ -5909,14 +5945,11 @@ function loadPeoplePage() {
   }
   page.appendChild(sub);
   var bar = el('div', 'toolbar');
-  var ng = el('button', 'btn quiet', tr('people.new_group_btn'));
-  ng.onclick = function () { newGroup(); };
   var gs = el('button', 'btn quiet', tr('people.groups_btn'));
   gs.onclick = groupsDialog;
   var check = el('button', 'btn quiet', tr('settings.calibration'));
   check.title = tr('people.calibration_hint');
   check.onclick = function () { showView('settings'); };
-  bar.appendChild(ng);
   bar.appendChild(gs);
   bar.appendChild(check);
   page.appendChild(bar);
