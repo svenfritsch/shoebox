@@ -135,6 +135,9 @@ fn several_photos_get_one_position() {
     jpeg_with_gps(&lib, GPS_PHOTO, 21);
     lib.jpeg("Neu/a.jpg", 40);
     lib.jpeg("Neu/b.jpg", 41);
+    for i in 0..25u8 {
+        lib.jpeg(&format!("Viele/V_{i:02}.jpg"), 60 + i);
+    }
     lib.scan();
     let before = lib.snapshot();
     let gps = id_of(&lib, GPS_PHOTO);
@@ -149,9 +152,12 @@ fn several_photos_get_one_position() {
     // have one of the user's that would be replaced.
     let r = post(addr, "/api/files/positions/check", &json!({ "ids": [gps, plain, a, b] }));
     assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
-    assert_eq!(r.json(), json!({ "total": 4, "with_file": 1, "with_user": 1 }));
+    assert_eq!(
+        r.json(),
+        json!({ "total": 4, "with_file": 1, "with_user": 1, "with_file_names": ["GPS_0001.jpg"], "with_user_names": ["IMG_0001.JPG"] })
+    );
     let r = post(addr, "/api/files/positions/check", &json!({ "ids": [] }));
-    assert_eq!(r.json(), json!({ "total": 0, "with_file": 0, "with_user": 0 }));
+    assert_eq!(r.json(), json!({ "total": 0, "with_file": 0, "with_user": 0, "with_file_names": [], "with_user_names": [] }));
     assert_eq!(post(addr, "/api/files/positions/check", &json!({ "ids": [999999] })).status, 400);
 
     // Only photos with a position in their file: nothing is set, nothing refused.
@@ -177,6 +183,18 @@ fn several_photos_get_one_position() {
     let mut want = vec![plain, a, b];
     want.sort();
     assert_eq!(got, want);
+
+    // A long list: the count is complete, the names stop after 20, sorted.
+    let many: Vec<i64> = (0..25).rev().map(|i| id_of(&lib, &format!("Viele/V_{i:02}.jpg"))).collect();
+    assert_eq!(post(addr, "/api/files/positions", &json!({ "ids": many, "lat": 1.0, "lon": 2.0 })).status, 200);
+    let r = post(addr, "/api/files/positions/check", &json!({ "ids": many }));
+    assert_eq!(r.status, 200);
+    let check = r.json();
+    assert_eq!(check["with_user"], 25);
+    let names: Vec<&str> = check["with_user_names"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+    let mut want: Vec<String> = (0..25).map(|i| format!("V_{i:02}.jpg")).collect();
+    want.truncate(20);
+    assert_eq!(names, want);
 
     // Every change needs the header.
     let body = json!({ "ids": [a], "lat": 1.0, "lon": 2.0 }).to_string();
