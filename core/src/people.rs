@@ -426,6 +426,13 @@ pub struct PersonRef {
     pub name: String,
 }
 
+/// A group by id and name, for the chips of a filter.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct GroupRef {
+    pub id: i64,
+    pub name: String,
+}
+
 /// A face as the API shows it.
 #[derive(Debug, Clone, Serialize)]
 pub struct FaceItem {
@@ -775,17 +782,33 @@ fn group(conn: &Connection, id: i64) -> Result<Group> {
     groups(conn)?.into_iter().find(|g| g.id == id).ok_or_else(|| anyhow::anyhow!("there is no group {id}"))
 }
 
-/// A new group, at the end.
-pub fn create_group(conn: &Connection, name: &str) -> Result<Group> {
+/// A new group, at the end, with this person as its first member: a group is
+/// never empty. The group the person leaves goes if nobody else is in it.
+pub fn create_group(conn: &Connection, name: &str, person_id: i64) -> Result<Group> {
     let name = check_name(name)?;
     if find_name(conn, "groups", &name, None)?.is_some() {
         bail!("there is a group called {name} already");
     }
-    conn.execute(
+    let tx = conn.unchecked_transaction()?;
+    let before = person_or_fail(&tx, person_id)?.group_id;
+    tx.execute(
         "INSERT INTO groups (name, position) VALUES (?1, (SELECT coalesce(max(position), 0) + 1 FROM groups))",
         [&name],
     )?;
-    group(conn, conn.last_insert_rowid())
+    let id = tx.last_insert_rowid();
+    tx.execute("UPDATE people SET group_id = ?2 WHERE id = ?1", params![person_id, id])?;
+    drop_if_empty(&tx, before)?;
+    tx.commit()?;
+    group(conn, id)
+}
+
+/// Remove a group nobody is in any more (the one a person just left). Other
+/// empty groups are left alone.
+fn drop_if_empty(conn: &Connection, group_id: Option<i64>) -> Result<()> {
+    if let Some(g) = group_id {
+        conn.execute("DELETE FROM groups WHERE id = ?1 AND NOT EXISTS (SELECT 1 FROM people WHERE group_id = ?1)", [g])?;
+    }
+    Ok(())
 }
 
 pub fn rename_group(conn: &Connection, id: i64, name: &str) -> Result<Group> {
@@ -1036,6 +1059,7 @@ pub fn delete_person(conn: &Connection, id: i64) -> Result<()> {
         bail!("{} has {} confirmed; merge them into someone instead", p.name, if p.faces == 1 { "a face".to_string() } else { format!("{} faces", p.faces) });
     }
     conn.execute("DELETE FROM people WHERE id = ?1", [id])?;
+    drop_if_empty(conn, p.group_id)?;
     Ok(())
 }
 
@@ -1046,15 +1070,18 @@ pub fn hide_person(conn: &Connection, id: i64, hidden: bool) -> Result<Person> {
     person_or_fail(conn, id)
 }
 
-/// Put a person in a group, or in none.
+/// Put a person in a group, or in none. The group they leave goes if nobody
+/// else is in it.
 pub fn set_group(conn: &Connection, id: i64, group_id: Option<i64>) -> Result<Person> {
     if let Some(g) = group_id
         && !exists(conn, "groups", g)?
     {
         bail!("there is no group {g}");
     }
-    if conn.execute("UPDATE people SET group_id = ?2 WHERE id = ?1", params![id, group_id])? == 0 {
-        bail!("there is no person {id}");
+    let before = person_or_fail(conn, id)?.group_id;
+    conn.execute("UPDATE people SET group_id = ?2 WHERE id = ?1", params![id, group_id])?;
+    if before != group_id {
+        drop_if_empty(conn, before)?;
     }
     person_or_fail(conn, id)
 }
@@ -1188,6 +1215,7 @@ pub fn merge_people(conn: &Connection, from: i64, into: i64) -> Result<Person> {
         )?;
     }
     tx.execute("DELETE FROM people WHERE id = ?1", [from])?;
+    drop_if_empty(&tx, a.group_id)?;
     // A face confirmed for one and rejected for the other: the
     // confirmation wins. A face rejected for both: one rejection.
     let m = Matched::load(&tx, None)?;
@@ -1807,6 +1835,26 @@ pub fn keys_by_person(conn: &Connection) -> Result<HashMap<i64, HashSet<String>>
     let mut rows = stmt.query([])?;
     while let Some(r) = rows.next()? {
         out.entry(r.get(0)?).or_default().insert(r.get(1)?);
+    }
+    Ok(out)
+}
+
+/// The people in a group (pets too).
+pub fn members_of_group(conn: &Connection, group_id: i64) -> Result<Vec<i64>> {
+    Ok(conn
+        .prepare("SELECT id FROM people WHERE group_id = ?1")?
+        .query_map([group_id], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?)
+}
+
+/// Names of groups by id (unknown ids are left out).
+pub fn group_names(conn: &Connection, ids: &[i64]) -> Result<Vec<GroupRef>> {
+    let mut stmt = conn.prepare("SELECT name FROM groups WHERE id = ?1")?;
+    let mut out = Vec::new();
+    for &id in ids {
+        if let Some(name) = stmt.query_row([id], |r| r.get(0)).optional()? {
+            out.push(GroupRef { id, name });
+        }
     }
     Ok(out)
 }

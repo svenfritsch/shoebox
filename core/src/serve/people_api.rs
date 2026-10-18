@@ -275,8 +275,54 @@ pub(super) async fn groups(State(app): State<Arc<App>>) -> ApiResult<Json<Vec<pe
     blocking(&app, |app| Ok(Json(people::groups(&app.conn.lock().unwrap())?))).await
 }
 
-pub(super) async fn create_group(State(app): State<Arc<App>>, Json(req): Json<NameRequest>) -> ApiResult<Json<people::Group>> {
-    people_change(&app, move |conn| people::create_group(conn, &req.name)).await.map(Json)
+#[derive(Deserialize)]
+pub(super) struct NewGroupRequest {
+    name: String,
+    /// The group's first member: a group is never empty.
+    person_id: i64,
+}
+
+pub(super) async fn create_group(State(app): State<Arc<App>>, Json(req): Json<NewGroupRequest>) -> ApiResult<Json<people::Group>> {
+    people_change(&app, move |conn| people::create_group(conn, &req.name, req.person_id)).await.map(Json)
+}
+
+#[derive(Serialize)]
+pub(super) struct GroupHit {
+    id: i64,
+    name: String,
+    people: u64,
+    /// Photos with anyone in it, within the filter.
+    photos: u64,
+}
+
+/// Groups whose name contains `q`, for the search box: a group in the search
+/// shows the photos of any of its people. With the photos it would show within
+/// the filter (`tag`, `folder`, `person`, `group`, ...), most first; groups of the
+/// filter itself and ones that would show nothing are left out.
+pub(super) async fn groups_search(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<GroupHit>>> {
+    blocking(&app, move |app| {
+        let conn = app.conn.lock().unwrap();
+        let needle = param(&pairs, "q").map(db::tag_fold).unwrap_or_default();
+        let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(8);
+        let filter = browse::Query { text: None, ..filter_of(&pairs)? };
+        let snapshot = app.snapshot(&conn)?;
+        let mut hits = Vec::new();
+        for g in people::groups(&conn)? {
+            if filter.groups.contains(&g.id) || !db::tag_fold(&g.name).contains(&needle) {
+                continue;
+            }
+            let mut with = filter.clone();
+            with.groups.push(g.id);
+            let photos = snapshot.query(&conn, &with)?.len() as u64;
+            if photos > 0 {
+                hits.push(GroupHit { id: g.id, name: g.name, people: g.people, photos });
+            }
+        }
+        hits.sort_by(|a, b| b.photos.cmp(&a.photos).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+        hits.truncate(limit);
+        Ok(Json(hits))
+    })
+    .await
 }
 
 pub(super) async fn rename_group(

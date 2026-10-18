@@ -147,6 +147,10 @@ pub struct Query {
     /// Only photos with a confirmed face of every one of these people
     /// (AND, 5c-3).
     pub people: Vec<i64>,
+    /// Only photos with a confirmed face of someone in every one of these
+    /// groups: any member of a group does (OR inside a group, AND between
+    /// groups and with everything else).
+    pub groups: Vec<i64>,
     /// Any of these types (OR); empty means every type.
     pub types: Vec<MediaType>,
     /// Only photos with a pet of every one of these species (AND): `cat`,
@@ -516,11 +520,21 @@ impl Snapshot {
                 None => ids,
             });
         }
+        // A group means any of its people; pets are people here too.
+        let mut group: Option<HashSet<i64>> = None;
+        for &g in &q.groups {
+            let ids = files_of_people(&crate::people::members_of_group(conn, g)?)?;
+            group = Some(match group {
+                Some(have) => have.intersection(&ids).copied().collect(),
+                None => ids,
+            });
+        }
         Ok(self
             .items
             .iter()
             .filter(|it| q.types.is_empty() || q.types.iter().any(|t| t.matches(it)))
             .filter(|it| person.as_ref().is_none_or(|p| p.contains(&it.id)))
+            .filter(|it| group.as_ref().is_none_or(|g| g.contains(&it.id)))
             .filter(|it| pet.as_ref().is_none_or(|p| p.contains(&it.id)))
             .filter(|it| folders.as_ref().is_none_or(|f| f.contains(&it.folder_id)))
             .filter(|it| fav.as_ref().is_none_or(|f| f.contains(&it.id)))

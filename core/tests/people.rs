@@ -407,7 +407,8 @@ fn not_a_face_is_hidden_everywhere_and_survives_a_model_change() {
     server.stop().unwrap();
 }
 
-/// Groups (one per person; deleting one leaves its people without), people
+/// Groups (one per person; a group starts with a person and is gone when its
+/// last person leaves; deleting one leaves its people without), people
 /// (rename, hide, cover, merge), and splitting a cluster by naming some of
 /// its faces.
 #[test]
@@ -425,12 +426,20 @@ fn groups_merge_and_split() {
     let addr = server.addr;
     wait_for_clusters(addr);
 
-    // Groups: made by the user, none up front.
+    // Groups: made by the user from a person, who is its first member; none
+    // up front, and never an empty one.
     assert_eq!(get(addr, "/api/groups").json(), json!([]));
-    let familie = ok(addr, "/api/groups", &json!({ "name": "Familie" }))["id"].as_i64().unwrap();
-    let freunde = ok(addr, "/api/groups", &json!({ "name": "Freunde" }))["id"].as_i64().unwrap();
-    assert_eq!(post(addr, "/api/groups", &json!({ "name": " FAMILIE" })).status, 400);
-    assert_eq!(post(addr, "/api/groups", &json!({ "name": "  " })).status, 400);
+    let dora0 = ok(addr, "/api/people", &json!({ "name": "Dora" }))["id"].as_i64().unwrap();
+    let emil = ok(addr, "/api/people", &json!({ "name": "Emil" }))["id"].as_i64().unwrap();
+    let no_person = post(addr, "/api/groups", &json!({ "name": "Familie" }));
+    assert!((400..500).contains(&no_person.status), "a group needs its first person: {}", no_person.status);
+    assert_eq!(post(addr, "/api/groups", &json!({ "name": "Familie", "person_id": 999 })).status, 400);
+    let familie = ok(addr, "/api/groups", &json!({ "name": "Familie", "person_id": dora0 }))["id"].as_i64().unwrap();
+    assert_eq!(get(addr, &format!("/api/people/{dora0}")).json()["group_id"], familie);
+    let freunde = ok(addr, "/api/groups", &json!({ "name": "Freunde", "person_id": emil }))["id"].as_i64().unwrap();
+    assert_eq!(post(addr, "/api/groups", &json!({ "name": " FAMILIE", "person_id": emil })).status, 400);
+    assert_eq!(post(addr, "/api/groups", &json!({ "name": "  ", "person_id": emil })).status, 400);
+    assert_eq!(get(addr, &format!("/api/people/{emil}")).json()["group_id"], freunde, "a refused group changes nothing");
     let order = ok(addr, "/api/groups/reorder", &json!({ "ids": [freunde] }));
     let names: Vec<&str> = order.as_array().unwrap().iter().map(|g| g["name"].as_str().unwrap()).collect();
     assert_eq!(names, ["Freunde", "Familie"]);
@@ -447,6 +456,7 @@ fn groups_merge_and_split() {
     let body = json!({ "name": "Dora", "faces": &faces[..2], "generation": generation });
     let named = ok(addr, &format!("/api/clusters/{cid}/name"), &body);
     let dora = named["person"]["id"].as_i64().unwrap();
+    assert_eq!(dora, dora0, "the name was Dora's already");
     // The reply says what is left of the card: its faces changed, so it has
     // a new generation; the old one is refused. Its number is where it sits
     // in the list now (which may move: cards of the same size have no fixed
@@ -511,10 +521,36 @@ fn groups_merge_and_split() {
     assert_eq!(ok(addr, &format!("/api/people/{dora}/group"), &json!({ "group_id": freunde }))["group_id"], freunde);
     assert_eq!(post(addr, &format!("/api/people/{dora}/group"), &json!({ "group_id": 999 })).status, 400);
     // Deleting a group: its people have none.
-    assert_eq!(ok(addr, &format!("/api/groups/{freunde}/delete"), &json!({}))["people"], 1);
+    assert_eq!(ok(addr, &format!("/api/groups/{freunde}/delete"), &json!({}))["people"], 2);
     assert!(get(addr, &format!("/api/people/{dora}")).json()["group_id"].is_null());
     let groups = get(addr, "/api/groups").json();
     assert_eq!((groups.as_array().unwrap().len(), groups[0]["people"].as_u64()), (1, Some(1)));
+
+    // Never an empty group: the one the last person leaves goes, whether
+    // they move to another group, to none, start a new group, are merged
+    // into someone or deleted. Groups that are not left by someone stay.
+    let group_names = || -> Vec<String> {
+        get(addr, "/api/groups").json().as_array().unwrap().iter().map(|g| g["name"].as_str().unwrap().to_string()).collect()
+    };
+    ok(addr, "/api/groups", &json!({ "name": "Nachbarn", "person_id": emil }));
+    assert_eq!(group_names(), ["Familie", "Nachbarn"]);
+    ok(addr, "/api/groups", &json!({ "name": "Solo", "person_id": emil }));
+    assert_eq!(group_names(), ["Familie", "Solo"], "Emil left Nachbarn, which is empty now");
+    ok(addr, &format!("/api/people/{emil}/group"), &json!({ "group_id": familie }));
+    assert_eq!(group_names(), ["Familie"], "Emil left Solo");
+    let gabi = ok(addr, "/api/people", &json!({ "name": "Gabi" }))["id"].as_i64().unwrap();
+    ok(addr, "/api/groups", &json!({ "name": "Gabis", "person_id": gabi }));
+    ok(addr, &format!("/api/people/{gabi}/group"), &json!({ "group_id": null }));
+    assert_eq!(group_names(), ["Familie"], "Gabi left Gabis for none");
+    ok(addr, "/api/groups", &json!({ "name": "Gabis", "person_id": gabi }));
+    ok(addr, &format!("/api/people/{gabi}/merge"), &json!({ "into": emil }));
+    assert_eq!(group_names(), ["Familie"], "Gabi was merged into Emil");
+    let hanna = ok(addr, "/api/people", &json!({ "name": "Hanna" }))["id"].as_i64().unwrap();
+    ok(addr, "/api/groups", &json!({ "name": "Hannas", "person_id": hanna }));
+    ok(addr, &format!("/api/people/{hanna}/delete"), &json!({}));
+    assert_eq!(group_names(), ["Familie"], "Hanna was deleted");
+    ok(addr, &format!("/api/people/{emil}/delete"), &json!({}));
+    assert_eq!(get(addr, "/api/groups").json()[0]["people"], 1);
 
     // A misspelled name without faces can be deleted; someone with faces
     // cannot (merge them instead).
@@ -697,10 +733,9 @@ fn user_data_backup_has_people_groups_and_decisions() {
     recognize(&lib);
     let server = start(&lib, None);
     let addr = server.addr;
-    let familie = ok(addr, "/api/groups", &json!({ "name": "Familie" }))["id"].clone();
     let a1 = face_id(addr, &lib, "a/a1.png");
     let anna = ok(addr, "/api/faces/assign", &json!({ "faces": [a1], "name": "Anna" }))["person"]["id"].as_i64().unwrap();
-    ok(addr, &format!("/api/people/{anna}/group"), &json!({ "group_id": familie }));
+    ok(addr, "/api/groups", &json!({ "name": "Familie", "person_id": anna }));
     ok(addr, "/api/faces/not-face", &json!({ "faces": [face_id(addr, &lib, "a/c1.png")] }));
     server.stop().unwrap();
 
@@ -1008,6 +1043,32 @@ fn people_as_search_terms_and_undoing_a_rejection() {
     let tags = get(addr, &format!("/api/tags?person={ben}")).json();
     assert_eq!(tags.as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect::<Vec<_>>(), ["Fotos"]);
 
+    // A group in the search shows the photos of any of its people (OR, where
+    // several people are all of them); several groups and everything else
+    // narrow it (AND).
+    let freunde = ok(addr, "/api/groups", &json!({ "name": "Freunde", "person_id": ben }))["id"].as_i64().unwrap();
+    assert_eq!(timeline(&format!("group={freunde}")), sorted(vec![x1, y1]), "only Ben so far");
+    ok(addr, &format!("/api/people/{anna}/group"), &json!({ "group_id": freunde }));
+    assert_eq!(timeline(&format!("group={freunde}")), sorted(vec![x1, x2, y1]), "Anna's photos or Ben's");
+    assert_eq!(timeline(&format!("group={freunde}&person={anna}")), sorted(vec![x1, x2]));
+    assert_eq!(timeline(&format!("group={freunde}&folder={}", folder_id(&lib, "Other"))), Vec::<i64>::new());
+    let chips = get(addr, &format!("/api/timeline?group={freunde}")).json();
+    assert_eq!(chips["groups"], json!([{ "id": freunde, "name": "Freunde" }]));
+    assert_eq!(chips["count"], 3);
+    assert_eq!(timeline("group=999"), Vec::<i64>::new(), "no such group");
+    // Suggestions: groups by name, counted within the search; groups of the
+    // search and groups that would show nothing left out.
+    let groups = |q: &str| get(addr, &format!("/api/groups/search?{q}")).json();
+    assert_eq!(groups("q=fre"), json!([{ "id": freunde, "name": "Freunde", "people": 2, "photos": 3 }]));
+    assert_eq!(groups(&format!("q=&person={anna}"))[0]["photos"], 2);
+    assert_eq!(groups("q=zzz"), json!([]));
+    assert_eq!(groups(&format!("q=&group={freunde}")), json!([]));
+    assert_eq!(groups(&format!("q=&folder={}", folder_id(&lib, "Other"))), json!([]));
+    // Tags within a search of a group.
+    let tags = get(addr, &format!("/api/tags?group={freunde}")).json();
+    assert_eq!(tags.as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect::<Vec<_>>(), ["Fotos"]);
+    ok(addr, &format!("/api/groups/{freunde}/delete"), &json!({}));
+
     // Undo a rejection: only the rejection goes, Ben stays confirmed.
     let y1_face = face_id(addr, &lib, "Fotos/y1.png");
     ok(addr, "/api/faces/reject", &json!({ "faces": [y1_face], "person_id": anna }));
@@ -1161,7 +1222,7 @@ fn pets_are_people_in_a_space_of_their_own() {
     assert_eq!(timeline, want);
 
     // Pets and people share groups: put the cat, the dog and a person in one.
-    let family = ok(addr, "/api/groups", &json!({ "name": "Family" }))["id"].as_i64().unwrap();
+    let family = ok(addr, "/api/groups", &json!({ "name": "Family", "person_id": spooky }))["id"].as_i64().unwrap();
     let anna_face = face_of_person(addr, &lib, "Anna/a1.png")["id"].as_i64().unwrap();
     let anna = ok(addr, "/api/faces/assign", &json!({ "faces": [anna_face], "name": "Anna" }))["person"]["id"].as_i64().unwrap();
     for p in [spooky, rex, anna] {
@@ -1169,6 +1230,13 @@ fn pets_are_people_in_a_space_of_their_own() {
     }
     let people = get(addr, "/api/people").json();
     assert!(people.as_array().unwrap().iter().all(|p| p["group_id"] == family), "{people}");
+    // The group's timeline has the photos of the cat, the dog and the person.
+    let mut group_timeline = ids(&get(addr, &format!("/api/timeline?group={family}")).json());
+    group_timeline.sort();
+    for n in 1..=3 {
+        assert!(group_timeline.contains(&id_of(&lib, &format!("Pets/spooky{n}.png"))), "pets are members like people");
+    }
+    assert!(group_timeline.contains(&id_of(&lib, "Anna/a1.png")));
     assert!(people.as_array().unwrap().iter().filter(|p| p["name"] == "Anna").all(|p| p["species"].is_null()));
 
     // A cat can also be merged into another pet (the same pet under two names).
