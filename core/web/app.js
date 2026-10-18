@@ -2277,7 +2277,30 @@ document.addEventListener('keydown', function (ev) {
 
 // ------------------------------------------------------------------ status
 
+// One status request at a time: asks that come while one is under way (a
+// stream event, a change, the page coming back) are answered by one more
+// request after it, never by a pile of them.
+var infoFlight = null, infoAgain = false, infoTimer = null;
+
 function loadInfo() {
+  if (infoFlight) { infoAgain = true; return infoFlight; }
+  infoFlight = fetchInfo().then(function () {
+    infoFlight = null;
+    if (infoAgain) { infoAgain = false; loadInfo(); }
+  });
+  return infoFlight;
+}
+
+// Only while something runs (a scan, thumbnails, faces, grouping) the status
+// is asked for again by itself; otherwise it follows from what the person does.
+function watchProgress(info) {
+  clearTimeout(infoTimer);
+  infoTimer = null;
+  var f = info.faces, c = info.clusters;
+  if (info.busy || f.running || c.running || c.embedding) infoTimer = setTimeout(loadInfo, 5000);
+}
+
+function fetchInfo() {
   return api(LIBAPI + '/info').then(function (info) {
     $('title').textContent = info.name;
     state.reveal = revealLabel(info.reveal);
@@ -2322,6 +2345,7 @@ function loadInfo() {
       reloadAll();
     }
     if (!info.busy) state.indexVersion = info.index_version;
+    watchProgress(info);
   }).catch(function () {});
 }
 
@@ -5216,7 +5240,19 @@ var people = { list: [], byId: {}, groups: [], open: {}, info: null, watch: null
 
 function fold(s) { return String(s).normalize('NFC').toLowerCase(); }
 
+// One request pair at a time (see `loadInfo`).
+var peopleFlight = null, peopleAgain = false;
+
 function loadPeople() {
+  if (peopleFlight) { peopleAgain = true; return peopleFlight; }
+  peopleFlight = fetchPeople().then(function () {
+    peopleFlight = null;
+    if (peopleAgain) { peopleAgain = false; loadPeople(); }
+  });
+  return peopleFlight;
+}
+
+function fetchPeople() {
   return Promise.all([api(LIBAPI + '/people'), api(LIBAPI + '/groups')]).then(function (r) {
     people.list = r[0];
     people.groups = r[1];
@@ -7839,6 +7875,21 @@ function backupLists(lists, b) {
   return wrap;
 }
 
+// The drives and the status are no longer asked for on a timer: when the
+// person comes back to the page (tab, window) after at least 15 s they are
+// asked for once, which also notices a scan or a drive plugged in meanwhile.
+function watchPageReturn() {
+  var last = Date.now();
+  var check = function () {
+    if (document.hidden || Date.now() - last < 15000) return;
+    last = Date.now();
+    refreshDrives().catch(function () {});
+    if (!isAll() && drives.current && drives.current.online) loadInfo();
+  };
+  document.addEventListener('visibilitychange', check);
+  window.addEventListener('focus', check);
+}
+
 function refreshDrives() {
   return api('/api/libraries').then(function (libs) {
     return api('/api/all/drives').catch(function () { return []; }).then(function (roles) {
@@ -7873,7 +7924,7 @@ I18n.ready.then(function () {
     return;
   }
   return refreshDrives().then(loadCompare).then(function () {
-    setInterval(refreshDrives, 10000);
+    watchPageReturn();
     if (drives.current.online) { loadEventPattern(); loadAllowTrash(); }
     if (!drives.current.online) {
       // Nothing of this library can be loaded: only the overview of the drives can be shown.
@@ -7893,7 +7944,6 @@ I18n.ready.then(function () {
     }
     return Promise.all([loadFolders(), loadInfo(), loadOwnTags(), loadPeople(), loadGeo()]).then(function () {
       applyFilter();
-      setInterval(loadInfo, 20000);
     });
   });
 }).catch(function (e) { console.error(e); }).then(function () {

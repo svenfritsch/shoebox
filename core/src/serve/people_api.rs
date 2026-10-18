@@ -11,7 +11,7 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use serde::{Deserialize, Serialize};
 
-use super::{ApiError, ApiResult, App, Pairs, blocking, change, filter_of, param};
+use super::{ApiError, ApiResult, App, Pairs, blocking, change_with, filter_of, param};
 use crate::browse;
 use crate::db;
 use crate::faces;
@@ -23,7 +23,7 @@ pub(super) async fn people_change<T: Send + 'static>(
     app: &Arc<App>,
     f: impl FnOnce(&rusqlite::Connection) -> anyhow::Result<T> + Send + 'static,
 ) -> ApiResult<T> {
-    let result = change(app, move |_, conn| {
+    let result = change_with(app, false, move |_, conn| {
         let done = f(conn)?;
         tidy(conn);
         Ok(done)

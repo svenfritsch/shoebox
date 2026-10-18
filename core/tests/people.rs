@@ -192,7 +192,9 @@ fn suggest_maybe_confirm_and_reject_under_the_guard() {
     assert_eq!(files_of(clusters[0]["faces"].as_array().unwrap()), anna_files);
     assert!(clusters[0]["suggestion"].is_null());
 
-    // Name it: three confirmed faces.
+    // Name it: three confirmed faces. Names touch no file, so the index
+    // version stays and no open page reloads its folders, tags and places.
+    let version_before = get(addr, "/api/info").json()["index_version"].clone();
     let body = json!({ "name": "Anna", "generation": clusters[0]["generation"] });
     let named = ok(addr, &format!("/api/clusters/{}/name", clusters[0]["id"]), &body);
     assert_eq!(named["faces"], 3);
@@ -200,6 +202,7 @@ fn suggest_maybe_confirm_and_reject_under_the_guard() {
     assert_eq!(named["person"]["name"], "Anna");
     // At once (before the clusters are recomputed): out of "Unnamed".
     assert_eq!(get(addr, "/api/clusters").json()["unnamed"], 5);
+    assert_eq!(get(addr, "/api/info").json()["index_version"], version_before);
     wait_for_clusters(addr);
 
     let people = get(addr, "/api/people").json();
