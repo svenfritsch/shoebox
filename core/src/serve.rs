@@ -517,8 +517,9 @@ struct InfoCounts {
     needs_date: u64,
 }
 
-/// What the faces' counts depend on: the index, and how far the clustering is.
-type InfoFacesKey = (IndexVersion, u64, u64, bool);
+/// What the faces' counts depend on: the index, `recognition.db` (another
+/// process writes it) and how far the clustering is.
+type InfoFacesKey = (IndexVersion, i64, u64, u64, bool);
 
 /// Changes whenever another connection (a scan) commits, or this server
 /// changes the library itself.
@@ -2436,7 +2437,8 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
         let clusters_done = app.clusters_done.load(Ordering::SeqCst);
         let clusters_wanted = app.clusters_wanted.load(Ordering::SeqCst);
         let embedding = app.embedding.load(Ordering::SeqCst);
-        let faces_key = (version, clusters_done, clusters_wanted, embedding);
+        let recog_version: i64 = conn.query_row("PRAGMA recog.data_version", [], |r| r.get(0))?;
+        let faces_key = (version, recog_version, clusters_done, clusters_wanted, embedding);
         let overviews = {
             let mut cache = app.info_faces.lock().unwrap();
             match cache.as_ref() {
