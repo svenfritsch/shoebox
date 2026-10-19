@@ -35,7 +35,7 @@ progress. Update the status section when a phase moves.
 | Scale | ~100,000 files, 150 GB today, up to 1 TB |
 | Repo | `core/` (Rust), `recognizer/` (Python), `scripts/`, `docker/`, `docs/` |
 | Dev environment | Docker for Linux builds/tests; native macOS builds with rustup; GitHub Actions for both |
-| CI until v1.0 | macOS only: `test` and `build` side by side with cached dependencies (PRs: arm64; main/tags: universal + Rosetta), skipped for docs-only PRs. Windows and Linux (Linux incl. the real recognizer) are built only by hand, one at a time, with `release-by-hand.yml`, which can add them to a release (phase 17). The guide's screenshots and `.txt` copies are not in git: `guide.yml` makes them on Linux for UI/guide PRs (artifact `guide`) and for releases; the same job runs the photo app's browser tests (`core/tests/browser/run.sh`, Playwright: keyboard use of the grid, viewer, selection bar and dialogs); releases ship `shoebox-macos` plus `recognizer/` and that guide (English and German, in the `guide/` folder of the archive) |
+| CI until v1.0 | macOS only: `test` and `build` side by side with cached dependencies (PRs: arm64; main/tags: universal + Rosetta), skipped for docs-only PRs. Windows and Linux (Linux incl. the real recognizer) are built only by hand, one at a time, with `release-by-hand.yml`, which can add them to a release (phase 17). The guide's screenshots and `.txt` copies are not in git: `guide.yml` makes them on Linux for UI/guide PRs (artifact `guide`) and for releases; the same job runs the photo app's browser tests (`core/tests/browser/run.sh`, Playwright: keyboard use of the grid, viewer, selection bar and dialogs; the Unnamed page, groups and the people list on a library with faces from the fake recognizer); releases ship `shoebox-macos` plus `recognizer/` and that guide (English and German, in the `guide/` folder of the archive) |
 
 ## Architecture
 
@@ -1858,5 +1858,11 @@ page too (`takePerson`, `countGroups`, `peopleShown`, `personRemoved`, `peopleMe
 only when the reply has no person or no picture could be told, and after a regrouping only when the People page is open
 (`people.stale` otherwise). The Unnamed page asks for its clusters once per naming, when the grouping that
 follows is done (`facesInfo`); a card or the single-faces bar updates itself from the
-reply. Open: `people::people`, `people::clusters` and
-`people::decide` still load every face (`View::load`) under the lock.
+reply. Checked in the browser by `core/tests/browser/unnamed.mjs` and `people.mjs`
+(a library drawn by `make-faces.py`, faces from the fake recognizer): the requests a
+page makes per action are counted, `/api/info` is held or its grouping steps are
+played one at a time, and the sidebar is compared with what the server has. Open:
+`people::people`, `people::clusters` and `people::decide` still load every face
+(`View::load`) under the lock; every change to people (`people_change`), also
+groups, names and pictures, asks for a regrouping, so the People page fetches the
+list once more when it is done.
