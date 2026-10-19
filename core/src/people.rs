@@ -1318,10 +1318,9 @@ pub struct ClusterRef {
 fn person_photos(conn: &Connection, id: i64) -> Result<u64> {
     let n: i64 = conn.query_row(
         &format!(
-            "SELECT count(DISTINCT key) FROM face_decisions
-             WHERE person_id = ?1 AND decision = 'confirmed'
-               AND key IN (SELECT quick_hash FROM ({}))",
-            faces::PRESENT
+            "SELECT count(DISTINCT d.key) FROM face_decisions d
+             WHERE d.person_id = ?1 AND d.decision = 'confirmed' AND {} IS NOT NULL",
+            faces::present_file("d.key")
         ),
         [id],
         |r| r.get(0),

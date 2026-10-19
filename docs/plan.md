@@ -1866,7 +1866,7 @@ thumbnails took milliseconds: finding a face's file joined `faces::PRESENT`
 (every file grouped by content, ~120 ms on 100 000 files) for every crop, under
 the shared connection, so a page of crops queued one behind the other. Since
 schema v16 `files` has an index by content (`files_quick_hash`: quick_hash,
-missing_since, kind), and a query about one face asks for its file
+missing_since, kind), and a query about one face or person (`person_photos`) asks for its file
 with `faces::present_file` (one look into that index). Keep `PRESENT` for
 queries over all faces. In the page: a picture taken off the page keeps its
 request and the browser sends only six at a time to this server, so pages,

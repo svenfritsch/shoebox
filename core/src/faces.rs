@@ -79,7 +79,7 @@ pub(crate) const PRESENT: &str = "SELECT quick_hash, min(id) AS id, kind FROM fi
 
 /// The present file `PRESENT` gives the content `{key}` (an SQL expression),
 /// as a correlated subquery: one look into the `files_quick_hash` index
-/// instead of grouping every file. For queries about one face.
+/// instead of grouping every file. For queries about one face or person.
 pub(crate) fn present_file(key: &str) -> String {
     format!(
         "(SELECT min(p.id) FROM files p WHERE p.quick_hash = {key} AND p.missing_since IS NULL
