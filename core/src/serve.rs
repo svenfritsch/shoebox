@@ -388,6 +388,9 @@ impl App {
         let conn = db::open_shared(&db_path)?;
         thumbs::attach(&conn, &db_path)?;
         recognize::attach(&conn, &db_path)?;
+        let people_conn = db::open_existing(&db_path)?;
+        recognize::attach(&people_conn, &db_path)?;
+        people_conn.pragma_update(None, "query_only", true)?;
 
         let name = volume::library_name(&root);
         // Older versions kept a crop of every face looked at, and some people
@@ -411,6 +414,9 @@ impl App {
             generation: AtomicU64::new(0),
             info_counts: Mutex::new(None),
             info_faces: Mutex::new(None),
+            people: Mutex::new(PeopleCache { conn: people_conn, state: None }),
+            clustering: AtomicBool::new(false),
+            faces_version: AtomicU64::new(0),
             writing: Mutex::new(()),
             dirty: AtomicBool::new(false),
             heal: Mutex::new(heal_tx),
@@ -458,6 +464,15 @@ struct App {
     info_faces: Mutex<Option<(InfoFacesKey, Instant, Arc<(recognize::Overview, clusters::Overview)>)>>,
     /// Name and full hash of every file, for the common timeline (phase 18).
     copies: Mutex<Option<(IndexVersion, Arc<HashMap<i64, multi::CopyFacts>>)>>,
+    /// Faces, decisions, present files and clusters as the people pages see
+    /// them (`people_view`), on a connection of their own: reading them reads
+    /// every face, seconds on a library of 100 000 photos.
+    people: Mutex<PeopleCache>,
+    /// The clustering of this server is running (`cluster`).
+    clustering: AtomicBool,
+    /// Counts its own changes to the detected faces (forgetting them), after
+    /// which the people view is read again in full.
+    faces_version: AtomicU64,
     /// Counts this server's own changes; `PRAGMA data_version` only sees
     /// other connections' commits.
     generation: AtomicU64,
@@ -525,6 +540,24 @@ type InfoFacesKey = (IndexVersion, i64, u64, u64, bool);
 /// changes the library itself.
 type IndexVersion = (i64, u64);
 
+/// The people view and the connection it is read on: read only, and its own,
+/// so reading the faces does not hold up the requests on `App::conn`, and
+/// its `PRAGMA data_version` sees every commit to the index, this server's
+/// own included.
+struct PeopleCache {
+    conn: Connection,
+    state: Option<PeopleState>,
+}
+
+/// A people view and what it was read from.
+struct PeopleState {
+    /// `PRAGMA data_version` of `library.db` and `recognition.db`.
+    main: i64,
+    recog: i64,
+    faces: u64,
+    view: Arc<people::View>,
+}
+
 impl App {
     fn version(&self, conn: &Connection) -> Result<IndexVersion> {
         let data_version: i64 = conn.query_row("PRAGMA data_version", [], |r| r.get(0))?;
@@ -542,6 +575,64 @@ impl App {
         let s = Arc::new(Snapshot::load(conn)?);
         *cache = Some((version, s.clone()));
         Ok(s)
+    }
+
+    /// The people view (`people::View`) as the index is now, with what it
+    /// holds of `recognition.db` as it was when the clustering of this server
+    /// started, while that runs (its bookkeeping and its new clusters are
+    /// read when it is done: `refresh_people_view`). Kept while nothing it
+    /// was read from changed; after a change to `library.db` only its part is
+    /// read again (`View::refresh`), after one to `recognition.db` all.
+    fn people_view(&self) -> Result<Arc<people::View>> {
+        self.with_people(|_, v| Ok(v.clone()))
+    }
+
+    /// `f` with the people view and its connection (for the people's rows),
+    /// one request at a time.
+    fn with_people<T>(&self, f: impl FnOnce(&Connection, &Arc<people::View>) -> Result<T>) -> Result<T> {
+        let mut cache = self.people.lock().unwrap();
+        let view = self.view_now(&mut cache)?;
+        f(&cache.conn, &view)
+    }
+
+    fn view_now(&self, cache: &mut PeopleCache) -> Result<Arc<people::View>> {
+        let main: i64 = cache.conn.query_row("PRAGMA data_version", [], |r| r.get(0))?;
+        let recog: i64 = cache.conn.query_row("PRAGMA recog.data_version", [], |r| r.get(0))?;
+        let faces = self.faces_version.load(Ordering::SeqCst);
+        if let Some(s) = &cache.state
+            && s.faces == faces
+            && (s.recog == recog || self.clustering.load(Ordering::SeqCst))
+        {
+            if s.main == main {
+                return Ok(s.view.clone());
+            }
+            if let Some(view) = s.view.refresh(&cache.conn)? {
+                let view = Arc::new(view);
+                // `recog` stays what the view holds.
+                cache.state = Some(PeopleState { main, recog: s.recog, faces, view: view.clone() });
+                return Ok(view);
+            }
+        }
+        let view = Arc::new(people::View::load(&cache.conn)?);
+        cache.state = Some(PeopleState { main, recog, faces, view: view.clone() });
+        Ok(view)
+    }
+
+    /// Everyone, as `people::people` lists them.
+    fn people(&self, hidden: bool) -> Result<Vec<people::Person>> {
+        self.with_people(|conn, v| people::people_in(conn, v, hidden))
+    }
+
+    /// After the clusters were recomputed: read the people view again now
+    /// (if the people pages use it), before the page hears that they are
+    /// done and asks.
+    fn refresh_people_view(&self) {
+        if self.people.lock().unwrap().state.is_none() {
+            return;
+        }
+        if let Err(e) = self.people_view() {
+            eprintln!("could not read the faces again: {e:#}");
+        }
     }
 
     /// What makes a file the same photo as one on another drive (phase 18).
@@ -597,6 +688,13 @@ impl App {
     /// The clustering itself, on a connection of its own. Skipped while
     /// `shoebox recognize` runs: it clusters when it is done.
     fn cluster(&self) -> Result<()> {
+        self.clustering.store(true, Ordering::SeqCst);
+        let result = self.cluster_now();
+        self.clustering.store(false, Ordering::SeqCst);
+        result
+    }
+
+    fn cluster_now(&self) -> Result<()> {
         let conn = db::open_existing(&self.db_path)?;
         recognize::attach(&conn, &self.db_path)?;
         if recognize::running(&conn)? || clusters::running(&conn)? {
@@ -775,6 +873,7 @@ fn spawn_clusterer(app: Weak<App>, requests: mpsc::Receiver<u64>) {
             if let Err(e) = app.cluster() {
                 eprintln!("could not group the faces: {e:#}");
             }
+            app.refresh_people_view();
             app.clusters_done.fetch_max(wanted, Ordering::SeqCst);
             app.faces_changed();
         }
@@ -1361,9 +1460,9 @@ async fn all_people(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> 
         let mut photos_of: HashMap<String, HashSet<multi::Photo>> = HashMap::new();
         for (d, app) in apps.iter().enumerate() {
             let conn = app.conn.lock().unwrap();
-            let mut list = people::people(&conn, true)?;
+            let mut list = app.people(true)?;
             // A drive without one of the names has nothing that matches.
-            let Some(query) = filter.query_for(&conn)? else { continue };
+            let Some(query) = filter.query_for(app, &conn)? else { continue };
             let snapshot = app.snapshot(&conn)?;
             let shown: HashSet<i64> = snapshot.query(&conn, &query)?.iter().map(|it| it.id).collect();
             let copies = app.copy_facts(&conn)?;
@@ -1429,7 +1528,7 @@ async fn all_groups(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> 
         let mut by_name: Vec<(String, AllGroup)> = Vec::new();
         for app in &apps {
             let conn = app.conn.lock().unwrap();
-            let Some(query) = filter.query_for(&conn)? else { continue };
+            let Some(query) = filter.query_for(app, &conn)? else { continue };
             let snapshot = app.snapshot(&conn)?;
             for g in people::groups(&conn)? {
                 let key = db::tag_fold(&g.name);
@@ -1718,7 +1817,7 @@ impl AllFilter {
     /// The query for one drive, with the names turned into its own ids. `None`
     /// when the drive lacks one of the tags, people or groups: nothing on it matches
     /// all of them.
-    fn query_for(&self, conn: &Connection) -> ApiResult<Option<browse::Query>> {
+    fn query_for(&self, app: &App, conn: &Connection) -> ApiResult<Option<browse::Query>> {
         let mut tags = Vec::new();
         for name in &self.tag_names {
             match db::find_tag(conn, name)? {
@@ -1726,7 +1825,7 @@ impl AllFilter {
                 None => return Ok(None),
             }
         }
-        let known_people = if self.person_names.is_empty() { Vec::new() } else { people::people(conn, true)? };
+        let known_people = if self.person_names.is_empty() { Vec::new() } else { app.people(true)? };
         let people_ids: Vec<i64> = self
             .person_names
             .iter()
@@ -1837,7 +1936,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
             if let Some(copies) = &copies {
                 fav_keys.extend(hearts.iter().filter_map(|id| copies.get(id)).map(|c| c.key.clone()));
             }
-            let Some(mut query) = filter.query_for(&conn)? else { continue };
+            let Some(mut query) = filter.query_for(app, &conn)? else { continue };
             let snapshot = app.snapshot(&conn)?;
             query.ids = different.as_ref().map(|sets| sets[d].clone());
             let items = snapshot.query(&conn, &query)?;
@@ -1961,7 +2060,7 @@ async fn all_tags(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> Ap
         for (d, app) in apps.iter().enumerate() {
             let conn = app.conn.lock().unwrap();
             // A drive without one of the names has nothing that matches.
-            let Some(query) = filter.query_for(&conn)? else { continue };
+            let Some(query) = filter.query_for(app, &conn)? else { continue };
             let snapshot = app.snapshot(&conn)?;
             let shown: HashSet<i64> = snapshot.query(&conn, &query)?.iter().map(|it| it.id).collect();
             let copies = app.copy_facts(&conn)?;

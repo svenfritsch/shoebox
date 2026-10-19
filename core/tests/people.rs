@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use common::*;
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use shoebox::{clusters, recognize};
+use shoebox::{clusters, people, recognize};
 
 const FAKE: &str = env!("CARGO_BIN_EXE_shoebox-fake-recognizer");
 
@@ -1714,4 +1714,120 @@ fn a_pets_species_can_be_corrected() {
     assert_eq!(pet_of(addr, &lib, "Fotos/katze.png")["species"], "dog");
     server.stop().unwrap();
     assert_eq!(lib.snapshot(), before, "originals untouched");
+}
+
+/// What the server shows of people and clusters, compared with what a
+/// fresh read of the library gives (`people::people`, `people::clusters` on a
+/// connection of the test's own): the photo app keeps what it read of the
+/// faces between requests (`App::people_view`), and this must never show.
+fn same_as_a_fresh_read(addr: std::net::SocketAddr, lib: &Library, after: &str) {
+    wait_for_clusters(addr);
+    let conn = conn(lib);
+    let fresh = serde_json::to_value(people::people(&conn, true).unwrap()).unwrap();
+    assert_eq!(get(addr, "/api/people?hidden=1").json(), fresh, "the people after {after}");
+    let fresh = serde_json::to_value(people::clusters(&conn, 0, 50, 8, None, people::Size::All).unwrap()).unwrap();
+    assert_eq!(get(addr, "/api/clusters").json(), fresh, "the clusters after {after}");
+}
+
+fn listed(addr: std::net::SocketAddr, hidden: bool) -> Vec<Value> {
+    get(addr, if hidden { "/api/people?hidden=1" } else { "/api/people" }).json().as_array().unwrap().clone()
+}
+
+fn listed_person(addr: std::net::SocketAddr, id: i64) -> Option<Value> {
+    listed(addr, true).into_iter().find(|p| p["id"] == id)
+}
+
+/// The people view the server keeps follows every change at once: names,
+/// rejections, merging, deleting, hiding, groups, a `recognize` run and a scan
+/// in other processes. After each, the lists are the same as a fresh read.
+#[test]
+fn the_kept_people_view_follows_every_change() {
+    let lib = empty("people-kept-view");
+    for n in 1..=3 {
+        plain(&lib, &format!("Anna/a{n}.png"), ANNA, n);
+    }
+    plain(&lib, "Ben/b1.png", BEN, 1);
+    plain(&lib, "Ben/b2.png", BEN, 2);
+    lib.scan();
+    recognize(&lib);
+    let before = lib.snapshot();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    same_as_a_fresh_read(addr, &lib, "the start");
+    assert!(listed(addr, true).is_empty());
+
+    // Name both clusters: in the lists at once, before the regrouping.
+    let clusters = get(addr, "/api/clusters").json()["clusters"].as_array().unwrap().clone();
+    assert_eq!(clusters.iter().map(|c| c["size"].as_u64().unwrap()).collect::<Vec<_>>(), [3, 2]);
+    let name = |c: &Value, name: &str| {
+        let body = json!({ "name": name, "generation": c["generation"] });
+        ok(addr, &format!("/api/clusters/{}/name", c["id"]), &body)["person"]["id"].as_i64().unwrap()
+    };
+    let anna = name(&clusters[0], "Anna");
+    assert_eq!(listed_person(addr, anna).unwrap()["faces"], 3);
+    assert_eq!(get(addr, "/api/clusters").json()["unnamed"], 2);
+    let ben = name(&clusters[1], "Ben");
+    assert_eq!(get(addr, "/api/clusters").json()["unnamed"], 0);
+    same_as_a_fresh_read(addr, &lib, "naming");
+
+    // Reject one of Anna's faces: no longer hers, listed as rejected.
+    let a1 = face_id(addr, &lib, "Anna/a1.png");
+    ok(addr, "/api/faces/reject", &json!({ "faces": [a1], "person_id": anna }));
+    assert_eq!(listed_person(addr, anna).unwrap()["faces"], 2);
+    assert_eq!(files_of(&person_faces(addr, anna, "rejected")), [id_of(&lib, "Anna/a1.png")]);
+    same_as_a_fresh_read(addr, &lib, "a rejection");
+
+    // Hide Ben, then a group for Anna that Ben joins.
+    ok(addr, &format!("/api/people/{ben}/hide"), &json!({ "hidden": true }));
+    assert!(!listed(addr, false).iter().any(|p| p["id"] == ben));
+    assert_eq!(listed_person(addr, ben).unwrap()["hidden"], true);
+    let group = ok(addr, "/api/groups", &json!({ "name": "Family", "person_id": anna }))["id"].clone();
+    assert_eq!(listed_person(addr, anna).unwrap()["group_id"], group);
+    ok(addr, &format!("/api/people/{ben}/group"), &json!({ "group_id": group }));
+    assert_eq!(listed_person(addr, ben).unwrap()["group_id"], group);
+    same_as_a_fresh_read(addr, &lib, "hiding and a group");
+
+    // Merge Ben into Anna: his two faces are hers.
+    ok(addr, &format!("/api/people/{ben}/merge"), &json!({ "into": anna }));
+    assert!(listed_person(addr, ben).is_none());
+    assert_eq!(listed_person(addr, anna).unwrap()["faces"], 4);
+    same_as_a_fresh_read(addr, &lib, "merging");
+
+    // Delete someone without faces (a misspelt name).
+    let typo = ok(addr, "/api/people", &json!({ "name": "Anan" }))["id"].as_i64().unwrap();
+    assert!(listed_person(addr, typo).is_some());
+    ok(addr, &format!("/api/people/{typo}/delete"), &json!({}));
+    assert!(listed_person(addr, typo).is_none());
+    same_as_a_fresh_read(addr, &lib, "deleting");
+    assert_eq!(lib.snapshot(), before, "people changed an original");
+
+    // New photos, recognised by another process: their faces show up, the
+    // new one of Anna's as suggested for her.
+    plain(&lib, "Anna/a4.png", ANNA, 4);
+    plain(&lib, "Carl/c1.png", CARL, 1);
+    let shoebox = env!("CARGO_BIN_EXE_shoebox");
+    let run = |args: &[&str]| {
+        let out = std::process::Command::new(shoebox).args(args).arg(&lib.root).output().unwrap();
+        assert!(out.status.success(), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    };
+    run(&["scan"]);
+    run(&["recognize", "--recognizer", FAKE]);
+    let mut before = lib.snapshot();
+    wait_until("the new faces show", || get(addr, "/api/clusters").json()["unnamed"] == 2);
+    same_as_a_fresh_read(addr, &lib, "a recognize run in another process");
+    let suggested = person_faces(addr, anna, "suggested");
+    assert_eq!(files_of(&suggested), [id_of(&lib, "Anna/a4.png")]);
+
+    // A photo removed, found by a scan in another process: one photo fewer
+    // for Anna (her confirmed face there still counts as a face).
+    let photos = listed_person(addr, anna).unwrap()["photos"].as_u64().unwrap();
+    std::fs::remove_file(lib.path("Anna/a2.png")).unwrap();
+    before.remove(&lib.path("Anna/a2.png"));
+    run(&["scan"]);
+    wait_until("the photo is gone", || listed_person(addr, anna).unwrap()["photos"] == photos - 1);
+    assert_eq!(listed_person(addr, anna).unwrap()["faces"], 4);
+    same_as_a_fresh_read(addr, &lib, "a scan that removed a photo");
+
+    server.stop().unwrap();
+    assert_eq!(lib.snapshot(), before, "people changed an original");
 }
