@@ -12,6 +12,66 @@ var el = function (tag, cls, text) {
   return e;
 };
 
+// Stop the pictures under `node` that are still loading, before it leaves the
+// page. A picture taken off the page keeps its request otherwise, and the
+// browser sends only six at a time to this server: the pictures now on the
+// screen would wait behind ones nobody sees any more.
+function dropPending(node) {
+  var imgs = node.querySelectorAll('img');
+  for (var i = 0; i < imgs.length; i++) {
+    if (imgs[i].complete) continue;
+    imgs[i].onload = imgs[i].onerror = null;
+    imgs[i].removeAttribute('src');
+  }
+}
+
+// Empty a page (or the viewer's stage) for what comes next, `dropPending` first.
+function clearNode(node) {
+  dropPending(node);
+  node.textContent = '';
+}
+
+// A long list of tiles (all faces of a group) goes onto the page a part at a
+// time: GROW_STEP now, the next part when the end of the list comes near the
+// screen. However long the list, the page holds only what was scrolled to,
+// and only the pictures near the screen are asked for. Drawn again (the same
+// grid, tiles that `tile` keeps), it shows at least as many as before, so the
+// page does not jump, and tiles already in their place stay there (and keep
+// the focus). `tail` (a "+n" button) goes last, once everything is in.
+var GROW_STEP = 120;
+
+function growGrid(grid, items, tile, tail) {
+  if (grid.grower) grid.grower.disconnect();
+  grid.grower = null;
+  var shown = window.IntersectionObserver ? Math.min(items.length, Math.max(GROW_STEP, grid.grown || 0)) : items.length;
+  var nodes = [];
+  for (var k = 0; k < shown; k++) nodes.push(tile(items[k]));
+  var end = shown < items.length ? el('span', 'grow-end') : tail;
+  if (end) nodes.push(end);
+  nodes.forEach(function (node, k) { if (grid.children[k] !== node) grid.insertBefore(node, grid.children[k] || null); });
+  while (grid.children.length > nodes.length) grid.lastElementChild.remove();
+  grid.grown = shown;
+  if (shown >= items.length) return;
+  grid.grower = new IntersectionObserver(function (entries) {
+    if (!entries.some(function (e) { return e.isIntersecting; })) return;
+    var frag = document.createDocumentFragment();
+    for (var stop = Math.min(items.length, shown + GROW_STEP); shown < stop; shown++) frag.appendChild(tile(items[shown]));
+    grid.insertBefore(frag, end);
+    grid.grown = shown;
+    if (shown < items.length) {
+      // Still near the screen (a short part): observing again reports it again.
+      grid.grower.unobserve(end);
+      grid.grower.observe(end);
+      return;
+    }
+    grid.grower.disconnect();
+    grid.grower = null;
+    end.remove();
+    if (tail) grid.appendChild(tail);
+  }, { root: $('scroller'), rootMargin: '1500px 0px' });
+  grid.grower.observe(end);
+}
+
 var HEADER_H = 44;
 var OVERSCAN = 600; // px above and below the viewport that stay rendered
 var KIND_BADGE = { v: '▶', h: '', j: '', p: '' };
@@ -1306,8 +1366,10 @@ function render() {
       sizer.appendChild(e);
     }
   }
+  // Rows scrolled out of reach go, and their thumbnails stop loading: a fast
+  // scroll through years of photos asks only for where it stops.
   Object.keys(state.rendered).forEach(function (k) {
-    if (!keep[k]) { state.rendered[k].remove(); delete state.rendered[k]; }
+    if (!keep[k]) { dropPending(state.rendered[k]); state.rendered[k].remove(); delete state.rendered[k]; }
   });
   // The month at the top of the viewport.
   var r = rowAt(Math.max(0, top));
@@ -1604,7 +1666,7 @@ $('years').addEventListener('change', function () {
 
 // ------------------------------------------------------------------ lightbox
 
-var lb = { video: null, details: null, showFaces: false, hover: null, drawing: null, showText: false, textOpen: false, hoverLine: null, textBox: null };
+var lb = { video: null, details: null, showFaces: false, hover: null, drawing: null, showText: false, textOpen: false, hoverLine: null, textBox: null, warm: [] };
 
 function openLightbox(i) {
   state.open = i;
@@ -1619,7 +1681,8 @@ function closeLightbox() {
   geoCleanup();
   stopDrawing();
   stopMedia();
-  $('stage').textContent = '';
+  clearNode($('stage'));
+  dropWarm();
   $('lightbox').hidden = true;
   // Opened from a page (face check), not from the grid: back to the page.
   if (lb.restore) { state.open = -1; lb.restore(); lb.restore = null; return; }
@@ -1629,6 +1692,12 @@ function closeLightbox() {
   state.open = -1;
   if (!d || i < 0) return;
   focusCell(i, true);
+}
+
+// The neighbours `showItem` asked for ahead.
+function dropWarm() {
+  (lb.warm || []).forEach(function (w) { w.removeAttribute('src'); });
+  lb.warm = [];
 }
 
 function stopMedia() {
@@ -1652,8 +1721,10 @@ function showItem() {
   var d = state.data, i = state.open;
   var id = d.ids[i], kind = d.kinds[i];
   var stage = $('stage');
+  var warm = [];
   stopMedia();
-  stage.textContent = '';
+  // Leafing on quickly: the picture before stops loading.
+  clearNode(stage);
   $('lb-prev').hidden = i <= 0;
   $('lb-next').hidden = i >= d.count - 1;
   $('lb-download').href = fileBase(id) + '/original?download=1';
@@ -1691,9 +1762,16 @@ function showItem() {
     stage.appendChild(img);
     // Warm up the neighbours.
     [i + 1, i - 1].forEach(function (j) {
-      if (j >= 0 && j < d.count && d.kinds[j] !== 'v') new Image().src = viewUrl(j);
+      if (j < 0 || j >= d.count || d.kinds[j] === 'v') return;
+      var w = new Image();
+      w.src = viewUrl(j);
+      warm.push(w);
     });
   }
+  // Those warmed for the photo before stop loading; the one that is now on the
+  // stage goes on, as the stage asks for the same picture.
+  dropWarm();
+  lb.warm = warm;
 
   api(fileBase(id)).then(function (info) {
     if (state.open !== i) return;
@@ -3027,7 +3105,7 @@ function loadDuplicates() {
 
 function loadDuplicatesAcross() {
   var page = $('page');
-  page.textContent = '';
+  clearNode(page);
   page.appendChild(el('h2', '', tr('dups.title')));
   addDupTabs(page);
   return renderDuplicatesAcross(page, function () { return state.filter.view === 'duplicates'; }, false);
@@ -3120,7 +3198,7 @@ function ignoreFoldersField(onChange) {
 
 function renderDuplicatesAcross(page, alive, embedded) {
   crossState.reload = embedded
-    ? function () { page.textContent = ''; return renderDuplicatesAcross(page, alive, true); }
+    ? function () { clearNode(page); return renderDuplicatesAcross(page, alive, true); }
     : loadDuplicatesAcross;
   var asked = 0;
   var fill;
@@ -3136,7 +3214,7 @@ function renderDuplicatesAcross(page, alive, embedded) {
     var mine = ++asked;
     return api('/api/all/duplicates?limit=200' + dupIgnoreQuery(ignore.names(), true)).then(function (r) {
       if (!alive() || mine !== asked) return;
-      box.textContent = '';
+      clearNode(box);
       ignore.setHidden(r.hidden_groups || 0);
       sub.textContent = r.total_groups
         ? tr('dups.across.some', { count: trn('count.photos_exist', r.total_groups), drives: r.compared.join(', ') })
@@ -3338,7 +3416,7 @@ function crossGroupNode(g, labels) {
 
 function loadDuplicatesHere() {
   var page = $('page');
-  page.textContent = '';
+  clearNode(page);
   page.appendChild(el('h2', '', tr('dups.title')));
   addDupTabs(page);
   page.appendChild(el('p', 'sub', tr('dups.looking')));
@@ -3366,7 +3444,7 @@ function loadDuplicatesHere() {
 
 function renderDuplicates() {
   var page = $('page');
-  page.textContent = '';
+  clearNode(page);
   dupState.syncs = [];
   page.appendChild(el('h2', '', tr('dups.title')));
   addDupTabs(page);
@@ -4015,7 +4093,7 @@ function loadTrash() {
   return api(LIBAPI + '/trash').then(function (items) {
     if (state.filter.view !== 'trash') return;
     var page = $('page');
-    page.textContent = '';
+    clearNode(page);
     page.appendChild(el('h2', '', tr('side.trash')));
     var batches = [], byBatch = {};
     items.forEach(function (it) {
@@ -4559,7 +4637,7 @@ $('nav-settings').onclick = function () { showView('settings'); };
 function loadFaces() {
   var page = $('page');
   var kind = checkKind();
-  page.textContent = '';
+  clearNode(page);
   var back = el('button', 'link back', tr('settings.back'));
   back.onclick = function () { showView('settings'); };
   page.appendChild(back);
@@ -4830,7 +4908,7 @@ function openFacePhoto(face, siblings) {
 // so thresholds and false finds can be judged on the real photos.
 function loadSettings() {
   var page = $('page');
-  page.textContent = '';
+  clearNode(page);
   page.appendChild(el('h2', '', tr('settings.title')));
   var sec = el('section', 'settings-section');
   sec.appendChild(el('h3', '', tr('settings.calibration')));
@@ -4977,7 +5055,7 @@ function forgetCard(space) {
 // each, so the limits can be judged on the real photos.
 function loadTextCheck() {
   var page = $('page');
-  page.textContent = '';
+  clearNode(page);
   page.appendChild(el('h2', '', tr('side.text_check')));
   page.appendChild(el('p', 'hint', tr('textcheck.hint')));
   var body = el('div', 'textcheck');
@@ -4989,7 +5067,7 @@ function loadTextCheck() {
 }
 
 function renderTextCheck(body, s, check) {
-  body.textContent = '';
+  clearNode(body);
   if (!s.read && !s.stored) {
     body.appendChild(el('p', 'sub', tr('textcheck.none')));
     return;
@@ -6134,7 +6212,7 @@ function personHead(box, f) {
 function loadPeoplePage() {
   var page = $('page');
   if (state.filter.view !== 'people') return;
-  page.textContent = '';
+  clearNode(page);
   page.appendChild(el('h2', '', tr('side.faces')));
   var c = people.info && people.info.clusters;
   var sub = el('p', 'sub');
@@ -6208,7 +6286,7 @@ var pp = { person: null, faces: [], total: 0, picking: false, picked: {} };
 function loadPersonPage() {
   var f = state.filter, page = $('page');
   var tab = PERSON_TABS.some(function (t) { return t[0] === f.tab; }) ? f.tab : 'confirmed';
-  page.textContent = '';
+  clearNode(page);
   pp.faces = [];
   pp.picked = {};
   pp.picking = false;
@@ -6568,7 +6646,7 @@ function faceSizeControl(page) {
 
 function loadUnnamed() {
   var page = $('page');
-  page.textContent = '';
+  clearNode(page);
   page.appendChild(el('h2', '', tr('people.unnamed')));
   var sub = el('p', 'sub', tr('dups.looking'));
   sub.id = 'un-sub';
@@ -6872,20 +6950,22 @@ function clusterCard(c) {
   card.appendChild(grid);
   var faces = c.faces.slice();
   var expanded = false;
-  var renderFaces = function () {
-    grid.textContent = '';
-    faces.forEach(function (face) {
-      var f = el('a', 'cface' + (card.picked[face.id] ? ' sel' : '') + (face.small ? ' small' : ''));
+  // Face id → its tile, kept while the face is in the card: drawn again (a
+  // refresh, Select) the card reuses them, with their pictures.
+  var tiles = {};
+  var tile = function (face) {
+    var f = tiles[face.id];
+    if (!f) {
+      f = tiles[face.id] = el('a');
       f.href = '#';
-      f.title = tr(card.picking ? 'facecheck.select' : 'facecheck.open_photo');
       f.appendChild(faceImg(face, 'big'));
       f.onclick = function (ev) {
         ev.preventDefault();
+        var face = f.face;
         if (card.picking) {
           var span = ev.shiftKey && pickSpan(faces, function (x) { return x.id; }, card.anchor, face.id);
           if (span) {
-            span.forEach(function (x) { card.picked[x.id] = true; });
-            renderFaces();
+            span.forEach(function (x) { card.picked[x.id] = true; if (tiles[x.id]) tiles[x.id].classList.add('sel'); });
           } else {
             if (card.picked[face.id]) delete card.picked[face.id]; else card.picked[face.id] = true;
             f.classList.toggle('sel', !!card.picked[face.id]);
@@ -6910,10 +6990,21 @@ function clusterCard(c) {
           if (next && next.classList.contains('cface')) { ev.preventDefault(); next.focus(); }
         }
       };
-      grid.appendChild(f);
-    });
+    }
+    f.face = face;
+    f.className = 'cface' + (card.picked[face.id] ? ' sel' : '') + (face.small ? ' small' : '');
+    f.title = tr(card.picking ? 'facecheck.select' : 'facecheck.open_photo');
+    return f;
+  };
+  // All faces of a big group can be thousands: `growGrid` puts them on the
+  // page as they are scrolled to.
+  var renderFaces = function () {
+    var now = {};
+    faces.forEach(function (face) { now[face.id] = true; });
+    Object.keys(tiles).forEach(function (id) { if (!now[id]) delete tiles[id]; });
+    var all = null;
     if (c.size > faces.length) {
-      var all = el('button', 'cmore', '+' + I18n.number(c.size - faces.length));
+      all = el('button', 'cmore', '+' + I18n.number(c.size - faces.length));
       all.title = tr('unnamed.show_all', { n: c.size });
       all.onclick = function () {
         api(LIBAPI + '/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
@@ -6923,8 +7014,8 @@ function clusterCard(c) {
           update();
         }).catch(function (e) { stale(e); });
       };
-      grid.appendChild(all);
     }
+    growGrid(grid, faces, tile, all);
   };
   var suggestion = el('div', 'csugg');
   card.appendChild(suggestion);
@@ -7542,7 +7633,7 @@ function showOffline() {
   $('page').hidden = false;
   $('sizer').hidden = true;
   $('empty').hidden = true;
-  page.textContent = '';
+  clearNode(page);
   page.appendChild(el('h2', '', tr('drives.offline_title', { name: drives.current.name })));
   page.appendChild(el('p', 'sub', tr('drives.offline_text')));
   var overview = el('button', 'btn quiet', tr('drives.show_all'));
@@ -7742,7 +7833,7 @@ function transferFilePicker(list, to, file) {
 
 function loadDrivesPage() {
   var page = $('page');
-  page.textContent = '';
+  clearNode(page);
   page.appendChild(el('h2', '', tr('side.manage_drives')));
   page.appendChild(el('p', 'sub', tr('drives.page_sub')));
   var cards = el('div', 'drive-cards'), tabs = el('div', 'tabs underline'), tabBox = el('div');

@@ -411,7 +411,7 @@ function loadLocations() {
   if (geo.map && geo.page && geo.page.isConnected) { selectFromHash(); return; }
   geoLeave();
   var page = $('page');
-  page.textContent = '';
+  clearNode(page);
   if (!geo.on) {
     page.appendChild(el('h2', '', tr('geo.page_title')));
     page.appendChild(el('p', 'sub', tr('geo.maps_needed')));
