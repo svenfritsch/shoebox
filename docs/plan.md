@@ -1849,5 +1849,8 @@ touches people, groups or face decisions goes through `change_with(.., false)`
 (`people_change`): it must not bump `generation`, or `index_version` changes
 and every open page reloads folders, tags, people and places (`reloadAll`), also
 after each name given on the Unnamed page. `/api/info` keeps the counts over all
-files 5 s and the faces' counts 2 s. Open: `people::people` and
-`people::clusters` still load every face (`View::load`) under the lock.
+files 5 s and the faces' counts 2 s. Naming faces answers with `photos` (the person's photo count, `person_photos`),
+so the page updates a known person in place; the list is fetched again only for a
+new person, and after a regrouping only when the People page is open
+(`people.stale` otherwise). Open: `people::people`, `people::clusters` and
+`people::decide` still load every face (`View::load`) under the lock.

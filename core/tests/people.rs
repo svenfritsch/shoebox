@@ -198,6 +198,8 @@ fn suggest_maybe_confirm_and_reject_under_the_guard() {
     let body = json!({ "name": "Anna", "generation": clusters[0]["generation"] });
     let named = ok(addr, &format!("/api/clusters/{}/name", clusters[0]["id"]), &body);
     assert_eq!(named["faces"], 3);
+    // The reply carries the photo count, so the page need not fetch the list again.
+    assert_eq!(named["photos"], 3);
     let anna = named["person"]["id"].as_i64().unwrap();
     assert_eq!(named["person"]["name"], "Anna");
     // At once (before the clusters are recomputed): out of "Unnamed".
@@ -209,6 +211,7 @@ fn suggest_maybe_confirm_and_reject_under_the_guard() {
     assert_eq!(people.as_array().unwrap().len(), 1);
     let p = &people[0];
     assert_eq!((p["name"].as_str(), p["faces"].as_u64(), p["photos"].as_u64()), (Some("Anna"), Some(3), Some(3)));
+    assert_eq!(p["photos"], named["photos"]);
     assert_eq!((p["suggested"].as_u64(), p["maybe"].as_u64()), (Some(1), Some(1)));
     assert!(p["cover"].is_i64());
     assert!(p["group_id"].is_null());

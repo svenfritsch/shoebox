@@ -2372,7 +2372,7 @@ function loadView(view) {
   if (view === 'duplicates') loadDuplicates();
   else if (view === 'settings') loadSettings();
   else if (view === 'faces' || view === 'pets') loadFaces();
-  else if (view === 'people') loadPeoplePage();
+  else if (view === 'people') { if (people.stale) loadPeople().then(loadPeoplePage); else loadPeoplePage(); }
   else if (view === 'unnamed') loadUnnamed();
   else if (view === 'person') loadPersonPage();
   else if (view === 'drives') loadDrivesPage();
@@ -5253,6 +5253,7 @@ function loadPeople() {
 }
 
 function fetchPeople() {
+  people.stale = false;
   return Promise.all([api(LIBAPI + '/people'), api(LIBAPI + '/groups')]).then(function (r) {
     people.list = r[0];
     people.groups = r[1];
@@ -5286,8 +5287,10 @@ function facesInfo(info) {
   people.info = info;
   var busy = info.clusters.stale || info.clusters.running || info.clusters.embedding;
   if (before && (before.clusters.stale || before.clusters.running || before.clusters.embedding) && !busy) {
-    // Recomputed: the suggestions and counts changed.
-    loadPeople().then(function () { if (state.filter.view === 'people') loadPeoplePage(); });
+    // Recomputed: the suggestions changed. Only the People page shows them;
+    // anywhere else the list is asked for when that page opens.
+    if (state.filter.view === 'people') loadPeople().then(loadPeoplePage);
+    else people.stale = true;
     if (state.filter.view === 'person') loadPersonCounts();
   }
   if (busy) watchClusters();
@@ -5338,8 +5341,16 @@ function facesStream() {
 
 // After a change to people or decisions (the Unnamed page follows at once,
 // also when the change was made in the viewer over it).
-function peopleChanged() {
-  loadPeople();
+//
+// `decided` is the reply to naming faces: a person the list already has takes
+// the photo count from it, and only someone new (or a change it does not
+// describe: a group, a picture) asks for the list again.
+function peopleChanged(decided) {
+  var known = decided && decided.person && people.byId[decided.person.id];
+  if (known && decided.photos != null) {
+    known.photos = decided.photos;
+    renderFacesSection();
+  } else loadPeople();
   loadInfo();
   if (state.filter.view === 'unnamed') scheduleUnnamedRefresh();
 }
@@ -6647,7 +6658,7 @@ function singlesSection() {
       st.count -= ids.length;
       field.input.value = '';
       update();
-      peopleChanged();
+      peopleChanged(r);
     }).catch(function (e) {
       bar.classList.remove('busy');
       if (e.status === 409) toast(tr('unnamed.regrouped')); else failed(e);
@@ -6968,7 +6979,7 @@ function clusterCard(c) {
         update();
       }
       unnamedSummary();
-      peopleChanged();
+      peopleChanged(r);
     }).catch(function (e) { card.classList.remove('busy'); stale(e); });
   };
   renderFaces();

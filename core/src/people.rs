@@ -1293,6 +1293,10 @@ pub struct Decided {
     pub faces: u64,
     /// The person they were assigned to, confirmed for or rejected for.
     pub person: Option<PersonRef>,
+    /// How many photos that person has now (the same number as `Person::photos`),
+    /// so the page need not ask for the whole list again.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub photos: Option<u64>,
     /// After an action on some faces of a cluster: what is left of it
     /// (`null` if nothing is).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1305,6 +1309,22 @@ pub struct ClusterRef {
     pub id: i64,
     pub generation: i64,
     pub size: u64,
+}
+
+/// Present photos (one per content) with a confirmed face of the person: what
+/// `people` counts as `photos`, without loading every face.
+fn person_photos(conn: &Connection, id: i64) -> Result<u64> {
+    let n: i64 = conn.query_row(
+        &format!(
+            "SELECT count(DISTINCT key) FROM face_decisions
+             WHERE person_id = ?1 AND decision = 'confirmed'
+               AND key IN (SELECT quick_hash FROM ({}))",
+            faces::PRESENT
+        ),
+        [id],
+        |r| r.get(0),
+    )?;
+    Ok(n as u64)
 }
 
 /// Apply `action` to detected faces (`recog.faces` ids; unknown ids are
@@ -1441,8 +1461,12 @@ pub fn decide(conn: &Connection, faces: &[i64], action: &Action) -> Result<Decid
         Some(p) => Some(PersonRef { id: p, name: tx.query_row("SELECT name FROM people WHERE id = ?1", [p], |r| r.get(0))? }),
         None => None,
     };
+    let photos = match &person {
+        Some(p) => Some(person_photos(&tx, p.id)?),
+        None => None,
+    };
     tx.commit()?;
-    Ok(Decided { faces: changed, person, cluster: None })
+    Ok(Decided { faces: changed, person, photos, cluster: None })
 }
 
 /// Say what kind of pet detected faces (`recog.faces` ids; people's faces and
