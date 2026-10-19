@@ -6052,7 +6052,8 @@ function groupsDialog() {
           return post(LIBAPI + '/groups/' + g.id + '/rename', { name: name }).then(function (r) {
             people.groups.forEach(function (x) { if (x.id === r.id) x.name = r.name; });
             peopleShown();
-            groupsDialog();
+            // After the name dialog has closed (it closes when this is done).
+            setTimeout(groupsDialog, 0);
             if (state.filter.view === 'people') loadPeoplePage();
           });
         });
