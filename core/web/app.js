@@ -5310,6 +5310,36 @@ function personUpdated(r) {
   if (takePerson(r)) peopleShown();
 }
 
+// A person was deleted: gone from the list, and from their group (which goes
+// with its last person).
+function personRemoved(id) {
+  var mine = people.byId[id];
+  if (!mine) loadPeople();
+  else {
+    people.list = people.list.filter(function (x) { return x.id !== id; });
+    delete people.byId[id];
+    countGroups(mine.group_id, null);
+    peopleShown();
+  }
+  peopleInfoChanged();
+}
+
+// `from` was merged into the person the reply describes. That one takes
+// `from`'s group if they had none; the group `from` left may be empty then.
+function peopleMerged(fromId, r) {
+  var from = people.byId[fromId], into = people.byId[r.id];
+  if (!from || !into) loadPeople();
+  else {
+    countGroups(into.group_id, r.group_id);
+    countGroups(from.group_id, null);
+    people.list = people.list.filter(function (x) { return x.id !== fromId; });
+    delete people.byId[fromId];
+    takePerson(r);
+    peopleShown();
+  }
+  peopleInfoChanged();
+}
+
 // One person left group `from` for `to` (either may be none): the groups'
 // counts follow, and a group nobody is in any more is gone, as on the server.
 function countGroups(from, to) {
@@ -5405,6 +5435,12 @@ function peopleChanged(decided) {
     known.photos = decided.photos;
     renderFacesSection();
   } else loadPeople();
+  peopleInfoChanged();
+}
+
+// What follows from any change to people: the status (how many are named) and
+// the Unnamed page (the names in its suggestions).
+function peopleInfoChanged() {
   loadInfo();
   if (state.filter.view === 'unnamed') scheduleUnnamedRefresh();
 }
@@ -5850,7 +5886,8 @@ function renamePerson(p) {
     return post(LIBAPI + '/people/' + p.id + '/rename', { name: name }).then(function (r) {
       toast(tr('people.renamed', { name: r.name }));
       state.personNames[p.id] = r.name;
-      peopleChanged();
+      personUpdated(r);
+      peopleInfoChanged();
       if (state.filter.view) loadView(state.filter.view); else renderChips();
     });
   });
@@ -5863,7 +5900,7 @@ function deletePersonDialog(p) {
     { label: tr('app.delete'), cls: 'danger', onclick: function () {
       post(LIBAPI + '/people/' + p.id + '/delete').then(function () {
         toast(tr('people.deleted', { name: p.name }));
-        peopleChanged();
+        personRemoved(p.id);
         if (state.filter.people.indexOf(p.id) >= 0) setFilter({ people: state.filter.people.filter(function (x) { return x !== p.id; }) });
         else if (state.filter.view === 'person' && state.filter.id === p.id) showView('people');
         else if (state.filter.view) loadView(state.filter.view);
@@ -5927,7 +5964,7 @@ function mergeDialog(p) {
       post(LIBAPI + '/people/' + p.id + '/merge', { into: into }).then(function (r) {
         closeModal();
         toast(tr('people.merged', { name: p.name, into: r.name }));
-        peopleChanged();
+        peopleMerged(p.id, r);
         if (state.filter.people.indexOf(p.id) >= 0 || (state.filter.view === 'person' && state.filter.id === p.id)) showPerson(r.id);
         else if (state.filter.view) loadView(state.filter.view);
       }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
