@@ -5343,11 +5343,12 @@ function facesStream() {
 // also when the change was made in the viewer over it).
 //
 // `decided` is the reply to naming faces: a person the list already has takes
-// the photo count from it, and only someone new (or a change it does not
-// describe: a group, a picture) asks for the list again.
+// the photo count from it, and only someone new or without a picture yet (or a
+// change it does not describe: a group, a picture) asks for the list again.
 function peopleChanged(decided) {
   var known = decided && decided.person && people.byId[decided.person.id];
-  if (known && decided.photos != null) {
+  // Someone without a picture yet gets one from their first faces: ask for the list then.
+  if (known && decided.photos != null && (known.cover != null || known.cover_manual != null)) {
     known.photos = decided.photos;
     renderFacesSection();
   } else loadPeople();
