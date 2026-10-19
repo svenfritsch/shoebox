@@ -1837,3 +1837,17 @@ TIFF-based RAW whose Exif IFD lies beyond the bytes loaded so far. Fixed in
 grows 256 KiB, 8 MiB, 64 MiB); tests in `core/tests/scan.rs`, fixture
 `IMG_0005.CR2` in `scripts/make-fixtures.sh`. Open: confirm on the 'Angie
 wedding' folder (`shoebox probe` should show `RAW 3 3 3`).
+
+Performance with ~100 000 photos (found on the real drive): everything shares
+one SQLite connection (`App::conn`, journal mode DELETE on exFAT), so one slow
+request makes every other one wait, and the page's own polling made it worse.
+Rules since: the page asks for `/api/libraries`, `/api/all/drives` and
+`/api/info` only on actions, when the person comes back to the page (15 s at
+the earliest) and, for `/api/info`, every 5 s while a job runs (`watchProgress`);
+`loadInfo` and `loadPeople` are one request at a time. A change that only
+touches people, groups or face decisions goes through `change_with(.., false)`
+(`people_change`): it must not bump `generation`, or `index_version` changes
+and every open page reloads folders, tags, people and places (`reloadAll`), also
+after each name given on the Unnamed page. `/api/info` keeps the counts over all
+files 5 s and the faces' counts 2 s. Open: `people::people` and
+`people::clusters` still load every face (`View::load`) under the lock.

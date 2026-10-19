@@ -409,6 +409,8 @@ impl App {
             duplicates: Mutex::new(None),
             copies: Mutex::new(None),
             generation: AtomicU64::new(0),
+            info_counts: Mutex::new(None),
+            info_faces: Mutex::new(None),
             writing: Mutex::new(()),
             dirty: AtomicBool::new(false),
             heal: Mutex::new(heal_tx),
@@ -449,6 +451,11 @@ struct App {
     /// Timeline and folders, rebuilt when the index changed.
     snapshot: Mutex<Option<(IndexVersion, Arc<Snapshot>)>>,
     duplicates: Mutex<Option<(IndexVersion, Arc<Vec<duplicates::Group>>)>>,
+    /// What `/api/info` counts over the whole index, kept for a few seconds:
+    /// the page asks often, and the counts cost seconds on a library of
+    /// 100 000 photos while every other request waits for the connection.
+    info_counts: Mutex<Option<(IndexVersion, Instant, Arc<InfoCounts>)>>,
+    info_faces: Mutex<Option<(InfoFacesKey, Instant, Arc<(recognize::Overview, clusters::Overview)>)>>,
     /// Name and full hash of every file, for the common timeline (phase 18).
     copies: Mutex<Option<(IndexVersion, Arc<HashMap<i64, multi::CopyFacts>>)>>,
     /// Counts this server's own changes; `PRAGMA data_version` only sees
@@ -492,6 +499,27 @@ struct App {
     /// The export that is running or ran last (phase 12).
     export: Arc<export::Shared>,
 }
+
+/// How long `/api/info` may reuse what it counted (thumbnails and faces
+/// found meanwhile show up this late at most).
+const INFO_COUNTS_AGE: Duration = Duration::from_secs(5);
+/// The same for the faces' and clusters' counts (`recognize` runs in another process).
+const INFO_FACES_AGE: Duration = Duration::from_secs(2);
+
+/// The counts of `/api/info` that read every file.
+struct InfoCounts {
+    photos: i64,
+    videos: i64,
+    missing: i64,
+    thumbs_total: i64,
+    thumbs_done: i64,
+    trash: i64,
+    needs_date: u64,
+}
+
+/// What the faces' counts depend on: the index, `recognition.db` (another
+/// process writes it) and how far the clustering is.
+type InfoFacesKey = (IndexVersion, i64, u64, u64, bool);
 
 /// Changes whenever another connection (a scan) commits, or this server
 /// changes the library itself.
@@ -2356,21 +2384,36 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
     let reveal = is_local(peer.ip(), host(&headers)).then(reveal::label);
     blocking(&app, move |app| {
         let conn = app.conn.lock().unwrap();
-        let (photos, videos, missing): (i64, i64, i64) = conn.query_row(
-            "SELECT count(*) FILTER (WHERE missing_since IS NULL AND kind NOT IN ('video', 'raw')),
-                    count(*) FILTER (WHERE missing_since IS NULL AND kind = 'video'),
-                    count(*) FILTER (WHERE missing_since IS NOT NULL)
-             FROM files",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-        )?;
-        let (thumbs_total, thumbs_done): (i64, i64) = conn.query_row(
-            "SELECT count(DISTINCT f.quick_hash), count(DISTINCT t.key)
-             FROM files f LEFT JOIN thumbs.thumbs t ON t.key = f.quick_hash
-             WHERE f.missing_since IS NULL AND f.kind != 'raw'",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?;
+        let (data_version, generation) = app.version(&conn)?;
+        let version = (data_version, generation);
+        let counts = {
+            let mut cache = app.info_counts.lock().unwrap();
+            match cache.as_ref() {
+                Some((v, at, c)) if *v == version && at.elapsed() < INFO_COUNTS_AGE => c.clone(),
+                _ => {
+                    let (photos, videos, missing): (i64, i64, i64) = conn.query_row(
+                        "SELECT count(*) FILTER (WHERE missing_since IS NULL AND kind NOT IN ('video', 'raw')),
+                                count(*) FILTER (WHERE missing_since IS NULL AND kind = 'video'),
+                                count(*) FILTER (WHERE missing_since IS NOT NULL)
+                         FROM files",
+                        [],
+                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                    )?;
+                    let (thumbs_total, thumbs_done): (i64, i64) = conn.query_row(
+                        "SELECT count(DISTINCT f.quick_hash), count(DISTINCT t.key)
+                         FROM files f LEFT JOIN thumbs.thumbs t ON t.key = f.quick_hash
+                         WHERE f.missing_since IS NULL AND f.kind != 'raw'",
+                        [],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )?;
+                    let trash: i64 = conn.query_row("SELECT count(DISTINCT batch) FROM trash", [], |r| r.get(0))?;
+                    let needs_date = app.snapshot(&conn)?.items.iter().filter(|it| needs_a_date(it)).count() as u64;
+                    let c = Arc::new(InfoCounts { photos, videos, missing, thumbs_total, thumbs_done, trash, needs_date });
+                    *cache = Some((version, Instant::now(), c.clone()));
+                    c
+                }
+            }
+        };
         let jobs: Vec<JobInfo> = conn
             .prepare(
                 "SELECT kind, state, started_at, updated_at, finished_at, done, total FROM jobs
@@ -2391,10 +2434,23 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
         // A job whose process died stays 'running' until the next scan; only
         // count it as busy while it is still reporting progress.
         let busy = jobs_running(&conn)?;
-        let (data_version, generation) = app.version(&conn)?;
-        let trash: i64 = conn.query_row("SELECT count(DISTINCT batch) FROM trash", [], |r| r.get(0))?;
-        let needs_date = app.snapshot(&conn)?.items.iter().filter(|it| needs_a_date(it)).count() as u64;
-        let faces = recognize::overview(&conn)?;
+        let clusters_done = app.clusters_done.load(Ordering::SeqCst);
+        let clusters_wanted = app.clusters_wanted.load(Ordering::SeqCst);
+        let embedding = app.embedding.load(Ordering::SeqCst);
+        let recog_version: i64 = conn.query_row("PRAGMA recog.data_version", [], |r| r.get(0))?;
+        let faces_key = (version, recog_version, clusters_done, clusters_wanted, embedding);
+        let overviews = {
+            let mut cache = app.info_faces.lock().unwrap();
+            match cache.as_ref() {
+                Some((k, at, o)) if *k == faces_key && at.elapsed() < INFO_FACES_AGE => o.clone(),
+                _ => {
+                    let o = Arc::new((recognize::overview(&conn)?, clusters::overview(&conn)?));
+                    *cache = Some((faces_key, Instant::now(), o.clone()));
+                    o
+                }
+            }
+        };
+        let faces = overviews.0.clone();
         // New faces from a `recognize` run that stopped before clustering.
         if !faces.running
             && app.clusters_done.load(Ordering::SeqCst) == app.clusters_wanted.load(Ordering::SeqCst)
@@ -2403,24 +2459,24 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
             app.request_clusters();
         }
         let clusters = ClustersInfo {
-            overview: clusters::overview(&conn)?,
-            stale: app.clusters_done.load(Ordering::SeqCst) < app.clusters_wanted.load(Ordering::SeqCst),
-            embedding: app.embedding.load(Ordering::SeqCst),
+            overview: overviews.1.clone(),
+            stale: clusters_done < clusters_wanted,
+            embedding,
         };
         Ok(Json(Info {
             name: app.name.clone(),
             version: env!("CARGO_PKG_VERSION"),
-            photos: photos as u64,
-            videos: videos as u64,
-            missing: missing as u64,
-            thumbs_done: thumbs_done as u64,
-            thumbs_total: thumbs_total as u64,
+            photos: counts.photos as u64,
+            videos: counts.videos as u64,
+            missing: counts.missing as u64,
+            thumbs_done: counts.thumbs_done as u64,
+            thumbs_total: counts.thumbs_total as u64,
             video_posters: media::SYSTEM_VIDEO_POSTERS || app.ffmpeg.is_some(),
             jobs,
             busy,
             index_version: format!("{data_version}.{generation}"),
-            trash: trash as u64,
-            needs_date,
+            trash: counts.trash as u64,
+            needs_date: counts.needs_date,
             faces,
             clusters,
             text: crate::text::progress(&conn)?,
@@ -3010,6 +3066,19 @@ async fn change<T: Send + 'static>(
     app: &Arc<App>,
     f: impl FnOnce(&App, &Connection) -> Result<T> + Send + 'static,
 ) -> ApiResult<T> {
+    change_with(app, true, f).await
+}
+
+/// `change`; with `files_changed` false the caches of the files and folders
+/// (timeline, duplicates, copies) stay and `index_version` stays the same:
+/// for changes that only touch people, groups and face decisions, which none
+/// of them reads. Otherwise every name given on the Unnamed page would make
+/// every open page reload its folders, tags, people and places.
+async fn change_with<T: Send + 'static>(
+    app: &Arc<App>,
+    files_changed: bool,
+    f: impl FnOnce(&App, &Connection) -> Result<T> + Send + 'static,
+) -> ApiResult<T> {
     blocking(app, move |app| {
         let _writing = app.writing.lock().unwrap();
         let conn = app.conn.lock().unwrap();
@@ -3017,7 +3086,9 @@ async fn change<T: Send + 'static>(
             return Err(ApiError::Conflict("a scan is running; try again when it is done".into()));
         }
         let result = f(app, &conn);
-        app.generation.fetch_add(1, Ordering::SeqCst);
+        if files_changed {
+            app.generation.fetch_add(1, Ordering::SeqCst);
+        }
         app.dirty.store(true, Ordering::SeqCst);
         let _ = app.backup.lock().unwrap().send(());
         result.map_err(|e| {
