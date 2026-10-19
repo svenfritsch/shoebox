@@ -5293,13 +5293,13 @@ function sortPeople() {
 }
 
 // The reply to a change of one person (their group, their picture) is the
-// person as they are now: it takes the place of their entry. False for
-// someone the list does not have (a hidden person).
-function takePerson(r) {
+// person as they are now: it takes the place of their entry (or, with `add`,
+// is added). False for someone the list does not have (a hidden person).
+function takePerson(r, add) {
   var at = -1;
   people.list.forEach(function (p, k) { if (p.id === r.id) at = k; });
-  if (at < 0) return false;
-  people.list[at] = r;
+  if (at < 0 && !add) return false;
+  if (at < 0) people.list.push(r); else people.list[at] = r;
   people.byId[r.id] = r;
   state.personNames[r.id] = r.name;
   state.personSpecies[r.id] = r.species;
@@ -5425,15 +5425,18 @@ function facesStream() {
 // After a change to people or decisions (the Unnamed page follows at once,
 // also when the change was made in the viewer over it).
 //
-// `decided` is the reply to naming faces: a person the list already has takes
-// the photo count from it, and only someone new or without a picture yet (or a
-// change it does not describe: a group, a picture) asks for the list again.
+// `decided` is the reply to naming faces; it carries the person as the list
+// shows them (`person_data`): they are added (someone new) or replace their
+// entry, so the whole list is not asked for again. Only a reply without them,
+// or a person whose picture the server could not tell, asks for the list.
 function peopleChanged(decided) {
-  var known = decided && decided.person && people.byId[decided.person.id];
-  // Someone without a picture yet gets one from their first faces: ask for the list then.
-  if (known && decided.photos != null && (known.cover != null || known.cover_manual != null)) {
-    known.photos = decided.photos;
-    renderFacesSection();
+  var d = decided && decided.person_data;
+  if (d && (d.cover != null || d.cover_manual != null)) {
+    var old = people.byId[d.id];
+    // The suggestions come with the next grouping (and the list is asked for then).
+    if (old) { d.suggested = old.suggested; d.maybe = old.maybe; }
+    takePerson(d, true);
+    peopleShown();
   } else loadPeople();
   peopleInfoChanged();
 }

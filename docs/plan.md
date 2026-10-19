@@ -1849,11 +1849,12 @@ touches people, groups or face decisions goes through `change_with(.., false)`
 (`people_change`): it must not bump `generation`, or `index_version` changes
 and every open page reloads folders, tags, people and places (`reloadAll`), also
 after each name given on the Unnamed page. `/api/info` keeps the counts over all
-files 5 s and the faces' counts 2 s. Naming faces answers with `photos` (the person's photo count, `person_photos`),
-so the page updates a known person in place. Moving a person to a group or
+files 5 s and the faces' counts 2 s. Naming faces answers with `person_data` (the person as the list shows them, from
+`people::person_light`: a few queries about that person, not `View::load`; suggestions are 0),
+so the page adds a new person or updates a known one in place. Moving a person to a group or
 creating a group (reply: the person or the group), renaming, deleting or ordering
 groups, "Use as picture", rename, merge and delete of a person (reply: the person) are applied to the list in the
 page too (`takePerson`, `countGroups`, `peopleShown`, `personRemoved`, `peopleMerged`); the list is fetched again
-only for a new person or one without a picture yet, and after a regrouping only when the People page is open
+only when the reply has no person or no picture could be told, and after a regrouping only when the People page is open
 (`people.stale` otherwise). Open: `people::people`, `people::clusters` and
 `people::decide` still load every face (`View::load`) under the lock.
