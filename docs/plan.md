@@ -1851,3 +1851,17 @@ and every open page reloads folders, tags, people and places (`reloadAll`), also
 after each name given on the Unnamed page. `/api/info` keeps the counts over all
 files 5 s and the faces' counts 2 s. Open: `people::people` and
 `people::clusters` still load every face (`View::load`) under the lock.
+
+Face crops (`/faces/{id}/crop`) took 0.6 to 3 s each on that drive while
+thumbnails took milliseconds: finding a face's file joined `faces::PRESENT`
+(every file grouped by content, ~120 ms on 100 000 files) for every crop, under
+the shared connection, so a page of crops queued one behind the other. Since
+schema v16 `files` has an index by content (`files_quick_hash`: quick_hash,
+missing_since, kind), and a query about one face asks for its file
+with `faces::present_file` (one look into that index). Keep `PRESENT` for
+queries over all faces. In the page: a picture taken off the page keeps its
+request and the browser sends only six at a time to this server, so pages,
+the viewer and the timeline's rows stop what they no longer show
+(`dropPending`, `clearNode`, the viewer's warmed neighbours); a list that can
+be thousands long (all faces of a group) goes onto the page a part at a time
+as it is scrolled to (`growGrid`), and tiles are kept by id across redraws.

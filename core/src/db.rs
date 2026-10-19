@@ -15,7 +15,7 @@ pub const FILE: &str = "library.db";
 const BACKUP_SUFFIX: &str = ".bak";
 
 /// Bump when the schema changes and add a step to `migrate`.
-const SCHEMA_VERSION: i32 = 15;
+const SCHEMA_VERSION: i32 = 16;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -262,6 +262,15 @@ CREATE TABLE IF NOT EXISTS text_hidden (
     at   INTEGER NOT NULL,        -- Unix seconds
     PRIMARY KEY (key, norm)
 );
+";
+
+/// v16: files by content. Many requests look up the present file of one
+/// content (a face's crop, a person's photo count); without this index each
+/// read every row of `files`, while all other requests waited for the
+/// connection. With `missing_since` and `kind` it also covers
+/// `faces::PRESENT`, so grouping every file needs no table rows and no sort.
+const SCHEMA_V16: &str = "
+CREATE INDEX IF NOT EXISTS files_quick_hash ON files(quick_hash, missing_since, kind);
 ";
 
 /// Whether `table` of `schema` has a column.
@@ -517,6 +526,12 @@ fn migrate(conn: &Connection) -> Result<()> {
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V15)?;
         tx.pragma_update(None, "user_version", 15)?;
+        tx.commit()?;
+    }
+    if version < 16 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V16)?;
+        tx.pragma_update(None, "user_version", 16)?;
         tx.commit()?;
     }
     Ok(())
