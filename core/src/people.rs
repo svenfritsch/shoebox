@@ -1293,6 +1293,12 @@ pub struct Decided {
     pub faces: u64,
     /// The person they were assigned to, confirmed for or rejected for.
     pub person: Option<PersonRef>,
+    /// The same person as the list shows them (`people`), for an action that
+    /// names someone, so the page can add or update them without asking for the
+    /// whole list again. Filled in by the server after the action; `suggested`
+    /// and `maybe` are 0 (only the next grouping knows them).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub person_data: Option<Person>,
     /// After an action on some faces of a cluster: what is left of it
     /// (`null` if nothing is).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1305,6 +1311,91 @@ pub struct ClusterRef {
     pub id: i64,
     pub generation: i64,
     pub size: u64,
+}
+
+/// Present photos (one per content) with a confirmed face of the person: what
+/// `people` counts as `photos`, without loading every face.
+fn person_photos(conn: &Connection, id: i64) -> Result<u64> {
+    let n: i64 = conn.query_row(
+        &format!(
+            "SELECT count(DISTINCT key) FROM face_decisions
+             WHERE person_id = ?1 AND decision = 'confirmed'
+               AND key IN (SELECT quick_hash FROM ({}))",
+            faces::PRESENT
+        ),
+        [id],
+        |r| r.get(0),
+    )?;
+    Ok(n as u64)
+}
+
+/// One person as `people` lists them, from a few queries about them alone
+/// instead of reading every face: for the reply to naming faces. `suggested`
+/// and `maybe` are 0. A person whose picture cannot be told this way (a
+/// photo that is not there) has neither `cover` nor `cover_manual`: the caller
+/// asks for the list then.
+pub fn person_light(conn: &Connection, id: i64) -> Result<Option<Person>> {
+    let row: Option<(String, Option<i64>, bool, Option<String>, Option<String>)> = conn
+        .query_row("SELECT name, group_id, hidden, cover_key, cover_box FROM people WHERE id = ?1", [id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        })
+        .optional()?;
+    let Some((name, group_id, hidden, cover_key, cover_box)) = row else { return Ok(None) };
+    let (faces, last_named): (i64, Option<i64>) = conn.query_row(
+        "SELECT count(*), max(at) FROM face_decisions WHERE person_id = ?1 AND decision = 'confirmed'",
+        [id],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    let (mut cover, mut cover_manual) = (None, None);
+    if let Some(key) = cover_key
+        && let Some(b) = cover_box.and_then(|b| serde_json::from_str::<[f64; 4]>(&b).ok())
+    {
+        let present: bool = conn
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM files WHERE quick_hash = ?1 AND missing_since IS NULL AND kind IN ('jpeg', 'png', 'heic'))",
+                [&key],
+                |r| r.get(0),
+            )?;
+        if present {
+            let mut best: Option<(f64, i64)> = None;
+            let mut stmt = conn.prepare("SELECT id, x, y, w, h FROM recog.faces WHERE key = ?1")?;
+            let mut rows = stmt.query([&key])?;
+            while let Some(r) = rows.next()? {
+                let iou = recognize::iou([r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?], b);
+                if iou >= MATCH_IOU && best.is_none_or(|(i, _)| iou > i) {
+                    best = Some((iou, r.get(0)?));
+                }
+            }
+            cover = best.map(|(_, face)| face);
+            if cover.is_none() {
+                let mut stmt = conn.prepare(
+                    "SELECT id, x, y, w, h FROM face_decisions
+                     WHERE person_id = ?1 AND key = ?2 AND manual = 1 AND decision = 'confirmed'",
+                )?;
+                let mut rows = stmt.query(params![id, key])?;
+                while let Some(r) = rows.next()? {
+                    if recognize::iou([r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?], b) >= MATCH_IOU {
+                        cover_manual = Some(r.get(0)?);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    Ok(Some(Person {
+        id,
+        name,
+        group_id,
+        hidden,
+        faces: faces as u64,
+        photos: person_photos(conn, id)?,
+        suggested: 0,
+        maybe: 0,
+        last_named,
+        species: person_species(conn)?.remove(&id),
+        cover,
+        cover_manual,
+    }))
 }
 
 /// Apply `action` to detected faces (`recog.faces` ids; unknown ids are
@@ -1442,7 +1533,7 @@ pub fn decide(conn: &Connection, faces: &[i64], action: &Action) -> Result<Decid
         None => None,
     };
     tx.commit()?;
-    Ok(Decided { faces: changed, person, cluster: None })
+    Ok(Decided { faces: changed, person, person_data: None, cluster: None })
 }
 
 /// Say what kind of pet detected faces (`recog.faces` ids; people's faces and

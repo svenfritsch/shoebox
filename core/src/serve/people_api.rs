@@ -417,7 +417,7 @@ pub(super) struct ClusterRequest {
 /// A cluster that changed since it was shown is refused (409); the reply
 /// says what is left of the cluster (its new generation, for a split).
 async fn on_cluster(app: Arc<App>, id: i64, req: ClusterRequest, action: fn(Who) -> Action) -> ApiResult<Json<people::Decided>> {
-    people_change(&app, move |conn| {
+    let done = people_change(&app, move |conn| {
         let all = people::cluster_face_ids(conn, id, req.generation, None)?;
         let faces = people::cluster_face_ids(conn, id, req.generation, req.faces.as_deref())?;
         let mut done = people::decide(conn, &faces, &action(req.who))?;
@@ -425,8 +425,17 @@ async fn on_cluster(app: Arc<App>, id: i64, req: ClusterRequest, action: fn(Who)
         done.cluster = Some(if left.is_empty() { None } else { people::cluster_of(conn, &left)? });
         Ok(done)
     })
-    .await
-    .map(Json)
+    .await?;
+    with_person(&app, done).await.map(Json)
+}
+
+/// The person an action named, as the list shows them, for the reply: the page
+/// adds or updates them without asking for the whole list again.
+async fn with_person(app: &Arc<App>, mut done: people::Decided) -> ApiResult<people::Decided> {
+    if let Some(id) = done.person.as_ref().map(|p| p.id) {
+        done.person_data = blocking(app, move |app| Ok(people::person_light(&app.conn.lock().unwrap(), id)?)).await?;
+    }
+    Ok(done)
 }
 
 /// Name the cluster (or some of its faces): confirmed for that person.
@@ -480,7 +489,7 @@ pub(super) struct FacesRequest {
 }
 
 async fn on_faces(app: Arc<App>, req: FacesRequest, action: Action) -> ApiResult<Json<people::Decided>> {
-    people_change(&app, move |conn| {
+    let done = people_change(&app, move |conn| {
         if req.open {
             people::ensure_undecided(conn, &req.faces)?;
         }
@@ -490,8 +499,8 @@ async fn on_faces(app: Arc<App>, req: FacesRequest, action: Action) -> ApiResult
         }
         Ok(done)
     })
-    .await
-    .map(Json)
+    .await?;
+    with_person(&app, done).await.map(Json)
 }
 
 /// Accept what was suggested (or offered as "maybe").
