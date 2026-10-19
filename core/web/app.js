@@ -2450,7 +2450,7 @@ function loadView(view) {
   if (view === 'duplicates') loadDuplicates();
   else if (view === 'settings') loadSettings();
   else if (view === 'faces' || view === 'pets') loadFaces();
-  else if (view === 'people') loadPeoplePage();
+  else if (view === 'people') { if (people.stale) loadPeople().then(loadPeoplePage); else loadPeoplePage(); }
   else if (view === 'unnamed') loadUnnamed();
   else if (view === 'person') loadPersonPage();
   else if (view === 'drives') loadDrivesPage();
@@ -4366,7 +4366,7 @@ $('sizer').addEventListener('contextmenu', function (ev) {
   var only = state.filter.people && state.filter.people.length === 1 ? state.filter.people[0] : null;
   if (only != null && state.personNames[only]) {
     items.push({ label: tr('menu.use_as', { name: state.personNames[only] }), run: function () {
-      post(LIBAPI + '/people/' + only + '/cover', { file: id }).then(function () { toast(tr('menu.picture_changed')); peopleChanged(); }).catch(failed);
+      post(LIBAPI + '/people/' + only + '/cover', { file: id }).then(function (r) { toast(tr('menu.picture_changed')); personUpdated(r); }).catch(failed);
     } });
   }
   showMenu(ev.clientX, ev.clientY, items);
@@ -5331,18 +5331,102 @@ function loadPeople() {
 }
 
 function fetchPeople() {
+  people.stale = false;
   return Promise.all([api(LIBAPI + '/people'), api(LIBAPI + '/groups')]).then(function (r) {
     people.list = r[0];
     people.groups = r[1];
     people.byId = {};
     r[0].forEach(function (p) { people.byId[p.id] = p; state.personNames[p.id] = p.name; state.personSpecies[p.id] = p.species; });
     r[1].forEach(function (g) { state.groupNames[g.id] = g.name; });
-    renderFacesSection();
-    renderChips();
-    // A group in the search that is gone (its last person left): the search drops it.
-    var f = state.filter, there = function (id) { return r[1].some(function (g) { return g.id === id; }); };
-    if (!isAll() && f.groups && !f.groups.every(there)) setFilter(withFilter({ groups: f.groups.filter(there) }));
+    peopleShown();
   }).catch(function () {});
+}
+
+// Show the people and groups as they are now. Also after a change the page
+// made itself from the reply (`takePerson`, `countGroups`), without asking the
+// server for the whole list again.
+function peopleShown() {
+  people.groups.forEach(function (g) { state.groupNames[g.id] = g.name; });
+  sortPeople();
+  renderFacesSection();
+  renderChips();
+  // A group in the search that is gone (its last person left): the search drops it.
+  var f = state.filter, there = function (id) { return people.groups.some(function (g) { return g.id === id; }); };
+  if (!isAll() && f.groups && !f.groups.every(there)) setFilter(withFilter({ groups: f.groups.filter(there) }));
+}
+
+// The server's order (`people::people`): by group (people without one last),
+// then name, then id.
+function sortPeople() {
+  var position = {};
+  people.groups.forEach(function (g) { position[g.id] = g.position; });
+  var rank = function (p) { return position[p.group_id] == null ? Infinity : position[p.group_id]; };
+  people.list.sort(function (a, b) {
+    var ra = rank(a), rb = rank(b);
+    if (ra !== rb) return ra < rb ? -1 : 1;
+    var na = a.name.toLowerCase(), nb = b.name.toLowerCase();
+    if (na !== nb) return na < nb ? -1 : 1;
+    return a.id - b.id;
+  });
+}
+
+// The reply to a change of one person (their group, their picture) is the
+// person as they are now: it takes the place of their entry (or, with `add`,
+// is added). False for someone the list does not have (a hidden person).
+function takePerson(r, add) {
+  var at = -1;
+  people.list.forEach(function (p, k) { if (p.id === r.id) at = k; });
+  if (at < 0 && !add) return false;
+  if (at < 0) people.list.push(r); else people.list[at] = r;
+  people.byId[r.id] = r;
+  state.personNames[r.id] = r.name;
+  state.personSpecies[r.id] = r.species;
+  return true;
+}
+
+function personUpdated(r) {
+  if (takePerson(r)) peopleShown();
+}
+
+// A person was deleted: gone from the list, and from their group (which goes
+// with its last person).
+function personRemoved(id) {
+  var mine = people.byId[id];
+  if (!mine) loadPeople();
+  else {
+    people.list = people.list.filter(function (x) { return x.id !== id; });
+    delete people.byId[id];
+    countGroups(mine.group_id, null);
+    peopleShown();
+  }
+  peopleInfoChanged();
+}
+
+// `from` was merged into the person the reply describes. That one takes
+// `from`'s group if they had none; the group `from` left may be empty then.
+function peopleMerged(fromId, r) {
+  var from = people.byId[fromId], into = people.byId[r.id];
+  if (!from || !into) loadPeople();
+  else {
+    countGroups(into.group_id, r.group_id);
+    countGroups(from.group_id, null);
+    people.list = people.list.filter(function (x) { return x.id !== fromId; });
+    delete people.byId[fromId];
+    takePerson(r);
+    peopleShown();
+  }
+  peopleInfoChanged();
+}
+
+// One person left group `from` for `to` (either may be none): the groups'
+// counts follow, and a group nobody is in any more is gone, as on the server.
+function countGroups(from, to) {
+  if (from === to) return;
+  people.groups.forEach(function (g) {
+    if (g.id === from) g.people--;
+    if (g.id === to) g.people++;
+  });
+  people.groups = people.groups.filter(function (g) { return g.people > 0; });
 }
 
 // Groups in their order with their people, then "No group" (only when
@@ -5364,14 +5448,17 @@ function facesInfo(info) {
   people.info = info;
   var busy = info.clusters.stale || info.clusters.running || info.clusters.embedding;
   if (before && (before.clusters.stale || before.clusters.running || before.clusters.embedding) && !busy) {
-    // Recomputed: the suggestions and counts changed.
-    loadPeople().then(function () { if (state.filter.view === 'people') loadPeoplePage(); });
+    // Recomputed: the suggestions changed. Only the People page shows them;
+    // anywhere else the list is asked for when that page opens.
+    if (state.filter.view === 'people') loadPeople().then(loadPeoplePage);
+    else people.stale = true;
     if (state.filter.view === 'person') loadPersonCounts();
   }
   if (busy) watchClusters();
   // Faces grouped anew in the background (after a decision, a recognize run):
-  // the Unnamed page takes the new cards and suggestions.
-  if (before && clustersSignature(before) !== clustersSignature(info) && state.filter.view === 'unnamed') scheduleUnnamedRefresh();
+  // the Unnamed page takes the new cards and suggestions, once when the grouping
+  // is done and not at each step of it (asked for, running, done).
+  if (before && !busy && clustersSignature(before) !== clustersSignature(info) && state.filter.view === 'unnamed') scheduleUnnamedRefresh();
   renderFacesSection();
 }
 
@@ -5416,10 +5503,32 @@ function facesStream() {
 
 // After a change to people or decisions (the Unnamed page follows at once,
 // also when the change was made in the viewer over it).
-function peopleChanged() {
-  loadPeople();
+//
+// `decided` is the reply to naming faces; it carries the person as the list
+// shows them (`person_data`): they are added (someone new) or replace their
+// entry, so the whole list is not asked for again. Only a reply without them,
+// or a person whose picture the server could not tell, asks for the list.
+//
+// `onUnnamed`: the change was made on the Unnamed page, whose card or faces
+// already show it; the page is asked for its clusters once, when the grouping
+// that follows is done (`facesInfo`), not at once as well.
+function peopleChanged(decided, onUnnamed) {
+  var d = decided && decided.person_data;
+  if (d && (d.cover != null || d.cover_manual != null)) {
+    var old = people.byId[d.id];
+    // The suggestions come with the next grouping (and the list is asked for then).
+    if (old) { d.suggested = old.suggested; d.maybe = old.maybe; }
+    takePerson(d, true);
+    peopleShown();
+  } else loadPeople();
+  peopleInfoChanged(onUnnamed);
+}
+
+// What follows from any change to people: the status (how many are named) and
+// the Unnamed page (the names in its suggestions).
+function peopleInfoChanged(onUnnamed) {
   loadInfo();
-  if (state.filter.view === 'unnamed') scheduleUnnamedRefresh();
+  if (state.filter.view === 'unnamed' && !onUnnamed) scheduleUnnamedRefresh();
 }
 
 function cropUrl(face) {
@@ -5534,11 +5643,16 @@ function dropOnGroup(node, groupId) {
 }
 
 function setGroup(p, groupId) {
-  return post(LIBAPI + '/people/' + p.id + '/group', { group_id: groupId }).then(function () {
+  var mine = people.byId[p.id];
+  var before = mine ? mine.group_id : undefined;
+  return post(LIBAPI + '/people/' + p.id + '/group', { group_id: groupId }).then(function (r) {
     var g = people.groups.filter(function (x) { return x.id === groupId; })[0];
     toast(g ? tr('people.is_in', { name: p.name, group: g.name }) : tr('people.is_in_none', { name: p.name }));
-    peopleChanged();
-    if (state.filter.view === 'people') loadPeople().then(loadPeoplePage);
+    // The reply is the person with their new group: no need for the whole list.
+    if (before === undefined || !takePerson(r)) return loadPeople().then(function () { if (state.filter.view === 'people') loadPeoplePage(); });
+    countGroups(before, groupId);
+    peopleShown();
+    if (state.filter.view === 'people') loadPeoplePage();
   }).catch(failed);
 }
 
@@ -5858,7 +5972,8 @@ function renamePerson(p) {
     return post(LIBAPI + '/people/' + p.id + '/rename', { name: name }).then(function (r) {
       toast(tr('people.renamed', { name: r.name }));
       state.personNames[p.id] = r.name;
-      peopleChanged();
+      personUpdated(r);
+      peopleInfoChanged();
       if (state.filter.view) loadView(state.filter.view); else renderChips();
     });
   });
@@ -5871,7 +5986,7 @@ function deletePersonDialog(p) {
     { label: tr('app.delete'), cls: 'danger', onclick: function () {
       post(LIBAPI + '/people/' + p.id + '/delete').then(function () {
         toast(tr('people.deleted', { name: p.name }));
-        peopleChanged();
+        personRemoved(p.id);
         if (state.filter.people.indexOf(p.id) >= 0) setFilter({ people: state.filter.people.filter(function (x) { return x !== p.id; }) });
         else if (state.filter.view === 'person' && state.filter.id === p.id) showView('people');
         else if (state.filter.view) loadView(state.filter.view);
@@ -5886,10 +6001,14 @@ function newGroup(p) {
   nameDialog(tr('people.new_group', { name: p.name }), '', tr('people.create'), function (name) {
     return post(LIBAPI + '/groups', { name: name, person_id: p.id }).then(function (g) {
       toast(tr('people.group_created', { name: g.name }));
-      peopleChanged();
-      return loadPeople().then(function () {
-        if (state.filter.view === 'people') loadPeoplePage();
-      });
+      // The reply is the new group (with its id), and the person is its first member.
+      var mine = people.byId[p.id];
+      if (!mine) return loadPeople().then(function () { if (state.filter.view === 'people') loadPeoplePage(); });
+      countGroups(mine.group_id, null);
+      people.groups.push(g);
+      mine.group_id = g.id;
+      peopleShown();
+      if (state.filter.view === 'people') loadPeoplePage();
     });
   });
 }
@@ -5931,7 +6050,7 @@ function mergeDialog(p) {
       post(LIBAPI + '/people/' + p.id + '/merge', { into: into }).then(function (r) {
         closeModal();
         toast(tr('people.merged', { name: p.name, into: r.name }));
-        peopleChanged();
+        peopleMerged(p.id, r);
         if (state.filter.people.indexOf(p.id) >= 0 || (state.filter.view === 'person' && state.filter.id === p.id)) showPerson(r.id);
         else if (state.filter.view) loadView(state.filter.view);
       }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
@@ -5966,7 +6085,7 @@ function groupsDialog() {
         ids.splice(k, 1);
         ids.splice(to, 0, g.id);
         post(LIBAPI + '/groups/reorder', { ids: ids }).then(function (gs) {
-          people.groups = gs; render(); peopleChanged();
+          people.groups = gs; render(); peopleShown();
           if (refocus) { var h = list.querySelectorAll('.grip')[to]; if (h) h.focus(); }
         }).catch(failed);
       };
@@ -6008,8 +6127,11 @@ function groupsDialog() {
       row.insertBefore(grip, row.firstChild);
       btn(tr('people.rename'), tr('people.rename'), function () {
         nameDialog(tr('people.rename_group'), g.name, tr('people.rename'), function (name) {
-          return post(LIBAPI + '/groups/' + g.id + '/rename', { name: name }).then(function () {
-            return loadPeople().then(function () { groupsDialog(); if (state.filter.view === 'people') loadPeoplePage(); });
+          return post(LIBAPI + '/groups/' + g.id + '/rename', { name: name }).then(function (r) {
+            people.groups.forEach(function (x) { if (x.id === r.id) x.name = r.name; });
+            peopleShown();
+            groupsDialog();
+            if (state.filter.view === 'people') loadPeoplePage();
           });
         });
       });
@@ -6019,7 +6141,13 @@ function groupsDialog() {
           { label: tr('app.delete'), cls: 'danger', onclick: function () {
             post(LIBAPI + '/groups/' + g.id + '/delete').then(function () {
               toast(tr('people.group_deleted', { name: g.name }));
-              return loadPeople().then(function () { groupsDialog(); if (state.filter.view === 'people') loadPeoplePage(); });
+              // Its people have no group afterwards.
+              people.groups = people.groups.filter(function (x) { return x.id !== g.id; });
+              people.list.forEach(function (x) { if (x.group_id === g.id) x.group_id = null; });
+              delete state.groupNames[g.id];
+              peopleShown();
+              groupsDialog();
+              if (state.filter.view === 'people') loadPeoplePage();
             }).catch(failed);
           } },
         ]);
@@ -6328,7 +6456,7 @@ function confirmedFaceMenu(face) {
   items.push({ label: tr('person.not', { name: p.name }), run: function () { personAction('reject', [face.id]); } });
   items.push({ label: tr('person.name_else'), run: function () { nameFacesDialog([face], personRefresh); } });
   items.push({ label: tr('menu.use_as', { name: p.name }), run: function () {
-    post(LIBAPI + '/people/' + p.id + '/cover', { face: face.id }).then(function () { toast(tr('menu.picture_changed')); peopleChanged(); }).catch(failed);
+    post(LIBAPI + '/people/' + p.id + '/cover', { face: face.id }).then(function (r) { toast(tr('menu.picture_changed')); personUpdated(r); }).catch(failed);
   } });
   items.push({ label: tr(p.species ? 'pet.not_a.pet' : 'facecheck.not_face'), run: function () { personAction('not-face', [face.id]); } });
   return items;
@@ -6725,7 +6853,7 @@ function singlesSection() {
       st.count -= ids.length;
       field.input.value = '';
       update();
-      peopleChanged();
+      peopleChanged(r, true);
     }).catch(function (e) {
       bar.classList.remove('busy');
       if (e.status === 409) toast(tr('unnamed.regrouped')); else failed(e);
@@ -7059,7 +7187,7 @@ function clusterCard(c) {
         update();
       }
       unnamedSummary();
-      peopleChanged();
+      peopleChanged(r, true);
     }).catch(function (e) { card.classList.remove('busy'); stale(e); });
   };
   renderFaces();
@@ -7254,7 +7382,7 @@ function infoFace(info, f, k, pick) {
       items.push({ label: tr('person.not', { name: f.person.name }), run: function () { send('reject', { faces: ids, person_id: f.person.id }); } });
       items.push({ label: tr('person.name_else'), run: function () { nameFacesDialog([f], changed); } });
       items.push({ label: tr('menu.use_as', { name: f.person.name }), run: function () {
-        post(LIBAPI + '/people/' + f.person.id + '/cover', { face: f.id }).then(function () { toast(tr('menu.picture_changed')); peopleChanged(); }).catch(failed);
+        post(LIBAPI + '/people/' + f.person.id + '/cover', { face: f.id }).then(function (r) { toast(tr('menu.picture_changed')); personUpdated(r); }).catch(failed);
       } });
     }
     if (f.state !== 'ignored') items.push({ label: tr(f.species ? 'info.ignore_stranger_pet' : 'info.ignore_stranger'), run: function () { send('ignore', { faces: ids }); } });

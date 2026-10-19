@@ -209,6 +209,12 @@ fn suggest_maybe_confirm_and_reject_under_the_guard() {
     assert_eq!(people.as_array().unwrap().len(), 1);
     let p = &people[0];
     assert_eq!((p["name"].as_str(), p["faces"].as_u64(), p["photos"].as_u64()), (Some("Anna"), Some(3), Some(3)));
+    // The reply carries the person as the list shows them (but for the counts of suggestions),
+    // so the page can add them without fetching the list again.
+    let mut listed = p.clone();
+    listed["suggested"] = json!(0);
+    listed["maybe"] = json!(0);
+    assert_eq!(named["person_data"], listed);
     assert_eq!((p["suggested"].as_u64(), p["maybe"].as_u64()), (Some(1), Some(1)));
     assert!(p["cover"].is_i64());
     assert!(p["group_id"].is_null());
