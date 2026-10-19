@@ -1856,5 +1856,7 @@ creating a group (reply: the person or the group), renaming, deleting or orderin
 groups, "Use as picture", rename, merge and delete of a person (reply: the person) are applied to the list in the
 page too (`takePerson`, `countGroups`, `peopleShown`, `personRemoved`, `peopleMerged`); the list is fetched again
 only when the reply has no person or no picture could be told, and after a regrouping only when the People page is open
-(`people.stale` otherwise). Open: `people::people`, `people::clusters` and
+(`people.stale` otherwise). The Unnamed page asks for its clusters once per naming, when the grouping that
+follows is done (`facesInfo`); a card or the single-faces bar updates itself from the
+reply. Open: `people::people`, `people::clusters` and
 `people::decide` still load every face (`View::load`) under the lock.

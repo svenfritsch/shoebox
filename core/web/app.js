@@ -5378,8 +5378,9 @@ function facesInfo(info) {
   }
   if (busy) watchClusters();
   // Faces grouped anew in the background (after a decision, a recognize run):
-  // the Unnamed page takes the new cards and suggestions.
-  if (before && clustersSignature(before) !== clustersSignature(info) && state.filter.view === 'unnamed') scheduleUnnamedRefresh();
+  // the Unnamed page takes the new cards and suggestions, once when the grouping
+  // is done and not at each step of it (asked for, running, done).
+  if (before && !busy && clustersSignature(before) !== clustersSignature(info) && state.filter.view === 'unnamed') scheduleUnnamedRefresh();
   renderFacesSection();
 }
 
@@ -5429,7 +5430,11 @@ function facesStream() {
 // shows them (`person_data`): they are added (someone new) or replace their
 // entry, so the whole list is not asked for again. Only a reply without them,
 // or a person whose picture the server could not tell, asks for the list.
-function peopleChanged(decided) {
+//
+// `onUnnamed`: the change was made on the Unnamed page, whose card or faces
+// already show it; the page is asked for its clusters once, when the grouping
+// that follows is done (`facesInfo`), not at once as well.
+function peopleChanged(decided, onUnnamed) {
   var d = decided && decided.person_data;
   if (d && (d.cover != null || d.cover_manual != null)) {
     var old = people.byId[d.id];
@@ -5438,14 +5443,14 @@ function peopleChanged(decided) {
     takePerson(d, true);
     peopleShown();
   } else loadPeople();
-  peopleInfoChanged();
+  peopleInfoChanged(onUnnamed);
 }
 
 // What follows from any change to people: the status (how many are named) and
 // the Unnamed page (the names in its suggestions).
-function peopleInfoChanged() {
+function peopleInfoChanged(onUnnamed) {
   loadInfo();
-  if (state.filter.view === 'unnamed') scheduleUnnamedRefresh();
+  if (state.filter.view === 'unnamed' && !onUnnamed) scheduleUnnamedRefresh();
 }
 
 function cropUrl(face) {
@@ -6770,7 +6775,7 @@ function singlesSection() {
       st.count -= ids.length;
       field.input.value = '';
       update();
-      peopleChanged(r);
+      peopleChanged(r, true);
     }).catch(function (e) {
       bar.classList.remove('busy');
       if (e.status === 409) toast(tr('unnamed.regrouped')); else failed(e);
@@ -7091,7 +7096,7 @@ function clusterCard(c) {
         update();
       }
       unnamedSummary();
-      peopleChanged(r);
+      peopleChanged(r, true);
     }).catch(function (e) { card.classList.remove('busy'); stale(e); });
   };
   renderFaces();
