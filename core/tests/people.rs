@@ -1723,10 +1723,16 @@ fn a_pets_species_can_be_corrected() {
 fn same_as_a_fresh_read(addr: std::net::SocketAddr, lib: &Library, after: &str) {
     wait_for_clusters(addr);
     let conn = conn(lib);
-    let fresh = serde_json::to_value(people::people(&conn, true).unwrap()).unwrap();
+    let fresh = as_sent(&people::people(&conn, true).unwrap());
     assert_eq!(get(addr, "/api/people?hidden=1").json(), fresh, "the people after {after}");
-    let fresh = serde_json::to_value(people::clusters(&conn, 0, 50, 8, None, people::Size::All).unwrap()).unwrap();
+    let fresh = as_sent(&people::clusters(&conn, 0, 50, 8, None, people::Size::All).unwrap());
     assert_eq!(get(addr, "/api/clusters").json(), fresh, "the clusters after {after}");
+}
+
+/// As the server sends it: written out and read back (an f32 similarity as
+/// written, not widened to f64).
+fn as_sent(v: &impl serde::Serialize) -> Value {
+    serde_json::from_str(&serde_json::to_string(v).unwrap()).unwrap()
 }
 
 fn listed(addr: std::net::SocketAddr, hidden: bool) -> Vec<Value> {
@@ -1803,6 +1809,9 @@ fn the_kept_people_view_follows_every_change() {
 
     // New photos, recognised by another process: their faces show up, the
     // new one of Anna's as suggested for her.
+    // (The face rejected for Anna is unnamed again.)
+    let unnamed = get(addr, "/api/clusters").json()["unnamed"].as_u64().unwrap();
+    assert_eq!(unnamed, 1);
     plain(&lib, "Anna/a4.png", ANNA, 4);
     plain(&lib, "Carl/c1.png", CARL, 1);
     let shoebox = env!("CARGO_BIN_EXE_shoebox");
@@ -1813,7 +1822,7 @@ fn the_kept_people_view_follows_every_change() {
     run(&["scan"]);
     run(&["recognize", "--recognizer", FAKE]);
     let mut before = lib.snapshot();
-    wait_until("the new faces show", || get(addr, "/api/clusters").json()["unnamed"] == 2);
+    wait_until("the new faces show", || get(addr, "/api/clusters").json()["unnamed"] == unnamed + 2);
     same_as_a_fresh_read(addr, &lib, "a recognize run in another process");
     let suggested = person_faces(addr, anna, "suggested");
     assert_eq!(files_of(&suggested), [id_of(&lib, "Anna/a4.png")]);

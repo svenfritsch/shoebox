@@ -105,6 +105,10 @@ fn where_the_time_goes() {
     println!("  {:46} {:8.1} ms", "naming, all of it", t.elapsed().as_secs_f64() * 1000.0);
     time("  drop a view", || drop(v));
     drop(v2);
+    println!("the backup after a change (App::backup, at most once a minute):");
+    let path = root.join(".shoebox/library.db");
+    time("  library.db.bak", || shoebox::db::backup(&conn, &path).unwrap());
+    time("  userdata.json", || shoebox::tags::write_user_data(&conn, &path).unwrap());
     println!("naming a cluster (/api/clusters/{{id}}/name), as before:");
     let large = people::clusters(&conn, 0, 30, 8, Some(shoebox::pets::Space::Faces), people::Size::Large).unwrap();
     let c = &large.clusters[0];

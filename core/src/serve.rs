@@ -515,6 +515,11 @@ struct App {
     export: Arc<export::Shared>,
 }
 
+/// Page cache of the clustering's connection to `recognition.db`, in KiB
+/// (`PRAGMA cache_size`): the rewritten clusters of 300 000 faces take about
+/// 15 MiB. Only what is used is allocated.
+const CLUSTER_CACHE_KIB: i64 = 64 * 1024;
+
 /// How long `/api/info` may reuse what it counted (thumbnails and faces
 /// found meanwhile show up this late at most).
 const INFO_COUNTS_AGE: Duration = Duration::from_secs(5);
@@ -697,6 +702,11 @@ impl App {
     fn cluster_now(&self) -> Result<()> {
         let conn = db::open_existing(&self.db_path)?;
         recognize::attach(&conn, &self.db_path)?;
+        // The clusters are rewritten in one transaction. With room for all of
+        // it in memory, `recognition.db` is locked against the other requests'
+        // reads only while it commits, not from the first page that no longer
+        // fits SQLite's default cache of 2 MiB on.
+        conn.pragma_update(Some("recog"), "cache_size", -CLUSTER_CACHE_KIB)?;
         if recognize::running(&conn)? || clusters::running(&conn)? {
             return Ok(());
         }
@@ -778,10 +788,12 @@ impl App {
         }
     }
 
-    /// Copy the index to `library.db.bak` and write `userdata.json`.
+    /// Copy the index to `library.db.bak` and write `userdata.json`. On a
+    /// connection of its own: both read the whole index (seconds on a large
+    /// one), and the requests that only read go on meanwhile; changes wait.
     fn backup(&self) -> Result<()> {
         let _writing = self.writing.lock().unwrap();
-        let conn = self.conn.lock().unwrap();
+        let conn = db::open_existing(&self.db_path)?;
         db::backup(&conn, &self.db_path)?;
         own_tags::write_user_data(&conn, &self.db_path)?;
         Ok(())
