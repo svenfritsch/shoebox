@@ -7,7 +7,7 @@ use axum::Json;
 use axum::extract::State;
 use serde::{Deserialize, Serialize};
 
-use super::people_api::people_change;
+use super::people_api::faces_change;
 use super::{ApiError, ApiResult, App, blocking};
 use crate::forget::{self, Forgot};
 use crate::pets::Space;
@@ -41,5 +41,5 @@ pub(super) async fn forget(State(app): State<Arc<App>>, Json(req): Json<ForgetRe
         "pets" => Space::Pets,
         _ => return Err(ApiError::BadRequest("space is faces or pets".into())),
     };
-    people_change(&app, move |conn| forget::forget(conn, space, req.everything)).await.map(Json)
+    faces_change(&app, move |conn| forget::forget(conn, space, req.everything)).await.map(Json)
 }

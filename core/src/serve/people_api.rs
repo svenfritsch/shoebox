@@ -6,6 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
@@ -18,15 +19,55 @@ use crate::faces;
 use crate::people::{self, Action, Who};
 
 /// Run a change to people or decisions, tidy up what it left behind, then
-/// recompute the clusters.
+/// recompute the clusters. It changes nothing but people, groups, pictures
+/// and face decisions (`faces_change` for the detected faces themselves):
+/// the people view (`App::people_view`) reads only those again.
 pub(super) async fn people_change<T: Send + 'static>(
     app: &Arc<App>,
     f: impl FnOnce(&rusqlite::Connection) -> anyhow::Result<T> + Send + 'static,
 ) -> ApiResult<T> {
-    let result = change_with(app, false, move |_, conn| {
-        let done = f(conn)?;
-        tidy(conn);
-        Ok(done)
+    people_change_then(app, move |_, conn| f(conn), |_, _, done| Ok(done)).await
+}
+
+/// `people_change` for a change that also touches the detected faces or
+/// what they are (forgetting them, a pet's species).
+pub(super) async fn faces_change<T: Send + 'static>(
+    app: &Arc<App>,
+    f: impl FnOnce(&rusqlite::Connection) -> anyhow::Result<T> + Send + 'static,
+) -> ApiResult<T> {
+    changed(app, true, move |_, conn| f(conn), |_, _, done| Ok(done)).await
+}
+
+/// `people_change`, then `reply` with what the change returned: it sees the
+/// people view with the change in it (`change` the one from before).
+pub(super) async fn people_change_then<A, T: Send + 'static>(
+    app: &Arc<App>,
+    change: impl FnOnce(&App, &rusqlite::Connection) -> anyhow::Result<A> + Send + 'static,
+    reply: impl FnOnce(&App, &rusqlite::Connection, A) -> anyhow::Result<T> + Send + 'static,
+) -> ApiResult<T> {
+    changed(app, false, change, reply).await
+}
+
+async fn changed<A, T: Send + 'static>(
+    app: &Arc<App>,
+    faces: bool,
+    change: impl FnOnce(&App, &rusqlite::Connection) -> anyhow::Result<A> + Send + 'static,
+    reply: impl FnOnce(&App, &rusqlite::Connection, A) -> anyhow::Result<T> + Send + 'static,
+) -> ApiResult<T> {
+    let result = change_with(app, false, move |app, conn| {
+        let done = change(app, conn);
+        // Whatever it got to write, also when it failed half-way.
+        if faces {
+            app.faces_version.fetch_add(1, Ordering::SeqCst);
+        }
+        let done = done?;
+        match app.people_view() {
+            Ok(v) => {
+                tidy_with(conn, &v);
+            }
+            Err(e) => eprintln!("could not read the faces: {e:#}"),
+        }
+        reply(app, conn, done)
     })
     .await;
     app.request_clusters();
@@ -38,15 +79,32 @@ pub(super) async fn people_change<T: Send + 'static>(
 /// picture of someone who chose a new one included). The change itself is
 /// done by now, so a failure here is only reported.
 pub(super) fn tidy(conn: &rusqlite::Connection) -> (u64, u64) {
-    let covers = people::ensure_covers(conn).unwrap_or_else(|e| {
+    match people::View::load(conn) {
+        Ok(v) => tidy_with(conn, &v),
+        Err(e) => {
+            eprintln!("could not read the faces: {e:#}");
+            (0, 0)
+        }
+    }
+}
+
+/// `tidy` with the faces and decisions of `v` (as they are now). Neither
+/// changes what `v` holds: pictures are in `people`, crops in `thumbs.db`.
+fn tidy_with(conn: &rusqlite::Connection, v: &people::View) -> (u64, u64) {
+    let covers = people::ensure_covers_in(conn, v).unwrap_or_else(|e| {
         eprintln!("could not set people's pictures: {e:#}");
         0
     });
-    let pruned = faces::prune_crops(conn).unwrap_or_else(|e| {
+    let pruned = faces::prune_crops_in(conn, &v.m).unwrap_or_else(|e| {
         eprintln!("could not remove face crops: {e:#}");
         0
     });
     (covers, pruned)
+}
+
+/// A person's reply after a change, from the view that has it.
+fn person_now(app: &App, _: &rusqlite::Connection, id: i64) -> anyhow::Result<people::Person> {
+    app.with_people(|conn, v| people::person_in(conn, v, id))?.ok_or_else(|| anyhow::anyhow!("there is no person {id}"))
 }
 
 // ---------------------------------------------------------------- people
@@ -59,11 +117,11 @@ pub(super) struct PeopleQuery {
 
 pub(super) async fn list(State(app): State<Arc<App>>, Query(q): Query<PeopleQuery>) -> ApiResult<Json<Vec<people::Person>>> {
     let hidden = q.hidden.is_some_and(|h| h != 0);
-    blocking(&app, move |app| Ok(Json(people::people(&app.conn.lock().unwrap(), hidden)?))).await
+    blocking(&app, move |app| Ok(Json(app.people(hidden)?))).await
 }
 
 pub(super) async fn get_person(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Json<people::Person>> {
-    blocking(&app, move |app| people::person(&app.conn.lock().unwrap(), id)?.map(Json).ok_or(ApiError::NotFound)).await
+    blocking(&app, move |app| app.with_people(|conn, v| people::person_in(conn, v, id))?.map(Json).ok_or(ApiError::NotFound)).await
 }
 
 #[derive(Deserialize)]
@@ -73,7 +131,7 @@ pub(super) struct CreatePerson {
 }
 
 pub(super) async fn create(State(app): State<Arc<App>>, Json(req): Json<CreatePerson>) -> ApiResult<Json<people::Person>> {
-    people_change(&app, move |conn| people::create_person(conn, &req.name, req.group_id)).await.map(Json)
+    people_change_then(&app, move |_, conn| people::create_person(conn, &req.name, req.group_id), person_now).await.map(Json)
 }
 
 #[derive(Deserialize)]
@@ -86,7 +144,9 @@ pub(super) async fn rename(
     Path(id): Path<i64>,
     Json(req): Json<NameRequest>,
 ) -> ApiResult<Json<people::Person>> {
-    people_change(&app, move |conn| people::rename_person(conn, id, &req.name)).await.map(Json)
+    people_change_then(&app, move |_, conn| people::rename_person(conn, id, &req.name), move |app, conn, ()| person_now(app, conn, id))
+        .await
+        .map(Json)
 }
 
 #[derive(Deserialize)]
@@ -100,7 +160,10 @@ pub(super) async fn merge(
     Path(id): Path<i64>,
     Json(req): Json<MergeRequest>,
 ) -> ApiResult<Json<people::Person>> {
-    people_change(&app, move |conn| people::merge_people(conn, id, req.into)).await.map(Json)
+    let into = req.into;
+    people_change_then(&app, move |_, conn| people::merge_people(conn, id, into), move |app, conn, ()| person_now(app, conn, into))
+        .await
+        .map(Json)
 }
 
 pub(super) async fn delete(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Json<serde_json::Value>> {
@@ -118,7 +181,9 @@ pub(super) async fn hide(
     Path(id): Path<i64>,
     Json(req): Json<HideRequest>,
 ) -> ApiResult<Json<people::Person>> {
-    people_change(&app, move |conn| people::hide_person(conn, id, req.hidden)).await.map(Json)
+    people_change_then(&app, move |_, conn| people::hide_person(conn, id, req.hidden), move |app, conn, ()| person_now(app, conn, id))
+        .await
+        .map(Json)
 }
 
 #[derive(Deserialize)]
@@ -132,7 +197,9 @@ pub(super) async fn set_group(
     Path(id): Path<i64>,
     Json(req): Json<GroupRequest>,
 ) -> ApiResult<Json<people::Person>> {
-    people_change(&app, move |conn| people::set_group(conn, id, req.group_id)).await.map(Json)
+    people_change_then(&app, move |_, conn| people::set_group(conn, id, req.group_id), move |app, conn, ()| person_now(app, conn, id))
+        .await
+        .map(Json)
 }
 
 /// The picture of a person: one of their confirmed faces, or (`file`) their
@@ -148,11 +215,15 @@ pub(super) async fn set_cover(
     Path(id): Path<i64>,
     Json(req): Json<CoverRequest>,
 ) -> ApiResult<Json<people::Person>> {
-    people_change(&app, move |conn| match (req.face, req.file) {
-        (Some(face), None) => people::set_cover(conn, id, face),
-        (None, Some(file)) => people::set_cover_from_file(conn, id, file),
-        _ => anyhow::bail!("send either a face or a file"),
-    })
+    people_change_then(
+        &app,
+        move |_, conn| match (req.face, req.file) {
+            (Some(face), None) => people::set_cover(conn, id, face),
+            (None, Some(file)) => people::set_cover_from_file(conn, id, file),
+            _ => anyhow::bail!("send either a face or a file"),
+        },
+        move |app, conn, ()| person_now(app, conn, id),
+    )
     .await
     .map(Json)
 }
@@ -174,7 +245,7 @@ pub(super) async fn person_faces(
     let which = q.state.unwrap_or(people::Which::Confirmed);
     let limit = q.limit.unwrap_or(300).min(2000);
     blocking(&app, move |app| {
-        people::person_faces(&app.conn.lock().unwrap(), id, which, q.offset, limit)?.map(Json).ok_or(ApiError::NotFound)
+        app.with_people(|conn, v| people::person_faces_in(conn, v, id, which, q.offset, limit))?.map(Json).ok_or(ApiError::NotFound)
     })
     .await
 }
@@ -216,7 +287,7 @@ pub(super) async fn search(State(app): State<Arc<App>>, Query(pairs): Query<Pair
             }
         }
         let keys = people::keys_by_person(&conn)?;
-        let mut hits: Vec<PersonHit> = people::people(&conn, false)?
+        let mut hits: Vec<PersonHit> = app.people(false)?
             .into_iter()
             .filter(|p| !filter.people.contains(&p.id) && db::tag_fold(&p.name).contains(&needle))
             .map(|p| {
@@ -382,7 +453,7 @@ pub(super) async fn clusters(State(app): State<Arc<App>>, Query(q): Query<Cluste
         Some("small") => people::Size::Small,
         Some(other) => return Err(ApiError::BadRequest(format!("size is large, small or all, not {other:?}"))),
     };
-    blocking(&app, move |app| Ok(Json(people::clusters(&app.conn.lock().unwrap(), q.offset, limit, samples, kind, size)?))).await
+    blocking(&app, move |app| Ok(Json(app.with_people(|_, v| Ok(people::clusters_in(v, q.offset, limit, samples, kind, size)))?))).await
 }
 
 #[derive(Deserialize)]
@@ -395,10 +466,12 @@ pub(super) async fn cluster_faces(
     Path(id): Path<i64>,
     Query(q): Query<GenerationQuery>,
 ) -> ApiResult<Json<Vec<people::FaceItem>>> {
-    blocking(&app, move |app| match people::cluster_faces(&app.conn.lock().unwrap(), id, q.generation) {
-        Ok(faces) => faces.map(Json).ok_or(ApiError::NotFound),
-        Err(e) if e.is::<people::Stale>() => Err(ApiError::Conflict(format!("{e}"))),
-        Err(e) => Err(e.into()),
+    blocking(&app, move |app| {
+        match app.with_people(|_, v| people::cluster_faces_in(v, id, q.generation)) {
+            Ok(faces) => faces.map(Json).ok_or(ApiError::NotFound),
+            Err(e) if e.is::<people::Stale>() => Err(ApiError::Conflict(format!("{e}"))),
+            Err(e) => Err(e.into()),
+        }
     })
     .await
 }
@@ -417,23 +490,30 @@ pub(super) struct ClusterRequest {
 /// A cluster that changed since it was shown is refused (409); the reply
 /// says what is left of the cluster (its new generation, for a split).
 async fn on_cluster(app: Arc<App>, id: i64, req: ClusterRequest, action: fn(Who) -> Action) -> ApiResult<Json<people::Decided>> {
-    let done = people_change(&app, move |conn| {
-        let all = people::cluster_face_ids(conn, id, req.generation, None)?;
-        let faces = people::cluster_face_ids(conn, id, req.generation, req.faces.as_deref())?;
-        let mut done = people::decide(conn, &faces, &action(req.who))?;
-        let left: Vec<i64> = all.into_iter().filter(|f| !faces.contains(f)).collect();
-        done.cluster = Some(if left.is_empty() { None } else { people::cluster_of(conn, &left)? });
-        Ok(done)
-    })
-    .await?;
-    with_person(&app, done).await.map(Json)
+    people_change_then(
+        &app,
+        move |app, conn| {
+            let v = app.people_view()?;
+            let all = people::cluster_face_ids_in(&v, id, req.generation, None)?;
+            let faces = people::cluster_face_ids_in(&v, id, req.generation, req.faces.as_deref())?;
+            let done = people::decide_in(conn, &v, &faces, &action(req.who))?;
+            let left: Vec<i64> = all.into_iter().filter(|f| !faces.contains(f)).collect();
+            Ok((done, left))
+        },
+        |app, conn, (mut done, left)| {
+            done.cluster = Some(if left.is_empty() { None } else { people::cluster_of_in(app.people_view()?.as_ref(), &left) });
+            with_person(conn, done)
+        },
+    )
+    .await
+    .map(Json)
 }
 
 /// The person an action named, as the list shows them, for the reply: the page
 /// adds or updates them without asking for the whole list again.
-async fn with_person(app: &Arc<App>, mut done: people::Decided) -> ApiResult<people::Decided> {
+fn with_person(conn: &rusqlite::Connection, mut done: people::Decided) -> anyhow::Result<people::Decided> {
     if let Some(id) = done.person.as_ref().map(|p| p.id) {
-        done.person_data = blocking(app, move |app| Ok(people::person_light(&app.conn.lock().unwrap(), id)?)).await?;
+        done.person_data = people::person_light(conn, id)?;
     }
     Ok(done)
 }
@@ -489,18 +569,19 @@ pub(super) struct FacesRequest {
 }
 
 async fn on_faces(app: Arc<App>, req: FacesRequest, action: Action) -> ApiResult<Json<people::Decided>> {
-    let done = people_change(&app, move |conn| {
+    people_change_then(&app, move |app, conn| {
+        let v = app.people_view()?;
         if req.open {
-            people::ensure_undecided(conn, &req.faces)?;
+            people::ensure_undecided_in(&v, &req.faces)?;
         }
-        let mut done = people::decide(conn, &req.faces, &action)?;
+        let mut done = people::decide_in(conn, &v, &req.faces, &action)?;
         if matches!(action, Action::Undo) {
             done.faces += people::delete_manual(conn, &req.manual)?;
         }
         Ok(done)
-    })
-    .await?;
-    with_person(&app, done).await.map(Json)
+    }, |_, conn, done| with_person(conn, done))
+    .await
+    .map(Json)
 }
 
 /// Accept what was suggested (or offered as "maybe").
@@ -531,7 +612,7 @@ pub(super) async fn not_face(State(app): State<Arc<App>>, Json(req): Json<FacesR
 /// These pets are a cat, or a dog, whatever the detector took them for.
 pub(super) async fn species(State(app): State<Arc<App>>, Json(req): Json<FacesRequest>) -> ApiResult<Json<serde_json::Value>> {
     let species = req.species.clone().ok_or_else(|| ApiError::BadRequest("species is missing".into()))?;
-    people_change(&app, move |conn| people::set_species(conn, &req.faces, &species))
+    faces_change(&app, move |conn| people::set_species(conn, &req.faces, &species))
         .await
         .map(|n| Json(serde_json::json!({ "faces": n })))
 }
