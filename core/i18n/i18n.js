@@ -73,7 +73,8 @@ var I18n = (function () {
   }
 
   // Static text in the HTML: data-i18n="key" sets the text, and
-  // data-i18n-title / -placeholder / -aria-label set those attributes.
+  // data-i18n-title / -placeholder / -aria-label set those attributes, and
+  // data-i18n-tip sets data-tip (the quick label, see tip.js).
   function apply(root) {
     var ATTRS = ['title', 'placeholder', 'aria-label'];
     Array.prototype.forEach.call((root || document).querySelectorAll('[data-i18n]'), function (e) {
@@ -83,6 +84,9 @@ var I18n = (function () {
       Array.prototype.forEach.call((root || document).querySelectorAll('[data-i18n-' + a + ']'), function (e) {
         e.setAttribute(a, tr(e.getAttribute('data-i18n-' + a)));
       });
+    });
+    Array.prototype.forEach.call((root || document).querySelectorAll('[data-i18n-tip]'), function (e) {
+      e.setAttribute('data-tip', tr(e.getAttribute('data-i18n-tip')));
     });
   }
 

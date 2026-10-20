@@ -164,7 +164,7 @@ function infoGeo(info) {
   var right = el('div', 'geo-right');
   if (pos) {
     var c = el('span', 'coords', fmtCoord(pos.lat, 'N', 'S') + ' · ' + fmtCoord(pos.lon, 'E', 'W'));
-    if (pos.source === 'user') c.title = tr('geo.from_user');
+    if (pos.source === 'user') setTip(c, tr('geo.from_user'));
     right.appendChild(c);
   }
   // Only a position that is not in the file can be given or changed.
@@ -432,7 +432,7 @@ function loadLocations() {
   var side = el('aside', 'geo-side');
   var tab = el('button', 'geo-tab', '‹');
   tab.type = 'button';
-  tab.title = tr('geo.side_show');
+  setTip(tab, tr('geo.side_show'));
   tab.onclick = function () { setSide(true); };
   main.appendChild(tab);
   root.appendChild(main);
@@ -633,7 +633,7 @@ function renderSide() {
   var tool = function (text, label, fn) {
     var b = el('button', 'icon-btn', text);
     b.type = 'button';
-    b.title = label;
+    setTip(b, label);
     b.setAttribute('aria-label', label);
     b.onclick = fn;
     tools.appendChild(b);

@@ -123,7 +123,7 @@ function markCollectionButton() {
   b.innerHTML = on ? COLL_ON : COLL_OFF;
   b.classList.toggle('on', on);
   b.disabled = !info || coll.busy;
-  b.title = tr(on ? 'coll.remove_hint' : 'coll.add_hint', { name: name });
+  setTip(b, tr(on ? 'coll.remove_hint' : 'coll.add_hint', { name: name }));
   b.setAttribute('aria-label', tr(on ? 'coll.remove' : 'coll.add', { name: name }));
   b.setAttribute('aria-pressed', on ? 'true' : 'false');
 }
@@ -153,7 +153,7 @@ $('lb-coll').onclick = toggleCollection;
 function exportChip(box, f) {
   if (!state.exportOk || isAll() || !f.tags.length || f.view) return;
   var b = el('button', 'btn small export-chip', tr('sel.export'));
-  b.title = tr('export.tag_hint');
+  setTip(b, tr('export.tag_hint'));
   b.onclick = function () {
     var ids = state.data && state.data.ids ? Array.prototype.slice.call(state.data.ids) : [];
     var name = f.tags.map(function (id) { return state.tagNames[id] || ''; }).filter(Boolean).join('-');
