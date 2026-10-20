@@ -19,13 +19,15 @@ ctx.setDefaultTimeout(20000);
 
 // The page's time runs on: its timers fire, the fake answers, until three
 // rounds of a second bring no request (but polls of /info, which come every
-// 1.5 s while a grouping runs).
+// 1.5 s while a grouping runs). Each round waits until the page has every reply
+// (`lib.waiting`), not only until the fake has sent it: on a slow machine the
+// page reads a naming's reply later, and the only request that follows is /info.
 async function settle(p, lib) {
   for (let round = 0, calm = 0; calm < 3; round++) {
     check(round < 300, 'the page never stops asking the server');
     const before = lib.log.filter((e) => e.path !== '/info').length;
     await p.clock.runFor(1000);
-    await until('the fake to answer', () => lib.open === 0);
+    await until('the fake to answer', () => lib.open === 0 && lib.waiting() === 0);
     await p.evaluate(() => 0);
     await p.evaluate(() => 0);
     calm = lib.open === 0 && lib.log.filter((e) => e.path !== '/info').length === before ? calm + 1 : 0;
@@ -46,6 +48,12 @@ async function on(hash, setup, run) {
     const lib = fakeLibrary();
     const s = setup(lib);
     const p = keep(await ctx.newPage());
+    // Requests the page sent and has not had the whole reply of yet.
+    let waiting = 0;
+    p.on('request', () => waiting++);
+    p.on('requestfinished', () => waiting--);
+    p.on('requestfailed', () => waiting--);
+    lib.waiting = () => waiting;
     const errors = [];
     p.on('pageerror', (e) => errors.push(e.message));
     await p.route(ORIGIN + '/**', lib.route);
