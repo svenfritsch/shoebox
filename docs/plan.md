@@ -35,7 +35,7 @@ progress. Update the status section when a phase moves.
 | Scale | ~100,000 files, 150 GB today, up to 1 TB |
 | Repo | `core/` (Rust), `recognizer/` (Python), `scripts/`, `docker/`, `docs/` |
 | Dev environment | Docker for Linux builds/tests; native macOS builds with rustup; GitHub Actions for both |
-| CI until v1.0 | macOS only: `test` and `build` side by side with cached dependencies (PRs: arm64; main/tags: universal + Rosetta), skipped for docs-only PRs. Windows and Linux (Linux incl. the real recognizer) are built only by hand, one at a time, with `release-by-hand.yml`, which can add them to a release (phase 17). The guide's screenshots and `.txt` copies are not in git: `guide.yml` makes them on Linux for UI/guide PRs (artifact `guide`) and for releases; the same job runs the photo app's browser tests (`core/tests/browser/run.sh`, Playwright: keyboard use of the grid, viewer, selection bar and dialogs; the Unnamed page, groups and the people list on a library with faces from the fake recognizer); releases ship `shoebox-macos` plus `recognizer/` and that guide (English and German, in the `guide/` folder of the archive) |
+| CI until v1.0 | macOS only: `test` and `build` side by side with cached dependencies (PRs: arm64; main/tags: universal + Rosetta), skipped for docs-only PRs. Windows and Linux (Linux incl. the real recognizer) are built only by hand, one at a time, with `release-by-hand.yml`, which can add them to a release (phase 17). The guide's screenshots and `.txt` copies are not in git: `guide.yml` makes them on Linux for UI/guide PRs (artifact `guide`) and for releases; the same job runs the photo app's browser tests (`core/tests/browser/run.sh`, Playwright: keyboard use of the grid, viewer, selection bar and dialogs; the Unnamed page, groups and the people list, mostly against a fake API; see "Browser tests"); releases ship `shoebox-macos` plus `recognizer/` and that guide (English and German, in the `guide/` folder of the archive) |
 
 ## Architecture
 
@@ -1406,6 +1406,53 @@ Open:
       closes on a tap outside, the button shows what is ticked).
 - [x] Confirm the GitHub Actions run is green (build and guide succeeded on main, 2026-10-13).
 
+## Browser tests
+
+Decided in PR #144 (October 2026); keep to it when the photo app or its API
+changes. Three layers, each checking what the others cannot:
+
+| Layer | Where | What it checks | Runs |
+|---|---|---|---|
+| API | `core/tests/*.rs` (e.g. `people.rs`) | every endpoint's reply for given bodies and parameters, on a real library: the server's side of each contract the page relies on (e.g. a naming reply's `person_data` equals that person's entry in `GET /people`) | `cargo test`, CI `test` |
+| Page, mocked | `core/tests/browser/faces-mocked.mjs` with `fake-api.mjs` | the page's logic: which requests it makes after each action and when, what it shows from a reply (the sidebar's people list), on a fake clock. No shoebox, no build: core/web as it is on disk | ~10 s |
+| Page, real server | `faces-e2e.mjs`, `keyboard.mjs` (`make-faces.py`, `make-library.py`, the fake recognizer) | what needs the real server: that the page and the server agree (the sidebar built from replies is what the server then lists), the grouping after a change, pages that need many endpoints (the viewer, a person's page, the grid) | ~20 s |
+
+`run.sh` runs both browser layers; CI runs it in `guide.yml` (every PR that
+touches `core/web`, `core/i18n`, `core/tests/browser` or the guide).
+
+Why so: `app.js` is one script of globals that starts itself, so there are no
+unit tests of single functions; splitting it into modules only for tests is
+not worth it. A page against a fake API in a real browser is the unit test of
+the page (fast, exact: the clock moves only when the test moves it, so "nothing
+is asked for until the grouping is done" is checked over minutes of page time
+at once, and each step of a grouping comes on cue). Against the real server
+the same checks need real waits (each "nothing more happens" costs a second)
+and depend on how fast the server groups (225 faces take milliseconds), so only
+a few tests run there, enough to catch a fake that no longer matches the
+server. The real server found what a fake could not: every change to people
+asks for a regrouping (so the People page fetches the list once more after
+it), and clusters stop at 100 faces (`clusters::MAX_CLUSTER`, below
+`GROW_STEP`).
+
+Keeping them up to date (agents too):
+
+- A change to what the page asks for or does after an action on the Unnamed
+  page, the people list, groups or people's pictures updates
+  `faces-mocked.mjs`, and, when the page asks for a new endpoint or a reply
+  changes, `fake-api.mjs` (the fake answers 404 to anything it does not know
+  and the test fails, so a new request does not go unnoticed).
+- A change to a reply's shape in `people_api.rs` (or any endpoint the fake
+  answers) updates the Rust API test of that endpoint first, then
+  `fake-api.mjs` to give the same shape.
+- New tests go to the mocked layer unless they need the real server (the list
+  above); `faces-e2e.mjs` stays at a handful. No fixed sleeps: wait on the
+  page, its requests or the server; a time window only to show that something
+  does not happen.
+- Prove a new test can fail: `APP_JS=<changed copy of app.js> core/tests/browser/run.sh`
+  (or `node core/tests/browser/faces-mocked.mjs` alone) runs the pages on
+  that file; change what the test is about and see it fail.
+- UI texts come from the page's `tr`, never written out in a test.
+
 ## Build notes and pitfalls (learned in phases 0–4)
 
 - **Pets are rows of `recog.faces` with a species**, and everything that
@@ -1858,7 +1905,7 @@ page too (`takePerson`, `countGroups`, `peopleShown`, `personRemoved`, `peopleMe
 only when the reply has no person or no picture could be told, and after a regrouping only when the People page is open
 (`people.stale` otherwise). The Unnamed page asks for its clusters once per naming, when the grouping that
 follows is done (`facesInfo`); a card or the single-faces bar updates itself from the
-reply. Open: `people::people`, `people::clusters` and
+reply. Checked by the browser tests (see "Browser tests"). Open: `people::people`, `people::clusters` and
 `people::decide` still load every face (`View::load`) under the lock; every change
 to people (`people_change`), also groups, names and pictures, asks for a
 regrouping, so the People page fetches the list once more when it is done.

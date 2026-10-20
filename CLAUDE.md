@@ -116,6 +116,10 @@ current status and next step. Update its status table when a phase moves.
   the code or the guide.
   Open items before giving it to others: see "Before giving shoebox
   to others" in docs/plan.md.
+- Tests of the photo app come in three layers (API tests in Rust, the page
+  against a fake API, a few against the real server): a change to what the
+  page asks for or a reply's shape updates them as "Browser tests" in
+  docs/plan.md says.
 - UI text is never hard-coded: `tr()`/`trn()`/`data-i18n` with a key in both
   `core/i18n/en.json` and `de.json` (see docs/phase8.md; `core/tests/i18n.rs`
   checks it).
@@ -149,9 +153,11 @@ docker/dev.sh bash -c 'scripts/make-fixtures.sh /target/fixtures && /target/*/re
 # the real recognizer too (after recognizer/fetch-models.sh; the image has OpenCV)
 docker/dev.sh bash -c 'python3 -m unittest -v recognizer/test_recognizer.py'
 docker/dev.sh bash -c 'SHOEBOX_RECOGNIZER=$PWD/recognizer/recognizer.py DEPS_DIR=/target/deps scripts/build.sh "" test'
-# browser tests of the photo app (keyboard use), on the host, Linux or macOS: needs
-# the host's release build (scripts/build.sh), Pillow, Node with Playwright and a Chromium
+# browser tests of the photo app, on the host, Linux or macOS: needs the host's
+# release build (scripts/build.sh), Pillow, Node with Playwright and a Chromium
 core/tests/browser/run.sh
+# only the Unnamed page and people list against a fake API (no build needed)
+NODE_PATH=$(npm root -g) node core/tests/browser/faces-mocked.mjs
 
 # macOS (Homebrew rustup is keg-only)
 export PATH=/opt/homebrew/opt/rustup/bin:$PATH

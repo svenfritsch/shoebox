@@ -1,17 +1,18 @@
 #!/bin/sh
-# Browser tests of the photo app (core/web): drawn libraries in a temporary
-# folder, scanned and served on localhost, driven by Playwright. Safe to run
-# anywhere: it touches nothing but its own temporary folder.
+# Browser tests of the photo app (core/web), driven by Playwright. Safe to run
+# anywhere: they touch nothing but their own temporary folder.
 #
 #   core/tests/browser/run.sh [path-to-shoebox]
 #
-# keyboard.mjs runs on a library of plain photos (make-library.py);
-# unnamed.mjs and people.mjs (the Unnamed page, groups and the people list) on
-# one with faces (make-faces.py), found by the fake recognizer that is built
-# next to shoebox (FAKE=path to use another one). ONLY=text runs only those
-# tests of unnamed.mjs and people.mjs whose name has the text in it;
-# APP_JS=file has their pages run that app.js instead of the one built into
-# shoebox.
+# faces-mocked.mjs (the Unnamed page, groups and the people list) needs no
+# server: a fake API in the test (fake-api.mjs) and a fake clock. The others
+# run on drawn libraries, scanned and served on localhost: keyboard.mjs on
+# plain photos (make-library.py), faces-e2e.mjs on faces (make-faces.py) that
+# the fake recognizer finds, which is built next to shoebox (FAKE=path to use
+# another one). Which test goes where: "Browser tests" in docs/plan.md.
+# ONLY=text runs only those face tests whose name has the text in it;
+# APP_JS=file has their pages run that app.js instead of core/web's (mocked)
+# or the one built into shoebox (e2e).
 #
 # Needs a built shoebox binary (default: the host's release build), Python
 # with Pillow, and Node with Playwright and a Chromium (CHROME=path to use
@@ -25,6 +26,9 @@ FAKE=${FAKE:-$(dirname "$BIN")/shoebox-fake-recognizer}
 [ -x "$FAKE" ] || { echo "no fake recognizer at $FAKE (scripts/build.sh builds it next to shoebox)" >&2; exit 1; }
 PORT=${PORT:-7950}
 export NODE_PATH=${NODE_PATH:-$(npm root -g)}
+
+failed=0
+node "$HERE/faces-mocked.mjs" || failed=1
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/shoebox-browser.XXXXXX")
 pids=
@@ -60,9 +64,6 @@ python3 "$HERE/make-faces.py" "$WORK/Faces"
 serve "$WORK/Photos" "$PORT"
 serve "$WORK/Faces" $((PORT + 1))
 
-failed=0
 node "$HERE/keyboard.mjs" "http://localhost:$PORT/" || failed=1
-for t in unnamed people; do
-    node "$HERE/$t.mjs" "http://localhost:$((PORT + 1))/" || failed=1
-done
+node "$HERE/faces-e2e.mjs" "http://localhost:$((PORT + 1))/" || failed=1
 exit $failed

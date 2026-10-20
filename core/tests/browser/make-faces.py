@@ -1,22 +1,15 @@
 #!/usr/bin/env python3
-"""A library with faces for the browser tests of the Unnamed page and the
-people list (unnamed.mjs, people.mjs). Plain PNG pictures that the fake recognizer
+"""A library with faces for the browser tests against the real server
+(faces-e2e.mjs). Plain PNG pictures that the fake recognizer
 (core/src/bin/shoebox-fake-recognizer.rs) turns into faces: one face in the
-middle of each picture, the person given by the picture's colour, and with a
-white top and a grey bottom a face of that person with a chosen similarity.
+middle of each picture, the person given by the picture's colour.
 
     make-faces.py <folder>
 
-What `shoebox recognize` with the fake makes of it (each folder one cluster
-of one person, nobody alike enough to anybody else to be suggested):
-
-    c01 ... c18   clusters of 3 to 6 faces, one person each
-    look          3 faces of one person
-    lookalike     3 faces 0.575 like `look` (one face, three files): a card of
-                  its own, suggested for whoever `look` is named as
-    singles       10 faces of nobody in particular (clusters of one)
-    big           100 faces of one person: the largest card there can be
-                  (`clusters::MAX_CLUSTER`; one more and it is split)
+What `shoebox recognize` with the fake makes of it: six folders `c01` ...
+`c06`, each one cluster of 3 to 6 faces of one person, nobody alike enough to
+anybody else to be suggested. The mocked tests (faces-mocked.mjs) need no
+library.
 
 Needs Pillow.
 """
@@ -51,8 +44,7 @@ def colour(k):
     raise ValueError(k)
 
 
-KS = list(range(2, 23))  # 18 clusters, then look, the singles' person and big
-LOOK, SINGLES, BIG = KS[18:]
+KS = list(range(2, 8))  # one person per folder
 for a, b in itertools.combinations(KS, 2):
     assert abs(sum(x * y for x, y in zip(emb(a), emb(b)))) < 0.25, (a, b)
 assert len({colour(k) for k in KS}) == len(KS)
@@ -70,30 +62,6 @@ def save(folder, im):
     im.save(os.path.join(path, f"IMG_{n:04d}.png"))
 
 
-def plain(folder, k):
-    """A face of person k, 100 px wide."""
-    save(folder, Image.new("RGB", (200, 120), colour(k)))
-
-
-def variant(folder, k, grey):
-    """A face of person k, round(40 grey / 255) / 40 alike (the fake's white-top cue)."""
-    im = Image.new("RGB", (200, 200), (255, 255, 255))
-    im.paste(colour(k), (0, 50, 200, 150))
-    im.paste((grey, grey, grey), (0, 150, 200, 200))
-    save(folder, im)
-
-
-for c, k in enumerate(KS[:18]):
+for c, k in enumerate(KS):
     for _ in range(3 + c % 4):
-        plain(f"c{c + 1:02d}", k)
-for _ in range(3):
-    plain("look", LOOK)
-for _ in range(3):
-    variant("lookalike", LOOK, 147)
-# Ten greys from 0.15 to 0.375 like the person SINGLES (whom no plain picture
-# shows): at most about 0.25 alike to each other, so each face is a cluster of
-# its own.
-for steps in range(6, 16):
-    variant("singles", SINGLES, round(steps * 255 / 40))
-for _ in range(100):
-    plain("big", BIG)
+        save(f"c{c + 1:02d}", Image.new("RGB", (200, 120), colour(k)))  # a face 100 px wide
