@@ -427,7 +427,7 @@
         </li>
         <li>
           <h3>Status</h3>
-          <p>Scan-, Vorschau- und Laufwerksstatus unten in der Seitenleiste.</p>
+          <p>Scan-, Vorschau- und Laufwerksstatus unten in der Seitenleiste; er bleibt sichtbar, wenn die Seitenleiste scrollt.</p>
         </li>
       </ol>
       <div class="panel">
@@ -442,7 +442,7 @@
       <div class="topic has-shots">
         <div class="txt">
           <h3>Wo du bist</h3>
-          <p>Die obere Leiste nennt, wo du bist. Neben dem Laufwerksnamen zeigt sie auf der Zeitleiste den Monat, den du gerade ansiehst (das Menü <b>Jahr</b> springt zu einem Jahr), und auf jeder anderen Seite (Duplikate, Papierkorb, Einstellungen, Gesichter, …) den Namen dieser Seite.</p>
+          <p>Die obere Leiste nennt, wo du bist. Neben dem Laufwerksnamen zeigt sie auf der Zeitleiste den Monat, den du gerade ansiehst (das Menü <b>Jahr</b> springt zu einem Jahr), und auf jeder anderen Seite (Duplikate, Papierkorb, Einstellungen, Gesichter, Unbenannt, …) den Namen dieser Seite.</p>
         </div>
         <div class="shots">
           <figure>
@@ -989,13 +989,22 @@
           <div class="topic has-shots">
             <div class="txt">
               <h3>Eine Karte benennen</h3>
-              <p>Den Namen einmal eintippen und <b>Benennen</b> drücken: Die ganze Karte ist benannt. Ein Klick ins Feld zeigt zuerst die zuletzt benannten Personen (<b>Zuletzt verwendet</b>) und die mit den meisten Fotos, dann alle nach Gruppe; beim Tippen erscheinen Personen, die es schon gibt (bei Tieren nur Katzen und Hunde, und umgekehrt); sonst <b>+ Neue Person</b> wählen (bei Tieren steht dort <b>+ Neue Katze</b>, <b>+ Neuer Hund</b> oder <b>+ Neues Tier</b>). Danach schlägt shoebox weitere Gesichter vor (<i>Sieht aus wie Mia</i>): mit ✓ bestätigen oder mit ✗ ablehnen.</p>
+              <p>Den Namen einmal eintippen und <b>Benennen</b> drücken: Die ganze Karte ist benannt. Ein Klick ins Feld zeigt zuerst die zuletzt benannten Personen (<b>Zuletzt verwendet</b>) und die mit den meisten Fotos, dann alle nach Gruppe; beim Tippen erscheinen Personen, die es schon gibt (bei Tieren nur Katzen und Hunde, und umgekehrt); sonst <b>+ Neue Person</b> wählen (bei Tieren steht dort <b>+ Neue Katze</b>, <b>+ Neuer Hund</b> oder <b>+ Neues Tier</b>). Mit der nächsten Neugruppierung (siehe unten) schlägt shoebox weitere Gesichter vor (<i>Sieht aus wie Mia</i>): mit ✓ bestätigen oder mit ✗ ablehnen.</p>
             </div>
             <div class="shots">
               <figure>
                 <img src="assets/de/name-suggestions.jpg" alt="" loading="lazy">
                 <figcaption>Gesichter benennen: zuerst die zuletzt Benannten, dann die mit den meisten Fotos, dann alle nach Gruppe. Die Liste öffnet sich nach oben über der Seite.</figcaption>
               </figure>
+            </div>
+          </div>
+        </li>
+        <li>
+          <div class="topic two">
+            <div class="txt">
+              <h3>Wann neue Vorschläge kommen</h3>
+              <p>Beim Benennen wartest du nie: Eine Karte, die du benennst, ignorierst oder als kein Gesicht markierst, verschwindet sofort, und du kannst gleich mit der nächsten weitermachen. Neue Karten und Vorschläge auszurechnen dauert bei einer großen Sammlung eine Weile (Minuten bei 100.000 Fotos), deshalb tut shoebox das, wenn es sich lohnt, nicht nach jeder Karte: nach <b>10 Karten</b> oder <b>30 Sekunden</b> nach deiner letzten Entscheidung. Jede Entscheidung startet die 30 Sekunden neu. Nach wenigen Sekunden kommt es außerdem, wenn du die Seite Unbenannt verlässt, eine Entscheidung von vor der letzten Neugruppierung rückgängig machst, ein „nicht diese Person“ zurücknimmst, zwei Personen zusammenführst, oder wenn keine Karte mit Vorschlag (oder gar keine Karte) mehr übrig ist.</p>
+              <p>Solange Entscheidungen warten, steht oben rechts auf der Seite, auf Höhe des Titels, wann es so weit ist: <i>Neue Vorschläge nach 7 weiteren Karten oder in 23 s</i>. Die Zahl der Karten sinkt mit jeder Karte, die du benennst. Der kleine Kreis links daneben ist zuerst voll und leert sich über die 30 Sekunden; jede Entscheidung füllt ihn wieder. Während shoebox die Gesichter neu ordnet, steht dort <i>Neue Vorschläge werden gesucht…</i>, und derselbe Kreis füllt sich mit dem Fortschritt. Du kannst währenddessen weiter benennen; diese Karten zählen für die nächste Runde. Wenn es fertig ist, verschwindet die Zeile und die Karten werden einmal aktualisiert. Scrollst du durch die Karten nach unten, bleibt die Zeile in einem kleinen Kasten oben stehen. Drücken musst du nichts. Ist in deinem System „Bewegung reduzieren“ eingeschaltet, springt der Kreis einmal pro Sekunde weiter, statt sich gleichmäßig zu bewegen.</p>
             </div>
           </div>
         </li>

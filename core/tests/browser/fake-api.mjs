@@ -7,11 +7,14 @@
 // (faces-e2e.mjs). When the page or the server changes what is asked or
 // answered, change the model here too (see "Browser tests" in docs/plan.md).
 //
-// Like the server, every change to people asks for a regrouping: the status
-// says `stale` from then on, until the test says how far the grouping is
-// (`lib.step = 'running'`) or that it is done (`lib.grouped()`). The event
-// stream is refused (204), so the page follows the grouping by asking for the
-// status every 1.5 s (`watchClusters`), on the page's fake clock.
+// Like the server (`serve/regroup.rs`), a decision waits for the next
+// regrouping: the status says `pending`, with the cards left before it starts
+// (10 at first) and the time (30 s; `lib.waitMs` sets what the next status
+// says). A merge or a deletion waits only a few seconds; names and groups ask
+// for none. The test says when it starts (`lib.step = 'stale'` or `'running'`,
+// with `lib.progress` = [done, total]) and that it is done (`lib.grouped()`).
+// The event stream is refused (204), so the page follows the grouping by
+// asking for the status every 1.5 s (`watchClusters`), on the page's fake clock.
 //
 // A request the model does not know is answered 404 and kept in `lib.unknown`;
 // the test fails on it.
@@ -31,7 +34,11 @@ export function fakeLibrary() {
   let faceSeq = 0, clusterSeq = 0, personSeq = 0, groupSeq = 0, time = 1_800_000_000;
   const lib = {
     clusters: [], people: [], groups: [],
-    step: null, // null (grouped), 'stale' (asked for) or 'running'
+    step: null, // null (grouped), 'stale' (starting) or 'running'
+    progress: [0, 0], // done, total while running
+    pending: false, // decisions wait for the next regrouping
+    cards: 0, // cards named since the last one started
+    waitMs: 30000, // what the status says is left of the pause
     finished: time,
     log: [], // { method, path, query } relative to LIB
     unknown: [],
@@ -66,9 +73,12 @@ export function fakeLibrary() {
     return g;
   };
   // The grouping that followed the last change is done.
-  lib.grouped = () => { lib.step = null; lib.finished = ++time; };
+  lib.grouped = () => { lib.step = null; lib.finished = ++time; lib.counted = null; };
+  // The regrouping starts (what was decided until now goes into it).
+  lib.start = (step = 'running') => { lib.step = step; lib.pending = false; lib.cards = 0; };
   // What the sidebar should show (`sidebarIs` in faces-common.mjs).
-  lib.lists = () => ({ groups: groupsOut(), people: peopleOut(), clusters: lib.clusters.length });
+  // (The number of clusters is the last grouping's, as `/api/info` says.)
+  lib.lists = () => ({ groups: groupsOut(), people: peopleOut(), clusters: (lib.counted || counts()).clusters });
 
   // ---- what the server says
 
@@ -84,25 +94,30 @@ export function fakeLibrary() {
   const small = () => lib.clusters.filter((c) => c.faces.length <= 2);
   const count = (cs) => cs.reduce((n, c) => n + c.faces.length, 0);
   const clusterOut = (c, samples) => ({ id: c.id, generation: c.generation, size: c.faces.length, faces: c.faces.slice(0, samples), suggestion: c.suggestion });
+  // What the cache of the last grouping counts (the server's `clusters::overview`).
+  const counts = () => ({ clusters: lib.clusters.length, unnamed: count(lib.clusters), suggested: lib.clusters.filter((c) => c.suggestion).length });
   const info = () => ({
     name: 'Faces', version: '0.0.1', photos: 200, videos: 0, missing: 0, thumbs_done: 200, thumbs_total: 200, video_posters: true,
     jobs: [{ kind: 'scan', state: 'done', started_at: 1, updated_at: 1, finished_at: 1, done: 200, total: 200 }],
     busy: false, index_version: '1.0', trash: 0, needs_date: 0,
     faces: { done: 200, total: 200, faces: 200, pets_done: 0, pets: 0, running: false },
     clusters: {
-      running: lib.step === 'running', done: 0, total: 0, state: lib.step === 'running' ? 'running' : 'done', finished_at: lib.finished,
-      clusters: lib.clusters.length, unnamed: count(lib.clusters), suggested: lib.clusters.filter((c) => c.suggestion).length,
-      people: lib.people.length, stale: lib.step === 'stale', embedding: false,
+      running: lib.step === 'running', done: lib.step === 'running' ? lib.progress[0] : 0, total: lib.step === 'running' ? lib.progress[1] : 0,
+      state: lib.step === 'running' ? 'running' : 'done', finished_at: lib.finished,
+      ...(lib.counted || counts()), people: lib.people.length, stale: lib.step === 'stale', embedding: false,
+      pending: lib.pending, cards_left: lib.pending ? Math.max(0, 10 - lib.cards) : 0, wait_ms: lib.pending ? lib.waitMs : 0, pause_ms: lib.pending ? 30000 : 0,
     },
     text: { done: 0, total: 200, lines: 0 }, reveal: 'Open folder', export: true, read_only: false,
   });
 
   // ---- changes, as the server makes them
 
-  // Groups nobody is in any more are gone; every change asks for a regrouping.
-  const changed = () => {
+  // Groups nobody is in any more are gone. A card waits for the next
+  // regrouping (10 cards, 30 s), a merge or deletion only a few seconds.
+  const changed = (regroup) => {
     lib.groups = lib.groups.filter((g) => members(g) > 0);
-    lib.step = 'stale';
+    if (regroup === 'card') { lib.pending = true; lib.cards++; lib.waitMs = 30000; }
+    if (regroup === 'soon') { lib.pending = true; lib.waitMs = Math.min(lib.pending ? lib.waitMs : 3000, 3000); }
   };
   const byId = (id) => lib.people.find((p) => p.id === Number(id));
   const who = (body) => {
@@ -118,13 +133,15 @@ export function fakeLibrary() {
   const decide = (ids, body) => {
     const p = who(body);
     if (!p) return [400, { error: 'there is no such person' }];
+    // The cache stays as it was until the next grouping.
+    if (!lib.counted) lib.counted = counts();
     for (const c of lib.clusters) c.faces = c.faces.filter((f) => !ids.includes(f.id));
     lib.clusters = lib.clusters.filter((c) => c.faces.length);
     p.faces += ids.length;
     p.photos += ids.length;
     if (p.cover == null) p.cover = ids[0];
     p.last_named = ++time;
-    changed();
+    changed('card');
     return [200, { faces: ids.length, person: { id: p.id, name: p.name }, person_data: { ...p, suggested: 0, maybe: 0 } }];
   };
 
@@ -159,6 +176,8 @@ export function fakeLibrary() {
       return [200, { ...reply, cluster: left ? { id: left.id, generation: left.generation, size: left.faces.length } : null }];
     }],
     [/^\/faces\/assign$/, (m, body) => decide(body.faces, body)],
+    // The Unnamed page was left: what waits is regrouped soon.
+    [/^\/clusters\/left$/, () => { if (lib.pending) changed('soon'); return [200, {}]; }],
     [/^\/people$/, (m, body) => {
       const p = who({ name: body.name });
       if (body.group_id != null) p.group_id = body.group_id;
@@ -173,14 +192,14 @@ export function fakeLibrary() {
       into.photos += from.photos;
       if (into.group_id == null) into.group_id = from.group_id;
       lib.people = lib.people.filter((p) => p !== from);
-      changed();
+      changed('soon');
       return [200, { ...into }];
     }],
     [/^\/people\/(\d+)\/delete$/, (m) => {
       const p = byId(m[1]);
       if (p.faces) return [400, { error: 'only someone without faces can be deleted' }];
       lib.people = lib.people.filter((x) => x !== p);
-      changed();
+      changed('soon');
       return [200, { deleted: p.id }];
     }],
     [/^\/groups$/, (m, body) => {

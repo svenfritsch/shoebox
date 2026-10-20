@@ -40,7 +40,7 @@ async function api(path, body) {
 const grouped = () => until('the grouping to finish', async () => {
   const info = await api('/info');
   const c = info.clusters;
-  return !info.busy && !c.stale && !c.running && !c.embedding && c;
+  return !info.busy && !c.pending && !c.stale && !c.running && !c.embedding && c;
 });
 
 // The cluster of `folder` (each folder of make-faces.py is one), its faces as
@@ -203,6 +203,19 @@ await test('a card named on the real server: no list request, the sidebar is wha
   check(reply.person_data && reply.person_data.name === 'Nora Server', 'the reply carries the person (person_data)');
   await card(p, c.faces[0].id).waitFor({ state: 'detached' });
   await sidebarIs(p, await server(), 'after the grouping');
+}));
+
+// run.sh serves with SHOEBOX_REGROUP=2,1500,300: two cards or 1.5 s.
+await test('the next grouping on the real server: the line after a name, then finding, gone once grouped; no button', on('view=unnamed', null, async (p, t) => {
+  const c = await clusterOf('c07');
+  await nameCard(p, c.faces[0].id, 'Lina Line');
+  const text = await until('the line', () => p.evaluate(() => { const l = document.getElementById('un-next'); return l && !l.hidden && l.querySelector('.text').textContent; }));
+  const expected = await p.evaluate(() => [0, 1, 2].map((s) => trn('unnamed.next', 1, { s })));
+  check(expected.includes(text) || text === await tr(p, 'unnamed.regrouping'), `after the name the line says "${text}"`);
+  check(!(await p.locator('#un-next button').count()), 'the line has no button');
+  await grouped();
+  await until('the line to go', () => p.evaluate(() => document.getElementById('un-next').hidden));
+  await card(p, c.faces[0].id).waitFor({ state: 'detached' });
 }));
 
 // The viewer has no card that shows the change: the page asks for its

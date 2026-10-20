@@ -25,6 +25,8 @@ BIN=${1:-$(cd "$HERE/../../.." && pwd)/core/target/$(rustc -vV | sed -n 's/^host
 FAKE=${FAKE:-$(dirname "$BIN")/shoebox-fake-recognizer}
 [ -x "$FAKE" ] || { echo "no fake recognizer at $FAKE (scripts/build.sh builds it next to shoebox)" >&2; exit 1; }
 PORT=${PORT:-7950}
+# Regroup after two cards or 1.5 s (the app's own rules are 10 cards or 30 s).
+export SHOEBOX_REGROUP=${SHOEBOX_REGROUP:-2,1500,300}
 export NODE_PATH=${NODE_PATH:-$(npm root -g)}
 
 failed=0

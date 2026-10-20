@@ -129,3 +129,31 @@ fn where_the_time_goes() {
     time("  prune_crops", || shoebox::faces::prune_crops(&conn).unwrap());
     println!("  {:46} {:8.1} ms", "all of it", t.elapsed().as_secs_f64() * 1000.0);
 }
+
+/// Where a regrouping's time goes, phase by phase (`clusters::compute`), on
+/// the same library:
+///
+///     SHOEBOX_CLUSTER_TIMES=1 SHOEBOX_BENCH_LIBRARY=<dir>/work cargo test --release --test people_bench regrouping_phases -- --ignored --nocapture
+///
+/// `ann::with_threads` as the photo app runs it (one core left free) with
+/// `SHOEBOX_BENCH_THREADS=<n>`.
+#[test]
+#[ignore]
+fn regrouping_phases() {
+    let Some(root) = library() else { return };
+    let conn = conn(&root);
+    let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let threads = std::env::var("SHOEBOX_BENCH_THREADS").ok().and_then(|t| t.parse().ok()).unwrap_or(cores);
+    for run in 1..=2 {
+        let t = Instant::now();
+        let s = shoebox::ann::with_threads(threads, || shoebox::clusters::run(&conn, &|| false, &mut |_, _| {}).unwrap());
+        println!(
+            "run {run} on {threads} threads: {:.1} s, {} faces, {} without a decision in {} clusters, {} suggested",
+            t.elapsed().as_secs_f64(),
+            s.faces,
+            s.unnamed,
+            s.clusters,
+            s.suggested
+        );
+    }
+}

@@ -279,7 +279,7 @@ function withFilter(changes) {
 function showView(view, id, tab) { setFilter({ view: view, id: id, tab: tab, folder: null, tags: [], people: [], q: '' }); }
 
 // The hash the page is showing; navigating away from a selection asks first.
-var shownHash = location.hash, revertingHash = false;
+var shownHash = location.hash, revertingHash = false, shownView = null;
 
 function applyFilter() {
   if (revertingHash) { revertingHash = false; return; }
@@ -307,6 +307,8 @@ function applyFilter() {
   markActiveFolder();
   closeSidebarOnPhone();
   var view = state.filter.view;
+  if (shownView === 'unnamed' && view !== 'unnamed') leftUnnamed();
+  shownView = view;
   $('page').hidden = !view;
   $('sizer').hidden = !!view;
   $('current-month').textContent = view && VIEW_LABELS[view] ? tr(VIEW_LABELS[view]) : '';
@@ -1380,7 +1382,7 @@ function render() {
 // The page that is open, shown next to the drive name instead of a month.
 var VIEW_LABELS = {
   duplicates: 'side.duplicates', trash: 'side.trash', settings: 'side.settings', drives: 'side.manage_drives',
-  faces: 'side.faces', pets: 'side.faces', people: 'side.faces', unnamed: 'side.faces', person: 'side.faces',
+  faces: 'side.faces', pets: 'side.faces', people: 'side.faces', unnamed: 'people.unnamed', person: 'side.faces',
   locations: 'side.locations', text: 'side.text_check',
 };
 
@@ -2412,8 +2414,6 @@ function fetchInfo() {
     state.textLines = info.text ? info.text.lines : 0;
     if (info.text && info.text.done && info.text.done < info.text.total) parts.push(tr('status.text_todo', { count: trn('count.photos', info.text.total - info.text.done) }));
     if (c.embedding) parts.push(tr('status.learning'));
-    if (c.running && c.total) parts.push(tr('status.grouping_pct', { pct: Math.floor(100 * c.done / Math.max(c.total, 1)) }));
-    else if (c.running || c.stale) parts.push(tr('status.grouping'));
     facesInfo(info);
     facesStream();
     $('status').textContent = parts.join(' · ');
@@ -5455,6 +5455,7 @@ function facesInfo(info) {
     if (state.filter.view === 'person') loadPersonCounts();
   }
   if (busy) watchClusters();
+  regroupLine(info);
   // Faces grouped anew in the background (after a decision, a recognize run):
   // the Unnamed page takes the new cards and suggestions, once when the grouping
   // is done and not at each step of it (asked for, running, done).
@@ -5462,9 +5463,11 @@ function facesInfo(info) {
   renderFacesSection();
 }
 
+// What a grouping changes. Not the people named: names wait for the next
+// grouping (`pending`) and the cards that took them already show them.
 function clustersSignature(info) {
   var c = info.clusters;
-  return [c.unnamed, c.clusters, c.suggested, c.people, c.finished_at, c.stale, c.running, c.embedding].join(',');
+  return [c.unnamed, c.clusters, c.suggested, c.finished_at, c.stale, c.running, c.embedding].join(',');
 }
 
 // While the clusters are being recomputed the server says when something
@@ -6648,6 +6651,7 @@ function faceSizeControl(page) {
 function loadUnnamed() {
   var page = $('page');
   clearNode(page);
+  page.appendChild(regroupElements());
   page.appendChild(el('h2', '', tr('people.unnamed')));
   var sub = el('p', 'sub', tr('dups.looking'));
   sub.id = 'un-sub';
@@ -6681,7 +6685,121 @@ function loadUnnamed() {
   un.box = box;
   un.more = more;
   un.singles = singles;
+  regroup.said = '';
+  drawRegroup();
   return Promise.all([moreClusters(box, more), singles.load()]);
+}
+
+// When the next regrouping brings new suggestions (the server's rules,
+// `/api/info` `clusters`: `pending`, `cards_left`, `wait_ms` and `pause_ms`
+// while decisions wait; `stale` or `running` with `done` of `total` while it
+// runs). A line at the top right of the Unnamed page, level with the title,
+// that stays at the top in a box while the cards scroll. Its circle empties
+// over the pause and fills again with each decision; while the regrouping runs
+// it fills with the progress. The seconds are counted down here from
+// `wait_ms`; the server tells of every change (`facesStream`). Screen readers
+// hear the line only when the number of cards changes and when the regrouping
+// starts and ends (`#un-live`), not every second.
+var regroup = { c: null, at: 0, timer: null, said: '', floatOn: false };
+
+function regroupElements() {
+  var frag = document.createDocumentFragment();
+  var line = el('div', 'regroup');
+  line.id = 'un-next';
+  line.hidden = true;
+  var tick = el('span', 'tick');
+  tick.setAttribute('aria-hidden', 'true');
+  line.appendChild(tick);
+  line.appendChild(el('span', 'text'));
+  frag.appendChild(line);
+  var live = el('span', 'sr-only');
+  live.id = 'un-live';
+  live.setAttribute('aria-live', 'polite');
+  frag.appendChild(live);
+  if (!regroup.floatOn) {
+    regroup.floatOn = true;
+    $('scroller').addEventListener('scroll', regroupFloat, { passive: true });
+  }
+  return frag;
+}
+
+// In a box once the page has scrolled under it.
+function regroupFloat() {
+  var line = $('un-next');
+  if (line) line.classList.toggle('floating', $('scroller').scrollTop > 8);
+}
+
+function regroupLine(info) {
+  regroup.c = info.clusters;
+  regroup.at = Date.now();
+  drawRegroup();
+}
+
+function reducedMotion() {
+  return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+
+// The circle at `deg`, reached in `ms` (0: at once, also when it fills up
+// again after a decision).
+function setTick(tick, deg, ms) {
+  tick.style.transitionDuration = ms + 'ms';
+  if (!ms) tick.classList.add('jump');
+  tick.style.setProperty('--regroup-deg', deg.toFixed(1) + 'deg');
+  if (!ms) {
+    void tick.offsetWidth;
+    tick.classList.remove('jump');
+  }
+}
+
+function drawRegroup() {
+  clearTimeout(regroup.timer);
+  regroup.timer = null;
+  var line = $('un-next'), live = $('un-live');
+  if (!line || state.filter.view !== 'unnamed') return;
+  var c = regroup.c;
+  var mode = !c ? null : c.running || c.stale ? 'running' : c.pending ? 'waiting' : null;
+  var tick = line.firstChild, text = line.lastChild, say = regroup.said;
+  line.hidden = !mode;
+  if (mode === 'running') {
+    var part = c.running && c.total ? Math.min(1, c.done / c.total) : 0;
+    setTick(tick, 360 * part, line.dataset.mode === 'running' && !reducedMotion() ? 1000 : 0);
+    text.textContent = tr('unnamed.regrouping');
+    say = tr('unnamed.regrouping');
+  } else if (mode === 'waiting') {
+    var left = Math.max(0, c.wait_ms - (Date.now() - regroup.at));
+    var pause = Math.max(c.pause_ms || 0, left, 1);
+    var secs = Math.ceil(left / 1000);
+    text.textContent = c.cards_left > 0 ? trn('unnamed.next', c.cards_left, { s: secs }) : tr('unnamed.next_soon', { s: secs });
+    // Smoothly to where it will be at the next second (with reduced motion
+    // it steps once a second); filled up again at once.
+    var next = left % 1000 || 1000;
+    var smooth = !reducedMotion() && left > 0;
+    var deg = 360 * Math.max(0, left - (smooth ? next : 0)) / pause;
+    var before = parseFloat(tick.style.getPropertyValue('--regroup-deg')) || 0;
+    var refill = line.dataset.mode !== 'waiting' || 360 * left / pause > before + 1;
+    if (refill && smooth) setTick(tick, 360 * left / pause, 0);
+    setTick(tick, deg, smooth ? next : 0);
+    if (refill && !smooth) setTick(tick, deg, 0);
+    say = c.cards_left > 0 ? trn('unnamed.next_cards', c.cards_left) : '';
+    if (left > 0) regroup.timer = setTimeout(drawRegroup, next);
+  } else if (line.dataset.mode === 'running') {
+    say = tr('unnamed.regrouped_done');
+  }
+  line.dataset.mode = mode || '';
+  if (live && say !== regroup.said) {
+    regroup.said = say;
+    live.textContent = say;
+  }
+}
+
+// Leaving the Unnamed page: decisions that wait are regrouped soon (the
+// server decides; nothing if none wait).
+function leftUnnamed() {
+  clearTimeout(regroup.timer);
+  regroup.timer = null;
+  var c = people.info && people.info.clusters;
+  if (!c || !c.pending) return;
+  post(LIBAPI + '/clusters/left').then(loadInfo).catch(function () {});
 }
 
 // Bring the Unnamed page up to date in place: the cards and single faces shown

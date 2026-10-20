@@ -62,7 +62,7 @@ fn wait_for_clusters(addr: std::net::SocketAddr) {
     let started = std::time::Instant::now();
     loop {
         let c = get(addr, "/api/info").json()["clusters"].clone();
-        if c["stale"] == false && c["running"] == false {
+        if c["stale"] == false && c["running"] == false && c["pending"] == false {
             return;
         }
         assert!(started.elapsed() < std::time::Duration::from_secs(20), "clustering did not finish: {c}");

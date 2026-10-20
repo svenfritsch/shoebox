@@ -6,8 +6,8 @@ middle of each picture, the person given by the picture's colour.
 
     make-faces.py <folder>
 
-What `shoebox recognize` with the fake makes of it: six folders `c01` ...
-`c06`, each one cluster of 3 to 6 faces of one person, nobody alike enough to
+What `shoebox recognize` with the fake makes of it: seven folders `c01` ...
+`c07`, each one cluster of 3 to 6 faces of one person, nobody alike enough to
 anybody else to be suggested. The mocked tests (faces-mocked.mjs) need no
 library.
 
@@ -44,7 +44,7 @@ def colour(k):
     raise ValueError(k)
 
 
-KS = list(range(2, 8))  # one person per folder
+KS = list(range(2, 9))  # one person per folder
 for a, b in itertools.combinations(KS, 2):
     assert abs(sum(x * y for x, y in zip(emb(a), emb(b)))) < 0.25, (a, b)
 assert len({colour(k) for k in KS}) == len(KS)

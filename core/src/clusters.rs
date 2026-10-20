@@ -76,6 +76,8 @@ pub const NEIGHBOURS: usize = 24;
 const REFERENCES: usize = 32;
 /// Neighbour lists computed (and committed) at a time.
 const CHUNK: usize = 500;
+/// Suggestions searched between two reports of progress.
+const SEARCH_CHUNK: usize = 2000;
 /// A `running` clustering job that has not reported progress for this long
 /// is dead.
 const JOB_ALIVE_SECS: i64 = 120;
@@ -176,10 +178,10 @@ pub fn run_printing(conn: &Connection, stop: &dyn Fn() -> bool) -> Result<Summar
     let mut last = 0;
     let s = run(conn, stop, &mut |done, total| {
         if last == 0 {
-            println!("Clusters: looking up the neighbours of {total} faces…");
+            println!("Clusters: neighbours and suggestions, {total} steps…");
             progress = crate::scan::Progress::new(total);
         }
-        progress.add(done - last, |done, total| format!("neighbours {done}/{total}"));
+        progress.add(done - last, |done, total| format!("clusters {done}/{total}"));
         last = done;
     })?;
     println!(
@@ -199,8 +201,9 @@ pub fn run_printing(conn: &Connection, stop: &dyn Fn() -> bool) -> Result<Summar
 
 /// Recompute the clusters and suggestions; resumes neighbour lists a
 /// stopped run left. `stop` is asked between chunks (Ctrl-C, the server
-/// stopping); `progress` gets (done, total) neighbour lists. `conn` has
-/// `recog` attached.
+/// stopping); `progress` gets (done, total) steps: neighbour lists computed
+/// and faces whose suggestion was searched (nearly all of the time once the
+/// lists are there). `conn` has `recog` attached.
 pub fn run(conn: &Connection, stop: &dyn Fn() -> bool, progress: &mut dyn FnMut(u64, u64)) -> Result<Summary> {
     let job = Job::start_in(conn, "recog.jobs", "clusters")?;
     let result = compute(conn, &job, stop, progress);
@@ -285,20 +288,55 @@ struct Analysis {
     suggestion: HashMap<usize, (i64, f32)>,
 }
 
+/// How long each phase of a run took, printed (to stderr) when
+/// `SHOEBOX_CLUSTER_TIMES` is set: `regrouping_phases` in
+/// `core/tests/people_bench.rs`.
+struct Laps {
+    last: Instant,
+    on: bool,
+}
+
+impl Laps {
+    fn new() -> Laps {
+        Laps { last: Instant::now(), on: std::env::var_os("SHOEBOX_CLUSTER_TIMES").is_some() }
+    }
+
+    /// The phase since the last lap is done.
+    fn lap(&mut self, what: impl FnOnce() -> String) {
+        if self.on {
+            eprintln!("  {:52} {:9.1} ms", what(), self.last.elapsed().as_secs_f64() * 1000.0);
+        }
+        self.last = Instant::now();
+    }
+}
+
 fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut dyn FnMut(u64, u64)) -> Result<Summary> {
     let started = Instant::now();
+    let mut laps = Laps::new();
     let mut parts: Vec<Part> = Vec::new();
     // A dog's face found by the face detector belongs to the pet, not here.
     let hidden = crate::people::pet_face_ids(conn)?;
+    laps.lap(|| "pet_face_ids".into());
     for space in [Space::Faces, Space::Pets] {
         let Some(model) = current_model_of(conn, space)? else { continue };
         let all = eligible(conn, space, &model, &hidden)?;
+        laps.lap(|| format!("eligible {space:?} ({} faces)", all.ids.len()));
         let mut th = space.thresholds(&model);
         if space == Space::Faces {
             th.cohesion = face_cohesion(th.cohesion);
         }
         parts.push(Part { space, model, th, all, todo: Vec::new() });
     }
+
+    // What the user decided, as it is now. Decisions made while this runs
+    // are seen through by the people view and count towards the next run.
+    let m = Matched::load(conn, None)?;
+    let state_of: HashMap<i64, usize> = m.faces.iter().enumerate().map(|(i, f)| (f.id, i)).collect();
+    let searches: u64 = parts
+        .iter()
+        .map(|p| p.all.ids.iter().filter(|id| state_of.get(id).and_then(|&s| m.decided(s)).is_none()).count() as u64)
+        .sum();
+    laps.lap(|| "decisions (Matched::load)".into());
 
     // Neighbour lists: kept from earlier runs, computed for the others.
     conn.execute("DELETE FROM recog.neighbours WHERE face NOT IN (SELECT id FROM recog.faces)", [])?;
@@ -307,7 +345,8 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
     for part in &mut parts {
         part.todo = (0..part.all.ids.len()).filter(|&i| !have.contains(&part.all.ids[i])).collect();
     }
-    let total: u64 = parts.iter().map(|p| p.todo.len() as u64).sum();
+    let total: u64 = parts.iter().map(|p| p.todo.len() as u64).sum::<u64>() + searches;
+    laps.lap(|| "neighbour lists kept".into());
     job.progress(conn, 0, Some(total))?;
     let mut done = 0;
     for part in &parts {
@@ -336,16 +375,19 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
         }
     }
 
-    // What the user decided, as it is now.
-    let m = Matched::load(conn, None)?;
-    let state_of: HashMap<i64, usize> = m.faces.iter().enumerate().map(|(i, f)| (f.id, i)).collect();
 
+    laps.lap(|| format!("neighbour lists computed ({})", total - searches));
     let mut summaries: Vec<Summary> = Vec::new();
     // (face, cluster, person, similarity) of every face without a decision.
     let mut rows: Vec<(i64, i64, Option<i64>, Option<f64>)> = Vec::new();
     let mut numbered = 0i64;
     for part in &parts {
-        let analysis = analyse(conn, &m, &state_of, part)?;
+        let analysis = analyse(conn, &m, &state_of, part, &mut laps, stop, &mut |n| {
+            done += n;
+            job.progress(conn, done, Some(total))?;
+            progress(done, total);
+            Ok(())
+        })?;
         let mut summary = Summary {
             faces: part.all.ids.len() as u64,
             listed: part.todo.len() as u64,
@@ -369,6 +411,7 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
         summaries.push(summary);
     }
 
+    laps.lap(|| "summaries".into());
     let tx = conn.unchecked_transaction()?;
     tx.execute("DELETE FROM recog.clusters", [])?;
     {
@@ -378,6 +421,7 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
         }
     }
     tx.commit()?;
+    laps.lap(|| format!("write recog.clusters ({} rows)", rows.len()));
     let mut summaries = summaries.into_iter();
     let mut out = Summary::default();
     for part in &parts {
@@ -392,7 +436,18 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
 }
 
 /// Clusters and suggestions of one space.
-fn analyse(conn: &Connection, m: &Matched, state_of: &HashMap<i64, usize>, part: &Part) -> Result<Analysis> {
+/// `searched` is told of suggestions searched (`SEARCH_CHUNK` at a time);
+/// `stop` is asked between those.
+fn analyse(
+    conn: &Connection,
+    m: &Matched,
+    state_of: &HashMap<i64, usize>,
+    part: &Part,
+    laps: &mut Laps,
+    stop: &dyn Fn() -> bool,
+    searched: &mut dyn FnMut(u64) -> Result<()>,
+) -> Result<Analysis> {
+    let space = part.space;
     let all = &part.all;
     let n = all.ids.len();
     let pos: HashMap<i64, usize> = all.ids.iter().enumerate().map(|(i, id)| (*id, i)).collect();
@@ -414,23 +469,35 @@ fn analyse(conn: &Connection, m: &Matched, state_of: &HashMap<i64, usize>, part:
         ref_person.push(p);
         ref_data.extend(emb);
     }
+    laps.lap(|| format!("{space:?}: references ({})", ref_person.len()));
     let ref_index = Index::build(&ref_data, all.dim.max(1));
+    laps.lap(|| format!("{space:?}: reference index"));
     let open_list: Vec<usize> = (0..n).filter(|&i| open[i]).collect();
     let suggestions: Vec<Option<(i64, f32)>> = if ref_person.is_empty() {
+        searched(open_list.len() as u64)?;
         vec![None; open_list.len()]
     } else {
-        ann::parallel(open_list.len(), |k| {
-            let i = open_list[k];
-            let rejected = state_of.get(&all.ids[i]).map(|&s| m.states[s].rejected.as_slice()).unwrap_or(&[]);
-            ref_index
-                .search(all.row(i), REFERENCES, part.th.maybe, None)
-                .into_iter()
-                .map(|(r, sim)| (ref_person[r], sim))
-                .find(|(p, _)| !rejected.contains(p))
-        })
+        let mut out = Vec::with_capacity(open_list.len());
+        for chunk in open_list.chunks(SEARCH_CHUNK) {
+            if stop() {
+                return Err(Interrupted.into());
+            }
+            out.extend(ann::parallel(chunk.len(), |k| {
+                let i = chunk[k];
+                let rejected = state_of.get(&all.ids[i]).map(|&s| m.states[s].rejected.as_slice()).unwrap_or(&[]);
+                ref_index
+                    .search(all.row(i), REFERENCES, part.th.maybe, None)
+                    .into_iter()
+                    .map(|(r, sim)| (ref_person[r], sim))
+                    .find(|(p, _)| !rejected.contains(p))
+            }));
+            searched(chunk.len() as u64)?;
+        }
+        out
     };
     let suggestion: HashMap<usize, (i64, f32)> =
         open_list.iter().zip(suggestions).filter_map(|(&i, s)| s.map(|s| (i, s))).collect();
+    laps.lap(|| format!("{space:?}: suggestion searches ({})", open_list.len()));
 
     // Clusters: neighbours without a decision, joined. Similarities are
     // computed again (cheap), so a list can never join faces that are not
@@ -454,6 +521,7 @@ fn analyse(conn: &Connection, m: &Matched, state_of: &HashMap<i64, usize>, part:
             }
         }
     }
+    laps.lap(|| format!("{space:?}: neighbours read, edges ({})", edges.len()));
     let label: Vec<Option<i64>> =
         (0..n).map(|i| suggestion.get(&i).filter(|s| s.1 >= part.th.suggest).map(|s| s.0)).collect();
     let cohesion = part.th.cohesion.map(|min| (all.data.as_slice(), all.dim, min));
@@ -482,6 +550,7 @@ fn analyse(conn: &Connection, m: &Matched, state_of: &HashMap<i64, usize>, part:
     }
     drop(edges);
     groups.sort_by(|a, b| b.len().cmp(&a.len()).then(a[0].cmp(&b[0])));
+    laps.lap(|| format!("{space:?}: join and split ({} cards)", groups.len()));
     Ok(Analysis { groups, suggestion })
 }
 
@@ -626,7 +695,8 @@ fn drawn_references(conn: &Connection, m: &Matched, space: Space, model: &str, d
 pub struct Overview {
     /// A clustering job is running (in any process).
     pub running: bool,
-    /// Neighbour lists of the latest job: computed and to compute.
+    /// Steps of the latest job (neighbour lists, suggestions searched):
+    /// done and to do.
     pub done: i64,
     pub total: Option<i64>,
     /// The latest job: `running`, `done`, `failed`, `interrupted`.

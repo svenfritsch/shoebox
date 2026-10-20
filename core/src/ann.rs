@@ -29,9 +29,23 @@ pub fn dot(a: &[f32], b: &[f32]) -> f32 {
     acc.iter().sum::<f32>() + tail
 }
 
-/// `f(i)` for `i` in `0..n`, on all cores, in order.
+thread_local! {
+    /// At most this many threads for `parallel` on this thread (`with_threads`).
+    static THREADS: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+
+/// Run `f` with `parallel` using at most `threads` threads (at least one).
+pub fn with_threads<T>(threads: usize, f: impl FnOnce() -> T) -> T {
+    let before = THREADS.with(|t| t.replace(Some(threads.max(1))));
+    let out = f();
+    THREADS.with(|t| t.set(before));
+    out
+}
+
+/// `f(i)` for `i` in `0..n`, on all cores (or what `with_threads` allows), in order.
 pub fn parallel<T: Send>(n: usize, f: impl Fn(usize) -> T + Sync) -> Vec<T> {
-    let threads = std::thread::available_parallelism().map_or(1, |t| t.get()).min(n).max(1);
+    let cores = std::thread::available_parallelism().map_or(1, |t| t.get());
+    let threads = THREADS.with(|t| t.get()).map_or(cores, |t| t.min(cores)).min(n).max(1);
     if threads == 1 {
         return (0..n).map(f).collect();
     }
