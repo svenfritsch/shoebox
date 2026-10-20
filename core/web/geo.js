@@ -432,7 +432,7 @@ function loadLocations() {
   var side = el('aside', 'geo-side');
   var tab = el('button', 'geo-tab', '‹');
   tab.type = 'button';
-  tab.title = tr('geo.side_show');
+  setTip(tab, tr('geo.side_show'));
   tab.onclick = function () { setSide(true); };
   main.appendChild(tab);
   root.appendChild(main);
@@ -633,7 +633,7 @@ function renderSide() {
   var tool = function (text, label, fn) {
     var b = el('button', 'icon-btn', text);
     b.type = 'button';
-    b.title = label;
+    setTip(b, label);
     b.setAttribute('aria-label', label);
     b.onclick = fn;
     tools.appendChild(b);

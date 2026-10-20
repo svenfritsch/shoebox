@@ -58,7 +58,7 @@ function infoDate(row, info) {
   pen.type = 'button';
   pen.innerHTML = PENCIL;
   var label = tr(info.estimate ? 'info.change_date' : 'info.set_date');
-  pen.title = label;
+  setTip(pen, label);
   pen.setAttribute('aria-label', label);
   pen.onclick = function () { datesDialog([info.id], info); };
   cell.appendChild(pen);

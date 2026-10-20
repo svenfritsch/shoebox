@@ -12,7 +12,9 @@ function setTip(node, text) {
   }
   node.setAttribute('data-tip', text);
   // `title` used to name an icon-only control or describe the others for a screen reader.
-  if (!/[\p{L}\p{N}]/u.test(node.textContent) && !node.hasAttribute('aria-label') && !node.hasAttribute('aria-labelledby')) {
+  var iconOnly = !/[\p{L}\p{N}]/u.test(node.textContent);
+  if (iconOnly && (node.tipNames || !node.hasAttribute('aria-label') && !node.hasAttribute('aria-labelledby'))) {
+    node.tipNames = true;
     node.setAttribute('aria-label', text);
   } else {
     node.setAttribute('aria-description', text);

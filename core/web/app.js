@@ -351,7 +351,7 @@ function renderChips() {
     c.appendChild(document.createTextNode(label));
     if (title) c.title = title;
     var x = el('button', '', '✕');
-    x.title = tr('chip.remove');
+    setTip(x, tr('chip.remove'));
     x.onclick = clear;
     c.appendChild(x);
     box.appendChild(c);
@@ -417,14 +417,14 @@ function renderChips() {
   var terms = box.children.length;
   if (terms) {
     var more = el('button', 'chip more', '+');
-    more.title = tr('chip.add');
+    setTip(more, tr('chip.add'));
     more.onclick = function () { $('search').value = ''; $('search').focus(); suggest(''); };
     box.appendChild(more);
   }
   // One click for the whole search; the ✕ on a chip drops just that term.
   if (terms >= 2) {
     var clear = el('button', 'chip clear', tr('chip.clear_all'));
-    clear.title = tr('chip.clear_all_hint');
+    setTip(clear, tr('chip.clear_all_hint'));
     clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], groups: [], pets: [], texts: [], names: [], types: [], fav: false, place: null, compare: '', q: '' }); };
     box.appendChild(clear);
   }
@@ -563,7 +563,7 @@ var SEL_ICONS = {
 function toolButton(icon, label) {
   var b = el('button', 'tool');
   b.innerHTML = icon;
-  b.title = label;
+  setTip(b, label);
   b.setAttribute('aria-label', label);
   return b;
 }
@@ -594,8 +594,8 @@ function heartButton(id, cls, readonly) {
   b.type = 'button';
   b.innerHTML = on ? HEART_ON : HEART_OFF;
   b.classList.toggle('on', on);
-  b.title = tr(readonly ? 'fav.readonly' : on ? 'fav.remove' : 'fav.add');
-  b.setAttribute('aria-label', b.title);
+  setTip(b, tr(readonly ? 'fav.readonly' : on ? 'fav.remove' : 'fav.add'));
+  b.setAttribute('aria-label', b.getAttribute('data-tip'));
   b.setAttribute('aria-pressed', on ? 'true' : 'false');
   if (readonly) b.disabled = true; // the common timeline only shows hearts
   return b;
@@ -608,8 +608,8 @@ function paintHearts() {
     var id = d.ids[parseInt(b.parentNode.dataset.index, 10)], on = !!state.favs[id];
     b.innerHTML = on ? HEART_ON : HEART_OFF;
     b.classList.toggle('on', on);
-    b.title = tr(isAll() ? 'fav.readonly' : on ? 'fav.remove' : 'fav.add');
-    b.setAttribute('aria-label', b.title);
+    setTip(b, tr(isAll() ? 'fav.readonly' : on ? 'fav.remove' : 'fav.add'));
+    b.setAttribute('aria-label', b.getAttribute('data-tip'));
     b.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
   markLightboxHeart();
@@ -621,8 +621,8 @@ function markLightboxHeart() {
   var on = !!state.favs[d.ids[i]];
   b.innerHTML = on ? HEART_ON : HEART_OFF;
   b.classList.toggle('on', on);
-  b.title = tr(isAll() ? 'fav.readonly' : on ? 'fav.remove_hint' : 'fav.add_hint');
-  b.setAttribute('aria-label', isAll() ? b.title : tr(on ? 'fav.remove' : 'fav.add'));
+  setTip(b, tr(isAll() ? 'fav.readonly' : on ? 'fav.remove_hint' : 'fav.add_hint'));
+  b.setAttribute('aria-label', isAll() ? b.getAttribute('data-tip') : tr(on ? 'fav.remove' : 'fav.add'));
   b.disabled = isAll();
   if (isAll()) b.hidden = !on; // the common timeline shows a heart only on favorites
   b.setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -1810,7 +1810,7 @@ function drawFaces() {
     if (f.person && f.state !== 'ignored') {
       b.appendChild(el('span', 'face-name', f.person.name + (f.state === 'confirmed' ? '' : '?')));
     }
-    b.title = (f.species ? speciesName(f.species) + ', ' : '') + (f.kept ? tr('face.kept') : f.score != null ? tr('face.score', { score: f.score.toFixed(2) }) : tr('face.drawn'));
+    setTip(b, (f.species ? speciesName(f.species) + ', ' : '') + (f.kept ? tr('face.kept') : f.score != null ? tr('face.score', { score: f.score.toFixed(2) }) : tr('face.drawn')));
     stage.appendChild(b);
   });
 }
@@ -1968,7 +1968,7 @@ function fillText(box, info) {
     if (!isAll()) {
       var x = el('button', 'x', l.hidden ? '↺' : '✕');
       x.type = 'button';
-      x.title = tr(l.hidden ? 'text.show_again' : 'text.hide');
+      setTip(x, tr(l.hidden ? 'text.show_again' : 'text.hide'));
       x.onclick = function (ev) {
         ev.stopPropagation();
         var id = info.id, hidden = !l.hidden;
@@ -2047,7 +2047,7 @@ function renderPanelAll(info) {
   if (state.favs[id]) {
     var heart = el('span', 'heart');
     heart.innerHTML = HEART_ON;
-    heart.title = tr('fav.readonly');
+    setTip(heart, tr('fav.readonly'));
     row(tr('info.favorite'), heart);
   }
   var tags = el('div', 'tags readonly');
@@ -3287,7 +3287,7 @@ function updateCrossBar(labels) {
   mark.onclick = function () { crossState.pick = pick.value; crossMarkDrive(pick.value); };
   bar.appendChild(mark);
   var clear = el('button', 'btn quiet', tr('dups.clear'));
-  clear.title = tr('dups.clear_hint');
+  setTip(clear, tr('dups.clear_hint'));
   clear.disabled = n === 0;
   clear.onclick = function () { crossState.marked = {}; crossState.syncs.forEach(function (sync) { sync(); }); };
   bar.appendChild(clear);
@@ -3366,7 +3366,7 @@ function crossGroupNode(g, labels) {
     var row = el('div', 'copy-row');
     var cb = el('input');
     cb.type = 'checkbox';
-    cb.title = tr('dups.delete_copy');
+    setTip(cb, tr('dups.delete_copy'));
     var state = el('span', 'state');
     var sync = function () {
       cb.checked = !!crossState.marked[crossKey(f)];
@@ -3388,7 +3388,7 @@ function crossGroupNode(g, labels) {
     if (f.volume) where.appendChild(el('span', 'meta', ' · ' + tr('dups.cross.folder', { name: f.name })));
     var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : tr('dups.top_level');
     var fb = el('button', 'folder', folder + (sameName ? '' : ' / ' + baseName(f)));
-    fb.title = tr('dups.show_in', { name: f.name });
+    setTip(fb, tr('dups.show_in', { name: f.name }));
     fb.onclick = function () { switchLibrary(f.library, 'q=' + encodeURIComponent(baseName(f))); };
     var line = el('div');
     line.appendChild(fb);
@@ -3396,7 +3396,7 @@ function crossGroupNode(g, labels) {
     var leaf = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')).split('/').pop() : '';
     if (leaf && crossState.ignore) {
       var ib = el('button', 'folder ignore-this', tr('dups.ignore.add'));
-      ib.title = tr('dups.ignore.add_hint', { name: leaf });
+      setTip(ib, tr('dups.ignore.add_hint', { name: leaf }));
       ib.onclick = function () { crossState.ignore.add(leaf); };
       line.appendChild(el('span', 'meta', ' · '));
       line.appendChild(ib);
@@ -3708,7 +3708,7 @@ function updateDupBar() {
   var n = Object.keys(marked).length;
   bar.appendChild(el('span', '', tr('dups.marked', { count: trn('count.copies', n) })));
   var clear = el('button', 'btn quiet', tr('dups.clear'));
-  clear.title = tr('dups.clear_hint');
+  setTip(clear, tr('dups.clear_hint'));
   clear.disabled = n === 0;
   clear.onclick = function () {
     Object.keys(marked).forEach(function (id) { delete dupState.marked[id]; });
@@ -3745,7 +3745,7 @@ function dupThumb(f, compare) {
   if (compare) {
     // Opens the group's pictures side by side instead of one in a new tab.
     a.removeAttribute('target');
-    a.title = tr('dups.compare');
+    setTip(a, tr('dups.compare'));
     a.onclick = function (e) { e.preventDefault(); compare(f); };
   }
   return a;
@@ -4395,7 +4395,7 @@ function infoTags(row, info) {
     var name = el('button', '', t.name);
     name.onclick = show;
     var x = el('button', 'x', '✕');
-    x.title = tr('tags.remove_hint');
+    setTip(x, tr('tags.remove_hint'));
     x.setAttribute('aria-label', tr('tags.remove_label', { name: t.name }));
     x.onclick = function () {
       post(LIBAPI + '/tags/remove', { ids: [info.id], name: t.name }).then(function () { tagsChanged(info.id); }).catch(failed);
@@ -4405,7 +4405,7 @@ function infoTags(row, info) {
     tags.appendChild(chip);
   });
   var add = el('button', 'add', tr('tags.add'));
-  add.title = tr('tags.add_key_hint');
+  setTip(add, tr('tags.add_key_hint'));
   add.onclick = function () {
     var input = tagInput();
     input.onkeydown = function (ev) {
@@ -4451,7 +4451,7 @@ function infoScreenshot(row, info) {
   });
   var marked = info.screenshot_mark != null;
   pick.value = info.screenshot ? '1' : '0';
-  pick.title = tr('shot.hint');
+  setTip(pick, tr('shot.hint'));
   var set = function (value) {
     post(LIBAPI + '/screenshots', { ids: [info.id], value: value }).then(function () { screenshotsChanged(info.id); }).catch(failed);
   };
@@ -4462,7 +4462,7 @@ function infoScreenshot(row, info) {
     // An undo icon at the right of the row; the words are its tooltip.
     var back = el('button', 'icon-btn shot-back');
     back.innerHTML = lineIcon('<path d="M9 5L4.5 9.5 9 14"/><path d="M5 9.5h9a5 5 0 0 1 0 10h-3"/>');
-    back.title = tr('shot.back');
+    setTip(back, tr('shot.back'));
     back.setAttribute('aria-label', tr('shot.back'));
     back.onclick = function () { set(null); };
     box.appendChild(back);
@@ -4808,7 +4808,7 @@ function faceCard(face, similarity) {
   card.dataset.id = face.id;
   var a = el('a', 'crop');
   a.href = '#';
-  a.title = tr('facecheck.open_photo');
+  setTip(a, tr('facecheck.open_photo'));
   var img = el('img');
   img.alt = '';
   img.loading = 'lazy';
@@ -4845,12 +4845,12 @@ function faceCard(face, similarity) {
   if (face.roll) card.appendChild(el('span', 'tag', tr('facecheck.tag_turned')));
   if (similarity == null) {
     var near = el('button', 'near', '≈');
-    near.title = tr(face.species ? 'facecheck.similar_pets' : 'facecheck.similar_btn');
+    setTip(near, tr(face.species ? 'facecheck.similar_pets' : 'facecheck.similar_btn'));
     near.onclick = function () { similarFaces(face); };
     card.appendChild(near);
     var undo = faceState.filter === 'not_face';
     var mark = el('button', 'mark', undo ? '↺' : '✕');
-    mark.title = face.species ? tr(undo ? 'facecheck.undo_hint_pet' : 'facecheck.not_pet') : tr(undo ? 'facecheck.undo_hint' : 'facecheck.not_face');
+    setTip(mark, face.species ? tr(undo ? 'facecheck.undo_hint_pet' : 'facecheck.not_pet') : tr(undo ? 'facecheck.undo_hint' : 'facecheck.not_face'));
     mark.onclick = function () { markFaces([face.id]); };
     card.appendChild(mark);
   }
@@ -5280,7 +5280,7 @@ function copyFoldersSection() {
       var chip = el('span', 'chip own', name + ' ');
       var x = el('button', 'chip-x', '✕');
       x.type = 'button';
-      x.title = tr('settings.copy_folders_remove');
+      setTip(x, tr('settings.copy_folders_remove'));
       x.onclick = function () { save(folders.filter(function (f) { return f !== name; })); };
       chip.appendChild(x);
       chips.appendChild(chip);
@@ -6073,7 +6073,7 @@ function groupsDialog() {
       row.appendChild(el('span', 'gcount', trn('count.people', g.people)));
       var btn = function (label, title, run) {
         var b = el('button', 'btn quiet small', label);
-        b.title = title;
+        setTip(b, title);
         b.setAttribute('aria-label', title);
         b.onclick = run;
         row.appendChild(b);
@@ -6092,7 +6092,7 @@ function groupsDialog() {
       var grip = el('span', 'grip', '\u283F');
       grip.tabIndex = 0;
       grip.setAttribute('role', 'button');
-      grip.title = tr('people.drag_handle');
+      setTip(grip, tr('people.drag_handle'));
       grip.setAttribute('aria-label', tr('people.drag_handle'));
       grip.onkeydown = function (e) {
         if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
@@ -6177,7 +6177,7 @@ function personMenuItems(p) {
 function menuButton(items, title) {
   var b = el('button', 'more-btn', '⋯');
   b.type = 'button';
-  b.title = title || tr('people.more');
+  setTip(b, title || tr('people.more'));
   b.setAttribute('aria-label', title || tr('people.more'));
   b.onclick = function (ev) {
     ev.preventDefault();
@@ -6382,7 +6382,7 @@ function personFaceCard(face, tab) {
   card.dataset.key = key;
   var a = el('a', 'crop');
   a.href = '#';
-  a.title = tr('facecheck.open_photo');
+  setTip(a, tr('facecheck.open_photo'));
   var url = cropUrl(face);
   if (tab === 'confirmed' && face.file != null) {
     // Confirmed faces have no stored crop: cut out of the photo's thumbnail.
@@ -6430,7 +6430,7 @@ function personFaceCard(face, tab) {
   var acts = el('div', 'acts');
   var act = function (label, title, cls, run) {
     var b = el('button', cls, label);
-    b.title = title;
+    setTip(b, title);
     b.setAttribute('aria-label', title);
     b.onclick = function (ev) { ev.stopPropagation(); run(); };
     acts.appendChild(b);
@@ -6752,7 +6752,7 @@ function singlesSection() {
   bar.appendChild(field);
   var nameBtn = el('button', 'btn', tr('person.name'));
   var ignore = el('button', 'btn quiet', tr('unnamed.ignore'));
-  ignore.title = tr('unnamed.ignore_hint');
+  setTip(ignore, tr('unnamed.ignore_hint'));
   var notFace = el('button', 'btn quiet', tr('facecheck.not_face'));
   var change = el('button', 'btn quiet');
   var done = el('button', 'btn quiet', tr('unnamed.clear'));
@@ -6766,7 +6766,7 @@ function singlesSection() {
     section.hidden = !st.faces.length && st.shown >= st.total;
     count.textContent = trn('count.faces', n);
     notFace.textContent = tr(pets ? 'pet.not_a.pet' : 'facecheck.not_face');
-    notFace.title = tr(pets ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint');
+    setTip(notFace, tr(pets ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint'));
     bar.hidden = !n;
     nameBtn.disabled = ignore.disabled = notFace.disabled = !n;
     var to = otherSpecies(chosen);
@@ -6777,10 +6777,10 @@ function singlesSection() {
   var tile = function (face) {
     var t = el('a', 'cface' + (st.picked[face.id] ? ' sel' : '') + (face.small ? ' small' : ''));
     t.href = '#';
-    t.title = tr('facecheck.select');
+    setTip(t, tr('facecheck.select'));
     t.appendChild(faceImg(face, 'big'));
     var open = el('span', 'copen', '↗');
-    open.title = tr('facecheck.open_photo');
+    setTip(open, tr('facecheck.open_photo'));
     open.onclick = function (ev) { ev.preventDefault(); ev.stopPropagation(); openFacePhoto(face, st.faces); };
     t.appendChild(open);
     // Keyboard: Tab between thumbnails (or ←/→), Enter selects (the click
@@ -6943,7 +6943,7 @@ function clusterCard(c) {
   // Open a card (all faces, or Select) and it takes the whole width; this
   // button stays at the top of the screen while the faces scroll by.
   var close = el('button', 'btn small cclose', tr('unnamed.close'));
-  close.title = tr('unnamed.close_hint');
+  setTip(close, tr('unnamed.close_hint'));
   close.hidden = true;
   head.appendChild(close);
   card.appendChild(head);
@@ -6994,7 +6994,7 @@ function clusterCard(c) {
     }
     f.face = face;
     f.className = 'cface' + (card.picked[face.id] ? ' sel' : '') + (face.small ? ' small' : '');
-    f.title = tr(card.picking ? 'facecheck.select' : 'facecheck.open_photo');
+    setTip(f, tr(card.picking ? 'facecheck.select' : 'facecheck.open_photo'));
     return f;
   };
   // All faces of a big group can be thousands: `growGrid` puts them on the
@@ -7034,15 +7034,15 @@ function clusterCard(c) {
   row.appendChild(nameBtn);
   var tools = row;
   var ignore = el('button', 'btn quiet', tr('unnamed.ignore'));
-  ignore.title = tr('unnamed.ignore_hint');
+  setTip(ignore, tr('unnamed.ignore_hint'));
   ignore.onclick = function () { act('ignore', {}); };
   // A card of pets says "not a pet": the finds that are no pet at all.
   var petCard = c.faces.length > 0 && c.faces.every(function (f) { return f.species; });
   var notFace = el('button', 'btn quiet', tr(petCard ? 'pet.not_a.pet' : 'facecheck.not_face'));
-  notFace.title = tr(petCard ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint');
+  setTip(notFace, tr(petCard ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint'));
   notFace.onclick = function () { act('not-face', {}); };
   var pick = el('button', 'btn quiet', tr('facecheck.select'));
-  pick.title = tr('unnamed.select_hint');
+  setTip(pick, tr('unnamed.select_hint'));
   // Select needs all the faces to choose from.
   var loadAll = function () {
     if (faces.length >= c.size) return Promise.resolve();
@@ -7092,7 +7092,7 @@ function clusterCard(c) {
     count.textContent = trn(pets ? 'count.pets' : 'count.faces', c.size) + (card.picking ? ' · ' + (n ? tr('unnamed.selected', { n: n }) : tr('unnamed.tap')) : '');
     pick.classList.toggle('active', card.picking);
     pick.textContent = tr(card.picking ? 'unnamed.select_done' : 'facecheck.select');
-    pick.title = tr(card.picking ? 'unnamed.select_done_hint' : 'unnamed.select_hint');
+    setTip(pick, tr(card.picking ? 'unnamed.select_done_hint' : 'unnamed.select_hint'));
     card.classList.toggle('picking', card.picking);
     card.classList.toggle('open', expanded || card.picking);
     close.hidden = !(expanded || card.picking);
@@ -7237,8 +7237,8 @@ function infoFaces(row, info) {
     add.onclick = startDrawing;
     if (lb.details.view_turn) {
       add.disabled = true;
-      add.title = tr('info.add_face_turned');
-      add.setAttribute('aria-label', add.title);
+      setTip(add, tr('info.add_face_turned'));
+      add.setAttribute('aria-label', add.getAttribute('data-tip'));
     }
     tools.appendChild(add);
   }
@@ -7264,9 +7264,9 @@ function infoPickBar(info, pickable, pick) {
   bar.appendChild(head);
   var row = el('div', 'pickacts');
   var ignore = el('button', 'btn quiet', n ? tr('unnamed.ignore_n', { n: n }) : tr('unnamed.ignore'));
-  ignore.title = tr('unnamed.ignore_hint');
+  setTip(ignore, tr('unnamed.ignore_hint'));
   var notFace = el('button', 'btn quiet', n ? tr(pets ? 'unnamed.notface_n_pet' : 'unnamed.notface_n', { n: n }) : tr('facecheck.not_face'));
-  notFace.title = tr(pets ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint');
+  setTip(notFace, tr(pets ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint'));
   var cancel = el('button', 'btn quiet', tr('app.cancel'));
   ignore.disabled = notFace.disabled = !n;
   var act = function (action) {
@@ -7346,12 +7346,12 @@ function infoFace(info, f, k, pick) {
   } else if (f.state === 'suggested' || f.state === 'maybe') {
     who.appendChild(el('span', 'guess', tr(f.state === 'maybe' ? 'info.guess_maybe' : 'info.guess', { name: f.person.name })));
     var yes = el('button', 'yes', '✓');
-    yes.title = tr('person.it_is', { name: f.person.name });
-    yes.setAttribute('aria-label', yes.title);
+    setTip(yes, tr('person.it_is', { name: f.person.name }));
+    yes.setAttribute('aria-label', yes.getAttribute('data-tip'));
     yes.onclick = function () { send('confirm', { faces: ids }); };
     var no = el('button', 'no', '✗');
-    no.title = tr('person.not', { name: f.person.name });
-    no.setAttribute('aria-label', no.title);
+    setTip(no, tr('person.not', { name: f.person.name }));
+    no.setAttribute('aria-label', no.getAttribute('data-tip'));
     no.onclick = function () { send('reject', { faces: ids, person_id: f.person.id }); };
     who.appendChild(yes);
     who.appendChild(no);

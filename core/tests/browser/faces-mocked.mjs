@@ -278,13 +278,13 @@ await test('groups ordered, renamed and deleted in the groups dialog', await on(
   const names = await groupNames(p);
   check(names.indexOf('Order Two') < names.indexOf('Order One'), `the sidebar's groups: ${names}`);
   await changedThenGrouped(p, lib, 'Order One renamed', async () => {
-    await row('Order One').locator(`button[title="${await tr(p, 'people.rename')}"]`).click();
+    await row('Order One').locator(`button[data-tip="${await tr(p, 'people.rename')}"]`).click();
     await typeName(p, 'Order Renamed');
     await posted(lib, /^\/groups\/\d+\/rename$/);
   });
   check(await row('Order Renamed').isVisible(), 'the groups dialog is open again, with the new name');
   await changedThenGrouped(p, lib, 'Order Two deleted', async () => {
-    await row('Order Two').locator(`button[title="${await tr(p, 'app.delete')}"]`).click();
+    await row('Order Two').locator(`button[data-tip="${await tr(p, 'app.delete')}"]`).click();
     await p.locator('#modal-actions .btn.danger').click();
     await posted(lib, /^\/groups\/\d+\/delete$/);
   });
