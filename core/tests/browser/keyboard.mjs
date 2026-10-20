@@ -1,7 +1,8 @@
 // Keyboard use of the photo app: the arrow keys in the grid and the viewer, the
 // selection bar as one toolbar (one Tab stop, arrows, Home, End, B there and
 // back), and dialogs (the focus goes in, Tab stays in, and comes back where it
-// was when the dialog closes). usage: node keyboard.mjs <url>
+// was when the dialog closes), and selecting photos by dragging the mouse
+// across them while selecting. usage: node keyboard.mjs <url>
 // Needs Playwright with a Chromium (CHROME=path) and a library served by
 // `shoebox serve` (see run.sh). Nothing here confirms a dialog: no photo is
 // moved, tagged or trashed.
@@ -223,6 +224,59 @@ await test('Enter on Done ends the selection, the focus goes back to the select 
   await p.keyboard.press('Enter');
   check(!(await visible(p, '#selbar')), 'Done hides the selection bar');
   await expectFocus(p, '#select', 'after the selection');
+});
+
+// Mouse drags while selecting: press on photo `from`, move over the photos in
+// `over` (indices, or a function that moves on its own), let go.
+const centre = async (p, i) => {
+  const b = await p.locator(`.cell[data-index="${i}"]`).boundingBox();
+  return [b.x + b.width / 2, b.y + b.height / 2];
+};
+async function dragAcross(p, from, over) {
+  await p.mouse.move(...await centre(p, from));
+  await p.mouse.down();
+  for (const i of over) await p.mouse.move(...await centre(p, i), { steps: 4 });
+  await p.mouse.up();
+}
+const selectedCells = (p) => p.evaluate(() => [...document.querySelectorAll('.cell.sel')]
+  .map((c) => parseInt(c.dataset.index, 10)).sort((a, b) => a - b).join(','));
+
+await test('dragging across photos selects them, back again leaves them as they were', async (p) => {
+  await p.locator('#select').click();
+  await dragAcross(p, 0, [3, 6, 4]);
+  check(!(await visible(p, '#lightbox')), 'a drag opens no photo');
+  check(await selectedCells(p) === '0,1,2,3,4', `0 to 6, then back to 4, selects 0 to 4 (got ${await selectedCells(p)})`);
+  check((await p.locator('#sel-count').textContent()).includes('5'), 'the bar counts the photos dragged across');
+  // Starting on a selected photo deselects; photos outside the drag keep theirs.
+  await dragAcross(p, 2, [3]);
+  check(await selectedCells(p) === '0,1,4', `a drag from a selected photo deselects (got ${await selectedCells(p)})`);
+  // A drag backwards, from an unselected photo, over a mix: all of them selected.
+  await dragAcross(p, 3, [1, 0]);
+  check(await selectedCells(p) === '0,1,2,3,4', `a drag backwards selects (got ${await selectedCells(p)})`);
+  // A plain click still toggles one photo after a drag.
+  await p.locator('.cell[data-index="8"]').click();
+  check(await selectedCells(p) === '0,1,2,3,4,8', `a click after a drag toggles one photo (got ${await selectedCells(p)})`);
+});
+
+await test('a drag to the bottom edge scrolls along and selects what comes into view', async (p) => {
+  await p.locator('#select').click();
+  const r = await p.locator('#scroller').boundingBox();
+  await p.mouse.move(...await centre(p, 0));
+  await p.mouse.down();
+  await p.mouse.move(r.x + r.width / 3, r.y + r.height - 5, { steps: 10 });
+  await p.waitForTimeout(800);
+  await p.mouse.up();
+  check(await p.locator('#scroller').evaluate((s) => s.scrollTop) > 0, 'the timeline scrolled');
+  const n = await p.evaluate(() => selectedIds().length);
+  check(n > 20, `the photos that came into view are selected too (${n})`);
+  check(await p.evaluate(() => { const ids = selectedIds(); return ids.every((id) => state.data.ids.indexOf(id) < ids.length); }),
+    'they are the first photos, without a gap');
+});
+
+await test('without the selection a drag selects nothing', async (p) => {
+  await dragAcross(p, 0, [3]);
+  check(!(await visible(p, '#selbar')), 'no selection started');
+  check(await p.locator('.cell.sel').count() === 0, 'nothing selected');
 });
 
 await browser.close();

@@ -1587,6 +1587,94 @@ $('sizer').addEventListener('mousedown', function (ev) {
   if (ev.shiftKey && ev.target.closest('.cell')) ev.preventDefault();
 });
 
+// Click and drag while selecting (mouse or pen, as in Finder): the photos from
+// the one pressed to the one under the pointer, in timeline order, all take the
+// opposite of the first one's state, so a drag that starts on an unselected
+// photo selects and one that starts on a selected photo deselects. Photos the
+// drag leaves again get back what they had. Near the top or bottom edge the
+// timeline scrolls along. Touch keeps scrolling the page (tap to select there).
+var selDrag = null;
+var DRAG_EDGE = 48; // px from the edge of the timeline where it scrolls along
+
+$('sizer').addEventListener('pointerdown', function (ev) {
+  if (!state.selecting || ev.button !== 0 || ev.shiftKey || ev.pointerType === 'touch') return;
+  var a = ev.target.closest('.cell');
+  if (!a || ev.target.closest('.fav')) return;
+  var i = parseInt(a.dataset.index, 10);
+  selDrag = {
+    start: i, end: i, on: !state.selected[state.data.ids[i]], before: Object.assign({}, state.selected),
+    data: state.data, pointer: ev.pointerId, x: ev.clientX, y: ev.clientY, moved: false, scrolling: false,
+  };
+});
+document.addEventListener('pointermove', function (ev) {
+  if (!selDrag || selDrag.done || ev.pointerId !== selDrag.pointer) return;
+  selDrag.x = ev.clientX;
+  selDrag.y = ev.clientY;
+  dragUpdate();
+  if (selDrag && selDrag.moved && !selDrag.scrolling) { selDrag.scrolling = true; requestAnimationFrame(dragScroll); }
+});
+document.addEventListener('pointerup', dragEnd);
+document.addEventListener('pointercancel', dragEnd);
+// The photos are links with pictures: no dragging them out of the page while selecting.
+$('sizer').addEventListener('dragstart', function (ev) {
+  if (state.selecting && ev.target.closest && ev.target.closest('.cell')) ev.preventDefault();
+});
+// The click that ends a drag selects nothing more.
+$('sizer').addEventListener('click', function (ev) {
+  if (selDrag && selDrag.moved) { ev.stopImmediatePropagation(); ev.preventDefault(); }
+}, true);
+
+// The photo under the pointer is the other end of the range.
+function dragUpdate() {
+  if (!state.selecting || state.data !== selDrag.data) { selDrag = null; return; }
+  var hit = document.elementFromPoint(selDrag.x, selDrag.y);
+  var a = hit && hit.closest('.cell');
+  if (!a || !$('sizer').contains(a)) return;
+  var i = parseInt(a.dataset.index, 10);
+  if (i === selDrag.end) return; // also: still on the first photo, no drag yet
+  if (!selDrag.moved) {
+    selDrag.moved = true;
+    // Keeps getting the pointer when it leaves the window (and the click that
+    // ends the drag goes to the timeline, not to a photo).
+    try { $('sizer').setPointerCapture(selDrag.pointer); } catch (e) {}
+  }
+  var ids = state.data.ids;
+  var lo = Math.min(selDrag.start, i), hi = Math.max(selDrag.start, i);
+  var from = Math.min(lo, selDrag.start, selDrag.end), to = Math.max(hi, selDrag.start, selDrag.end);
+  for (var k = from; k <= to; k++) {
+    var id = ids[k];
+    if (k >= lo && k <= hi ? selDrag.on : selDrag.before[id]) state.selected[id] = true; else delete state.selected[id];
+  }
+  selDrag.end = i;
+  state.anchor = i;
+  showSelected();
+}
+
+// Scrolls while the pointer is near the top or bottom edge, faster the closer it is.
+function dragScroll() {
+  if (!selDrag || selDrag.done) return;
+  var scroller = $('scroller'), r = scroller.getBoundingClientRect(), v = 0;
+  if (selDrag.y < r.top + DRAG_EDGE) v = -(r.top + DRAG_EDGE - selDrag.y);
+  else if (selDrag.y > r.bottom - DRAG_EDGE) v = selDrag.y - (r.bottom - DRAG_EDGE);
+  if (!v) { selDrag.scrolling = false; return; }
+  var top = scroller.scrollTop;
+  scroller.scrollTop = top + Math.max(-40, Math.min(40, v / 2));
+  if (scroller.scrollTop === top) { selDrag.scrolling = false; return; }
+  render();
+  dragUpdate();
+  requestAnimationFrame(dragScroll);
+}
+
+function dragEnd(ev) {
+  if (!selDrag || ev.pointerId !== selDrag.pointer) return;
+  var was = selDrag;
+  if (!was.moved) { selDrag = null; return; }
+  // Kept until after the click that follows, so that click is swallowed above.
+  was.done = true;
+  setTimeout(function () { if (selDrag === was) selDrag = null; }, 0);
+  try { $('sizer').releasePointerCapture(was.pointer); } catch (e) {}
+}
+
 // Shift-click in a list of faces being selected: the items from the last one
 // clicked (`anchor`, an id as `idOf` gives it) to this one, both included, in
 // either order; null if there is no anchor in the list. The anchor stays.
@@ -2631,6 +2719,12 @@ function selectRange(a, b, on) {
     if (on) state.selected[ids[i]] = true; else delete state.selected[ids[i]];
   }
   if (state.anchor == null) state.anchor = a;
+  showSelected();
+}
+
+// The ticks on the photos shown, and the bar, after the selection changed.
+function showSelected() {
+  var ids = state.data.ids;
   Array.prototype.forEach.call(document.querySelectorAll('.cell'), function (c) {
     c.classList.toggle('sel', !!state.selected[ids[parseInt(c.dataset.index, 10)]]);
   });

@@ -543,7 +543,8 @@ Done (see [phase2.md](phase2.md)):
   closes the viewer again.
   Checked in the browser by `core/tests/browser/keyboard.mjs`, together with
   the selection bar (one Tab stop, arrows, Home, End, B) and dialogs (Tab
-  stays in, the focus returns when they close).
+  stays in, the focus returns when they close), and the mouse drag that
+  selects photos.
 - Perceptual hash (64-bit DCT) from the same decode in `files.phash`.
 - `shoebox serve` (axum, UI embedded with rust-embed): virtualised timeline
   grid grouped by month, folder tree, search over paths and tags, viewer
@@ -578,7 +579,10 @@ Done (see [phase3.md](phase3.md)):
 - UI: selection with move/trash, folder
   rename, duplicates and trash pages. Added later: Shift-click selects a
   range, "Select all" on a month heading selects the month (the iPad has no
-  Shift). Every non-GET request needs an
+  Shift); a mouse drag across photos while selecting selects them, or
+  deselects them when it starts on a selected one, as in Finder (the range
+  from the first photo to the one under the pointer, timeline order; the
+  timeline scrolls along at the edges; touch keeps scrolling). Every non-GET request needs an
   `X-Shoebox` header (CSRF protection for localhost without PIN).
 
 Open:
