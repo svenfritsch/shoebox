@@ -275,7 +275,7 @@
   "status.learning": "gezeichnete Gesichter werden gelernt …",
   "status.grouping_pct": "Gesichter werden gruppiert {pct} %",
   "status.grouping": "Gesichter werden gruppiert …",
-  "sel.hint_mouse": "Fotos anklicken zum Auswählen, Umschalt-Klick für einen Bereich",
+  "sel.hint_mouse": "Fotos anklicken oder darüberziehen zum Auswählen, Umschalt-Klick für einen Bereich",
   "sel.hint_touch": "Fotos antippen zum Auswählen",
   "move.title": "Verschieben",
   "move.text": "Verschiebe {count} in den Ordner:",
