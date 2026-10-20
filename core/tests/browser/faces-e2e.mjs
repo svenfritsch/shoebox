@@ -14,7 +14,7 @@
 // time window (`nothingFor`) is for checking that something does not happen.
 // While the page's answers to /info are held back (`holdInfo`) it cannot know
 // that a grouping is done, so what it asks for then comes from the action.
-import { browser, check, until, tr, test, finish, requests, noListRequests, clusterRounds, sidebarIs, groupNames, menu, card, nameCard } from './faces-common.mjs';
+import { browser, check, until, tr, test, finish, requests, noListRequests, clusterRounds, sidebarIs, groupNames, menu, typeName, card, nameCard } from './faces-common.mjs';
 
 const url = process.argv[2];
 const T = 60000;
@@ -290,6 +290,48 @@ await test('a person moved to a group and out again on the real server: the grou
   await move(anton, none);
   check(!(await groupNames(p)).includes('Move Group'), 'the empty group left the sidebar');
   check(!(await api('/groups')).some((g) => g.name === 'Move Group'), 'and the server');
+}));
+
+// The server answers a rename or a merge from the people view it keeps
+// between requests (`App::people_view`), read again after the change: the
+// person in the reply is the one it lists right after, and the sidebar built
+// from the reply is what the server has.
+await test('a person renamed and merged on the real server: the replies are what the server then lists', on('view=people', async () => {
+  // Two faces of the card to a misspelt name, the rest to the right one.
+  const c = await clusterOf('c03');
+  await api(`/clusters/${c.id}/name`, { name: 'Ida Typo', generation: c.generation, faces: c.faces.slice(0, 2).map((f) => f.id) });
+  await grouped();
+  const ida = await named('c03', 'Ida Server');
+  const typo = await personNamed('Ida Typo');
+  check(typo.faces === 2 && ida.faces === c.size - 2, `set up: ${typo.faces} and ${ida.faces} faces`);
+  return { ida, typo, all: c.size };
+}, async (p, t, { ida, typo, all }) => {
+  const listed = async (id) => (await api('/people')).find((x) => x.id === id);
+  const same = async (reply, why) => {
+    const want = await listed(reply.id);
+    check(JSON.stringify(reply) === JSON.stringify(want), `${why}: the reply ${JSON.stringify(reply)} is not what the server lists, ${JSON.stringify(want)}`);
+  };
+  const renamed = await fromReply(p, t, 'renamed', async () => {
+    await openMenu(p, p.locator(`#page .person[data-id="${ida.id}"] .more-btn`));
+    await menu(p, 'people.menu.rename');
+    const reply = posted(p, /^\/people\/\d+\/rename$/);
+    await typeName(p, 'Ida Renamed');
+    return reply;
+  });
+  check(renamed.name === 'Ida Renamed' && renamed.faces === ida.faces && renamed.cover === ida.cover, `renamed: ${JSON.stringify(renamed)}`);
+  await same(renamed, 'renamed');
+  const merged = await fromReply(p, t, 'merged', async () => {
+    await openMenu(p, p.locator(`#page .person[data-id="${typo.id}"] .more-btn`));
+    await menu(p, 'people.menu.merge');
+    await p.locator('#modal-body .pfield input').fill('Ida Renamed');
+    await p.locator('#modal-body .pfield input').press('Enter');
+    const reply = posted(p, /^\/people\/\d+\/merge$/);
+    await p.locator('#modal-actions button').last().click();
+    return reply;
+  });
+  check(merged.id === ida.id && merged.name === 'Ida Renamed' && merged.faces === all && merged.photos === all, `merged: ${JSON.stringify(merged)}`);
+  await same(merged, 'merged');
+  check(!(await listed(typo.id)), 'Ida Typo is gone from the server');
 }));
 
 await finish();
