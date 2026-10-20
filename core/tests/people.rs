@@ -142,6 +142,17 @@ fn person_faces(addr: std::net::SocketAddr, person: i64, state: &str) -> Vec<Val
     get(addr, &format!("/api/people/{person}/faces?state={state}")).json()["faces"].as_array().unwrap().clone()
 }
 
+/// The person as `/api/people` lists them, with the counts of suggestions a
+/// naming reply leaves at 0 (only the next grouping knows them): what the
+/// reply's `person_data` must be, so the page can show it without the list.
+fn as_listed(addr: std::net::SocketAddr, person: i64) -> Value {
+    let people = get(addr, "/api/people").json();
+    let mut p = people.as_array().unwrap().iter().find(|p| p["id"] == person).expect("listed").clone();
+    p["suggested"] = json!(0);
+    p["maybe"] = json!(0);
+    p
+}
+
 fn files_of(faces: &[Value]) -> Vec<i64> {
     let mut files: Vec<i64> = faces.iter().map(|f| f["file"].as_i64().unwrap()).collect();
     files.sort();
@@ -259,10 +270,18 @@ fn suggest_maybe_confirm_and_reject_under_the_guard() {
 
     // Assign by name makes a person; the same name in another spelling is
     // that person.
+    // Both replies carry the person as the list shows them (`person_data`):
+    // new, then with one face more.
     let b1 = face_id(addr, &lib, "Ben/b1.png");
-    let ben = ok(addr, "/api/faces/assign", &json!({ "faces": [b1], "name": "Ben" }))["person"]["id"].as_i64().unwrap();
+    let named = ok(addr, "/api/faces/assign", &json!({ "faces": [b1], "name": "Ben" }));
+    let ben = named["person"]["id"].as_i64().unwrap();
+    assert_eq!(named["person_data"], as_listed(addr, ben));
+    assert_eq!((named["person_data"]["faces"].as_u64(), named["person_data"]["photos"].as_u64()), (Some(1), Some(1)));
     let b2 = face_id(addr, &lib, "Ben/b2.png");
-    assert_eq!(ok(addr, "/api/faces/assign", &json!({ "faces": [b2], "name": " ben " }))["person"]["id"], ben);
+    let named = ok(addr, "/api/faces/assign", &json!({ "faces": [b2], "name": " ben " }));
+    assert_eq!(named["person"]["id"], ben);
+    assert_eq!(named["person_data"], as_listed(addr, ben));
+    assert_eq!(named["person_data"]["faces"].as_u64(), Some(2));
 
     // The Unnamed page acts only on faces nobody has decided on (`open`): a
     // face named in the meantime (in the viewer, on another device) is
@@ -466,6 +485,9 @@ fn groups_merge_and_split() {
     let named = ok(addr, &format!("/api/clusters/{cid}/name"), &body);
     let dora = named["person"]["id"].as_i64().unwrap();
     assert_eq!(dora, dora0, "the name was Dora's already");
+    // Dora as the list shows her now: in her group, with the two faces.
+    assert_eq!(named["person_data"], as_listed(addr, dora));
+    assert_eq!((named["person_data"]["group_id"].as_i64(), named["person_data"]["faces"].as_u64()), (Some(familie), Some(2)));
     // The reply says what is left of the card: its faces changed, so it has
     // a new generation; the old one is refused. Its number is where it sits
     // in the list now (which may move: cards of the same size have no fixed
