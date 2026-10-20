@@ -1858,11 +1858,21 @@ page too (`takePerson`, `countGroups`, `peopleShown`, `personRemoved`, `peopleMe
 only when the reply has no person or no picture could be told, and after a regrouping only when the People page is open
 (`people.stale` otherwise). The Unnamed page asks for its clusters once per naming, when the grouping that
 follows is done (`facesInfo`); a card or the single-faces bar updates itself from the
-reply. Checked in the browser by `core/tests/browser/unnamed.mjs` and `people.mjs`
-(a library drawn by `make-faces.py`, faces from the fake recognizer): the requests a
-page makes per action are counted, `/api/info` is held or its grouping steps are
-played one at a time, and the sidebar is compared with what the server has. Open:
-`people::people`, `people::clusters` and `people::decide` still load every face
-(`View::load`) under the lock; every change to people (`people_change`), also
-groups, names and pictures, asks for a regrouping, so the People page fetches the
-list once more when it is done.
+reply. Open: `people::people`, `people::clusters` and
+`people::decide` still load every face (`View::load`) under the lock; every change
+to people (`people_change`), also groups, names and pictures, asks for a
+regrouping, so the People page fetches the list once more when it is done.
+
+Face crops (`/faces/{id}/crop`) took 0.6 to 3 s each on that drive while
+thumbnails took milliseconds: finding a face's file joined `faces::PRESENT`
+(every file grouped by content, ~120 ms on 100 000 files) for every crop, under
+the shared connection, so a page of crops queued one behind the other. Since
+schema v16 `files` has an index by content (`files_quick_hash`: quick_hash,
+missing_since, kind), and a query about one face or person (`person_photos`) asks for its file
+with `faces::present_file` (one look into that index). Keep `PRESENT` for
+queries over all faces. In the page: a picture taken off the page keeps its
+request and the browser sends only six at a time to this server, so pages,
+the viewer and the timeline's rows stop what they no longer show
+(`dropPending`, `clearNode`, the viewer's warmed neighbours); a list that can
+be thousands long (all faces of a group) goes onto the page a part at a time
+as it is scrolled to (`growGrid`), and tiles are kept by id across redraws.
