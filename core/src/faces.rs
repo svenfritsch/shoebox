@@ -789,7 +789,14 @@ pub fn prune_crops(conn: &Connection) -> Result<u64> {
     if !crate::people::table_exists(conn, "thumbs", "faces")? || !crate::people::table_exists(conn, "recog", "faces")? {
         return Ok(0);
     }
-    let m = Matched::load(conn, None)?;
+    prune_crops_in(conn, &Matched::load(conn, None)?)
+}
+
+/// `prune_crops`, with the faces and decisions of `m`.
+pub fn prune_crops_in(conn: &Connection, m: &Matched) -> Result<u64> {
+    if !crate::people::table_exists(conn, "thumbs", "faces")? || !crate::people::table_exists(conn, "recog", "faces")? {
+        return Ok(0);
+    }
     let mut keep: HashSet<(String, [u64; 4])> =
         (0..m.faces.len()).filter(|&i| m.decided(i).is_none()).map(|i| (m.faces[i].key.clone(), bits(m.faces[i].b))).collect();
     keep.extend(covers(conn)?.into_iter().map(|(k, b)| (k, bits(b))));

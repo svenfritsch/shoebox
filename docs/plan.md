@@ -1905,10 +1905,50 @@ page too (`takePerson`, `countGroups`, `peopleShown`, `personRemoved`, `peopleMe
 only when the reply has no person or no picture could be told, and after a regrouping only when the People page is open
 (`people.stale` otherwise). The Unnamed page asks for its clusters once per naming, when the grouping that
 follows is done (`facesInfo`); a card or the single-faces bar updates itself from the
-reply. Checked by the browser tests (see "Browser tests"). Open: `people::people`, `people::clusters` and
-`people::decide` still load every face (`View::load`) under the lock; every change
-to people (`people_change`), also groups, names and pictures, asks for a
-regrouping, so the People page fetches the list once more when it is done.
+reply. Checked by the browser tests (see "Browser tests").
+
+The people view is kept (measured with `scripts/bench-people.py`: 100 000
+files, 300 000 faces, 300 people, on a 4-core Linux VM with an SSD; the real
+drive is slower). Every people and cluster request, a person's faces and every
+naming read all faces, decisions, clusters and present files (`View::load`,
+about 1.2 s there), a naming five times, under the shared connection:
+`/api/people` took 2.8 s, `/api/clusters` 1.8 s, naming a cluster 10.8 s, and
+`/api/groups` waited up to 12 s. Now `App::people_view` keeps one
+`people::View` per library, read on a read-only connection of its own
+(`PeopleCache`): reading it never holds up `App::conn`, and its
+`PRAGMA data_version` sees every commit to `library.db` and `recognition.db`,
+the server's own included, so nothing has to remember to invalidate it. After
+a commit to `library.db` only that part is read again (`View::refresh`:
+decisions, people, present files; all of it if a pet's species changed);
+after one to `recognition.db` (a `recognize` run, the regrouping, forgetting
+faces: `faces_version`) all of it. While this server's own regrouping runs,
+the view keeps its `recognition.db` part (that run's bookkeeping would
+otherwise make every request read everything again) and reads it again when
+the run is done, before the page is told (`refresh_people_view`). The counts per
+person and the grouping of clusters are worked out once per view (`OnceLock`);
+`people::people` no longer looks through every face for each person's picture.
+Changes use the view from before (`decide_in`, `cluster_face_ids_in`) and
+reply from the view after (`people_change_then`). The regrouping's connection
+has a 64 MiB page cache, so rewriting `recog.clusters` locks `recognition.db`
+only while it commits; the backup (`library.db.bak`, `userdata.json`, about 1 s
+there, several on a USB drive) runs on a connection of its own. After:
+`/api/people` 2 ms, `/api/clusters` 3 to 12 ms (about 200 ms for the first one
+after a change), naming a cluster 0.9 s, `/api/groups` p95 0.5 s and at most
+1.1 s while naming and regrouping. The view holds about 100 MB for 300 000
+faces. The faces of one photo (`/api/files/{id}` in the viewer and the info
+panel, a crop that is cut for the first time) were read with the queries of
+every photo (`?1 IS NULL OR key = ?1`), which SQLite cannot answer from the
+index by content, so each read every face, decision and file, and every
+cluster row (about 400 ms there, seconds from a cold drive): now one query per
+case (`faces_sql` and the others in `people.rs`, checked with `EXPLAIN QUERY
+PLAN` in a test), 15 ms. Still open: every change to people (`people_change`),
+also groups, names and pictures, asks for a regrouping, so the People page
+fetches the list once more when it is done; and a regrouping takes about 45 s
+of all cores on that library after every name (which phase dominates is not
+measured yet), so requests compete for the CPU; it could leave a core free,
+wait for a pause or a few names, or work only on what the change touched. WAL stays off
+(its `-shm` file on external exFAT drives, copies of `.shoebox` without the
+`-wal` file).
 
 Face crops (`/faces/{id}/crop`) took 0.6 to 3 s each on that drive while
 thumbnails took milliseconds: finding a face's file joined `faces::PRESENT`
