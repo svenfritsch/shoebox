@@ -1935,12 +1935,18 @@ there, several on a USB drive) runs on a connection of its own. After:
 `/api/people` 2 ms, `/api/clusters` 3 to 12 ms (about 200 ms for the first one
 after a change), naming a cluster 0.9 s, `/api/groups` p95 0.5 s and at most
 1.1 s while naming and regrouping. The view holds about 100 MB for 300 000
-faces. Still open: every change to people (`people_change`), also groups,
-names and pictures, asks for a regrouping, so the People page fetches the list
-once more when it is done; and a regrouping takes about 45 s of all cores on
-that library after every name (which phase dominates is not measured yet), so
-requests compete for the CPU; it could leave a core free, wait for a pause or
-a few names, or work only on what the change touched. WAL stays off
+faces. The faces of one photo (`/api/files/{id}` in the viewer and the info
+panel, a crop that is cut for the first time) were read with the queries of
+every photo (`?1 IS NULL OR key = ?1`), which SQLite cannot answer from the
+index by content, so each read every face, decision and file, and every
+cluster row (about 400 ms there, seconds from a cold drive): now one query per
+case (`faces_sql` and the others in `people.rs`, checked with `EXPLAIN QUERY
+PLAN` in a test), 15 ms. Still open: every change to people (`people_change`),
+also groups, names and pictures, asks for a regrouping, so the People page
+fetches the list once more when it is done; and a regrouping takes about 45 s
+of all cores on that library after every name (which phase dominates is not
+measured yet), so requests compete for the CPU; it could leave a core free,
+wait for a pause or a few names, or work only on what the change touched. WAL stays off
 (its `-shm` file on external exFAT drives, copies of `.shoebox` without the
 `-wal` file).
 

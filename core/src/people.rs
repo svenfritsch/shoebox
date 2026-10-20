@@ -23,7 +23,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
 
 use anyhow::{Result, bail};
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 use serde::{Deserialize, Serialize};
 
 use crate::pets::{Space, Thresholds};
@@ -167,24 +167,79 @@ pub(crate) fn table_exists(conn: &Connection, schema: &str, table: &str) -> Resu
         .is_some())
 }
 
+// The faces, decisions, files and sizes of every content, or (`one`) of the
+// content bound as `?1`. Two statements, not one with `?1 IS NULL OR key =
+// ?1`: SQLite plans a statement once for both, so that one could never use
+// the index by content, and showing one photo's faces read every face.
+
+/// `recog.faces` (`version`: `recognition.db`'s) with the width in px.
+fn faces_sql(version: i32, one: bool) -> String {
+    let roll = if version >= 2 { "f.roll" } else { "0" };
+    // Before v5 there are no pets.
+    let species = if version >= 5 { "f.species" } else { "NULL" };
+    format!(
+        "SELECT f.id, f.key, f.x, f.y, f.w, f.h, {roll}, {px}, f.score, f.model, {species} FROM recog.faces f
+         LEFT JOIN recog.looked l ON l.key = f.key AND l.task = CASE WHEN {species} IS NULL THEN '{FACES}' ELSE '{PETS}' END
+         {filter} ORDER BY f.id",
+        px = faces::size_px(roll),
+        filter = if one { "WHERE f.key = ?1" } else { "" }
+    )
+}
+
+fn bodies_sql(one: bool) -> String {
+    format!("SELECT key, x, y, w, h FROM recog.bodies{}", if one { " WHERE key = ?1" } else { "" })
+}
+
+fn species_sql(one: bool) -> String {
+    format!("SELECT id, key, x, y, w, h, species, at FROM face_species{} ORDER BY id", if one { " WHERE key = ?1" } else { "" })
+}
+
+/// `species`: whether `face_decisions` has the column (v7).
+fn decisions_sql(species: bool, one: bool) -> String {
+    format!(
+        "SELECT id, key, x, y, w, h, person_id, decision, manual, at, {} FROM face_decisions{} ORDER BY id",
+        if species { "species" } else { "NULL" },
+        if one { " WHERE key = ?1" } else { "" }
+    )
+}
+
+/// `faces::PRESENT`; for one content its lowest present file, as `min(id)`
+/// picks it there.
+fn present_sql(one: bool) -> String {
+    if one {
+        "SELECT quick_hash, id, kind FROM files
+         WHERE quick_hash = ?1 AND missing_since IS NULL AND kind IN ('jpeg', 'png', 'heic') ORDER BY id LIMIT 1"
+            .to_string()
+    } else {
+        format!("SELECT quick_hash, id, kind FROM ({})", faces::PRESENT)
+    }
+}
+
+/// The cluster cache, of every face or of the faces of one content.
+fn clusters_sql(one: bool) -> String {
+    format!(
+        "SELECT face, cluster, person, similarity FROM recog.clusters{}",
+        if one { " WHERE face IN (SELECT id FROM recog.faces WHERE key = ?1)" } else { "" }
+    )
+}
+
+fn sizes_sql(one: bool) -> String {
+    format!(
+        "SELECT key, width, height FROM recog.looked WHERE task = '{FACES}' AND width IS NOT NULL{}",
+        if one { " AND key = ?1" } else { "" }
+    )
+}
+
 impl Matched {
     /// All faces and decisions, or those of one content. `conn` has `recog`
     /// attached (read-only works: a `recognition.db` of phase 4 and a
     /// `library.db` before v4 too).
     pub fn load(conn: &Connection, key: Option<&str>) -> Result<Matched> {
         let version: i32 = conn.pragma_query_value(Some("recog"), "user_version", |r| r.get(0))?;
-        let roll = if version >= 2 { "f.roll" } else { "0" };
-        // Before v5 there are no pets.
-        let species = if version >= 5 { "f.species" } else { "NULL" };
         let mut faces = Vec::new();
         {
-            let mut stmt = conn.prepare(&format!(
-                "SELECT f.id, f.key, f.x, f.y, f.w, f.h, {roll}, {px}, f.score, f.model, {species} FROM recog.faces f
-                 LEFT JOIN recog.looked l ON l.key = f.key AND l.task = CASE WHEN {species} IS NULL THEN '{FACES}' ELSE '{PETS}' END
-                 WHERE ?1 IS NULL OR f.key = ?1 ORDER BY f.id",
-                px = faces::size_px(roll)
-            ))?;
-            let mut rows = stmt.query([key])?;
+            let mut stmt = conn.prepare(&faces_sql(version, key.is_some()))?;
+            let mut rows = stmt.query(params_from_iter(key))?;
             while let Some(r) = rows.next()? {
                 faces.push(Detected {
                     id: r.get(0)?,
@@ -205,8 +260,8 @@ impl Matched {
         let mut bodies: HashMap<String, Vec<[f64; 4]>> = HashMap::new();
         // Before v6 nobody saw people: no face is taken for a pet's.
         if version >= 6 {
-            let mut stmt = conn.prepare("SELECT key, x, y, w, h FROM recog.bodies WHERE ?1 IS NULL OR key = ?1")?;
-            let mut rows = stmt.query([key])?;
+            let mut stmt = conn.prepare(&bodies_sql(key.is_some()))?;
+            let mut rows = stmt.query(params_from_iter(key))?;
             while let Some(r) = rows.next()? {
                 bodies.entry(r.get(0)?).or_default().push([r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?]);
             }
@@ -334,9 +389,9 @@ fn load_species(conn: &Connection, key: Option<&str>) -> Result<Vec<SpeciesRow>>
     if !table_exists(conn, "main", "face_species")? {
         return Ok(Vec::new());
     }
-    let mut stmt = conn.prepare("SELECT id, key, x, y, w, h, species, at FROM face_species WHERE ?1 IS NULL OR key = ?1 ORDER BY id")?;
+    let mut stmt = conn.prepare(&species_sql(key.is_some()))?;
     let rows = stmt
-        .query_map([key], |r| Ok(SpeciesRow { id: r.get(0)?, key: r.get(1)?, b: [r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?], species: r.get(6)?, at: r.get(7)? }))?
+        .query_map(params_from_iter(key), |r| Ok(SpeciesRow { id: r.get(0)?, key: r.get(1)?, b: [r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?], species: r.get(6)?, at: r.get(7)? }))?
         .collect::<rusqlite::Result<_>>()?;
     Ok(rows)
 }
@@ -368,12 +423,9 @@ fn apply_species_overrides(conn: &Connection, key: Option<&str>, faces: &mut [De
 
 fn load_decisions(conn: &Connection, key: Option<&str>) -> Result<Vec<DecisionRow>> {
     // A library.db before v7 (read-only use) has no species: all persons'.
-    let species = if db::has_column(conn, "main", "face_decisions", "species")? { "species" } else { "NULL" };
-    let mut stmt = conn.prepare(&format!(
-        "SELECT id, key, x, y, w, h, person_id, decision, manual, at, {species} FROM face_decisions
-         WHERE ?1 IS NULL OR key = ?1 ORDER BY id"
-    ))?;
-    let mut rows = stmt.query([key])?;
+    let species = db::has_column(conn, "main", "face_decisions", "species")?;
+    let mut stmt = conn.prepare(&decisions_sql(species, key.is_some()))?;
+    let mut rows = stmt.query(params_from_iter(key))?;
     let mut out = Vec::new();
     while let Some(r) = rows.next()? {
         let text: String = r.get(7)?;
@@ -493,8 +545,8 @@ pub fn not_face_ids(conn: &Connection) -> Result<HashSet<i64>> {
 /// Content → (a present file, its kind): all, or of one content.
 fn load_present(conn: &Connection, key: Option<&str>) -> Result<HashMap<String, (i64, String)>> {
     let mut present = HashMap::new();
-    let mut stmt = conn.prepare(&format!("SELECT quick_hash, id, kind FROM ({}) WHERE ?1 IS NULL OR quick_hash = ?1", faces::PRESENT))?;
-    let mut rows = stmt.query([key])?;
+    let mut stmt = conn.prepare(&present_sql(key.is_some()))?;
+    let mut rows = stmt.query(params_from_iter(key))?;
     while let Some(r) = rows.next()? {
         present.insert(r.get::<_, String>(0)?, (r.get(1)?, r.get(2)?));
     }
@@ -669,8 +721,8 @@ impl View {
         let present = load_present(conn, key)?;
         let mut cache = HashMap::new();
         if table_exists(conn, "recog", "clusters")? {
-            let mut stmt = conn.prepare("SELECT face, cluster, person, similarity FROM recog.clusters")?;
-            let mut rows = stmt.query([])?;
+            let mut stmt = conn.prepare(&clusters_sql(key.is_some()))?;
+            let mut rows = stmt.query(params_from_iter(key))?;
             while let Some(r) = rows.next()? {
                 cache.insert(
                     r.get::<_, i64>(0)?,
@@ -681,18 +733,30 @@ impl View {
         let names = load_names(conn)?;
         let mut sizes = HashMap::new();
         {
-            let mut stmt = conn.prepare(&format!(
-                "SELECT key, width, height FROM recog.looked
-                 WHERE task = '{FACES}' AND width IS NOT NULL AND (?1 IS NULL OR key = ?1)"
-            ))?;
-            let mut rows = stmt.query([key])?;
+            let mut stmt = conn.prepare(&sizes_sql(key.is_some()))?;
+            let mut rows = stmt.query(params_from_iter(key))?;
             while let Some(r) = rows.next()? {
                 sizes.insert(r.get::<_, String>(0)?, (r.get(1)?, r.get(2)?));
             }
         }
         let pet_faces = m.pet_faces();
-        // Of everyone: from the decisions just read when they are all there.
-        let person_species = if key.is_none() { person_species_of(&m.decisions) } else { person_species(conn)? };
+        // Of everyone: from the decisions just read when they are all there;
+        // for one content, of the people confirmed in it (the only ones it
+        // asks about).
+        let person_species = match key {
+            None => person_species_of(&m.decisions),
+            Some(_) => {
+                let mut of = HashMap::new();
+                let confirmed: HashSet<i64> =
+                    m.decisions.iter().filter(|d| d.decision == Decision::Confirmed).filter_map(|d| d.person).collect();
+                for p in confirmed {
+                    if let Some(s) = species_of_person(conn, p)? {
+                        of.insert(p, s);
+                    }
+                }
+                of
+            }
+        };
         Ok(View {
             m,
             whole: key.is_none(),
@@ -2347,6 +2411,45 @@ pub fn user_data(conn: &Connection) -> Result<UserPeople> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The rows of one content (one photo's faces in the viewer, a crop) are
+    /// found through the indexes by content: none of these reads a whole table.
+    #[test]
+    fn one_contents_rows_are_found_through_the_indexes() {
+        let dir = std::env::temp_dir().join(format!("shoebox-people-plans-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join(db::DIR).join(db::FILE);
+        let conn = db::open(&path).unwrap();
+        recognize::attach(&conn, &path).unwrap();
+        let version: i32 = conn.pragma_query_value(Some("recog"), "user_version", |r| r.get(0)).unwrap();
+        let queries = [
+            ("faces", faces_sql(version, true)),
+            ("bodies", bodies_sql(true)),
+            ("species", species_sql(true)),
+            ("decisions", decisions_sql(true, true)),
+            ("present", present_sql(true)),
+            ("sizes", sizes_sql(true)),
+            ("clusters", clusters_sql(true)),
+        ];
+        for (what, sql) in queries {
+            let plan: Vec<String> = conn
+                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .unwrap()
+                .query_map(["key"], |r| r.get(3))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap();
+            assert!(plan.iter().any(|l| l.starts_with("SEARCH")), "{what}: {plan:?}");
+            assert!(!plan.iter().any(|l| l.starts_with("SCAN")), "{what} reads a whole table: {plan:?}");
+        }
+        // For every content they are plain reads of the tables (no `?1`).
+        for sql in [faces_sql(version, false), bodies_sql(false), species_sql(false), decisions_sql(true, false), present_sql(false), sizes_sql(false), clusters_sql(false)] {
+            assert!(!sql.contains("?1"), "{sql}");
+            conn.prepare(&sql).unwrap();
+        }
+        drop(conn);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     fn face(id: i64, key: &str, b: [f64; 4]) -> Detected {
         Detected { id, key: key.into(), b, roll: 0, px: 100.0, score: 0.9, model: "m".into(), species: None }
