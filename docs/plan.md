@@ -1430,9 +1430,14 @@ the same checks need real waits (each "nothing more happens" costs a second)
 and depend on how fast the server groups (225 faces take milliseconds), so only
 a few tests run there, enough to catch a fake that no longer matches the
 server. The real server found what a fake could not: every change to people
-asks for a regrouping (so the People page fetches the list once more after
-it), and clusters stop at 100 faces (`clusters::MAX_CLUSTER`, below
-`GROW_STEP`).
+asked for a regrouping (so the People page fetches the list once more after
+it; now only decisions, a merge and a deletion do, see "When to
+regroup" under Performance), and clusters stop at 100 faces
+(`clusters::MAX_CLUSTER`, below `GROW_STEP`). `run.sh` serves with
+`SHOEBOX_REGROUP=2,1500,300` (two cards or 1.5 s) so the real server's
+regrouping comes within the tests' waits; the fake follows the app's own
+rules (10 cards, 30 s) and keeps the counts of the last grouping in
+`/api/info`, as the server's cache does.
 
 Keeping them up to date (agents too):
 
@@ -1941,12 +1946,52 @@ every photo (`?1 IS NULL OR key = ?1`), which SQLite cannot answer from the
 index by content, so each read every face, decision and file, and every
 cluster row (about 400 ms there, seconds from a cold drive): now one query per
 case (`faces_sql` and the others in `people.rs`, checked with `EXPLAIN QUERY
-PLAN` in a test), 15 ms. Still open: every change to people (`people_change`),
-also groups, names and pictures, asks for a regrouping, so the People page
-fetches the list once more when it is done; and a regrouping takes about 45 s
-of all cores on that library after every name (which phase dominates is not
-measured yet), so requests compete for the CPU; it could leave a core free,
-wait for a pause or a few names, or work only on what the change touched. WAL stays off
+PLAN` in a test), 15 ms.
+
+When to regroup (`serve/regroup.rs`): a regrouping took 134 s of all four
+cores on that library (another VM than the 45 s above), and it ran after
+every name, back to back while someone named cards. Where the time goes
+(`regrouping_phases` in `core/tests/people_bench.rs`, `SHOEBOX_CLUSTER_TIMES=1`
+prints every phase): the suggestion searches, every face without a decision
+(163 508) against the index of every confirmed face (116 982, an eighth of
+its cells each), 125 to 128 s, 94 %; everything else together about 8 s
+(`pet_face_ids` 1 s, `eligible` 1.5 s, the decisions 1 s, the reference index
+1.4 s, reading the neighbour lists and the edges 0.8 s, join and split 0.9 s,
+the write 0.2 s; no neighbour list is computed again after a name). Now
+the server regroups when it pays off, not after every decision: after 10
+cards (a request that names, ignores, marks as not a face or confirms, one
+each), or 30 s after the last decision (each one, a rejection too, starts the
+pause again); 3 s after the Unnamed page is left (`POST /api/clusters/left`),
+an undo of a decision from before the last regrouping (its face is not in
+`recog.clusters`), a rejection taken back, a merge, a deleted person, or when
+the cards with a suggestion ran out (there were some after the last
+regrouping, none are left) or no card is left; at once after new or forgotten
+faces (`recognize`, faces drawn by hand, Carry over, a species). Names,
+groups, pictures and hiding ask for none. Decisions made while one runs count
+towards the next one; the one running finishes (its result is right: every
+request sees through the decisions made since). `/api/info` `clusters`
+says `pending`, `cards_left`, `wait_ms` and `pause_ms` (relative, so device
+clocks do not matter), a "faces" event tells of every change, and the
+Unnamed page counts the seconds down itself. `stale` now means a regrouping
+is starting or running (no longer: asked for). The rules are
+`serve::Options::regroup` (the tests: every card at once, `REGROUP_AT_ONCE`;
+the browser tests against the real server: `SHOEBOX_REGROUP=2,1500,300`).
+Progress (`done`/`total` of the job) counts the suggestion searches too, so
+the page's circle fills over the whole run. The server's regrouping leaves
+one core free (`ann::with_threads`, `shoebox recognize` takes them all):
+while one runs, `/api/groups` (every 100 ms) went from median 10 ms, p95
+660 ms, max 1.9 s to 5 ms, 465 ms, 1.9 s, and `/api/people` from max 2.9 s to
+2.8 s, for a regrouping about 13 % longer (172 to 195 s in the benchmark
+server). The waits of up to 2 to 3 s that remain are not the CPU: most likely
+the people view read again in full when the run is done (`refresh_people_view`,
+about 1.2 s, under the cache's lock) and the rewrite of `recog.clusters`
+(not measured one by one). Next step: work only on what changed. A face's
+suggestion depends only on that face, the confirmed faces and its rejections,
+so after 10 names only the few hundred newly confirmed faces need comparing
+with the open ones (well under a second), and an undo, a rejection or a
+merge only the faces they touch; that would bring a regrouping from about
+134 s to the remaining 8 s, most of which (the loads, the reference index)
+could be kept between runs. WAL stays off
 (its `-shm` file on external exFAT drives, copies of `.shoebox` without the
 `-wal` file).
 
