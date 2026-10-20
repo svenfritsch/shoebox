@@ -349,7 +349,7 @@ function renderChips() {
     var c = el('span', 'chip' + (named ? ' ' + (ic === 'scan' ? 'text' : 'name') : ''), '');
     if (ic) c.appendChild(named ? icon(ic) : ic);
     c.appendChild(document.createTextNode(label));
-    if (title) c.title = title;
+    if (title) setTip(c, title);
     var x = el('button', '', '✕');
     setTip(x, tr('chip.remove'));
     x.onclick = clear;
@@ -361,7 +361,7 @@ function renderChips() {
     add(folder.path || folder.name, function () { setFilter(withFilter({ folder: null })); }, folderIcon());
     if (folder.path && !readOnly) {
       var edit = el('button', 'edit', '✎');
-      edit.title = tr('chip.rename_folder');
+      setTip(edit, tr('chip.rename_folder'));
       edit.onclick = function () { renameFolder(folder); };
       box.lastChild.insertBefore(edit, box.lastChild.lastChild);
     }
@@ -394,7 +394,7 @@ function renderChips() {
     var spot = placeOf(f.place);
     add(spot ? spot.name : '…', function () { setFilter(withFilter({ place: null })); }, icon('place'));
     var onMap = el('button', 'edit', '🗺');
-    onMap.title = tr('chip.show_on_map');
+    setTip(onMap, tr('chip.show_on_map'));
     onMap.onclick = function () { showView('locations', f.place); };
     box.lastChild.insertBefore(onMap, box.lastChild.lastChild);
   }
@@ -406,7 +406,7 @@ function renderChips() {
   });
   f.dates.forEach(function (term) {
     add(dateTermLabel(term), function () { setFilter(withFilter({ dates: f.dates.filter(function (t) { return t !== term; }) })); }, icon('date'));
-    box.lastChild.title = tr('dates.chip_hint', { date: dateTermLabel(term) });
+    setTip(box.lastChild, tr('dates.chip_hint', { date: dateTermLabel(term) }));
   });
   if (f.nodate) add(dates.needs ? tr('side.needs_date_n', { n: dates.needs }) : tr('side.needs_date'), function () { setFilter(withFilter({ nodate: false })); }, icon('date'));
   if (f.compare) {
@@ -799,7 +799,7 @@ function compareBadge(fileId) {
   if (isAll() || !c || !drives.only || !drives.only[fileId]) return null;
   var kind = c.kind;
   var b = el('span', 'cmp-badge ' + kind, tr(kind === 'backup' ? 'cmp.only_backup' : 'cmp.not_backed_up'));
-  b.title = tr(kind === 'backup' ? 'cmp.tip_only_backup' : 'cmp.tip_not_backed_up', { drive: driveLabel(drives.current.id), other: driveLabel(c.other) });
+  setTip(b, tr(kind === 'backup' ? 'cmp.tip_only_backup' : 'cmp.tip_not_backed_up', { drive: driveLabel(drives.current.id), other: driveLabel(c.other) }));
   return b;
 }
 
@@ -1736,7 +1736,7 @@ function showItem() {
   var rot = $('lb-rotate');
   rot.hidden = isAll() || kind === 'v';
   rot.disabled = kind !== 'j' && kind !== 'h' && kind !== 'p';
-  rot.title = tr(rot.disabled ? 'lb.rotate_raw' : kind === 'j' ? 'lb.rotate_hint' : 'lb.rotate_view_hint');
+  setTip(rot, tr(rot.disabled ? 'lb.rotate_raw' : kind === 'j' ? 'lb.rotate_hint' : 'lb.rotate_view_hint'));
   $('lb-title').textContent = '';
   $('lb-text').hidden = true; // until the photo's details say it has text
   lb.hover = null;
@@ -2065,7 +2065,7 @@ function renderPanelAll(info) {
     var name = f.state === 'confirmed' ? f.person.name : tr(f.state === 'maybe' ? 'info.guess_maybe' : 'info.guess', { name: f.person.name });
     var line = el('div', 'pface', name + (f.species ? ' ' + petIcon(f.species) : ''));
     // As in the drive's own panel: pointing at (or tapping) a face shows its box.
-    line.title = tr('info.show_where');
+    setTip(line, tr('info.show_where'));
     line.onclick = function () { lb.hover = lb.hover === k ? null : k; drawFaces(); };
     line.addEventListener('mouseenter', function () { lb.hover = k; drawFaces(); });
     line.addEventListener('mouseleave', function () { if (lb.hover === k) { lb.hover = null; drawFaces(); } });
@@ -2085,7 +2085,7 @@ function renderPanelAll(info) {
   if (text) panel.appendChild(text);
   var actions = el('div', 'actions');
   var open = el('button', 'btn quiet', tr('info.open_in', { name: driveName }));
-  open.title = tr('info.open_in_hint');
+  setTip(open, tr('info.open_in_hint'));
   open.onclick = function () { switchLibrary(lib.id, 'folder=' + info.folder_id); };
   actions.appendChild(open);
   if (state.reveal) {
@@ -2114,7 +2114,7 @@ function alsoOnRow(dl, before, library, file) {
     list.forEach(function (c) {
       var cut = c.path.lastIndexOf('/');
       var b = el('button', 'link also-on', (c.volume || c.name) + (cut > 0 ? ' · ' + c.path.slice(0, cut) : ''));
-      b.title = tr('info.also_on_hint');
+      setTip(b, tr('info.also_on_hint'));
       b.onclick = function () { switchLibrary(c.library, 'folder=' + c.folder_id); };
       dd.appendChild(b);
     });
@@ -2751,7 +2751,7 @@ function moveDialog(ids, done) {
   keep.checked = false;
   keepLabel.appendChild(keep);
   keepLabel.appendChild(document.createTextNode(' ' + tr('move.keep_folder_tags')));
-  keepLabel.title = tr('move.keep_hint');
+  setTip(keepLabel, tr('move.keep_hint'));
   body.appendChild(keepLabel);
   body.appendChild(el('p', 'hint', tr('move.hint')));
   var error = el('p', 'error');
@@ -3283,7 +3283,7 @@ function updateCrossBar(labels) {
   pick.onchange = function () { crossState.pick = pick.value; };
   bar.appendChild(pick);
   var mark = el('button', 'btn quiet', tr('dups.cross.mark'));
-  mark.title = tr('dups.cross.mark_hint');
+  setTip(mark, tr('dups.cross.mark_hint'));
   mark.onclick = function () { crossState.pick = pick.value; crossMarkDrive(pick.value); };
   bar.appendChild(mark);
   var clear = el('button', 'btn quiet', tr('dups.clear'));
@@ -3494,7 +3494,7 @@ function dupToolbar() {
   };
   DUP_KINDS.forEach(function (k) {
     var label = el('label', 'check');
-    label.title = k.hint;
+    setTip(label, k.hint);
     var cb = el('input');
     cb.type = 'checkbox';
     cb.checked = dupState.types[k.id];
@@ -3671,7 +3671,7 @@ function preselectMenu() {
       menu.appendChild(el('div', 'dup-pre-head', DUP_KINDS.filter(function (k) { return k.id === entry.kind; })[0].label));
     }
     var b = el('button', 'btn quiet', preselectText(entry, false) + ' · ' + trn('count.files', c.files));
-    b.title = preselectText(entry, true);
+    setTip(b, preselectText(entry, true));
     b.onclick = function () { applyPreselect(entry); };
     menu.appendChild(b);
   });
@@ -3782,7 +3782,7 @@ function compareDialog(g, start, onKeep) {
     var row = el('div', 'compare-buttons');
     // Keep: mark this photo to stay; Keep (N) below ticks all the others.
     var tog = el('button', 'btn quiet keep-toggle');
-    tog.title = tr('dups.keep_hint');
+    setTip(tog, tr('dups.keep_hint'));
     tog.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path class="tick" d="M7.5 12.5l3 3 6-7"/></svg>';
     tog.appendChild(el('span', '', tr('dups.keep')));
     tog.onclick = function () { if (kept[f.id]) delete kept[f.id]; else kept[f.id] = true; refresh(); };
@@ -3829,12 +3829,12 @@ function groupNode(g) {
   var head = el('div', 'group-head');
   var kind = DUP_KINDS.filter(function (k) { return k.id === g.kind; })[0];
   var title = el('span', 'label', kind.label);
-  title.title = kind.hint;
+  setTip(title, kind.hint);
   head.appendChild(title);
   var ids = g.files.map(function (f) { return f.id; });
   var decide = function (decision, label, hint) {
     var b = el('button', 'btn quiet', label);
-    b.title = hint;
+    setTip(b, hint);
     b.onclick = function () {
       b.disabled = true;
       post(LIBAPI + '/duplicates/decide', { ids: ids, decision: decision }).then(function () {
@@ -3932,7 +3932,7 @@ function groupNode(g) {
     if (thumb) {
       // Pinned to the foot of the card, edge to edge.
       var only = el('button', 'keep-one', tr('dups.keep_this'));
-      only.title = tr('dups.keep_this_hint');
+      setTip(only, tr('dups.keep_this_hint'));
       only.onclick = function () { keepTicked([f]); };
       card.appendChild(only);
     }
@@ -3966,7 +3966,7 @@ function groupNode(g) {
     var name = el('div', 'name', first.name + ' ');
     if (first.same) {
       var same = el('span', 'same', String.fromCharCode(64 + first.same));
-      same.title = tr('dups.same_letter');
+      setTip(same, tr('dups.same_letter'));
       name.appendChild(same);
     }
     left.appendChild(name);
@@ -4386,7 +4386,7 @@ function infoTags(row, info) {
       var b = el('button', '');
       b.appendChild(folderIcon());
       b.appendChild(document.createTextNode(t.name));
-      b.title = tr('tags.folder_hint');
+      setTip(b, tr('tags.folder_hint'));
       b.onclick = show;
       tags.appendChild(b);
       return;
@@ -5672,7 +5672,7 @@ function renderFacesSection() {
     var toggle = el('button', 'toggle');
     if (s.people.length) setArrow(toggle, !!people.open[key]);
     var name = el('button', 'name', s.name);
-    name.title = tr(s.people.length ? (s.id == null ? 'people.group_toggle' : 'people.group_show') : 'people.group_empty');
+    setTip(name, tr(s.people.length ? (s.id == null ? 'people.group_toggle' : 'people.group_show') : 'people.group_empty'));
     var flip = function () { people.open[key] = !people.open[key]; renderFacesSection(); };
     toggle.onclick = flip;
     if (s.id == null) name.onclick = flip;
@@ -6230,7 +6230,7 @@ function loadPeoplePage() {
   var gs = el('button', 'btn quiet', tr('people.groups_btn'));
   gs.onclick = groupsDialog;
   var check = el('button', 'btn quiet', tr('settings.calibration'));
-  check.title = tr('people.calibration_hint');
+  setTip(check, tr('people.calibration_hint'));
   check.onclick = function () { showView('settings'); };
   bar.appendChild(gs);
   bar.appendChild(check);
@@ -6270,7 +6270,7 @@ function personTile(p) {
   t.appendChild(a);
   if (p.suggested + p.maybe) {
     var badge = el('button', 'pbadge', tr('people.to_check', { n: p.suggested + p.maybe }));
-    badge.title = tr('people.suggested_for', { name: p.name });
+    setTip(badge, tr('people.suggested_for', { name: p.name }));
     badge.onclick = function () { showView('person', p.id, p.suggested ? 'suggested' : 'maybe'); };
     t.appendChild(badge);
   }
@@ -6624,7 +6624,7 @@ function faceSizeControl(page) {
   var size = faceSize();
   page.style.setProperty('--face-size', size + 'px');
   var label = el('label', 'face-size');
-  label.title = tr('unnamed.size');
+  setTip(label, tr('unnamed.size'));
   label.appendChild(el('span', 'dot s'));
   var input = el('input');
   input.type = 'range';
@@ -7006,7 +7006,7 @@ function clusterCard(c) {
     var all = null;
     if (c.size > faces.length) {
       all = el('button', 'cmore', '+' + I18n.number(c.size - faces.length));
-      all.title = tr('unnamed.show_all', { n: c.size });
+      setTip(all, tr('unnamed.show_all', { n: c.size }));
       all.onclick = function () {
         api(LIBAPI + '/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
           faces = list;
@@ -7111,13 +7111,13 @@ function clusterCard(c) {
       suggestion.appendChild(el('b', '', s.person.name));
       suggestion.appendChild(el('span', '', ' ' + tr('unnamed.of', { faces: s.faces, size: c.size }) + ' '));
       var yes = el('button', 'btn small', '✓ ' + s.person.name);
-      yes.title = tr('unnamed.name_all', { size: c.size, name: s.person.name });
+      setTip(yes, tr('unnamed.name_all', { size: c.size, name: s.person.name }));
       yes.onclick = function () { act('name', { person_id: s.person.id }); };
       suggestion.appendChild(yes);
       if (s.faces < c.size) {
         // Only the faces that really look like them; the rest stays.
         var only = el('button', 'btn small', tr('unnamed.only', { n: s.faces }));
-        only.title = tr('unnamed.only_hint', { n: s.faces, name: s.person.name, rest: c.size - s.faces });
+        setTip(only, tr('unnamed.only_hint', { n: s.faces, name: s.person.name, rest: c.size - s.faces }));
         only.onclick = function () {
           loadAll().then(function () {
             var ids = faces.filter(function (x) { return x.state === 'suggested' && x.person && x.person.id === s.person.id; })
@@ -7327,7 +7327,7 @@ function infoFace(info, f, k, pick) {
   // A named person shows their picture (no crop of the face is kept); the
   // box on the photo shows which face it is.
   var pic = f.state === 'confirmed' && f.person ? avatar(people.byId[f.person.id] || { name: f.person.name }, 'small') : faceImg(f, 'small');
-  pic.title = tr('info.show_where');
+  setTip(pic, tr('info.show_where'));
   pic.onclick = function () { lb.hover = lb.hover === k ? null : k; drawFaces(); };
   line.appendChild(pic);
   line.addEventListener('mouseenter', function () { lb.hover = k; drawFaces(); });
@@ -7339,7 +7339,7 @@ function infoFace(info, f, k, pick) {
   var ids = f.id != null ? [f.id] : [];
   if (f.state === 'confirmed') {
     var name = el('button', 'pname', f.person.name);
-    name.title = tr('info.photos_of', { name: f.person.name });
+    setTip(name, tr('info.photos_of', { name: f.person.name }));
     name.onclick = function () { showPerson(f.person.id); };
     who.appendChild(name);
     if (f.kept) who.appendChild(el('span', 'note', ' ' + tr('info.face_kept')));
@@ -7609,7 +7609,7 @@ function renderDriveList() {
     var ab = el('button');
     ab.appendChild(el('span', 'dot'));
     ab.appendChild(el('span', 'name', tr('drives.all')));
-    ab.title = tr('drives.all_hint');
+    setTip(ab, tr('drives.all_hint'));
     ab.onclick = function () { if (!isAll()) switchLibrary('all', keepCompare()); };
     all.appendChild(ab);
     ul.appendChild(all);
@@ -7689,7 +7689,7 @@ function footCell(label, t, hint) {
   var c = el('span', 'cell', label + ' ');
   if (!t) { c.appendChild(el('b', '', tr('time.never'))); return c; }
   c.appendChild(whenOf(t));
-  if (hint) { var i = el('i', 'info', 'i'); i.title = hint; c.appendChild(i); }
+  if (hint) { var i = el('i', 'info', 'i'); setTip(i, hint); c.appendChild(i); }
   return c;
 }
 
@@ -7870,7 +7870,7 @@ function loadDrivesPage() {
         top.appendChild(name);
         if (d.online) {
           var sel = el('select');
-          sel.title = tr('drives.role_hint');
+          setTip(sel, tr('drives.role_hint'));
           [['unknown', tr('drives.role.unknown')], ['separate', tr('drives.role.separate')], ['backup', tr('drives.role.backup')]].forEach(function (o) {
             var opt = el('option', '', o[1]); opt.value = o[0]; if (d.role === o[0]) opt.selected = true; sel.appendChild(opt);
           });
@@ -7957,7 +7957,7 @@ function loadDrivesPage() {
         var pills = el('div', 'pills');
         p.libraries.forEach(function (l) {
           var pill = el('span', 'pill drive', (l.volume || l.name) + ' · ' + l.faces);
-          if (l.volume) pill.title = tr('drives.person_folder', { name: l.name });
+          if (l.volume) setTip(pill, tr('drives.person_folder', { name: l.name }));
           pills.appendChild(pill);
         });
         c.appendChild(pills);

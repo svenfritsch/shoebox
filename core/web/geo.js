@@ -164,7 +164,7 @@ function infoGeo(info) {
   var right = el('div', 'geo-right');
   if (pos) {
     var c = el('span', 'coords', fmtCoord(pos.lat, 'N', 'S') + ' · ' + fmtCoord(pos.lon, 'E', 'W'));
-    if (pos.source === 'user') c.title = tr('geo.from_user');
+    if (pos.source === 'user') setTip(c, tr('geo.from_user'));
     right.appendChild(c);
   }
   // Only a position that is not in the file can be given or changed.
