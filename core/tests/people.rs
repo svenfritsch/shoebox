@@ -2277,3 +2277,36 @@ fn faces_grouped_by_recognize_are_not_grouped_again() {
     assert_eq!(c["unnamed"], 6, "{c}");
     server.stop().unwrap();
 }
+
+/// The cards with a suggestion ran out (the last regrouping left some): the
+/// next one starts soon, although cards without one are left.
+#[test]
+fn suggestions_that_ran_out_regroup_soon() {
+    let lib = empty("regroup-ran-out");
+    plain(&lib, "a/1.png", ANNA, 1);
+    plain(&lib, "a/2.png", ANNA, 2);
+    variant(&lib, "a/suggested.png", ANNA, SUGGESTED);
+    plain(&lib, "b/1.png", BEN, 1);
+    plain(&lib, "b/2.png", BEN, 2);
+    lib.scan();
+    recognize(&lib);
+    let server = start_regrouping(&lib, rules(10, 60_000, 200));
+    let addr = server.addr;
+    wait_for_clusters(addr);
+    let guard = lib.snapshot();
+    // The card of Anna's two plain pictures (in whichever order it lists them).
+    let a1 = id_of(&lib, "a/1.png");
+    let anna_card =
+        cards(addr).into_iter().find(|c| c["faces"].as_array().unwrap().iter().any(|f| f["file"] == a1)).expect("Anna's card");
+    ok(addr, &format!("/api/clusters/{}/name", anna_card["id"]), &json!({ "name": "Anna", "generation": anna_card["generation"] }));
+    ok(addr, "/api/clusters/left", &json!({}));
+    wait_for_clusters(addr);
+    let suggested = cards(addr).into_iter().find(|c| !c["suggestion"].is_null()).expect("a card that looks like Anna");
+    let before = regroupings(&lib);
+    ok(addr, &format!("/api/clusters/{}/name", suggested["id"]), &json!({ "name": "Anna", "generation": suggested["generation"] }));
+    assert_eq!(cards(addr).len(), 1, "Ben's card is left");
+    assert!(regrouped_within(&lib, before, Duration::from_secs(2)), "the suggestions ran out");
+    wait_for_clusters(addr);
+    server.stop().unwrap();
+    assert_eq!(lib.snapshot(), guard, "regrouping changed an original");
+}

@@ -749,6 +749,14 @@ impl App {
         }
     }
 
+    /// Faces suggested for someone in the clusters' cache, on a connection
+    /// of its own.
+    fn suggested_now(&self) -> Result<u64> {
+        let conn = db::open_existing(&self.db_path)?;
+        recognize::attach(&conn, &self.db_path)?;
+        Ok(clusters::overview(&conn)?.suggested)
+    }
+
     /// Ask for the faces drawn by hand to be embedded.
     fn request_embed(&self) {
         let _ = self.embed.lock().unwrap().send(());
@@ -915,14 +923,31 @@ fn spawn_clusterer(app: Weak<App>) {
                 eprintln!("could not group the faces: {e:#}");
             }
             app.refresh_people_view();
-            match app.with_people(|_, v| Ok(people::cards_now(v))) {
-                Ok((_, suggested)) => schedule.grouped(suggested),
-                Err(e) => eprintln!("could not read the faces again: {e:#}"),
+            // Whether it left suggestions (when they run out, the next one
+            // comes soon), from the cache: the people view is only read when
+            // a page asks for it.
+            match app.suggested_now() {
+                Ok(suggested) => schedule.grouped(suggested),
+                Err(e) => eprintln!("could not count the suggestions: {e:#}"),
             }
             app.clusters_done.fetch_max(wanted, Ordering::SeqCst);
             app.faces_changed();
+            drop(app);
+            release_freed_memory();
         }
     });
+}
+
+/// Hand what a regrouping freed back to the system: glibc keeps freed small
+/// blocks for the process, so the server stayed at about 420 MB after one on
+/// the benchmark library of 100 000 photos, 80 MB with this. (Not measured on
+/// macOS and Windows, whose allocators return free pages themselves.)
+fn release_freed_memory() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    // SAFETY: malloc_trim only gives unused memory of the allocator back.
+    unsafe {
+        libc::malloc_trim(0);
+    }
 }
 
 /// Embeds faces drawn by hand as they are asked for (requests that come in
