@@ -749,7 +749,9 @@ function compareFor() {
 function loadCompare() {
   drives.cmp = { backups: [], drives: [] };
   if (drives.list.length < 2) { checkCompare(); return Promise.resolve(); }
-  return Promise.all([api('/api/all/backups?limit=0'), api('/api/all/drives')]).then(function (r) {
+  // refreshDrives asked for the drives just before: not twice at the start.
+  var roles = drives.roles ? Promise.resolve(drives.roles) : api('/api/all/drives');
+  return Promise.all([api('/api/all/backups?limit=0'), roles]).then(function (r) {
     drives.cmp = { backups: r[0], drives: r[1] };
   }).catch(function () {}).then(checkCompare).then(loadOnlyHere);
 }
@@ -8192,12 +8194,20 @@ function backupLists(lists, b) {
 // The drives and the status are no longer asked for on a timer: when the
 // person comes back to the page (tab, window) after at least 15 s they are
 // asked for once, which also notices a scan or a drive plugged in meanwhile.
+// Coming back to the page asks for the drives again only where they can have
+// changed something: with one drive there is no list and nothing to switch, and
+// the Unnamed page (naming faces, in and out of other windows) shows none of it.
+function driveRefreshNeeded() {
+  if (drives.list.length < 2 && drives.current && drives.current.online) return false;
+  return !(state.filter && state.filter.view === 'unnamed');
+}
+
 function watchPageReturn() {
   var last = Date.now();
   var check = function () {
-    if (document.hidden || Date.now() - last < 15000) return;
+    if (document.hidden || Date.now() - last < 60000) return;
     last = Date.now();
-    refreshDrives().catch(function () {});
+    if (driveRefreshNeeded()) refreshDrives().catch(function () {});
     if (!isAll() && drives.current && drives.current.online) loadInfo();
   };
   document.addEventListener('visibilitychange', check);
@@ -8206,7 +8216,7 @@ function watchPageReturn() {
 
 function refreshDrives() {
   return api('/api/libraries').then(function (libs) {
-    return api('/api/all/drives').catch(function () { return []; }).then(function (roles) {
+    return api('/api/all/drives').then(function (list) { drives.roles = list; return list; }, function () { drives.roles = null; return []; }).then(function (roles) {
       libs.forEach(function (l) { var r = roles.filter(function (x) { return x.library === l.id; })[0]; l.role = r ? r.role : 'unknown'; });
       drives.list = libs;
       drives.current = libs.filter(function (l) { return drives.current && l.id === drives.current.id; })[0] || chosenLibrary(libs);
