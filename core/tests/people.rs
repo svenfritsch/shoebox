@@ -724,6 +724,9 @@ fn hand_drawn_faces() {
     let p = get(addr, &format!("/api/people/{anna}")).json();
     assert_eq!((p["cover"].as_i64(), p["cover_manual"].as_i64()), (None, Some(m)));
     assert_eq!(post(addr, "/api/faces/manual", &json!({ "file": dark, "box": [0.8, 0.0, 0.3, 0.4], "name": "Anna" })).status, 400);
+    // The same request again (a double click, a slow reply) adds nothing.
+    assert_eq!(ok(addr, "/api/faces/manual", &body)["manual"].as_i64(), Some(m));
+    assert_eq!(faces_of(addr, &lib, "a/dark.png").len(), 1);
 
     // Over the detected face of the other photo: one face, the drawn box.
     let detected = face_id(addr, &lib, "a/anna.png");
@@ -750,6 +753,41 @@ fn hand_drawn_faces() {
     let face = &faces_of(addr, &lib, "a/anna.png")[0];
     assert!(face.get("manual").is_none() && face["state"].is_null(), "{face}");
     assert_eq!(lib.snapshot(), before);
+    server.stop().unwrap();
+}
+
+/// The same person is added to a photo or video once per request: a repeated
+/// one (a double click, a slow reply) returns the face that is there. A video
+/// has no boxes, so any second box is the same link; a photo can show the same
+/// person twice, at places that do not overlap.
+#[test]
+fn hand_drawn_face_is_added_once() {
+    let lib = empty("people-manual-once");
+    save(&lib, "a/dark.png", image::RgbImage::from_pixel(200, 100, image::Rgb([0, 0, 0])));
+    lib.write("a/clip.mp4", b"not really a video, only a file the scan calls one");
+    lib.scan();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let draw = |rel: &str, name: &str, b: [f64; 4]| {
+        ok(addr, "/api/faces/manual", &json!({ "file": id_of(&lib, rel), "box": b, "name": name }))["manual"].as_i64().unwrap()
+    };
+
+    // A video: the same person once, whatever the box; somebody else is another link.
+    let clip = draw("a/clip.mp4", "Anna", [0.02, 0.02, 0.08, 0.08]);
+    assert_eq!(draw("a/clip.mp4", "Anna", [0.02, 0.02, 0.08, 0.08]), clip);
+    assert_eq!(draw("a/clip.mp4", "Anna", [0.12, 0.02, 0.08, 0.08]), clip);
+    assert_eq!(faces_of(addr, &lib, "a/clip.mp4").len(), 1);
+    let bert = draw("a/clip.mp4", "Bert", [0.12, 0.02, 0.08, 0.08]);
+    assert_ne!(bert, clip);
+    assert_eq!(faces_of(addr, &lib, "a/clip.mp4").len(), 2);
+
+    // A photo: the same box (or nearly) is the same face, another place a second one.
+    let first = draw("a/dark.png", "Anna", [0.1, 0.2, 0.3, 0.4]);
+    assert_eq!(draw("a/dark.png", "Anna", [0.1, 0.2, 0.3, 0.4]), first);
+    assert_eq!(draw("a/dark.png", "Anna", [0.11, 0.21, 0.3, 0.4]), first);
+    let other = draw("a/dark.png", "Anna", [0.6, 0.2, 0.3, 0.4]);
+    assert_ne!(other, first);
+    assert_eq!(faces_of(addr, &lib, "a/dark.png").len(), 2);
     server.stop().unwrap();
 }
 

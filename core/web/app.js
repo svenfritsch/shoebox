@@ -6670,7 +6670,13 @@ function nameFacesDialog(faces, done) {
   var question = !kind ? (faces.length === 1 ? tr('person.who_one') : tr('person.who_many', { n: faces.length }))
     : kind === 'cat' ? tr('person.who_cat') : kind === 'dog' ? tr('person.who_dog') : tr('person.who_pet');
   body.appendChild(el('p', '', question));
+  // One request at a time (the dialog stays open until the reply).
+  var saving = false, buttons = [];
   var save = function (who) {
+    if (saving) return;
+    saving = true;
+    buttons.forEach(function (b) { b.disabled = true; });
+    field.input.disabled = true;
     var ids = faces.map(function (x) { return x.id; }).filter(function (x) { return x != null; });
     var drawn = faces.filter(function (x) { return x.id == null && x.manual != null; });
     var req = ids.length ? post(LIBAPI + '/faces/assign', Object.assign({ faces: ids }, who)) : Promise.resolve({ faces: 0 });
@@ -6690,7 +6696,7 @@ function nameFacesDialog(faces, done) {
   };
   var field = personField(function (who) { save(who); }, { allowNew: true, placeholder: tr('people.name_placeholder'), species: facesSpecies(faces) });
   body.appendChild(field);
-  openModal(tr('person.name'), body, [{ label: tr('app.cancel'), cls: 'quiet' }, {
+  buttons = openModal(tr('person.name'), body, [{ label: tr('app.cancel'), cls: 'quiet' }, {
     label: tr('person.name'), onclick: function () {
       var who = field.value();
       if (!who) return false;
@@ -7760,7 +7766,15 @@ function nameDrawnFace(info, frac) {
     update();
     next.focus();
   });
+  // One request at a time: the dialog stays open until the reply, so a second
+  // click, Enter or pick meanwhile would add the face again. (A failure opens
+  // the error dialog over this one, so nothing needs enabling again.)
+  var saving = false, buttons = [];
   var save = function (who) {
+    if (saving) return;
+    saving = true;
+    buttons.forEach(function (b) { b.disabled = true; });
+    field.input.disabled = true;
     post(LIBAPI + '/faces/manual', Object.assign({ file: info.id, box: frac, species: kind || undefined }, who)).then(function () {
       closeModal();
       stopDrawing();
@@ -7776,7 +7790,7 @@ function nameDrawnFace(info, frac) {
   field.input.setAttribute('aria-describedby', hint.id);
   body.appendChild(hint);
   update();
-  openModal(tr('draw.title'), body, [
+  buttons = openModal(tr('draw.title'), body, [
     video ? null : { label: tr('draw.again'), cls: 'quiet', onclick: function () { var r = lb.drawing && lb.drawing.layer.querySelector('.draw-box'); if (r) r.hidden = true; } },
     { label: tr('app.cancel'), cls: 'quiet', onclick: function () { stopDrawing(); } },
     { label: tr('draw.save'), onclick: function () { var who = field.value(); if (!who) return false; save(who); return false; } },

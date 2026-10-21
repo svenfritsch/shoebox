@@ -444,4 +444,46 @@ await test('a person without faces deleted: their group goes with them', await o
   check(!(await groupNames(p)).includes('Delete Group'), 'the group left the sidebar');
 }));
 
+// The naming dialog stays open until the server has answered: a second click,
+// Enter or pick meanwhile must not send the naming again (a slow server once
+// gave a video the same person three times). `hold` keeps the replies of
+// /faces/assign back until `release` answers them.
+async function holdAssign(p) {
+  const held = [];
+  await p.route(ORIGIN + '/**/faces/assign', (route) => { held.push(route); });
+  return held;
+}
+const dialogButtons = (p) => p.evaluate(() => Array.from(document.querySelectorAll('#modal-actions button')).map((b) => b.disabled));
+const clickSave = (p) => p.evaluate(() => { const b = document.querySelectorAll('#modal-actions button'); b[b.length - 1].click(); });
+
+await test('the naming dialog sends one request while one is pending, and its buttons are disabled', await on('view=people', (lib) => lib.person('Pia Dialog'), async (p, lib, pia) => {
+  const held = await holdAssign(p);
+  await p.evaluate((id) => { nameFacesDialog([{ id }], null); }, pia.cover);
+  const field = p.locator('#modal-body .pfield input');
+  await field.fill('Pia Dialog');
+  await field.press('Enter');
+  await until('the request', () => held.length === 1);
+  for (let i = 0; i < 3; i++) await clickSave(p);
+  await p.evaluate(() => 0);
+  check(held.length === 1, `the page sent ${held.length} namings while the first was pending, expected 1`);
+  const disabled = await dialogButtons(p);
+  check(disabled.length > 0 && disabled.every(Boolean), `the dialog's buttons are not disabled while it waits: ${disabled}`);
+  check(await field.isDisabled(), 'the name field is not disabled while it waits');
+  await held[0].fallback();
+  await until('the dialog to close', () => p.evaluate(() => $('modal').hidden));
+  check(lib.log.filter((e) => e.method === 'POST' && e.path.endsWith('/faces/assign')).length === 1, 'the face was named more than once');
+}));
+
+await test('a failed naming shows the error and was sent once', await on('view=people', (lib) => lib.person('Pia Failed'), async (p, lib, pia) => {
+  const held = await holdAssign(p);
+  await p.evaluate((id) => { nameFacesDialog([{ id }], null); }, pia.cover);
+  await p.locator('#modal-body .pfield input').fill('Pia Failed');
+  await clickSave(p);
+  await clickSave(p);
+  await until('the request', () => held.length === 1);
+  await held[0].fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'down' }) });
+  await until('the error dialog', async () => (await p.locator('#modal-title').textContent()) === (await tr(p, 'app.failed')));
+  check(held.length === 1, `the naming was sent ${held.length} times`);
+}));
+
 await finish();
