@@ -32,6 +32,7 @@
   "launcher.app.start": "Start photo app",
   "launcher.app.open": "Open photo app",
   "launcher.app.stop": "Stop photo app",
+  "launcher.app.starting": "Starting the photo app. It opens in a new browser tab in a moment.",
   "launcher.app.idle": "The photo app starts only when you press this button. Scan first if this is a new drive.",
   "launcher.app.running": "Running for {roots} at ",
   "launcher.app.running_end": ". Stop it to scan, verify or change folders.",
