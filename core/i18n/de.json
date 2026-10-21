@@ -273,7 +273,7 @@
   "status.finding_faces": "Gesichter werden gesucht {pct} %",
   "status.faces_todo": "Gesichter: {count} noch zu prüfen",
   "status.learning": "gezeichnete Gesichter werden gelernt …",
-  "sel.hint_mouse": "Fotos anklicken zum Auswählen, Umschalt-Klick für einen Bereich",
+  "sel.hint_mouse": "Fotos anklicken oder darüberziehen zum Auswählen, Umschalt-Klick für einen Bereich",
   "sel.hint_touch": "Fotos antippen zum Auswählen",
   "move.title": "Verschieben",
   "move.text": "Verschiebe {count} in den Ordner:",

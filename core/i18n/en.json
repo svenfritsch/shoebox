@@ -273,7 +273,7 @@
   "status.finding_faces": "finding faces {pct}%",
   "status.faces_todo": "faces: {count} to look at",
   "status.learning": "learning drawn faces…",
-  "sel.hint_mouse": "Click photos to select, Shift-click for a range",
+  "sel.hint_mouse": "Click or drag across photos to select, Shift-click for a range",
   "sel.hint_touch": "Tap photos to select",
   "move.title": "Move",
   "move.text": "Move {count} into the folder:",
