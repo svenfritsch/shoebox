@@ -2225,7 +2225,13 @@ fn faces_grouped_by_recognize_are_not_grouped_again() {
     plain(&lib, "p1/3.png", PEOPLE[1], 3);
     run(&["scan"]);
     run(&["recognize", "--recognizer", FAKE]);
-    conn(&lib).execute("DELETE FROM recog.jobs WHERE id = (SELECT max(id) FROM recog.jobs WHERE kind = 'clusters')", []).unwrap();
+    // The server compares whole seconds (`finished_at`): an earlier grouping
+    // that ended in the same second as this run would count as after it. The
+    // earlier ones are put back, as they were before this run.
+    let c = conn(&lib);
+    c.execute("DELETE FROM recog.jobs WHERE id = (SELECT max(id) FROM recog.jobs WHERE kind = 'clusters')", []).unwrap();
+    c.execute("UPDATE recog.jobs SET finished_at = finished_at - 60 WHERE kind = 'clusters'", []).unwrap();
+    drop(c);
     let before = regroupings(&lib);
     next_regrouping(addr);
     assert!(regrouped_within(&lib, before, Duration::from_secs(2)), "the server groups what was not grouped");
