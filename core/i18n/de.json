@@ -32,6 +32,8 @@
   "launcher.app.start": "Foto-App starten",
   "launcher.app.open": "Foto-App öffnen",
   "launcher.app.stop": "Foto-App beenden",
+  "launcher.app.starting_btn": "Foto-App startet…",
+  "launcher.app.starting": "Die Foto-App startet. Sie öffnet sich gleich in einem neuen Browser-Tab.",
   "launcher.app.idle": "Die Foto-App startet nur, wenn du diesen Knopf drückst. Scanne zuerst, wenn das Laufwerk neu ist.",
   "launcher.app.running": "Läuft für {roots} unter ",
   "launcher.app.running_end": ". Beende sie, um zu scannen, zu prüfen oder Ordner zu ändern.",
