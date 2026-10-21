@@ -2455,6 +2455,16 @@ pub fn user_data(conn: &Connection) -> Result<UserPeople> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn overlap_is_intersection_over_union() {
+        let a = [0.1, 0.1, 0.2, 0.2];
+        assert!((overlap(a, a) - 1.0).abs() < 1e-9);
+        assert_eq!(overlap(a, [0.5, 0.5, 0.2, 0.2]), 0.0);
+        assert!(overlap(a, [0.3, 0.1, 0.2, 0.2]) < 1e-9, "touching is not overlapping");
+        // Half of each: 0.02 shared of 0.04 + 0.04 - 0.02.
+        assert!((overlap(a, [0.2, 0.1, 0.2, 0.2]) - 1.0 / 3.0).abs() < 1e-9);
+    }
+
     /// The rows of one content (one photo's faces in the viewer, a crop) are
     /// found through the indexes by content: none of these reads a whole table.
     #[test]

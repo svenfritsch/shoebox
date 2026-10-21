@@ -6692,12 +6692,7 @@ function nameFacesDialog(faces, done) {
       toast(tr('person.named', { count: kind ? animalCount(kind, faces.length) : trn('count.faces', faces.length), name: r.person ? r.person.name : who.name || state.personNames[who.person_id] || '' }));
       peopleChanged();
       if (done) done();
-    }).catch(function (e) {
-      saving = false;
-      buttons.forEach(function (b) { b.disabled = false; });
-      field.input.disabled = false;
-      failed(e);
-    });
+    }).catch(failed);
   };
   var field = personField(function (who) { save(who); }, { allowNew: true, placeholder: tr('people.name_placeholder'), species: facesSpecies(faces) });
   body.appendChild(field);
@@ -7772,7 +7767,8 @@ function nameDrawnFace(info, frac) {
     next.focus();
   });
   // One request at a time: the dialog stays open until the reply, so a second
-  // click, Enter or pick meanwhile would add the face again.
+  // click, Enter or pick meanwhile would add the face again. (A failure opens
+  // the error dialog over this one, so nothing needs enabling again.)
   var saving = false, buttons = [];
   var save = function (who) {
     if (saving) return;
@@ -7784,12 +7780,7 @@ function nameDrawnFace(info, frac) {
       stopDrawing();
       toast(tr(kind ? 'draw.added_pet' : 'draw.added'));
       infoFacesChanged(info.id);
-    }).catch(function (e) {
-      saving = false;
-      buttons.forEach(function (b) { b.disabled = false; });
-      field.input.disabled = false;
-      failed(e);
-    });
+    }).catch(failed);
   };
   field = personField(function (who) { save(who); }, { allowNew: true, placeholder: tr('people.name_placeholder'), species: function () { return kind; } });
   body.appendChild(kinds);
