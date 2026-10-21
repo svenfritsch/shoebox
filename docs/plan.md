@@ -1893,8 +1893,9 @@ Performance with ~100 000 photos (found on the real drive): everything shares
 one SQLite connection (`App::conn`, journal mode DELETE on exFAT), so one slow
 request makes every other one wait, and the page's own polling made it worse.
 Rules since: the page asks for `/api/libraries`, `/api/all/drives` and
-`/api/info` only on actions, when the person comes back to the page (15 s at
-the earliest) and, for `/api/info`, every 5 s while a job runs (`watchProgress`);
+`/api/info` only on actions, when the person comes back to the page (60 s at
+the earliest, and not with one drive or on the Unnamed page; the start asks for
+`/api/all/drives` once, `loadCompare` reuses it) and, for `/api/info`, every 5 s while a job runs (`watchProgress`);
 `loadInfo` and `loadPeople` are one request at a time. A change that only
 touches people, groups or face decisions goes through `change_with(.., false)`
 (`people_change`): it must not bump `generation`, or `index_version` changes
