@@ -2008,10 +2008,10 @@ everything is searched, as before (the first run after `recognize`). Up to
 building the index's cells costs about a second. A test runs each kind of
 change and checks that the result is exactly a full run's
 (`suggestions_compare_only_what_changed_and_match_a_full_run`). On the
-benchmark library, three threads: the first run 82 s (this VM after a
-restart; 140 to 186 s before), then after 10 cards named 9.5 s (1000 new
-references, every open face compared with them: 1.5 s), after a rejection
-8.6 s (one face searched), after an older name undone 9.8 s (52 faces). What
+benchmark library, three threads: the first run 76 to 82 s (this VM after a
+restart; 140 to 186 s before), then after 10 cards named 7.0 s (1000 new
+references, every open face compared with them: 1.6 s), after a rejection
+5.3 s (one face searched), after an older name undone 6.0 s (52 faces). What
 is left is reading the same data again for every run: `pet_face_ids` about
 1 s, `eligible` 1.6 to 2.3 s, the decisions 0.7 s, the neighbour lists and
 edges 0.5 to 0.7 s, join and split 1.3 to 1.8 s, the write 0.4 s. Keeping the
