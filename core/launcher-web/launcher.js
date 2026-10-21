@@ -254,6 +254,11 @@ function renderAddons() {
   refreshActions();
 }
 
+// The folders are looked at again whenever the page comes back to the front
+// (add-ons installed or deleted in the file manager meanwhile).
+document.addEventListener('visibilitychange', function () { if (!document.hidden) loadAddons(); });
+window.addEventListener('focus', loadAddons);
+
 // The add-ons ticked that are not installed yet.
 function wantedAddons() {
   return ['faces', 'pets', 'text'].filter(function (k) { return $('addon-' + k).checked && !(addons && addons[k]); });

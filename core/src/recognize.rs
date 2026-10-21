@@ -471,7 +471,20 @@ pub fn program_dir() -> Option<PathBuf> {
 fn bundled_python(dir: &Path) -> Option<PathBuf> {
     let runtime = dir.join("runtime").join(format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH));
     let bundled = if cfg!(windows) { runtime.join("python.exe") } else { runtime.join("bin").join("python3") };
-    bundled.is_file().then_some(bundled)
+    (bundled.is_file() && has_opencv(&runtime)).then_some(bundled)
+}
+
+/// OpenCV is in the runtime's `site-packages` (`Lib/` on Windows, `lib/python3.x/`
+/// elsewhere): a Python without it cannot run the recognizer, so a folder that
+/// has only the interpreter (an install that stopped half way, a leftover) is
+/// not an installed runtime.
+fn has_opencv(runtime: &Path) -> bool {
+    if cfg!(windows) {
+        return runtime.join("Lib").join("site-packages").join("cv2").is_dir();
+    }
+    std::fs::read_dir(runtime.join("lib")).is_ok_and(|entries| {
+        entries.flatten().any(|e| e.file_name().to_string_lossy().starts_with("python") && e.path().join("site-packages").join("cv2").is_dir())
+    })
 }
 
 /// The standalone Python shipped in `<dir>/runtime/<os>-<arch>/`, else `python3`
