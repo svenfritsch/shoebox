@@ -1436,7 +1436,7 @@ regroup" under Performance), and clusters stop at 100 faces
 (`clusters::MAX_CLUSTER`, below `GROW_STEP`). `run.sh` serves with
 `SHOEBOX_REGROUP=2,1500,300` (two cards or 1.5 s) so the real server's
 regrouping comes within the tests' waits; the fake follows the app's own
-rules (10 cards, 30 s) and keeps the counts of the last grouping in
+rules (5 cards, 30 s) and keeps the counts of the last grouping in
 `/api/info`, as the server's cache does.
 
 Keeping them up to date (agents too):
@@ -1958,15 +1958,18 @@ its cells each), 125 to 128 s, 94 %; everything else together about 8 s
 (`pet_face_ids` 1 s, `eligible` 1.5 s, the decisions 1 s, the reference index
 1.4 s, reading the neighbour lists and the edges 0.8 s, join and split 0.9 s,
 the write 0.2 s; no neighbour list is computed again after a name). Now
-the server regroups when it pays off, not after every decision: after 10
+the server regroups when it pays off, not after every decision: after 5
 cards (a request that names, ignores, marks as not a face or confirms, one
 each), or 30 s after the last decision (each one, a rejection too, starts the
 pause again); 3 s after the Unnamed page is left (`POST /api/clusters/left`),
 an undo of a decision from before the last regrouping (its face is not in
 `recog.clusters`), a rejection taken back, a merge, a deleted person, or when
 the cards with a suggestion ran out (there were some after the last
-regrouping, none are left; on a new library without suggestions only the 10
-cards and the pause count) or no card is left; at once after new or
+regrouping, none are left; on a new library without suggestions only the 5
+cards and the pause count) or no card is left (5 cards and 30 s chosen once
+a regrouping took seconds: 5 brings the first suggestions early, when they
+help most; fewer would rebuild the page under the cursor too often, and a
+shorter pause would regroup while someone thinks about a hard card); at once after new or
 forgotten faces (detected by `recognize`, drawn by hand and embedded:
 detected faces, not names), Carry over and a species. New faces from a
 `recognize` run in another process are grouped by that run at its end; the

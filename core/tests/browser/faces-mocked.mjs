@@ -274,15 +274,15 @@ async function namedThenGroupedLine(p, lib, s) {
   await posted(lib, /^\/clusters\/\d+\/name$/);
   await settle(p, lib);
   let l = await parts();
-  check(l.shown && l.cards === 9 && l.secs > 20, `after the first name the line says "${l.text}"`);
+  check(l.shown && l.cards === 4 && l.secs > 20, `after the first name the line says "${l.text}"`);
   check(l.buttons === 0, 'the line has no button');
   check(Math.abs(l.deg - 12 * (l.secs - 1)) < 13, `the circle is at ${l.deg}° with ${l.secs} s left (12° a second)`);
-  check(l.live === await p.evaluate(() => trn('unnamed.next_cards', 9)), `screen readers hear "${l.live}"`);
+  check(l.live === await p.evaluate(() => trn('unnamed.next_cards', 4)), `screen readers hear "${l.live}"`);
   const said = l.live, before = l.secs;
 
   await p.clock.runFor(5000);
   l = await parts();
-  check(l.cards === 9 && l.secs === before - 5, `5 s later the line says "${l.text}"`);
+  check(l.cards === 4 && l.secs === before - 5, `5 s later the line says "${l.text}"`);
   check(Math.abs(l.deg - 12 * (l.secs - 1)) < 13, `5 s later the circle is at ${l.deg}° with ${l.secs} s left`);
   check(l.live === said, 'screen readers are not told every second');
 
@@ -290,9 +290,9 @@ async function namedThenGroupedLine(p, lib, s) {
   await until('the second name', () => lib.log.filter((e) => e.method === 'POST' && /^\/clusters\/\d+\/name$/.test(e.path)).length === 2);
   await settle(p, lib);
   l = await parts();
-  check(l.cards === 8 && l.secs > before - 5, `after the second name the line says "${l.text}" (the seconds start again)`);
+  check(l.cards === 3 && l.secs > before - 5, `after the second name the line says "${l.text}" (the seconds start again)`);
   check(Math.abs(l.deg - 12 * (l.secs - 1)) < 13, `the circle filled up again: ${l.deg}° with ${l.secs} s left`);
-  check(l.live === await p.evaluate(() => trn('unnamed.next_cards', 8)), `screen readers hear the new count: "${l.live}"`);
+  check(l.live === await p.evaluate(() => trn('unnamed.next_cards', 3)), `screen readers hear the new count: "${l.live}"`);
 
   await p.evaluate(() => { document.getElementById('scroller').scrollTop = 600; document.getElementById('scroller').dispatchEvent(new Event('scroll')); });
   l = await line(p);

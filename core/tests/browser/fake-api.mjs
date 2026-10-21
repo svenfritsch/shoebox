@@ -9,7 +9,7 @@
 //
 // Like the server (`serve/regroup.rs`), a decision waits for the next
 // regrouping: the status says `pending`, with the cards left before it starts
-// (10 at first) and the time (30 s; `lib.waitMs` sets what the next status
+// (5 at first) and the time (30 s; `lib.waitMs` sets what the next status
 // says). A merge or a deletion waits only a few seconds; names and groups ask
 // for none. The test says when it starts (`lib.step = 'stale'` or `'running'`,
 // with `lib.progress` = [done, total]) and that it is done (`lib.grouped()`).
@@ -105,7 +105,7 @@ export function fakeLibrary() {
       running: lib.step === 'running', done: lib.step === 'running' ? lib.progress[0] : 0, total: lib.step === 'running' ? lib.progress[1] : 0,
       state: lib.step === 'running' ? 'running' : 'done', finished_at: lib.finished,
       ...(lib.counted || counts()), people: lib.people.length, stale: lib.step === 'stale', embedding: false,
-      pending: lib.pending, cards_left: lib.pending ? Math.max(0, 10 - lib.cards) : 0, wait_ms: lib.pending ? lib.waitMs : 0, pause_ms: lib.pending ? 30000 : 0,
+      pending: lib.pending, cards_left: lib.pending ? Math.max(0, 5 - lib.cards) : 0, wait_ms: lib.pending ? lib.waitMs : 0, pause_ms: lib.pending ? 30000 : 0,
     },
     text: { done: 0, total: 200, lines: 0 }, reveal: 'Open folder', export: true, read_only: false,
   });
@@ -113,7 +113,7 @@ export function fakeLibrary() {
   // ---- changes, as the server makes them
 
   // Groups nobody is in any more are gone. A card waits for the next
-  // regrouping (10 cards, 30 s), a merge or deletion only a few seconds.
+  // regrouping (5 cards, 30 s), a merge or deletion only a few seconds.
   const changed = (regroup) => {
     lib.groups = lib.groups.filter((g) => members(g) > 0);
     if (regroup === 'card') { lib.pending = true; lib.cards++; lib.waitMs = 30000; }

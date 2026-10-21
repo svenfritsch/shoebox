@@ -34,10 +34,10 @@ pub struct Rules {
 }
 
 impl Default for Rules {
-    /// 10 cards, 30 s, 3 s; `SHOEBOX_REGROUP=<cards>,<pause ms>,<soon ms>`
+    /// 5 cards, 30 s, 3 s; `SHOEBOX_REGROUP=<cards>,<pause ms>,<soon ms>`
     /// sets others (the browser tests against the real server).
     fn default() -> Rules {
-        let mut rules = Rules { cards: 10, pause: Duration::from_secs(30), soon: Duration::from_secs(3) };
+        let mut rules = Rules { cards: 5, pause: Duration::from_secs(30), soon: Duration::from_secs(3) };
         if let Ok(v) = std::env::var("SHOEBOX_REGROUP") {
             let n: Vec<u64> = v.split(',').filter_map(|p| p.trim().parse().ok()).collect();
             if let [cards, pause, soon] = n[..] {
