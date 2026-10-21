@@ -76,8 +76,8 @@ struct State {
     pause_due: Option<Instant>,
     /// When a `Soon` or `Now` is due.
     soon_due: Option<Instant>,
-    /// Cards with a suggestion after the last regrouping: if there were
-    /// some and none are left, the next one starts soon.
+    /// Suggestions after the last regrouping: if there were some and no card
+    /// with one is left, the next one starts soon.
     suggested: u64,
 }
 
@@ -139,7 +139,8 @@ impl Schedule {
         }
     }
 
-    /// Cards with a suggestion after a regrouping.
+    /// After a regrouping: whether it left suggestions (faces suggested for
+    /// someone; any number above 0 will do).
     pub(super) fn grouped(&self, suggested: u64) {
         self.state.lock().unwrap().suggested = suggested;
     }

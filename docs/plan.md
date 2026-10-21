@@ -2028,7 +2028,19 @@ is left is reading the same data again for every run: `pet_face_ids` about
 1 s, `eligible` 1.6 to 2.3 s, the decisions 0.7 s, the neighbour lists and
 edges 0.5 to 0.7 s, join and split 1.3 to 1.8 s, the write 0.4 s. Keeping the
 embeddings and the neighbour lists in the server between runs would take
-most of the reading away. WAL stays off
+most of the reading away, for about 200 MB more (decided against: nobody
+waits for a regrouping).
+
+Memory (measured on the benchmark library, Linux): the kept people view
+(`View::load` with its counts and groups) takes about 187 MB for 300 000
+faces, not the 100 MB estimated before; a regrouping peaks at about 800 MB
+(the embeddings, the index, the decisions). glibc kept what a regrouping
+freed, so the server stayed at about 420 MB after the first one, also when
+no people page was open; now it hands it back (`release_freed_memory`,
+`malloc_trim`, Linux only): 82 MB after the first grouping, 264 MB once the
+People page was opened. The view is read only when a page asks for it
+(after a regrouping the cards with a suggestion are counted in the cache,
+`suggested_now`, not in the view). Not measured on macOS and Windows. WAL stays off
 (its `-shm` file on external exFAT drives, copies of `.shoebox` without the
 `-wal` file).
 
