@@ -553,6 +553,8 @@ var ADD_FACE_ICON = lineIcon('<circle cx="11" cy="13" r="8"/><circle cx="8.3" cy
 var TRASH_ICON = lineIcon('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>');
 var SEL_ICONS = {
   close: lineIcon('<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>'),
+  check: lineIcon('<path d="M5 12.8l4.6 4.6L19 7.2"/>'),
+  undo: lineIcon('<path d="M9 5.5L5 9.5l4 4"/><path d="M5 9.5h8.5a5 5 0 0 1 0 10H10"/>'),
   tag: lineIcon('<path d="M2 14l4.3-5H14.5A1.5 1.5 0 0 1 16 10.5v7a1.5 1.5 0 0 1-1.5 1.5H6.3z"/><circle cx="6.6" cy="14" r=".6"/><path d="M19 2.5v6.5M15.75 5.75h6.5"/>'),
   untag: lineIcon('<path d="M2 14l4.3-5H14.5A1.5 1.5 0 0 1 16 10.5v7a1.5 1.5 0 0 1-1.5 1.5H6.3z"/><circle cx="6.6" cy="14" r=".6"/><path d="M15.75 5.75h6.5"/>'),
   date: lineIcon('<path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5z"/><path d="M8.5 3.5v5M15.5 3.5v5" stroke-width="2.2"/><path d="M7.5 14.5c1.5-2.3 3-2.3 4.5 0s3 2.3 4.5 0"/>'),
@@ -6417,7 +6419,8 @@ function loadPersonPage() {
     page.appendChild(tabs);
     personTabCounts(p);
     page.appendChild(el('p', 'sub', tr('person.sub.' + tab, { name: p.name })));
-    var bar = el('div', 'toolbar');
+    // Stays at the top while the faces scroll under it.
+    var bar = el('div', 'toolbar sticky');
     var pick = el('button', 'btn quiet', tr('facecheck.select'));
     pick.id = 'pp-pick';
     pick.onclick = function () { pp.picking = !pp.picking; if (!pp.picking) clearPersonPicks(); updatePersonPick(); };
@@ -6599,49 +6602,168 @@ function personAction(action, ids, manual) {
   }).catch(failed);
 }
 
+// The bar of the timeline's selection: close, count (or what to do), Select
+// all, then the tools. Confirm and Undo are icons with a quick label, the other
+// actions keep their words (they carry a name).
 function personPickBar(tab) {
-  var bar = el('div', 'selbar');
+  var bar = el('div', 'selbar tools');
   bar.id = 'pp-bar';
+  bar.setAttribute('role', 'toolbar');
+  bar.setAttribute('aria-label', tr('sel.bar'));
   bar.hidden = true;
-  var count = el('span');
+  var done = el('button', 'ib');
+  done.innerHTML = SEL_ICONS.close;
+  setTip(done, tr('app.done'));
+  done.setAttribute('aria-label', tr('app.done'));
+  done.onclick = function () { pp.picking = false; clearPersonPicks(); updatePersonPick(); };
+  bar.appendChild(done);
+  var count = el('span', 'sel-count');
   count.id = 'pp-count';
+  count.setAttribute('aria-live', 'polite');
   bar.appendChild(count);
   var p = pp.person;
-  var button = function (label, cls, run) {
-    var b = el('button', 'btn ' + (cls || ''), label);
-    b.className += ' pp-act';
-    b.onclick = function () {
-      var faces = Object.keys(pp.picked).map(function (k) { return pp.picked[k]; });
-      run(faces, faces.map(function (x) { return x.id; }).filter(function (x) { return x != null; }));
-    };
-    bar.appendChild(b);
-  };
-  var all = el('button', 'btn quiet', tr('person.all'));
+  var all = el('button', 'sel-all', tr('sel.all'));
+  all.id = 'pp-all';
   all.onclick = function () {
+    var on = Object.keys(pp.picked).length < pp.faces.filter(faceKey).length;
     pp.faces.forEach(function (face) {
       var k = faceKey(face);
       if (!k) return;
-      pp.picked[k] = face;
+      if (on) pp.picked[k] = face; else delete pp.picked[k];
       var card = document.querySelector('#pp-grid .face[data-key="' + k + '"]');
-      if (card) card.classList.add('sel');
+      if (card) card.classList.toggle('sel', on);
     });
     updatePersonPick();
   };
   bar.appendChild(all);
+  var sep = el('span', 'sep break');
+  sep.setAttribute('aria-hidden', 'true');
+  bar.appendChild(sep);
+  var chosen = function (run) {
+    return function () {
+      var faces = Object.keys(pp.picked).map(function (k) { return pp.picked[k]; });
+      run(faces, faces.map(function (x) { return x.id; }).filter(function (x) { return x != null; }));
+    };
+  };
+  var iconTool = function (svg, label, cls, run) {
+    var b = el('button', 'ib pp-act' + (cls ? ' ' + cls : ''));
+    b.innerHTML = svg;
+    setTip(b, label);
+    b.setAttribute('aria-label', label);
+    b.onclick = chosen(run);
+    bar.appendChild(b);
+  };
+  var button = function (label, cls, run) {
+    var b = el('button', 'btn pp-act ' + (cls || ''), label);
+    b.onclick = chosen(run);
+    bar.appendChild(b);
+  };
   if (tab === 'suggested' || tab === 'maybe') {
-    button(tr('person.confirm'), '', function (faces, ids) { personAction('confirm', ids); });
+    iconTool(SEL_ICONS.check, tr('person.confirm'), 'ok', function (faces, ids) { personAction('confirm', ids); });
     button(tr('person.not', { name: p.name }), 'quiet', function (faces, ids) { personAction('reject', ids); });
   } else if (tab === 'rejected') {
-    button(tr('person.undo'), '', function (faces, ids) { personAction('unreject', ids); });
+    iconTool(SEL_ICONS.undo, tr('person.undo'), '', function (faces, ids) { personAction('unreject', ids); });
   } else {
     button(tr('person.not', { name: p.name }), 'quiet', function (faces, ids) { personAction('reject', ids); });
     button(tr('person.name_btn'), '', function (faces) { nameFacesDialog(faces, personRefresh); });
     button(tr(p.species ? 'pet.not_a.pet' : 'facecheck.not_face'), 'quiet', function (faces, ids) { personAction('not-face', ids); });
   }
-  var done = el('button', 'btn quiet', tr('app.done'));
-  done.onclick = function () { pp.picking = false; clearPersonPicks(); updatePersonPick(); };
-  bar.appendChild(done);
   return bar;
+}
+
+// Click and drag across the faces of a person's page while selecting (mouse or
+// pen), as in the timeline: the faces from the one pressed to the one under the
+// pointer take the opposite of the first one's state, faces the drag leaves
+// get back what they had, and the page scrolls along near its top or bottom edge.
+var ppDrag = null;
+
+function ppFaceIndex(card) {
+  var key = card && card.dataset.key;
+  for (var i = 0; i < pp.faces.length; i++) if (faceKey(pp.faces[i]) === key) return i;
+  return -1;
+}
+
+$('page').addEventListener('pointerdown', function (ev) {
+  if (!pp.picking || ev.button !== 0 || ev.shiftKey || ev.pointerType === 'touch') return;
+  var crop = ev.target.closest('#pp-grid .face .crop');
+  if (!crop) return;
+  var i = ppFaceIndex(crop.parentNode);
+  if (i < 0 || !faceKey(pp.faces[i])) return;
+  ppDrag = {
+    start: i, end: i, on: !pp.picked[faceKey(pp.faces[i])], before: Object.assign({}, pp.picked),
+    pointer: ev.pointerId, x: ev.clientX, y: ev.clientY, moved: false, scrolling: false, done: false,
+  };
+});
+document.addEventListener('pointermove', function (ev) {
+  if (!ppDrag || ppDrag.done || ev.pointerId !== ppDrag.pointer) return;
+  ppDrag.x = ev.clientX;
+  ppDrag.y = ev.clientY;
+  ppDragUpdate();
+  if (ppDrag && ppDrag.moved && !ppDrag.scrolling) { ppDrag.scrolling = true; requestAnimationFrame(ppDragScroll); }
+});
+document.addEventListener('pointerup', ppDragEnd);
+document.addEventListener('pointercancel', ppDragEnd);
+// The faces are links with pictures: no dragging them out of the page while selecting.
+$('page').addEventListener('dragstart', function (ev) {
+  if (pp.picking && ev.target.closest && ev.target.closest('#pp-grid .face')) ev.preventDefault();
+});
+// The click that ends a drag selects nothing more.
+$('page').addEventListener('click', function (ev) {
+  if (ppDrag && ppDrag.moved) { ev.stopImmediatePropagation(); ev.preventDefault(); }
+}, true);
+
+function ppDragUpdate() {
+  if (!pp.picking) { ppDrag = null; return; }
+  var hit = document.elementFromPoint(ppDrag.x, ppDrag.y);
+  var card = hit && hit.closest('#pp-grid .face');
+  if (!card) return;
+  var i = ppFaceIndex(card);
+  if (i < 0 || i === ppDrag.end) return; // also: still on the first face, no drag yet
+  if (!ppDrag.moved) {
+    ppDrag.moved = true;
+    // Keeps getting the pointer when it leaves the window.
+    try { $('page').setPointerCapture(ppDrag.pointer); } catch (e) {}
+    $('pp-grid').classList.add('dragging');
+  }
+  var lo = Math.min(ppDrag.start, i), hi = Math.max(ppDrag.start, i);
+  var from = Math.min(lo, ppDrag.start, ppDrag.end), to = Math.max(hi, ppDrag.start, ppDrag.end);
+  for (var k = from; k <= to; k++) {
+    var key = faceKey(pp.faces[k]);
+    if (!key) continue;
+    var on = k >= lo && k <= hi ? ppDrag.on : !!ppDrag.before[key];
+    if (on) pp.picked[key] = pp.faces[k]; else delete pp.picked[key];
+    var c = document.querySelector('#pp-grid .face[data-key="' + key + '"]');
+    if (c) c.classList.toggle('sel', on);
+  }
+  ppDrag.end = i;
+  pp.anchor = faceKey(pp.faces[i]);
+  updatePersonPick();
+}
+
+// Scrolls while the pointer is near the top or bottom edge, faster the closer it is.
+function ppDragScroll() {
+  if (!ppDrag || ppDrag.done) return;
+  var scroller = $('scroller'), r = scroller.getBoundingClientRect(), v = 0;
+  if (ppDrag.y < r.top + DRAG_EDGE) v = -(r.top + DRAG_EDGE - ppDrag.y);
+  else if (ppDrag.y > r.bottom - DRAG_EDGE) v = ppDrag.y - (r.bottom - DRAG_EDGE);
+  if (!v) { ppDrag.scrolling = false; return; }
+  var top = scroller.scrollTop;
+  scroller.scrollTop = top + Math.max(-40, Math.min(40, v / 2));
+  if (scroller.scrollTop === top) { ppDrag.scrolling = false; return; }
+  ppDragUpdate();
+  if (ppDrag) requestAnimationFrame(ppDragScroll);
+}
+
+function ppDragEnd(ev) {
+  if (!ppDrag || ev.pointerId !== ppDrag.pointer) return;
+  var was = ppDrag;
+  if (!was.moved) { ppDrag = null; return; }
+  // Kept until after the click that follows, so that click is swallowed above.
+  was.done = true;
+  setTimeout(function () { if (ppDrag === was) ppDrag = null; }, 0);
+  try { $('page').releasePointerCapture(was.pointer); } catch (e) {}
+  var grid = $('pp-grid');
+  if (grid) grid.classList.remove('dragging');
 }
 
 function clearPersonPicks() {
@@ -6656,8 +6778,15 @@ function updatePersonPick() {
   var n = Object.keys(pp.picked).length;
   bar.hidden = !pp.picking;
   $('pp-pick').classList.toggle('active', pp.picking);
-  $('pp-count').textContent = n ? trn('count.faces', n) : tr('facecheck.tap');
-  Array.prototype.forEach.call(bar.querySelectorAll('.pp-act'), function (b) { b.disabled = !n; });
+  $('pp-count').textContent = n ? trn('count.faces', n) : tr(window.matchMedia('(pointer: fine)').matches ? 'person.hint_mouse' : 'facecheck.tap');
+  $('pp-count').classList.toggle('hint', !n);
+  var total = pp.faces.filter(faceKey).length;
+  $('pp-all').textContent = tr(total && n >= total ? 'sel.none' : 'sel.all');
+  $('pp-all').disabled = !total;
+  Array.prototype.forEach.call(bar.querySelectorAll('.pp-act'), function (b) {
+    // The icon tools are dimmed, not disabled, like the timeline's.
+    if (b.classList.contains('ib')) b.setAttribute('aria-disabled', n ? 'false' : 'true'); else b.disabled = !n;
+  });
 }
 
 // Name several faces at once (detected or drawn ones): everyone listed, or
