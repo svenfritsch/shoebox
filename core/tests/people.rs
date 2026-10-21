@@ -724,6 +724,9 @@ fn hand_drawn_faces() {
     let p = get(addr, &format!("/api/people/{anna}")).json();
     assert_eq!((p["cover"].as_i64(), p["cover_manual"].as_i64()), (None, Some(m)));
     assert_eq!(post(addr, "/api/faces/manual", &json!({ "file": dark, "box": [0.8, 0.0, 0.3, 0.4], "name": "Anna" })).status, 400);
+    // The same request again (a double click, a slow reply) adds nothing.
+    assert_eq!(ok(addr, "/api/faces/manual", &body)["manual"].as_i64(), Some(m));
+    assert_eq!(faces_of(addr, &lib, "a/dark.png").len(), 1);
 
     // Over the detected face of the other photo: one face, the drawn box.
     let detected = face_id(addr, &lib, "a/anna.png");

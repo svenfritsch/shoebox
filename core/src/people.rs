@@ -1866,11 +1866,26 @@ pub fn add_manual(conn: &Connection, file: i64, b: [f64; 4], who: &Who, species:
         bail!("the box must lie inside the picture (fractions of its width and height)");
     }
     let tx = conn.unchecked_transaction()?;
-    let key: String = tx
-        .query_row("SELECT quick_hash FROM files WHERE id = ?1 AND missing_since IS NULL", [file], |r| r.get(0))
+    let (key, kind): (String, String) = tx
+        .query_row("SELECT quick_hash, kind FROM files WHERE id = ?1 AND missing_since IS NULL", [file], |r| Ok((r.get(0)?, r.get(1)?)))
         .optional()?
         .ok_or_else(|| anyhow::anyhow!("there is no file {file}"))?;
     let person = resolve(&tx, who)?;
+    // The same person is added only once: to a video (it is linked to the whole
+    // clip, the box means nothing) at all, to a photo only where the box lies
+    // on the one already drawn for them. A repeated request (a double click, a
+    // slow reply) so returns the face that is there.
+    let mut stmt = tx.prepare(
+        "SELECT id, x, y, w, h FROM face_decisions
+         WHERE key = ?1 AND person_id = ?2 AND manual = 1 AND decision = 'confirmed' ORDER BY id",
+    )?;
+    let there: Vec<(i64, [f64; 4])> = stmt
+        .query_map(params![key, person], |r| Ok((r.get(0)?, [r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?])))?
+        .collect::<rusqlite::Result<_>>()?;
+    drop(stmt);
+    if let Some((id, _)) = there.iter().find(|(_, o)| kind == "video" || overlap(*o, b) > 0.5) {
+        return Ok(*id);
+    }
     tx.execute(
         "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at, species)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'confirmed', 1, ?7, ?8)",
@@ -1879,6 +1894,17 @@ pub fn add_manual(conn: &Connection, file: i64, b: [f64; 4], who: &Who, species:
     let id = tx.last_insert_rowid();
     tx.commit()?;
     Ok(id)
+}
+
+/// Intersection over union of two boxes `[x, y, w, h]`.
+fn overlap(a: [f64; 4], b: [f64; 4]) -> f64 {
+    let w = (a[0] + a[2]).min(b[0] + b[2]) - a[0].max(b[0]);
+    let h = (a[1] + a[3]).min(b[1] + b[3]) - a[1].max(b[1]);
+    if w <= 0.0 || h <= 0.0 {
+        return 0.0;
+    }
+    let i = w * h;
+    i / (a[2] * a[3] + b[2] * b[3] - i)
 }
 
 /// Delete hand-drawn faces (`manual` ids). Returns how many went.
