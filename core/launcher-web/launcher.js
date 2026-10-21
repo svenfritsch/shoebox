@@ -1104,7 +1104,8 @@ function summaryOf(kind, r) {
 
 function setStarting(on) {
   starting = on;
-  $('app-spinner').hidden = !on;
+  $('start-app').classList.toggle('starting', on);
+  $('start-app').textContent = tr(on ? 'launcher.app.starting_btn' : serving ? 'launcher.app.open' : 'launcher.app.start');
   if (on) $('app-state').textContent = tr('launcher.app.starting');
   else if (!serving && !$('app-state').classList.contains('error')) $('app-state').textContent = tr('launcher.app.idle');
   refreshStart();
