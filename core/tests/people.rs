@@ -2250,7 +2250,10 @@ fn suggestions_that_ran_out_regroup_soon() {
     let addr = server.addr;
     wait_for_clusters(addr);
     let guard = lib.snapshot();
-    let anna_card = cards(addr).into_iter().find(|c| c["faces"][0]["file"] == id_of(&lib, "a/1.png")).unwrap();
+    // The card of Anna's two plain pictures (in whichever order it lists them).
+    let a1 = id_of(&lib, "a/1.png");
+    let anna_card =
+        cards(addr).into_iter().find(|c| c["faces"].as_array().unwrap().iter().any(|f| f["file"] == a1)).expect("Anna's card");
     ok(addr, &format!("/api/clusters/{}/name", anna_card["id"]), &json!({ "name": "Anna", "generation": anna_card["generation"] }));
     ok(addr, "/api/clusters/left", &json!({}));
     wait_for_clusters(addr);
