@@ -1968,7 +1968,11 @@ the cards with a suggestion ran out (there were some after the last
 regrouping, none are left; on a new library without suggestions only the 10
 cards and the pause count) or no card is left; at once after new or
 forgotten faces (detected by `recognize`, drawn by hand and embedded:
-detected faces, not names), Carry over and a species. Names,
+detected faces, not names), Carry over and a species. New faces from a
+`recognize` run in another process are grouped by that run at its end; the
+server only notes them (`grouped_after_recognition`: the latest clustering job
+finished after the latest look for faces) and groups only what such a run left
+ungrouped (stopped before). Names,
 groups, pictures and hiding ask for none. Decisions made while one runs count
 towards the next one; the one running finishes (its result is right: every
 request sees through the decisions made since). `/api/info` `clusters`

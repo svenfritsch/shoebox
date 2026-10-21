@@ -2199,3 +2199,37 @@ fn suggestions_compare_only_what_changed_and_match_a_full_run() {
     assert_eq!(s.searched, s.unnamed);
     assert_eq!(lib.snapshot(), before, "clustering changed an original");
 }
+
+/// A `recognize` run in another process groups its new faces at its end:
+/// the server notes them and does not group again. One that stopped before
+/// grouping is grouped by the server.
+#[test]
+fn faces_grouped_by_recognize_are_not_grouped_again() {
+    let (lib, server) = cards_library("regroup-recognize", 2, rules(10, 60_000, 200));
+    let addr = server.addr;
+    let run = |args: &[&str]| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_shoebox")).args(args).arg(&lib.root).output().unwrap();
+        assert!(out.status.success(), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    };
+    let before = regroupings(&lib);
+    plain(&lib, "p0/3.png", PEOPLE[0], 3);
+    run(&["scan"]);
+    run(&["recognize", "--recognizer", FAKE]);
+    assert_eq!(regroupings(&lib), before + 1, "recognize groups at its end");
+    let c = next_regrouping(addr);
+    assert_eq!((&c["pending"], &c["stale"]), (&json!(false), &json!(false)), "{c}");
+    assert!(!regrouped_within(&lib, before + 1, Duration::from_millis(600)), "grouped again");
+    assert_eq!(get(addr, "/api/clusters").json()["unnamed"], 5, "the new face is on the page");
+
+    // A run whose grouping did not happen (as if stopped before it).
+    plain(&lib, "p1/3.png", PEOPLE[1], 3);
+    run(&["scan"]);
+    run(&["recognize", "--recognizer", FAKE]);
+    conn(&lib).execute("DELETE FROM recog.jobs WHERE id = (SELECT max(id) FROM recog.jobs WHERE kind = 'clusters')", []).unwrap();
+    let before = regroupings(&lib);
+    next_regrouping(addr);
+    assert!(regrouped_within(&lib, before, Duration::from_secs(2)), "the server groups what was not grouped");
+    let c = wait_for_clusters(addr);
+    assert_eq!(c["unnamed"], 6, "{c}");
+    server.stop().unwrap();
+}

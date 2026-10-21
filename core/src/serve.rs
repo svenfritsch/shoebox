@@ -880,6 +880,18 @@ fn faces_fingerprint(conn: &Connection) -> Result<i64> {
     Ok(conn.query_row("SELECT count(*) * 1000003 + coalesce(max(id), 0) FROM recog.faces", [], |r| r.get(0))?)
 }
 
+/// The latest clustering finished after the latest look for faces or pets
+/// ended (`shoebox recognize` groups at its end), so the faces it found are
+/// grouped already.
+fn grouped_after_recognition(conn: &Connection) -> Result<bool> {
+    Ok(conn.query_row(
+        "SELECT (SELECT max(finished_at) FROM recog.jobs WHERE kind = 'clusters' AND state = 'done')
+             >= coalesce((SELECT max(finished_at) FROM recog.jobs WHERE kind IN ('faces', 'faces-rot', 'pets')), 0)",
+        [],
+        |r| Ok(r.get::<_, Option<bool>>(0)?.unwrap_or(false)),
+    )?)
+}
+
 /// Recomputes clusters and suggestions when the rules say (`regroup`):
 /// decisions that come in while one runs count towards the next. Ends with
 /// the server.
@@ -2587,12 +2599,20 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
             }
         };
         let faces = overviews.0.clone();
-        // New faces from a `recognize` run that stopped before clustering.
+        // New faces from a `recognize` run in another process: grouped by it
+        // when it got that far (only noted here), else by this server.
         if !faces.running
+            && !overviews.1.running
             && app.clusters_done.load(Ordering::SeqCst) == app.clusters_wanted.load(Ordering::SeqCst)
-            && faces_fingerprint(&conn)? != app.faces_seen.load(Ordering::SeqCst)
         {
-            app.regroup(Why::Now);
+            let seen = faces_fingerprint(&conn)?;
+            if seen != app.faces_seen.load(Ordering::SeqCst) {
+                if grouped_after_recognition(&conn)? {
+                    app.faces_seen.store(seen, Ordering::SeqCst);
+                } else {
+                    app.regroup(Why::Now);
+                }
+            }
         }
         let clusters = ClustersInfo {
             overview: overviews.1.clone(),
