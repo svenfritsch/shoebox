@@ -117,6 +117,16 @@ impl<'a> Index<'a> {
         Index { dim, data, centres, cells: lists, probe }
     }
 
+    /// About how many embeddings one search over `n` compares the query
+    /// with (all of them up to `EXACT_MAX`, else those in the probed cells).
+    pub fn compared_per_search(n: usize) -> usize {
+        if n <= EXACT_MAX {
+            return n;
+        }
+        let cells = ((n as f64).sqrt().round() as usize).max(2);
+        n * (cells / 8).max(12).min(cells) / cells
+    }
+
     pub fn len(&self) -> usize {
         self.data.len().checked_div(self.dim).unwrap_or(0)
     }

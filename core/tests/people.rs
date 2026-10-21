@@ -2094,3 +2094,108 @@ fn the_last_card_named_regroups_soon() {
     server.stop().unwrap();
     assert_eq!(lib.snapshot(), guard, "regrouping changed an original");
 }
+
+// ------------------------------------------------- incremental suggestions
+
+/// The face of `rel` (one per picture with the fake).
+fn face_of(c: &Connection, rel: &str) -> i64 {
+    c.query_row(
+        "SELECT f.id FROM recog.faces f JOIN files fi ON fi.quick_hash = f.key WHERE fi.path_nfc = ?1",
+        [rel],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
+/// `recog.clusters` as rows, in order.
+fn cache_rows(c: &Connection) -> Vec<(i64, i64, Option<i64>, Option<f64>)> {
+    c.prepare("SELECT face, cluster, person, similarity FROM recog.clusters ORDER BY face")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap()
+}
+
+/// A run after a change compares only what changed, and its clusters and
+/// suggestions are exactly those of a run that searches everything again.
+fn same_as_full(c: &Connection, what: &str) -> clusters::Summary {
+    let quick = clusters::run(c, &|| false, &mut |_, _| {}).unwrap();
+    let rows = cache_rows(c);
+    c.execute("DELETE FROM recog.suggest_runs", []).unwrap();
+    let full = clusters::run(c, &|| false, &mut |_, _| {}).unwrap();
+    assert_eq!(full.searched, full.unnamed, "{what}: without a last run every face is searched");
+    assert_eq!(rows, cache_rows(c), "{what}: the run that compared only what changed differs from a full one");
+    quick
+}
+
+/// Each kind of change: names (new references), a rejection and taking it
+/// back, an undo, a merge, a deleted person, a face drawn by hand removed.
+#[test]
+fn suggestions_compare_only_what_changed_and_match_a_full_run() {
+    let lib = empty("people-incremental");
+    for (p, rgb) in [ANNA, BEN, CARL].iter().enumerate() {
+        for n in 1..=3 {
+            plain(&lib, &format!("p{p}/plain{n}.png"), *rgb, n);
+        }
+        variant(&lib, &format!("p{p}/suggested.png"), *rgb, SUGGESTED);
+        variant(&lib, &format!("p{p}/maybe.png"), *rgb, MAYBE);
+        variant(&lib, &format!("p{p}/far.png"), *rgb, FAR);
+    }
+    lib.scan();
+    let before = lib.snapshot();
+    recognize(&lib);
+    let c = conn(&lib);
+    let assign = |rels: &[&str], name: &str| {
+        let faces: Vec<i64> = rels.iter().map(|r| face_of(&c, r)).collect();
+        let who = people::Who { person_id: None, name: Some(name.into()) };
+        people::decide(&c, &faces, &people::Action::Assign(who)).unwrap().person.unwrap().id
+    };
+
+    // Nobody named: nothing to compare with.
+    let s = same_as_full(&c, "nobody named");
+    assert_eq!(s.suggested + s.maybe, 0);
+
+    // Anna named: her look-alikes get suggestions, compared with her new
+    // faces only (no face is searched among all references).
+    let anna = assign(&["p0/plain1.png", "p0/plain2.png"], "Anna");
+    let s = same_as_full(&c, "Anna named");
+    assert_eq!((s.searched, s.compared), (0, s.unnamed), "{s:?}");
+    assert!(s.suggested >= 1, "{s:?}");
+
+    // Ben named, and one more face of Anna.
+    let ben = assign(&["p1/plain1.png", "p1/plain2.png", "p1/plain3.png"], "Ben");
+    assign(&["p0/plain3.png"], "Anna");
+    let s = same_as_full(&c, "Ben named");
+    assert_eq!(s.searched, 0, "{s:?}");
+
+    // A rejection: only that face is searched again; taken back, the same.
+    let suggested = face_of(&c, "p0/suggested.png");
+    people::decide(&c, &[suggested], &people::Action::Reject(Some(anna))).unwrap();
+    let s = same_as_full(&c, "a rejection");
+    assert_eq!(s.searched, 1, "{s:?}");
+    people::decide(&c, &[suggested], &people::Action::Unreject(anna)).unwrap();
+    let s = same_as_full(&c, "a rejection taken back");
+    assert_eq!(s.searched, 1, "{s:?}");
+
+    // An undo: the face is open again (searched), Anna lost a reference
+    // (her suggested faces searched again).
+    people::decide(&c, &[face_of(&c, "p0/plain3.png")], &people::Action::Undo).unwrap();
+    let s = same_as_full(&c, "an undo");
+    assert!(s.searched >= 2 && s.searched < s.unnamed, "{s:?}");
+
+    // Ben merged into Anna, then Carl named and deleted again.
+    people::merge_people(&c, ben, anna).unwrap();
+    same_as_full(&c, "a merge");
+    let carl = assign(&["p2/plain1.png"], "Carl");
+    same_as_full(&c, "Carl named");
+    people::decide(&c, &[face_of(&c, "p2/plain1.png")], &people::Action::Undo).unwrap();
+    people::delete_person(&c, carl).unwrap();
+    same_as_full(&c, "Carl deleted");
+
+    // A new model: everything is searched.
+    c.execute("UPDATE recog.suggest_runs SET model = 'old'", []).unwrap();
+    let s = clusters::run(&c, &|| false, &mut |_, _| {}).unwrap();
+    assert_eq!(s.searched, s.unnamed);
+    assert_eq!(lib.snapshot(), before, "clustering changed an original");
+}

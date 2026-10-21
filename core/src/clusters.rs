@@ -98,6 +98,11 @@ pub struct Summary {
     /// Faces suggested for someone, and offered as "maybe".
     pub suggested: u64,
     pub maybe: u64,
+    /// Of `unnamed`: faces whose suggestion was searched among all confirmed
+    /// faces, and those only compared with the faces confirmed since the last
+    /// run (their earlier suggestion kept otherwise).
+    pub searched: u64,
+    pub compared: u64,
     /// The clusters by size, to judge the thresholds on a real library.
     pub sizes: Sizes,
     pub seconds: f64,
@@ -286,6 +291,60 @@ struct Part {
 struct Analysis {
     groups: Vec<Vec<usize>>,
     suggestion: HashMap<usize, (i64, f32)>,
+    /// What the suggestions came from, for the next run (`Previous`):
+    /// (ref, person), and the faces without a decision with their rejections.
+    refs: Vec<(i64, i64)>,
+    open: Vec<(i64, String)>,
+    searched: u64,
+    compared: u64,
+}
+
+/// What the last run worked the suggestions out from (`recog.suggest_*`,
+/// written with `recog.clusters`). A face's suggestion depends only on its
+/// embedding, the confirmed faces (the references) and its rejections, so
+/// the next run searches all references only for faces where one of those
+/// changed, and compares the others with the references added since.
+#[derive(Default)]
+struct Previous {
+    /// Space (`Space::task`) → its model and its references (ref → person).
+    refs: HashMap<String, (String, HashMap<i64, i64>)>,
+    /// The faces without a decision then: their suggestion.
+    rows: HashMap<i64, Option<(i64, f32)>>,
+    /// Their space and rejections (`rejections`).
+    open: HashMap<i64, (String, String)>,
+}
+
+/// A face's rejections as `recog.suggest_open` keeps them.
+fn rejections(rejected: &[i64]) -> String {
+    let mut ids = rejected.to_vec();
+    ids.sort_unstable();
+    ids.dedup();
+    ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",")
+}
+
+impl Previous {
+    fn load(conn: &Connection) -> Result<Previous> {
+        let mut prev = Previous::default();
+        let runs: Vec<(String, String)> =
+            conn.prepare("SELECT space, model FROM recog.suggest_runs")?.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
+        let mut stmt = conn.prepare("SELECT ref, person FROM recog.suggest_refs WHERE space = ?1")?;
+        for (space, model) in runs {
+            let refs: HashMap<i64, i64> = stmt.query_map([&space], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
+            prev.refs.insert(space, (model, refs));
+        }
+        let mut stmt = conn.prepare("SELECT face, person, similarity FROM recog.clusters")?;
+        let mut rows = stmt.query([])?;
+        while let Some(r) = rows.next()? {
+            let (face, person, sim): (i64, Option<i64>, Option<f64>) = (r.get(0)?, r.get(1)?, r.get(2)?);
+            prev.rows.insert(face, person.zip(sim).map(|(p, s)| (p, s as f32)));
+        }
+        let mut stmt = conn.prepare("SELECT face, space, rejected FROM recog.suggest_open")?;
+        let mut rows = stmt.query([])?;
+        while let Some(r) = rows.next()? {
+            prev.open.insert(r.get(0)?, (r.get(1)?, r.get(2)?));
+        }
+        Ok(prev)
+    }
 }
 
 /// How long each phase of a run took, printed (to stderr) when
@@ -377,12 +436,16 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
 
 
     laps.lap(|| format!("neighbour lists computed ({})", total - searches));
+    let previous = Previous::load(conn)?;
+    laps.lap(|| format!("the last run's suggestions ({} faces)", previous.rows.len()));
     let mut summaries: Vec<Summary> = Vec::new();
+    // What this run's suggestions come from, per space.
+    let mut sources: Vec<(&'static str, &str, Vec<(i64, i64)>, Vec<(i64, String)>)> = Vec::new();
     // (face, cluster, person, similarity) of every face without a decision.
     let mut rows: Vec<(i64, i64, Option<i64>, Option<f64>)> = Vec::new();
     let mut numbered = 0i64;
     for part in &parts {
-        let analysis = analyse(conn, &m, &state_of, part, &mut laps, stop, &mut |n| {
+        let mut analysis = analyse(conn, &m, &state_of, part, &previous, &mut laps, stop, &mut |n| {
             done += n;
             job.progress(conn, done, Some(total))?;
             progress(done, total);
@@ -392,8 +455,11 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
             faces: part.all.ids.len() as u64,
             listed: part.todo.len() as u64,
             clusters: analysis.groups.len() as u64,
+            searched: analysis.searched,
+            compared: analysis.compared,
             ..Summary::default()
         };
+        sources.push((part.space.task(), &part.model, std::mem::take(&mut analysis.refs), std::mem::take(&mut analysis.open)));
         for (c, group) in analysis.groups.iter().enumerate() {
             summary.sizes.add(group.len());
             for &i in group {
@@ -420,6 +486,21 @@ fn compute(conn: &Connection, job: &Job, stop: &dyn Fn() -> bool, progress: &mut
             insert.execute(params![face, cluster, person, similarity])?;
         }
     }
+    tx.execute_batch("DELETE FROM recog.suggest_runs; DELETE FROM recog.suggest_refs; DELETE FROM recog.suggest_open;")?;
+    {
+        let mut run = tx.prepare("INSERT INTO recog.suggest_runs (space, model) VALUES (?1, ?2)")?;
+        let mut source = tx.prepare("INSERT INTO recog.suggest_refs (space, ref, person) VALUES (?1, ?2, ?3)")?;
+        let mut open = tx.prepare("INSERT OR REPLACE INTO recog.suggest_open (face, space, rejected) VALUES (?1, ?2, ?3)")?;
+        for (space, model, refs, faces) in &sources {
+            run.execute(params![space, model])?;
+            for (r, person) in refs {
+                source.execute(params![space, r, person])?;
+            }
+            for (face, rejected) in faces {
+                open.execute(params![face, space, rejected])?;
+            }
+        }
+    }
     tx.commit()?;
     laps.lap(|| format!("write recog.clusters ({} rows)", rows.len()));
     let mut summaries = summaries.into_iter();
@@ -443,6 +524,7 @@ fn analyse(
     m: &Matched,
     state_of: &HashMap<i64, usize>,
     part: &Part,
+    previous: &Previous,
     laps: &mut Laps,
     stop: &dyn Fn() -> bool,
     searched: &mut dyn FnMut(u64) -> Result<()>,
@@ -457,47 +539,101 @@ fn analyse(
     // Suggestions: the most similar confirmed faces of every person (of
     // this space), and the faces or pets drawn by hand that were aligned.
     // First, because a cluster never joins faces suggested for two people.
+    // A reference is a face's id, or minus the decision's for one drawn by hand.
+    let mut ref_id: Vec<i64> = Vec::new();
     let mut ref_person: Vec<i64> = Vec::new();
     let mut ref_data: Vec<f32> = Vec::new();
     for i in 0..n {
         if let Some(p) = decided(i).filter(|d| d.decision == Decision::Confirmed).and_then(|d| d.person) {
+            ref_id.push(all.ids[i]);
             ref_person.push(p);
             ref_data.extend_from_slice(all.row(i));
         }
     }
-    for (p, emb) in drawn_references(conn, m, part.space, &part.model, all.dim)? {
+    for (d, p, emb) in drawn_references(conn, m, part.space, &part.model, all.dim)? {
+        ref_id.push(-d);
         ref_person.push(p);
         ref_data.extend(emb);
     }
     laps.lap(|| format!("{space:?}: references ({})", ref_person.len()));
-    let ref_index = Index::build(&ref_data, all.dim.max(1));
-    laps.lap(|| format!("{space:?}: reference index"));
     let open_list: Vec<usize> = (0..n).filter(|&i| open[i]).collect();
-    let suggestions: Vec<Option<(i64, f32)>> = if ref_person.is_empty() {
-        searched(open_list.len() as u64)?;
-        vec![None; open_list.len()]
-    } else {
-        let mut out = Vec::with_capacity(open_list.len());
-        for chunk in open_list.chunks(SEARCH_CHUNK) {
-            if stop() {
-                return Err(Interrupted.into());
-            }
-            out.extend(ann::parallel(chunk.len(), |k| {
-                let i = chunk[k];
-                let rejected = state_of.get(&all.ids[i]).map(|&s| m.states[s].rejected.as_slice()).unwrap_or(&[]);
-                ref_index
-                    .search(all.row(i), REFERENCES, part.th.maybe, None)
-                    .into_iter()
-                    .map(|(r, sim)| (ref_person[r], sim))
-                    .find(|(p, _)| !rejected.contains(p))
-            }));
-            searched(chunk.len() as u64)?;
+    let rejected_of = |i: usize| state_of.get(&all.ids[i]).map(|&s| m.states[s].rejected.as_slice()).unwrap_or(&[]);
+
+    // What changed since the last run: references added (or now someone
+    // else's), and the people who lost one (their suggestions may have come
+    // from it). Without a last run of this model, or with more references
+    // added than a search compares a face with, every face is searched.
+    let mut added: Vec<usize> = Vec::new();
+    let mut dirty: HashSet<i64> = HashSet::new();
+    let search_all = match previous.refs.get(space.task()).filter(|(model, _)| *model == part.model) {
+        None => true,
+        Some((_, before)) => {
+            let now: HashMap<i64, i64> = ref_id.iter().copied().zip(ref_person.iter().copied()).collect();
+            dirty.extend(before.iter().filter(|(r, p)| now.get(r) != Some(p)).map(|(_, p)| *p));
+            added.extend((0..ref_id.len()).filter(|&k| before.get(&ref_id[k]) != Some(&ref_person[k])));
+            added.len() > Index::compared_per_search(ref_id.len())
         }
-        out
     };
+    // A face is searched again when it had no decision at the last run, or
+    // not in this space (new, a decision undone, a pet's species corrected),
+    // its rejections changed, or the person it was suggested for lost a
+    // reference.
+    let rejected_now: Vec<String> = open_list.iter().map(|&i| rejections(rejected_of(i))).collect();
+    let search: Vec<bool> = open_list
+        .iter()
+        .zip(&rejected_now)
+        .map(|(&i, rejected)| {
+            let id = all.ids[i];
+            search_all
+                || match (previous.open.get(&id), previous.rows.get(&id)) {
+                    (Some((was, before_rejected)), Some(before)) => {
+                        was != space.task() || before_rejected != rejected || before.is_some_and(|(p, _)| dirty.contains(&p))
+                    }
+                    _ => true,
+                }
+        })
+        .collect();
+    let searched_n = search.iter().filter(|&&s| s).count() as u64;
+    let ref_index = (!ref_person.is_empty() && searched_n > 0).then(|| Index::build(&ref_data, all.dim.max(1)));
+    laps.lap(|| format!("{space:?}: reference index"));
+    let dim = all.dim.max(1);
+    let new_person: Vec<i64> = added.iter().map(|&k| ref_person[k]).collect();
+    let new_data: Vec<f32> = added.iter().flat_map(|&k| ref_data[k * dim..(k + 1) * dim].iter().copied()).collect();
+    let mut suggestions: Vec<Option<(i64, f32)>> = Vec::with_capacity(open_list.len());
+    for (chunk, wanted) in open_list.chunks(SEARCH_CHUNK).zip(search.chunks(SEARCH_CHUNK)) {
+        if stop() {
+            return Err(Interrupted.into());
+        }
+        suggestions.extend(ann::parallel(chunk.len(), |k| {
+            let i = chunk[k];
+            let rejected = rejected_of(i);
+            if wanted[k] {
+                return ref_index.as_ref().and_then(|index| {
+                    index
+                        .search(all.row(i), REFERENCES, part.th.maybe, None)
+                        .into_iter()
+                        .map(|(r, sim)| (ref_person[r], sim))
+                        .find(|(p, _)| !rejected.contains(p))
+                });
+            }
+            // The earlier suggestion, unless one of the new references is closer.
+            let mut best = previous.rows.get(&all.ids[i]).copied().flatten();
+            for (p, emb) in new_person.iter().zip(new_data.chunks_exact(dim)) {
+                let sim = ann::dot(all.row(i), emb);
+                if sim >= part.th.maybe && !rejected.contains(p) && best.is_none_or(|b| sim > b.1) {
+                    best = Some((*p, sim));
+                }
+            }
+            best
+        }));
+        searched(chunk.len() as u64)?;
+    }
     let suggestion: HashMap<usize, (i64, f32)> =
         open_list.iter().zip(suggestions).filter_map(|(&i, s)| s.map(|s| (i, s))).collect();
-    laps.lap(|| format!("{space:?}: suggestion searches ({})", open_list.len()));
+    let refs: Vec<(i64, i64)> = ref_id.into_iter().zip(ref_person).collect();
+    let open_faces: Vec<(i64, String)> = open_list.iter().map(|&i| all.ids[i]).zip(rejected_now).collect();
+    let compared = open_list.len() as u64 - searched_n;
+    laps.lap(|| format!("{space:?}: suggestions ({searched_n} searched, {compared} compared with {} new)", new_person.len()));
 
     // Clusters: neighbours without a decision, joined. Similarities are
     // computed again (cheap), so a list can never join faces that are not
@@ -551,7 +687,7 @@ fn analyse(
     drop(edges);
     groups.sort_by(|a, b| b.len().cmp(&a.len()).then(a[0].cmp(&b[0])));
     laps.lap(|| format!("{space:?}: join and split ({} cards)", groups.len()));
-    Ok(Analysis { groups, suggestion })
+    Ok(Analysis { groups, suggestion, refs, open: open_faces, searched: searched_n, compared })
 }
 
 /// Join `n` faces along `edges` (pairs at least the cluster similarity
@@ -657,7 +793,9 @@ fn split(members: Vec<usize>, edges: Vec<(usize, usize, f32)>, sim: f32, out: &m
 /// (that one's own embedding counts then), of a present photo, aligned
 /// (landmarks found; a pet's box always is), embedded with `model`, at
 /// least the space's minimum wide.
-fn drawn_references(conn: &Connection, m: &Matched, space: Space, model: &str, dim: usize) -> Result<Vec<(i64, Vec<f32>)>> {
+/// (decision id, person, embedding) of the faces drawn by hand that serve
+/// as references.
+fn drawn_references(conn: &Connection, m: &Matched, space: Space, model: &str, dim: usize) -> Result<Vec<(i64, i64, Vec<f32>)>> {
     // The width of the copy the worker saw is the same in every pass.
     let mut stmt = conn.prepare(&format!(
         "SELECT e.emb, (SELECT l.width FROM recog.looked l WHERE l.key = e.key AND l.width IS NOT NULL LIMIT 1)
@@ -684,7 +822,7 @@ fn drawn_references(conn: &Connection, m: &Matched, space: Space, model: &str, d
         }
         let emb: Vec<f32> = bytes.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
         if dim > 0 && emb.len() == dim {
-            out.push((person, emb));
+            out.push((row.id, person, emb));
         }
     }
     Ok(out)
