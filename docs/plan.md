@@ -1981,8 +1981,9 @@ the page's circle fills over the whole run. The server's regrouping leaves
 one core free (`ann::with_threads`, `shoebox recognize` takes them all):
 while one runs, `/api/groups` (every 100 ms) went from median 10 ms, p95
 660 ms, max 1.9 s to 5 ms, 465 ms, 1.9 s, and `/api/people` from max 2.9 s to
-2.8 s, for a regrouping about 13 % longer (172 to 195 s in the benchmark
-server). The waits of up to 2 to 3 s that remain are not the CPU: most likely
+2.8 s, for a regrouping that takes longer: 172 to 195 s in the benchmark's
+server, 140 to 186 s (a third more) on its own (`regrouping_phases` with
+`SHOEBOX_BENCH_THREADS=3`). The waits of up to 2 to 3 s that remain are not the CPU: most likely
 the people view read again in full when the run is done (`refresh_people_view`,
 about 1.2 s, under the cache's lock) and the rewrite of `recog.clusters`
 (not measured one by one). Next step: work only on what changed. A face's
