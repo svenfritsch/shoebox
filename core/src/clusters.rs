@@ -76,6 +76,9 @@ pub const NEIGHBOURS: usize = 24;
 const REFERENCES: usize = 32;
 /// Neighbour lists computed (and committed) at a time.
 const CHUNK: usize = 500;
+/// Up to this many faces searched among all references, they are compared
+/// with each one instead of through the index's cells.
+const EXACT_SEARCHES: usize = 1000;
 /// Suggestions searched between two reports of progress.
 const SEARCH_CHUNK: usize = 2000;
 /// A `running` clustering job that has not reported progress for this long
@@ -594,7 +597,15 @@ fn analyse(
         })
         .collect();
     let searched_n = search.iter().filter(|&&s| s).count() as u64;
-    let ref_index = (!ref_person.is_empty() && searched_n > 0).then(|| Index::build(&ref_data, all.dim.max(1)));
+    // A few faces are compared with every reference: cheaper than building
+    // the index's cells (about a second on 100 000 references).
+    let ref_index = (!ref_person.is_empty() && searched_n > 0).then(|| {
+        if searched_n as usize <= EXACT_SEARCHES {
+            Index::exact(&ref_data, all.dim.max(1))
+        } else {
+            Index::build(&ref_data, all.dim.max(1))
+        }
+    });
     laps.lap(|| format!("{space:?}: reference index"));
     let dim = all.dim.max(1);
     let new_person: Vec<i64> = added.iter().map(|&k| ref_person[k]).collect();

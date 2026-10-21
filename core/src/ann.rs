@@ -117,6 +117,13 @@ impl<'a> Index<'a> {
         Index { dim, data, centres, cells: lists, probe }
     }
 
+    /// An index that compares every query with all of `data` (no cells to
+    /// build): for a few searches, which would cost less than building them.
+    pub fn exact(data: &'a [f32], dim: usize) -> Index<'a> {
+        let n = data.len().checked_div(dim).unwrap_or(0);
+        Index { dim, data, centres: Vec::new(), cells: vec![(0..n as u32).collect()], probe: 1 }
+    }
+
     /// About how many embeddings one search over `n` compares the query
     /// with (all of them up to `EXACT_MAX`, else those in the probed cells).
     pub fn compared_per_search(n: usize) -> usize {
