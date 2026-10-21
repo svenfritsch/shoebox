@@ -279,6 +279,30 @@ pub fn encode(s: &str) -> String {
         .collect()
 }
 
+/// The tests' rules for regrouping: after every card, and 300 ms after
+/// anything else (`start_regrouping` for others).
+pub const REGROUP_AT_ONCE: serve::RegroupRules =
+    serve::RegroupRules { cards: 1, pause: std::time::Duration::from_millis(300), soon: std::time::Duration::from_millis(300) };
+
+/// Like `start`, with the rules for regrouping.
+pub fn start_regrouping(lib: &Library, regroup: serve::RegroupRules) -> serve::Server {
+    serve::start(
+        &serve::Options {
+            root: lib.root.clone(),
+            more_roots: Vec::new(),
+            db: None,
+            port: 0,
+            lan: false,
+            pin: None,
+            reveal: None,
+            recognizer: Some(env!("CARGO_BIN_EXE_shoebox-fake-recognizer").into()),
+            regroup,
+        },
+        false,
+    )
+    .unwrap()
+}
+
 pub fn start(lib: &Library, pin: Option<&str>) -> serve::Server {
     start_with(lib, pin, None)
 }
@@ -295,6 +319,7 @@ pub fn start_with(lib: &Library, pin: Option<&str>, reveal: Option<serve::Reveal
             pin: pin.map(str::to_string),
             reveal,
             recognizer: Some(env!("CARGO_BIN_EXE_shoebox-fake-recognizer").into()),
+            regroup: REGROUP_AT_ONCE,
         },
         false,
     )
@@ -318,6 +343,7 @@ pub fn start_many_with(libs: &[&Library], extra_missing: &[&Path], reveal: Optio
             pin: None,
             reveal,
             recognizer: Some(env!("CARGO_BIN_EXE_shoebox-fake-recognizer").into()),
+            regroup: REGROUP_AT_ONCE,
         },
         false,
     )

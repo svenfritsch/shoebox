@@ -129,3 +129,54 @@ fn where_the_time_goes() {
     time("  prune_crops", || shoebox::faces::prune_crops(&conn).unwrap());
     println!("  {:46} {:8.1} ms", "all of it", t.elapsed().as_secs_f64() * 1000.0);
 }
+
+/// Where a regrouping's time goes, phase by phase (`clusters::compute`), on
+/// the same library: a first run (every suggestion searched), then after 10
+/// cards named, a rejection, and an undo of an older name (only what changed):
+///
+///     SHOEBOX_CLUSTER_TIMES=1 SHOEBOX_BENCH_LIBRARY=<dir>/work cargo test --release --test people_bench regrouping_phases -- --ignored --nocapture
+///
+/// `ann::with_threads` as the photo app runs it (one core left free) with
+/// `SHOEBOX_BENCH_THREADS=<n>`. Works on the copy: it names faces.
+#[test]
+#[ignore]
+fn regrouping_phases() {
+    let Some(root) = library() else { return };
+    let conn = conn(&root);
+    let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let threads = std::env::var("SHOEBOX_BENCH_THREADS").ok().and_then(|t| t.parse().ok()).unwrap_or(cores);
+    let run = |what: &str| {
+        println!("{what}:");
+        let t = Instant::now();
+        let s = shoebox::ann::with_threads(threads, || shoebox::clusters::run(&conn, &|| false, &mut |_, _| {}).unwrap());
+        println!(
+            "{what} on {threads} threads: {:.1} s, {} without a decision in {} clusters, {} suggested; {} searched, {} compared",
+            t.elapsed().as_secs_f64(),
+            s.unnamed,
+            s.clusters,
+            s.suggested,
+            s.searched,
+            s.compared
+        );
+    };
+    run("first run");
+    let v = people::View::load(&conn).unwrap();
+    let cards = people::clusters_in(&v, 0, 10, 1, Some(shoebox::pets::Space::Faces), people::Size::Large).clusters;
+    let mut first = None;
+    for (k, c) in cards.iter().enumerate() {
+        let faces = people::cluster_face_ids_in(&v, c.id, Some(c.generation), None).unwrap();
+        let who = people::Who { person_id: None, name: Some(format!("Bench card {k}")) };
+        people::decide(&conn, &faces, &people::Action::Assign(who)).unwrap();
+        first.get_or_insert(faces);
+    }
+    drop(v);
+    run("after 10 cards named");
+    let v = people::View::load(&conn).unwrap();
+    let open = people::clusters_in(&v, 0, 1, 1, Some(shoebox::pets::Space::Faces), people::Size::Large).clusters.remove(0);
+    let face = open.faces[0].id.unwrap();
+    drop(v);
+    people::decide(&conn, &[face], &people::Action::Reject(Some(1))).unwrap();
+    run("after a rejection");
+    people::decide(&conn, &first.unwrap()[..1], &people::Action::Undo).unwrap();
+    run("after an older name undone");
+}

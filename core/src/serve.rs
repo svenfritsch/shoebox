@@ -95,6 +95,10 @@ mod faces_api;
 mod people_api;
 mod forget_api;
 mod text_api;
+mod regroup;
+
+pub use regroup::Rules as RegroupRules;
+use regroup::Why;
 
 pub const DEFAULT_PORT: u16 = 7878;
 const SESSION_COOKIE: &str = "shoebox_session";
@@ -111,8 +115,6 @@ const BACKUP_INTERVAL: Duration = Duration::from_secs(60);
 /// A job that has not reported progress for this long belongs to a process
 /// that died.
 const JOB_ALIVE_SECS: i64 = 120;
-/// Changes that come in this soon after another one are clustered together.
-const CLUSTER_DELAY: Duration = Duration::from_millis(300);
 
 /// Opens a photo in the computer's file manager; tests swap in a recorder.
 pub type RevealFn = Arc<dyn Fn(&FsPath) -> Result<()> + Send + Sync>;
@@ -133,6 +135,9 @@ pub struct Options {
     /// The recognizer for faces drawn by hand (else `$SHOEBOX_RECOGNIZER` or
     /// the installed one).
     pub recognizer: Option<PathBuf>,
+    /// When the clusters and suggestions are worked out again after
+    /// decisions (`regroup`).
+    pub regroup: RegroupRules,
 }
 
 /// A running server; dropping it does not stop it, `stop` does.
@@ -198,6 +203,7 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
         recognizer: opts.recognizer.clone(),
         ffmpeg: media::find_ffmpeg(),
         workers: std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2),
+        regroup: opts.regroup,
         closing: watch::channel(false).0,
     });
 
@@ -274,6 +280,7 @@ struct Shared {
     recognizer: Option<PathBuf>,
     ffmpeg: Option<PathBuf>,
     workers: usize,
+    regroup: RegroupRules,
     /// Set when the server begins to stop: the event streams end, so the
     /// graceful shutdown does not wait for them forever.
     closing: watch::Sender<bool>,
@@ -401,7 +408,6 @@ impl App {
         }
         let (heal_tx, heal_rx) = mpsc::channel();
         let (backup_tx, backup_rx) = mpsc::channel();
-        let (clusters_tx, clusters_rx) = mpsc::channel();
         let (embed_tx, embed_rx) = mpsc::channel();
         let app = Arc::new(App {
             root,
@@ -421,7 +427,8 @@ impl App {
             dirty: AtomicBool::new(false),
             heal: Mutex::new(heal_tx),
             backup: Mutex::new(backup_tx),
-            clusters: Mutex::new(clusters_tx),
+            regroup: Arc::new(regroup::Schedule::new(shared.regroup)),
+            threads: shared.workers,
             clusters_wanted: AtomicU64::new(0),
             clusters_done: AtomicU64::new(0),
             faces_seen: AtomicI64::new(-1),
@@ -439,9 +446,9 @@ impl App {
         });
         spawn_healer(Arc::downgrade(&app), heal_rx);
         spawn_backups(Arc::downgrade(&app), backup_rx);
-        spawn_clusterer(Arc::downgrade(&app), clusters_rx);
+        spawn_clusterer(Arc::downgrade(&app));
         spawn_embedder(Arc::downgrade(&app), embed_rx);
-        app.request_clusters();
+        app.regroup(Why::Now);
         app.request_embed();
         Ok(app)
     }
@@ -485,9 +492,11 @@ struct App {
     heal: Mutex<mpsc::Sender<()>>,
     /// Asks the background thread for a backup of the index and user data.
     backup: Mutex<mpsc::Sender<()>>,
-    /// Asks the background thread to recompute clusters and suggestions.
-    clusters: Mutex<mpsc::Sender<u64>>,
-    /// Counts those requests, and the requests covered by a finished run.
+    /// When the background thread recomputes clusters and suggestions.
+    regroup: Arc<regroup::Schedule>,
+    /// Cores of this computer (the regrouping leaves one free).
+    threads: usize,
+    /// Counts the regroupings started, and those finished.
     clusters_wanted: AtomicU64,
     clusters_done: AtomicU64,
     /// `recognition.db`'s faces when they were last clustered (a number
@@ -677,10 +686,10 @@ impl App {
         Ok(())
     }
 
-    /// Ask for the clusters and suggestions to be recomputed.
-    fn request_clusters(&self) {
-        let n = self.clusters_wanted.fetch_add(1, Ordering::SeqCst) + 1;
-        let _ = self.clusters.lock().unwrap().send(n);
+    /// Ask for the clusters and suggestions to be recomputed, when the rules
+    /// say (`regroup`).
+    fn regroup(&self, why: Why) {
+        self.regroup.ask(why);
         self.faces_changed();
     }
 
@@ -721,7 +730,10 @@ impl App {
                 self.faces_changed();
             }
         };
-        match clusters::run(&conn, &stopping, &mut progress) {
+        // One core is left for the requests, which would otherwise wait for
+        // the CPU (`shoebox recognize` takes them all).
+        let threads = self.threads.saturating_sub(1).max(1);
+        match crate::ann::with_threads(threads, || clusters::run(&conn, &stopping, &mut progress)) {
             Ok(s) => {
                 self.faces_seen.store(seen, Ordering::SeqCst);
                 if s.listed > 0 {
@@ -779,7 +791,7 @@ impl App {
             Ok(s) => {
                 println!("Faces and pets drawn by hand: {} embedded ({} faces without landmarks), {} failed.", s.embedded, s.plain, s.failed);
                 if s.embedded > 0 {
-                    self.request_clusters();
+                    self.regroup(Why::Now);
                 }
                 Ok(())
             }
@@ -868,24 +880,45 @@ fn faces_fingerprint(conn: &Connection) -> Result<i64> {
     Ok(conn.query_row("SELECT count(*) * 1000003 + coalesce(max(id), 0) FROM recog.faces", [], |r| r.get(0))?)
 }
 
-/// Recomputes clusters and suggestions as they are asked for: requests that
-/// come in while one runs (or within `CLUSTER_DELAY`) are covered by the
-/// next run. Ends with the server.
-fn spawn_clusterer(app: Weak<App>, requests: mpsc::Receiver<u64>) {
+/// The latest clustering finished after the latest look for faces or pets
+/// ended (`shoebox recognize` groups at its end), so the faces it found are
+/// grouped already.
+fn grouped_after_recognition(conn: &Connection) -> Result<bool> {
+    Ok(conn.query_row(
+        "SELECT (SELECT max(finished_at) FROM recog.jobs WHERE kind = 'clusters' AND state = 'done')
+             >= coalesce((SELECT max(finished_at) FROM recog.jobs WHERE kind IN ('faces', 'faces-rot', 'pets')), 0)",
+        [],
+        |r| Ok(r.get::<_, Option<bool>>(0)?.unwrap_or(false)),
+    )?)
+}
+
+/// Recomputes clusters and suggestions when the rules say (`regroup`):
+/// decisions that come in while one runs count towards the next. Ends with
+/// the server.
+fn spawn_clusterer(app: Weak<App>) {
     std::thread::spawn(move || {
-        while let Ok(mut wanted) = requests.recv() {
-            std::thread::sleep(CLUSTER_DELAY);
-            while let Ok(n) = requests.try_recv() {
-                wanted = wanted.max(n);
+        loop {
+            let schedule = match app.upgrade() {
+                Some(app) if !app.stopping.load(Ordering::SeqCst) => app.regroup.clone(),
+                _ => break,
+            };
+            if !schedule.wait_due(Duration::from_secs(1)) {
+                continue;
             }
             let Some(app) = app.upgrade() else { break };
             if app.stopping.load(Ordering::SeqCst) {
                 break;
             }
+            let wanted = app.clusters_wanted.fetch_add(1, Ordering::SeqCst) + 1;
+            app.faces_changed();
             if let Err(e) = app.cluster() {
                 eprintln!("could not group the faces: {e:#}");
             }
             app.refresh_people_view();
+            match app.with_people(|_, v| Ok(people::cards_now(v))) {
+                Ok((_, suggested)) => schedule.grouped(suggested),
+                Err(e) => eprintln!("could not read the faces again: {e:#}"),
+            }
             app.clusters_done.fetch_max(wanted, Ordering::SeqCst);
             app.faces_changed();
         }
@@ -1180,6 +1213,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/groups/{id}/delete", post(people_api::delete_group))
         .route("/api/clusters", get(people_api::clusters))
         .route("/api/clusters/{id}/faces", get(people_api::cluster_faces))
+        .route("/api/clusters/left", post(people_api::left_unnamed))
         .route("/api/clusters/{id}/name", post(people_api::name_cluster))
         .route("/api/clusters/{id}/ignore", post(people_api::ignore_cluster))
         .route("/api/clusters/{id}/not-face", post(people_api::not_face_cluster))
@@ -2385,7 +2419,7 @@ async fn all_transfer_apply(
     })
     .await?;
     if counts.people > 0 {
-        to.request_clusters();
+        to.regroup(Why::Now);
     }
     Ok(Json(serde_json::json!({ "from": from, "to": to.name, "counts": counts })))
 }
@@ -2423,11 +2457,14 @@ struct JobInfo {
 struct ClustersInfo {
     #[serde(flatten)]
     overview: clusters::Overview,
-    /// A recomputation is asked for or running in this server: what the
+    /// A recomputation is starting or running in this server: what the
     /// cache says may be behind the latest decisions.
     stale: bool,
     /// Faces drawn by hand are being embedded (the recognizer runs).
     embedding: bool,
+    /// Decisions waiting for the next one (`pending`, `cards_left`, `wait_ms`).
+    #[serde(flatten)]
+    next: regroup::Status,
 }
 
 #[derive(Serialize)]
@@ -2562,17 +2599,26 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
             }
         };
         let faces = overviews.0.clone();
-        // New faces from a `recognize` run that stopped before clustering.
+        // New faces from a `recognize` run in another process: grouped by it
+        // when it got that far (only noted here), else by this server.
         if !faces.running
+            && !overviews.1.running
             && app.clusters_done.load(Ordering::SeqCst) == app.clusters_wanted.load(Ordering::SeqCst)
-            && faces_fingerprint(&conn)? != app.faces_seen.load(Ordering::SeqCst)
         {
-            app.request_clusters();
+            let seen = faces_fingerprint(&conn)?;
+            if seen != app.faces_seen.load(Ordering::SeqCst) {
+                if grouped_after_recognition(&conn)? {
+                    app.faces_seen.store(seen, Ordering::SeqCst);
+                } else {
+                    app.regroup(Why::Now);
+                }
+            }
         }
         let clusters = ClustersInfo {
             overview: overviews.1.clone(),
             stale: clusters_done < clusters_wanted,
             embedding,
+            next: app.regroup.status(),
         };
         Ok(Json(Info {
             name: app.name.clone(),

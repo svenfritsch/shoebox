@@ -241,7 +241,7 @@ class Server:
         time.sleep(0.5)
         while True:
             c = self.get("/api/info")["clusters"]
-            if not c["stale"] and not c["running"]:
+            if not c["stale"] and not c["running"] and not c.get("pending"):
                 return time.time() - started
             if time.time() - started > timeout:
                 raise SystemExit("clustering did not finish")

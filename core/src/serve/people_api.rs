@@ -1,8 +1,8 @@
 //! People, groups, clusters and face decisions (phase 5c-2, `people.rs`).
 //! Changes go through `change` like every other change to the index (one
-//! at a time, backed up afterwards) and ask for the clusters and
-//! suggestions to be recomputed in the background. Nothing here reads an
-//! original.
+//! at a time, backed up afterwards) and say whether, and how soon, the
+//! clusters and suggestions should be recomputed in the background
+//! (`regroup`). Nothing here reads an original.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -12,45 +12,51 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use serde::{Deserialize, Serialize};
 
-use super::{ApiError, ApiResult, App, Pairs, blocking, change_with, filter_of, param};
+use super::{ApiError, ApiResult, App, Pairs, Why, blocking, change_with, filter_of, param};
 use crate::browse;
 use crate::db;
 use crate::faces;
 use crate::people::{self, Action, Who};
 
 /// Run a change to people or decisions, tidy up what it left behind, then
-/// recompute the clusters. It changes nothing but people, groups, pictures
-/// and face decisions (`faces_change` for the detected faces themselves):
-/// the people view (`App::people_view`) reads only those again.
+/// ask for the clusters to be recomputed as `why` says (`None`: the clusters
+/// and suggestions do not depend on it, like a name or a group). It changes
+/// nothing but people, groups, pictures and face decisions (`faces_change`
+/// for the detected faces themselves): the people view (`App::people_view`)
+/// reads only those again.
 pub(super) async fn people_change<T: Send + 'static>(
     app: &Arc<App>,
+    why: Option<Why>,
     f: impl FnOnce(&rusqlite::Connection) -> anyhow::Result<T> + Send + 'static,
 ) -> ApiResult<T> {
-    people_change_then(app, move |_, conn| f(conn), |_, _, done| Ok(done)).await
+    people_change_then(app, why, move |_, conn| f(conn), |_, _, done| Ok(done)).await
 }
 
 /// `people_change` for a change that also touches the detected faces or
-/// what they are (forgetting them, a pet's species).
+/// what they are (forgetting them, a pet's species): regrouped at once.
 pub(super) async fn faces_change<T: Send + 'static>(
     app: &Arc<App>,
     f: impl FnOnce(&rusqlite::Connection) -> anyhow::Result<T> + Send + 'static,
 ) -> ApiResult<T> {
-    changed(app, true, move |_, conn| f(conn), |_, _, done| Ok(done)).await
+    changed(app, true, |_| Some(Why::Now), move |_, conn| f(conn), |_, _, done| Ok(done)).await
 }
 
 /// `people_change`, then `reply` with what the change returned: it sees the
 /// people view with the change in it (`change` the one from before).
 pub(super) async fn people_change_then<A, T: Send + 'static>(
     app: &Arc<App>,
+    why: Option<Why>,
     change: impl FnOnce(&App, &rusqlite::Connection) -> anyhow::Result<A> + Send + 'static,
     reply: impl FnOnce(&App, &rusqlite::Connection, A) -> anyhow::Result<T> + Send + 'static,
 ) -> ApiResult<T> {
-    changed(app, false, change, reply).await
+    changed(app, false, move |_| why, change, reply).await
 }
 
+/// `why` sees what the change returned. A change that failed asks for nothing.
 async fn changed<A, T: Send + 'static>(
     app: &Arc<App>,
     faces: bool,
+    why: impl FnOnce(&A) -> Option<Why> + Send + 'static,
     change: impl FnOnce(&App, &rusqlite::Connection) -> anyhow::Result<A> + Send + 'static,
     reply: impl FnOnce(&App, &rusqlite::Connection, A) -> anyhow::Result<T> + Send + 'static,
 ) -> ApiResult<T> {
@@ -61,17 +67,42 @@ async fn changed<A, T: Send + 'static>(
             app.faces_version.fetch_add(1, Ordering::SeqCst);
         }
         let done = done?;
+        let why = why(&done);
+        // The cards left after a card was decided (`regroup::Schedule::cards_now`).
+        let mut cards = None;
         match app.people_view() {
             Ok(v) => {
                 tidy_with(conn, &v);
+                if why == Some(Why::Card) {
+                    cards = Some(people::cards_now(&v));
+                }
             }
             Err(e) => eprintln!("could not read the faces: {e:#}"),
         }
-        reply(app, conn, done)
+        Ok((reply(app, conn, done)?, why, cards))
     })
     .await;
-    app.request_clusters();
-    result
+    match result {
+        Ok((reply, why, cards)) => {
+            if let Some(why) = why {
+                app.regroup.ask(why);
+            }
+            if let Some((cards, suggested)) = cards {
+                app.regroup.cards_now(cards, suggested);
+            }
+            if why.is_some() {
+                app.faces_changed();
+            }
+            Ok(reply)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// The person left the Unnamed page: decisions that wait are regrouped soon.
+pub(super) async fn left_unnamed(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
+    app.regroup(Why::Left);
+    Ok(Json(serde_json::json!({})))
 }
 
 /// After a change to people or decisions: everyone with confirmed faces has a
@@ -131,7 +162,7 @@ pub(super) struct CreatePerson {
 }
 
 pub(super) async fn create(State(app): State<Arc<App>>, Json(req): Json<CreatePerson>) -> ApiResult<Json<people::Person>> {
-    people_change_then(&app, move |_, conn| people::create_person(conn, &req.name, req.group_id), person_now).await.map(Json)
+    people_change_then(&app, None, move |_, conn| people::create_person(conn, &req.name, req.group_id), person_now).await.map(Json)
 }
 
 #[derive(Deserialize)]
@@ -144,7 +175,7 @@ pub(super) async fn rename(
     Path(id): Path<i64>,
     Json(req): Json<NameRequest>,
 ) -> ApiResult<Json<people::Person>> {
-    people_change_then(&app, move |_, conn| people::rename_person(conn, id, &req.name), move |app, conn, ()| person_now(app, conn, id))
+    people_change_then(&app, None, move |_, conn| people::rename_person(conn, id, &req.name), move |app, conn, ()| person_now(app, conn, id))
         .await
         .map(Json)
 }
@@ -161,13 +192,13 @@ pub(super) async fn merge(
     Json(req): Json<MergeRequest>,
 ) -> ApiResult<Json<people::Person>> {
     let into = req.into;
-    people_change_then(&app, move |_, conn| people::merge_people(conn, id, into), move |app, conn, ()| person_now(app, conn, into))
+    people_change_then(&app, Some(Why::Soon), move |_, conn| people::merge_people(conn, id, into), move |app, conn, ()| person_now(app, conn, into))
         .await
         .map(Json)
 }
 
 pub(super) async fn delete(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Json<serde_json::Value>> {
-    people_change(&app, move |conn| people::delete_person(conn, id)).await?;
+    people_change(&app, Some(Why::Soon), move |conn| people::delete_person(conn, id)).await?;
     Ok(Json(serde_json::json!({ "deleted": id })))
 }
 
@@ -181,7 +212,7 @@ pub(super) async fn hide(
     Path(id): Path<i64>,
     Json(req): Json<HideRequest>,
 ) -> ApiResult<Json<people::Person>> {
-    people_change_then(&app, move |_, conn| people::hide_person(conn, id, req.hidden), move |app, conn, ()| person_now(app, conn, id))
+    people_change_then(&app, None, move |_, conn| people::hide_person(conn, id, req.hidden), move |app, conn, ()| person_now(app, conn, id))
         .await
         .map(Json)
 }
@@ -197,7 +228,7 @@ pub(super) async fn set_group(
     Path(id): Path<i64>,
     Json(req): Json<GroupRequest>,
 ) -> ApiResult<Json<people::Person>> {
-    people_change_then(&app, move |_, conn| people::set_group(conn, id, req.group_id), move |app, conn, ()| person_now(app, conn, id))
+    people_change_then(&app, None, move |_, conn| people::set_group(conn, id, req.group_id), move |app, conn, ()| person_now(app, conn, id))
         .await
         .map(Json)
 }
@@ -217,6 +248,7 @@ pub(super) async fn set_cover(
 ) -> ApiResult<Json<people::Person>> {
     people_change_then(
         &app,
+        None,
         move |_, conn| match (req.face, req.file) {
             (Some(face), None) => people::set_cover(conn, id, face),
             (None, Some(file)) => people::set_cover_from_file(conn, id, file),
@@ -354,7 +386,7 @@ pub(super) struct NewGroupRequest {
 }
 
 pub(super) async fn create_group(State(app): State<Arc<App>>, Json(req): Json<NewGroupRequest>) -> ApiResult<Json<people::Group>> {
-    people_change(&app, move |conn| people::create_group(conn, &req.name, req.person_id)).await.map(Json)
+    people_change(&app, None, move |conn| people::create_group(conn, &req.name, req.person_id)).await.map(Json)
 }
 
 #[derive(Serialize)]
@@ -401,7 +433,7 @@ pub(super) async fn rename_group(
     Path(id): Path<i64>,
     Json(req): Json<NameRequest>,
 ) -> ApiResult<Json<people::Group>> {
-    people_change(&app, move |conn| people::rename_group(conn, id, &req.name)).await.map(Json)
+    people_change(&app, None, move |conn| people::rename_group(conn, id, &req.name)).await.map(Json)
 }
 
 #[derive(Deserialize)]
@@ -413,12 +445,12 @@ pub(super) async fn reorder_groups(
     State(app): State<Arc<App>>,
     Json(req): Json<ReorderRequest>,
 ) -> ApiResult<Json<Vec<people::Group>>> {
-    people_change(&app, move |conn| people::reorder_groups(conn, &req.ids)).await.map(Json)
+    people_change(&app, None, move |conn| people::reorder_groups(conn, &req.ids)).await.map(Json)
 }
 
 /// Its people have no group afterwards.
 pub(super) async fn delete_group(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Json<serde_json::Value>> {
-    people_change(&app, move |conn| people::delete_group(conn, id))
+    people_change(&app, None, move |conn| people::delete_group(conn, id))
         .await
         .map(|n| Json(serde_json::json!({ "people": n })))
 }
@@ -492,6 +524,7 @@ pub(super) struct ClusterRequest {
 async fn on_cluster(app: Arc<App>, id: i64, req: ClusterRequest, action: fn(Who) -> Action) -> ApiResult<Json<people::Decided>> {
     people_change_then(
         &app,
+        Some(Why::Card),
         move |app, conn| {
             let v = app.people_view()?;
             let all = people::cluster_face_ids_in(&v, id, req.generation, None)?;
@@ -568,18 +601,40 @@ pub(super) struct FacesRequest {
     open: bool,
 }
 
+/// A decision about single faces counts as one card. A rejection only starts
+/// the pause again; taking one back, or undoing a decision made before the
+/// last regrouping (its face is not in the clusters), only a regrouping shows,
+/// so it comes soon. Undoing a newer decision shows at once.
 async fn on_faces(app: Arc<App>, req: FacesRequest, action: Action) -> ApiResult<Json<people::Decided>> {
-    people_change_then(&app, move |app, conn| {
-        let v = app.people_view()?;
-        if req.open {
-            people::ensure_undecided_in(&v, &req.faces)?;
-        }
-        let mut done = people::decide_in(conn, &v, &req.faces, &action)?;
-        if matches!(action, Action::Undo) {
-            done.faces += people::delete_manual(conn, &req.manual)?;
-        }
-        Ok(done)
-    }, |_, conn, done| with_person(conn, done))
+    let why = match action {
+        Action::Reject(_) => Why::Pause,
+        Action::Unreject(_) => Why::Soon,
+        Action::Undo => Why::Pause,
+        _ => Why::Card,
+    };
+    changed(
+        &app,
+        false,
+        |(_, why): &(people::Decided, Why)| Some(*why),
+        move |app, conn| {
+            let v = app.people_view()?;
+            if req.open {
+                people::ensure_undecided_in(&v, &req.faces)?;
+            }
+            let mut done = people::decide_in(conn, &v, &req.faces, &action)?;
+            let mut why = why;
+            if matches!(action, Action::Undo) {
+                // Hand-drawn faces are references for the suggestions.
+                let drawn = people::delete_manual(conn, &req.manual)?;
+                if drawn > 0 || req.faces.iter().any(|&f| !v.in_clusters(f)) {
+                    why = Why::Soon;
+                }
+                done.faces += drawn;
+            }
+            Ok((done, why))
+        },
+        |_, conn, (done, _)| with_person(conn, done),
+    )
     .await
     .map(Json)
 }
@@ -647,7 +702,7 @@ pub(super) struct ManualRequest {
 /// A face or pet drawn by hand (missed by the detector), with who it is.
 pub(super) async fn manual(State(app): State<Arc<App>>, Json(req): Json<ManualRequest>) -> ApiResult<Json<serde_json::Value>> {
     let species = req.species.clone().or_else(|| req.pet.then(|| crate::pets::PET.to_string()));
-    let added = people_change(&app, move |conn| people::add_manual(conn, req.file, req.b, &req.who, species.as_deref())).await;
+    let added = people_change(&app, None, move |conn| people::add_manual(conn, req.file, req.b, &req.who, species.as_deref())).await;
     app.request_embed();
     added.map(|id| Json(serde_json::json!({ "manual": id })))
 }

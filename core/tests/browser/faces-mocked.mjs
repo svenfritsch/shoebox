@@ -76,17 +76,18 @@ async function on(hash, setup, run) {
 const posted = (lib, re) => until(`a POST to ${re}`, () => lib.log.some((e) => e.method === 'POST' && re.test(e.path)));
 
 // A name given on the Unnamed page by `act`: from the reply alone the person is
-// in the sidebar; no clusters are asked for while the grouping is asked for or
-// running; once it is done, one refresh (large and single faces together);
-// never the people list or the groups.
+// in the sidebar; no clusters are asked for while the name waits for the
+// grouping, nor while it starts or runs; once it is done, one refresh (large
+// and single faces together); never the people list or the groups.
 async function namedThenGrouped(p, lib, act) {
   const from = lib.log.length;
   await act();
   await settle(p, lib);
   noListRequests(lib.log, from, 'a name on the Unnamed page');
   await sidebarIs(p, lib.lists(), 'from the reply');
+  check(lib.pending, 'a name waits for the next grouping');
   for (const step of ['stale', 'running']) {
-    lib.step = step;
+    lib.start(step);
     await tell(p, lib);
     check(!requests(lib.log, from, '/clusters').length, `the clusters were asked for while the grouping was ${step}`);
   }
@@ -99,10 +100,10 @@ async function namedThenGrouped(p, lib, act) {
 }
 
 // A change to people or groups by `act`: the page asks for neither the people
-// list nor the groups and its sidebar is right from the reply. After the
-// grouping that follows (the server asks for one after every change) the People
-// page asks for the list once, on purpose (the suggestions changed); no other
-// page does.
+// list nor the groups and its sidebar is right from the reply. Names and
+// groups change no suggestion, so no grouping follows. After the grouping that
+// follows a merge or a deletion, the People page asks for the list once, on
+// purpose (the suggestions changed); no other page does.
 async function changedThenGrouped(p, lib, why, act) {
   const from = lib.log.length;
   await act();
@@ -110,7 +111,10 @@ async function changedThenGrouped(p, lib, why, act) {
   await tell(p, lib);
   noListRequests(lib.log, from, why);
   await sidebarIs(p, lib.lists(), why);
+  if (!lib.pending) return;
   const after = lib.log.length;
+  lib.start();
+  await tell(p, lib);
   lib.grouped();
   await tell(p, lib);
   const n = requests(lib.log, after, '/people').length, g = requests(lib.log, after, '/groups').length;
@@ -226,6 +230,117 @@ await test('a long card adds its faces as they are scrolled to, its tiles stay a
   check((await k.getAttribute('class')).includes('picking'), 'the big card is still selecting');
   check((await marked()) === 40, `after a name elsewhere ${await marked()} of the 40 marked tiles are left`);
   check((await tiles()) === 100, `after a name elsewhere the card shows ${await tiles()} faces`);
+}));
+
+// ---- when the next grouping comes (the line at the top right)
+
+// The line and its circle as the page shows them.
+const line = (p) => p.evaluate(() => {
+  const l = document.getElementById('un-next'), tick = l && l.querySelector('.tick');
+  return l && {
+    shown: !l.hidden, text: l.querySelector('.text').textContent, buttons: l.querySelectorAll('button').length,
+    deg: tick ? parseFloat(tick.style.getPropertyValue('--regroup-deg')) : null, ms: tick ? tick.style.transitionDuration : null,
+    floating: l.classList.contains('floating'), live: document.getElementById('un-live').textContent,
+    status: document.getElementById('status').textContent, title: document.getElementById('current-month').textContent,
+  };
+});
+
+// Many cards (named one after the other) and single faces.
+function manyCards(lib) {
+  const olga = lib.person('Olga Listed', { faces: 4 });
+  return { olga, cards: Array.from({ length: 12 }, (_, k) => lib.cluster(14 - k)), singles: [1, 2].map(() => lib.cluster(1)) };
+}
+
+await test('the next grouping: the line after a name, cards and seconds count down, the circle refills, then finding and gone; no button', await on('view=unnamed', manyCards, async (p, lib, s) => {
+  let l = await line(p);
+  check(!l.shown, 'no line before a decision');
+  check(l.title === await tr(p, 'people.unnamed'), `the top bar says "${l.title}", not the Unnamed page`);
+  const status = l.status;
+  await namedThenGroupedLine(p, lib, s);
+  l = await line(p);
+  check(l.status === status, `the sidebar's status line changed while grouping: "${l.status}"`);
+}));
+
+async function namedThenGroupedLine(p, lib, s) {
+  // The line as "<cards>, <seconds>" (the page's time runs on while it settles).
+  const parts = async () => {
+    const l = await line(p);
+    for (let n = 1; n <= 10; n++) for (let secs = 0; secs <= 30; secs++) {
+      if (l.text === await p.evaluate(([n, secs]) => trn('unnamed.next', n, { s: secs }), [n, secs])) return { ...l, cards: n, secs };
+    }
+    return { ...l, cards: null, secs: null };
+  };
+  await nameCard(p, first(s.cards[0]), 'Ada First');
+  await posted(lib, /^\/clusters\/\d+\/name$/);
+  await settle(p, lib);
+  let l = await parts();
+  check(l.shown && l.cards === 4 && l.secs > 20, `after the first name the line says "${l.text}"`);
+  check(l.buttons === 0, 'the line has no button');
+  check(Math.abs(l.deg - 12 * (l.secs - 1)) < 13, `the circle is at ${l.deg}° with ${l.secs} s left (12° a second)`);
+  check(l.live === await p.evaluate(() => trn('unnamed.next_cards', 4)), `screen readers hear "${l.live}"`);
+  const said = l.live, before = l.secs;
+
+  await p.clock.runFor(5000);
+  l = await parts();
+  check(l.cards === 4 && l.secs === before - 5, `5 s later the line says "${l.text}"`);
+  check(Math.abs(l.deg - 12 * (l.secs - 1)) < 13, `5 s later the circle is at ${l.deg}° with ${l.secs} s left`);
+  check(l.live === said, 'screen readers are not told every second');
+
+  await nameCard(p, first(s.cards[1]), 'Ben Second');
+  await until('the second name', () => lib.log.filter((e) => e.method === 'POST' && /^\/clusters\/\d+\/name$/.test(e.path)).length === 2);
+  await settle(p, lib);
+  l = await parts();
+  check(l.cards === 3 && l.secs > before - 5, `after the second name the line says "${l.text}" (the seconds start again)`);
+  check(Math.abs(l.deg - 12 * (l.secs - 1)) < 13, `the circle filled up again: ${l.deg}° with ${l.secs} s left`);
+  check(l.live === await p.evaluate(() => trn('unnamed.next_cards', 3)), `screen readers hear the new count: "${l.live}"`);
+
+  await p.evaluate(() => { document.getElementById('scroller').scrollTop = 600; document.getElementById('scroller').dispatchEvent(new Event('scroll')); });
+  l = await line(p);
+  check(l.floating, 'scrolled, the line is in its box');
+
+  const from = lib.log.length;
+  lib.start('running');
+  lib.progress = [37, 100];
+  await tell(p, lib);
+  l = await line(p);
+  check(l.shown && l.text === await tr(p, 'unnamed.regrouping'), `while grouping the line says "${l.text}"`);
+  check(Math.abs(l.deg - 133.2) < 1, `the circle shows the progress: ${l.deg}°, expected 37% of 360°`);
+  check(l.live === await tr(p, 'unnamed.regrouping'), 'screen readers hear that it started');
+  check(!requests(lib.log, from, '/clusters').length, 'no clusters asked for while grouping');
+
+  lib.grouped();
+  await tell(p, lib);
+  l = await line(p);
+  check(!l.shown, 'the line is gone when the grouping is done');
+  check(l.live === await tr(p, 'unnamed.regrouped_done'), 'screen readers hear that it is done');
+  check(clusterRounds(lib.log, from) === 'large, small', 'the cards updated once');
+}
+
+await test('the circle steps once a second with reduced motion', await on('view=unnamed', manyCards, async (p, lib, s) => {
+  await p.emulateMedia({ reducedMotion: 'reduce' });
+  await nameCard(p, first(s.cards[0]), 'Ada First');
+  await posted(lib, /^\/clusters\/\d+\/name$/);
+  await settle(p, lib);
+  await p.clock.runFor(1000);
+  const a = await line(p);
+  await p.clock.runFor(1000);
+  const b = await line(p);
+  check(a.ms === '0ms' && b.ms === '0ms', `no smooth movement: ${a.ms}, ${b.ms}`);
+  check(Math.abs(a.deg - b.deg - 12) < 1.5, `one step of 12° a second: ${a.deg}° then ${b.deg}°`);
+}));
+
+await test('leaving the Unnamed page while names wait asks for the grouping soon; with nothing waiting it asks nothing', await on('view=unnamed', manyCards, async (p, lib, s) => {
+  await p.evaluate(() => showView('people'));
+  await settle(p, lib);
+  check(!requests(lib.log, 0, '/clusters/left', 'POST').length, 'left with nothing waiting: nothing asked');
+  await p.evaluate(() => showView('unnamed'));
+  await settle(p, lib);
+  await nameCard(p, first(s.cards[0]), 'Ada First');
+  await posted(lib, /^\/clusters\/\d+\/name$/);
+  await settle(p, lib);
+  await p.evaluate(() => showView('people'));
+  await settle(p, lib);
+  check(requests(lib.log, 0, '/clusters/left', 'POST').length === 1, 'leaving with names waiting tells the server once');
 }));
 
 // ---- groups and people (the People page)

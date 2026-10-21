@@ -105,7 +105,7 @@ fn wait_for_clusters(addr: std::net::SocketAddr) -> Value {
     loop {
         let info = get(addr, "/api/info").json();
         let c = &info["clusters"];
-        if c["stale"] == false && c["running"] == false {
+        if c["stale"] == false && c["running"] == false && c["pending"] == false {
             return c.clone();
         }
         assert!(started.elapsed() < Duration::from_secs(20), "clustering did not finish: {c}");
@@ -813,7 +813,8 @@ fn clustering_resumes_after_a_stop() {
     let mut seen = Vec::new();
     let s = clusters::run(&c, &|| false, &mut |done, total| seen.push((done, total))).unwrap();
     assert_eq!((s.faces, s.listed, s.unnamed, s.clusters), (3, 3, 3, 2));
-    assert_eq!(seen.last(), Some(&(3, 3)));
+    // Three neighbour lists, then the three faces' suggestions searched.
+    assert_eq!(seen.last(), Some(&(6, 6)));
     let again = clusters::run(&c, &|| false, &mut |_, _| {}).unwrap();
     assert_eq!((again.listed, again.clusters), (0, 2), "lists are kept");
     let o = clusters::overview(&c).unwrap();
@@ -1839,4 +1840,396 @@ fn the_kept_people_view_follows_every_change() {
 
     server.stop().unwrap();
     assert_eq!(lib.snapshot(), before, "people changed an original");
+}
+
+// ------------------------------------------------------- when to regroup
+
+/// Colours of people for the regrouping tests: far apart for the fake
+/// (`person_number`), none of them a cue.
+const PEOPLE: [[u8; 3]; 8] =
+    [ANNA, BEN, CARL, DORA, [150, 200, 60], [60, 150, 200], [180, 80, 140], [100, 180, 160]];
+
+/// `people` people with two photos each (one card each), recognised, with a
+/// server that regroups by `rules`, after its first grouping.
+fn cards_library(test: &str, people: usize, rules: shoebox::serve::RegroupRules) -> (Library, shoebox::serve::Server) {
+    let lib = empty(test);
+    for (p, rgb) in PEOPLE.iter().take(people).enumerate() {
+        plain(&lib, &format!("p{p}/1.png"), *rgb, 1);
+        plain(&lib, &format!("p{p}/2.png"), *rgb, 2);
+    }
+    lib.scan();
+    recognize(&lib);
+    let server = start_regrouping(&lib, rules);
+    wait_for_clusters(server.addr);
+    (lib, server)
+}
+
+/// Regroupings started so far (the jobs of every run, the server's and
+/// `recognize`'s).
+fn regroupings(lib: &Library) -> i64 {
+    conn(lib).query_row("SELECT count(*) FROM recog.jobs WHERE kind = 'clusters'", [], |r| r.get(0)).unwrap()
+}
+
+/// Wait up to `max` for more than `before` regroupings to have started.
+fn regrouped_within(lib: &Library, before: i64, max: Duration) -> bool {
+    let started = Instant::now();
+    while started.elapsed() < max {
+        if regroupings(lib) > before {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    false
+}
+
+/// The cards of the Unnamed page as they are now.
+fn cards(addr: std::net::SocketAddr) -> Vec<Value> {
+    get(addr, "/api/clusters?limit=50").json()["clusters"].as_array().unwrap().clone()
+}
+
+/// Name the first card on the Unnamed page; its face ids.
+fn name_first(addr: std::net::SocketAddr, name: &str) -> Vec<i64> {
+    let c = cards(addr).remove(0);
+    ok(addr, &format!("/api/clusters/{}/name", c["id"]), &json!({ "name": name, "generation": c["generation"] }));
+    c["faces"].as_array().unwrap().iter().map(|f| f["id"].as_i64().unwrap()).collect()
+}
+
+fn next_regrouping(addr: std::net::SocketAddr) -> Value {
+    get(addr, "/api/info").json()["clusters"].clone()
+}
+
+fn rules(cards: u32, pause_ms: u64, soon_ms: u64) -> shoebox::serve::RegroupRules {
+    shoebox::serve::RegroupRules { cards, pause: Duration::from_millis(pause_ms), soon: Duration::from_millis(soon_ms) }
+}
+
+/// N named cards start a regrouping before the pause is over; `/api/info`
+/// says how many cards are left and how long the pause still is.
+#[test]
+fn n_named_cards_start_a_regrouping_before_the_pause() {
+    let (lib, server) = cards_library("regroup-cards", 4, rules(3, 60_000, 200));
+    let addr = server.addr;
+    let guard = lib.snapshot();
+    let c = next_regrouping(addr);
+    assert_eq!((&c["pending"], &c["cards_left"], &c["wait_ms"]), (&json!(false), &json!(0), &json!(0)), "nothing waits: {c}");
+    let before = regroupings(&lib);
+
+    name_first(addr, "P0");
+    let c = next_regrouping(addr);
+    assert_eq!((&c["pending"], &c["cards_left"], &c["stale"]), (&json!(true), &json!(2), &json!(false)), "{c}");
+    let wait = c["wait_ms"].as_u64().unwrap();
+    assert!(wait > 55_000 && wait <= 60_000, "{c}");
+    assert_eq!(c["pause_ms"], 60_000);
+    name_first(addr, "P1");
+    assert_eq!(next_regrouping(addr)["cards_left"], 1);
+    assert!(!regrouped_within(&lib, before, Duration::from_millis(400)), "two cards are not enough");
+
+    name_first(addr, "P2");
+    assert!(regrouped_within(&lib, before, Duration::from_secs(2)), "the third card starts it");
+    let c = wait_for_clusters(addr);
+    assert_eq!((&c["pending"], &c["cards_left"], &c["wait_ms"]), (&json!(false), &json!(0), &json!(0)), "{c}");
+    assert_eq!(regroupings(&lib), before + 1, "one regrouping for the three cards");
+    server.stop().unwrap();
+    assert_eq!(lib.snapshot(), guard, "regrouping changed an original");
+}
+
+/// Fewer than N cards: the pause starts it; every decision starts the pause
+/// again (a rejection too, without counting as a card).
+#[test]
+fn the_pause_starts_a_regrouping_and_each_decision_restarts_it() {
+    let (lib, server) = cards_library("regroup-pause", 3, rules(10, 1500, 200));
+    let addr = server.addr;
+    let guard = lib.snapshot();
+    let before = regroupings(&lib);
+    let faces = name_first(addr, "P0");
+    std::thread::sleep(Duration::from_millis(900));
+    // A rejection restarts the pause but is no card.
+    let other = cards(addr).remove(0)["faces"][0]["id"].as_i64().unwrap();
+    let p0 = get(addr, "/api/people").json()[0]["id"].as_i64().unwrap();
+    ok(addr, "/api/faces/reject", &json!({ "faces": [other], "person_id": p0 }));
+    let c = next_regrouping(addr);
+    assert_eq!(c["cards_left"], 9, "{c}");
+    assert!(c["wait_ms"].as_u64().unwrap() > 1200, "the pause starts again: {c}");
+    std::thread::sleep(Duration::from_millis(900));
+    name_first(addr, "P1");
+    // 1.8 s after the first name, 0.9 s after the rejection: still waiting.
+    assert!(!regrouped_within(&lib, before, Duration::from_millis(900)), "each decision restarts the pause");
+    assert!(regrouped_within(&lib, before, Duration::from_secs(2)), "the pause is over");
+    wait_for_clusters(addr);
+    assert_eq!(regroupings(&lib), before + 1);
+    assert!(faces.len() == 2);
+    server.stop().unwrap();
+    assert_eq!(lib.snapshot(), guard, "regrouping changed an original");
+}
+
+/// Leaving the Unnamed page, undoing a decision made before the last
+/// regrouping, taking back a rejection and merging two people start one
+/// soon; undoing a newer decision shows at once and only restarts the pause.
+#[test]
+fn leaving_an_old_undo_an_unreject_and_a_merge_regroup_soon() {
+    let (lib, server) = cards_library("regroup-soon", 4, rules(10, 60_000, 200));
+    let addr = server.addr;
+    let guard = lib.snapshot();
+    let soon = Duration::from_secs(2);
+
+    // Nothing waits: leaving the page starts nothing.
+    let before = regroupings(&lib);
+    ok(addr, "/api/clusters/left", &json!({}));
+    assert!(!next_regrouping(addr)["pending"].as_bool().unwrap());
+    assert!(!regrouped_within(&lib, before, Duration::from_millis(500)));
+
+    // A name, then leaving: soon.
+    let old = name_first(addr, "P0");
+    ok(addr, "/api/clusters/left", &json!({}));
+    assert!(next_regrouping(addr)["wait_ms"].as_u64().unwrap() <= 200);
+    assert!(regrouped_within(&lib, before, soon), "leaving the page");
+    wait_for_clusters(addr);
+
+    // Undo of a decision made since then: back on the page at once, no
+    // regrouping needed (only the pause starts).
+    let before = regroupings(&lib);
+    let new = name_first(addr, "P1");
+    let left = cards(addr).len();
+    ok(addr, "/api/faces/undo", &json!({ "faces": new }));
+    assert_eq!(cards(addr).len(), left + 1, "the card is back at once");
+    assert!(next_regrouping(addr)["wait_ms"].as_u64().unwrap() > 50_000, "{}", next_regrouping(addr));
+    assert!(!regrouped_within(&lib, before, Duration::from_millis(500)));
+
+    // Undo of the decision made before the last regrouping: only a
+    // regrouping brings the card back, soon.
+    let left = cards(addr).len();
+    ok(addr, "/api/faces/undo", &json!({ "faces": old }));
+    assert!(next_regrouping(addr)["wait_ms"].as_u64().unwrap() <= 200);
+    assert!(regrouped_within(&lib, before, soon), "an old undo");
+    wait_for_clusters(addr);
+    assert_eq!(cards(addr).len(), left + 1, "the card is back after the regrouping");
+
+    // A rejection taken back: soon.
+    let a = name_first(addr, "Anna");
+    let anna = get(addr, "/api/people").json().as_array().unwrap().iter().find(|p| p["name"] == "Anna").unwrap()["id"].as_i64().unwrap();
+    let other = cards(addr).remove(0)["faces"][0]["id"].as_i64().unwrap();
+    ok(addr, "/api/faces/reject", &json!({ "faces": [other], "person_id": anna }));
+    ok(addr, "/api/clusters/left", &json!({}));
+    wait_for_clusters(addr);
+    let before = regroupings(&lib);
+    ok(addr, "/api/faces/unreject", &json!({ "faces": [other], "person_id": anna }));
+    assert!(regrouped_within(&lib, before, soon), "a rejection taken back");
+    wait_for_clusters(addr);
+
+    // A merge: soon, without any card named.
+    let before = regroupings(&lib);
+    name_first(addr, "Ben");
+    ok(addr, "/api/clusters/left", &json!({}));
+    wait_for_clusters(addr);
+    let before_merge = regroupings(&lib);
+    assert!(before_merge > before);
+    let ben = get(addr, "/api/people").json().as_array().unwrap().iter().find(|p| p["name"] == "Ben").unwrap()["id"].as_i64().unwrap();
+    ok(addr, &format!("/api/people/{ben}/merge"), &json!({ "into": anna }));
+    assert!(regrouped_within(&lib, before_merge, soon), "a merge");
+    wait_for_clusters(addr);
+
+    // A rename or a group changes no suggestion: nothing.
+    let before = regroupings(&lib);
+    ok(addr, &format!("/api/people/{anna}/rename"), &json!({ "name": "Anna B." }));
+    ok(addr, "/api/groups", &json!({ "name": "Family", "person_id": anna }));
+    assert!(!next_regrouping(addr)["pending"].as_bool().unwrap());
+    assert!(!regrouped_within(&lib, before, Duration::from_millis(500)));
+    assert!(a.len() == 2);
+    server.stop().unwrap();
+    assert_eq!(lib.snapshot(), guard, "regrouping changed an original");
+}
+
+/// Names given while a regrouping runs count towards the next one; the one
+/// running finishes (its result is still right: the new names are seen
+/// through).
+#[test]
+fn naming_during_a_regrouping_counts_towards_the_next() {
+    let (lib, server) = cards_library("regroup-during", 6, rules(2, 60_000, 200));
+    let addr = server.addr;
+    let guard = lib.snapshot();
+    let before = regroupings(&lib);
+    name_first(addr, "P0");
+    name_first(addr, "P1");
+    // The second card started it; the third comes while it starts or runs,
+    // or after it, and waits for the next one either way.
+    name_first(addr, "P2");
+    assert!(regrouped_within(&lib, before, Duration::from_secs(2)));
+    let c = wait_for_clusters_or_pending(addr);
+    assert_eq!((&c["pending"], &c["cards_left"]), (&json!(true), &json!(1)), "{c}");
+    assert_eq!(regroupings(&lib), before + 1);
+    // The named cards are off the page; the fourth starts the next one.
+    assert_eq!(cards(addr).len(), 3);
+    name_first(addr, "P3");
+    assert!(regrouped_within(&lib, before + 1, Duration::from_secs(2)));
+    wait_for_clusters(addr);
+    server.stop().unwrap();
+    assert_eq!(lib.snapshot(), guard, "regrouping changed an original");
+}
+
+/// The regrouping that runs is done; decisions may still wait.
+fn wait_for_clusters_or_pending(addr: std::net::SocketAddr) -> Value {
+    let started = Instant::now();
+    loop {
+        let c = next_regrouping(addr);
+        if c["stale"] == false && c["running"] == false {
+            return c;
+        }
+        assert!(started.elapsed() < Duration::from_secs(20), "clustering did not finish: {c}");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// The last card named: nothing is left to name, so it starts soon.
+#[test]
+fn the_last_card_named_regroups_soon() {
+    let (lib, server) = cards_library("regroup-last", 2, rules(10, 60_000, 200));
+    let addr = server.addr;
+    let guard = lib.snapshot();
+    let before = regroupings(&lib);
+    name_first(addr, "P0");
+    assert!(next_regrouping(addr)["wait_ms"].as_u64().unwrap() > 50_000);
+    name_first(addr, "P1");
+    assert!(cards(addr).is_empty());
+    assert!(regrouped_within(&lib, before, Duration::from_secs(2)), "no card left");
+    wait_for_clusters(addr);
+    server.stop().unwrap();
+    assert_eq!(lib.snapshot(), guard, "regrouping changed an original");
+}
+
+// ------------------------------------------------- incremental suggestions
+
+/// The face of `rel` (one per picture with the fake).
+fn face_of(c: &Connection, rel: &str) -> i64 {
+    c.query_row(
+        "SELECT f.id FROM recog.faces f JOIN files fi ON fi.quick_hash = f.key WHERE fi.path_nfc = ?1",
+        [rel],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
+/// `recog.clusters` as rows, in order.
+fn cache_rows(c: &Connection) -> Vec<(i64, i64, Option<i64>, Option<f64>)> {
+    c.prepare("SELECT face, cluster, person, similarity FROM recog.clusters ORDER BY face")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap()
+}
+
+/// A run after a change compares only what changed, and its clusters and
+/// suggestions are exactly those of a run that searches everything again.
+fn same_as_full(c: &Connection, what: &str) -> clusters::Summary {
+    let quick = clusters::run(c, &|| false, &mut |_, _| {}).unwrap();
+    let rows = cache_rows(c);
+    c.execute("DELETE FROM recog.suggest_runs", []).unwrap();
+    let full = clusters::run(c, &|| false, &mut |_, _| {}).unwrap();
+    assert_eq!(full.searched, full.unnamed, "{what}: without a last run every face is searched");
+    assert_eq!(rows, cache_rows(c), "{what}: the run that compared only what changed differs from a full one");
+    quick
+}
+
+/// Each kind of change: names (new references), a rejection and taking it
+/// back, an undo, a merge, a deleted person, a face drawn by hand removed.
+#[test]
+fn suggestions_compare_only_what_changed_and_match_a_full_run() {
+    let lib = empty("people-incremental");
+    for (p, rgb) in [ANNA, BEN, CARL].iter().enumerate() {
+        for n in 1..=3 {
+            plain(&lib, &format!("p{p}/plain{n}.png"), *rgb, n);
+        }
+        variant(&lib, &format!("p{p}/suggested.png"), *rgb, SUGGESTED);
+        variant(&lib, &format!("p{p}/maybe.png"), *rgb, MAYBE);
+        variant(&lib, &format!("p{p}/far.png"), *rgb, FAR);
+    }
+    lib.scan();
+    let before = lib.snapshot();
+    recognize(&lib);
+    let c = conn(&lib);
+    let assign = |rels: &[&str], name: &str| {
+        let faces: Vec<i64> = rels.iter().map(|r| face_of(&c, r)).collect();
+        let who = people::Who { person_id: None, name: Some(name.into()) };
+        people::decide(&c, &faces, &people::Action::Assign(who)).unwrap().person.unwrap().id
+    };
+
+    // Nobody named: nothing to compare with.
+    let s = same_as_full(&c, "nobody named");
+    assert_eq!(s.suggested + s.maybe, 0);
+
+    // Anna named: her look-alikes get suggestions, compared with her new
+    // faces only (no face is searched among all references).
+    let anna = assign(&["p0/plain1.png", "p0/plain2.png"], "Anna");
+    let s = same_as_full(&c, "Anna named");
+    assert_eq!((s.searched, s.compared), (0, s.unnamed), "{s:?}");
+    assert!(s.suggested >= 1, "{s:?}");
+
+    // Ben named, and one more face of Anna.
+    let ben = assign(&["p1/plain1.png", "p1/plain2.png", "p1/plain3.png"], "Ben");
+    assign(&["p0/plain3.png"], "Anna");
+    let s = same_as_full(&c, "Ben named");
+    assert_eq!(s.searched, 0, "{s:?}");
+
+    // A rejection: only that face is searched again; taken back, the same.
+    let suggested = face_of(&c, "p0/suggested.png");
+    people::decide(&c, &[suggested], &people::Action::Reject(Some(anna))).unwrap();
+    let s = same_as_full(&c, "a rejection");
+    assert_eq!(s.searched, 1, "{s:?}");
+    people::decide(&c, &[suggested], &people::Action::Unreject(anna)).unwrap();
+    let s = same_as_full(&c, "a rejection taken back");
+    assert_eq!(s.searched, 1, "{s:?}");
+
+    // An undo: the face is open again (searched), Anna lost a reference
+    // (her suggested faces searched again).
+    people::decide(&c, &[face_of(&c, "p0/plain3.png")], &people::Action::Undo).unwrap();
+    let s = same_as_full(&c, "an undo");
+    assert!(s.searched >= 2 && s.searched < s.unnamed, "{s:?}");
+
+    // Ben merged into Anna, then Carl named and deleted again.
+    people::merge_people(&c, ben, anna).unwrap();
+    same_as_full(&c, "a merge");
+    let carl = assign(&["p2/plain1.png"], "Carl");
+    same_as_full(&c, "Carl named");
+    people::decide(&c, &[face_of(&c, "p2/plain1.png")], &people::Action::Undo).unwrap();
+    people::delete_person(&c, carl).unwrap();
+    same_as_full(&c, "Carl deleted");
+
+    // A new model: everything is searched.
+    c.execute("UPDATE recog.suggest_runs SET model = 'old'", []).unwrap();
+    let s = clusters::run(&c, &|| false, &mut |_, _| {}).unwrap();
+    assert_eq!(s.searched, s.unnamed);
+    assert_eq!(lib.snapshot(), before, "clustering changed an original");
+}
+
+/// A `recognize` run in another process groups its new faces at its end:
+/// the server notes them and does not group again. One that stopped before
+/// grouping is grouped by the server.
+#[test]
+fn faces_grouped_by_recognize_are_not_grouped_again() {
+    let (lib, server) = cards_library("regroup-recognize", 2, rules(10, 60_000, 200));
+    let addr = server.addr;
+    let run = |args: &[&str]| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_shoebox")).args(args).arg(&lib.root).output().unwrap();
+        assert!(out.status.success(), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    };
+    let before = regroupings(&lib);
+    plain(&lib, "p0/3.png", PEOPLE[0], 3);
+    run(&["scan"]);
+    run(&["recognize", "--recognizer", FAKE]);
+    assert_eq!(regroupings(&lib), before + 1, "recognize groups at its end");
+    let c = next_regrouping(addr);
+    assert_eq!((&c["pending"], &c["stale"]), (&json!(false), &json!(false)), "{c}");
+    assert!(!regrouped_within(&lib, before + 1, Duration::from_millis(600)), "grouped again");
+    assert_eq!(get(addr, "/api/clusters").json()["unnamed"], 5, "the new face is on the page");
+
+    // A run whose grouping did not happen (as if stopped before it).
+    plain(&lib, "p1/3.png", PEOPLE[1], 3);
+    run(&["scan"]);
+    run(&["recognize", "--recognizer", FAKE]);
+    conn(&lib).execute("DELETE FROM recog.jobs WHERE id = (SELECT max(id) FROM recog.jobs WHERE kind = 'clusters')", []).unwrap();
+    let before = regroupings(&lib);
+    next_regrouping(addr);
+    assert!(regrouped_within(&lib, before, Duration::from_secs(2)), "the server groups what was not grouped");
+    let c = wait_for_clusters(addr);
+    assert_eq!(c["unnamed"], 6, "{c}");
+    server.stop().unwrap();
 }

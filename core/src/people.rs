@@ -839,6 +839,12 @@ impl View {
         .then_some((person, sim))
     }
 
+    /// Whether face `id` was in the last regrouping (without a decision then):
+    /// undoing a decision about it brings it back at once.
+    pub fn in_clusters(&self, id: i64) -> bool {
+        self.cache.contains_key(&id)
+    }
+
     /// The cluster of face `i` if it has no decision.
     fn cluster(&self, i: usize) -> Option<i64> {
         if self.m.states[i].decided.is_some() || self.pet_faces.contains(&self.m.faces[i].id) {
@@ -2069,6 +2075,17 @@ pub enum Size {
 /// pets) if `kind` is given. Faces and pets never share a cluster.
 pub fn clusters(conn: &Connection, offset: usize, limit: usize, samples: usize, kind: Option<Space>, size: Size) -> Result<Clusters> {
     Ok(clusters_in(&View::load(conn)?, offset, limit, samples, kind, size))
+}
+
+/// Cards on the Unnamed page (clusters with faces nobody decided on, all
+/// sizes) and how many of them have a suggestion: when to regroup.
+pub fn cards_now(v: &View) -> (u64, u64) {
+    let groups = grouped(v, None);
+    let suggested = groups
+        .iter()
+        .filter(|c| c.faces.iter().any(|&i| v.suggestion(i).is_some_and(|s| s.1 >= v.m.faces[i].thresholds().suggest)))
+        .count();
+    (groups.len() as u64, suggested as u64)
 }
 
 pub fn clusters_in(v: &View, offset: usize, limit: usize, samples: usize, kind: Option<Space>, size: Size) -> Clusters {

@@ -29,9 +29,23 @@ pub fn dot(a: &[f32], b: &[f32]) -> f32 {
     acc.iter().sum::<f32>() + tail
 }
 
-/// `f(i)` for `i` in `0..n`, on all cores, in order.
+thread_local! {
+    /// At most this many threads for `parallel` on this thread (`with_threads`).
+    static THREADS: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+
+/// Run `f` with `parallel` using at most `threads` threads (at least one).
+pub fn with_threads<T>(threads: usize, f: impl FnOnce() -> T) -> T {
+    let before = THREADS.with(|t| t.replace(Some(threads.max(1))));
+    let out = f();
+    THREADS.with(|t| t.set(before));
+    out
+}
+
+/// `f(i)` for `i` in `0..n`, on all cores (or what `with_threads` allows), in order.
 pub fn parallel<T: Send>(n: usize, f: impl Fn(usize) -> T + Sync) -> Vec<T> {
-    let threads = std::thread::available_parallelism().map_or(1, |t| t.get()).min(n).max(1);
+    let cores = std::thread::available_parallelism().map_or(1, |t| t.get());
+    let threads = THREADS.with(|t| t.get()).map_or(cores, |t| t.min(cores)).min(n).max(1);
     if threads == 1 {
         return (0..n).map(f).collect();
     }
@@ -101,6 +115,23 @@ impl<'a> Index<'a> {
         // (99% of those ≥ 0.55 in `tests`, 128 numbers per face like SFace).
         let probe = (cells / 8).max(12).min(cells);
         Index { dim, data, centres, cells: lists, probe }
+    }
+
+    /// An index that compares every query with all of `data` (no cells to
+    /// build): for a few searches, which would cost less than building them.
+    pub fn exact(data: &'a [f32], dim: usize) -> Index<'a> {
+        let n = data.len().checked_div(dim).unwrap_or(0);
+        Index { dim, data, centres: Vec::new(), cells: vec![(0..n as u32).collect()], probe: 1 }
+    }
+
+    /// About how many embeddings one search over `n` compares the query
+    /// with (all of them up to `EXACT_MAX`, else those in the probed cells).
+    pub fn compared_per_search(n: usize) -> usize {
+        if n <= EXACT_MAX {
+            return n;
+        }
+        let cells = ((n as f64).sqrt().round() as usize).max(2);
+        n * (cells / 8).max(12).min(cells) / cells
     }
 
     pub fn len(&self) -> usize {
