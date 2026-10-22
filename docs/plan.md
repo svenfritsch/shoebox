@@ -2126,4 +2126,15 @@ text of two letters or more, and alone for `text:` and `name:`, which now ask
 `/suggest` too (`/count` stays for the API tests). A row whose term finds
 nothing is left out; after `text:` or `name:` a line says so
 (`search.text_none`, `search.name_none`, or `search.text_unread` while no text
-has been read, when the plain search keeps its greyed row).
+has been read, when the plain search keeps its greyed row). Tests: `core/tests/suggest.rs`
+(the reply's keys, each section with its limits and what it leaves out, the
+prefixes, every number equal to the list's count once picked within every
+kind of chip, kept counts following a tag, a name, a hidden person), each
+section against its own endpoint in `people.rs`, `dates.rs`,
+`text_search.rs` and `multi.rs` (all drives); in the browser on a fake clock
+(`faces-mocked.mjs`): nothing asked 149 ms after a letter, the suggestions at
+150 ms and the photos at 300 ms, requests an older text asked for called off
+(suggestions and photos), Escape and leaving the box calling off what is on
+its way, the text row and prefixes; against the real server
+(`faces-e2e.mjs`): one `/suggest` per pause and a list that is what the
+server answers.

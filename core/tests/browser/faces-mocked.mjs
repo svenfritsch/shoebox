@@ -524,6 +524,84 @@ await test('the search box asks once typing pauses and calls off what a newer te
   check(shown.includes('Longo Search'), `the list shows [${shown}]`);
 }));
 
+// What the search box asked for since `from`: the typed text of each request
+// to `path`, and the requests the page called off ("/suggest?q=lon").
+function searchLog(p, lib) {
+  const from = lib.log.length, calledOff = [];
+  p.on('requestfailed', (r) => { const u = new URL(r.url()); calledOff.push(u.pathname.slice(LIB.length) + '?q=' + (u.searchParams.get('q') || '')); });
+  return { calledOff, asked: (path) => lib.log.slice(from).filter((e) => e.path === path).map((e) => e.query.get('q') || '') };
+}
+// A time window of real time in which nothing may happen (the page's clock stands still).
+const quiet = () => new Promise((go) => setTimeout(go, 300));
+// The page's time stands still but where the test moves it (the waits take real time).
+const pauseClock = async (p) => p.clock.pauseAt(await p.evaluate(() => Date.now()) + 1000);
+
+await test('the search box waits 150 ms after the last letter for the suggestions and 300 ms for the photos', await on('', (lib) => lib.person('Longo Search'), async (p, lib) => {
+  await pauseClock(p);
+  await p.focus('#search');
+  await settle(p, lib);
+  const { asked } = searchLog(p, lib);
+  await p.keyboard.type('l');
+  await p.clock.runFor(149);
+  await p.keyboard.type('o'); // 149 ms after the "l": its suggestions and photos are never asked for
+  await p.clock.runFor(149);
+  await quiet();
+  check(!asked('/suggest').length, `asked 149 ms after the last letter: [${asked('/suggest')}]`);
+  await p.clock.runFor(1);
+  await until('the suggestions 150 ms after the last letter', () => asked('/suggest').includes('lo'));
+  await p.clock.runFor(149);
+  await quiet();
+  check(!asked('/timeline').length, `the photos asked for 299 ms after the last letter: [${asked('/timeline')}]`);
+  await p.clock.runFor(1);
+  await until('the photos 300 ms after the last letter', () => asked('/timeline').includes('lo'));
+  await settle(p, lib);
+  check(asked('/suggest').join() === 'lo', `suggestions asked for [${asked('/suggest')}], expected once for "lo"`);
+  check(asked('/timeline').join() === 'lo', `photos asked for [${asked('/timeline')}], expected once for "lo"`);
+}));
+
+await test('the search box calls off the photos an older text asked for', await on('', () => null, async (p, lib) => {
+  await pauseClock(p);
+  await p.focus('#search');
+  await settle(p, lib);
+  const { asked, calledOff } = searchLog(p, lib);
+  lib.hold = /^\/timeline$/;
+  await p.keyboard.type('a');
+  await p.clock.runFor(300);
+  await until('the photos for "a"', () => asked('/timeline').includes('a'));
+  await p.keyboard.type('b');
+  await p.clock.runFor(300);
+  await until('the photos for "ab"', () => asked('/timeline').includes('ab'));
+  await until('the photos for "a" called off', () => calledOff.includes('/timeline?q=a'));
+  lib.release();
+  await settle(p, lib);
+  check(asked('/timeline').join() === 'a,ab', `photos asked for [${asked('/timeline')}]`);
+  check(!calledOff.includes('/timeline?q=ab'), 'the photos for "ab" were called off');
+  check(await p.evaluate(() => state.filter.q) === 'ab', 'the search is not "ab"');
+}));
+
+await test('Escape and leaving the search box call off the suggestions on their way', await on('', () => null, async (p, lib) => {
+  await pauseClock(p);
+  await p.focus('#search');
+  await settle(p, lib);
+  const { asked, calledOff } = searchLog(p, lib);
+  lib.hold = /^\/suggest$/;
+  await p.keyboard.type('x');
+  await p.clock.runFor(150);
+  await until('the suggestions for "x"', () => asked('/suggest').includes('x'));
+  await p.keyboard.press('Escape');
+  await until('the suggestions for "x" called off by Escape', () => calledOff.includes('/suggest?q=x'));
+  await p.keyboard.type('y');
+  await p.clock.runFor(150);
+  // (Escape also empties a search field in the browser.)
+  await until('the suggestions for "y"', () => asked('/suggest').includes('y'));
+  await p.evaluate(() => $('search').blur());
+  await p.clock.runFor(150); // the list closes a moment after the box is left
+  await until('the suggestions for "y" called off when the box was left', () => calledOff.includes('/suggest?q=y'));
+  lib.release();
+  await settle(p, lib);
+  check(await p.locator('#suggest').isHidden(), 'the list is open after the box was left');
+}));
+
 // The text row and the prefixes: the server counts what `text:` and `name:`
 // (and the text row of a plain search) would find; a term that finds nothing
 // gets no row (a prefix says why). `date:` asks for dates. Nothing else is
