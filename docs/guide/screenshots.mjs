@@ -300,7 +300,7 @@ await p.locator('#modal-actions button').last().click(); await wait(600);
 const miaMenu = p.locator('button.more-btn[aria-label$="Mia"]');
 await miaMenu.scrollIntoViewIfNeeded(); await wait(600);   // scrolling closes an open menu
 await miaMenu.click(); await wait(500);
-await p.locator('.menu button').nth(3).click(); await wait(600);
+await p.locator('.menu button', { hasText: await p.evaluate(() => tr('people.menu.move')) }).click(); await wait(600);
 await shot('move-to-group');
 await p.locator('#modal-body button', { hasText: GROUPS.family }).first().click(); await wait(500);
 await toastGone(); await wait(800);   // the status line settles
