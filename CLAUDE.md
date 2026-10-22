@@ -120,6 +120,30 @@ current status and next step. Update its status table when a phase moves.
   against a fake API, a few against the real server): a change to what the
   page asks for or a reply's shape updates them as "Browser tests" in
   docs/plan.md says.
+- **Tests are part of every change, without being asked.** Before writing
+  code, say which tests the change needs (in the plan or the first reply);
+  write them in the same pull request. For each new or changed behaviour:
+  - a new or changed endpoint or reply: a Rust API test of that endpoint
+    (its reply's shape, each case it handles, what it leaves out, a broken
+    parameter refused) and, where it repeats another endpoint, that both
+    answer the same;
+  - something the page does on its own (when it asks, what it calls off,
+    what it shows from a reply): a test in `faces-mocked.mjs` on the fake
+    clock, and the fake (`fake-api.mjs`) answering as the server does;
+  - a test against the real server (`faces-e2e.mjs`, `keyboard.mjs`) only
+    for what the fake cannot show (that page and server agree, a real
+    grouping);
+  - a cache or a counter kept between requests: a test that a change in
+    between is seen at once.
+  Prove each new test fails without the change (break the code on purpose,
+  `APP_JS=` for the page) and run it several times for flakiness. Weigh what
+  a test protects against what it costs: Rust API tests and mocked browser
+  tests take milliseconds to seconds, a real-server test seconds and a
+  library; no fixed sleeps, a time window only to show that something does
+  not happen. Do not add a test that only repeats another one or cannot
+  fail. The pull request says which tests were added and why, and which were
+  left out and why (e.g. not observable, like a request the server drops
+  from its queue: measure it in a `scripts/bench-*.py` instead).
 - UI text is never hard-coded: `tr()`/`trn()`/`data-i18n` with a key in both
   `core/i18n/en.json` and `de.json` (see docs/phase8.md; `core/tests/i18n.rs`
   checks it).
