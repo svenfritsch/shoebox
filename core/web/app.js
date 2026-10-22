@@ -4360,13 +4360,12 @@ function loadTrash() {
       var img = el('img');
       img.alt = '';
       img.src = LIBAPI + '/trash/' + first.id + '/thumb';
-      // The badges sit on the picture's own corner, not the square's.
-      var frame = el('span', 'frame');
-      img.onerror = function () { this.remove(); frame.classList.add('empty'); };
-      frame.appendChild(img);
+      img.onerror = function () { this.remove(); };
+      thumb.appendChild(img);
+      // In the square's corner, the same place on every card (the whole
+      // picture stays visible, not cropped).
       var badges = trashBadges(files, first);
-      if (badges) frame.appendChild(badges);
-      thumb.appendChild(frame);
+      if (badges) thumb.appendChild(badges);
       card.appendChild(thumb);
       card.appendChild(el('div', 'name', first.path.split('/').pop()));
       var folder = first.path.indexOf('/') >= 0 ? first.path.slice(0, first.path.lastIndexOf('/')) : tr('dups.top_level');
