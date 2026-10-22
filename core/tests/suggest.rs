@@ -147,8 +147,12 @@ fn every_section_in_one_reply() {
     }
     let s = suggest(addr, "q=name:img_000");
     assert!(only(&s, "name"), "{s}");
-    assert_eq!(s["name"], json!({ "term": "img_000", "count": 2 }));
-    assert_eq!(suggest(addr, "q=Name:+bild")["name"]["count"], 1);
+    // As many as the list then shows (with SHOEBOX_FIXTURES the library has more such files).
+    assert_eq!(s["name"]["term"], "img_000");
+    assert!(s["name"]["count"].as_u64().unwrap() >= 2, "{s}");
+    assert_eq!(s["name"]["count"].as_u64(), Some(count(addr, "name=img_000")));
+    assert_eq!(suggest(addr, "q=Name:+bild")["name"]["count"].as_u64(), Some(count(addr, "name=bild")));
+    assert!(suggest(addr, "q=Name:+bild")["name"]["count"].as_u64().unwrap() >= 1);
     let s = suggest(addr, "q=text:");
     assert!(KEYS.iter().all(|k| s[*k] == json!([]) || s[*k].is_null()), "nothing after the prefix: {s}");
     // Not a prefix: a word with a colon later on, or another word before it.
