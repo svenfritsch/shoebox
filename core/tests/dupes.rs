@@ -335,6 +335,115 @@ fn the_same_pixels_in_another_format_are_one_photo_with_no_suggestion() {
 }
 
 #[test]
+fn removing_one_format_keeps_the_other_with_the_same_name() {
+    let lib = Library::new("dupes-same-name");
+    // The HEIC and the smaller JPEG of it side by side (with a RAW and an
+    // edit file of the same name): only the ticked file goes, never the one
+    // that stays or anything else next to it.
+    rings(&lib.path("Fotos/IMG_3070.jpg"), 1600, 1200);
+    rings(&lib.path("Fotos/IMG_3070.png"), 800, 600);
+    fs::write(lib.path("Fotos/IMG_3070.aae"), "edits").unwrap();
+    fs::copy(lib.path("2020-07 Urlaub Griechenland/IMG_0001.JPG"), lib.path("Fotos/IMG_3070.CR2")).unwrap();
+    lib.scan();
+    let (big, small) = (id_of(&lib, "Fotos/IMG_3070.jpg"), id_of(&lib, "Fotos/IMG_3070.png"));
+    let server = start(&lib, None);
+    let addr = server.addr;
+    post(addr, "/api/tags/add", &json!({ "ids": [small], "name": "Klein" }));
+    assert_eq!(group_of(&groups(addr), "Fotos/IMG_3070.jpg")["kind"], "resolution");
+
+    let r = remove(addr, &[big], &[small]);
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    let body: Value = r.json();
+    assert_eq!(body["trashed"]["files"], json!(["Fotos/IMG_3070.png"]));
+    for stays in ["IMG_3070.jpg", "IMG_3070.aae", "IMG_3070.CR2"] {
+        assert!(lib.path(&format!("Fotos/{stays}")).exists(), "{stays}");
+    }
+    assert!(!lib.path("Fotos/IMG_3070.png").exists());
+    assert_eq!(tags(&lib, big, "user"), ["Klein"]);
+    server.stop().unwrap();
+}
+
+#[test]
+fn a_copy_put_back_from_the_trash_is_a_duplicate_again() {
+    let lib = Library::new("dupes-put-back");
+    rings(&lib.path("Ringe/gross.jpg"), 1600, 1200);
+    rings(&lib.path("Ringe/klein.jpg"), 800, 600);
+    fs::create_dir_all(lib.path("Kopien")).unwrap();
+    fs::copy(lib.path("Ringe/gross.jpg"), lib.path("Kopien/gross.jpg")).unwrap();
+    lib.scan();
+    let id = |p: &str| id_of(&lib, p);
+    let (gross, klein, kopie) = (id("Ringe/gross.jpg"), id("Ringe/klein.jpg"), id("Kopien/gross.jpg"));
+    let server = start(&lib, None);
+    let addr = server.addr;
+    assert_eq!(group_of(&groups(addr), "Ringe/gross.jpg")["files"].as_array().unwrap().len(), 3);
+
+    let r = remove(addr, &[gross], &[klein, kopie]);
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    let batches: Vec<i64> = r.json()["trashed"]["batches"].as_array().unwrap().iter().map(|b| b.as_i64().unwrap()).collect();
+    assert_eq!(batches.len(), 2);
+    // (With the full fixtures other groups are there too.)
+    let in_group = |all: &[Value]| all.iter().any(|g| g["files"].as_array().unwrap().iter().any(|f| f["path"] == "Ringe/gross.jpg"));
+    assert!(!in_group(&groups(addr)));
+
+    // Both come back to the group straight away, the smaller one too
+    // (found by its look, not its bytes), without a scan.
+    for b in batches {
+        let r = post(addr, &format!("/api/trash/{b}/restore"), &json!({}));
+        assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    }
+    let all = groups(addr);
+    let paths: std::collections::BTreeSet<&str> =
+        group_of(&all, "Ringe/gross.jpg")["files"].as_array().unwrap().iter().map(|f| f["path"].as_str().unwrap()).collect();
+    assert_eq!(paths, ["Kopien/gross.jpg", "Ringe/gross.jpg", "Ringe/klein.jpg"].into());
+    assert_eq!(group_of(&all, "Ringe/gross.jpg")["kind"], "resolution");
+    server.stop().unwrap();
+}
+
+fn trash_entry(addr: std::net::SocketAddr, path: &str) -> Value {
+    let list = get(addr, "/api/trash").json();
+    list.as_array().unwrap().iter().find(|t| t["path"] == path).unwrap_or_else(|| panic!("{path} not in {list}")).clone()
+}
+
+#[test]
+fn the_trash_names_the_copy_that_stayed() {
+    let lib = Library::new("dupes-trash-kept");
+    rings(&lib.path("Ringe/gross.jpg"), 1600, 1200);
+    rings(&lib.path("Ringe/klein.jpg"), 800, 600);
+    fs::create_dir_all(lib.path("Kopien")).unwrap();
+    fs::copy(lib.path("Ringe/gross.jpg"), lib.path("Kopien/gross.jpg")).unwrap();
+    lib.scan();
+    let id = |p: &str| id_of(&lib, p);
+    let (gross, klein, kopie) = (id("Ringe/gross.jpg"), id("Ringe/klein.jpg"), id("Kopien/gross.jpg"));
+    let other = id("2020-07 Urlaub Griechenland/IMG_0001.JPG");
+    let server = start(&lib, None);
+    let addr = server.addr;
+
+    // Removed as duplicates: both name the copy that stayed, the smaller
+    // version too (its content differs, the kept one is found by its own).
+    assert_eq!(remove(addr, &[gross], &[klein, kopie]).status, 200);
+    for path in ["Ringe/klein.jpg", "Kopien/gross.jpg"] {
+        let kept = &trash_entry(addr, path)["duplicate_of"];
+        assert_eq!((kept["id"].as_i64(), kept["path"].as_str(), kept["kind"].as_str()), (Some(gross), Some("Ringe/gross.jpg"), Some("jpeg")), "{path}");
+        assert_eq!(kept["version"].as_str().unwrap().len(), 8);
+    }
+    // Deleted from the timeline: no duplicate.
+    assert_eq!(post(addr, "/api/trash", &json!({ "ids": [other] })).status, 200);
+    assert!(trash_entry(addr, "2020-07 Urlaub Griechenland/IMG_0001.JPG").get("duplicate_of").is_none());
+
+    // Put back, then deleted from the timeline: the earlier removal does not count.
+    let batch = trash_entry(addr, "Ringe/klein.jpg")["batch"].as_i64().unwrap();
+    assert_eq!(post(addr, &format!("/api/trash/{batch}/restore"), &json!({})).status, 200);
+    let klein = id("Ringe/klein.jpg");
+    assert_eq!(post(addr, "/api/trash", &json!({ "ids": [klein] })).status, 200);
+    assert!(trash_entry(addr, "Ringe/klein.jpg").get("duplicate_of").is_none());
+
+    // The copy that stayed goes too: the duplicate says it is gone.
+    assert_eq!(post(addr, "/api/trash", &json!({ "ids": [gross] })).status, 200);
+    assert_eq!(trash_entry(addr, "Kopien/gross.jpg")["duplicate_of"], json!({ "id": null, "path": null, "kind": null, "version": null }));
+    server.stop().unwrap();
+}
+
+#[test]
 fn files_in_a_copies_folder_are_never_the_original() {
     let lib = Library::new("dupes-copies-folder");
     // A packaged InDesign project: its "Link" folder holds copies. The Link

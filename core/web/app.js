@@ -4350,7 +4350,9 @@ function loadTrash() {
     };
     batches.forEach(function (b) {
       var files = byBatch[b];
-      var first = files.filter(function (f) { return f.kind; })[0] || files[0];
+      // The picture the card shows: the photo, not its RAW or Live Photo video.
+      var main = function (f) { return f.kind && f.kind !== 'raw' && f.kind !== 'video'; };
+      var first = files.filter(main)[0] || files.filter(function (f) { return f.kind; })[0] || files[0];
       var card = el('div', 'card pick');
       cardOf[b] = card;
       card.batch = b;
@@ -4360,12 +4362,15 @@ function loadTrash() {
       img.src = LIBAPI + '/trash/' + first.id + '/thumb';
       img.onerror = function () { this.remove(); };
       thumb.appendChild(img);
+      // In the square's corner, the same place on every card (the whole
+      // picture stays visible, not cropped).
+      var badges = trashBadges(files, first);
+      if (badges) thumb.appendChild(badges);
       card.appendChild(thumb);
       card.appendChild(el('div', 'name', first.path.split('/').pop()));
       var folder = first.path.indexOf('/') >= 0 ? first.path.slice(0, first.path.lastIndexOf('/')) : tr('dups.top_level');
       card.appendChild(el('div', 'meta', folder));
-      var extra = files.length > 1 ? tr('trash.with', { names: files.slice(1).map(function (f) { return f.path.split('/').pop(); }).join(', ') }) : '';
-      card.appendChild(el('div', 'meta', tr('trash.deleted', { date: I18n.date(new Date(first.deleted_at * 1000)), extra: extra })));
+      card.appendChild(el('div', 'meta', tr('trash.deleted', { date: I18n.date(new Date(first.deleted_at * 1000)) })));
       card.onclick = function (ev) {
         var span = ev.shiftKey && anchor !== null ? pickSpan(batches, function (x) { return x; }, anchor, b) : null;
         var on = !picked[b];
@@ -4383,6 +4388,38 @@ function loadTrash() {
     page.appendChild(bar);
     drawBar();
   }).catch(failed);
+}
+
+// The badges at the foot of a trash card: one per file that went with the
+// photo (LIVE ▶ for its Live Photo video, RAW, else the file type), and for a copy
+// removed as a duplicate one that opens the copy that stayed.
+function trashBadges(files, first) {
+  var box = el('div', 'badges');
+  files.forEach(function (f) {
+    if (f === first) return;
+    var name = f.path.split('/').pop();
+    var live = f.kind === 'video' && first.kind !== 'video';
+    var b = el('span', 'badge', live ? 'LIVE ▶' : f.kind === 'raw' ? 'RAW' : name.slice(name.lastIndexOf('.') + 1).toUpperCase());
+    setTip(b, name + ' · ' + formatBytes(f.size));
+    box.appendChild(b);
+  });
+  var dup = first.duplicate_of;
+  if (dup) {
+    var d;
+    if (dup.id != null) {
+      d = el('button', 'badge dup', tr('trash.duplicate'));
+      setTip(d, tr('trash.duplicate_of', { path: dup.path }) + '\n' + tr('trash.duplicate_open'));
+      d.onclick = function (ev) {
+        ev.stopPropagation();
+        openFiles([{ file: dup.id, kind: dup.kind, version: dup.version }], 0);
+      };
+    } else {
+      d = el('span', 'badge dup gone', tr('trash.duplicate'));
+      setTip(d, tr('trash.duplicate_gone'));
+    }
+    box.appendChild(d);
+  }
+  return box.children.length ? box : null;
 }
 
 // Puts the batches back, one after the other; says how many worked.
@@ -5109,7 +5146,6 @@ function similarFaces(face) {
 // `siblings` (optional): the faces shown with it, e.g. in a cluster card; the
 // arrow keys then step through their photos (once per photo).
 function openFacePhoto(face, siblings) {
-  var saved = state.data;
   var list = [], seen = {}, at = 0;
   (siblings || [face]).forEach(function (f) {
     if (f.file == null || seen[f.file]) return;
@@ -5118,10 +5154,17 @@ function openFacePhoto(face, siblings) {
   });
   list.forEach(function (f, k) { if (f.file === face.file) at = k; });
   if (!list.length) list = [face];
+  openFiles(list, at);
+}
+
+// Opens the viewer over these files ({ file, kind, version }) instead of the
+// timeline, starting at `at`; closing it goes back to where it was opened.
+function openFiles(list, at) {
+  var saved = state.data;
   state.data = {
     count: list.length,
     ids: list.map(function (f) { return f.file; }),
-    kinds: list.map(function (f) { return { jpeg: 'j', png: 'p', heic: 'h' }[f.kind] || 'j'; }).join(''),
+    kinds: list.map(function (f) { return { jpeg: 'j', png: 'p', heic: 'h', video: 'v' }[f.kind] || 'j'; }).join(''),
     days: list.map(function () { return 0; }),
     versions: list.map(function (f) { return ((f.version || '') + '00000000').slice(0, 8); }).join(''),
     live: [],

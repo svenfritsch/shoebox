@@ -1,7 +1,7 @@
 // A stand-in for `shoebox serve` for the mocked browser tests (faces-mocked.mjs):
 // the page's files come from core/web and core/i18n as they are on disk, the
 // library's API from a small model in memory (people, groups, unnamed
-// clusters, the status). Its answers have the shapes of the real server's;
+// clusters, the status, the trash). Its answers have the shapes of the real server's;
 // those are checked by the Rust API tests (core/tests/people.rs: the naming
 // replies' `person_data` against the list) and the real-server browser tests
 // (faces-e2e.mjs). When the page or the server changes what is asked or
@@ -34,6 +34,7 @@ export function fakeLibrary() {
   let faceSeq = 0, clusterSeq = 0, personSeq = 0, groupSeq = 0, time = 1_800_000_000;
   const lib = {
     clusters: [], people: [], groups: [],
+    trash: [], // what GET /trash answers (organize::TrashItem)
     step: null, // null (grouped), 'stale' (starting) or 'running'
     progress: [0, 0], // done, total while running
     pending: false, // decisions wait for the next regrouping
@@ -154,6 +155,7 @@ export function fakeLibrary() {
     '/places': () => [],
     '/event-pattern': () => ({ pattern: 'YYYY-MM Name' }),
     '/allow-trash': () => ({ allow: false, read_only: false }),
+    '/trash': () => lib.trash,
     '/clusters': (q) => {
       const cs = q.get('size') === 'large' ? large() : q.get('size') === 'small' ? small() : lib.clusters;
       const sorted = [...cs].sort((a, b) => b.faces.length - a.faces.length || a.id - b.id);
@@ -256,6 +258,7 @@ export function fakeLibrary() {
     if (!path.startsWith(LIB + '/')) { lib.unknown.push(`${req.method()} ${path}`); return json(route, 404, { error: 'not in the fake' }); }
     const rel = path.slice(LIB.length);
     if (rel === '/events') return route.fulfill({ status: 204 }); // no stream: the page asks for the status itself
+    if (/^\/trash\/\d+\/thumb$/.test(rel)) return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
     if (/^\/faces\/(manual\/)?\d+\/crop$/.test(rel)) return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
     lib.log.push({ method: req.method(), path: rel, query: u.searchParams });
     if (req.method() === 'GET') {

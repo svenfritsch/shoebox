@@ -1,4 +1,4 @@
-// The Unnamed page, groups and the people list against a fake API
+// The Unnamed page, groups, the people list and the trash page against a fake API
 // (fake-api.mjs) on a fake clock: which requests the page makes after each
 // action and when, and what the sidebar shows from the replies (PRs #142 and
 // #143). No shoebox is needed: the page is core/web as it is on disk.
@@ -484,6 +484,50 @@ await test('a failed naming shows the error and was sent once', await on('view=p
   await held[0].fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'down' }) });
   await until('the error dialog', async () => (await p.locator('#modal-title').textContent()) === (await tr(p, 'app.failed')));
   check(held.length === 1, `the naming was sent ${held.length} times`);
+}));
+
+// The trash page: a badge for each file that went with a photo, and for a
+// copy removed as a duplicate one that opens the copy that stayed.
+const trashed = (lib) => {
+  const at = Date.parse('2026-05-30T12:00:00') / 1000;
+  const item = (id, batch, path, kind, size, more) => ({ id, batch, path, kind, size, deleted_at: at, ...more });
+  lib.trash = [
+    item(1, 3, 'Südafrika/IMG_6714.HEIC', 'heic', 2_100_000),
+    item(2, 3, 'Südafrika/IMG_6714.MOV', 'video', 3_400_000),
+    // The server lists a batch by name: the RAW before its JPEG.
+    item(5, 4, 'Selfies/IMG_1795.CR2', 'raw', 25_000_000),
+    item(6, 4, 'Selfies/IMG_1795.JPG', 'jpeg', 4_000_000),
+    item(3, 2, 'Selfies/IMG_1794.JPG', 'jpeg', 4_000_000, { duplicate_of: { id: 77, path: '2019-04 Kapstadt/IMG_1794.JPG', kind: 'jpeg', version: 'abcdef12' } }),
+    item(4, 1, 'Downloads/IMG_2002 (2).JPG', 'jpeg', 900_000, { duplicate_of: { id: null, path: null, kind: null, version: null } }),
+  ];
+};
+
+await test('trash cards: badges for the files that came along, the Duplicate badge opens the copy that stayed', await on('view=trash', trashed, async (p) => {
+  await p.locator('.card.pick').first().waitFor();
+  const cards = await p.locator('.card.pick').evaluateAll((cs) => cs.map((c) => ({
+    name: c.querySelector('.name').textContent,
+    meta: [...c.querySelectorAll('.meta')].map((m) => m.textContent).join(' | '),
+    badges: [...c.querySelectorAll('.badge')].map((b) => [b.tagName, b.textContent, b.getAttribute('data-tip')]),
+  })));
+  const dup = await tr(p, 'trash.duplicate');
+  check(cards[0].name === 'IMG_6714.HEIC' && JSON.stringify(cards[0].badges) === JSON.stringify([['SPAN', 'LIVE ▶', 'IMG_6714.MOV · 3.4 MB']]), `Live Photo card: ${JSON.stringify(cards[0])}`);
+  check(!cards[0].meta.includes('MOV'), `the card still lists the video under it: ${cards[0].meta}`);
+  check(cards[1].name === 'IMG_1795.JPG' && JSON.stringify(cards[1].badges) === JSON.stringify([['SPAN', 'RAW', 'IMG_1795.CR2 · 25.0 MB']]), `RAW card: ${JSON.stringify(cards[1])}`);
+  cards.splice(1, 1);
+  const tip = (await tr(p, 'trash.duplicate_of')).replace('{path}', '2019-04 Kapstadt/IMG_1794.JPG') + '\n' + (await tr(p, 'trash.duplicate_open'));
+  check(JSON.stringify(cards[1].badges) === JSON.stringify([['BUTTON', dup, tip]]), `duplicate card: ${JSON.stringify(cards[1])}`);
+  check(JSON.stringify(cards[2].badges) === JSON.stringify([['SPAN', dup, await tr(p, 'trash.duplicate_gone')]]), `duplicate whose kept copy is gone: ${JSON.stringify(cards[2])}`);
+
+  // A click on the badge opens the kept photo, and does not select the card.
+  await p.evaluate(() => { window.openFiles = (list, at) => { window.opened = { list, at }; }; });
+  await p.locator('.card.pick').nth(2).locator('button.badge').click();
+  const opened = await p.evaluate(() => window.opened);
+  check(JSON.stringify(opened) === JSON.stringify({ list: [{ file: 77, kind: 'jpeg', version: 'abcdef12' }], at: 0 }), `opened ${JSON.stringify(opened)}`);
+  check(!(await p.locator('.card.pick.sel').count()), 'the click on the badge selected the card');
+  // The gone one opens nothing; a click there selects the card as before.
+  await p.evaluate(() => { window.opened = null; });
+  await p.locator('.card.pick').nth(3).locator('.badge').click();
+  check(!(await p.evaluate(() => window.opened)) && (await p.locator('.card.pick').nth(3).evaluate((c) => c.classList.contains('sel'))), 'a click on the gone badge should select its card');
 }));
 
 await finish();

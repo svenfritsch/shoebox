@@ -914,7 +914,7 @@ pub fn remove_copies(
         }
     }
     let ids: Vec<i64> = gone.iter().map(|g| g.id).collect();
-    let trashed = organize::trash_files(conn, root, &ids)?;
+    let trashed = organize::trash_files_only(conn, root, &ids)?;
     let mut out = Removed { trashed, ..Default::default() };
     let done: HashSet<String> = out.trashed.files.iter().cloned().collect();
     let went = |c: &Carry| done.contains(&c.path);
@@ -923,6 +923,11 @@ pub fn remove_copies(
         tx.execute(
             "INSERT INTO removed_copies (path_nfc, size, full_hash, kept_hash, removed_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![path, size, full_hash, kept_hash, db::now()],
+        )?;
+        // The trash entry it just got names the copy that stayed (its Duplicate badge).
+        tx.execute(
+            "UPDATE trash SET kept_hash = ?2 WHERE path_nfc = ?1 AND batch = (SELECT max(batch) FROM trash WHERE path_nfc = ?1)",
+            params![path, kept_hash],
         )?;
     }
     for c in carries.iter().filter(|c| went(c)) {
