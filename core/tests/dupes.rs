@@ -397,6 +397,50 @@ fn a_copy_put_back_from_the_trash_is_a_duplicate_again() {
     server.stop().unwrap();
 }
 
+fn trash_entry(addr: std::net::SocketAddr, path: &str) -> Value {
+    let list = get(addr, "/api/trash").json();
+    list.as_array().unwrap().iter().find(|t| t["path"] == path).unwrap_or_else(|| panic!("{path} not in {list}")).clone()
+}
+
+#[test]
+fn the_trash_names_the_copy_that_stayed() {
+    let lib = Library::new("dupes-trash-kept");
+    rings(&lib.path("Ringe/gross.jpg"), 1600, 1200);
+    rings(&lib.path("Ringe/klein.jpg"), 800, 600);
+    fs::create_dir_all(lib.path("Kopien")).unwrap();
+    fs::copy(lib.path("Ringe/gross.jpg"), lib.path("Kopien/gross.jpg")).unwrap();
+    lib.scan();
+    let id = |p: &str| id_of(&lib, p);
+    let (gross, klein, kopie) = (id("Ringe/gross.jpg"), id("Ringe/klein.jpg"), id("Kopien/gross.jpg"));
+    let other = id("2020-07 Urlaub Griechenland/IMG_0001.JPG");
+    let server = start(&lib, None);
+    let addr = server.addr;
+
+    // Removed as duplicates: both name the copy that stayed, the smaller
+    // version too (its content differs, the kept one is found by its own).
+    assert_eq!(remove(addr, &[gross], &[klein, kopie]).status, 200);
+    for path in ["Ringe/klein.jpg", "Kopien/gross.jpg"] {
+        let kept = &trash_entry(addr, path)["duplicate_of"];
+        assert_eq!((kept["id"].as_i64(), kept["path"].as_str(), kept["kind"].as_str()), (Some(gross), Some("Ringe/gross.jpg"), Some("jpeg")), "{path}");
+        assert_eq!(kept["version"].as_str().unwrap().len(), 8);
+    }
+    // Deleted from the timeline: no duplicate.
+    assert_eq!(post(addr, "/api/trash", &json!({ "ids": [other] })).status, 200);
+    assert!(trash_entry(addr, "2020-07 Urlaub Griechenland/IMG_0001.JPG").get("duplicate_of").is_none());
+
+    // Put back, then deleted from the timeline: the earlier removal does not count.
+    let batch = trash_entry(addr, "Ringe/klein.jpg")["batch"].as_i64().unwrap();
+    assert_eq!(post(addr, &format!("/api/trash/{batch}/restore"), &json!({})).status, 200);
+    let klein = id("Ringe/klein.jpg");
+    assert_eq!(post(addr, "/api/trash", &json!({ "ids": [klein] })).status, 200);
+    assert!(trash_entry(addr, "Ringe/klein.jpg").get("duplicate_of").is_none());
+
+    // The copy that stayed goes too: the duplicate says it is gone.
+    assert_eq!(post(addr, "/api/trash", &json!({ "ids": [gross] })).status, 200);
+    assert_eq!(trash_entry(addr, "Kopien/gross.jpg")["duplicate_of"], json!({ "id": null, "path": null, "kind": null, "version": null }));
+    server.stop().unwrap();
+}
+
 #[test]
 fn files_in_a_copies_folder_are_never_the_original() {
     let lib = Library::new("dupes-copies-folder");

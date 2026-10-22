@@ -924,6 +924,11 @@ pub fn remove_copies(
             "INSERT INTO removed_copies (path_nfc, size, full_hash, kept_hash, removed_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![path, size, full_hash, kept_hash, db::now()],
         )?;
+        // The trash entry it just got names the copy that stayed (its Duplicate badge).
+        tx.execute(
+            "UPDATE trash SET kept_hash = ?2 WHERE path_nfc = ?1 AND batch = (SELECT max(batch) FROM trash WHERE path_nfc = ?1)",
+            params![path, kept_hash],
+        )?;
     }
     for c in carries.iter().filter(|c| went(c)) {
         out.tags_added += carry_names(&tx, c.heir, &c.names)?;
