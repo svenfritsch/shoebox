@@ -6831,6 +6831,7 @@ function personAction(action, ids, manual) {
       reject: tr('person.toast.reject', { count: count, name: p.name }),
       unreject: tr('person.toast.unreject', { count: count, name: p.name }),
       'not-face': tr(p.species ? 'facecheck.marked_pet' : 'facecheck.marked', { count: count }),
+      ignore: tr('unnamed.ignored', { count: count }),
       undo: tr('person.toast.undo'),
     }[action]);
     peopleChanged();
@@ -6902,6 +6903,8 @@ function personPickBar(tab) {
   } else {
     button(tr('person.not', { name: p.name }), 'quiet', function (faces, ids) { personAction('reject', ids); });
     button(tr('person.name_btn'), '', function (faces) { nameFacesDialog(faces, personRefresh); });
+    // Someone the user does not want to keep: ignored, so not asked about again.
+    button(tr('unnamed.ignore'), 'quiet', function (faces, ids) { personAction('ignore', ids); });
     button(tr(p.species ? 'pet.not_a.pet' : 'facecheck.not_face'), 'quiet', function (faces, ids) { personAction('not-face', ids); });
   }
   return bar;
