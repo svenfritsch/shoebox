@@ -397,6 +397,21 @@ await test('the ⋯ menu of a person on the People page and on their page: no Re
   check(JSON.stringify(page) === JSON.stringify(await words(edit)), `person's page: ${JSON.stringify(page)}`);
 }));
 
+// ---- a person's faces
+
+await test('a person\'s page: "Show more" stands clear of the last row of faces', await on('view=people', (lib) => lib.person('Sam More', { suggested: 201 }), async (p, lib, sam) => {
+  await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=suggested`; }, sam.id);
+  const more = p.locator('#page button', { hasText: await tr(p, 'app.show_more') });
+  await more.waitFor();
+  await settle(p, lib);
+  const gap = await p.evaluate(() => {
+    const cards = document.querySelectorAll('#pp-grid .face');
+    const btn = document.querySelector('#pp-grid + button');
+    return btn.getBoundingClientRect().top - cards[cards.length - 1].getBoundingClientRect().bottom;
+  });
+  check(gap >= 12, `"Show more" is ${gap} px under the last row of faces`);
+}));
+
 await test('a person moved to a group, then both out of it: the empty group is gone', await on('view=people', (lib) => {
   const anton = lib.person('Anton Move'), bea = lib.person('Bea Move');
   lib.group('Move Group', bea);
