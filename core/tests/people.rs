@@ -318,6 +318,12 @@ fn suggest_maybe_confirm_and_reject_under_the_guard() {
     assert_eq!(faces_of(addr, &lib, "Mix/maybe.png")[0]["state"], "maybe");
     ok(addr, "/api/faces/ignore", &json!({ "faces": [maybe_face, far_face] }));
     assert_eq!(faces_of(addr, &lib, "Mix/far.png")[0]["state"], "ignored");
+    // A confirmed face can be ignored too (Ignore on the Confirmed tab of a
+    // person's page): it is no longer theirs and does not come back to
+    // "Unnamed".
+    ok(addr, "/api/faces/ignore", &json!({ "faces": [b2] }));
+    assert_eq!(faces_of(addr, &lib, "Ben/b2.png")[0]["state"], "ignored");
+    assert_eq!(person_faces(addr, ben, "confirmed").len(), 1);
     wait_for_clusters(addr);
     assert_eq!(get(addr, "/api/clusters").json()["unnamed"], 0);
     let info = get(addr, "/api/info").json();
