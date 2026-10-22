@@ -1,7 +1,9 @@
-// The Unnamed page, groups, the people list and the trash page against a fake API
+// The Unnamed page, groups, the people list, a person's faces page (and the
+// viewer opened from it), the search box and the trash page against a fake API
 // (fake-api.mjs) on a fake clock: which requests the page makes after each
 // action and when, and what the sidebar shows from the replies (PRs #142 and
-// #143); the search box's requests while someone types. No shoebox is needed: the page is core/web as it is on disk.
+// #143); the search box's requests while someone types. No shoebox is needed:
+// the page is core/web as it is on disk.
 //
 //   node core/tests/browser/faces-mocked.mjs     (ONLY=text: only those tests)
 //
@@ -12,6 +14,7 @@
 // by calling the page's own `loadInfo` (`tell`), as the stream's event does.
 import { browser, check, until, tr, test, finish, requests, noListRequests, clusterRounds, sidebarIs, groupNames, menu, typeName, face, card, single, nameCard } from './faces-common.mjs';
 import { fakeLibrary, ORIGIN, LIB } from './fake-api.mjs';
+import { inflateSync } from 'node:zlib';
 
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 1400 } });
 await ctx.addInitScript(() => { try { localStorage.setItem('shoebox.lang', 'en'); } catch (e) {} });
@@ -343,6 +346,28 @@ await test('leaving the Unnamed page while names wait asks for the grouping soon
   check(requests(lib.log, 0, '/clusters/left', 'POST').length === 1, 'leaving with names waiting tells the server once');
 }));
 
+// ---- the search box
+
+// A pet's row: picture, species icon and name on one middle line, as are a
+// text row's icon and words (not the picture on the text's baseline).
+await test('search suggestions: picture, icon and name of a row are centred on one line', await on('view=people', (lib) => {
+  lib.person('Spucky', { faces: 5, species: 'cat' });
+  lib.person('Spud Person', { faces: 2 });
+}, async (p, lib) => {
+  await p.locator('#search').fill('spu');
+  await settle(p, lib);
+  const rows = await p.locator('#suggest .item').evaluateAll((bs) => bs.map((b) => {
+    const mid = (e) => { const r = e.getBoundingClientRect(); return r.top + r.height / 2; };
+    return { text: b.textContent, parts: [...b.querySelectorAll('.avatar, .ic, .text, .count')].map((e) => [e.className, mid(e)]) };
+  }));
+  check(rows.length === 3, `expected Spucky, Spud Person and the text row, got ${JSON.stringify(rows.map((r) => r.text))}`);
+  check(rows[0].parts.length === 4 && rows[0].parts[0][0].includes('pet-cat'), `the pet's row has picture, icon, name and count: ${JSON.stringify(rows[0])}`);
+  for (const r of rows) {
+    const mids = r.parts.map((x) => x[1]);
+    check(Math.max(...mids) - Math.min(...mids) <= 1, `not on one middle line: ${JSON.stringify(r)}`);
+  }
+}));
+
 // ---- groups and people (the People page)
 
 const person = (p, x) => p.locator(`#page .person[data-id="${x.id}"]`);
@@ -351,6 +376,148 @@ async function personMenu(p, x, key) {
   await p.locator('.menu').waitFor();
   await menu(p, key);
 }
+
+// "Check n faces" (or "Faces") opens a person's faces; their ⋯ menu has no
+// second way there.
+await test('the ⋯ menu of a person on the People page and on their page: no Review faces', await on('view=people', (lib) => lib.person('Rita Menu', { suggested: 3 }), async (p, lib, rita) => {
+  const items = async () => {
+    await p.locator('.menu').waitFor();
+    const got = await p.locator('.menu [role=menuitem]').allTextContents();
+    await p.keyboard.press('Escape');
+    await p.locator('.menu').waitFor({ state: 'detached' });
+    return got;
+  };
+  const words = (keys) => Promise.all(keys.map((k) => tr(p, k)));
+  const edit = ['people.menu.rename', 'people.menu.move', 'people.menu.new_group', 'people.menu.merge'];
+  await person(p, rita).locator('.more-btn').click();
+  const tile = await items();
+  const want = await words(['people.menu.show', ...edit]);
+  check(JSON.stringify(tile) === JSON.stringify(want), `People page: ${JSON.stringify(tile)}, expected ${JSON.stringify(want)}`);
+  await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=suggested`; }, rita.id);
+  await p.locator('#pp-grid .face').first().waitFor();
+  await p.locator('.person-head .more-btn').click();
+  const page = await items();
+  check(JSON.stringify(page) === JSON.stringify(await words(edit)), `person's page: ${JSON.stringify(page)}`);
+}));
+
+// ---- a person's faces
+
+await test('a person\'s page: "Show more" stands clear of the last row of faces', await on('view=people', (lib) => lib.person('Sam More', { suggested: 201 }), async (p, lib, sam) => {
+  await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=suggested`; }, sam.id);
+  const more = p.locator('#page button', { hasText: await tr(p, 'app.show_more') });
+  await more.waitFor();
+  await settle(p, lib);
+  const gap = await p.evaluate(() => {
+    const cards = document.querySelectorAll('#pp-grid .face');
+    const btn = document.querySelector('#pp-grid + button');
+    return btn.getBoundingClientRect().top - cards[cards.length - 1].getBoundingClientRect().bottom;
+  });
+  check(gap >= 12, `"Show more" is ${gap} px under the last row of faces`);
+}));
+
+// The faces the next "Show more" would bring come by themselves once the
+// shown ones have all left; when none are left the page says so.
+await test('a person\'s page: "Confirm all shown" brings the next faces without "Show more"', await on('view=people', (lib) => lib.person('Ines Next', { suggested: 250 }), async (p, lib, ines) => {
+  await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=suggested`; }, ines.id);
+  await p.locator('#pp-grid .face').first().waitFor();
+  await settle(p, lib);
+  const cards = () => p.locator('#pp-grid .face').count();
+  const more = p.locator('#pp-grid + button');
+  check((await cards()) === 200 && (await more.isVisible()), `at first: ${await cards()} faces, Show more ${await more.isVisible() ? 'shown' : 'hidden'}`);
+  const confirmAll = async () => {
+    const from = lib.log.length;
+    await p.locator('.toolbar button', { hasText: await tr(p, 'person.confirm_all') }).click();
+    await settle(p, lib);
+    return lib.log.slice(from).filter((e) => e.method === 'GET' && e.path === `/people/${ines.id}/faces`).map((e) => `${e.query.get('state')} ${e.query.get('offset')}`);
+  };
+  const asked = await confirmAll();
+  check(JSON.stringify(asked) === JSON.stringify(['suggested 0']), `after the first: asked for ${JSON.stringify(asked)}, expected the next faces once`);
+  check((await cards()) === 50 && !(await more.isVisible()), `after the first: ${await cards()} faces, Show more ${await more.isVisible() ? 'shown' : 'hidden'}`);
+  await confirmAll();
+  check((await cards()) === 0 && (await p.locator('#pp-grid .sub').textContent()) === (await tr(p, 'person.none')), 'after the last: the page says there are none');
+  check(lib.faceLists[ines.id].suggested.length === 0 && ines.faces === 253, `the fake has ${lib.faceLists[ines.id].suggested.length} suggestions left, ${ines.faces} faces`);
+}));
+
+// A face decided in the viewer opened from a person's page has left the tab
+// when the viewer closes; the other cards stay as they were (no new page).
+await test('a person\'s page: a face rejected in the viewer is gone from it once the viewer closes', await on('view=people', (lib) => lib.person('Vera View', { suggested: 3 }), async (p, lib, vera) => {
+  await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=suggested`; }, vera.id);
+  await p.locator('#pp-grid .face').first().waitFor();
+  await settle(p, lib);
+  const [a, b, c] = lib.faceLists[vera.id].suggested.map((f) => f.id);
+  await p.evaluate(() => document.querySelectorAll('#pp-grid .face').forEach((x) => { x.dataset.old = '1'; }));
+  const faces = (from) => lib.log.slice(from).filter((e) => e.method === 'GET' && e.path === `/people/${vera.id}/faces`).length;
+  const view = async (id) => {
+    await p.locator(`#pp-grid .face[data-key="f${id}"] .crop`).click();
+    await p.locator('#lightbox').waitFor({ state: 'visible' });
+    await settle(p, lib);
+  };
+  const close = async () => {
+    await p.keyboard.press('Escape');
+    await p.locator('#lightbox').waitFor({ state: 'hidden' });
+    await settle(p, lib);
+  };
+  // Looked at only: nothing is asked for again.
+  let from = lib.log.length;
+  await view(a);
+  await close();
+  check(faces(from) === 0, `closed without a decision, the faces were asked for ${faces(from)} times`);
+  // ✗ in the info panel.
+  await view(b);
+  await p.locator('#lb-info').click();
+  await p.locator('#lb-panel .pface button.no').click();
+  await posted(lib, /^\/faces\/reject$/);
+  await settle(p, lib);
+  check(await p.locator(`#pp-grid .face[data-key="f${b}"]`).count() === 1, 'the card left before the viewer closed');
+  from = lib.log.length;
+  await close();
+  const left = await p.locator('#pp-grid .face').evaluateAll((xs) => xs.map((x) => [x.dataset.key, x.dataset.old]));
+  check(JSON.stringify(left) === JSON.stringify([[`f${a}`, '1'], [`f${c}`, '1']]), `after the viewer: ${JSON.stringify(left)}, expected the other two cards as they were`);
+  check(faces(from) === 1, `the faces were asked for ${faces(from)} times, expected once`);
+  const tab = await p.locator('#person-tabs .tab[data-tab="suggested"]').textContent();
+  check(tab.includes('(2)'), `the tab says ${tab}`);
+}));
+
+// One pixel of the page (r, g, b) at x, y, from a screenshot of just it.
+async function pixel(p, x, y) {
+  const png = await p.screenshot({ clip: { x, y, width: 1, height: 1 } });
+  // A 1×1 PNG: after the signature, chunks of length, type, data, CRC; the
+  // inflated IDAT is a filter byte and the pixel (filter 0 or 1 alike for one pixel).
+  let at = 8, data = [];
+  while (at < png.length) {
+    const len = png.readUInt32BE(at), type = png.toString('ascii', at + 4, at + 8);
+    if (type === 'IDAT') data.push(png.subarray(at + 8, at + 8 + len));
+    at += 12 + len;
+  }
+  const raw = inflateSync(Buffer.concat(data));
+  return [raw[1], raw[2], raw[3]];
+}
+
+// Confirmed faces are cut out of the photo's thumbnail (no stored crop): the
+// selection's frame shows over that picture as over a crop.
+await test('a person\'s page: a selected face shows its frame on Confirmed as on Suggested', await on('view=people', (lib) => lib.person('Olaf Outline', { faces: 3, suggested: 3 }), async (p, lib, olaf) => {
+  const accent = await p.evaluate(() => {
+    const e = document.createElement('div');
+    e.style.color = 'var(--accent)';
+    document.body.appendChild(e);
+    const c = getComputedStyle(e).color.match(/\d+/g).slice(0, 3).map(Number);
+    e.remove();
+    return c;
+  });
+  for (const tab of ['suggested', 'confirmed']) {
+    await p.evaluate(([id, t]) => { location.hash = `view=person&id=${id}&tab=${t}`; }, [olaf.id, tab]);
+    await p.locator(`#person-tabs .tab.active[data-tab="${tab}"]`).waitFor();
+    await p.locator('#pp-grid .face').nth(1).waitFor();
+    await settle(p, lib);
+    await p.locator('#pp-pick').click();
+    const card = p.locator('#pp-grid .face').nth(1);
+    await card.locator('.crop').click();
+    check(await card.evaluate((c) => c.classList.contains('sel')), `${tab}: the card is not selected`);
+    const box = await card.locator('.crop').boundingBox();
+    const got = await pixel(p, box.x + 1, box.y + box.height / 2);
+    check(got.every((v, i) => Math.abs(v - accent[i]) <= 8), `${tab}: the edge of the selected face is rgb(${got}), not the accent rgb(${accent})`);
+  }
+}));
 
 await test('a person moved to a group, then both out of it: the empty group is gone', await on('view=people', (lib) => {
   const anton = lib.person('Anton Move'), bea = lib.person('Bea Move');

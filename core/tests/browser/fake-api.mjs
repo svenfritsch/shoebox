@@ -1,7 +1,8 @@
 // A stand-in for `shoebox serve` for the mocked browser tests (faces-mocked.mjs):
 // the page's files come from core/web and core/i18n as they are on disk, the
 // library's API from a small model in memory (people, groups, unnamed
-// clusters, the status, the trash). Its answers have the shapes of the real server's;
+// clusters, a person's faces and their photos' info, the search box, the
+// status, the trash). Its answers have the shapes of the real server's;
 // those are checked by the Rust API tests (core/tests/people.rs: the naming
 // replies' `person_data` against the list) and the real-server browser tests
 // (faces-e2e.mjs). When the page or the server changes what is asked or
@@ -39,6 +40,7 @@ export function fakeLibrary() {
   let faceSeq = 0, clusterSeq = 0, personSeq = 0, groupSeq = 0, time = 1_800_000_000;
   const lib = {
     clusters: [], people: [], groups: [],
+    faceLists: {}, // person id: { confirmed, suggested, rejected } (a person's page)
     trash: [], // what GET /trash answers (organize::TrashItem)
     step: null, // null (grouped), 'stale' (starting) or 'running'
     progress: [0, 0], // done, total while running
@@ -71,10 +73,19 @@ export function fakeLibrary() {
     return c;
   };
   // Someone with `faces` confirmed faces (their picture one of them), in `group`.
-  lib.person = (name, { faces = 3, group = null } = {}) => {
+  // `species`: a pet ('cat', 'dog' or 'pet'); `suggested`: that many faces
+  // suggested for them (most similar first, each on a photo of its own).
+  lib.person = (name, { faces = 3, group = null, species = null, suggested = 0 } = {}) => {
     const p = { id: ++personSeq, name, group_id: group ? group.id : null, hidden: false, faces, photos: faces, suggested: 0, maybe: 0, cover: null, cover_manual: null };
-    if (faces) { p.cover = face().id; faceSeq += faces - 1; p.last_named = time; }
+    if (species) p.species = species;
+    const confirmed = Array.from({ length: faces }, () => ({ ...face(), state: 'confirmed', person: { id: p.id, name } }));
+    if (faces) { p.cover = confirmed[0].id; p.last_named = time; }
     lib.people.push(p);
+    lib.faceLists[p.id] = { confirmed, suggested: [], rejected: [] };
+    for (let i = 0; i < suggested; i++) {
+      lib.faceLists[p.id].suggested.push({ ...face(), state: 'suggested', person: { id: p.id, name }, similarity: 0.95 - i * 0.0001 });
+    }
+    p.suggested = suggested;
     return p;
   };
   // A group (made with its first person, as the app always does).
@@ -147,6 +158,8 @@ export function fakeLibrary() {
     if (!p) return [400, { error: 'there is no such person' }];
     // The cache stays as it was until the next grouping.
     if (!lib.counted) lib.counted = counts();
+    const named = lib.clusters.flatMap((c) => c.faces).filter((f) => ids.includes(f.id));
+    (lib.faceLists[p.id] ||= { confirmed: [], suggested: [], rejected: [] }).confirmed.push(...named.map((f) => ({ ...f, state: 'confirmed', person: { id: p.id, name: p.name } })));
     for (const c of lib.clusters) c.faces = c.faces.filter((f) => !ids.includes(f.id));
     lib.clusters = lib.clusters.filter((c) => c.faces.length);
     p.faces += ids.length;
@@ -182,7 +195,7 @@ export function fakeLibrary() {
         ...none,
         tags: lib.tags.filter((t) => t.kind !== 'folder' && fold(t.name).includes(needle)).slice(0, 8),
         people: peopleOut().filter((p) => p.photos && fold(p.name).includes(needle)).slice(0, 6)
-          .map((p) => ({ id: p.id, name: p.name, group_id: p.group_id, species: null, cover: p.cover, cover_manual: p.cover_manual, photos: p.photos })),
+          .map((p) => ({ id: p.id, name: p.name, group_id: p.group_id, species: p.species || null, cover: p.cover, cover_manual: p.cover_manual, photos: p.photos })),
         text: [...needle].length >= 2 ? count(lib.words, needle) : null,
       };
     },
@@ -198,7 +211,35 @@ export function fakeLibrary() {
       return { total: sorted.length, unnamed: count(sorted), small_faces: count(small()), clusters: sorted.slice(offset, offset + limit).map((c) => clusterOut(c, samples)) };
     },
   };
+  // A person's faces in one tab (`people::person_faces_in`): `total` and a page.
+  const personFaces = (m, q) => {
+    const p = byId(m[1]);
+    if (!p) return [404, { error: 'no such person' }];
+    const list = (lib.faceLists[p.id] || {})[q.get('state')] || [];
+    const offset = Number(q.get('offset') || 0), limit = Math.min(Number(q.get('limit') || 300), 2000);
+    return [200, { total: list.length, faces: list.slice(offset, offset + limit) }];
+  };
+  // The viewer's info panel (`FileInfo`) of a photo with one face of a
+  // person's lists on it: a suggestion, or one rejected for them.
+  const fileInfo = (m) => {
+    const id = Number(m[1]);
+    for (const [pid, l] of Object.entries(lib.faceLists)) {
+      const f = [...l.suggested, ...l.rejected].find((x) => x.file === id);
+      if (!f) continue;
+      const rejected = l.rejected.includes(f) ? [Number(pid)] : [];
+      return [200, {
+        id, name: `IMG_${id}.PNG`, path: `IMG_${id}.PNG`, folder_id: 1, kind: 'png', size: 1000, taken: null, taken_offset: null, estimate: null, exif: null,
+        modified: '2026-01-01T10:00:00', width: 100, height: 100, duration_ms: null, camera: null, tags: [], missing: false,
+        date_source: null, sort_date: null, live: null, linked: [], faces: [{ ...f, rejected, landmarks: [] }],
+        view_turn: 0, screenshot: false, screenshot_mark: null, position: null, text: [],
+      }];
+    }
+    return [404, { error: 'no such file' }];
+  };
   const getPattern = [
+    [/^\/files\/(\d+)$/, fileInfo],
+    [/^\/people\/(\d+)$/, (m) => { const p = byId(m[1]); return p ? [200, { ...p }] : [404, { error: 'no such person' }]; }],
+    [/^\/people\/(\d+)\/faces$/, personFaces],
     [/^\/clusters\/(\d+)\/faces$/, (m) => { const c = lib.clusters.find((x) => x.id === Number(m[1])); return c ? [200, c.faces] : [404, { error: 'no such cluster' }]; }],
   ];
   const post = [
@@ -213,6 +254,23 @@ export function fakeLibrary() {
       return [200, { ...reply, cluster: left ? { id: left.id, generation: left.generation, size: left.faces.length } : null }];
     }],
     [/^\/faces\/assign$/, (m, body) => decide(body.faces, body)],
+    // A suggestion confirmed or rejected (a person's page, the viewer): it
+    // leaves the list at once; the other suggestions wait for the grouping.
+    [/^\/faces\/(confirm|reject)$/, (m, body) => {
+      const ids = body.faces || [];
+      let p = null, n = 0;
+      for (const [pid, l] of Object.entries(lib.faceLists)) {
+        const gone = l.suggested.filter((f) => ids.includes(f.id));
+        if (!gone.length) continue;
+        p = byId(pid);
+        l.suggested = l.suggested.filter((f) => !ids.includes(f.id));
+        p.suggested = l.suggested.length;
+        if (m[1] === 'confirm') { p.faces += gone.length; p.photos += gone.length; l.confirmed.push(...gone.map((f) => ({ ...f, state: 'confirmed', similarity: null }))); } else l.rejected.push(...gone.map((f) => ({ ...f, state: null, similarity: null })));
+        n += gone.length;
+      }
+      changed('card');
+      return [200, { faces: n, person: p && { id: p.id, name: p.name }, ...(p && m[1] === 'confirm' ? { person_data: { ...p, suggested: 0, maybe: 0 } } : {}) }];
+    }],
     // The Unnamed page was left: what waits is regrouped soon.
     [/^\/clusters\/left$/, () => { if (lib.pending) changed('soon'); return [200, {}]; }],
     [/^\/people$/, (m, body) => {
@@ -302,6 +360,7 @@ export function fakeLibrary() {
     const rel = path.slice(LIB.length);
     if (rel === '/events') return route.fulfill({ status: 204 }); // no stream: the page asks for the status itself
     if (/^\/trash\/\d+\/thumb$/.test(rel)) return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
+    if (/^\/files\/\d+\/(view|thumb)$/.test(rel)) return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
     if (/^\/faces\/(manual\/)?\d+\/crop$/.test(rel)) return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
     lib.log.push({ method: req.method(), path: rel, query: u.searchParams });
     if (lib.hold && lib.hold.test(rel)) {
@@ -310,7 +369,7 @@ export function fakeLibrary() {
     }
     if (req.method() === 'GET') {
       if (get[rel]) return json(route, 200, get[rel](u.searchParams));
-      for (const [re, fn] of getPattern) { const m = rel.match(re); if (m) { const [s, b] = fn(m); return json(route, s, b); } }
+      for (const [re, fn] of getPattern) { const m = rel.match(re); if (m) { const [s, b] = fn(m, u.searchParams); return json(route, s, b); } }
     } else if (req.method() === 'POST') {
       const body = req.postDataJSON() || {};
       for (const [re, fn] of post) { const m = rel.match(re); if (m) { const [s, b] = fn(m, body); return json(route, s, b); } }
