@@ -195,7 +195,9 @@ var ICONS = {
   person: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="7" r="3"/><path d="M7.5 20v-2.5c0-3 1.7-5 4.5-5s4.5 2 4.5 5V20z"/></svg>',
   // A sitting cat with its tail up.
   cat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 4.5l1.3 1.8h3.4l1.3-1.8v4.2a3.3 3.3 0 0 1-6 0z"/><path d="M8.7 11.5C6.5 13 5.5 15.5 5.5 18c0 1.2.8 2 2 2h6.5c2.6 0 4.5-1.6 4.5-3.5V8.5"/><path d="M18.5 8.5a1.5 1.5 0 0 1 3 0"/></svg>',
-  // A paw print: dogs, and pets in general.
+  // A bone: a dog.
+  dog: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path transform="rotate(-45 12 12) translate(12 12) scale(1.15) translate(-12 -12)" d="M7.19 10H16.81A2.4 2.4 0 1 1 20.39 10Q19.6 12 20.39 14A2.4 2.4 0 1 1 16.81 14H7.19A2.4 2.4 0 1 1 3.61 14Q4.4 12 3.61 10A2.4 2.4 0 1 1 7.19 10z"/></svg>',
+  // A paw print: a pet in general.
   paw: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="11.5" r="1.7" fill="currentColor"/><circle cx="9.3" cy="7" r="1.7" fill="currentColor"/><circle cx="14.7" cy="7" r="1.7" fill="currentColor"/><circle cx="18.5" cy="11.5" r="1.7" fill="currentColor"/><path d="M8.3 17.5c0-2.2 1.7-4 3.7-4s3.7 1.8 3.7 4c0 1.5-1 2.2-2.2 2.2-.6 0-1-.3-1.5-.3s-.9.3-1.5.3c-1.2 0-2.2-.7-2.2-2.2z"/></svg>',
   // The map marker of the selection bar, without its plus.
   place: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21C9.5 18.2 6 14.8 6 10.8a6 6 0 0 1 12 0c0 4-3.5 7.4-6 10.2z"/><circle cx="12" cy="10.8" r="1.4" fill="currentColor"/></svg>',
@@ -204,8 +206,8 @@ var ICONS = {
   // Three pawns, the middle one taller: a group of people.
   group: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="9.5" r="2"/><path d="M2.5 20v-1.5C2.5 16 3.8 14.5 5.5 14.5S8.5 16 8.5 18.5V20z"/><circle cx="18.5" cy="9.5" r="2"/><path d="M15.5 20v-1.5c0-2.5 1.3-4 3-4s3 1.5 3 4V20z"/><circle cx="12" cy="6.5" r="2.4"/><path d="M8.5 20v-2.5c0-3 1.5-5 3.5-5s3.5 2 3.5 5V20z"/></svg>',
 };
-// The icon of a species in chips and suggestions: the sitting cat, else the paw.
-function speciesIcon(species) { return icon(species === 'cat' ? 'cat' : 'paw'); }
+// The icon of a species in chips and suggestions: the sitting cat, the bone for a dog, else the paw.
+function speciesIcon(species) { return icon(species === 'cat' ? 'cat' : species === 'dog' ? 'dog' : 'paw'); }
 function icon(name, cls) {
   var s = document.createElement('span');
   s.className = 'ic' + (cls ? ' ' + cls : '');
@@ -534,9 +536,9 @@ function meansFav(name) { return FAV_TYPED.indexOf(String(name).trim().toLowerCa
 // Our own drawn icons (no icon set): a 24 grid, round 2 px lines in the colour
 // of the text. The fill sits in the style so that rules like ".icon svg" do
 // not fill the outline.
-function lineIcon(paths, fill) {
+function lineIcon(paths, fill, sw) {
   return '<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" style="fill:' + (fill ? 'currentColor' : 'none') +
-    '" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + paths + '</svg>';
+    '" stroke="currentColor" stroke-width="' + (sw || 2) + '" stroke-linecap="round" stroke-linejoin="round">' + paths + '</svg>';
 }
 var HEART_PATH = '<path stroke-width="2.2" d="M12 19.5C8 16.8 4 13.6 4 9.6 4 7.1 5.9 5.2 8.2 5.2c1.6 0 3 .9 3.8 2.3.8-1.4 2.2-2.3 3.8-2.3 2.3 0 4.2 1.9 4.2 4.4 0 4-4 7.2-8 9.9z"/>';
 var HEART_ON = lineIcon(HEART_PATH, true);
@@ -546,6 +548,14 @@ var HEART_OFF = lineIcon(HEART_PATH);
 var FRAME_ICON = lineIcon('<path d="M3 9V6.5A2.5 2.5 0 0 1 5.5 4H9M15 4h3.5A2.5 2.5 0 0 1 21 6.5V9M3 15v2.5A2.5 2.5 0 0 0 5.5 20H9"/><path d="M12.5 17c1.2-2 3.3-3 4.5-3s3.3 1 4.5 3c-1.2 2-3.3 3-4.5 3s-3.3-1-4.5-3z"/><circle cx="17" cy="17" r="1.1"/>');
 var SELECT_ICON = lineIcon('<rect x="4" y="4" width="16" height="16" rx="3.5"/><path d="M8.5 12.2l2.5 2.5 4.8-5"/>');
 var ADD_FACE_ICON = lineIcon('<circle cx="11" cy="13" r="8"/><circle cx="8.3" cy="11.5" r=".6"/><circle cx="13.7" cy="11.5" r=".6"/><path d="M7.4 15.6a4.2 4.2 0 0 0 7.2 0"/><path d="M19 2.5v5M16.5 5h5"/>');
+// The icons of the face and pet actions (Unnamed cards, the singles bar, the photo's face panel).
+var NAME_ICON = lineIcon('<circle cx="10" cy="8" r="3.4"/><path d="M3.5 20c.6-3.6 3.2-5.6 6.5-5.6 1 0 1.9.2 2.7.5"/><path d="M14.5 17.5l2.3 2.3 4.2-4.6"/>');
+var IGNORE_ICON = lineIcon('<path d="M2.5 12C5 7.6 8.3 6 12 6s7 1.6 9.5 6c-2.5 4.4-5.8 6-9.5 6s-7-1.6-9.5-6z"/><circle cx="12" cy="12" r="2.6"/><path d="M4.5 20L19.5 4"/>');
+var NOT_FACE_ICON = lineIcon('<circle cx="12" cy="12" r="8.5"/><circle cx="9.3" cy="10.5" r=".6"/><circle cx="14.7" cy="10.5" r=".6"/><path d="M8.5 14.8a4.2 4.2 0 0 0 7 0"/><path d="M4.5 19.5l15-15"/>');
+var NOT_PET_ICON = lineIcon('<circle cx="5.5" cy="11.5" r="1.6" fill="currentColor" stroke-width="1"/><circle cx="9.3" cy="7" r="1.6" fill="currentColor" stroke-width="1"/><circle cx="14.7" cy="7" r="1.6" fill="currentColor" stroke-width="1"/><circle cx="18.5" cy="11.5" r="1.6" fill="currentColor" stroke-width="1"/><path stroke-width="1.8" d="M8.3 17.5c0-2.2 1.7-4 3.7-4s3.7 1.8 3.7 4c0 1.5-1 2.2-2.2 2.2-.6 0-1-.3-1.5-.3s-.9.3-1.5.3c-1.2 0-2.2-.7-2.2-2.2z"/><path d="M4.5 20.5l15-17"/>');
+var CAT_ICON = lineIcon('<path d="M8.5 4.5l1.3 1.8h3.4l1.3-1.8v4.2a3.3 3.3 0 0 1-6 0z"/><path d="M8.7 11.5C6.5 13 5.5 15.5 5.5 18c0 1.2.8 2 2 2h6.5c2.6 0 4.5-1.6 4.5-3.5V8.5"/><path d="M18.5 8.5a1.5 1.5 0 0 1 3 0"/>', false, 1.8);
+// A bone: the dog (the paw is the pet in general).
+var DOG_ICON = lineIcon('<path transform="rotate(-45 12 12) translate(12 12) scale(1.15) translate(-12 -12)" d="M7.19 10H16.81A2.4 2.4 0 1 1 20.39 10Q19.6 12 20.39 14A2.4 2.4 0 1 1 16.81 14H7.19A2.4 2.4 0 1 1 3.61 14Q4.4 12 3.61 10A2.4 2.4 0 1 1 7.19 10z"/>', false, 1.8);
 // The selection bar's tools (our own drawings): a cross, a label pointing
 // left with a plus or a minus, a calendar page with the "~" of an estimated
 // date, a map marker with a plus, an arrow into a folder, an arrow up out of
@@ -568,6 +578,29 @@ function toolButton(icon, label) {
   setTip(b, label);
   b.setAttribute('aria-label', label);
   return b;
+}
+
+// An icon button of the face actions: its quick label is the name of the action
+// and, on a second line, what it does. With nothing ticked yet it is dimmed
+// (aria-disabled, so that the label still shows) and says to tick faces first.
+function actionButton(icon, act) {
+  var b = el('button', 'abtn');
+  b.innerHTML = icon;
+  b.setAttribute('data-act', act);
+  return b;
+}
+
+function actionOff(b) { return b.getAttribute('aria-disabled') === 'true'; }
+
+function onAction(b, fn) {
+  b.onclick = function (ev) { if (!actionOff(b)) fn(ev); };
+}
+
+function setAction(b, label, hint, off) {
+  var text = off ? tr('unnamed.select_first') : hint;
+  setTip(b, text ? label + '\n' + text : label);
+  b.setAttribute('aria-label', label);
+  if (off) b.setAttribute('aria-disabled', 'true'); else b.removeAttribute('aria-disabled');
 }
 
 function markFavFilter() {
@@ -6970,12 +7003,13 @@ function singlesSection() {
   bar.appendChild(count);
   var field = personField(function () { name(); }, { allowNew: true, placeholder: tr('unnamed.who'), species: function () { return facesSpecies(picked()); } });
   bar.appendChild(field);
-  var nameBtn = el('button', 'btn', tr('person.name'));
-  var ignore = el('button', 'btn quiet', tr('unnamed.ignore'));
-  setTip(ignore, tr('unnamed.ignore_hint'));
-  var notFace = el('button', 'btn quiet', tr('facecheck.not_face'));
-  var change = el('button', 'btn quiet');
-  var done = el('button', 'btn quiet', tr('unnamed.clear'));
+  var nameBtn = actionButton(NAME_ICON, 'name');
+  nameBtn.classList.add('primary');
+  var ignore = actionButton(IGNORE_ICON, 'ignore');
+  var notFace = actionButton(NOT_FACE_ICON, 'not-face');
+  var change = actionButton(CAT_ICON, 'change');
+  var done = actionButton(lineIcon('<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>'), 'clear');
+  setAction(done, tr('unnamed.clear'), tr('unnamed.select_done_hint'));
   [nameBtn, ignore, notFace, change, done].forEach(function (b) { bar.appendChild(b); });
 
   var picked = function () { return st.faces.filter(function (f) { return st.picked[f.id]; }); };
@@ -6985,13 +7019,17 @@ function singlesSection() {
     head.textContent = tr('unnamed.singles', { count: trn('count.faces', st.count) });
     section.hidden = !st.faces.length && st.shown >= st.total;
     count.textContent = trn('count.faces', n);
-    notFace.textContent = tr(pets ? 'pet.not_a.pet' : 'facecheck.not_face');
-    setTip(notFace, tr(pets ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint'));
     bar.hidden = !n;
-    nameBtn.disabled = ignore.disabled = notFace.disabled = !n;
+    setAction(nameBtn, tr('unnamed.name_n', { n: n }), tr('unnamed.name_selected_hint'));
+    setAction(ignore, tr('unnamed.ignore_n', { n: n }), tr('unnamed.ignore_hint'));
+    notFace.innerHTML = pets ? NOT_PET_ICON : NOT_FACE_ICON;
+    setAction(notFace, tr(pets ? 'unnamed.notface_n_pet' : 'unnamed.notface_n', { n: n }), tr(pets ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint'));
     var to = otherSpecies(chosen);
     change.hidden = !to;
-    if (to) change.textContent = makeSpeciesLabel(to);
+    if (to) {
+      change.innerHTML = to === 'cat' ? CAT_ICON : DOG_ICON;
+      setAction(change, makeSpeciesLabel(to), '');
+    }
     more.hidden = st.shown >= st.total;
   };
   var tile = function (face) {
@@ -7096,15 +7134,15 @@ function singlesSection() {
     if (!who) { field.input.focus(); return; }
     act('assign', who);
   };
-  nameBtn.onclick = name;
-  ignore.onclick = function () { act('ignore'); };
-  notFace.onclick = function () { act('not-face'); };
-  done.onclick = function () {
+  onAction(nameBtn, name);
+  onAction(ignore, function () { act('ignore'); });
+  onAction(notFace, function () { act('not-face'); });
+  onAction(done, function () {
     Object.keys(st.picked).forEach(function (id) { if (st.tiles[id]) st.tiles[id].classList.remove('sel'); });
     st.picked = {};
     st.anchor = null;
     update();
-  };
+  });
   // The faces as the server lists them now (`refreshUnnamed`): tiles of faces
   // that are gone leave (and their ticks), new ones come in, the others stay.
   var sync = function (r) {
@@ -7245,24 +7283,22 @@ function clusterCard(c) {
   var row = el('div', 'crow cbar');
   var field = personField(function (who) { act('name', who); }, { allowNew: true, placeholder: tr('unnamed.who'), species: facesSpecies(c.faces) });
   row.appendChild(field);
-  var nameBtn = el('button', 'btn', tr('person.name'));
-  nameBtn.onclick = function () {
+  var nameBtn = actionButton(NAME_ICON, 'name');
+  nameBtn.classList.add('primary');
+  onAction(nameBtn, function () {
     var who = field.value();
     if (!who) { field.input.focus(); return; }
     act('name', who);
-  };
+  });
   row.appendChild(nameBtn);
   var tools = row;
-  var ignore = el('button', 'btn quiet', tr('unnamed.ignore'));
-  setTip(ignore, tr('unnamed.ignore_hint'));
-  ignore.onclick = function () { act('ignore', {}); };
+  var ignore = actionButton(IGNORE_ICON, 'ignore');
+  onAction(ignore, function () { act('ignore', {}); });
   // A card of pets says "not a pet": the finds that are no pet at all.
   var petCard = c.faces.length > 0 && c.faces.every(function (f) { return f.species; });
-  var notFace = el('button', 'btn quiet', tr(petCard ? 'pet.not_a.pet' : 'facecheck.not_face'));
-  setTip(notFace, tr(petCard ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint'));
-  notFace.onclick = function () { act('not-face', {}); };
-  var pick = el('button', 'btn quiet', tr('facecheck.select'));
-  setTip(pick, tr('unnamed.select_hint'));
+  var notFace = actionButton(petCard ? NOT_PET_ICON : NOT_FACE_ICON, 'not-face');
+  onAction(notFace, function () { act('not-face', {}); });
+  var pick = actionButton(SELECT_ICON, 'pick');
   // Select needs all the faces to choose from.
   var loadAll = function () {
     if (faces.length >= c.size) return Promise.resolve();
@@ -7270,7 +7306,7 @@ function clusterCard(c) {
       faces = list;
     });
   };
-  pick.onclick = function () {
+  onAction(pick, function () {
     card.picking = !card.picking;
     if (!card.picking) { card.picked = {}; card.anchor = null; }
     else expanded = true;
@@ -7278,7 +7314,7 @@ function clusterCard(c) {
       renderFaces();
       update();
     }).catch(function (e) { stale(e); });
-  };
+  });
   close.onclick = function () {
     card.picking = false;
     card.picked = {};
@@ -7288,8 +7324,8 @@ function clusterCard(c) {
     update();
     card.scrollIntoView({ block: 'nearest' });
   };
-  var change = el('button', 'btn quiet');
-  change.onclick = function () {
+  var change = actionButton(CAT_ICON, 'change');
+  onAction(change, function () {
     var chosen = faces.filter(function (f) { return card.picked[f.id]; }), to = otherSpecies(chosen);
     if (!to) return;
     card.classList.add('busy');
@@ -7298,7 +7334,7 @@ function clusterCard(c) {
       peopleChanged();
       loadUnnamed();
     }).catch(function (e) { card.classList.remove('busy'); stale(e); });
-  };
+  });
   tools.appendChild(ignore);
   tools.appendChild(notFace);
   tools.appendChild(change);
@@ -7309,21 +7345,29 @@ function clusterCard(c) {
   var update = function () {
     var n = picked().length;
     var pets = c.faces.length > 0 && c.faces.every(function (f) { return f.species; });
-    count.textContent = trn(pets ? 'count.pets' : 'count.faces', c.size) + (card.picking ? ' · ' + (n ? tr('unnamed.selected', { n: n }) : tr('unnamed.tap')) : '');
+    count.textContent = trn(pets ? 'count.pets' : 'count.faces', c.size);
+    if (card.picking) {
+      count.appendChild(document.createTextNode(' · '));
+      if (n) count.appendChild(el('b', '', tr('unnamed.selected', { n: n })));
+      else count.appendChild(document.createTextNode(tr('unnamed.tap')));
+    }
     pick.classList.toggle('active', card.picking);
-    pick.textContent = tr(card.picking ? 'unnamed.select_done' : 'facecheck.select');
-    setTip(pick, tr(card.picking ? 'unnamed.select_done_hint' : 'unnamed.select_hint'));
+    setAction(pick, tr(card.picking ? 'unnamed.select_done' : 'facecheck.select'), tr(card.picking ? 'unnamed.select_done_hint' : 'unnamed.select_hint'));
     card.classList.toggle('picking', card.picking);
     card.classList.toggle('open', expanded || card.picking);
     close.hidden = !(expanded || card.picking);
     var some = card.picking && n;
-    nameBtn.textContent = some ? tr('unnamed.name_n', { n: n }) : tr('person.name');
-    ignore.textContent = some ? tr('unnamed.ignore_n', { n: n }) : tr('unnamed.ignore');
-    notFace.textContent = some ? tr(petCard ? 'unnamed.notface_n_pet' : 'unnamed.notface_n', { n: n }) : tr(petCard ? 'pet.not_a.pet' : 'facecheck.not_face');
-    nameBtn.disabled = ignore.disabled = notFace.disabled = card.picking && !n;
+    var off = card.picking && !n;
+    setAction(nameBtn, some ? tr('unnamed.name_n', { n: n }) : tr('person.name'), tr(some ? 'unnamed.name_selected_hint' : 'unnamed.name_hint'), off);
+    setAction(ignore, some ? tr('unnamed.ignore_n', { n: n }) : tr('unnamed.ignore'), tr('unnamed.ignore_hint'), off);
+    setAction(notFace, some ? tr(petCard ? 'unnamed.notface_n_pet' : 'unnamed.notface_n', { n: n }) : tr(petCard ? 'pet.not_a.pet' : 'facecheck.not_face'),
+      tr(petCard ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint'), off);
     var to = card.picking ? otherSpecies(faces.filter(function (f) { return card.picked[f.id]; })) : '';
     change.hidden = !to;
-    if (to) change.textContent = makeSpeciesLabel(to);
+    if (to) {
+      change.innerHTML = to === 'cat' ? CAT_ICON : DOG_ICON;
+      setAction(change, makeSpeciesLabel(to), '');
+    }
     suggestion.textContent = '';
     if (c.suggestion && !card.picking) {
       var s = c.suggestion;
@@ -7483,12 +7527,12 @@ function infoPickBar(info, pickable, pick) {
   }
   bar.appendChild(head);
   var row = el('div', 'pickacts');
-  var ignore = el('button', 'btn quiet', n ? tr('unnamed.ignore_n', { n: n }) : tr('unnamed.ignore'));
-  setTip(ignore, tr('unnamed.ignore_hint'));
-  var notFace = el('button', 'btn quiet', n ? tr(pets ? 'unnamed.notface_n_pet' : 'unnamed.notface_n', { n: n }) : tr('facecheck.not_face'));
-  setTip(notFace, tr(pets ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint'));
+  var ignore = actionButton(IGNORE_ICON, 'ignore');
+  setAction(ignore, n ? tr('unnamed.ignore_n', { n: n }) : tr('unnamed.ignore'), tr('unnamed.ignore_hint'), !n);
+  var notFace = actionButton(pets ? NOT_PET_ICON : NOT_FACE_ICON, 'not-face');
+  setAction(notFace, n ? tr(pets ? 'unnamed.notface_n_pet' : 'unnamed.notface_n', { n: n }) : tr('facecheck.not_face'),
+    tr(pets ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint'), !n);
   var cancel = el('button', 'btn quiet', tr('app.cancel'));
-  ignore.disabled = notFace.disabled = !n;
   var act = function (action) {
     var ids = chosen.map(function (f) { return f.id; });
     bar.classList.add('busy');
@@ -7500,21 +7544,22 @@ function infoPickBar(info, pickable, pick) {
       infoFacesChanged(info.id);
     }).catch(function (e) { bar.classList.remove('busy'); failed(e); });
   };
-  ignore.onclick = function () { act('ignore'); };
-  notFace.onclick = function () { act('not-face'); };
+  onAction(ignore, function () { act('ignore'); });
+  onAction(notFace, function () { act('not-face'); });
   cancel.onclick = function () { pick.on = false; pick.ids = {}; renderPanel(); };
   [ignore, notFace].forEach(function (b) { row.appendChild(b); });
   var to = otherSpecies(chosen);
   if (to) {
-    var change = el('button', 'btn quiet', makeSpeciesLabel(to));
-    change.onclick = function () {
+    var change = actionButton(to === 'cat' ? CAT_ICON : DOG_ICON, 'change');
+    setAction(change, makeSpeciesLabel(to), '');
+    onAction(change, function () {
       bar.classList.add('busy');
       setSpecies(chosen.map(function (f) { return f.id; }), to).then(function () {
         pick.on = false;
         pick.ids = {};
         infoFacesChanged(info.id);
       }).catch(function (e) { bar.classList.remove('busy'); failed(e); });
-    };
+    });
     row.appendChild(change);
   }
   row.appendChild(cancel);
