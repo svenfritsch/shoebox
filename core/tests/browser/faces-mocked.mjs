@@ -530,4 +530,99 @@ await test('trash cards: badges for the files that came along, the Duplicate bad
   check(!(await p.evaluate(() => window.opened)) && (await p.locator('.card.pick').nth(3).evaluate((c) => c.classList.contains('sel'))), 'a click on the gone badge should select its card');
 }));
 
+// ---- Our own icons instead of emojis
+
+const EMOJI = /[\u{1F000}-\u{1FAFF}\u{26A0}\u{270E}]/u;
+
+await test('pets on the Unnamed page carry their icon in a disc in the corner, people do not; nothing is an emoji', await on('view=unnamed', (lib) => ({
+  cat: lib.cluster(3, null, 'cat'), dog: lib.cluster(3, null, 'dog'), person: lib.cluster(3),
+}), async (p, lib, s) => {
+  const tile = (c, k) => card(p, first(c)).locator('.cface').nth(k);
+  for (const [c, species] of [[s.cat, 'cat'], [s.dog, 'dog']]) {
+    const faces = await card(p, first(c)).locator('.cface').count();
+    check(faces === 3, `the ${species} card shows ${faces} faces`);
+    for (let k = 0; k < 3; k++) {
+      const badge = tile(c, k).locator('.avatar.pet-' + species + ' .pet-badge');
+      check(await badge.count() === 1 && await badge.locator('svg').count() === 1, `${species} face ${k}: expected one badge with an icon`);
+      check((await badge.textContent()).trim() === '', `${species} face ${k}: the badge has text`);
+      // In the corner, inside the face's square (so no box around it cuts it off).
+      const [b, a] = await Promise.all([badge.boundingBox(), tile(c, k).locator('.avatar').boundingBox()]);
+      check(b.x >= a.x && b.y >= a.y && b.x + b.width <= a.x + a.width + 0.5 && b.y + b.height <= a.y + a.height + 0.5, `${species} face ${k}: the badge is outside the face's square`);
+      check(b.x + b.width / 2 > a.x + a.width / 2 && b.y + b.height / 2 > a.y + a.height / 2, `${species} face ${k}: the badge is not at the bottom right`);
+    }
+  }
+  check(await card(p, first(s.person)).locator('.pet-badge').count() === 0, 'a person has a pet badge');
+  // The old badge was a character after the face; the ring is not clipped by the circle now.
+  const after = await p.locator('.avatar.pet').first().evaluate((a) => [getComputedStyle(a, '::after').content, getComputedStyle(a).overflow]);
+  check(after[0] === 'none' || after[0] === 'normal' || after[0] === '""', `a text after the face: ${after[0]}`);
+  check(after[1] === 'visible', `the pet's face clips what reaches past its circle: ${after[1]}`);
+  const text = await p.evaluate(() => document.body.innerText);
+  check(!EMOJI.test(text), 'the page shows an emoji: ' + text.match(EMOJI));
+}));
+
+await test('a pet in the people list has its icon before the name, a person has none; the head of a pet likewise', await on('view=people', (lib) => ({
+  layka: lib.person('Layka', { faces: 3, species: 'dog' }), kim: lib.person('Kim', { faces: 3 }),
+}), async (p, lib, s) => {
+  const name = (who) => p.locator(`#page .person[data-id="${who.id}"] .pname`);
+  const dog = name(s.layka);
+  check(await dog.locator('svg').count() === 1 && (await dog.textContent()).trim() === 'Layka', `the dog's name: ${await dog.innerHTML()}`);
+  check(await dog.evaluate((n) => n.firstChild.classList.contains('ic') && n.lastChild.nodeType === 3), 'the icon is not before the name');
+  check(await name(s.kim).locator('svg').count() === 0, 'a person has an icon before the name');
+  check(await p.locator(`#page .person[data-id="${s.layka.id}"] .avatar.pet-dog .pet-badge`).count() === 0, 'the people list shows the pet badge on a person');
+  // The labels of the other places (head of a pet, tags, info panel) are made the same way.
+  const kinds = await p.evaluate(() => ['cat', 'dog', 'pet', null].map((sp) => { var e = petLabel('h2', 'pname', sp, 'Tommy'); return [e.querySelectorAll('svg').length, e.textContent]; }));
+  check(JSON.stringify(kinds) === JSON.stringify([[1, 'Tommy'], [1, 'Tommy'], [1, 'Tommy'], [0, 'Tommy']]), `labels: ${JSON.stringify(kinds)}`);
+  const missing = await p.evaluate(() => ['person', 'cat', 'dog', 'paw', 'place', 'drive', 'pencil'].filter((n) => !/<svg[^>]*>.*<\/svg>/.test(ICONS[n] || '')));
+  check(!missing.length, 'icons missing: ' + missing);
+  // A thumbnail that does not load shows a picture icon, not a character.
+  const broken = await p.evaluate(() => {
+    document.body.insertAdjacentHTML('beforeend', '<div class="cell broken" style="width:80px;height:80px"><div class="ph"></div></div>');
+    var st = getComputedStyle(document.querySelector('.cell.broken .ph'), '::after');
+    return [st.content, st.maskImage || st.webkitMaskImage, st.width];
+  });
+  check(broken[0] === '""' && /svg/.test(broken[1]) && broken[2] === '28px', `broken thumbnail: ${JSON.stringify(broken)}`);
+}));
+
+await test('the kind picker of "Add face or pet" has an icon on each button (person, cat, dog), the arrows still move the choice', await on('view=people', () => null, async (p) => {
+  await p.evaluate(() => { nameDrawnFace({ id: 1, kind: 'jpeg' }, [0.1, 0.1, 0.2, 0.2]); });
+  const buttons = p.locator('#modal .kinds button');
+  check(await buttons.count() === 3, 'the dialog has no three kinds');
+  const labels = [await tr(p, 'draw.kind.person'), await tr(p, 'draw.kind.cat'), await tr(p, 'draw.kind.dog')];
+  for (let k = 0; k < 3; k++) {
+    const b = buttons.nth(k);
+    check(await b.locator('svg').count() === 1 && (await b.textContent()).trim() === labels[k], `kind ${k}: ${await b.innerHTML()}`);
+    check(!EMOJI.test(await b.textContent()), `kind ${k} has an emoji`);
+  }
+  check(await buttons.nth(0).getAttribute('aria-checked') === 'true', 'person is not the first choice');
+  await buttons.nth(0).focus();
+  await p.keyboard.press('ArrowRight');
+  check(await buttons.nth(1).getAttribute('aria-checked') === 'true' && await buttons.nth(1).evaluate((b) => document.activeElement === b), 'the arrow did not move the choice to the cat');
+}));
+
+await test('a place chip has its marker only; the marker opens the map; the folder chip edits with a pencil icon', await on('view=people', () => null, async (p) => {
+  await p.evaluate(() => {
+    geo.places = [{ id: 7, name: 'Mainau' }];
+    state.folderById = { 3: { id: 3, name: 'Trip', path: 'Trip' } };
+    window.shown = [];
+    window.showView = function (v, id) { window.shown.push([v, id]); };
+    state.filter.view = null;
+    state.filter.place = 7;
+    renderChips();
+  });
+  // The filter bar also has the "+" that adds a term; the place chip is the first.
+  const chip = p.locator('#filters .chip').first();
+  check(await chip.locator('.ic.link').count() === 1, 'the place chip is missing');
+  check(await chip.locator('button').count() === 1, 'the chip has more buttons than its remove button');
+  check(await chip.locator('svg').count() === 1 && !EMOJI.test(await chip.textContent()), `the chip: ${await chip.innerHTML()}`);
+  const mark = chip.locator('.ic.link');
+  check(await mark.getAttribute('role') === 'button' && await mark.getAttribute('aria-label') === await tr(p, 'chip.show_on_map'), 'the marker is not a labelled button');
+  await mark.click();
+  await mark.focus();
+  await p.keyboard.press('Enter');
+  check(JSON.stringify(await p.evaluate(() => window.shown)) === '[["locations",7],["locations",7]]', 'the marker did not open the place on the map: ' + JSON.stringify(await p.evaluate(() => window.shown)));
+  await p.evaluate(() => { state.filter.place = null; state.filter.folder = 3; readOnly = false; renderChips(); });
+  const edit = p.locator('#filters .chip .edit');
+  check(await edit.count() === 1 && await edit.locator('svg').count() === 1 && (await edit.textContent()) === '', `the folder chip's edit button: ${await edit.innerHTML()}`);
+}));
+
 await finish();

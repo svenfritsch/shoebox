@@ -630,8 +630,10 @@ function renderSide() {
   else title.textContent = geo.data ? tr('geo.here_count', { count: trn('count.photos', geo.data.count) }) : '';
   head.appendChild(title);
   var tools = el('div', 'geo-tools');
+  // `text` is a symbol, or the markup of one of our icons.
   var tool = function (text, label, fn) {
-    var b = el('button', 'icon-btn', text);
+    var b = el('button', 'icon-btn');
+    if (text.charAt(0) === '<') b.innerHTML = text; else b.textContent = text;
     b.type = 'button';
     setTip(b, label);
     b.setAttribute('aria-label', label);
@@ -639,9 +641,9 @@ function renderSide() {
     tools.appendChild(b);
   };
   if (place) {
-    tool('✎', tr('geo.rename'), function () { renamePlace(place); });
+    tool(ICONS.pencil, tr('geo.rename'), function () { renamePlace(place); });
     tool('⬚', tr('geo.redraw'), function () { startDraw({ type: 'redraw', place: place }); });
-    tool('🗑', tr('app.delete'), function () { deletePlace(place); });
+    tool(TRASH_ICON, tr('app.delete'), function () { deletePlace(place); });
   }
   tool('›', tr('geo.side_hide'), function () { setSide(false); });
   head.appendChild(tools);
