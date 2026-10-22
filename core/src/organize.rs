@@ -1049,9 +1049,25 @@ pub fn trash_files_tidy(conn: &Connection, root: &Path, ids: &[i64]) -> Result<T
 /// records go (with tags and duplicate decisions); the trash table keeps
 /// what is needed to put them back, own tags included.
 pub fn trash_files(conn: &Connection, root: &Path, ids: &[i64]) -> Result<Trashed> {
+    trash(conn, root, ids, false)
+}
+
+/// As `trash_files`, but only the files asked for: no companion (same name,
+/// same folder: the HEIC next to a JPEG copy, its RAW, its Live Photo video)
+/// and no sidecar goes along. For the duplicates screen and "Delete the new
+/// copies", which remove single copies, never what lies next to them.
+pub fn trash_files_only(conn: &Connection, root: &Path, ids: &[i64]) -> Result<Trashed> {
+    trash(conn, root, ids, true)
+}
+
+fn trash(conn: &Connection, root: &Path, ids: &[i64], only: bool) -> Result<Trashed> {
     crate::libraries::ensure_writable(root)?;
     let mut out = Trashed::default();
-    for group in Group::all(conn, root, ids, &mut out.skipped)? {
+    for mut group in Group::all(conn, root, ids, &mut out.skipped)? {
+        if only {
+            group.files.retain(|f| ids.contains(&f.id));
+            group.sidecars.clear();
+        }
         let first = group.files[0].path_nfc.clone();
         if let Err(e) = group.check(root).and_then(|()| trash_group(conn, root, &group, &mut out)) {
             out.skipped.push(format!("{first}: {e:#}"));
@@ -1237,6 +1253,7 @@ pub fn restore(conn: &Connection, root: &Path, batch: i64) -> Result<Restored> {
             if r.kind.is_some() {
                 let hash = r.full_hash.as_deref().filter(|_| *unchanged);
                 let id = index_file(&tx, root, &raw, hash)?;
+                crate::thumbs::fill_phash_of(&tx, id)?;
                 if let Some(names) = &r.user_tags {
                     tags::restore_names_json(&tx, id, names)?;
                 }

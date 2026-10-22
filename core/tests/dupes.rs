@@ -335,6 +335,69 @@ fn the_same_pixels_in_another_format_are_one_photo_with_no_suggestion() {
 }
 
 #[test]
+fn removing_one_format_keeps_the_other_with_the_same_name() {
+    let lib = Library::new("dupes-same-name");
+    // The HEIC and the smaller JPEG of it side by side (with a RAW and an
+    // edit file of the same name): only the ticked file goes, never the one
+    // that stays or anything else next to it.
+    rings(&lib.path("Fotos/IMG_3070.jpg"), 1600, 1200);
+    rings(&lib.path("Fotos/IMG_3070.png"), 800, 600);
+    fs::write(lib.path("Fotos/IMG_3070.aae"), "edits").unwrap();
+    fs::copy(lib.path("2020-07 Urlaub Griechenland/IMG_0001.JPG"), lib.path("Fotos/IMG_3070.CR2")).unwrap();
+    lib.scan();
+    let (big, small) = (id_of(&lib, "Fotos/IMG_3070.jpg"), id_of(&lib, "Fotos/IMG_3070.png"));
+    let server = start(&lib, None);
+    let addr = server.addr;
+    post(addr, "/api/tags/add", &json!({ "ids": [small], "name": "Klein" }));
+    assert_eq!(group_of(&groups(addr), "Fotos/IMG_3070.jpg")["kind"], "resolution");
+
+    let r = remove(addr, &[big], &[small]);
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    let body: Value = r.json();
+    assert_eq!(body["trashed"]["files"], json!(["Fotos/IMG_3070.png"]));
+    for stays in ["IMG_3070.jpg", "IMG_3070.aae", "IMG_3070.CR2"] {
+        assert!(lib.path(&format!("Fotos/{stays}")).exists(), "{stays}");
+    }
+    assert!(!lib.path("Fotos/IMG_3070.png").exists());
+    assert_eq!(tags(&lib, big, "user"), ["Klein"]);
+    server.stop().unwrap();
+}
+
+#[test]
+fn a_copy_put_back_from_the_trash_is_a_duplicate_again() {
+    let lib = Library::new("dupes-put-back");
+    rings(&lib.path("Ringe/gross.jpg"), 1600, 1200);
+    rings(&lib.path("Ringe/klein.jpg"), 800, 600);
+    fs::create_dir_all(lib.path("Kopien")).unwrap();
+    fs::copy(lib.path("Ringe/gross.jpg"), lib.path("Kopien/gross.jpg")).unwrap();
+    lib.scan();
+    let id = |p: &str| id_of(&lib, p);
+    let (gross, klein, kopie) = (id("Ringe/gross.jpg"), id("Ringe/klein.jpg"), id("Kopien/gross.jpg"));
+    let server = start(&lib, None);
+    let addr = server.addr;
+    assert_eq!(group_of(&groups(addr), "Ringe/gross.jpg")["files"].as_array().unwrap().len(), 3);
+
+    let r = remove(addr, &[gross], &[klein, kopie]);
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    let batches: Vec<i64> = r.json()["trashed"]["batches"].as_array().unwrap().iter().map(|b| b.as_i64().unwrap()).collect();
+    assert_eq!(batches.len(), 2);
+    assert!(groups(addr).is_empty());
+
+    // Both come back to the group straight away, the smaller one too
+    // (found by its look, not its bytes), without a scan.
+    for b in batches {
+        let r = post(addr, &format!("/api/trash/{b}/restore"), &json!({}));
+        assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    }
+    let all = groups(addr);
+    let paths: std::collections::BTreeSet<&str> =
+        group_of(&all, "Ringe/gross.jpg")["files"].as_array().unwrap().iter().map(|f| f["path"].as_str().unwrap()).collect();
+    assert_eq!(paths, ["Kopien/gross.jpg", "Ringe/gross.jpg", "Ringe/klein.jpg"].into());
+    assert_eq!(group_of(&all, "Ringe/gross.jpg")["kind"], "resolution");
+    server.stop().unwrap();
+}
+
+#[test]
 fn files_in_a_copies_folder_are_never_the_original() {
     let lib = Library::new("dupes-copies-folder");
     // A packaged InDesign project: its "Link" folder holds copies. The Link

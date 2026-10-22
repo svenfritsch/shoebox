@@ -914,7 +914,7 @@ pub fn remove_copies(
         }
     }
     let ids: Vec<i64> = gone.iter().map(|g| g.id).collect();
-    let trashed = organize::trash_files(conn, root, &ids)?;
+    let trashed = organize::trash_files_only(conn, root, &ids)?;
     let mut out = Removed { trashed, ..Default::default() };
     let done: HashSet<String> = out.trashed.files.iter().cloned().collect();
     let went = |c: &Carry| done.contains(&c.path);
