@@ -258,19 +258,63 @@ await test('dragging across photos selects them, back again leaves them as they 
   check(await selectedCells(p) === '0,1,2,3,4,8', `a click after a drag toggles one photo (got ${await selectedCells(p)})`);
 });
 
+await test('a drag selects only what its rectangle covers, and gives back what it leaves', async (p) => {
+  await p.locator('#select').click();
+  // Two rows of one month, columns 1 and 2 of each: four photos, not the rows between.
+  const at = await p.evaluate(() => {
+    const rows = state.rows;
+    for (let i = 0; i + 1 < rows.length; i++) {
+      if (rows[i].type === 'r' && rows[i + 1].type === 'r' && rows[i].end - rows[i].start >= 4 && rows[i + 1].end - rows[i + 1].start >= 4) return [rows[i].start, rows[i + 1].start];
+    }
+    return null;
+  });
+  check(at, 'the fixtures have two full rows in a month');
+  const [r0, r1] = at;
+  const rect = (from, to) => dragAcross(p, from, [to]);
+  await rect(r0 + 1, r1 + 2);
+  check(await selectedCells(p) === [r0 + 1, r0 + 2, r1 + 1, r1 + 2].join(','), `a rectangle of 2 by 2 selects 4 photos (got ${await selectedCells(p)})`);
+  check(await p.locator('.marquee').count() === 0, 'the rectangle is gone after the drag');
+  // Starting on a selected photo deselects what the rectangle covers, nothing else.
+  await p.locator(`.cell[data-index="${r0}"]`).click();
+  await rect(r0 + 1, r1 + 1);
+  check(await selectedCells(p) === [r0, r0 + 2, r1 + 2].join(','), `a drag from a selected photo deselects its rectangle only (got ${await selectedCells(p)})`);
+  // Moving the pointer back shrinks the rectangle: what it left is as it was.
+  await p.mouse.move(...await centre(p, r0 + 3));
+  await p.mouse.down();
+  await p.mouse.move(...await centre(p, r1 + 3), { steps: 4 });
+  await p.mouse.move(...await centre(p, r0 + 3), { steps: 4 });
+  await p.mouse.up();
+  check(await selectedCells(p) === [r0, r0 + 2, r0 + 3, r1 + 2].join(','), `a drag back leaves only the first row's photo added (got ${await selectedCells(p)})`);
+});
+
 await test('a drag to the bottom edge scrolls along and selects what comes into view', async (p) => {
   await p.locator('#select').click();
   const r = await p.locator('#scroller').boundingBox();
   await p.mouse.move(...await centre(p, 0));
   await p.mouse.down();
-  await p.mouse.move(r.x + r.width / 3, r.y + r.height - 5, { steps: 10 });
+  const x = r.x + r.width / 3;
+  await p.mouse.move(x, r.y + r.height - 5, { steps: 10 });
   await p.waitForTimeout(800);
   await p.mouse.up();
   check(await p.locator('#scroller').evaluate((s) => s.scrollTop) > 0, 'the timeline scrolled');
-  const n = await p.evaluate(() => selectedIds().length);
-  check(n > 20, `the photos that came into view are selected too (${n})`);
-  check(await p.evaluate(() => { const ids = selectedIds(); return ids.every((id) => state.data.ids.indexOf(id) < ids.length); }),
-    'they are the first photos, without a gap');
+  // The rectangle spans the columns from the first photo to the pointer, in every row down to the last one reached.
+  const bad = await p.evaluate((x) => {
+    const sizer = document.getElementById('sizer').getBoundingClientRect();
+    const last = Math.min(state.cols - 1, Math.floor((x - sizer.left) / state.cell));
+    const rows = state.rows.filter((row) => row.type === 'r');
+    const sel = (i) => !!state.selected[state.data.ids[i]];
+    let first = -1, end = -1;
+    rows.forEach((row, k) => { if (sel(row.start)) { if (first < 0) first = k; end = k; } });
+    if (first !== 0 || end < 5) return `rows ${first} to ${end}`;
+    for (let k = first; k <= end; k++) {
+      const row = rows[k];
+      for (let i = row.start; i < row.end; i++) {
+        if (sel(i) !== (i - row.start <= last)) return `photo ${i} (column ${i - row.start}) is ${sel(i) ? '' : 'not '}selected, columns 0 to ${last} should be`;
+      }
+    }
+    return '';
+  }, x);
+  check(!bad, `the photos that came into view are selected, only in the columns covered (${bad})`);
 });
 
 await test('without the selection a drag selects nothing', async (p) => {
