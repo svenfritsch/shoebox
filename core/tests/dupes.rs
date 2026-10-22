@@ -381,7 +381,9 @@ fn a_copy_put_back_from_the_trash_is_a_duplicate_again() {
     assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
     let batches: Vec<i64> = r.json()["trashed"]["batches"].as_array().unwrap().iter().map(|b| b.as_i64().unwrap()).collect();
     assert_eq!(batches.len(), 2);
-    assert!(groups(addr).is_empty());
+    // (With the full fixtures other groups are there too.)
+    let in_group = |all: &[Value]| all.iter().any(|g| g["files"].as_array().unwrap().iter().any(|f| f["path"] == "Ringe/gross.jpg"));
+    assert!(!in_group(&groups(addr)));
 
     // Both come back to the group straight away, the smaller one too
     // (found by its look, not its bytes), without a scan.
