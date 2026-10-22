@@ -195,7 +195,9 @@ var ICONS = {
   person: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="7" r="3"/><path d="M7.5 20v-2.5c0-3 1.7-5 4.5-5s4.5 2 4.5 5V20z"/></svg>',
   // A sitting cat with its tail up.
   cat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 4.5l1.3 1.8h3.4l1.3-1.8v4.2a3.3 3.3 0 0 1-6 0z"/><path d="M8.7 11.5C6.5 13 5.5 15.5 5.5 18c0 1.2.8 2 2 2h6.5c2.6 0 4.5-1.6 4.5-3.5V8.5"/><path d="M18.5 8.5a1.5 1.5 0 0 1 3 0"/></svg>',
-  // A paw print: dogs, and pets in general.
+  // A bone: a dog.
+  dog: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path transform="rotate(-45 12 12) translate(12 12) scale(1.15) translate(-12 -12)" d="M7.19 10H16.81A2.4 2.4 0 1 1 20.39 10Q19.6 12 20.39 14A2.4 2.4 0 1 1 16.81 14H7.19A2.4 2.4 0 1 1 3.61 14Q4.4 12 3.61 10A2.4 2.4 0 1 1 7.19 10z"/></svg>',
+  // A paw print: a pet in general.
   paw: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="11.5" r="1.7" fill="currentColor"/><circle cx="9.3" cy="7" r="1.7" fill="currentColor"/><circle cx="14.7" cy="7" r="1.7" fill="currentColor"/><circle cx="18.5" cy="11.5" r="1.7" fill="currentColor"/><path d="M8.3 17.5c0-2.2 1.7-4 3.7-4s3.7 1.8 3.7 4c0 1.5-1 2.2-2.2 2.2-.6 0-1-.3-1.5-.3s-.9.3-1.5.3c-1.2 0-2.2-.7-2.2-2.2z"/></svg>',
   // The map marker of the selection bar, without its plus.
   place: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21C9.5 18.2 6 14.8 6 10.8a6 6 0 0 1 12 0c0 4-3.5 7.4-6 10.2z"/><circle cx="12" cy="10.8" r="1.4" fill="currentColor"/></svg>',
@@ -204,8 +206,8 @@ var ICONS = {
   // Three pawns, the middle one taller: a group of people.
   group: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="9.5" r="2"/><path d="M2.5 20v-1.5C2.5 16 3.8 14.5 5.5 14.5S8.5 16 8.5 18.5V20z"/><circle cx="18.5" cy="9.5" r="2"/><path d="M15.5 20v-1.5c0-2.5 1.3-4 3-4s3 1.5 3 4V20z"/><circle cx="12" cy="6.5" r="2.4"/><path d="M8.5 20v-2.5c0-3 1.5-5 3.5-5s3.5 2 3.5 5V20z"/></svg>',
 };
-// The icon of a species in chips and suggestions: the sitting cat, else the paw.
-function speciesIcon(species) { return icon(species === 'cat' ? 'cat' : 'paw'); }
+// The icon of a species in chips and suggestions: the sitting cat, the bone for a dog, else the paw.
+function speciesIcon(species) { return icon(species === 'cat' ? 'cat' : species === 'dog' ? 'dog' : 'paw'); }
 function icon(name, cls) {
   var s = document.createElement('span');
   s.className = 'ic' + (cls ? ' ' + cls : '');
@@ -552,8 +554,8 @@ var IGNORE_ICON = lineIcon('<path d="M2.5 12C5 7.6 8.3 6 12 6s7 1.6 9.5 6c-2.5 4
 var NOT_FACE_ICON = lineIcon('<circle cx="12" cy="12" r="8.5"/><circle cx="9.3" cy="10.5" r=".6"/><circle cx="14.7" cy="10.5" r=".6"/><path d="M8.5 14.8a4.2 4.2 0 0 0 7 0"/><path d="M4.5 19.5l15-15"/>');
 var NOT_PET_ICON = lineIcon('<circle cx="5.5" cy="11.5" r="1.6" fill="currentColor" stroke-width="1"/><circle cx="9.3" cy="7" r="1.6" fill="currentColor" stroke-width="1"/><circle cx="14.7" cy="7" r="1.6" fill="currentColor" stroke-width="1"/><circle cx="18.5" cy="11.5" r="1.6" fill="currentColor" stroke-width="1"/><path stroke-width="1.8" d="M8.3 17.5c0-2.2 1.7-4 3.7-4s3.7 1.8 3.7 4c0 1.5-1 2.2-2.2 2.2-.6 0-1-.3-1.5-.3s-.9.3-1.5.3c-1.2 0-2.2-.7-2.2-2.2z"/><path d="M4.5 20.5l15-17"/>');
 var CAT_ICON = lineIcon('<path d="M8.5 4.5l1.3 1.8h3.4l1.3-1.8v4.2a3.3 3.3 0 0 1-6 0z"/><path d="M8.7 11.5C6.5 13 5.5 15.5 5.5 18c0 1.2.8 2 2 2h6.5c2.6 0 4.5-1.6 4.5-3.5V8.5"/><path d="M18.5 8.5a1.5 1.5 0 0 1 3 0"/>', false, 1.8);
-// A sitting dog seen from the side: head, ear, one dot for the eye, tail low behind.
-var DOG_ICON = lineIcon('<path d="M12.2 3.9C9 2.8 4.6 4.8 4.6 8.4c0 2.4 1.9 3.8 4.6 3.7"/><path d="M12.2 3.9c1.7.2 3 .6 4 1.2l1.8.4c1.2.3 1.6 1.6.7 2.4-1 .9-3.2 2.2-4.6 2.9"/><path d="M14.1 10.8c.7.7 1.4 1.8 1.4 3V20"/><path d="M9.2 12.1c-2.5 1.6-3.7 4-3.7 6.3 0 1 .9 1.6 2.1 1.6H17"/><path d="M5.6 18.1C4.2 17.6 3.4 16.3 3.4 14.8"/><path d="M8 6.8c2.3.6 3 3.3 1.2 5.3"/><path d="M13.7 7.4h.01" stroke-width="2.2"/>', false, 1.8);
+// A bone: the dog (the paw is the pet in general).
+var DOG_ICON = lineIcon('<path transform="rotate(-45 12 12) translate(12 12) scale(1.15) translate(-12 -12)" d="M7.19 10H16.81A2.4 2.4 0 1 1 20.39 10Q19.6 12 20.39 14A2.4 2.4 0 1 1 16.81 14H7.19A2.4 2.4 0 1 1 3.61 14Q4.4 12 3.61 10A2.4 2.4 0 1 1 7.19 10z"/>', false, 1.8);
 // The selection bar's tools (our own drawings): a cross, a label pointing
 // left with a plus or a minus, a calendar page with the "~" of an estimated
 // date, a map marker with a plus, an arrow into a folder, an arrow up out of
