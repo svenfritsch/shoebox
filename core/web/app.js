@@ -1694,6 +1694,101 @@ function pickSpan(list, idOf, anchor, id) {
   return list.slice(Math.min(a, b), Math.max(a, b) + 1);
 }
 
+// Click and drag across the tiles of a list that is being selected (mouse or
+// pen), as in the timeline: the tiles from the one pressed to the one under the
+// pointer take the opposite of the first one's state, tiles the drag leaves get
+// back what they had, and the page scrolls along near its top or bottom edge.
+// A list takes part by being a `.has-drag` element whose `dragSite()` returns,
+// while its tiles can be selected, { sel: selector of a tile, items: the items
+// in order, itemOf(tile), get(item), set(item, on) (data and look), done(item)
+// (after a change: anchor, bar) }; null while it cannot.
+var tileDrag = null;
+var DRAG_SKIP = 'button, input, select, textarea, .acts, .more-btn, .near, .mark, .copen, .menu';
+
+$('page').addEventListener('pointerdown', function (ev) {
+  if (ev.button !== 0 || ev.shiftKey || ev.pointerType === 'touch' || !ev.target.closest || ev.target.closest(DRAG_SKIP)) return;
+  var host = ev.target.closest('.has-drag');
+  var site = host && host.dragSite();
+  if (!site) return;
+  var tile = ev.target.closest(site.sel);
+  if (!tile || !host.contains(tile)) return;
+  var item = site.itemOf(tile), i = site.items.indexOf(item);
+  if (i < 0) return;
+  tileDrag = {
+    site: site, host: host, items: site.items, start: i, end: i, on: !site.get(item), before: site.items.map(site.get),
+    pointer: ev.pointerId, x: ev.clientX, y: ev.clientY, moved: false, scrolling: false, done: false,
+  };
+  document.body.classList.add('tile-drag');
+});
+document.addEventListener('pointermove', function (ev) {
+  if (!tileDrag || tileDrag.done || ev.pointerId !== tileDrag.pointer) return;
+  tileDrag.x = ev.clientX;
+  tileDrag.y = ev.clientY;
+  tileDragUpdate();
+  if (tileDrag && tileDrag.moved && !tileDrag.scrolling) { tileDrag.scrolling = true; requestAnimationFrame(tileDragScroll); }
+});
+document.addEventListener('pointerup', tileDragEnd);
+document.addEventListener('pointercancel', tileDragEnd);
+// The tiles are links with pictures: no dragging them out of the page while selecting.
+$('page').addEventListener('dragstart', function (ev) {
+  var host = ev.target.closest && ev.target.closest('.has-drag');
+  var site = host && host.dragSite();
+  if (site && ev.target.closest(site.sel)) ev.preventDefault();
+});
+// The click that ends a drag selects nothing more.
+$('page').addEventListener('click', function (ev) {
+  if (tileDrag && tileDrag.moved) { ev.stopImmediatePropagation(); ev.preventDefault(); }
+}, true);
+
+function tileDragUpdate() {
+  var d = tileDrag;
+  if (!d.host.isConnected || !d.host.dragSite()) { tileDragEnd({ pointerId: d.pointer }); return; }
+  var hit = document.elementFromPoint(d.x, d.y);
+  var tile = hit && hit.closest(d.site.sel);
+  if (!tile || !d.host.contains(tile)) return;
+  var i = d.items.indexOf(d.site.itemOf(tile));
+  if (i < 0 || i === d.end) return; // also: still on the first tile, no drag yet
+  if (!d.moved) {
+    d.moved = true;
+    // Keeps getting the pointer when it leaves the window.
+    try { $('page').setPointerCapture(d.pointer); } catch (e) {}
+  }
+  var lo = Math.min(d.start, i), hi = Math.max(d.start, i);
+  var from = Math.min(lo, d.start, d.end), to = Math.max(hi, d.start, d.end);
+  for (var k = from; k <= to; k++) {
+    var on = k >= lo && k <= hi ? d.on : d.before[k];
+    if (d.site.get(d.items[k]) !== on) d.site.set(d.items[k], on);
+  }
+  d.end = i;
+  d.site.done(d.items[i]);
+}
+
+// Scrolls while the pointer is near the top or bottom edge, faster the closer it is.
+function tileDragScroll() {
+  var d = tileDrag;
+  if (!d || d.done) return;
+  var scroller = $('scroller'), r = scroller.getBoundingClientRect(), v = 0;
+  if (d.y < r.top + DRAG_EDGE) v = -(r.top + DRAG_EDGE - d.y);
+  else if (d.y > r.bottom - DRAG_EDGE) v = d.y - (r.bottom - DRAG_EDGE);
+  if (!v) { d.scrolling = false; return; }
+  var top = scroller.scrollTop;
+  scroller.scrollTop = top + Math.max(-40, Math.min(40, v / 2));
+  if (scroller.scrollTop === top) { d.scrolling = false; return; }
+  tileDragUpdate();
+  if (tileDrag === d) requestAnimationFrame(tileDragScroll);
+}
+
+function tileDragEnd(ev) {
+  var d = tileDrag;
+  if (!d || ev.pointerId !== d.pointer) return;
+  document.body.classList.remove('tile-drag');
+  if (!d.moved) { tileDrag = null; return; }
+  // Kept until after the click that follows, so that click is swallowed above.
+  d.done = true;
+  setTimeout(function () { if (tileDrag === d) tileDrag = null; }, 0);
+  try { $('page').releasePointerCapture(d.pointer); } catch (e) {}
+}
+
 // Keep Shift-click on faces from selecting the page's text.
 document.addEventListener('mousedown', function (ev) {
   if (ev.shiftKey && ev.target.closest && ev.target.closest('.face, .cface')) ev.preventDefault();
@@ -4227,13 +4322,23 @@ function loadTrash() {
       del.onclick = function () { deleteBatches(batches.filter(function (b) { return picked[b]; }), batches.length); };
       bar.appendChild(del);
     };
-    var cards = el('div', 'cards');
+    var cards = el('div', 'cards has-drag');
     cards.style.flexWrap = 'wrap';
+    cards.dragSite = function () {
+      return {
+        sel: '.card', items: batches,
+        itemOf: function (tile) { return tile.batch; },
+        get: function (b) { return !!picked[b]; },
+        set: function (b, on) { if (on) picked[b] = true; else delete picked[b]; cardOf[b].classList.toggle('sel', on); },
+        done: function (b) { anchor = b; drawBar(); },
+      };
+    };
     batches.forEach(function (b) {
       var files = byBatch[b];
       var first = files.filter(function (f) { return f.kind; })[0] || files[0];
       var card = el('div', 'card pick');
       cardOf[b] = card;
+      card.batch = b;
       var thumb = el('div', 'thumb');
       var img = el('img');
       img.alt = '';
@@ -4744,7 +4849,22 @@ function loadFaces() {
   page.appendChild(sub);
   if (!checkFilters().some(function (o) { return o[0] === faceState.filter; })) faceState.filter = 'all';
   page.appendChild(faceToolbar());
-  var grid = el('div', 'faces');
+  var grid = el('div', 'faces has-drag');
+  grid.dragSite = function () {
+    if (!faceState.picking) return null;
+    var items = faceState.faces;
+    return {
+      sel: '.face[data-id]', items: items,
+      itemOf: function (tile) { return items.filter(function (x) { return String(x.id) === tile.dataset.id; })[0]; },
+      get: function (x) { return !!faceState.picked[x.id]; },
+      set: function (x, on) {
+        if (on) faceState.picked[x.id] = true; else delete faceState.picked[x.id];
+        var c = document.querySelector('.face[data-id="' + x.id + '"]');
+        if (c) c.classList.toggle('sel', on);
+      },
+      done: function (x) { faceState.anchor = x.id; updateFacePick(); },
+    };
+  };
   page.appendChild(grid);
   var more = el('button', 'btn quiet', tr('app.show_more'));
   more.hidden = true;
@@ -6431,8 +6551,24 @@ function loadPersonPage() {
       bar.appendChild(all);
     }
     page.appendChild(bar);
-    var grid = el('div', 'faces');
+    var grid = el('div', 'faces has-drag');
     grid.id = 'pp-grid';
+    grid.dragSite = function () {
+      if (!pp.picking) return null;
+      var items = pp.faces.filter(faceKey);
+      var cardOf = function (x) { return document.querySelector('#pp-grid .face[data-key="' + faceKey(x) + '"]'); };
+      return {
+        sel: '.face', items: items,
+        itemOf: function (tile) { return items.filter(function (x) { return faceKey(x) === tile.dataset.key; })[0]; },
+        get: function (x) { return !!pp.picked[faceKey(x)]; },
+        set: function (x, on) {
+          if (on) pp.picked[faceKey(x)] = x; else delete pp.picked[faceKey(x)];
+          var c = cardOf(x);
+          if (c) c.classList.toggle('sel', on);
+        },
+        done: function (x) { pp.anchor = faceKey(x); updatePersonPick(); },
+      };
+    };
     page.appendChild(grid);
     var more = el('button', 'btn quiet', tr('app.show_more'));
     more.hidden = true;
@@ -6669,101 +6805,6 @@ function personPickBar(tab) {
     button(tr(p.species ? 'pet.not_a.pet' : 'facecheck.not_face'), 'quiet', function (faces, ids) { personAction('not-face', ids); });
   }
   return bar;
-}
-
-// Click and drag across the faces of a person's page while selecting (mouse or
-// pen), as in the timeline: the faces from the one pressed to the one under the
-// pointer take the opposite of the first one's state, faces the drag leaves
-// get back what they had, and the page scrolls along near its top or bottom edge.
-var ppDrag = null;
-
-function ppFaceIndex(card) {
-  var key = card && card.dataset.key;
-  for (var i = 0; i < pp.faces.length; i++) if (faceKey(pp.faces[i]) === key) return i;
-  return -1;
-}
-
-$('page').addEventListener('pointerdown', function (ev) {
-  if (!pp.picking || ev.button !== 0 || ev.shiftKey || ev.pointerType === 'touch') return;
-  var crop = ev.target.closest('#pp-grid .face .crop');
-  if (!crop) return;
-  var i = ppFaceIndex(crop.parentNode);
-  if (i < 0 || !faceKey(pp.faces[i])) return;
-  ppDrag = {
-    start: i, end: i, on: !pp.picked[faceKey(pp.faces[i])], before: Object.assign({}, pp.picked),
-    pointer: ev.pointerId, x: ev.clientX, y: ev.clientY, moved: false, scrolling: false, done: false,
-  };
-});
-document.addEventListener('pointermove', function (ev) {
-  if (!ppDrag || ppDrag.done || ev.pointerId !== ppDrag.pointer) return;
-  ppDrag.x = ev.clientX;
-  ppDrag.y = ev.clientY;
-  ppDragUpdate();
-  if (ppDrag && ppDrag.moved && !ppDrag.scrolling) { ppDrag.scrolling = true; requestAnimationFrame(ppDragScroll); }
-});
-document.addEventListener('pointerup', ppDragEnd);
-document.addEventListener('pointercancel', ppDragEnd);
-// The faces are links with pictures: no dragging them out of the page while selecting.
-$('page').addEventListener('dragstart', function (ev) {
-  if (pp.picking && ev.target.closest && ev.target.closest('#pp-grid .face')) ev.preventDefault();
-});
-// The click that ends a drag selects nothing more.
-$('page').addEventListener('click', function (ev) {
-  if (ppDrag && ppDrag.moved) { ev.stopImmediatePropagation(); ev.preventDefault(); }
-}, true);
-
-function ppDragUpdate() {
-  if (!pp.picking) { ppDrag = null; return; }
-  var hit = document.elementFromPoint(ppDrag.x, ppDrag.y);
-  var card = hit && hit.closest('#pp-grid .face');
-  if (!card) return;
-  var i = ppFaceIndex(card);
-  if (i < 0 || i === ppDrag.end) return; // also: still on the first face, no drag yet
-  if (!ppDrag.moved) {
-    ppDrag.moved = true;
-    // Keeps getting the pointer when it leaves the window.
-    try { $('page').setPointerCapture(ppDrag.pointer); } catch (e) {}
-    $('pp-grid').classList.add('dragging');
-  }
-  var lo = Math.min(ppDrag.start, i), hi = Math.max(ppDrag.start, i);
-  var from = Math.min(lo, ppDrag.start, ppDrag.end), to = Math.max(hi, ppDrag.start, ppDrag.end);
-  for (var k = from; k <= to; k++) {
-    var key = faceKey(pp.faces[k]);
-    if (!key) continue;
-    var on = k >= lo && k <= hi ? ppDrag.on : !!ppDrag.before[key];
-    if (on) pp.picked[key] = pp.faces[k]; else delete pp.picked[key];
-    var c = document.querySelector('#pp-grid .face[data-key="' + key + '"]');
-    if (c) c.classList.toggle('sel', on);
-  }
-  ppDrag.end = i;
-  pp.anchor = faceKey(pp.faces[i]);
-  updatePersonPick();
-}
-
-// Scrolls while the pointer is near the top or bottom edge, faster the closer it is.
-function ppDragScroll() {
-  if (!ppDrag || ppDrag.done) return;
-  var scroller = $('scroller'), r = scroller.getBoundingClientRect(), v = 0;
-  if (ppDrag.y < r.top + DRAG_EDGE) v = -(r.top + DRAG_EDGE - ppDrag.y);
-  else if (ppDrag.y > r.bottom - DRAG_EDGE) v = ppDrag.y - (r.bottom - DRAG_EDGE);
-  if (!v) { ppDrag.scrolling = false; return; }
-  var top = scroller.scrollTop;
-  scroller.scrollTop = top + Math.max(-40, Math.min(40, v / 2));
-  if (scroller.scrollTop === top) { ppDrag.scrolling = false; return; }
-  ppDragUpdate();
-  if (ppDrag) requestAnimationFrame(ppDragScroll);
-}
-
-function ppDragEnd(ev) {
-  if (!ppDrag || ev.pointerId !== ppDrag.pointer) return;
-  var was = ppDrag;
-  if (!was.moved) { ppDrag = null; return; }
-  // Kept until after the click that follows, so that click is swallowed above.
-  was.done = true;
-  setTimeout(function () { if (ppDrag === was) ppDrag = null; }, 0);
-  try { $('page').releasePointerCapture(was.pointer); } catch (e) {}
-  var grid = $('pp-grid');
-  if (grid) grid.classList.remove('dragging');
 }
 
 function clearPersonPicks() {
@@ -7081,7 +7122,19 @@ var SINGLES_PAGE = 60;
 
 function singlesSection() {
   var st = { faces: [], picked: {}, anchor: null, shown: 0, total: 0, count: 0, tiles: {} };
-  var section = el('section', 'singles');
+  var section = el('section', 'singles has-drag');
+  section.dragSite = function () {
+    return {
+      sel: '.cface', items: st.faces,
+      itemOf: function (tile) { return tile.face; },
+      get: function (x) { return !!st.picked[x.id]; },
+      set: function (x, on) {
+        if (on) st.picked[x.id] = true; else delete st.picked[x.id];
+        if (st.tiles[x.id]) st.tiles[x.id].classList.toggle('sel', on);
+      },
+      done: function (x) { st.anchor = x.id; update(); },
+    };
+  };
   section.hidden = true;
   var head = el('h3');
   var hint = el('p', 'sub', tr('unnamed.singles_hint'));
@@ -7160,6 +7213,7 @@ function singlesSection() {
       }
       update();
     };
+    t.face = face;
     st.tiles[face.id] = t;
     return t;
   };
@@ -7282,7 +7336,20 @@ function moreClusters(box, more) {
 }
 
 function clusterCard(c) {
-  var card = el('div', 'cluster');
+  var card = el('div', 'cluster has-drag');
+  card.dragSite = function () {
+    if (!card.picking) return null;
+    return {
+      sel: '.cface', items: faces,
+      itemOf: function (tile) { return tile.face; },
+      get: function (x) { return !!card.picked[x.id]; },
+      set: function (x, on) {
+        if (on) card.picked[x.id] = true; else delete card.picked[x.id];
+        if (tiles[x.id]) tiles[x.id].classList.toggle('sel', on);
+      },
+      done: function (x) { card.anchor = x.id; update(); },
+    };
+  };
   card.cluster = c;
   card.picked = {};
   card.picking = false;
