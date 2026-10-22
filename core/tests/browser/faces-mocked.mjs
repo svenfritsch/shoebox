@@ -184,7 +184,7 @@ await test('a single face named for someone the list has (Name button)', await o
   await namedThenGrouped(p, lib, async () => {
     await bar.locator('.pfield input').fill('Olga Listed');
     await bar.locator('.pfield input').press('Escape'); // the list folds away
-    await bar.locator(':scope > button.btn:not(.quiet)').click();
+    await bar.locator('[data-act="name"]').click();
     await posted(lib, /^\/faces\/assign$/);
   });
   check(s.olga.faces === 5, `Olga has ${s.olga.faces} faces, expected 4 + 1`);
@@ -216,7 +216,7 @@ await test('a long card adds its faces as they are scrolled to, its tiles stay a
   check(!(await k.locator('.grow-end').count()), 'no end marker once all are in');
 
   const marked = () => k.evaluate((c) => [...c.querySelectorAll('.cfaces .cface')].filter((f) => f.dataset.testMark != null).length);
-  await k.locator('.cbar button', { hasText: await tr(p, 'facecheck.select') }).click();
+  await k.locator('.cbar [data-act="pick"]').click();
   await settle(p, lib);
   check((await k.getAttribute('class')).includes('picking'), 'Select is on');
   check((await marked()) === 40, `after Select ${await marked()} of the 40 marked tiles are left`);

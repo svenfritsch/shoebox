@@ -168,6 +168,8 @@ body.selecting #sizer { -webkit-user-select: none; user-select: none; }
 .selbar {
   position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 15;
   display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 16px; border-radius: 14px;
+  /* left: 50% would squeeze the bar into half the window: as wide as it needs, up to the window */
+  width: max-content; max-width: calc(100vw - 24px);
   background: var(--panel); border: 1px solid var(--line); box-shadow: 0 6px 30px rgba(0,0,0,.2); white-space: nowrap;
 }
 .btn { padding: 7px 14px; border-radius: 9px; border: 0; background: var(--accent); color: #fff; font-weight: 600; }
@@ -180,6 +182,20 @@ body.selecting #sizer { -webkit-user-select: none; user-select: none; }
 .btn .ficon, .btn.with-icon .ficon { margin-right: 0; }
 .btn.reveal .ficon svg { width: 16px; height: 16px; }
 .btn:disabled { opacity: .5; cursor: default; }
+/* The face actions (Unnamed cards, the singles bar, the photo's face panel) are icon buttons;
+   their quick label (tip.js) names the action and says what it does. With nothing ticked yet
+   they are dimmed with aria-disabled, so that the label still shows. */
+.abtn {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; padding: 0; border: 0; border-radius: 9px; background: var(--line); color: var(--fg); font-size: 20px;
+}
+.abtn svg { width: 20px; height: 20px; }
+.abtn.primary { background: var(--accent); color: #fff; }
+.abtn.active { background: var(--accent); color: #fff; }
+.abtn[aria-disabled="true"] { opacity: .45; cursor: default; }
+.abtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.lb-panel .abtn { background: rgba(255,255,255,.15); color: #eee; }
+@media (pointer: coarse) { .abtn { width: 44px; height: 44px; } }
 
 /* The timeline's selection bar: what belongs to the selection on the left
    (close, count, Select all), then icon tools in groups. A label shows at once
@@ -196,6 +212,9 @@ body.selecting #sizer { -webkit-user-select: none; user-select: none; }
 .selbar.tools .ib[aria-disabled="true"] svg { opacity: .4; }
 .selbar.tools .ib.danger { color: #c63b2f; }
 .selbar.tools .ib.danger:hover:not([aria-disabled="true"]) { background: #c63b2f; color: #fff; }
+.selbar.tools .ib.ok { color: #2f8a3b; }
+.selbar.tools .ib.ok:hover:not([aria-disabled="true"]) { background: #2f8a3b; color: #fff; }
+.selbar.tools .btn { flex: none; }
 .selbar.tools button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* The quick label (tip.js) for every control with a data-tip. */
 #quick-tip {
@@ -209,7 +228,7 @@ body.selecting #sizer { -webkit-user-select: none; user-select: none; }
 #quick-tip.instant { transition: none; }
 @media (hover: none) { #quick-tip { display: none; } }
 .sel-count { padding: 0 6px 0 2px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.sel-count.hint { max-width: 16em; white-space: normal; line-height: 1.25; font-size: 13px; font-weight: 400; color: var(--muted); }
+.sel-count.hint { max-width: 22em; white-space: normal; line-height: 1.25; font-size: 13px; font-weight: 400; color: var(--muted); }
 .sel-all { flex: none; border: 0; border-radius: 8px; padding: 6px 8px; background: none; color: var(--accent); }
 .sel-all:hover:not(:disabled) { background: var(--line); }
 .sel-all:disabled { opacity: .5; cursor: default; }
@@ -283,6 +302,12 @@ body.selecting #sizer { -webkit-user-select: none; user-select: none; }
 @media (prefers-reduced-motion: reduce) { .regroup .tick { transition: none; } }
 @media (max-width: 600px) { .regroup { float: none; width: fit-content; margin: 0 0 6px auto; } }
 .page .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+/* A toolbar whose buttons stay in reach while a long list scrolls under it. */
+.page .toolbar.sticky { position: sticky; top: 0; z-index: 5; margin-top: -8px; padding: 8px 0; background: var(--bg); }
+/* Dragging across tiles selects them, not the page's text. */
+body.tile-drag { -webkit-user-select: none; user-select: none; }
+/* The rectangle dragged over tiles while selecting; it scrolls with the page. */
+.marquee { position: absolute; z-index: 12; pointer-events: none; border: 1px solid var(--accent); border-radius: 2px; background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .group { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 14px; background: var(--panel); }
 .group-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .group-head .label { font-weight: 600; flex: 1; }
@@ -500,6 +525,10 @@ body.selecting .sec .pick { display: inline; }
 .cluster .csugg b { font-weight: 600; }
 .cluster .crow { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
 .cluster .crow .pfield { flex: 1 1 200px; min-width: 150px; max-width: 360px; }
+/* The card's toolbar is one row at every card width: the name field takes what the icons leave. */
+.cluster .cbar { flex-wrap: nowrap; gap: 6px; }
+.cluster .cbar .pfield { flex: 1 1 0; min-width: 0; max-width: none; }
+.csize b { color: var(--fg); }
 .cluster .cbar { position: sticky; bottom: 0; z-index: 4; align-items: center; margin: 0 -4px -4px; padding: 8px 4px; background: var(--panel); border-top: 1px solid var(--line); border-radius: 0 0 10px 10px; }
 .cluster.open .cbar { bottom: calc(0px + env(safe-area-inset-bottom)); }
 
@@ -555,7 +584,8 @@ body.selecting .sec .pick { display: inline; }
 .lb-panel .pickhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
 .lb-panel .pickhead .link { background: none; border: 0; padding: 0; color: var(--accent); font-size: 13px; }
 .lb-panel .also-on { display: block; text-align: left; font-size: inherit; overflow-wrap: anywhere; }
-.lb-panel .pickacts { display: flex; gap: 6px; flex-wrap: wrap; }
+.lb-panel .pickacts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.lb-panel .pickacts .btn { margin-left: auto; }
 .lb-panel .ptools { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 .lb-panel .ptools .tool { width: 34px; height: 34px; padding: 0; border: 0; border-radius: 9px; background: rgba(255,255,255,.15); color: #eee; font-size: 19px; display: inline-flex; align-items: center; justify-content: center; }
 .lb-panel .ptools .tool:hover:not(:disabled) { background: rgba(255,255,255,.22); }

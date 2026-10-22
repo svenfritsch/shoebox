@@ -18,9 +18,7 @@ const wait = (ms = 600) => p.waitForTimeout(ms);
 // Until a toast has gone (it shows for 4 s) and the pictures on the page are loaded.
 const toastGone = () => p.waitForSelector('#toast', { state: 'hidden', timeout: 10000 });
 const imagesLoaded = () => p.waitForFunction(() => [...document.images].every((i) => i.complete), null, { timeout: 30000 });
-// A button by its label (core/i18n), not by its place: cards differ in which buttons they have.
 const { readFileSync, writeFileSync } = await import('node:fs');
-const SELECT = JSON.parse(readFileSync(new URL(`../../core/i18n/${lang}.json`, import.meta.url), 'utf8'))['facecheck.select'];
 
 const GROUPS = de ? { family: 'Familie', friends: 'Freunde', colleagues: 'Kollegen', pets: 'Haustiere' } : { family: 'Family', friends: 'Friends', colleagues: 'Colleagues', pets: 'Pets' };
 const nameEveryone = () => p.evaluate(async (g) => {
@@ -263,12 +261,12 @@ await p.click('#all'); await wait(800);
 // People and pets: the cards waiting for a name.
 await p.click('#nav-people'); await wait(1200);
 await p.locator('#page .link').first().click(); await wait(2500);
-await p.waitForSelector('#un-box .cluster button.btn.quiet', { timeout: 120000 }); await wait(1500);   // the cards come when the clusters are computed
+await p.waitForSelector('#un-box .cluster .cbar .abtn', { timeout: 120000 }); await wait(1500);   // the cards come when the clusters are computed
 await shot('people-unnamed');
 
 // "Select" on a card: tick some faces, then name, ignore or mark only those.
 const card = p.locator('#un-box .cluster').first();
-await card.locator('button.btn.quiet', { hasText: SELECT }).first().click(); await wait(500);
+await card.locator('.abtn[data-act="pick"]').click(); await wait(500);
 await card.locator('.cface').nth(1).click(); await card.locator('.cface').nth(3).click(); await wait(300);
 await card.locator('input[type=text]').fill('Mia'); await wait(300);
 await card.screenshot({ path: `${out}/faces-select.png` });
@@ -283,7 +281,7 @@ if (!(await p.locator('.pfaces:visible').count())) { await p.keyboard.press('i')
 await p.locator('.pfaces:visible .ptools button').nth(1).click(); await wait(500);
 await p.locator('.pfaces:visible .pface.pickable input').nth(0).check(); await p.locator('.pfaces:visible .pface.pickable input').nth(1).check(); await wait(500);
 await shot('info-select');
-await p.locator('.pfaces:visible .pickacts button').nth(2).click(); await wait(300);
+await p.locator('.pfaces:visible .pickacts .btn').click(); await wait(300);
 await p.keyboard.press('Escape'); await wait(300);
 await p.click('#all'); await wait(800);
 
