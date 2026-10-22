@@ -60,8 +60,10 @@ export function fakeLibrary() {
     return c;
   };
   // Someone with `faces` confirmed faces (their picture one of them), in `group`.
-  lib.person = (name, { faces = 3, group = null } = {}) => {
+  // `species`: a pet ('cat', 'dog' or 'pet').
+  lib.person = (name, { faces = 3, group = null, species = null } = {}) => {
     const p = { id: ++personSeq, name, group_id: group ? group.id : null, hidden: false, faces, photos: faces, suggested: 0, maybe: 0, cover: null, cover_manual: null };
+    if (species) p.species = species;
     if (faces) { p.cover = face().id; faceSeq += faces - 1; p.last_named = time; }
     lib.people.push(p);
     return p;
@@ -156,6 +158,16 @@ export function fakeLibrary() {
     '/event-pattern': () => ({ pattern: 'YYYY-MM Name' }),
     '/allow-trash': () => ({ allow: false, read_only: false }),
     '/trash': () => lib.trash,
+    // The search box (`people_api::search`, with no filter): who has the
+    // text in their name and photos, most first. No pets or groups to offer.
+    '/people/search': (q) => lib.people.filter((p) => p.photos && fold(p.name).includes(fold(q.get('q') || '')))
+      .sort((a, b) => b.photos - a.photos || (fold(a.name) < fold(b.name) ? -1 : 1)).slice(0, Number(q.get('limit') || 8))
+      .map((p) => ({ id: p.id, name: p.name, group_id: p.group_id, species: p.species || null, cover: p.cover, cover_manual: p.cover_manual, photos: p.photos })),
+    '/pets/search': () => [],
+    '/dates': () => [],
+    // What a typed search shows after a moment: no photos here.
+    '/timeline': () => ({ count: 0, ids: [], kinds: '', days: [], versions: '', live: [], tags: [], people: [], groups: [], favs: [], snips: [], est: [] }),
+    '/groups/search': () => [],
     '/clusters': (q) => {
       const cs = q.get('size') === 'large' ? large() : q.get('size') === 'small' ? small() : lib.clusters;
       const sorted = [...cs].sort((a, b) => b.faces.length - a.faces.length || a.id - b.id);

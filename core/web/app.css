@@ -417,8 +417,10 @@ body.tile-drag { -webkit-user-select: none; user-select: none; }
   background: var(--bg); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,.2); padding: 4px 0;
 }
 .suggest .head { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 6px 12px 2px; }
-.suggest .item { display: flex; width: 100%; gap: 8px; align-items: baseline; padding: 7px 12px; border: 0; background: none; color: var(--fg); text-align: left; font-size: 14px; }
-.suggest .item .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggest .item { display: flex; width: 100%; gap: 8px; align-items: center; padding: 7px 12px; border: 0; background: none; color: var(--fg); text-align: left; font-size: 14px; }
+/* The picture, the icon and the name on one middle line (not on the text's baseline). */
+.suggest .item .label { flex: 1; min-width: 0; display: flex; align-items: center; }
+.suggest .item .label .text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .suggest .item .count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .suggest .item:hover, .suggest .item.at { background: var(--panel); }
 .chip.more, .chip.clear { padding: 3px 10px; color: var(--accent); cursor: pointer; }

@@ -343,6 +343,28 @@ await test('leaving the Unnamed page while names wait asks for the grouping soon
   check(requests(lib.log, 0, '/clusters/left', 'POST').length === 1, 'leaving with names waiting tells the server once');
 }));
 
+// ---- the search box
+
+// A pet's row: picture, species icon and name on one middle line, as are a
+// text row's icon and words (not the picture on the text's baseline).
+await test('search suggestions: picture, icon and name of a row are centred on one line', await on('view=people', (lib) => {
+  lib.person('Spucky', { faces: 5, species: 'cat' });
+  lib.person('Spud Person', { faces: 2 });
+}, async (p, lib) => {
+  await p.locator('#search').fill('spu');
+  await settle(p, lib);
+  const rows = await p.locator('#suggest .item').evaluateAll((bs) => bs.map((b) => {
+    const mid = (e) => { const r = e.getBoundingClientRect(); return r.top + r.height / 2; };
+    return { text: b.textContent, parts: [...b.querySelectorAll('.avatar, .ic, .text, .count')].map((e) => [e.className, mid(e)]) };
+  }));
+  check(rows.length === 3, `expected Spucky, Spud Person and the text row, got ${JSON.stringify(rows.map((r) => r.text))}`);
+  check(rows[0].parts.length === 4 && rows[0].parts[0][0].includes('pet-cat'), `the pet's row has picture, icon, name and count: ${JSON.stringify(rows[0])}`);
+  for (const r of rows) {
+    const mids = r.parts.map((x) => x[1]);
+    check(Math.max(...mids) - Math.min(...mids) <= 1, `not on one middle line: ${JSON.stringify(r)}`);
+  }
+}));
+
 // ---- groups and people (the People page)
 
 const person = (p, x) => p.locator(`#page .person[data-id="${x.id}"]`);

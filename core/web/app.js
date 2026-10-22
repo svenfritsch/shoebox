@@ -1005,7 +1005,7 @@ function showSuggest(items, hint) {
     if (it.kind === 'date') label.appendChild(icon('date'));
     if (it.kind === 'folder') label.appendChild(folderIcon());
     if (it.kind === 'text' || it.kind === 'name') label.appendChild(icon(it.kind === 'text' ? 'scan' : 'draft'));
-    label.appendChild(document.createTextNode((it.kind === 'text' || it.kind === 'name' ? '“' : it.kind === 'fav' ? '♥ ' : it.kind === 'compare' ? '⇄ ' : (it.kind === 'pet' || it.kind === 'group' || it.kind === 'person' || it.kind === 'place' || it.kind === 'date') ? ''
+    label.appendChild(el('span', 'text', (it.kind === 'text' || it.kind === 'name' ? '“' : it.kind === 'fav' ? '♥ ' : it.kind === 'compare' ? '⇄ ' : (it.kind === 'pet' || it.kind === 'group' || it.kind === 'person' || it.kind === 'place' || it.kind === 'date') ? ''
         : it.kind === 'folder' ? '' : '# ') + it.label + (it.kind === 'text' || it.kind === 'name' ? '”' : '')));
     b.appendChild(label);
     b.appendChild(el('span', 'count', it.count === undefined ? '' : I18n.number(it.count)));
