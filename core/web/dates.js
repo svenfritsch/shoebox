@@ -256,12 +256,3 @@ function dateItems(rows) {
     return { kind: 'date', id: id, label: formatEstimate(r), count: r.count };
   });
 }
-
-// The rest of the filter, which the counts of the rows are made within.
-function datesWithin(f) {
-  return { tag: f.tags, manual: f.manual ? 1 : null, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null };
-}
-
-function suggestDates(needle, prefix, within) {
-  return api(LIBAPI + '/dates' + query(Object.assign({ q: needle, prefix: prefix ? 1 : null }, within))).catch(function () { return []; });
-}

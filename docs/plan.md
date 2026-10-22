@@ -2057,3 +2057,84 @@ the viewer and the timeline's rows stop what they no longer show
 (`dropPending`, `clearNode`, the viewer's warmed neighbours); a list that can
 be thousands long (all faces of a group) goes onto the page a part at a time
 as it is scrolled to (`growGrid`), and tiles are kept by id across redraws.
+
+Search (measured with `scripts/bench-search.py`: the library of
+`bench-people.py` plus 205 000 folder and own tags of 531 names, same VM; found
+on the real drive, where a letter's suggestions came seconds late). Every
+letter typed sent five suggestion requests (`/tags`, `/people/search`,
+`/pets/search`, `/dates`, `/groups/search`), none was called off, and the server
+ran each one under the shared connection, so the list for the last letter came
+after those of all the letters before; when the photos for the typed text came
+(300 ms), the page asked for the same five again (`applyFilter`). `/tags`
+counted every tag of every file (`browse::all_tags`, 220 ms) and
+`/people/search` read every file and every confirmed face (110 ms) for every
+letter, though only the text changed. Typing "longsea" (a letter every 120 ms):
+the list came 1.8 to 2.1 s after the last letter. Now: the page asks for the
+suggestions once the letters pause for 150 ms (`suggestSoon`) and only again
+after the photos came when the search itself changed (`sugg.key`), and calls
+off (`AbortController`) what an older text asked for, the list and the
+timeline (`state.loadCtrl`); the server takes these requests (and those of the
+common timeline's search, `Hub::searches`) one at a time in the order asked
+(`queued`, `in_turn`: a turn is taken before the work goes to a blocking
+thread, so a request the browser called off while it waits is dropped and never
+touches the database; one that has started runs to its end); it keeps the tags
+with their counts per index version (`App::all_tags`; own tags change only
+through `change`, which moves the version) and the photos per person for the
+last filter (`PersonPhotos`, with the people view, which is read again after
+every decision). After: `/tags` 1 ms and `/people/search` 2 ms (the first
+after a change to the index 250 ms and 110 ms; the very first people search
+loads the people view, about 1 s, which the sidebar's `/api/people` has
+usually done already), the others 1 to 23 ms; ten uncached people searches
+of which nine are called off after 50 ms: the last after 0.27 s (1.1 to 1.6 s
+before); the list comes 160 ms after the last letter (the pause and a few
+milliseconds), the photos 310 ms. The browser test `the search box asks once
+typing pauses ...` (`faces-mocked.mjs`) checks the requests on a fake clock.
+
+One request (decided after that): the five came back in one `Promise.all`,
+so the page never showed one before the others, and the server ran them one
+after another anyway, each working out again which photos the filter shows.
+Now the page asks `GET /api/lib/<id>/suggest?q=…&<filter>` (over all drives
+`/api/all/suggest`, which replaces four requests, one of them per drive) and
+gets `{tags, people, pets, groups, dates}`. The sections are built by the
+same functions as `/api/tags?own=1`, `/api/people/search`, `/api/pets/search`,
+`/api/groups/search` and `/api/dates` (`tag_hits`, `person_hits`,
+`pet_hits`, `group_hits`, `dates::suggest`), which stay for the API tests and
+the tag fields; the API tests check that each section equals that endpoint's
+reply. The photos the filter shows are worked out once. The server reads the
+search box's prefixes (`Typed` in `serve.rs`, as `DATE_PREFIX` and `PREFIX`
+in the page): `date:`/`datum:` answers only `dates` (the other keys empty),
+`text:`/`name:` all empty; the page still knows them for what it does itself
+(a term chip on Enter, the hint under the list) and does not ask for `text:`
+and `name:`, which it offers as typed. A section of people, pets or groups
+that cannot be read is empty (and logged), not the whole list. Every section
+now counts within the whole search: before, dates left out groups, text and
+file-name terms, and the other sections left out dates and "needs a date";
+`/api/tags` now also narrows by type, heart and date. Over all drives the
+merged people are kept on the server (`AllPeopleKept`, per drive the index
+version and the people view, and the filter) instead of 30 s in the page,
+pets are counted within the whole filter (before: only `pet=`), hidden people
+are left out as on one drive, and the text row is no longer listed twice. Measured
+(`bench-search.py`; nothing kept, another filter each time): without a filter
+`/suggest` 4.5 ms (the date rows; the set of shown photos is built only when
+the filter narrows), with a person in the search 200 ms against 390 ms for
+the five requests, with a tag 98 against 107 ms (there the counting of each
+person's photos is most of it). The text row's number came from a second request,
+`/count?text=…` (and so for `text:` and `name:`), sent once the list was on
+the page and counted without date chips; now `/suggest` counts it (`text`,
+`name`: `{term, count}` or null, as `/count` with the term added): for plain
+text of two letters or more, and alone for `text:` and `name:`, which now ask
+`/suggest` too (`/count` stays for the API tests). A row whose term finds
+nothing is left out; after `text:` or `name:` a line says so
+(`search.text_none`, `search.name_none`, or `search.text_unread` while no text
+has been read, when the plain search keeps its greyed row). Tests: `core/tests/suggest.rs`
+(the reply's keys, each section with its limits and what it leaves out, the
+prefixes, every number equal to the list's count once picked within every
+kind of chip, kept counts following a tag, a name, a hidden person), each
+section against its own endpoint in `people.rs`, `dates.rs`,
+`text_search.rs` and `multi.rs` (all drives); in the browser on a fake clock
+(`faces-mocked.mjs`): nothing asked 149 ms after a letter, the suggestions at
+150 ms and the photos at 300 ms, requests an older text asked for called off
+(suggestions and photos), Escape and leaving the box calling off what is on
+its way, the text row and prefixes; against the real server
+(`faces-e2e.mjs`): one `/suggest` per pause and a list that is what the
+server answers.

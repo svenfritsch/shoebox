@@ -173,6 +173,8 @@
   "search.name_prefixed_hint": "Nur Dateinamen. Enter fügt einen Chip hinzu.",
   "search.prefix_empty_text": "Tippe ein Wort, das im Text von Fotos stehen soll",
   "search.prefix_empty_name": "Tippe einen Teil eines Dateinamens",
+  "search.text_none": "Kein Foto hier hat „{term}“ im erkannten Text.",
+  "search.name_none": "Kein Foto hier hat „{term}“ im Dateinamen.",
   "search.text_unread": "Es wurde noch kein Text gelesen. Installiere die Erweiterung „Text“ und drücke „Text erkennen“ in der Zentrale.",
   "chip.text_hint": "Erkannter Text: {term}",
   "chip.name_hint": "Dateiname: {term}",
