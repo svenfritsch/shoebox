@@ -37,6 +37,10 @@ h4{margin:0 0 14px;font-size:17px}
 .sp.B span,.sp.C span{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center}
 .sp.B span{background:rgba(22,22,22,.72);box-shadow:0 0 0 1.5px var(--pet);margin-bottom:-15px;position:relative;z-index:2;backdrop-filter:blur(4px)}
 .sp.C span{background:rgba(90,200,250,.16);box-shadow:0 0 0 1.5px rgba(90,200,250,.6);margin-bottom:6px}
+.corner{position:relative;width:150px;height:150px}
+.corner .av{width:150px;height:150px}
+.corner span{position:absolute;right:3px;bottom:3px;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(22,22,22,.78);box-shadow:0 0 0 1.5px var(--pet);color:var(--pet);backdrop-filter:blur(4px)}
+.corner svg{width:24px;height:24px}
 .sp.A svg{width:26px;height:26px}
 .sp.B svg,.sp.C svg{width:22px;height:22px}
 .cap{color:var(--muted);font-size:13px;margin:0 0 10px}
@@ -92,3 +96,9 @@ rows = [
 ]
 hdr = '<div class="h">Emoji today</div><div class="h">Where</div><div class="h">Icon</div><div class="h">Options</div>'
 open('options.html', 'w').write(page('<div class="card"><div class="table">%s%s</div></div>' % (hdr, ''.join(rows)), 1100))
+
+def grid_corner():
+    cells = ''.join('<div class="pet"><div class="corner"><div class="av" style="background-image:url(pet%d.jpg)"></div><span>%s</span></div></div>' % (i, svg(CAT)) for i in range(8))
+    cells += '<div class="pet"><div class="more">+2</div></div>'
+    return '<div class="card"><h4>10 pets</h4><div class="grid">%s</div></div>' % cells
+open('grid-D.html', 'w').write(page(grid_corner(), 760))
