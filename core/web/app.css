@@ -292,6 +292,8 @@ body.selecting #sizer { -webkit-user-select: none; user-select: none; }
 .page .toolbar.sticky { position: sticky; top: 0; z-index: 5; margin-top: -8px; padding: 8px 0; background: var(--bg); }
 /* Dragging across tiles selects them, not the page's text. */
 body.tile-drag { -webkit-user-select: none; user-select: none; }
+/* The rectangle dragged over tiles while selecting; it scrolls with the page. */
+.marquee { position: absolute; z-index: 12; pointer-events: none; border: 1px solid var(--accent); border-radius: 2px; background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .group { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 14px; background: var(--panel); }
 .group-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .group-head .label { font-weight: 600; flex: 1; }
