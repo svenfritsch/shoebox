@@ -2057,3 +2057,35 @@ the viewer and the timeline's rows stop what they no longer show
 (`dropPending`, `clearNode`, the viewer's warmed neighbours); a list that can
 be thousands long (all faces of a group) goes onto the page a part at a time
 as it is scrolled to (`growGrid`), and tiles are kept by id across redraws.
+
+Search (measured with `scripts/bench-search.py`: the library of
+`bench-people.py` plus 205 000 folder and own tags of 531 names, same VM; found
+on the real drive, where a letter's suggestions came seconds late). Every
+letter typed sent five suggestion requests (`/tags`, `/people/search`,
+`/pets/search`, `/dates`, `/groups/search`), none was called off, and the server
+ran each one under the shared connection, so the list for the last letter came
+after those of all the letters before; when the photos for the typed text came
+(300 ms), the page asked for the same five again (`applyFilter`). `/tags`
+counted every tag of every file (`browse::all_tags`, 220 ms) and
+`/people/search` read every file and every confirmed face (110 ms) for every
+letter, though only the text changed. Typing "longsea" (a letter every 120 ms):
+the list came 1.8 to 2.1 s after the last letter. Now: the page asks for the
+suggestions once the letters pause for 150 ms (`suggestSoon`) and only again
+after the photos came when the search itself changed (`sugg.key`), and calls
+off (`AbortController`) what an older text asked for, the list and the
+timeline (`state.loadCtrl`); the server takes these requests (and those of the
+common timeline's search, `Hub::searches`) one at a time in the order asked
+(`queued`, `in_turn`: a turn is taken before the work goes to a blocking
+thread, so a request the browser called off while it waits is dropped and never
+touches the database; one that has started runs to its end); it keeps the tags
+with their counts per index version (`App::all_tags`; own tags change only
+through `change`, which moves the version) and the photos per person for the
+last filter (`PersonPhotos`, with the people view, which is read again after
+every decision). After: `/tags` 1 ms and `/people/search` 2 ms (the first
+after a change to the index 250 ms and 110 ms; the very first people search
+loads the people view, about 1 s, which the sidebar's `/api/people` has
+usually done already), the others 1 to 23 ms; ten uncached people searches
+of which nine are called off after 50 ms: the last after 0.27 s (1.1 to 1.6 s
+before); the list comes 160 ms after the last letter (the pause and a few
+milliseconds), the photos 310 ms. The browser test `the search box asks once
+typing pauses ...` (`faces-mocked.mjs`) checks the requests on a fake clock.

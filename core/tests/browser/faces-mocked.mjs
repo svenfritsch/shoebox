@@ -1,7 +1,7 @@
 // The Unnamed page, groups and the people list against a fake API
 // (fake-api.mjs) on a fake clock: which requests the page makes after each
 // action and when, and what the sidebar shows from the replies (PRs #142 and
-// #143). No shoebox is needed: the page is core/web as it is on disk.
+// #143); the search box's requests while someone types. No shoebox is needed: the page is core/web as it is on disk.
 //
 //   node core/tests/browser/faces-mocked.mjs     (ONLY=text: only those tests)
 //
@@ -11,7 +11,7 @@
 // server tells the page of each step by its event stream; here the test does,
 // by calling the page's own `loadInfo` (`tell`), as the stream's event does.
 import { browser, check, until, tr, test, finish, requests, noListRequests, clusterRounds, sidebarIs, groupNames, menu, typeName, face, card, single, nameCard } from './faces-common.mjs';
-import { fakeLibrary, ORIGIN } from './fake-api.mjs';
+import { fakeLibrary, ORIGIN, LIB } from './fake-api.mjs';
 
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 1400 } });
 await ctx.addInitScript(() => { try { localStorage.setItem('shoebox.lang', 'en'); } catch (e) {} });
@@ -484,6 +484,45 @@ await test('a failed naming shows the error and was sent once', await on('view=p
   await held[0].fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'down' }) });
   await until('the error dialog', async () => (await p.locator('#modal-title').textContent()) === (await tr(p, 'app.failed')));
   check(held.length === 1, `the naming was sent ${held.length} times`);
+}));
+
+// ---- the search box
+
+// Typing asks for the suggestions once the letters pause (150 ms) and for the
+// photos after 300 ms. Every one of these waits for the drive's one
+// connection, so what was asked for an earlier text is called off when a newer
+// one is asked for (see "Search" under Performance in docs/plan.md).
+await test('the search box asks once typing pauses and calls off what a newer text replaces', await on('', (lib) => lib.person('Longo Search'), async (p, lib) => {
+  const from = lib.log.length;
+  const asked = (path) => lib.log.slice(from).filter((e) => e.path === path).map((e) => e.query.get('q') || '');
+  const calledOff = [];
+  p.on('requestfailed', (r) => { const u = new URL(r.url()); calledOff.push(u.pathname.slice(LIB.length) + '?q=' + (u.searchParams.get('q') || '')); });
+  lib.hold = /^\/(tags|people\/search|pets\/search|groups\/search|dates)$/;
+  // The page's time stands still but where the test moves it (the waits below take real time).
+  await p.clock.pauseAt(await p.evaluate(() => Date.now()) + 1000);
+  await p.focus('#search'); // the list for an empty box, at once
+  for (const ch of 'lon') {
+    await p.keyboard.type(ch);
+    await p.clock.runFor(100);
+  }
+  check(asked('/people/search').join() === '', `asked while the letters came 100 ms apart: [${asked('/people/search')}]`);
+  await p.clock.runFor(100);
+  const each = ['/tags', '/people/search', '/pets/search', '/groups/search', '/dates'];
+  await until('the suggestions for "lon"', () => each.every((path) => asked(path).includes('lon')));
+  for (const path of each) check(asked(path).join() === ',lon', `${path} asked for [${asked(path)}], expected once for "" (the box entered) and once for "lon"`);
+  check(!asked('/timeline').length, 'the photos were asked for before 300 ms without a letter');
+  // Another letter while the answers for "lon" wait: they are called off.
+  await p.keyboard.type('g');
+  await p.clock.runFor(200);
+  await until('the suggestions for "long"', () => each.every((path) => asked(path).includes('long')));
+  await until('the requests for "" and "lon" called off', () => ['/tags', '/people/search', '/dates'].every((path) => calledOff.includes(path + '?q=lon') && calledOff.includes(path + '?q=')));
+  lib.release();
+  await settle(p, lib);
+  for (const path of each) check(asked(path).join() === ',lon,long', `${path} asked for [${asked(path)}], expected "", "lon", "long" once each`);
+  check(asked('/timeline').join() === 'long', `the photos asked for [${asked('/timeline')}], expected once for "long"`);
+  check(!calledOff.some((r) => r.endsWith('?q=long')), `what "long" asked for was called off: ${calledOff}`);
+  const shown = await p.locator('#suggest .item .label').allTextContents();
+  check(shown.includes('Longo Search'), `the list shows [${shown}]`);
 }));
 
 await finish();

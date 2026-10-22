@@ -95,6 +95,7 @@ var state = {
   open: -1,          // index of the item in the lightbox
   indexVersion: null,
   loadSeq: 0,
+  loadCtrl: null,    // stops the timeline request a newer one replaces
   reveal: null,      // label of "show in the file manager"; set only on the shoebox computer
 };
 
@@ -302,8 +303,9 @@ function applyFilter() {
   $('search').value = state.filter.q;
   renderChips();
   markTypes();
-  // Still typing: offer what narrows the new search down.
-  if (document.activeElement === $('search')) suggest($('search').value);
+  // Still typing: offer what narrows the new search down (not again when only
+  // the typed text became the search: the list for it is there or on its way).
+  if (document.activeElement === $('search') && suggestKey($('search').value) !== sugg.key) suggest($('search').value);
   markActiveFolder();
   closeSidebarOnPhone();
   var view = state.filter.view;
@@ -644,7 +646,35 @@ $('lb-fav').onclick = toggleFavoriteOpen;
 // list below the box offers tags (counted within the current search) and
 // folders, and picking one adds it to the search as a chip.
 var searchTimer = null;
-var sugg = { items: [], at: -1, seq: 0 };
+// `ctrl` stops the requests of the list shown before (see suggestSoon); `key`
+// is what the list shown or on its way is for (suggestKey).
+var sugg = { items: [], at: -1, seq: 0, timer: null, ctrl: null, key: null };
+
+// What a list of suggestions depends on: the text typed and the search but
+// its own text.
+function suggestKey(text) {
+  return text + '\n' + JSON.stringify(Object.assign({}, state.filter, { q: '' }));
+}
+
+// While someone types, the list is asked for once they pause (SUGGEST_PAUSE),
+// and what was asked for the letters before is called off: every suggestion
+// request waits for the drive's one connection, so a request nobody waits for
+// any more holds up the one that is wanted (see "Search" under Performance in
+// docs/plan.md).
+var SUGGEST_PAUSE = 150;
+function suggestSoon(v) {
+  clearTimeout(sugg.timer);
+  stopSuggest();
+  sugg.timer = setTimeout(function () { suggest(v); }, SUGGEST_PAUSE);
+}
+
+// Calls off the suggestion requests still on their way (a newer list replaces them).
+function stopSuggest() {
+  ++sugg.seq;
+  sugg.key = null;
+  if (sugg.ctrl) sugg.ctrl.abort();
+  sugg.ctrl = null;
+}
 
 $('search').addEventListener('input', function () {
   clearTimeout(searchTimer);
@@ -652,10 +682,10 @@ $('search').addEventListener('input', function () {
   // On the Locations page typing looks for a place; the text only becomes a search with Enter.
   if (state.filter.view === 'locations' && geo.on) { suggest(v); return; }
   // `date:` looks for a date; what follows is not a text search.
-  if (DATE_PREFIX.test(v)) { suggest(v); return; }
+  if (DATE_PREFIX.test(v)) { suggestSoon(v); return; }
   // `text:` and `name:` are a term of their own: nothing is searched until Enter or a pick.
   if (!prefixOf(v)) searchTimer = setTimeout(function () { setFilter(withFilter({ q: v.trim() })); }, 300);
-  suggest(v);
+  suggestSoon(v);
 });
 $('search').addEventListener('focus', function () {
   // A search shows another list: with photos selected, ask once when the box is
@@ -821,7 +851,11 @@ function compareSuggestion(needle, f) {
 }
 
 function suggest(text) {
-  var seq = ++sugg.seq, f = state.filter;
+  clearTimeout(sugg.timer);
+  stopSuggest();
+  sugg.key = suggestKey(text);
+  var seq = sugg.seq, f = state.filter;
+  var ctrl = sugg.ctrl = new AbortController(), opts = { signal: ctrl.signal };
   // On the Locations page the search finds places: picking one shows it.
   if (f.view === 'locations' && geo.on) { showSuggest(placeSuggestions(text.trim(), f)); return; }
   if (f.view) { closeSuggest(); return; }
@@ -832,21 +866,21 @@ function suggest(text) {
   if (typed) {
     if (isAll()) { closeSuggest(); return; }
     var after = typed[1].trim();
-    suggestDates(after, true, datesWithin(f)).then(function (rows) {
+    suggestDates(after, true, datesWithin(f), opts).then(function (rows) {
       if (seq !== sugg.seq) return;
       showSuggest(dateItems(rows), after && rows.length ? '' : tr('dates.hint_prefix'));
     });
     return;
   }
-  if (isAll()) { suggestAll(text, seq); return; }
+  if (isAll()) { suggestAll(text, seq, opts); return; }
   var needle = text.trim();
   var within = { q: needle, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place };
   Promise.all([
-    api(LIBAPI + '/tags' + query(Object.assign({ limit: 8, own: 1 }, within))),
-    api(LIBAPI + '/people/search' + query(Object.assign({ limit: 6 }, within))).catch(function () { return []; }),
-    api(LIBAPI + '/pets/search' + query(within)).catch(function () { return []; }),
-    suggestDates(needle, false, datesWithin(f)),
-    api(LIBAPI + '/groups/search' + query(Object.assign({ limit: 4 }, within))).catch(function () { return []; }),
+    api(LIBAPI + '/tags' + query(Object.assign({ limit: 8, own: 1 }, within)), opts),
+    api(LIBAPI + '/people/search' + query(Object.assign({ limit: 6 }, within)), opts).catch(function () { return []; }),
+    api(LIBAPI + '/pets/search' + query(within), opts).catch(function () { return []; }),
+    suggestDates(needle, false, datesWithin(f), opts),
+    api(LIBAPI + '/groups/search' + query(Object.assign({ limit: 4 }, within)), opts).catch(function () { return []; }),
   ]).then(function (r) {
     if (seq !== sugg.seq) return;
     var items = compareSuggestion(needle, f).concat(favSuggestion(needle, f));
@@ -881,24 +915,24 @@ function suggest(text) {
 
 // Over all drives: tags and people by name (the drives share names, not ids).
 var allPeople = { at: 0, key: '', list: [] };
-function suggestAll(text, seq) {
+function suggestAll(text, seq, opts) {
   var needle = text.trim(), low = needle.toLowerCase(), f = state.filter;
   // The suggestions narrow with the filter, as on a single drive: counts are
   // the photos the list would show, and what would show nothing is left out.
   var within = { tag: f.tags, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null };
   var wkey = query(within);
   var people = Date.now() - allPeople.at < 30000 && allPeople.key === wkey ? Promise.resolve(allPeople.list)
-    : api('/api/all/people' + wkey).then(function (r) { allPeople = { at: Date.now(), key: wkey, list: r.people }; return r.people; });
+    : api('/api/all/people' + wkey, opts).then(function (r) { allPeople = { at: Date.now(), key: wkey, list: r.people }; return r.people; });
   // Pet terms mean the same on every drive: add up what the drives that take part answer.
   var pets = Promise.all(drives.allLibs.map(function (l) {
-    return api('/api/lib/' + l.id + '/pets/search' + query({ q: needle, pet: f.pets })).catch(function () { return []; });
+    return api('/api/lib/' + l.id + '/pets/search' + query({ q: needle, pet: f.pets }), opts).catch(function () { return []; });
   })).then(function (lists) {
     var sum = {};
     lists.forEach(function (list) { list.forEach(function (h) { sum[h.species] = (sum[h.species] || 0) + h.photos; }); });
     return Object.keys(sum).sort(function (a, b) { return sum[b] - sum[a]; }).map(function (s) { return { species: s, photos: sum[s] }; });
   });
-  var groups = api('/api/all/groups' + query(Object.assign({ q: needle }, within))).catch(function () { return []; });
-  Promise.all([api('/api/all/tags' + query(Object.assign({ q: needle, limit: 8, own: 1 }, within))), people.catch(function () { return []; }), pets, groups]).then(function (r) {
+  var groups = api('/api/all/groups' + query(Object.assign({ q: needle }, within)), opts).catch(function () { return []; });
+  Promise.all([api('/api/all/tags' + query(Object.assign({ q: needle, limit: 8, own: 1 }, within)), opts), people.catch(function () { return []; }), pets, groups]).then(function (r) {
     if (seq !== sugg.seq) return;
     var items = r[1].filter(function (p) { return f.people.indexOf(p.name) < 0 && (!low || p.name.toLowerCase().indexOf(low) >= 0); })
       .slice(0, 6).map(function (p) { return { kind: 'person', id: p.name, label: p.name, count: p.photos, person: { name: p.name, species: p.species } }; });
@@ -933,7 +967,7 @@ function fillCount(it, i, seq) {
   var f = state.filter;
   var p = { tag: f.tags, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place };
   p[it.kind] = (it.kind === 'text' ? f.texts : f.names).concat([it.id]);
-  api(LIBAPI + '/count' + query(p)).then(function (r) {
+  api(LIBAPI + '/count' + query(p), sugg.ctrl ? { signal: sugg.ctrl.signal } : {}).then(function (r) {
     if (seq !== sugg.seq) return;
     var c = $('suggest').querySelector('[data-i="' + i + '"] .count');
     if (c) c.textContent = I18n.number(r.count);
@@ -991,7 +1025,7 @@ function markSuggest() {
   });
 }
 
-function closeSuggest() { $('suggest').hidden = true; sugg.at = -1; }
+function closeSuggest() { clearTimeout(sugg.timer); stopSuggest(); $('suggest').hidden = true; sugg.at = -1; }
 
 function pickSuggest(it) {
   clearTimeout(searchTimer);
@@ -1262,10 +1296,14 @@ function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
 function loadTimeline(resetScroll) {
   var seq = ++state.loadSeq;
   var f = state.filter;
+  // A newer list replaces the one still on its way (typing in the search box asks for one per pause).
+  if (state.loadCtrl) state.loadCtrl.abort();
+  var ctrl = state.loadCtrl = new AbortController();
   var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null, compare: f.compare === 'different' ? 'different' : null, q: f.q })
     : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null, compare: f.compare === 'different' ? null : f.compare || null, q: f.q });
-  return api(url).then(function (data) {
+  return api(url, { signal: ctrl.signal }).then(function (data) {
     if (seq !== state.loadSeq) return;
+    state.loadCtrl = null;
     if (isAll()) allTimelineLoaded(data);
     state.anchor = null; // indices change with the new list
     var unnamed = !isAll() && (f.tags.some(function (id) { return !state.tagNames[id]; }) || f.people.some(function (id) { return !state.personNames[id]; }) || f.groups.some(function (id) { return !state.groupNames[id]; }));
@@ -1295,7 +1333,7 @@ function loadTimeline(resetScroll) {
     state.countFor = location.hash;
     showCount();
     $('empty').hidden = data.count > 0;
-  }).catch(function (e) { console.error(e); });
+  }).catch(function (e) { if (e.name !== 'AbortError') console.error(e); });
 }
 
 // Month groups over the (already sorted) items.

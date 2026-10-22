@@ -16,6 +16,11 @@
 // The event stream is refused (204), so the page follows the grouping by
 // asking for the status every 1.5 s (`watchClusters`), on the page's fake clock.
 //
+// The search box's requests (suggestions and the timeline) are answered from
+// the people and `lib.tags`; `lib.hold` (a pattern of paths) keeps the answers
+// of matching requests back until `lib.release()`, so a test can type while
+// they wait.
+//
 // A request the model does not know is answered 404 and kept in `lib.unknown`;
 // the test fails on it.
 import { readFileSync } from 'node:fs';
@@ -43,6 +48,9 @@ export function fakeLibrary() {
     log: [], // { method, path, query } relative to LIB
     unknown: [],
     open: 0, // requests being answered
+    tags: [], // { id, name, count, kind } for /tags
+    hold: null, // paths (relative to LIB) whose answers wait for `release`
+    held: [],
   };
   const face = () => {
     const id = ++faceSeq;
@@ -150,7 +158,14 @@ export function fakeLibrary() {
     '/people': () => peopleOut(),
     '/groups': () => groupsOut(),
     '/folders': () => [{ id: 1, parent: null, name: '', path: '', count: 200 }],
-    '/tags': () => [],
+    '/tags': (q) => lib.tags.filter((t) => fold(t.name).includes(fold(q.get('q') || ''))).slice(0, Number(q.get('limit') || 50)),
+    // The search box (no filter here): people by name, nothing else.
+    '/people/search': (q) => peopleOut().filter((p) => p.photos && fold(p.name).includes(fold(q.get('q') || ''))).slice(0, Number(q.get('limit') || 8))
+      .map((p) => ({ id: p.id, name: p.name, group_id: p.group_id, species: null, cover: p.cover, cover_manual: p.cover_manual, photos: p.photos })),
+    '/pets/search': () => [],
+    '/groups/search': () => [],
+    '/dates': () => [],
+    '/timeline': () => ({ count: 0, ids: [], kinds: '', days: [], versions: '', live: [], tags: [], people: [], groups: [], favs: [], est: [] }),
     '/places': () => [],
     '/event-pattern': () => ({ pattern: 'YYYY-MM Name' }),
     '/allow-trash': () => ({ allow: false, read_only: false }),
@@ -231,9 +246,17 @@ export function fakeLibrary() {
     lib.open++;
     try {
       await answer(route);
+    } catch (e) {
+      if (!route.held) throw e; // a held request the page called off cannot be answered any more
     } finally {
       lib.open--;
     }
+  };
+  lib.release = () => {
+    const held = lib.held;
+    lib.hold = null;
+    lib.held = [];
+    held.forEach((go) => go());
   };
   const answer = async (route) => {
     const req = route.request();
@@ -258,6 +281,10 @@ export function fakeLibrary() {
     if (rel === '/events') return route.fulfill({ status: 204 }); // no stream: the page asks for the status itself
     if (/^\/faces\/(manual\/)?\d+\/crop$/.test(rel)) return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
     lib.log.push({ method: req.method(), path: rel, query: u.searchParams });
+    if (lib.hold && lib.hold.test(rel)) {
+      route.held = true;
+      await new Promise((go) => lib.held.push(go));
+    }
     if (req.method() === 'GET') {
       if (get[rel]) return json(route, 200, get[rel](u.searchParams));
       for (const [re, fn] of getPattern) { const m = rel.match(re); if (m) { const [s, b] = fn(m); return json(route, s, b); } }

@@ -221,7 +221,7 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
         }
         slots.push(slot);
     }
-    let hub = Arc::new(Hub { slots, shared, roles: Mutex::new(None) });
+    let hub = Arc::new(Hub { slots, shared, roles: Mutex::new(None), searches: Arc::new(Semaphore::new(1)) });
 
     let ip = if opts.lan { IpAddr::V4(Ipv4Addr::UNSPECIFIED) } else { IpAddr::V4(Ipv4Addr::LOCALHOST) };
     let listener = std::net::TcpListener::bind((ip, opts.port))
@@ -380,6 +380,8 @@ struct Hub {
     /// What the drives hold in common, worked out at most every
     /// `ROLES_TTL` (it compares all hashes) and again after a role changed.
     roles: Mutex<Option<(Instant, Vec<multi::DriveRole>)>>,
+    /// The turn of the search box's requests over all drives (`in_turn`).
+    searches: Arc<Semaphore>,
 }
 
 const ROLES_TTL: Duration = Duration::from_secs(20);
@@ -417,6 +419,8 @@ impl App {
             snapshot: Mutex::new(None),
             duplicates: Mutex::new(None),
             copies: Mutex::new(None),
+            tags: Mutex::new(None),
+            person_photos: Mutex::new(None),
             generation: AtomicU64::new(0),
             info_counts: Mutex::new(None),
             info_faces: Mutex::new(None),
@@ -441,6 +445,7 @@ impl App {
             ffmpeg: shared.ffmpeg.clone(),
             reveal: shared.reveal.clone(),
             renders: Semaphore::new(shared.workers),
+            searches: Arc::new(Semaphore::new(1)),
             auth: shared.auth.clone(),
             export: Arc::new(export::Shared::default()),
         });
@@ -471,6 +476,11 @@ struct App {
     info_faces: Mutex<Option<(InfoFacesKey, Instant, Arc<(recognize::Overview, clusters::Overview)>)>>,
     /// Name and full hash of every file, for the common timeline (phase 18).
     copies: Mutex<Option<(IndexVersion, Arc<HashMap<i64, multi::CopyFacts>>)>>,
+    /// Every tag with its counts (`browse::all_tags`, about 0.2 s on 100 000
+    /// photos), which the search box asks for with every letter typed.
+    tags: Mutex<Option<(IndexVersion, Arc<Vec<browse::Tag>>)>>,
+    /// Photos per person within a filter, for the search box (`person_photos`).
+    person_photos: Mutex<Option<people_api::PersonPhotos>>,
     /// Faces, decisions, present files and clusters as the people pages see
     /// them (`people_view`), on a connection of their own: reading them reads
     /// every face, seconds on a library of 100 000 photos.
@@ -519,6 +529,8 @@ struct App {
     reveal: RevealFn,
     /// Limits concurrent decodes to the number of cores.
     renders: Semaphore,
+    /// The turn of the search box's requests and the timeline (`queued`).
+    searches: Arc<Semaphore>,
     auth: Arc<Auth>,
     /// The export that is running or ran last (phase 12).
     export: Arc<export::Shared>,
@@ -661,6 +673,21 @@ impl App {
         let c = Arc::new(multi::copy_facts(conn)?);
         *cache = Some((version, c.clone()));
         Ok(c)
+    }
+
+    /// Every tag with the number of present files carrying it (`browse::all_tags`).
+    /// Own tags change only through `change`, so the index version tells.
+    fn all_tags(&self, conn: &Connection) -> Result<Arc<Vec<browse::Tag>>> {
+        let version = self.version(conn)?;
+        let mut cache = self.tags.lock().unwrap();
+        if let Some((v, t)) = cache.as_ref()
+            && *v == version
+        {
+            return Ok(t.clone());
+        }
+        let t = Arc::new(browse::all_tags(conn)?);
+        *cache = Some((version, t.clone()));
+        Ok(t)
     }
 
     /// Ask for a search for moved files (at most one runs at a time).
@@ -1317,6 +1344,32 @@ async fn blocking<T: Send + 'static>(
         .map_err(|e| ApiError::Internal(anyhow::anyhow!("worker failed: {e}")))?
 }
 
+/// One at a time, in the order asked: what the search box and the timeline
+/// ask for while someone types. Every one of these reads under the one
+/// connection, so they wait for each other anyway; here they wait for their
+/// turn before they go to a blocking thread, so a request the browser calls
+/// off while it waits (a newer letter replaces it) is dropped with its turn
+/// and never touches the database. Work that has started runs to its end (a
+/// blocking thread cannot be stopped), so the turn goes with it.
+async fn in_turn<T: Send + 'static>(queue: &Arc<Semaphore>, f: impl FnOnce() -> ApiResult<T> + Send + 'static) -> ApiResult<T> {
+    let turn = queue.clone().acquire_owned().await.map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))?;
+    tokio::task::spawn_blocking(move || {
+        let _turn = turn;
+        f()
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("worker failed: {e}")))?
+}
+
+/// `blocking` in the turn of the library's searches (`in_turn`).
+async fn queued<T: Send + 'static>(
+    app: &Arc<App>,
+    f: impl FnOnce(&App) -> ApiResult<T> + Send + 'static,
+) -> ApiResult<T> {
+    let a = app.clone();
+    in_turn(&app.searches, move || f(&a)).await
+}
+
 // ---------------------------------------------------------------- auth
 
 struct Auth {
@@ -1524,7 +1577,7 @@ async fn all_people(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> 
     let apps = online_apps(&hub).await;
     let offline = hub.slots.iter().filter(|s| !apps.iter().any(|a| a.name == s.name)).map(|s| s.name.clone()).collect();
     let filter = AllFilter::of(&pairs, false)?;
-    let people = tokio::task::spawn_blocking(move || -> ApiResult<Vec<multi::MergedPerson>> {
+    let people = in_turn(&hub.searches, move || -> ApiResult<Vec<multi::MergedPerson>> {
         let mut per_drive = Vec::new();
         // By name (as `merge_people` matches them): the photos the list shows
         // of the person, a photo on two drives once (phase 18).
@@ -1575,8 +1628,7 @@ async fn all_people(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> 
         }
         Ok(people)
     })
-    .await
-    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+    .await?;
     Ok(Json(AllPeople { people, offline }))
 }
 
@@ -1595,7 +1647,7 @@ async fn all_groups(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> 
     let apps = online_apps(&hub).await;
     let filter = AllFilter::of(&pairs, false)?;
     let needle = param(&pairs, "q").map(db::tag_fold).unwrap_or_default();
-    let hits = tokio::task::spawn_blocking(move || -> ApiResult<Vec<AllGroup>> {
+    let hits = in_turn(&hub.searches, move || -> ApiResult<Vec<AllGroup>> {
         let mut by_name: Vec<(String, AllGroup)> = Vec::new();
         for app in &apps {
             let conn = app.conn.lock().unwrap();
@@ -1622,8 +1674,7 @@ async fn all_groups(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> 
         hits.sort_by(|a, b| b.photos.cmp(&a.photos).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
         Ok(hits)
     })
-    .await
-    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+    .await?;
     Ok(Json(hits))
 }
 
@@ -1982,7 +2033,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
         .map(|(a, &i)| LibraryRef { id: library_id(&a.name), name: a.name.clone(), volume: volume::placement(&a.root).map(|p| p.volume), role: o.drives[i].role })
         .collect();
 
-    let timeline = tokio::task::spawn_blocking(move || -> ApiResult<(Timeline, usize)> {
+    let timeline = in_turn(&hub.searches, move || -> ApiResult<(Timeline, usize)> {
         struct Row {
             sort: String,
             path: String,
@@ -2103,8 +2154,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
         }
         Ok((t, hidden))
     })
-    .await
-    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+    .await?;
     let (timeline, hidden) = timeline;
     Ok(Json(AllTimeline { timeline, libs, left_out, flat, hidden }))
 }
@@ -2123,7 +2173,7 @@ async fn all_tags(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> Ap
     let own = param(&pairs, "own").is_some_and(|v| v != "0");
     let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(50);
     let filter = AllFilter::of(&pairs, false)?;
-    let tags = tokio::task::spawn_blocking(move || -> ApiResult<Vec<browse::Tag>> {
+    let tags = in_turn(&hub.searches, move || -> ApiResult<Vec<browse::Tag>> {
         // By name: the tag, the photos that carry it and those that carry it
         // as an own tag. A photo on two drives is one photo (phase 18).
         type Merged = (browse::Tag, HashSet<multi::Photo>, HashSet<multi::Photo>);
@@ -2137,7 +2187,7 @@ async fn all_tags(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> Ap
             let copies = app.copy_facts(&conn)?;
             // Whether a tag is only a folder name is a fact about the drive,
             // not about the photos shown (as on a single drive).
-            let facts: HashMap<i64, browse::Tag> = browse::all_tags(&conn)?.into_iter().map(|t| (t.id, t)).collect();
+            let facts: HashMap<i64, browse::Tag> = app.all_tags(&conn)?.iter().map(|t| (t.id, t.clone())).collect();
             for t in browse::tag_files_within(&conn, &shown, &query.tags)? {
                 let mut tag = t.tag;
                 if let Some(f) = facts.get(&tag.id) {
@@ -2165,8 +2215,7 @@ async fn all_tags(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> Ap
         list.truncate(limit);
         Ok(list)
     })
-    .await
-    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+    .await?;
     Ok(Json(tags))
 }
 
@@ -2797,7 +2846,7 @@ fn pets_of(pairs: &Pairs) -> ApiResult<Vec<String>> {
 /// show nothing, so suggestions narrow a search; `own=1` keeps only tags the
 /// user added somewhere.
 async fn tags(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<browse::Tag>>> {
-    blocking(&app, move |app| {
+    queued(&app, move |app| {
         let conn = app.conn.lock().unwrap();
         let needle = param(&pairs, "q").map(db::tag_fold).unwrap_or_default();
         let own = param(&pairs, "own").is_some_and(|o| o != "0");
@@ -2813,13 +2862,13 @@ async fn tags(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiRes
             && filter.place.is_none()
             && filter.area.is_none()
         {
-            browse::all_tags(&conn)?
+            app.all_tags(&conn)?.as_ref().clone()
         } else {
             let snapshot = app.snapshot(&conn)?;
             let shown: HashSet<i64> = snapshot.query(&conn, &filter)?.iter().map(|it| it.id).collect();
             // Whether a tag is only a folder name is a fact about the drive, not
             // about the photos shown: a tag given by hand elsewhere stays a tag.
-            let kinds: HashMap<i64, browse::TagKind> = browse::all_tags(&conn)?.into_iter().map(|t| (t.id, t.kind)).collect();
+            let kinds: HashMap<i64, browse::TagKind> = app.all_tags(&conn)?.iter().map(|t| (t.id, t.kind)).collect();
             let mut within = browse::tags_within(&conn, &shown, &filter.tags)?;
             for t in &mut within {
                 if let Some(&kind) = kinds.get(&t.id) {
@@ -2873,7 +2922,7 @@ struct Timeline {
 async fn timeline(State(app): State<Arc<App>>, axum::Extension(only): axum::Extension<CompareIds>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Timeline>> {
     let mut query = filter_of(&pairs)?;
     query.ids = only.0;
-    blocking(&app, move |app| {
+    queued(&app, move |app| {
         let conn = app.conn.lock().unwrap();
         if let Some(place) = query.place
             && crate::geo::place(&conn, place)?.is_none()
@@ -2936,7 +2985,7 @@ async fn timeline(State(app): State<Arc<App>>, axum::Extension(only): axum::Exte
 /// suggestion of the search box.
 async fn count(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<serde_json::Value>> {
     let query = filter_of(&pairs)?;
-    blocking(&app, move |app| {
+    queued(&app, move |app| {
         let conn = app.conn.lock().unwrap();
         let snapshot = app.snapshot(&conn)?;
         let n = snapshot.query(&conn, &query)?.len();
@@ -3733,7 +3782,7 @@ async fn dates_check(State(app): State<Arc<App>>, Json(req): Json<IdsRequest>) -
 /// optional `date:` prefix, `prefix=1` when it was typed), counted within the
 /// rest of the filter.
 async fn dates_suggest(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<dates::Row>>> {
-    blocking(&app, move |app| {
+    queued(&app, move |app| {
         let conn = app.conn.lock().unwrap();
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
         let snapshot = app.snapshot(&conn)?;

@@ -1045,8 +1045,8 @@ fn drawn_faces_are_embedded_and_aligned_ones_suggest() {
 
 /// People are terms of the search: several together (AND), with tags and
 /// folders; free text finds them by name; the search box's suggestions
-/// count within the current search. Undoing a rejection keeps every other
-/// decision about the face.
+/// count within the current search and follow every decision. Undoing a
+/// rejection keeps every other decision about the face.
 #[test]
 fn people_as_search_terms_and_undoing_a_rejection() {
     let lib = empty("people-search");
@@ -1150,6 +1150,12 @@ fn people_as_search_terms_and_undoing_a_rejection() {
     let face = &faces_of(addr, &lib, "Fotos/y1.png")[0];
     assert_eq!((face["state"].as_str(), face["person"]["id"].as_i64()), (Some("confirmed"), Some(ben)));
     assert_eq!(ok(addr, "/api/faces/unreject", &json!({ "faces": [y1_face], "person_id": anna }))["faces"], 0);
+
+    // The suggestions' counts are kept between letters typed, but never past
+    // a decision: a name given in between counts at once.
+    assert_eq!(search("q=")[0], json!({ "id": anna, "name": "Anna", "group_id": null, "photos": 2 }));
+    assign("Other/z1.png", "Anna");
+    assert_eq!(search("q=a")[0], json!({ "id": anna, "name": "Anna", "group_id": null, "photos": 3 }));
 
     assert_eq!(lib.snapshot(), before);
     server.stop().unwrap();
