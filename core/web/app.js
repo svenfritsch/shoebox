@@ -563,6 +563,8 @@ var DOG_ICON = lineIcon('<path transform="rotate(-45 12 12) translate(12 12) sca
 var TRASH_ICON = lineIcon('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>');
 var SEL_ICONS = {
   close: lineIcon('<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>'),
+  check: lineIcon('<path d="M5 12.8l4.6 4.6L19 7.2"/>'),
+  undo: lineIcon('<path d="M9 5.5L5 9.5l4 4"/><path d="M5 9.5h8.5a5 5 0 0 1 0 10H10"/>'),
   tag: lineIcon('<path d="M2 14l4.3-5H14.5A1.5 1.5 0 0 1 16 10.5v7a1.5 1.5 0 0 1-1.5 1.5H6.3z"/><circle cx="6.6" cy="14" r=".6"/><path d="M19 2.5v6.5M15.75 5.75h6.5"/>'),
   untag: lineIcon('<path d="M2 14l4.3-5H14.5A1.5 1.5 0 0 1 16 10.5v7a1.5 1.5 0 0 1-1.5 1.5H6.3z"/><circle cx="6.6" cy="14" r=".6"/><path d="M15.75 5.75h6.5"/>'),
   date: lineIcon('<path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5z"/><path d="M8.5 3.5v5M15.5 3.5v5" stroke-width="2.2"/><path d="M7.5 14.5c1.5-2.3 3-2.3 4.5 0s3 2.3 4.5 0"/>'),
@@ -1624,94 +1626,6 @@ $('sizer').addEventListener('mousedown', function (ev) {
   if (ev.shiftKey && ev.target.closest('.cell')) ev.preventDefault();
 });
 
-// Click and drag while selecting (mouse or pen, as in Finder): the photos from
-// the one pressed to the one under the pointer, in timeline order, all take the
-// opposite of the first one's state, so a drag that starts on an unselected
-// photo selects and one that starts on a selected photo deselects. Photos the
-// drag leaves again get back what they had. Near the top or bottom edge the
-// timeline scrolls along. Touch keeps scrolling the page (tap to select there).
-var selDrag = null;
-var DRAG_EDGE = 48; // px from the edge of the timeline where it scrolls along
-
-$('sizer').addEventListener('pointerdown', function (ev) {
-  if (!state.selecting || ev.button !== 0 || ev.shiftKey || ev.pointerType === 'touch') return;
-  var a = ev.target.closest('.cell');
-  if (!a || ev.target.closest('.fav')) return;
-  var i = parseInt(a.dataset.index, 10);
-  selDrag = {
-    start: i, end: i, on: !state.selected[state.data.ids[i]], before: Object.assign({}, state.selected),
-    data: state.data, pointer: ev.pointerId, x: ev.clientX, y: ev.clientY, moved: false, scrolling: false,
-  };
-});
-document.addEventListener('pointermove', function (ev) {
-  if (!selDrag || selDrag.done || ev.pointerId !== selDrag.pointer) return;
-  selDrag.x = ev.clientX;
-  selDrag.y = ev.clientY;
-  dragUpdate();
-  if (selDrag && selDrag.moved && !selDrag.scrolling) { selDrag.scrolling = true; requestAnimationFrame(dragScroll); }
-});
-document.addEventListener('pointerup', dragEnd);
-document.addEventListener('pointercancel', dragEnd);
-// The photos are links with pictures: no dragging them out of the page while selecting.
-$('sizer').addEventListener('dragstart', function (ev) {
-  if (state.selecting && ev.target.closest && ev.target.closest('.cell')) ev.preventDefault();
-});
-// The click that ends a drag selects nothing more.
-$('sizer').addEventListener('click', function (ev) {
-  if (selDrag && selDrag.moved) { ev.stopImmediatePropagation(); ev.preventDefault(); }
-}, true);
-
-// The photo under the pointer is the other end of the range.
-function dragUpdate() {
-  if (!state.selecting || state.data !== selDrag.data) { selDrag = null; return; }
-  var hit = document.elementFromPoint(selDrag.x, selDrag.y);
-  var a = hit && hit.closest('.cell');
-  if (!a || !$('sizer').contains(a)) return;
-  var i = parseInt(a.dataset.index, 10);
-  if (i === selDrag.end) return; // also: still on the first photo, no drag yet
-  if (!selDrag.moved) {
-    selDrag.moved = true;
-    // Keeps getting the pointer when it leaves the window (and the click that
-    // ends the drag goes to the timeline, not to a photo).
-    try { $('sizer').setPointerCapture(selDrag.pointer); } catch (e) {}
-  }
-  var ids = state.data.ids;
-  var lo = Math.min(selDrag.start, i), hi = Math.max(selDrag.start, i);
-  var from = Math.min(lo, selDrag.start, selDrag.end), to = Math.max(hi, selDrag.start, selDrag.end);
-  for (var k = from; k <= to; k++) {
-    var id = ids[k];
-    if (k >= lo && k <= hi ? selDrag.on : selDrag.before[id]) state.selected[id] = true; else delete state.selected[id];
-  }
-  selDrag.end = i;
-  state.anchor = i;
-  showSelected();
-}
-
-// Scrolls while the pointer is near the top or bottom edge, faster the closer it is.
-function dragScroll() {
-  if (!selDrag || selDrag.done) return;
-  var scroller = $('scroller'), r = scroller.getBoundingClientRect(), v = 0;
-  if (selDrag.y < r.top + DRAG_EDGE) v = -(r.top + DRAG_EDGE - selDrag.y);
-  else if (selDrag.y > r.bottom - DRAG_EDGE) v = selDrag.y - (r.bottom - DRAG_EDGE);
-  if (!v) { selDrag.scrolling = false; return; }
-  var top = scroller.scrollTop;
-  scroller.scrollTop = top + Math.max(-40, Math.min(40, v / 2));
-  if (scroller.scrollTop === top) { selDrag.scrolling = false; return; }
-  render();
-  dragUpdate();
-  requestAnimationFrame(dragScroll);
-}
-
-function dragEnd(ev) {
-  if (!selDrag || ev.pointerId !== selDrag.pointer) return;
-  var was = selDrag;
-  if (!was.moved) { selDrag = null; return; }
-  // Kept until after the click that follows, so that click is swallowed above.
-  was.done = true;
-  setTimeout(function () { if (selDrag === was) selDrag = null; }, 0);
-  try { $('sizer').releasePointerCapture(was.pointer); } catch (e) {}
-}
-
 // Shift-click in a list of faces being selected: the items from the last one
 // clicked (`anchor`, an id as `idOf` gives it) to this one, both included, in
 // either order; null if there is no anchor in the list. The anchor stays.
@@ -1725,6 +1639,171 @@ function pickSpan(list, idOf, anchor, id) {
   return list.slice(Math.min(a, b), Math.max(a, b) + 1);
 }
 
+// Click and drag while selecting (mouse or pen, as in Finder): a rectangle
+// from where the button went down to the pointer. Whatever it covers, and only
+// that, takes the opposite of the state of the tile pressed (an empty spot
+// counts as unselected, so the drag selects), and what the rectangle leaves
+// again gets back what it had. Near the top or bottom edge the page scrolls
+// along and the rectangle grows with it. Touch keeps scrolling the page (tap to
+// select there).
+//
+// A list takes part by being a `.has-drag` element whose `dragSite()` returns,
+// while its tiles can be selected, { sel: selector of a tile, itemOf(tile),
+// get(item), set(item, on) (data and look), done(item) (after a change; `item`
+// is the one under the pointer, if any: anchor, bar), hit(rect) (optional: the
+// items a rectangle of window coordinates covers, when the tiles are not all
+// in the page) }; null while it cannot.
+var tileDrag = null;
+var DRAG_EDGE = 48; // px from the edge of the page where it scrolls along
+var DRAG_START = 4; // px the pointer must move before a press becomes a drag
+var DRAG_SKIP = 'button, input, select, textarea, .acts, .more-btn, .near, .mark, .copen, .menu, .fav';
+
+$('scroller').addEventListener('pointerdown', function (ev) {
+  if (ev.button !== 0 || ev.shiftKey || ev.pointerType === 'touch' || !ev.target.closest || ev.target.closest(DRAG_SKIP)) return;
+  var host = ev.target.closest('.has-drag');
+  var site = host && host.dragSite();
+  if (!site) return;
+  var tile = ev.target.closest(site.sel);
+  if (tile && !host.contains(tile)) tile = null;
+  var item = tile ? site.itemOf(tile) : undefined;
+  var sr = $('scroller').getBoundingClientRect();
+  tileDrag = {
+    site: site, host: host, on: item === undefined ? true : !site.get(item),
+    sx: ev.clientX - sr.left + $('scroller').scrollLeft, sy: ev.clientY - sr.top + $('scroller').scrollTop,
+    x: ev.clientX, y: ev.clientY, pointer: ev.pointerId, moved: false, scrolling: false, done: false,
+    before: new Map(), covered: new Set(), box: null,
+  };
+  document.body.classList.add('tile-drag');
+});
+document.addEventListener('pointermove', function (ev) {
+  if (!tileDrag || tileDrag.done || ev.pointerId !== tileDrag.pointer) return;
+  tileDrag.x = ev.clientX;
+  tileDrag.y = ev.clientY;
+  tileDragUpdate();
+  if (tileDrag && tileDrag.moved && !tileDrag.scrolling) { tileDrag.scrolling = true; requestAnimationFrame(tileDragScroll); }
+});
+document.addEventListener('pointerup', tileDragEnd);
+document.addEventListener('pointercancel', tileDragEnd);
+// The tiles are links with pictures: no dragging them out of the page while selecting.
+$('scroller').addEventListener('dragstart', function (ev) {
+  var host = ev.target.closest && ev.target.closest('.has-drag');
+  var site = host && host.dragSite();
+  if (site && ev.target.closest(site.sel)) ev.preventDefault();
+});
+// The click that ends a drag selects nothing more.
+$('scroller').addEventListener('click', function (ev) {
+  if (tileDrag && tileDrag.moved) { ev.stopImmediatePropagation(); ev.preventDefault(); }
+}, true);
+
+function tileDragUpdate() {
+  var d = tileDrag, scroller = $('scroller');
+  if (!d.host.isConnected || !d.host.dragSite()) { tileDragEnd({ pointerId: d.pointer }); return; }
+  var sr = scroller.getBoundingClientRect();
+  // The rectangle in the page's own coordinates (it scrolls along) and in the window's.
+  var px = Math.max(0, Math.min(scroller.clientWidth, d.x - sr.left + scroller.scrollLeft));
+  var py = Math.max(0, Math.min(scroller.scrollHeight, d.y - sr.top + scroller.scrollTop));
+  if (!d.moved && Math.abs(d.x - (d.sx + sr.left - scroller.scrollLeft)) < DRAG_START && Math.abs(d.y - (d.sy + sr.top - scroller.scrollTop)) < DRAG_START) return;
+  var x1 = Math.min(d.sx, px), x2 = Math.max(d.sx, px), y1 = Math.min(d.sy, py), y2 = Math.max(d.sy, py);
+  if (!d.moved) {
+    d.moved = true;
+    d.box = el('div', 'marquee');
+    scroller.appendChild(d.box);
+    // Keeps getting the pointer when it leaves the window.
+    try { scroller.setPointerCapture(d.pointer); } catch (e) {}
+  }
+  d.box.style.left = x1 + 'px';
+  d.box.style.top = y1 + 'px';
+  d.box.style.width = (x2 - x1) + 'px';
+  d.box.style.height = (y2 - y1) + 'px';
+  var rect = { left: x1 - scroller.scrollLeft + sr.left, right: x2 - scroller.scrollLeft + sr.left, top: y1 - scroller.scrollTop + sr.top, bottom: y2 - scroller.scrollTop + sr.top };
+  var now = new Set(d.site.hit ? d.site.hit(rect) : tilesIn(d.host, d.site, rect));
+  var changed = false;
+  d.covered.forEach(function (item) {
+    if (now.has(item)) return;
+    d.site.set(item, d.before.get(item));
+    changed = true;
+  });
+  now.forEach(function (item) {
+    if (d.covered.has(item)) return;
+    if (!d.before.has(item)) d.before.set(item, d.site.get(item));
+    if (d.site.get(item) !== d.on) { d.site.set(item, d.on); changed = true; }
+  });
+  d.covered = now;
+  if (changed) {
+    var hit = document.elementFromPoint(d.x, d.y), tile = hit && hit.closest(d.site.sel);
+    d.site.done(tile && d.host.contains(tile) ? d.site.itemOf(tile) : undefined);
+  }
+}
+
+// The items of the tiles in a list that a rectangle of window coordinates touches.
+function tilesIn(host, site, rect) {
+  var out = [];
+  Array.prototype.forEach.call(host.querySelectorAll(site.sel), function (tile) {
+    var r = tile.getBoundingClientRect();
+    if (r.right < rect.left || r.left > rect.right || r.bottom < rect.top || r.top > rect.bottom) return;
+    var item = site.itemOf(tile);
+    if (item !== undefined) out.push(item);
+  });
+  return out;
+}
+
+// Scrolls while the pointer is near the top or bottom edge, faster the closer it is.
+function tileDragScroll() {
+  var d = tileDrag;
+  if (!d || d.done) return;
+  var scroller = $('scroller'), r = scroller.getBoundingClientRect(), v = 0;
+  if (d.y < r.top + DRAG_EDGE) v = -(r.top + DRAG_EDGE - d.y);
+  else if (d.y > r.bottom - DRAG_EDGE) v = d.y - (r.bottom - DRAG_EDGE);
+  if (!v) { d.scrolling = false; return; }
+  var top = scroller.scrollTop;
+  scroller.scrollTop = top + Math.max(-40, Math.min(40, v / 2));
+  if (scroller.scrollTop === top) { d.scrolling = false; return; }
+  tileDragUpdate();
+  if (tileDrag === d) requestAnimationFrame(tileDragScroll);
+}
+
+function tileDragEnd(ev) {
+  var d = tileDrag;
+  if (!d || ev.pointerId !== d.pointer) return;
+  document.body.classList.remove('tile-drag');
+  if (d.box) d.box.remove();
+  if (!d.moved) { tileDrag = null; return; }
+  // Kept until after the click that follows, so that click is swallowed above.
+  d.done = true;
+  setTimeout(function () { if (tileDrag === d) tileDrag = null; }, 0);
+  try { $('scroller').releasePointerCapture(d.pointer); } catch (e) {}
+}
+
+// The timeline: the tiles are not all in the page, so the rectangle is worked
+// out from the layout (rows and columns); items are the photos' positions.
+$('sizer').classList.add('has-drag');
+$('sizer').dragSite = function () {
+  if (!state.selecting || !state.data || !state.data.ids) return null;
+  var data = state.data;
+  return {
+    sel: '.cell',
+    itemOf: function (tile) { return parseInt(tile.dataset.index, 10); },
+    get: function (i) { return !!state.selected[data.ids[i]]; },
+    set: function (i, on) { if (on) state.selected[data.ids[i]] = true; else delete state.selected[data.ids[i]]; },
+    done: function (i) {
+      if (state.data !== data) return;
+      if (i !== undefined) state.anchor = i;
+      showSelected();
+    },
+    hit: function (rect) {
+      var sr = $('sizer').getBoundingClientRect(), out = [];
+      var x1 = rect.left - sr.left, x2 = rect.right - sr.left, y1 = rect.top - sr.top, y2 = rect.bottom - sr.top;
+      if (x2 < 0 || x1 > state.cols * state.cell || !state.rows.length) return out;
+      var c1 = Math.max(0, Math.floor(x1 / state.cell)), c2 = Math.min(state.cols - 1, Math.floor(x2 / state.cell));
+      for (var r = rowAt(Math.max(0, y1)); r < state.rows.length && state.rows[r].top <= y2; r++) {
+        var row = state.rows[r];
+        if (row.type !== 'r' || row.top + row.h < y1) continue;
+        for (var i = row.start + c1; i <= Math.min(row.start + c2, row.end - 1); i++) out.push(i);
+      }
+      return out;
+    },
+  };
+};
 // Keep Shift-click on faces from selecting the page's text.
 document.addEventListener('mousedown', function (ev) {
   if (ev.shiftKey && ev.target.closest && ev.target.closest('.face, .cface')) ev.preventDefault();
@@ -4258,13 +4337,23 @@ function loadTrash() {
       del.onclick = function () { deleteBatches(batches.filter(function (b) { return picked[b]; }), batches.length); };
       bar.appendChild(del);
     };
-    var cards = el('div', 'cards');
+    var cards = el('div', 'cards has-drag');
     cards.style.flexWrap = 'wrap';
+    cards.dragSite = function () {
+      return {
+        sel: '.card',
+        itemOf: function (tile) { return tile.batch; },
+        get: function (b) { return !!picked[b]; },
+        set: function (b, on) { if (on) picked[b] = true; else delete picked[b]; cardOf[b].classList.toggle('sel', on); },
+        done: function (b) { if (b !== undefined) anchor = b; drawBar(); },
+      };
+    };
     batches.forEach(function (b) {
       var files = byBatch[b];
       var first = files.filter(function (f) { return f.kind; })[0] || files[0];
       var card = el('div', 'card pick');
       cardOf[b] = card;
+      card.batch = b;
       var thumb = el('div', 'thumb');
       var img = el('img');
       img.alt = '';
@@ -4775,7 +4864,21 @@ function loadFaces() {
   page.appendChild(sub);
   if (!checkFilters().some(function (o) { return o[0] === faceState.filter; })) faceState.filter = 'all';
   page.appendChild(faceToolbar());
-  var grid = el('div', 'faces');
+  var grid = el('div', 'faces has-drag');
+  grid.dragSite = function () {
+    if (!faceState.picking) return null;
+    return {
+      sel: '.face[data-id]',
+      itemOf: function (tile) { return tile.face; },
+      get: function (x) { return !!faceState.picked[x.id]; },
+      set: function (x, on) {
+        if (on) faceState.picked[x.id] = true; else delete faceState.picked[x.id];
+        var c = document.querySelector('.face[data-id="' + x.id + '"]');
+        if (c) c.classList.toggle('sel', on);
+      },
+      done: function (x) { if (x) faceState.anchor = x.id; updateFacePick(); },
+    };
+  };
   page.appendChild(grid);
   var more = el('button', 'btn quiet', tr('app.show_more'));
   more.hidden = true;
@@ -4935,6 +5038,7 @@ function moreFaces(grid, more) {
 function faceCard(face, similarity) {
   var card = el('div', 'face' + (face.small ? ' small' : ''));
   card.dataset.id = face.id;
+  card.face = face;
   var a = el('a', 'crop');
   a.href = '#';
   setTip(a, tr('facecheck.open_photo'));
@@ -6450,7 +6554,8 @@ function loadPersonPage() {
     page.appendChild(tabs);
     personTabCounts(p);
     page.appendChild(el('p', 'sub', tr('person.sub.' + tab, { name: p.name })));
-    var bar = el('div', 'toolbar');
+    // Stays at the top while the faces scroll under it.
+    var bar = el('div', 'toolbar sticky');
     var pick = el('button', 'btn quiet', tr('facecheck.select'));
     pick.id = 'pp-pick';
     pick.onclick = function () { pp.picking = !pp.picking; if (!pp.picking) clearPersonPicks(); updatePersonPick(); };
@@ -6461,8 +6566,23 @@ function loadPersonPage() {
       bar.appendChild(all);
     }
     page.appendChild(bar);
-    var grid = el('div', 'faces');
+    var grid = el('div', 'faces has-drag');
     grid.id = 'pp-grid';
+    grid.dragSite = function () {
+      if (!pp.picking) return null;
+      var cardOf = function (x) { return document.querySelector('#pp-grid .face[data-key="' + faceKey(x) + '"]'); };
+      return {
+        sel: '.face',
+        itemOf: function (tile) { return tile.face && faceKey(tile.face) ? tile.face : undefined; },
+        get: function (x) { return !!pp.picked[faceKey(x)]; },
+        set: function (x, on) {
+          if (on) pp.picked[faceKey(x)] = x; else delete pp.picked[faceKey(x)];
+          var c = cardOf(x);
+          if (c) c.classList.toggle('sel', on);
+        },
+        done: function (x) { if (x) pp.anchor = faceKey(x); updatePersonPick(); },
+      };
+    };
     page.appendChild(grid);
     var more = el('button', 'btn quiet', tr('app.show_more'));
     more.hidden = true;
@@ -6512,6 +6632,7 @@ function personFaceCard(face, tab) {
   var card = el('div', 'face' + (face.small ? ' small' : ''));
   var key = faceKey(face);
   card.dataset.key = key;
+  card.face = face;
   var a = el('a', 'crop');
   a.href = '#';
   setTip(a, tr('facecheck.open_photo'));
@@ -6632,48 +6753,72 @@ function personAction(action, ids, manual) {
   }).catch(failed);
 }
 
+// The bar of the timeline's selection: close, count (or what to do), Select
+// all, then the tools. Confirm and Undo are icons with a quick label, the other
+// actions keep their words (they carry a name).
 function personPickBar(tab) {
-  var bar = el('div', 'selbar');
+  var bar = el('div', 'selbar tools');
   bar.id = 'pp-bar';
+  bar.setAttribute('role', 'toolbar');
+  bar.setAttribute('aria-label', tr('sel.bar'));
   bar.hidden = true;
-  var count = el('span');
+  var done = el('button', 'ib');
+  done.innerHTML = SEL_ICONS.close;
+  setTip(done, tr('app.done'));
+  done.setAttribute('aria-label', tr('app.done'));
+  done.onclick = function () { pp.picking = false; clearPersonPicks(); updatePersonPick(); };
+  bar.appendChild(done);
+  var count = el('span', 'sel-count');
   count.id = 'pp-count';
+  count.setAttribute('aria-live', 'polite');
   bar.appendChild(count);
   var p = pp.person;
-  var button = function (label, cls, run) {
-    var b = el('button', 'btn ' + (cls || ''), label);
-    b.className += ' pp-act';
-    b.onclick = function () {
-      var faces = Object.keys(pp.picked).map(function (k) { return pp.picked[k]; });
-      run(faces, faces.map(function (x) { return x.id; }).filter(function (x) { return x != null; }));
-    };
-    bar.appendChild(b);
-  };
-  var all = el('button', 'btn quiet', tr('person.all'));
+  var all = el('button', 'sel-all', tr('sel.all'));
+  all.id = 'pp-all';
   all.onclick = function () {
+    var on = Object.keys(pp.picked).length < pp.faces.filter(faceKey).length;
     pp.faces.forEach(function (face) {
       var k = faceKey(face);
       if (!k) return;
-      pp.picked[k] = face;
+      if (on) pp.picked[k] = face; else delete pp.picked[k];
       var card = document.querySelector('#pp-grid .face[data-key="' + k + '"]');
-      if (card) card.classList.add('sel');
+      if (card) card.classList.toggle('sel', on);
     });
     updatePersonPick();
   };
   bar.appendChild(all);
+  var sep = el('span', 'sep break');
+  sep.setAttribute('aria-hidden', 'true');
+  bar.appendChild(sep);
+  var chosen = function (run) {
+    return function () {
+      var faces = Object.keys(pp.picked).map(function (k) { return pp.picked[k]; });
+      run(faces, faces.map(function (x) { return x.id; }).filter(function (x) { return x != null; }));
+    };
+  };
+  var iconTool = function (svg, label, cls, run) {
+    var b = el('button', 'ib pp-act' + (cls ? ' ' + cls : ''));
+    b.innerHTML = svg;
+    setTip(b, label);
+    b.setAttribute('aria-label', label);
+    b.onclick = chosen(run);
+    bar.appendChild(b);
+  };
+  var button = function (label, cls, run) {
+    var b = el('button', 'btn pp-act ' + (cls || ''), label);
+    b.onclick = chosen(run);
+    bar.appendChild(b);
+  };
   if (tab === 'suggested' || tab === 'maybe') {
-    button(tr('person.confirm'), '', function (faces, ids) { personAction('confirm', ids); });
+    iconTool(SEL_ICONS.check, tr('person.confirm'), 'ok', function (faces, ids) { personAction('confirm', ids); });
     button(tr('person.not', { name: p.name }), 'quiet', function (faces, ids) { personAction('reject', ids); });
   } else if (tab === 'rejected') {
-    button(tr('person.undo'), '', function (faces, ids) { personAction('unreject', ids); });
+    iconTool(SEL_ICONS.undo, tr('person.undo'), '', function (faces, ids) { personAction('unreject', ids); });
   } else {
     button(tr('person.not', { name: p.name }), 'quiet', function (faces, ids) { personAction('reject', ids); });
     button(tr('person.name_btn'), '', function (faces) { nameFacesDialog(faces, personRefresh); });
     button(tr(p.species ? 'pet.not_a.pet' : 'facecheck.not_face'), 'quiet', function (faces, ids) { personAction('not-face', ids); });
   }
-  var done = el('button', 'btn quiet', tr('app.done'));
-  done.onclick = function () { pp.picking = false; clearPersonPicks(); updatePersonPick(); };
-  bar.appendChild(done);
   return bar;
 }
 
@@ -6689,8 +6834,15 @@ function updatePersonPick() {
   var n = Object.keys(pp.picked).length;
   bar.hidden = !pp.picking;
   $('pp-pick').classList.toggle('active', pp.picking);
-  $('pp-count').textContent = n ? trn('count.faces', n) : tr('facecheck.tap');
-  Array.prototype.forEach.call(bar.querySelectorAll('.pp-act'), function (b) { b.disabled = !n; });
+  $('pp-count').textContent = n ? trn('count.faces', n) : tr(window.matchMedia('(pointer: fine)').matches ? 'person.hint_mouse' : 'facecheck.tap');
+  $('pp-count').classList.toggle('hint', !n);
+  var total = pp.faces.filter(faceKey).length;
+  $('pp-all').textContent = tr(total && n >= total ? 'sel.none' : 'sel.all');
+  $('pp-all').disabled = !total;
+  Array.prototype.forEach.call(bar.querySelectorAll('.pp-act'), function (b) {
+    // The icon tools are dimmed, not disabled, like the timeline's.
+    if (b.classList.contains('ib')) b.setAttribute('aria-disabled', n ? 'false' : 'true'); else b.disabled = !n;
+  });
 }
 
 // Name several faces at once (detected or drawn ones): everyone listed, or
@@ -6985,7 +7137,19 @@ var SINGLES_PAGE = 60;
 
 function singlesSection() {
   var st = { faces: [], picked: {}, anchor: null, shown: 0, total: 0, count: 0, tiles: {} };
-  var section = el('section', 'singles');
+  var section = el('section', 'singles has-drag');
+  section.dragSite = function () {
+    return {
+      sel: '.cface',
+      itemOf: function (tile) { return tile.face; },
+      get: function (x) { return !!st.picked[x.id]; },
+      set: function (x, on) {
+        if (on) st.picked[x.id] = true; else delete st.picked[x.id];
+        if (st.tiles[x.id]) st.tiles[x.id].classList.toggle('sel', on);
+      },
+      done: function (x) { if (x) st.anchor = x.id; update(); },
+    };
+  };
   section.hidden = true;
   var head = el('h3');
   var hint = el('p', 'sub', tr('unnamed.singles_hint'));
@@ -7069,6 +7233,7 @@ function singlesSection() {
       }
       update();
     };
+    t.face = face;
     st.tiles[face.id] = t;
     return t;
   };
@@ -7191,7 +7356,20 @@ function moreClusters(box, more) {
 }
 
 function clusterCard(c) {
-  var card = el('div', 'cluster');
+  var card = el('div', 'cluster has-drag');
+  card.dragSite = function () {
+    if (!card.picking) return null;
+    return {
+      sel: '.cface',
+      itemOf: function (tile) { return tile.face; },
+      get: function (x) { return !!card.picked[x.id]; },
+      set: function (x, on) {
+        if (on) card.picked[x.id] = true; else delete card.picked[x.id];
+        if (tiles[x.id]) tiles[x.id].classList.toggle('sel', on);
+      },
+      done: function (x) { if (x) card.anchor = x.id; update(); },
+    };
+  };
   card.cluster = c;
   card.picked = {};
   card.picking = false;
