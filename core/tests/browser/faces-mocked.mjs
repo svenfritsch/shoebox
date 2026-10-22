@@ -13,6 +13,7 @@
 // by calling the page's own `loadInfo` (`tell`), as the stream's event does.
 import { browser, check, until, tr, test, finish, requests, noListRequests, clusterRounds, sidebarIs, groupNames, menu, typeName, face, card, single, nameCard } from './faces-common.mjs';
 import { fakeLibrary, ORIGIN } from './fake-api.mjs';
+import { inflateSync } from 'node:zlib';
 
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 1400 } });
 await ctx.addInitScript(() => { try { localStorage.setItem('shoebox.lang', 'en'); } catch (e) {} });
@@ -474,6 +475,47 @@ await test('a person\'s page: a face rejected in the viewer is gone from it once
   check(faces(from) === 1, `the faces were asked for ${faces(from)} times, expected once`);
   const tab = await p.locator('#person-tabs .tab[data-tab="suggested"]').textContent();
   check(tab.includes('(2)'), `the tab says ${tab}`);
+}));
+
+// One pixel of the page (r, g, b) at x, y, from a screenshot of just it.
+async function pixel(p, x, y) {
+  const png = await p.screenshot({ clip: { x, y, width: 1, height: 1 } });
+  // A 1×1 PNG: after the signature, chunks of length, type, data, CRC; the
+  // inflated IDAT is a filter byte and the pixel (filter 0 or 1 alike for one pixel).
+  let at = 8, data = [];
+  while (at < png.length) {
+    const len = png.readUInt32BE(at), type = png.toString('ascii', at + 4, at + 8);
+    if (type === 'IDAT') data.push(png.subarray(at + 8, at + 8 + len));
+    at += 12 + len;
+  }
+  const raw = inflateSync(Buffer.concat(data));
+  return [raw[1], raw[2], raw[3]];
+}
+
+// Confirmed faces are cut out of the photo's thumbnail (no stored crop): the
+// selection's frame shows over that picture as over a crop.
+await test('a person\'s page: a selected face shows its frame on Confirmed as on Suggested', await on('view=people', (lib) => lib.person('Olaf Outline', { faces: 3, suggested: 3 }), async (p, lib, olaf) => {
+  const accent = await p.evaluate(() => {
+    const e = document.createElement('div');
+    e.style.color = 'var(--accent)';
+    document.body.appendChild(e);
+    const c = getComputedStyle(e).color.match(/\d+/g).slice(0, 3).map(Number);
+    e.remove();
+    return c;
+  });
+  for (const tab of ['suggested', 'confirmed']) {
+    await p.evaluate(([id, t]) => { location.hash = `view=person&id=${id}&tab=${t}`; }, [olaf.id, tab]);
+    await p.locator(`#person-tabs .tab.active[data-tab="${tab}"]`).waitFor();
+    await p.locator('#pp-grid .face').nth(1).waitFor();
+    await settle(p, lib);
+    await p.locator('#pp-pick').click();
+    const card = p.locator('#pp-grid .face').nth(1);
+    await card.locator('.crop').click();
+    check(await card.evaluate((c) => c.classList.contains('sel')), `${tab}: the card is not selected`);
+    const box = await card.locator('.crop').boundingBox();
+    const got = await pixel(p, box.x + 1, box.y + box.height / 2);
+    check(got.every((v, i) => Math.abs(v - accent[i]) <= 8), `${tab}: the edge of the selected face is rgb(${got}), not the accent rgb(${accent})`);
+  }
 }));
 
 await test('a person moved to a group, then both out of it: the empty group is gone', await on('view=people', (lib) => {

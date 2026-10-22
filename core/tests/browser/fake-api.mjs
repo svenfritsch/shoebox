@@ -35,7 +35,7 @@ export function fakeLibrary() {
   let faceSeq = 0, clusterSeq = 0, personSeq = 0, groupSeq = 0, time = 1_800_000_000;
   const lib = {
     clusters: [], people: [], groups: [],
-    faceLists: {}, // person id: { suggested, rejected } (a person's page; confirmed ones are only counted)
+    faceLists: {}, // person id: { confirmed, suggested, rejected } (a person's page)
     trash: [], // what GET /trash answers (organize::TrashItem)
     step: null, // null (grouped), 'stale' (starting) or 'running'
     progress: [0, 0], // done, total while running
@@ -67,9 +67,10 @@ export function fakeLibrary() {
   lib.person = (name, { faces = 3, group = null, species = null, suggested = 0 } = {}) => {
     const p = { id: ++personSeq, name, group_id: group ? group.id : null, hidden: false, faces, photos: faces, suggested: 0, maybe: 0, cover: null, cover_manual: null };
     if (species) p.species = species;
-    if (faces) { p.cover = face().id; faceSeq += faces - 1; p.last_named = time; }
+    const confirmed = Array.from({ length: faces }, () => ({ ...face(), state: 'confirmed', person: { id: p.id, name } }));
+    if (faces) { p.cover = confirmed[0].id; p.last_named = time; }
     lib.people.push(p);
-    lib.faceLists[p.id] = { suggested: [], rejected: [] };
+    lib.faceLists[p.id] = { confirmed, suggested: [], rejected: [] };
     for (let i = 0; i < suggested; i++) {
       lib.faceLists[p.id].suggested.push({ ...face(), state: 'suggested', person: { id: p.id, name }, similarity: 0.95 - i * 0.0001 });
     }
@@ -146,6 +147,8 @@ export function fakeLibrary() {
     if (!p) return [400, { error: 'there is no such person' }];
     // The cache stays as it was until the next grouping.
     if (!lib.counted) lib.counted = counts();
+    const named = lib.clusters.flatMap((c) => c.faces).filter((f) => ids.includes(f.id));
+    (lib.faceLists[p.id] ||= { confirmed: [], suggested: [], rejected: [] }).confirmed.push(...named.map((f) => ({ ...f, state: 'confirmed', person: { id: p.id, name: p.name } })));
     for (const c of lib.clusters) c.faces = c.faces.filter((f) => !ids.includes(f.id));
     lib.clusters = lib.clusters.filter((c) => c.faces.length);
     p.faces += ids.length;
@@ -187,7 +190,7 @@ export function fakeLibrary() {
   const personFaces = (m, q) => {
     const p = byId(m[1]);
     if (!p) return [404, { error: 'no such person' }];
-    const list = lib.faceLists[p.id][q.get('state')] || [];
+    const list = (lib.faceLists[p.id] || {})[q.get('state')] || [];
     const offset = Number(q.get('offset') || 0), limit = Math.min(Number(q.get('limit') || 300), 2000);
     return [200, { total: list.length, faces: list.slice(offset, offset + limit) }];
   };
@@ -237,7 +240,7 @@ export function fakeLibrary() {
         p = byId(pid);
         l.suggested = l.suggested.filter((f) => !ids.includes(f.id));
         p.suggested = l.suggested.length;
-        if (m[1] === 'confirm') { p.faces += gone.length; p.photos += gone.length; } else l.rejected.push(...gone.map((f) => ({ ...f, state: null, similarity: null })));
+        if (m[1] === 'confirm') { p.faces += gone.length; p.photos += gone.length; l.confirmed.push(...gone.map((f) => ({ ...f, state: 'confirmed', similarity: null }))); } else l.rejected.push(...gone.map((f) => ({ ...f, state: null, similarity: null })));
         n += gone.length;
       }
       changed('card');

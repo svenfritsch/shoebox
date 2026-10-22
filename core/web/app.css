@@ -399,7 +399,6 @@ body.tile-drag { -webkit-user-select: none; user-select: none; }
 .face { position: relative; width: 112px; font-size: 12px; }
 .face .crop { display: block; width: 112px; height: 112px; border-radius: 8px; overflow: hidden; background: var(--cell-bg); }
 .face .crop img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.face.small .crop { outline: 2px dashed var(--muted); outline-offset: -2px; }
 .face.broken .crop img { visibility: hidden; }
 .face .meta { color: var(--muted); margin-top: 2px; }
 .face .tag { display: inline-block; margin-right: 4px; padding: 0 5px; border-radius: 4px; background: var(--line); color: var(--fg); font-size: 11px; }
@@ -408,7 +407,11 @@ body.tile-drag { -webkit-user-select: none; user-select: none; }
 /* "Show more" under a grid of faces (a person's page, Face check), not against its last row. */
 .faces + .btn { margin-top: 16px; }
 .face .mark { position: absolute; top: 4px; left: 4px; width: 24px; height: 24px; border: 0; border-radius: 12px; background: rgba(0,0,0,.55); color: #fff; font-size: 13px; line-height: 24px; padding: 0; cursor: pointer; }
-.face.sel .crop { outline: 3px solid var(--accent); outline-offset: -3px; }
+/* Frames lie over the picture: a confirmed face's cut-out (.zoom) is positioned and would cover an outline. */
+.face .crop { position: relative; }
+.face.small .crop::before, .face.sel .crop::after { content: ''; position: absolute; inset: 0; z-index: 1; border-radius: inherit; pointer-events: none; }
+.face.small .crop::before { border: 2px dashed var(--muted); }
+.face.sel .crop::after { border: 3px solid var(--accent); }
 #face-pick.active { background: var(--accent); color: #fff; }
 .page .toolbar select { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
 
