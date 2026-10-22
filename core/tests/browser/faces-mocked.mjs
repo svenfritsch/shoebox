@@ -374,6 +374,29 @@ async function personMenu(p, x, key) {
   await menu(p, key);
 }
 
+// "Check n faces" (or "Faces") opens a person's faces; their ⋯ menu has no
+// second way there.
+await test('the ⋯ menu of a person on the People page and on their page: no Review faces', await on('view=people', (lib) => lib.person('Rita Menu', { suggested: 3 }), async (p, lib, rita) => {
+  const items = async () => {
+    await p.locator('.menu').waitFor();
+    const got = await p.locator('.menu [role=menuitem]').allTextContents();
+    await p.keyboard.press('Escape');
+    await p.locator('.menu').waitFor({ state: 'detached' });
+    return got;
+  };
+  const words = (keys) => Promise.all(keys.map((k) => tr(p, k)));
+  const edit = ['people.menu.rename', 'people.menu.move', 'people.menu.new_group', 'people.menu.merge'];
+  await person(p, rita).locator('.more-btn').click();
+  const tile = await items();
+  const want = await words(['people.menu.show', ...edit]);
+  check(JSON.stringify(tile) === JSON.stringify(want), `People page: ${JSON.stringify(tile)}, expected ${JSON.stringify(want)}`);
+  await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=suggested`; }, rita.id);
+  await p.locator('#pp-grid .face').first().waitFor();
+  await p.locator('.person-head .more-btn').click();
+  const page = await items();
+  check(JSON.stringify(page) === JSON.stringify(await words(edit)), `person's page: ${JSON.stringify(page)}`);
+}));
+
 await test('a person moved to a group, then both out of it: the empty group is gone', await on('view=people', (lib) => {
   const anton = lib.person('Anton Move'), bea = lib.person('Bea Move');
   lib.group('Move Group', bea);

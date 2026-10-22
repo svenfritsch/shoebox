@@ -34,6 +34,7 @@ export function fakeLibrary() {
   let faceSeq = 0, clusterSeq = 0, personSeq = 0, groupSeq = 0, time = 1_800_000_000;
   const lib = {
     clusters: [], people: [], groups: [],
+    faceLists: {}, // person id: { suggested, rejected } (a person's page; confirmed ones are only counted)
     trash: [], // what GET /trash answers (organize::TrashItem)
     step: null, // null (grouped), 'stale' (starting) or 'running'
     progress: [0, 0], // done, total while running
@@ -60,12 +61,18 @@ export function fakeLibrary() {
     return c;
   };
   // Someone with `faces` confirmed faces (their picture one of them), in `group`.
-  // `species`: a pet ('cat', 'dog' or 'pet').
-  lib.person = (name, { faces = 3, group = null, species = null } = {}) => {
+  // `species`: a pet ('cat', 'dog' or 'pet'); `suggested`: that many faces
+  // suggested for them (most similar first, each on a photo of its own).
+  lib.person = (name, { faces = 3, group = null, species = null, suggested = 0 } = {}) => {
     const p = { id: ++personSeq, name, group_id: group ? group.id : null, hidden: false, faces, photos: faces, suggested: 0, maybe: 0, cover: null, cover_manual: null };
     if (species) p.species = species;
     if (faces) { p.cover = face().id; faceSeq += faces - 1; p.last_named = time; }
     lib.people.push(p);
+    lib.faceLists[p.id] = { suggested: [], rejected: [] };
+    for (let i = 0; i < suggested; i++) {
+      lib.faceLists[p.id].suggested.push({ ...face(), state: 'suggested', person: { id: p.id, name }, similarity: 0.95 - i * 0.0001 });
+    }
+    p.suggested = suggested;
     return p;
   };
   // A group (made with its first person, as the app always does).
@@ -175,7 +182,17 @@ export function fakeLibrary() {
       return { total: sorted.length, unnamed: count(sorted), small_faces: count(small()), clusters: sorted.slice(offset, offset + limit).map((c) => clusterOut(c, samples)) };
     },
   };
+  // A person's faces in one tab (`people::person_faces_in`): `total` and a page.
+  const personFaces = (m, q) => {
+    const p = byId(m[1]);
+    if (!p) return [404, { error: 'no such person' }];
+    const list = lib.faceLists[p.id][q.get('state')] || [];
+    const offset = Number(q.get('offset') || 0), limit = Math.min(Number(q.get('limit') || 300), 2000);
+    return [200, { total: list.length, faces: list.slice(offset, offset + limit) }];
+  };
   const getPattern = [
+    [/^\/people\/(\d+)$/, (m) => { const p = byId(m[1]); return p ? [200, { ...p }] : [404, { error: 'no such person' }]; }],
+    [/^\/people\/(\d+)\/faces$/, personFaces],
     [/^\/clusters\/(\d+)\/faces$/, (m) => { const c = lib.clusters.find((x) => x.id === Number(m[1])); return c ? [200, c.faces] : [404, { error: 'no such cluster' }]; }],
   ];
   const post = [
@@ -190,6 +207,23 @@ export function fakeLibrary() {
       return [200, { ...reply, cluster: left ? { id: left.id, generation: left.generation, size: left.faces.length } : null }];
     }],
     [/^\/faces\/assign$/, (m, body) => decide(body.faces, body)],
+    // A suggestion confirmed or rejected (a person's page, the viewer): it
+    // leaves the list at once; the other suggestions wait for the grouping.
+    [/^\/faces\/(confirm|reject)$/, (m, body) => {
+      const ids = body.faces || [];
+      let p = null, n = 0;
+      for (const [pid, l] of Object.entries(lib.faceLists)) {
+        const gone = l.suggested.filter((f) => ids.includes(f.id));
+        if (!gone.length) continue;
+        p = byId(pid);
+        l.suggested = l.suggested.filter((f) => !ids.includes(f.id));
+        p.suggested = l.suggested.length;
+        if (m[1] === 'confirm') { p.faces += gone.length; p.photos += gone.length; } else l.rejected.push(...gone.map((f) => ({ ...f, state: null, similarity: null })));
+        n += gone.length;
+      }
+      changed('card');
+      return [200, { faces: n, person: p && { id: p.id, name: p.name }, ...(p && m[1] === 'confirm' ? { person_data: { ...p, suggested: 0, maybe: 0 } } : {}) }];
+    }],
     // The Unnamed page was left: what waits is regrouped soon.
     [/^\/clusters\/left$/, () => { if (lib.pending) changed('soon'); return [200, {}]; }],
     [/^\/people$/, (m, body) => {
@@ -275,7 +309,7 @@ export function fakeLibrary() {
     lib.log.push({ method: req.method(), path: rel, query: u.searchParams });
     if (req.method() === 'GET') {
       if (get[rel]) return json(route, 200, get[rel](u.searchParams));
-      for (const [re, fn] of getPattern) { const m = rel.match(re); if (m) { const [s, b] = fn(m); return json(route, s, b); } }
+      for (const [re, fn] of getPattern) { const m = rel.match(re); if (m) { const [s, b] = fn(m, u.searchParams); return json(route, s, b); } }
     } else if (req.method() === 'POST') {
       const body = req.postDataJSON() || {};
       for (const [re, fn] of post) { const m = rel.match(re); if (m) { const [s, b] = fn(m, body); return json(route, s, b); } }
