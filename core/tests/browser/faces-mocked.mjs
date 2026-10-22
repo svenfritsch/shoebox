@@ -435,6 +435,46 @@ await test('a person\'s page: "Confirm all shown" brings the next faces without 
   check(lib.faceLists[ines.id].suggested.length === 0 && ines.faces === 253, `the fake has ${lib.faceLists[ines.id].suggested.length} suggestions left, ${ines.faces} faces`);
 }));
 
+// A face decided in the viewer opened from a person's page has left the tab
+// when the viewer closes; the other cards stay as they were (no new page).
+await test('a person\'s page: a face rejected in the viewer is gone from it once the viewer closes', await on('view=people', (lib) => lib.person('Vera View', { suggested: 3 }), async (p, lib, vera) => {
+  await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=suggested`; }, vera.id);
+  await p.locator('#pp-grid .face').first().waitFor();
+  await settle(p, lib);
+  const [a, b, c] = lib.faceLists[vera.id].suggested.map((f) => f.id);
+  await p.evaluate(() => document.querySelectorAll('#pp-grid .face').forEach((x) => { x.dataset.old = '1'; }));
+  const faces = (from) => lib.log.slice(from).filter((e) => e.method === 'GET' && e.path === `/people/${vera.id}/faces`).length;
+  const view = async (id) => {
+    await p.locator(`#pp-grid .face[data-key="f${id}"] .crop`).click();
+    await p.locator('#lightbox').waitFor({ state: 'visible' });
+    await settle(p, lib);
+  };
+  const close = async () => {
+    await p.keyboard.press('Escape');
+    await p.locator('#lightbox').waitFor({ state: 'hidden' });
+    await settle(p, lib);
+  };
+  // Looked at only: nothing is asked for again.
+  let from = lib.log.length;
+  await view(a);
+  await close();
+  check(faces(from) === 0, `closed without a decision, the faces were asked for ${faces(from)} times`);
+  // ✗ in the info panel.
+  await view(b);
+  await p.locator('#lb-info').click();
+  await p.locator('#lb-panel .pface button.no').click();
+  await posted(lib, /^\/faces\/reject$/);
+  await settle(p, lib);
+  check(await p.locator(`#pp-grid .face[data-key="f${b}"]`).count() === 1, 'the card left before the viewer closed');
+  from = lib.log.length;
+  await close();
+  const left = await p.locator('#pp-grid .face').evaluateAll((xs) => xs.map((x) => [x.dataset.key, x.dataset.old]));
+  check(JSON.stringify(left) === JSON.stringify([[`f${a}`, '1'], [`f${c}`, '1']]), `after the viewer: ${JSON.stringify(left)}, expected the other two cards as they were`);
+  check(faces(from) === 1, `the faces were asked for ${faces(from)} times, expected once`);
+  const tab = await p.locator('#person-tabs .tab[data-tab="suggested"]').textContent();
+  check(tab.includes('(2)'), `the tab says ${tab}`);
+}));
+
 await test('a person moved to a group, then both out of it: the empty group is gone', await on('view=people', (lib) => {
   const anton = lib.person('Anton Move'), bea = lib.person('Bea Move');
   lib.group('Move Group', bea);

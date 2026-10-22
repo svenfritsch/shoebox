@@ -5145,7 +5145,9 @@ function similarFaces(face) {
 // viewer closes.
 // `siblings` (optional): the faces shown with it, e.g. in a cluster card; the
 // arrow keys then step through their photos (once per photo).
-function openFacePhoto(face, siblings) {
+// `onBack(changed)` (optional): called when the viewer closes, `changed` true
+// if faces were decided in it.
+function openFacePhoto(face, siblings, onBack) {
   var list = [], seen = {}, at = 0;
   (siblings || [face]).forEach(function (f) {
     if (f.file == null || seen[f.file]) return;
@@ -5154,12 +5156,13 @@ function openFacePhoto(face, siblings) {
   });
   list.forEach(function (f, k) { if (f.file === face.file) at = k; });
   if (!list.length) list = [face];
-  openFiles(list, at);
+  openFiles(list, at, onBack);
 }
 
 // Opens the viewer over these files ({ file, kind, version }) instead of the
-// timeline, starting at `at`; closing it goes back to where it was opened.
-function openFiles(list, at) {
+// timeline, starting at `at`; closing it goes back to where it was opened
+// (and calls `onBack` as openFacePhoto says).
+function openFiles(list, at, onBack) {
   var saved = state.data;
   state.data = {
     count: list.length,
@@ -5171,9 +5174,11 @@ function openFiles(list, at) {
   };
   // Back to the thumbnail it was opened from (keyboard: Tab, Space, Space).
   var from = document.activeElement;
+  lb.facesChanged = false;
   lb.restore = function () {
     state.data = saved;
     if (from && from.isConnected && from.focus) from.focus();
+    if (onBack) onBack(lb.facesChanged);
   };
   openLightbox(at);
 }
@@ -6669,6 +6674,42 @@ function morePersonFaces(grid, more, tab) {
   }).catch(failed);
 }
 
+// The faces shown whose key `gone(key)` says left the tab's list.
+function dropPersonFaces(gone) {
+  pp.faces = pp.faces.filter(function (x) {
+    var k = faceKey(x);
+    if (!gone(k)) return true;
+    var card = document.querySelector('#pp-grid .face[data-key="' + k + '"]');
+    if (card) card.remove();
+    delete pp.picked[k];
+    return false;
+  });
+  updatePersonPick();
+  personGridEmptied();
+}
+
+// Back from the viewer, where faces were decided: the faces shown that left
+// this tab go (as after a decision here), the counts follow. A face that came
+// into the tab shows with the next visit. The list is asked for up to what is
+// shown and a page more, so a face that moved down stays; past the server's
+// limit the page is built again.
+function personFacesAgain() {
+  var id = pp.person && pp.person.id, tab = pp.tab, n = pp.faces.length;
+  if (state.filter.view !== 'person' || state.filter.id !== id) return;
+  loadPersonCounts();
+  if (!n) return;
+  if (n + 200 > 2000) { loadPersonPage(); return; }
+  api(LIBAPI + '/people/' + id + '/faces' + query({ state: tab, offset: 0, limit: n + 200 })).then(function (r) {
+    if (state.filter.view !== 'person' || state.filter.id !== id || pp.tab !== tab) return;
+    var still = {};
+    r.faces.forEach(function (x) { still[faceKey(x)] = true; });
+    pp.total = r.total;
+    dropPersonFaces(function (k) { return k && !still[k]; });
+    var more = $('pp-more');
+    if (more && !more.disabled) more.hidden = pp.faces.length >= pp.total;
+  }).catch(failed);
+}
+
 // The last faces shown left the list (e.g. "Confirm all shown"): the next
 // ones come without a click on "Show more", or the line that there are none.
 function personGridEmptied() {
@@ -6724,7 +6765,7 @@ function personFaceCard(face, tab) {
       return;
     }
     // Suggested and maybe: the arrow keys step through the faces to check.
-    if (face.file != null) openFacePhoto(face, tab === 'suggested' || tab === 'maybe' ? pp.faces : null);
+    if (face.file != null) openFacePhoto(face, tab === 'suggested' || tab === 'maybe' ? pp.faces : null, function (changed) { if (changed) personFacesAgain(); });
   };
   card.appendChild(a);
   var caption = face.similarity != null ? tr('person.alike', { pct: Math.round(face.similarity * 100) }) : Math.round(face.px) + ' px';
@@ -6783,16 +6824,7 @@ function personAction(action, ids, manual) {
     var gone = {};
     ids.forEach(function (x) { gone['f' + x] = true; });
     manual.forEach(function (x) { gone['m' + x] = true; });
-    pp.faces = pp.faces.filter(function (x) {
-      var k = faceKey(x);
-      if (!gone[k]) return true;
-      var card = document.querySelector('#pp-grid .face[data-key="' + k + '"]');
-      if (card) card.remove();
-      delete pp.picked[k];
-      return false;
-    });
-    updatePersonPick();
-    personGridEmptied();
+    dropPersonFaces(function (k) { return gone[k]; });
     var count = trn('count.faces', r.faces);
     toast({
       confirm: tr('person.toast.confirm', { count: count, name: p.name }),
@@ -7901,6 +7933,7 @@ function infoFace(info, f, k, pick) {
 
 // After a change in the info panel: its faces again, and the people.
 function infoFacesChanged(id) {
+  lb.facesChanged = true;
   peopleChanged();
   if (!lb.details || lb.details.id !== id) return;
   api(LIBAPI + '/files/' + id).then(function (info) {

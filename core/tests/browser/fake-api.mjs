@@ -190,7 +190,25 @@ export function fakeLibrary() {
     const offset = Number(q.get('offset') || 0), limit = Math.min(Number(q.get('limit') || 300), 2000);
     return [200, { total: list.length, faces: list.slice(offset, offset + limit) }];
   };
+  // The viewer's info panel (`FileInfo`) of a photo with one face of a
+  // person's lists on it: a suggestion, or one rejected for them.
+  const fileInfo = (m) => {
+    const id = Number(m[1]);
+    for (const [pid, l] of Object.entries(lib.faceLists)) {
+      const f = [...l.suggested, ...l.rejected].find((x) => x.file === id);
+      if (!f) continue;
+      const rejected = l.rejected.includes(f) ? [Number(pid)] : [];
+      return [200, {
+        id, name: `IMG_${id}.PNG`, path: `IMG_${id}.PNG`, folder_id: 1, kind: 'png', size: 1000, taken: null, taken_offset: null, estimate: null, exif: null,
+        modified: '2026-01-01T10:00:00', width: 100, height: 100, duration_ms: null, camera: null, tags: [], missing: false,
+        date_source: null, sort_date: null, live: null, linked: [], faces: [{ ...f, rejected, landmarks: [] }],
+        view_turn: 0, screenshot: false, screenshot_mark: null, position: null, text: [],
+      }];
+    }
+    return [404, { error: 'no such file' }];
+  };
   const getPattern = [
+    [/^\/files\/(\d+)$/, fileInfo],
     [/^\/people\/(\d+)$/, (m) => { const p = byId(m[1]); return p ? [200, { ...p }] : [404, { error: 'no such person' }]; }],
     [/^\/people\/(\d+)\/faces$/, personFaces],
     [/^\/clusters\/(\d+)\/faces$/, (m) => { const c = lib.clusters.find((x) => x.id === Number(m[1])); return c ? [200, c.faces] : [404, { error: 'no such cluster' }]; }],
@@ -305,6 +323,7 @@ export function fakeLibrary() {
     const rel = path.slice(LIB.length);
     if (rel === '/events') return route.fulfill({ status: 204 }); // no stream: the page asks for the status itself
     if (/^\/trash\/\d+\/thumb$/.test(rel)) return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
+    if (/^\/files\/\d+\/(view|thumb)$/.test(rel)) return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
     if (/^\/faces\/(manual\/)?\d+\/crop$/.test(rel)) return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
     lib.log.push({ method: req.method(), path: rel, query: u.searchParams });
     if (req.method() === 'GET') {
