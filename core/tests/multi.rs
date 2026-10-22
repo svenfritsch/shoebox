@@ -281,6 +281,7 @@ fn one_timeline_over_the_drives_by_tag_person_and_text_but_without_backups() {
     assert_eq!(hits[0]["photos"], 2);
     assert_eq!(get(addr, "/raw/api/all/groups?q=zzz").json(), json!([]));
     assert_eq!(get(addr, "/raw/api/all/groups?q=&group=Family").json(), json!([]), "a group in the search is not offered again");
+    assert_eq!(get(addr, "/raw/api/all/suggest?q=fam").json()["groups"], hits, "the search box's one request");
     // A tag by name (the folder `Familie/Weihnachten` exists on every drive).
     let xmas = get(addr, "/raw/api/all/timeline?tag=weihnachten").json();
     assert_eq!(xmas["count"], 3);
@@ -544,6 +545,23 @@ fn suggestions_over_all_drives_narrow_with_the_filter() {
     }
     assert_eq!(person_photos(addr, "?tag=Winter", "Anna"), Some(count_of("?tag=Winter&person=Anna")));
     assert_eq!(person_photos(addr, "?tag=Strand", "Anna"), Some(count_of("?tag=Strand&person=Anna")));
+
+    // The search box asks for every section at once (`/api/all/suggest`): the
+    // same tags and people; people of the search are not offered again.
+    for filter in ["", "&tag=Ski", "&tag=Strand", "&person=Anna", "&tag=Sommer"] {
+        let s = get(addr, &format!("/raw/api/all/suggest?q={filter}")).json();
+        let tags: std::collections::BTreeMap<String, u64> =
+            s["tags"].as_array().unwrap().iter().map(|t| (t["name"].as_str().unwrap().to_string(), t["count"].as_u64().unwrap())).collect();
+        assert_eq!(tags, tag_counts(addr, filter), "{filter:?}");
+        let anna = s["people"].as_array().unwrap().iter().find(|p| p["name"] == "Anna").map(|p| p["photos"].as_u64().unwrap());
+        let expected = if filter.contains("person=Anna") { None } else { person_photos(addr, &filter.replacen('&', "?", 1), "Anna") };
+        assert_eq!(anna, expected, "{filter:?}");
+    }
+    assert_eq!(get(addr, "/raw/api/all/suggest?q=winter").json()["tags"][0]["name"], "Winter");
+    for typed in ["date:2020", "text:Ski", "name:a1"] {
+        let empty = json!({ "tags": [], "people": [], "pets": [], "groups": [], "dates": [], "text": null, "name": null });
+        assert_eq!(get(addr, &format!("/raw/api/all/suggest?q={typed}")).json(), empty, "{typed}");
+    }
     server.stop().unwrap();
 }
 

@@ -1,8 +1,9 @@
 // The Unnamed page, groups, the people list, a person's faces page (and the
-// viewer opened from it), the search suggestions and the trash page against a fake API
+// viewer opened from it), the search box and the trash page against a fake API
 // (fake-api.mjs) on a fake clock: which requests the page makes after each
 // action and when, and what the sidebar shows from the replies (PRs #142 and
-// #143). No shoebox is needed: the page is core/web as it is on disk.
+// #143); the search box's requests while someone types. No shoebox is needed:
+// the page is core/web as it is on disk.
 //
 //   node core/tests/browser/faces-mocked.mjs     (ONLY=text: only those tests)
 //
@@ -12,7 +13,7 @@
 // server tells the page of each step by its event stream; here the test does,
 // by calling the page's own `loadInfo` (`tell`), as the stream's event does.
 import { browser, check, until, tr, test, finish, requests, noListRequests, clusterRounds, sidebarIs, groupNames, menu, typeName, face, card, single, nameCard } from './faces-common.mjs';
-import { fakeLibrary, ORIGIN } from './fake-api.mjs';
+import { fakeLibrary, ORIGIN, LIB } from './fake-api.mjs';
 import { inflateSync } from 'node:zlib';
 
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 1400 } });
@@ -650,6 +651,172 @@ await test('a failed naming shows the error and was sent once', await on('view=p
   await held[0].fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'down' }) });
   await until('the error dialog', async () => (await p.locator('#modal-title').textContent()) === (await tr(p, 'app.failed')));
   check(held.length === 1, `the naming was sent ${held.length} times`);
+}));
+
+// ---- the search box
+
+// Typing asks for the suggestions, all in one request, once the letters pause
+// (150 ms), and for the photos after 300 ms. Both wait for the drive's one
+// connection, so what was asked for an earlier text is called off when a newer
+// one is asked for (see "Search" under Performance in docs/plan.md).
+await test('the search box asks once typing pauses and calls off what a newer text replaces', await on('', (lib) => lib.person('Longo Search'), async (p, lib) => {
+  const from = lib.log.length;
+  const asked = (path) => lib.log.slice(from).filter((e) => e.path === path).map((e) => e.query.get('q') || '');
+  const calledOff = [];
+  p.on('requestfailed', (r) => { const u = new URL(r.url()); calledOff.push(u.pathname.slice(LIB.length) + '?q=' + (u.searchParams.get('q') || '')); });
+  lib.hold = /^\/suggest$/;
+  // The page's time stands still but where the test moves it (the waits below take real time).
+  await p.clock.pauseAt(await p.evaluate(() => Date.now()) + 1000);
+  await p.focus('#search'); // the list for an empty box, at once
+  for (const ch of 'lon') {
+    await p.keyboard.type(ch);
+    await p.clock.runFor(100);
+  }
+  check(asked('/suggest').join() === '', `asked while the letters came 100 ms apart: [${asked('/suggest')}]`);
+  await p.clock.runFor(100);
+  await until('the suggestions for "lon"', () => asked('/suggest').includes('lon'));
+  check(asked('/suggest').join() === ',lon', `suggestions asked for [${asked('/suggest')}], expected once for "" (the box entered) and once for "lon"`);
+  check(!asked('/timeline').length, 'the photos were asked for before 300 ms without a letter');
+  // Another letter while the answer for "lon" waits: it is called off.
+  await p.keyboard.type('g');
+  await p.clock.runFor(200);
+  await until('the suggestions for "long"', () => asked('/suggest').includes('long'));
+  await until('the requests for "" and "lon" called off', () => calledOff.includes('/suggest?q=lon') && calledOff.includes('/suggest?q='));
+  lib.release();
+  await settle(p, lib);
+  check(asked('/suggest').join() === ',lon,long', `suggestions asked for [${asked('/suggest')}], expected "", "lon", "long" once each`);
+  check(asked('/timeline').join() === 'long', `the photos asked for [${asked('/timeline')}], expected once for "long"`);
+  check(!calledOff.some((r) => r.endsWith('?q=long')), `what "long" asked for was called off: ${calledOff}`);
+  const shown = await p.locator('#suggest .item .label').allTextContents();
+  check(shown.includes('Longo Search'), `the list shows [${shown}]`);
+}));
+
+// What the search box asked for since `from`: the typed text of each request
+// to `path`, and the requests the page called off ("/suggest?q=lon").
+function searchLog(p, lib) {
+  const from = lib.log.length, calledOff = [];
+  p.on('requestfailed', (r) => { const u = new URL(r.url()); calledOff.push(u.pathname.slice(LIB.length) + '?q=' + (u.searchParams.get('q') || '')); });
+  return { calledOff, asked: (path) => lib.log.slice(from).filter((e) => e.path === path).map((e) => e.query.get('q') || '') };
+}
+// A time window of real time in which nothing may happen (the page's clock stands still).
+const quiet = () => new Promise((go) => setTimeout(go, 300));
+// The page's time stands still but where the test moves it (the waits take real time).
+const pauseClock = async (p) => p.clock.pauseAt(await p.evaluate(() => Date.now()) + 1000);
+
+await test('the search box waits 150 ms after the last letter for the suggestions and 300 ms for the photos', await on('', (lib) => lib.person('Longo Search'), async (p, lib) => {
+  await pauseClock(p);
+  await p.focus('#search');
+  await settle(p, lib);
+  const { asked } = searchLog(p, lib);
+  await p.keyboard.type('l');
+  await p.clock.runFor(149);
+  await p.keyboard.type('o'); // 149 ms after the "l": its suggestions and photos are never asked for
+  await p.clock.runFor(149);
+  await quiet();
+  check(!asked('/suggest').length, `asked 149 ms after the last letter: [${asked('/suggest')}]`);
+  await p.clock.runFor(1);
+  await until('the suggestions 150 ms after the last letter', () => asked('/suggest').includes('lo'));
+  await p.clock.runFor(149);
+  await quiet();
+  check(!asked('/timeline').length, `the photos asked for 299 ms after the last letter: [${asked('/timeline')}]`);
+  await p.clock.runFor(1);
+  await until('the photos 300 ms after the last letter', () => asked('/timeline').includes('lo'));
+  await settle(p, lib);
+  check(asked('/suggest').join() === 'lo', `suggestions asked for [${asked('/suggest')}], expected once for "lo"`);
+  check(asked('/timeline').join() === 'lo', `photos asked for [${asked('/timeline')}], expected once for "lo"`);
+}));
+
+await test('the search box calls off the photos an older text asked for', await on('', () => null, async (p, lib) => {
+  await pauseClock(p);
+  await p.focus('#search');
+  await settle(p, lib);
+  const { asked, calledOff } = searchLog(p, lib);
+  lib.hold = /^\/timeline$/;
+  await p.keyboard.type('a');
+  await p.clock.runFor(300);
+  await until('the photos for "a"', () => asked('/timeline').includes('a'));
+  await p.keyboard.type('b');
+  await p.clock.runFor(300);
+  await until('the photos for "ab"', () => asked('/timeline').includes('ab'));
+  await until('the photos for "a" called off', () => calledOff.includes('/timeline?q=a'));
+  lib.release();
+  await settle(p, lib);
+  check(asked('/timeline').join() === 'a,ab', `photos asked for [${asked('/timeline')}]`);
+  check(!calledOff.includes('/timeline?q=ab'), 'the photos for "ab" were called off');
+  check(await p.evaluate(() => state.filter.q) === 'ab', 'the search is not "ab"');
+}));
+
+await test('Escape and leaving the search box call off the suggestions on their way', await on('', () => null, async (p, lib) => {
+  await pauseClock(p);
+  await p.focus('#search');
+  await settle(p, lib);
+  const { asked, calledOff } = searchLog(p, lib);
+  lib.hold = /^\/suggest$/;
+  await p.keyboard.type('x');
+  await p.clock.runFor(150);
+  await until('the suggestions for "x"', () => asked('/suggest').includes('x'));
+  await p.keyboard.press('Escape');
+  await until('the suggestions for "x" called off by Escape', () => calledOff.includes('/suggest?q=x'));
+  await p.keyboard.type('y');
+  await p.clock.runFor(150);
+  // (Escape also empties a search field in the browser.)
+  await until('the suggestions for "y"', () => asked('/suggest').includes('y'));
+  await p.evaluate(() => $('search').blur());
+  await p.clock.runFor(150); // the list closes a moment after the box is left
+  await until('the suggestions for "y" called off when the box was left', () => calledOff.includes('/suggest?q=y'));
+  lib.release();
+  await settle(p, lib);
+  check(await p.locator('#suggest').isHidden(), 'the list is open after the box was left');
+}));
+
+// The text row and the prefixes: the server counts what `text:` and `name:`
+// (and the text row of a plain search) would find; a term that finds nothing
+// gets no row (a prefix says why). `date:` asks for dates. Nothing else is
+// asked for a number (the fake answers no `/count`).
+const rows = async (p) => {
+  const items = await p.locator('#suggest .item').evaluateAll((bs) => bs.map((b) => b.querySelector('.label').textContent + '=' + b.querySelector('.count').textContent + (b.classList.contains('off') ? ' (off)' : '')));
+  const hints = await p.locator('#suggest > .hint').allTextContents();
+  return { items, hints };
+};
+const typeIn = async (p, lib, text) => {
+  await p.fill('#search', text);
+  await settle(p, lib);
+  return rows(p);
+};
+await test('the search box: the text row and text: and name: show what the server counted, nothing when it finds nothing', await on('', (lib) => {
+  lib.textLines = 40;
+  lib.words = { hello: 3 };
+  lib.fileNames = { img_1: 2 };
+}, async (p, lib) => {
+  await p.focus('#search');
+  await settle(p, lib);
+  const from = lib.log.length;
+  let r = await typeIn(p, lib, 'text:hello');
+  check(r.items.join() === '“hello”=3', `text:hello shows [${r.items}]`);
+  r = await typeIn(p, lib, 'text:zzz');
+  check(!r.items.length && r.hints.includes(await tr(p, 'search.text_none', { term: 'zzz' })), `text:zzz shows [${r.items}], hints [${r.hints}]`);
+  r = await typeIn(p, lib, 'name:IMG_1');
+  check(r.items.join() === '“IMG_1”=2', `name:IMG_1 shows [${r.items}]`);
+  r = await typeIn(p, lib, 'name:nope');
+  check(!r.items.length && r.hints.includes(await tr(p, 'search.name_none', { term: 'nope' })), `name:nope shows [${r.items}], hints [${r.hints}]`);
+  r = await typeIn(p, lib, 'hello');
+  check(r.items.includes('“hello”=3'), `hello: the text row with its number, got [${r.items}]`);
+  r = await typeIn(p, lib, 'zzz');
+  check(!r.items.some((i) => i.startsWith('“')), `zzz: a text row that finds nothing, got [${r.items}]`);
+  r = await typeIn(p, lib, 'text:');
+  check(!r.items.length && r.hints.includes(await tr(p, 'search.prefix_empty_text')), `text: alone shows [${r.items}], hints [${r.hints}]`);
+  await typeIn(p, lib, 'date:2019');
+  const asked = lib.log.slice(from).filter((e) => e.path === '/suggest').map((e) => e.query.get('q'));
+  check(asked.join() === 'text:hello,text:zzz,name:IMG_1,name:nope,hello,zzz,date:2019', `asked for [${asked}]`);
+}));
+
+await test('the search box before any text was read: the text row greyed, text: says how to read it', await on('', () => null, async (p, lib) => {
+  await p.focus('#search');
+  await settle(p, lib);
+  let r = await typeIn(p, lib, 'hello');
+  check(r.items.includes('“hello”= (off)'), `hello: the greyed text row, got [${r.items}]`);
+  r = await typeIn(p, lib, 'text:hello');
+  check(!r.items.length && r.hints.includes(await tr(p, 'search.text_unread')), `text:hello shows [${r.items}], hints [${r.hints}]`);
 }));
 
 // The trash page: a badge for each file that went with a photo, and for a

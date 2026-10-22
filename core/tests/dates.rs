@@ -219,6 +219,32 @@ fn date_terms_find_what_lies_inside_them() {
     // Counted within the rest of the filter: no videos here.
     assert!(rows("q=1987&type=video").is_empty());
 
+    // The search box asks for every section at once (`/api/suggest`): the
+    // server reads the prefix; `date:` answers only dates, `text:` and
+    // `name:` nothing, plain text dates among the rest.
+    let suggest = |q: &str| get(addr, &format!("/api/suggest?{q}")).json();
+    let raw_rows = |q: &str| get(addr, &format!("/api/dates?{q}")).json();
+    for (typed, same_as) in [("q=date:juni", "q=juni&prefix=1"), ("q=+DATUM:+1987", "q=1987&prefix=1"), ("q=date:", "q=&prefix=1")] {
+        let s = suggest(typed);
+        assert_eq!(s["dates"], raw_rows(same_as), "{typed}");
+        assert!(s["dates"].as_array().unwrap().len() > 0, "{typed}");
+        for k in ["tags", "people", "pets", "groups"] {
+            assert_eq!(s[k], json!([]), "{typed}: only dates");
+        }
+        assert!(s["text"].is_null() && s["name"].is_null(), "{typed}: only dates");
+    }
+    assert_eq!(suggest("q=june+1987")["dates"], raw_rows("q=june+1987"));
+    assert_eq!(suggest("q=june")["dates"], json!([]), "a month alone gets no row without the prefix");
+    assert_eq!(suggest("q=1987&type=video")["dates"], json!([]));
+    // `text:` and `name:`: only the number of that term (see text_search.rs).
+    for (typed, key) in [("q=text:1987", "text"), ("q=name:IMG", "name"), ("q=Name:+1987", "name")] {
+        let s = suggest(typed);
+        for k in ["tags", "people", "pets", "groups", "dates"] {
+            assert_eq!(s[k], json!([]), "{typed}");
+        }
+        assert!(s[key]["count"].is_u64(), "{typed}: {s}");
+    }
+
     server.stop().unwrap();
 }
 

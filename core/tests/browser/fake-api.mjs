@@ -1,8 +1,8 @@
 // A stand-in for `shoebox serve` for the mocked browser tests (faces-mocked.mjs):
 // the page's files come from core/web and core/i18n as they are on disk, the
 // library's API from a small model in memory (people, groups, unnamed
-// clusters, a person's suggested and rejected faces and their photos' info,
-// the search box, the status, the trash). Its answers have the shapes of the real server's;
+// clusters, a person's faces and their photos' info, the search box, the
+// status, the trash). Its answers have the shapes of the real server's;
 // those are checked by the Rust API tests (core/tests/people.rs: the naming
 // replies' `person_data` against the list) and the real-server browser tests
 // (faces-e2e.mjs). When the page or the server changes what is asked or
@@ -16,6 +16,11 @@
 // with `lib.progress` = [done, total]) and that it is done (`lib.grouped()`).
 // The event stream is refused (204), so the page follows the grouping by
 // asking for the status every 1.5 s (`watchClusters`), on the page's fake clock.
+//
+// The search box's requests (suggestions and the timeline) are answered from
+// the people and `lib.tags`; `lib.hold` (a pattern of paths) keeps the answers
+// of matching requests back until `lib.release()`, so a test can type while
+// they wait.
 //
 // A request the model does not know is answered 404 and kept in `lib.unknown`;
 // the test fails on it.
@@ -46,6 +51,12 @@ export function fakeLibrary() {
     log: [], // { method, path, query } relative to LIB
     unknown: [],
     open: 0, // requests being answered
+    tags: [], // { id, name, count, kind } for /tags
+    textLines: 0, // lines of recognized text (`/info`); 0: nothing read yet
+    words: {}, // word -> photos whose recognized text has it (`text`)
+    fileNames: {}, // part of a file name -> photos (`name`)
+    hold: null, // paths (relative to LIB) whose answers wait for `release`
+    held: [],
   };
   const face = () => {
     const id = ++faceSeq;
@@ -119,7 +130,7 @@ export function fakeLibrary() {
       ...(lib.counted || counts()), people: lib.people.length, stale: lib.step === 'stale', embedding: false,
       pending: lib.pending, cards_left: lib.pending ? Math.max(0, 5 - lib.cards) : 0, wait_ms: lib.pending ? lib.waitMs : 0, pause_ms: lib.pending ? 30000 : 0,
     },
-    text: { done: 0, total: 200, lines: 0 }, reveal: 'Open folder', export: true, read_only: false,
+    text: { done: 0, total: 200, lines: lib.textLines }, reveal: 'Open folder', export: true, read_only: false,
   });
 
   // ---- changes, as the server makes them
@@ -164,21 +175,35 @@ export function fakeLibrary() {
     '/people': () => peopleOut(),
     '/groups': () => groupsOut(),
     '/folders': () => [{ id: 1, parent: null, name: '', path: '', count: 200 }],
-    '/tags': () => [],
+    '/tags': (q) => lib.tags.filter((t) => fold(t.name).includes(fold(q.get('q') || ''))).slice(0, Number(q.get('limit') || 50)),
+    // The search box (no filter here): own tags and people by name and the
+    // text row's number; with `date:` only dates (none here), with `text:` or
+    // `name:` only that term's number.
+    '/suggest': (q) => {
+      const typed = q.get('q') || '';
+      const none = { tags: [], people: [], pets: [], groups: [], dates: [], text: null, name: null };
+      const count = (map, term) => (term ? { term, count: map[fold(term)] || 0 } : null);
+      const pre = /^\s*(date|datum|text|name):\s*(.*)$/i.exec(typed);
+      if (pre) {
+        const kind = pre[1].toLowerCase(), term = pre[2].trim();
+        if (kind === 'text') return { ...none, text: count(lib.words, term) };
+        if (kind === 'name') return { ...none, name: count(lib.fileNames, term) };
+        return none;
+      }
+      const needle = fold(typed);
+      return {
+        ...none,
+        tags: lib.tags.filter((t) => t.kind !== 'folder' && fold(t.name).includes(needle)).slice(0, 8),
+        people: peopleOut().filter((p) => p.photos && fold(p.name).includes(needle)).slice(0, 6)
+          .map((p) => ({ id: p.id, name: p.name, group_id: p.group_id, species: p.species || null, cover: p.cover, cover_manual: p.cover_manual, photos: p.photos })),
+        text: [...needle].length >= 2 ? count(lib.words, needle) : null,
+      };
+    },
+    '/timeline': () => ({ count: 0, ids: [], kinds: '', days: [], versions: '', live: [], tags: [], people: [], groups: [], favs: [], est: [] }),
     '/places': () => [],
     '/event-pattern': () => ({ pattern: 'YYYY-MM Name' }),
     '/allow-trash': () => ({ allow: false, read_only: false }),
     '/trash': () => lib.trash,
-    // The search box (`people_api::search`, with no filter): who has the
-    // text in their name and photos, most first. No pets or groups to offer.
-    '/people/search': (q) => lib.people.filter((p) => p.photos && fold(p.name).includes(fold(q.get('q') || '')))
-      .sort((a, b) => b.photos - a.photos || (fold(a.name) < fold(b.name) ? -1 : 1)).slice(0, Number(q.get('limit') || 8))
-      .map((p) => ({ id: p.id, name: p.name, group_id: p.group_id, species: p.species || null, cover: p.cover, cover_manual: p.cover_manual, photos: p.photos })),
-    '/pets/search': () => [],
-    '/dates': () => [],
-    // What a typed search shows after a moment: no photos here.
-    '/timeline': () => ({ count: 0, ids: [], kinds: '', days: [], versions: '', live: [], tags: [], people: [], groups: [], favs: [], snips: [], est: [] }),
-    '/groups/search': () => [],
     '/clusters': (q) => {
       const cs = q.get('size') === 'large' ? large() : q.get('size') === 'small' ? small() : lib.clusters;
       const sorted = [...cs].sort((a, b) => b.faces.length - a.faces.length || a.id - b.id);
@@ -301,9 +326,17 @@ export function fakeLibrary() {
     lib.open++;
     try {
       await answer(route);
+    } catch (e) {
+      if (!route.held) throw e; // a held request the page called off cannot be answered any more
     } finally {
       lib.open--;
     }
+  };
+  lib.release = () => {
+    const held = lib.held;
+    lib.hold = null;
+    lib.held = [];
+    held.forEach((go) => go());
   };
   const answer = async (route) => {
     const req = route.request();
@@ -330,6 +363,10 @@ export function fakeLibrary() {
     if (/^\/files\/\d+\/(view|thumb)$/.test(rel)) return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
     if (/^\/faces\/(manual\/)?\d+\/crop$/.test(rel)) return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
     lib.log.push({ method: req.method(), path: rel, query: u.searchParams });
+    if (lib.hold && lib.hold.test(rel)) {
+      route.held = true;
+      await new Promise((go) => lib.held.push(go));
+    }
     if (req.method() === 'GET') {
       if (get[rel]) return json(route, 200, get[rel](u.searchParams));
       for (const [re, fn] of getPattern) { const m = rel.match(re); if (m) { const [s, b] = fn(m, u.searchParams); return json(route, s, b); } }
