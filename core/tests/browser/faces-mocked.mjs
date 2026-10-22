@@ -1,4 +1,5 @@
-// The Unnamed page, groups, the people list and the trash page against a fake API
+// The Unnamed page, groups, the people list, a person's faces page (and the
+// viewer opened from it), the search suggestions and the trash page against a fake API
 // (fake-api.mjs) on a fake clock: which requests the page makes after each
 // action and when, and what the sidebar shows from the replies (PRs #142 and
 // #143). No shoebox is needed: the page is core/web as it is on disk.

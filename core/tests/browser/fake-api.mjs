@@ -1,7 +1,8 @@
 // A stand-in for `shoebox serve` for the mocked browser tests (faces-mocked.mjs):
 // the page's files come from core/web and core/i18n as they are on disk, the
 // library's API from a small model in memory (people, groups, unnamed
-// clusters, the status, the trash). Its answers have the shapes of the real server's;
+// clusters, a person's suggested and rejected faces and their photos' info,
+// the search box, the status, the trash). Its answers have the shapes of the real server's;
 // those are checked by the Rust API tests (core/tests/people.rs: the naming
 // replies' `person_data` against the list) and the real-server browser tests
 // (faces-e2e.mjs). When the page or the server changes what is asked or
