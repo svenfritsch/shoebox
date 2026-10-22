@@ -231,12 +231,18 @@ fn date_terms_find_what_lies_inside_them() {
         for k in ["tags", "people", "pets", "groups"] {
             assert_eq!(s[k], json!([]), "{typed}: only dates");
         }
+        assert!(s["text"].is_null() && s["name"].is_null(), "{typed}: only dates");
     }
     assert_eq!(suggest("q=june+1987")["dates"], raw_rows("q=june+1987"));
     assert_eq!(suggest("q=june")["dates"], json!([]), "a month alone gets no row without the prefix");
     assert_eq!(suggest("q=1987&type=video")["dates"], json!([]));
-    for typed in ["q=text:1987", "q=name:IMG", "q=Name:+1987"] {
-        assert_eq!(suggest(typed), json!({ "tags": [], "people": [], "pets": [], "groups": [], "dates": [] }), "{typed}");
+    // `text:` and `name:`: only the number of that term (see text_search.rs).
+    for (typed, key) in [("q=text:1987", "text"), ("q=name:IMG", "name"), ("q=Name:+1987", "name")] {
+        let s = suggest(typed);
+        for k in ["tags", "people", "pets", "groups", "dates"] {
+            assert_eq!(s[k], json!([]), "{typed}");
+        }
+        assert!(s[key]["count"].is_u64(), "{typed}: {s}");
     }
 
     server.stop().unwrap();

@@ -2217,8 +2217,8 @@ async fn all_tags(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> Ap
 /// `all_tags?own=1`, `all_people` (by name, hidden people left out, as on one
 /// drive), `pets/search` added up over the drives and `all_groups` give for
 /// `q`, counted within the filter (by name, as the common timeline's). The
-/// common timeline has no date suggestions, so `date:` (and `text:`, `name:`)
-/// get an empty reply.
+/// common timeline has no date suggestions and no number on the text row, so
+/// `date:`, `text:` and `name:` get an empty reply.
 async fn all_suggest(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<AllSuggestions>> {
     let q = param(&pairs, "q").unwrap_or("").to_string();
     let Typed::Plain(text) = typed(&q) else { return Ok(Json(AllSuggestions::default())) };
@@ -2251,7 +2251,7 @@ async fn all_suggest(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) ->
         pets.sort_by(|a, b| b.photos.cmp(&a.photos).then_with(|| a.species.cmp(b.species)));
         let mut groups = all_group_hits(&online, &filter, &needle)?;
         groups.truncate(SUGGEST_GROUPS);
-        Ok(AllSuggestions { tags, people, pets, groups, dates: Vec::new() })
+        Ok(AllSuggestions { tags, people, pets, groups, ..Default::default() })
     })
     .await?;
     Ok(Json(out))
@@ -2266,6 +2266,9 @@ struct AllSuggestions {
     groups: Vec<AllGroup>,
     /// Always empty: the common timeline has no date suggestions.
     dates: Vec<dates::Row>,
+    /// Always null: over all drives the text row has no number.
+    text: Option<TermCount>,
+    name: Option<TermCount>,
 }
 
 /// `all_tags` for `needle` (folded).
@@ -3009,9 +3012,10 @@ enum Typed<'a> {
     Plain(&'a str),
     /// `date:` or `datum:`: only dates (a month alone lists it in every year).
     Date(&'a str),
-    /// `text:` or `name:`: a term of its own that the page offers as typed;
-    /// nothing to look up.
-    Term,
+    /// `text:`: only the words read in pictures (`text=` in a search).
+    Text(&'a str),
+    /// `name:`: only file names (`name=` in a search).
+    Name(&'a str),
 }
 
 fn typed(q: &str) -> Typed<'_> {
@@ -3019,7 +3023,8 @@ fn typed(q: &str) -> Typed<'_> {
     if let Some((head, rest)) = t.split_once(':') {
         match head.to_ascii_lowercase().as_str() {
             "date" | "datum" => return Typed::Date(rest.trim()),
-            "text" | "name" => return Typed::Term,
+            "text" => return Typed::Text(rest.trim()),
+            "name" => return Typed::Name(rest.trim()),
             _ => {}
         }
     }
@@ -3040,6 +3045,19 @@ struct Suggestions {
     pets: Vec<people_api::PetHit>,
     groups: Vec<people_api::GroupHit>,
     dates: Vec<dates::Row>,
+    /// The photos whose recognized text has the typed word, within the filter
+    /// (`text=` added): for plain text of two letters or more and for `text:`;
+    /// else null.
+    text: Option<TermCount>,
+    /// The photos whose file name has the typed part, within the filter
+    /// (`name=` added): only for `name:`; else null.
+    name: Option<TermCount>,
+}
+
+#[derive(Serialize)]
+struct TermCount {
+    term: String,
+    count: usize,
 }
 
 /// A section of the suggestions, empty if it could not be read (the rest are still shown).
@@ -3054,21 +3072,34 @@ fn section<T>(app: &App, what: &str, r: Result<Vec<T>>) -> Vec<T> {
 /// counted within the rest of the filter (the timeline's parameters): own
 /// tags as `tags?own=1`, people as `people/search`, pets as `pets/search`,
 /// groups as `groups/search`, dates as `dates`, each section built by the same
-/// code as those endpoints. The photos the filter shows are worked out once
+/// code as those endpoints, and the number of the text row as `count?text=`.
+/// `text:` and `name:` answer only that row's number (`text`, `name`). The photos the filter shows are worked out once
 /// for all of them. People, pets and groups depend on the faces' tables: one
 /// of them failing leaves its section empty (and says so in the log), not the
 /// whole list.
 async fn suggest(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Suggestions>> {
     queued(&app, move |app| {
         let q = param(&pairs, "q").unwrap_or("").to_string();
-        let (text, only_dates) = match typed(&q) {
-            Typed::Plain(t) => (t, false),
-            Typed::Date(t) => (t, true),
-            Typed::Term => return Ok(Json(Suggestions::default())),
-        };
+        let typed = typed(&q);
         let conn = app.conn.lock().unwrap();
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
         let snapshot = app.snapshot(&conn)?;
+        // How many photos the search shows with the term added, as `/count` says.
+        let term_count = |term: &str, add: fn(&mut browse::Query, String)| -> Result<Option<TermCount>> {
+            if term.is_empty() {
+                return Ok(None);
+            }
+            let mut with = filter.clone();
+            add(&mut with, term.to_string());
+            Ok(Some(TermCount { term: term.to_string(), count: snapshot.query(&conn, &with)?.len() }))
+        };
+        let in_text = |q: &mut browse::Query, t: String| q.in_text.push(t);
+        let (text, only_dates) = match typed {
+            Typed::Plain(t) => (t, false),
+            Typed::Date(t) => (t, true),
+            Typed::Text(t) => return Ok(Json(Suggestions { text: term_count(t, in_text)?, ..Default::default() })),
+            Typed::Name(t) => return Ok(Json(Suggestions { name: term_count(t, |q, t| q.names.push(t))?, ..Default::default() })),
+        };
         let items = snapshot.query(&conn, &filter)?;
         let all_dates: Vec<(i32, Option<u32>, Option<u32>)> = items.iter().map(|it| it.date_parts()).collect();
         let dates = dates::suggest(text, only_dates, &all_dates);
@@ -3085,6 +3116,9 @@ async fn suggest(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> Api
             pets: section(app, "pets", people_api::pet_hits(app, &conn, &filter, text)),
             groups: section(app, "groups", people_api::group_hits(app, &conn, &filter, &needle, SUGGEST_GROUPS)),
             dates,
+            // As the page offers it: the text row from two letters on.
+            text: if text.chars().count() >= 2 { term_count(text, in_text)? } else { None },
+            name: None,
         }))
     })
     .await

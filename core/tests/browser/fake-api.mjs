@@ -49,6 +49,9 @@ export function fakeLibrary() {
     unknown: [],
     open: 0, // requests being answered
     tags: [], // { id, name, count, kind } for /tags
+    textLines: 0, // lines of recognized text (`/info`); 0: nothing read yet
+    words: {}, // word -> photos whose recognized text has it (`text`)
+    fileNames: {}, // part of a file name -> photos (`name`)
     hold: null, // paths (relative to LIB) whose answers wait for `release`
     held: [],
   };
@@ -115,7 +118,7 @@ export function fakeLibrary() {
       ...(lib.counted || counts()), people: lib.people.length, stale: lib.step === 'stale', embedding: false,
       pending: lib.pending, cards_left: lib.pending ? Math.max(0, 5 - lib.cards) : 0, wait_ms: lib.pending ? lib.waitMs : 0, pause_ms: lib.pending ? 30000 : 0,
     },
-    text: { done: 0, total: 200, lines: 0 }, reveal: 'Open folder', export: true, read_only: false,
+    text: { done: 0, total: 200, lines: lib.textLines }, reveal: 'Open folder', export: true, read_only: false,
   });
 
   // ---- changes, as the server makes them
@@ -159,21 +162,29 @@ export function fakeLibrary() {
     '/groups': () => groupsOut(),
     '/folders': () => [{ id: 1, parent: null, name: '', path: '', count: 200 }],
     '/tags': (q) => lib.tags.filter((t) => fold(t.name).includes(fold(q.get('q') || ''))).slice(0, Number(q.get('limit') || 50)),
-    // The search box (no filter here): own tags and people by name; with
-    // `date:` only dates (none here), with `text:` or `name:` nothing.
+    // The search box (no filter here): own tags and people by name and the
+    // text row's number; with `date:` only dates (none here), with `text:` or
+    // `name:` only that term's number.
     '/suggest': (q) => {
       const typed = q.get('q') || '';
-      const none = { tags: [], people: [], pets: [], groups: [], dates: [] };
-      if (/^\s*(date|datum|text|name):/i.test(typed)) return none;
+      const none = { tags: [], people: [], pets: [], groups: [], dates: [], text: null, name: null };
+      const count = (map, term) => (term ? { term, count: map[fold(term)] || 0 } : null);
+      const pre = /^\s*(date|datum|text|name):\s*(.*)$/i.exec(typed);
+      if (pre) {
+        const kind = pre[1].toLowerCase(), term = pre[2].trim();
+        if (kind === 'text') return { ...none, text: count(lib.words, term) };
+        if (kind === 'name') return { ...none, name: count(lib.fileNames, term) };
+        return none;
+      }
       const needle = fold(typed);
       return {
         ...none,
         tags: lib.tags.filter((t) => t.kind !== 'folder' && fold(t.name).includes(needle)).slice(0, 8),
         people: peopleOut().filter((p) => p.photos && fold(p.name).includes(needle)).slice(0, 6)
           .map((p) => ({ id: p.id, name: p.name, group_id: p.group_id, species: null, cover: p.cover, cover_manual: p.cover_manual, photos: p.photos })),
+        text: [...needle].length >= 2 ? count(lib.words, needle) : null,
       };
     },
-    '/count': () => ({ count: 0 }),
     '/timeline': () => ({ count: 0, ids: [], kinds: '', days: [], versions: '', live: [], tags: [], people: [], groups: [], favs: [], est: [] }),
     '/places': () => [],
     '/event-pattern': () => ({ pattern: 'YYYY-MM Name' }),

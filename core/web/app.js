@@ -859,9 +859,14 @@ function suggest(text) {
   // On the Locations page the search finds places: picking one shows it.
   if (f.view === 'locations' && geo.on) { showSuggest(placeSuggestions(text.trim(), f)); return; }
   if (f.view) { closeSuggest(); return; }
-  var pre = prefixOf(text);
-  // `text:` and `name:` are offered as typed: the server has nothing to add.
-  if (pre) { showSuggest(pre.term ? [{ kind: pre.kind, id: pre.term, label: pre.term, prefixed: true, hint: pre.kind === 'text' ? tr('search.text_prefixed_hint') : tr('search.name_prefixed_hint') }] : [], pre.term ? null : (pre.kind === 'text' ? tr('search.prefix_empty_text') : tr('search.prefix_empty_name'))); return; }
+  // `text:` and `name:`: one row, the term as typed, with the photos it finds
+  // (the server counts them); none when it finds nothing.
+  var pre = prefixOf(text), row = null;
+  if (pre) {
+    if (!pre.term) { showSuggest([], tr(pre.kind === 'text' ? 'search.prefix_empty_text' : 'search.prefix_empty_name')); return; }
+    row = { kind: pre.kind, id: pre.term, label: pre.term, prefixed: true, hint: tr(pre.kind === 'text' ? 'search.text_prefixed_hint' : 'search.name_prefixed_hint') };
+    if (isAll()) { showSuggest([row]); return; } // over all drives without a number
+  }
   // `date:` (or `datum:`): the server answers only dates, a month alone in every year.
   var typed = DATE_PREFIX.exec(text);
   if (isAll()) {
@@ -874,6 +879,12 @@ function suggest(text) {
   var within = { q: needle, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null };
   api(LIBAPI + '/suggest' + query(within), opts).then(function (r) {
     if (seq !== sugg.seq) return;
+    if (pre) {
+      var found = pre.kind === 'text' ? r.text : r.name;
+      if (found && found.count) { row.count = found.count; showSuggest([row]); return; }
+      showSuggest([], pre.kind === 'name' ? tr('search.name_none', { term: pre.term }) : state.textLines ? tr('search.text_none', { term: pre.term }) : tr('search.text_unread'));
+      return;
+    }
     if (typed) {
       var after = typed[1].trim();
       showSuggest(dateItems(r.dates), after && r.dates.length ? '' : tr('dates.hint_prefix'));
@@ -902,7 +913,7 @@ function suggest(text) {
         .slice(0, 4)
         .forEach(function (fo) { items.push({ kind: 'folder', id: fo.id, label: fo.path, count: fo.count }); });
     }
-    items = items.concat(textItems(needle));
+    items = items.concat(textItems(needle, r.text));
     // Last: a year, a month with a year or a day, when that is what was typed.
     items = items.concat(dateItems(r.dates));
     showSuggest(items);
@@ -929,11 +940,18 @@ function suggestAll(text, seq, opts) {
   }).catch(function () {});
 }
 
-// The last row of a plain search: look for the same word in the text of photos.
-// Greyed until something has been read (the Text add-on, then "Recognize text").
-function textItems(needle) {
+// The last row of a plain search: look for the same word in the text of photos,
+// with the photos it finds (`found`, counted by the server), left out when it
+// finds none. Greyed while nothing has been read (the Text add-on, then
+// "Recognize text"); over all drives without a number.
+function textItems(needle, found) {
   if (needle.length < 2) return [];
-  return [{ kind: 'text', id: needle, label: needle, hint: tr('search.text_hint', { term: needle }), off: !isAll() && !state.textLines }];
+  var row = { kind: 'text', id: needle, label: needle, hint: tr('search.text_hint', { term: needle }) };
+  if (isAll()) return [row];
+  if (!state.textLines) { row.off = true; return [row]; }
+  if (!found || !found.count) return [];
+  row.count = found.count;
+  return [row];
 }
 
 // Add a text or name term to the search as a chip.
@@ -943,24 +961,11 @@ function addTerm(kind, term) {
   setFilter(withFilter(ch));
 }
 
-// How many photos a text or name suggestion would show, beside it.
-function fillCount(it, i, seq) {
-  var f = state.filter;
-  var p = { tag: f.tags, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place };
-  p[it.kind] = (it.kind === 'text' ? f.texts : f.names).concat([it.id]);
-  api(LIBAPI + '/count' + query(p), sugg.ctrl ? { signal: sugg.ctrl.signal } : {}).then(function (r) {
-    if (seq !== sugg.seq) return;
-    var c = $('suggest').querySelector('[data-i="' + i + '"] .count');
-    if (c) c.textContent = I18n.number(r.count);
-  }).catch(function () {});
-}
-
 function showSuggest(items, hint) {
   var box = $('suggest');
   box.textContent = '';
   sugg.items = items;
   sugg.at = -1;
-  var seq = sugg.seq;
   var last = null;
   items.forEach(function (it, i) {
     if (it.kind !== last) {
@@ -994,7 +999,6 @@ function showSuggest(items, hint) {
     b.dataset.i = i;
     box.appendChild(b);
     if (it.hint) box.appendChild(el('div', 'hint', it.hint));
-    if ((it.kind === 'text' || it.kind === 'name') && !it.off && !isAll()) fillCount(it, i, seq);
   });
   if (hint) box.appendChild(el('div', 'hint', hint));
   box.hidden = !(items.length || hint) || document.activeElement !== $('search');

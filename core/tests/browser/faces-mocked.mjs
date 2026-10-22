@@ -524,23 +524,54 @@ await test('the search box asks once typing pauses and calls off what a newer te
   check(shown.includes('Longo Search'), `the list shows [${shown}]`);
 }));
 
-// The prefixes: `date:` asks the server (it answers only dates), `text:` and
-// `name:` ask nothing (the term is offered as typed).
-await test('the search box: date: asks the server, text: and name: ask nothing', await on('', () => null, async (p, lib) => {
+// The text row and the prefixes: the server counts what `text:` and `name:`
+// (and the text row of a plain search) would find; a term that finds nothing
+// gets no row (a prefix says why). `date:` asks for dates. Nothing else is
+// asked for a number (the fake answers no `/count`).
+const rows = async (p) => {
+  const items = await p.locator('#suggest .item').evaluateAll((bs) => bs.map((b) => b.querySelector('.label').textContent + '=' + b.querySelector('.count').textContent + (b.classList.contains('off') ? ' (off)' : '')));
+  const hints = await p.locator('#suggest > .hint').allTextContents();
+  return { items, hints };
+};
+const typeIn = async (p, lib, text) => {
+  await p.fill('#search', text);
+  await settle(p, lib);
+  return rows(p);
+};
+await test('the search box: the text row and text: and name: show what the server counted, nothing when it finds nothing', await on('', (lib) => {
+  lib.textLines = 40;
+  lib.words = { hello: 3 };
+  lib.fileNames = { img_1: 2 };
+}, async (p, lib) => {
   await p.focus('#search');
   await settle(p, lib);
   const from = lib.log.length;
-  const asked = () => lib.log.slice(from).filter((e) => e.path === '/suggest').map((e) => e.query.get('q'));
-  for (const typed of ['text:hello', 'name:IMG_1']) {
-    await p.fill('#search', typed);
-    await settle(p, lib);
-    const shown = await p.locator('#suggest .item .label').allTextContents();
-    check(shown.join() === `“${typed.split(':')[1]}”`, `${typed}: the list shows [${shown}]`);
-  }
-  check(!asked().length, `text: or name: asked the server: [${asked()}]`);
-  await p.fill('#search', 'date:2019');
+  let r = await typeIn(p, lib, 'text:hello');
+  check(r.items.join() === '“hello”=3', `text:hello shows [${r.items}]`);
+  r = await typeIn(p, lib, 'text:zzz');
+  check(!r.items.length && r.hints.includes(await tr(p, 'search.text_none', { term: 'zzz' })), `text:zzz shows [${r.items}], hints [${r.hints}]`);
+  r = await typeIn(p, lib, 'name:IMG_1');
+  check(r.items.join() === '“IMG_1”=2', `name:IMG_1 shows [${r.items}]`);
+  r = await typeIn(p, lib, 'name:nope');
+  check(!r.items.length && r.hints.includes(await tr(p, 'search.name_none', { term: 'nope' })), `name:nope shows [${r.items}], hints [${r.hints}]`);
+  r = await typeIn(p, lib, 'hello');
+  check(r.items.includes('“hello”=3'), `hello: the text row with its number, got [${r.items}]`);
+  r = await typeIn(p, lib, 'zzz');
+  check(!r.items.some((i) => i.startsWith('“')), `zzz: a text row that finds nothing, got [${r.items}]`);
+  r = await typeIn(p, lib, 'text:');
+  check(!r.items.length && r.hints.includes(await tr(p, 'search.prefix_empty_text')), `text: alone shows [${r.items}], hints [${r.hints}]`);
+  await typeIn(p, lib, 'date:2019');
+  const asked = lib.log.slice(from).filter((e) => e.path === '/suggest').map((e) => e.query.get('q'));
+  check(asked.join() === 'text:hello,text:zzz,name:IMG_1,name:nope,hello,zzz,date:2019', `asked for [${asked}]`);
+}));
+
+await test('the search box before any text was read: the text row greyed, text: says how to read it', await on('', () => null, async (p, lib) => {
+  await p.focus('#search');
   await settle(p, lib);
-  check(asked().join() === 'date:2019', `date: asked for [${asked()}]`);
+  let r = await typeIn(p, lib, 'hello');
+  check(r.items.includes('“hello”= (off)'), `hello: the greyed text row, got [${r.items}]`);
+  r = await typeIn(p, lib, 'text:hello');
+  check(!r.items.length && r.hints.includes(await tr(p, 'search.text_unread')), `text:hello shows [${r.items}], hints [${r.hints}]`);
 }));
 
 await finish();

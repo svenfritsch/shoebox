@@ -2118,4 +2118,12 @@ are left out as on one drive, and the text row is no longer listed twice. Measur
 `/suggest` 4.5 ms (the date rows; the set of shown photos is built only when
 the filter narrows), with a person in the search 200 ms against 390 ms for
 the five requests, with a tag 98 against 107 ms (there the counting of each
-person's photos is most of it).
+person's photos is most of it). The text row's number came from a second request,
+`/count?text=…` (and so for `text:` and `name:`), sent once the list was on
+the page and counted without date chips; now `/suggest` counts it (`text`,
+`name`: `{term, count}` or null, as `/count` with the term added): for plain
+text of two letters or more, and alone for `text:` and `name:`, which now ask
+`/suggest` too (`/count` stays for the API tests). A row whose term finds
+nothing is left out; after `text:` or `name:` a line says so
+(`search.text_none`, `search.name_none`, or `search.text_unread` while no text
+has been read, when the plain search keeps its greyed row).

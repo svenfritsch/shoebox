@@ -119,6 +119,31 @@ fn text_search_finds_photos_by_the_words_in_them() {
     assert_eq!(sorted(hits(addr, &format!("text=rechnung&folder={folder}"))), both);
     assert_eq!(hits(addr, "name=scan&name=2024"), vec![scan]);
     assert!(hits(addr, "name=scan&name=foto").is_empty());
+
+    // The search box's numbers (`/api/suggest`): the text row of a plain
+    // search (two letters or more) and `text:`/`name:` count what `/count`
+    // counts with the term added, within the rest of the search.
+    let count = |q: &str| get(addr, &format!("/api/count?{q}")).json()["count"].as_u64().unwrap();
+    let suggest = |q: &str| get(addr, &format!("/api/suggest?{q}")).json();
+    for (q, key, as_count) in [
+        ("q=rechnung", "text", "text=rechnung"),
+        ("q=zebra", "text", "text=zebra"),
+        ("q=text:strasse", "text", "text=strasse"),
+        ("q=text:+Rechnung+2024", "text", "text=Rechnung%202024"),
+        ("q=name:scan", "name", "name=scan"),
+        ("q=NAME:nothing", "name", "name=nothing"),
+        (&format!("q=text:rechnung&folder={folder}"), "text", &format!("text=rechnung&folder={folder}")),
+        ("q=name:scan&text=strasse", "name", "name=scan&text=strasse"),
+    ] {
+        let s = suggest(q);
+        assert_eq!(s[key]["count"].as_u64(), Some(count(as_count)), "{q}: {s}");
+    }
+    assert_eq!(suggest("q=rechnung")["text"], json!({ "term": "rechnung", "count": 2 }));
+    assert_eq!(suggest("q=zebra")["text"]["count"], 0, "the page leaves such a row out");
+    assert!(suggest("q=r")["text"].is_null(), "one letter: no text row");
+    assert!(suggest("q=text:")["text"].is_null(), "nothing typed after the prefix");
+    let s = suggest("q=text:rechnung");
+    assert!(s["name"].is_null() && s["tags"] == json!([]) && s["dates"] == json!([]), "only the text row: {s}");
     server.stop().unwrap();
     assert_eq!(lib.snapshot(), before, "searching changed an original");
 }

@@ -173,6 +173,8 @@
   "search.name_prefixed_hint": "Only file names. Enter adds a chip.",
   "search.prefix_empty_text": "Type a word to look for in the text of photos",
   "search.prefix_empty_name": "Type part of a file name",
+  "search.text_none": "No photo here has “{term}” in its recognized text.",
+  "search.name_none": "No photo here has “{term}” in its file name.",
   "search.text_unread": "No text has been read yet. Install the Text add-on and press “Recognize text” in the Control Panel.",
   "chip.text_hint": "Recognized text: {term}",
   "chip.name_hint": "File name: {term}",

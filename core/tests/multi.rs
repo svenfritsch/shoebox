@@ -559,7 +559,8 @@ fn suggestions_over_all_drives_narrow_with_the_filter() {
     }
     assert_eq!(get(addr, "/raw/api/all/suggest?q=winter").json()["tags"][0]["name"], "Winter");
     for typed in ["date:2020", "text:Ski", "name:a1"] {
-        assert_eq!(get(addr, &format!("/raw/api/all/suggest?q={typed}")).json(), json!({ "tags": [], "people": [], "pets": [], "groups": [], "dates": [] }), "{typed}");
+        let empty = json!({ "tags": [], "people": [], "pets": [], "groups": [], "dates": [], "text": null, "name": null });
+        assert_eq!(get(addr, &format!("/raw/api/all/suggest?q={typed}")).json(), empty, "{typed}");
     }
     server.stop().unwrap();
 }
