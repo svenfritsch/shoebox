@@ -11,13 +11,15 @@ the tags of its folder's name, a few thousand own tags, some hearts.
 
 `run` copies `<dir>/pristine` to `<dir>/work` and times, against a running
 `shoebox serve`:
-  - every request the search box sends for one typed text (tags, people,
-    pets, dates, groups, the timeline), alone;
+  - every request the search box sent for one typed text (tags, people,
+    pets, dates, groups), the one it sends now (`suggest`) and the
+    timeline, alone;
   - ten requests at once of which nine are called off (closing their
     connection, as the browser does), how long the tenth takes;
   - typing a word one letter every 120 ms as the page did before (every
     letter asks for everything at once, nothing is called off) and as it
-    does now (the list after a pause of 150 ms, the timeline after 300 ms, a
+    does now (one request for the list after a pause of 150 ms, the
+    timeline after 300 ms, a
     request that a newer letter replaces is called off by closing its
     connection, as the browser does): how long after the last letter the
     last list and the timeline arrive.
@@ -83,6 +85,10 @@ def suggestion_paths(lib, text):
     ]
 
 
+def suggest_path(lib, text):
+    return f"{lib}/suggest?q={urllib.parse.quote(text)}"
+
+
 def timeline_path(lib, text):
     return f"{lib}/timeline?q={urllib.parse.quote(text)}"
 
@@ -142,7 +148,7 @@ def typing(port, lib, word, gap, new):
 
     def ask_suggestions(text, last):
         with lock:
-            reqs = [send(port, p) for p in suggestion_paths(lib, text)]
+            reqs = [send(port, p) for p in ([suggest_path(lib, text)] if new else suggestion_paths(lib, text))]
             pending.extend(reqs)
             if last:
                 final["sugg"] = reqs
@@ -203,12 +209,12 @@ def run(args):
         lib = s.lib
         # The first after the server started (or the index changed): nothing kept yet.
         print("first, nothing kept yet (ms):")
-        for path in suggestion_paths(lib, "l") + [timeline_path(lib, "l")]:
+        for path in suggestion_paths(lib, "l") + [suggest_path(lib, "l"), timeline_path(lib, "l")]:
             _, _, t = s.request("/api" + path[len(lib):])
             print(f"  {t * 1000:8.1f}  {path[len(lib):]}")
         print("alone, median of 3 (ms):")
         for text in ["l", "lon", args.word]:
-            for path in suggestion_paths(lib, text) + [timeline_path(lib, text)]:
+            for path in suggestion_paths(lib, text) + [suggest_path(lib, text), timeline_path(lib, text)]:
                 times = []
                 for _ in range(3):
                     c = http.client.HTTPConnection("127.0.0.1", args.port, timeout=600)

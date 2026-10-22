@@ -2089,3 +2089,33 @@ of which nine are called off after 50 ms: the last after 0.27 s (1.1 to 1.6 s
 before); the list comes 160 ms after the last letter (the pause and a few
 milliseconds), the photos 310 ms. The browser test `the search box asks once
 typing pauses ...` (`faces-mocked.mjs`) checks the requests on a fake clock.
+
+One request (decided after that): the five came back in one `Promise.all`,
+so the page never showed one before the others, and the server ran them one
+after another anyway, each working out again which photos the filter shows.
+Now the page asks `GET /api/lib/<id>/suggest?q=…&<filter>` (over all drives
+`/api/all/suggest`, which replaces four requests, one of them per drive) and
+gets `{tags, people, pets, groups, dates}`. The sections are built by the
+same functions as `/api/tags?own=1`, `/api/people/search`, `/api/pets/search`,
+`/api/groups/search` and `/api/dates` (`tag_hits`, `person_hits`,
+`pet_hits`, `group_hits`, `dates::suggest`), which stay for the API tests and
+the tag fields; the API tests check that each section equals that endpoint's
+reply. The photos the filter shows are worked out once. The server reads the
+search box's prefixes (`Typed` in `serve.rs`, as `DATE_PREFIX` and `PREFIX`
+in the page): `date:`/`datum:` answers only `dates` (the other keys empty),
+`text:`/`name:` all empty; the page still knows them for what it does itself
+(a term chip on Enter, the hint under the list) and does not ask for `text:`
+and `name:`, which it offers as typed. A section of people, pets or groups
+that cannot be read is empty (and logged), not the whole list. Every section
+now counts within the whole search: before, dates left out groups, text and
+file-name terms, and the other sections left out dates and "needs a date";
+`/api/tags` now also narrows by type, heart and date. Over all drives the
+merged people are kept on the server (`AllPeopleKept`, per drive the index
+version and the people view, and the filter) instead of 30 s in the page,
+pets are counted within the whole filter (before: only `pet=`), hidden people
+are left out as on one drive, and the text row is no longer listed twice. Measured
+(`bench-search.py`; nothing kept, another filter each time): without a filter
+`/suggest` 4.5 ms (the date rows; the set of shown photos is built only when
+the filter narrows), with a person in the search 200 ms against 390 ms for
+the five requests, with a tag 98 against 107 ms (there the counting of each
+person's photos is most of it).

@@ -1109,6 +1109,16 @@ fn people_as_search_terms_and_undoing_a_rejection() {
     assert_eq!(search("q=AN"), json!([{ "id": anna, "name": "Anna", "group_id": null, "photos": 2 }]));
     assert_eq!(search(&format!("q=&person={ben}")), json!([{ "id": anna, "name": "Anna", "group_id": null, "photos": 1 }]));
     assert_eq!(search(&format!("q=&person={anna}&person={ben}")), json!([]));
+    // The search box asks for every section at once (`/api/suggest`): each
+    // as its own endpoint answers.
+    for q in ["q=".to_string(), "q=AN".to_string(), format!("q=&person={ben}"), format!("q=a&person={anna}&person={ben}")] {
+        let s = get(addr, &format!("/api/suggest?{q}")).json();
+        assert_eq!(s["people"], get(addr, &format!("/api/people/search?{q}&limit=6")).json(), "{q}");
+        assert_eq!(s["tags"], get(addr, &format!("/api/tags?{q}&own=1&limit=8")).json(), "{q}");
+        assert_eq!(s["groups"], get(addr, &format!("/api/groups/search?{q}&limit=4")).json(), "{q}");
+        assert_eq!(s["pets"], get(addr, &format!("/api/pets/search?{q}")).json(), "{q}");
+        assert_eq!(s["dates"], get(addr, &format!("/api/dates?{q}")).json(), "{q}");
+    }
     // Tags within a search of people.
     let tags = get(addr, &format!("/api/tags?person={ben}")).json();
     assert_eq!(tags.as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect::<Vec<_>>(), ["Fotos"]);
@@ -1134,6 +1144,7 @@ fn people_as_search_terms_and_undoing_a_rejection() {
     assert_eq!(groups("q=zzz"), json!([]));
     assert_eq!(groups(&format!("q=&group={freunde}")), json!([]));
     assert_eq!(groups(&format!("q=&folder={}", folder_id(&lib, "Other"))), json!([]));
+    assert_eq!(get(addr, "/api/suggest?q=fre").json()["groups"], groups("q=fre&limit=4"));
     // Tags within a search of a group.
     let tags = get(addr, &format!("/api/tags?group={freunde}")).json();
     assert_eq!(tags.as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect::<Vec<_>>(), ["Fotos"]);

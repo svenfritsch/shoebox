@@ -488,8 +488,8 @@ await test('a failed naming shows the error and was sent once', await on('view=p
 
 // ---- the search box
 
-// Typing asks for the suggestions once the letters pause (150 ms) and for the
-// photos after 300 ms. Every one of these waits for the drive's one
+// Typing asks for the suggestions, all in one request, once the letters pause
+// (150 ms), and for the photos after 300 ms. Both wait for the drive's one
 // connection, so what was asked for an earlier text is called off when a newer
 // one is asked for (see "Search" under Performance in docs/plan.md).
 await test('the search box asks once typing pauses and calls off what a newer text replaces', await on('', (lib) => lib.person('Longo Search'), async (p, lib) => {
@@ -497,7 +497,7 @@ await test('the search box asks once typing pauses and calls off what a newer te
   const asked = (path) => lib.log.slice(from).filter((e) => e.path === path).map((e) => e.query.get('q') || '');
   const calledOff = [];
   p.on('requestfailed', (r) => { const u = new URL(r.url()); calledOff.push(u.pathname.slice(LIB.length) + '?q=' + (u.searchParams.get('q') || '')); });
-  lib.hold = /^\/(tags|people\/search|pets\/search|groups\/search|dates)$/;
+  lib.hold = /^\/suggest$/;
   // The page's time stands still but where the test moves it (the waits below take real time).
   await p.clock.pauseAt(await p.evaluate(() => Date.now()) + 1000);
   await p.focus('#search'); // the list for an empty box, at once
@@ -505,24 +505,42 @@ await test('the search box asks once typing pauses and calls off what a newer te
     await p.keyboard.type(ch);
     await p.clock.runFor(100);
   }
-  check(asked('/people/search').join() === '', `asked while the letters came 100 ms apart: [${asked('/people/search')}]`);
+  check(asked('/suggest').join() === '', `asked while the letters came 100 ms apart: [${asked('/suggest')}]`);
   await p.clock.runFor(100);
-  const each = ['/tags', '/people/search', '/pets/search', '/groups/search', '/dates'];
-  await until('the suggestions for "lon"', () => each.every((path) => asked(path).includes('lon')));
-  for (const path of each) check(asked(path).join() === ',lon', `${path} asked for [${asked(path)}], expected once for "" (the box entered) and once for "lon"`);
+  await until('the suggestions for "lon"', () => asked('/suggest').includes('lon'));
+  check(asked('/suggest').join() === ',lon', `suggestions asked for [${asked('/suggest')}], expected once for "" (the box entered) and once for "lon"`);
   check(!asked('/timeline').length, 'the photos were asked for before 300 ms without a letter');
-  // Another letter while the answers for "lon" wait: they are called off.
+  // Another letter while the answer for "lon" waits: it is called off.
   await p.keyboard.type('g');
   await p.clock.runFor(200);
-  await until('the suggestions for "long"', () => each.every((path) => asked(path).includes('long')));
-  await until('the requests for "" and "lon" called off', () => ['/tags', '/people/search', '/dates'].every((path) => calledOff.includes(path + '?q=lon') && calledOff.includes(path + '?q=')));
+  await until('the suggestions for "long"', () => asked('/suggest').includes('long'));
+  await until('the requests for "" and "lon" called off', () => calledOff.includes('/suggest?q=lon') && calledOff.includes('/suggest?q='));
   lib.release();
   await settle(p, lib);
-  for (const path of each) check(asked(path).join() === ',lon,long', `${path} asked for [${asked(path)}], expected "", "lon", "long" once each`);
+  check(asked('/suggest').join() === ',lon,long', `suggestions asked for [${asked('/suggest')}], expected "", "lon", "long" once each`);
   check(asked('/timeline').join() === 'long', `the photos asked for [${asked('/timeline')}], expected once for "long"`);
   check(!calledOff.some((r) => r.endsWith('?q=long')), `what "long" asked for was called off: ${calledOff}`);
   const shown = await p.locator('#suggest .item .label').allTextContents();
   check(shown.includes('Longo Search'), `the list shows [${shown}]`);
+}));
+
+// The prefixes: `date:` asks the server (it answers only dates), `text:` and
+// `name:` ask nothing (the term is offered as typed).
+await test('the search box: date: asks the server, text: and name: ask nothing', await on('', () => null, async (p, lib) => {
+  await p.focus('#search');
+  await settle(p, lib);
+  const from = lib.log.length;
+  const asked = () => lib.log.slice(from).filter((e) => e.path === '/suggest').map((e) => e.query.get('q'));
+  for (const typed of ['text:hello', 'name:IMG_1']) {
+    await p.fill('#search', typed);
+    await settle(p, lib);
+    const shown = await p.locator('#suggest .item .label').allTextContents();
+    check(shown.join() === `“${typed.split(':')[1]}”`, `${typed}: the list shows [${shown}]`);
+  }
+  check(!asked().length, `text: or name: asked the server: [${asked()}]`);
+  await p.fill('#search', 'date:2019');
+  await settle(p, lib);
+  check(asked().join() === 'date:2019', `date: asked for [${asked()}]`);
 }));
 
 await finish();

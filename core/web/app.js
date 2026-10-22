@@ -860,41 +860,37 @@ function suggest(text) {
   if (f.view === 'locations' && geo.on) { showSuggest(placeSuggestions(text.trim(), f)); return; }
   if (f.view) { closeSuggest(); return; }
   var pre = prefixOf(text);
+  // `text:` and `name:` are offered as typed: the server has nothing to add.
   if (pre) { showSuggest(pre.term ? [{ kind: pre.kind, id: pre.term, label: pre.term, prefixed: true, hint: pre.kind === 'text' ? tr('search.text_prefixed_hint') : tr('search.name_prefixed_hint') }] : [], pre.term ? null : (pre.kind === 'text' ? tr('search.prefix_empty_text') : tr('search.prefix_empty_name'))); return; }
-  // `date:` (or `datum:`): only dates, a month alone lists it in every year.
+  // `date:` (or `datum:`): the server answers only dates, a month alone in every year.
   var typed = DATE_PREFIX.exec(text);
-  if (typed) {
-    if (isAll()) { closeSuggest(); return; }
-    var after = typed[1].trim();
-    suggestDates(after, true, datesWithin(f), opts).then(function (rows) {
-      if (seq !== sugg.seq) return;
-      showSuggest(dateItems(rows), after && rows.length ? '' : tr('dates.hint_prefix'));
-    });
+  if (isAll()) {
+    if (typed) closeSuggest(); // the common timeline has no dates to offer
+    else suggestAll(text, seq, opts);
     return;
   }
-  if (isAll()) { suggestAll(text, seq, opts); return; }
   var needle = text.trim();
-  var within = { q: needle, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place };
-  Promise.all([
-    api(LIBAPI + '/tags' + query(Object.assign({ limit: 8, own: 1 }, within)), opts),
-    api(LIBAPI + '/people/search' + query(Object.assign({ limit: 6 }, within)), opts).catch(function () { return []; }),
-    api(LIBAPI + '/pets/search' + query(within), opts).catch(function () { return []; }),
-    suggestDates(needle, false, datesWithin(f), opts),
-    api(LIBAPI + '/groups/search' + query(Object.assign({ limit: 4 }, within)), opts).catch(function () { return []; }),
-  ]).then(function (r) {
+  // Counted within the search as the list shows it (every term but the typed text).
+  var within = { q: needle, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null };
+  api(LIBAPI + '/suggest' + query(within), opts).then(function (r) {
     if (seq !== sugg.seq) return;
+    if (typed) {
+      var after = typed[1].trim();
+      showSuggest(dateItems(r.dates), after && r.dates.length ? '' : tr('dates.hint_prefix'));
+      return;
+    }
     var items = compareSuggestion(needle, f).concat(favSuggestion(needle, f));
-    items = items.concat(r[1].map(function (p) {
+    items = items.concat(r.people.map(function (p) {
       state.personNames[p.id] = p.name;
       state.personSpecies[p.id] = p.species;
       return { kind: 'person', id: p.id, label: p.name, count: p.photos, person: p };
     }));
-    r[4].forEach(function (g) {
+    r.groups.forEach(function (g) {
       state.groupNames[g.id] = g.name;
       items.push({ kind: 'group', id: g.id, label: g.name, count: g.photos });
     });
-    r[2].forEach(function (p) { items.push({ kind: 'pet', id: p.species, label: PET_TERMS[p.species].label, count: p.photos }); });
-    r[0].forEach(function (t) {
+    r.pets.forEach(function (p) { items.push({ kind: 'pet', id: p.species, label: PET_TERMS[p.species].label, count: p.photos }); });
+    r.tags.forEach(function (t) {
       if (isFavTag(t.name)) return; // the heart, offered above
       state.tagNames[t.id] = t.name;
       items.push({ kind: 'tag', id: t.id, label: t.name, count: t.count, folderTag: t.kind === 'folder' });
@@ -908,41 +904,26 @@ function suggest(text) {
     }
     items = items.concat(textItems(needle));
     // Last: a year, a month with a year or a day, when that is what was typed.
-    items = items.concat(dateItems(r[3]));
+    items = items.concat(dateItems(r.dates));
     showSuggest(items);
   }).catch(function () {});
 }
 
-// Over all drives: tags and people by name (the drives share names, not ids).
-var allPeople = { at: 0, key: '', list: [] };
+// Over all drives: tags, people and groups by name (the drives share names, not ids).
 function suggestAll(text, seq, opts) {
-  var needle = text.trim(), low = needle.toLowerCase(), f = state.filter;
+  var needle = text.trim(), f = state.filter;
   // The suggestions narrow with the filter, as on a single drive: counts are
   // the photos the list would show, and what would show nothing is left out.
-  var within = { tag: f.tags, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null };
-  var wkey = query(within);
-  var people = Date.now() - allPeople.at < 30000 && allPeople.key === wkey ? Promise.resolve(allPeople.list)
-    : api('/api/all/people' + wkey, opts).then(function (r) { allPeople = { at: Date.now(), key: wkey, list: r.people }; return r.people; });
-  // Pet terms mean the same on every drive: add up what the drives that take part answer.
-  var pets = Promise.all(drives.allLibs.map(function (l) {
-    return api('/api/lib/' + l.id + '/pets/search' + query({ q: needle, pet: f.pets }), opts).catch(function () { return []; });
-  })).then(function (lists) {
-    var sum = {};
-    lists.forEach(function (list) { list.forEach(function (h) { sum[h.species] = (sum[h.species] || 0) + h.photos; }); });
-    return Object.keys(sum).sort(function (a, b) { return sum[b] - sum[a]; }).map(function (s) { return { species: s, photos: sum[s] }; });
-  });
-  var groups = api('/api/all/groups' + query(Object.assign({ q: needle }, within)), opts).catch(function () { return []; });
-  Promise.all([api('/api/all/tags' + query(Object.assign({ q: needle, limit: 8, own: 1 }, within)), opts), people.catch(function () { return []; }), pets, groups]).then(function (r) {
+  var within = { q: needle, tag: f.tags, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null };
+  api('/api/all/suggest' + query(within), opts).then(function (r) {
     if (seq !== sugg.seq) return;
-    var items = r[1].filter(function (p) { return f.people.indexOf(p.name) < 0 && (!low || p.name.toLowerCase().indexOf(low) >= 0); })
-      .slice(0, 6).map(function (p) { return { kind: 'person', id: p.name, label: p.name, count: p.photos, person: { name: p.name, species: p.species } }; });
-    r[3].slice(0, 4).forEach(function (g) { state.groupNames[g.name] = g.name; items.push({ kind: 'group', id: g.name, label: g.name, count: g.photos }); });
-    r[2].forEach(function (p) { items.push({ kind: 'pet', id: p.species, label: PET_TERMS[p.species].label, count: p.photos }); });
+    var items = r.people.map(function (p) { return { kind: 'person', id: p.name, label: p.name, count: p.photos, person: { name: p.name, species: p.species } }; });
+    r.groups.forEach(function (g) { state.groupNames[g.name] = g.name; items.push({ kind: 'group', id: g.name, label: g.name, count: g.photos }); });
+    r.pets.forEach(function (p) { items.push({ kind: 'pet', id: p.species, label: PET_TERMS[p.species].label, count: p.photos }); });
     items = favSuggestion(needle, f).concat(items);
-    r[0].filter(function (t) { return f.tags.indexOf(t.name) < 0 && !isFavTag(t.name); }).forEach(function (t) {
+    r.tags.filter(function (t) { return f.tags.indexOf(t.name) < 0 && !isFavTag(t.name); }).forEach(function (t) {
       items.push({ kind: 'tag', id: t.name, label: t.name, count: t.count, folderTag: t.kind === 'folder' });
     });
-    items = items.concat(textItems(needle));
     items = items.concat(textItems(needle));
     showSuggest(items);
   }).catch(function () {});
@@ -8063,7 +8044,6 @@ function transferDialog(list, to, preferred, file) {
         post('/api/all/transfer', req).then(function (r) {
           closeModal();
           toast(r.counts.photos ? tr('transfer.done', { photos: trn('count.photos', r.counts.photos) }) : tr('transfer.nothing_new', { to: label(to) }));
-          allPeople.at = 0;
           if (state.filter && state.filter.view === 'drives') loadDrivesPage();
           refreshDrives();
         }).catch(function (e) { btn.disabled = false; failed(e); });

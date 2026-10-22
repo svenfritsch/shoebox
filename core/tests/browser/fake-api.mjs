@@ -159,12 +159,21 @@ export function fakeLibrary() {
     '/groups': () => groupsOut(),
     '/folders': () => [{ id: 1, parent: null, name: '', path: '', count: 200 }],
     '/tags': (q) => lib.tags.filter((t) => fold(t.name).includes(fold(q.get('q') || ''))).slice(0, Number(q.get('limit') || 50)),
-    // The search box (no filter here): people by name, nothing else.
-    '/people/search': (q) => peopleOut().filter((p) => p.photos && fold(p.name).includes(fold(q.get('q') || ''))).slice(0, Number(q.get('limit') || 8))
-      .map((p) => ({ id: p.id, name: p.name, group_id: p.group_id, species: null, cover: p.cover, cover_manual: p.cover_manual, photos: p.photos })),
-    '/pets/search': () => [],
-    '/groups/search': () => [],
-    '/dates': () => [],
+    // The search box (no filter here): own tags and people by name; with
+    // `date:` only dates (none here), with `text:` or `name:` nothing.
+    '/suggest': (q) => {
+      const typed = q.get('q') || '';
+      const none = { tags: [], people: [], pets: [], groups: [], dates: [] };
+      if (/^\s*(date|datum|text|name):/i.test(typed)) return none;
+      const needle = fold(typed);
+      return {
+        ...none,
+        tags: lib.tags.filter((t) => t.kind !== 'folder' && fold(t.name).includes(needle)).slice(0, 8),
+        people: peopleOut().filter((p) => p.photos && fold(p.name).includes(needle)).slice(0, 6)
+          .map((p) => ({ id: p.id, name: p.name, group_id: p.group_id, species: null, cover: p.cover, cover_manual: p.cover_manual, photos: p.photos })),
+      };
+    },
+    '/count': () => ({ count: 0 }),
     '/timeline': () => ({ count: 0, ids: [], kinds: '', days: [], versions: '', live: [], tags: [], people: [], groups: [], favs: [], est: [] }),
     '/places': () => [],
     '/event-pattern': () => ({ pattern: 'YYYY-MM Name' }),
