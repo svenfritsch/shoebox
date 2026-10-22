@@ -4,8 +4,8 @@
 #
 #   core/tests/browser/run.sh [path-to-shoebox]
 #
-# faces-mocked.mjs (the Unnamed page, groups, the people list and the trash
-# page) needs no server: a fake API in the test (fake-api.mjs) and a fake
+# faces-mocked.mjs (the Unnamed page, groups, the people list, a person's
+# faces, the search suggestions and the trash page) needs no server: a fake API in the test (fake-api.mjs) and a fake
 # clock. The others
 # run on drawn libraries, scanned and served on localhost: keyboard.mjs on
 # plain photos (make-library.py), faces-e2e.mjs on faces (make-faces.py) that

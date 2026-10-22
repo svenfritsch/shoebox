@@ -4,8 +4,8 @@
 // sidebar built from the server's replies is what the server then lists, that
 // the server's grouping after a name ends in one refresh of the page, a name
 // given in the viewer (which asks for /files), "Use as picture" in its three
-// places, and a group the server removes when its last person leaves. The
-// rest is in faces-mocked.mjs (see "Browser tests" in docs/plan.md).
+// places, a group the server removes when its last person leaves, and the
+// search box's one request and its list. The rest is in faces-mocked.mjs (see "Browser tests" in docs/plan.md).
 //
 //   node core/tests/browser/faces-e2e.mjs <url>     (ONLY=text: only those tests)
 //
@@ -345,6 +345,39 @@ await test('a person renamed and merged on the real server: the replies are what
   check(merged.id === ida.id && merged.name === 'Ida Renamed' && merged.faces === all && merged.photos === all, `merged: ${JSON.stringify(merged)}`);
   await same(merged, 'merged');
   check(!(await listed(typo.id)), 'Ida Typo is gone from the server');
+}));
+
+// The search box against the real server: the fake's `/suggest` (fake-api.mjs)
+// answers as the server does, and the page sends one request per pause, not
+// the sections one by one (the timing and calling off are checked on a fake
+// clock in faces-mocked.mjs). The tag is this test's own.
+await test('the search box on the real server: one request per pause, the list is what the server suggests', on('', async () => {
+  const ids = (await api('/timeline')).ids.slice(0, 2);
+  await api('/tags/add', { ids, name: 'Suchprobe' });
+}, async (p, t) => {
+  await p.focus('#search');
+  await quiet(t);
+  let from = t.log.length;
+  await p.keyboard.type('suchpr'); // no pause between the letters
+  await until('the photos for "suchpr"', () => requests(t.log, from, '/timeline').length > 0);
+  await p.locator('#suggest .item', { hasText: 'Suchprobe' }).waitFor();
+  await quiet(t);
+  const asked = t.log.slice(from).map((e) => e.path + (e.path === '/suggest' || e.path === '/timeline' ? '?q=' + e.query.get('q') : ''));
+  check(asked.join() === '/suggest?q=suchpr,/timeline?q=suchpr', `while typing the page asked for [${asked}]`);
+  const reply = await api('/suggest?q=suchpr');
+  check(reply.tags.length === 1 && reply.tags[0].name === 'Suchprobe' && reply.tags[0].count === 2, `the server suggests ${JSON.stringify(reply.tags)}`);
+  const rows = await p.locator('#suggest .item').evaluateAll((bs) => bs.map((b) => b.querySelector('.label').textContent + '=' + b.querySelector('.count').textContent));
+  check(rows.includes('# Suchprobe=2'), `the list shows [${rows}]`);
+  // date: the server answers only dates; the list shows as many rows.
+  from = t.log.length;
+  await p.fill('#search', 'date:');
+  await until('the dates', () => requests(t.log, from, '/suggest').length === 1);
+  await quiet(t);
+  const dates = (await api('/suggest?q=date:')).dates;
+  check(dates.length > 0, 'the server has no years to offer');
+  const shown = await p.locator('#suggest .item').count();
+  check(shown === dates.length, `the list shows ${shown} rows, the server suggests ${dates.length} dates`);
+  check(t.log.slice(from).every((e) => e.path === '/suggest'), `date: asked for [${t.log.slice(from).map((e) => e.path)}]`);
 }));
 
 await finish();
