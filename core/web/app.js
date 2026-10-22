@@ -6560,12 +6560,13 @@ function personTile(p) {
 // ---- a person's faces
 
 var PERSON_TABS = [['confirmed', 'person.tab.confirmed'], ['suggested', 'person.tab.suggested'], ['maybe', 'person.tab.maybe'], ['rejected', 'person.tab.rejected']];
-var pp = { person: null, faces: [], total: 0, picking: false, picked: {} };
+var pp = { person: null, tab: 'confirmed', faces: [], total: 0, picking: false, picked: {} };
 
 function loadPersonPage() {
   var f = state.filter, page = $('page');
   var tab = PERSON_TABS.some(function (t) { return t[0] === f.tab; }) ? f.tab : 'confirmed';
   clearNode(page);
+  pp.tab = tab;
   pp.faces = [];
   pp.picked = {};
   pp.picking = false;
@@ -6627,6 +6628,7 @@ function loadPersonPage() {
     };
     page.appendChild(grid);
     var more = el('button', 'btn quiet', tr('app.show_more'));
+    more.id = 'pp-more';
     more.hidden = true;
     more.onclick = function () { morePersonFaces(grid, more, tab); };
     page.appendChild(more);
@@ -6665,6 +6667,14 @@ function morePersonFaces(grid, more, tab) {
     more.disabled = false;
     more.hidden = pp.faces.length >= pp.total;
   }).catch(failed);
+}
+
+// The last faces shown left the list (e.g. "Confirm all shown"): the next
+// ones come without a click on "Show more", or the line that there are none.
+function personGridEmptied() {
+  var grid = $('pp-grid'), more = $('pp-more');
+  if (pp.faces.length || !grid || !more || more.disabled) return;
+  morePersonFaces(grid, more, pp.tab);
 }
 
 function faceKey(face) { return face.id != null ? 'f' + face.id : face.manual != null ? 'm' + face.manual : null; }
@@ -6782,6 +6792,7 @@ function personAction(action, ids, manual) {
       return false;
     });
     updatePersonPick();
+    personGridEmptied();
     var count = trn('count.faces', r.faces);
     toast({
       confirm: tr('person.toast.confirm', { count: count, name: p.name }),

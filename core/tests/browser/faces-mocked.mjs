@@ -412,6 +412,29 @@ await test('a person\'s page: "Show more" stands clear of the last row of faces'
   check(gap >= 12, `"Show more" is ${gap} px under the last row of faces`);
 }));
 
+// The faces the next "Show more" would bring come by themselves once the
+// shown ones have all left; when none are left the page says so.
+await test('a person\'s page: "Confirm all shown" brings the next faces without "Show more"', await on('view=people', (lib) => lib.person('Ines Next', { suggested: 250 }), async (p, lib, ines) => {
+  await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=suggested`; }, ines.id);
+  await p.locator('#pp-grid .face').first().waitFor();
+  await settle(p, lib);
+  const cards = () => p.locator('#pp-grid .face').count();
+  const more = p.locator('#pp-grid + button');
+  check((await cards()) === 200 && (await more.isVisible()), `at first: ${await cards()} faces, Show more ${await more.isVisible() ? 'shown' : 'hidden'}`);
+  const confirmAll = async () => {
+    const from = lib.log.length;
+    await p.locator('.toolbar button', { hasText: await tr(p, 'person.confirm_all') }).click();
+    await settle(p, lib);
+    return lib.log.slice(from).filter((e) => e.method === 'GET' && e.path === `/people/${ines.id}/faces`).map((e) => `${e.query.get('state')} ${e.query.get('offset')}`);
+  };
+  const asked = await confirmAll();
+  check(JSON.stringify(asked) === JSON.stringify(['suggested 0']), `after the first: asked for ${JSON.stringify(asked)}, expected the next faces once`);
+  check((await cards()) === 50 && !(await more.isVisible()), `after the first: ${await cards()} faces, Show more ${await more.isVisible() ? 'shown' : 'hidden'}`);
+  await confirmAll();
+  check((await cards()) === 0 && (await p.locator('#pp-grid .sub').textContent()) === (await tr(p, 'person.none')), 'after the last: the page says there are none');
+  check(lib.faceLists[ines.id].suggested.length === 0 && ines.faces === 253, `the fake has ${lib.faceLists[ines.id].suggested.length} suggestions left, ${ines.faces} faces`);
+}));
+
 await test('a person moved to a group, then both out of it: the empty group is gone', await on('view=people', (lib) => {
   const anton = lib.person('Anton Move'), bea = lib.person('Bea Move');
   lib.group('Move Group', bea);
