@@ -4,8 +4,9 @@
 #
 #   core/tests/browser/run.sh [path-to-shoebox]
 #
-# faces-mocked.mjs (the Unnamed page, groups and the people list) needs no
-# server: a fake API in the test (fake-api.mjs) and a fake clock. The others
+# faces-mocked.mjs (the Unnamed page, groups, the people list and the trash
+# page) needs no server: a fake API in the test (fake-api.mjs) and a fake
+# clock. The others
 # run on drawn libraries, scanned and served on localhost: keyboard.mjs on
 # plain photos (make-library.py), faces-e2e.mjs on faces (make-faces.py) that
 # the fake recognizer finds, which is built next to shoebox (FAKE=path to use

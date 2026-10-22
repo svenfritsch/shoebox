@@ -487,6 +487,38 @@ fn fill_phash(conn: &Connection) -> Result<u64> {
     Ok(n)
 }
 
+/// One file put back from the trash: its perceptual hash taken over from a
+/// twin, else measured on the thumbnail the trash kept, so the duplicates
+/// screen finds it again without a scan. Nothing without `thumbs.db`
+/// attached (the next scan's `fill_phash` does it then).
+pub(crate) fn fill_phash_of(conn: &Connection, id: i64) -> Result<()> {
+    let image = "id = ?1 AND phash IS NULL AND kind NOT IN ('video', 'raw')";
+    conn.execute(
+        &format!(
+            "UPDATE files SET phash = (SELECT g.phash FROM files g WHERE g.quick_hash = files.quick_hash
+                                       AND g.phash IS NOT NULL LIMIT 1)
+             WHERE {image}"
+        ),
+        [id],
+    )?;
+    let attached: bool =
+        conn.query_row("SELECT count(*) FROM pragma_database_list WHERE name = 'thumbs'", [], |r| r.get::<_, i64>(0))? > 0;
+    if !attached {
+        return Ok(());
+    }
+    let jpeg: Option<Vec<u8>> = conn
+        .query_row(
+            &format!("SELECT t.jpeg FROM files JOIN thumbs.thumbs t ON t.key = files.quick_hash WHERE {image} AND t.jpeg IS NOT NULL"),
+            [id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if let Some(img) = jpeg.and_then(|j| image::load_from_memory_with_format(&j, image::ImageFormat::Jpeg).ok()) {
+        conn.execute("UPDATE files SET phash = ?2 WHERE id = ?1", params![id, phash::to_hex(phash::of(&img))])?;
+    }
+    Ok(())
+}
+
 /// Images that have a thumbnail but no flatness yet (made before phase 11, or
 /// a copy that showed up later): taken over from a twin, else measured on the
 /// stored thumbnail. The originals are not opened.

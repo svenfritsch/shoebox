@@ -352,7 +352,9 @@ fn an_older_index_gets_the_table_without_losing_anything() {
     lib.scan();
     assert_eq!(lib.count("SELECT count(*) FROM date_estimates"), 0);
     let v: i64 = lib.db().query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
-    assert_eq!(v, 16);
+    assert_eq!(v, 17);
     // v16: files by content (face crops find their file through it).
     assert_eq!(lib.count("SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = 'files_quick_hash'"), 1);
+    // v17: the trash names the copy that stayed of a removed duplicate.
+    assert_eq!(lib.count("SELECT count(*) FROM pragma_table_info('trash') WHERE name = 'kept_hash'"), 1);
 }
