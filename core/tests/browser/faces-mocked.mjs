@@ -885,6 +885,17 @@ await test('trash page: "Only duplicates" shows just the removed copies, and Sel
   check(!(await toggle.isChecked()) && await toggle.isDisabled(), 'with no duplicate left the toggle is off and disabled');
 }));
 
+// What the page ticks by itself on the Duplicates screen: a copy with fewer
+// pixels but a bigger file is left for the person (suggestedIds, Smaller versions).
+await test('duplicates: a copy with fewer pixels but a bigger file is not ticked by Suggested or Smaller versions', await on('view=trash', () => null, async (p) => {
+  const ids = await p.evaluate(() => {
+    const f = (id, more) => ({ id, row: 0, pick: false, keeper: null, bigger_file: false, same: null, in_copies: false, ...more });
+    const g = { kind: 'resolution', files: [f(1, { pick: true }), f(2, { keeper: 1 }), f(3, { keeper: 1, bigger_file: true })] };
+    return { suggested: suggestedIds(g), smaller: PRESELECT.find((e) => e.id === 'smaller').ids(g) };
+  });
+  check(JSON.stringify(ids) === JSON.stringify({ suggested: [2], smaller: [2] }), `ticked: ${JSON.stringify(ids)}`);
+}));
+
 // ---- Our own icons instead of emojis
 
 const EMOJI = /[\u{1F000}-\u{1FAFF}\u{26A0}\u{270E}]/u;

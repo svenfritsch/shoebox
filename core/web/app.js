@@ -3781,7 +3781,7 @@ function suggestedIds(g) {
   g.files.forEach(function (f) { if (f.pick) pickOf[f.row] = f; });
   return g.files.filter(function (f) {
     var best = pickOf[f.row];
-    return !f.pick && (f.keeper || (f.same && best && best.same === f.same) || (f.in_copies && best && !best.in_copies));
+    return !f.pick && ((f.keeper && !f.bigger_file) || (f.same && best && best.same === f.same) || (f.in_copies && best && !best.in_copies));
   }).map(function (f) { return f.id; });
 }
 
@@ -3821,7 +3821,7 @@ var PRESELECT = [
     });
     return ids;
   } },
-  { id: 'smaller', kind: 'resolution', also: 'similar', ids: function (g) { return g.files.filter(function (f) { return f.keeper; }).map(function (f) { return f.id; }); } },
+  { id: 'smaller', kind: 'resolution', also: 'similar', ids: function (g) { return g.files.filter(function (f) { return f.keeper && !f.bigger_file; }).map(function (f) { return f.id; }); } },
   { id: 'heic', kind: 'resolution', ids: function (g) { return otherFormats(g, 'heic'); } },
   { id: 'jpeg', kind: 'resolution', ids: function (g) { return otherFormats(g, 'jpg'); } },
   { id: 'edited', kind: 'edited', ids: function (g) {
@@ -4166,6 +4166,11 @@ function groupNode(g) {
     meta.push((f.size / 1e6).toFixed(1) + ' MB');
     card.appendChild(el('div', 'meta', meta.join(' · ')));
     if (f.keeper) card.appendChild(el('div', 'badge worse', tr('dups.lower_quality')));
+    if (f.keeper && f.bigger_file) {
+      var bf = el('div', 'badge', tr('dups.bigger_file'));
+      setTip(bf, tr('dups.bigger_file_hint'));
+      card.appendChild(bf);
+    }
     if (f.in_copies) card.appendChild(el('div', 'meta', tr('dups.in_copies')));
     card.appendChild(el('div', 'meta', f.taken ? formatDate({ taken: f.taken, date_source: 'file' }) : tr('dups.no_capture_date')));
     if (thumb && topPixels !== null && (f.width || 0) * (f.height || 0) === topPixels) card.appendChild(el('div', 'badge', tr('dups.badge_pixels')));

@@ -69,6 +69,10 @@ pub struct DupFile {
     /// pixels, or without the metadata the best one has): the id of that
     /// best file, which is the one to keep. The page ticks these.
     pub keeper: Option<i64>,
+    /// A `keeper` copy that has fewer pixels but a bigger file than the one
+    /// to keep: the numbers disagree, so the page does not tick it by itself
+    /// and warns on the card; the person decides.
+    pub bigger_file: bool,
     /// The file of its row to keep: the best quality, then the one without
     /// a copy's name ("IMG_1 (2)", "IMG_1 - Copy"), then the earliest. The
     /// page ticks the other files of a row.
@@ -181,6 +185,7 @@ pub fn load(conn: &Connection, shown: &HashSet<i64>) -> Result<Candidates> {
                     tags: Vec::new(),
                     row: 0,
                     keeper: None,
+                    bigger_file: false,
                     in_copies: false,
                     pick: false,
                     copy_named: false,
@@ -558,8 +563,10 @@ pub fn find(candidates: &Candidates) -> Vec<Group> {
             order.sort_by(|&i, &j| rows[j].file.taken.cmp(&rows[i].file.taken).then(rows[i].file.path.cmp(&rows[j].file.path)));
             let info = photo_rows(rows, &order, &open);
             let copy_flags = copy_named(&order.iter().map(|&i| rows[i].file.name.as_str()).collect::<Vec<_>>());
+            let size_of: HashMap<i64, u64> = order.iter().map(|&i| (rows[i].file.id, rows[i].file.size)).collect();
             for ((&i, &(row, keeper, pick)), &copy) in order.iter().zip(&info).zip(&copy_flags) {
                 let mut f = rows[i].file.clone();
+                f.bigger_file = keeper.and_then(|k| size_of.get(&k)).is_some_and(|&kept| f.size > kept);
                 f.copy_named = copy;
                 f.row = row;
                 f.keeper = keeper;
