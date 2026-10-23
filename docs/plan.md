@@ -1617,7 +1617,10 @@ is (`organize::turn`, going by content, not name):
   bytes are put back. The quick hash changes, so the index record is updated
   and the capture-date override, face decisions (boxes turned with the
   picture) and a person's picture follow to the new key; thumbnails and
-  detected faces are made again (next view, next `shoebox recognize`).
+  detected faces are made again (next view, next `shoebox recognize`). The
+  grid does not wait for a scan: `thumbAfterTurn` (app.js) asks for the new
+  thumbnail 1.5 s after the last turn (three turns in a row are one request),
+  and `/thumb` makes it on demand.
   Refused: a JPEG without an Orientation tag (adding one shifts every byte
   after it). The small EXIF thumbnail inside the file is not turned.
 - **HEIC and PNG: in shoebox only.** The turn is stored in `library.db`

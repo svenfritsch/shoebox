@@ -42,6 +42,8 @@ export function fakeLibrary() {
     clusters: [], people: [], groups: [],
     faceLists: {}, // person id: { confirmed, suggested, rejected } (a person's page)
     trash: [], // what GET /trash answers (organize::TrashItem)
+    photos: null, // [{ id, version }]: the timeline (newest first, one month), else it is empty
+    thumbs: [], // addresses of the thumbnails (and pictures) the page asked for, as written: `/files/7/thumb?v=...`
     step: null, // null (grouped), 'stale' (starting) or 'running'
     progress: [0, 0], // done, total while running
     pending: false, // decisions wait for the next regrouping
@@ -200,7 +202,10 @@ export function fakeLibrary() {
         text: [...needle].length >= 2 ? count(lib.words, needle) : null,
       };
     },
-    '/timeline': () => ({ count: 0, ids: [], kinds: '', days: [], versions: '', live: [], tags: [], people: [], groups: [], favs: [], est: [] }),
+    '/timeline': () => {
+      const ph = lib.photos || [];
+      return { count: ph.length, ids: ph.map((x) => x.id), kinds: 'j'.repeat(ph.length), days: ph.map(() => 20260315), versions: ph.map((x) => x.version).join(''), live: [], tags: [], people: [], groups: [], favs: [], est: [] };
+    },
     '/places': () => [],
     '/event-pattern': () => ({ pattern: 'YYYY-MM Name' }),
     '/allow-trash': () => ({ allow: false, read_only: false }),
@@ -224,6 +229,14 @@ export function fakeLibrary() {
   // person's lists on it: a suggestion, or one rejected for them.
   const fileInfo = (m) => {
     const id = Number(m[1]);
+    if (lib.photos?.some((x) => x.id === id)) {
+      return [200, {
+        id, name: `IMG_${id}.JPG`, path: `IMG_${id}.JPG`, folder_id: 1, kind: 'jpeg', size: 1000, taken: null, taken_offset: null, estimate: null, exif: null,
+        modified: '2026-01-01T10:00:00', width: 100, height: 100, duration_ms: null, camera: null, tags: [], missing: false,
+        date_source: null, sort_date: null, live: null, linked: [], faces: [],
+        view_turn: 0, screenshot: false, screenshot_mark: null, position: null, text: [],
+      }];
+    }
     for (const [pid, l] of Object.entries(lib.faceLists)) {
       const f = [...l.suggested, ...l.rejected].find((x) => x.file === id);
       if (!f) continue;
@@ -244,6 +257,14 @@ export function fakeLibrary() {
     [/^\/clusters\/(\d+)\/faces$/, (m) => { const c = lib.clusters.find((x) => x.id === Number(m[1])); return c ? [200, c.faces] : [404, { error: 'no such cluster' }]; }],
   ];
   const post = [
+    // organize::rotate: a JPEG turned in the file has a new quick hash, so a new version.
+    [/^\/files\/(\d+)\/rotate$/, (m) => {
+      const x = lib.photos?.find((y) => y.id === Number(m[1]));
+      if (!x) return [404, { error: 'not in the index' }];
+      x.turns = (x.turns || 0) + 1;
+      x.version = `rot${String(x.turns).padStart(5, '0')}`;
+      return [200, { id: x.id, version: x.version, orientation: 6, view_only: false }];
+    }],
     [/^\/clusters\/(\d+)\/name$/, (m, body) => {
       const c = lib.clusters.find((x) => x.id === Number(m[1]));
       if (!c || (body.generation != null && body.generation !== c.generation)) return [409, { error: 'the faces changed' }];
@@ -361,6 +382,7 @@ export function fakeLibrary() {
     const rel = path.slice(LIB.length);
     if (rel === '/events') return route.fulfill({ status: 204 }); // no stream: the page asks for the status itself
     if (/^\/trash\/\d+\/thumb$/.test(rel)) return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
+    if (/^\/files\/\d+\/(view|thumb)$/.test(rel)) lib.thumbs.push(rel + u.search);
     if (/^\/files\/\d+\/(view|thumb)$/.test(rel)) return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
     if (/^\/faces\/(manual\/)?\d+\/crop$/.test(rel)) return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
     lib.log.push({ method: req.method(), path: rel, query: u.searchParams });
