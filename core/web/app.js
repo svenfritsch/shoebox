@@ -2443,6 +2443,30 @@ $('lb-trash').onclick = function () {
   trashDialog([d.ids[i]], function () { closeLightbox(); });
 };
 
+// The grid keeps showing the thumbnail it has until told otherwise. After a
+// turn the new one is asked for once the user has stopped turning (a photo is
+// often turned two or three times), so the server makes one thumbnail, not one
+// per turn.
+var TURN_THUMB_DELAY_MS = 1000;
+var turned = { timer: null, ids: {} };
+
+function thumbAfterTurn(id) {
+  turned.ids[id] = true;
+  clearTimeout(turned.timer);
+  turned.timer = setTimeout(function () {
+    var ids = turned.ids;
+    turned.ids = {};
+    var d = state.data;
+    if (!d) return;
+    Object.keys(state.rendered).forEach(function (k) {
+      state.rendered[k].querySelectorAll('a.cell').forEach(function (a) {
+        var i = +a.dataset.index, img = a.querySelector('img');
+        if (img && ids[d.ids[i]]) img.src = thumbUrl(i);
+      });
+    });
+  }, TURN_THUMB_DELAY_MS);
+}
+
 // Turns a JPEG on the drive (its EXIF orientation, two bytes, no loss), like
 // the rotate button of the Finder's Quick Look; a HEIC or PNG is only shown
 // turned by shoebox (its file stays as it is). `turns` is in quarter turns
@@ -2455,10 +2479,11 @@ function rotateOpen(turns) {
   post(fileBase(id) + '/rotate', { turns: turns }).then(function (r) {
     lb.rotating = false;
     // The address of the picture carries the version, so the new one is
-    // fetched; the grid follows when the status poll sees the change.
+    // fetched; the grid's thumbnail follows a moment after the last turn.
     if (state.data === d && d.ids[i] === id) {
       d.versions = d.versions.slice(0, i * 8) + r.version + d.versions.slice(i * 8 + 8);
       if (state.open === i) showItem();
+      thumbAfterTurn(id);
     }
     if (r.view_only && !lb.toldViewOnly) {
       lb.toldViewOnly = true;

@@ -1024,4 +1024,37 @@ await test('a place chip has its marker only; the marker opens the map; the fold
   check(await edit.count() === 1 && await edit.locator('svg').count() === 1 && (await edit.textContent()) === '', `the folder chip's edit button: ${await edit.innerHTML()}`);
 }));
 
+// A JPEG turned in the viewer gets a new quick hash, so the grid's thumbnail is
+// another address (`?v=`). The grid asks for it once the user has stopped
+// turning (three turns in a row are one request), not after each turn and not
+// only at the next scan.
+await test('a photo turned in the viewer: the grid asks for its new thumbnail once, after the last turn', await on('', (lib) => {
+  lib.photos = [1, 2, 3].map((id) => ({ id, version: `orig000${id}` }));
+}, async (p, lib) => {
+  const cells = p.locator('#sizer a.cell');
+  await until('the grid', async () => (await cells.count()) === 3);
+  const asked = () => lib.thumbs.filter((a) => a.includes('/thumb?v=rot'));
+  check(lib.thumbs.includes('/files/1/thumb?v=orig0001'), `the grid asked for ${JSON.stringify(lib.thumbs)}`);
+  await cells.first().click();
+  await p.locator('#lightbox').waitFor({ state: 'visible' });
+  await settle(p, lib);
+  for (let n = 1; n <= 3; n++) {
+    await p.keyboard.press('r');
+    await until(`turn ${n} to be answered`, async () => lib.log.filter((e) => e.method === 'POST' && e.path === '/files/1/rotate').length === n && !(await p.evaluate(() => lb.rotating)));
+    // 600 ms a turn: the first pause would be over before the last turn if each turn did not start it again.
+    await p.clock.runFor(600);
+    await p.evaluate(() => 0);
+    check(asked().length === 0, `after turn ${n} the grid asked for ${JSON.stringify(asked())}`);
+  }
+  await p.clock.runFor(300);
+  await p.evaluate(() => 0);
+  check(asked().length === 0, `before the pause is over the grid asked for ${JSON.stringify(asked())}`);
+  await p.clock.runFor(200);
+  await until('the new thumbnail', () => asked().length > 0);
+  await settle(p, lib);
+  check(JSON.stringify(asked()) === '["/files/1/thumb?v=rot00003"]', `after the last turn the grid asked for ${JSON.stringify(asked())}`);
+  const srcs = await cells.evaluateAll((as) => as.map((a) => a.querySelector('img').getAttribute('src')));
+  check(JSON.stringify(srcs) === JSON.stringify(['/api/lib/' + LIB.split('/').pop() + '/files/1/thumb?v=rot00003', '/api/lib/' + LIB.split('/').pop() + '/files/2/thumb?v=orig0002', '/api/lib/' + LIB.split('/').pop() + '/files/3/thumb?v=orig0003']), `the grid shows ${JSON.stringify(srcs)}`);
+}));
+
 await finish();
