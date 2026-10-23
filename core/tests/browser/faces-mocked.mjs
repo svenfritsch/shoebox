@@ -368,6 +368,33 @@ await test('search suggestions: picture, icon and name of a row are centred on o
   }
 }));
 
+await test('picking a suggestion closes the list, and it stays closed once the new search is shown', await on('view=people', (lib) => {
+  lib.person('Spucky', { faces: 5, species: 'cat' });
+}, async (p, lib) => {
+  await p.locator('#search').fill('spu');
+  await settle(p, lib);
+  await p.locator('#suggest .item', { hasText: 'Spucky' }).click();
+  check(await p.locator('#suggest').isHidden(), 'the list is open right after the pick');
+  await settle(p, lib);
+  check(await p.evaluate(() => state.filter.people.length) === 1, 'the pick is not in the search');
+  check(await p.locator('#suggest').isHidden(), 'the list opened again for the new search');
+}));
+
+// ---- the Unnamed page's filter
+
+await test('the Unnamed page keeps its filter (people and pets, faces, pets) over a reload', await on('view=unnamed', (lib) => ({ cards: [lib.cluster(5), lib.cluster(4)] }), async (p, lib) => {
+  check(await p.locator('#un-kind').inputValue() === 'all', 'the filter starts at all');
+  await p.locator('#un-kind').selectOption('pets');
+  await settle(p, lib);
+  await p.reload();
+  await p.locator('#un-kind').waitFor();
+  check(await p.locator('#un-kind').inputValue() === 'pets', 'after a reload the filter is not pets');
+  await p.evaluate(() => localStorage.setItem('shoebox-unnamed-kind', 'nonsense'));
+  await p.reload();
+  await p.locator('#un-kind').waitFor();
+  check(await p.locator('#un-kind').inputValue() === 'all', 'a value nobody offers is not taken');
+}));
+
 // ---- groups and people (the People page)
 
 const person = (p, x) => p.locator(`#page .person[data-id="${x.id}"]`);
@@ -537,7 +564,21 @@ await test('a person moved to a group, then both out of it: the empty group is g
   check(!(await groupNames(p)).includes('Move Group'), 'the empty group left the sidebar');
 }));
 
-await test('a new group with a person', await on('view=people', (lib) => lib.person('Cleo New'), async (p, lib, cleo) => {
+await test('a group on the People page folds and unfolds from its title; all start open', await on('view=people', (lib) => {
+  lib.group('Fold One', lib.person('Fia One'));
+  lib.group('Fold Two', lib.person('Gus Two'));
+}, async (p, lib) => {
+  const grp = (name) => p.locator('#page .pgroup', { hasText: name });
+  for (const n of ['Fold One', 'Fold Two']) check(await grp(n).locator('.people').isVisible(), `${n} does not start open`);
+  await grp('Fold One').locator('h3').click();
+  check(await grp('Fold One').locator('.people').isHidden(), 'Fold One stays open after a click on its title');
+  check(await grp('Fold One').locator('h3 .toggle').getAttribute('aria-expanded') === 'false', 'its arrow does not say folded');
+  check(await grp('Fold Two').locator('.people').isVisible(), 'Fold Two folded with Fold One');
+  await grp('Fold One').locator('h3 .toggle').click();
+  check(await grp('Fold One').locator('.people').isVisible(), 'the arrow does not unfold the group');
+}));
+
+await test('a new group with a person',await on('view=people', (lib) => lib.person('Cleo New'), async (p, lib, cleo) => {
   await changedThenGrouped(p, lib, 'a new group', async () => {
     await personMenu(p, cleo, 'people.menu.new_group');
     await typeName(p, 'Cleo Group');

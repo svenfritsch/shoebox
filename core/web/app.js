@@ -1059,6 +1059,9 @@ function closeSuggest() { clearTimeout(sugg.timer); stopSuggest(); $('suggest').
 
 function pickSuggest(it) {
   clearTimeout(searchTimer);
+  // The list closes with a pick (leaving the box also keeps the new search from offering it again).
+  closeSuggest();
+  $('search').blur();
   $('search').value = '';
   var f = state.filter;
   if (it.kind === 'fav') setFilter(withFilter({ fav: true, q: '' }));
@@ -6563,6 +6566,16 @@ function personHead(box, f) {
 
 // ---- people overview
 
+// Groups folded on the People page (kept while the page is in use, not saved).
+var pageClosed = {};
+
+function foldGroup(sec, grid, fold, open) {
+  setArrow(fold, open);
+  fold.setAttribute('aria-expanded', String(open));
+  sec.classList.toggle('folded', !open);
+  grid.hidden = !open;
+}
+
 function loadPeoplePage() {
   var page = $('page');
   if (state.filter.view !== 'people') return;
@@ -6591,11 +6604,23 @@ function loadPeoplePage() {
   var sections = groupedPeople();
   if (!people.list.length) page.appendChild(el('p', 'sub', tr('people.nobody_named')));
   sections.forEach(function (s) {
+    var key = s.id == null ? 'none' : s.id;
     var sec = el('section', 'pgroup');
-    var h = el('h3', '', s.name);
+    var h = el('h3');
+    var fold = el('button', 'toggle');
+    fold.type = 'button';
+    h.appendChild(fold);
+    h.appendChild(el('span', 'gname', s.name));
     h.appendChild(el('span', 'n', String(s.people.length)));
     sec.appendChild(h);
     var grid = el('div', 'people');
+    // The title folds the group's people away; all groups start open.
+    var flipGroup = function () {
+      pageClosed[key] = !pageClosed[key];
+      foldGroup(sec, grid, fold, !pageClosed[key]);
+    };
+    foldGroup(sec, grid, fold, !pageClosed[key]);
+    h.onclick = flipGroup;
     s.people.forEach(function (p) { grid.appendChild(personTile(p)); });
     if (!s.people.length) grid.appendChild(el('p', 'hint', tr('people.group_empty_hint')));
     sec.appendChild(grid);
@@ -7056,6 +7081,12 @@ function nameFacesDialog(faces, done) {
 // the actions and loads started, so a refresh that crossed one is redone.
 var un = { shown: 0, total: 0, unnamed: 0, kind: 'all', box: null, more: null, singles: null, epoch: 0, timer: null };
 var UN_KINDS = [['all', 'unnamed.kind.all'], ['faces', 'unnamed.kind.faces'], ['pets', 'unnamed.kind.pets']];
+// Which kind the page lists is a browser setting, kept over a reload.
+var UN_KIND_KEY = 'shoebox-unnamed-kind';
+try {
+  var savedKind = localStorage.getItem(UN_KIND_KEY);
+  if (UN_KINDS.some(function (o) { return o[0] === savedKind; })) un.kind = savedKind;
+} catch (e) { /* private window */ }
 var PAGE_CLUSTERS = 30;
 
 // Size of the face circles: a browser setting for the whole application, like
@@ -7111,7 +7142,11 @@ function loadUnnamed() {
     opt.selected = o[0] === un.kind;
     kinds.appendChild(opt);
   });
-  kinds.onchange = function () { un.kind = kinds.value; loadUnnamed(); };
+  kinds.onchange = function () {
+    un.kind = kinds.value;
+    try { localStorage.setItem(UN_KIND_KEY, un.kind); } catch (e) { /* ignore */ }
+    loadUnnamed();
+  };
   var bar = el('div', 'toolbar');
   bar.appendChild(kinds);
   bar.appendChild(faceSizeControl(page));
