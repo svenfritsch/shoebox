@@ -896,6 +896,39 @@ await test('duplicates: a copy with fewer pixels but a bigger file is not ticked
   check(JSON.stringify(ids) === JSON.stringify({ suggested: [2], smaller: [2] }), `ticked: ${JSON.stringify(ids)}`);
 }));
 
+// The thumbnail of a same-photo group opens the viewer on the group's versions
+// (card order), the arrow keys switch between them, Esc comes back to the thumbnail.
+const dupFile = (id, name, w, h, size, more) => ({ id, path: 'Selfies/' + name, name, folder_id: 1, kind: 'jpeg', size, width: w, height: h, taken: '2015-11-19T17:32:00', version: 'abcdef1' + id, same: null, tags: [], row: 0, keeper: null, bigger_file: false, in_copies: false, pick: false, copy_named: false, ...more });
+await test('duplicates: a click on the picture opens the viewer on the versions, left and right switch, Escape comes back to the group', await on('view=duplicates', (lib) => {
+  lib.dupGroups = [
+    { exact: false, kind: 'resolution', files: [dupFile(1, 'IMG_1794_1.JPG', 3888, 2592, 1_000_000, { pick: true }), dupFile(2, 'IMG_1794.JPG', 3793, 2529, 1_300_000, { keeper: 1, bigger_file: true })] },
+    { exact: false, kind: 'resolution', files: [dupFile(3, 'IMG_2210.JPG', 4032, 3024, 3_100_000, { pick: true }), dupFile(4, 'IMG-WA0007.jpg', 1600, 1200, 240_000, { keeper: 3 })] },
+  ];
+}, async (p) => {
+  await p.locator('.dup-photo a.thumb').first().waitFor();
+  // Both cards of the conflict are red and nothing is ticked there.
+  const badges = await p.locator('.dup-row').first().locator('.badge.worse').allTextContents();
+  check(JSON.stringify(badges) === JSON.stringify([await tr(p, 'dups.smaller_file'), await tr(p, 'dups.lower_quality')]), `badges ${badges}`);
+  const second = p.locator('.dup-photo a.thumb').nth(1);
+  await second.click();
+  const open = () => p.evaluate(() => ({ at: state.open, ids: state.data && state.data.ids, hidden: $('lightbox').hidden }));
+  await until('the viewer', async () => !(await open()).hidden);
+  let o = await open();
+  check(o.at === 0 && JSON.stringify(o.ids) === JSON.stringify([3, 4]), `viewer on ${JSON.stringify(o)}`);
+  await p.keyboard.press('ArrowRight');
+  await until('the next version', async () => (await open()).at === 1);
+  await p.keyboard.press('ArrowLeft');
+  await until('the first version again', async () => (await open()).at === 0);
+  await p.keyboard.press('Escape');
+  await until('the viewer to close', async () => (await open()).hidden);
+  check(await second.evaluate((a) => document.activeElement === a), 'focus is not back on the thumbnail of the second group');
+  check(await p.locator('.dup-photo a.thumb').count() === 2, 'the page was drawn again');
+  await second.click();
+  await until('the viewer again', async () => !(await open()).hidden);
+  await p.keyboard.press(' ');
+  await until('Space closes it', async () => (await open()).hidden);
+}));
+
 // ---- Our own icons instead of emojis
 
 const EMOJI = /[\u{1F000}-\u{1FAFF}\u{26A0}\u{270E}]/u;

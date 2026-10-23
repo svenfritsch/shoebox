@@ -3973,7 +3973,10 @@ function dupRows(g) {
   return rows;
 }
 
-function dupThumb(f, compare) {
+// `versions`: the files of the photo's row, in card order; a click then opens the
+// viewer on them (left and right switch between the versions, Esc or Space
+// come back to this thumbnail) instead of the file in a new tab.
+function dupThumb(f, compare, versions) {
   var a = el('a', 'thumb');
   a.href = LIBAPI + '/files/' + f.id + (f.kind === 'video' ? '/original' : '/view') + '?v=' + f.version;
   a.target = '_blank';
@@ -3988,6 +3991,13 @@ function dupThumb(f, compare) {
     a.removeAttribute('target');
     setTip(a, tr('dups.compare'));
     a.onclick = function (e) { e.preventDefault(); compare(f); };
+  } else if (versions && versions.length > 1) {
+    a.removeAttribute('target');
+    a.onclick = function (e) {
+      e.preventDefault();
+      a.focus(); // the viewer returns here (Safari does not focus a clicked link)
+      openFiles(versions.map(function (v) { return { file: v.id, kind: v.kind, version: v.version }; }), 0);
+    };
   }
   return a;
 }
@@ -4131,7 +4141,7 @@ function groupNode(g) {
   var heavier = {};
   g.files.forEach(function (f) { if (f.keeper && f.bigger_file) heavier[f.keeper] = true; });
   var sizeBadge = function (key) {
-    var b = el('div', 'badge', tr(key));
+    var b = el('div', 'badge worse', tr(key));
     setTip(b, tr('dups.size_conflict_hint'));
     return b;
   };
@@ -4173,7 +4183,7 @@ function groupNode(g) {
     meta.push((f.size / 1e6).toFixed(1) + ' MB');
     card.appendChild(el('div', 'meta', meta.join(' · ')));
     // Fewer pixels, and a bigger file than the copy that stays: not ticked for
-    // you. Both cards say what they lose on, in the same plain colour.
+    // you. Both cards say what they lose on, both red.
     if (f.keeper && !f.bigger_file) card.appendChild(el('div', 'badge worse', tr('dups.lower_quality')));
     else if (f.keeper) card.appendChild(sizeBadge('dups.lower_quality'));
     else if (heavier[f.id]) card.appendChild(sizeBadge('dups.smaller_file'));
@@ -4214,7 +4224,7 @@ function groupNode(g) {
     copies = bestFirst(copies);
     var first = copies[0];
     var left = el('div', 'dup-photo');
-    left.appendChild(dupThumb(first));
+    left.appendChild(dupThumb(first, null, copies));
     var name = el('div', 'name', first.name + ' ');
     if (first.same) {
       var same = el('span', 'same', String.fromCharCode(64 + first.same));

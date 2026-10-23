@@ -42,6 +42,7 @@ export function fakeLibrary() {
     clusters: [], people: [], groups: [],
     faceLists: {}, // person id: { confirmed, suggested, rejected } (a person's page)
     trash: [], // what GET /trash answers (organize::TrashItem)
+    dupGroups: [], // what GET /duplicates answers (duplicates::Group)
     step: null, // null (grouped), 'stale' (starting) or 'running'
     progress: [0, 0], // done, total while running
     pending: false, // decisions wait for the next regrouping
@@ -205,6 +206,7 @@ export function fakeLibrary() {
     '/event-pattern': () => ({ pattern: 'YYYY-MM Name' }),
     '/allow-trash': () => ({ allow: false, read_only: false }),
     '/trash': () => lib.trash,
+    '/duplicates': () => ({ groups: lib.dupGroups, total_groups: lib.dupGroups.length, hidden_groups: 0 }),
     '/clusters': (q) => {
       const cs = q.get('size') === 'large' ? large() : q.get('size') === 'small' ? small() : lib.clusters;
       const sorted = [...cs].sort((a, b) => b.faces.length - a.faces.length || a.id - b.id);
@@ -232,6 +234,15 @@ export function fakeLibrary() {
         id, name: `IMG_${id}.PNG`, path: `IMG_${id}.PNG`, folder_id: 1, kind: 'png', size: 1000, taken: null, taken_offset: null, estimate: null, exif: null,
         modified: '2026-01-01T10:00:00', width: 100, height: 100, duration_ms: null, camera: null, tags: [], missing: false,
         date_source: null, sort_date: null, live: null, linked: [], faces: [{ ...f, rejected, landmarks: [] }],
+        view_turn: 0, screenshot: false, screenshot_mark: null, position: null, text: [],
+      }];
+    }
+    const d = lib.dupGroups.flatMap((g) => g.files).find((x) => x.id === id);
+    if (d) {
+      return [200, {
+        id, name: d.name, path: d.path, folder_id: d.folder_id, kind: 'jpeg', size: d.size, taken: d.taken, taken_offset: null, estimate: null, exif: null,
+        modified: '2026-01-01T10:00:00', width: d.width, height: d.height, duration_ms: null, camera: null, tags: [], missing: false,
+        date_source: null, sort_date: null, live: null, linked: [], faces: [],
         view_turn: 0, screenshot: false, screenshot_mark: null, position: null, text: [],
       }];
     }
