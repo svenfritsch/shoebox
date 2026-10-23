@@ -4128,6 +4128,13 @@ function groupNode(g) {
     var v = g.files.map(key), top = Math.max.apply(null, v);
     return v.some(function (x) { return x !== top; }) ? top : null;
   };
+  var heavier = {};
+  g.files.forEach(function (f) { if (f.keeper && f.bigger_file) heavier[f.keeper] = true; });
+  var sizeBadge = function (key) {
+    var b = el('div', 'badge', tr(key));
+    setTip(b, tr('dups.size_conflict_hint'));
+    return b;
+  };
   var topPixels = most(function (f) { return (f.width || 0) * (f.height || 0); });
   var topSize = most(function (f) { return f.size; });
   var copyCard = function (f, showName, thumb) {
@@ -4165,12 +4172,11 @@ function groupNode(g) {
     if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
     meta.push((f.size / 1e6).toFixed(1) + ' MB');
     card.appendChild(el('div', 'meta', meta.join(' · ')));
-    if (f.keeper) card.appendChild(el('div', 'badge worse', tr('dups.lower_quality')));
-    if (f.keeper && f.bigger_file) {
-      var bf = el('div', 'badge', tr('dups.bigger_file'));
-      setTip(bf, tr('dups.bigger_file_hint'));
-      card.appendChild(bf);
-    }
+    // Fewer pixels, and a bigger file than the copy that stays: not ticked for
+    // you. Both cards say what they lose on, in the same plain colour.
+    if (f.keeper && !f.bigger_file) card.appendChild(el('div', 'badge worse', tr('dups.lower_quality')));
+    else if (f.keeper) card.appendChild(sizeBadge('dups.lower_quality'));
+    else if (heavier[f.id]) card.appendChild(sizeBadge('dups.smaller_file'));
     if (f.in_copies) card.appendChild(el('div', 'meta', tr('dups.in_copies')));
     card.appendChild(el('div', 'meta', f.taken ? formatDate({ taken: f.taken, date_source: 'file' }) : tr('dups.no_capture_date')));
     if (thumb && topPixels !== null && (f.width || 0) * (f.height || 0) === topPixels) card.appendChild(el('div', 'badge', tr('dups.badge_pixels')));
