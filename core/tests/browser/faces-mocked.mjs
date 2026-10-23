@@ -975,12 +975,12 @@ await test('a photo turned in the viewer: the grid asks for its new thumbnail on
   for (let n = 1; n <= 3; n++) {
     await p.keyboard.press('r');
     await until(`turn ${n} to be answered`, async () => lib.log.filter((e) => e.method === 'POST' && e.path === '/files/1/rotate').length === n && !(await p.evaluate(() => lb.rotating)));
-    // A second a turn: the first pause would be over before the last turn if each turn did not start it again.
-    await p.clock.runFor(1000);
+    // 600 ms a turn: the first pause would be over before the last turn if each turn did not start it again.
+    await p.clock.runFor(600);
     await p.evaluate(() => 0);
     check(asked().length === 0, `after turn ${n} the grid asked for ${JSON.stringify(asked())}`);
   }
-  await p.clock.runFor(400);
+  await p.clock.runFor(300);
   await p.evaluate(() => 0);
   check(asked().length === 0, `before the pause is over the grid asked for ${JSON.stringify(asked())}`);
   await p.clock.runFor(200);

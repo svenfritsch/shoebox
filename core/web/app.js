@@ -2447,7 +2447,7 @@ $('lb-trash').onclick = function () {
 // turn the new one is asked for once the user has stopped turning (a photo is
 // often turned two or three times), so the server makes one thumbnail, not one
 // per turn.
-var TURN_THUMB_DELAY_MS = 1500;
+var TURN_THUMB_DELAY_MS = 1000;
 var turned = { timer: null, ids: {} };
 
 function thumbAfterTurn(id) {

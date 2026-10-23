@@ -1619,7 +1619,7 @@ is (`organize::turn`, going by content, not name):
   picture) and a person's picture follow to the new key; thumbnails and
   detected faces are made again (next view, next `shoebox recognize`). The
   grid does not wait for a scan: `thumbAfterTurn` (app.js) asks for the new
-  thumbnail 1.5 s after the last turn (three turns in a row are one request),
+  thumbnail 1 s after the last turn (three turns in a row are one request),
   and `/thumb` makes it on demand.
   Refused: a JPEG without an Orientation tag (adding one shifts every byte
   after it). The small EXIF thumbnail inside the file is not turned.
