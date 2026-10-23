@@ -545,21 +545,23 @@ fn item(r: &rusqlite::Row) -> rusqlite::Result<Item> {
 
 /// Faces of present photos, filtered and sorted for the face check page.
 /// `conn` has `recog` attached (at the current schema).
-pub fn list(conn: &Connection, q: &ListQuery) -> Result<List> {
+/// `view` is the people view (the server keeps one, so a request does not
+/// read every face and decision again).
+pub fn list(conn: &Connection, view: &crate::people::View, q: &ListQuery) -> Result<List> {
     let order = match q.sort.as_deref() {
         Some("score") => "f.score",
         _ => "px",
     };
     let dir = if q.desc { "DESC" } else { "ASC" };
     // Ids are numbers from the database, so they can go into the SQL.
-    let m = crate::people::Matched::load(conn, None)?;
+    let m = &view.m;
     let join = |ids: HashSet<i64>| ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
     let pet_faces = m.pet_faces();
     let filter = if q.unmatched {
         format!(
             "px >= ?1 AND px < ?2{} AND f.id IN ({})",
             if q.rotated { " AND f.roll != 0" } else { "" },
-            join(crate::people::View::load(conn)?.unplaced_ids())
+            join(view.unplaced_ids())
         )
     } else if q.pet_face {
         format!("px >= ?1 AND px < ?2{} AND f.id IN ({})", if q.rotated { " AND f.roll != 0" } else { "" }, join(pet_faces))

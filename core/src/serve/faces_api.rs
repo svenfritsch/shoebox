@@ -16,7 +16,7 @@ use crate::faces;
 use crate::thumbs;
 
 pub(super) async fn list(State(app): State<Arc<App>>, Query(q): Query<faces::ListQuery>) -> ApiResult<Json<faces::List>> {
-    blocking(&app, move |app| Ok(Json(faces::list(&app.conn.lock().unwrap(), &q)?))).await
+    blocking(&app, move |app| Ok(Json(app.with_people(|conn, view| faces::list(conn, view, &q))?))).await
 }
 
 #[derive(Deserialize)]
