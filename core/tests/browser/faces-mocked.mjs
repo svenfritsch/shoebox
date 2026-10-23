@@ -863,6 +863,28 @@ await test('trash cards: badges for the files that came along, the Duplicate bad
   check(!(await p.evaluate(() => window.opened)) && (await p.locator('.card.pick').nth(3).evaluate((c) => c.classList.contains('sel'))), 'a click on the gone badge should select its card');
 }));
 
+await test('trash page: "Only duplicates" shows just the removed copies, and Select all and Delete for good reach only those', await on('view=trash', trashed, async (p, lib) => {
+  await p.locator('.card.pick').first().waitFor();
+  const toggle = p.locator('.trash-head input[type=checkbox]');
+  check(await p.locator('.card.pick').count() === 4, 'all four photos shown at first');
+  check((await p.locator('.trash-head label').textContent()).includes('2'), 'the toggle says how many duplicates there are');
+  await toggle.check();
+  await until('only the duplicates', async () => (await p.locator('.card.pick').count()) === 2);
+  const names = await p.locator('.card.pick .name').allTextContents();
+  check(JSON.stringify(names) === JSON.stringify(['IMG_1794.JPG', 'IMG_2002 (2).JPG']), `shown: ${names}`);
+  const all = p.locator('.dup-bar button', { hasText: (await tr(p, 'trash.select_all')).replace('{count}', '2') });
+  await all.click();
+  check(await p.locator('.card.pick.sel').count() === 2, 'Select all ticks the two duplicates');
+  await p.locator('.dup-bar .btn.danger').click();
+  await p.locator('#modal-actions .btn.danger').click();
+  await until('the delete', async () => lib.trash.length === 4);
+  // The photos trashed by hand are still there, and the toggle stays on until no duplicate is left.
+  const left = lib.trash.map((t) => t.batch).sort().join();
+  check(left === '3,3,4,4', `left in the trash: ${left}`);
+  await until('the page to follow', async () => (await p.locator('.card.pick').count()) === 2);
+  check(!(await toggle.isChecked()) && await toggle.isDisabled(), 'with no duplicate left the toggle is off and disabled');
+}));
+
 // ---- Our own icons instead of emojis
 
 const EMOJI = /[\u{1F000}-\u{1FAFF}\u{26A0}\u{270E}]/u;

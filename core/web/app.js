@@ -4330,17 +4330,44 @@ function askDates(conflicts, done) {
 
 // ------------------------------------------------------------------ trash page
 
+// "Only duplicates" on the trash page: shows just the copies removed as
+// duplicates, so a selection (and Select all) cannot reach what was trashed by hand.
+var trashDupsOnly = false;
+
+// The file a trash card shows: the photo, not its RAW or Live Photo video.
+function trashFirst(files) {
+  var main = function (f) { return f.kind && f.kind !== 'raw' && f.kind !== 'video'; };
+  return files.filter(main)[0] || files.filter(function (f) { return f.kind; })[0] || files[0];
+}
+
 function loadTrash() {
   return api(LIBAPI + '/trash').then(function (items) {
     if (state.filter.view !== 'trash') return;
     var page = $('page');
     clearNode(page);
-    page.appendChild(el('h2', '', tr('side.trash')));
-    var batches = [], byBatch = {};
+    var allBatches = [], byBatch = {};
     items.forEach(function (it) {
-      if (!byBatch[it.batch]) { byBatch[it.batch] = []; batches.push(it.batch); }
+      if (!byBatch[it.batch]) { byBatch[it.batch] = []; allBatches.push(it.batch); }
       byBatch[it.batch].push(it);
     });
+    var dupBatches = allBatches.filter(function (b) { return !!trashFirst(byBatch[b]).duplicate_of; });
+    if (!dupBatches.length) trashDupsOnly = false;
+    var batches = trashDupsOnly ? dupBatches : allBatches;
+    var head = el('div', 'trash-head');
+    head.appendChild(el('h2', '', tr('side.trash')));
+    if (allBatches.length) {
+      var only = el('label', 'check');
+      var onlyBox = el('input');
+      onlyBox.type = 'checkbox';
+      onlyBox.checked = trashDupsOnly;
+      onlyBox.disabled = !dupBatches.length;
+      onlyBox.onchange = function () { trashDupsOnly = onlyBox.checked; loadTrash(); };
+      only.appendChild(onlyBox);
+      only.appendChild(document.createTextNode(' ' + tr('trash.only_duplicates', { count: I18n.number(dupBatches.length) })));
+      setTip(only, tr('trash.only_duplicates_hint'));
+      head.appendChild(only);
+    }
+    page.appendChild(head);
     page.appendChild(el('p', 'sub', batches.length
       ? tr('trash.page_sub', { count: trn('count.photos', batches.length) })
       : tr('trash.empty')));
@@ -4367,7 +4394,7 @@ function loadTrash() {
       bar.appendChild(back);
       var del = el('button', 'btn danger', tr('trash.delete_for_good'));
       del.disabled = !n;
-      del.onclick = function () { deleteBatches(batches.filter(function (b) { return picked[b]; }), batches.length); };
+      del.onclick = function () { deleteBatches(batches.filter(function (b) { return picked[b]; }), trashDupsOnly ? -1 : batches.length); };
       bar.appendChild(del);
     };
     var cards = el('div', 'cards has-drag');
@@ -4383,9 +4410,7 @@ function loadTrash() {
     };
     batches.forEach(function (b) {
       var files = byBatch[b];
-      // The picture the card shows: the photo, not its RAW or Live Photo video.
-      var main = function (f) { return f.kind && f.kind !== 'raw' && f.kind !== 'video'; };
-      var first = files.filter(main)[0] || files.filter(function (f) { return f.kind; })[0] || files[0];
+      var first = trashFirst(files);
       var card = el('div', 'card pick');
       cardOf[b] = card;
       card.batch = b;
@@ -4472,7 +4497,8 @@ function putBack(list, byBatch) {
   }).catch(function (e) { failed(e); changed(); });
 }
 
-// Asks, then deletes the batches for good; everything at once when all are chosen.
+// Asks, then deletes the batches for good; everything at once when all are chosen
+// (total -1: only some are shown, so only the chosen ones).
 function deleteBatches(list, total) {
   deleteForGood(list.length === total ? [null] : list, list.length);
 }

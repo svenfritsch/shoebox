@@ -244,6 +244,12 @@ export function fakeLibrary() {
     [/^\/clusters\/(\d+)\/faces$/, (m) => { const c = lib.clusters.find((x) => x.id === Number(m[1])); return c ? [200, c.faces] : [404, { error: 'no such cluster' }]; }],
   ];
   const post = [
+    // organize::empty_trash: one batch, or the whole trash when `batch` is null.
+    [/^\/trash\/empty$/, (m, body) => {
+      const gone = lib.trash.filter((t) => body.batch == null || t.batch === body.batch);
+      lib.trash = lib.trash.filter((t) => !gone.includes(t));
+      return [200, { deleted: gone.length }];
+    }],
     [/^\/clusters\/(\d+)\/name$/, (m, body) => {
       const c = lib.clusters.find((x) => x.id === Number(m[1]));
       if (!c || (body.generation != null && body.generation !== c.generation)) return [409, { error: 'the faces changed' }];
