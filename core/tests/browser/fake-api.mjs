@@ -60,14 +60,15 @@ export function fakeLibrary() {
   };
   const face = () => {
     const id = ++faceSeq;
-    return { id, file: id, kind: 'png', version: String(id).padStart(8, '0'), x: 0.25, y: 0.25, w: 0.5, h: 0.5, roll: 0, px: 100, score: 0.99, small: false, state: null, person: null, similarity: null };
+    return { id, file: id, kind: 'png', version: String(id).padStart(8, '0'), x: 0.25, y: 0.25, w: 0.5, h: 0.5, roll: 0, px: 100, score: 0.99, small: false, state: null, species: null, person: null, similarity: null };
   };
 
   // ---- set up (by the tests)
 
   // An unnamed cluster of `size` faces; `suggest`: a person it looks like.
-  lib.cluster = (size, suggest) => {
-    const c = { id: ++clusterSeq, generation: 1000 + clusterSeq, faces: Array.from({ length: size }, face), suggestion: null };
+  // `species`: 'cat' or 'dog' for a cluster of pets (their faces say it, as the server's do).
+  lib.cluster = (size, suggest, species = null) => {
+    const c = { id: ++clusterSeq, generation: 1000 + clusterSeq, faces: Array.from({ length: size }, () => ({ ...face(), species })), suggestion: null };
     if (suggest) c.suggestion = { person: { id: suggest.id, name: suggest.name }, faces: size };
     lib.clusters.push(c);
     return c;
@@ -147,7 +148,7 @@ export function fakeLibrary() {
     if (body.person_id != null) return byId(body.person_id);
     const named = lib.people.find((p) => fold(p.name) === fold(body.name));
     if (named) return named;
-    const p = { id: ++personSeq, name: String(body.name).trim(), group_id: null, hidden: false, faces: 0, photos: 0, suggested: 0, maybe: 0, cover: null, cover_manual: null };
+    const p = { id: ++personSeq, name: String(body.name).trim(), group_id: null, species: null, hidden: false, faces: 0, photos: 0, suggested: 0, maybe: 0, cover: null, cover_manual: null };
     lib.people.push(p);
     return p;
   };

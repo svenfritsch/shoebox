@@ -192,8 +192,8 @@ var ICONS = {
   scan: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><rect x="7" y="6.5" width="10" height="11" rx="2"/><path d="M9.5 10h5M9.5 12.5h5M9.5 15h5"/></svg>',
   draft: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M14 3v5h5"/></svg>',
   copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
-  // A single pawn: one person.
-  person: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="7" r="3"/><path d="M7.5 20v-2.5c0-3 1.7-5 4.5-5s4.5 2 4.5 5V20z"/></svg>',
+  // A head with shoulders: one person.
+  person: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c.5-4 3.5-6.2 7.5-6.2s7 2.2 7.5 6.2"/></svg>',
   // A sitting cat with its tail up.
   cat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 4.5l1.3 1.8h3.4l1.3-1.8v4.2a3.3 3.3 0 0 1-6 0z"/><path d="M8.7 11.5C6.5 13 5.5 15.5 5.5 18c0 1.2.8 2 2 2h6.5c2.6 0 4.5-1.6 4.5-3.5V8.5"/><path d="M18.5 8.5a1.5 1.5 0 0 1 3 0"/></svg>',
   // A bone: a dog.
@@ -202,6 +202,10 @@ var ICONS = {
   paw: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="11.5" r="1.7" fill="currentColor"/><circle cx="9.3" cy="7" r="1.7" fill="currentColor"/><circle cx="14.7" cy="7" r="1.7" fill="currentColor"/><circle cx="18.5" cy="11.5" r="1.7" fill="currentColor"/><path d="M8.3 17.5c0-2.2 1.7-4 3.7-4s3.7 1.8 3.7 4c0 1.5-1 2.2-2.2 2.2-.6 0-1-.3-1.5-.3s-.9.3-1.5.3c-1.2 0-2.2-.7-2.2-2.2z"/></svg>',
   // The map marker of the selection bar, without its plus.
   place: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21C9.5 18.2 6 14.8 6 10.8a6 6 0 0 1 12 0c0 4-3.5 7.4-6 10.2z"/><circle cx="12" cy="10.8" r="1.4" fill="currentColor"/></svg>',
+  // A flat drive with its light: the disk a folder is on (the guide's symbol).
+  drive: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="18" height="10" rx="2"/><circle cx="17" cy="12" r="1"/><path d="M6 12h6"/></svg>',
+  // A pencil: change a name.
+  pencil: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19l1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L9 18z"/><path d="M14.5 6.5l3 3"/></svg>',
   // The calendar page of the selection bar (a date of your own).
   date: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5z"/><path d="M8.5 3.5v5M15.5 3.5v5" stroke-width="2.2"/><path d="M7.5 14.5c1.5-2.3 3-2.3 4.5 0s3 2.3 4.5 0"/></svg>',
   // Three pawns, the middle one taller: a group of people.
@@ -366,7 +370,8 @@ function renderChips() {
     var folder = state.folderById[f.folder];
     add(folder.path || folder.name, function () { setFilter(withFilter({ folder: null })); }, folderIcon());
     if (folder.path && !readOnly) {
-      var edit = el('button', 'edit', '✎');
+      var edit = el('button', 'edit');
+      edit.appendChild(icon('pencil'));
       setTip(edit, tr('chip.rename_folder'));
       edit.onclick = function () { renameFolder(folder); };
       box.lastChild.insertBefore(edit, box.lastChild.lastChild);
@@ -398,11 +403,16 @@ function renderChips() {
   if (f.types.length) add(f.types.length === 1 ? tr('types.' + f.types[0]) : f.types.map(typeLabel).join(', '), function () { setFilter(withFilter({ types: [] })); }, typeIcon(f.types));
   if (f.place) {
     var spot = placeOf(f.place);
-    add(spot ? spot.name : '…', function () { setFilter(withFilter({ place: null })); }, icon('place'));
-    var onMap = el('button', 'edit', '🗺');
-    setTip(onMap, tr('chip.show_on_map'));
-    onMap.onclick = function () { showView('locations', f.place); };
-    box.lastChild.insertBefore(onMap, box.lastChild.lastChild);
+    // The marker is the way to the map (no second button beside the name).
+    var mark = icon('place', 'link');
+    mark.setAttribute('role', 'button');
+    mark.tabIndex = 0;
+    mark.setAttribute('aria-label', tr('chip.show_on_map'));
+    setTip(mark, tr('chip.show_on_map'));
+    var toMap = function () { showView('locations', f.place); };
+    mark.onclick = toMap;
+    mark.onkeydown = function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toMap(); } };
+    add(spot ? spot.name : '…', function () { setFilter(withFilter({ place: null })); }, mark);
   }
   f.names.forEach(function (term) {
     add(term, function () { setFilter(withFilter({ names: f.names.filter(function (n) { return n !== term; }) })); }, 'draft', tr('chip.name_hint', { term: term }));
@@ -2290,7 +2300,7 @@ function renderPanelAll(info) {
   (info.faces || []).forEach(function (f, k) {
     if (!f.person || f.state === 'ignored') return;
     var name = f.state === 'confirmed' ? f.person.name : tr(f.state === 'maybe' ? 'info.guess_maybe' : 'info.guess', { name: f.person.name });
-    var line = el('div', 'pface', name + (f.species ? ' ' + petIcon(f.species) : ''));
+    var line = petLabel('div', 'pface', f.species, name);
     // As in the drive's own panel: pointing at (or tapping) a face shows its box.
     setTip(line, tr('info.show_where'));
     line.onclick = function () { lb.hover = lb.hover === k ? null : k; drawFaces(); };
@@ -4886,9 +4896,15 @@ function loadOwnTags() {
 
 var faceState = { sort: 'size', desc: false, filter: 'all', faces: [], total: 0, minPx: 30, picking: false, picked: {} };
 // `pet`: a pet drawn by hand, whose species nobody said.
-var PET_ICON = { cat: '🐱', dog: '🐶', pet: '🐾' };
-function petIcon(species) { return PET_ICON[species] || ''; }
-function speciesName(species) { return tr('pet.species.' + (PET_ICON[species] ? species : 'pet')); }
+var PET_SPECIES = { cat: true, dog: true, pet: true };
+// An element with `text`, led by the species' icon when it is a pet's (our own drawings, not emojis).
+function petLabel(tag, cls, species, text) {
+  var e = el(tag, cls);
+  if (PET_SPECIES[species]) e.appendChild(speciesIcon(species));
+  e.appendChild(document.createTextNode(text));
+  return e;
+}
+function speciesName(species) { return tr('pet.species.' + (PET_SPECIES[species] ? species : 'pet')); }
 // "3 cats", "1 dog": the pets of one species (or just pets).
 function animalCount(species, n) { return trn('count.' + (species === 'cat' ? 'cats' : species === 'dog' ? 'dogs' : 'pets'), n); }
 
@@ -5133,7 +5149,7 @@ function faceCard(face, similarity) {
   var caption = Math.round(face.px) + ' px · ' + face.score.toFixed(2);
   if (similarity != null) caption = similarity.toFixed(2) + ' · ' + caption;
   card.appendChild(el('div', 'meta', caption));
-  if (face.species) card.appendChild(el('span', 'tag', petIcon(face.species) + ' ' + speciesName(face.species)));
+  if (face.species) card.appendChild(petLabel('span', 'tag', face.species, speciesName(face.species)));
   if (face.small) card.appendChild(el('span', 'tag', tr('facecheck.tag_small')));
   if (face.roll) card.appendChild(el('span', 'tag', tr('facecheck.tag_turned')));
   if (similarity == null) {
@@ -5902,6 +5918,12 @@ function zoomFace(face) {
 function faceImg(face, cls) {
   var a = el('span', 'avatar' + (cls ? ' ' + cls : '') + (face.species ? ' pet pet-' + face.species : ''));
   if (face.species) a.title = face.species;
+  // The pet's icon sits in a disc in the corner of the big faces (the name of a person says it elsewhere).
+  if (face.species && cls === 'big') {
+    var badge = el('span', 'pet-badge');
+    badge.appendChild(speciesIcon(face.species));
+    a.appendChild(badge);
+  }
   var url = cropUrl(face);
   if (face.state === 'ignored' && face.file != null) {
     a.appendChild(zoomFace(face));
@@ -5999,7 +6021,7 @@ function renderFacesSection() {
         var pli = el('li');
         var prow = el('div', 'row');
         prow.appendChild(avatar(p, 'tiny'));
-        var b = el('button', 'name', (p.species ? petIcon(p.species) + ' ' : '') + p.name);
+        var b = petLabel('button', 'name', p.species, p.name);
         b.dataset.person = p.id;
         b.onclick = function () { showPerson(p.id); };
         prow.appendChild(b);
@@ -6204,7 +6226,7 @@ function personField(done, opts) {
     } else if (opts.allowNew && text && !exact) {
       var it = { who: { name: text }, label: text };
       var sp = kind();
-      var b = option('item new', tr(sp ? 'people.new.' + (PET_ICON[sp] ? sp : 'pet') : 'people.new_person', { name: text }));
+      var b = option('item new', tr(sp ? 'people.new.' + (PET_SPECIES[sp] ? sp : 'pet') : 'people.new_person', { name: text }));
       b.onclick = function () { pick(it); };
       items.push(it);
       list.appendChild(b);
@@ -6502,7 +6524,7 @@ function personHead(box, f) {
   var head = el('div', 'person-head');
   head.appendChild(avatar(p, 'big'));
   var text = el('div', 'ptext');
-  text.appendChild(el('div', 'pname', (p.species ? petIcon(p.species) + ' ' : '') + p.name));
+  text.appendChild(petLabel('div', 'pname', p.species, p.name));
   var g = people.groups.filter(function (x) { return x.id === p.group_id; })[0];
   text.appendChild(el('div', 'pmeta', trn('count.photos', p.photos) + ' · ' + (g ? g.name : tr('people.no_group_lower'))));
   head.appendChild(text);
@@ -6571,7 +6593,7 @@ function personTile(p) {
   a.href = '#';
   a.onclick = function (ev) { ev.preventDefault(); showPerson(p.id); };
   a.appendChild(avatar(p, 'big'));
-  a.appendChild(el('span', 'pname', (p.species ? petIcon(p.species) + ' ' : '') + p.name));
+  a.appendChild(petLabel('span', 'pname', p.species, p.name));
   a.appendChild(el('span', 'pmeta', trn('count.photos', p.photos)));
   t.appendChild(a);
   if (p.suggested + p.maybe) {
@@ -6606,7 +6628,7 @@ function loadPersonPage() {
     var head = el('div', 'person-head');
     head.appendChild(avatar(p, 'big'));
     var text = el('div', 'ptext');
-    text.appendChild(el('h2', 'pname', (p.species ? petIcon(p.species) + ' ' : '') + p.name));
+    text.appendChild(petLabel('h2', 'pname', p.species, p.name));
     text.appendChild(el('div', 'pmeta', tr('person.meta', { photos: trn('count.photos', p.photos), faces: p.species ? animalCount(p.species, p.faces) : trn('count.faces', p.faces) })));
     head.appendChild(text);
     var photos = el('button', 'btn quiet', tr('person.photos'));
@@ -7923,7 +7945,7 @@ function infoFace(info, f, k, pick) {
     };
     who.appendChild(add);
   }
-  if (f.species) who.appendChild(el('span', 'note', ' ' + petIcon(f.species) + ' ' + speciesName(f.species)));
+  if (f.species) who.appendChild(petLabel('span', 'note', f.species, speciesName(f.species)));
   if (f.small) who.appendChild(el('span', 'note', ' ' + tr('facecheck.tag_small')));
   if (f.kept) return line;
   line.appendChild(menuButton(function () {
@@ -8079,11 +8101,9 @@ function nameDrawnFace(info, frac) {
     field.input.dispatchEvent(new Event('input'));
   };
   var video = info.kind === 'video';
-  [['', '🧑', 'draw.kind.person'], ['cat', PET_ICON.cat, 'draw.kind.cat'], ['dog', PET_ICON.dog, 'draw.kind.dog']].forEach(function (k) {
+  [['', 'person', 'draw.kind.person'], ['cat', 'cat', 'draw.kind.cat'], ['dog', 'dog', 'draw.kind.dog']].forEach(function (k) {
     var b = el('button');
-    var icon = el('span', '', k[1] + ' ');
-    icon.setAttribute('aria-hidden', 'true');
-    b.appendChild(icon);
+    b.appendChild(icon(k[1]));
     b.appendChild(document.createTextNode(tr(k[2])));
     b.type = 'button';
     b.setAttribute('role', 'radio');
@@ -8444,7 +8464,7 @@ function loadDrivesPage() {
         // drive holds more than photos.
         if (d.volume) {
           var where = el('div', 'where');
-          where.appendChild(el('span', 'ico', '💾'));
+          where.appendChild(icon('drive', 'ico'));
           where.appendChild(el('b', '', d.volume));
           where.appendChild(el('span', '', ' · ' + d.folder));
           body.appendChild(where);

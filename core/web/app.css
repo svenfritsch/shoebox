@@ -109,7 +109,9 @@ button { cursor: pointer; }
 .cell .ph { width: 100%; height: 100%; background: var(--cell-bg); overflow: hidden; }
 .cell img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity .15s; }
 .cell img.ok { opacity: 1; }
-.cell.broken .ph::after { content: "⚠︎"; display: flex; height: 100%; align-items: center; justify-content: center; color: var(--muted); }
+.cell.broken .ph::after { content: ""; display: block; width: 28px; height: 28px; max-width: 50%; max-height: 50%; margin: auto; position: absolute; inset: 0; background: var(--muted);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='4.5' width='17' height='15' rx='2.5'/%3E%3Ccircle cx='9' cy='10' r='1.5'/%3E%3Cpath d='M4 17l5-4.5 3.5 3 2.5-2L20 17'/%3E%3Cpath d='M4 20L20 4'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='4.5' width='17' height='15' rx='2.5'/%3E%3Ccircle cx='9' cy='10' r='1.5'/%3E%3Cpath d='M4 17l5-4.5 3.5 3 2.5-2L20 17'/%3E%3Cpath d='M4 20L20 4'/%3E%3C/svg%3E") center / contain no-repeat; }
 .cell .badge {
   position: absolute; right: 6px; bottom: 6px; font-size: 11px; font-weight: 600; color: #fff;
   background: rgba(0,0,0,.45); border-radius: 4px; padding: 1px 5px; pointer-events: none;
@@ -740,17 +742,20 @@ body.selecting .sec .pick { display: inline; }
 /* Language selector in the sidebar footer (phase 8) */
 .bar .lang-pick { font-size: 13px; padding: 4px 6px; color: var(--muted); }
 
-/* Pets (phase 7): cats and dogs are people with a small pet in the corner */
+/* Pets (phase 7): cats and dogs are people with a blue ring; the big faces of
+   a pet carry its icon in a disc in the corner (.pet-badge). The ring and the
+   badge may reach past the circle, so the picture rounds itself. */
 .avatar { position: relative; }
-.avatar.pet { box-shadow: 0 0 0 2px #5ac8fa; }
-.avatar.pet-cat::after, .avatar.pet-dog::after, .avatar.pet-pet::after { position: absolute; right: 6%; bottom: 2%; font-size: 40%; line-height: 1; content: ''; }
-.avatar.pet-cat::after { content: '🐱'; }
-.avatar.pet-dog::after { content: '🐶'; }
-.avatar.pet-pet::after { content: '🐾'; }
+.avatar.pet { box-shadow: 0 0 0 2px #5ac8fa; overflow: visible; }
+.avatar.pet img, .avatar.pet .zoom { border-radius: 50%; }
+.avatar .pet-badge {
+  position: absolute; right: 3%; bottom: 3%; z-index: 1; width: 28%; height: 28%; min-width: 18px; min-height: 18px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; background: rgba(22, 22, 22, .78); box-shadow: 0 0 0 1.5px #5ac8fa; color: #5ac8fa;
+}
+.avatar .pet-badge .ic { width: 62%; height: 62%; min-width: 11px; min-height: 11px; margin: 0; vertical-align: 0; }
+.person-head .pname .ic { color: #5ac8fa; width: .9em; height: .9em; margin-right: 10px; vertical-align: -.1em; }
 /* In the search suggestions a pet looks like a person: the pet icon before the name is the only difference (the ring would also be cut off by the label). */
 .suggest .avatar.pet { box-shadow: none; }
-.avatar.tiny.pet-cat::after, .avatar.tiny.pet-dog::after, .avatar.tiny.pet-pet::after { content: none; }
-.avatar.big.pet-cat::after, .avatar.big.pet-dog::after, .avatar.big.pet-pet::after { font-size: 28px; }
 
 /* Settings and the calibration pages */
 .settings-section { margin: 0 0 24px; }
@@ -887,6 +892,7 @@ body.geo-view #page { padding: 0; height: 100%; }
 /* "Add face or pet": what was drawn */
 .dialog .kinds { display: flex; margin: 0 0 12px; }
 .dialog .kinds button { flex: 1; padding: 7px 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font-size: 14px; }
+.dialog .kinds .ic { width: 1.25em; height: 1.25em; margin-right: .35em; vertical-align: -.25em; }
 .dialog .kinds button:first-child { border-radius: 8px 0 0 8px; }
 .dialog .kinds button:last-child { border-radius: 0 8px 8px 0; }
 .dialog .kinds button + button { border-left: 0; }
@@ -1110,3 +1116,9 @@ body.read-only #sel-move, body.read-only #lb-rotate, body.read-only .copy label.
 .ignore-folders .lbl { display: block; margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
 .ignore-folders .note { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
 .copy-row .ignore-this { margin-left: 0; }
+
+/* The marker of a place chip opens the map. */
+.chip .ic.link { cursor: pointer; }
+.chip .ic.link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.chip .edit .ic { margin: 0; width: 1em; height: 1em; vertical-align: -.15em; }
+.icon-btn svg { width: 18px; height: 18px; display: block; }

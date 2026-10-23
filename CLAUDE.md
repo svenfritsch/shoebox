@@ -114,6 +114,8 @@ current status and next step. Update its status table when a phase moves.
   construction. Such an icon needs no
   licence entry only because it is ours. Never paste an icon set's SVG into
   the code or the guide.
+  No emojis anywhere in the pages (`core/tests/no_emoji.rs` fails on one); plain
+  text symbols (✓ ✗ ✕ ♥ ☰ ↺ ⇄) may stay.
   Open items before giving it to others: see "Before giving shoebox
   to others" in docs/plan.md.
 - Tests of the photo app come in three layers (API tests in Rust, the page
