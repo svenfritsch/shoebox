@@ -6521,7 +6521,6 @@ function groupsDialog() {
 
 function personMenuItems(p) {
   return [
-    { label: tr('people.menu.show'), run: function () { showPerson(p.id); } },
     { label: tr('people.menu.rename'), run: function () { renamePerson(p); } },
     { label: tr('people.menu.move'), run: function () { moveToGroupDialog(p); } },
     { label: tr('people.menu.new_group'), run: function () { newGroup(p); } },
@@ -6560,7 +6559,7 @@ function personHead(box, f) {
   var faces = el('button', 'btn quiet', review ? tr('people.check', { count: trn('count.faces', review) }) : tr('side.faces'));
   faces.onclick = function () { showView('person', p.id, p.suggested ? 'suggested' : p.maybe ? 'maybe' : 'confirmed'); };
   head.appendChild(faces);
-  head.appendChild(menuButton(personMenuItems(p).slice(1), tr('people.more_for', { name: p.name })));
+  head.appendChild(menuButton(personMenuItems(p), tr('people.more_for', { name: p.name })));
   box.insertBefore(head, box.firstChild);
 }
 
@@ -6684,7 +6683,7 @@ function loadPersonPage() {
     var photos = el('button', 'btn quiet', tr('person.photos'));
     photos.onclick = function () { showPerson(p.id); };
     head.appendChild(photos);
-    head.appendChild(menuButton(personMenuItems(p).slice(1), tr('people.more_for', { name: p.name })));
+    head.appendChild(menuButton(personMenuItems(p), tr('people.more_for', { name: p.name })));
     page.appendChild(head);
     var tabs = el('div', 'tabs');
     tabs.id = 'person-tabs';

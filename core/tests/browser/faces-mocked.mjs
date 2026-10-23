@@ -418,7 +418,7 @@ await test('the ⋯ menu of a person on the People page and on their page: no Re
   const edit = ['people.menu.rename', 'people.menu.move', 'people.menu.new_group', 'people.menu.merge'];
   await person(p, rita).locator('.more-btn').click();
   const tile = await items();
-  const want = await words(['people.menu.show', ...edit]);
+  const want = await words(edit);
   check(JSON.stringify(tile) === JSON.stringify(want), `People page: ${JSON.stringify(tile)}, expected ${JSON.stringify(want)}`);
   await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=suggested`; }, rita.id);
   await p.locator('#pp-grid .face').first().waitFor();
