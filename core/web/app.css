@@ -79,7 +79,7 @@ select { cursor: pointer; }
 .icon svg { display: block; width: 1em; height: 1em; fill: currentColor; }
 .icon {
   flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--ctl-h); height: var(--ctl-h); padding: 0;
-  background: none; border: 0; border-radius: var(--ctl-r); font-size: 20px; line-height: 1; color: inherit; text-decoration: none;
+  background: none; border: 0; border-radius: 50%; font-size: 20px; line-height: 1; color: inherit; text-decoration: none;
 }
 .icon:hover:not(:disabled) { background: var(--line); }
 .lb-bar .icon:hover:not(:disabled) { background: rgba(255,255,255,.18); }
@@ -235,7 +235,7 @@ body.selecting #sizer { -webkit-user-select: none; user-select: none; }
 .selbar.tools { --sel-h: var(--ctl-h); gap: 2px; padding: 6px; }
 .selbar.tools .ib {
   position: relative; flex: none; display: inline-flex; align-items: center; justify-content: center;
-  width: var(--sel-h); height: var(--sel-h); padding: 0; border: 0; border-radius: var(--ctl-r); background: none; color: var(--fg); font-size: 20px;
+  width: var(--sel-h); height: var(--sel-h); padding: 0; border: 0; border-radius: 50%; background: none; color: var(--fg); font-size: 20px;
 }
 .selbar.tools .ib svg { width: 20px; height: 20px; }
 .selbar.tools .ib:hover:not([aria-disabled="true"]) { background: var(--line); }
@@ -497,7 +497,7 @@ body.selecting .sec .pick { display: inline; }
 .avatar.small { width: 36px; height: 36px; cursor: pointer; }
 .avatar.big { width: 72px; height: 72px; font-size: 22px; }
 .more-btn {
-  flex: none; min-width: 32px; height: 32px; border: 0; border-radius: 16px; background: none; color: var(--muted);
+  flex: none; min-width: var(--ctl-h); height: var(--ctl-h); border: 0; border-radius: 99px; background: none; color: var(--muted);
   font-size: 18px; line-height: 1; padding: 0 6px;
 }
 .more-btn:hover, .more-btn:focus-visible { background: var(--line); color: var(--fg); }
@@ -537,7 +537,7 @@ body.selecting .sec .pick { display: inline; }
 .tabs .tab { border: 0; background: none; padding: 8px 12px; border-bottom: 2px solid transparent; color: var(--muted); }
 .tabs .tab.active { color: var(--fg); border-bottom-color: var(--accent); font-weight: 600; }
 .face .acts { display: flex; gap: 6px; margin-top: 4px; }
-.face .acts button { flex: 1; height: var(--ctl-h); border: 0; border-radius: var(--ctl-r); background: var(--line); color: var(--fg); font-size: 18px; }
+.face .acts button { flex: 1; display: inline-flex; align-items: center; justify-content: center; padding: 0; line-height: 1; height: var(--ctl-h); border: 0; border-radius: var(--ctl-r); background: var(--line); color: var(--fg); font-size: 18px; }
 .face .acts .yes, .lb-panel .pface button.yes { background: color-mix(in srgb, var(--ok) 22%, transparent); color: var(--ok-fg); }
 .face .acts .no, .lb-panel .pface button.no { background: color-mix(in srgb, var(--bad) 22%, transparent); color: var(--bad-fg); }
 .face .acts .yes:hover, .lb-panel .pface button.yes:hover { background: color-mix(in srgb, var(--ok) 36%, transparent); }
@@ -843,7 +843,7 @@ body.selecting .sec .pick { display: inline; }
 .settings-section input[type=text] { min-width: 220px; }
 
 /* favorites: the heart */
-.fav-btn { display: inline-flex; align-items: center; justify-content: center; font-size: 18px; height: var(--ctl-h); padding: 0 10px; border-radius: var(--ctl-r); border: 1px solid var(--line); background: var(--panel); color: inherit; }
+.fav-btn { display: inline-flex; align-items: center; justify-content: center; font-size: 18px; width: var(--ctl-h); height: var(--ctl-h); padding: 0; border-radius: var(--ctl-r); border: 1px solid var(--line); background: var(--panel); color: inherit; }
 .fav-btn.on { border-color: var(--accent); color: #e0405a; }
 .cell .fav {
   position: absolute; right: 5px; top: 5px; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%;
@@ -906,7 +906,7 @@ body.geo-view #page { padding: 0; height: 100%; }
 .geo-side-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .geo-side-head h3 { margin: 0; font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .geo-tools { display: flex; gap: 2px; flex: none; }
-.icon-btn { background: none; border: 0; color: var(--muted); font-size: 16px; padding: 4px 7px; border-radius: 6px; }
+.icon-btn { background: none; border: 0; color: var(--muted); font-size: 16px; padding: 4px 7px; border-radius: 50%; }
 .shot-pick { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
 .shot-pick .shot-back { margin-left: auto; padding: 4px; display: flex; }
 .shot-pick .shot-back svg { width: 18px; height: 18px; fill: currentColor; }
@@ -1183,3 +1183,18 @@ body.read-only #sel-move, body.read-only #lb-rotate, body.read-only .copy label.
 .lb-bar .hide-lb:disabled { cursor: default; opacity: 1; }
 .lb-panel { --ok-fg: #6fcf7c; --bad-fg: #ff8a7d; }
 .types-btn:hover, .fav-btn:hover { border-color: var(--muted); }
+
+/* One drop-down arrow for every select and for the Type button: our own chevron, with room to the right of it. */
+select:not([multiple]):not([size]), .types-btn {
+  -webkit-appearance: none; appearance: none; padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%231d1d1f' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 11px center; background-size: 12px 12px;
+}
+@media (prefers-color-scheme: dark) {
+  select:not([multiple]):not([size]), .types-btn {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%23ececec' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+}
+.lb-panel select:not([multiple]):not([size]) {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%23eeeeee' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}

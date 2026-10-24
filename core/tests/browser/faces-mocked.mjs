@@ -1358,6 +1358,10 @@ await test('common control sizes: the viewer\'s tools and the header\'s drop-dow
   const years = await box('#years'), lang = await box('#lang');
   check(years[1] === lang[1], `the year and language drop-downs are ${years[1]} and ${lang[1]} px high`);
   check((await p.locator('#years').evaluate((e) => getComputedStyle(e).cursor)) === 'pointer', 'the year drop-down has no pointer cursor');
+  check((await p.locator('#select').evaluate((e) => getComputedStyle(e).borderRadius)) === '50%', 'the select icon is not a circle');
+  check(!(await p.locator('#types-btn').textContent()).includes('▾'), 'the Type button has its own text arrow');
+  const arrows = await p.evaluate(() => ['years', 'lang', 'types-btn'].map((id) => getComputedStyle(document.getElementById(id)).backgroundImage));
+  check(arrows.every((x) => x.startsWith('url(') && x === arrows[0]), 'the selects and the Type button do not share one arrow');
   await p.locator('#sizer a.cell').first().click();
   await p.locator('#lightbox').waitFor({ state: 'visible' });
   await settle(p, lib);
