@@ -4990,6 +4990,10 @@ function infoTags(row, info) {
     };
     add.replaceWith(input);
     input.focus();
+    // Back to "+ Tag" when the focus leaves (a click on a suggestion keeps it in the field, a save in flight keeps it too).
+    input.addEventListener('blur', function () {
+      setTimeout(function () { if (input.isConnected && !input.disabled && document.activeElement !== input) input.replaceWith(add); }, 200);
+    });
   };
   tags.appendChild(add);
   row(tr('info.tags'), tags);

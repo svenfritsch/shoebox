@@ -1511,7 +1511,10 @@ await test('badges: tags, the + tag chip, face names and both small fields in th
   check(other.length === 2 && other.every((x) => x === 26), `the face chips are ${other} px high`);
   await p.locator('#lb-panel .tags .add').click();
   check((await h('#lb-panel .tags input')).join() === '26', 'the tag field is not 26 px high');
-  await p.keyboard.press('Escape');
+  await p.locator('#lb-panel .tags input').fill('Str');
+  await p.locator('#lb-panel .pface button.add').nth(1).focus();
+  await p.clock.runFor(400);
+  check(await p.locator('#lb-panel .tags input').count() === 0 && await p.locator('#lb-panel .tags .add').count() === 1, 'the tag field did not turn back into "+ Tag" when it lost the focus');
   await p.locator('#lb-panel .pface button.add').nth(1).click();
   check((await h('#lb-panel .pfield input')).join() === '26', 'the "Who is it?" field is not 26 px high: ' + await h('#lb-panel .pfield input'));
   await p.locator('#lb-panel .pfield input').fill('Ant');
