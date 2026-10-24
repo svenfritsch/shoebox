@@ -151,6 +151,7 @@
   "lb.rotate_hint": "Rotate left (r) · Option-click or Shift+R: right",
   "lb.rotate_view_hint": "Rotate left (r) · Option-click or Shift+R: right · in shoebox only, the file stays as it is",
   "lb.rotate_raw": "RAW photos cannot be rotated",
+  "lb.video_unplayable": "This browser cannot play this video format. Use Show in Finder / Explorer in the info panel and play it in another program.",
   "lb.rotate_view_only": "Turned in shoebox only. The file itself is not changed, so Finder and other apps show it as before.",
   "info.add_face_turned": "Turn the photo back first: boxes are drawn on the photo as the file has it",
   "login.text": "Enter the PIN shown in the terminal where shoebox is running.",

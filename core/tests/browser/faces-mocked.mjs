@@ -1057,4 +1057,20 @@ await test('a photo turned in the viewer: the grid asks for its new thumbnail on
   check(JSON.stringify(srcs) === JSON.stringify(['/api/lib/' + LIB.split('/').pop() + '/files/1/thumb?v=rot00003', '/api/lib/' + LIB.split('/').pop() + '/files/2/thumb?v=orig0002', '/api/lib/' + LIB.split('/').pop() + '/files/3/thumb?v=orig0003']), `the grid shows ${JSON.stringify(srcs)}`);
 }));
 
+// A video the browser cannot decode (an old .avi): the viewer says so, once,
+// and a photo next to it has no notice.
+await test('a video the browser cannot play shows a notice, a photo does not', await on('', (lib) => {
+  lib.photos = [{ id: 1, version: 'vid00001', kind: 'v' }, { id: 2, version: 'pho00002' }];
+}, async (p, lib) => {
+  const cells = p.locator('#sizer a.cell');
+  await until('the grid', async () => (await cells.count()) === 2);
+  await cells.first().click();
+  const note = p.locator('#stage .lb-note');
+  await until('the notice', async () => { await p.clock.runFor(100); return (await note.count()) === 1; });
+  check((await note.textContent()) === await tr(p, 'lb.video_unplayable'), `notice: ${await note.textContent()}`);
+  await p.keyboard.press('ArrowRight');
+  await until('the photo', async () => (await p.locator('#stage img').count()) === 1);
+  check((await note.count()) === 0, 'the photo still has the notice');
+}));
+
 await finish();

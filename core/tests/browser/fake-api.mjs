@@ -205,7 +205,7 @@ export function fakeLibrary() {
     },
     '/timeline': () => {
       const ph = lib.photos || [];
-      return { count: ph.length, ids: ph.map((x) => x.id), kinds: 'j'.repeat(ph.length), days: ph.map(() => 20260315), versions: ph.map((x) => x.version).join(''), live: [], tags: [], people: [], groups: [], favs: [], est: [] };
+      return { count: ph.length, ids: ph.map((x) => x.id), kinds: ph.map((x) => x.kind || 'j').join(''), days: ph.map(() => 20260315), versions: ph.map((x) => x.version).join(''), live: [], tags: [], people: [], groups: [], favs: [], est: [] };
     },
     '/places': () => [],
     '/event-pattern': () => ({ pattern: 'YYYY-MM Name' }),
@@ -402,6 +402,8 @@ export function fakeLibrary() {
     if (/^\/files\/\d+\/(view|thumb)$/.test(rel)) lib.thumbs.push(rel + u.search);
     if (/^\/files\/\d+\/(view|thumb)$/.test(rel)) return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
     if (/^\/faces\/(manual\/)?\d+\/crop$/.test(rel)) return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
+    // A video no browser can play: junk under a video type.
+    if (/^\/files\/\d+\/original$/.test(rel)) return route.fulfill({ status: 200, contentType: 'video/x-msvideo', body: 'not a video the browser knows' });
     lib.log.push({ method: req.method(), path: rel, query: u.searchParams });
     if (lib.hold && lib.hold.test(rel)) {
       route.held = true;
