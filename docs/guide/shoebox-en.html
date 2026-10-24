@@ -756,6 +756,14 @@
           <h3>Move</h3>
           <p><b>Move…</b> asks for a folder. New folders are created, nothing is ever overwritten, and RAW, Live Photo and sidecar files move along. The photos’ own tags always go with them. “Keep folder tags” also keeps the old folder’s tags as own tags; folder tags always follow the new folder.</p>
           <p>If a folder is empty after the move (nothing left in it but the leftovers your computer keeps there, such as <code>.DS_Store</code> or <code>Thumbs.db</code>), shoebox removes that empty folder and tells you which one. A folder that still holds anything else, a subfolder included, stays.</p>
+          <h4>Folder names that work on every computer</h4>
+          <p>A drive moves between Mac, Windows and Linux, so <b>Move…</b> only takes folder names that all three can open, and says what is wrong if one is not. A name is refused if it:</p>
+          <ul>
+            <li>contains one of <code>/ \ : * ? " &lt; &gt; |</code>. A slash would also mean a subfolder, so “09/10 Exchange” cannot be one name. On a Mac, Finder shows a <code>:</code> in a name as <code>/</code> and the other way round, so a folder you see as “09/10 Exchange” is really called <code>09:10 Exchange</code> and is refused. Rename it in Finder, for example to <code>09-10 Exchange</code>.</li>
+            <li>starts with a dot (the folder would be hidden) or ends with a dot (Windows cuts it off), such as <code>Flight N.Y.</code>.</li>
+            <li>is one of the names Windows keeps for devices: CON, PRN, AUX, NUL, COM1 to COM9 and LPT1 to LPT9, with or without an ending.</li>
+          </ul>
+          <p>Spaces, underscores, hyphens, digits, ß and umlauts are all fine; a space at the start or end is dropped. Folders you already have with such a name still show up as folder tags, but you cannot move photos into them until you rename them in Finder or File Explorer (shoebox does not rename folders for you); a scan then finds them under the new name. A word after the last dot can make Finder ask about a “file ending” (<code>10.07.WM</code> looks like the ending <i>.WM</i>); a name with more words or a space after the dot, such as <code>10.07. WM</code>, does not.</p>
         </div>
         <div class="shots">
           <figure>
