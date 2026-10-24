@@ -1740,6 +1740,18 @@ not matter which step made one. Playing a video is the viewing browser's
 business, not the build's (Safari on the iPad plays HEVC whichever computer
 runs shoebox).
 
+**A video the browser cannot decode (old `.avi`, `.mkv`, `.mpg`, `.mts`):**
+decided October 2026 to show a notice in the viewer (`lb.video_unplayable`)
+and leave the rest to "Show in Finder / Explorer" in the info panel and a
+player of the user's choice. No conversion for now.
+Possible later upgrade, not planned: a converted copy made by ffmpeg *on
+command* (a button with a time estimate from file size and duration, never
+automatic, never at scan time), H.264 + AAC in an MP4 under
+`.shoebox/playback/<quick hash>.mp4` (on the drive, it survives sessions;
+read of the original under `fingerprint::read_unchanged`), with a size cap
+(oldest played copy goes first) so the folder cannot grow without limit, and
+only where ffmpeg is found. A first draft of this was thrown away.
+
 **Stored browser frame (step 1 below).** `POST /api/files/{id}/poster` with a
 JPEG body (`image/jpeg`, at most 512 KiB): only a video, only while its
 content has no picture yet (none, or the reason it failed), only from a browser
