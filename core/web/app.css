@@ -292,6 +292,8 @@ body.selecting #sizer { -webkit-user-select: none; user-select: none; }
 
 .page { padding: 14px 16px 80px; }
 .page h2 { font-size: 20px; margin: 0 0 4px; }
+.trash-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.trash-head label.check { font-size: 14px; color: var(--muted); }
 .page .sub { color: var(--muted); margin: 0 0 16px; font-size: 14px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 /* When the next regrouping comes (Unnamed page): level with the title, taking

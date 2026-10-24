@@ -42,6 +42,7 @@ export function fakeLibrary() {
     clusters: [], people: [], groups: [],
     faceLists: {}, // person id: { confirmed, suggested, rejected } (a person's page)
     trash: [], // what GET /trash answers (organize::TrashItem)
+    dupGroups: [], // what GET /duplicates answers (duplicates::Group)
     photos: null, // [{ id, version }]: the timeline (newest first, one month), else it is empty
     thumbs: [], // addresses of the thumbnails (and pictures) the page asked for, as written: `/files/7/thumb?v=...`
     step: null, // null (grouped), 'stale' (starting) or 'running'
@@ -210,6 +211,7 @@ export function fakeLibrary() {
     '/event-pattern': () => ({ pattern: 'YYYY-MM Name' }),
     '/allow-trash': () => ({ allow: false, read_only: false }),
     '/trash': () => lib.trash,
+    '/duplicates': () => ({ groups: lib.dupGroups, total_groups: lib.dupGroups.length, hidden_groups: 0 }),
     '/clusters': (q) => {
       const cs = q.get('size') === 'large' ? large() : q.get('size') === 'small' ? small() : lib.clusters;
       const sorted = [...cs].sort((a, b) => b.faces.length - a.faces.length || a.id - b.id);
@@ -248,6 +250,15 @@ export function fakeLibrary() {
         view_turn: 0, screenshot: false, screenshot_mark: null, position: null, text: [],
       }];
     }
+    const d = lib.dupGroups.flatMap((g) => g.files).find((x) => x.id === id);
+    if (d) {
+      return [200, {
+        id, name: d.name, path: d.path, folder_id: d.folder_id, kind: 'jpeg', size: d.size, taken: d.taken, taken_offset: null, estimate: null, exif: null,
+        modified: '2026-01-01T10:00:00', width: d.width, height: d.height, duration_ms: null, camera: null, tags: [], missing: false,
+        date_source: null, sort_date: null, live: null, linked: [], faces: [],
+        view_turn: 0, screenshot: false, screenshot_mark: null, position: null, text: [],
+      }];
+    }
     return [404, { error: 'no such file' }];
   };
   const getPattern = [
@@ -257,6 +268,12 @@ export function fakeLibrary() {
     [/^\/clusters\/(\d+)\/faces$/, (m) => { const c = lib.clusters.find((x) => x.id === Number(m[1])); return c ? [200, c.faces] : [404, { error: 'no such cluster' }]; }],
   ];
   const post = [
+    // organize::empty_trash: one batch, or the whole trash when `batch` is null.
+    [/^\/trash\/empty$/, (m, body) => {
+      const gone = lib.trash.filter((t) => body.batch == null || t.batch === body.batch);
+      lib.trash = lib.trash.filter((t) => !gone.includes(t));
+      return [200, { deleted: gone.length }];
+    }],
     // organize::rotate: a JPEG turned in the file has a new quick hash, so a new version.
     [/^\/files\/(\d+)\/rotate$/, (m) => {
       const x = lib.photos?.find((y) => y.id === Number(m[1]));

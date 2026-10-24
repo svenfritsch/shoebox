@@ -3806,7 +3806,7 @@ function suggestedIds(g) {
   g.files.forEach(function (f) { if (f.pick) pickOf[f.row] = f; });
   return g.files.filter(function (f) {
     var best = pickOf[f.row];
-    return !f.pick && (f.keeper || (f.same && best && best.same === f.same) || (f.in_copies && best && !best.in_copies));
+    return !f.pick && ((f.keeper && !f.bigger_file) || (f.same && best && best.same === f.same) || (f.in_copies && best && !best.in_copies));
   }).map(function (f) { return f.id; });
 }
 
@@ -3846,7 +3846,7 @@ var PRESELECT = [
     });
     return ids;
   } },
-  { id: 'smaller', kind: 'resolution', also: 'similar', ids: function (g) { return g.files.filter(function (f) { return f.keeper; }).map(function (f) { return f.id; }); } },
+  { id: 'smaller', kind: 'resolution', also: 'similar', ids: function (g) { return g.files.filter(function (f) { return f.keeper && !f.bigger_file; }).map(function (f) { return f.id; }); } },
   { id: 'heic', kind: 'resolution', ids: function (g) { return otherFormats(g, 'heic'); } },
   { id: 'jpeg', kind: 'resolution', ids: function (g) { return otherFormats(g, 'jpg'); } },
   { id: 'edited', kind: 'edited', ids: function (g) {
@@ -3998,7 +3998,10 @@ function dupRows(g) {
   return rows;
 }
 
-function dupThumb(f, compare) {
+// `versions`: the files of the photo's row, in card order; a click then opens the
+// viewer on them (left and right switch between the versions, Esc or Space
+// come back to this thumbnail) instead of the file in a new tab.
+function dupThumb(f, compare, versions) {
   var a = el('a', 'thumb');
   a.href = LIBAPI + '/files/' + f.id + (f.kind === 'video' ? '/original' : '/view') + '?v=' + f.version;
   a.target = '_blank';
@@ -4013,6 +4016,13 @@ function dupThumb(f, compare) {
     a.removeAttribute('target');
     setTip(a, tr('dups.compare'));
     a.onclick = function (e) { e.preventDefault(); compare(f); };
+  } else if (versions && versions.length > 1) {
+    a.removeAttribute('target');
+    a.onclick = function (e) {
+      e.preventDefault();
+      a.focus(); // the viewer returns here (Safari does not focus a clicked link)
+      openFiles(versions.map(function (v) { return { file: v.id, kind: v.kind, version: v.version }; }), 0);
+    };
   }
   return a;
 }
@@ -4153,6 +4163,13 @@ function groupNode(g) {
     var v = g.files.map(key), top = Math.max.apply(null, v);
     return v.some(function (x) { return x !== top; }) ? top : null;
   };
+  var heavier = {};
+  g.files.forEach(function (f) { if (f.keeper && f.bigger_file) heavier[f.keeper] = true; });
+  var sizeBadge = function (key) {
+    var b = el('div', 'badge worse', tr(key));
+    setTip(b, tr('dups.size_conflict_hint'));
+    return b;
+  };
   var topPixels = most(function (f) { return (f.width || 0) * (f.height || 0); });
   var topSize = most(function (f) { return f.size; });
   var copyCard = function (f, showName, thumb) {
@@ -4190,7 +4207,11 @@ function groupNode(g) {
     if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
     meta.push((f.size / 1e6).toFixed(1) + ' MB');
     card.appendChild(el('div', 'meta', meta.join(' · ')));
-    if (f.keeper) card.appendChild(el('div', 'badge worse', tr('dups.lower_quality')));
+    // Fewer pixels, and a bigger file than the copy that stays: not ticked for
+    // you. Both cards say what they lose on, both red.
+    if (f.keeper && !f.bigger_file) card.appendChild(el('div', 'badge worse', tr('dups.lower_quality')));
+    else if (f.keeper) card.appendChild(sizeBadge('dups.lower_quality'));
+    else if (heavier[f.id]) card.appendChild(sizeBadge('dups.smaller_file'));
     if (f.in_copies) card.appendChild(el('div', 'meta', tr('dups.in_copies')));
     card.appendChild(el('div', 'meta', f.taken ? formatDate({ taken: f.taken, date_source: 'file' }) : tr('dups.no_capture_date')));
     if (thumb && topPixels !== null && (f.width || 0) * (f.height || 0) === topPixels) card.appendChild(el('div', 'badge', tr('dups.badge_pixels')));
@@ -4228,7 +4249,7 @@ function groupNode(g) {
     copies = bestFirst(copies);
     var first = copies[0];
     var left = el('div', 'dup-photo');
-    left.appendChild(dupThumb(first));
+    left.appendChild(dupThumb(first, null, copies));
     var name = el('div', 'name', first.name + ' ');
     if (first.same) {
       var same = el('span', 'same', String.fromCharCode(64 + first.same));
@@ -4355,17 +4376,44 @@ function askDates(conflicts, done) {
 
 // ------------------------------------------------------------------ trash page
 
+// "Only duplicates" on the trash page: shows just the copies removed as
+// duplicates, so a selection (and Select all) cannot reach what was trashed by hand.
+var trashDupsOnly = false;
+
+// The file a trash card shows: the photo, not its RAW or Live Photo video.
+function trashFirst(files) {
+  var main = function (f) { return f.kind && f.kind !== 'raw' && f.kind !== 'video'; };
+  return files.filter(main)[0] || files.filter(function (f) { return f.kind; })[0] || files[0];
+}
+
 function loadTrash() {
   return api(LIBAPI + '/trash').then(function (items) {
     if (state.filter.view !== 'trash') return;
     var page = $('page');
     clearNode(page);
-    page.appendChild(el('h2', '', tr('side.trash')));
-    var batches = [], byBatch = {};
+    var allBatches = [], byBatch = {};
     items.forEach(function (it) {
-      if (!byBatch[it.batch]) { byBatch[it.batch] = []; batches.push(it.batch); }
+      if (!byBatch[it.batch]) { byBatch[it.batch] = []; allBatches.push(it.batch); }
       byBatch[it.batch].push(it);
     });
+    var dupBatches = allBatches.filter(function (b) { return !!trashFirst(byBatch[b]).duplicate_of; });
+    if (!dupBatches.length) trashDupsOnly = false;
+    var batches = trashDupsOnly ? dupBatches : allBatches;
+    var head = el('div', 'trash-head');
+    head.appendChild(el('h2', '', tr('side.trash')));
+    if (allBatches.length) {
+      var only = el('label', 'check');
+      var onlyBox = el('input');
+      onlyBox.type = 'checkbox';
+      onlyBox.checked = trashDupsOnly;
+      onlyBox.disabled = !dupBatches.length;
+      onlyBox.onchange = function () { trashDupsOnly = onlyBox.checked; loadTrash(); };
+      only.appendChild(onlyBox);
+      only.appendChild(document.createTextNode(' ' + tr('trash.only_duplicates', { count: I18n.number(dupBatches.length) })));
+      setTip(only, tr('trash.only_duplicates_hint'));
+      head.appendChild(only);
+    }
+    page.appendChild(head);
     page.appendChild(el('p', 'sub', batches.length
       ? tr('trash.page_sub', { count: trn('count.photos', batches.length) })
       : tr('trash.empty')));
@@ -4392,7 +4440,7 @@ function loadTrash() {
       bar.appendChild(back);
       var del = el('button', 'btn danger', tr('trash.delete_for_good'));
       del.disabled = !n;
-      del.onclick = function () { deleteBatches(batches.filter(function (b) { return picked[b]; }), batches.length); };
+      del.onclick = function () { deleteBatches(batches.filter(function (b) { return picked[b]; }), trashDupsOnly ? -1 : batches.length); };
       bar.appendChild(del);
     };
     var cards = el('div', 'cards has-drag');
@@ -4408,9 +4456,7 @@ function loadTrash() {
     };
     batches.forEach(function (b) {
       var files = byBatch[b];
-      // The picture the card shows: the photo, not its RAW or Live Photo video.
-      var main = function (f) { return f.kind && f.kind !== 'raw' && f.kind !== 'video'; };
-      var first = files.filter(main)[0] || files.filter(function (f) { return f.kind; })[0] || files[0];
+      var first = trashFirst(files);
       var card = el('div', 'card pick');
       cardOf[b] = card;
       card.batch = b;
@@ -4497,7 +4543,8 @@ function putBack(list, byBatch) {
   }).catch(function (e) { failed(e); changed(); });
 }
 
-// Asks, then deletes the batches for good; everything at once when all are chosen.
+// Asks, then deletes the batches for good; everything at once when all are chosen
+// (total -1: only some are shown, so only the chosen ones).
 function deleteBatches(list, total) {
   deleteForGood(list.length === total ? [null] : list, list.length);
 }

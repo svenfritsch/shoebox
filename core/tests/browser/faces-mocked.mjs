@@ -863,6 +863,72 @@ await test('trash cards: badges for the files that came along, the Duplicate bad
   check(!(await p.evaluate(() => window.opened)) && (await p.locator('.card.pick').nth(3).evaluate((c) => c.classList.contains('sel'))), 'a click on the gone badge should select its card');
 }));
 
+await test('trash page: "Only duplicates" shows just the removed copies, and Select all and Delete for good reach only those', await on('view=trash', trashed, async (p, lib) => {
+  await p.locator('.card.pick').first().waitFor();
+  const toggle = p.locator('.trash-head input[type=checkbox]');
+  check(await p.locator('.card.pick').count() === 4, 'all four photos shown at first');
+  check((await p.locator('.trash-head label').textContent()).includes('2'), 'the toggle says how many duplicates there are');
+  await toggle.check();
+  await until('only the duplicates', async () => (await p.locator('.card.pick').count()) === 2);
+  const names = await p.locator('.card.pick .name').allTextContents();
+  check(JSON.stringify(names) === JSON.stringify(['IMG_1794.JPG', 'IMG_2002 (2).JPG']), `shown: ${names}`);
+  const all = p.locator('.dup-bar button', { hasText: (await tr(p, 'trash.select_all')).replace('{count}', '2') });
+  await all.click();
+  check(await p.locator('.card.pick.sel').count() === 2, 'Select all ticks the two duplicates');
+  await p.locator('.dup-bar .btn.danger').click();
+  await p.locator('#modal-actions .btn.danger').click();
+  await until('the delete', async () => lib.trash.length === 4);
+  // The photos trashed by hand are still there, and the toggle stays on until no duplicate is left.
+  const left = lib.trash.map((t) => t.batch).sort().join();
+  check(left === '3,3,4,4', `left in the trash: ${left}`);
+  await until('the page to follow', async () => (await p.locator('.card.pick').count()) === 2);
+  check(!(await toggle.isChecked()) && await toggle.isDisabled(), 'with no duplicate left the toggle is off and disabled');
+}));
+
+// What the page ticks by itself on the Duplicates screen: a copy with fewer
+// pixels but a bigger file is left for the person (suggestedIds, Smaller versions).
+await test('duplicates: a copy with fewer pixels but a bigger file is not ticked by Suggested or Smaller versions', await on('view=trash', () => null, async (p) => {
+  const ids = await p.evaluate(() => {
+    const f = (id, more) => ({ id, row: 0, pick: false, keeper: null, bigger_file: false, same: null, in_copies: false, ...more });
+    const g = { kind: 'resolution', files: [f(1, { pick: true }), f(2, { keeper: 1 }), f(3, { keeper: 1, bigger_file: true })] };
+    return { suggested: suggestedIds(g), smaller: PRESELECT.find((e) => e.id === 'smaller').ids(g) };
+  });
+  check(JSON.stringify(ids) === JSON.stringify({ suggested: [2], smaller: [2] }), `ticked: ${JSON.stringify(ids)}`);
+}));
+
+// The thumbnail of a same-photo group opens the viewer on the group's versions
+// (card order), the arrow keys switch between them, Esc comes back to the thumbnail.
+const dupFile = (id, name, w, h, size, more) => ({ id, path: 'Selfies/' + name, name, folder_id: 1, kind: 'jpeg', size, width: w, height: h, taken: '2015-11-19T17:32:00', version: 'abcdef1' + id, same: null, tags: [], row: 0, keeper: null, bigger_file: false, in_copies: false, pick: false, copy_named: false, ...more });
+await test('duplicates: a click on the picture opens the viewer on the versions, left and right switch, Escape comes back to the group', await on('view=duplicates', (lib) => {
+  lib.dupGroups = [
+    { exact: false, kind: 'resolution', files: [dupFile(1, 'IMG_1794_1.JPG', 3888, 2592, 1_000_000, { pick: true }), dupFile(2, 'IMG_1794.JPG', 3793, 2529, 1_300_000, { keeper: 1, bigger_file: true })] },
+    { exact: false, kind: 'resolution', files: [dupFile(3, 'IMG_2210.JPG', 4032, 3024, 3_100_000, { pick: true }), dupFile(4, 'IMG-WA0007.jpg', 1600, 1200, 240_000, { keeper: 3 })] },
+  ];
+}, async (p) => {
+  await p.locator('.dup-photo a.thumb').first().waitFor();
+  // Both cards of the conflict are red and nothing is ticked there.
+  const badges = await p.locator('.dup-row').first().locator('.badge.worse').allTextContents();
+  check(JSON.stringify(badges) === JSON.stringify([await tr(p, 'dups.smaller_file'), await tr(p, 'dups.lower_quality')]), `badges ${badges}`);
+  const second = p.locator('.dup-photo a.thumb').nth(1);
+  await second.click();
+  const open = () => p.evaluate(() => ({ at: state.open, ids: state.data && state.data.ids, hidden: $('lightbox').hidden }));
+  await until('the viewer', async () => !(await open()).hidden);
+  let o = await open();
+  check(o.at === 0 && JSON.stringify(o.ids) === JSON.stringify([3, 4]), `viewer on ${JSON.stringify(o)}`);
+  await p.keyboard.press('ArrowRight');
+  await until('the next version', async () => (await open()).at === 1);
+  await p.keyboard.press('ArrowLeft');
+  await until('the first version again', async () => (await open()).at === 0);
+  await p.keyboard.press('Escape');
+  await until('the viewer to close', async () => (await open()).hidden);
+  check(await second.evaluate((a) => document.activeElement === a), 'focus is not back on the thumbnail of the second group');
+  check(await p.locator('.dup-photo a.thumb').count() === 2, 'the page was drawn again');
+  await second.click();
+  await until('the viewer again', async () => !(await open()).hidden);
+  await p.keyboard.press(' ');
+  await until('Space closes it', async () => (await open()).hidden);
+}));
+
 // ---- Our own icons instead of emojis
 
 const EMOJI = /[\u{1F000}-\u{1FAFF}\u{26A0}\u{270E}]/u;

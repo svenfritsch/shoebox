@@ -33,6 +33,18 @@ fn rings(path: &std::path::Path, w: u32, h: u32) {
     .unwrap();
 }
 
+/// Like `rings`, with the JPEG quality given: a small picture can weigh more than a big one.
+fn rings_quality(path: &std::path::Path, w: u32, h: u32, quality: u8) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let img = image::RgbImage::from_fn(w, h, |x, y| {
+        let (cx, cy) = (x as f32 * 1600.0 / w as f32, y as f32 * 1200.0 / h as f32);
+        let d = ((cx - 1000.0).powi(2) + (cy - 500.0).powi(2)).sqrt();
+        image::Rgb([((d / 25.0).sin() * 100.0 + 128.0) as u8, (cy / 5.0) as u8, 90])
+    });
+    let mut out = fs::File::create(path).unwrap();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, quality).encode_image(&img).unwrap();
+}
+
 fn remove(addr: std::net::SocketAddr, keep: &[i64], remove: &[i64]) -> common::Response {
     post(addr, "/api/duplicates/remove", &json!({ "keep": keep, "remove": remove }))
 }
@@ -474,5 +486,29 @@ fn files_in_a_copies_folder_are_never_the_original() {
     assert!(pick(&all, "Fotos/IMG_0508.JPG") && !pick(&all, "Album/Projekt/Link/IMG_0508.JPG"));
     assert_eq!(file_of(&all, "Album/Projekt/Link/IMG_0508.JPG")["in_copies"], true);
     assert_eq!(file_of(&all, "Fotos/IMG_0508.JPG")["in_copies"], false);
+    server.stop().unwrap();
+}
+
+#[test]
+fn a_copy_with_fewer_pixels_but_a_bigger_file_is_flagged() {
+    let lib = Library::new("dupes-bigger-file");
+    // The same picture twice: the smaller one saved at full quality weighs
+    // more than the larger one saved at a low quality.
+    rings_quality(&lib.path("Selfies/IMG_1794_1.jpg"), 1600, 1200, 20);
+    rings_quality(&lib.path("Selfies/IMG_1794.jpg"), 1520, 1140, 100);
+    // And a plain messenger copy: fewer pixels and a smaller file.
+    rings_quality(&lib.path("Messenger/IMG-WA0001.jpg"), 400, 300, 20);
+    lib.scan();
+    let big = lib.path("Selfies/IMG_1794_1.jpg").metadata().unwrap().len();
+    let heavy = lib.path("Selfies/IMG_1794.jpg").metadata().unwrap().len();
+    assert!(heavy > big, "the fixture needs the smaller picture to be the bigger file ({heavy} vs {big})");
+    let server = start(&lib, None);
+    let all = groups(server.addr);
+    let best = id_of(&lib, "Selfies/IMG_1794_1.jpg");
+    let (f, w) = (file_of(&all, "Selfies/IMG_1794.jpg"), file_of(&all, "Messenger/IMG-WA0001.jpg"));
+    // Both have fewer pixels than the best; only the heavier one is flagged.
+    assert_eq!((f["keeper"].as_i64(), w["keeper"].as_i64()), (Some(best), Some(best)));
+    assert_eq!((f["bigger_file"].as_bool(), w["bigger_file"].as_bool()), (Some(true), Some(false)));
+    assert_eq!(file_of(&all, "Selfies/IMG_1794_1.jpg")["bigger_file"].as_bool(), Some(false));
     server.stop().unwrap();
 }
