@@ -2239,11 +2239,23 @@ pub fn keys_of_people(conn: &Connection, ids: &[i64]) -> Result<HashSet<String>>
 /// detector thought. For searching; only reads, and `recog` need not be
 /// attached.
 pub fn keys_of_pets(conn: &Connection, species: &str) -> Result<HashSet<String>> {
-    let mut keys = HashSet::new();
-    let any = species == crate::pets::PET;
+    Ok(keys_of_all_pets(conn)?.remove(species).unwrap_or_default())
+}
+
+/// `keys_of_pets` for every species at once (and `pet`: any), from one reading
+/// of the faces: the search box counts all of them.
+pub fn keys_of_all_pets(conn: &Connection) -> Result<HashMap<String, HashSet<String>>> {
+    let mut keys: HashMap<String, HashSet<String>> = HashMap::new();
     let of_people = person_species(conn)?;
-    let wanted = |own: Option<&str>, person: Option<i64>| {
-        effective_species(own, person, &of_people).is_some_and(|s| any || s == species)
+    let mut add = |own: Option<&str>, person: Option<i64>, key: &str| {
+        if let Some(s) = effective_species(own, person, &of_people) {
+            for species in [s.as_str(), crate::pets::PET] {
+                let set = keys.entry(species.to_string()).or_default();
+                if !set.contains(key) {
+                    set.insert(key.to_string());
+                }
+            }
+        }
     };
     if table_exists(conn, "recog", "faces")? && db::has_column(conn, "recog", "faces", "species")? {
         let m = Matched::load(conn, None)?;
@@ -2254,9 +2266,7 @@ pub fn keys_of_pets(conn: &Connection, species: &str) -> Result<HashSet<String>>
                 continue;
             }
             let person = decided.filter(|d| d.decision == Decision::Confirmed).and_then(|d| d.person);
-            if wanted(f.species.as_deref(), person) {
-                keys.insert(f.key.clone());
-            }
+            add(f.species.as_deref(), person, &f.key);
         }
     }
     if table_exists(conn, "main", "face_decisions")? && db::has_column(conn, "main", "face_decisions", "species")? {
@@ -2265,9 +2275,7 @@ pub fn keys_of_pets(conn: &Connection, species: &str) -> Result<HashSet<String>>
         )?;
         let mut rows = stmt.query([])?;
         while let Some(r) = rows.next()? {
-            if wanted(r.get::<_, Option<String>>(1)?.as_deref(), r.get(2)?) {
-                keys.insert(r.get(0)?);
-            }
+            add(r.get::<_, Option<String>>(1)?.as_deref(), r.get(2)?, &r.get::<_, String>(0)?);
         }
     }
     Ok(keys)

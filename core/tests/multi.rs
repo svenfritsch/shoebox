@@ -838,3 +838,57 @@ fn folder_names_are_offered_with_the_photos_they_would_hide() {
     assert!(folders("q=nothing+like+it").is_empty());
     server.stop().unwrap();
 }
+
+#[test]
+fn the_common_timeline_hides_what_each_drive_hides_and_shows_it_for_the_hidden_chip() {
+    let a = own_library("multi-hid-a", 10);
+    let b = own_library("multi-hid-b", 100);
+    let before = (a.snapshot(), b.snapshot());
+    let server = start_many(&[&a, &b], &[]);
+    let addr = server.addr;
+    let (ia, ib) = (lib_id(addr, &a), lib_id(addr, &b));
+    let all_count = || get(addr, "/raw/api/all/timeline").json()["count"].as_i64().unwrap();
+    let hidden_list = || get(addr, "/raw/api/all/timeline?hidden=1").json();
+    let baseline = all_count();
+    assert_eq!(hidden_list()["count"], 0);
+    let hide = |id: &str, ids: &[i64]| {
+        let r = post(addr, &format!("/raw/api/lib/{id}/hidden"), &json!({ "ids": ids, "on": true }));
+        assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    };
+
+    // A photo only on drive a (a tag), and a folder of drive b.
+    let dsc_a = id_of(&a, "Familie/Weihnachten/DSC_2001.jpg");
+    hide(&ia, &[dsc_a]);
+    let r = post(addr, &format!("/raw/api/lib/{ib}/hidden/folder"), &json!({ "path": "Ordner mit Leerzeichen", "on": true }));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    assert_eq!(all_count(), baseline - 2);
+    let shown = hidden_list();
+    assert_eq!(shown["count"], 2, "{shown}");
+    let drives: std::collections::BTreeSet<i64> = ids_of(&shown).iter().map(|g| g / SPAN).collect();
+    assert_eq!(drives.len(), 2, "hidden photos of both drives, tag and folder");
+    assert_eq!(shown["hids"].as_array().unwrap().len(), 2, "the viewer knows they are hidden");
+    assert_eq!(get(addr, "/raw/api/all/timeline").json()["hids"].as_array().unwrap().len(), 0);
+    // The word typed as text shows them as well; a filter narrows the hidden ones (AND).
+    assert_eq!(get(addr, "/raw/api/all/timeline?q=hidden").json()["count"], 2);
+    assert_eq!(get(addr, "/raw/api/all/timeline?hidden=1&q=weihnachten").json()["count"], 1);
+
+    // The same photo on both drives, hidden on one of them: each drive's own flags count, it
+    // is shown once through the copy that is not hidden.
+    let same_a = id_of(&a, "2020-07 Urlaub Griechenland/IMG_0001.JPG");
+    let same_b = id_of(&b, "2020-07 Urlaub Griechenland/IMG_0001.JPG");
+    hide(&ia, &[same_a]);
+    assert_eq!(all_count(), baseline - 2, "still there once, through drive b");
+    assert_eq!(hidden_list()["count"], 3);
+    hide(&ib, &[same_b]);
+    assert_eq!(all_count(), baseline - 3, "hidden on both drives: gone");
+    assert_eq!(hidden_list()["count"], 3, "and once for the chip");
+
+    // The tags offered by the common timeline count the photos it shows: a tag of the hidden
+    // folder of drive b still has drive a's photo, a tag of drive a's hidden photo has drive b's.
+    let tags = get(addr, "/raw/api/all/tags").json();
+    let count = |name: &str| tags.as_array().unwrap().iter().find(|t| t["name"] == name).map(|t| t["count"].as_i64().unwrap());
+    assert_eq!((count("Weihnachten"), count("Ordner mit Leerzeichen")), (Some(1), Some(1)), "{tags}");
+    assert_eq!(count("Urlaub Griechenland"), Some(2), "IMG_0001 is hidden on both drives; the two different IMG_0002 stay: {tags}");
+    server.stop().unwrap();
+    assert_eq!((a.snapshot().len(), b.snapshot().len()), (before.0.len(), before.1.len()), "no file touched or added");
+}

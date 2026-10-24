@@ -120,6 +120,7 @@ button { cursor: pointer; }
 
 .lightbox { position: fixed; inset: 0; background: #000; z-index: 20; color: #eee; touch-action: pan-y pinch-zoom; }
 .stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.stage .lb-note { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); max-width: 60%; padding: 10px 14px; border-radius: 8px; background: rgba(0, 0, 0, 0.75); color: #fff; text-align: center; pointer-events: none; }
 .stage img, .stage video { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
 .face-box.pet { border-color: #5ac8fa; }
 .face-box { position: absolute; border: 2px solid #ffd60a; border-radius: 4px; box-shadow: 0 0 0 1px rgba(0,0,0,.5); pointer-events: none; }
@@ -292,6 +293,8 @@ body.selecting #sizer { -webkit-user-select: none; user-select: none; }
 
 .page { padding: 14px 16px 80px; }
 .page h2 { font-size: 20px; margin: 0 0 4px; }
+.trash-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.trash-head label.check { font-size: 14px; color: var(--muted); }
 .page .sub { color: var(--muted); margin: 0 0 16px; font-size: 14px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 /* When the next regrouping comes (Unnamed page): level with the title, taking
@@ -483,7 +486,11 @@ body.selecting .sec .pick { display: inline; }
 
 /* people overview */
 .pgroup { margin: 0 0 18px; padding: 4px; }
-.pgroup h3 { font-size: 15px; margin: 6px 4px 10px; }
+.pgroup h3 { font-size: 15px; margin: 6px 4px 10px; display: flex; align-items: center; gap: 2px; cursor: pointer; user-select: none; }
+.pgroup h3 .toggle { width: 22px; flex: none; background: none; border: 0; color: var(--muted); padding: 2px 0; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+/* Folded groups are a single line each, a rule under it keeps them apart. */
+.pgroup.folded { margin-bottom: 0; border-bottom: 1px solid var(--line); }
+.pgroup.folded h3 { margin-bottom: 6px; }
 .pgroup h3 .n { color: var(--muted); font-weight: 400; margin-left: 8px; font-size: 13px; }
 .pgroup.empty-drop { min-height: 64px; border: 1px dashed var(--line); border-radius: 10px; }
 .pgroup .hint { color: var(--muted); font-size: 13px; margin: 0 4px; }
@@ -579,7 +586,7 @@ body.selecting .sec .pick { display: inline; }
 .lb-panel .pface .note, .lb-panel .pfaces > .note { color: #999; font-size: 12px; }
 .lb-panel .avatar { background: rgba(255,255,255,.12); }
 /* picking mode: rows are checkboxes, their own buttons step aside */
-.lb-panel .pfaces.picking .pface { padding: 4px 6px; margin: 0 -6px; border-radius: 10px; }
+.lb-panel .pfaces.picking .pface { padding: 4px 6px; margin: 0 -6px; border-radius: 10px; user-select: none; -webkit-user-select: none; }
 .lb-panel .pface.pickable { cursor: pointer; }
 .lb-panel .pface.pickable:hover { background: rgba(255,255,255,.07); }
 .lb-panel .pface.picked { background: rgba(255,255,255,.14); }
@@ -944,6 +951,13 @@ body.geo-view #page { padding: 0; height: 100%; }
 .chip.name .ic { color: var(--muted); }
 .suggest .item .ic { color: var(--accent); }
 .suggest .item.off { opacity: .55; }
+/* Placeholder rows while the list is on its way. */
+.suggest .wait-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; }
+.suggest .wait-dot { width: 22px; height: 22px; border-radius: 50%; flex: none; background: var(--muted); opacity: .3; }
+.suggest .wait-bar { height: 12px; border-radius: 6px; background: var(--muted); opacity: .3; }
+.suggest .wait-row .wait-dot, .suggest .wait-row .wait-bar { animation: suggest-wait 1.2s ease-in-out infinite; }
+@keyframes suggest-wait { 50% { opacity: .15; } }
+@media (prefers-reduced-motion: reduce) { .suggest .wait-row .wait-dot, .suggest .wait-row .wait-bar { animation: none; } }
 .suggest .hint { font-size: 12px; color: var(--muted); padding: 2px 12px 6px; }
 .cell .snip {
   position: absolute; left: 6px; bottom: 6px; max-width: calc(100% - 12px); box-sizing: border-box; height: 18px; padding: 0 9px;
@@ -1128,3 +1142,21 @@ body.read-only #sel-move, body.read-only #lb-rotate, body.read-only .copy label.
 .busy::before { content: ''; position: absolute; top: 0; bottom: 0; width: 30%; background: var(--accent); border-radius: 2px; animation: busy-slide 1.2s ease-in-out infinite; }
 @keyframes busy-slide { from { left: -30%; } to { left: 100%; } }
 @media (prefers-reduced-motion: reduce) { .busy::before { width: 100%; animation: none; opacity: .6; } }
+
+/* Hidden from the timeline (phase 20) */
+.tree .row.hidden-folder .name, .tree .row.hidden-folder .count { opacity: .5; }
+.tree .row .ico { width: 15px; height: 15px; display: inline-flex; flex: none; color: var(--muted); }
+.tree .row .ico svg { width: 100%; height: 100%; }
+#hidden-row .toggle { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
+#hidden-row .toggle svg { width: 16px; height: 16px; }
+.chip .eye { display: inline-flex; align-items: center; color: var(--muted); cursor: pointer; }
+.chip .eye.on { color: var(--accent); }
+.chip .eye:disabled { opacity: .5; cursor: default; }
+.chip .eye svg { width: 1.05em; height: 1.05em; }
+.chip.acts { gap: 2px; }
+.chip.acts button { padding: 0 3px; }
+@media (pointer: coarse) { .chip.acts { gap: 4px; } .chip.acts button { padding: 0 6px; } }
+.chip.hid { border-color: var(--accent); }
+.chip.hid .ic { color: var(--accent); margin-right: 0; }
+.lb-bar .hide-lb.on { color: var(--accent); }
+.lb-bar .hide-lb:disabled { cursor: default; opacity: 1; }

@@ -1080,7 +1080,7 @@ crops removed at the start, guard).
     photos of an InDesign project's Link folder are ticked, the same photo
     elsewhere is the one that stays. Remove the name again.
   - [x] A photo and its WhatsApp (or other messenger) copy: they are one row,
-    the messenger copy is ticked and says “lower quality”. Do other shots
+    the messenger copy is ticked and says “fewer pixels”. Do other shots
     of a series stay in rows of their own? Any wrongly ticked copy, or a
     messenger copy that is not recognised (note its name and size)?
   - [x] “Remove lower-quality versions”: note the count, run it; the better

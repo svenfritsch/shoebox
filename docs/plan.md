@@ -438,6 +438,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 17 | Release folder with three things on top (`Start shoebox.command`, `guide/`, `program/` with everything else; "The release folder" above), the older `.shoebox/bin/` layout removed. Then Windows and Linux releases by hand: `release-by-hand.yml` (inputs: system, tag) builds one system in the same layout (`scripts/package.sh`, the guide taken from the release's macOS archive) and adds `shoebox-windows.zip` or `shoebox-linux.tar.gz` to that tag's release; without a tag only an artifact for testing. The automatic release stays macOS only. Also: shoebox refuses a program folder or a library inside a cloud-synced folder (OneDrive, iCloud Drive, Dropbox, Google Drive, …) on Windows and macOS (plan in [phase17.md](phase17.md)) | Release folder **done** (macOS release, launchers, guide; from the next tag). Windows: **checked on a real PC** (start, SmartScreen, add-ons, recognize, Show in Explorer; fixes in #125), guide updated. `release-by-hand.yml` (Windows and Linux): **built**, not run on GitHub yet; Linux not tried on a real PC. Cloud-folder check: **plan** |
 | 18 | Identical photos once in the common timeline (All drives): a photo with the same file name and the same full hash on more than one drive is shown once (no switch; the copy with a date the user gave wins, else the first drive), the other copies listed in the info panel ("Also on"), search counts count it once; read only (design in [phase18.md](phase18.md)) | **Built** (branch `claude/phase18-identical-once`), tests in `core/tests/multi.rs`; to try on the couple's two drives |
 | 19 | Groups in the search and the timeline: a group is a search chip that shows the photos of anyone in it (OR inside the group, AND with every other chip; pets count), picked from the suggestions ("Groups") or by clicking a group in the sidebar, which also unfolds it; a group is made from a person ("New group…" on their page, they are its first member) and goes when its last person leaves, so there are no empty groups (design in [phase19.md](phase19.md)) | **Built except the real-hardware check**: core (`group=` filter, `/api/groups/search`, `/api/all/groups`, no empty groups), search box, chip, sidebar, tests, guide in both languages; the own icons for the group, person, cat, paw, place and date chips come in a second commit |
+| 20 | Hidden from the timeline: the own tag `hidden` (viewer button, selection bar) and a hidden-folder flag (right-click, folder chip) inherited by everything below it; hidden photos are left out of the photo grid in every filter, with its counts and suggestions, and shown only by the Hidden chip, the word *hidden*, or a click on a hidden folder; administrative pages show everything (design in [phase20.md](phase20.md)) | **Built, real-hardware check open**: core (own tag, folder flag, schema v18, query rule, counts, Places, carry over box, userdata.json v7), the page (viewer eye and key h, selection bar, folder menu and chip, Hidden chip, row and suggestion, toast for typed words), guide EN/DE; open: people counts, the iPad (chip button) and the CI run (see [phase20.md](phase20.md) section 5) |
 
 ### Phase 15 details (your data between drives)
 
@@ -1761,6 +1762,18 @@ not matter which step made one. Playing a video is the viewing browser's
 business, not the build's (Safari on the iPad plays HEVC whichever computer
 runs shoebox).
 
+**A video the browser cannot decode (old `.avi`, `.mkv`, `.mpg`, `.mts`):**
+decided October 2026 to show a notice in the viewer (`lb.video_unplayable`)
+and leave the rest to "Show in Finder / Explorer" in the info panel and a
+player of the user's choice. No conversion for now.
+Possible later upgrade, not planned: a converted copy made by ffmpeg *on
+command* (a button with a time estimate from file size and duration, never
+automatic, never at scan time), H.264 + AAC in an MP4 under
+`.shoebox/playback/<quick hash>.mp4` (on the drive, it survives sessions;
+read of the original under `fingerprint::read_unchanged`), with a size cap
+(oldest played copy goes first) so the folder cannot grow without limit, and
+only where ffmpeg is found. A first draft of this was thrown away.
+
 **Stored browser frame (step 1 below).** `POST /api/files/{id}/poster` with a
 JPEG body (`image/jpeg`, at most 512 KiB): only a video, only while its
 content has no picture yet (none, or the reason it failed), only from a browser
@@ -2162,3 +2175,25 @@ section against its own endpoint in `people.rs`, `dates.rs`,
 its way, the text row and prefixes; against the real server
 (`faces-e2e.mjs`): one `/suggest` per pause and a list that is what the
 server answers.
+
+The empty box (a click into it) took 2.6 s on `bench-search.py`'s library (100 000
+files, 215 000 faces, 7 groups): each of the 7 groups and 3 pet words was a
+search of its own (`snapshot.query`), each reading every file, the pets every
+face again (pets 2.0 s, groups 0.55 s). Now `person_photos` is `counts`
+(`people_api.rs`): one reading of the files gives the photos of every person,
+group and pet species within the filter (`Counts`), kept like the people's
+counts, and what they are made of (the contents of each person, group and
+species, `Keys`) is kept for any filter while the people view stays the same,
+so a chip picked changes only the counting. `people::keys_of_all_pets` reads
+the faces once for every species. Measured: the empty box 2.6 s -> 1.0 s the
+first time after a change to the people (the pets' faces, once), 5 ms again
+with the same filter and 31 ms with another one. `pet_hits_uncached` is the
+old search for the all-drives list, which has no request filter to key on. The
+page shows five grey placeholder rows 120 ms after asking if the list has not
+come (`showWaiting`, `.wait-row`; nothing is shown for a quick answer, and a
+list that is there stays until the new one comes), and offers suggestions on
+every page, not only the timeline (picking one shows the timeline with the
+chip, as typing a search already did). Tests: `suggest.rs` (groups and pets
+kept counts follow a group change and a drawn dog), `faces-mocked.mjs` (rows
+after 120 ms and gone with the list, none for a quick one; the list on a first
+click on the Faces page).

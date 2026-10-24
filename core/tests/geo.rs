@@ -259,7 +259,7 @@ fn places_are_rectangles_that_collect_their_photos() {
     // The backup of what the user made.
     server.stop().unwrap();
     let data: Value = serde_json::from_slice(&fs::read(lib.path(".shoebox/userdata.json")).unwrap()).unwrap();
-    assert_eq!(data["version"], 6);
+    assert_eq!(data["version"], 7);
     assert_eq!(data["places"][0]["name"], "Zuhause");
     assert_eq!(data["geo_overrides"][0]["files"][0], PLAIN);
     assert_eq!(lib.snapshot(), before, "originals untouched");
@@ -307,5 +307,36 @@ fn a_place_combines_with_the_other_filters() {
     for path in ["tags", "people/search", "pets/search", "timeline"] {
         assert_eq!(get(addr, &format!("/api/{path}?place=9999")).status, 400, "{path}");
     }
+    server.stop().unwrap();
+}
+
+#[test]
+fn hidden_photos_are_not_on_the_map_or_counted_in_a_place() {
+    let lib = Library::new("geo-hidden");
+    jpeg_with_gps(&lib, GPS_PHOTO, 90);
+    lib.scan();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let gps = id_of(&lib, GPS_PHOTO);
+    let plain = id_of(&lib, PLAIN);
+    assert_eq!(post(addr, &format!("/api/files/{plain}/position"), &json!({ "lat": 48.2, "lon": 11.6 })).status, 200);
+    let r = post(addr, "/api/places", &json!({ "name": "München", "south": 48.0, "west": 11.0, "north": 48.5, "east": 12.0 }));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    let on_map = || -> Vec<i64> {
+        let mut v: Vec<i64> = get(addr, "/api/geo/points").json()["ids"].as_array().unwrap().iter().map(|v| v.as_i64().unwrap()).collect();
+        v.sort();
+        v
+    };
+    let in_place = || get(addr, "/api/places").json()[0]["count"].as_i64().unwrap();
+    assert_eq!((on_map().len(), in_place()), (2, 2));
+
+    // A hidden photo, and one in a hidden folder, leave the map and the place's count.
+    assert_eq!(post(addr, "/api/hidden", &json!({ "ids": [plain], "on": true })).status, 200);
+    assert_eq!((on_map(), in_place()), (vec![gps], 1));
+    assert_eq!(post(addr, "/api/hidden/folder", &json!({ "path": "Familie", "on": true })).status, 200);
+    assert_eq!((on_map(), in_place()), (Vec::<i64>::new(), 0));
+    assert_eq!(post(addr, "/api/hidden/folder", &json!({ "path": "Familie", "on": false })).status, 200);
+    assert_eq!(post(addr, "/api/hidden", &json!({ "ids": [plain], "on": false })).status, 200);
+    assert_eq!((on_map().len(), in_place()), (2, 2));
     server.stop().unwrap();
 }

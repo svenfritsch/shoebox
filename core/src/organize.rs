@@ -367,6 +367,18 @@ pub fn rename_folder(conn: &Connection, root: &Path, folder_id: i64, new_path: &
         let raw = rebase(raw)?;
         tx.execute("UPDATE folders SET path = ?2, path_nfc = ?3 WHERE id = ?1", params![id, raw, library::nfc(&raw)])?;
     }
+    // A hidden folder stays hidden under its new name (and so does everything below it).
+    if crate::people::table_exists(&tx, "main", "hidden_folders")? {
+        let rows: Vec<String> = tx
+            .prepare("SELECT path_nfc FROM hidden_folders")?
+            .query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        for old in rows.iter().filter(|p| below(p, &old_nfc)) {
+            let moved_to = format!("{new_nfc}{}", &old[old_nfc.len()..]);
+            tx.execute("DELETE FROM hidden_folders WHERE path_nfc = ?1", [old])?;
+            tx.execute("INSERT OR IGNORE INTO hidden_folders (path_nfc, added_at) VALUES (?1, strftime('%s','now'))", [&moved_to])?;
+        }
+    }
     let event = library::parse_event(name);
     tx.execute(
         "UPDATE folders SET parent_id = ?2, name = ?3, event_year = ?4, event_month = ?5, event_name = ?6 WHERE id = ?1",

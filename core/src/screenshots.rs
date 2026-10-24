@@ -21,7 +21,7 @@ const NAME_WORDS: &[&str] =
 /// Pixel sizes of phone, tablet and computer displays (either way round).
 const DISPLAYS: &[(u32, u32)] = &[
     // iPhone
-    (640, 1136), (750, 1334), (828, 1792), (1080, 1920), (1125, 2436), (1170, 2532), (1179, 2556),
+    (640, 960), (640, 1136), (750, 1334), (828, 1792), (1080, 1920), (1125, 2436), (1170, 2532), (1179, 2556),
     (1206, 2622), (1242, 2208), (1242, 2688), (1284, 2778), (1290, 2796), (1320, 2868),
     // Android
     (720, 1280), (720, 1600), (1080, 2160), (1080, 2240), (1080, 2340), (1080, 2400), (1080, 2412),
@@ -87,11 +87,12 @@ pub fn score(name: &str, kind: Kind, width: Option<u32>, height: Option<u32>, ca
         && is_display_size(w, h)
     {
         s += 25;
-        // A PNG without camera at exactly the size of a display is what a
-        // phone's screen capture is, even when the picture inside is a photo
-        // (a lock screen with a photo as wallpaper: little flat colour).
-        if kind == Kind::Png && !has_camera {
-            s += 10;
+        // A picture without camera at exactly the size of a display is what a
+        // screen capture is, even when the picture inside is a photo (a lock
+        // screen, an Instagram post: little flat colour). A JPEG too: a
+        // screenshot sent through a messenger or an app is one.
+        if !has_camera {
+            s += 20;
         }
     }
     s += pixels.unwrap_or(0) as u32 / 2;
@@ -174,6 +175,7 @@ mod tests {
     #[test]
     fn sizes_either_way_round() {
         assert!(is_display_size(1170, 2532) && is_display_size(2532, 1170) && is_display_size(2880, 1800));
+        assert!(is_display_size(640, 960) && is_display_size(960, 640));
         assert!(!is_display_size(4032, 3024) && !is_display_size(1171, 2532));
     }
 
@@ -190,6 +192,20 @@ mod tests {
         assert!(score("IMG_1234.PNG", png, Some(1171), Some(2532), None, Some(0)) < THRESHOLD);
         // A forwarded JPEG that lost everything but its pixels.
         assert!(score("IMG-20240302-WA0001.jpg", Kind::Jpeg, Some(1080), Some(2400), None, Some(90)) >= THRESHOLD);
+        // Screenshots of an app with a photo inside (Instagram, Messages): no
+        // flat colour at all, found by size and the missing camera alone, as
+        // PNG or as JPEG after a messenger. 640x960 is the iPhone 4/4S.
+        for (name, kind, w, h) in [
+            ("IMG_0001.PNG", png, 640, 960),
+            ("IMG_0001.JPG", Kind::Jpeg, 640, 960),
+            ("IMG_0002.jpg", Kind::Jpeg, 640, 1136),
+            ("IMG_0003.jpg", Kind::Jpeg, 750, 1334),
+        ] {
+            assert!(score(name, kind, Some(w), Some(h), None, Some(0)) >= THRESHOLD, "{name} {w}x{h}");
+        }
+        // The same size with a camera model, or a JPEG of another size, is a photo.
+        assert!(score("IMG_0001.JPG", Kind::Jpeg, Some(640), Some(960), Some("iPhone 4"), Some(0)) < THRESHOLD);
+        assert!(score("IMG_0001.JPG", Kind::Jpeg, Some(641), Some(960), None, Some(0)) < THRESHOLD);
         // A camera made it: never, whatever it looks like.
         assert!(score("Screenshot.jpg", Kind::Jpeg, Some(1170), Some(2532), Some("iPhone 15"), Some(100)) < THRESHOLD);
         // A flat PNG of the wrong size and name (a drawing).

@@ -336,7 +336,7 @@ fn removing_a_copy_hands_its_date_to_the_survivor_and_the_backup_has_it() {
     // The backup of what the user made.
     server.stop().unwrap();
     let data: Value = serde_json::from_slice(&fs::read(lib.path(".shoebox/userdata.json")).unwrap()).unwrap();
-    assert_eq!(data["version"], 6);
+    assert_eq!(data["version"], 7);
     let mine = data["date_estimates"].as_array().unwrap().iter().find(|e| e["files"][0] == original).expect("the survivor's date");
     assert_eq!((mine["year"].as_i64(), mine["month"].as_i64()), (Some(1987), Some(8)));
     assert_eq!(before[&lib.path(original)], lib.snapshot()[&lib.path(original)], "the survivor is untouched");
@@ -352,7 +352,9 @@ fn an_older_index_gets_the_table_without_losing_anything() {
     lib.scan();
     assert_eq!(lib.count("SELECT count(*) FROM date_estimates"), 0);
     let v: i64 = lib.db().query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
-    assert_eq!(v, 17);
+    assert_eq!(v, 18);
+    // v18 (phase 20): the folders hidden from the timeline.
+    assert_eq!(lib.count("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'hidden_folders'"), 1);
     // v16: files by content (face crops find their file through it).
     assert_eq!(lib.count("SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = 'files_quick_hash'"), 1);
     // v17: the trash names the copy that stayed of a removed duplicate.

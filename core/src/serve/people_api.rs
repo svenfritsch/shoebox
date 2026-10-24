@@ -322,13 +322,13 @@ pub(super) fn person_hits(
     needle: &str,
     limit: usize,
 ) -> anyhow::Result<Vec<PersonHit>> {
-    let (list, view) = app.with_people(|conn, v| Ok((people::people_in(conn, v, false)?, v.clone())))?;
-    let photos = person_photos(app, conn, pairs, filter, shown, view)?;
+    let list = app.with_people(|conn, v| people::people_in(conn, v, false))?;
+    let counts = counts(app, conn, pairs, filter, shown)?;
     let mut hits: Vec<PersonHit> = list
         .into_iter()
         .filter(|p| !filter.people.contains(&p.id) && db::tag_fold(&p.name).contains(needle))
         .map(|p| {
-            let photos = photos.get(&p.id).copied().unwrap_or(0);
+            let photos = counts.people.get(&p.id).copied().unwrap_or(0);
             PersonHit { id: p.id, name: p.name, group_id: p.group_id, species: p.species, cover: p.cover, cover_manual: p.cover_manual, photos }
         })
         .filter(|h| h.photos > 0)
@@ -338,27 +338,43 @@ pub(super) fn person_hits(
     Ok(hits)
 }
 
-/// The photos of each person within a filter, as `search` counts them, kept
-/// while the index, the people view (it is read again after every decision)
-/// and the filter stay the same: the search box asks with every letter typed,
-/// and counting reads every file and every confirmed face (about 0.1 s on
-/// 100 000 photos).
+/// The photos of each person, group and pet species within a filter, as the
+/// search box's lists count them (`search`, `pets_search`, `groups_search`),
+/// kept while the index, the people view (it is read again after every
+/// decision, group change and recognition) and the filter stay the same: the
+/// search box asks with every letter typed, and counting reads every file and
+/// every confirmed face (about 0.1 s on 100 000 photos), the pets every face
+/// found (about 0.7 s). One reading of the files serves all three; they were
+/// counted with a search each (a reading of every file per group and species).
 pub(super) struct PersonPhotos {
     version: IndexVersion,
     view: Arc<people::View>,
     /// The request's filter without what is typed (`q`, `limit`), sorted.
     filter: Pairs,
-    photos: Arc<HashMap<i64, u64>>,
+    counts: Arc<Counts>,
+    /// The contents of each person, group and pet species: what the counts are
+    /// made of, the same for any filter while the view is (a picked chip asks
+    /// for new counts, not for new contents).
+    keys: Arc<Keys>,
 }
 
-fn person_photos(
-    app: &App,
-    conn: &rusqlite::Connection,
-    pairs: &Pairs,
-    filter: &browse::Query,
-    shown: Option<&HashSet<i64>>,
+struct Keys {
     view: Arc<people::View>,
-) -> anyhow::Result<Arc<HashMap<i64, u64>>> {
+    of_person: HashMap<i64, HashSet<String>>,
+    of_group: Vec<(i64, HashSet<String>)>,
+    of_pets: HashMap<String, HashSet<String>>,
+}
+
+#[derive(Default)]
+pub(super) struct Counts {
+    people: HashMap<i64, u64>,
+    groups: HashMap<i64, u64>,
+    /// By species: `cat`, `dog`, `pet` (any).
+    pets: HashMap<String, u64>,
+}
+
+fn counts(app: &App, conn: &rusqlite::Connection, pairs: &Pairs, filter: &browse::Query, shown: Option<&HashSet<i64>>) -> anyhow::Result<Arc<Counts>> {
+    let view = app.with_people(|_, v| Ok(v.clone()))?;
     let version = app.version(conn)?;
     let mut within: Pairs = pairs.iter().filter(|(k, _)| k != "q" && k != "limit").cloned().collect();
     within.sort();
@@ -368,7 +384,7 @@ fn person_photos(
         && Arc::ptr_eq(&c.view, &view)
         && c.filter == within
     {
-        return Ok(c.photos.clone());
+        return Ok(c.counts.clone());
     }
     let computed;
     let shown = match shown {
@@ -388,14 +404,28 @@ fn person_photos(
             }
         }
     }
-    let photos: Arc<HashMap<i64, u64>> = Arc::new(
-        people::keys_by_person(conn)?
-            .into_iter()
-            .map(|(person, keys)| (person, keys.iter().map(|k| files_per_key.get(k).copied().unwrap_or(0)).sum()))
-            .collect(),
-    );
-    *cache = Some(PersonPhotos { version, view, filter: within, photos: photos.clone() });
-    Ok(photos)
+    let keys = match cache.as_ref() {
+        Some(c) if Arc::ptr_eq(&c.keys.view, &view) => c.keys.clone(),
+        _ => {
+            let of_person = people::keys_by_person(conn)?;
+            let mut of_group = Vec::new();
+            for g in people::groups(conn)? {
+                // Any member: a content with two of them counts once.
+                let keys: HashSet<String> = people::members_of_group(conn, g.id)?.iter().filter_map(|p| of_person.get(p)).flatten().cloned().collect();
+                of_group.push((g.id, keys));
+            }
+            Arc::new(Keys { view: view.clone(), of_person, of_group, of_pets: people::keys_of_all_pets(conn)? })
+        }
+    };
+    let of_keys = |keys: &HashSet<String>| -> u64 { keys.iter().map(|k| files_per_key.get(k).copied().unwrap_or(0)).sum() };
+    let counts = Counts {
+        people: keys.of_person.iter().map(|(person, keys)| (*person, of_keys(keys))).collect(),
+        groups: keys.of_group.iter().map(|(group, keys)| (*group, of_keys(keys))).collect(),
+        pets: keys.of_pets.iter().map(|(species, keys)| (species.clone(), of_keys(keys))).collect(),
+    };
+    let counts = Arc::new(counts);
+    *cache = Some(PersonPhotos { version, view, filter: within, counts: counts.clone(), keys });
+    Ok(counts)
 }
 
 /// A pet search term offered while typing.
@@ -416,13 +446,14 @@ pub(super) async fn pets_search(State(app): State<Arc<App>>, Query(pairs): Query
         let conn = app.db();
         let needle = param(&pairs, "q").unwrap_or("");
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
-        Ok(Json(pet_hits(app, &conn, &filter, needle)?))
+        Ok(Json(pet_hits(app, &conn, &pairs, &filter, None, needle)?))
     })
     .await
 }
 
-/// `pets_search` for `needle` (as typed) within `filter`.
-pub(super) fn pet_hits(app: &App, conn: &rusqlite::Connection, filter: &browse::Query, needle: &str) -> anyhow::Result<Vec<PetHit>> {
+/// `pet_hits` for a filter that is not a request's own (over all drives it is
+/// worked out for each drive): a search for each species, nothing kept.
+pub(super) fn pet_hits_uncached(app: &App, conn: &rusqlite::Connection, filter: &browse::Query, needle: &str) -> anyhow::Result<Vec<PetHit>> {
     let snapshot = app.snapshot(conn)?;
     let mut hits = Vec::new();
     for species in crate::pets::species_matching(needle) {
@@ -432,6 +463,31 @@ pub(super) fn pet_hits(app: &App, conn: &rusqlite::Connection, filter: &browse::
         let mut with = filter.clone();
         with.pets.push(species.to_string());
         let photos = snapshot.query(conn, &with)?.len() as u64;
+        if photos > 0 {
+            hits.push(PetHit { species, photos });
+        }
+    }
+    hits.sort_by(|a, b| b.photos.cmp(&a.photos));
+    Ok(hits)
+}
+
+/// `pets_search` for `needle` (as typed) within `filter`, whose photos are
+/// `shown` when the caller has them already (`/api/suggest`).
+pub(super) fn pet_hits(
+    app: &App,
+    conn: &rusqlite::Connection,
+    pairs: &Pairs,
+    filter: &browse::Query,
+    shown: Option<&HashSet<i64>>,
+    needle: &str,
+) -> anyhow::Result<Vec<PetHit>> {
+    let counts = counts(app, conn, pairs, filter, shown)?;
+    let mut hits = Vec::new();
+    for species in crate::pets::species_matching(needle) {
+        if filter.pets.iter().any(|p| p == species) {
+            continue;
+        }
+        let photos = counts.pets.get(species).copied().unwrap_or(0);
         if photos > 0 {
             hits.push(PetHit { species, photos });
         }
@@ -476,22 +532,29 @@ pub(super) async fn groups_search(State(app): State<Arc<App>>, Query(pairs): Que
         let needle = param(&pairs, "q").map(db::tag_fold).unwrap_or_default();
         let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(8);
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
-        Ok(Json(group_hits(app, &conn, &filter, &needle, limit)?))
+        Ok(Json(group_hits(app, &conn, &pairs, &filter, None, &needle, limit)?))
     })
     .await
 }
 
-/// `groups_search` for `needle` (folded) within `filter`.
-pub(super) fn group_hits(app: &App, conn: &rusqlite::Connection, filter: &browse::Query, needle: &str, limit: usize) -> anyhow::Result<Vec<GroupHit>> {
-    let snapshot = app.snapshot(conn)?;
+/// `groups_search` for `needle` (folded) within `filter`, whose photos are
+/// `shown` when the caller has them already (`/api/suggest`).
+pub(super) fn group_hits(
+    app: &App,
+    conn: &rusqlite::Connection,
+    pairs: &Pairs,
+    filter: &browse::Query,
+    shown: Option<&HashSet<i64>>,
+    needle: &str,
+    limit: usize,
+) -> anyhow::Result<Vec<GroupHit>> {
+    let counts = counts(app, conn, pairs, filter, shown)?;
     let mut hits = Vec::new();
     for g in people::groups(conn)? {
         if filter.groups.contains(&g.id) || !db::tag_fold(&g.name).contains(needle) {
             continue;
         }
-        let mut with = filter.clone();
-        with.groups.push(g.id);
-        let photos = snapshot.query(conn, &with)?.len() as u64;
+        let photos = counts.groups.get(&g.id).copied().unwrap_or(0);
         if photos > 0 {
             hits.push(GroupHit { id: g.id, name: g.name, people: g.people, photos });
         }

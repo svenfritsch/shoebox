@@ -559,6 +559,8 @@ struct InfoCounts {
     thumbs_done: i64,
     trash: i64,
     needs_date: u64,
+    /// Photos hidden from the timeline (phase 20).
+    hidden: u64,
 }
 
 /// What the faces' counts depend on: the index, `recognition.db` (another
@@ -722,7 +724,9 @@ impl App {
         {
             return Ok(t.clone());
         }
-        let t = Arc::new(cancel::unarmed(conn, || browse::all_tags(conn))?);
+        // Hidden photos (phase 20) are not counted: a tag's number is what a click shows.
+        let (files, folders) = self.snapshot(conn)?.hidden_exclusions();
+        let t = Arc::new(cancel::unarmed(conn, || browse::all_tags_shown(conn, &files, &folders))?);
         *cache = Some((version, t.clone()));
         Ok(t)
     }
@@ -1253,6 +1257,8 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/tags/remove", post(tags_remove))
         .route("/api/tags/selection", post(tags_selection))
         .route("/api/favorites", post(favorites_set))
+        .route("/api/hidden", post(hidden_set))
+        .route("/api/hidden/folder", post(hidden_folder_set))
         .route("/api/screenshots", post(screenshots_set))
         .route("/api/geo/points", get(geo_points))
         .route("/api/files/{id}/position", post(position_set))
@@ -1994,6 +2000,7 @@ struct AllFilter {
     in_text: Vec<String>,
     names: Vec<String>,
     fav: bool,
+    hidden: bool,
     dates: Vec<dates::Term>,
     needs_date: bool,
 }
@@ -2012,6 +2019,7 @@ impl AllFilter {
             in_text: terms_of(pairs, "text"),
             names: terms_of(pairs, "name"),
             fav: fav_of(pairs),
+            hidden: hidden_of(pairs),
             dates: dates_of(pairs)?,
             needs_date: param(pairs, "nodate").is_some_and(|v| !v.is_empty() && v != "0"),
         })
@@ -2028,6 +2036,7 @@ impl AllFilter {
             && self.in_text.is_empty()
             && self.names.is_empty()
             && !self.fav
+            && !self.hidden
             && self.dates.is_empty()
             && !self.needs_date
     }
@@ -2078,6 +2087,7 @@ impl AllFilter {
             in_text: self.in_text.clone(),
             names: self.names.clone(),
             fav: self.fav,
+            hidden: self.hidden,
             dates: self.dates.clone(),
             needs_date: self.needs_date,
             ..Default::default()
@@ -2139,6 +2149,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
             version: String,
             live: Option<i64>,
             fav: bool,
+            hid: bool,
             snip: Option<String>,
             est: Option<char>,
             drive: usize,
@@ -2167,6 +2178,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
                 rows.push(Row {
                     snip: snips.get(&it.id).cloned(),
                     fav: hearts.contains(&it.id),
+                    hid: it.hidden,
                     sort: it.sort.clone(),
                     path: it.path_lower.clone(),
                     gid: d as i64 * ID_SPAN + it.id,
@@ -2227,6 +2239,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
             people: Vec::new(),
             groups: Vec::new(),
             favs: Vec::new(),
+            hids: Vec::new(),
             snips: Vec::new(),
             est: Vec::new(),
         };
@@ -2236,6 +2249,9 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
             }
             if r.fav {
                 t.favs.push(r.gid);
+            }
+            if r.hid {
+                t.hids.push(r.gid);
             }
             if let Some(c) = r.est {
                 t.est.push((r.gid, c));
@@ -2303,7 +2319,7 @@ async fn all_suggest(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) ->
         for app in &taking_part {
             let conn = app.db();
             let Some(query) = filter.query_for(app, &conn)? else { continue };
-            for hit in people_api::pet_hits(app, &conn, &query, &text)? {
+            for hit in people_api::pet_hits_uncached(app, &conn, &query, &text)? {
                 *pets.entry(hit.species).or_default() += hit.photos;
             }
         }
@@ -2719,6 +2735,8 @@ struct Info {
     trash: u64,
     /// Photos that need a date: none in the file, none of the user's.
     needs_date: u64,
+    /// Photos hidden from the timeline (phase 20): the sidebar's Hidden row and the suggestion.
+    hidden: u64,
     /// Face recognition (`shoebox recognize`).
     faces: recognize::Overview,
     /// Clusters and suggestions (5c-2).
@@ -2785,8 +2803,10 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
                         |r| Ok((r.get(0)?, r.get(1)?)),
                     )?;
                     let trash: i64 = conn.query_row("SELECT count(DISTINCT batch) FROM trash", [], |r| r.get(0))?;
-                    let needs_date = app.snapshot(&conn)?.items.iter().filter(|it| needs_a_date(it)).count() as u64;
-                    let c = Arc::new(InfoCounts { photos, videos, missing, thumbs_total, thumbs_done, trash, needs_date });
+                    let snapshot = app.snapshot(&conn)?;
+                    let needs_date = snapshot.items.iter().filter(|it| !it.hidden && needs_a_date(it)).count() as u64;
+                    let hidden = snapshot.items.iter().filter(|it| it.hidden).count() as u64;
+                    let c = Arc::new(InfoCounts { photos, videos, missing, thumbs_total, thumbs_done, trash, needs_date, hidden });
                     *cache = Some((version, Instant::now(), c.clone()));
                     c
                 }
@@ -2864,6 +2884,7 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
             index_version: format!("{data_version}.{generation}"),
             trash: counts.trash as u64,
             needs_date: counts.needs_date,
+            hidden: counts.hidden,
             faces,
             clusters,
             text: crate::text::progress(&conn)?,
@@ -2918,6 +2939,7 @@ fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
         in_text: terms_of(pairs, "text"),
         names: terms_of(pairs, "name"),
         fav: fav_of(pairs),
+        hidden: hidden_of(pairs),
         area: area_of(pairs)?,
         place: param(pairs, "place").filter(|v| !v.is_empty()).map(number).transpose()?,
         dates: dates_of(pairs)?,
@@ -2982,6 +3004,11 @@ fn fav_of(pairs: &Pairs) -> bool {
     param(pairs, "fav").is_some_and(|v| !v.is_empty() && v != "0")
 }
 
+/// `hidden=1`: only hidden photos (phase 20).
+fn hidden_of(pairs: &Pairs) -> bool {
+    param(pairs, "hidden").is_some_and(|v| !v.is_empty() && v != "0")
+}
+
 /// The pet terms of a request (`pet=cat`, `pet=dog`, `pet=pet` for any pet,
 /// repeated: all must match), each once.
 fn pets_of(pairs: &Pairs) -> ApiResult<Vec<String>> {
@@ -3026,6 +3053,7 @@ fn shows_everything(filter: &browse::Query) -> bool {
         && filter.area.is_none()
         && filter.types.is_empty()
         && !filter.fav
+        && !filter.hidden
         && filter.dates.is_empty()
         && !filter.needs_date
         && filter.text.is_none()
@@ -3173,8 +3201,8 @@ async fn suggest(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> Api
         Ok(Json(Suggestions {
             tags: tag_hits(app, &conn, &filter, shown.as_ref(), &needle, true, SUGGEST_TAGS)?,
             people: section(app, "people", people_api::person_hits(app, &conn, &pairs, &filter, shown.as_ref(), &needle, SUGGEST_PEOPLE)),
-            pets: section(app, "pets", people_api::pet_hits(app, &conn, &filter, text)),
-            groups: section(app, "groups", people_api::group_hits(app, &conn, &filter, &needle, SUGGEST_GROUPS)),
+            pets: section(app, "pets", people_api::pet_hits(app, &conn, &pairs, &filter, shown.as_ref(), text)),
+            groups: section(app, "groups", people_api::group_hits(app, &conn, &pairs, &filter, shown.as_ref(), &needle, SUGGEST_GROUPS)),
             dates,
             // As the page offers it: the text row from two letters on.
             text: if text.chars().count() >= 2 { term_count(text, in_text)? } else { None },
@@ -3205,6 +3233,9 @@ struct Timeline {
     groups: Vec<people::GroupRef>,
     /// Ids of the items with a heart.
     favs: Vec<i64>,
+    /// Ids of the items that are hidden from the timeline (shown by the Hidden
+    /// chip, or in a hidden folder), for the eye in the viewer.
+    hids: Vec<i64>,
     /// [id, line] of what a text search found in an item (the first matching
     /// line of recognized text); only with `text=` in the filter.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -3242,6 +3273,7 @@ async fn timeline(State(app): State<Arc<App>>, axum::Extension(only): axum::Exte
             people,
             groups,
             favs: Vec::new(),
+            hids: Vec::new(),
             snips: Vec::new(),
             est: Vec::new(),
         };
@@ -3254,6 +3286,9 @@ async fn timeline(State(app): State<Arc<App>>, axum::Extension(only): axum::Exte
         for it in items {
             if hearts.contains(&it.id) {
                 t.favs.push(it.id);
+            }
+            if it.hidden {
+                t.hids.push(it.id);
             }
             if let Some(c) = estimate_code(it.date_source) {
                 t.est.push((it.id, c));
@@ -3318,6 +3353,11 @@ struct FileInfo {
     /// bottom, hidden ones marked; boxes are fractions of the picture in the
     /// file's orientation, like the face boxes. Empty if nothing was read.
     text: Vec<crate::text::LineOut>,
+    /// Hidden from the timeline (phase 20): by the own tag, and by the folder
+    /// (the NFC path of the folder with the flag, which shows it again).
+    hidden: bool,
+    hidden_tag: bool,
+    hidden_folder: Option<String>,
 }
 
 async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Json<FileInfo>> {
@@ -3356,6 +3396,9 @@ async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiRe
             screenshot_mark,
             position: crate::geo::position_of(&conn, id)?,
             text,
+            hidden: item.is_some_and(|it| it.hidden),
+            hidden_tag: item.is_some_and(|it| it.hidden_tag),
+            hidden_folder: item.and_then(|it| snapshot.hiding_folder(it.folder_id)).map(|f| f.path.clone()),
         }))
     })
     .await
@@ -3965,7 +4008,7 @@ async fn geo_points(State(app): State<Arc<App>>) -> ApiResult<Json<GeoPoints>> {
     blocking(&app, |app| {
         let conn = app.db();
         let snapshot = app.snapshot(&conn)?;
-        let shown: HashSet<i64> = snapshot.items.iter().map(|it| it.id).collect();
+        let shown: HashSet<i64> = snapshot.items.iter().filter(|it| !it.hidden).map(|it| it.id).collect();
         let mut out = GeoPoints { ids: Vec::new(), lats: Vec::new(), lons: Vec::new() };
         for (id, lat, lon) in crate::geo::positions(&conn)? {
             if shown.contains(&id) {
@@ -4101,7 +4144,7 @@ async fn places_list(State(app): State<Arc<App>>) -> ApiResult<Json<Vec<PlaceRow
     blocking(&app, |app| {
         let conn = app.db();
         let snapshot = app.snapshot(&conn)?;
-        let shown: HashSet<i64> = snapshot.items.iter().map(|it| it.id).collect();
+        let shown: HashSet<i64> = snapshot.items.iter().filter(|it| !it.hidden).map(|it| it.id).collect();
         let points = crate::geo::positions(&conn)?;
         let rows = crate::geo::places(&conn)?
             .into_iter()
@@ -4227,6 +4270,13 @@ struct FavoriteRequest {
 }
 
 #[derive(Deserialize)]
+struct HiddenFolderRequest {
+    /// NFC path of the folder, relative to the library.
+    path: String,
+    on: bool,
+}
+
+#[derive(Deserialize)]
 struct ScreenshotRequest {
     ids: Vec<i64>,
     /// `true`: these are screenshots; `false`: they are not; `null`: leave it
@@ -4250,6 +4300,19 @@ async fn screenshots_set(State(app): State<Arc<App>>, Json(req): Json<Screenshot
 /// The heart: the own tag `favorite` on or off (see `tags::FAVORITE`).
 async fn favorites_set(State(app): State<Arc<App>>, Json(req): Json<FavoriteRequest>) -> ApiResult<Json<own_tags::Changed>> {
     change(&app, move |_, conn| own_tags::set_favorite(conn, &req.ids, req.on)).await.map(Json)
+}
+
+/// Hide photos from the timeline: the own tag `hidden` on or off (see `tags::HIDDEN`).
+async fn hidden_set(State(app): State<Arc<App>>, Json(req): Json<FavoriteRequest>) -> ApiResult<Json<own_tags::Changed>> {
+    change(&app, move |_, conn| own_tags::set_hidden(conn, &req.ids, req.on)).await.map(Json)
+}
+
+/// Hide a folder and everything below it from the timeline, or show it again. It is a
+/// flag in the index (`hidden_folders`); nothing is written to the folder, so a library
+/// kept next to the program takes it too.
+async fn hidden_folder_set(State(app): State<Arc<App>>, Json(req): Json<HiddenFolderRequest>) -> ApiResult<Json<serde_json::Value>> {
+    let changed = change(&app, move |_, conn| own_tags::set_folder_hidden(conn, &req.path, req.on)).await?;
+    Ok(Json(serde_json::json!({ "changed": changed })))
 }
 
 /// The own tags on a selection, for "Remove tag…".
