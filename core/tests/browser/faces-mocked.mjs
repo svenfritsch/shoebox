@@ -1206,4 +1206,20 @@ await test('the search box offers Hidden for hidden, versteckt, verborgen or aus
   check(JSON.stringify(await gridIds(p)) === '[1]', `the grid shows ${await gridIds(p)}`);
 }));
 
+// A video the browser cannot decode (an old .avi): the viewer says so, once,
+// and a photo next to it has no notice.
+await test('a video the browser cannot play shows a notice, a photo does not', await on('', (lib) => {
+  lib.photos = [{ id: 1, version: 'vid00001', kind: 'v' }, { id: 2, version: 'pho00002' }];
+}, async (p, lib) => {
+  const cells = p.locator('#sizer a.cell');
+  await until('the grid', async () => (await cells.count()) === 2);
+  await cells.first().click();
+  const note = p.locator('#stage .lb-note');
+  await until('the notice', async () => { await p.clock.runFor(100); return (await note.count()) === 1; });
+  check((await note.textContent()) === await tr(p, 'lb.video_unplayable'), `notice: ${await note.textContent()}`);
+  await p.keyboard.press('ArrowRight');
+  await until('the photo', async () => (await p.locator('#stage img').count()) === 1);
+  check((await note.count()) === 0, 'the photo still has the notice');
+}));
+
 await finish();

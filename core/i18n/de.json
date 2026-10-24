@@ -151,6 +151,7 @@
   "lb.rotate_hint": "Nach links drehen (r) · Wahltaste-Klick oder Umschalt+R: nach rechts",
   "lb.rotate_view_hint": "Nach links drehen (r) · Wahltaste-Klick oder Umschalt+R: nach rechts · nur in shoebox, die Datei bleibt unverändert",
   "lb.rotate_raw": "RAW-Fotos können nicht gedreht werden",
+  "lb.video_unplayable": "Dieser Browser kann dieses Videoformat nicht abspielen. Nutze im Infofenster „Im Finder / Explorer zeigen“ und spiele es in einem anderen Programm ab.",
   "lb.rotate_view_only": "Nur in shoebox gedreht. Die Datei selbst bleibt unverändert, Finder und andere Apps zeigen sie wie zuvor.",
   "info.add_face_turned": "Foto zuerst zurückdrehen: Rahmen werden auf dem Foto gezeichnet, so wie es in der Datei gespeichert ist",
   "login.text": "Gib die PIN ein, die im Terminal angezeigt wird, in dem shoebox läuft.",

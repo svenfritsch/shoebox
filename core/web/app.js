@@ -2144,6 +2144,11 @@ function showItem() {
     v.preload = 'metadata';
     v.poster = frames.cache[id] || thumbUrl(i);
     v.src = fileBase(id) + '/original';
+    // An old camcorder format (.avi, .mkv, ...) the browser cannot decode: say so.
+    v.addEventListener('error', function () {
+      if (!v.parentNode || v.parentNode.querySelector('.lb-note')) return;
+      v.parentNode.appendChild(el('div', 'lb-note', tr('lb.video_unplayable')));
+    });
     stage.appendChild(v);
   } else {
     var img = el('img');
