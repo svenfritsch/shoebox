@@ -1404,4 +1404,18 @@ await test('a text button never wraps: a long label is cut with an ellipsis and 
   check(await p.locator('#quick-tip.show').count() === 0, 'a button that is not cut off shows a quick label');
 }));
 
+await test('the settings page uses the common controls: selects with the shared arrow, the folder field and its button 32 px high, chips with a round remove button', await on('view=settings', (lib) => { lib.copyFolders = ['Links', 'Gartensessions']; }, async (p, lib) => {
+  await p.locator('.copy-folder-row input').first().waitFor();
+  await settle(p, lib);
+  const m = await p.evaluate(() => {
+    const h = (e) => Math.round(e.getBoundingClientRect().height);
+    const row = [...document.querySelectorAll('.copy-folder-row')].pop();
+    const sel = document.querySelector('.pattern-choice select');
+    return { input: h(row.querySelector('input')), add: h(row.querySelector('.btn')), select: h(sel), arrow: getComputedStyle(sel).backgroundImage.startsWith('url('), native: getComputedStyle(sel).appearance, x: getComputedStyle(row.previousElementSibling.querySelector('.chip-x')).borderRadius };
+  });
+  check(m.input === 32 && m.add === 32 && m.select === 32, `the folder field is ${m.input}, its button ${m.add}, a pattern select ${m.select} px high, expected 32`);
+  check(m.arrow && m.native === 'none', 'the pattern selects have the native arrow');
+  check(m.x === '50%', `the chip's remove button has the radius ${m.x}, expected a circle`);
+}));
+
 await finish();

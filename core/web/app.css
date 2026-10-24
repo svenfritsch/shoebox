@@ -71,11 +71,11 @@ select { cursor: pointer; }
 .types-menu label:hover { background: var(--panel); }
 .types-menu .ficon { margin-right: 0; }
 .types-menu .tip { color: var(--muted, #888); cursor: help; font-size: 13px; }
-.bar select, .page .toolbar select {
+select {
   height: var(--ctl-h); padding: 0 10px; border-radius: var(--ctl-r); border: 1px solid var(--line);
   background: var(--panel); color: var(--fg);
 }
-.bar select:hover, .page .toolbar select:hover { border-color: var(--muted); }
+select:hover { border-color: var(--muted); }
 .icon svg { display: block; width: 1em; height: 1em; fill: currentColor; }
 .icon {
   flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--ctl-h); height: var(--ctl-h); padding: 0;
@@ -836,11 +836,14 @@ body.selecting .sec .pick { display: inline; }
 .sface-grid .cface:focus-visible { outline: none; }
 .sface-grid .cface:focus-visible .avatar { box-shadow: 0 0 0 3px var(--bg, #000), 0 0 0 5px var(--fg); }
 .settings-section .tagline { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
-.settings-section .chip { background: var(--cell-bg); border-radius: 12px; padding: 2px 10px; }
-.settings-section .chip.own { background: var(--accent); color: #fff; }
-.chip-x { background: none; border: 0; color: #fff; cursor: pointer; padding: 0 0 0 4px; font-size: 12px; }
+.settings-section .chip { height: var(--ctl-h-sm); padding: 0 3px 0 12px; border-radius: 99px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; }
+.settings-section .chip.own { background: var(--panel); color: var(--fg); }
+.chip-x { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); cursor: pointer; font-size: 11px; line-height: 1; }
+.chip-x:hover { background: var(--line); color: var(--fg); }
 .copy-folder-row { display: flex; gap: 8px; align-items: center; }
-.settings-section input[type=text] { min-width: 220px; }
+.settings-section input[type=text] { min-width: 220px; height: var(--ctl-h); padding: 0 12px; border-radius: var(--ctl-r); border: 1px solid var(--line); background: var(--panel); }
+.settings-section input[type=text]:hover { border-color: var(--muted); }
+.settings-section input[type=text]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* favorites: the heart */
 .fav-btn { display: inline-flex; align-items: center; justify-content: center; font-size: 18px; width: var(--ctl-h); height: var(--ctl-h); padding: 0; border-radius: var(--ctl-r); border: 1px solid var(--line); background: var(--panel); color: inherit; }
@@ -1185,16 +1188,21 @@ body.read-only #sel-move, body.read-only #lb-rotate, body.read-only .copy label.
 .types-btn:hover, .fav-btn:hover { border-color: var(--muted); }
 
 /* One drop-down arrow for every select and for the Type button: our own chevron, with room to the right of it. */
-select:not([multiple]):not([size]), .types-btn {
-  -webkit-appearance: none; appearance: none; padding-right: 32px;
+select:not([multiple]):not([size]), .types-btn, .dup-filter > summary.btn {
+  -webkit-appearance: none; appearance: none; padding-right: 26px;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%231d1d1f' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right 11px center; background-size: 12px 12px;
+  background-repeat: no-repeat; background-position: right 4px center; background-size: 12px 12px;
 }
 @media (prefers-color-scheme: dark) {
-  select:not([multiple]):not([size]), .types-btn {
+  select:not([multiple]):not([size]), .types-btn, .dup-filter > summary.btn {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%23ececec' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   }
 }
 .lb-panel select:not([multiple]):not([size]) {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%23eeeeee' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+.dup-filter > summary.btn { max-width: 26em; }
+/* Preselect is a primary button: its arrow is white like its label. */
+.dup-filter > summary.btn:not(.quiet) {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%23ffffff' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
