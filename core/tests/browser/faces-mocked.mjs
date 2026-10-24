@@ -1059,6 +1059,18 @@ await test('a photo turned in the viewer: the grid asks for its new thumbnail on
 
 // ---- hidden from the timeline (phase 20)
 
+// The page applied what was done (a hash change, then its requests) and drew it: the time runs on, round
+// after round, until `ok` says so. (`settle` alone can find the page calm before a hash change was heard.)
+async function settleUntil(p, lib, what, ok) {
+  for (let round = 0; round < 60; round++) {
+    await p.clock.runFor(500);
+    await until('the fake to answer', () => lib.open === 0 && lib.waiting() === 0);
+    await p.evaluate(() => 0);
+    if (await ok()) return;
+  }
+  throw new Error(`${what} never happened`);
+}
+const gridIs = (p, ids) => async () => JSON.stringify(await gridIds(p)) === JSON.stringify(ids);
 const gridIds = (p) => p.locator('#sizer a.cell').evaluateAll((as) => as.map((a) => Number(a.querySelector('img').getAttribute('src').match(/files\/(\d+)\//)[1])));
 const hiddenPhotos = (lib) => { lib.photos = [1, 2, 3].map((id) => ({ id, version: `orig000${id}` })); };
 const cellCount = (p, n) => until(`${n} photos in the grid`, async () => (await p.locator('#sizer a.cell').count()) === n);
@@ -1090,7 +1102,7 @@ await test('hiding in the viewer (key h): the photo stays until the viewer close
   check(await p.locator('#hidden-row .count').textContent() === '1', 'the Hidden row counts the hidden photo');
   // The Hidden row: only the hidden photos, as a chip.
   await p.locator('#hidden-row .name').click();
-  await settle(p, lib);
+  await settleUntil(p, lib, 'the Hidden chip list', gridIs(p, [1]));
   check(JSON.stringify(await gridIds(p)) === '[1]', `the Hidden chip shows ${await gridIds(p)}`);
   check(await p.locator('#filters .chip.hid').count() === 1, 'the Hidden chip');
   check(lib.log.some((e) => e.path === '/timeline' && e.query.get('hidden') === '1'), 'the timeline was asked with hidden=1');
@@ -1143,7 +1155,7 @@ await test('a folder: the chip\'s eye and the right-click menu hide it, it stays
   check((await eye.getAttribute('data-tip')) === await tr(p, 'hidden.folder_hide'), 'chip tip');
   await eye.click();
   await posted(lib, /^\/hidden\/folder$/);
-  await settle(p, lib);
+  await settleUntil(p, lib, 'the folder shown as hidden', async () => (await p.locator('#filters .chip .eye.on').count()) === 1 && (await p.locator('#tree .row.hidden-folder').count()) === 1);
   check(JSON.stringify(lib.log.filter((e) => e.path === '/hidden/folder').length) === '1' && lib.folders[1].hidden_own, 'the folder is flagged');
   check(await p.locator('#filters .chip .eye.on').count() === 1 && !(await slashed(p, '#filters .chip .eye')), 'the chip shows the plain eye, lit');
   check(await p.locator('#tree .row.hidden-folder').count() === 1, 'the hidden folder is dimmed in the tree');
@@ -1151,7 +1163,7 @@ await test('a folder: the chip\'s eye and the right-click menu hide it, it stays
   check(JSON.stringify(await gridIds(p)) === '[1]', 'the opened hidden folder shows its photo');
   // All photos: the hidden folder's photo is not in it, and the count in the sidebar says so.
   await p.locator('#all').click();
-  await settle(p, lib);
+  await settleUntil(p, lib, 'the timeline', gridIs(p, [2, 3]));
   check(JSON.stringify(await gridIds(p)) === '[2,3]', `the timeline shows ${await gridIds(p)}`);
   check(await p.locator('#tree .row.hidden-folder .name').count() === 1, 'the folder is still in the tree');
   // Right-click on the folder: the menu shows it again.
@@ -1160,7 +1172,7 @@ await test('a folder: the chip\'s eye and the right-click menu hide it, it stays
   check((await entry.allTextContents()).join() === await tr(p, 'hidden.folder_show'), 'menu: ' + await entry.allTextContents());
   await entry.click();
   await until('the folder shown again', () => !lib.folders[1].hidden_own);
-  await settle(p, lib);
+  await settleUntil(p, lib, 'the folder not dimmed any more', async () => (await p.locator('#tree .row.hidden-folder').count()) === 0);
   check(await p.locator('#tree .row.hidden-folder').count() === 0, 'not dimmed any more');
   // Right-click on a folder that is not hidden: the menu hides it.
   await p.locator('#tree .name', { hasText: 'Urlaub' }).click({ button: 'right' });
@@ -1200,7 +1212,7 @@ await test('the search box offers Hidden for hidden, versteckt, verborgen or aus
   check(!r.items.some((i) => i.startsWith(label)), `zz shows [${r.items}]`);
   await typeIn(p, lib, 'hidd');
   await p.locator('#suggest .item').first().click();
-  await settle(p, lib);
+  await settleUntil(p, lib, 'the Hidden filter', gridIs(p, [1]));
   check(await p.evaluate(() => state.filter.hidden === true && location.hash.includes('hidden=1')), 'the filter has hidden=1');
   check(await p.locator('#filters .chip.hid').count() === 1, 'the Hidden chip');
   check(JSON.stringify(await gridIds(p)) === '[1]', `the grid shows ${await gridIds(p)}`);
