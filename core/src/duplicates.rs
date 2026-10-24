@@ -889,7 +889,9 @@ pub fn remove_copies(
     let mut carries = Vec::new();
     for g in &gone {
         let Some(h) = heir(g, &keep) else { bail!("{} is not a duplicate of a file that stays", g.path) };
+        // A folder called "Hidden" does not hide the photo that inherits its tags; the own tag does.
         let mut names = tag_names(conn, g.id, "folder")?;
+        names.retain(|n| !crate::tags::means_hidden(n));
         names.extend(tag_names(conn, g.id, "user")?);
         carries.push(Carry { path: g.path.clone(), heir: h.id, names, date: date_of(conn, g.id)?.0, position: crate::geo::position_of(conn, g.id)?, estimate: crate::dates::get(conn, g.id)? });
     }

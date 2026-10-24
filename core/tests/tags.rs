@@ -719,3 +719,23 @@ fn hidden_is_the_own_tag_hidden_and_a_folder_flag_is_inherited() {
     let after = lib.snapshot();
     assert!(after.len() >= before.len());
 }
+
+#[test]
+fn a_folder_called_hidden_does_not_hide_its_photos_nor_the_ones_that_keep_its_tag() {
+    let lib = Library::new("hidden-name");
+    lib.scan();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let img1 = id_of(&lib, "2020-07 Urlaub Griechenland/IMG_0001.JPG");
+    let all = timeline_ids(addr, "");
+    let r = post(addr, "/api/move", &json!({ "ids": [img1], "folder": "Hidden" }));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    assert_eq!(timeline_ids(addr, ""), all, "a folder's name hides nothing, only the flag does");
+    assert_eq!(folder_row(addr, "Hidden")["hidden"], false);
+    // Moving out with the folder's tags kept: they become own tags, but "hidden" is not one of them.
+    let r = post(addr, "/api/move", &json!({ "ids": [img1], "folder": "Sortiert", "keep_folder_tags": true }));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    assert!(own_tags(&lib, img1).iter().all(|t| !t.eq_ignore_ascii_case("hidden")), "{:?}", own_tags(&lib, img1));
+    assert_eq!(timeline_ids(addr, ""), all);
+    server.stop().unwrap();
+}

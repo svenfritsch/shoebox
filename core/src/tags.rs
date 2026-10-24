@@ -206,7 +206,8 @@ pub fn folder_names(conn: &Connection, id: i64) -> Result<Vec<String>> {
 pub fn keep_as_own(conn: &Connection, id: i64, names: &[String]) -> Result<()> {
     let have: Vec<String> = folder_names(conn, id)?.iter().map(|n| db::tag_fold(n)).collect();
     for name in names {
-        if have.contains(&db::tag_fold(name)) {
+        // A folder called "Hidden" must not hide the photos that keep its tags (phase 20).
+        if have.contains(&db::tag_fold(name)) || means_hidden(name) {
             continue;
         }
         let tag = db::own_tag_id(conn, name)?;
