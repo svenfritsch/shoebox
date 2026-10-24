@@ -340,7 +340,7 @@
   "dups.sub": "Tick “delete this copy” on the files to remove; of every photo the best file is left unticked and one file per group always stays. Decided groups are not shown again.",
   "dups.none": "No duplicates. Photos added since the last scan are compared once they have thumbnails.",
   "dups.none_kinds": "No duplicates of the chosen kinds.",
-  "dups.show": "Show: {what} ▾",
+  "dups.show": "Show: {what}",
   "dups.all_kinds": "all kinds",
   "dups.nothing": "nothing",
   "dups.marked": "{count} marked",

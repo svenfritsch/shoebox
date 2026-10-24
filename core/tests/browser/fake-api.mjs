@@ -178,6 +178,11 @@ export function fakeLibrary() {
 
   const get = {
     '/info': () => info(),
+    // The settings page: nothing recognized yet, no folders that hold copies.
+    '/faces/stats': () => ({ faces: 0, looked: 0, failed: 0 }),
+    '/text/stats': () => ({ read: 0, lines: 0, with_text: 0, stored: 0 }),
+    '/recognition/forget': () => { const none = { finds: 0, photos: 0, decisions: 0, people: 0 }; return { faces: none, pets: none }; },
+    '/duplicates/copy-folders': () => ({ folders: lib.copyFolders || [] }),
     '/people': () => peopleOut(),
     '/groups': () => groupsOut(),
     '/folders': () => (lib.folders || [{ id: 1, parent: null, name: '', path: '', count: 200 }]).map((f) => ({ hidden: false, hidden_own: false, ...f })),

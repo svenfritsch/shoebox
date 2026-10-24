@@ -535,7 +535,7 @@ function markTypes() {
   var on = state.filter.types;
   typeBoxes.forEach(function (b) { b.checked = on.indexOf(b.value) >= 0; });
   var btn = $('types-btn');
-  btn.textContent = (on.length ? on.map(typeLabel).join(', ') : tr('types.label')) + ' ▾';
+  btn.textContent = (on.length ? on.map(typeLabel).join(', ') : tr('types.label'));
   btn.classList.toggle('on', on.length > 0);
   $('types').hidden = !!state.filter.view;
 }

@@ -1406,4 +1406,71 @@ await test('the Export button next to a tag chip is not offered while the Hidden
   check(await p.locator('#filters .export-chip').count() === 0, 'the Export button is still offered with the Hidden chip');
 }));
 
+await test('common control sizes: the viewer\'s tools and the header\'s drop-downs share one height, and the person bar\'s words match Select all', await on('', hiddenPhotos, async (p, lib) => {
+  await cellCount(p, 3);
+  const box = (sel) => p.locator(sel).first().evaluate((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; });
+  await p.evaluate(() => { $('years').hidden = false; if (!$('years').options.length) $('years').add(new Option('2020', '2020')); });
+  const years = await box('#years'), lang = await box('#lang');
+  check(years[1] === lang[1], `the year and language drop-downs are ${years[1]} and ${lang[1]} px high`);
+  check((await p.locator('#years').evaluate((e) => getComputedStyle(e).cursor)) === 'pointer', 'the year drop-down has no pointer cursor');
+  check((await p.locator('#select').evaluate((e) => getComputedStyle(e).borderRadius)) === '50%', 'the select icon is not a circle');
+  check(!(await p.locator('#types-btn').textContent()).includes('▾'), 'the Type button has its own text arrow');
+  const arrows = await p.evaluate(() => ['years', 'lang', 'types-btn'].map((id) => getComputedStyle(document.getElementById(id)).backgroundImage));
+  check(arrows.every((x) => x.startsWith('url(') && x === arrows[0]), 'the selects and the Type button do not share one arrow');
+  await p.locator('#sizer a.cell').first().click();
+  await p.locator('#lightbox').waitFor({ state: 'visible' });
+  await settle(p, lib);
+  const sizes = [];
+  for (const id of ['lb-fav', 'lb-rotate', 'lb-download', 'lb-info']) sizes.push(id + ':' + (await box('#' + id)).join('x'));
+  check(new Set(sizes.map((x) => x.split(':')[1])).size === 1, `the viewer's tools differ in size: ${sizes}`);
+  const hover = async (sel) => { await p.locator(sel).hover(); return p.locator(sel).evaluate((e) => getComputedStyle(e).backgroundColor); };
+  check((await hover('#lb-info')) !== 'rgba(0, 0, 0, 0)', 'the info icon has no hover background');
+  await p.locator('#lb-info').focus();
+  await p.keyboard.press('Tab');
+  await p.keyboard.press('Shift+Tab');
+  check((await p.locator('#lb-info').evaluate((e) => getComputedStyle(e).outlineStyle)) === 'solid', 'the info icon has no focus ring');
+}));
+
+await test('common control sizes: on a person\'s suggested faces "Select all" and "Not x" are equally high and plain until hovered', await on('view=people', (lib) => lib.person('Nina Bar', { suggested: 3 }), async (p, lib, nina) => {
+  await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=suggested`; }, nina.id);
+  await p.locator('#pp-grid .face').nth(1).waitFor();
+  await settle(p, lib);
+  await p.locator('#pp-pick').click();
+  const h = (sel) => p.locator(sel).first().evaluate((e) => e.getBoundingClientRect().height);
+  const not = '#pp-bar .btn.quiet';
+  check((await h('#pp-all')) === (await h(not)), `Select all is ${await h('#pp-all')} px high, "Not" ${await h(not)} px`);
+  check((await p.locator(not).evaluate((e) => getComputedStyle(e).backgroundColor)) === 'rgba(0, 0, 0, 0)', '"Not" has a background before it is hovered');
+}));
+
+await test('a text button never wraps: a long label is cut with an ellipsis and the quick label shows it whole', await on('view=people', (lib) => lib.person('Maximilian Alexander Friedrich Wilhelm von Hohenzollern-Sigmaringen', { suggested: 3 }), async (p, lib, long) => {
+  await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=suggested`; }, long.id);
+  await p.locator('#pp-grid .face').nth(1).waitFor();
+  await settle(p, lib);
+  await p.locator('#pp-pick').click();
+  const not = p.locator('#pp-bar .btn.quiet');
+  const m = await not.evaluate((e) => ({ h: e.getBoundingClientRect().height, cut: e.scrollWidth > e.clientWidth, text: e.textContent, over: getComputedStyle(e).textOverflow }));
+  check(m.h === 32, `the long button is ${m.h} px high, expected one line of 32`);
+  check(m.cut && m.over === 'ellipsis', 'the long label is not cut with an ellipsis');
+  await not.hover();
+  await p.clock.runFor(400);
+  check((await p.locator('#quick-tip.show').textContent()) === m.text, 'the quick label does not show the whole label');
+  await p.locator('#pp-all').hover();
+  await p.clock.runFor(400);
+  check(await p.locator('#quick-tip.show').count() === 0, 'a button that is not cut off shows a quick label');
+}));
+
+await test('the settings page uses the common controls: selects with the shared arrow, the folder field and its button 32 px high, chips with a round remove button', await on('view=settings', (lib) => { lib.copyFolders = ['Links', 'Gartensessions']; }, async (p, lib) => {
+  await p.locator('.copy-folder-row input').first().waitFor();
+  await settle(p, lib);
+  const m = await p.evaluate(() => {
+    const h = (e) => Math.round(e.getBoundingClientRect().height);
+    const row = [...document.querySelectorAll('.copy-folder-row')].pop();
+    const sel = document.querySelector('.pattern-choice select');
+    return { input: h(row.querySelector('input')), add: h(row.querySelector('.btn')), select: h(sel), arrow: getComputedStyle(sel).backgroundImage.startsWith('url('), native: getComputedStyle(sel).appearance, x: getComputedStyle(row.previousElementSibling.querySelector('.chip-x')).borderRadius };
+  });
+  check(m.input === 32 && m.add === 32 && m.select === 32, `the folder field is ${m.input}, its button ${m.add}, a pattern select ${m.select} px high, expected 32`);
+  check(m.arrow && m.native === 'none', 'the pattern selects have the native arrow');
+  check(m.x === '50%', `the chip's remove button has the radius ${m.x}, expected a circle`);
+}));
+
 await finish();

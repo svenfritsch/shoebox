@@ -340,7 +340,7 @@
   "dups.sub": "Hake „diese Kopie löschen“ bei den Dateien an, die entfernt werden sollen; von jedem Foto bleibt die beste Datei unangehakt, und pro Gruppe bleibt immer eine Datei erhalten. Entschiedene Gruppen werden nicht noch einmal gezeigt.",
   "dups.none": "Keine Duplikate. Fotos, die seit dem letzten Scan hinzugekommen sind, werden verglichen, sobald sie Vorschaubilder haben.",
   "dups.none_kinds": "Keine Duplikate der gewählten Arten.",
-  "dups.show": "Anzeigen: {what} ▾",
+  "dups.show": "Anzeigen: {what}",
   "dups.all_kinds": "alle Arten",
   "dups.nothing": "nichts",
   "dups.marked": "{count} markiert",
