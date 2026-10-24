@@ -352,7 +352,9 @@ fn an_older_index_gets_the_table_without_losing_anything() {
     lib.scan();
     assert_eq!(lib.count("SELECT count(*) FROM date_estimates"), 0);
     let v: i64 = lib.db().query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
-    assert_eq!(v, 17);
+    assert_eq!(v, 18);
+    // v18 (phase 20): the folders hidden from the timeline.
+    assert_eq!(lib.count("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'hidden_folders'"), 1);
     // v16: files by content (face crops find their file through it).
     assert_eq!(lib.count("SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = 'files_quick_hash'"), 1);
     // v17: the trash names the copy that stayed of a removed duplicate.

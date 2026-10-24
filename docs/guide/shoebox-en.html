@@ -201,6 +201,8 @@
     <symbol id="i-sel-geo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 21C7.5 18.2 4 14.8 4 10.8a6 6 0 0 1 12 0c0 4-3.5 7.4-6 10.2z"/><circle cx="10" cy="10.8" r="1.4" fill="currentColor"/><path d="M19.5 1.5v6M16.5 4.5h6"/></symbol>
     <symbol id="i-sel-move" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9.5V7a2 2 0 0 1 2-2h3l2 2h6a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V17.5"/><path d="M2 13.5h10M9 10.5l3 3-3 3"/></symbol>
     <symbol id="i-sel-export" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13.5v4A2.5 2.5 0 0 0 6.5 20h11a2.5 2.5 0 0 0 2.5-2.5v-4"/><path d="M12 15.5V4.5M8 8.5l4-4 4 4"/></symbol>
+    <symbol id="i-sel-hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12C5 7.6 8.3 6 12 6s7 1.6 9.5 6c-2.5 4.4-5.8 6-9.5 6s-7-1.6-9.5-6z"/><circle cx="12" cy="12" r="2.6"/><path d="M4.5 20L19.5 4"/></symbol>
+    <symbol id="i-sel-show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12C5 7.6 8.3 6 12 6s7 1.6 9.5 6c-2.5 4.4-5.8 6-9.5 6s-7-1.6-9.5-6z"/><circle cx="12" cy="12" r="2.6"/></symbol>
     <symbol id="logo" viewBox="0 0 64 64"><rect x="6" y="22" width="52" height="34" rx="4" fill="#b07d4f"/><rect x="2" y="12" width="60" height="14" rx="4" fill="#d9a066"/><rect x="10" y="30" width="44" height="3" rx="1.5" fill="#fff" opacity=".35"/></symbol>
   </svg>
 
@@ -398,6 +400,10 @@
           <p>Show only the photos you have hearted. Also found by typing <i>favorite</i> in the search box.</p>
         </li>
         <li>
+          <h3>Hide from the timeline</h3>
+          <p>Keep some photos or whole folders out of the timeline you show to others. Find them again with the <b>Hidden</b> chip.</p>
+        </li>
+        <li>
           <h3>Type</h3>
           <p>Tick what to show (Photos, Videos, Live Photos, Screenshots); nothing ticked shows everything. What you tick also appears as a chip above the photos. See “Find and organise”.</p>
         </li>
@@ -461,7 +467,7 @@
         <div class="topic">
           <div class="txt">
             <h3>Folders</h3>
-            <p>The <b>Folders</b> section mirrors the folders on your drive, with their counts. Click one to see only its photos. Rename or move a folder from its chip above the photos.</p>
+            <p>The <b>Folders</b> section mirrors the folders on your drive, with their counts. Click one to see only its photos. Rename or move a folder from its chip above the photos. The eye next to the pencil hides the folder from the timeline, or shows it again; right-click on a folder in the sidebar does the same.</p>
           </div>
         </div>
       </div>
@@ -596,6 +602,14 @@
         </div>
         <div class="topic">
           <div class="txt">
+            <h3>Hide from the timeline</h3>
+            <p>The eye with a slash <svg class="ic" style="width:1.1em;height:1.1em;vertical-align:-.2em" aria-hidden="true"><use href="#i-sel-hide"/></svg> in the top bar of the viewer (key <b>h</b>) hides the photo from the timeline. Once it is hidden, the same button shows the eye without the slash <svg class="ic" style="width:1.1em;height:1.1em;vertical-align:-.2em" aria-hidden="true"><use href="#i-sel-show"/></svg> and brings the photo back. In the selection bar the button <b>Hide from timeline</b> does the same for many photos at once. To hide a whole folder, right-click it in the sidebar (<b>Hide folder from timeline</b>) or press the eye in its chip above the photos, which is also the way on the iPad. Everything in the folder and below it is hidden, also photos you copy there later. A hidden folder stays in the sidebar, dimmed, and a click on it shows its photos.</p>
+            <p>Hidden photos are left out wherever you look at photos, with every filter: the timeline, a person, a date, a place, a tag, and the counts agree. To see them, pick <b>Hidden</b> in the search suggestions (or type <i>hidden</i>, <i>versteckt</i>, <i>verborgen</i> or <i>ausgeblendet</i>), or use the <b>Hidden</b> row in the sidebar. Together with other chips it finds, for example, the hidden photos of one person. Pages for looking after your library, such as Duplicates, the face checks and the Trash, show everything. In <b>All drives</b> the same rules apply: each drive keeps its own hidden photos and folders.</p>
+            <p>This is tidiness, not privacy. It only keeps photos out of the timeline you may show to others; the files stay where they are on the drive, and shoebox does not lock them (a password on the drive does that). A hidden photo is your own tag <i>hidden</i> and a hidden folder a flag in the index; nothing is written into a photo or a folder. Typing <i>hidden</i> or <i>versteckt</i> as a tag hides the photo and says so, it does not make a tag. A photo moved into a hidden folder is hidden, moved out of it it shows again. A collection exported with the button next to a tag leaves hidden photos out; select them to export them.</p>
+          </div>
+        </div>
+        <div class="topic">
+          <div class="txt">
             <h3>Rotate</h3>
             <p><b>r</b> turns left, <b>Shift+R</b> right. For JPEGs this changes only the two bytes of the rotation flag; for other formats the turn exists in shoebox only. The small picture in the grid follows about a second after your last turn, so turning a photo two or three times makes it only once.</p>
           </div>
@@ -615,6 +629,8 @@
             <dd>video: pause / play; Live Photo: play its motion / back to the still picture</dd>
             <dt>f</dt>
             <dd>add to / remove from favorites</dd>
+            <dt>h</dt>
+            <dd>hide from / show in the timeline</dd>
             <dt>t</dt>
             <dd>add a tag: opens the info panel and the tag field with its list; the arrow keys pick a tag, Enter adds it; Esc closes the list, a second Esc leaves the field</dd>
             <dt>w</dt>
@@ -657,6 +673,7 @@
               <tr><td><code>text:Rechnung</code></td><td><span class="chip"><svg viewBox="0 0 24 24" width="1.15em" height="1.15em" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M7 12h10"/></svg>Rechnung<i class="x" data-txt="skip">✕</i></span></td><td>Words written inside photos. See “Words in photos”.</td></tr>
               <tr><td><code>name:IMG_20</code></td><td><span class="chip"><svg viewBox="0 0 24 24" width="1.15em" height="1.15em" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/></svg>IMG_20<i class="x" data-txt="skip">✕</i></span></td><td>File names.</td></tr>
               <tr><td><code>favorite</code></td><td><span class="chip">♥ Favorites<i class="x" data-txt="skip">✕</i></span></td><td>Your favorites. The <b>♥</b> button next to <b>Type</b> does the same. It combines with everything else, for example the favorites of one person or one year.</td></tr>
+              <tr><td><code>hidden</code></td><td><span class="chip"><svg viewBox="0 0 24 24" width="1.15em" height="1.15em" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><path d="M2.5 12C5 7.6 8.3 6 12 6s7 1.6 9.5 6c-2.5 4.4-5.8 6-9.5 6s-7-1.6-9.5-6z"/><circle cx="12" cy="12" r="2.6"/><path d="M4.5 20L19.5 4"/></svg>Hidden<i class="x" data-txt="skip">✕</i></span></td><td>The photos you hid from the timeline; <i>versteckt</i>, <i>verborgen</i> and <i>ausgeblendet</i> find the same. It combines with everything else, for example the hidden photos of one person.</td></tr>
               <tr><td><code>Home</code></td><td><span class="chip"><svg viewBox="0 0 24 24" width="1.15em" height="1.15em" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ><path d="M12 21C9.5 18.2 6 14.8 6 10.8a6 6 0 0 1 12 0c0 4-3.5 7.4-6 10.2z"/><circle cx="12" cy="10.8" r="1.4" fill="currentColor"/></svg>Home<i class="x" data-txt="skip">✕</i></span></td><td>Photos taken in a named place (maps on). See “Locations and maps”.</td></tr>
             </tbody>
           </table>
@@ -712,6 +729,7 @@
             <li><svg class="ic" style="width:1.1em;height:1.1em;vertical-align:-.2em" aria-hidden="true"><use href="#i-sel-date"/></svg> <b>Set date…</b> (see “Dates and searching by date”)</li>
             <li><svg class="ic" style="width:1.1em;height:1.1em;vertical-align:-.2em" aria-hidden="true"><use href="#i-sel-geo"/></svg> <b>Set location…</b>: one location for all of them (see “Give a photo a location”)</li>
             <li><svg class="ic" style="width:1.1em;height:1.1em;vertical-align:-.2em" aria-hidden="true"><use href="#i-sel-move"/></svg> <b>Move…</b> and <svg class="ic" style="width:1.1em;height:1.1em;vertical-align:-.2em" aria-hidden="true"><use href="#i-sel-export"/></svg> <b>Export…</b></li>
+            <li><svg class="ic" style="width:1.1em;height:1.1em;vertical-align:-.2em" aria-hidden="true"><use href="#i-sel-hide"/></svg> <b>Hide from timeline</b>; with all the selected photos hidden already it shows the eye without the slash and says <b>Show in timeline</b></li>
             <li><svg class="ic" style="width:1.1em;height:1.1em;vertical-align:-.2em" aria-hidden="true"><use href="#i-trash"/></svg> <b>Move to trash</b>, in red, if you allowed it</li>
           </ul>
           <p>With the keyboard, pick photos with the arrow keys and Space, then press <b>B</b> to go to the bar (and <b>B</b> again to go back to the photo). In the bar the arrow keys go from tool to tool; Enter or Space opens one, and when its dialog closes you are back on the tool. On the iPad the bar shows the icons only; each opens a dialog that says what it does, so a wrong tap costs one Cancel.</p>
@@ -1213,7 +1231,7 @@
       <div class="topic">
         <div class="txt">
           <h3>Several drives</h3>
-          <p>Start shoebox with more than one drive and each one appears in the sidebar. <b>All drives</b> gives you one common timeline across all of them. It is for looking: photos that are favorites show a ♥ (greyed out, you cannot click it), and the info panel shows tags, favorite and people, but none of it can be changed there (<b>Show boxes</b> and pointing at a person to see their face still work). The panel names the drive the photo is on (its disk name, as in <b>Manage drives</b>) and has <b>Show in Finder</b> (<b>Show in Explorer</b> on Windows) and <b>Copy path</b>; <b>Open in &lt;drive&gt;'s timeline</b> switches to that drive's own timeline, at the photo's folder, to change tags, people or favorites.</p>
+          <p>Start shoebox with more than one drive and each one appears in the sidebar. <b>All drives</b> gives you one common timeline across all of them. It is for looking: photos that are favorites show a ♥ (greyed out, you cannot click it), photos you hid on a drive are left out (the <b>Hidden</b> chip shows them, with a greyed-out eye), and the info panel shows tags, favorite and people, but none of it can be changed there (<b>Show boxes</b> and pointing at a person to see their face still work). The panel names the drive the photo is on (its disk name, as in <b>Manage drives</b>) and has <b>Show in Finder</b> (<b>Show in Explorer</b> on Windows) and <b>Copy path</b>; <b>Open in &lt;drive&gt;'s timeline</b> switches to that drive's own timeline, at the photo's folder, to change tags, people or favorites.</p>
           <p>A photo that is on more than one drive, with the same file name and the same content (in any folder), shows only once in <b>All drives</b>, and the numbers in the search suggestions count it once; the status line at the bottom says how many copies are hidden. The copy shown is the one whose date you corrected or estimated (the one changed last, if several have one), otherwise the one on the drive that comes first in the sidebar; a ♥ on any copy shows on it, and with chips the copy that fits them is shown. The info panel lists the other copies under <b>Also on</b> with disk name and folder; click one to open that folder on its drive. A copy with another name, and a file shoebox has not finished checking after a scan, show as photos of their own; <b>Duplicates across drives</b> lists every copy. Nothing is deleted or changed: each drive keeps all its files, and its own timeline shows them all.</p>
           <p><b>Manage drives</b>, next to Duplicates, Trash and Settings, opens a page that does not depend on the drive you are looking at: your drives as cards, and two tabs below them, <b>People across drives</b> and <b>Duplicates across drives</b>. A drive that is unplugged is shown as offline.</p>
           <p>Under <b>People across drives</b> each person shows the drives they are on by disk name with the number of faces found there (point at one to see its folder), and the people who are on the most drives come first. The drive you are looking at is filled in with the accent colour, and so is the page you have open under it (All photos, Duplicates, Trash, Settings), so you can always see which drive's trash you are in.</p>
@@ -1222,7 +1240,7 @@
       <div class="topic">
         <div class="txt">
           <h3>Carry over data</h3>
-          <p>You scanned a drive again, or copied its photos to a new one, and the tags, hearts and people you made are missing there? On <b>Manage drives</b> a drive that has such data on another drive shows a line and the button <b>Carry over data…</b>. Choose where it comes from (<b>From</b>) and tick what to bring: <b>Tags</b>, <b>Hearts</b>, <b>People</b>, <b>Dates</b> (dates you corrected or estimated) and <b>Places</b> (places you gave by hand). Each box shows how many photos it concerns; one with nothing to carry is greyed out.</p>
+          <p>You scanned a drive again, or copied its photos to a new one, and the tags, hearts and people you made are missing there? On <b>Manage drives</b> a drive that has such data on another drive shows a line and the button <b>Carry over data…</b>. Choose where it comes from (<b>From</b>) and tick what to bring: <b>Tags</b>, <b>Hearts</b>, <b>People</b>, <b>Dates</b> (dates you corrected or estimated) <b>Places</b> (places you gave by hand) and <b>Hidden</b> (photos and folders you hid from the timeline; folders are matched by their path, and this box is not ticked at first because what to hide is decided per drive). Each box shows how many photos it concerns; one with nothing to carry is greyed out.</p>
           <p>Photos are matched by their content, not by their path, so a photo that was renamed or sits in another folder is still found. Only photos on both drives take part. Folder tags are not carried (the new drive has its own folders), people are matched by name, and faces you already decided on the target drive stay as you decided them. What the target drive already has always stays: nothing is overwritten and nothing is deleted. You can repeat it safely.</p>
           <p>The other drive is only read and no photo is touched; the data is written into this drive's index only. Do it <b>before you erase</b> the source drive: afterwards its data is gone. Backups are not changed by this. After an export onto another shoebox drive, the result says the same.</p>
           <p><b>From a file.</b> When the other drive is gone or erased, or this drive lost its index, the data can come from a <code>userdata.json</code> instead (see “Your tags and names are saved” below). Under <b>From</b> choose <b>A file (userdata.json)…</b> and pick the file in this computer's folders: every drive keeps one in its <code>.shoebox</code> folder, and a copy you kept somewhere else works the same. The dialog says when the file was written. With only one drive, the same button is in <b>Settings → Carry over data</b>. The file is only read and the same rules apply. Choosing a file works only in a browser on this computer, not on the iPad.</p>
@@ -1266,7 +1284,7 @@
       <div class="topic">
         <div class="txt">
           <h3>Your tags and names are saved</h3>
-          <p>Everything you add yourself (own tags, people, groups, your ✓ and ✗ decisions, drawn faces) is kept in the index, never in a photo. While you work, shoebox also keeps a safety copy of the index, <code>library.db.bak</code>, and a readable list of it all, <code>userdata.json</code>, in the <code>.shoebox</code> folder on the drive. They travel with the drive, so a backup of the drive has them too. Open <code>userdata.json</code> in any text editor to see what you have made. If the index is ever damaged, <b>Verify</b> in the launcher points you to the safety copy. If it is lost, scan the drive again and use <b>Carry over data</b> with its <code>userdata.json</code> to bring your tags, hearts, people, dates and places back. Copy the file somewhere else first: shoebox writes it anew after your next change.</p>
+          <p>Everything you add yourself (own tags, hidden photos and folders, people, groups, your ✓ and ✗ decisions, drawn faces) is kept in the index, never in a photo. While you work, shoebox also keeps a safety copy of the index, <code>library.db.bak</code>, and a readable list of it all, <code>userdata.json</code>, in the <code>.shoebox</code> folder on the drive. They travel with the drive, so a backup of the drive has them too. Open <code>userdata.json</code> in any text editor to see what you have made. If the index is ever damaged, <b>Verify</b> in the launcher points you to the safety copy. If it is lost, scan the drive again and use <b>Carry over data</b> with its <code>userdata.json</code> to bring your tags, hearts, people, dates and places back. Copy the file somewhere else first: shoebox writes it anew after your next change.</p>
         </div>
       </div>
       <div class="topic has-shots">
