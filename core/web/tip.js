@@ -22,6 +22,20 @@ function setTip(node, text) {
   return node;
 }
 
+// The control a quick label belongs to: one with a `data-tip`, or a text button whose label is
+// cut with an ellipsis (it then names itself).
+function tipTarget(node) {
+  if (!node.closest) return null;
+  var t = node.closest('[data-tip]');
+  if (t) return t;
+  var b = node.closest('.btn, .sel-all');
+  return b && b.scrollWidth > b.clientWidth ? b : null;
+}
+
+function tipText(target) {
+  return target.getAttribute('data-tip') || target.textContent.trim();
+}
+
 (function () {
   var box = null, timer = 0, current = null, shown = false;
 
@@ -58,7 +72,7 @@ function setTip(node, text) {
 
   function show(target) {
     if (!target.isConnected || target.getAttribute('aria-disabled') === 'true' && !target.getAttribute('data-tip')) return;
-    var text = target.getAttribute('data-tip');
+    var text = tipText(target);
     if (!text) return;
     var b = ensure();
     b.textContent = text;
@@ -74,7 +88,7 @@ function setTip(node, text) {
 
   function over(ev) {
     if (ev.pointerType === 'touch') return;
-    var t = ev.target.closest && ev.target.closest('[data-tip]');
+    var t = tipTarget(ev.target);
     if (t === current) return;
     if (!t) { if (current || timer) hide(); return; }
     clearTimeout(timer);
@@ -91,7 +105,7 @@ function setTip(node, text) {
   document.addEventListener('scroll', hide, true);
   document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') hide(); }, true);
   document.addEventListener('focusin', function (ev) {
-    var t = ev.target.closest && ev.target.closest('[data-tip]');
+    var t = tipTarget(ev.target);
     if (t && t.matches(':focus-visible')) { clearTimeout(timer); show(t); }
   });
   document.addEventListener('focusout', hide);

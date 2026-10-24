@@ -368,6 +368,58 @@ await test('search suggestions: picture, icon and name of a row are centred on o
   }
 }));
 
+await test('a first click into the search box opens the list', await on('', (lib) => {
+  lib.person('Spucky', { faces: 5, species: 'cat' });
+}, async (p, lib) => {
+  check(await p.evaluate(() => document.activeElement !== $('search')), 'the box starts focused');
+  await p.locator('#search').click();
+  await settle(p, lib);
+  check(await p.locator('#suggest').isVisible(), 'the list is not open after the first click');
+  check(await p.locator('#suggest .item').count() > 0, 'the list has no rows after the first click');
+}));
+
+await test('the list opens on a first click on any page, not only the timeline', await on('view=people', (lib) => lib.person('Spucky', { faces: 5, species: 'cat' }), async (p, lib) => {
+  await p.locator('#search').click();
+  await settle(p, lib);
+  check(await p.locator('#suggest .item').count() > 0, 'no suggestions after a click in the box on the Faces page');
+  await p.locator('#suggest .item', { hasText: 'Spucky' }).click();
+  await settle(p, lib);
+  await until('the pick on the timeline', () => p.evaluate(() => !state.filter.view && state.filter.people.length === 1));
+}));
+
+await test('picking a suggestion closes the list and asks for no suggestions until the box is clicked or typed in', await on('', (lib) => {
+  lib.person('Spucky', { faces: 5, species: 'cat' });
+}, async (p, lib) => {
+  await p.locator('#search').fill('spu');
+  await settle(p, lib);
+  const from = lib.log.length;
+  await p.locator('#suggest .item', { hasText: 'Spucky' }).click();
+  check(await p.locator('#suggest').isHidden(), 'the list is open right after the pick');
+  await settle(p, lib);
+  await until('the pick in the search', () => p.evaluate(() => state.filter.people.length === 1));
+  check(await p.locator('#suggest').isHidden(), 'the list opened again for the new search');
+  check(!lib.log.slice(from).some((e) => e.path === '/suggest'), 'suggestions were asked for after the pick');
+  check(await p.evaluate(() => document.activeElement === $('search')), 'the box lost the focus with the pick');
+  await p.locator('#search').click();
+  await settle(p, lib);
+  check(await p.locator('#suggest').isVisible(), 'a click in the focused box does not open the list again');
+}));
+
+// ---- the Unnamed page's filter
+
+await test('the Unnamed page keeps its filter (people and pets, faces, pets) over a reload', await on('view=unnamed', (lib) => ({ cards: [lib.cluster(5), lib.cluster(4)] }), async (p, lib) => {
+  check(await p.locator('#un-kind').inputValue() === 'all', 'the filter starts at all');
+  await p.locator('#un-kind').selectOption('pets');
+  await settle(p, lib);
+  await p.reload();
+  await p.locator('#un-kind').waitFor();
+  check(await p.locator('#un-kind').inputValue() === 'pets', 'after a reload the filter is not pets');
+  await p.evaluate(() => localStorage.setItem('shoebox-unnamed-kind', 'nonsense'));
+  await p.reload();
+  await p.locator('#un-kind').waitFor();
+  check(await p.locator('#un-kind').inputValue() === 'all', 'a value nobody offers is not taken');
+}));
+
 // ---- groups and people (the People page)
 
 const person = (p, x) => p.locator(`#page .person[data-id="${x.id}"]`);
@@ -391,7 +443,7 @@ await test('the ⋯ menu of a person on the People page and on their page: no Re
   const edit = ['people.menu.rename', 'people.menu.move', 'people.menu.new_group', 'people.menu.merge'];
   await person(p, rita).locator('.more-btn').click();
   const tile = await items();
-  const want = await words(['people.menu.show', ...edit]);
+  const want = await words(edit);
   check(JSON.stringify(tile) === JSON.stringify(want), `People page: ${JSON.stringify(tile)}, expected ${JSON.stringify(want)}`);
   await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=suggested`; }, rita.id);
   await p.locator('#pp-grid .face').first().waitFor();
@@ -537,7 +589,21 @@ await test('a person moved to a group, then both out of it: the empty group is g
   check(!(await groupNames(p)).includes('Move Group'), 'the empty group left the sidebar');
 }));
 
-await test('a new group with a person', await on('view=people', (lib) => lib.person('Cleo New'), async (p, lib, cleo) => {
+await test('a group on the People page folds and unfolds from its title; all start open', await on('view=people', (lib) => {
+  lib.group('Fold One', lib.person('Fia One'));
+  lib.group('Fold Two', lib.person('Gus Two'));
+}, async (p, lib) => {
+  const grp = (name) => p.locator('#page .pgroup', { hasText: name });
+  for (const n of ['Fold One', 'Fold Two']) check(await grp(n).locator('.people').isVisible(), `${n} does not start open`);
+  await grp('Fold One').locator('h3').click();
+  check(await grp('Fold One').locator('.people').isHidden(), 'Fold One stays open after a click on its title');
+  check(await grp('Fold One').locator('h3 .toggle').getAttribute('aria-expanded') === 'false', 'its arrow does not say folded');
+  check(await grp('Fold Two').locator('.people').isVisible(), 'Fold Two folded with Fold One');
+  await grp('Fold One').locator('h3 .toggle').click();
+  check(await grp('Fold One').locator('.people').isVisible(), 'the arrow does not unfold the group');
+}));
+
+await test('a new group with a person',await on('view=people', (lib) => lib.person('Cleo New'), async (p, lib, cleo) => {
   await changedThenGrouped(p, lib, 'a new group', async () => {
     await personMenu(p, cleo, 'people.menu.new_group');
     await typeName(p, 'Cleo Group');
@@ -767,6 +833,31 @@ await test('Escape and leaving the search box call off the suggestions on their 
   lib.release();
   await settle(p, lib);
   check(await p.locator('#suggest').isHidden(), 'the list is open after the box was left');
+}));
+
+await test('a list that takes a moment shows placeholder rows, a quick one does not', await on('', (lib) => lib.person('Spucky', { faces: 5, species: 'cat' }), async (p, lib) => {
+  await pauseClock(p);
+  const rows = () => p.locator('#suggest .wait-row').count();
+  // Quick: the list is there before the placeholders are due.
+  await p.locator('#search').click();
+  await until('the list', async () => (await p.locator('#suggest .item').count()) > 0);
+  await p.clock.runFor(500);
+  check(await rows() === 0, 'placeholder rows next to a list that came at once');
+  await p.keyboard.press('Escape');
+  // Slow: placeholders from 120 ms on, until the list replaces them.
+  lib.hold = /^\/suggest$/;
+  await p.locator('#search').blur();
+  await p.locator('#search').focus();
+  await until('the request', () => lib.log.some((e) => e.path === '/suggest'));
+  await p.clock.runFor(119);
+  check(await rows() === 0, 'placeholder rows before 120 ms');
+  await p.clock.runFor(1);
+  check(await rows() > 0 && await p.locator('#suggest').isVisible(), 'no placeholder rows after 120 ms');
+  check(await p.locator('#suggest').getAttribute('aria-busy') === 'true', 'the list does not say it is busy');
+  lib.release();
+  await until('the list', async () => (await p.locator('#suggest .item').count()) > 0);
+  check(await rows() === 0, 'placeholder rows next to the list');
+  check(await p.locator('#suggest').getAttribute('aria-busy') === null, 'the list still says it is busy');
 }));
 
 // The text row and the prefixes: the server counts what `text:` and `name:`
@@ -1057,6 +1148,222 @@ await test('a photo turned in the viewer: the grid asks for its new thumbnail on
   check(JSON.stringify(srcs) === JSON.stringify(['/api/lib/' + LIB.split('/').pop() + '/files/1/thumb?v=rot00003', '/api/lib/' + LIB.split('/').pop() + '/files/2/thumb?v=orig0002', '/api/lib/' + LIB.split('/').pop() + '/files/3/thumb?v=orig0003']), `the grid shows ${JSON.stringify(srcs)}`);
 }));
 
+// ---- hidden from the timeline (phase 20)
+
+// The page applied what was done (a hash change, then its requests) and drew it: the time runs on, round
+// after round, until `ok` says so. (`settle` alone can find the page calm before a hash change was heard.)
+async function settleUntil(p, lib, what, ok) {
+  for (let round = 0; round < 60; round++) {
+    await p.clock.runFor(500);
+    await until('the fake to answer', () => lib.open === 0 && lib.waiting() === 0);
+    await p.evaluate(() => 0);
+    if (await ok()) return;
+  }
+  throw new Error(`${what} never happened`);
+}
+const gridIs = (p, ids) => async () => JSON.stringify(await gridIds(p)) === JSON.stringify(ids);
+const gridIds = (p) => p.locator('#sizer a.cell').evaluateAll((as) => as.map((a) => Number(a.querySelector('img').getAttribute('src').match(/files\/(\d+)\//)[1])));
+const hiddenPhotos = (lib) => { lib.photos = [1, 2, 3].map((id) => ({ id, version: `orig000${id}` })); };
+const cellCount = (p, n) => until(`${n} photos in the grid`, async () => (await p.locator('#sizer a.cell').count()) === n);
+const postedTo = (lib, path) => lib.log.filter((e) => e.method === 'POST' && e.path === path);
+// The icon of an action is the eye with a slash (hide) or without (show again).
+const slashed = (p, sel) => p.evaluate((s) => !!document.querySelector(s + ' svg path[d="M4.5 20L19.5 4"]'), sel);
+
+await test('hiding in the viewer (key h): the photo stays until the viewer closes, then the grid loses it; the Hidden row and chip show it', await on('', hiddenPhotos, async (p, lib) => {
+  const cells = p.locator('#sizer a.cell');
+  await cellCount(p, 3);
+  check(await p.locator('#hidden-row').count() === 0, 'a Hidden row with nothing hidden');
+  await cells.first().click();
+  await p.locator('#lightbox').waitFor({ state: 'visible' });
+  await settle(p, lib);
+  check(await slashed(p, '#lb-hide'), 'the hide button is not the eye with a slash');
+  check((await p.locator('#lb-hide').getAttribute('data-tip')) === await tr(p, 'hidden.hide_hint'), 'tip of the hide button');
+  await p.keyboard.press('h');
+  await posted(lib, /^\/hidden$/);
+  await settle(p, lib);
+  check(JSON.stringify(postedTo(lib, '/hidden')[0] && lib.log.filter((e) => e.path === '/hidden').length) === '1', 'one POST to /hidden');
+  check(await p.locator('#lb-hide.on').count() === 1 && !(await slashed(p, '#lb-hide')), 'the button is the plain eye, lit, once hidden');
+  check((await p.locator('#lb-hide').getAttribute('data-tip')) === await tr(p, 'hidden.show_hint'), 'tip when hidden');
+  check((await p.locator('#toast').textContent()) === await tr(p, 'hidden.toast_hidden.one', { n: 1 }), 'toast: ' + await p.locator('#toast').textContent());
+  check(await p.locator('#sizer a.cell').count() === 3, 'the grid keeps its photos while the viewer is open');
+  await p.keyboard.press('Escape');
+  await cellCount(p, 2);
+  await settle(p, lib);
+  check(JSON.stringify(await gridIds(p)) === '[2,3]', `the grid shows ${await gridIds(p)}`);
+  check(await p.locator('#hidden-row .count').textContent() === '1', 'the Hidden row counts the hidden photo');
+  // The Hidden row: only the hidden photos, as a chip.
+  await p.locator('#hidden-row .name').click();
+  await settleUntil(p, lib, 'the Hidden chip list', gridIs(p, [1]));
+  check(JSON.stringify(await gridIds(p)) === '[1]', `the Hidden chip shows ${await gridIds(p)}`);
+  check(await p.locator('#filters .chip.hid').count() === 1, 'the Hidden chip');
+  check(lib.log.some((e) => e.path === '/timeline' && e.query.get('hidden') === '1'), 'the timeline was asked with hidden=1');
+  // In the viewer the eye shows it again.
+  await p.locator('#sizer a.cell').first().click();
+  await p.locator('#lightbox').waitFor({ state: 'visible' });
+  await settle(p, lib);
+  check(await p.locator('#lb-hide.on').count() === 1, 'the photo is hidden, the button is lit');
+  await p.keyboard.press('h');
+  await until('showing again', () => postedTo(lib, '/hidden').length === 2);
+  check(postedTo(lib, '/hidden')[1] && lib.photos[0].hidden === false, 'the photo is shown again');
+}));
+
+await test('the selection bar: the eye hides the selected photos, and in the hidden list it shows them again', await on('', hiddenPhotos, async (p, lib) => {
+  await cellCount(p, 3);
+  await p.locator('#select').click();
+  await p.locator('#sizer a.cell').nth(0).click();
+  await p.locator('#sizer a.cell').nth(1).click();
+  check(await slashed(p, '#sel-hide'), 'the bar offers the eye with a slash');
+  check((await p.locator('#sel-hide').getAttribute('data-tip')) === await tr(p, 'sel.hide'), 'tip: ' + await p.locator('#sel-hide').getAttribute('data-tip'));
+  await p.locator('#sel-hide').click();
+  await posted(lib, /^\/hidden$/);
+  await settle(p, lib);
+  const body = lib.log.filter((e) => e.path === '/hidden').length;
+  check(body === 1 && lib.photos.filter((x) => x.hidden).map((x) => x.id).join() === '1,2', 'two photos hidden');
+  check((await p.locator('#toast').textContent()) === await tr(p, 'hidden.toast_hidden.other', { n: 2 }), 'toast: ' + await p.locator('#toast').textContent());
+  await cellCount(p, 1);
+  check(await p.locator('#selbar').isHidden(), 'the selection ends');
+  // The hidden list: all selected are hidden, so the bar offers to show them.
+  await p.locator('#hidden-row .name').click();
+  await settle(p, lib);
+  await cellCount(p, 2);
+  await p.locator('#select').click();
+  await p.locator('#sel-all').click();
+  check(!(await slashed(p, '#sel-hide')), 'the bar offers the plain eye when all are hidden');
+  check((await p.locator('#sel-hide').getAttribute('data-tip')) === await tr(p, 'sel.unhide'), 'tip: ' + await p.locator('#sel-hide').getAttribute('data-tip'));
+  await p.locator('#sel-hide').click();
+  await until('showing again', () => lib.photos.every((x) => !x.hidden));
+  await settle(p, lib);
+  check(JSON.stringify(lib.log.filter((e) => e.path === '/hidden').map((e) => e.method)) === '["POST","POST"]', 'two POSTs');
+}));
+
+await test('a folder: the chip\'s eye and the right-click menu hide it, it stays dimmed in the tree and shows its photos when opened', await on('folder=2', (lib) => {
+  lib.folders = [{ id: 1, parent: null, name: '', path: '', count: 3 }, { id: 2, parent: 1, name: 'Privat', path: 'Privat', count: 1 }, { id: 3, parent: 1, name: 'Urlaub', path: 'Urlaub', count: 2 }];
+  lib.photos = [{ id: 1, version: 'orig0001', folder: 2 }, { id: 2, version: 'orig0002', folder: 3 }, { id: 3, version: 'orig0003', folder: 3 }];
+}, async (p, lib) => {
+  await cellCount(p, 1);
+  const eye = p.locator('#filters .chip .eye');
+  check(await eye.count() === 1 && await slashed(p, '#filters .chip .eye'), 'the folder chip has the eye with a slash');
+  check((await eye.getAttribute('data-tip')) === await tr(p, 'hidden.folder_hide'), 'chip tip');
+  await eye.click();
+  await posted(lib, /^\/hidden\/folder$/);
+  await settleUntil(p, lib, 'the folder shown as hidden', async () => (await p.locator('#filters .chip .eye.on').count()) === 1 && (await p.locator('#tree .row.hidden-folder').count()) === 1);
+  check(JSON.stringify(lib.log.filter((e) => e.path === '/hidden/folder').length) === '1' && lib.folders[1].hidden_own, 'the folder is flagged');
+  check(await p.locator('#filters .chip .eye.on').count() === 1 && !(await slashed(p, '#filters .chip .eye')), 'the chip shows the plain eye, lit');
+  check(await p.locator('#tree .row.hidden-folder').count() === 1, 'the hidden folder is dimmed in the tree');
+  check(await p.locator('#tree .row.hidden-folder .ico').count() === 1, 'with its small eye');
+  check(JSON.stringify(await gridIds(p)) === '[1]', 'the opened hidden folder shows its photo');
+  // All photos: the hidden folder's photo is not in it, and the count in the sidebar says so.
+  await p.locator('#all').click();
+  await settleUntil(p, lib, 'the timeline', gridIs(p, [2, 3]));
+  check(JSON.stringify(await gridIds(p)) === '[2,3]', `the timeline shows ${await gridIds(p)}`);
+  check(await p.locator('#tree .row.hidden-folder .name').count() === 1, 'the folder is still in the tree');
+  // Right-click on the folder: the menu shows it again.
+  await p.locator('#tree .row.hidden-folder .name').click({ button: 'right' });
+  const entry = p.locator('.menu button');
+  check((await entry.allTextContents()).join() === await tr(p, 'hidden.folder_show'), 'menu: ' + await entry.allTextContents());
+  await entry.click();
+  await until('the folder shown again', () => !lib.folders[1].hidden_own);
+  await settleUntil(p, lib, 'the folder not dimmed any more', async () => (await p.locator('#tree .row.hidden-folder').count()) === 0);
+  check(await p.locator('#tree .row.hidden-folder').count() === 0, 'not dimmed any more');
+  // Right-click on a folder that is not hidden: the menu hides it.
+  await p.locator('#tree .name', { hasText: 'Urlaub' }).click({ button: 'right' });
+  check((await p.locator('.menu button').allTextContents()).join() === await tr(p, 'hidden.folder_hide'), 'menu for a normal folder');
+  await p.keyboard.press('Escape');
+}));
+
+await test('typing versteckt as a tag: the photo is hidden, no tag is added, and a toast says so', await on('', hiddenPhotos, async (p, lib) => {
+  await cellCount(p, 3);
+  await p.locator('#sizer a.cell').first().click();
+  await p.locator('#lightbox').waitFor({ state: 'visible' });
+  await p.keyboard.press('i');
+  await settle(p, lib);
+  await p.locator('#lb-panel .tags .add').click();
+  await p.locator('#lb-panel .tags input').fill('Versteckt');
+  await p.keyboard.press('Enter');
+  await posted(lib, /^\/hidden$/);
+  await settle(p, lib);
+  check(!postedTo(lib, '/tags/add').length, 'a tag was added');
+  check(lib.photos[0].hidden === 'tag', 'the photo is hidden');
+  check((await p.locator('#toast').textContent()) === await tr(p, 'tags.reserved_hidden'), 'toast: ' + await p.locator('#toast').textContent());
+  check(await p.locator('#lb-hide.on').count() === 1, 'the eye is lit');
+  check(await p.locator('#lb-panel .tags .own').count() === 0, 'no tag chip for it');
+}));
+
+await test('the search box offers Hidden for hidden, versteckt, verborgen or ausgeblendet while something is hidden, and picking it adds the chip', await on('', (lib) => {
+  lib.photos = [1, 2, 3].map((id) => ({ id, version: `orig000${id}`, hidden: id === 1 ? 'tag' : false }));
+}, async (p, lib) => {
+  await p.focus('#search');
+  await settle(p, lib);
+  const label = await tr(p, 'hidden.label');
+  for (const word of ['hid', 'Versteckt', 'verb', 'ausg']) {
+    const r = await typeIn(p, lib, word);
+    check(r.items.some((i) => i === label + '=1'), `${word} shows [${r.items}]`);
+  }
+  const r = await typeIn(p, lib, 'zz');
+  check(!r.items.some((i) => i.startsWith(label)), `zz shows [${r.items}]`);
+  await typeIn(p, lib, 'hidd');
+  await p.locator('#suggest .item').first().click();
+  await settleUntil(p, lib, 'the Hidden filter', gridIs(p, [1]));
+  check(await p.evaluate(() => state.filter.hidden === true && location.hash.includes('hidden=1')), 'the filter has hidden=1');
+  check(await p.locator('#filters .chip.hid').count() === 1, 'the Hidden chip');
+  check(JSON.stringify(await gridIds(p)) === '[1]', `the grid shows ${await gridIds(p)}`);
+}));
+
+// The info panel's list of faces in Select mode: a click on a row ticks it,
+// Shift-click ticks everything from the last one clicked, and dragging over rows
+// ticks (or, from a ticked row, unticks) them; the drag takes back what the
+// pointer leaves again.
+await test('the viewer\'s Select list: Shift-click and dragging over rows tick several faces', await on('', (lib) => {
+  lib.photos = [{ id: 1, version: 'orig0001' }];
+  lib.photoFaces = { 1: [101, 102, 103, 104, 105].map((id) => ({ id, file: 1, kind: 'jpeg', version: 'orig0001', x: 0.1, y: 0.1, w: 0.1, h: 0.1, roll: 0, px: 100, score: 0.9, small: false, state: null, species: null, person: null, similarity: null, rejected: [], landmarks: [] })) };
+}, async (p, lib) => {
+  await p.locator('#sizer a.cell').first().click();
+  await p.locator('#lb-info').click();
+  await p.locator('#lb-panel .pface').first().waitFor();
+  await p.locator(`#lb-panel .ptools button[data-tip^="${await tr(p, 'info.select')}"]`).click();
+  const rows = p.locator('#lb-panel .pface.pickable');
+  const ticked = () => p.locator('#lb-panel .pface.picked').evaluateAll((xs) => xs.map((x) => x.dataset.face).join());
+  const boxed = () => p.locator('#lb-panel .pface input:checked').count();
+  const middle = async (k) => { const b = await rows.nth(k).boundingBox(); return { x: b.x + b.width * 0.6, y: b.y + b.height / 2 }; };
+  // A click, then Shift-click two rows further: the three, in either order.
+  await rows.nth(0).click({ position: { x: 150, y: 10 } });
+  check(await ticked() === '101', `after a click: ${await ticked()}`);
+  await rows.nth(2).click({ modifiers: ['Shift'], position: { x: 150, y: 10 } });
+  check(await ticked() === '101,102,103' && await boxed() === 3, `after Shift-click: ${await ticked()}`);
+  await rows.nth(0).click({ position: { x: 150, y: 10 } });
+  check(await ticked() === '102,103', `a click on a ticked row unticks it: ${await ticked()}`);
+  // Shift-click on the box of a row works as on the row (from the last one clicked, the first).
+  await rows.nth(4).locator('input').click({ modifiers: ['Shift'] });
+  check(await ticked() === '101,102,103,104,105', `Shift-click on a box: ${await ticked()}`);
+  await p.locator('#lb-panel .pickbar button.btn.quiet').click();
+  await p.locator(`#lb-panel .ptools button[data-tip^="${await tr(p, 'info.select')}"]`).click();
+  // Dragging over the first three rows, down and back up by one row: the pointer
+  // leaves the third row again, so only two stay ticked, until it goes back.
+  const a = await middle(0), c = await middle(2), b = await middle(1);
+  await p.mouse.move(a.x, a.y);
+  await p.mouse.down();
+  await p.mouse.move(b.x, b.y, { steps: 4 });
+  await p.mouse.move(c.x, c.y, { steps: 4 });
+  check(await ticked() === '101,102,103', `while dragging over three rows: ${await ticked()}`);
+  await p.mouse.move(b.x, b.y, { steps: 4 });
+  check(await ticked() === '101,102', `the drag leaves the third: ${await ticked()}`);
+  await p.mouse.move(c.x, c.y, { steps: 4 });
+  await p.mouse.up();
+  await p.clock.runFor(10);
+  check(await ticked() === '101,102,103' && (await p.locator('#lb-panel .pickcount').textContent()).includes('3'), `after the drag: ${await ticked()}, ${await p.locator('#lb-panel .pickcount').textContent()}`);
+  // The drag ends with no click on the row it ended on, and Shift-click goes on from it.
+  await rows.nth(4).click({ modifiers: ['Shift'], position: { x: 150, y: 10 } });
+  check(await ticked() === '101,102,103,104,105', `Shift-click after the drag: ${await ticked()}`);
+  // A drag from a ticked row unticks what it covers.
+  const d = await middle(3), e = await middle(4);
+  await p.mouse.move(d.x, d.y);
+  await p.mouse.down();
+  await p.mouse.move(e.x, e.y, { steps: 4 });
+  await p.mouse.up();
+  await p.clock.runFor(10);
+  check(await ticked() === '101,102,103', `a drag from a ticked row unticks: ${await ticked()}`);
+}));
+
 // A video the browser cannot decode (an old .avi): the viewer says so, once,
 // and a photo next to it has no notice.
 await test('a video the browser cannot play shows a notice, a photo does not', await on('', (lib) => {
@@ -1071,6 +1378,99 @@ await test('a video the browser cannot play shows a notice, a photo does not', a
   await p.keyboard.press('ArrowRight');
   await until('the photo', async () => (await p.locator('#stage img').count()) === 1);
   check((await note.count()) === 0, 'the photo still has the notice');
+}));
+
+await test('the Export button next to a tag chip is not offered while the list is empty', await on('tag=1', (lib) => {
+  lib.photos = [1, 2].map((id) => ({ id, version: `orig000${id}`, hidden: 'tag' }));
+  lib.tags = [{ id: 1, name: 'Strand', count: 2, kind: 'own' }];
+}, async (p, lib) => {
+  // Both photos are hidden, so the tag's list is empty: no button. The Hidden chip lists them, but has no button either.
+  await settle(p, lib);
+  check(await p.locator('#sizer a.cell').count() === 0, 'the tag list is empty');
+  check(await p.locator('#filters .export-chip').count() === 1 && await p.locator('#filters .export-chip').isHidden(), 'the Export button is offered for an empty list');
+  lib.photos[0].hidden = false;
+  await p.evaluate(() => loadTimeline(false));
+  await settle(p, lib);
+  check(await p.locator('#filters .export-chip').isVisible(), 'the Export button is not offered once the list has a photo');
+}));
+
+await test('the Export button next to a tag chip is not offered while the Hidden chip is on', await on('tag=1', (lib) => {
+  lib.photos = [1, 2].map((id) => ({ id, version: `orig000${id}` }));
+  lib.tags = [{ id: 1, name: 'Strand', count: 2, kind: 'own' }];
+}, async (p, lib) => {
+  await cellCount(p, 2);
+  check(await p.locator('#filters .export-chip').count() === 1, 'a tag chip alone has the Export button');
+  await p.evaluate(() => setFilter(withFilter({ hidden: true })));
+  await settle(p, lib);
+  check(await p.locator('#filters .chip.hid').count() === 1, 'the Hidden chip is on');
+  check(await p.locator('#filters .export-chip').count() === 0, 'the Export button is still offered with the Hidden chip');
+}));
+
+await test('common control sizes: the viewer\'s tools and the header\'s drop-downs share one height, and the person bar\'s words match Select all', await on('', hiddenPhotos, async (p, lib) => {
+  await cellCount(p, 3);
+  const box = (sel) => p.locator(sel).first().evaluate((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; });
+  await p.evaluate(() => { $('years').hidden = false; if (!$('years').options.length) $('years').add(new Option('2020', '2020')); });
+  const years = await box('#years'), lang = await box('#lang');
+  check(years[1] === lang[1], `the year and language drop-downs are ${years[1]} and ${lang[1]} px high`);
+  check((await p.locator('#years').evaluate((e) => getComputedStyle(e).cursor)) === 'pointer', 'the year drop-down has no pointer cursor');
+  check((await p.locator('#select').evaluate((e) => getComputedStyle(e).borderRadius)) === '50%', 'the select icon is not a circle');
+  check(!(await p.locator('#types-btn').textContent()).includes('▾'), 'the Type button has its own text arrow');
+  const arrows = await p.evaluate(() => ['years', 'lang', 'types-btn'].map((id) => getComputedStyle(document.getElementById(id)).backgroundImage));
+  check(arrows.every((x) => x.startsWith('url(') && x === arrows[0]), 'the selects and the Type button do not share one arrow');
+  await p.locator('#sizer a.cell').first().click();
+  await p.locator('#lightbox').waitFor({ state: 'visible' });
+  await settle(p, lib);
+  const sizes = [];
+  for (const id of ['lb-fav', 'lb-rotate', 'lb-download', 'lb-info']) sizes.push(id + ':' + (await box('#' + id)).join('x'));
+  check(new Set(sizes.map((x) => x.split(':')[1])).size === 1, `the viewer's tools differ in size: ${sizes}`);
+  const hover = async (sel) => { await p.locator(sel).hover(); return p.locator(sel).evaluate((e) => getComputedStyle(e).backgroundColor); };
+  check((await hover('#lb-info')) !== 'rgba(0, 0, 0, 0)', 'the info icon has no hover background');
+  await p.locator('#lb-info').focus();
+  await p.keyboard.press('Tab');
+  await p.keyboard.press('Shift+Tab');
+  check((await p.locator('#lb-info').evaluate((e) => getComputedStyle(e).outlineStyle)) === 'solid', 'the info icon has no focus ring');
+}));
+
+await test('common control sizes: on a person\'s suggested faces "Select all" and "Not x" are equally high and plain until hovered', await on('view=people', (lib) => lib.person('Nina Bar', { suggested: 3 }), async (p, lib, nina) => {
+  await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=suggested`; }, nina.id);
+  await p.locator('#pp-grid .face').nth(1).waitFor();
+  await settle(p, lib);
+  await p.locator('#pp-pick').click();
+  const h = (sel) => p.locator(sel).first().evaluate((e) => e.getBoundingClientRect().height);
+  const not = '#pp-bar .btn.quiet';
+  check((await h('#pp-all')) === (await h(not)), `Select all is ${await h('#pp-all')} px high, "Not" ${await h(not)} px`);
+  check((await p.locator(not).evaluate((e) => getComputedStyle(e).backgroundColor)) === 'rgba(0, 0, 0, 0)', '"Not" has a background before it is hovered');
+}));
+
+await test('a text button never wraps: a long label is cut with an ellipsis and the quick label shows it whole', await on('view=people', (lib) => lib.person('Maximilian Alexander Friedrich Wilhelm von Hohenzollern-Sigmaringen', { suggested: 3 }), async (p, lib, long) => {
+  await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=suggested`; }, long.id);
+  await p.locator('#pp-grid .face').nth(1).waitFor();
+  await settle(p, lib);
+  await p.locator('#pp-pick').click();
+  const not = p.locator('#pp-bar .btn.quiet');
+  const m = await not.evaluate((e) => ({ h: e.getBoundingClientRect().height, cut: e.scrollWidth > e.clientWidth, text: e.textContent, over: getComputedStyle(e).textOverflow }));
+  check(m.h === 32, `the long button is ${m.h} px high, expected one line of 32`);
+  check(m.cut && m.over === 'ellipsis', 'the long label is not cut with an ellipsis');
+  await not.hover();
+  await p.clock.runFor(400);
+  check((await p.locator('#quick-tip.show').textContent()) === m.text, 'the quick label does not show the whole label');
+  await p.locator('#pp-all').hover();
+  await p.clock.runFor(400);
+  check(await p.locator('#quick-tip.show').count() === 0, 'a button that is not cut off shows a quick label');
+}));
+
+await test('the settings page uses the common controls: selects with the shared arrow, the folder field and its button 32 px high, chips with a round remove button', await on('view=settings', (lib) => { lib.copyFolders = ['Links', 'Gartensessions']; }, async (p, lib) => {
+  await p.locator('.copy-folder-row input').first().waitFor();
+  await settle(p, lib);
+  const m = await p.evaluate(() => {
+    const h = (e) => Math.round(e.getBoundingClientRect().height);
+    const row = [...document.querySelectorAll('.copy-folder-row')].pop();
+    const sel = document.querySelector('.pattern-choice select');
+    return { input: h(row.querySelector('input')), add: h(row.querySelector('.btn')), select: h(sel), arrow: getComputedStyle(sel).backgroundImage.startsWith('url('), native: getComputedStyle(sel).appearance, x: getComputedStyle(row.previousElementSibling.querySelector('.chip-x')).borderRadius };
+  });
+  check(m.input === 32 && m.add === 32 && m.select === 32, `the folder field is ${m.input}, its button ${m.add}, a pattern select ${m.select} px high, expected 32`);
+  check(m.arrow && m.native === 'none', 'the pattern selects have the native arrow');
+  check(m.x === '50%', `the chip's remove button has the radius ${m.x}, expected a circle`);
 }));
 
 await finish();

@@ -93,8 +93,18 @@ current status and next step. Update its status table when a phase moves.
   wins, one transaction, never a backup, no photo touched. Phase 15b: the source
   can instead be a `userdata.json` the user picks on this computer
   (`transfer::read_userdata`, only a `.json` file, so never an original; every
-  entry checked like typed input; only for a browser on this computer). A new table in
+  entry checked like typed input; only for a browser on this computer). Hidden photos and folders (phase 20) are a box of their own, not ticked unless the
+  user does, and never part of the Tags box. A new table in
   `library.db` must be listed in `transfer::TRANSFERRED_TABLES` or `NOT_TRANSFERRED_TABLES`.
+- Hidden from the timeline (phase 20, [docs/phase20.md](docs/phase20.md)): the own tag
+  `hidden` (`tags::HIDDEN`) and the folders in `hidden_folders` live in `library.db`
+  only, never in a photo or a folder, so a library kept next to the program takes them
+  too. Hidden photos are left out of the photo grid in every form (`browse::Snapshot::query`,
+  the folder and tag counts, the map) unless the Hidden chip (`hidden=1`), the typed word or a
+  selected hidden folder asks for them; the pages for looking after the library (duplicates,
+  face checks, trash, stats) show everything. A new list of photos for looking must apply
+  the rule (`Item::hidden`). No original is touched, so no guard. It is tidiness, not
+  privacy: texts say it only keeps photos out of the timeline.
 - Licences: `LICENSE.txt` (all rights reserved, private use) and the generated
   `THIRD-PARTY-LICENSES.txt` go into the release archive. After a change to
   `Cargo.lock`, `scripts/build-deps.sh` or `core/web/vendor/` run

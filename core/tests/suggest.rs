@@ -262,5 +262,22 @@ fn kept_counts_follow_every_change() {
     let r = post(addr, &format!("/api/people/{ben}/hide"), &json!({ "hidden": true }));
     assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
     assert_eq!(photos_of("q=ben", "people", "Benno"), None, "hidden in between");
+    // The groups' and pets' counts are kept the same way: Ben leaving his group
+    // and a dog drawn on a photo count at once, with the same filter.
+    let group_photos = |q: &str| suggest(addr, q)["groups"].as_array().unwrap().iter().find(|g| g["name"] == "Familie Gruppe").map(|g| g["photos"].as_u64().unwrap());
+    assert_eq!(group_photos("q=familie+g"), Some(3), "Anna's two and Ben's one");
+    let r = post(addr, &format!("/api/people/{ben}/group"), &json!({ "group_id": null }));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    assert_eq!(group_photos("q=familie+g"), Some(2), "Ben left his group in between");
+    assert_eq!(suggest(addr, "q=dog")["pets"], json!([]));
+    lib.db()
+        .execute(
+            "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at, species)
+             VALUES (?1, 0.2, 0.2, 0.5, 0.5, NULL, 'confirmed', 1, 1, 'dog')",
+            [lib.record_key("Ordner mit Leerzeichen/Bild 1.jpeg")],
+        )
+        .unwrap();
+    assert_eq!(suggest(addr, "q=dog")["pets"], json!([{ "species": "dog", "photos": 1 }]), "a dog drawn in between");
+    assert_eq!(suggest(addr, "q=pets")["pets"][0]["photos"], 2, "any pet: the cat and the dog");
     server.stop().unwrap();
 }
