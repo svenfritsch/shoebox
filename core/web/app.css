@@ -199,7 +199,7 @@ body.selecting #sizer { -webkit-user-select: none; user-select: none; }
   --btn-h: var(--ctl-h);
   display: inline-block; height: var(--btn-h); line-height: var(--btn-h); padding: 0 14px; text-align: center;
   /* One line, never wrapped: a long label is cut with an ellipsis, and tip.js shows it whole. */
-  max-width: 20em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle;
+  max-width: 12em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle;
   border-radius: var(--ctl-r); border: 0; background: var(--accent); color: #fff; font-weight: 600;
 }
 .btn:hover:not(:disabled) { filter: brightness(1.1); }
@@ -262,7 +262,7 @@ body.selecting #sizer { -webkit-user-select: none; user-select: none; }
 @media (hover: none) { #quick-tip { display: none; } }
 .sel-count { padding: 0 6px 0 2px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .sel-count.hint { max-width: 22em; white-space: normal; line-height: 1.25; font-size: 13px; font-weight: 400; color: var(--muted); }
-.sel-all { flex: none; height: var(--ctl-h); max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; border-radius: var(--ctl-r); padding: 0 8px; background: none; color: var(--accent); }
+.sel-all { flex: none; height: var(--ctl-h); white-space: nowrap; border: 0; border-radius: var(--ctl-r); padding: 0 8px; background: none; color: var(--accent); }
 .sel-all:hover:not(:disabled) { background: var(--line); }
 .sel-all:disabled { opacity: .5; cursor: default; }
 /* A count in the date or location dialog for a selection: bold, with an info button that lists the photos. */
