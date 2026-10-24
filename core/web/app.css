@@ -104,7 +104,8 @@ select:hover { border-color: var(--muted); }
 #tree { flex: none; }
 .tree ul { padding-left: 14px; }
 .tree .row { display: flex; align-items: center; gap: 2px; padding: 2px 8px 2px 4px; }
-.tree .toggle:hover, .pgroup h3 .toggle:hover, .caret:hover:not(:disabled) { color: var(--fg); }
+/* A caret is a muted glyph that goes to full strength on hover: no background, no outline. */
+.tree .toggle:hover, .pgroup h3 .toggle:hover, .caret:hover:not(:disabled), #hidden-row .toggle:hover { color: var(--fg); }
 .tree .toggle, .pgroup h3 .toggle, .caret { border-radius: 6px; }
 .tree .toggle { width: 22px; flex: none; background: none; border: 0; color: var(--muted); padding: 2px 0; display: inline-flex; align-items: center; justify-content: center; }
 .tree .name {
@@ -612,7 +613,7 @@ body.selecting .sec .pick { display: inline; }
 .lb-panel .pface { display: flex; align-items: center; gap: 8px; }
 .lb-panel .pface .who { flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
 .lb-panel .pface .guess { font-style: italic; }
-.lb-panel .pface button.yes, .lb-panel .pface button.no { width: 34px; height: var(--ctl-h-sm); padding: 0; border: 0; border-radius: var(--ctl-r); font-size: 14px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+.lb-panel .pface button.yes, .lb-panel .pface button.no { width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; font-size: 13px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
 .lb-panel .pface .more-btn { background: none; color: #bbb; border-radius: 16px; padding: 0 6px; font-size: 18px; }
 .lb-panel .pface .note, .lb-panel .pfaces > .note { color: #999; font-size: 12px; }
 .lb-panel .avatar { background: rgba(255,255,255,.12); }
@@ -1234,9 +1235,9 @@ select:not([multiple]):not([size]), .types-btn, .dup-filter > summary.btn {
 button.badge-chip:hover, .badge-chip > button:hover { background: var(--bdg-hover); }
 .badge-chip.add { background: none; border: 1px dashed var(--bdg-dash); color: var(--bdg-muted); }
 .badge-chip.add:hover { color: var(--bdg-fg); }
-.badge-chip > button { display: inline-flex; align-items: center; height: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; }
-.badge-chip > button.x { padding: 0 0 0 4px; color: var(--bdg-muted); }
-.badge-chip > button:hover { background: none; }
+.badge-chip > button, .lb-panel dd .badge-chip > button { display: inline-flex; align-items: center; height: 100%; padding: 0; border: 0; border-radius: 0; background: none; color: inherit; font: inherit; }
+.badge-chip > button.x, .lb-panel dd .badge-chip > button.x { padding: 0 0 0 4px; color: var(--bdg-muted); }
+.badge-chip > button:hover, .lb-panel dd .badge-chip > button:hover { background: none; }
 .badge-chip > button.x:hover { color: var(--bdg-fg); }
 .badge-input {
   height: var(--ctl-h-sm); padding: 0 10px; border-radius: 99px; border: 1px solid var(--bdg-line); background: var(--bdg-field); color: var(--bdg-fg);

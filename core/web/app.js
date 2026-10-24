@@ -8343,6 +8343,10 @@ function infoFace(info, f, k, pick) {
       }, { allowNew: true, placeholder: tr('unnamed.who'), species: f.species, badge: true, onEscape: function () { field.replaceWith(add); } });
       add.replaceWith(field);
       field.input.focus();
+      // Back to the badge when the focus leaves (a click on a suggestion keeps it in the field).
+      field.input.addEventListener('blur', function () {
+        setTimeout(function () { if (field.isConnected && document.activeElement !== field.input) field.replaceWith(add); }, 200);
+      });
     };
     who.appendChild(add);
   }

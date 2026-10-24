@@ -1501,10 +1501,12 @@ await test('badges: tags, the + tag chip, face names and both small fields in th
   const h = (sel) => p.locator(sel).evaluateAll((xs) => xs.map((e) => Math.round(e.getBoundingClientRect().height)));
   const chips = await h('#lb-panel .tags .badge-chip');
   check(chips.length === 3 && chips.every((x) => x === 26), `tag chips are ${chips} px high, expected three of 26`);
+  const inner = await p.locator('#lb-panel .tags .own > button').evaluateAll((xs) => xs.map((e) => getComputedStyle(e).backgroundColor));
+  check(inner.length === 2 && inner.every((x) => x === 'rgba(0, 0, 0, 0)'), `the buttons inside an own tag have a background of their own: ${inner}`);
   const guess = await p.locator('#lb-panel .pface .guess').textContent();
   check(guess === 'Antonia Eger?', `the guess reads "${guess}"`);
   const yn = await p.locator('#lb-panel .pface button.yes, #lb-panel .pface button.no').evaluateAll((xs) => xs.map((e) => { const c = getComputedStyle(e); return c.borderTopWidth + '|' + c.borderRadius + '|' + Math.round(e.getBoundingClientRect().height); }));
-  check(yn.length === 2 && yn.every((x) => x === '0px|10px|26'), `the ✓ and ✗ in the panel have a border or the wrong shape: ${yn}`);
+  check(yn.length === 2 && yn.every((x) => x === '0px|50%|22'), `the ✓ and ✗ in the panel are not 22 px circles without a border: ${yn}`);
   const other = await h('#lb-panel .pface button.add');
   check(other.length === 2 && other.every((x) => x === 26), `the face chips are ${other} px high`);
   await p.locator('#lb-panel .tags .add').click();
@@ -1512,6 +1514,10 @@ await test('badges: tags, the + tag chip, face names and both small fields in th
   await p.keyboard.press('Escape');
   await p.locator('#lb-panel .pface button.add').nth(1).click();
   check((await h('#lb-panel .pfield input')).join() === '26', 'the "Who is it?" field is not 26 px high: ' + await h('#lb-panel .pfield input'));
+  await p.locator('#lb-panel .pfield input').fill('Ant');
+  await p.locator('#lb-panel .tags .add').focus();
+  await p.clock.runFor(400);
+  check(await p.locator('#lb-panel .pfield').count() === 0 && await p.locator('#lb-panel .pface button.add').count() === 2, 'the field did not turn back into the badge when it lost the focus');
 }));
 
 await test('tabs look the same everywhere: a person\'s tabs and the drives\' tabs share one style', await on('view=people', (lib) => lib.person('Tabea Tab', { suggested: 2 }), async (p, lib, tabea) => {
@@ -1538,6 +1544,24 @@ await test('one badge style: the labels on photos in the timeline, the duplicate
   check(look.cell === look.card, `the timeline's and the duplicates' badges differ: ${look.cell} vs ${look.card}`);
   const [bg, fg, radius, weight] = look.cell.split('|'), g = look.geo.split('|');
   check(g[0] === bg && g[1] === fg && g[2] === radius && g[3] === weight && g[4] === '10px', `the map's badge is not the small one: ${look.geo}`);
+}));
+
+await test('a caret in the sidebar goes from muted to full strength on hover, with no background', await on('', hiddenPhotos, async (p, lib) => {
+  await cellCount(p, 3);
+  await p.evaluate(() => {
+    const host = document.createElement('div');
+    host.innerHTML = '<div class="tree"><div class="row"><button class="toggle" id="c1">▸</button></div></div><div class="tree"><div id="hidden-row" class="row"><button class="toggle" id="c2">▸</button></div></div>';
+    host.style.cssText = 'position:fixed;left:300px;top:300px;z-index:99';
+    document.body.appendChild(host);
+  });
+  const text = await p.evaluate(() => getComputedStyle(document.body).color);
+  for (const id of ['c1', 'c2']) {
+    const rest = await p.locator('#' + id).evaluate((e) => getComputedStyle(e).color);
+    check(rest !== text, `${id} is not muted at rest`);
+    await p.locator('#' + id).hover();
+    const on = await p.locator('#' + id).evaluate((e) => { const c = getComputedStyle(e); return [c.color, c.backgroundColor, c.outlineStyle].join('|'); });
+    check(on === `${text}|rgba(0, 0, 0, 0)|none`, `${id} on hover: ${on}, expected ${text} without background or outline`);
+  }
 }));
 
 await finish();
