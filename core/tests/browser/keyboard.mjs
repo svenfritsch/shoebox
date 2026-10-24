@@ -5,7 +5,7 @@
 // across them while selecting. usage: node keyboard.mjs <url>
 // Needs Playwright with a Chromium (CHROME=path) and a library served by
 // `shoebox serve` (see run.sh). Nothing here confirms a dialog: no photo is
-// moved, tagged or trashed.
+// moved, tagged or trashed; the one test that hides a photo shows it again.
 import { createRequire } from 'node:module';
 const { chromium } = createRequire(import.meta.url)('playwright'); // honours NODE_PATH
 const [url] = process.argv.slice(2);
@@ -321,6 +321,39 @@ await test('without the selection a drag selects nothing', async (p) => {
   await dragAcross(p, 0, [3]);
   check(!(await visible(p, '#selbar')), 'no selection started');
   check(await p.locator('.cell.sel').count() === 0, 'nothing selected');
+});
+
+// Hiding from the timeline (phase 20) against the real server: that page and server agree on the
+// replies (`hids` of the timeline, the Hidden count of /api/info, the list with hidden=1). The photo
+// is shown again at the end, so the tests after it find the library as it was.
+await test('hiding on the real server: the eye in the viewer, the grid, the Hidden row and the way back', async (p) => {
+  const total = await p.evaluate(() => state.data.count);
+  await p.locator('.cell').first().click();
+  await p.locator('#lightbox').waitFor({ state: 'visible' });
+  await p.waitForFunction(() => !document.querySelector('#lb-hide').hidden);
+  check(await p.locator('#lb-hide path[d="M4.5 20L19.5 4"]').count() === 1, 'the eye with a slash is offered');
+  await p.keyboard.press('h');
+  await p.waitForSelector('#lb-hide.on');
+  check(await p.locator('#lb-hide path[d="M4.5 20L19.5 4"]').count() === 0, 'the plain eye is offered once hidden');
+  await p.keyboard.press('Escape');
+  await p.waitForFunction((t) => state.data && state.data.count === t - 1, total);
+  await p.waitForSelector('#hidden-row');
+  check((await p.locator('#hidden-row .count').textContent()) === '1', 'the Hidden row counts one photo');
+  // The row shows only that photo, and the eye shows it again.
+  await p.locator('#hidden-row .name').click();
+  await p.waitForFunction(() => state.data && state.filter.hidden && state.data.count === 1);
+  check(await p.evaluate(() => Object.keys(state.hids).length) === 1, 'the list says the photo is hidden');
+  check(await p.locator('#filters .chip.hid').count() === 1, 'the Hidden chip');
+  await p.locator('.cell').first().click();
+  await p.locator('#lightbox').waitFor({ state: 'visible' });
+  await p.waitForSelector('#lb-hide.on');
+  await p.keyboard.press('h');
+  await p.waitForSelector('#lb-hide:not(.on)');
+  await p.keyboard.press('Escape');
+  await p.waitForFunction(() => state.data && state.data.count === 0);
+  await p.waitForFunction(() => !document.querySelector('#hidden-row'));
+  await p.locator('#all').click();
+  await p.waitForFunction((t) => state.data && !state.filter.hidden && state.data.count === t, total);
 });
 
 await browser.close();
