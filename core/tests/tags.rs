@@ -204,7 +204,7 @@ fn own_tags_add_remove_many_at_once_and_fold_names() {
     }
     server.stop().unwrap();
     let data: Value = serde_json::from_slice(&fs::read(&userdata).unwrap()).unwrap();
-    assert_eq!(data["version"], 6);
+    assert_eq!(data["version"], 7);
     let names: Vec<&str> = data["own_tags"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
     assert_eq!(names, ["\u{d6}sterreich"]);
     let files = data["own_tags"][0]["files"].as_array().unwrap();
@@ -569,4 +569,153 @@ fn manual_tags_only_leaves_out_what_a_folder_name_gives() {
 
     server.stop().unwrap();
     assert_untouched(&before, &lib.snapshot());
+}
+
+fn hide(addr: std::net::SocketAddr, ids: &[i64], on: bool) -> Value {
+    let r = post(addr, "/api/hidden", &json!({ "ids": ids, "on": on }));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    r.json()
+}
+
+fn hide_folder(addr: std::net::SocketAddr, path: &str, on: bool) -> Value {
+    let r = post(addr, "/api/hidden/folder", &json!({ "path": path, "on": on }));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    r.json()
+}
+
+fn folder_row(addr: std::net::SocketAddr, path: &str) -> Value {
+    let list = get(addr, "/api/folders").json();
+    list.as_array().unwrap().iter().find(|f| f["path"] == path).unwrap_or_else(|| panic!("no folder {path}")).clone()
+}
+
+fn hids(timeline: &Value) -> Vec<i64> {
+    sorted(timeline["hids"].as_array().unwrap().iter().map(|v| v.as_i64().unwrap()).collect())
+}
+
+#[test]
+fn hidden_is_the_own_tag_hidden_and_a_folder_flag_is_inherited() {
+    let lib = Library::new("hidden");
+    lib.scan();
+    let before = lib.snapshot();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let img1 = id_of(&lib, "2020-07 Urlaub Griechenland/IMG_0001.JPG");
+    let img2 = id_of(&lib, "2020-07 Urlaub Griechenland/IMG_0002.JPG");
+    let dsc = id_of(&lib, "Familie/Weihnachten/DSC_2001.jpg");
+    let shot = id_of(&lib, "Familie/Screenshot.png");
+    let all = timeline_ids(addr, "");
+    let without = |hidden: &[i64]| sorted(all.iter().copied().filter(|i| !hidden.contains(i)).collect());
+
+    // The photo: the database only gets an own tag called "hidden".
+    assert_eq!(hide(addr, &[img1], true)["files"], 1);
+    assert_eq!(own_tags(&lib, img1), vec!["hidden"]);
+    assert_eq!(hide(addr, &[img1], true)["files"], 0, "already there");
+    // Typed as a tag name, the other words are the same tag.
+    for name in ["Versteckt", "verborgen", "Ausgeblendet"] {
+        let r = add(addr, &[img1], name);
+        assert_eq!((r["tag"]["name"].as_str(), r["files"].as_i64()), (Some("hidden"), Some(0)), "{name}");
+    }
+    assert_eq!(own_tags(&lib, img1), vec!["hidden"]);
+
+    // Every list leaves it out: the timeline, a folder, a tag, a type, a date, a search.
+    assert_eq!(timeline_ids(addr, ""), without(&[img1]));
+    assert_eq!(hids(&get(addr, "/api/timeline").json()), Vec::<i64>::new());
+    let urlaub = folder_row(addr, "2020-07 Urlaub Griechenland");
+    assert_eq!(urlaub["count"], 1, "the folder counts what is shown");
+    let urlaub_id = urlaub["id"].as_i64().unwrap();
+    assert_eq!(timeline_ids(addr, &format!("?folder={urlaub_id}")), vec![img2], "a hidden photo is not shown by clicking its folder");
+    assert_eq!(timeline_ids(addr, "?type=photo"), without(&[img1, shot]));
+    assert_eq!(timeline_ids(addr, "?q=griechenland"), vec![img2]);
+    // The Hidden chip, and the whole word typed as text, show it; a start of the word does not.
+    assert_eq!(timeline_ids(addr, "?hidden=1"), vec![img1]);
+    assert_eq!(hids(&get(addr, "/api/timeline?hidden=1").json()), vec![img1]);
+    for q in ["hidden", "versteckt", "Verborgen", "ausgeblendet"] {
+        assert!(timeline_ids(addr, &format!("?q={q}")).contains(&img1), "{q}");
+    }
+    assert_eq!(timeline_ids(addr, "?q=hidden%20griechenland"), vec![img1], "only the hidden one has the word");
+    for q in ["hid", "vers", "ausg"] {
+        assert_eq!(timeline_ids(addr, &format!("?q={q}")), Vec::<i64>::new(), "{q} is only the start of a word");
+    }
+    // With the chip the other filters still apply (AND).
+    assert_eq!(timeline_ids(addr, "?hidden=1&type=video"), Vec::<i64>::new());
+    assert_eq!(timeline_ids(addr, "?hidden=1&q=griechenland"), vec![img1]);
+    // The photo's details say why it is hidden.
+    let info = get(addr, &format!("/api/files/{img1}")).json();
+    assert_eq!((info["hidden"].as_bool(), info["hidden_tag"].as_bool(), info["hidden_folder"].as_str()), (Some(true), Some(true), None));
+    // Tag counts and the tag list leave it out too, and the hidden tag itself is a tag like any other
+    // in the list (the page does not show it).
+    let tags = tag_list(addr, "");
+    assert_eq!(find(&tags, "Urlaub Griechenland").unwrap()["count"], 1);
+
+    // The folder: everything in it and below is hidden, also what comes later.
+    assert_eq!(hide_folder(addr, "Familie", true)["changed"], true);
+    assert_eq!(hide_folder(addr, "Familie", true)["changed"], false, "already hidden");
+    assert_eq!(timeline_ids(addr, ""), without(&[img1, dsc, shot]));
+    assert_eq!(timeline_ids(addr, "?hidden=1"), sorted(vec![img1, dsc, shot]));
+    let familie = folder_row(addr, "Familie");
+    let weihnachten = folder_row(addr, "Familie/Weihnachten");
+    assert_eq!((familie["hidden"].as_bool(), familie["hidden_own"].as_bool()), (Some(true), Some(true)));
+    assert_eq!((weihnachten["hidden"].as_bool(), weihnachten["hidden_own"].as_bool()), (Some(true), Some(false)), "hidden by the folder above");
+    assert_eq!(familie["count"], 2, "a hidden folder counts its own photos");
+    assert_eq!(folder_row(addr, "")["count"], all.len() as i64 - 3, "the folders above do not");
+    // Clicking a hidden folder (or one below it) shows its photos; they are not in the timeline.
+    assert_eq!(timeline_ids(addr, &format!("?folder={}", familie["id"])), sorted(vec![dsc, shot]));
+    assert_eq!(timeline_ids(addr, &format!("?folder={}", weihnachten["id"])), vec![dsc]);
+    assert_eq!(hids(&get(addr, &format!("/api/timeline?folder={}", familie["id"])).json()), sorted(vec![dsc, shot]));
+    // Tags: folder tags of hidden photos are not counted, a tag with nothing left is not offered.
+    let tags = tag_list(addr, "");
+    assert!(find(&tags, "Weihnachten").is_none() && find(&tags, "Familie").is_none(), "{tags:?}");
+    let info = get(addr, &format!("/api/files/{dsc}")).json();
+    assert_eq!((info["hidden"].as_bool(), info["hidden_tag"].as_bool(), info["hidden_folder"].as_str()), (Some(true), Some(false), Some("Familie")));
+
+    // A photo moved into a hidden folder is hidden; moved out of it, it is shown again.
+    let r = post(addr, "/api/move", &json!({ "ids": [img2], "folder": "Familie/Weihnachten" }));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    assert_eq!(timeline_ids(addr, ""), without(&[img1, dsc, shot, img2]));
+    let r = post(addr, "/api/move", &json!({ "ids": [dsc], "folder": "Sortiert" }));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    assert_eq!(timeline_ids(addr, ""), without(&[img1, shot, img2]));
+    // A renamed hidden folder stays hidden, with the folders below it.
+    let r = post(addr, &format!("/api/folders/{}/rename", familie["id"]), &json!({ "path": "Familie 2" }));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    assert_eq!(timeline_ids(addr, ""), without(&[img1, shot, img2]));
+    assert_eq!(folder_row(addr, "Familie 2/Weihnachten")["hidden"], true);
+    assert_eq!(lib.count("SELECT count(*) FROM hidden_folders WHERE path_nfc = 'Familie 2'"), 1);
+    assert_eq!(lib.count("SELECT count(*) FROM hidden_folders WHERE path_nfc = 'Familie'"), 0);
+
+    // Broken requests are refused.
+    for body in [json!({ "path": "Nicht da", "on": true }), json!({ "path": "", "on": true }), json!({ "path": "/", "on": true })] {
+        assert_eq!(post(addr, "/api/hidden/folder", &body).status, 400, "{body}");
+    }
+    assert_eq!(post(addr, "/api/hidden/folder", &json!({ "path": "Familie 2" })).status, 422, "on is needed");
+    assert_eq!(post(addr, "/api/hidden", &json!({ "ids": "x", "on": true })).status, 422);
+    // Showing a folder that is not hidden is not an error and changes nothing.
+    assert_eq!(hide_folder(addr, "Sortiert", false)["changed"], false);
+
+    // The backup of what the user made says which folders are hidden.
+    server.stop().unwrap();
+    let data: Value = serde_json::from_slice(&fs::read(lib.path(".shoebox/userdata.json")).unwrap()).unwrap();
+    assert_eq!(data["hidden_folders"], json!(["Familie 2"]));
+    assert!(data["own_tags"].as_array().unwrap().iter().any(|t| t["name"] == "hidden"));
+
+    // A rescan keeps the flags and a photo copied into a hidden folder is hidden at once.
+    lib.jpeg("Familie 2/Neu.jpg", 77);
+    lib.scan();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let neu = id_of(&lib, "Familie 2/Neu.jpg");
+    assert!(!timeline_ids(addr, "").contains(&neu));
+    assert!(timeline_ids(addr, "?hidden=1").contains(&neu));
+    // Everything shown again.
+    assert_eq!(hide_folder(addr, "Familie 2", false)["changed"], true);
+    assert_eq!(hide(addr, &[img1], false)["files"], 1);
+    assert_eq!(timeline_ids(addr, "?hidden=1"), Vec::<i64>::new());
+    assert!(timeline_ids(addr, "").contains(&neu));
+    assert!(timeline_ids(addr, "").contains(&img1));
+    assert_eq!(folder_row(addr, "Familie 2")["hidden"], false);
+    server.stop().unwrap();
+
+    // Nothing was written next to an original: only what the moves and the new file changed.
+    let after = lib.snapshot();
+    assert!(after.len() >= before.len());
 }

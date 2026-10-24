@@ -1,6 +1,6 @@
 # Phase 20: Hidden from the timeline
 
-**Planned, nothing built.** Photos you want kept out of the timeline (nude
+**In progress** (branch `claude/phase19-hidden-plan`). Photos you want kept out of the timeline (nude
 pictures, documents, surprises) are marked *hidden*. They vanish from the photo
 grid in every form (timeline, a folder, a person, a date, a type, a tag, a
 search) and come back only when you ask for them: the Hidden chip, the word
@@ -57,7 +57,7 @@ matches what a click shows.
   `userdata.json` and by "Carry over data" like any own tag, and survives moves,
   rescans and the trash.
 - **Hidden folder = a row in a new table** `hidden_folders(path_nfc TEXT PRIMARY KEY,
-  added_at INTEGER)` in `library.db` (schema v16), keyed by NFC path so it survives
+  added_at INTEGER)` in `library.db` (schema v18), keyed by NFC path so it survives
   rescans. A folder is hidden if it or an ancestor has a row. Listed in
   `transfer::NOT_TRANSFERRED_TABLES` (a path is not content; the own tag part does
   travel). Nothing is written into a file or a folder.
@@ -159,7 +159,7 @@ Search words (not strings, in `tags::is_hidden_word`): `hidden`, `versteckt`,
 ## 7. Steps
 
 1. Core: `tags::HIDDEN`, `check_name` mapping, `is_hidden_word`, `set_hidden`, `hidden_ids`;
-   schema v16 `hidden_folders`, `tags::set_folder_hidden`; the table in
+   schema v18 `hidden_folders`, `tags::set_folder_hidden`; the table in
    `NOT_TRANSFERRED_TABLES`. Test `hidden_is_the_own_tag_hidden_and_a_folder_flag_is_inherited`
    in `core/tests/tags.rs`.
 2. `browse.rs`: `Item.hidden`, `Query.hidden`, the visibility rule, the word loop.
@@ -180,3 +180,23 @@ Search words (not strings, in `tags::is_hidden_word`): `hidden`, `versteckt`,
 8. Browser test (keyboard: `h`, chip, folder click) in `core/tests/browser/`.
 9. Real-hardware check: hide photos and a folder on the iPad (chip button), look at the
    timeline, a person, Places and the counts; copy a photo into a hidden folder and scan.
+
+## 8. Tests (written with the change)
+
+- `tags.rs` unit tests: `is_hidden_word`, `means_hidden`, `check_name` mapping (`hidden`,
+  `versteckt`, `verborgen`, `ausgeblendet` become `hidden`; `Hiddenstreet` stays a name).
+- `core/tests/tags.rs` `hidden_is_the_own_tag_hidden_and_a_folder_flag_is_inherited`: the
+  timeline, a person, a tag, a date and a type leave hidden photos out; the Hidden chip and the typed
+  word show them; a hidden folder (and a folder below it) shows when selected; a photo tagged hidden in
+  a normal folder does not; folder counts (the hidden folder keeps its own, parents drop it);
+  a moved photo follows its new folder; a rescan keeps the flags and hides a photo copied into a hidden folder.
+- `core/tests/serve.rs`: `POST /api/hidden` and `/api/hidden/folder` (replies, a broken body refused,
+  a read-only library accepts them), `hidden=1`, `hids` in the timeline, `hidden` and `hidden_own` in the folder list,
+  tag counts that leave hidden photos out, the info reply, export by tag leaving them out.
+- `core/tests/multi.rs`: All drives hides them, `hidden=1` lists them from every drive (tag and folder),
+  a photo hidden on one drive only is hidden in the common timeline, suggestion counts agree with the list.
+- `core/tests/transfer.rs`: the "Hidden" box (off by default), the Tags box does not carry `hidden`,
+  folder flags by path, `userdata.json` round trip.
+- Browser, mocked (`faces-mocked.mjs` with `fake-api.mjs`): key `h`, the selection bar button and its toggle,
+  the folder menu and chip button, the Hidden chip, the toast after typing a reserved word.
+- Each new test is shown to fail with the change broken, and run several times.

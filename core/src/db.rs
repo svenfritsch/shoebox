@@ -15,7 +15,7 @@ pub const FILE: &str = "library.db";
 const BACKUP_SUFFIX: &str = ".bak";
 
 /// Bump when the schema changes and add a step to `migrate`.
-const SCHEMA_VERSION: i32 = 17;
+const SCHEMA_VERSION: i32 = 18;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -261,6 +261,16 @@ CREATE TABLE IF NOT EXISTS text_hidden (
     norm TEXT NOT NULL,           -- recog.text_lines.text_norm
     at   INTEGER NOT NULL,        -- Unix seconds
     PRIMARY KEY (key, norm)
+);
+";
+
+/// v18 (phase 20): folders the user hid from the timeline, by path (NFC, relative to
+/// the library, as `folders.path_nfc`). Everything in a hidden folder and below is hidden.
+/// Nothing is written to a folder.
+const SCHEMA_V18: &str = "
+CREATE TABLE IF NOT EXISTS hidden_folders (
+    path_nfc TEXT PRIMARY KEY,
+    added_at INTEGER NOT NULL
 );
 ";
 
@@ -553,6 +563,12 @@ fn migrate(conn: &Connection) -> Result<()> {
              WHERE kept_hash IS NULL AND full_hash IS NOT NULL;",
         )?;
         tx.pragma_update(None, "user_version", 17)?;
+        tx.commit()?;
+    }
+    if version < 18 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V18)?;
+        tx.pragma_update(None, "user_version", 18)?;
         tx.commit()?;
     }
     Ok(())

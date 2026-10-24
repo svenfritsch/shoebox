@@ -126,7 +126,7 @@ fn data_is_carried_by_content_to_the_same_photos_under_other_names() {
     let set = transfer::read_drive(&db_path(&a)).unwrap();
     let conn = open(&b);
     // The plan says what will happen, without doing it.
-    let expected = Counts { tags: 3, hearts: 1, people: 2, new_people: 1, dates: 2, places: 1, photos: 3 };
+    let expected = Counts { tags: 3, hearts: 1, people: 2, new_people: 1, dates: 2, places: 1, photos: 3, ..Counts::default() };
     assert_eq!(transfer::plan(&conn, &set, Boxes::all()).unwrap(), expected);
     assert_eq!(b.count("SELECT count(*) FROM people"), 0);
     assert_eq!(b.count("SELECT count(*) FROM face_decisions"), 0);
@@ -180,7 +180,7 @@ fn a_box_that_is_not_ticked_changes_nothing() {
     let set = transfer::read_drive(&db_path(&a)).unwrap();
     let conn = open(&b);
 
-    let only_hearts = Boxes { tags: false, hearts: true, people: false, dates: false, places: false };
+    let only_hearts = Boxes { tags: false, hearts: true, people: false, dates: false, places: false, hidden: false };
     let done = transfer::apply(&conn, &set, only_hearts).unwrap();
     assert_eq!(done, Counts { hearts: 1, photos: 1, ..Counts::default() });
     assert_eq!(own_tag_rows(&b, "favorite", None), 1);
@@ -483,7 +483,7 @@ fn a_userdata_json_carries_the_same_as_its_drive() {
     assert_eq!(info.version, tags::USERDATA_VERSION);
     assert!(info.written_at > 0);
     let conn = open(&b);
-    let expected = Counts { tags: 3, hearts: 1, people: 2, new_people: 1, dates: 2, places: 1, photos: 3 };
+    let expected = Counts { tags: 3, hearts: 1, people: 2, new_people: 1, dates: 2, places: 1, photos: 3, ..Counts::default() };
     assert_eq!(transfer::plan(&conn, &set, Boxes::all()).unwrap(), expected);
     assert_eq!(transfer::apply(&conn, &set, Boxes::all()).unwrap(), expected);
 
@@ -683,4 +683,78 @@ fn the_routes_take_a_file_from_this_computer_only() {
     assert_eq!(b.count("SELECT count(*) FROM face_decisions"), 0, "people were not ticked");
     server.stop().unwrap();
     let _ = fs::remove_dir_all(&aside);
+}
+
+// ---------------------------------------------------------------- hidden (phase 20)
+
+/// The source hides one photo by its tag and two folders; the target has the photo (as another
+/// file) and one of the folders.
+fn hidden_pair(test: &str) -> (Library, Library) {
+    let a = source(&format!("{test}-a"));
+    let b = bare(&format!("{test}-b"));
+    b.jpeg("Familie/2026/IMG_1.jpg", 20);
+    b.jpeg("Norwegen/extra.jpg", 31);
+    b.scan_opts(true, false, false);
+    let conn = open(&a);
+    tags::set_hidden(&conn, &[id_of(&a, FJORD)], true).unwrap();
+    tags::add(&conn, &[id_of(&a, FJORD)], "Fjord").unwrap();
+    tags::set_folder_hidden(&conn, "Norwegen", true).unwrap();
+    tags::set_folder_hidden(&conn, "Solo", true).unwrap();
+    (a, b)
+}
+
+fn hidden_only() -> Boxes {
+    Boxes { tags: false, hearts: false, people: false, dates: false, places: false, hidden: true }
+}
+
+#[test]
+fn hidden_is_a_box_of_its_own_that_is_off_when_none_are_given() {
+    let (a, b) = hidden_pair("transfer-hidden");
+    let set = transfer::read_drive(&db_path(&a)).unwrap();
+    assert!(!Boxes::default().hidden && Boxes::all().hidden);
+    assert!(set.tags.iter().all(|t| !tags::means_hidden(&t.name)), "the tags box has no hidden");
+    assert_eq!(set.hidden.len(), 1);
+    assert_eq!(set.hidden_folders, ["Norwegen", "Solo"]);
+    let conn = open(&b);
+
+    // The plan counts it for the check box; without the box nothing of it is carried.
+    let counts = transfer::plan(&conn, &set, Boxes::all()).unwrap();
+    assert_eq!((counts.hidden, counts.hidden_folders), (1, 1), "Solo is not on the target");
+    let done = transfer::apply(&conn, &set, Boxes::default()).unwrap();
+    assert_eq!((done.hidden, done.hidden_folders, done.tags), (0, 0, 1));
+    assert_eq!(own_tag_rows(&b, "hidden", None), 0);
+    assert!(tags::hidden_folder_paths(&conn).unwrap().is_empty());
+    let only_tags = Boxes { hidden: false, ..Boxes::all() };
+    transfer::apply(&conn, &set, only_tags).unwrap();
+    assert_eq!(own_tag_rows(&b, "hidden", None), 0, "the Tags box does not carry it either");
+
+    // With the box: the tag by content, the folder flag by path (only folders the target has).
+    let done = transfer::apply(&conn, &set, hidden_only()).unwrap();
+    assert_eq!((done.hidden, done.hidden_folders, done.photos), (1, 1, 1));
+    assert_eq!(own_tag_rows(&b, "hidden", Some("Familie/2026/IMG_1.jpg")), 1);
+    assert_eq!(tags::hidden_folder_paths(&conn).unwrap(), ["Norwegen"]);
+    assert!(transfer::apply(&conn, &set, hidden_only()).unwrap().is_nothing(), "a second run adds nothing");
+}
+
+#[test]
+fn hidden_travels_in_a_userdata_json_too() {
+    let (a, b) = hidden_pair("transfer-hidden-file");
+    let file = write_userdata(&a);
+    let (set, info) = transfer::read_userdata(&file).unwrap();
+    assert_eq!(info.version, 7);
+    assert_eq!((set.hidden.len(), set.hidden_folders.clone()), (1, vec!["Norwegen".to_string(), "Solo".to_string()]));
+    assert!(set.tags.iter().all(|t| !tags::means_hidden(&t.name)));
+    let conn = open(&b);
+    let done = transfer::apply(&conn, &set, Boxes::default()).unwrap();
+    assert_eq!((done.hidden, done.hidden_folders), (0, 0));
+    let done = transfer::apply(&conn, &set, hidden_only()).unwrap();
+    assert_eq!((done.hidden, done.hidden_folders), (1, 1));
+
+    // An older file has no list; a hand-made one is checked like typed input.
+    let aside = kept_aside("transfer-hidden-file-old");
+    let old = aside.join("userdata.json");
+    fs::write(&old, br#"{"shoebox":"0.1","version":6,"own_tags":[]}"#).unwrap();
+    assert!(transfer::read_userdata(&old).unwrap().0.hidden_folders.is_empty());
+    fs::write(&old, "{\"shoebox\":\"0.1\",\"version\":7,\"hidden_folders\":[\" /Norwegen/ \",\"\",\"a\\nb\",\"Norwegen\"]}").unwrap();
+    assert_eq!(transfer::read_userdata(&old).unwrap().0.hidden_folders, ["Norwegen"]);
 }

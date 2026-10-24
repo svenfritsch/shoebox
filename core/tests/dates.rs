@@ -336,7 +336,7 @@ fn removing_a_copy_hands_its_date_to_the_survivor_and_the_backup_has_it() {
     // The backup of what the user made.
     server.stop().unwrap();
     let data: Value = serde_json::from_slice(&fs::read(lib.path(".shoebox/userdata.json")).unwrap()).unwrap();
-    assert_eq!(data["version"], 6);
+    assert_eq!(data["version"], 7);
     let mine = data["date_estimates"].as_array().unwrap().iter().find(|e| e["files"][0] == original).expect("the survivor's date");
     assert_eq!((mine["year"].as_i64(), mine["month"].as_i64()), (Some(1987), Some(8)));
     assert_eq!(before[&lib.path(original)], lib.snapshot()[&lib.path(original)], "the survivor is untouched");

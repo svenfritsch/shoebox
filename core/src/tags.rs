@@ -32,7 +32,7 @@ pub const MAX_NAME: usize = 100;
 pub const USERDATA_FILE: &str = "userdata.json";
 /// Format of `userdata.json`. Every version so far only added lists, so a
 /// reader of this version reads all older ones (`transfer::read_userdata`).
-pub const USERDATA_VERSION: u32 = 6;
+pub const USERDATA_VERSION: u32 = 7;
 
 /// A tag name typed by the user: trimmed, NFC, not empty, no control
 /// characters.
@@ -50,6 +50,10 @@ pub fn check_name(name: &str) -> Result<String> {
     // "Favoriten" and the like are the heart, not a tag of their own.
     if means_favorite(&name) {
         return Ok(FAVORITE.to_string());
+    }
+    // "versteckt" and the like hide the photo from the timeline (phase 20).
+    if means_hidden(&name) {
+        return Ok(HIDDEN.to_string());
     }
     Ok(name)
 }
@@ -98,6 +102,86 @@ pub fn favorite_ids(conn: &Connection) -> Result<std::collections::HashSet<i64>>
         )?
         .query_map([FAVORITE], |r| r.get(0))?
         .collect::<rusqlite::Result<_>>()?)
+}
+
+/// Hidden from the timeline (phase 20) is an own tag with this name, like the
+/// heart: stored in English whatever the UI language is, never shown as a tag.
+/// A folder can be hidden too (`hidden_folders`).
+pub const HIDDEN: &str = "hidden";
+
+/// Other spellings typed as a tag name; they all become `HIDDEN`.
+const HIDDEN_ALIASES: [&str; 3] = ["versteckt", "verborgen", "ausgeblendet"];
+
+/// Words that start one of the words for "hidden" (English and German), three
+/// letters at least: what the search box offers the Hidden suggestion for.
+pub fn is_hidden_word(word: &str) -> bool {
+    let word = word.to_lowercase();
+    word.chars().count() >= 3 && std::iter::once(HIDDEN).chain(HIDDEN_ALIASES).any(|w| w.starts_with(&word))
+}
+
+/// A whole word for "hidden" (not a start of one): typed as search text it shows
+/// the hidden photos. A start of a word (`ver` for Verona) must not.
+pub fn is_hidden_exact(word: &str) -> bool {
+    let word = db::tag_fold(word);
+    word == HIDDEN || HIDDEN_ALIASES.contains(&word.as_str())
+}
+
+/// Is this tag name the hidden tag (the UI shows it as the eye, not as a tag)?
+pub fn is_hidden_name(name: &str) -> bool {
+    db::tag_fold(name) == HIDDEN
+}
+
+/// Does a typed tag name mean "hidden" (`hidden`, `versteckt`, `verborgen`, `ausgeblendet`)?
+pub fn means_hidden(name: &str) -> bool {
+    is_hidden_exact(name)
+}
+
+/// Hide files from the timeline or show them again. Only the user's own tag
+/// counts: a folder called "hidden" does not hide its photos.
+pub fn set_hidden(conn: &Connection, ids: &[i64], on: bool) -> Result<Changed> {
+    if on { add(conn, ids, HIDDEN) } else { remove(conn, ids, HIDDEN) }
+}
+
+/// Files with the hidden tag (not those hidden by a folder, see `hidden_folder_paths`).
+pub fn hidden_ids(conn: &Connection) -> Result<std::collections::HashSet<i64>> {
+    Ok(conn
+        .prepare(
+            "SELECT DISTINCT ft.file_id FROM file_tags ft JOIN tags t ON t.id = ft.tag_id
+             WHERE ft.source = 'user' AND t.fold = ?1",
+        )?
+        .query_map([HIDDEN], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?)
+}
+
+/// The folders the user hid (NFC paths, each with everything below it). An empty
+/// list for a library from before phase 20, which has no such table.
+pub fn hidden_folder_paths(conn: &Connection) -> Result<Vec<String>> {
+    if !crate::people::table_exists(conn, "main", "hidden_folders")? {
+        return Ok(Vec::new());
+    }
+    Ok(conn
+        .prepare("SELECT path_nfc FROM hidden_folders ORDER BY path_nfc")?
+        .query_map([], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?)
+}
+
+/// Hide a folder (and everything below it) from the timeline, or show it again. The
+/// folder must be in the index; the library itself cannot be hidden. Returns whether
+/// anything changed.
+pub fn set_folder_hidden(conn: &Connection, path: &str, on: bool) -> Result<bool> {
+    let path = library::nfc(path.trim().trim_matches('/'));
+    if path.is_empty() {
+        bail!("the library itself cannot be hidden");
+    }
+    if on {
+        let known: bool = conn.query_row("SELECT count(*) > 0 FROM folders WHERE path_nfc = ?1", [&path], |r| r.get(0))?;
+        if !known {
+            bail!("no such folder: {path}");
+        }
+        Ok(conn.execute("INSERT OR IGNORE INTO hidden_folders (path_nfc, added_at) VALUES (?1, ?2)", params![path, db::now()])? > 0)
+    } else {
+        Ok(conn.execute("DELETE FROM hidden_folders WHERE path_nfc = ?1", [&path])? > 0)
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -291,6 +375,8 @@ pub struct UserData {
     /// Estimated capture dates (version 6).
     #[serde(flatten)]
     pub dates: crate::dates::UserDates,
+    /// Folders hidden from the timeline (version 7); the hidden photos are the own tag `hidden`.
+    pub hidden_folders: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -441,6 +527,7 @@ pub fn user_data(conn: &Connection) -> Result<UserData> {
         people: crate::people::user_data(conn)?,
         geo: crate::geo::user_data(conn)?,
         dates: crate::dates::user_data(conn)?,
+        hidden_folders: hidden_folder_paths(conn)?,
     })
 }
 
@@ -480,5 +567,30 @@ mod tests {
         }
         assert_eq!(check_name("Favoritenstraße").unwrap(), "Favoritenstraße");
         assert_eq!(db::tag_fold("O\u{308}STERREICH"), db::tag_fold("\u{f6}sterreich"));
+    }
+
+    #[test]
+    fn hidden_words_and_names() {
+        // The words that start one of the four, three letters at least.
+        for w in ["hid", "Hidden", "vers", "VERBORGEN", "ausg", "aus"] {
+            assert!(is_hidden_word(w), "{w}");
+        }
+        for w in ["hi", "ve", "hiddenn", "versteckte", "xyz"] {
+            assert!(!is_hidden_word(w), "{w}");
+        }
+        // Only a whole word shows the hidden photos when typed as text.
+        for w in ["hidden", "Versteckt", " verborgen ", "AUSGEBLENDET"] {
+            assert!(is_hidden_exact(w), "{w}");
+        }
+        for w in ["hid", "ver", "aus", "Hiddenstreet", "versteckte"] {
+            assert!(!is_hidden_exact(w), "{w}");
+        }
+        // Typed as a tag name they all mean the one stored tag.
+        for n in ["hidden", "Versteckt", " VERBORGEN", "ausgeblendet"] {
+            assert_eq!(check_name(n).unwrap(), "hidden", "{n}");
+            assert!(means_hidden(n), "{n}");
+        }
+        assert_eq!(check_name("Hiddenstreet").unwrap(), "Hiddenstreet");
+        assert!(is_hidden_name(" Hidden ") && !is_hidden_name("versteckt"));
     }
 }
