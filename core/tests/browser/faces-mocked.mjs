@@ -378,6 +378,10 @@ await test('picking a suggestion closes the list, and it stays closed once the n
   await settle(p, lib);
   check(await p.evaluate(() => state.filter.people.length) === 1, 'the pick is not in the search');
   check(await p.locator('#suggest').isHidden(), 'the list opened again for the new search');
+  check(await p.evaluate(() => document.activeElement === $('search')), 'the box lost the focus with the pick');
+  await p.locator('#search').click();
+  await settle(p, lib);
+  check(await p.locator('#suggest').isVisible(), 'a click in the focused box does not open the list again');
 }));
 
 // ---- the Unnamed page's filter

@@ -311,7 +311,7 @@ function applyFilter() {
   markTypes();
   // Still typing: offer what narrows the new search down (not again when only
   // the typed text became the search: the list for it is there or on its way).
-  if (document.activeElement === $('search') && suggestKey($('search').value) !== sugg.key) suggest($('search').value);
+  if (document.activeElement === $('search') && !sugg.picked && suggestKey($('search').value) !== sugg.key) suggest($('search').value);
   markActiveFolder();
   closeSidebarOnPhone();
   var view = state.filter.view;
@@ -693,7 +693,7 @@ $('lb-fav').onclick = toggleFavoriteOpen;
 var searchTimer = null;
 // `ctrl` stops the requests of the list shown before (see suggestSoon); `key`
 // is what the list shown or on its way is for (suggestKey).
-var sugg = { items: [], at: -1, seq: 0, timer: null, ctrl: null, key: null };
+var sugg = { items: [], at: -1, seq: 0, timer: null, ctrl: null, key: null, picked: false };
 
 // What a list of suggestions depends on: the text typed and the search but
 // its own text.
@@ -722,6 +722,7 @@ function stopSuggest() {
 }
 
 $('search').addEventListener('input', function () {
+  sugg.picked = false;
   clearTimeout(searchTimer);
   var v = this.value;
   // On the Locations page typing looks for a place; the text only becomes a search with Enter.
@@ -733,6 +734,7 @@ $('search').addEventListener('input', function () {
   suggestSoon(v);
 });
 $('search').addEventListener('focus', function () {
+  sugg.picked = false;
   // A search shows another list: with photos selected, ask once when the box is
   // entered (not on every key).
   if (state.selecting && selectedIds().length && $('modal').hidden) {
@@ -744,6 +746,13 @@ $('search').addEventListener('focus', function () {
     return;
   }
   suggest(this.value);
+});
+// A click in the box that already has the focus (after a pick closed the list, or
+// Escape) opens the list again; the click that gives the focus does so through `focus`.
+var searchHadFocus = false;
+$('search').addEventListener('mousedown', function () { searchHadFocus = document.activeElement === this; });
+$('search').addEventListener('click', function () {
+  if (searchHadFocus && $('suggest').hidden) { sugg.picked = false; suggest(this.value); }
 });
 $('search').addEventListener('blur', function () { setTimeout(closeSuggest, 150); });
 $('search').addEventListener('keydown', function (ev) {
@@ -1059,9 +1068,10 @@ function closeSuggest() { clearTimeout(sugg.timer); stopSuggest(); $('suggest').
 
 function pickSuggest(it) {
   clearTimeout(searchTimer);
-  // The list closes with a pick (leaving the box also keeps the new search from offering it again).
+  // The list closes with a pick and the box keeps the focus; the new search does
+  // not offer it again until the box is clicked or typed in.
   closeSuggest();
-  $('search').blur();
+  sugg.picked = true;
   $('search').value = '';
   var f = state.filter;
   if (it.kind === 'fav') setFilter(withFilter({ fav: true, q: '' }));
