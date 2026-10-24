@@ -558,52 +558,40 @@ pub fn list(conn: &Connection, view: &crate::people::View, q: &ListQuery) -> Res
         _ => "px",
     };
     let dir = if q.desc { "DESC" } else { "ASC" };
-    // Ids are numbers from the database, so they can go into the SQL.
     let m = &view.m;
-    let join = |ids: HashSet<i64>| ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
-    let pet_faces = m.pet_faces();
-    let filter = if q.unmatched {
-        format!(
-            "px >= ?1 AND px < ?2{} AND f.id IN ({})",
-            if q.rotated { " AND f.roll != 0" } else { "" },
-            join(view.unplaced_ids())
-        )
+    // Which faces are listed is decided here, by id, not in the SQL: a list of
+    // 100 000 ids in `IN (...)` makes SQLite check the whole list for every
+    // photo (minutes on a big library), and one scan of the rows is quick.
+    let (ids, within): (HashSet<i64>, bool) = if q.unmatched {
+        (view.unplaced_ids(), true)
     } else if q.pet_face {
-        format!("px >= ?1 AND px < ?2{} AND f.id IN ({})", if q.rotated { " AND f.roll != 0" } else { "" }, join(pet_faces))
+        (m.pet_faces(), true)
+    } else if q.not_face {
+        (m.not_faces(), true)
     } else {
-        let mut hidden = pet_faces;
-        let marked = m.not_faces();
-        let listed: HashSet<i64> = if q.not_face { marked } else { hidden.extend(marked); hidden };
-        format!(
-            "px >= ?1 AND px < ?2{} AND f.id {} ({})",
-            if q.rotated { " AND f.roll != 0" } else { "" },
-            if q.not_face { "IN" } else { "NOT IN" },
-            join(listed)
-        )
+        let mut hidden = m.pet_faces();
+        hidden.extend(m.not_faces());
+        (hidden, false)
     };
+    let filter = format!("px >= ?1 AND px < ?2{}", if q.rotated { " AND f.roll != 0" } else { "" });
     let space = match q.kind.as_deref() {
         Some("pets") => Space::Pets,
         _ => Space::Faces,
     };
-    let sql = format!(
-        "{} ORDER BY {order} {dir}, f.id LIMIT ?3 OFFSET ?4",
-        item_sql(", count(*) OVER ()", &filter, space)
-    );
+    let sql = format!("{} ORDER BY {order} {dir}, f.id", item_sql("", &filter, space));
     let limit = q.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT);
     let (min, max) = (q.min_px.unwrap_or(0.0), q.max_px.unwrap_or(f64::MAX));
-    let mut total = 0;
-    let faces = conn
-        .prepare(&sql)?
-        .query_map(params![min, max, limit as i64, q.offset as i64], |r| {
-            total = r.get::<_, i64>(8)? as u64;
-            item(r)
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    if faces.is_empty() && q.offset > 0 {
-        // Past the end: count without the page.
-        total = conn.query_row(&format!("SELECT count(*) FROM ({})", item_sql("", &filter, space)), params![min, max], |r| {
-            r.get::<_, i64>(0)
-        })? as u64;
+    let (mut total, mut faces) = (0u64, Vec::new());
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query(params![min, max])?;
+    while let Some(r) = rows.next()? {
+        if ids.contains(&r.get::<_, i64>(0)?) != within {
+            continue;
+        }
+        if total >= q.offset as u64 && faces.len() < limit {
+            faces.push(item(r)?);
+        }
+        total += 1;
     }
     Ok(List { total, faces, min_cluster_px: space.min_px() })
 }
