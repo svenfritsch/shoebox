@@ -1462,6 +1462,27 @@ Keeping them up to date (agents too):
   that file; change what the test is about and see it fail.
 - UI texts come from the page's `tr`, never written out in a test.
 
+## Slow requests and calling them off
+
+Measured with `scripts/bench-people.py make` and `scripts/bench-endpoints.py`
+(100 000 files, 299 000 faces). Rules that came out of it:
+
+- A request the browser drops is called off on the server too
+  (`serve/cancel.rs`): queued work does not begin, a running statement stops
+  at its next step. Shared caches (snapshot, people view, duplicates) are built
+  `unarmed`, so a quick succession of filters cannot keep restarting them.
+- The page asks for what a page shows with `pageApi`; `leavePage` (every
+  `applyFilter`) calls those off, `latest:` lets a newer request replace an
+  older one. A bar at the top (`#busy`) shows after 400 ms of any such request
+  or POST. A new page-load request uses `pageApi`, not `api`.
+- Never put a long list of ids into `IN (...)` (the Face check's unmatched
+  list took over 10 minutes; now 0.7 s): keep the ids in a set and decide in
+  Rust, or use a table.
+- Still slow on 100 000 photos, all with the bar and called off on leaving:
+  `/suggest` 3 s (queued, own abort), `/faces/similar` 1.5-2.4 s (scans every
+  embedding), `/faces/stats` 0.8 s, `/recognition/forget` 0.8 s, the face list
+  0.6-0.7 s. Everything else is under 0.4 s.
+
 ## Build notes and pitfalls (learned in phases 0–4)
 
 - **Pets are rows of `recog.faces` with a species**, and everything that

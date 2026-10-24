@@ -3689,7 +3689,7 @@ async fn duplicates_list(State(app): State<Arc<App>>) -> ApiResult<Response> {
             return Ok(Json(DuplicateList { groups: groups.as_slice() }).into_response());
         }
         let shown: HashSet<i64> = app.snapshot(&conn)?.items.iter().map(|it| it.id).collect();
-        let candidates = duplicates::load(&conn, &shown)?;
+        let candidates = cancel::unarmed(&conn, || duplicates::load(&conn, &shown))?;
         drop(conn);
         let mut groups = duplicates::find(&candidates);
         duplicates::add_tags(&app.db(), &mut groups)?;
