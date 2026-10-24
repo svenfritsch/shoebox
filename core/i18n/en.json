@@ -628,7 +628,7 @@
   "info.show_where": "Show where it is",
   "info.photos_of": "Photos of {name}",
   "info.guess": "{name}?",
-  "info.guess_maybe": "Maybe {name}?",
+  "info.guess_maybe": "{name}?",
   "info.stranger": "Stranger",
   "info.other_person": "Other…",
   "info.plus_name": "+ Name",

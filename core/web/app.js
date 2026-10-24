@@ -2494,7 +2494,7 @@ function renderPanelAll(info) {
   var tags = el('div', 'tags readonly');
   (info.tags || []).forEach(function (t) {
     if (t.source === 'user' && (isFavTag(t.name) || isHiddenTag(t.name))) return;
-    var tag = el('span', t.source === 'folder' ? 'folder' : 'own');
+    var tag = el('span', 'badge-chip ' + (t.source === 'folder' ? 'folder' : 'own'));
     if (t.source === 'folder') tag.appendChild(folderIcon());
     tag.appendChild(document.createTextNode(t.name));
     tags.appendChild(tag);
@@ -4972,7 +4972,7 @@ function infoTags(row, info) {
     if (t.source === 'user' && (isFavTag(t.name) || isHiddenTag(t.name))) return; // the heart and the eye in the top bar
     var show = function () { closeLightbox(); setFilter({ folder: null, tags: [t.id], q: '' }); };
     if (t.source === 'folder') {
-      var b = el('button', '');
+      var b = el('button', 'badge-chip');
       b.appendChild(folderIcon());
       b.appendChild(document.createTextNode(t.name));
       setTip(b, tr('tags.folder_hint'));
@@ -4980,7 +4980,7 @@ function infoTags(row, info) {
       tags.appendChild(b);
       return;
     }
-    var chip = el('span', 'own');
+    var chip = el('span', 'badge-chip own');
     var name = el('button', '', t.name);
     name.onclick = show;
     var x = el('button', 'x', '✕');
@@ -4993,10 +4993,11 @@ function infoTags(row, info) {
     chip.appendChild(x);
     tags.appendChild(chip);
   });
-  var add = el('button', 'add', tr('tags.add'));
+  var add = el('button', 'badge-chip add', tr('tags.add'));
   setTip(add, tr('tags.add_key_hint'));
   add.onclick = function () {
     var input = tagInput();
+    input.classList.add('badge-input');
     input.onkeydown = function (ev) {
       ev.stopPropagation(); // arrows and Escape belong to the field, not the viewer
       if (ev.key === 'Escape') { input.replaceWith(add); return; }
@@ -6425,6 +6426,7 @@ function personField(done, opts) {
   input.type = 'text';
   input.placeholder = opts.placeholder || tr('people.name_placeholder');
   input.autocomplete = 'off';
+  if (opts.badge) input.classList.add('badge-input');
   input.setAttribute('autocapitalize', 'words');
   input.setAttribute('enterkeyhint', 'done');
   var list = el('div', 'plist');
@@ -8334,11 +8336,11 @@ function infoFace(info, f, k, pick) {
     who.appendChild(el('span', 'note', tr(f.species ? 'info.stranger_pet' : 'info.stranger')));
   }
   if (f.state !== 'confirmed') {
-    var add = el('button', 'add', tr(f.state === 'suggested' || f.state === 'maybe' ? 'info.other_person' : 'info.plus_name'));
+    var add = el('button', 'badge-chip add', tr(f.state === 'suggested' || f.state === 'maybe' ? 'info.other_person' : 'info.plus_name'));
     add.onclick = function () {
       var field = personField(function (person) {
         send('assign', Object.assign({ faces: ids }, person));
-      }, { allowNew: true, placeholder: tr('unnamed.who'), species: f.species, onEscape: function () { field.replaceWith(add); } });
+      }, { allowNew: true, placeholder: tr('unnamed.who'), species: f.species, badge: true, onEscape: function () { field.replaceWith(add); } });
       add.replaceWith(field);
       field.input.focus();
     };

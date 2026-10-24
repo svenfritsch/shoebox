@@ -1473,20 +1473,53 @@ await test('the settings page uses the common controls: selects with the shared 
   check(m.x === '50%', `the chip's remove button has the radius ${m.x}, expected a circle`);
 }));
 
-await test('the follow-up controls share the 32 px height: search box, face action buttons, dialog fields, tab pills, kind toggle, viewer tools', await on('', hiddenPhotos, async (p, lib) => {
+await test('the follow-up controls share the 32 px height: search box, face action buttons, dialog fields, kind toggle, viewer tools', await on('', hiddenPhotos, async (p, lib) => {
   await cellCount(p, 3);
   const heights = await p.evaluate(() => {
     const host = document.createElement('div');
     host.innerHTML = '<div class="dialog"><input type="text"><input type="number"><select><option>a</option></select><div class="kinds"><button>x</button><button class="on">y</button></div></div>'
-      + '<button class="abtn">+</button><div class="tabs"><button>one</button></div><div class="lb-panel"><div class="ptools"><button class="tool">+</button></div></div>';
+      + '<button class="abtn">+</button><div class="lb-panel"><div class="ptools"><button class="tool">+</button></div></div>';
     document.body.appendChild(host);
     const h = (sel) => Math.round(host.querySelector(sel).getBoundingClientRect().height);
     const out = { search: Math.round(document.querySelector('.search input').getBoundingClientRect().height),
-      text: h('.dialog input[type=text]'), number: h('.dialog input[type=number]'), select: h('.dialog select'), kind: h('.kinds button'), abtn: h('.abtn'), tab: h('.tabs button'), tool: h('.ptools .tool') };
+      text: h('.dialog input[type=text]'), number: h('.dialog input[type=number]'), select: h('.dialog select'), kind: h('.kinds button'), abtn: h('.abtn'), tool: h('.ptools .tool') };
     host.remove();
     return out;
   });
   for (const [name, v] of Object.entries(heights)) check(v === 32, `${name} is ${v} px high, expected 32`);
+}));
+
+await test('badges: tags, the + tag chip, face names and both small fields in the viewer\'s panel are 26 px high, and a maybe guess has no "Maybe"', await on('', (lib) => {
+  lib.photos = [{ id: 1, version: 'orig0001' }];
+  lib.photoTags = { 1: [{ id: 1, name: 'Strand', source: 'user' }, { id: 2, name: 'Urlaub', source: 'folder' }] };
+  const face = (id, extra) => ({ id, file: 1, kind: 'jpeg', version: 'orig0001', x: 0.1, y: 0.1, w: 0.1, h: 0.1, roll: 0, px: 100, score: 0.9, small: false, state: null, species: null, person: null, similarity: null, rejected: [], landmarks: [], ...extra });
+  lib.photoFaces = { 1: [face(101, { state: 'maybe', person: { id: 9, name: 'Antonia Eger' } }), face(102)] };
+}, async (p, lib) => {
+  await p.locator('#sizer a.cell').first().click();
+  await p.locator('#lb-info').click();
+  await p.locator('#lb-panel .pface').first().waitFor();
+  const h = (sel) => p.locator(sel).evaluateAll((xs) => xs.map((e) => Math.round(e.getBoundingClientRect().height)));
+  const chips = await h('#lb-panel .tags .badge-chip');
+  check(chips.length === 3 && chips.every((x) => x === 26), `tag chips are ${chips} px high, expected three of 26`);
+  const guess = await p.locator('#lb-panel .pface .guess').textContent();
+  check(guess === 'Antonia Eger?', `the guess reads "${guess}"`);
+  const other = await h('#lb-panel .pface button.add');
+  check(other.length === 2 && other.every((x) => x === 26), `the face chips are ${other} px high`);
+  await p.locator('#lb-panel .tags .add').click();
+  check((await h('#lb-panel .tags input')).join() === '26', 'the tag field is not 26 px high');
+  await p.keyboard.press('Escape');
+  await p.locator('#lb-panel .pface button.add').nth(1).click();
+  check((await h('#lb-panel .pfield input')).join() === '26', 'the "Who is it?" field is not 26 px high: ' + await h('#lb-panel .pfield input'));
+}));
+
+await test('tabs look the same everywhere: a person\'s tabs and the drives\' tabs share one style', await on('view=people', (lib) => lib.person('Tabea Tab', { suggested: 2 }), async (p, lib, tabea) => {
+  await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=suggested`; }, tabea.id);
+  await p.locator('#person-tabs .tab.active').waitFor();
+  const style = (sel) => p.evaluate((q) => { const e = document.querySelector(q); const c = getComputedStyle(e); return [c.textTransform, c.paddingTop, c.paddingLeft, c.borderBottomWidth, c.fontWeight, c.letterSpacing].join('|'); }, sel);
+  await p.evaluate(() => { const d = document.createElement('div'); d.className = 'tabs underline'; d.innerHTML = '<button class="on">x</button><button>y</button>'; d.id = 'probe-tabs'; document.body.appendChild(d); });
+  check((await style('#person-tabs .tab.active')) === (await style('#probe-tabs .on')), `the active tabs differ: ${await style('#person-tabs .tab.active')} vs ${await style('#probe-tabs .on')}`);
+  check((await style('#person-tabs .tab:not(.active)')) === (await style('#probe-tabs button:not(.on)')), 'the other tabs differ');
+  check((await style('#person-tabs .tab.active')).startsWith('uppercase'), 'the tabs are not in the drives\' style');
 }));
 
 await finish();
