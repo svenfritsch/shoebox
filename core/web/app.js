@@ -311,7 +311,7 @@ function applyFilter() {
   markTypes();
   // Still typing: offer what narrows the new search down (not again when only
   // the typed text became the search: the list for it is there or on its way).
-  if (document.activeElement === $('search') && suggestKey($('search').value) !== sugg.key) suggest($('search').value);
+  if (document.activeElement === $('search') && !sugg.picked && suggestKey($('search').value) !== sugg.key) suggest($('search').value);
   markActiveFolder();
   closeSidebarOnPhone();
   var view = state.filter.view;
@@ -693,7 +693,7 @@ $('lb-fav').onclick = toggleFavoriteOpen;
 var searchTimer = null;
 // `ctrl` stops the requests of the list shown before (see suggestSoon); `key`
 // is what the list shown or on its way is for (suggestKey).
-var sugg = { items: [], at: -1, seq: 0, timer: null, ctrl: null, key: null };
+var sugg = { items: [], at: -1, seq: 0, timer: null, ctrl: null, key: null, picked: false, wait: null };
 
 // What a list of suggestions depends on: the text typed and the search but
 // its own text.
@@ -722,6 +722,7 @@ function stopSuggest() {
 }
 
 $('search').addEventListener('input', function () {
+  sugg.picked = false;
   clearTimeout(searchTimer);
   var v = this.value;
   // On the Locations page typing looks for a place; the text only becomes a search with Enter.
@@ -733,6 +734,7 @@ $('search').addEventListener('input', function () {
   suggestSoon(v);
 });
 $('search').addEventListener('focus', function () {
+  sugg.picked = false;
   // A search shows another list: with photos selected, ask once when the box is
   // entered (not on every key).
   if (state.selecting && selectedIds().length && $('modal').hidden) {
@@ -744,6 +746,13 @@ $('search').addEventListener('focus', function () {
     return;
   }
   suggest(this.value);
+});
+// A click in the box that already has the focus (after a pick closed the list, or
+// Escape) opens the list again; the click that gives the focus does so through `focus`.
+var searchHadFocus = false;
+$('search').addEventListener('mousedown', function () { searchHadFocus = document.activeElement === this; });
+$('search').addEventListener('click', function () {
+  if (searchHadFocus && $('suggest').hidden) { sugg.picked = false; suggest(this.value); }
 });
 $('search').addEventListener('blur', function () { setTimeout(closeSuggest, 150); });
 $('search').addEventListener('keydown', function (ev) {
@@ -901,9 +910,11 @@ function suggest(text) {
   sugg.key = suggestKey(text);
   var seq = sugg.seq, f = state.filter;
   var ctrl = sugg.ctrl = new AbortController(), opts = { signal: ctrl.signal };
+  // A list that takes a moment shows grey placeholder rows meanwhile (a quick one is not flashed).
+  clearTimeout(sugg.wait);
+  sugg.wait = setTimeout(function () { showWaiting(seq); }, SUGGEST_WAIT);
   // On the Locations page the search finds places: picking one shows it.
   if (f.view === 'locations' && geo.on) { showSuggest(placeSuggestions(text.trim(), f)); return; }
-  if (f.view) { closeSuggest(); return; }
   // `text:` and `name:`: one row, the term as typed, with the photos it finds
   // (the server counts them); none when it finds nothing.
   var pre = prefixOf(text), row = null;
@@ -962,7 +973,7 @@ function suggest(text) {
     // Last: a year, a month with a year or a day, when that is what was typed.
     items = items.concat(dateItems(r.dates));
     showSuggest(items);
-  }).catch(function () {});
+  }).catch(function () { if (seq === sugg.seq) closeSuggest(); });
 }
 
 // Over all drives: tags, people and groups by name (the drives share names, not ids).
@@ -982,7 +993,7 @@ function suggestAll(text, seq, opts) {
     });
     items = items.concat(textItems(needle));
     showSuggest(items);
-  }).catch(function () {});
+  }).catch(function () { if (seq === sugg.seq) closeSuggest(); });
 }
 
 // The last row of a plain search: look for the same word in the text of photos,
@@ -1006,8 +1017,34 @@ function addTerm(kind, term) {
   setFilter(withFilter(ch));
 }
 
+var SUGGEST_WAIT = 120;
+var WAITING_ROWS = [62, 48, 70, 40, 56];
+
+// Placeholder rows while the list is on its way, if nothing is shown yet (a
+// list that is there stays until the new one replaces it).
+function showWaiting(seq) {
+  var box = $('suggest');
+  if (seq !== sugg.seq || document.activeElement !== $('search') || (!box.hidden && box.querySelector('.item'))) return;
+  box.textContent = '';
+  sugg.items = [];
+  sugg.at = -1;
+  WAITING_ROWS.forEach(function (w) {
+    var row = el('div', 'wait-row');
+    row.setAttribute('aria-hidden', 'true');
+    row.appendChild(el('span', 'wait-dot'));
+    var bar = el('span', 'wait-bar');
+    bar.style.width = w + '%';
+    row.appendChild(bar);
+    box.appendChild(row);
+  });
+  box.setAttribute('aria-busy', 'true');
+  box.hidden = false;
+}
+
 function showSuggest(items, hint) {
   var box = $('suggest');
+  clearTimeout(sugg.wait);
+  box.removeAttribute('aria-busy');
   box.textContent = '';
   sugg.items = items;
   sugg.at = -1;
@@ -1055,10 +1092,14 @@ function markSuggest() {
   });
 }
 
-function closeSuggest() { clearTimeout(sugg.timer); stopSuggest(); $('suggest').hidden = true; sugg.at = -1; }
+function closeSuggest() { clearTimeout(sugg.timer); clearTimeout(sugg.wait); stopSuggest(); $('suggest').hidden = true; $('suggest').removeAttribute('aria-busy'); sugg.at = -1; }
 
 function pickSuggest(it) {
   clearTimeout(searchTimer);
+  // The list closes with a pick and the box keeps the focus; the new search does
+  // not offer it again until the box is clicked or typed in.
+  closeSuggest();
+  sugg.picked = true;
   $('search').value = '';
   var f = state.filter;
   if (it.kind === 'fav') setFilter(withFilter({ fav: true, q: '' }));
@@ -6570,7 +6611,6 @@ function groupsDialog() {
 
 function personMenuItems(p) {
   return [
-    { label: tr('people.menu.show'), run: function () { showPerson(p.id); } },
     { label: tr('people.menu.rename'), run: function () { renamePerson(p); } },
     { label: tr('people.menu.move'), run: function () { moveToGroupDialog(p); } },
     { label: tr('people.menu.new_group'), run: function () { newGroup(p); } },
@@ -6609,11 +6649,21 @@ function personHead(box, f) {
   var faces = el('button', 'btn quiet', review ? tr('people.check', { count: trn('count.faces', review) }) : tr('side.faces'));
   faces.onclick = function () { showView('person', p.id, p.suggested ? 'suggested' : p.maybe ? 'maybe' : 'confirmed'); };
   head.appendChild(faces);
-  head.appendChild(menuButton(personMenuItems(p).slice(1), tr('people.more_for', { name: p.name })));
+  head.appendChild(menuButton(personMenuItems(p), tr('people.more_for', { name: p.name })));
   box.insertBefore(head, box.firstChild);
 }
 
 // ---- people overview
+
+// Groups folded on the People page (kept while the page is in use, not saved).
+var pageClosed = {};
+
+function foldGroup(sec, grid, fold, open) {
+  setArrow(fold, open);
+  fold.setAttribute('aria-expanded', String(open));
+  sec.classList.toggle('folded', !open);
+  grid.hidden = !open;
+}
 
 function loadPeoplePage() {
   var page = $('page');
@@ -6643,11 +6693,23 @@ function loadPeoplePage() {
   var sections = groupedPeople();
   if (!people.list.length) page.appendChild(el('p', 'sub', tr('people.nobody_named')));
   sections.forEach(function (s) {
+    var key = s.id == null ? 'none' : s.id;
     var sec = el('section', 'pgroup');
-    var h = el('h3', '', s.name);
+    var h = el('h3');
+    var fold = el('button', 'toggle');
+    fold.type = 'button';
+    h.appendChild(fold);
+    h.appendChild(el('span', 'gname', s.name));
     h.appendChild(el('span', 'n', String(s.people.length)));
     sec.appendChild(h);
     var grid = el('div', 'people');
+    // The title folds the group's people away; all groups start open.
+    var flipGroup = function () {
+      pageClosed[key] = !pageClosed[key];
+      foldGroup(sec, grid, fold, !pageClosed[key]);
+    };
+    foldGroup(sec, grid, fold, !pageClosed[key]);
+    h.onclick = flipGroup;
     s.people.forEach(function (p) { grid.appendChild(personTile(p)); });
     if (!s.people.length) grid.appendChild(el('p', 'hint', tr('people.group_empty_hint')));
     sec.appendChild(grid);
@@ -6711,7 +6773,7 @@ function loadPersonPage() {
     var photos = el('button', 'btn quiet', tr('person.photos'));
     photos.onclick = function () { showPerson(p.id); };
     head.appendChild(photos);
-    head.appendChild(menuButton(personMenuItems(p).slice(1), tr('people.more_for', { name: p.name })));
+    head.appendChild(menuButton(personMenuItems(p), tr('people.more_for', { name: p.name })));
     page.appendChild(head);
     var tabs = el('div', 'tabs');
     tabs.id = 'person-tabs';
@@ -7108,6 +7170,12 @@ function nameFacesDialog(faces, done) {
 // the actions and loads started, so a refresh that crossed one is redone.
 var un = { shown: 0, total: 0, unnamed: 0, kind: 'all', box: null, more: null, singles: null, epoch: 0, timer: null };
 var UN_KINDS = [['all', 'unnamed.kind.all'], ['faces', 'unnamed.kind.faces'], ['pets', 'unnamed.kind.pets']];
+// Which kind the page lists is a browser setting, kept over a reload.
+var UN_KIND_KEY = 'shoebox-unnamed-kind';
+try {
+  var savedKind = localStorage.getItem(UN_KIND_KEY);
+  if (UN_KINDS.some(function (o) { return o[0] === savedKind; })) un.kind = savedKind;
+} catch (e) { /* private window */ }
 var PAGE_CLUSTERS = 30;
 
 // Size of the face circles: a browser setting for the whole application, like
@@ -7163,7 +7231,11 @@ function loadUnnamed() {
     opt.selected = o[0] === un.kind;
     kinds.appendChild(opt);
   });
-  kinds.onchange = function () { un.kind = kinds.value; loadUnnamed(); };
+  kinds.onchange = function () {
+    un.kind = kinds.value;
+    try { localStorage.setItem(UN_KIND_KEY, un.kind); } catch (e) { /* ignore */ }
+    loadUnnamed();
+  };
   var bar = el('div', 'toolbar');
   bar.appendChild(kinds);
   bar.appendChild(faceSizeControl(page));

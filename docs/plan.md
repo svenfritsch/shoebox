@@ -2153,3 +2153,25 @@ section against its own endpoint in `people.rs`, `dates.rs`,
 its way, the text row and prefixes; against the real server
 (`faces-e2e.mjs`): one `/suggest` per pause and a list that is what the
 server answers.
+
+The empty box (a click into it) took 2.6 s on `bench-search.py`'s library (100 000
+files, 215 000 faces, 7 groups): each of the 7 groups and 3 pet words was a
+search of its own (`snapshot.query`), each reading every file, the pets every
+face again (pets 2.0 s, groups 0.55 s). Now `person_photos` is `counts`
+(`people_api.rs`): one reading of the files gives the photos of every person,
+group and pet species within the filter (`Counts`), kept like the people's
+counts, and what they are made of (the contents of each person, group and
+species, `Keys`) is kept for any filter while the people view stays the same,
+so a chip picked changes only the counting. `people::keys_of_all_pets` reads
+the faces once for every species. Measured: the empty box 2.6 s -> 1.0 s the
+first time after a change to the people (the pets' faces, once), 5 ms again
+with the same filter and 31 ms with another one. `pet_hits_uncached` is the
+old search for the all-drives list, which has no request filter to key on. The
+page shows five grey placeholder rows 120 ms after asking if the list has not
+come (`showWaiting`, `.wait-row`; nothing is shown for a quick answer, and a
+list that is there stays until the new one comes), and offers suggestions on
+every page, not only the timeline (picking one shows the timeline with the
+chip, as typing a search already did). Tests: `suggest.rs` (groups and pets
+kept counts follow a group change and a drawn dog), `faces-mocked.mjs` (rows
+after 120 ms and gone with the list, none for a quick one; the list on a first
+click on the Faces page).
