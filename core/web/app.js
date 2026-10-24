@@ -693,7 +693,7 @@ $('lb-fav').onclick = toggleFavoriteOpen;
 var searchTimer = null;
 // `ctrl` stops the requests of the list shown before (see suggestSoon); `key`
 // is what the list shown or on its way is for (suggestKey).
-var sugg = { items: [], at: -1, seq: 0, timer: null, ctrl: null, key: null, picked: false };
+var sugg = { items: [], at: -1, seq: 0, timer: null, ctrl: null, key: null, picked: false, wait: null };
 
 // What a list of suggestions depends on: the text typed and the search but
 // its own text.
@@ -910,9 +910,11 @@ function suggest(text) {
   sugg.key = suggestKey(text);
   var seq = sugg.seq, f = state.filter;
   var ctrl = sugg.ctrl = new AbortController(), opts = { signal: ctrl.signal };
+  // A list that takes a moment shows grey placeholder rows meanwhile (a quick one is not flashed).
+  clearTimeout(sugg.wait);
+  sugg.wait = setTimeout(function () { showWaiting(seq); }, SUGGEST_WAIT);
   // On the Locations page the search finds places: picking one shows it.
   if (f.view === 'locations' && geo.on) { showSuggest(placeSuggestions(text.trim(), f)); return; }
-  if (f.view) { closeSuggest(); return; }
   // `text:` and `name:`: one row, the term as typed, with the photos it finds
   // (the server counts them); none when it finds nothing.
   var pre = prefixOf(text), row = null;
@@ -971,7 +973,7 @@ function suggest(text) {
     // Last: a year, a month with a year or a day, when that is what was typed.
     items = items.concat(dateItems(r.dates));
     showSuggest(items);
-  }).catch(function () {});
+  }).catch(function () { if (seq === sugg.seq) closeSuggest(); });
 }
 
 // Over all drives: tags, people and groups by name (the drives share names, not ids).
@@ -991,7 +993,7 @@ function suggestAll(text, seq, opts) {
     });
     items = items.concat(textItems(needle));
     showSuggest(items);
-  }).catch(function () {});
+  }).catch(function () { if (seq === sugg.seq) closeSuggest(); });
 }
 
 // The last row of a plain search: look for the same word in the text of photos,
@@ -1015,8 +1017,34 @@ function addTerm(kind, term) {
   setFilter(withFilter(ch));
 }
 
+var SUGGEST_WAIT = 120;
+var WAITING_ROWS = [62, 48, 70, 40, 56];
+
+// Placeholder rows while the list is on its way, if nothing is shown yet (a
+// list that is there stays until the new one replaces it).
+function showWaiting(seq) {
+  var box = $('suggest');
+  if (seq !== sugg.seq || document.activeElement !== $('search') || (!box.hidden && box.querySelector('.item'))) return;
+  box.textContent = '';
+  sugg.items = [];
+  sugg.at = -1;
+  WAITING_ROWS.forEach(function (w) {
+    var row = el('div', 'wait-row');
+    row.setAttribute('aria-hidden', 'true');
+    row.appendChild(el('span', 'wait-dot'));
+    var bar = el('span', 'wait-bar');
+    bar.style.width = w + '%';
+    row.appendChild(bar);
+    box.appendChild(row);
+  });
+  box.setAttribute('aria-busy', 'true');
+  box.hidden = false;
+}
+
 function showSuggest(items, hint) {
   var box = $('suggest');
+  clearTimeout(sugg.wait);
+  box.removeAttribute('aria-busy');
   box.textContent = '';
   sugg.items = items;
   sugg.at = -1;
@@ -1064,7 +1092,7 @@ function markSuggest() {
   });
 }
 
-function closeSuggest() { clearTimeout(sugg.timer); stopSuggest(); $('suggest').hidden = true; sugg.at = -1; }
+function closeSuggest() { clearTimeout(sugg.timer); clearTimeout(sugg.wait); stopSuggest(); $('suggest').hidden = true; $('suggest').removeAttribute('aria-busy'); sugg.at = -1; }
 
 function pickSuggest(it) {
   clearTimeout(searchTimer);

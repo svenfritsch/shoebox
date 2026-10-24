@@ -2243,7 +2243,7 @@ async fn all_suggest(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) ->
         for app in &taking_part {
             let conn = app.conn.lock().unwrap();
             let Some(query) = filter.query_for(app, &conn)? else { continue };
-            for hit in people_api::pet_hits(app, &conn, &query, &text)? {
+            for hit in people_api::pet_hits_uncached(app, &conn, &query, &text)? {
                 *pets.entry(hit.species).or_default() += hit.photos;
             }
         }
@@ -3113,8 +3113,8 @@ async fn suggest(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> Api
         Ok(Json(Suggestions {
             tags: tag_hits(app, &conn, &filter, shown.as_ref(), &needle, true, SUGGEST_TAGS)?,
             people: section(app, "people", people_api::person_hits(app, &conn, &pairs, &filter, shown.as_ref(), &needle, SUGGEST_PEOPLE)),
-            pets: section(app, "pets", people_api::pet_hits(app, &conn, &filter, text)),
-            groups: section(app, "groups", people_api::group_hits(app, &conn, &filter, &needle, SUGGEST_GROUPS)),
+            pets: section(app, "pets", people_api::pet_hits(app, &conn, &pairs, &filter, shown.as_ref(), text)),
+            groups: section(app, "groups", people_api::group_hits(app, &conn, &pairs, &filter, shown.as_ref(), &needle, SUGGEST_GROUPS)),
             dates,
             // As the page offers it: the text row from two letters on.
             text: if text.chars().count() >= 2 { term_count(text, in_text)? } else { None },
