@@ -1383,4 +1383,21 @@ await test('common control sizes: on a person\'s suggested faces "Select all" an
   check((await p.locator(not).evaluate((e) => getComputedStyle(e).backgroundColor)) === 'rgba(0, 0, 0, 0)', '"Not" has a background before it is hovered');
 }));
 
+await test('a text button never wraps: a long label is cut with an ellipsis and the quick label shows it whole', await on('view=people', (lib) => lib.person('Maximilian Alexander Friedrich Wilhelm von Hohenzollern-Sigmaringen', { suggested: 3 }), async (p, lib, long) => {
+  await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=suggested`; }, long.id);
+  await p.locator('#pp-grid .face').nth(1).waitFor();
+  await settle(p, lib);
+  await p.locator('#pp-pick').click();
+  const not = p.locator('#pp-bar .btn.quiet');
+  const m = await not.evaluate((e) => ({ h: e.getBoundingClientRect().height, cut: e.scrollWidth > e.clientWidth, text: e.textContent, over: getComputedStyle(e).textOverflow }));
+  check(m.h === 32, `the long button is ${m.h} px high, expected one line of 32`);
+  check(m.cut && m.over === 'ellipsis', 'the long label is not cut with an ellipsis');
+  await not.hover();
+  await p.clock.runFor(400);
+  check((await p.locator('#quick-tip.show').textContent()) === m.text, 'the quick label does not show the whole label');
+  await p.locator('#pp-all').hover();
+  await p.clock.runFor(400);
+  check(await p.locator('#quick-tip.show').count() === 0, 'a button that is not cut off shows a quick label');
+}));
+
 await finish();
