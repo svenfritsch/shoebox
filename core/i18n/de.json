@@ -271,6 +271,7 @@
   "side.trash_n": "Papierkorb ({n})",
   "status.missing": "{n} fehlen",
   "status.thumbs": "Vorschaubilder {pct} %",
+  "app.loading": "Lädt",
   "status.scanning": "Scan läuft …",
   "status.last_scan": "letzter Scan {date}",
   "status.no_ffmpeg": "kein ffmpeg: Video-Vorschauen kommen vom Browser",

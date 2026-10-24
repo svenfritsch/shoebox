@@ -20,7 +20,7 @@ pub(super) struct Counts {
 
 pub(super) async fn counts(State(app): State<Arc<App>>) -> ApiResult<Json<Counts>> {
     blocking(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
+        let conn = app.db();
         Ok(Json(Counts { faces: forget::counts(&conn, Space::Faces)?, pets: forget::counts(&conn, Space::Pets)? }))
     })
     .await

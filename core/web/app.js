@@ -132,14 +132,73 @@ function api(path, opts) {
   });
 }
 
+// The requests of the page being shown. Leaving the page or changing what it
+// lists calls them off (the browser drops them and the server stops working on
+// them, see serve/cancel.rs), so they never queue up behind the next page. A
+// request called off never answers: nothing is shown for it and no error
+// appears. `latest` names a request a newer one with the same name replaces
+// (the face list asked again for another sort).
+var pageCalls = { ctrls: [], latest: {}, pending: 0, posts: 0, timer: null };
+
+// The bar at the top of the page: shown when a request takes longer than a
+// moment, so a slow page does not look stuck.
+function busyUpdate() {
+  var on = pageCalls.pending + pageCalls.posts > 0;
+  if (!on) { clearTimeout(pageCalls.timer); pageCalls.timer = null; $('busy').hidden = true; return; }
+  if (pageCalls.timer === null && $('busy').hidden) pageCalls.timer = setTimeout(function () { pageCalls.timer = null; $('busy').hidden = false; }, 400);
+}
+
+function pageApi(path, opts) {
+  opts = Object.assign({}, opts);
+  var latest = opts.latest;
+  delete opts.latest;
+  var ctrl = new AbortController();
+  if (latest) {
+    if (pageCalls.latest[latest]) pageCalls.latest[latest].abort();
+    pageCalls.latest[latest] = ctrl;
+  }
+  pageCalls.ctrls.push(ctrl);
+  pageCalls.pending++;
+  busyUpdate();
+  var done = function () {
+    var at = pageCalls.ctrls.indexOf(ctrl);
+    if (at >= 0) { pageCalls.ctrls.splice(at, 1); pageCalls.pending--; }
+    if (latest && pageCalls.latest[latest] === ctrl) delete pageCalls.latest[latest];
+    busyUpdate();
+  };
+  return new Promise(function (resolve, reject) {
+    api(path, Object.assign({ signal: ctrl.signal }, opts)).then(function (r) { done(); resolve(r); }, function (e) {
+      done();
+      if (e && e.name === 'AbortError') return; // called off: the page moved on
+      reject(e);
+    });
+  });
+}
+
+// The page is left (another page, another filter): call off what it asked for.
+function leavePage() {
+  var ctrls = pageCalls.ctrls;
+  pageCalls.ctrls = [];
+  pageCalls.latest = {};
+  pageCalls.pending = 0;
+  ctrls.forEach(function (c) { c.abort(); });
+  if (state.loadCtrl) { state.loadCtrl.abort(); state.loadCtrl = null; }
+  busyUpdate();
+}
+
 // Every change is a POST with the X-Shoebox header (the server refuses it
 // otherwise, so other web pages cannot make changes).
 function post(path, body) {
-  return api(path, {
+  pageCalls.posts++;
+  busyUpdate();
+  var done = function () { pageCalls.posts--; busyUpdate(); };
+  var req = api(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Shoebox': '1' },
     body: JSON.stringify(body || {}),
   });
+  req.then(done, done);
+  return req;
 }
 
 // Arrays repeat their key (`tag=1&tag=2`).
@@ -305,6 +364,7 @@ function applyFilter() {
     return;
   }
   shownHash = location.hash;
+  leavePage();
   state.filter = readHash();
   $('search').value = state.filter.q;
   renderChips();
@@ -3478,7 +3538,7 @@ function renderDuplicatesAcross(page, alive, embedded) {
   // The list again, e.g. after a name was added or taken away; the field stays.
   fill = function () {
     var mine = ++asked;
-    return api('/api/all/duplicates?limit=200' + dupIgnoreQuery(ignore.names(), true)).then(function (r) {
+    return pageApi('/api/all/duplicates?limit=200' + dupIgnoreQuery(ignore.names(), true)).then(function (r) {
       if (!alive() || mine !== asked) return;
       clearNode(box);
       ignore.setHidden(r.hidden_groups || 0);
@@ -3686,7 +3746,7 @@ function loadDuplicatesHere() {
   page.appendChild(el('h2', '', tr('dups.title')));
   addDupTabs(page);
   page.appendChild(el('p', 'sub', tr('dups.looking')));
-  return api(LIBAPI + '/duplicates').then(function (res) {
+  return pageApi(LIBAPI + '/duplicates').then(function (res) {
     if (state.filter.view !== 'duplicates') return;
     dupState.groups = res.groups;
     dupState.shown = 0;
@@ -4356,7 +4416,7 @@ function askDates(conflicts, done) {
 // ------------------------------------------------------------------ trash page
 
 function loadTrash() {
-  return api(LIBAPI + '/trash').then(function (items) {
+  return pageApi(LIBAPI + '/trash').then(function (items) {
     if (state.filter.view !== 'trash') return;
     var page = $('page');
     clearNode(page);
@@ -4989,7 +5049,7 @@ function loadFaces() {
   faceState.faces = [];
   faceState.picked = {};
   updateFacePick();
-  api(LIBAPI + '/faces/stats' + query({ kind: kind === 'pets' ? 'pets' : null })).then(function (s) {
+  pageApi(LIBAPI + '/faces/stats' + query({ kind: kind === 'pets' ? 'pets' : null }), { latest: 'face-stats' }).then(function (s) {
     if (checkKind() === kind && onCheckPage()) sub.textContent = faceSummary(s);
   }).catch(function () {});
   return moreFaces(grid, more);
@@ -5123,7 +5183,7 @@ function moreFaces(grid, more) {
     rotated: f === 'rotated' ? 'true' : null, not_face: f === 'not_face' ? 'true' : null, pet_face: f === 'pet_face' ? 'true' : null, unmatched: f === 'unmatched' ? 'true' : null,
   });
   more.disabled = true;
-  return api(LIBAPI + '/faces' + q).then(function (r) {
+  return pageApi(LIBAPI + '/faces' + q, { latest: 'face-list' }).then(function (r) {
     if (!onCheckPage()) return;
     faceState.total = r.total;
     faceState.minPx = r.min_cluster_px;
@@ -5273,14 +5333,14 @@ function loadSettings() {
     card.onclick = function () { showView(c[0]); };
     cards.appendChild(card);
     if (c[0] === 'text') {
-      api(LIBAPI + '/text/stats').then(function (s) {
+      pageApi(LIBAPI + '/text/stats').then(function (s) {
         line.textContent = s.read
           ? tr('textcheck.summary_short', { lines: s.lines, photos: trn('count.photos', s.with_text), read: s.read })
           : tr('settings.not_yet_text');
       }).catch(function () { line.textContent = ''; });
       return;
     }
-    api(LIBAPI + '/faces/stats' + query({ kind: c[0] === 'pets' ? 'pets' : null })).then(function (s) {
+    pageApi(LIBAPI + '/faces/stats' + query({ kind: c[0] === 'pets' ? 'pets' : null })).then(function (s) {
       line.textContent = s.faces
         ? tr('facecheck.faces_in', { faces: trn(c[0] === 'pets' ? 'count.pets' : 'count.faces', s.faces), photos: trn('count.photos', s.looked - s.failed) })
         : s.looked ? tr('settings.looked_none', { photos: trn('count.photos', s.looked) })
@@ -5324,7 +5384,7 @@ function textCleanupCard() {
   var del = el('button', 'btn quiet', tr('settings.text_delete'));
   del.type = 'button';
   del.disabled = true;
-  api(LIBAPI + '/text/stats').then(function (s) {
+  pageApi(LIBAPI + '/text/stats').then(function (s) {
     line.textContent = s.stored ? tr('settings.text_stored', { lines: s.stored, photos: trn('count.photos', s.read) }) : tr('settings.not_yet_text');
     del.disabled = !s.stored && !s.read;
   }).catch(function () {});
@@ -5361,7 +5421,7 @@ function forgetCard(space) {
   auto.type = all.type = 'button';
   auto.disabled = all.disabled = true;
   var counts = null;
-  api(LIBAPI + '/recognition/forget').then(function (c) {
+  pageApi(LIBAPI + '/recognition/forget').then(function (c) {
     counts = c[space];
     line.textContent = counts.finds || counts.decisions
       ? tr('forget.stored', { finds: counts.finds, photos: counts.photos, decisions: counts.decisions, people: counts.people })
@@ -5405,7 +5465,7 @@ function loadTextCheck() {
   page.appendChild(el('p', 'hint', tr('textcheck.hint')));
   var body = el('div', 'textcheck');
   page.appendChild(body);
-  Promise.all([api(LIBAPI + '/text/stats'), api(LIBAPI + '/text/check')]).then(function (r) {
+  Promise.all([pageApi(LIBAPI + '/text/stats'), pageApi(LIBAPI + '/text/check')]).then(function (r) {
     if (state.filter.view !== 'text') return;
     renderTextCheck(body, r[0], r[1]);
   }).catch(function (e) { body.textContent = e.message; });
@@ -5478,7 +5538,7 @@ function renderTextCheck(body, s, check) {
     dyn.appendChild(grid);
   };
   var refresh = function () {
-    Promise.all([api(LIBAPI + '/text/stats'), api(LIBAPI + '/text/check')]).then(function (r) {
+    Promise.all([pageApi(LIBAPI + '/text/stats'), pageApi(LIBAPI + '/text/check')]).then(function (r) {
       if (state.filter.view === 'text') fill(r[0], r[1]);
     }).catch(function (e) { dyn.textContent = e.message; });
   };
@@ -5677,7 +5737,7 @@ function loadPeople() {
 
 function fetchPeople() {
   people.stale = false;
-  return Promise.all([api(LIBAPI + '/people'), api(LIBAPI + '/groups')]).then(function (r) {
+  return Promise.all([pageApi(LIBAPI + '/people'), pageApi(LIBAPI + '/groups')]).then(function (r) {
     people.list = r[0];
     people.groups = r[1];
     people.byId = {};
@@ -6645,7 +6705,7 @@ function loadPersonPage() {
   pp.faces = [];
   pp.picked = {};
   pp.picking = false;
-  return api(LIBAPI + '/people/' + f.id).then(function (p) {
+  return pageApi(LIBAPI + '/people/' + f.id).then(function (p) {
     if (state.filter.view !== 'person' || state.filter.id !== p.id) return;
     pp.person = p;
     state.personNames[p.id] = p.name;
@@ -6727,14 +6787,14 @@ function personTabCounts(p) {
 // The counts in the tabs after the suggestions were recomputed.
 function loadPersonCounts() {
   var id = state.filter.id;
-  api(LIBAPI + '/people/' + id).then(function (p) {
+  pageApi(LIBAPI + '/people/' + id).then(function (p) {
     if (state.filter.view === 'person' && state.filter.id === id) { pp.person = p; personTabCounts(p); }
   }).catch(function () {});
 }
 
 function morePersonFaces(grid, more, tab) {
   more.disabled = true;
-  return api(LIBAPI + '/people/' + pp.person.id + '/faces' + query({ state: tab, offset: pp.faces.length, limit: 200 })).then(function (r) {
+  return pageApi(LIBAPI + '/people/' + pp.person.id + '/faces' + query({ state: tab, offset: pp.faces.length, limit: 200 })).then(function (r) {
     if (state.filter.view !== 'person') return;
     pp.total = r.total;
     r.faces.forEach(function (face) { pp.faces.push(face); grid.appendChild(personFaceCard(face, tab)); });
@@ -6769,7 +6829,7 @@ function personFacesAgain() {
   loadPersonCounts();
   if (!n) return;
   if (n + 200 > 2000) { loadPersonPage(); return; }
-  api(LIBAPI + '/people/' + id + '/faces' + query({ state: tab, offset: 0, limit: n + 200 })).then(function (r) {
+  pageApi(LIBAPI + '/people/' + id + '/faces' + query({ state: tab, offset: 0, limit: n + 200 })).then(function (r) {
     if (state.filter.view !== 'person' || state.filter.id !== id || pp.tab !== tab) return;
     var still = {};
     r.faces.forEach(function (x) { still[faceKey(x)] = true; });
@@ -7264,8 +7324,8 @@ function refreshUnnamed() {
   var epoch = un.epoch, box = un.box, more = un.more, singles = un.singles;
   var kind = un.kind === 'all' ? null : un.kind;
   Promise.all([
-    api(LIBAPI + '/clusters' + query({ size: 'large', offset: 0, limit: Math.max(un.shown, PAGE_CLUSTERS), samples: 8, kind: kind })),
-    api(LIBAPI + '/clusters' + query({ size: 'small', offset: 0, limit: Math.max(singles.shown(), SINGLES_PAGE), samples: 2, kind: kind })),
+    pageApi(LIBAPI + '/clusters' + query({ size: 'large', offset: 0, limit: Math.max(un.shown, PAGE_CLUSTERS), samples: 8, kind: kind })),
+    pageApi(LIBAPI + '/clusters' + query({ size: 'small', offset: 0, limit: Math.max(singles.shown(), SINGLES_PAGE), samples: 2, kind: kind })),
   ]).then(function (r) {
     if (state.filter.view !== 'unnamed' || box !== un.box) return;
     if (epoch !== un.epoch) { scheduleUnnamedRefresh(); return; }
@@ -7398,7 +7458,7 @@ function singlesSection() {
   var load = function () {
     more.disabled = true;
     un.epoch++;
-    return api(LIBAPI + '/clusters' + query({ size: 'small', offset: st.shown, limit: SINGLES_PAGE, samples: 2, kind: un.kind === 'all' ? null : un.kind })).then(function (r) {
+    return pageApi(LIBAPI + '/clusters' + query({ size: 'small', offset: st.shown, limit: SINGLES_PAGE, samples: 2, kind: un.kind === 'all' ? null : un.kind })).then(function (r) {
       if (state.filter.view !== 'unnamed') return;
       st.total = r.total;
       st.count = r.unnamed;
@@ -7501,7 +7561,7 @@ function unnamedSummary() {
 function moreClusters(box, more) {
   more.disabled = true;
   un.epoch++;
-  return api(LIBAPI + '/clusters' + query({ size: 'large', offset: un.shown, limit: PAGE_CLUSTERS, samples: 8, kind: un.kind === 'all' ? null : un.kind })).then(function (r) {
+  return pageApi(LIBAPI + '/clusters' + query({ size: 'large', offset: un.shown, limit: PAGE_CLUSTERS, samples: 8, kind: un.kind === 'all' ? null : un.kind })).then(function (r) {
     if (state.filter.view !== 'unnamed') return;
     un.total = r.total;
     un.unnamed = r.unnamed;
@@ -7602,7 +7662,7 @@ function clusterCard(c) {
       all = el('button', 'cmore', '+' + I18n.number(c.size - faces.length));
       setTip(all, tr('unnamed.show_all', { n: c.size }));
       all.onclick = function () {
-        api(LIBAPI + '/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
+        pageApi(LIBAPI + '/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
           faces = list;
           expanded = true;
           renderFaces();
@@ -7638,7 +7698,7 @@ function clusterCard(c) {
   // Select needs all the faces to choose from.
   var loadAll = function () {
     if (faces.length >= c.size) return Promise.resolve();
-    return api(LIBAPI + '/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
+    return pageApi(LIBAPI + '/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
       faces = list;
     });
   };
@@ -7744,7 +7804,7 @@ function clusterCard(c) {
     c.size = n.size;
     c.suggestion = n.suggestion;
     if (expanded || card.picking) {
-      api(LIBAPI + '/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
+      pageApi(LIBAPI + '/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
         faces = list;
         renderFaces();
         update();
@@ -8451,7 +8511,7 @@ function loadDrivesPage() {
   var role = function (d, value, of) {
     post('/api/all/role', { library: d.library, role: value, of: of || null }).then(function () { toast(tr('drives.role_toast', { name: d.name, role: tr('drives.role.' + value) })); loadDrivesPage(); refreshDrives(); }).catch(failed);
   };
-  Promise.all([api('/api/all/drives'), api('/api/all/backups'), api('/api/all/transfer').catch(function () { return []; })]).then(function (res) {
+  Promise.all([pageApi('/api/all/drives'), pageApi('/api/all/backups'), api('/api/all/transfer').catch(function () { return []; })]).then(function (res) {
     var list = res[0], backups = res[1], hints = res[2];
     var primaryOf = {};
     backups.forEach(function (b) { if (b.primary) primaryOf[b.library] = b.primary; });
@@ -8551,7 +8611,7 @@ function loadDrivesPage() {
     var mine = tabBox, tab = drivesTab;
     var alive = function () { return mine.parentNode && drivesTab === tab; };
     if (tab === 'dups') return renderDuplicatesAcross(tabBox, alive, true);
-    api('/api/all/people').then(function (r) {
+    pageApi('/api/all/people').then(function (r) {
       if (!alive()) return;
       if (r.offline.length) tabBox.appendChild(el('p', 'sub', tr('drives.people_offline', { names: r.offline.join(', ') })));
       if (!r.people.length) tabBox.appendChild(el('p', 'sub', tr('drives.nobody')));

@@ -160,6 +160,12 @@ pub fn stats(conn: &Connection) -> Result<Stats> {
 
 /// The stats of one space: people's faces, or cats and dogs.
 pub fn stats_of(conn: &Connection, space: Space) -> Result<Stats> {
+    stats_in(conn, &crate::people::View::load(conn)?, space)
+}
+
+/// `stats_of` with the people view the server keeps, instead of reading every
+/// face and decision again.
+pub fn stats_in(conn: &Connection, view: &crate::people::View, space: Space) -> Result<Stats> {
     let version: i32 = conn.pragma_query_value(Some("recog"), "user_version", |r| r.get(0))?;
     let roll = if version >= 2 { "f.roll" } else { "0" };
     let task = space.task();
@@ -189,7 +195,6 @@ pub fn stats_of(conn: &Connection, space: Space) -> Result<Stats> {
         Space::Pets => (buckets(&PET_WIDTH_BUCKETS), buckets(&PET_SCORE_BUCKETS)),
     };
     let (mut faces, mut rotated_faces, mut small, mut not_faces) = (0, 0, 0, 0);
-    let view = crate::people::View::load(conn)?;
     let (marked, pet_ids, unmatched_ids) = (view.m.not_faces(), view.m.pet_faces(), view.unplaced_ids());
     let mut unmatched = 0;
     let mut pet_faces = 0;

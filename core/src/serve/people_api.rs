@@ -302,7 +302,7 @@ pub(super) struct PersonHit {
 /// left out.
 pub(super) async fn search(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<PersonHit>>> {
     queued(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
+        let conn = app.db();
         let needle = param(&pairs, "q").map(db::tag_fold).unwrap_or_default();
         let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(8);
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
@@ -413,7 +413,7 @@ pub(super) struct PetHit {
 /// filter already has are left out.
 pub(super) async fn pets_search(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<PetHit>>> {
     queued(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
+        let conn = app.db();
         let needle = param(&pairs, "q").unwrap_or("");
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
         Ok(Json(pet_hits(app, &conn, &filter, needle)?))
@@ -443,7 +443,7 @@ pub(super) fn pet_hits(app: &App, conn: &rusqlite::Connection, filter: &browse::
 // ---------------------------------------------------------------- groups
 
 pub(super) async fn groups(State(app): State<Arc<App>>) -> ApiResult<Json<Vec<people::Group>>> {
-    blocking(&app, |app| Ok(Json(people::groups(&app.conn.lock().unwrap())?))).await
+    blocking(&app, |app| Ok(Json(people::groups(&app.db())?))).await
 }
 
 #[derive(Deserialize)]
@@ -472,7 +472,7 @@ pub(super) struct GroupHit {
 /// filter itself and ones that would show nothing are left out.
 pub(super) async fn groups_search(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<GroupHit>>> {
     queued(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
+        let conn = app.db();
         let needle = param(&pairs, "q").map(db::tag_fold).unwrap_or_default();
         let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(8);
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };

@@ -1122,3 +1122,9 @@ body.read-only #sel-move, body.read-only #lb-rotate, body.read-only .copy label.
 .chip .ic.link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .chip .edit .ic { margin: 0; width: 1em; height: 1em; vertical-align: -.15em; }
 .icon-btn svg { width: 18px; height: 18px; display: block; }
+
+/* A thin bar across the top while a request takes longer than a moment (`busyUpdate`). */
+.busy { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 50; overflow: hidden; pointer-events: none; }
+.busy::before { content: ''; position: absolute; top: 0; bottom: 0; width: 30%; background: var(--accent); border-radius: 2px; animation: busy-slide 1.2s ease-in-out infinite; }
+@keyframes busy-slide { from { left: -30%; } to { left: 100%; } }
+@media (prefers-reduced-motion: reduce) { .busy::before { width: 100%; animation: none; opacity: .6; } }

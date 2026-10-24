@@ -991,4 +991,35 @@ await test('a photo turned in the viewer: the grid asks for its new thumbnail on
   check(JSON.stringify(srcs) === JSON.stringify(['/api/lib/' + LIB.split('/').pop() + '/files/1/thumb?v=rot00003', '/api/lib/' + LIB.split('/').pop() + '/files/2/thumb?v=orig0002', '/api/lib/' + LIB.split('/').pop() + '/files/3/thumb?v=orig0003']), `the grid shows ${JSON.stringify(srcs)}`);
 }));
 
+// Requests of the page being shown are called off when it is left, and a bar
+// shows while one takes long (`pageApi`, `leavePage`, `busyUpdate` in app.js).
+await test('leaving the Unnamed page calls off the clusters it asked for', await on('view=unnamed', (lib) => lib.cluster(3), async (p, lib) => {
+  await pauseClock(p);
+  await settle(p, lib);
+  const { calledOff } = searchLog(p, lib);
+  lib.hold = /^\/clusters$/;
+  await p.evaluate(() => { loadUnnamed(); });
+  await until('the clusters to be asked for', () => lib.held.length > 0);
+  await p.evaluate(() => { location.hash = '#view=trash'; });
+  await until('the clusters called off', () => calledOff.some((c) => c.startsWith('/clusters')));
+  lib.release();
+  await settle(p, lib);
+  check(await p.locator('#page .cluster').count() === 0, 'a cluster from the page that was left is shown');
+}));
+
+await test('a bar shows when a request takes longer than 400 ms and goes when it is answered', await on('view=unnamed', (lib) => lib.cluster(3), async (p, lib) => {
+  await pauseClock(p);
+  await settle(p, lib);
+  check(await p.locator('#busy').isHidden(), 'the bar shows while nothing is asked');
+  lib.hold = /^\/clusters$/;
+  await p.evaluate(() => { loadUnnamed(); });
+  await until('the clusters to be asked for', () => lib.held.length > 0);
+  await p.clock.runFor(399);
+  check(await p.locator('#busy').isHidden(), 'the bar shows before 400 ms');
+  await p.clock.runFor(1);
+  check(await p.locator('#busy').isVisible(), 'the bar does not show after 400 ms');
+  lib.release();
+  await until('the bar to go', () => p.locator('#busy').isHidden());
+}));
+
 await finish();

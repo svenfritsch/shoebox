@@ -31,7 +31,7 @@ tower = { version = "0.5.3", features = ["util"] }
 tower-http = { version = "0.7.1", features = ["fs"] }
 unicode-normalization = "0.1.25"
 walkdir = "2.5.0"
-rusqlite = { version = "0.40.2", features = ["bundled", "backup"] }
+rusqlite = { version = "0.40.2", features = ["bundled", "backup", "hooks"] }
 
 # Video posters from AVFoundation, the system's own video framework (macOS
 # only; see src/avposter.rs). Only the classes it uses are switched on.

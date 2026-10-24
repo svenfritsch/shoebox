@@ -31,7 +31,7 @@ pub(super) async fn stats(State(app): State<Arc<App>>, Query(q): Query<StatsQuer
         Some("pets") => crate::pets::Space::Pets,
         Some(other) => return Err(ApiError::BadRequest(format!("kind is faces or pets, not {other:?}"))),
     };
-    blocking(&app, move |app| Ok(Json(faces::stats_of(&app.conn.lock().unwrap(), space)?))).await
+    blocking(&app, move |app| Ok(Json(app.with_people(|conn, view| faces::stats_in(conn, view, space))?))).await
 }
 
 #[derive(Deserialize)]
@@ -46,7 +46,7 @@ pub(super) async fn similar(
 ) -> ApiResult<Json<Vec<faces::Neighbour>>> {
     let limit = q.limit.unwrap_or(24).min(200);
     blocking(&app, move |app| {
-        faces::similar(&app.conn.lock().unwrap(), id, limit)?.map(Json).ok_or(ApiError::NotFound)
+        faces::similar(&app.db(), id, limit)?.map(Json).ok_or(ApiError::NotFound)
     })
     .await
 }
@@ -68,7 +68,7 @@ async fn crop_of(
     find: impl FnOnce(&rusqlite::Connection) -> anyhow::Result<Option<(String, faces::FaceBox, Option<i64>)>> + Send + 'static,
 ) -> ApiResult<Response> {
     let found = blocking(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
+        let conn = app.db();
         let (key, b, file) = find(&conn)?.ok_or(ApiError::NotFound)?;
         match faces::load_crop(&conn, &key, &b)? {
             Some(Ok(bytes)) => Ok(Err(jpeg(bytes, IMMUTABLE))),
@@ -89,15 +89,15 @@ async fn crop_of(
     let _permit = app.renders.acquire().await.map_err(|e| ApiError::Internal(e.into()))?;
     let made = blocking(&app, move |app| {
         // Another request may have made it while this one waited.
-        if let Some(stored) = faces::load_crop(&app.conn.lock().unwrap(), &key, &b)? {
+        if let Some(stored) = faces::load_crop(&app.db(), &key, &b)? {
             return Ok(stored);
         }
-        let boxes = faces::boxes_of(&app.conn.lock().unwrap(), &key)?;
+        let boxes = faces::boxes_of(&app.db(), &key)?;
         let result = faces::render_crops(&LibHeif::new(), &src, &boxes);
         if !matches!(&result, Err(e) if thumbs::is_transient(e)) {
             // Only faces still waiting for a decision and people's pictures
             // are kept; a decided face is made again whenever it is asked for.
-            let conn = app.conn.lock().unwrap();
+            let conn = app.db();
             let stored = faces::wanted(&conn, &key, &boxes).and_then(|wanted| faces::store_crops(&conn, &key, &boxes, &wanted, &result));
             if let Err(e) = stored {
                 eprintln!("could not store face crops: {e:#}"); // still worth sending
