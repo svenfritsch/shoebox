@@ -151,17 +151,14 @@ $('lb-coll').onclick = toggleCollection;
 // With a tag in the search: the same dialog as the selection's, for
 // everything shown, with the tag's name as the folder name.
 function exportChip(box, f) {
-  if (!state.exportOk || isAll() || !f.tags.length || f.view) return;
+  // Not with the Hidden chip on: hidden photos are exported from a selection, like any other.
+  if (!state.exportOk || isAll() || !f.tags.length || f.view || f.hidden) return;
   var b = el('button', 'btn small export-chip', tr('sel.export'));
   setTip(b, tr('export.tag_hint'));
   b.onclick = function () {
     var ids = state.data && state.data.ids ? Array.prototype.slice.call(state.data.ids) : [];
     var name = f.tags.map(function (id) { return state.tagNames[id] || ''; }).filter(Boolean).join('-');
-    // Hidden photos (the Hidden chip is on) are not part of a collection: only a selection exports them.
-    var left = ids.filter(function (id) { return state.hids && state.hids[id]; }).length;
-    if (left) ids = ids.filter(function (id) { return !state.hids[id]; });
     if (!ids.length) { toast(tr('export.nothing')); return; }
-    if (left) toast(trn('export.hidden_left_out', left));
     openExport(ids, name);
   };
   box.appendChild(b);

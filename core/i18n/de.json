@@ -808,8 +808,6 @@
   "hidden.toast_shown.other": "{n} Fotos wieder in der Zeitleiste angezeigt",
   "hidden.move_into": "Der Zielordner ist ausgeblendet: Diese Fotos werden ausgeblendet.",
   "hidden.move_out": "Diese Fotos stammen aus einem ausgeblendeten Ordner: Sie erscheinen wieder in der Zeitleiste.",
-  "export.hidden_left_out.one": "{n} ausgeblendetes Foto ausgelassen",
-  "export.hidden_left_out.other": "{n} ausgeblendete Fotos ausgelassen",
   "tags.reserved_fav": "Favorit gesetzt. Favoriten erscheinen als Herz, nicht als Tag.",
   "tags.reserved_hidden": "Aus der Zeitleiste ausgeblendet. Erkennbar durch das Auge, kein Tag.",
   "transfer.hidden": "Ausgeblendet ({n})",

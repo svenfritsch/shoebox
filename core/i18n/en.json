@@ -808,8 +808,6 @@
   "hidden.toast_shown.other": "{n} photos shown in the timeline again",
   "hidden.move_into": "The target folder is hidden: these photos will be hidden.",
   "hidden.move_out": "These photos come from a hidden folder: they will show in the timeline again.",
-  "export.hidden_left_out.one": "{n} hidden photo left out",
-  "export.hidden_left_out.other": "{n} hidden photos left out",
   "tags.reserved_fav": "Favorite set. Favorites show as a heart, not as a tag.",
   "tags.reserved_hidden": "Hidden from the timeline. Marked through the eye button, not a tag.",
   "transfer.hidden": "Hidden ({n})",

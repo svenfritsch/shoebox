@@ -108,10 +108,8 @@ Everything list-like in the grid goes through `browse::Snapshot::query`
    `serve::forward`), the backup comparison filters, the viewer's next/previous.
    Administrative pages (section 1) are left alone on purpose. A grep for direct
    `FROM files` in `serve.rs`, `people.rs`, `geo.rs`, `multi.rs` completes the list.
-5. **Export** (phase 13). The button that shows when a single tag chip is active
-   (the collection) leaves hidden photos out and says "n hidden photos left out";
-   the selection bar's Export still exports hidden photos that are selected (they
-   are selected only while the Hidden chip or a hidden folder shows them).
+5. **Export** (phase 13). The Export button next to a tag chip is not shown while the Hidden chip is on;
+   hidden photos are exported from a selection, like any other. Nothing is filtered: an export is what is shown.
 
 ## 5. Decisions and what is not done
 
@@ -127,8 +125,7 @@ Everything list-like in the grid goes through `browse::Snapshot::query`
    shares); a person's photo grid does leave them out. Decide whether the counts should follow
    the grid like the folder and tag counts do.
 6. **Not tested in the page:** the Hidden box of Carry over data in the dialog (the server side
-   is tested in `core/tests/transfer.rs`) and the Export button's "left out" toast (the page
-   change is two lines in `core/web/export.js`); the fake API has no transfer or export routes.
+   is tested in `core/tests/transfer.rs`) (the fake API has no transfer route).
 
 ## 6. Translation strings (new keys, `core/i18n/en.json` and `de.json`)
 
@@ -151,7 +148,6 @@ Everything list-like in the grid goes through `browse::Snapshot::query`
 | `hidden.toast_shown` (one / other) | 1 photo shown in the timeline again / {n} photos shown in the timeline again | 1 Foto wieder in der Zeitleiste / {n} Fotos wieder in der Zeitleiste | after showing |
 | `hidden.move_into` | The target folder is hidden: these photos will be hidden. | Der Zielordner ist ausgeblendet: Diese Fotos werden ausgeblendet. | move dialog |
 | `hidden.move_out` | These photos come from a hidden folder: they will show in the timeline again. | Diese Fotos stammen aus einem ausgeblendeten Ordner: Sie erscheinen wieder in der Zeitleiste. | move dialog |
-| `export.hidden_left_out` (one / other) | 1 hidden photo left out / {n} hidden photos left out | 1 ausgeblendetes Foto ausgelassen / {n} ausgeblendete Fotos ausgelassen | export dialog of a tag |
 | `tags.reserved_fav` | Favorite set. Favorites show as a heart, not as a tag. | Favorit gesetzt. Favoriten erscheinen als Herz, nicht als Tag. | toast after typing a favorite word (option A) |
 | `tags.reserved_hidden` | Hidden from the timeline. Marked through the eye button, not a tag. | Aus der Zeitleiste ausgeblendet. Erkennbar durch das Auge, kein Tag. | toast after typing a hidden word (option A) |
 | `transfer.hidden` | Hidden ({n}) | Ausgeblendet ({n}) | Carry over data, check box, not ticked by default |

@@ -1222,4 +1222,16 @@ await test('a video the browser cannot play shows a notice, a photo does not', a
   check((await note.count()) === 0, 'the photo still has the notice');
 }));
 
+await test('the Export button next to a tag chip is not offered while the Hidden chip is on', await on('tag=1', (lib) => {
+  lib.photos = [1, 2].map((id) => ({ id, version: `orig000${id}` }));
+  lib.tags = [{ id: 1, name: 'Strand', count: 2, kind: 'own' }];
+}, async (p, lib) => {
+  await cellCount(p, 2);
+  check(await p.locator('#filters .export-chip').count() === 1, 'a tag chip alone has the Export button');
+  await p.evaluate(() => setFilter(withFilter({ hidden: true })));
+  await settle(p, lib);
+  check(await p.locator('#filters .chip.hid').count() === 1, 'the Hidden chip is on');
+  check(await p.locator('#filters .export-chip').count() === 0, 'the Export button is still offered with the Hidden chip');
+}));
+
 await finish();
