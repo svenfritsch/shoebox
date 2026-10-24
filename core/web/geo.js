@@ -164,7 +164,7 @@ function infoGeo(info) {
   var right = el('div', 'geo-right');
   if (pos) {
     var c = el('span', 'coords', fmtCoord(pos.lat, 'N', 'S') + ' · ' + fmtCoord(pos.lon, 'E', 'W'));
-    if (pos.source === 'user') c.title = tr('geo.from_user');
+    if (pos.source === 'user') setTip(c, tr('geo.from_user'));
     right.appendChild(c);
   }
   // Only a position that is not in the file can be given or changed.
@@ -411,7 +411,7 @@ function loadLocations() {
   if (geo.map && geo.page && geo.page.isConnected) { selectFromHash(); return; }
   geoLeave();
   var page = $('page');
-  page.textContent = '';
+  clearNode(page);
   if (!geo.on) {
     page.appendChild(el('h2', '', tr('geo.page_title')));
     page.appendChild(el('p', 'sub', tr('geo.maps_needed')));
@@ -432,7 +432,7 @@ function loadLocations() {
   var side = el('aside', 'geo-side');
   var tab = el('button', 'geo-tab', '‹');
   tab.type = 'button';
-  tab.title = tr('geo.side_show');
+  setTip(tab, tr('geo.side_show'));
   tab.onclick = function () { setSide(true); };
   main.appendChild(tab);
   root.appendChild(main);
@@ -630,18 +630,20 @@ function renderSide() {
   else title.textContent = geo.data ? tr('geo.here_count', { count: trn('count.photos', geo.data.count) }) : '';
   head.appendChild(title);
   var tools = el('div', 'geo-tools');
+  // `text` is a symbol, or the markup of one of our icons.
   var tool = function (text, label, fn) {
-    var b = el('button', 'icon-btn', text);
+    var b = el('button', 'icon-btn');
+    if (text.charAt(0) === '<') b.innerHTML = text; else b.textContent = text;
     b.type = 'button';
-    b.title = label;
+    setTip(b, label);
     b.setAttribute('aria-label', label);
     b.onclick = fn;
     tools.appendChild(b);
   };
   if (place) {
-    tool('✎', tr('geo.rename'), function () { renamePlace(place); });
+    tool(ICONS.pencil, tr('geo.rename'), function () { renamePlace(place); });
     tool('⬚', tr('geo.redraw'), function () { startDraw({ type: 'redraw', place: place }); });
-    tool('🗑', tr('app.delete'), function () { deletePlace(place); });
+    tool(TRASH_ICON, tr('app.delete'), function () { deletePlace(place); });
   }
   tool('›', tr('geo.side_hide'), function () { setSide(false); });
   head.appendChild(tools);

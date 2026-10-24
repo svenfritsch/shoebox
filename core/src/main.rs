@@ -368,7 +368,7 @@ fn main() -> ExitCode {
             true
         }),
         Command::Serve { root, more, db, port, lan, pin, recognizer } => {
-            serve::run(&serve::Options { root, more_roots: more, db, port, lan, pin, reveal: None, recognizer }).map(|_| true)
+            serve::run(&serve::Options { root, more_roots: more, db, port, lan, pin, reveal: None, recognizer, regroup: Default::default() }).map(|_| true)
         }
     };
     finish(result)

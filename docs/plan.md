@@ -35,7 +35,7 @@ progress. Update the status section when a phase moves.
 | Scale | ~100,000 files, 150 GB today, up to 1 TB |
 | Repo | `core/` (Rust), `recognizer/` (Python), `scripts/`, `docker/`, `docs/` |
 | Dev environment | Docker for Linux builds/tests; native macOS builds with rustup; GitHub Actions for both |
-| CI until v1.0 | macOS only: `test` and `build` side by side with cached dependencies (PRs: arm64; main/tags: universal + Rosetta), skipped for docs-only PRs. Windows and Linux (Linux incl. the real recognizer) are built only by hand, one at a time, with `release-by-hand.yml`, which can add them to a release (phase 17). The guide's screenshots and `.txt` copies are not in git: `guide.yml` makes them on Linux for UI/guide PRs (artifact `guide`) and for releases; the same job runs the photo app's browser tests (`core/tests/browser/run.sh`, Playwright: keyboard use of the grid, viewer, selection bar and dialogs); releases ship `shoebox-macos` plus `recognizer/` and that guide (English and German, in the `guide/` folder of the archive) |
+| CI until v1.0 | macOS only: `test` and `build` side by side with cached dependencies (PRs: arm64; main/tags: universal + Rosetta), skipped for docs-only PRs. Windows and Linux (Linux incl. the real recognizer) are built only by hand, one at a time, with `release-by-hand.yml`, which can add them to a release (phase 17). The guide's screenshots and `.txt` copies are not in git: `guide.yml` makes them on Linux for UI/guide PRs (artifact `guide`) and for releases; the same job runs the photo app's browser tests (`core/tests/browser/run.sh`, Playwright: keyboard use of the grid, viewer, selection bar and dialogs; the Unnamed page, groups, the people list and the trash page, mostly against a fake API; see "Browser tests"); releases ship `shoebox-macos` plus `recognizer/` and that guide (English and German, in the `guide/` folder of the archive) |
 
 ## Architecture
 
@@ -436,8 +436,9 @@ rot) and shows "last backup N days ago, M files new since".
 | 15 | Your data between drives: search suggestion counts in All drives that narrow with the filter, and "Carry over data" (Manage drives): tags, hearts, people, dates and places of photos on one shoebox drive are added to the same photos (matched by content) on another, five check boxes ticked by default; a second source, `userdata.json` (15b); "Ignore folders" for duplicates across drives (15c). No moving of photos, no "keep both" (design in [phase15.md](phase15.md)) | **15a built** (counts that narrow, Carry over data; written without a local build, CI is the first compile); **15b built** (data from a `userdata.json`, also from Settings with one drive; tested locally on Linux); **15c built** (Ignore folders with the generic `chipsInput`, suggestions, "Ignore this folder"; tested on Linux and in a browser), so phase 15 is built; open: the real-hardware check with two drives; open questions in [phase15.md](phase15.md) section 10 |
 | 16 | Index next to the program: a library (a folder on a server or NAS) keeps its `library.db`, `thumbs.db` and `recognition.db` in `<shoebox folder>/libraries/<name>/` (beside `program/`, phase 17) instead of `<root>/.shoebox/`; `libraries/libraries.json` is the registry (name, root path, changeable) and feeds the Control Panel's drive list; nothing is written to the scanned folder (design in [phase16.md](phase16.md)) | **Design only**, nothing built; the Windows real-PC check comes first |
 | 17 | Release folder with three things on top (`Start shoebox.command`, `guide/`, `program/` with everything else; "The release folder" above), the older `.shoebox/bin/` layout removed. Then Windows and Linux releases by hand: `release-by-hand.yml` (inputs: system, tag) builds one system in the same layout (`scripts/package.sh`, the guide taken from the release's macOS archive) and adds `shoebox-windows.zip` or `shoebox-linux.tar.gz` to that tag's release; without a tag only an artifact for testing. The automatic release stays macOS only. Also: shoebox refuses a program folder or a library inside a cloud-synced folder (OneDrive, iCloud Drive, Dropbox, Google Drive, …) on Windows and macOS (plan in [phase17.md](phase17.md)) | Release folder **done** (macOS release, launchers, guide; from the next tag). Windows: **checked on a real PC** (start, SmartScreen, add-ons, recognize, Show in Explorer; fixes in #125), guide updated. `release-by-hand.yml` (Windows and Linux): **built**, not run on GitHub yet; Linux not tried on a real PC. Cloud-folder check: **plan** |
-| 18 | Identical photos once in the common timeline (All drives): a photo with the same file name and the same full hash on more than one drive is shown once (a switch, on by default), the other copies listed in the info panel ("Also on"), search counts count it once; read only (design in [phase18.md](phase18.md)) | **Planned**: plan written, nothing built; open questions in [phase18.md](phase18.md) section 5 |
-| 19 | Hidden photos and folders: the own tag `hidden` (viewer button, selection bar) and a hidden-folder flag inherited by everything below it; hidden photos are left out of every view, count and suggestion, and shown only by the Hidden chip, the word *hidden*, or a click on a hidden folder (design in [phase19.md](phase19.md)) | **Planned**: plan written, nothing built; open questions in [phase19.md](phase19.md) section 4 |
+| 19 | Groups in the search and the timeline: a group is a search chip that shows the photos of anyone in it (OR inside the group, AND with every other chip; pets count), picked from the suggestions ("Groups") or by clicking a group in the sidebar, which also unfolds it; a group is made from a person ("New group…" on their page, they are its first member) and goes when its last person leaves, so there are no empty groups (design in [phase19.md](phase19.md)) | **Built except the real-hardware check**: core (`group=` filter, `/api/groups/search`, `/api/all/groups`, no empty groups), search box, chip, sidebar, tests, guide in both languages; the own icons for the group, person, cat, paw, place and date chips come in a second commit |
+>>>>>>> origin/main
+| 20 | Hidden photos and folders: the own tag `hidden` (viewer button, selection bar) and a hidden-folder flag inherited by everything below it; hidden photos are left out of every view, count and suggestion, and shown only by the Hidden chip, the word *hidden*, or a click on a hidden folder (design in [phase20.md](phase20.md)) | **Planned**: plan written, nothing built; open questions in [phase20.md](phase20.md) section 4 |
 
 ### Phase 15 details (your data between drives)
 
@@ -472,8 +473,10 @@ Full plan, use cases and tests: [phase15.md](phase15.md). Summary:
 Full plan: [phase18.md](phase18.md). In All drives a photo is shown once when
 another drive has a file with the same name (last path component, NFC, case-folded)
 and the same full hash; both must match, anything else (renamed copies, same name
-with other content, no hash yet) stays as it is. A switch turns it off. Which copy
-shows: the first drive in the list. The info panel lists the other copies. Counts
+with other content, no hash yet) stays as it is. No switch (Duplicates across
+drives is there to compare). Which copy shows: the one with a date the user gave
+(the last given), else the first drive in the list; the heart shows if any copy
+has one. The info panel lists the other copies. Counts
 in the search suggestions (phase 15a) count identical photos once. Single-drive
 timelines and the backup comparison are not merged. Nothing is written.
 
@@ -541,7 +544,8 @@ Done (see [phase2.md](phase2.md)):
   closes the viewer again.
   Checked in the browser by `core/tests/browser/keyboard.mjs`, together with
   the selection bar (one Tab stop, arrows, Home, End, B) and dialogs (Tab
-  stays in, the focus returns when they close).
+  stays in, the focus returns when they close), and the mouse drag that
+  selects photos.
 - Perceptual hash (64-bit DCT) from the same decode in `files.phash`.
 - `shoebox serve` (axum, UI embedded with rust-embed): virtualised timeline
   grid grouped by month, folder tree, search over paths and tags, viewer
@@ -576,7 +580,10 @@ Done (see [phase3.md](phase3.md)):
 - UI: selection with move/trash, folder
   rename, duplicates and trash pages. Added later: Shift-click selects a
   range, "Select all" on a month heading selects the month (the iPad has no
-  Shift). Every non-GET request needs an
+  Shift); a mouse drag across photos while selecting selects them, or
+  deselects them when it starts on a selected one, as in Finder (the range
+  from the first photo to the one under the pointer, timeline order; the
+  timeline scrolls along at the edges; touch keeps scrolling). Every non-GET request needs an
   `X-Shoebox` header (CSRF protection for localhost without PIN).
 
 Open:
@@ -1404,6 +1411,58 @@ Open:
       closes on a tap outside, the button shows what is ticked).
 - [x] Confirm the GitHub Actions run is green (build and guide succeeded on main, 2026-10-13).
 
+## Browser tests
+
+Decided in PR #144 (October 2026); keep to it when the photo app or its API
+changes. Three layers, each checking what the others cannot:
+
+| Layer | Where | What it checks | Runs |
+|---|---|---|---|
+| API | `core/tests/*.rs` (e.g. `people.rs`) | every endpoint's reply for given bodies and parameters, on a real library: the server's side of each contract the page relies on (e.g. a naming reply's `person_data` equals that person's entry in `GET /people`) | `cargo test`, CI `test` |
+| Page, mocked | `core/tests/browser/faces-mocked.mjs` with `fake-api.mjs` | the page's logic: which requests it makes after each action and when, what it shows from a reply (the sidebar's people list), on a fake clock. No shoebox, no build: core/web as it is on disk | ~10 s |
+| Page, real server | `faces-e2e.mjs`, `keyboard.mjs` (`make-faces.py`, `make-library.py`, the fake recognizer) | what needs the real server: that the page and the server agree (the sidebar built from replies is what the server then lists), the grouping after a change, pages that need many endpoints (the viewer, a person's page, the grid) | ~20 s |
+
+`run.sh` runs both browser layers; CI runs it in `guide.yml` (every PR that
+touches `core/web`, `core/i18n`, `core/tests/browser` or the guide).
+
+Why so: `app.js` is one script of globals that starts itself, so there are no
+unit tests of single functions; splitting it into modules only for tests is
+not worth it. A page against a fake API in a real browser is the unit test of
+the page (fast, exact: the clock moves only when the test moves it, so "nothing
+is asked for until the grouping is done" is checked over minutes of page time
+at once, and each step of a grouping comes on cue). Against the real server
+the same checks need real waits (each "nothing more happens" costs a second)
+and depend on how fast the server groups (225 faces take milliseconds), so only
+a few tests run there, enough to catch a fake that no longer matches the
+server. The real server found what a fake could not: every change to people
+asked for a regrouping (so the People page fetches the list once more after
+it; now only decisions, a merge and a deletion do, see "When to
+regroup" under Performance), and clusters stop at 100 faces
+(`clusters::MAX_CLUSTER`, below `GROW_STEP`). `run.sh` serves with
+`SHOEBOX_REGROUP=2,1500,300` (two cards or 1.5 s) so the real server's
+regrouping comes within the tests' waits; the fake follows the app's own
+rules (5 cards, 30 s) and keeps the counts of the last grouping in
+`/api/info`, as the server's cache does.
+
+Keeping them up to date (agents too):
+
+- A change to what the page asks for or does after an action on the Unnamed
+  page, the people list, groups or people's pictures updates
+  `faces-mocked.mjs`, and, when the page asks for a new endpoint or a reply
+  changes, `fake-api.mjs` (the fake answers 404 to anything it does not know
+  and the test fails, so a new request does not go unnoticed).
+- A change to a reply's shape in `people_api.rs` (or any endpoint the fake
+  answers) updates the Rust API test of that endpoint first, then
+  `fake-api.mjs` to give the same shape.
+- New tests go to the mocked layer unless they need the real server (the list
+  above); `faces-e2e.mjs` stays at a handful. No fixed sleeps: wait on the
+  page, its requests or the server; a time window only to show that something
+  does not happen.
+- Prove a new test can fail: `APP_JS=<changed copy of app.js> core/tests/browser/run.sh`
+  (or `node core/tests/browser/faces-mocked.mjs` alone) runs the pages on
+  that file; change what the test is about and see it fail.
+- UI texts come from the page's `tr`, never written out in a test.
+
 ## Build notes and pitfalls (learned in phases 0–4)
 
 - **Pets are rows of `recog.faces` with a species**, and everything that
@@ -1559,7 +1618,10 @@ is (`organize::turn`, going by content, not name):
   bytes are put back. The quick hash changes, so the index record is updated
   and the capture-date override, face decisions (boxes turned with the
   picture) and a person's picture follow to the new key; thumbnails and
-  detected faces are made again (next view, next `shoebox recognize`).
+  detected faces are made again (next view, next `shoebox recognize`). The
+  grid does not wait for a scan: `thumbAfterTurn` (app.js) asks for the new
+  thumbnail 1 s after the last turn (three turns in a row are one request),
+  and `/thumb` makes it on demand.
   Refused: a JPEG without an Orientation tag (adding one shifts every byte
   after it). The small EXIF thumbnail inside the file is not turned.
 - **HEIC and PNG: in shoebox only.** The turn is stored in `library.db`
@@ -1835,3 +1897,248 @@ TIFF-based RAW whose Exif IFD lies beyond the bytes loaded so far. Fixed in
 grows 256 KiB, 8 MiB, 64 MiB); tests in `core/tests/scan.rs`, fixture
 `IMG_0005.CR2` in `scripts/make-fixtures.sh`. Open: confirm on the 'Angie
 wedding' folder (`shoebox probe` should show `RAW 3 3 3`).
+
+Performance with ~100 000 photos (found on the real drive): everything shares
+one SQLite connection (`App::conn`, journal mode DELETE on exFAT), so one slow
+request makes every other one wait, and the page's own polling made it worse.
+Rules since: the page asks for `/api/libraries`, `/api/all/drives` and
+`/api/info` only on actions, when the person comes back to the page (60 s at
+the earliest, and not with one drive or on the Unnamed page; the start asks for
+`/api/all/drives` once, `loadCompare` reuses it) and, for `/api/info`, every 5 s while a job runs (`watchProgress`);
+`loadInfo` and `loadPeople` are one request at a time. A change that only
+touches people, groups or face decisions goes through `change_with(.., false)`
+(`people_change`): it must not bump `generation`, or `index_version` changes
+and every open page reloads folders, tags, people and places (`reloadAll`), also
+after each name given on the Unnamed page. `/api/info` keeps the counts over all
+files 5 s and the faces' counts 2 s. Naming faces answers with `person_data` (the person as the list shows them, from
+`people::person_light`: a few queries about that person, not `View::load`; suggestions are 0),
+so the page adds a new person or updates a known one in place. Moving a person to a group or
+creating a group (reply: the person or the group), renaming, deleting or ordering
+groups, "Use as picture", rename, merge and delete of a person (reply: the person) are applied to the list in the
+page too (`takePerson`, `countGroups`, `peopleShown`, `personRemoved`, `peopleMerged`); the list is fetched again
+only when the reply has no person or no picture could be told, and after a regrouping only when the People page is open
+(`people.stale` otherwise). The Unnamed page asks for its clusters once per naming, when the grouping that
+follows is done (`facesInfo`); a card or the single-faces bar updates itself from the
+reply. Checked by the browser tests (see "Browser tests").
+
+The people view is kept (measured with `scripts/bench-people.py`: 100 000
+files, 300 000 faces, 300 people, on a 4-core Linux VM with an SSD; the real
+drive is slower). Every people and cluster request, a person's faces and every
+naming read all faces, decisions, clusters and present files (`View::load`,
+about 1.2 s there), a naming five times, under the shared connection:
+`/api/people` took 2.8 s, `/api/clusters` 1.8 s, naming a cluster 10.8 s, and
+`/api/groups` waited up to 12 s. Now `App::people_view` keeps one
+`people::View` per library, read on a read-only connection of its own
+(`PeopleCache`): reading it never holds up `App::conn`, and its
+`PRAGMA data_version` sees every commit to `library.db` and `recognition.db`,
+the server's own included, so nothing has to remember to invalidate it. After
+a commit to `library.db` only that part is read again (`View::refresh`:
+decisions, people, present files; all of it if a pet's species changed);
+after one to `recognition.db` (a `recognize` run, the regrouping, forgetting
+faces: `faces_version`) all of it. While this server's own regrouping runs,
+the view keeps its `recognition.db` part (that run's bookkeeping would
+otherwise make every request read everything again) and reads it again when
+the run is done, before the page is told (`refresh_people_view`). The counts per
+person and the grouping of clusters are worked out once per view (`OnceLock`);
+`people::people` no longer looks through every face for each person's picture.
+Changes use the view from before (`decide_in`, `cluster_face_ids_in`) and
+reply from the view after (`people_change_then`). The regrouping's connection
+has a 64 MiB page cache, so rewriting `recog.clusters` locks `recognition.db`
+only while it commits; the backup (`library.db.bak`, `userdata.json`, about 1 s
+there, several on a USB drive) runs on a connection of its own. After:
+`/api/people` 2 ms, `/api/clusters` 3 to 12 ms (about 200 ms for the first one
+after a change), naming a cluster 0.9 s, `/api/groups` p95 0.5 s and at most
+1.1 s while naming and regrouping. The view holds about 100 MB for 300 000
+faces. The faces of one photo (`/api/files/{id}` in the viewer and the info
+panel, a crop that is cut for the first time) were read with the queries of
+every photo (`?1 IS NULL OR key = ?1`), which SQLite cannot answer from the
+index by content, so each read every face, decision and file, and every
+cluster row (about 400 ms there, seconds from a cold drive): now one query per
+case (`faces_sql` and the others in `people.rs`, checked with `EXPLAIN QUERY
+PLAN` in a test), 15 ms.
+
+When to regroup (`serve/regroup.rs`): a regrouping took 134 s of all four
+cores on that library (another VM than the 45 s above), and it ran after
+every name, back to back while someone named cards. Where the time goes
+(`regrouping_phases` in `core/tests/people_bench.rs`, `SHOEBOX_CLUSTER_TIMES=1`
+prints every phase): the suggestion searches, every face without a decision
+(163 508) against the index of every confirmed face (116 982, an eighth of
+its cells each), 125 to 128 s, 94 %; everything else together about 8 s
+(`pet_face_ids` 1 s, `eligible` 1.5 s, the decisions 1 s, the reference index
+1.4 s, reading the neighbour lists and the edges 0.8 s, join and split 0.9 s,
+the write 0.2 s; no neighbour list is computed again after a name). Now
+the server regroups when it pays off, not after every decision: after 5
+cards (a request that names, ignores, marks as not a face or confirms, one
+each), or 30 s after the last decision (each one, a rejection too, starts the
+pause again); 3 s after the Unnamed page is left (`POST /api/clusters/left`),
+an undo of a decision from before the last regrouping (its face is not in
+`recog.clusters`), a rejection taken back, a merge, a deleted person, or when
+the cards with a suggestion ran out (there were some after the last
+regrouping, none are left; on a new library without suggestions only the 5
+cards and the pause count) or no card is left (5 cards and 30 s chosen once
+a regrouping took seconds: 5 brings the first suggestions early, when they
+help most; fewer would rebuild the page under the cursor too often, and a
+shorter pause would regroup while someone thinks about a hard card); at once after new or
+forgotten faces (detected by `recognize`, drawn by hand and embedded:
+detected faces, not names), Carry over and a species. New faces from a
+`recognize` run in another process are grouped by that run at its end; the
+server only notes them (`grouped_after_recognition`: the latest clustering job
+finished after the latest look for faces) and groups only what such a run left
+ungrouped (stopped before). Names,
+groups, pictures and hiding ask for none. Decisions made while one runs count
+towards the next one; the one running finishes (its result is right: every
+request sees through the decisions made since). `/api/info` `clusters`
+says `pending`, `cards_left`, `wait_ms` and `pause_ms` (relative, so device
+clocks do not matter), a "faces" event tells of every change, and the
+Unnamed page counts the seconds down itself. `stale` now means a regrouping
+is starting or running (no longer: asked for). The rules are
+`serve::Options::regroup` (the tests: every card at once, `REGROUP_AT_ONCE`;
+the browser tests against the real server: `SHOEBOX_REGROUP=2,1500,300`).
+Progress (`done`/`total` of the job) counts the suggestion searches too, so
+the page's circle fills over the whole run. The server's regrouping leaves
+one core free (`ann::with_threads`, `shoebox recognize` takes them all):
+while one runs, `/api/groups` (every 100 ms) went from median 10 ms, p95
+660 ms, max 1.9 s to 5 ms, 465 ms, 1.9 s, and `/api/people` from max 2.9 s to
+2.8 s, for a regrouping that takes longer: 172 to 195 s in the benchmark's
+server, 140 to 186 s (a third more) on its own (`regrouping_phases` with
+`SHOEBOX_BENCH_THREADS=3`). The waits of up to 2 to 3 s that remain are not the CPU: most likely
+the people view read again in full when the run is done (`refresh_people_view`,
+about 1.2 s, under the cache's lock) and the rewrite of `recog.clusters`
+(not measured one by one).
+
+Only what changed (schema v9 of `recognition.db`): a face's suggestion
+depends only on that face, the confirmed faces (the references) and its
+rejections. Every run keeps what its suggestions came from, written with
+`recog.clusters`: each space's references (`recog.suggest_refs`: a face id, or
+minus the decision id of a face drawn by hand, and the person;
+`recog.suggest_runs`: the model) and the faces without a decision with their
+space and rejections (`recog.suggest_open`). The next run keeps a face's
+suggestion and compares it only with the references added since (or now
+someone else's); it searches all references only for a face that had a
+decision or another space then (an undo, a pet's species), whose rejections
+changed, or whose suggested person lost a reference (an undo, a merge, a
+deletion, a photo gone). Without a last run of this model, or with more new
+references than one search compares with (`Index::compared_per_search`),
+everything is searched, as before (the first run after `recognize`). Up to
+1000 faces to search are compared with every reference (`Index::exact`):
+building the index's cells costs about a second. A test runs each kind of
+change and checks that the result is exactly a full run's
+(`suggestions_compare_only_what_changed_and_match_a_full_run`). On the
+benchmark library, three threads: the first run 76 to 82 s (this VM after a
+restart; 140 to 186 s before), then after 10 cards named 7.0 s (1000 new
+references, every open face compared with them: 1.6 s), after a rejection
+5.3 s (one face searched), after an older name undone 6.0 s (52 faces). What
+is left is reading the same data again for every run: `pet_face_ids` about
+1 s, `eligible` 1.6 to 2.3 s, the decisions 0.7 s, the neighbour lists and
+edges 0.5 to 0.7 s, join and split 1.3 to 1.8 s, the write 0.4 s. Keeping the
+embeddings and the neighbour lists in the server between runs would take
+most of the reading away, for about 200 MB more (decided against: nobody
+waits for a regrouping).
+
+Memory (measured on the benchmark library, Linux): the kept people view
+(`View::load` with its counts and groups) takes about 187 MB for 300 000
+faces, not the 100 MB estimated before; a regrouping peaks at about 800 MB
+(the embeddings, the index, the decisions). glibc kept what a regrouping
+freed, so the server stayed at about 420 MB after the first one, also when
+no people page was open; now it hands it back (`release_freed_memory`,
+`malloc_trim`, Linux only): 82 MB after the first grouping, 264 MB once the
+People page was opened. The view is read only when a page asks for it
+(after a regrouping the cards with a suggestion are counted in the cache,
+`suggested_now`, not in the view). Not measured on macOS and Windows. WAL stays off
+(its `-shm` file on external exFAT drives, copies of `.shoebox` without the
+`-wal` file).
+
+Face crops (`/faces/{id}/crop`) took 0.6 to 3 s each on that drive while
+thumbnails took milliseconds: finding a face's file joined `faces::PRESENT`
+(every file grouped by content, ~120 ms on 100 000 files) for every crop, under
+the shared connection, so a page of crops queued one behind the other. Since
+schema v16 `files` has an index by content (`files_quick_hash`: quick_hash,
+missing_since, kind), and a query about one face or person (`person_photos`) asks for its file
+with `faces::present_file` (one look into that index). Keep `PRESENT` for
+queries over all faces. In the page: a picture taken off the page keeps its
+request and the browser sends only six at a time to this server, so pages,
+the viewer and the timeline's rows stop what they no longer show
+(`dropPending`, `clearNode`, the viewer's warmed neighbours); a list that can
+be thousands long (all faces of a group) goes onto the page a part at a time
+as it is scrolled to (`growGrid`), and tiles are kept by id across redraws.
+
+Search (measured with `scripts/bench-search.py`: the library of
+`bench-people.py` plus 205 000 folder and own tags of 531 names, same VM; found
+on the real drive, where a letter's suggestions came seconds late). Every
+letter typed sent five suggestion requests (`/tags`, `/people/search`,
+`/pets/search`, `/dates`, `/groups/search`), none was called off, and the server
+ran each one under the shared connection, so the list for the last letter came
+after those of all the letters before; when the photos for the typed text came
+(300 ms), the page asked for the same five again (`applyFilter`). `/tags`
+counted every tag of every file (`browse::all_tags`, 220 ms) and
+`/people/search` read every file and every confirmed face (110 ms) for every
+letter, though only the text changed. Typing "longsea" (a letter every 120 ms):
+the list came 1.8 to 2.1 s after the last letter. Now: the page asks for the
+suggestions once the letters pause for 150 ms (`suggestSoon`) and only again
+after the photos came when the search itself changed (`sugg.key`), and calls
+off (`AbortController`) what an older text asked for, the list and the
+timeline (`state.loadCtrl`); the server takes these requests (and those of the
+common timeline's search, `Hub::searches`) one at a time in the order asked
+(`queued`, `in_turn`: a turn is taken before the work goes to a blocking
+thread, so a request the browser called off while it waits is dropped and never
+touches the database; one that has started runs to its end); it keeps the tags
+with their counts per index version (`App::all_tags`; own tags change only
+through `change`, which moves the version) and the photos per person for the
+last filter (`PersonPhotos`, with the people view, which is read again after
+every decision). After: `/tags` 1 ms and `/people/search` 2 ms (the first
+after a change to the index 250 ms and 110 ms; the very first people search
+loads the people view, about 1 s, which the sidebar's `/api/people` has
+usually done already), the others 1 to 23 ms; ten uncached people searches
+of which nine are called off after 50 ms: the last after 0.27 s (1.1 to 1.6 s
+before); the list comes 160 ms after the last letter (the pause and a few
+milliseconds), the photos 310 ms. The browser test `the search box asks once
+typing pauses ...` (`faces-mocked.mjs`) checks the requests on a fake clock.
+
+One request (decided after that): the five came back in one `Promise.all`,
+so the page never showed one before the others, and the server ran them one
+after another anyway, each working out again which photos the filter shows.
+Now the page asks `GET /api/lib/<id>/suggest?q=…&<filter>` (over all drives
+`/api/all/suggest`, which replaces four requests, one of them per drive) and
+gets `{tags, people, pets, groups, dates}`. The sections are built by the
+same functions as `/api/tags?own=1`, `/api/people/search`, `/api/pets/search`,
+`/api/groups/search` and `/api/dates` (`tag_hits`, `person_hits`,
+`pet_hits`, `group_hits`, `dates::suggest`), which stay for the API tests and
+the tag fields; the API tests check that each section equals that endpoint's
+reply. The photos the filter shows are worked out once. The server reads the
+search box's prefixes (`Typed` in `serve.rs`, as `DATE_PREFIX` and `PREFIX`
+in the page): `date:`/`datum:` answers only `dates` (the other keys empty),
+`text:`/`name:` all empty; the page still knows them for what it does itself
+(a term chip on Enter, the hint under the list) and does not ask for `text:`
+and `name:`, which it offers as typed. A section of people, pets or groups
+that cannot be read is empty (and logged), not the whole list. Every section
+now counts within the whole search: before, dates left out groups, text and
+file-name terms, and the other sections left out dates and "needs a date";
+`/api/tags` now also narrows by type, heart and date. Over all drives the
+merged people are kept on the server (`AllPeopleKept`, per drive the index
+version and the people view, and the filter) instead of 30 s in the page,
+pets are counted within the whole filter (before: only `pet=`), hidden people
+are left out as on one drive, and the text row is no longer listed twice. Measured
+(`bench-search.py`; nothing kept, another filter each time): without a filter
+`/suggest` 4.5 ms (the date rows; the set of shown photos is built only when
+the filter narrows), with a person in the search 200 ms against 390 ms for
+the five requests, with a tag 98 against 107 ms (there the counting of each
+person's photos is most of it). The text row's number came from a second request,
+`/count?text=…` (and so for `text:` and `name:`), sent once the list was on
+the page and counted without date chips; now `/suggest` counts it (`text`,
+`name`: `{term, count}` or null, as `/count` with the term added): for plain
+text of two letters or more, and alone for `text:` and `name:`, which now ask
+`/suggest` too (`/count` stays for the API tests). A row whose term finds
+nothing is left out; after `text:` or `name:` a line says so
+(`search.text_none`, `search.name_none`, or `search.text_unread` while no text
+has been read, when the plain search keeps its greyed row). Tests: `core/tests/suggest.rs`
+(the reply's keys, each section with its limits and what it leaves out, the
+prefixes, every number equal to the list's count once picked within every
+kind of chip, kept counts following a tag, a name, a hidden person), each
+section against its own endpoint in `people.rs`, `dates.rs`,
+`text_search.rs` and `multi.rs` (all drives); in the browser on a fake clock
+(`faces-mocked.mjs`): nothing asked 149 ms after a letter, the suggestions at
+150 ms and the photos at 300 ms, requests an older text asked for called off
+(suggestions and photos), Escape and leaving the box calling off what is on
+its way, the text row and prefixes; against the real server
+(`faces-e2e.mjs`): one `/suggest` per pause and a list that is what the
+server answers.

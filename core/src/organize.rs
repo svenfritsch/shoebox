@@ -1049,9 +1049,25 @@ pub fn trash_files_tidy(conn: &Connection, root: &Path, ids: &[i64]) -> Result<T
 /// records go (with tags and duplicate decisions); the trash table keeps
 /// what is needed to put them back, own tags included.
 pub fn trash_files(conn: &Connection, root: &Path, ids: &[i64]) -> Result<Trashed> {
+    trash(conn, root, ids, false)
+}
+
+/// As `trash_files`, but only the files asked for: no companion (same name,
+/// same folder: the HEIC next to a JPEG copy, its RAW, its Live Photo video)
+/// and no sidecar goes along. For the duplicates screen and "Delete the new
+/// copies", which remove single copies, never what lies next to them.
+pub fn trash_files_only(conn: &Connection, root: &Path, ids: &[i64]) -> Result<Trashed> {
+    trash(conn, root, ids, true)
+}
+
+fn trash(conn: &Connection, root: &Path, ids: &[i64], only: bool) -> Result<Trashed> {
     crate::libraries::ensure_writable(root)?;
     let mut out = Trashed::default();
-    for group in Group::all(conn, root, ids, &mut out.skipped)? {
+    for mut group in Group::all(conn, root, ids, &mut out.skipped)? {
+        if only {
+            group.files.retain(|f| ids.contains(&f.id));
+            group.sidecars.clear();
+        }
         let first = group.files[0].path_nfc.clone();
         if let Err(e) = group.check(root).and_then(|()| trash_group(conn, root, &group, &mut out)) {
             out.skipped.push(format!("{first}: {e:#}"));
@@ -1134,25 +1150,69 @@ pub struct TrashItem {
     pub deleted_at: i64,
     #[serde(skip)]
     pub quick_hash: Option<String>,
+    /// A copy removed on the duplicates screen (or by "Delete the new
+    /// copies"): the copy that stayed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duplicate_of: Option<DuplicateOf>,
+}
+
+/// The copy that stayed when a duplicate went to the trash, found by its
+/// content (`trash.kept_hash`), so it is found after a move or rename
+/// too. All fields are `None` when no file with that content is in the
+/// library any more.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct DuplicateOf {
+    pub id: Option<i64>,
+    /// NFC path.
+    pub path: Option<String>,
+    pub kind: Option<String>,
+    /// The first 8 characters of its quick hash (the picture addresses).
+    pub version: Option<String>,
 }
 
 /// Everything in the trash, most recently deleted first.
 pub fn trash_list(conn: &Connection) -> Result<Vec<TrashItem>> {
-    let items = conn
-        .prepare("SELECT id, batch, path_nfc, kind, size, deleted_at, quick_hash FROM trash ORDER BY batch DESC, kind IS NULL, path_nfc")?
+    let mut items: Vec<(TrashItem, Option<String>)> = conn
+        .prepare(
+            "SELECT id, batch, path_nfc, kind, size, deleted_at, quick_hash, kept_hash
+             FROM trash ORDER BY batch DESC, kind IS NULL, path_nfc",
+        )?
         .query_map([], |r| {
-            Ok(TrashItem {
-                id: r.get(0)?,
-                batch: r.get(1)?,
-                path: r.get(2)?,
-                kind: r.get(3)?,
-                size: r.get::<_, i64>(4)? as u64,
-                deleted_at: r.get(5)?,
-                quick_hash: r.get(6)?,
-            })
+            Ok((
+                TrashItem {
+                    id: r.get(0)?,
+                    batch: r.get(1)?,
+                    path: r.get(2)?,
+                    kind: r.get(3)?,
+                    size: r.get::<_, i64>(4)? as u64,
+                    deleted_at: r.get(5)?,
+                    quick_hash: r.get(6)?,
+                    duplicate_of: None,
+                },
+                r.get(7)?,
+            ))
         })?
         .collect::<rusqlite::Result<_>>()?;
-    Ok(items)
+    let mut kept = conn.prepare(
+        "SELECT id, path_nfc, kind, quick_hash FROM files WHERE full_hash = ?1 AND missing_since IS NULL
+         ORDER BY kind = 'raw', path_nfc LIMIT 1",
+    )?;
+    for (item, kept_hash) in &mut items {
+        if let Some(h) = kept_hash {
+            let found = kept
+                .query_row([&*h], |r| {
+                    Ok(DuplicateOf {
+                        id: Some(r.get(0)?),
+                        path: Some(r.get(1)?),
+                        kind: Some(r.get(2)?),
+                        version: Some(r.get::<_, String>(3)?.chars().take(8).collect()),
+                    })
+                })
+                .optional()?;
+            item.duplicate_of = Some(found.unwrap_or_default());
+        }
+    }
+    Ok(items.into_iter().map(|(item, _)| item).collect())
 }
 
 struct TrashRow {
@@ -1237,6 +1297,7 @@ pub fn restore(conn: &Connection, root: &Path, batch: i64) -> Result<Restored> {
             if r.kind.is_some() {
                 let hash = r.full_hash.as_deref().filter(|_| *unchanged);
                 let id = index_file(&tx, root, &raw, hash)?;
+                crate::thumbs::fill_phash_of(&tx, id)?;
                 if let Some(names) = &r.user_tags {
                     tags::restore_names_json(&tx, id, names)?;
                 }

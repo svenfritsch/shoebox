@@ -12,6 +12,66 @@ var el = function (tag, cls, text) {
   return e;
 };
 
+// Stop the pictures under `node` that are still loading, before it leaves the
+// page. A picture taken off the page keeps its request otherwise, and the
+// browser sends only six at a time to this server: the pictures now on the
+// screen would wait behind ones nobody sees any more.
+function dropPending(node) {
+  var imgs = node.querySelectorAll('img');
+  for (var i = 0; i < imgs.length; i++) {
+    if (imgs[i].complete) continue;
+    imgs[i].onload = imgs[i].onerror = null;
+    imgs[i].removeAttribute('src');
+  }
+}
+
+// Empty a page (or the viewer's stage) for what comes next, `dropPending` first.
+function clearNode(node) {
+  dropPending(node);
+  node.textContent = '';
+}
+
+// A long list of tiles (all faces of a group) goes onto the page a part at a
+// time: GROW_STEP now, the next part when the end of the list comes near the
+// screen. However long the list, the page holds only what was scrolled to,
+// and only the pictures near the screen are asked for. Drawn again (the same
+// grid, tiles that `tile` keeps), it shows at least as many as before, so the
+// page does not jump, and tiles already in their place stay there (and keep
+// the focus). `tail` (a "+n" button) goes last, once everything is in.
+var GROW_STEP = 120;
+
+function growGrid(grid, items, tile, tail) {
+  if (grid.grower) grid.grower.disconnect();
+  grid.grower = null;
+  var shown = window.IntersectionObserver ? Math.min(items.length, Math.max(GROW_STEP, grid.grown || 0)) : items.length;
+  var nodes = [];
+  for (var k = 0; k < shown; k++) nodes.push(tile(items[k]));
+  var end = shown < items.length ? el('span', 'grow-end') : tail;
+  if (end) nodes.push(end);
+  nodes.forEach(function (node, k) { if (grid.children[k] !== node) grid.insertBefore(node, grid.children[k] || null); });
+  while (grid.children.length > nodes.length) grid.lastElementChild.remove();
+  grid.grown = shown;
+  if (shown >= items.length) return;
+  grid.grower = new IntersectionObserver(function (entries) {
+    if (!entries.some(function (e) { return e.isIntersecting; })) return;
+    var frag = document.createDocumentFragment();
+    for (var stop = Math.min(items.length, shown + GROW_STEP); shown < stop; shown++) frag.appendChild(tile(items[shown]));
+    grid.insertBefore(frag, end);
+    grid.grown = shown;
+    if (shown < items.length) {
+      // Still near the screen (a short part): observing again reports it again.
+      grid.grower.unobserve(end);
+      grid.grower.observe(end);
+      return;
+    }
+    grid.grower.disconnect();
+    grid.grower = null;
+    end.remove();
+    if (tail) grid.appendChild(tail);
+  }, { root: $('scroller'), rootMargin: '1500px 0px' });
+  grid.grower.observe(end);
+}
+
 var HEADER_H = 44;
 var OVERSCAN = 600; // px above and below the viewport that stay rendered
 var KIND_BADGE = { v: '▶', h: '', j: '', p: '' };
@@ -35,6 +95,7 @@ var state = {
   open: -1,          // index of the item in the lightbox
   indexVersion: null,
   loadSeq: 0,
+  loadCtrl: null,    // stops the timeline request a newer one replaces
   reveal: null,      // label of "show in the file manager"; set only on the shoebox computer
 };
 
@@ -120,9 +181,9 @@ var COMPARES = ['backup', 'original', 'different'];
 var VIEWS = ['duplicates', 'trash', 'faces', 'people', 'unnamed', 'person', 'drives', 'settings', 'pets', 'locations', 'text'];
 // Pet search terms (`pet=` in the URL and the API): a species or any pet.
 var PET_TERMS = {
-  cat: { icon: '🐱', get label() { return tr('pet.term.cat'); } },
-  dog: { icon: '🐶', get label() { return tr('pet.term.dog'); } },
-  pet: { icon: '🐾', get label() { return tr('pet.term.pet'); } },
+  cat: { get label() { return tr('pet.term.cat'); } },
+  dog: { get label() { return tr('pet.term.dog'); } },
+  pet: { get label() { return tr('pet.term.pet'); } },
 };
 
 // Line icons of the text search: the document scanner for words read in
@@ -131,7 +192,27 @@ var ICONS = {
   scan: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><rect x="7" y="6.5" width="10" height="11" rx="2"/><path d="M9.5 10h5M9.5 12.5h5M9.5 15h5"/></svg>',
   draft: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M14 3v5h5"/></svg>',
   copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
+  // A head with shoulders: one person.
+  person: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c.5-4 3.5-6.2 7.5-6.2s7 2.2 7.5 6.2"/></svg>',
+  // A sitting cat with its tail up.
+  cat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 4.5l1.3 1.8h3.4l1.3-1.8v4.2a3.3 3.3 0 0 1-6 0z"/><path d="M8.7 11.5C6.5 13 5.5 15.5 5.5 18c0 1.2.8 2 2 2h6.5c2.6 0 4.5-1.6 4.5-3.5V8.5"/><path d="M18.5 8.5a1.5 1.5 0 0 1 3 0"/></svg>',
+  // A bone: a dog.
+  dog: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path transform="rotate(-45 12 12) translate(12 12) scale(1.15) translate(-12 -12)" d="M7.19 10H16.81A2.4 2.4 0 1 1 20.39 10Q19.6 12 20.39 14A2.4 2.4 0 1 1 16.81 14H7.19A2.4 2.4 0 1 1 3.61 14Q4.4 12 3.61 10A2.4 2.4 0 1 1 7.19 10z"/></svg>',
+  // A paw print: a pet in general.
+  paw: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="11.5" r="1.7" fill="currentColor"/><circle cx="9.3" cy="7" r="1.7" fill="currentColor"/><circle cx="14.7" cy="7" r="1.7" fill="currentColor"/><circle cx="18.5" cy="11.5" r="1.7" fill="currentColor"/><path d="M8.3 17.5c0-2.2 1.7-4 3.7-4s3.7 1.8 3.7 4c0 1.5-1 2.2-2.2 2.2-.6 0-1-.3-1.5-.3s-.9.3-1.5.3c-1.2 0-2.2-.7-2.2-2.2z"/></svg>',
+  // The map marker of the selection bar, without its plus.
+  place: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21C9.5 18.2 6 14.8 6 10.8a6 6 0 0 1 12 0c0 4-3.5 7.4-6 10.2z"/><circle cx="12" cy="10.8" r="1.4" fill="currentColor"/></svg>',
+  // A flat drive with its light: the disk a folder is on (the guide's symbol).
+  drive: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="18" height="10" rx="2"/><circle cx="17" cy="12" r="1"/><path d="M6 12h6"/></svg>',
+  // A pencil: change a name.
+  pencil: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19l1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L9 18z"/><path d="M14.5 6.5l3 3"/></svg>',
+  // The calendar page of the selection bar (a date of your own).
+  date: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5z"/><path d="M8.5 3.5v5M15.5 3.5v5" stroke-width="2.2"/><path d="M7.5 14.5c1.5-2.3 3-2.3 4.5 0s3 2.3 4.5 0"/></svg>',
+  // Three pawns, the middle one taller: a group of people.
+  group: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="9.5" r="2"/><path d="M2.5 20v-1.5C2.5 16 3.8 14.5 5.5 14.5S8.5 16 8.5 18.5V20z"/><circle cx="18.5" cy="9.5" r="2"/><path d="M15.5 20v-1.5c0-2.5 1.3-4 3-4s3 1.5 3 4V20z"/><circle cx="12" cy="6.5" r="2.4"/><path d="M8.5 20v-2.5c0-3 1.5-5 3.5-5s3.5 2 3.5 5V20z"/></svg>',
 };
+// The icon of a species in chips and suggestions: the sitting cat, the bone for a dog, else the paw.
+function speciesIcon(species) { return icon(species === 'cat' ? 'cat' : species === 'dog' ? 'dog' : 'paw'); }
 function icon(name, cls) {
   var s = document.createElement('span');
   s.className = 'ic' + (cls ? ' ' + cls : '');
@@ -148,7 +229,7 @@ function prefixOf(v) {
 }
 
 function readHash() {
-  var f = { folder: null, tags: [], people: [], pets: [], texts: [], names: [], types: [], fav: false, manual: false, place: null, dates: [], nodate: false, compare: '', q: '', view: null, id: null, tab: null };
+  var f = { folder: null, tags: [], people: [], groups: [], pets: [], texts: [], names: [], types: [], fav: false, manual: false, place: null, dates: [], nodate: false, compare: '', q: '', view: null, id: null, tab: null };
   location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
     var i = kv.indexOf('=');
     if (i < 0) return;
@@ -158,6 +239,8 @@ function readHash() {
     var all = isAll();
     if (k === 'tag') { var t = all ? v : parseInt(v, 10); if (t && f.tags.indexOf(t) < 0) f.tags.push(t); }
     if (k === 'person') { var pp = all ? v : parseInt(v, 10); if (pp && f.people.indexOf(pp) < 0) f.people.push(pp); }
+    // A group: the photos of any of its people.
+    if (k === 'group') { var gg = all ? v : parseInt(v, 10); if (gg && f.groups.indexOf(gg) < 0) f.groups.push(gg); }
     if (k === 'type' && TYPES.indexOf(v) >= 0 && f.types.indexOf(v) < 0) f.types.push(v);
     // A kind of pet (all cats, all dogs, any pet): the same on every drive.
     if (k === 'pet' && PET_TERMS[v] && f.pets.indexOf(v) < 0) f.pets.push(v);
@@ -187,7 +270,7 @@ function readHash() {
 // folder, any number of tags and people (`tag`, `person` repeated in the
 // URL) and free text.
 function setFilter(f) {
-  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], pet: f.pets || [], text: f.texts || [], name: f.names || [], type: f.types || [], fav: f.fav ? 1 : null, manual: f.manual && (f.tags || []).length ? 1 : null, place: f.place, date: f.dates || [], nodate: f.nodate ? 1 : null, compare: f.compare || null, q: f.q }).replace(/^\?/, '');
+  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], group: f.groups || [], pet: f.pets || [], text: f.texts || [], name: f.names || [], type: f.types || [], fav: f.fav ? 1 : null, manual: f.manual && (f.tags || []).length ? 1 : null, place: f.place, date: f.dates || [], nodate: f.nodate ? 1 : null, compare: f.compare || null, q: f.q }).replace(/^\?/, '');
   if (h === location.hash.replace(/^#/, '')) { applyFilter(); return; }
   location.hash = h; // triggers hashchange -> applyFilter
 }
@@ -197,13 +280,13 @@ function withFilter(changes) {
   var f = state.filter;
   // A place picked on the Locations page goes with the search to the timeline.
   var place = f.view === 'locations' ? f.id : f.place;
-  return Object.assign({ folder: f.folder, tags: f.tags.slice(), manual: f.manual && !('tags' in changes), people: f.people.slice(), pets: f.pets.slice(), texts: f.texts.slice(), names: f.names.slice(), types: f.types.slice(), fav: f.fav, place: place, dates: f.dates.slice(), nodate: f.nodate, compare: f.compare, q: f.q }, changes);
+  return Object.assign({ folder: f.folder, tags: f.tags.slice(), manual: f.manual && !('tags' in changes), people: f.people.slice(), groups: f.groups.slice(), pets: f.pets.slice(), texts: f.texts.slice(), names: f.names.slice(), types: f.types.slice(), fav: f.fav, place: place, dates: f.dates.slice(), nodate: f.nodate, compare: f.compare, q: f.q }, changes);
 }
 
 function showView(view, id, tab) { setFilter({ view: view, id: id, tab: tab, folder: null, tags: [], people: [], q: '' }); }
 
 // The hash the page is showing; navigating away from a selection asks first.
-var shownHash = location.hash, revertingHash = false;
+var shownHash = location.hash, revertingHash = false, shownView = null;
 
 function applyFilter() {
   if (revertingHash) { revertingHash = false; return; }
@@ -226,16 +309,19 @@ function applyFilter() {
   $('search').value = state.filter.q;
   renderChips();
   markTypes();
-  // Still typing: offer what narrows the new search down.
-  if (document.activeElement === $('search')) suggest($('search').value);
+  // Still typing: offer what narrows the new search down (not again when only
+  // the typed text became the search: the list for it is there or on its way).
+  if (document.activeElement === $('search') && suggestKey($('search').value) !== sugg.key) suggest($('search').value);
   markActiveFolder();
   closeSidebarOnPhone();
   var view = state.filter.view;
+  if (shownView === 'unnamed' && view !== 'unnamed') leftUnnamed();
+  shownView = view;
   $('page').hidden = !view;
   $('sizer').hidden = !!view;
   $('current-month').textContent = view && VIEW_LABELS[view] ? tr(VIEW_LABELS[view]) : '';
   var f = state.filter;
-  $('all').classList.toggle('active', !view && !f.folder && !f.tags.length && !f.people.length && !f.pets.length && !f.texts.length && !f.names.length && !f.place && !f.fav && !f.dates.length && !f.nodate && !f.compare && !f.q);
+  $('all').classList.toggle('active', !view && !f.folder && !f.tags.length && !f.people.length && !f.groups.length && !f.pets.length && !f.texts.length && !f.names.length && !f.place && !f.fav && !f.dates.length && !f.nodate && !f.compare && !f.q);
   $('nav-nodate').classList.toggle('active', !view && f.nodate);
   if (isAll()) $('nav-nodate').hidden = true;
   $('nav-dups').classList.toggle('active', view === 'duplicates');
@@ -273,9 +359,9 @@ function renderChips() {
     var c = el('span', 'chip' + (named ? ' ' + (ic === 'scan' ? 'text' : 'name') : ''), '');
     if (ic) c.appendChild(named ? icon(ic) : ic);
     c.appendChild(document.createTextNode(label));
-    if (title) c.title = title;
+    if (title) setTip(c, title);
     var x = el('button', '', '✕');
-    x.title = tr('chip.remove');
+    setTip(x, tr('chip.remove'));
     x.onclick = clear;
     c.appendChild(x);
     box.appendChild(c);
@@ -284,8 +370,9 @@ function renderChips() {
     var folder = state.folderById[f.folder];
     add(folder.path || folder.name, function () { setFilter(withFilter({ folder: null })); }, folderIcon());
     if (folder.path && !readOnly) {
-      var edit = el('button', 'edit', '✎');
-      edit.title = tr('chip.rename_folder');
+      var edit = el('button', 'edit');
+      edit.appendChild(icon('pencil'));
+      setTip(edit, tr('chip.rename_folder'));
       edit.onclick = function () { renameFolder(folder); };
       box.lastChild.insertBefore(edit, box.lastChild.lastChild);
     }
@@ -296,25 +383,36 @@ function renderChips() {
     });
   });
   f.people.forEach(function (id) {
-    add((petIcon(state.personSpecies[id]) || '👤') + ' ' + (state.personNames[id] || id), function () {
+    var kind = state.personSpecies[id];
+    add((state.personNames[id] || id), function () {
       setFilter(withFilter({ people: f.people.filter(function (p) { return p !== id; }) }));
-    });
+    }, kind ? speciesIcon(kind) : icon('person'));
+  });
+  f.groups.forEach(function (id) {
+    add(state.groupNames[id] || id, function () {
+      setFilter(withFilter({ groups: f.groups.filter(function (g) { return g !== id; }) }));
+    }, icon('group'), tr('chip.group_hint', { name: state.groupNames[id] || id }));
   });
   f.pets.forEach(function (species) {
-    add(PET_TERMS[species].icon + ' ' + PET_TERMS[species].label, function () {
+    add(PET_TERMS[species].label, function () {
       setFilter(withFilter({ pets: f.pets.filter(function (p) { return p !== species; }) }));
-    });
+    }, speciesIcon(species));
   });
   if (f.fav) add('♥ ' + tr('fav.label'), function () { setFilter(withFilter({ fav: false })); });
   // The Type drop-down's choice as a chip too, like the heart's.
   if (f.types.length) add(f.types.length === 1 ? tr('types.' + f.types[0]) : f.types.map(typeLabel).join(', '), function () { setFilter(withFilter({ types: [] })); }, typeIcon(f.types));
   if (f.place) {
     var spot = placeOf(f.place);
-    add('📍 ' + (spot ? spot.name : '…'), function () { setFilter(withFilter({ place: null })); });
-    var onMap = el('button', 'edit', '🗺');
-    onMap.title = tr('chip.show_on_map');
-    onMap.onclick = function () { showView('locations', f.place); };
-    box.lastChild.insertBefore(onMap, box.lastChild.lastChild);
+    // The marker is the way to the map (no second button beside the name).
+    var mark = icon('place', 'link');
+    mark.setAttribute('role', 'button');
+    mark.tabIndex = 0;
+    mark.setAttribute('aria-label', tr('chip.show_on_map'));
+    setTip(mark, tr('chip.show_on_map'));
+    var toMap = function () { showView('locations', f.place); };
+    mark.onclick = toMap;
+    mark.onkeydown = function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toMap(); } };
+    add(spot ? spot.name : '…', function () { setFilter(withFilter({ place: null })); }, mark);
   }
   f.names.forEach(function (term) {
     add(term, function () { setFilter(withFilter({ names: f.names.filter(function (n) { return n !== term; }) })); }, 'draft', tr('chip.name_hint', { term: term }));
@@ -323,10 +421,10 @@ function renderChips() {
     add(term, function () { setFilter(withFilter({ texts: f.texts.filter(function (n) { return n !== term; }) })); }, 'scan', tr('chip.text_hint', { term: term }));
   });
   f.dates.forEach(function (term) {
-    add('📅 ' + dateTermLabel(term), function () { setFilter(withFilter({ dates: f.dates.filter(function (t) { return t !== term; }) })); });
-    box.lastChild.title = tr('dates.chip_hint', { date: dateTermLabel(term) });
+    add(dateTermLabel(term), function () { setFilter(withFilter({ dates: f.dates.filter(function (t) { return t !== term; }) })); }, icon('date'));
+    setTip(box.lastChild, tr('dates.chip_hint', { date: dateTermLabel(term) }));
   });
-  if (f.nodate) add('📅 ' + (dates.needs ? tr('side.needs_date_n', { n: dates.needs }) : tr('side.needs_date')), function () { setFilter(withFilter({ nodate: false })); });
+  if (f.nodate) add(dates.needs ? tr('side.needs_date_n', { n: dates.needs }) : tr('side.needs_date'), function () { setFilter(withFilter({ nodate: false })); }, icon('date'));
   if (f.compare) {
     add('⇄ ' + compareLabel(f.compare), function () { setFilter(withFilter({ compare: '' })); });
     box.lastChild.classList.add('cmp');
@@ -335,15 +433,15 @@ function renderChips() {
   var terms = box.children.length;
   if (terms) {
     var more = el('button', 'chip more', '+');
-    more.title = tr('chip.add');
+    setTip(more, tr('chip.add'));
     more.onclick = function () { $('search').value = ''; $('search').focus(); suggest(''); };
     box.appendChild(more);
   }
   // One click for the whole search; the ✕ on a chip drops just that term.
   if (terms >= 2) {
     var clear = el('button', 'chip clear', tr('chip.clear_all'));
-    clear.title = tr('chip.clear_all_hint');
-    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], pets: [], texts: [], names: [], types: [], fav: false, place: null, compare: '', q: '' }); };
+    setTip(clear, tr('chip.clear_all_hint'));
+    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], groups: [], pets: [], texts: [], names: [], types: [], fav: false, place: null, compare: '', q: '' }); };
     box.appendChild(clear);
   }
   // How many the search finds, at the right; filled in when the timeline is in.
@@ -385,6 +483,7 @@ function showCount() {
 state.tagNames = {};
 state.personNames = {};
 state.personSpecies = {}; // id -> cat, dog or pet, for people who are pets
+state.groupNames = {}; // id -> name of a group (its own name over all drives)
 
 // ------------------------------------------------------------------ type filter
 
@@ -449,9 +548,9 @@ function meansFav(name) { return FAV_TYPED.indexOf(String(name).trim().toLowerCa
 // Our own drawn icons (no icon set): a 24 grid, round 2 px lines in the colour
 // of the text. The fill sits in the style so that rules like ".icon svg" do
 // not fill the outline.
-function lineIcon(paths, fill) {
+function lineIcon(paths, fill, sw) {
   return '<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" style="fill:' + (fill ? 'currentColor' : 'none') +
-    '" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + paths + '</svg>';
+    '" stroke="currentColor" stroke-width="' + (sw || 2) + '" stroke-linecap="round" stroke-linejoin="round">' + paths + '</svg>';
 }
 var HEART_PATH = '<path stroke-width="2.2" d="M12 19.5C8 16.8 4 13.6 4 9.6 4 7.1 5.9 5.2 8.2 5.2c1.6 0 3 .9 3.8 2.3.8-1.4 2.2-2.3 3.8-2.3 2.3 0 4.2 1.9 4.2 4.4 0 4-4 7.2-8 9.9z"/>';
 var HEART_ON = lineIcon(HEART_PATH, true);
@@ -461,6 +560,14 @@ var HEART_OFF = lineIcon(HEART_PATH);
 var FRAME_ICON = lineIcon('<path d="M3 9V6.5A2.5 2.5 0 0 1 5.5 4H9M15 4h3.5A2.5 2.5 0 0 1 21 6.5V9M3 15v2.5A2.5 2.5 0 0 0 5.5 20H9"/><path d="M12.5 17c1.2-2 3.3-3 4.5-3s3.3 1 4.5 3c-1.2 2-3.3 3-4.5 3s-3.3-1-4.5-3z"/><circle cx="17" cy="17" r="1.1"/>');
 var SELECT_ICON = lineIcon('<rect x="4" y="4" width="16" height="16" rx="3.5"/><path d="M8.5 12.2l2.5 2.5 4.8-5"/>');
 var ADD_FACE_ICON = lineIcon('<circle cx="11" cy="13" r="8"/><circle cx="8.3" cy="11.5" r=".6"/><circle cx="13.7" cy="11.5" r=".6"/><path d="M7.4 15.6a4.2 4.2 0 0 0 7.2 0"/><path d="M19 2.5v5M16.5 5h5"/>');
+// The icons of the face and pet actions (Unnamed cards, the singles bar, the photo's face panel).
+var NAME_ICON = lineIcon('<circle cx="10" cy="8" r="3.4"/><path d="M3.5 20c.6-3.6 3.2-5.6 6.5-5.6 1 0 1.9.2 2.7.5"/><path d="M14.5 17.5l2.3 2.3 4.2-4.6"/>');
+var IGNORE_ICON = lineIcon('<path d="M2.5 12C5 7.6 8.3 6 12 6s7 1.6 9.5 6c-2.5 4.4-5.8 6-9.5 6s-7-1.6-9.5-6z"/><circle cx="12" cy="12" r="2.6"/><path d="M4.5 20L19.5 4"/>');
+var NOT_FACE_ICON = lineIcon('<circle cx="12" cy="12" r="8.5"/><circle cx="9.3" cy="10.5" r=".6"/><circle cx="14.7" cy="10.5" r=".6"/><path d="M8.5 14.8a4.2 4.2 0 0 0 7 0"/><path d="M4.5 19.5l15-15"/>');
+var NOT_PET_ICON = lineIcon('<circle cx="5.5" cy="11.5" r="1.6" fill="currentColor" stroke-width="1"/><circle cx="9.3" cy="7" r="1.6" fill="currentColor" stroke-width="1"/><circle cx="14.7" cy="7" r="1.6" fill="currentColor" stroke-width="1"/><circle cx="18.5" cy="11.5" r="1.6" fill="currentColor" stroke-width="1"/><path stroke-width="1.8" d="M8.3 17.5c0-2.2 1.7-4 3.7-4s3.7 1.8 3.7 4c0 1.5-1 2.2-2.2 2.2-.6 0-1-.3-1.5-.3s-.9.3-1.5.3c-1.2 0-2.2-.7-2.2-2.2z"/><path d="M4.5 20.5l15-17"/>');
+var CAT_ICON = lineIcon('<path d="M8.5 4.5l1.3 1.8h3.4l1.3-1.8v4.2a3.3 3.3 0 0 1-6 0z"/><path d="M8.7 11.5C6.5 13 5.5 15.5 5.5 18c0 1.2.8 2 2 2h6.5c2.6 0 4.5-1.6 4.5-3.5V8.5"/><path d="M18.5 8.5a1.5 1.5 0 0 1 3 0"/>', false, 1.8);
+// A bone: the dog (the paw is the pet in general).
+var DOG_ICON = lineIcon('<path transform="rotate(-45 12 12) translate(12 12) scale(1.15) translate(-12 -12)" d="M7.19 10H16.81A2.4 2.4 0 1 1 20.39 10Q19.6 12 20.39 14A2.4 2.4 0 1 1 16.81 14H7.19A2.4 2.4 0 1 1 3.61 14Q4.4 12 3.61 10A2.4 2.4 0 1 1 7.19 10z"/>', false, 1.8);
 // The selection bar's tools (our own drawings): a cross, a label pointing
 // left with a plus or a minus, a calendar page with the "~" of an estimated
 // date, a map marker with a plus, an arrow into a folder, an arrow up out of
@@ -468,6 +575,8 @@ var ADD_FACE_ICON = lineIcon('<circle cx="11" cy="13" r="8"/><circle cx="8.3" cy
 var TRASH_ICON = lineIcon('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>');
 var SEL_ICONS = {
   close: lineIcon('<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>'),
+  check: lineIcon('<path d="M5 12.8l4.6 4.6L19 7.2"/>'),
+  undo: lineIcon('<path d="M9 5.5L5 9.5l4 4"/><path d="M5 9.5h8.5a5 5 0 0 1 0 10H10"/>'),
   tag: lineIcon('<path d="M2 14l4.3-5H14.5A1.5 1.5 0 0 1 16 10.5v7a1.5 1.5 0 0 1-1.5 1.5H6.3z"/><circle cx="6.6" cy="14" r=".6"/><path d="M19 2.5v6.5M15.75 5.75h6.5"/>'),
   untag: lineIcon('<path d="M2 14l4.3-5H14.5A1.5 1.5 0 0 1 16 10.5v7a1.5 1.5 0 0 1-1.5 1.5H6.3z"/><circle cx="6.6" cy="14" r=".6"/><path d="M15.75 5.75h6.5"/>'),
   date: lineIcon('<path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5z"/><path d="M8.5 3.5v5M15.5 3.5v5" stroke-width="2.2"/><path d="M7.5 14.5c1.5-2.3 3-2.3 4.5 0s3 2.3 4.5 0"/>'),
@@ -480,9 +589,32 @@ var SEL_ICONS = {
 function toolButton(icon, label) {
   var b = el('button', 'tool');
   b.innerHTML = icon;
-  b.title = label;
+  setTip(b, label);
   b.setAttribute('aria-label', label);
   return b;
+}
+
+// An icon button of the face actions: its quick label is the name of the action
+// and, on a second line, what it does. With nothing ticked yet it is dimmed
+// (aria-disabled, so that the label still shows) and says to tick faces first.
+function actionButton(icon, act) {
+  var b = el('button', 'abtn');
+  b.innerHTML = icon;
+  b.setAttribute('data-act', act);
+  return b;
+}
+
+function actionOff(b) { return b.getAttribute('aria-disabled') === 'true'; }
+
+function onAction(b, fn) {
+  b.onclick = function (ev) { if (!actionOff(b)) fn(ev); };
+}
+
+function setAction(b, label, hint, off) {
+  var text = off ? tr('unnamed.select_first') : hint;
+  setTip(b, text ? label + '\n' + text : label);
+  b.setAttribute('aria-label', label);
+  if (off) b.setAttribute('aria-disabled', 'true'); else b.removeAttribute('aria-disabled');
 }
 
 function markFavFilter() {
@@ -511,8 +643,8 @@ function heartButton(id, cls, readonly) {
   b.type = 'button';
   b.innerHTML = on ? HEART_ON : HEART_OFF;
   b.classList.toggle('on', on);
-  b.title = tr(readonly ? 'fav.readonly' : on ? 'fav.remove' : 'fav.add');
-  b.setAttribute('aria-label', b.title);
+  setTip(b, tr(readonly ? 'fav.readonly' : on ? 'fav.remove' : 'fav.add'));
+  b.setAttribute('aria-label', b.getAttribute('data-tip'));
   b.setAttribute('aria-pressed', on ? 'true' : 'false');
   if (readonly) b.disabled = true; // the common timeline only shows hearts
   return b;
@@ -525,8 +657,8 @@ function paintHearts() {
     var id = d.ids[parseInt(b.parentNode.dataset.index, 10)], on = !!state.favs[id];
     b.innerHTML = on ? HEART_ON : HEART_OFF;
     b.classList.toggle('on', on);
-    b.title = tr(isAll() ? 'fav.readonly' : on ? 'fav.remove' : 'fav.add');
-    b.setAttribute('aria-label', b.title);
+    setTip(b, tr(isAll() ? 'fav.readonly' : on ? 'fav.remove' : 'fav.add'));
+    b.setAttribute('aria-label', b.getAttribute('data-tip'));
     b.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
   markLightboxHeart();
@@ -538,8 +670,8 @@ function markLightboxHeart() {
   var on = !!state.favs[d.ids[i]];
   b.innerHTML = on ? HEART_ON : HEART_OFF;
   b.classList.toggle('on', on);
-  b.title = tr(isAll() ? 'fav.readonly' : on ? 'fav.remove_hint' : 'fav.add_hint');
-  b.setAttribute('aria-label', isAll() ? b.title : tr(on ? 'fav.remove' : 'fav.add'));
+  setTip(b, tr(isAll() ? 'fav.readonly' : on ? 'fav.remove_hint' : 'fav.add_hint'));
+  b.setAttribute('aria-label', isAll() ? b.getAttribute('data-tip') : tr(on ? 'fav.remove' : 'fav.add'));
   b.disabled = isAll();
   if (isAll()) b.hidden = !on; // the common timeline shows a heart only on favorites
   b.setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -559,7 +691,35 @@ $('lb-fav').onclick = toggleFavoriteOpen;
 // list below the box offers tags (counted within the current search) and
 // folders, and picking one adds it to the search as a chip.
 var searchTimer = null;
-var sugg = { items: [], at: -1, seq: 0 };
+// `ctrl` stops the requests of the list shown before (see suggestSoon); `key`
+// is what the list shown or on its way is for (suggestKey).
+var sugg = { items: [], at: -1, seq: 0, timer: null, ctrl: null, key: null };
+
+// What a list of suggestions depends on: the text typed and the search but
+// its own text.
+function suggestKey(text) {
+  return text + '\n' + JSON.stringify(Object.assign({}, state.filter, { q: '' }));
+}
+
+// While someone types, the list is asked for once they pause (SUGGEST_PAUSE),
+// and what was asked for the letters before is called off: every suggestion
+// request waits for the drive's one connection, so a request nobody waits for
+// any more holds up the one that is wanted (see "Search" under Performance in
+// docs/plan.md).
+var SUGGEST_PAUSE = 150;
+function suggestSoon(v) {
+  clearTimeout(sugg.timer);
+  stopSuggest();
+  sugg.timer = setTimeout(function () { suggest(v); }, SUGGEST_PAUSE);
+}
+
+// Calls off the suggestion requests still on their way (a newer list replaces them).
+function stopSuggest() {
+  ++sugg.seq;
+  sugg.key = null;
+  if (sugg.ctrl) sugg.ctrl.abort();
+  sugg.ctrl = null;
+}
 
 $('search').addEventListener('input', function () {
   clearTimeout(searchTimer);
@@ -567,10 +727,10 @@ $('search').addEventListener('input', function () {
   // On the Locations page typing looks for a place; the text only becomes a search with Enter.
   if (state.filter.view === 'locations' && geo.on) { suggest(v); return; }
   // `date:` looks for a date; what follows is not a text search.
-  if (DATE_PREFIX.test(v)) { suggest(v); return; }
+  if (DATE_PREFIX.test(v)) { suggestSoon(v); return; }
   // `text:` and `name:` are a term of their own: nothing is searched until Enter or a pick.
   if (!prefixOf(v)) searchTimer = setTimeout(function () { setFilter(withFilter({ q: v.trim() })); }, 300);
-  suggest(v);
+  suggestSoon(v);
 });
 $('search').addEventListener('focus', function () {
   // A search shows another list: with photos selected, ask once when the box is
@@ -619,6 +779,7 @@ $('search').addEventListener('keydown', function (ev) {
     else if (f.nodate) setFilter(withFilter({ nodate: false }));
     else if (f.dates.length) setFilter(withFilter({ dates: f.dates.slice(0, -1) }));
     else if (f.pets.length) setFilter(withFilter({ pets: f.pets.slice(0, -1) }));
+    else if (f.groups.length) setFilter(withFilter({ groups: f.groups.slice(0, -1) }));
     else if (f.people.length) setFilter(withFilter({ people: f.people.slice(0, -1) }));
     else if (f.tags.length) setFilter(withFilter({ tags: f.tags.slice(0, -1) }));
     else if (f.folder) setFilter(withFilter({ folder: null }));
@@ -665,7 +826,9 @@ function compareFor() {
 function loadCompare() {
   drives.cmp = { backups: [], drives: [] };
   if (drives.list.length < 2) { checkCompare(); return Promise.resolve(); }
-  return Promise.all([api('/api/all/backups?limit=0'), api('/api/all/drives')]).then(function (r) {
+  // refreshDrives asked for the drives just before: not twice at the start.
+  var roles = drives.roles ? Promise.resolve(drives.roles) : api('/api/all/drives');
+  return Promise.all([api('/api/all/backups?limit=0'), roles]).then(function (r) {
     drives.cmp = { backups: r[0], drives: r[1] };
   }).catch(function () {}).then(checkCompare).then(loadOnlyHere);
 }
@@ -715,7 +878,7 @@ function compareBadge(fileId) {
   if (isAll() || !c || !drives.only || !drives.only[fileId]) return null;
   var kind = c.kind;
   var b = el('span', 'cmp-badge ' + kind, tr(kind === 'backup' ? 'cmp.only_backup' : 'cmp.not_backed_up'));
-  b.title = tr(kind === 'backup' ? 'cmp.tip_only_backup' : 'cmp.tip_not_backed_up', { drive: driveLabel(drives.current.id), other: driveLabel(c.other) });
+  setTip(b, tr(kind === 'backup' ? 'cmp.tip_only_backup' : 'cmp.tip_not_backed_up', { drive: driveLabel(drives.current.id), other: driveLabel(c.other) }));
   return b;
 }
 
@@ -733,41 +896,57 @@ function compareSuggestion(needle, f) {
 }
 
 function suggest(text) {
-  var seq = ++sugg.seq, f = state.filter;
+  clearTimeout(sugg.timer);
+  stopSuggest();
+  sugg.key = suggestKey(text);
+  var seq = sugg.seq, f = state.filter;
+  var ctrl = sugg.ctrl = new AbortController(), opts = { signal: ctrl.signal };
   // On the Locations page the search finds places: picking one shows it.
   if (f.view === 'locations' && geo.on) { showSuggest(placeSuggestions(text.trim(), f)); return; }
   if (f.view) { closeSuggest(); return; }
-  var pre = prefixOf(text);
-  if (pre) { showSuggest(pre.term ? [{ kind: pre.kind, id: pre.term, label: pre.term, prefixed: true, hint: pre.kind === 'text' ? tr('search.text_prefixed_hint') : tr('search.name_prefixed_hint') }] : [], pre.term ? null : (pre.kind === 'text' ? tr('search.prefix_empty_text') : tr('search.prefix_empty_name'))); return; }
-  // `date:` (or `datum:`): only dates, a month alone lists it in every year.
+  // `text:` and `name:`: one row, the term as typed, with the photos it finds
+  // (the server counts them); none when it finds nothing.
+  var pre = prefixOf(text), row = null;
+  if (pre) {
+    if (!pre.term) { showSuggest([], tr(pre.kind === 'text' ? 'search.prefix_empty_text' : 'search.prefix_empty_name')); return; }
+    row = { kind: pre.kind, id: pre.term, label: pre.term, prefixed: true, hint: tr(pre.kind === 'text' ? 'search.text_prefixed_hint' : 'search.name_prefixed_hint') };
+    if (isAll()) { showSuggest([row]); return; } // over all drives without a number
+  }
+  // `date:` (or `datum:`): the server answers only dates, a month alone in every year.
   var typed = DATE_PREFIX.exec(text);
-  if (typed) {
-    if (isAll()) { closeSuggest(); return; }
-    var after = typed[1].trim();
-    suggestDates(after, true, datesWithin(f)).then(function (rows) {
-      if (seq !== sugg.seq) return;
-      showSuggest(dateItems(rows), after && rows.length ? '' : tr('dates.hint_prefix'));
-    });
+  if (isAll()) {
+    if (typed) closeSuggest(); // the common timeline has no dates to offer
+    else suggestAll(text, seq, opts);
     return;
   }
-  if (isAll()) { suggestAll(text, seq); return; }
   var needle = text.trim();
-  var within = { q: needle, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place };
-  Promise.all([
-    api(LIBAPI + '/tags' + query(Object.assign({ limit: 8, own: 1 }, within))),
-    api(LIBAPI + '/people/search' + query(Object.assign({ limit: 6 }, within))).catch(function () { return []; }),
-    api(LIBAPI + '/pets/search' + query(within)).catch(function () { return []; }),
-    suggestDates(needle, false, datesWithin(f)),
-  ]).then(function (r) {
+  // Counted within the search as the list shows it (every term but the typed text).
+  var within = { q: needle, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null };
+  api(LIBAPI + '/suggest' + query(within), opts).then(function (r) {
     if (seq !== sugg.seq) return;
+    if (pre) {
+      var found = pre.kind === 'text' ? r.text : r.name;
+      if (found && found.count) { row.count = found.count; showSuggest([row]); return; }
+      showSuggest([], pre.kind === 'name' ? tr('search.name_none', { term: pre.term }) : state.textLines ? tr('search.text_none', { term: pre.term }) : tr('search.text_unread'));
+      return;
+    }
+    if (typed) {
+      var after = typed[1].trim();
+      showSuggest(dateItems(r.dates), after && r.dates.length ? '' : tr('dates.hint_prefix'));
+      return;
+    }
     var items = compareSuggestion(needle, f).concat(favSuggestion(needle, f));
-    items = items.concat(r[1].map(function (p) {
+    items = items.concat(r.people.map(function (p) {
       state.personNames[p.id] = p.name;
       state.personSpecies[p.id] = p.species;
       return { kind: 'person', id: p.id, label: p.name, count: p.photos, person: p };
     }));
-    r[2].forEach(function (p) { items.push({ kind: 'pet', id: p.species, label: PET_TERMS[p.species].label, count: p.photos }); });
-    r[0].forEach(function (t) {
+    r.groups.forEach(function (g) {
+      state.groupNames[g.id] = g.name;
+      items.push({ kind: 'group', id: g.id, label: g.name, count: g.photos });
+    });
+    r.pets.forEach(function (p) { items.push({ kind: 'pet', id: p.species, label: PET_TERMS[p.species].label, count: p.photos }); });
+    r.tags.forEach(function (t) {
       if (isFavTag(t.name)) return; // the heart, offered above
       state.tagNames[t.id] = t.name;
       items.push({ kind: 'tag', id: t.id, label: t.name, count: t.count, folderTag: t.kind === 'folder' });
@@ -779,51 +958,45 @@ function suggest(text) {
         .slice(0, 4)
         .forEach(function (fo) { items.push({ kind: 'folder', id: fo.id, label: fo.path, count: fo.count }); });
     }
-    items = items.concat(textItems(needle));
+    items = items.concat(textItems(needle, r.text));
     // Last: a year, a month with a year or a day, when that is what was typed.
-    items = items.concat(dateItems(r[3]));
+    items = items.concat(dateItems(r.dates));
     showSuggest(items);
   }).catch(function () {});
 }
 
-// Over all drives: tags and people by name (the drives share names, not ids).
-var allPeople = { at: 0, key: '', list: [] };
-function suggestAll(text, seq) {
-  var needle = text.trim(), low = needle.toLowerCase(), f = state.filter;
+// Over all drives: tags, people and groups by name (the drives share names, not ids).
+function suggestAll(text, seq, opts) {
+  var needle = text.trim(), f = state.filter;
   // The suggestions narrow with the filter, as on a single drive: counts are
   // the photos the list would show, and what would show nothing is left out.
-  var within = { tag: f.tags, person: f.people, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null };
-  var wkey = query(within);
-  var people = Date.now() - allPeople.at < 30000 && allPeople.key === wkey ? Promise.resolve(allPeople.list)
-    : api('/api/all/people' + wkey).then(function (r) { allPeople = { at: Date.now(), key: wkey, list: r.people }; return r.people; });
-  // Pet terms mean the same on every drive: add up what the drives that take part answer.
-  var pets = Promise.all(drives.allLibs.map(function (l) {
-    return api('/api/lib/' + l.id + '/pets/search' + query({ q: needle, pet: f.pets })).catch(function () { return []; });
-  })).then(function (lists) {
-    var sum = {};
-    lists.forEach(function (list) { list.forEach(function (h) { sum[h.species] = (sum[h.species] || 0) + h.photos; }); });
-    return Object.keys(sum).sort(function (a, b) { return sum[b] - sum[a]; }).map(function (s) { return { species: s, photos: sum[s] }; });
-  });
-  Promise.all([api('/api/all/tags' + query(Object.assign({ q: needle, limit: 8, own: 1 }, within))), people.catch(function () { return []; }), pets]).then(function (r) {
+  var within = { q: needle, tag: f.tags, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null };
+  api('/api/all/suggest' + query(within), opts).then(function (r) {
     if (seq !== sugg.seq) return;
-    var items = r[1].filter(function (p) { return f.people.indexOf(p.name) < 0 && (!low || p.name.toLowerCase().indexOf(low) >= 0); })
-      .slice(0, 6).map(function (p) { return { kind: 'person', id: p.name, label: p.name, count: p.photos, person: { name: p.name, species: p.species } }; });
-    r[2].forEach(function (p) { items.push({ kind: 'pet', id: p.species, label: PET_TERMS[p.species].label, count: p.photos }); });
+    var items = r.people.map(function (p) { return { kind: 'person', id: p.name, label: p.name, count: p.photos, person: { name: p.name, species: p.species } }; });
+    r.groups.forEach(function (g) { state.groupNames[g.name] = g.name; items.push({ kind: 'group', id: g.name, label: g.name, count: g.photos }); });
+    r.pets.forEach(function (p) { items.push({ kind: 'pet', id: p.species, label: PET_TERMS[p.species].label, count: p.photos }); });
     items = favSuggestion(needle, f).concat(items);
-    r[0].filter(function (t) { return f.tags.indexOf(t.name) < 0 && !isFavTag(t.name); }).forEach(function (t) {
+    r.tags.filter(function (t) { return f.tags.indexOf(t.name) < 0 && !isFavTag(t.name); }).forEach(function (t) {
       items.push({ kind: 'tag', id: t.name, label: t.name, count: t.count, folderTag: t.kind === 'folder' });
     });
     items = items.concat(textItems(needle));
-    items = items.concat(textItems(needle));
     showSuggest(items);
   }).catch(function () {});
 }
 
-// The last row of a plain search: look for the same word in the text of photos.
-// Greyed until something has been read (the Text add-on, then "Recognize text").
-function textItems(needle) {
+// The last row of a plain search: look for the same word in the text of photos,
+// with the photos it finds (`found`, counted by the server), left out when it
+// finds none. Greyed while nothing has been read (the Text add-on, then
+// "Recognize text"); over all drives without a number.
+function textItems(needle, found) {
   if (needle.length < 2) return [];
-  return [{ kind: 'text', id: needle, label: needle, hint: tr('search.text_hint', { term: needle }), off: !isAll() && !state.textLines }];
+  var row = { kind: 'text', id: needle, label: needle, hint: tr('search.text_hint', { term: needle }) };
+  if (isAll()) return [row];
+  if (!state.textLines) { row.off = true; return [row]; }
+  if (!found || !found.count) return [];
+  row.count = found.count;
+  return [row];
 }
 
 // Add a text or name term to the search as a chip.
@@ -833,30 +1006,17 @@ function addTerm(kind, term) {
   setFilter(withFilter(ch));
 }
 
-// How many photos a text or name suggestion would show, beside it.
-function fillCount(it, i, seq) {
-  var f = state.filter;
-  var p = { tag: f.tags, person: f.people, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place };
-  p[it.kind] = (it.kind === 'text' ? f.texts : f.names).concat([it.id]);
-  api(LIBAPI + '/count' + query(p)).then(function (r) {
-    if (seq !== sugg.seq) return;
-    var c = $('suggest').querySelector('[data-i="' + i + '"] .count');
-    if (c) c.textContent = I18n.number(r.count);
-  }).catch(function () {});
-}
-
 function showSuggest(items, hint) {
   var box = $('suggest');
   box.textContent = '';
   sugg.items = items;
   sugg.at = -1;
-  var seq = sugg.seq;
   var last = null;
   items.forEach(function (it, i) {
     if (it.kind !== last) {
-      var f = state.filter, narrowed = f.tags.length || f.people.length || f.pets.length || f.texts.length || f.names.length || f.folder || f.place;
+      var f = state.filter, narrowed = f.tags.length || f.people.length || f.groups.length || f.pets.length || f.texts.length || f.names.length || f.folder || f.place;
       var head = it.kind === 'fav' ? tr('fav.label') : it.kind === 'compare' ? tr('cmp.head') : it.kind === 'tag' ? tr(narrowed ? 'search.tags_here' : 'search.tags')
-        : it.kind === 'person' ? tr(narrowed ? 'search.faces_here' : 'side.faces')
+        : it.kind === 'person' ? tr(narrowed ? 'search.faces_here' : 'side.faces') : it.kind === 'group' ? tr('search.groups')
           : it.kind === 'pet' ? tr(narrowed ? 'search.pets_here' : 'search.pets') : it.kind === 'place' ? tr('search.places') : it.kind === 'date' ? tr('search.dates')
             : it.kind === 'text' ? tr('search.text') : it.kind === 'name' ? tr('search.names') : tr('search.folders');
       box.appendChild(el('div', 'head', head));
@@ -868,11 +1028,15 @@ function showSuggest(items, hint) {
     // People as in the sidebar: their picture, and the dog or cat for a pet.
     var label = el('span', 'label');
     if (it.kind === 'person') label.appendChild(avatar(it.person, 'tiny'));
+    if (it.kind === 'person' && it.person && it.person.species) label.appendChild(speciesIcon(it.person.species));
+    if (it.kind === 'group') label.appendChild(icon('group'));
+    if (it.kind === 'pet') label.appendChild(speciesIcon(it.id));
+    if (it.kind === 'place') label.appendChild(icon('place'));
+    if (it.kind === 'date') label.appendChild(icon('date'));
     if (it.kind === 'folder') label.appendChild(folderIcon());
     if (it.kind === 'text' || it.kind === 'name') label.appendChild(icon(it.kind === 'text' ? 'scan' : 'draft'));
-    label.appendChild(document.createTextNode((it.kind === 'text' || it.kind === 'name' ? '“' : it.kind === 'fav' ? '♥ ' : it.kind === 'compare' ? '⇄ ' : it.kind === 'pet' ? PET_TERMS[it.id].icon + ' '
-      : it.kind === 'person' ? (petIcon(it.person && it.person.species) ? petIcon(it.person.species) + ' ' : '')
-        : ({ place: '📍 ', date: '📅 ' }[it.kind] || (it.kind === 'folder' ? '' : '# '))) + it.label + (it.kind === 'text' || it.kind === 'name' ? '”' : '')));
+    label.appendChild(el('span', 'text', (it.kind === 'text' || it.kind === 'name' ? '“' : it.kind === 'fav' ? '♥ ' : it.kind === 'compare' ? '⇄ ' : (it.kind === 'pet' || it.kind === 'group' || it.kind === 'person' || it.kind === 'place' || it.kind === 'date') ? ''
+        : it.kind === 'folder' ? '' : '# ') + it.label + (it.kind === 'text' || it.kind === 'name' ? '”' : '')));
     b.appendChild(label);
     b.appendChild(el('span', 'count', it.count === undefined ? '' : I18n.number(it.count)));
     b.onmousedown = function (ev) { ev.preventDefault(); }; // keep the focus in the box
@@ -880,7 +1044,6 @@ function showSuggest(items, hint) {
     b.dataset.i = i;
     box.appendChild(b);
     if (it.hint) box.appendChild(el('div', 'hint', it.hint));
-    if ((it.kind === 'text' || it.kind === 'name') && !it.off && !isAll()) fillCount(it, i, seq);
   });
   if (hint) box.appendChild(el('div', 'hint', hint));
   box.hidden = !(items.length || hint) || document.activeElement !== $('search');
@@ -892,7 +1055,7 @@ function markSuggest() {
   });
 }
 
-function closeSuggest() { $('suggest').hidden = true; sugg.at = -1; }
+function closeSuggest() { clearTimeout(sugg.timer); stopSuggest(); $('suggest').hidden = true; sugg.at = -1; }
 
 function pickSuggest(it) {
   clearTimeout(searchTimer);
@@ -902,6 +1065,7 @@ function pickSuggest(it) {
   else if (it.kind === 'compare') setFilter(withFilter({ compare: it.id, q: '' }));
   else if (it.kind === 'tag') setFilter(withFilter({ tags: f.tags.indexOf(it.id) < 0 ? f.tags.concat([it.id]) : f.tags, q: '' }));
   else if (it.kind === 'person') setFilter(withFilter({ people: f.people.indexOf(it.id) < 0 ? f.people.concat([it.id]) : f.people, q: '' }));
+  else if (it.kind === 'group') setFilter(withFilter({ groups: f.groups.indexOf(it.id) < 0 ? f.groups.concat([it.id]) : f.groups, q: '' }));
   else if (it.kind === 'pet') setFilter(withFilter({ pets: f.pets.indexOf(it.id) < 0 ? f.pets.concat([it.id]) : f.pets, q: '' }));
   else if (it.kind === 'date') setFilter(withFilter({ dates: f.dates.indexOf(it.id) < 0 ? f.dates.concat([it.id]) : f.dates, q: '' }));
   else if (it.kind === 'place') pickPlace(it.id);
@@ -1115,7 +1279,7 @@ function sectionHasActive(id) {
   if (id === 'folders-section') return !f.view && f.folder != null;
   if (id === 'tags-section') return !f.view && f.tags.length > 0;
   if (id === 'locations-section') return f.view === 'locations';
-  return f.view === 'people' || f.view === 'unnamed' || f.view === 'person' || (!f.view && f.people.length > 0);
+  return f.view === 'people' || f.view === 'unnamed' || f.view === 'person' || (!f.view && (f.people.length > 0 || f.groups.length > 0));
 }
 
 // A section holding the current selection cannot be folded (a safeguard).
@@ -1162,15 +1326,20 @@ function closeSidebarOnPhone() { document.body.classList.remove('side-open'); }
 function loadTimeline(resetScroll) {
   var seq = ++state.loadSeq;
   var f = state.filter;
-  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null, compare: f.compare === 'different' ? 'different' : null, q: f.q })
-    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null, compare: f.compare === 'different' ? null : f.compare || null, q: f.q });
-  return api(url).then(function (data) {
+  // A newer list replaces the one still on its way (typing in the search box asks for one per pause).
+  if (state.loadCtrl) state.loadCtrl.abort();
+  var ctrl = state.loadCtrl = new AbortController();
+  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null, compare: f.compare === 'different' ? 'different' : null, q: f.q })
+    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null, compare: f.compare === 'different' ? null : f.compare || null, q: f.q });
+  return api(url, { signal: ctrl.signal }).then(function (data) {
     if (seq !== state.loadSeq) return;
+    state.loadCtrl = null;
     if (isAll()) allTimelineLoaded(data);
     state.anchor = null; // indices change with the new list
-    var unnamed = !isAll() && (f.tags.some(function (id) { return !state.tagNames[id]; }) || f.people.some(function (id) { return !state.personNames[id]; }));
+    var unnamed = !isAll() && (f.tags.some(function (id) { return !state.tagNames[id]; }) || f.people.some(function (id) { return !state.personNames[id]; }) || f.groups.some(function (id) { return !state.groupNames[id]; }));
     data.tags.forEach(function (t) { state.tagNames[t.id] = t.name; });
     data.people.forEach(function (p) { state.personNames[p.id] = p.name; });
+    (data.groups || []).forEach(function (g) { state.groupNames[g.id] = g.name; });
     if (unnamed) renderChips(); // a link with tags this page has not seen yet
     // A date change moves photos: the open one is found again by its id.
     var openId = state.open >= 0 && state.data && state.data.ids ? state.data.ids[state.open] : null;
@@ -1194,7 +1363,7 @@ function loadTimeline(resetScroll) {
     state.countFor = location.hash;
     showCount();
     $('empty').hidden = data.count > 0;
-  }).catch(function (e) { console.error(e); });
+  }).catch(function (e) { if (e.name !== 'AbortError') console.error(e); });
 }
 
 // Month groups over the (already sorted) items.
@@ -1269,8 +1438,10 @@ function render() {
       sizer.appendChild(e);
     }
   }
+  // Rows scrolled out of reach go, and their thumbnails stop loading: a fast
+  // scroll through years of photos asks only for where it stops.
   Object.keys(state.rendered).forEach(function (k) {
-    if (!keep[k]) { state.rendered[k].remove(); delete state.rendered[k]; }
+    if (!keep[k]) { dropPending(state.rendered[k]); state.rendered[k].remove(); delete state.rendered[k]; }
   });
   // The month at the top of the viewport.
   var r = rowAt(Math.max(0, top));
@@ -1281,7 +1452,7 @@ function render() {
 // The page that is open, shown next to the drive name instead of a month.
 var VIEW_LABELS = {
   duplicates: 'side.duplicates', trash: 'side.trash', settings: 'side.settings', drives: 'side.manage_drives',
-  faces: 'side.faces', pets: 'side.faces', people: 'side.faces', unnamed: 'side.faces', person: 'side.faces',
+  faces: 'side.faces', pets: 'side.faces', people: 'side.faces', unnamed: 'people.unnamed', person: 'side.faces',
   locations: 'side.locations', text: 'side.text_check',
 };
 
@@ -1501,6 +1672,171 @@ function pickSpan(list, idOf, anchor, id) {
   return list.slice(Math.min(a, b), Math.max(a, b) + 1);
 }
 
+// Click and drag while selecting (mouse or pen, as in Finder): a rectangle
+// from where the button went down to the pointer. Whatever it covers, and only
+// that, takes the opposite of the state of the tile pressed (an empty spot
+// counts as unselected, so the drag selects), and what the rectangle leaves
+// again gets back what it had. Near the top or bottom edge the page scrolls
+// along and the rectangle grows with it. Touch keeps scrolling the page (tap to
+// select there).
+//
+// A list takes part by being a `.has-drag` element whose `dragSite()` returns,
+// while its tiles can be selected, { sel: selector of a tile, itemOf(tile),
+// get(item), set(item, on) (data and look), done(item) (after a change; `item`
+// is the one under the pointer, if any: anchor, bar), hit(rect) (optional: the
+// items a rectangle of window coordinates covers, when the tiles are not all
+// in the page) }; null while it cannot.
+var tileDrag = null;
+var DRAG_EDGE = 48; // px from the edge of the page where it scrolls along
+var DRAG_START = 4; // px the pointer must move before a press becomes a drag
+var DRAG_SKIP = 'button, input, select, textarea, .acts, .more-btn, .near, .mark, .copen, .menu, .fav';
+
+$('scroller').addEventListener('pointerdown', function (ev) {
+  if (ev.button !== 0 || ev.shiftKey || ev.pointerType === 'touch' || !ev.target.closest || ev.target.closest(DRAG_SKIP)) return;
+  var host = ev.target.closest('.has-drag');
+  var site = host && host.dragSite();
+  if (!site) return;
+  var tile = ev.target.closest(site.sel);
+  if (tile && !host.contains(tile)) tile = null;
+  var item = tile ? site.itemOf(tile) : undefined;
+  var sr = $('scroller').getBoundingClientRect();
+  tileDrag = {
+    site: site, host: host, on: item === undefined ? true : !site.get(item),
+    sx: ev.clientX - sr.left + $('scroller').scrollLeft, sy: ev.clientY - sr.top + $('scroller').scrollTop,
+    x: ev.clientX, y: ev.clientY, pointer: ev.pointerId, moved: false, scrolling: false, done: false,
+    before: new Map(), covered: new Set(), box: null,
+  };
+  document.body.classList.add('tile-drag');
+});
+document.addEventListener('pointermove', function (ev) {
+  if (!tileDrag || tileDrag.done || ev.pointerId !== tileDrag.pointer) return;
+  tileDrag.x = ev.clientX;
+  tileDrag.y = ev.clientY;
+  tileDragUpdate();
+  if (tileDrag && tileDrag.moved && !tileDrag.scrolling) { tileDrag.scrolling = true; requestAnimationFrame(tileDragScroll); }
+});
+document.addEventListener('pointerup', tileDragEnd);
+document.addEventListener('pointercancel', tileDragEnd);
+// The tiles are links with pictures: no dragging them out of the page while selecting.
+$('scroller').addEventListener('dragstart', function (ev) {
+  var host = ev.target.closest && ev.target.closest('.has-drag');
+  var site = host && host.dragSite();
+  if (site && ev.target.closest(site.sel)) ev.preventDefault();
+});
+// The click that ends a drag selects nothing more.
+$('scroller').addEventListener('click', function (ev) {
+  if (tileDrag && tileDrag.moved) { ev.stopImmediatePropagation(); ev.preventDefault(); }
+}, true);
+
+function tileDragUpdate() {
+  var d = tileDrag, scroller = $('scroller');
+  if (!d.host.isConnected || !d.host.dragSite()) { tileDragEnd({ pointerId: d.pointer }); return; }
+  var sr = scroller.getBoundingClientRect();
+  // The rectangle in the page's own coordinates (it scrolls along) and in the window's.
+  var px = Math.max(0, Math.min(scroller.clientWidth, d.x - sr.left + scroller.scrollLeft));
+  var py = Math.max(0, Math.min(scroller.scrollHeight, d.y - sr.top + scroller.scrollTop));
+  if (!d.moved && Math.abs(d.x - (d.sx + sr.left - scroller.scrollLeft)) < DRAG_START && Math.abs(d.y - (d.sy + sr.top - scroller.scrollTop)) < DRAG_START) return;
+  var x1 = Math.min(d.sx, px), x2 = Math.max(d.sx, px), y1 = Math.min(d.sy, py), y2 = Math.max(d.sy, py);
+  if (!d.moved) {
+    d.moved = true;
+    d.box = el('div', 'marquee');
+    scroller.appendChild(d.box);
+    // Keeps getting the pointer when it leaves the window.
+    try { scroller.setPointerCapture(d.pointer); } catch (e) {}
+  }
+  d.box.style.left = x1 + 'px';
+  d.box.style.top = y1 + 'px';
+  d.box.style.width = (x2 - x1) + 'px';
+  d.box.style.height = (y2 - y1) + 'px';
+  var rect = { left: x1 - scroller.scrollLeft + sr.left, right: x2 - scroller.scrollLeft + sr.left, top: y1 - scroller.scrollTop + sr.top, bottom: y2 - scroller.scrollTop + sr.top };
+  var now = new Set(d.site.hit ? d.site.hit(rect) : tilesIn(d.host, d.site, rect));
+  var changed = false;
+  d.covered.forEach(function (item) {
+    if (now.has(item)) return;
+    d.site.set(item, d.before.get(item));
+    changed = true;
+  });
+  now.forEach(function (item) {
+    if (d.covered.has(item)) return;
+    if (!d.before.has(item)) d.before.set(item, d.site.get(item));
+    if (d.site.get(item) !== d.on) { d.site.set(item, d.on); changed = true; }
+  });
+  d.covered = now;
+  if (changed) {
+    var hit = document.elementFromPoint(d.x, d.y), tile = hit && hit.closest(d.site.sel);
+    d.site.done(tile && d.host.contains(tile) ? d.site.itemOf(tile) : undefined);
+  }
+}
+
+// The items of the tiles in a list that a rectangle of window coordinates touches.
+function tilesIn(host, site, rect) {
+  var out = [];
+  Array.prototype.forEach.call(host.querySelectorAll(site.sel), function (tile) {
+    var r = tile.getBoundingClientRect();
+    if (r.right < rect.left || r.left > rect.right || r.bottom < rect.top || r.top > rect.bottom) return;
+    var item = site.itemOf(tile);
+    if (item !== undefined) out.push(item);
+  });
+  return out;
+}
+
+// Scrolls while the pointer is near the top or bottom edge, faster the closer it is.
+function tileDragScroll() {
+  var d = tileDrag;
+  if (!d || d.done) return;
+  var scroller = $('scroller'), r = scroller.getBoundingClientRect(), v = 0;
+  if (d.y < r.top + DRAG_EDGE) v = -(r.top + DRAG_EDGE - d.y);
+  else if (d.y > r.bottom - DRAG_EDGE) v = d.y - (r.bottom - DRAG_EDGE);
+  if (!v) { d.scrolling = false; return; }
+  var top = scroller.scrollTop;
+  scroller.scrollTop = top + Math.max(-40, Math.min(40, v / 2));
+  if (scroller.scrollTop === top) { d.scrolling = false; return; }
+  tileDragUpdate();
+  if (tileDrag === d) requestAnimationFrame(tileDragScroll);
+}
+
+function tileDragEnd(ev) {
+  var d = tileDrag;
+  if (!d || ev.pointerId !== d.pointer) return;
+  document.body.classList.remove('tile-drag');
+  if (d.box) d.box.remove();
+  if (!d.moved) { tileDrag = null; return; }
+  // Kept until after the click that follows, so that click is swallowed above.
+  d.done = true;
+  setTimeout(function () { if (tileDrag === d) tileDrag = null; }, 0);
+  try { $('scroller').releasePointerCapture(d.pointer); } catch (e) {}
+}
+
+// The timeline: the tiles are not all in the page, so the rectangle is worked
+// out from the layout (rows and columns); items are the photos' positions.
+$('sizer').classList.add('has-drag');
+$('sizer').dragSite = function () {
+  if (!state.selecting || !state.data || !state.data.ids) return null;
+  var data = state.data;
+  return {
+    sel: '.cell',
+    itemOf: function (tile) { return parseInt(tile.dataset.index, 10); },
+    get: function (i) { return !!state.selected[data.ids[i]]; },
+    set: function (i, on) { if (on) state.selected[data.ids[i]] = true; else delete state.selected[data.ids[i]]; },
+    done: function (i) {
+      if (state.data !== data) return;
+      if (i !== undefined) state.anchor = i;
+      showSelected();
+    },
+    hit: function (rect) {
+      var sr = $('sizer').getBoundingClientRect(), out = [];
+      var x1 = rect.left - sr.left, x2 = rect.right - sr.left, y1 = rect.top - sr.top, y2 = rect.bottom - sr.top;
+      if (x2 < 0 || x1 > state.cols * state.cell || !state.rows.length) return out;
+      var c1 = Math.max(0, Math.floor(x1 / state.cell)), c2 = Math.min(state.cols - 1, Math.floor(x2 / state.cell));
+      for (var r = rowAt(Math.max(0, y1)); r < state.rows.length && state.rows[r].top <= y2; r++) {
+        var row = state.rows[r];
+        if (row.type !== 'r' || row.top + row.h < y1) continue;
+        for (var i = row.start + c1; i <= Math.min(row.start + c2, row.end - 1); i++) out.push(i);
+      }
+      return out;
+    },
+  };
+};
 // Keep Shift-click on faces from selecting the page's text.
 document.addEventListener('mousedown', function (ev) {
   if (ev.shiftKey && ev.target.closest && ev.target.closest('.face, .cface')) ev.preventDefault();
@@ -1567,7 +1903,7 @@ $('years').addEventListener('change', function () {
 
 // ------------------------------------------------------------------ lightbox
 
-var lb = { video: null, details: null, showFaces: false, hover: null, drawing: null, showText: false, textOpen: false, hoverLine: null, textBox: null };
+var lb = { video: null, details: null, showFaces: false, hover: null, drawing: null, showText: false, textOpen: false, hoverLine: null, textBox: null, warm: [] };
 
 function openLightbox(i) {
   state.open = i;
@@ -1582,7 +1918,8 @@ function closeLightbox() {
   geoCleanup();
   stopDrawing();
   stopMedia();
-  $('stage').textContent = '';
+  clearNode($('stage'));
+  dropWarm();
   $('lightbox').hidden = true;
   // Opened from a page (face check), not from the grid: back to the page.
   if (lb.restore) { state.open = -1; lb.restore(); lb.restore = null; return; }
@@ -1592,6 +1929,12 @@ function closeLightbox() {
   state.open = -1;
   if (!d || i < 0) return;
   focusCell(i, true);
+}
+
+// The neighbours `showItem` asked for ahead.
+function dropWarm() {
+  (lb.warm || []).forEach(function (w) { w.removeAttribute('src'); });
+  lb.warm = [];
 }
 
 function stopMedia() {
@@ -1615,8 +1958,10 @@ function showItem() {
   var d = state.data, i = state.open;
   var id = d.ids[i], kind = d.kinds[i];
   var stage = $('stage');
+  var warm = [];
   stopMedia();
-  stage.textContent = '';
+  // Leafing on quickly: the picture before stops loading.
+  clearNode(stage);
   $('lb-prev').hidden = i <= 0;
   $('lb-next').hidden = i >= d.count - 1;
   $('lb-download').href = fileBase(id) + '/original?download=1';
@@ -1628,7 +1973,7 @@ function showItem() {
   var rot = $('lb-rotate');
   rot.hidden = isAll() || kind === 'v';
   rot.disabled = kind !== 'j' && kind !== 'h' && kind !== 'p';
-  rot.title = tr(rot.disabled ? 'lb.rotate_raw' : kind === 'j' ? 'lb.rotate_hint' : 'lb.rotate_view_hint');
+  setTip(rot, tr(rot.disabled ? 'lb.rotate_raw' : kind === 'j' ? 'lb.rotate_hint' : 'lb.rotate_view_hint'));
   $('lb-title').textContent = '';
   $('lb-text').hidden = true; // until the photo's details say it has text
   lb.hover = null;
@@ -1654,9 +1999,16 @@ function showItem() {
     stage.appendChild(img);
     // Warm up the neighbours.
     [i + 1, i - 1].forEach(function (j) {
-      if (j >= 0 && j < d.count && d.kinds[j] !== 'v') new Image().src = viewUrl(j);
+      if (j < 0 || j >= d.count || d.kinds[j] === 'v') return;
+      var w = new Image();
+      w.src = viewUrl(j);
+      warm.push(w);
     });
   }
+  // Those warmed for the photo before stop loading; the one that is now on the
+  // stage goes on, as the stage asks for the same picture.
+  dropWarm();
+  lb.warm = warm;
 
   api(fileBase(id)).then(function (info) {
     if (state.open !== i) return;
@@ -1695,7 +2047,7 @@ function drawFaces() {
     if (f.person && f.state !== 'ignored') {
       b.appendChild(el('span', 'face-name', f.person.name + (f.state === 'confirmed' ? '' : '?')));
     }
-    b.title = (f.species ? speciesName(f.species) + ', ' : '') + (f.kept ? tr('face.kept') : f.score != null ? tr('face.score', { score: f.score.toFixed(2) }) : tr('face.drawn'));
+    setTip(b, (f.species ? speciesName(f.species) + ', ' : '') + (f.kept ? tr('face.kept') : f.score != null ? tr('face.score', { score: f.score.toFixed(2) }) : tr('face.drawn')));
     stage.appendChild(b);
   });
 }
@@ -1853,7 +2205,7 @@ function fillText(box, info) {
     if (!isAll()) {
       var x = el('button', 'x', l.hidden ? '↺' : '✕');
       x.type = 'button';
-      x.title = tr(l.hidden ? 'text.show_again' : 'text.hide');
+      setTip(x, tr(l.hidden ? 'text.show_again' : 'text.hide'));
       x.onclick = function (ev) {
         ev.stopPropagation();
         var id = info.id, hidden = !l.hidden;
@@ -1924,6 +2276,7 @@ function renderPanelAll(info) {
   var driveName = lib.volume || lib.name;
   var driveCell = row(tr('info.drive'), driveName);
   if (driveCell && state.data.flat) driveCell.appendChild(el('span', 'cmp-badge ' + (lib.role === 'backup' ? 'backup' : 'original'), tr(lib.role === 'backup' ? 'cmp.badge_backup' : 'cmp.badge_original')));
+  if (!state.data.flat) alsoOnRow(dl, dl.lastChild, lib.id, id % SPAN);
   row(tr('info.path'), info.path);
   row(tr('info.size'), (info.width && info.height ? info.width + ' × ' + info.height + ' · ' : '') + formatBytes(info.size));
   row(tr('info.camera'), info.camera);
@@ -1931,7 +2284,7 @@ function renderPanelAll(info) {
   if (state.favs[id]) {
     var heart = el('span', 'heart');
     heart.innerHTML = HEART_ON;
-    heart.title = tr('fav.readonly');
+    setTip(heart, tr('fav.readonly'));
     row(tr('info.favorite'), heart);
   }
   var tags = el('div', 'tags readonly');
@@ -1947,9 +2300,9 @@ function renderPanelAll(info) {
   (info.faces || []).forEach(function (f, k) {
     if (!f.person || f.state === 'ignored') return;
     var name = f.state === 'confirmed' ? f.person.name : tr(f.state === 'maybe' ? 'info.guess_maybe' : 'info.guess', { name: f.person.name });
-    var line = el('div', 'pface', name + (f.species ? ' ' + petIcon(f.species) : ''));
+    var line = petLabel('div', 'pface', f.species, name);
     // As in the drive's own panel: pointing at (or tapping) a face shows its box.
-    line.title = tr('info.show_where');
+    setTip(line, tr('info.show_where'));
     line.onclick = function () { lb.hover = lb.hover === k ? null : k; drawFaces(); };
     line.addEventListener('mouseenter', function () { lb.hover = k; drawFaces(); });
     line.addEventListener('mouseleave', function () { if (lb.hover === k) { lb.hover = null; drawFaces(); } });
@@ -1969,7 +2322,7 @@ function renderPanelAll(info) {
   if (text) panel.appendChild(text);
   var actions = el('div', 'actions');
   var open = el('button', 'btn quiet', tr('info.open_in', { name: driveName }));
-  open.title = tr('info.open_in_hint');
+  setTip(open, tr('info.open_in_hint'));
   open.onclick = function () { switchLibrary(lib.id, 'folder=' + info.folder_id); };
   actions.appendChild(open);
   if (state.reveal) {
@@ -1983,6 +2336,29 @@ function renderPanelAll(info) {
   actions.appendChild(copy);
   panel.appendChild(actions);
   drawFaces();
+}
+
+// Phase 18: the other copies of the shown photo (same name, same content) on
+// the drives of the common timeline, each a way into that drive's folder. Put
+// in after `before` once the server answered.
+var otherCopies = {};
+function alsoOnRow(dl, before, library, file) {
+  var key = library + ':' + file;
+  var got = otherCopies[key] || (otherCopies[key] = api('/api/all/copies' + query({ library: library, file: file })));
+  got.then(function (list) {
+    if (!list.length) return;
+    var dd = el('dd');
+    list.forEach(function (c) {
+      var cut = c.path.lastIndexOf('/');
+      var b = el('button', 'link also-on', (c.volume || c.name) + (cut > 0 ? ' · ' + c.path.slice(0, cut) : ''));
+      setTip(b, tr('info.also_on_hint'));
+      b.onclick = function () { switchLibrary(c.library, 'folder=' + c.folder_id); };
+      dd.appendChild(b);
+    });
+    var next = before ? before.nextSibling : null;
+    dl.insertBefore(el('dt', '', tr('info.also_on')), next);
+    dl.insertBefore(dd, next);
+  }).catch(function () { delete otherCopies[key]; });
 }
 
 function renderPanel() {
@@ -2067,6 +2443,30 @@ $('lb-trash').onclick = function () {
   trashDialog([d.ids[i]], function () { closeLightbox(); });
 };
 
+// The grid keeps showing the thumbnail it has until told otherwise. After a
+// turn the new one is asked for once the user has stopped turning (a photo is
+// often turned two or three times), so the server makes one thumbnail, not one
+// per turn.
+var TURN_THUMB_DELAY_MS = 1000;
+var turned = { timer: null, ids: {} };
+
+function thumbAfterTurn(id) {
+  turned.ids[id] = true;
+  clearTimeout(turned.timer);
+  turned.timer = setTimeout(function () {
+    var ids = turned.ids;
+    turned.ids = {};
+    var d = state.data;
+    if (!d) return;
+    Object.keys(state.rendered).forEach(function (k) {
+      state.rendered[k].querySelectorAll('a.cell').forEach(function (a) {
+        var i = +a.dataset.index, img = a.querySelector('img');
+        if (img && ids[d.ids[i]]) img.src = thumbUrl(i);
+      });
+    });
+  }, TURN_THUMB_DELAY_MS);
+}
+
 // Turns a JPEG on the drive (its EXIF orientation, two bytes, no loss), like
 // the rotate button of the Finder's Quick Look; a HEIC or PNG is only shown
 // turned by shoebox (its file stays as it is). `turns` is in quarter turns
@@ -2079,10 +2479,11 @@ function rotateOpen(turns) {
   post(fileBase(id) + '/rotate', { turns: turns }).then(function (r) {
     lb.rotating = false;
     // The address of the picture carries the version, so the new one is
-    // fetched; the grid follows when the status poll sees the change.
+    // fetched; the grid's thumbnail follows a moment after the last turn.
     if (state.data === d && d.ids[i] === id) {
       d.versions = d.versions.slice(0, i * 8) + r.version + d.versions.slice(i * 8 + 8);
       if (state.open === i) showItem();
+      thumbAfterTurn(id);
     }
     if (r.view_only && !lb.toldViewOnly) {
       lb.toldViewOnly = true;
@@ -2216,7 +2617,30 @@ document.addEventListener('keydown', function (ev) {
 
 // ------------------------------------------------------------------ status
 
+// One status request at a time: asks that come while one is under way (a
+// stream event, a change, the page coming back) are answered by one more
+// request after it, never by a pile of them.
+var infoFlight = null, infoAgain = false, infoTimer = null;
+
 function loadInfo() {
+  if (infoFlight) { infoAgain = true; return infoFlight; }
+  infoFlight = fetchInfo().then(function () {
+    infoFlight = null;
+    if (infoAgain) { infoAgain = false; loadInfo(); }
+  });
+  return infoFlight;
+}
+
+// Only while something runs (a scan, thumbnails, faces, grouping) the status
+// is asked for again by itself; otherwise it follows from what the person does.
+function watchProgress(info) {
+  clearTimeout(infoTimer);
+  infoTimer = null;
+  var f = info.faces, c = info.clusters;
+  if (info.busy || f.running || c.running || c.embedding) infoTimer = setTimeout(loadInfo, 5000);
+}
+
+function fetchInfo() {
   return api(LIBAPI + '/info').then(function (info) {
     $('title').textContent = info.name;
     state.reveal = revealLabel(info.reveal);
@@ -2250,8 +2674,6 @@ function loadInfo() {
     state.textLines = info.text ? info.text.lines : 0;
     if (info.text && info.text.done && info.text.done < info.text.total) parts.push(tr('status.text_todo', { count: trn('count.photos', info.text.total - info.text.done) }));
     if (c.embedding) parts.push(tr('status.learning'));
-    if (c.running && c.total) parts.push(tr('status.grouping_pct', { pct: Math.floor(100 * c.done / Math.max(c.total, 1)) }));
-    else if (c.running || c.stale) parts.push(tr('status.grouping'));
     facesInfo(info);
     facesStream();
     $('status').textContent = parts.join(' · ');
@@ -2261,6 +2683,7 @@ function loadInfo() {
       reloadAll();
     }
     if (!info.busy) state.indexVersion = info.index_version;
+    watchProgress(info);
   }).catch(function () {});
 }
 
@@ -2287,7 +2710,7 @@ function loadView(view) {
   if (view === 'duplicates') loadDuplicates();
   else if (view === 'settings') loadSettings();
   else if (view === 'faces' || view === 'pets') loadFaces();
-  else if (view === 'people') loadPeoplePage();
+  else if (view === 'people') { if (people.stale) loadPeople().then(loadPeoplePage); else loadPeoplePage(); }
   else if (view === 'unnamed') loadUnnamed();
   else if (view === 'person') loadPersonPage();
   else if (view === 'drives') loadDrivesPage();
@@ -2468,6 +2891,12 @@ function selectRange(a, b, on) {
     if (on) state.selected[ids[i]] = true; else delete state.selected[ids[i]];
   }
   if (state.anchor == null) state.anchor = a;
+  showSelected();
+}
+
+// The ticks on the photos shown, and the bar, after the selection changed.
+function showSelected() {
+  var ids = state.data.ids;
   Array.prototype.forEach.call(document.querySelectorAll('.cell'), function (c) {
     c.classList.toggle('sel', !!state.selected[ids[parseInt(c.dataset.index, 10)]]);
   });
@@ -2588,7 +3017,7 @@ function moveDialog(ids, done) {
   keep.checked = false;
   keepLabel.appendChild(keep);
   keepLabel.appendChild(document.createTextNode(' ' + tr('move.keep_folder_tags')));
-  keepLabel.title = tr('move.keep_hint');
+  setTip(keepLabel, tr('move.keep_hint'));
   body.appendChild(keepLabel);
   body.appendChild(el('p', 'hint', tr('move.hint')));
   var error = el('p', 'error');
@@ -2942,7 +3371,7 @@ function loadDuplicates() {
 
 function loadDuplicatesAcross() {
   var page = $('page');
-  page.textContent = '';
+  clearNode(page);
   page.appendChild(el('h2', '', tr('dups.title')));
   addDupTabs(page);
   return renderDuplicatesAcross(page, function () { return state.filter.view === 'duplicates'; }, false);
@@ -3035,7 +3464,7 @@ function ignoreFoldersField(onChange) {
 
 function renderDuplicatesAcross(page, alive, embedded) {
   crossState.reload = embedded
-    ? function () { page.textContent = ''; return renderDuplicatesAcross(page, alive, true); }
+    ? function () { clearNode(page); return renderDuplicatesAcross(page, alive, true); }
     : loadDuplicatesAcross;
   var asked = 0;
   var fill;
@@ -3051,7 +3480,7 @@ function renderDuplicatesAcross(page, alive, embedded) {
     var mine = ++asked;
     return api('/api/all/duplicates?limit=200' + dupIgnoreQuery(ignore.names(), true)).then(function (r) {
       if (!alive() || mine !== asked) return;
-      box.textContent = '';
+      clearNode(box);
       ignore.setHidden(r.hidden_groups || 0);
       sub.textContent = r.total_groups
         ? tr('dups.across.some', { count: trn('count.photos_exist', r.total_groups), drives: r.compared.join(', ') })
@@ -3120,11 +3549,11 @@ function updateCrossBar(labels) {
   pick.onchange = function () { crossState.pick = pick.value; };
   bar.appendChild(pick);
   var mark = el('button', 'btn quiet', tr('dups.cross.mark'));
-  mark.title = tr('dups.cross.mark_hint');
+  setTip(mark, tr('dups.cross.mark_hint'));
   mark.onclick = function () { crossState.pick = pick.value; crossMarkDrive(pick.value); };
   bar.appendChild(mark);
   var clear = el('button', 'btn quiet', tr('dups.clear'));
-  clear.title = tr('dups.clear_hint');
+  setTip(clear, tr('dups.clear_hint'));
   clear.disabled = n === 0;
   clear.onclick = function () { crossState.marked = {}; crossState.syncs.forEach(function (sync) { sync(); }); };
   bar.appendChild(clear);
@@ -3203,7 +3632,7 @@ function crossGroupNode(g, labels) {
     var row = el('div', 'copy-row');
     var cb = el('input');
     cb.type = 'checkbox';
-    cb.title = tr('dups.delete_copy');
+    setTip(cb, tr('dups.delete_copy'));
     var state = el('span', 'state');
     var sync = function () {
       cb.checked = !!crossState.marked[crossKey(f)];
@@ -3225,7 +3654,7 @@ function crossGroupNode(g, labels) {
     if (f.volume) where.appendChild(el('span', 'meta', ' · ' + tr('dups.cross.folder', { name: f.name })));
     var folder = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')) : tr('dups.top_level');
     var fb = el('button', 'folder', folder + (sameName ? '' : ' / ' + baseName(f)));
-    fb.title = tr('dups.show_in', { name: f.name });
+    setTip(fb, tr('dups.show_in', { name: f.name }));
     fb.onclick = function () { switchLibrary(f.library, 'q=' + encodeURIComponent(baseName(f))); };
     var line = el('div');
     line.appendChild(fb);
@@ -3233,7 +3662,7 @@ function crossGroupNode(g, labels) {
     var leaf = f.path.indexOf('/') >= 0 ? f.path.slice(0, f.path.lastIndexOf('/')).split('/').pop() : '';
     if (leaf && crossState.ignore) {
       var ib = el('button', 'folder ignore-this', tr('dups.ignore.add'));
-      ib.title = tr('dups.ignore.add_hint', { name: leaf });
+      setTip(ib, tr('dups.ignore.add_hint', { name: leaf }));
       ib.onclick = function () { crossState.ignore.add(leaf); };
       line.appendChild(el('span', 'meta', ' · '));
       line.appendChild(ib);
@@ -3253,7 +3682,7 @@ function crossGroupNode(g, labels) {
 
 function loadDuplicatesHere() {
   var page = $('page');
-  page.textContent = '';
+  clearNode(page);
   page.appendChild(el('h2', '', tr('dups.title')));
   addDupTabs(page);
   page.appendChild(el('p', 'sub', tr('dups.looking')));
@@ -3281,7 +3710,7 @@ function loadDuplicatesHere() {
 
 function renderDuplicates() {
   var page = $('page');
-  page.textContent = '';
+  clearNode(page);
   dupState.syncs = [];
   page.appendChild(el('h2', '', tr('dups.title')));
   addDupTabs(page);
@@ -3331,7 +3760,7 @@ function dupToolbar() {
   };
   DUP_KINDS.forEach(function (k) {
     var label = el('label', 'check');
-    label.title = k.hint;
+    setTip(label, k.hint);
     var cb = el('input');
     cb.type = 'checkbox';
     cb.checked = dupState.types[k.id];
@@ -3377,7 +3806,7 @@ function suggestedIds(g) {
   g.files.forEach(function (f) { if (f.pick) pickOf[f.row] = f; });
   return g.files.filter(function (f) {
     var best = pickOf[f.row];
-    return !f.pick && (f.keeper || (f.same && best && best.same === f.same) || (f.in_copies && best && !best.in_copies));
+    return !f.pick && ((f.keeper && !f.bigger_file) || (f.same && best && best.same === f.same) || (f.in_copies && best && !best.in_copies));
   }).map(function (f) { return f.id; });
 }
 
@@ -3417,7 +3846,7 @@ var PRESELECT = [
     });
     return ids;
   } },
-  { id: 'smaller', kind: 'resolution', also: 'similar', ids: function (g) { return g.files.filter(function (f) { return f.keeper; }).map(function (f) { return f.id; }); } },
+  { id: 'smaller', kind: 'resolution', also: 'similar', ids: function (g) { return g.files.filter(function (f) { return f.keeper && !f.bigger_file; }).map(function (f) { return f.id; }); } },
   { id: 'heic', kind: 'resolution', ids: function (g) { return otherFormats(g, 'heic'); } },
   { id: 'jpeg', kind: 'resolution', ids: function (g) { return otherFormats(g, 'jpg'); } },
   { id: 'edited', kind: 'edited', ids: function (g) {
@@ -3508,7 +3937,7 @@ function preselectMenu() {
       menu.appendChild(el('div', 'dup-pre-head', DUP_KINDS.filter(function (k) { return k.id === entry.kind; })[0].label));
     }
     var b = el('button', 'btn quiet', preselectText(entry, false) + ' · ' + trn('count.files', c.files));
-    b.title = preselectText(entry, true);
+    setTip(b, preselectText(entry, true));
     b.onclick = function () { applyPreselect(entry); };
     menu.appendChild(b);
   });
@@ -3545,7 +3974,7 @@ function updateDupBar() {
   var n = Object.keys(marked).length;
   bar.appendChild(el('span', '', tr('dups.marked', { count: trn('count.copies', n) })));
   var clear = el('button', 'btn quiet', tr('dups.clear'));
-  clear.title = tr('dups.clear_hint');
+  setTip(clear, tr('dups.clear_hint'));
   clear.disabled = n === 0;
   clear.onclick = function () {
     Object.keys(marked).forEach(function (id) { delete dupState.marked[id]; });
@@ -3569,7 +3998,10 @@ function dupRows(g) {
   return rows;
 }
 
-function dupThumb(f, compare) {
+// `versions`: the files of the photo's row, in card order; a click then opens the
+// viewer on them (left and right switch between the versions, Esc or Space
+// come back to this thumbnail) instead of the file in a new tab.
+function dupThumb(f, compare, versions) {
   var a = el('a', 'thumb');
   a.href = LIBAPI + '/files/' + f.id + (f.kind === 'video' ? '/original' : '/view') + '?v=' + f.version;
   a.target = '_blank';
@@ -3582,8 +4014,15 @@ function dupThumb(f, compare) {
   if (compare) {
     // Opens the group's pictures side by side instead of one in a new tab.
     a.removeAttribute('target');
-    a.title = tr('dups.compare');
+    setTip(a, tr('dups.compare'));
     a.onclick = function (e) { e.preventDefault(); compare(f); };
+  } else if (versions && versions.length > 1) {
+    a.removeAttribute('target');
+    a.onclick = function (e) {
+      e.preventDefault();
+      a.focus(); // the viewer returns here (Safari does not focus a clicked link)
+      openFiles(versions.map(function (v) { return { file: v.id, kind: v.kind, version: v.version }; }), 0);
+    };
   }
   return a;
 }
@@ -3619,7 +4058,7 @@ function compareDialog(g, start, onKeep) {
     var row = el('div', 'compare-buttons');
     // Keep: mark this photo to stay; Keep (N) below ticks all the others.
     var tog = el('button', 'btn quiet keep-toggle');
-    tog.title = tr('dups.keep_hint');
+    setTip(tog, tr('dups.keep_hint'));
     tog.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path class="tick" d="M7.5 12.5l3 3 6-7"/></svg>';
     tog.appendChild(el('span', '', tr('dups.keep')));
     tog.onclick = function () { if (kept[f.id]) delete kept[f.id]; else kept[f.id] = true; refresh(); };
@@ -3666,12 +4105,12 @@ function groupNode(g) {
   var head = el('div', 'group-head');
   var kind = DUP_KINDS.filter(function (k) { return k.id === g.kind; })[0];
   var title = el('span', 'label', kind.label);
-  title.title = kind.hint;
+  setTip(title, kind.hint);
   head.appendChild(title);
   var ids = g.files.map(function (f) { return f.id; });
   var decide = function (decision, label, hint) {
     var b = el('button', 'btn quiet', label);
-    b.title = hint;
+    setTip(b, hint);
     b.onclick = function () {
       b.disabled = true;
       post(LIBAPI + '/duplicates/decide', { ids: ids, decision: decision }).then(function () {
@@ -3724,6 +4163,13 @@ function groupNode(g) {
     var v = g.files.map(key), top = Math.max.apply(null, v);
     return v.some(function (x) { return x !== top; }) ? top : null;
   };
+  var heavier = {};
+  g.files.forEach(function (f) { if (f.keeper && f.bigger_file) heavier[f.keeper] = true; });
+  var sizeBadge = function (key) {
+    var b = el('div', 'badge worse', tr(key));
+    setTip(b, tr('dups.size_conflict_hint'));
+    return b;
+  };
   var topPixels = most(function (f) { return (f.width || 0) * (f.height || 0); });
   var topSize = most(function (f) { return f.size; });
   var copyCard = function (f, showName, thumb) {
@@ -3761,7 +4207,11 @@ function groupNode(g) {
     if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
     meta.push((f.size / 1e6).toFixed(1) + ' MB');
     card.appendChild(el('div', 'meta', meta.join(' · ')));
-    if (f.keeper) card.appendChild(el('div', 'badge worse', tr('dups.lower_quality')));
+    // Fewer pixels, and a bigger file than the copy that stays: not ticked for
+    // you. Both cards say what they lose on, both red.
+    if (f.keeper && !f.bigger_file) card.appendChild(el('div', 'badge worse', tr('dups.lower_quality')));
+    else if (f.keeper) card.appendChild(sizeBadge('dups.lower_quality'));
+    else if (heavier[f.id]) card.appendChild(sizeBadge('dups.smaller_file'));
     if (f.in_copies) card.appendChild(el('div', 'meta', tr('dups.in_copies')));
     card.appendChild(el('div', 'meta', f.taken ? formatDate({ taken: f.taken, date_source: 'file' }) : tr('dups.no_capture_date')));
     if (thumb && topPixels !== null && (f.width || 0) * (f.height || 0) === topPixels) card.appendChild(el('div', 'badge', tr('dups.badge_pixels')));
@@ -3769,7 +4219,7 @@ function groupNode(g) {
     if (thumb) {
       // Pinned to the foot of the card, edge to edge.
       var only = el('button', 'keep-one', tr('dups.keep_this'));
-      only.title = tr('dups.keep_this_hint');
+      setTip(only, tr('dups.keep_this_hint'));
       only.onclick = function () { keepTicked([f]); };
       card.appendChild(only);
     }
@@ -3799,11 +4249,11 @@ function groupNode(g) {
     copies = bestFirst(copies);
     var first = copies[0];
     var left = el('div', 'dup-photo');
-    left.appendChild(dupThumb(first));
+    left.appendChild(dupThumb(first, null, copies));
     var name = el('div', 'name', first.name + ' ');
     if (first.same) {
       var same = el('span', 'same', String.fromCharCode(64 + first.same));
-      same.title = tr('dups.same_letter');
+      setTip(same, tr('dups.same_letter'));
       name.appendChild(same);
     }
     left.appendChild(name);
@@ -3926,17 +4376,44 @@ function askDates(conflicts, done) {
 
 // ------------------------------------------------------------------ trash page
 
+// "Only duplicates" on the trash page: shows just the copies removed as
+// duplicates, so a selection (and Select all) cannot reach what was trashed by hand.
+var trashDupsOnly = false;
+
+// The file a trash card shows: the photo, not its RAW or Live Photo video.
+function trashFirst(files) {
+  var main = function (f) { return f.kind && f.kind !== 'raw' && f.kind !== 'video'; };
+  return files.filter(main)[0] || files.filter(function (f) { return f.kind; })[0] || files[0];
+}
+
 function loadTrash() {
   return api(LIBAPI + '/trash').then(function (items) {
     if (state.filter.view !== 'trash') return;
     var page = $('page');
-    page.textContent = '';
-    page.appendChild(el('h2', '', tr('side.trash')));
-    var batches = [], byBatch = {};
+    clearNode(page);
+    var allBatches = [], byBatch = {};
     items.forEach(function (it) {
-      if (!byBatch[it.batch]) { byBatch[it.batch] = []; batches.push(it.batch); }
+      if (!byBatch[it.batch]) { byBatch[it.batch] = []; allBatches.push(it.batch); }
       byBatch[it.batch].push(it);
     });
+    var dupBatches = allBatches.filter(function (b) { return !!trashFirst(byBatch[b]).duplicate_of; });
+    if (!dupBatches.length) trashDupsOnly = false;
+    var batches = trashDupsOnly ? dupBatches : allBatches;
+    var head = el('div', 'trash-head');
+    head.appendChild(el('h2', '', tr('side.trash')));
+    if (allBatches.length) {
+      var only = el('label', 'check');
+      var onlyBox = el('input');
+      onlyBox.type = 'checkbox';
+      onlyBox.checked = trashDupsOnly;
+      onlyBox.disabled = !dupBatches.length;
+      onlyBox.onchange = function () { trashDupsOnly = onlyBox.checked; loadTrash(); };
+      only.appendChild(onlyBox);
+      only.appendChild(document.createTextNode(' ' + tr('trash.only_duplicates', { count: I18n.number(dupBatches.length) })));
+      setTip(only, tr('trash.only_duplicates_hint'));
+      head.appendChild(only);
+    }
+    page.appendChild(head);
     page.appendChild(el('p', 'sub', batches.length
       ? tr('trash.page_sub', { count: trn('count.photos', batches.length) })
       : tr('trash.empty')));
@@ -3963,28 +4440,41 @@ function loadTrash() {
       bar.appendChild(back);
       var del = el('button', 'btn danger', tr('trash.delete_for_good'));
       del.disabled = !n;
-      del.onclick = function () { deleteBatches(batches.filter(function (b) { return picked[b]; }), batches.length); };
+      del.onclick = function () { deleteBatches(batches.filter(function (b) { return picked[b]; }), trashDupsOnly ? -1 : batches.length); };
       bar.appendChild(del);
     };
-    var cards = el('div', 'cards');
+    var cards = el('div', 'cards has-drag');
     cards.style.flexWrap = 'wrap';
+    cards.dragSite = function () {
+      return {
+        sel: '.card',
+        itemOf: function (tile) { return tile.batch; },
+        get: function (b) { return !!picked[b]; },
+        set: function (b, on) { if (on) picked[b] = true; else delete picked[b]; cardOf[b].classList.toggle('sel', on); },
+        done: function (b) { if (b !== undefined) anchor = b; drawBar(); },
+      };
+    };
     batches.forEach(function (b) {
       var files = byBatch[b];
-      var first = files.filter(function (f) { return f.kind; })[0] || files[0];
+      var first = trashFirst(files);
       var card = el('div', 'card pick');
       cardOf[b] = card;
+      card.batch = b;
       var thumb = el('div', 'thumb');
       var img = el('img');
       img.alt = '';
       img.src = LIBAPI + '/trash/' + first.id + '/thumb';
       img.onerror = function () { this.remove(); };
       thumb.appendChild(img);
+      // In the square's corner, the same place on every card (the whole
+      // picture stays visible, not cropped).
+      var badges = trashBadges(files, first);
+      if (badges) thumb.appendChild(badges);
       card.appendChild(thumb);
       card.appendChild(el('div', 'name', first.path.split('/').pop()));
       var folder = first.path.indexOf('/') >= 0 ? first.path.slice(0, first.path.lastIndexOf('/')) : tr('dups.top_level');
       card.appendChild(el('div', 'meta', folder));
-      var extra = files.length > 1 ? tr('trash.with', { names: files.slice(1).map(function (f) { return f.path.split('/').pop(); }).join(', ') }) : '';
-      card.appendChild(el('div', 'meta', tr('trash.deleted', { date: I18n.date(new Date(first.deleted_at * 1000)), extra: extra })));
+      card.appendChild(el('div', 'meta', tr('trash.deleted', { date: I18n.date(new Date(first.deleted_at * 1000)) })));
       card.onclick = function (ev) {
         var span = ev.shiftKey && anchor !== null ? pickSpan(batches, function (x) { return x; }, anchor, b) : null;
         var on = !picked[b];
@@ -4004,6 +4494,38 @@ function loadTrash() {
   }).catch(failed);
 }
 
+// The badges at the foot of a trash card: one per file that went with the
+// photo (LIVE ▶ for its Live Photo video, RAW, else the file type), and for a copy
+// removed as a duplicate one that opens the copy that stayed.
+function trashBadges(files, first) {
+  var box = el('div', 'badges');
+  files.forEach(function (f) {
+    if (f === first) return;
+    var name = f.path.split('/').pop();
+    var live = f.kind === 'video' && first.kind !== 'video';
+    var b = el('span', 'badge', live ? 'LIVE ▶' : f.kind === 'raw' ? 'RAW' : name.slice(name.lastIndexOf('.') + 1).toUpperCase());
+    setTip(b, name + ' · ' + formatBytes(f.size));
+    box.appendChild(b);
+  });
+  var dup = first.duplicate_of;
+  if (dup) {
+    var d;
+    if (dup.id != null) {
+      d = el('button', 'badge dup', tr('trash.duplicate'));
+      setTip(d, tr('trash.duplicate_of', { path: dup.path }) + '\n' + tr('trash.duplicate_open'));
+      d.onclick = function (ev) {
+        ev.stopPropagation();
+        openFiles([{ file: dup.id, kind: dup.kind, version: dup.version }], 0);
+      };
+    } else {
+      d = el('span', 'badge dup gone', tr('trash.duplicate'));
+      setTip(d, tr('trash.duplicate_gone'));
+    }
+    box.appendChild(d);
+  }
+  return box.children.length ? box : null;
+}
+
 // Puts the batches back, one after the other; says how many worked.
 function putBack(list, byBatch) {
   var done = 0, first = null;
@@ -4021,7 +4543,8 @@ function putBack(list, byBatch) {
   }).catch(function (e) { failed(e); changed(); });
 }
 
-// Asks, then deletes the batches for good; everything at once when all are chosen.
+// Asks, then deletes the batches for good; everything at once when all are chosen
+// (total -1: only some are shown, so only the chosen ones).
 function deleteBatches(list, total) {
   deleteForGood(list.length === total ? [null] : list, list.length);
 }
@@ -4203,7 +4726,7 @@ $('sizer').addEventListener('contextmenu', function (ev) {
   var only = state.filter.people && state.filter.people.length === 1 ? state.filter.people[0] : null;
   if (only != null && state.personNames[only]) {
     items.push({ label: tr('menu.use_as', { name: state.personNames[only] }), run: function () {
-      post(LIBAPI + '/people/' + only + '/cover', { file: id }).then(function () { toast(tr('menu.picture_changed')); peopleChanged(); }).catch(failed);
+      post(LIBAPI + '/people/' + only + '/cover', { file: id }).then(function (r) { toast(tr('menu.picture_changed')); personUpdated(r); }).catch(failed);
     } });
   }
   showMenu(ev.clientX, ev.clientY, items);
@@ -4223,7 +4746,7 @@ function infoTags(row, info) {
       var b = el('button', '');
       b.appendChild(folderIcon());
       b.appendChild(document.createTextNode(t.name));
-      b.title = tr('tags.folder_hint');
+      setTip(b, tr('tags.folder_hint'));
       b.onclick = show;
       tags.appendChild(b);
       return;
@@ -4232,7 +4755,7 @@ function infoTags(row, info) {
     var name = el('button', '', t.name);
     name.onclick = show;
     var x = el('button', 'x', '✕');
-    x.title = tr('tags.remove_hint');
+    setTip(x, tr('tags.remove_hint'));
     x.setAttribute('aria-label', tr('tags.remove_label', { name: t.name }));
     x.onclick = function () {
       post(LIBAPI + '/tags/remove', { ids: [info.id], name: t.name }).then(function () { tagsChanged(info.id); }).catch(failed);
@@ -4242,7 +4765,7 @@ function infoTags(row, info) {
     tags.appendChild(chip);
   });
   var add = el('button', 'add', tr('tags.add'));
-  add.title = tr('tags.add_key_hint');
+  setTip(add, tr('tags.add_key_hint'));
   add.onclick = function () {
     var input = tagInput();
     input.onkeydown = function (ev) {
@@ -4288,7 +4811,7 @@ function infoScreenshot(row, info) {
   });
   var marked = info.screenshot_mark != null;
   pick.value = info.screenshot ? '1' : '0';
-  pick.title = tr('shot.hint');
+  setTip(pick, tr('shot.hint'));
   var set = function (value) {
     post(LIBAPI + '/screenshots', { ids: [info.id], value: value }).then(function () { screenshotsChanged(info.id); }).catch(failed);
   };
@@ -4299,7 +4822,7 @@ function infoScreenshot(row, info) {
     // An undo icon at the right of the row; the words are its tooltip.
     var back = el('button', 'icon-btn shot-back');
     back.innerHTML = lineIcon('<path d="M9 5L4.5 9.5 9 14"/><path d="M5 9.5h9a5 5 0 0 1 0 10h-3"/>');
-    back.title = tr('shot.back');
+    setTip(back, tr('shot.back'));
     back.setAttribute('aria-label', tr('shot.back'));
     back.onclick = function () { set(null); };
     box.appendChild(back);
@@ -4445,9 +4968,15 @@ function loadOwnTags() {
 
 var faceState = { sort: 'size', desc: false, filter: 'all', faces: [], total: 0, minPx: 30, picking: false, picked: {} };
 // `pet`: a pet drawn by hand, whose species nobody said.
-var PET_ICON = { cat: '🐱', dog: '🐶', pet: '🐾' };
-function petIcon(species) { return PET_ICON[species] || ''; }
-function speciesName(species) { return tr('pet.species.' + (PET_ICON[species] ? species : 'pet')); }
+var PET_SPECIES = { cat: true, dog: true, pet: true };
+// An element with `text`, led by the species' icon when it is a pet's (our own drawings, not emojis).
+function petLabel(tag, cls, species, text) {
+  var e = el(tag, cls);
+  if (PET_SPECIES[species]) e.appendChild(speciesIcon(species));
+  e.appendChild(document.createTextNode(text));
+  return e;
+}
+function speciesName(species) { return tr('pet.species.' + (PET_SPECIES[species] ? species : 'pet')); }
 // "3 cats", "1 dog": the pets of one species (or just pets).
 function animalCount(species, n) { return trn('count.' + (species === 'cat' ? 'cats' : species === 'dog' ? 'dogs' : 'pets'), n); }
 
@@ -4474,7 +5003,7 @@ $('nav-settings').onclick = function () { showView('settings'); };
 function loadFaces() {
   var page = $('page');
   var kind = checkKind();
-  page.textContent = '';
+  clearNode(page);
   var back = el('button', 'link back', tr('settings.back'));
   back.onclick = function () { showView('settings'); };
   page.appendChild(back);
@@ -4483,7 +5012,21 @@ function loadFaces() {
   page.appendChild(sub);
   if (!checkFilters().some(function (o) { return o[0] === faceState.filter; })) faceState.filter = 'all';
   page.appendChild(faceToolbar());
-  var grid = el('div', 'faces');
+  var grid = el('div', 'faces has-drag');
+  grid.dragSite = function () {
+    if (!faceState.picking) return null;
+    return {
+      sel: '.face[data-id]',
+      itemOf: function (tile) { return tile.face; },
+      get: function (x) { return !!faceState.picked[x.id]; },
+      set: function (x, on) {
+        if (on) faceState.picked[x.id] = true; else delete faceState.picked[x.id];
+        var c = document.querySelector('.face[data-id="' + x.id + '"]');
+        if (c) c.classList.toggle('sel', on);
+      },
+      done: function (x) { if (x) faceState.anchor = x.id; updateFacePick(); },
+    };
+  };
   page.appendChild(grid);
   var more = el('button', 'btn quiet', tr('app.show_more'));
   more.hidden = true;
@@ -4643,9 +5186,10 @@ function moreFaces(grid, more) {
 function faceCard(face, similarity) {
   var card = el('div', 'face' + (face.small ? ' small' : ''));
   card.dataset.id = face.id;
+  card.face = face;
   var a = el('a', 'crop');
   a.href = '#';
-  a.title = tr('facecheck.open_photo');
+  setTip(a, tr('facecheck.open_photo'));
   var img = el('img');
   img.alt = '';
   img.loading = 'lazy';
@@ -4677,17 +5221,17 @@ function faceCard(face, similarity) {
   var caption = Math.round(face.px) + ' px · ' + face.score.toFixed(2);
   if (similarity != null) caption = similarity.toFixed(2) + ' · ' + caption;
   card.appendChild(el('div', 'meta', caption));
-  if (face.species) card.appendChild(el('span', 'tag', petIcon(face.species) + ' ' + speciesName(face.species)));
+  if (face.species) card.appendChild(petLabel('span', 'tag', face.species, speciesName(face.species)));
   if (face.small) card.appendChild(el('span', 'tag', tr('facecheck.tag_small')));
   if (face.roll) card.appendChild(el('span', 'tag', tr('facecheck.tag_turned')));
   if (similarity == null) {
     var near = el('button', 'near', '≈');
-    near.title = tr(face.species ? 'facecheck.similar_pets' : 'facecheck.similar_btn');
+    setTip(near, tr(face.species ? 'facecheck.similar_pets' : 'facecheck.similar_btn'));
     near.onclick = function () { similarFaces(face); };
     card.appendChild(near);
     var undo = faceState.filter === 'not_face';
     var mark = el('button', 'mark', undo ? '↺' : '✕');
-    mark.title = face.species ? tr(undo ? 'facecheck.undo_hint_pet' : 'facecheck.not_pet') : tr(undo ? 'facecheck.undo_hint' : 'facecheck.not_face');
+    setTip(mark, face.species ? tr(undo ? 'facecheck.undo_hint_pet' : 'facecheck.not_pet') : tr(undo ? 'facecheck.undo_hint' : 'facecheck.not_face'));
     mark.onclick = function () { markFaces([face.id]); };
     card.appendChild(mark);
   }
@@ -4712,8 +5256,9 @@ function similarFaces(face) {
 // viewer closes.
 // `siblings` (optional): the faces shown with it, e.g. in a cluster card; the
 // arrow keys then step through their photos (once per photo).
-function openFacePhoto(face, siblings) {
-  var saved = state.data;
+// `onBack(changed)` (optional): called when the viewer closes, `changed` true
+// if faces were decided in it.
+function openFacePhoto(face, siblings, onBack) {
   var list = [], seen = {}, at = 0;
   (siblings || [face]).forEach(function (f) {
     if (f.file == null || seen[f.file]) return;
@@ -4722,19 +5267,29 @@ function openFacePhoto(face, siblings) {
   });
   list.forEach(function (f, k) { if (f.file === face.file) at = k; });
   if (!list.length) list = [face];
+  openFiles(list, at, onBack);
+}
+
+// Opens the viewer over these files ({ file, kind, version }) instead of the
+// timeline, starting at `at`; closing it goes back to where it was opened
+// (and calls `onBack` as openFacePhoto says).
+function openFiles(list, at, onBack) {
+  var saved = state.data;
   state.data = {
     count: list.length,
     ids: list.map(function (f) { return f.file; }),
-    kinds: list.map(function (f) { return { jpeg: 'j', png: 'p', heic: 'h' }[f.kind] || 'j'; }).join(''),
+    kinds: list.map(function (f) { return { jpeg: 'j', png: 'p', heic: 'h', video: 'v' }[f.kind] || 'j'; }).join(''),
     days: list.map(function () { return 0; }),
     versions: list.map(function (f) { return ((f.version || '') + '00000000').slice(0, 8); }).join(''),
     live: [],
   };
   // Back to the thumbnail it was opened from (keyboard: Tab, Space, Space).
   var from = document.activeElement;
+  lb.facesChanged = false;
   lb.restore = function () {
     state.data = saved;
     if (from && from.isConnected && from.focus) from.focus();
+    if (onBack) onBack(lb.facesChanged);
   };
   openLightbox(at);
 }
@@ -4745,7 +5300,7 @@ function openFacePhoto(face, siblings) {
 // so thresholds and false finds can be judged on the real photos.
 function loadSettings() {
   var page = $('page');
-  page.textContent = '';
+  clearNode(page);
   page.appendChild(el('h2', '', tr('settings.title')));
   var sec = el('section', 'settings-section');
   sec.appendChild(el('h3', '', tr('settings.calibration')));
@@ -4892,7 +5447,7 @@ function forgetCard(space) {
 // each, so the limits can be judged on the real photos.
 function loadTextCheck() {
   var page = $('page');
-  page.textContent = '';
+  clearNode(page);
   page.appendChild(el('h2', '', tr('side.text_check')));
   page.appendChild(el('p', 'hint', tr('textcheck.hint')));
   var body = el('div', 'textcheck');
@@ -4904,7 +5459,7 @@ function loadTextCheck() {
 }
 
 function renderTextCheck(body, s, check) {
-  body.textContent = '';
+  clearNode(body);
   if (!s.read && !s.stored) {
     body.appendChild(el('p', 'sub', tr('textcheck.none')));
     return;
@@ -5117,7 +5672,7 @@ function copyFoldersSection() {
       var chip = el('span', 'chip own', name + ' ');
       var x = el('button', 'chip-x', '✕');
       x.type = 'button';
-      x.title = tr('settings.copy_folders_remove');
+      setTip(x, tr('settings.copy_folders_remove'));
       x.onclick = function () { save(folders.filter(function (f) { return f !== name; })); };
       chip.appendChild(x);
       chips.appendChild(chip);
@@ -5155,15 +5710,115 @@ var people = { list: [], byId: {}, groups: [], open: {}, info: null, watch: null
 
 function fold(s) { return String(s).normalize('NFC').toLowerCase(); }
 
+// One request pair at a time (see `loadInfo`).
+var peopleFlight = null, peopleAgain = false;
+
 function loadPeople() {
+  if (peopleFlight) { peopleAgain = true; return peopleFlight; }
+  peopleFlight = fetchPeople().then(function () {
+    peopleFlight = null;
+    if (peopleAgain) { peopleAgain = false; loadPeople(); }
+  });
+  return peopleFlight;
+}
+
+function fetchPeople() {
+  people.stale = false;
   return Promise.all([api(LIBAPI + '/people'), api(LIBAPI + '/groups')]).then(function (r) {
     people.list = r[0];
     people.groups = r[1];
     people.byId = {};
     r[0].forEach(function (p) { people.byId[p.id] = p; state.personNames[p.id] = p.name; state.personSpecies[p.id] = p.species; });
-    renderFacesSection();
-    renderChips();
+    r[1].forEach(function (g) { state.groupNames[g.id] = g.name; });
+    peopleShown();
   }).catch(function () {});
+}
+
+// Show the people and groups as they are now. Also after a change the page
+// made itself from the reply (`takePerson`, `countGroups`), without asking the
+// server for the whole list again.
+function peopleShown() {
+  people.groups.forEach(function (g) { state.groupNames[g.id] = g.name; });
+  sortPeople();
+  renderFacesSection();
+  renderChips();
+  // A group in the search that is gone (its last person left): the search drops it.
+  var f = state.filter, there = function (id) { return people.groups.some(function (g) { return g.id === id; }); };
+  if (!isAll() && f.groups && !f.groups.every(there)) setFilter(withFilter({ groups: f.groups.filter(there) }));
+}
+
+// The server's order (`people::people`): by group (people without one last),
+// then name, then id.
+function sortPeople() {
+  var position = {};
+  people.groups.forEach(function (g) { position[g.id] = g.position; });
+  var rank = function (p) { return position[p.group_id] == null ? Infinity : position[p.group_id]; };
+  people.list.sort(function (a, b) {
+    var ra = rank(a), rb = rank(b);
+    if (ra !== rb) return ra < rb ? -1 : 1;
+    var na = a.name.toLowerCase(), nb = b.name.toLowerCase();
+    if (na !== nb) return na < nb ? -1 : 1;
+    return a.id - b.id;
+  });
+}
+
+// The reply to a change of one person (their group, their picture) is the
+// person as they are now: it takes the place of their entry (or, with `add`,
+// is added). False for someone the list does not have (a hidden person).
+function takePerson(r, add) {
+  var at = -1;
+  people.list.forEach(function (p, k) { if (p.id === r.id) at = k; });
+  if (at < 0 && !add) return false;
+  if (at < 0) people.list.push(r); else people.list[at] = r;
+  people.byId[r.id] = r;
+  state.personNames[r.id] = r.name;
+  state.personSpecies[r.id] = r.species;
+  return true;
+}
+
+function personUpdated(r) {
+  if (takePerson(r)) peopleShown();
+}
+
+// A person was deleted: gone from the list, and from their group (which goes
+// with its last person).
+function personRemoved(id) {
+  var mine = people.byId[id];
+  if (!mine) loadPeople();
+  else {
+    people.list = people.list.filter(function (x) { return x.id !== id; });
+    delete people.byId[id];
+    countGroups(mine.group_id, null);
+    peopleShown();
+  }
+  peopleInfoChanged();
+}
+
+// `from` was merged into the person the reply describes. That one takes
+// `from`'s group if they had none; the group `from` left may be empty then.
+function peopleMerged(fromId, r) {
+  var from = people.byId[fromId], into = people.byId[r.id];
+  if (!from || !into) loadPeople();
+  else {
+    countGroups(into.group_id, r.group_id);
+    countGroups(from.group_id, null);
+    people.list = people.list.filter(function (x) { return x.id !== fromId; });
+    delete people.byId[fromId];
+    takePerson(r);
+    peopleShown();
+  }
+  peopleInfoChanged();
+}
+
+// One person left group `from` for `to` (either may be none): the groups'
+// counts follow, and a group nobody is in any more is gone, as on the server.
+function countGroups(from, to) {
+  if (from === to) return;
+  people.groups.forEach(function (g) {
+    if (g.id === from) g.people--;
+    if (g.id === to) g.people++;
+  });
+  people.groups = people.groups.filter(function (g) { return g.people > 0; });
 }
 
 // Groups in their order with their people, then "No group" (only when
@@ -5185,20 +5840,26 @@ function facesInfo(info) {
   people.info = info;
   var busy = info.clusters.stale || info.clusters.running || info.clusters.embedding;
   if (before && (before.clusters.stale || before.clusters.running || before.clusters.embedding) && !busy) {
-    // Recomputed: the suggestions and counts changed.
-    loadPeople().then(function () { if (state.filter.view === 'people') loadPeoplePage(); });
+    // Recomputed: the suggestions changed. Only the People page shows them;
+    // anywhere else the list is asked for when that page opens.
+    if (state.filter.view === 'people') loadPeople().then(loadPeoplePage);
+    else people.stale = true;
     if (state.filter.view === 'person') loadPersonCounts();
   }
   if (busy) watchClusters();
+  regroupLine(info);
   // Faces grouped anew in the background (after a decision, a recognize run):
-  // the Unnamed page takes the new cards and suggestions.
-  if (before && clustersSignature(before) !== clustersSignature(info) && state.filter.view === 'unnamed') scheduleUnnamedRefresh();
+  // the Unnamed page takes the new cards and suggestions, once when the grouping
+  // is done and not at each step of it (asked for, running, done).
+  if (before && !busy && clustersSignature(before) !== clustersSignature(info) && state.filter.view === 'unnamed') scheduleUnnamedRefresh();
   renderFacesSection();
 }
 
+// What a grouping changes. Not the people named: names wait for the next
+// grouping (`pending`) and the cards that took them already show them.
 function clustersSignature(info) {
   var c = info.clusters;
-  return [c.unnamed, c.clusters, c.suggested, c.people, c.finished_at, c.stale, c.running, c.embedding].join(',');
+  return [c.unnamed, c.clusters, c.suggested, c.finished_at, c.stale, c.running, c.embedding].join(',');
 }
 
 // While the clusters are being recomputed the server says when something
@@ -5237,10 +5898,32 @@ function facesStream() {
 
 // After a change to people or decisions (the Unnamed page follows at once,
 // also when the change was made in the viewer over it).
-function peopleChanged() {
-  loadPeople();
+//
+// `decided` is the reply to naming faces; it carries the person as the list
+// shows them (`person_data`): they are added (someone new) or replace their
+// entry, so the whole list is not asked for again. Only a reply without them,
+// or a person whose picture the server could not tell, asks for the list.
+//
+// `onUnnamed`: the change was made on the Unnamed page, whose card or faces
+// already show it; the page is asked for its clusters once, when the grouping
+// that follows is done (`facesInfo`), not at once as well.
+function peopleChanged(decided, onUnnamed) {
+  var d = decided && decided.person_data;
+  if (d && (d.cover != null || d.cover_manual != null)) {
+    var old = people.byId[d.id];
+    // The suggestions come with the next grouping (and the list is asked for then).
+    if (old) { d.suggested = old.suggested; d.maybe = old.maybe; }
+    takePerson(d, true);
+    peopleShown();
+  } else loadPeople();
+  peopleInfoChanged(onUnnamed);
+}
+
+// What follows from any change to people: the status (how many are named) and
+// the Unnamed page (the names in its suggestions).
+function peopleInfoChanged(onUnnamed) {
   loadInfo();
-  if (state.filter.view === 'unnamed') scheduleUnnamedRefresh();
+  if (state.filter.view === 'unnamed' && !onUnnamed) scheduleUnnamedRefresh();
 }
 
 function cropUrl(face) {
@@ -5307,6 +5990,12 @@ function zoomFace(face) {
 function faceImg(face, cls) {
   var a = el('span', 'avatar' + (cls ? ' ' + cls : '') + (face.species ? ' pet pet-' + face.species : ''));
   if (face.species) a.title = face.species;
+  // The pet's icon sits in a disc in the corner of the big faces (the name of a person says it elsewhere).
+  if (face.species && cls === 'big') {
+    var badge = el('span', 'pet-badge');
+    badge.appendChild(speciesIcon(face.species));
+    a.appendChild(badge);
+  }
   var url = cropUrl(face);
   if (face.state === 'ignored' && face.file != null) {
     a.appendChild(zoomFace(face));
@@ -5321,6 +6010,8 @@ function faceImg(face, cls) {
 }
 
 function showPerson(id) { closeLightboxQuietly(); setFilter({ folder: null, tags: [], people: [id], q: '' }); }
+// The photos of anyone in the group.
+function showGroup(id) { closeLightboxQuietly(); setFilter({ folder: null, tags: [], people: [], groups: [id], q: '' }); }
 
 function closeLightboxQuietly() { if (!$('lightbox').hidden) closeLightbox(); }
 
@@ -5353,11 +6044,16 @@ function dropOnGroup(node, groupId) {
 }
 
 function setGroup(p, groupId) {
-  return post(LIBAPI + '/people/' + p.id + '/group', { group_id: groupId }).then(function () {
+  var mine = people.byId[p.id];
+  var before = mine ? mine.group_id : undefined;
+  return post(LIBAPI + '/people/' + p.id + '/group', { group_id: groupId }).then(function (r) {
     var g = people.groups.filter(function (x) { return x.id === groupId; })[0];
     toast(g ? tr('people.is_in', { name: p.name, group: g.name }) : tr('people.is_in_none', { name: p.name }));
-    peopleChanged();
-    if (state.filter.view === 'people') loadPeople().then(loadPeoplePage);
+    // The reply is the person with their new group: no need for the whole list.
+    if (before === undefined || !takePerson(r)) return loadPeople().then(function () { if (state.filter.view === 'people') loadPeoplePage(); });
+    countGroups(before, groupId);
+    peopleShown();
+    if (state.filter.view === 'people') loadPeoplePage();
   }).catch(failed);
 }
 
@@ -5377,10 +6073,15 @@ function renderFacesSection() {
     var toggle = el('button', 'toggle');
     if (s.people.length) setArrow(toggle, !!people.open[key]);
     var name = el('button', 'name', s.name);
-    name.title = tr(s.people.length ? 'people.group_toggle' : 'people.group_empty');
+    setTip(name, tr(s.people.length ? (s.id == null ? 'people.group_toggle' : 'people.group_show') : 'people.group_empty'));
     var flip = function () { people.open[key] = !people.open[key]; renderFacesSection(); };
     toggle.onclick = flip;
-    name.onclick = flip;
+    if (s.id == null) name.onclick = flip;
+    else {
+      // A group shows the photos of all its people and unfolds; the arrow only folds and unfolds.
+      name.dataset.group = s.id;
+      name.onclick = function () { people.open[key] = true; showGroup(s.id); renderFacesSection(); };
+    }
     row.appendChild(toggle);
     row.appendChild(name);
     row.appendChild(el('span', 'count', String(s.people.length)));
@@ -5392,7 +6093,7 @@ function renderFacesSection() {
         var pli = el('li');
         var prow = el('div', 'row');
         prow.appendChild(avatar(p, 'tiny'));
-        var b = el('button', 'name', (p.species ? petIcon(p.species) + ' ' : '') + p.name);
+        var b = petLabel('button', 'name', p.species, p.name);
         b.dataset.person = p.id;
         b.onclick = function () { showPerson(p.id); };
         prow.appendChild(b);
@@ -5423,6 +6124,7 @@ function markFacesSection() {
   $('nav-people').classList.toggle('active', f.view === 'people');
   Array.prototype.forEach.call(document.querySelectorAll('#people-tree .name'), function (b) {
     var on = b.dataset.view ? f.view === b.dataset.view
+      : b.dataset.group ? !f.view && f.groups.length === 1 && !f.people.length && f.groups[0] === parseInt(b.dataset.group, 10)
       : b.dataset.person ? (!f.view && f.people.indexOf(parseInt(b.dataset.person, 10)) >= 0) || (f.view === 'person' && f.id === parseInt(b.dataset.person, 10))
       : false;
     b.classList.toggle('active', on);
@@ -5596,7 +6298,7 @@ function personField(done, opts) {
     } else if (opts.allowNew && text && !exact) {
       var it = { who: { name: text }, label: text };
       var sp = kind();
-      var b = option('item new', tr(sp ? 'people.new.' + (PET_ICON[sp] ? sp : 'pet') : 'people.new_person', { name: text }));
+      var b = option('item new', tr(sp ? 'people.new.' + (PET_SPECIES[sp] ? sp : 'pet') : 'people.new_person', { name: text }));
       b.onclick = function () { pick(it); };
       items.push(it);
       list.appendChild(b);
@@ -5671,7 +6373,8 @@ function renamePerson(p) {
     return post(LIBAPI + '/people/' + p.id + '/rename', { name: name }).then(function (r) {
       toast(tr('people.renamed', { name: r.name }));
       state.personNames[p.id] = r.name;
-      peopleChanged();
+      personUpdated(r);
+      peopleInfoChanged();
       if (state.filter.view) loadView(state.filter.view); else renderChips();
     });
   });
@@ -5684,7 +6387,7 @@ function deletePersonDialog(p) {
     { label: tr('app.delete'), cls: 'danger', onclick: function () {
       post(LIBAPI + '/people/' + p.id + '/delete').then(function () {
         toast(tr('people.deleted', { name: p.name }));
-        peopleChanged();
+        personRemoved(p.id);
         if (state.filter.people.indexOf(p.id) >= 0) setFilter({ people: state.filter.people.filter(function (x) { return x !== p.id; }) });
         else if (state.filter.view === 'person' && state.filter.id === p.id) showView('people');
         else if (state.filter.view) loadView(state.filter.view);
@@ -5693,14 +6396,20 @@ function deletePersonDialog(p) {
   ]);
 }
 
-function newGroup(then) {
-  nameDialog(tr('people.new_group'), '', tr('people.create'), function (name) {
-    return post(LIBAPI + '/groups', { name: name }).then(function (g) {
+// A new group always starts with a person (their page: "New group…"): the
+// person is its first member, so there is never an empty group.
+function newGroup(p) {
+  nameDialog(tr('people.new_group', { name: p.name }), '', tr('people.create'), function (name) {
+    return post(LIBAPI + '/groups', { name: name, person_id: p.id }).then(function (g) {
       toast(tr('people.group_created', { name: g.name }));
-      return loadPeople().then(function () {
-        if (then) then(g);
-        else if (state.filter.view === 'people') loadPeoplePage();
-      });
+      // The reply is the new group (with its id), and the person is its first member.
+      var mine = people.byId[p.id];
+      if (!mine) return loadPeople().then(function () { if (state.filter.view === 'people') loadPeoplePage(); });
+      countGroups(mine.group_id, null);
+      people.groups.push(g);
+      mine.group_id = g.id;
+      peopleShown();
+      if (state.filter.view === 'people') loadPeoplePage();
     });
   });
 }
@@ -5719,7 +6428,7 @@ function moveToGroupDialog(p) {
   body.appendChild(list);
   body.appendChild(el('p', 'hint', tr('people.group_hint')));
   openModal(tr('people.to_group_title'), body, [
-    { label: tr('people.new_group_btn'), cls: 'quiet', onclick: function () { setTimeout(function () { newGroup(function (g) { setGroup(p, g.id); }); }, 0); } },
+    { label: tr('people.new_group_btn'), cls: 'quiet', onclick: function () { setTimeout(function () { newGroup(p); }, 0); } },
     { label: tr('app.cancel'), cls: 'quiet' },
   ]);
 }
@@ -5742,7 +6451,7 @@ function mergeDialog(p) {
       post(LIBAPI + '/people/' + p.id + '/merge', { into: into }).then(function (r) {
         closeModal();
         toast(tr('people.merged', { name: p.name, into: r.name }));
-        peopleChanged();
+        peopleMerged(p.id, r);
         if (state.filter.people.indexOf(p.id) >= 0 || (state.filter.view === 'person' && state.filter.id === p.id)) showPerson(r.id);
         else if (state.filter.view) loadView(state.filter.view);
       }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
@@ -5765,7 +6474,7 @@ function groupsDialog() {
       row.appendChild(el('span', 'gcount', trn('count.people', g.people)));
       var btn = function (label, title, run) {
         var b = el('button', 'btn quiet small', label);
-        b.title = title;
+        setTip(b, title);
         b.setAttribute('aria-label', title);
         b.onclick = run;
         row.appendChild(b);
@@ -5777,14 +6486,14 @@ function groupsDialog() {
         ids.splice(k, 1);
         ids.splice(to, 0, g.id);
         post(LIBAPI + '/groups/reorder', { ids: ids }).then(function (gs) {
-          people.groups = gs; render(); peopleChanged();
+          people.groups = gs; render(); peopleShown();
           if (refocus) { var h = list.querySelectorAll('.grip')[to]; if (h) h.focus(); }
         }).catch(failed);
       };
       var grip = el('span', 'grip', '\u283F');
       grip.tabIndex = 0;
       grip.setAttribute('role', 'button');
-      grip.title = tr('people.drag_handle');
+      setTip(grip, tr('people.drag_handle'));
       grip.setAttribute('aria-label', tr('people.drag_handle'));
       grip.onkeydown = function (e) {
         if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
@@ -5819,8 +6528,12 @@ function groupsDialog() {
       row.insertBefore(grip, row.firstChild);
       btn(tr('people.rename'), tr('people.rename'), function () {
         nameDialog(tr('people.rename_group'), g.name, tr('people.rename'), function (name) {
-          return post(LIBAPI + '/groups/' + g.id + '/rename', { name: name }).then(function () {
-            return loadPeople().then(function () { groupsDialog(); if (state.filter.view === 'people') loadPeoplePage(); });
+          return post(LIBAPI + '/groups/' + g.id + '/rename', { name: name }).then(function (r) {
+            people.groups.forEach(function (x) { if (x.id === r.id) x.name = r.name; });
+            peopleShown();
+            // After the name dialog has closed (it closes when this is done).
+            setTimeout(groupsDialog, 0);
+            if (state.filter.view === 'people') loadPeoplePage();
           });
         });
       });
@@ -5830,7 +6543,13 @@ function groupsDialog() {
           { label: tr('app.delete'), cls: 'danger', onclick: function () {
             post(LIBAPI + '/groups/' + g.id + '/delete').then(function () {
               toast(tr('people.group_deleted', { name: g.name }));
-              return loadPeople().then(function () { groupsDialog(); if (state.filter.view === 'people') loadPeoplePage(); });
+              // Its people have no group afterwards.
+              people.groups = people.groups.filter(function (x) { return x.id !== g.id; });
+              people.list.forEach(function (x) { if (x.group_id === g.id) x.group_id = null; });
+              delete state.groupNames[g.id];
+              peopleShown();
+              groupsDialog();
+              if (state.filter.view === 'people') loadPeoplePage();
             }).catch(failed);
           } },
         ]);
@@ -5840,7 +6559,6 @@ function groupsDialog() {
   };
   render();
   openModal(tr('people.groups_title'), body, [
-    { label: tr('people.new_group_btn'), cls: 'quiet', onclick: function () { setTimeout(function () { newGroup(function () { groupsDialog(); }); }, 0); } },
     { label: tr('app.done'), onclick: function () { if (state.filter.view === 'people') loadPeoplePage(); } },
   ]);
 }
@@ -5848,9 +6566,9 @@ function groupsDialog() {
 function personMenuItems(p) {
   return [
     { label: tr('people.menu.show'), run: function () { showPerson(p.id); } },
-    { label: tr('people.menu.review'), run: function () { showView('person', p.id, p.suggested ? 'suggested' : p.maybe ? 'maybe' : 'confirmed'); } },
     { label: tr('people.menu.rename'), run: function () { renamePerson(p); } },
     { label: tr('people.menu.move'), run: function () { moveToGroupDialog(p); } },
+    { label: tr('people.menu.new_group'), run: function () { newGroup(p); } },
     { label: tr('people.menu.merge'), run: function () { mergeDialog(p); } },
   ].concat(p.faces === 0 ? [{ label: tr('people.menu.delete'), run: function () { deletePersonDialog(p); } }] : []);
 }
@@ -5859,7 +6577,7 @@ function personMenuItems(p) {
 function menuButton(items, title) {
   var b = el('button', 'more-btn', '⋯');
   b.type = 'button';
-  b.title = title || tr('people.more');
+  setTip(b, title || tr('people.more'));
   b.setAttribute('aria-label', title || tr('people.more'));
   b.onclick = function (ev) {
     ev.preventDefault();
@@ -5878,7 +6596,7 @@ function personHead(box, f) {
   var head = el('div', 'person-head');
   head.appendChild(avatar(p, 'big'));
   var text = el('div', 'ptext');
-  text.appendChild(el('div', 'pname', (p.species ? petIcon(p.species) + ' ' : '') + p.name));
+  text.appendChild(petLabel('div', 'pname', p.species, p.name));
   var g = people.groups.filter(function (x) { return x.id === p.group_id; })[0];
   text.appendChild(el('div', 'pmeta', trn('count.photos', p.photos) + ' · ' + (g ? g.name : tr('people.no_group_lower'))));
   head.appendChild(text);
@@ -5895,7 +6613,7 @@ function personHead(box, f) {
 function loadPeoplePage() {
   var page = $('page');
   if (state.filter.view !== 'people') return;
-  page.textContent = '';
+  clearNode(page);
   page.appendChild(el('h2', '', tr('side.faces')));
   var c = people.info && people.info.clusters;
   var sub = el('p', 'sub');
@@ -5909,14 +6627,11 @@ function loadPeoplePage() {
   }
   page.appendChild(sub);
   var bar = el('div', 'toolbar');
-  var ng = el('button', 'btn quiet', tr('people.new_group_btn'));
-  ng.onclick = function () { newGroup(); };
   var gs = el('button', 'btn quiet', tr('people.groups_btn'));
   gs.onclick = groupsDialog;
   var check = el('button', 'btn quiet', tr('settings.calibration'));
-  check.title = tr('people.calibration_hint');
+  setTip(check, tr('people.calibration_hint'));
   check.onclick = function () { showView('settings'); };
-  bar.appendChild(ng);
   bar.appendChild(gs);
   bar.appendChild(check);
   page.appendChild(bar);
@@ -5950,12 +6665,12 @@ function personTile(p) {
   a.href = '#';
   a.onclick = function (ev) { ev.preventDefault(); showPerson(p.id); };
   a.appendChild(avatar(p, 'big'));
-  a.appendChild(el('span', 'pname', (p.species ? petIcon(p.species) + ' ' : '') + p.name));
+  a.appendChild(petLabel('span', 'pname', p.species, p.name));
   a.appendChild(el('span', 'pmeta', trn('count.photos', p.photos)));
   t.appendChild(a);
   if (p.suggested + p.maybe) {
     var badge = el('button', 'pbadge', tr('people.to_check', { n: p.suggested + p.maybe }));
-    badge.title = tr('people.suggested_for', { name: p.name });
+    setTip(badge, tr('people.suggested_for', { name: p.name }));
     badge.onclick = function () { showView('person', p.id, p.suggested ? 'suggested' : 'maybe'); };
     t.appendChild(badge);
   }
@@ -5967,12 +6682,13 @@ function personTile(p) {
 // ---- a person's faces
 
 var PERSON_TABS = [['confirmed', 'person.tab.confirmed'], ['suggested', 'person.tab.suggested'], ['maybe', 'person.tab.maybe'], ['rejected', 'person.tab.rejected']];
-var pp = { person: null, faces: [], total: 0, picking: false, picked: {} };
+var pp = { person: null, tab: 'confirmed', faces: [], total: 0, picking: false, picked: {} };
 
 function loadPersonPage() {
   var f = state.filter, page = $('page');
   var tab = PERSON_TABS.some(function (t) { return t[0] === f.tab; }) ? f.tab : 'confirmed';
-  page.textContent = '';
+  clearNode(page);
+  pp.tab = tab;
   pp.faces = [];
   pp.picked = {};
   pp.picking = false;
@@ -5984,13 +6700,13 @@ function loadPersonPage() {
     var head = el('div', 'person-head');
     head.appendChild(avatar(p, 'big'));
     var text = el('div', 'ptext');
-    text.appendChild(el('h2', 'pname', (p.species ? petIcon(p.species) + ' ' : '') + p.name));
+    text.appendChild(petLabel('h2', 'pname', p.species, p.name));
     text.appendChild(el('div', 'pmeta', tr('person.meta', { photos: trn('count.photos', p.photos), faces: p.species ? animalCount(p.species, p.faces) : trn('count.faces', p.faces) })));
     head.appendChild(text);
     var photos = el('button', 'btn quiet', tr('person.photos'));
     photos.onclick = function () { showPerson(p.id); };
     head.appendChild(photos);
-    head.appendChild(menuButton(personMenuItems(p).slice(2), tr('people.more_for', { name: p.name })));
+    head.appendChild(menuButton(personMenuItems(p).slice(1), tr('people.more_for', { name: p.name })));
     page.appendChild(head);
     var tabs = el('div', 'tabs');
     tabs.id = 'person-tabs';
@@ -6003,7 +6719,8 @@ function loadPersonPage() {
     page.appendChild(tabs);
     personTabCounts(p);
     page.appendChild(el('p', 'sub', tr('person.sub.' + tab, { name: p.name })));
-    var bar = el('div', 'toolbar');
+    // Stays at the top while the faces scroll under it.
+    var bar = el('div', 'toolbar sticky');
     var pick = el('button', 'btn quiet', tr('facecheck.select'));
     pick.id = 'pp-pick';
     pick.onclick = function () { pp.picking = !pp.picking; if (!pp.picking) clearPersonPicks(); updatePersonPick(); };
@@ -6014,10 +6731,26 @@ function loadPersonPage() {
       bar.appendChild(all);
     }
     page.appendChild(bar);
-    var grid = el('div', 'faces');
+    var grid = el('div', 'faces has-drag');
     grid.id = 'pp-grid';
+    grid.dragSite = function () {
+      if (!pp.picking) return null;
+      var cardOf = function (x) { return document.querySelector('#pp-grid .face[data-key="' + faceKey(x) + '"]'); };
+      return {
+        sel: '.face',
+        itemOf: function (tile) { return tile.face && faceKey(tile.face) ? tile.face : undefined; },
+        get: function (x) { return !!pp.picked[faceKey(x)]; },
+        set: function (x, on) {
+          if (on) pp.picked[faceKey(x)] = x; else delete pp.picked[faceKey(x)];
+          var c = cardOf(x);
+          if (c) c.classList.toggle('sel', on);
+        },
+        done: function (x) { if (x) pp.anchor = faceKey(x); updatePersonPick(); },
+      };
+    };
     page.appendChild(grid);
     var more = el('button', 'btn quiet', tr('app.show_more'));
+    more.id = 'pp-more';
     more.hidden = true;
     more.onclick = function () { morePersonFaces(grid, more, tab); };
     page.appendChild(more);
@@ -6058,6 +6791,50 @@ function morePersonFaces(grid, more, tab) {
   }).catch(failed);
 }
 
+// The faces shown whose key `gone(key)` says left the tab's list.
+function dropPersonFaces(gone) {
+  pp.faces = pp.faces.filter(function (x) {
+    var k = faceKey(x);
+    if (!gone(k)) return true;
+    var card = document.querySelector('#pp-grid .face[data-key="' + k + '"]');
+    if (card) card.remove();
+    delete pp.picked[k];
+    return false;
+  });
+  updatePersonPick();
+  personGridEmptied();
+}
+
+// Back from the viewer, where faces were decided: the faces shown that left
+// this tab go (as after a decision here), the counts follow. A face that came
+// into the tab shows with the next visit. The list is asked for up to what is
+// shown and a page more, so a face that moved down stays; past the server's
+// limit the page is built again.
+function personFacesAgain() {
+  var id = pp.person && pp.person.id, tab = pp.tab, n = pp.faces.length;
+  if (state.filter.view !== 'person' || state.filter.id !== id) return;
+  loadPersonCounts();
+  if (!n) return;
+  if (n + 200 > 2000) { loadPersonPage(); return; }
+  api(LIBAPI + '/people/' + id + '/faces' + query({ state: tab, offset: 0, limit: n + 200 })).then(function (r) {
+    if (state.filter.view !== 'person' || state.filter.id !== id || pp.tab !== tab) return;
+    var still = {};
+    r.faces.forEach(function (x) { still[faceKey(x)] = true; });
+    pp.total = r.total;
+    dropPersonFaces(function (k) { return k && !still[k]; });
+    var more = $('pp-more');
+    if (more && !more.disabled) more.hidden = pp.faces.length >= pp.total;
+  }).catch(failed);
+}
+
+// The last faces shown left the list (e.g. "Confirm all shown"): the next
+// ones come without a click on "Show more", or the line that there are none.
+function personGridEmptied() {
+  var grid = $('pp-grid'), more = $('pp-more');
+  if (pp.faces.length || !grid || !more || more.disabled) return;
+  morePersonFaces(grid, more, pp.tab);
+}
+
 function faceKey(face) { return face.id != null ? 'f' + face.id : face.manual != null ? 'm' + face.manual : null; }
 
 function personFaceCard(face, tab) {
@@ -6065,9 +6842,10 @@ function personFaceCard(face, tab) {
   var card = el('div', 'face' + (face.small ? ' small' : ''));
   var key = faceKey(face);
   card.dataset.key = key;
+  card.face = face;
   var a = el('a', 'crop');
   a.href = '#';
-  a.title = tr('facecheck.open_photo');
+  setTip(a, tr('facecheck.open_photo'));
   var url = cropUrl(face);
   if (tab === 'confirmed' && face.file != null) {
     // Confirmed faces have no stored crop: cut out of the photo's thumbnail.
@@ -6104,7 +6882,7 @@ function personFaceCard(face, tab) {
       return;
     }
     // Suggested and maybe: the arrow keys step through the faces to check.
-    if (face.file != null) openFacePhoto(face, tab === 'suggested' || tab === 'maybe' ? pp.faces : null);
+    if (face.file != null) openFacePhoto(face, tab === 'suggested' || tab === 'maybe' ? pp.faces : null, function (changed) { if (changed) personFacesAgain(); });
   };
   card.appendChild(a);
   var caption = face.similarity != null ? tr('person.alike', { pct: Math.round(face.similarity * 100) }) : Math.round(face.px) + ' px';
@@ -6115,7 +6893,7 @@ function personFaceCard(face, tab) {
   var acts = el('div', 'acts');
   var act = function (label, title, cls, run) {
     var b = el('button', cls, label);
-    b.title = title;
+    setTip(b, title);
     b.setAttribute('aria-label', title);
     b.onclick = function (ev) { ev.stopPropagation(); run(); };
     acts.appendChild(b);
@@ -6142,7 +6920,7 @@ function confirmedFaceMenu(face) {
   items.push({ label: tr('person.not', { name: p.name }), run: function () { personAction('reject', [face.id]); } });
   items.push({ label: tr('person.name_else'), run: function () { nameFacesDialog([face], personRefresh); } });
   items.push({ label: tr('menu.use_as', { name: p.name }), run: function () {
-    post(LIBAPI + '/people/' + p.id + '/cover', { face: face.id }).then(function () { toast(tr('menu.picture_changed')); peopleChanged(); }).catch(failed);
+    post(LIBAPI + '/people/' + p.id + '/cover', { face: face.id }).then(function (r) { toast(tr('menu.picture_changed')); personUpdated(r); }).catch(failed);
   } });
   items.push({ label: tr(p.species ? 'pet.not_a.pet' : 'facecheck.not_face'), run: function () { personAction('not-face', [face.id]); } });
   return items;
@@ -6163,21 +6941,14 @@ function personAction(action, ids, manual) {
     var gone = {};
     ids.forEach(function (x) { gone['f' + x] = true; });
     manual.forEach(function (x) { gone['m' + x] = true; });
-    pp.faces = pp.faces.filter(function (x) {
-      var k = faceKey(x);
-      if (!gone[k]) return true;
-      var card = document.querySelector('#pp-grid .face[data-key="' + k + '"]');
-      if (card) card.remove();
-      delete pp.picked[k];
-      return false;
-    });
-    updatePersonPick();
+    dropPersonFaces(function (k) { return gone[k]; });
     var count = trn('count.faces', r.faces);
     toast({
       confirm: tr('person.toast.confirm', { count: count, name: p.name }),
       reject: tr('person.toast.reject', { count: count, name: p.name }),
       unreject: tr('person.toast.unreject', { count: count, name: p.name }),
       'not-face': tr(p.species ? 'facecheck.marked_pet' : 'facecheck.marked', { count: count }),
+      ignore: tr('unnamed.ignored', { count: count }),
       undo: tr('person.toast.undo'),
     }[action]);
     peopleChanged();
@@ -6185,48 +6956,74 @@ function personAction(action, ids, manual) {
   }).catch(failed);
 }
 
+// The bar of the timeline's selection: close, count (or what to do), Select
+// all, then the tools. Confirm and Undo are icons with a quick label, the other
+// actions keep their words (they carry a name).
 function personPickBar(tab) {
-  var bar = el('div', 'selbar');
+  var bar = el('div', 'selbar tools');
   bar.id = 'pp-bar';
+  bar.setAttribute('role', 'toolbar');
+  bar.setAttribute('aria-label', tr('sel.bar'));
   bar.hidden = true;
-  var count = el('span');
+  var done = el('button', 'ib');
+  done.innerHTML = SEL_ICONS.close;
+  setTip(done, tr('app.done'));
+  done.setAttribute('aria-label', tr('app.done'));
+  done.onclick = function () { pp.picking = false; clearPersonPicks(); updatePersonPick(); };
+  bar.appendChild(done);
+  var count = el('span', 'sel-count');
   count.id = 'pp-count';
+  count.setAttribute('aria-live', 'polite');
   bar.appendChild(count);
   var p = pp.person;
-  var button = function (label, cls, run) {
-    var b = el('button', 'btn ' + (cls || ''), label);
-    b.className += ' pp-act';
-    b.onclick = function () {
-      var faces = Object.keys(pp.picked).map(function (k) { return pp.picked[k]; });
-      run(faces, faces.map(function (x) { return x.id; }).filter(function (x) { return x != null; }));
-    };
-    bar.appendChild(b);
-  };
-  var all = el('button', 'btn quiet', tr('person.all'));
+  var all = el('button', 'sel-all', tr('sel.all'));
+  all.id = 'pp-all';
   all.onclick = function () {
+    var on = Object.keys(pp.picked).length < pp.faces.filter(faceKey).length;
     pp.faces.forEach(function (face) {
       var k = faceKey(face);
       if (!k) return;
-      pp.picked[k] = face;
+      if (on) pp.picked[k] = face; else delete pp.picked[k];
       var card = document.querySelector('#pp-grid .face[data-key="' + k + '"]');
-      if (card) card.classList.add('sel');
+      if (card) card.classList.toggle('sel', on);
     });
     updatePersonPick();
   };
   bar.appendChild(all);
+  var sep = el('span', 'sep break');
+  sep.setAttribute('aria-hidden', 'true');
+  bar.appendChild(sep);
+  var chosen = function (run) {
+    return function () {
+      var faces = Object.keys(pp.picked).map(function (k) { return pp.picked[k]; });
+      run(faces, faces.map(function (x) { return x.id; }).filter(function (x) { return x != null; }));
+    };
+  };
+  var iconTool = function (svg, label, cls, run) {
+    var b = el('button', 'ib pp-act' + (cls ? ' ' + cls : ''));
+    b.innerHTML = svg;
+    setTip(b, label);
+    b.setAttribute('aria-label', label);
+    b.onclick = chosen(run);
+    bar.appendChild(b);
+  };
+  var button = function (label, cls, run) {
+    var b = el('button', 'btn pp-act ' + (cls || ''), label);
+    b.onclick = chosen(run);
+    bar.appendChild(b);
+  };
   if (tab === 'suggested' || tab === 'maybe') {
-    button(tr('person.confirm'), '', function (faces, ids) { personAction('confirm', ids); });
+    iconTool(SEL_ICONS.check, tr('person.confirm'), 'ok', function (faces, ids) { personAction('confirm', ids); });
     button(tr('person.not', { name: p.name }), 'quiet', function (faces, ids) { personAction('reject', ids); });
   } else if (tab === 'rejected') {
-    button(tr('person.undo'), '', function (faces, ids) { personAction('unreject', ids); });
+    iconTool(SEL_ICONS.undo, tr('person.undo'), '', function (faces, ids) { personAction('unreject', ids); });
   } else {
     button(tr('person.not', { name: p.name }), 'quiet', function (faces, ids) { personAction('reject', ids); });
     button(tr('person.name_btn'), '', function (faces) { nameFacesDialog(faces, personRefresh); });
+    // Someone the user does not want to keep: ignored, so not asked about again.
+    button(tr('unnamed.ignore'), 'quiet', function (faces, ids) { personAction('ignore', ids); });
     button(tr(p.species ? 'pet.not_a.pet' : 'facecheck.not_face'), 'quiet', function (faces, ids) { personAction('not-face', ids); });
   }
-  var done = el('button', 'btn quiet', tr('app.done'));
-  done.onclick = function () { pp.picking = false; clearPersonPicks(); updatePersonPick(); };
-  bar.appendChild(done);
   return bar;
 }
 
@@ -6242,8 +7039,15 @@ function updatePersonPick() {
   var n = Object.keys(pp.picked).length;
   bar.hidden = !pp.picking;
   $('pp-pick').classList.toggle('active', pp.picking);
-  $('pp-count').textContent = n ? trn('count.faces', n) : tr('facecheck.tap');
-  Array.prototype.forEach.call(bar.querySelectorAll('.pp-act'), function (b) { b.disabled = !n; });
+  $('pp-count').textContent = n ? trn('count.faces', n) : tr(window.matchMedia('(pointer: fine)').matches ? 'person.hint_mouse' : 'facecheck.tap');
+  $('pp-count').classList.toggle('hint', !n);
+  var total = pp.faces.filter(faceKey).length;
+  $('pp-all').textContent = tr(total && n >= total ? 'sel.none' : 'sel.all');
+  $('pp-all').disabled = !total;
+  Array.prototype.forEach.call(bar.querySelectorAll('.pp-act'), function (b) {
+    // The icon tools are dimmed, not disabled, like the timeline's.
+    if (b.classList.contains('ib')) b.setAttribute('aria-disabled', n ? 'false' : 'true'); else b.disabled = !n;
+  });
 }
 
 // Name several faces at once (detected or drawn ones): everyone listed, or
@@ -6256,7 +7060,13 @@ function nameFacesDialog(faces, done) {
   var question = !kind ? (faces.length === 1 ? tr('person.who_one') : tr('person.who_many', { n: faces.length }))
     : kind === 'cat' ? tr('person.who_cat') : kind === 'dog' ? tr('person.who_dog') : tr('person.who_pet');
   body.appendChild(el('p', '', question));
+  // One request at a time (the dialog stays open until the reply).
+  var saving = false, buttons = [];
   var save = function (who) {
+    if (saving) return;
+    saving = true;
+    buttons.forEach(function (b) { b.disabled = true; });
+    field.input.disabled = true;
     var ids = faces.map(function (x) { return x.id; }).filter(function (x) { return x != null; });
     var drawn = faces.filter(function (x) { return x.id == null && x.manual != null; });
     var req = ids.length ? post(LIBAPI + '/faces/assign', Object.assign({ faces: ids }, who)) : Promise.resolve({ faces: 0 });
@@ -6276,7 +7086,7 @@ function nameFacesDialog(faces, done) {
   };
   var field = personField(function (who) { save(who); }, { allowNew: true, placeholder: tr('people.name_placeholder'), species: facesSpecies(faces) });
   body.appendChild(field);
-  openModal(tr('person.name'), body, [{ label: tr('app.cancel'), cls: 'quiet' }, {
+  buttons = openModal(tr('person.name'), body, [{ label: tr('app.cancel'), cls: 'quiet' }, {
     label: tr('person.name'), onclick: function () {
       var who = field.value();
       if (!who) return false;
@@ -6309,7 +7119,7 @@ function faceSizeControl(page) {
   var size = faceSize();
   page.style.setProperty('--face-size', size + 'px');
   var label = el('label', 'face-size');
-  label.title = tr('unnamed.size');
+  setTip(label, tr('unnamed.size'));
   label.appendChild(el('span', 'dot s'));
   var input = el('input');
   input.type = 'range';
@@ -6332,7 +7142,8 @@ function faceSizeControl(page) {
 
 function loadUnnamed() {
   var page = $('page');
-  page.textContent = '';
+  clearNode(page);
+  page.appendChild(regroupElements());
   page.appendChild(el('h2', '', tr('people.unnamed')));
   var sub = el('p', 'sub', tr('dups.looking'));
   sub.id = 'un-sub';
@@ -6366,7 +7177,121 @@ function loadUnnamed() {
   un.box = box;
   un.more = more;
   un.singles = singles;
+  regroup.said = '';
+  drawRegroup();
   return Promise.all([moreClusters(box, more), singles.load()]);
+}
+
+// When the next regrouping brings new suggestions (the server's rules,
+// `/api/info` `clusters`: `pending`, `cards_left`, `wait_ms` and `pause_ms`
+// while decisions wait; `stale` or `running` with `done` of `total` while it
+// runs). A line at the top right of the Unnamed page, level with the title,
+// that stays at the top in a box while the cards scroll. Its circle empties
+// over the pause and fills again with each decision; while the regrouping runs
+// it fills with the progress. The seconds are counted down here from
+// `wait_ms`; the server tells of every change (`facesStream`). Screen readers
+// hear the line only when the number of cards changes and when the regrouping
+// starts and ends (`#un-live`), not every second.
+var regroup = { c: null, at: 0, timer: null, said: '', floatOn: false };
+
+function regroupElements() {
+  var frag = document.createDocumentFragment();
+  var line = el('div', 'regroup');
+  line.id = 'un-next';
+  line.hidden = true;
+  var tick = el('span', 'tick');
+  tick.setAttribute('aria-hidden', 'true');
+  line.appendChild(tick);
+  line.appendChild(el('span', 'text'));
+  frag.appendChild(line);
+  var live = el('span', 'sr-only');
+  live.id = 'un-live';
+  live.setAttribute('aria-live', 'polite');
+  frag.appendChild(live);
+  if (!regroup.floatOn) {
+    regroup.floatOn = true;
+    $('scroller').addEventListener('scroll', regroupFloat, { passive: true });
+  }
+  return frag;
+}
+
+// In a box once the page has scrolled under it.
+function regroupFloat() {
+  var line = $('un-next');
+  if (line) line.classList.toggle('floating', $('scroller').scrollTop > 8);
+}
+
+function regroupLine(info) {
+  regroup.c = info.clusters;
+  regroup.at = Date.now();
+  drawRegroup();
+}
+
+function reducedMotion() {
+  return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+
+// The circle at `deg`, reached in `ms` (0: at once, also when it fills up
+// again after a decision).
+function setTick(tick, deg, ms) {
+  tick.style.transitionDuration = ms + 'ms';
+  if (!ms) tick.classList.add('jump');
+  tick.style.setProperty('--regroup-deg', deg.toFixed(1) + 'deg');
+  if (!ms) {
+    void tick.offsetWidth;
+    tick.classList.remove('jump');
+  }
+}
+
+function drawRegroup() {
+  clearTimeout(regroup.timer);
+  regroup.timer = null;
+  var line = $('un-next'), live = $('un-live');
+  if (!line || state.filter.view !== 'unnamed') return;
+  var c = regroup.c;
+  var mode = !c ? null : c.running || c.stale ? 'running' : c.pending ? 'waiting' : null;
+  var tick = line.firstChild, text = line.lastChild, say = regroup.said;
+  line.hidden = !mode;
+  if (mode === 'running') {
+    var part = c.running && c.total ? Math.min(1, c.done / c.total) : 0;
+    setTick(tick, 360 * part, line.dataset.mode === 'running' && !reducedMotion() ? 1000 : 0);
+    text.textContent = tr('unnamed.regrouping');
+    say = tr('unnamed.regrouping');
+  } else if (mode === 'waiting') {
+    var left = Math.max(0, c.wait_ms - (Date.now() - regroup.at));
+    var pause = Math.max(c.pause_ms || 0, left, 1);
+    var secs = Math.ceil(left / 1000);
+    text.textContent = c.cards_left > 0 ? trn('unnamed.next', c.cards_left, { s: secs }) : tr('unnamed.next_soon', { s: secs });
+    // Smoothly to where it will be at the next second (with reduced motion
+    // it steps once a second); filled up again at once.
+    var next = left % 1000 || 1000;
+    var smooth = !reducedMotion() && left > 0;
+    var deg = 360 * Math.max(0, left - (smooth ? next : 0)) / pause;
+    var before = parseFloat(tick.style.getPropertyValue('--regroup-deg')) || 0;
+    var refill = line.dataset.mode !== 'waiting' || 360 * left / pause > before + 1;
+    if (refill && smooth) setTick(tick, 360 * left / pause, 0);
+    setTick(tick, deg, smooth ? next : 0);
+    if (refill && !smooth) setTick(tick, deg, 0);
+    say = c.cards_left > 0 ? trn('unnamed.next_cards', c.cards_left) : '';
+    if (left > 0) regroup.timer = setTimeout(drawRegroup, next);
+  } else if (line.dataset.mode === 'running') {
+    say = tr('unnamed.regrouped_done');
+  }
+  line.dataset.mode = mode || '';
+  if (live && say !== regroup.said) {
+    regroup.said = say;
+    live.textContent = say;
+  }
+}
+
+// Leaving the Unnamed page: decisions that wait are regrouped soon (the
+// server decides; nothing if none wait).
+function leftUnnamed() {
+  clearTimeout(regroup.timer);
+  regroup.timer = null;
+  var c = people.info && people.info.clusters;
+  if (!c || !c.pending) return;
+  post(LIBAPI + '/clusters/left').then(loadInfo).catch(function () {});
 }
 
 // Bring the Unnamed page up to date in place: the cards and single faces shown
@@ -6417,7 +7342,19 @@ var SINGLES_PAGE = 60;
 
 function singlesSection() {
   var st = { faces: [], picked: {}, anchor: null, shown: 0, total: 0, count: 0, tiles: {} };
-  var section = el('section', 'singles');
+  var section = el('section', 'singles has-drag');
+  section.dragSite = function () {
+    return {
+      sel: '.cface',
+      itemOf: function (tile) { return tile.face; },
+      get: function (x) { return !!st.picked[x.id]; },
+      set: function (x, on) {
+        if (on) st.picked[x.id] = true; else delete st.picked[x.id];
+        if (st.tiles[x.id]) st.tiles[x.id].classList.toggle('sel', on);
+      },
+      done: function (x) { if (x) st.anchor = x.id; update(); },
+    };
+  };
   section.hidden = true;
   var head = el('h3');
   var hint = el('p', 'sub', tr('unnamed.singles_hint'));
@@ -6435,12 +7372,13 @@ function singlesSection() {
   bar.appendChild(count);
   var field = personField(function () { name(); }, { allowNew: true, placeholder: tr('unnamed.who'), species: function () { return facesSpecies(picked()); } });
   bar.appendChild(field);
-  var nameBtn = el('button', 'btn', tr('person.name'));
-  var ignore = el('button', 'btn quiet', tr('unnamed.ignore'));
-  ignore.title = tr('unnamed.ignore_hint');
-  var notFace = el('button', 'btn quiet', tr('facecheck.not_face'));
-  var change = el('button', 'btn quiet');
-  var done = el('button', 'btn quiet', tr('unnamed.clear'));
+  var nameBtn = actionButton(NAME_ICON, 'name');
+  nameBtn.classList.add('primary');
+  var ignore = actionButton(IGNORE_ICON, 'ignore');
+  var notFace = actionButton(NOT_FACE_ICON, 'not-face');
+  var change = actionButton(CAT_ICON, 'change');
+  var done = actionButton(lineIcon('<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>'), 'clear');
+  setAction(done, tr('unnamed.clear'), tr('unnamed.select_done_hint'));
   [nameBtn, ignore, notFace, change, done].forEach(function (b) { bar.appendChild(b); });
 
   var picked = function () { return st.faces.filter(function (f) { return st.picked[f.id]; }); };
@@ -6450,22 +7388,26 @@ function singlesSection() {
     head.textContent = tr('unnamed.singles', { count: trn('count.faces', st.count) });
     section.hidden = !st.faces.length && st.shown >= st.total;
     count.textContent = trn('count.faces', n);
-    notFace.textContent = tr(pets ? 'pet.not_a.pet' : 'facecheck.not_face');
-    notFace.title = tr(pets ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint');
     bar.hidden = !n;
-    nameBtn.disabled = ignore.disabled = notFace.disabled = !n;
+    setAction(nameBtn, tr('unnamed.name_n', { n: n }), tr('unnamed.name_selected_hint'));
+    setAction(ignore, tr('unnamed.ignore_n', { n: n }), tr('unnamed.ignore_hint'));
+    notFace.innerHTML = pets ? NOT_PET_ICON : NOT_FACE_ICON;
+    setAction(notFace, tr(pets ? 'unnamed.notface_n_pet' : 'unnamed.notface_n', { n: n }), tr(pets ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint'));
     var to = otherSpecies(chosen);
     change.hidden = !to;
-    if (to) change.textContent = makeSpeciesLabel(to);
+    if (to) {
+      change.innerHTML = to === 'cat' ? CAT_ICON : DOG_ICON;
+      setAction(change, makeSpeciesLabel(to), '');
+    }
     more.hidden = st.shown >= st.total;
   };
   var tile = function (face) {
     var t = el('a', 'cface' + (st.picked[face.id] ? ' sel' : '') + (face.small ? ' small' : ''));
     t.href = '#';
-    t.title = tr('facecheck.select');
+    setTip(t, tr('facecheck.select'));
     t.appendChild(faceImg(face, 'big'));
     var open = el('span', 'copen', '↗');
-    open.title = tr('facecheck.open_photo');
+    setTip(open, tr('facecheck.open_photo'));
     open.onclick = function (ev) { ev.preventDefault(); ev.stopPropagation(); openFacePhoto(face, st.faces); };
     t.appendChild(open);
     // Keyboard: Tab between thumbnails (or ←/→), Enter selects (the click
@@ -6496,6 +7438,7 @@ function singlesSection() {
       }
       update();
     };
+    t.face = face;
     st.tiles[face.id] = t;
     return t;
   };
@@ -6539,7 +7482,7 @@ function singlesSection() {
       st.count -= ids.length;
       field.input.value = '';
       update();
-      peopleChanged();
+      peopleChanged(r, true);
     }).catch(function (e) {
       bar.classList.remove('busy');
       if (e.status === 409) toast(tr('unnamed.regrouped')); else failed(e);
@@ -6561,15 +7504,15 @@ function singlesSection() {
     if (!who) { field.input.focus(); return; }
     act('assign', who);
   };
-  nameBtn.onclick = name;
-  ignore.onclick = function () { act('ignore'); };
-  notFace.onclick = function () { act('not-face'); };
-  done.onclick = function () {
+  onAction(nameBtn, name);
+  onAction(ignore, function () { act('ignore'); });
+  onAction(notFace, function () { act('not-face'); });
+  onAction(done, function () {
     Object.keys(st.picked).forEach(function (id) { if (st.tiles[id]) st.tiles[id].classList.remove('sel'); });
     st.picked = {};
     st.anchor = null;
     update();
-  };
+  });
   // The faces as the server lists them now (`refreshUnnamed`): tiles of faces
   // that are gone leave (and their ticks), new ones come in, the others stay.
   var sync = function (r) {
@@ -6618,7 +7561,20 @@ function moreClusters(box, more) {
 }
 
 function clusterCard(c) {
-  var card = el('div', 'cluster');
+  var card = el('div', 'cluster has-drag');
+  card.dragSite = function () {
+    if (!card.picking) return null;
+    return {
+      sel: '.cface',
+      itemOf: function (tile) { return tile.face; },
+      get: function (x) { return !!card.picked[x.id]; },
+      set: function (x, on) {
+        if (on) card.picked[x.id] = true; else delete card.picked[x.id];
+        if (tiles[x.id]) tiles[x.id].classList.toggle('sel', on);
+      },
+      done: function (x) { if (x) card.anchor = x.id; update(); },
+    };
+  };
   card.cluster = c;
   card.picked = {};
   card.picking = false;
@@ -6628,7 +7584,7 @@ function clusterCard(c) {
   // Open a card (all faces, or Select) and it takes the whole width; this
   // button stays at the top of the screen while the faces scroll by.
   var close = el('button', 'btn small cclose', tr('unnamed.close'));
-  close.title = tr('unnamed.close_hint');
+  setTip(close, tr('unnamed.close_hint'));
   close.hidden = true;
   head.appendChild(close);
   card.appendChild(head);
@@ -6636,20 +7592,22 @@ function clusterCard(c) {
   card.appendChild(grid);
   var faces = c.faces.slice();
   var expanded = false;
-  var renderFaces = function () {
-    grid.textContent = '';
-    faces.forEach(function (face) {
-      var f = el('a', 'cface' + (card.picked[face.id] ? ' sel' : '') + (face.small ? ' small' : ''));
+  // Face id → its tile, kept while the face is in the card: drawn again (a
+  // refresh, Select) the card reuses them, with their pictures.
+  var tiles = {};
+  var tile = function (face) {
+    var f = tiles[face.id];
+    if (!f) {
+      f = tiles[face.id] = el('a');
       f.href = '#';
-      f.title = tr(card.picking ? 'facecheck.select' : 'facecheck.open_photo');
       f.appendChild(faceImg(face, 'big'));
       f.onclick = function (ev) {
         ev.preventDefault();
+        var face = f.face;
         if (card.picking) {
           var span = ev.shiftKey && pickSpan(faces, function (x) { return x.id; }, card.anchor, face.id);
           if (span) {
-            span.forEach(function (x) { card.picked[x.id] = true; });
-            renderFaces();
+            span.forEach(function (x) { card.picked[x.id] = true; if (tiles[x.id]) tiles[x.id].classList.add('sel'); });
           } else {
             if (card.picked[face.id]) delete card.picked[face.id]; else card.picked[face.id] = true;
             f.classList.toggle('sel', !!card.picked[face.id]);
@@ -6674,11 +7632,22 @@ function clusterCard(c) {
           if (next && next.classList.contains('cface')) { ev.preventDefault(); next.focus(); }
         }
       };
-      grid.appendChild(f);
-    });
+    }
+    f.face = face;
+    f.className = 'cface' + (card.picked[face.id] ? ' sel' : '') + (face.small ? ' small' : '');
+    setTip(f, tr(card.picking ? 'facecheck.select' : 'facecheck.open_photo'));
+    return f;
+  };
+  // All faces of a big group can be thousands: `growGrid` puts them on the
+  // page as they are scrolled to.
+  var renderFaces = function () {
+    var now = {};
+    faces.forEach(function (face) { now[face.id] = true; });
+    Object.keys(tiles).forEach(function (id) { if (!now[id]) delete tiles[id]; });
+    var all = null;
     if (c.size > faces.length) {
-      var all = el('button', 'cmore', '+' + I18n.number(c.size - faces.length));
-      all.title = tr('unnamed.show_all', { n: c.size });
+      all = el('button', 'cmore', '+' + I18n.number(c.size - faces.length));
+      setTip(all, tr('unnamed.show_all', { n: c.size }));
       all.onclick = function () {
         api(LIBAPI + '/clusters/' + c.id + '/faces' + query({ generation: c.generation })).then(function (list) {
           faces = list;
@@ -6687,8 +7656,8 @@ function clusterCard(c) {
           update();
         }).catch(function (e) { stale(e); });
       };
-      grid.appendChild(all);
     }
+    growGrid(grid, faces, tile, all);
   };
   var suggestion = el('div', 'csugg');
   card.appendChild(suggestion);
@@ -6697,24 +7666,22 @@ function clusterCard(c) {
   var row = el('div', 'crow cbar');
   var field = personField(function (who) { act('name', who); }, { allowNew: true, placeholder: tr('unnamed.who'), species: facesSpecies(c.faces) });
   row.appendChild(field);
-  var nameBtn = el('button', 'btn', tr('person.name'));
-  nameBtn.onclick = function () {
+  var nameBtn = actionButton(NAME_ICON, 'name');
+  nameBtn.classList.add('primary');
+  onAction(nameBtn, function () {
     var who = field.value();
     if (!who) { field.input.focus(); return; }
     act('name', who);
-  };
+  });
   row.appendChild(nameBtn);
   var tools = row;
-  var ignore = el('button', 'btn quiet', tr('unnamed.ignore'));
-  ignore.title = tr('unnamed.ignore_hint');
-  ignore.onclick = function () { act('ignore', {}); };
+  var ignore = actionButton(IGNORE_ICON, 'ignore');
+  onAction(ignore, function () { act('ignore', {}); });
   // A card of pets says "not a pet": the finds that are no pet at all.
   var petCard = c.faces.length > 0 && c.faces.every(function (f) { return f.species; });
-  var notFace = el('button', 'btn quiet', tr(petCard ? 'pet.not_a.pet' : 'facecheck.not_face'));
-  notFace.title = tr(petCard ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint');
-  notFace.onclick = function () { act('not-face', {}); };
-  var pick = el('button', 'btn quiet', tr('facecheck.select'));
-  pick.title = tr('unnamed.select_hint');
+  var notFace = actionButton(petCard ? NOT_PET_ICON : NOT_FACE_ICON, 'not-face');
+  onAction(notFace, function () { act('not-face', {}); });
+  var pick = actionButton(SELECT_ICON, 'pick');
   // Select needs all the faces to choose from.
   var loadAll = function () {
     if (faces.length >= c.size) return Promise.resolve();
@@ -6722,7 +7689,7 @@ function clusterCard(c) {
       faces = list;
     });
   };
-  pick.onclick = function () {
+  onAction(pick, function () {
     card.picking = !card.picking;
     if (!card.picking) { card.picked = {}; card.anchor = null; }
     else expanded = true;
@@ -6730,7 +7697,7 @@ function clusterCard(c) {
       renderFaces();
       update();
     }).catch(function (e) { stale(e); });
-  };
+  });
   close.onclick = function () {
     card.picking = false;
     card.picked = {};
@@ -6740,8 +7707,8 @@ function clusterCard(c) {
     update();
     card.scrollIntoView({ block: 'nearest' });
   };
-  var change = el('button', 'btn quiet');
-  change.onclick = function () {
+  var change = actionButton(CAT_ICON, 'change');
+  onAction(change, function () {
     var chosen = faces.filter(function (f) { return card.picked[f.id]; }), to = otherSpecies(chosen);
     if (!to) return;
     card.classList.add('busy');
@@ -6750,7 +7717,7 @@ function clusterCard(c) {
       peopleChanged();
       loadUnnamed();
     }).catch(function (e) { card.classList.remove('busy'); stale(e); });
-  };
+  });
   tools.appendChild(ignore);
   tools.appendChild(notFace);
   tools.appendChild(change);
@@ -6761,21 +7728,29 @@ function clusterCard(c) {
   var update = function () {
     var n = picked().length;
     var pets = c.faces.length > 0 && c.faces.every(function (f) { return f.species; });
-    count.textContent = trn(pets ? 'count.pets' : 'count.faces', c.size) + (card.picking ? ' · ' + (n ? tr('unnamed.selected', { n: n }) : tr('unnamed.tap')) : '');
+    count.textContent = trn(pets ? 'count.pets' : 'count.faces', c.size);
+    if (card.picking) {
+      count.appendChild(document.createTextNode(' · '));
+      if (n) count.appendChild(el('b', '', tr('unnamed.selected', { n: n })));
+      else count.appendChild(document.createTextNode(tr('unnamed.tap')));
+    }
     pick.classList.toggle('active', card.picking);
-    pick.textContent = tr(card.picking ? 'unnamed.select_done' : 'facecheck.select');
-    pick.title = tr(card.picking ? 'unnamed.select_done_hint' : 'unnamed.select_hint');
+    setAction(pick, tr(card.picking ? 'unnamed.select_done' : 'facecheck.select'), tr(card.picking ? 'unnamed.select_done_hint' : 'unnamed.select_hint'));
     card.classList.toggle('picking', card.picking);
     card.classList.toggle('open', expanded || card.picking);
     close.hidden = !(expanded || card.picking);
     var some = card.picking && n;
-    nameBtn.textContent = some ? tr('unnamed.name_n', { n: n }) : tr('person.name');
-    ignore.textContent = some ? tr('unnamed.ignore_n', { n: n }) : tr('unnamed.ignore');
-    notFace.textContent = some ? tr(petCard ? 'unnamed.notface_n_pet' : 'unnamed.notface_n', { n: n }) : tr(petCard ? 'pet.not_a.pet' : 'facecheck.not_face');
-    nameBtn.disabled = ignore.disabled = notFace.disabled = card.picking && !n;
+    var off = card.picking && !n;
+    setAction(nameBtn, some ? tr('unnamed.name_n', { n: n }) : tr('person.name'), tr(some ? 'unnamed.name_selected_hint' : 'unnamed.name_hint'), off);
+    setAction(ignore, some ? tr('unnamed.ignore_n', { n: n }) : tr('unnamed.ignore'), tr('unnamed.ignore_hint'), off);
+    setAction(notFace, some ? tr(petCard ? 'unnamed.notface_n_pet' : 'unnamed.notface_n', { n: n }) : tr(petCard ? 'pet.not_a.pet' : 'facecheck.not_face'),
+      tr(petCard ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint'), off);
     var to = card.picking ? otherSpecies(faces.filter(function (f) { return card.picked[f.id]; })) : '';
     change.hidden = !to;
-    if (to) change.textContent = makeSpeciesLabel(to);
+    if (to) {
+      change.innerHTML = to === 'cat' ? CAT_ICON : DOG_ICON;
+      setAction(change, makeSpeciesLabel(to), '');
+    }
     suggestion.textContent = '';
     if (c.suggestion && !card.picking) {
       var s = c.suggestion;
@@ -6783,13 +7758,13 @@ function clusterCard(c) {
       suggestion.appendChild(el('b', '', s.person.name));
       suggestion.appendChild(el('span', '', ' ' + tr('unnamed.of', { faces: s.faces, size: c.size }) + ' '));
       var yes = el('button', 'btn small', '✓ ' + s.person.name);
-      yes.title = tr('unnamed.name_all', { size: c.size, name: s.person.name });
+      setTip(yes, tr('unnamed.name_all', { size: c.size, name: s.person.name }));
       yes.onclick = function () { act('name', { person_id: s.person.id }); };
       suggestion.appendChild(yes);
       if (s.faces < c.size) {
         // Only the faces that really look like them; the rest stays.
         var only = el('button', 'btn small', tr('unnamed.only', { n: s.faces }));
-        only.title = tr('unnamed.only_hint', { n: s.faces, name: s.person.name, rest: c.size - s.faces });
+        setTip(only, tr('unnamed.only_hint', { n: s.faces, name: s.person.name, rest: c.size - s.faces }));
         only.onclick = function () {
           loadAll().then(function () {
             var ids = faces.filter(function (x) { return x.state === 'suggested' && x.person && x.person.id === s.person.id; })
@@ -6860,7 +7835,7 @@ function clusterCard(c) {
         update();
       }
       unnamedSummary();
-      peopleChanged();
+      peopleChanged(r, true);
     }).catch(function (e) { card.classList.remove('busy'); stale(e); });
   };
   renderFaces();
@@ -6909,8 +7884,8 @@ function infoFaces(row, info) {
     add.onclick = startDrawing;
     if (lb.details.view_turn) {
       add.disabled = true;
-      add.title = tr('info.add_face_turned');
-      add.setAttribute('aria-label', add.title);
+      setTip(add, tr('info.add_face_turned'));
+      add.setAttribute('aria-label', add.getAttribute('data-tip'));
     }
     tools.appendChild(add);
   }
@@ -6935,12 +7910,12 @@ function infoPickBar(info, pickable, pick) {
   }
   bar.appendChild(head);
   var row = el('div', 'pickacts');
-  var ignore = el('button', 'btn quiet', n ? tr('unnamed.ignore_n', { n: n }) : tr('unnamed.ignore'));
-  ignore.title = tr('unnamed.ignore_hint');
-  var notFace = el('button', 'btn quiet', n ? tr(pets ? 'unnamed.notface_n_pet' : 'unnamed.notface_n', { n: n }) : tr('facecheck.not_face'));
-  notFace.title = tr(pets ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint');
+  var ignore = actionButton(IGNORE_ICON, 'ignore');
+  setAction(ignore, n ? tr('unnamed.ignore_n', { n: n }) : tr('unnamed.ignore'), tr('unnamed.ignore_hint'), !n);
+  var notFace = actionButton(pets ? NOT_PET_ICON : NOT_FACE_ICON, 'not-face');
+  setAction(notFace, n ? tr(pets ? 'unnamed.notface_n_pet' : 'unnamed.notface_n', { n: n }) : tr('facecheck.not_face'),
+    tr(pets ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint'), !n);
   var cancel = el('button', 'btn quiet', tr('app.cancel'));
-  ignore.disabled = notFace.disabled = !n;
   var act = function (action) {
     var ids = chosen.map(function (f) { return f.id; });
     bar.classList.add('busy');
@@ -6952,21 +7927,22 @@ function infoPickBar(info, pickable, pick) {
       infoFacesChanged(info.id);
     }).catch(function (e) { bar.classList.remove('busy'); failed(e); });
   };
-  ignore.onclick = function () { act('ignore'); };
-  notFace.onclick = function () { act('not-face'); };
+  onAction(ignore, function () { act('ignore'); });
+  onAction(notFace, function () { act('not-face'); });
   cancel.onclick = function () { pick.on = false; pick.ids = {}; renderPanel(); };
   [ignore, notFace].forEach(function (b) { row.appendChild(b); });
   var to = otherSpecies(chosen);
   if (to) {
-    var change = el('button', 'btn quiet', makeSpeciesLabel(to));
-    change.onclick = function () {
+    var change = actionButton(to === 'cat' ? CAT_ICON : DOG_ICON, 'change');
+    setAction(change, makeSpeciesLabel(to), '');
+    onAction(change, function () {
       bar.classList.add('busy');
       setSpecies(chosen.map(function (f) { return f.id; }), to).then(function () {
         pick.on = false;
         pick.ids = {};
         infoFacesChanged(info.id);
       }).catch(function (e) { bar.classList.remove('busy'); failed(e); });
-    };
+    });
     row.appendChild(change);
   }
   row.appendChild(cancel);
@@ -6999,7 +7975,7 @@ function infoFace(info, f, k, pick) {
   // A named person shows their picture (no crop of the face is kept); the
   // box on the photo shows which face it is.
   var pic = f.state === 'confirmed' && f.person ? avatar(people.byId[f.person.id] || { name: f.person.name }, 'small') : faceImg(f, 'small');
-  pic.title = tr('info.show_where');
+  setTip(pic, tr('info.show_where'));
   pic.onclick = function () { lb.hover = lb.hover === k ? null : k; drawFaces(); };
   line.appendChild(pic);
   line.addEventListener('mouseenter', function () { lb.hover = k; drawFaces(); });
@@ -7011,19 +7987,19 @@ function infoFace(info, f, k, pick) {
   var ids = f.id != null ? [f.id] : [];
   if (f.state === 'confirmed') {
     var name = el('button', 'pname', f.person.name);
-    name.title = tr('info.photos_of', { name: f.person.name });
+    setTip(name, tr('info.photos_of', { name: f.person.name }));
     name.onclick = function () { showPerson(f.person.id); };
     who.appendChild(name);
     if (f.kept) who.appendChild(el('span', 'note', ' ' + tr('info.face_kept')));
   } else if (f.state === 'suggested' || f.state === 'maybe') {
     who.appendChild(el('span', 'guess', tr(f.state === 'maybe' ? 'info.guess_maybe' : 'info.guess', { name: f.person.name })));
     var yes = el('button', 'yes', '✓');
-    yes.title = tr('person.it_is', { name: f.person.name });
-    yes.setAttribute('aria-label', yes.title);
+    setTip(yes, tr('person.it_is', { name: f.person.name }));
+    yes.setAttribute('aria-label', yes.getAttribute('data-tip'));
     yes.onclick = function () { send('confirm', { faces: ids }); };
     var no = el('button', 'no', '✗');
-    no.title = tr('person.not', { name: f.person.name });
-    no.setAttribute('aria-label', no.title);
+    setTip(no, tr('person.not', { name: f.person.name }));
+    no.setAttribute('aria-label', no.getAttribute('data-tip'));
     no.onclick = function () { send('reject', { faces: ids, person_id: f.person.id }); };
     who.appendChild(yes);
     who.appendChild(no);
@@ -7041,7 +8017,7 @@ function infoFace(info, f, k, pick) {
     };
     who.appendChild(add);
   }
-  if (f.species) who.appendChild(el('span', 'note', ' ' + petIcon(f.species) + ' ' + speciesName(f.species)));
+  if (f.species) who.appendChild(petLabel('span', 'note', f.species, speciesName(f.species)));
   if (f.small) who.appendChild(el('span', 'note', ' ' + tr('facecheck.tag_small')));
   if (f.kept) return line;
   line.appendChild(menuButton(function () {
@@ -7055,7 +8031,7 @@ function infoFace(info, f, k, pick) {
       items.push({ label: tr('person.not', { name: f.person.name }), run: function () { send('reject', { faces: ids, person_id: f.person.id }); } });
       items.push({ label: tr('person.name_else'), run: function () { nameFacesDialog([f], changed); } });
       items.push({ label: tr('menu.use_as', { name: f.person.name }), run: function () {
-        post(LIBAPI + '/people/' + f.person.id + '/cover', { face: f.id }).then(function () { toast(tr('menu.picture_changed')); peopleChanged(); }).catch(failed);
+        post(LIBAPI + '/people/' + f.person.id + '/cover', { face: f.id }).then(function (r) { toast(tr('menu.picture_changed')); personUpdated(r); }).catch(failed);
       } });
     }
     if (f.state !== 'ignored') items.push({ label: tr(f.species ? 'info.ignore_stranger_pet' : 'info.ignore_stranger'), run: function () { send('ignore', { faces: ids }); } });
@@ -7077,6 +8053,7 @@ function infoFace(info, f, k, pick) {
 
 // After a change in the info panel: its faces again, and the people.
 function infoFacesChanged(id) {
+  lb.facesChanged = true;
   peopleChanged();
   if (!lb.details || lb.details.id !== id) return;
   api(LIBAPI + '/files/' + id).then(function (info) {
@@ -7196,11 +8173,9 @@ function nameDrawnFace(info, frac) {
     field.input.dispatchEvent(new Event('input'));
   };
   var video = info.kind === 'video';
-  [['', '🧑', 'draw.kind.person'], ['cat', PET_ICON.cat, 'draw.kind.cat'], ['dog', PET_ICON.dog, 'draw.kind.dog']].forEach(function (k) {
+  [['', 'person', 'draw.kind.person'], ['cat', 'cat', 'draw.kind.cat'], ['dog', 'dog', 'draw.kind.dog']].forEach(function (k) {
     var b = el('button');
-    var icon = el('span', '', k[1] + ' ');
-    icon.setAttribute('aria-hidden', 'true');
-    b.appendChild(icon);
+    b.appendChild(icon(k[1]));
     b.appendChild(document.createTextNode(tr(k[2])));
     b.type = 'button';
     b.setAttribute('role', 'radio');
@@ -7218,7 +8193,15 @@ function nameDrawnFace(info, frac) {
     update();
     next.focus();
   });
+  // One request at a time: the dialog stays open until the reply, so a second
+  // click, Enter or pick meanwhile would add the face again. (A failure opens
+  // the error dialog over this one, so nothing needs enabling again.)
+  var saving = false, buttons = [];
   var save = function (who) {
+    if (saving) return;
+    saving = true;
+    buttons.forEach(function (b) { b.disabled = true; });
+    field.input.disabled = true;
     post(LIBAPI + '/faces/manual', Object.assign({ file: info.id, box: frac, species: kind || undefined }, who)).then(function () {
       closeModal();
       stopDrawing();
@@ -7234,7 +8217,7 @@ function nameDrawnFace(info, frac) {
   field.input.setAttribute('aria-describedby', hint.id);
   body.appendChild(hint);
   update();
-  openModal(tr('draw.title'), body, [
+  buttons = openModal(tr('draw.title'), body, [
     video ? null : { label: tr('draw.again'), cls: 'quiet', onclick: function () { var r = lb.drawing && lb.drawing.layer.querySelector('.draw-box'); if (r) r.hidden = true; } },
     { label: tr('app.cancel'), cls: 'quiet', onclick: function () { stopDrawing(); } },
     { label: tr('draw.save'), onclick: function () { var who = field.value(); if (!who) return false; save(who); return false; } },
@@ -7281,7 +8264,7 @@ function renderDriveList() {
     var ab = el('button');
     ab.appendChild(el('span', 'dot'));
     ab.appendChild(el('span', 'name', tr('drives.all')));
-    ab.title = tr('drives.all_hint');
+    setTip(ab, tr('drives.all_hint'));
     ab.onclick = function () { if (!isAll()) switchLibrary('all', keepCompare()); };
     all.appendChild(ab);
     ul.appendChild(all);
@@ -7306,7 +8289,7 @@ function showOffline() {
   $('page').hidden = false;
   $('sizer').hidden = true;
   $('empty').hidden = true;
-  page.textContent = '';
+  clearNode(page);
   page.appendChild(el('h2', '', tr('drives.offline_title', { name: drives.current.name })));
   page.appendChild(el('p', 'sub', tr('drives.offline_text')));
   var overview = el('button', 'btn quiet', tr('drives.show_all'));
@@ -7361,7 +8344,7 @@ function footCell(label, t, hint) {
   var c = el('span', 'cell', label + ' ');
   if (!t) { c.appendChild(el('b', '', tr('time.never'))); return c; }
   c.appendChild(whenOf(t));
-  if (hint) { var i = el('i', 'info', 'i'); i.title = hint; c.appendChild(i); }
+  if (hint) { var i = el('i', 'info', 'i'); setTip(i, hint); c.appendChild(i); }
   return c;
 }
 
@@ -7469,7 +8452,6 @@ function transferDialog(list, to, preferred, file) {
         post('/api/all/transfer', req).then(function (r) {
           closeModal();
           toast(r.counts.photos ? tr('transfer.done', { photos: trn('count.photos', r.counts.photos) }) : tr('transfer.nothing_new', { to: label(to) }));
-          allPeople.at = 0;
           if (state.filter && state.filter.view === 'drives') loadDrivesPage();
           refreshDrives();
         }).catch(function (e) { btn.disabled = false; failed(e); });
@@ -7506,7 +8488,7 @@ function transferFilePicker(list, to, file) {
 
 function loadDrivesPage() {
   var page = $('page');
-  page.textContent = '';
+  clearNode(page);
   page.appendChild(el('h2', '', tr('side.manage_drives')));
   page.appendChild(el('p', 'sub', tr('drives.page_sub')));
   var cards = el('div', 'drive-cards'), tabs = el('div', 'tabs underline'), tabBox = el('div');
@@ -7542,7 +8524,7 @@ function loadDrivesPage() {
         top.appendChild(name);
         if (d.online) {
           var sel = el('select');
-          sel.title = tr('drives.role_hint');
+          setTip(sel, tr('drives.role_hint'));
           [['unknown', tr('drives.role.unknown')], ['separate', tr('drives.role.separate')], ['backup', tr('drives.role.backup')]].forEach(function (o) {
             var opt = el('option', '', o[1]); opt.value = o[0]; if (d.role === o[0]) opt.selected = true; sel.appendChild(opt);
           });
@@ -7554,7 +8536,7 @@ function loadDrivesPage() {
         // drive holds more than photos.
         if (d.volume) {
           var where = el('div', 'where');
-          where.appendChild(el('span', 'ico', '💾'));
+          where.appendChild(icon('drive', 'ico'));
           where.appendChild(el('b', '', d.volume));
           where.appendChild(el('span', '', ' · ' + d.folder));
           body.appendChild(where);
@@ -7629,7 +8611,7 @@ function loadDrivesPage() {
         var pills = el('div', 'pills');
         p.libraries.forEach(function (l) {
           var pill = el('span', 'pill drive', (l.volume || l.name) + ' · ' + l.faces);
-          if (l.volume) pill.title = tr('drives.person_folder', { name: l.name });
+          if (l.volume) setTip(pill, tr('drives.person_folder', { name: l.name }));
           pills.appendChild(pill);
         });
         c.appendChild(pills);
@@ -7647,6 +8629,7 @@ function loadDrivesPage() {
 // The common timeline came in: which drives its ids refer to, and what is left out.
 function allTimelineLoaded(data) {
   drives.allLibs = data.libs;
+  otherCopies = {};
   var note = $('all-note');
   if (!note) {
     note = el('div', 'note-bar');
@@ -7660,7 +8643,8 @@ function allTimelineLoaded(data) {
     return;
   }
   note.textContent = tr('drives.note', { libs: data.libs.map(function (l) { return l.name; }).join(', ') }) + (out.length ? tr('drives.note_out', { out: out.join(', ') }) : '');
-  $('status').textContent = tr('drives.status', { photos: trn('count.photos', data.count), drives: trn('count.drives', data.libs.length) });
+  $('status').textContent = tr('drives.status', { photos: trn('count.photos', data.count), drives: trn('count.drives', data.libs.length) })
+    + (data.hidden ? ' · ' + trn('count.hidden_copies', data.hidden) : '');
 }
 
 // "Show in Finder" for a file on one of the drives (named by drive and path).
@@ -7765,9 +8749,32 @@ function backupLists(lists, b) {
   return wrap;
 }
 
+// The drives and the status are no longer asked for on a timer: when the
+// person comes back to the page (tab, window) after at least 15 s they are
+// asked for once, which also notices a scan or a drive plugged in meanwhile.
+// Coming back to the page asks for the drives again only where they can have
+// changed something: with one drive there is no list and nothing to switch, and
+// the Unnamed page (naming faces, in and out of other windows) shows none of it.
+function driveRefreshNeeded() {
+  if (drives.list.length < 2 && drives.current && drives.current.online) return false;
+  return !(state.filter && state.filter.view === 'unnamed');
+}
+
+function watchPageReturn() {
+  var last = Date.now();
+  var check = function () {
+    if (document.hidden || Date.now() - last < 60000) return;
+    last = Date.now();
+    if (driveRefreshNeeded()) refreshDrives().catch(function () {});
+    if (!isAll() && drives.current && drives.current.online) loadInfo();
+  };
+  document.addEventListener('visibilitychange', check);
+  window.addEventListener('focus', check);
+}
+
 function refreshDrives() {
   return api('/api/libraries').then(function (libs) {
-    return api('/api/all/drives').catch(function () { return []; }).then(function (roles) {
+    return api('/api/all/drives').then(function (list) { drives.roles = list; return list; }, function () { drives.roles = null; return []; }).then(function (roles) {
       libs.forEach(function (l) { var r = roles.filter(function (x) { return x.library === l.id; })[0]; l.role = r ? r.role : 'unknown'; });
       drives.list = libs;
       drives.current = libs.filter(function (l) { return drives.current && l.id === drives.current.id; })[0] || chosenLibrary(libs);
@@ -7799,7 +8806,7 @@ I18n.ready.then(function () {
     return;
   }
   return refreshDrives().then(loadCompare).then(function () {
-    setInterval(refreshDrives, 10000);
+    watchPageReturn();
     if (drives.current.online) { loadEventPattern(); loadAllowTrash(); }
     if (!drives.current.online) {
       // Nothing of this library can be loaded: only the overview of the drives can be shown.
@@ -7819,7 +8826,6 @@ I18n.ready.then(function () {
     }
     return Promise.all([loadFolders(), loadInfo(), loadOwnTags(), loadPeople(), loadGeo()]).then(function () {
       applyFilter();
-      setInterval(loadInfo, 20000);
     });
   });
 }).catch(function (e) { console.error(e); }).then(function () {

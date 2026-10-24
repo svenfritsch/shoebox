@@ -32,7 +32,8 @@ var drives = [];
 var drivesLoaded = false;
 var runningKind = '';    // the kind of the command that runs
 var busy = false;        // a command is running
-var serving = false;     // the photo app is running: only recognition may still run
+var starting = false;    // the photo app was asked to start and is not up yet
+var serving = false;    // the photo app is running: only recognition may still run
 
 function tickedPaths() {
   return paths.filter(function (p) { return !off[p]; });
@@ -111,7 +112,7 @@ function isOffline(p) {
 function refreshStart() {
   var off = tickedPaths().filter(isOffline);
   var block = off.length > 0 && !serving;
-  $('start-app').disabled = block || (busy && BESIDE_APP.indexOf(runningKind) < 0);
+  $('start-app').disabled = starting || block || (busy && BESIDE_APP.indexOf(runningKind) < 0);
   $('app-offline').hidden = !block;
   $('app-offline').textContent = block ? tr('launcher.app.offline', { names: off.map(driveName).join(', ') }) : '';
 }
@@ -253,6 +254,11 @@ function renderAddons() {
   // Both ways: a button whose add-on was just installed can be pressed again.
   refreshActions();
 }
+
+// The folders are looked at again whenever the page comes back to the front
+// (add-ons installed or deleted in the file manager meanwhile).
+document.addEventListener('visibilitychange', function () { if (!document.hidden) loadAddons(); });
+window.addEventListener('focus', loadAddons);
 
 // The add-ons ticked that are not installed yet.
 function wantedAddons() {
@@ -1096,6 +1102,15 @@ function summaryOf(kind, r) {
   return out;
 }
 
+function setStarting(on) {
+  starting = on;
+  $('start-app').classList.toggle('starting', on);
+  $('start-app').textContent = tr(on ? 'launcher.app.starting_btn' : serving ? 'launcher.app.open' : 'launcher.app.start');
+  if (on) $('app-state').textContent = tr('launcher.app.starting');
+  else if (!serving && !$('app-state').classList.contains('error')) $('app-state').textContent = tr('launcher.app.idle');
+  refreshStart();
+}
+
 function appState() {
   return api('/api/app').then(function (s) {
     serving = !!s.running;
@@ -1120,8 +1135,11 @@ $('start-app').onclick = function () {
   if (serving) { window.open($('app-state').querySelector('a').href, '_blank', 'noopener'); return; }
   var roots = tickedPaths();
   if (!roots.length) { $('root').focus(); $('root-hint').textContent = tr('launcher.need_ticked'); return; }
-  // The server opens the browser itself when it starts the app.
-  api('/api/app', { roots: roots }).then(appState).catch(function (e) { $('app-state').textContent = e.message; $('app-state').classList.add('error'); });
+  // The server opens the browser itself when it starts the app. Until the
+  // stop button shows, the start button stays off and a spinner is shown.
+  setStarting(true);
+  api('/api/app', { roots: roots }).then(appState).catch(function (e) { $('app-state').textContent = e.message; $('app-state').classList.add('error'); })
+    .then(function () { setStarting(false); });
 };
 $('stop-app').onclick = function () {
   api('/api/app/stop', {}).then(appState).then(function () { $('app-state').textContent = tr('launcher.app.stopped'); });

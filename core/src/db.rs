@@ -15,7 +15,7 @@ pub const FILE: &str = "library.db";
 const BACKUP_SUFFIX: &str = ".bak";
 
 /// Bump when the schema changes and add a step to `migrate`.
-const SCHEMA_VERSION: i32 = 15;
+const SCHEMA_VERSION: i32 = 17;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -262,6 +262,15 @@ CREATE TABLE IF NOT EXISTS text_hidden (
     at   INTEGER NOT NULL,        -- Unix seconds
     PRIMARY KEY (key, norm)
 );
+";
+
+/// v16: files by content. Many requests look up the present file of one
+/// content (a face's crop, a person's photo count); without this index each
+/// read every row of `files`, while all other requests waited for the
+/// connection. With `missing_since` and `kind` it also covers
+/// `faces::PRESENT`, so grouping every file needs no table rows and no sort.
+const SCHEMA_V16: &str = "
+CREATE INDEX IF NOT EXISTS files_quick_hash ON files(quick_hash, missing_since, kind);
 ";
 
 /// Whether `table` of `schema` has a column.
@@ -519,6 +528,33 @@ fn migrate(conn: &Connection) -> Result<()> {
         tx.pragma_update(None, "user_version", 15)?;
         tx.commit()?;
     }
+    if version < 16 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V16)?;
+        tx.pragma_update(None, "user_version", 16)?;
+        tx.commit()?;
+    }
+    if version < 17 {
+        let tx = conn.unchecked_transaction()?;
+        // A copy removed on the duplicates screen keeps in the trash the
+        // content of the copy that stayed (the Duplicate badge). A re-run
+        // (the tests lower user_version) must not add it twice.
+        if !has_column(&tx, "main", "trash", "kept_hash")? {
+            tx.execute_batch("ALTER TABLE trash ADD COLUMN kept_hash TEXT;")?;
+        }
+        // What is in the trash already: the removal recorded right after
+        // its files went there.
+        tx.execute_batch(
+            "UPDATE trash SET kept_hash = (
+                 SELECT r.kept_hash FROM removed_copies r
+                 WHERE r.path_nfc = trash.path_nfc AND r.full_hash = trash.full_hash
+                   AND r.removed_at >= trash.deleted_at AND r.removed_at < trash.deleted_at + 3600
+                 ORDER BY r.id DESC LIMIT 1)
+             WHERE kept_hash IS NULL AND full_hash IS NOT NULL;",
+        )?;
+        tx.pragma_update(None, "user_version", 17)?;
+        tx.commit()?;
+    }
     Ok(())
 }
 
@@ -740,6 +776,33 @@ mod tests {
         let conn = open(&path).unwrap();
         let species: Option<String> = conn.query_row("SELECT species FROM face_decisions", [], |r| r.get(0)).unwrap();
         assert_eq!(species.as_deref(), Some("cat"));
+        drop(conn);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn v17_names_the_kept_copy_of_what_is_in_the_trash() {
+        let dir = std::env::temp_dir().join(format!("shoebox-db-v17-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join(DIR).join(FILE);
+        let conn = open(&path).unwrap();
+        // Removed on the duplicates screen (recorded a second later), and one
+        // deleted from the timeline a day after the same copy was removed and
+        // put back.
+        conn.execute_batch(
+            "INSERT INTO trash (batch, path, path_nfc, stored, kind, size, mtime_ns, full_hash, deleted_at)
+                 VALUES (1, 'a/x.jpg', 'a/x.jpg', '1/x.jpg', 'jpeg', 1, 0, 'X', 1000),
+                        (2, 'b/y.jpg', 'b/y.jpg', '2/y.jpg', 'jpeg', 1, 0, 'Y', 90000);
+             INSERT INTO removed_copies (path_nfc, size, full_hash, kept_hash, removed_at)
+                 VALUES ('a/x.jpg', 1, 'X', 'K', 1001), ('b/y.jpg', 1, 'Y', 'L', 1000);
+             PRAGMA user_version = 16;",
+        )
+        .unwrap();
+        drop(conn);
+        let conn = open(&path).unwrap();
+        let kept: Vec<Option<String>> =
+            conn.prepare("SELECT kept_hash FROM trash ORDER BY batch").unwrap().query_map([], |r| r.get(0)).unwrap().collect::<rusqlite::Result<_>>().unwrap();
+        assert_eq!(kept, [Some("K".to_string()), None]);
         drop(conn);
         std::fs::remove_dir_all(&dir).unwrap();
     }

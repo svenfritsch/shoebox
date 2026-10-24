@@ -96,7 +96,7 @@ const POLL: Duration = Duration::from_millis(200);
 /// A `running` job that has not reported progress for this long is dead.
 const JOB_ALIVE_SECS: i64 = 120;
 
-const SCHEMA_VERSION: i32 = 8;
+const SCHEMA_VERSION: i32 = 9;
 const SCHEMA_V1: &str = "
 CREATE TABLE recog.jobs (
     id          INTEGER PRIMARY KEY,
@@ -229,6 +229,28 @@ END;
 INSERT INTO recog.text_fts(text_fts) VALUES ('rebuild');
 ";
 
+/// v9: what the suggestions of the last clustering were worked out from
+/// (`clusters.rs`), so the next run compares only what changed since: the
+/// confirmed faces each space's suggestions came from, and the faces without
+/// a decision with their space and rejections. Written with `recog.clusters`.
+const SCHEMA_V9: &str = "
+CREATE TABLE IF NOT EXISTS recog.suggest_runs (
+    space TEXT PRIMARY KEY,         -- 'faces' or 'pets'
+    model TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS recog.suggest_refs (
+    space  TEXT NOT NULL,
+    ref    INTEGER NOT NULL,        -- recog.faces.id; minus face_decisions.id for a face drawn by hand
+    person INTEGER NOT NULL,        -- people.id in library.db
+    PRIMARY KEY (space, ref)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS recog.suggest_open (
+    face     INTEGER PRIMARY KEY,   -- recog.faces.id, without a decision then
+    space    TEXT NOT NULL,
+    rejected TEXT NOT NULL          -- the people it is not: ids, sorted, comma-separated
+);
+";
+
 /// Location of `recognition.db` for a library database.
 pub fn path_for(db_path: &Path) -> PathBuf {
     db_path.with_file_name(FILE)
@@ -292,6 +314,10 @@ pub fn attach(conn: &Connection, db_path: &Path) -> Result<()> {
     if version < 8 {
         tx.execute_batch(SCHEMA_V8)?;
         tx.pragma_update(Some("recog"), "user_version", 8)?;
+    }
+    if version < 9 {
+        tx.execute_batch(SCHEMA_V9)?;
+        tx.pragma_update(Some("recog"), "user_version", 9)?;
     }
     tx.commit()?;
     Ok(())
@@ -471,7 +497,20 @@ pub fn program_dir() -> Option<PathBuf> {
 fn bundled_python(dir: &Path) -> Option<PathBuf> {
     let runtime = dir.join("runtime").join(format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH));
     let bundled = if cfg!(windows) { runtime.join("python.exe") } else { runtime.join("bin").join("python3") };
-    bundled.is_file().then_some(bundled)
+    (bundled.is_file() && has_opencv(&runtime)).then_some(bundled)
+}
+
+/// OpenCV is in the runtime's `site-packages` (`Lib/` on Windows, `lib/python3.x/`
+/// elsewhere): a Python without it cannot run the recognizer, so a folder that
+/// has only the interpreter (an install that stopped half way, a leftover) is
+/// not an installed runtime.
+fn has_opencv(runtime: &Path) -> bool {
+    if cfg!(windows) {
+        return runtime.join("Lib").join("site-packages").join("cv2").is_dir();
+    }
+    std::fs::read_dir(runtime.join("lib")).is_ok_and(|entries| {
+        entries.flatten().any(|e| e.file_name().to_string_lossy().starts_with("python") && e.path().join("site-packages").join("cv2").is_dir())
+    })
 }
 
 /// The standalone Python shipped in `<dir>/runtime/<os>-<arch>/`, else `python3`

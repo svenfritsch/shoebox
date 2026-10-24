@@ -1,36 +1,108 @@
 //! People, groups, clusters and face decisions (phase 5c-2, `people.rs`).
 //! Changes go through `change` like every other change to the index (one
-//! at a time, backed up afterwards) and ask for the clusters and
-//! suggestions to be recomputed in the background. Nothing here reads an
-//! original.
+//! at a time, backed up afterwards) and say whether, and how soon, the
+//! clusters and suggestions should be recomputed in the background
+//! (`regroup`). Nothing here reads an original.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use serde::{Deserialize, Serialize};
 
-use super::{ApiError, ApiResult, App, Pairs, blocking, change, filter_of, param};
+use super::{ApiError, ApiResult, App, IndexVersion, Pairs, Why, blocking, change_with, filter_of, param, queued};
 use crate::browse;
 use crate::db;
 use crate::faces;
 use crate::people::{self, Action, Who};
 
 /// Run a change to people or decisions, tidy up what it left behind, then
-/// recompute the clusters.
+/// ask for the clusters to be recomputed as `why` says (`None`: the clusters
+/// and suggestions do not depend on it, like a name or a group). It changes
+/// nothing but people, groups, pictures and face decisions (`faces_change`
+/// for the detected faces themselves): the people view (`App::people_view`)
+/// reads only those again.
 pub(super) async fn people_change<T: Send + 'static>(
+    app: &Arc<App>,
+    why: Option<Why>,
+    f: impl FnOnce(&rusqlite::Connection) -> anyhow::Result<T> + Send + 'static,
+) -> ApiResult<T> {
+    people_change_then(app, why, move |_, conn| f(conn), |_, _, done| Ok(done)).await
+}
+
+/// `people_change` for a change that also touches the detected faces or
+/// what they are (forgetting them, a pet's species): regrouped at once.
+pub(super) async fn faces_change<T: Send + 'static>(
     app: &Arc<App>,
     f: impl FnOnce(&rusqlite::Connection) -> anyhow::Result<T> + Send + 'static,
 ) -> ApiResult<T> {
-    let result = change(app, move |_, conn| {
-        let done = f(conn)?;
-        tidy(conn);
-        Ok(done)
+    changed(app, true, |_| Some(Why::Now), move |_, conn| f(conn), |_, _, done| Ok(done)).await
+}
+
+/// `people_change`, then `reply` with what the change returned: it sees the
+/// people view with the change in it (`change` the one from before).
+pub(super) async fn people_change_then<A, T: Send + 'static>(
+    app: &Arc<App>,
+    why: Option<Why>,
+    change: impl FnOnce(&App, &rusqlite::Connection) -> anyhow::Result<A> + Send + 'static,
+    reply: impl FnOnce(&App, &rusqlite::Connection, A) -> anyhow::Result<T> + Send + 'static,
+) -> ApiResult<T> {
+    changed(app, false, move |_| why, change, reply).await
+}
+
+/// `why` sees what the change returned. A change that failed asks for nothing.
+async fn changed<A, T: Send + 'static>(
+    app: &Arc<App>,
+    faces: bool,
+    why: impl FnOnce(&A) -> Option<Why> + Send + 'static,
+    change: impl FnOnce(&App, &rusqlite::Connection) -> anyhow::Result<A> + Send + 'static,
+    reply: impl FnOnce(&App, &rusqlite::Connection, A) -> anyhow::Result<T> + Send + 'static,
+) -> ApiResult<T> {
+    let result = change_with(app, false, move |app, conn| {
+        let done = change(app, conn);
+        // Whatever it got to write, also when it failed half-way.
+        if faces {
+            app.faces_version.fetch_add(1, Ordering::SeqCst);
+        }
+        let done = done?;
+        let why = why(&done);
+        // The cards left after a card was decided (`regroup::Schedule::cards_now`).
+        let mut cards = None;
+        match app.people_view() {
+            Ok(v) => {
+                tidy_with(conn, &v);
+                if why == Some(Why::Card) {
+                    cards = Some(people::cards_now(&v));
+                }
+            }
+            Err(e) => eprintln!("could not read the faces: {e:#}"),
+        }
+        Ok((reply(app, conn, done)?, why, cards))
     })
     .await;
-    app.request_clusters();
-    result
+    match result {
+        Ok((reply, why, cards)) => {
+            if let Some(why) = why {
+                app.regroup.ask(why);
+            }
+            if let Some((cards, suggested)) = cards {
+                app.regroup.cards_now(cards, suggested);
+            }
+            if why.is_some() {
+                app.faces_changed();
+            }
+            Ok(reply)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// The person left the Unnamed page: decisions that wait are regrouped soon.
+pub(super) async fn left_unnamed(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
+    app.regroup(Why::Left);
+    Ok(Json(serde_json::json!({})))
 }
 
 /// After a change to people or decisions: everyone with confirmed faces has a
@@ -38,15 +110,32 @@ pub(super) async fn people_change<T: Send + 'static>(
 /// picture of someone who chose a new one included). The change itself is
 /// done by now, so a failure here is only reported.
 pub(super) fn tidy(conn: &rusqlite::Connection) -> (u64, u64) {
-    let covers = people::ensure_covers(conn).unwrap_or_else(|e| {
+    match people::View::load(conn) {
+        Ok(v) => tidy_with(conn, &v),
+        Err(e) => {
+            eprintln!("could not read the faces: {e:#}");
+            (0, 0)
+        }
+    }
+}
+
+/// `tidy` with the faces and decisions of `v` (as they are now). Neither
+/// changes what `v` holds: pictures are in `people`, crops in `thumbs.db`.
+fn tidy_with(conn: &rusqlite::Connection, v: &people::View) -> (u64, u64) {
+    let covers = people::ensure_covers_in(conn, v).unwrap_or_else(|e| {
         eprintln!("could not set people's pictures: {e:#}");
         0
     });
-    let pruned = faces::prune_crops(conn).unwrap_or_else(|e| {
+    let pruned = faces::prune_crops_in(conn, &v.m).unwrap_or_else(|e| {
         eprintln!("could not remove face crops: {e:#}");
         0
     });
     (covers, pruned)
+}
+
+/// A person's reply after a change, from the view that has it.
+fn person_now(app: &App, _: &rusqlite::Connection, id: i64) -> anyhow::Result<people::Person> {
+    app.with_people(|conn, v| people::person_in(conn, v, id))?.ok_or_else(|| anyhow::anyhow!("there is no person {id}"))
 }
 
 // ---------------------------------------------------------------- people
@@ -59,11 +148,11 @@ pub(super) struct PeopleQuery {
 
 pub(super) async fn list(State(app): State<Arc<App>>, Query(q): Query<PeopleQuery>) -> ApiResult<Json<Vec<people::Person>>> {
     let hidden = q.hidden.is_some_and(|h| h != 0);
-    blocking(&app, move |app| Ok(Json(people::people(&app.conn.lock().unwrap(), hidden)?))).await
+    blocking(&app, move |app| Ok(Json(app.people(hidden)?))).await
 }
 
 pub(super) async fn get_person(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Json<people::Person>> {
-    blocking(&app, move |app| people::person(&app.conn.lock().unwrap(), id)?.map(Json).ok_or(ApiError::NotFound)).await
+    blocking(&app, move |app| app.with_people(|conn, v| people::person_in(conn, v, id))?.map(Json).ok_or(ApiError::NotFound)).await
 }
 
 #[derive(Deserialize)]
@@ -73,7 +162,7 @@ pub(super) struct CreatePerson {
 }
 
 pub(super) async fn create(State(app): State<Arc<App>>, Json(req): Json<CreatePerson>) -> ApiResult<Json<people::Person>> {
-    people_change(&app, move |conn| people::create_person(conn, &req.name, req.group_id)).await.map(Json)
+    people_change_then(&app, None, move |_, conn| people::create_person(conn, &req.name, req.group_id), person_now).await.map(Json)
 }
 
 #[derive(Deserialize)]
@@ -86,7 +175,9 @@ pub(super) async fn rename(
     Path(id): Path<i64>,
     Json(req): Json<NameRequest>,
 ) -> ApiResult<Json<people::Person>> {
-    people_change(&app, move |conn| people::rename_person(conn, id, &req.name)).await.map(Json)
+    people_change_then(&app, None, move |_, conn| people::rename_person(conn, id, &req.name), move |app, conn, ()| person_now(app, conn, id))
+        .await
+        .map(Json)
 }
 
 #[derive(Deserialize)]
@@ -100,11 +191,14 @@ pub(super) async fn merge(
     Path(id): Path<i64>,
     Json(req): Json<MergeRequest>,
 ) -> ApiResult<Json<people::Person>> {
-    people_change(&app, move |conn| people::merge_people(conn, id, req.into)).await.map(Json)
+    let into = req.into;
+    people_change_then(&app, Some(Why::Soon), move |_, conn| people::merge_people(conn, id, into), move |app, conn, ()| person_now(app, conn, into))
+        .await
+        .map(Json)
 }
 
 pub(super) async fn delete(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Json<serde_json::Value>> {
-    people_change(&app, move |conn| people::delete_person(conn, id)).await?;
+    people_change(&app, Some(Why::Soon), move |conn| people::delete_person(conn, id)).await?;
     Ok(Json(serde_json::json!({ "deleted": id })))
 }
 
@@ -118,7 +212,9 @@ pub(super) async fn hide(
     Path(id): Path<i64>,
     Json(req): Json<HideRequest>,
 ) -> ApiResult<Json<people::Person>> {
-    people_change(&app, move |conn| people::hide_person(conn, id, req.hidden)).await.map(Json)
+    people_change_then(&app, None, move |_, conn| people::hide_person(conn, id, req.hidden), move |app, conn, ()| person_now(app, conn, id))
+        .await
+        .map(Json)
 }
 
 #[derive(Deserialize)]
@@ -132,7 +228,9 @@ pub(super) async fn set_group(
     Path(id): Path<i64>,
     Json(req): Json<GroupRequest>,
 ) -> ApiResult<Json<people::Person>> {
-    people_change(&app, move |conn| people::set_group(conn, id, req.group_id)).await.map(Json)
+    people_change_then(&app, None, move |_, conn| people::set_group(conn, id, req.group_id), move |app, conn, ()| person_now(app, conn, id))
+        .await
+        .map(Json)
 }
 
 /// The picture of a person: one of their confirmed faces, or (`file`) their
@@ -148,11 +246,16 @@ pub(super) async fn set_cover(
     Path(id): Path<i64>,
     Json(req): Json<CoverRequest>,
 ) -> ApiResult<Json<people::Person>> {
-    people_change(&app, move |conn| match (req.face, req.file) {
-        (Some(face), None) => people::set_cover(conn, id, face),
-        (None, Some(file)) => people::set_cover_from_file(conn, id, file),
-        _ => anyhow::bail!("send either a face or a file"),
-    })
+    people_change_then(
+        &app,
+        None,
+        move |_, conn| match (req.face, req.file) {
+            (Some(face), None) => people::set_cover(conn, id, face),
+            (None, Some(file)) => people::set_cover_from_file(conn, id, file),
+            _ => anyhow::bail!("send either a face or a file"),
+        },
+        move |app, conn, ()| person_now(app, conn, id),
+    )
     .await
     .map(Json)
 }
@@ -174,7 +277,7 @@ pub(super) async fn person_faces(
     let which = q.state.unwrap_or(people::Which::Confirmed);
     let limit = q.limit.unwrap_or(300).min(2000);
     blocking(&app, move |app| {
-        people::person_faces(&app.conn.lock().unwrap(), id, which, q.offset, limit)?.map(Json).ok_or(ApiError::NotFound)
+        app.with_people(|conn, v| people::person_faces_in(conn, v, id, which, q.offset, limit))?.map(Json).ok_or(ApiError::NotFound)
     })
     .await
 }
@@ -198,47 +301,110 @@ pub(super) struct PersonHit {
 /// of the filter itself, hidden ones and ones that would show nothing are
 /// left out.
 pub(super) async fn search(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<PersonHit>>> {
-    blocking(&app, move |app| {
+    queued(&app, move |app| {
         let conn = app.conn.lock().unwrap();
         let needle = param(&pairs, "q").map(db::tag_fold).unwrap_or_default();
         let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(8);
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
-        let snapshot = app.snapshot(&conn)?;
-        let shown: HashSet<i64> = snapshot.query(&conn, &filter)?.iter().map(|it| it.id).collect();
-        let mut files_per_key: HashMap<String, u64> = HashMap::new();
-        {
-            let mut stmt = conn.prepare("SELECT id, quick_hash FROM files WHERE missing_since IS NULL")?;
-            let mut rows = stmt.query([])?;
-            while let Some(r) = rows.next()? {
-                if shown.contains(&r.get::<_, i64>(0)?) {
-                    *files_per_key.entry(r.get(1)?).or_default() += 1;
-                }
-            }
-        }
-        let keys = people::keys_by_person(&conn)?;
-        let mut hits: Vec<PersonHit> = people::people(&conn, false)?
-            .into_iter()
-            .filter(|p| !filter.people.contains(&p.id) && db::tag_fold(&p.name).contains(&needle))
-            .map(|p| {
-                let photos = keys.get(&p.id).into_iter().flatten().map(|k| files_per_key.get(k).copied().unwrap_or(0)).sum();
-                PersonHit { id: p.id, name: p.name, group_id: p.group_id, species: p.species, cover: p.cover, cover_manual: p.cover_manual, photos }
-            })
-            .filter(|h| h.photos > 0)
-            .collect();
-        hits.sort_by(|a, b| b.photos.cmp(&a.photos).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
-        hits.truncate(limit);
-        Ok(Json(hits))
+        Ok(Json(person_hits(app, &conn, &pairs, &filter, None, &needle, limit)?))
     })
     .await
+}
+
+/// `search` for `needle` (folded) within `filter`, whose photos are `shown`
+/// when the caller has them already (`/api/suggest`).
+pub(super) fn person_hits(
+    app: &App,
+    conn: &rusqlite::Connection,
+    pairs: &Pairs,
+    filter: &browse::Query,
+    shown: Option<&HashSet<i64>>,
+    needle: &str,
+    limit: usize,
+) -> anyhow::Result<Vec<PersonHit>> {
+    let (list, view) = app.with_people(|conn, v| Ok((people::people_in(conn, v, false)?, v.clone())))?;
+    let photos = person_photos(app, conn, pairs, filter, shown, view)?;
+    let mut hits: Vec<PersonHit> = list
+        .into_iter()
+        .filter(|p| !filter.people.contains(&p.id) && db::tag_fold(&p.name).contains(needle))
+        .map(|p| {
+            let photos = photos.get(&p.id).copied().unwrap_or(0);
+            PersonHit { id: p.id, name: p.name, group_id: p.group_id, species: p.species, cover: p.cover, cover_manual: p.cover_manual, photos }
+        })
+        .filter(|h| h.photos > 0)
+        .collect();
+    hits.sort_by(|a, b| b.photos.cmp(&a.photos).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    hits.truncate(limit);
+    Ok(hits)
+}
+
+/// The photos of each person within a filter, as `search` counts them, kept
+/// while the index, the people view (it is read again after every decision)
+/// and the filter stay the same: the search box asks with every letter typed,
+/// and counting reads every file and every confirmed face (about 0.1 s on
+/// 100 000 photos).
+pub(super) struct PersonPhotos {
+    version: IndexVersion,
+    view: Arc<people::View>,
+    /// The request's filter without what is typed (`q`, `limit`), sorted.
+    filter: Pairs,
+    photos: Arc<HashMap<i64, u64>>,
+}
+
+fn person_photos(
+    app: &App,
+    conn: &rusqlite::Connection,
+    pairs: &Pairs,
+    filter: &browse::Query,
+    shown: Option<&HashSet<i64>>,
+    view: Arc<people::View>,
+) -> anyhow::Result<Arc<HashMap<i64, u64>>> {
+    let version = app.version(conn)?;
+    let mut within: Pairs = pairs.iter().filter(|(k, _)| k != "q" && k != "limit").cloned().collect();
+    within.sort();
+    let mut cache = app.person_photos.lock().unwrap();
+    if let Some(c) = cache.as_ref()
+        && c.version == version
+        && Arc::ptr_eq(&c.view, &view)
+        && c.filter == within
+    {
+        return Ok(c.photos.clone());
+    }
+    let computed;
+    let shown = match shown {
+        Some(s) => s,
+        None => {
+            computed = app.snapshot(conn)?.query(conn, filter)?.iter().map(|it| it.id).collect::<HashSet<i64>>();
+            &computed
+        }
+    };
+    let mut files_per_key: HashMap<String, u64> = HashMap::new();
+    {
+        let mut stmt = conn.prepare("SELECT id, quick_hash FROM files WHERE missing_since IS NULL")?;
+        let mut rows = stmt.query([])?;
+        while let Some(r) = rows.next()? {
+            if shown.contains(&r.get::<_, i64>(0)?) {
+                *files_per_key.entry(r.get(1)?).or_default() += 1;
+            }
+        }
+    }
+    let photos: Arc<HashMap<i64, u64>> = Arc::new(
+        people::keys_by_person(conn)?
+            .into_iter()
+            .map(|(person, keys)| (person, keys.iter().map(|k| files_per_key.get(k).copied().unwrap_or(0)).sum()))
+            .collect(),
+    );
+    *cache = Some(PersonPhotos { version, view, filter: within, photos: photos.clone() });
+    Ok(photos)
 }
 
 /// A pet search term offered while typing.
 #[derive(Serialize)]
 pub(super) struct PetHit {
     /// `cat`, `dog` or `pet` (any); the value of `pet=` in a search.
-    species: &'static str,
+    pub(super) species: &'static str,
     /// Photos it shows within the filter of the request.
-    photos: u64,
+    pub(super) photos: u64,
 }
 
 /// The pet terms ("all cats", "all dogs", "any pet") that fit what is typed
@@ -246,27 +412,32 @@ pub(super) struct PetHit {
 /// (`tag`, `folder`, `person`, `pet`), with how many, most first. Terms the
 /// filter already has are left out.
 pub(super) async fn pets_search(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<PetHit>>> {
-    blocking(&app, move |app| {
+    queued(&app, move |app| {
         let conn = app.conn.lock().unwrap();
         let needle = param(&pairs, "q").unwrap_or("");
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
-        let snapshot = app.snapshot(&conn)?;
-        let mut hits = Vec::new();
-        for species in crate::pets::species_matching(needle) {
-            if filter.pets.iter().any(|p| p == species) {
-                continue;
-            }
-            let mut with = filter.clone();
-            with.pets.push(species.to_string());
-            let photos = snapshot.query(&conn, &with)?.len() as u64;
-            if photos > 0 {
-                hits.push(PetHit { species, photos });
-            }
-        }
-        hits.sort_by(|a, b| b.photos.cmp(&a.photos));
-        Ok(Json(hits))
+        Ok(Json(pet_hits(app, &conn, &filter, needle)?))
     })
     .await
+}
+
+/// `pets_search` for `needle` (as typed) within `filter`.
+pub(super) fn pet_hits(app: &App, conn: &rusqlite::Connection, filter: &browse::Query, needle: &str) -> anyhow::Result<Vec<PetHit>> {
+    let snapshot = app.snapshot(conn)?;
+    let mut hits = Vec::new();
+    for species in crate::pets::species_matching(needle) {
+        if filter.pets.iter().any(|p| p == species) {
+            continue;
+        }
+        let mut with = filter.clone();
+        with.pets.push(species.to_string());
+        let photos = snapshot.query(conn, &with)?.len() as u64;
+        if photos > 0 {
+            hits.push(PetHit { species, photos });
+        }
+    }
+    hits.sort_by(|a, b| b.photos.cmp(&a.photos));
+    Ok(hits)
 }
 
 // ---------------------------------------------------------------- groups
@@ -275,8 +446,59 @@ pub(super) async fn groups(State(app): State<Arc<App>>) -> ApiResult<Json<Vec<pe
     blocking(&app, |app| Ok(Json(people::groups(&app.conn.lock().unwrap())?))).await
 }
 
-pub(super) async fn create_group(State(app): State<Arc<App>>, Json(req): Json<NameRequest>) -> ApiResult<Json<people::Group>> {
-    people_change(&app, move |conn| people::create_group(conn, &req.name)).await.map(Json)
+#[derive(Deserialize)]
+pub(super) struct NewGroupRequest {
+    name: String,
+    /// The group's first member: a group is never empty.
+    person_id: i64,
+}
+
+pub(super) async fn create_group(State(app): State<Arc<App>>, Json(req): Json<NewGroupRequest>) -> ApiResult<Json<people::Group>> {
+    people_change(&app, None, move |conn| people::create_group(conn, &req.name, req.person_id)).await.map(Json)
+}
+
+#[derive(Serialize)]
+pub(super) struct GroupHit {
+    id: i64,
+    name: String,
+    people: u64,
+    /// Photos with anyone in it, within the filter.
+    photos: u64,
+}
+
+/// Groups whose name contains `q`, for the search box: a group in the search
+/// shows the photos of any of its people. With the photos it would show within
+/// the filter (`tag`, `folder`, `person`, `group`, ...), most first; groups of the
+/// filter itself and ones that would show nothing are left out.
+pub(super) async fn groups_search(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<GroupHit>>> {
+    queued(&app, move |app| {
+        let conn = app.conn.lock().unwrap();
+        let needle = param(&pairs, "q").map(db::tag_fold).unwrap_or_default();
+        let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(8);
+        let filter = browse::Query { text: None, ..filter_of(&pairs)? };
+        Ok(Json(group_hits(app, &conn, &filter, &needle, limit)?))
+    })
+    .await
+}
+
+/// `groups_search` for `needle` (folded) within `filter`.
+pub(super) fn group_hits(app: &App, conn: &rusqlite::Connection, filter: &browse::Query, needle: &str, limit: usize) -> anyhow::Result<Vec<GroupHit>> {
+    let snapshot = app.snapshot(conn)?;
+    let mut hits = Vec::new();
+    for g in people::groups(conn)? {
+        if filter.groups.contains(&g.id) || !db::tag_fold(&g.name).contains(needle) {
+            continue;
+        }
+        let mut with = filter.clone();
+        with.groups.push(g.id);
+        let photos = snapshot.query(conn, &with)?.len() as u64;
+        if photos > 0 {
+            hits.push(GroupHit { id: g.id, name: g.name, people: g.people, photos });
+        }
+    }
+    hits.sort_by(|a, b| b.photos.cmp(&a.photos).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    hits.truncate(limit);
+    Ok(hits)
 }
 
 pub(super) async fn rename_group(
@@ -284,7 +506,7 @@ pub(super) async fn rename_group(
     Path(id): Path<i64>,
     Json(req): Json<NameRequest>,
 ) -> ApiResult<Json<people::Group>> {
-    people_change(&app, move |conn| people::rename_group(conn, id, &req.name)).await.map(Json)
+    people_change(&app, None, move |conn| people::rename_group(conn, id, &req.name)).await.map(Json)
 }
 
 #[derive(Deserialize)]
@@ -296,12 +518,12 @@ pub(super) async fn reorder_groups(
     State(app): State<Arc<App>>,
     Json(req): Json<ReorderRequest>,
 ) -> ApiResult<Json<Vec<people::Group>>> {
-    people_change(&app, move |conn| people::reorder_groups(conn, &req.ids)).await.map(Json)
+    people_change(&app, None, move |conn| people::reorder_groups(conn, &req.ids)).await.map(Json)
 }
 
 /// Its people have no group afterwards.
 pub(super) async fn delete_group(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Json<serde_json::Value>> {
-    people_change(&app, move |conn| people::delete_group(conn, id))
+    people_change(&app, None, move |conn| people::delete_group(conn, id))
         .await
         .map(|n| Json(serde_json::json!({ "people": n })))
 }
@@ -336,7 +558,7 @@ pub(super) async fn clusters(State(app): State<Arc<App>>, Query(q): Query<Cluste
         Some("small") => people::Size::Small,
         Some(other) => return Err(ApiError::BadRequest(format!("size is large, small or all, not {other:?}"))),
     };
-    blocking(&app, move |app| Ok(Json(people::clusters(&app.conn.lock().unwrap(), q.offset, limit, samples, kind, size)?))).await
+    blocking(&app, move |app| Ok(Json(app.with_people(|_, v| Ok(people::clusters_in(v, q.offset, limit, samples, kind, size)))?))).await
 }
 
 #[derive(Deserialize)]
@@ -349,10 +571,12 @@ pub(super) async fn cluster_faces(
     Path(id): Path<i64>,
     Query(q): Query<GenerationQuery>,
 ) -> ApiResult<Json<Vec<people::FaceItem>>> {
-    blocking(&app, move |app| match people::cluster_faces(&app.conn.lock().unwrap(), id, q.generation) {
-        Ok(faces) => faces.map(Json).ok_or(ApiError::NotFound),
-        Err(e) if e.is::<people::Stale>() => Err(ApiError::Conflict(format!("{e}"))),
-        Err(e) => Err(e.into()),
+    blocking(&app, move |app| {
+        match app.with_people(|_, v| people::cluster_faces_in(v, id, q.generation)) {
+            Ok(faces) => faces.map(Json).ok_or(ApiError::NotFound),
+            Err(e) if e.is::<people::Stale>() => Err(ApiError::Conflict(format!("{e}"))),
+            Err(e) => Err(e.into()),
+        }
     })
     .await
 }
@@ -371,16 +595,33 @@ pub(super) struct ClusterRequest {
 /// A cluster that changed since it was shown is refused (409); the reply
 /// says what is left of the cluster (its new generation, for a split).
 async fn on_cluster(app: Arc<App>, id: i64, req: ClusterRequest, action: fn(Who) -> Action) -> ApiResult<Json<people::Decided>> {
-    people_change(&app, move |conn| {
-        let all = people::cluster_face_ids(conn, id, req.generation, None)?;
-        let faces = people::cluster_face_ids(conn, id, req.generation, req.faces.as_deref())?;
-        let mut done = people::decide(conn, &faces, &action(req.who))?;
-        let left: Vec<i64> = all.into_iter().filter(|f| !faces.contains(f)).collect();
-        done.cluster = Some(if left.is_empty() { None } else { people::cluster_of(conn, &left)? });
-        Ok(done)
-    })
+    people_change_then(
+        &app,
+        Some(Why::Card),
+        move |app, conn| {
+            let v = app.people_view()?;
+            let all = people::cluster_face_ids_in(&v, id, req.generation, None)?;
+            let faces = people::cluster_face_ids_in(&v, id, req.generation, req.faces.as_deref())?;
+            let done = people::decide_in(conn, &v, &faces, &action(req.who))?;
+            let left: Vec<i64> = all.into_iter().filter(|f| !faces.contains(f)).collect();
+            Ok((done, left))
+        },
+        |app, conn, (mut done, left)| {
+            done.cluster = Some(if left.is_empty() { None } else { people::cluster_of_in(app.people_view()?.as_ref(), &left) });
+            with_person(conn, done)
+        },
+    )
     .await
     .map(Json)
+}
+
+/// The person an action named, as the list shows them, for the reply: the page
+/// adds or updates them without asking for the whole list again.
+fn with_person(conn: &rusqlite::Connection, mut done: people::Decided) -> anyhow::Result<people::Decided> {
+    if let Some(id) = done.person.as_ref().map(|p| p.id) {
+        done.person_data = people::person_light(conn, id)?;
+    }
+    Ok(done)
 }
 
 /// Name the cluster (or some of its faces): confirmed for that person.
@@ -433,17 +674,40 @@ pub(super) struct FacesRequest {
     open: bool,
 }
 
+/// A decision about single faces counts as one card. A rejection only starts
+/// the pause again; taking one back, or undoing a decision made before the
+/// last regrouping (its face is not in the clusters), only a regrouping shows,
+/// so it comes soon. Undoing a newer decision shows at once.
 async fn on_faces(app: Arc<App>, req: FacesRequest, action: Action) -> ApiResult<Json<people::Decided>> {
-    people_change(&app, move |conn| {
-        if req.open {
-            people::ensure_undecided(conn, &req.faces)?;
-        }
-        let mut done = people::decide(conn, &req.faces, &action)?;
-        if matches!(action, Action::Undo) {
-            done.faces += people::delete_manual(conn, &req.manual)?;
-        }
-        Ok(done)
-    })
+    let why = match action {
+        Action::Reject(_) => Why::Pause,
+        Action::Unreject(_) => Why::Soon,
+        Action::Undo => Why::Pause,
+        _ => Why::Card,
+    };
+    changed(
+        &app,
+        false,
+        |(_, why): &(people::Decided, Why)| Some(*why),
+        move |app, conn| {
+            let v = app.people_view()?;
+            if req.open {
+                people::ensure_undecided_in(&v, &req.faces)?;
+            }
+            let mut done = people::decide_in(conn, &v, &req.faces, &action)?;
+            let mut why = why;
+            if matches!(action, Action::Undo) {
+                // Hand-drawn faces are references for the suggestions.
+                let drawn = people::delete_manual(conn, &req.manual)?;
+                if drawn > 0 || req.faces.iter().any(|&f| !v.in_clusters(f)) {
+                    why = Why::Soon;
+                }
+                done.faces += drawn;
+            }
+            Ok((done, why))
+        },
+        |_, conn, (done, _)| with_person(conn, done),
+    )
     .await
     .map(Json)
 }
@@ -476,7 +740,7 @@ pub(super) async fn not_face(State(app): State<Arc<App>>, Json(req): Json<FacesR
 /// These pets are a cat, or a dog, whatever the detector took them for.
 pub(super) async fn species(State(app): State<Arc<App>>, Json(req): Json<FacesRequest>) -> ApiResult<Json<serde_json::Value>> {
     let species = req.species.clone().ok_or_else(|| ApiError::BadRequest("species is missing".into()))?;
-    people_change(&app, move |conn| people::set_species(conn, &req.faces, &species))
+    faces_change(&app, move |conn| people::set_species(conn, &req.faces, &species))
         .await
         .map(|n| Json(serde_json::json!({ "faces": n })))
 }
@@ -511,7 +775,7 @@ pub(super) struct ManualRequest {
 /// A face or pet drawn by hand (missed by the detector), with who it is.
 pub(super) async fn manual(State(app): State<Arc<App>>, Json(req): Json<ManualRequest>) -> ApiResult<Json<serde_json::Value>> {
     let species = req.species.clone().or_else(|| req.pet.then(|| crate::pets::PET.to_string()));
-    let added = people_change(&app, move |conn| people::add_manual(conn, req.file, req.b, &req.who, species.as_deref())).await;
+    let added = people_change(&app, None, move |conn| people::add_manual(conn, req.file, req.b, &req.who, species.as_deref())).await;
     app.request_embed();
     added.map(|id| Json(serde_json::json!({ "manual": id })))
 }

@@ -20,9 +20,10 @@
 //!   cache is recomputed.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::{Arc, OnceLock};
 
 use anyhow::{Result, bail};
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 use serde::{Deserialize, Serialize};
 
 use crate::pets::{Space, Thresholds};
@@ -143,14 +144,20 @@ pub struct State {
 
 /// The detected faces and the decisions, matched to each other.
 pub struct Matched {
-    pub faces: Vec<Detected>,
+    /// Shared by every `Matched` made from one load (`with_decisions`).
+    pub faces: Arc<Vec<Detected>>,
+    /// Content → its faces (indexes into `faces`, in order).
+    by_key: Arc<HashMap<String, Vec<usize>>>,
     pub decisions: Vec<DecisionRow>,
     /// Per face.
     pub states: Vec<State>,
     /// Per decision: the face it belongs to.
     pub face_of: Vec<Option<usize>>,
     /// Where the pets pass saw people, per content (fractions).
-    pub bodies: HashMap<String, Vec<[f64; 4]>>,
+    pub bodies: Arc<HashMap<String, Vec<[f64; 4]>>>,
+    /// The species the user gave pets (`face_species`), already applied to
+    /// `faces`.
+    overrides: Arc<Vec<SpeciesRow>>,
 }
 
 pub(crate) fn table_exists(conn: &Connection, schema: &str, table: &str) -> Result<bool> {
@@ -160,24 +167,79 @@ pub(crate) fn table_exists(conn: &Connection, schema: &str, table: &str) -> Resu
         .is_some())
 }
 
+// The faces, decisions, files and sizes of every content, or (`one`) of the
+// content bound as `?1`. Two statements, not one with `?1 IS NULL OR key =
+// ?1`: SQLite plans a statement once for both, so that one could never use
+// the index by content, and showing one photo's faces read every face.
+
+/// `recog.faces` (`version`: `recognition.db`'s) with the width in px.
+fn faces_sql(version: i32, one: bool) -> String {
+    let roll = if version >= 2 { "f.roll" } else { "0" };
+    // Before v5 there are no pets.
+    let species = if version >= 5 { "f.species" } else { "NULL" };
+    format!(
+        "SELECT f.id, f.key, f.x, f.y, f.w, f.h, {roll}, {px}, f.score, f.model, {species} FROM recog.faces f
+         LEFT JOIN recog.looked l ON l.key = f.key AND l.task = CASE WHEN {species} IS NULL THEN '{FACES}' ELSE '{PETS}' END
+         {filter} ORDER BY f.id",
+        px = faces::size_px(roll),
+        filter = if one { "WHERE f.key = ?1" } else { "" }
+    )
+}
+
+fn bodies_sql(one: bool) -> String {
+    format!("SELECT key, x, y, w, h FROM recog.bodies{}", if one { " WHERE key = ?1" } else { "" })
+}
+
+fn species_sql(one: bool) -> String {
+    format!("SELECT id, key, x, y, w, h, species, at FROM face_species{} ORDER BY id", if one { " WHERE key = ?1" } else { "" })
+}
+
+/// `species`: whether `face_decisions` has the column (v7).
+fn decisions_sql(species: bool, one: bool) -> String {
+    format!(
+        "SELECT id, key, x, y, w, h, person_id, decision, manual, at, {} FROM face_decisions{} ORDER BY id",
+        if species { "species" } else { "NULL" },
+        if one { " WHERE key = ?1" } else { "" }
+    )
+}
+
+/// `faces::PRESENT`; for one content its lowest present file, as `min(id)`
+/// picks it there.
+fn present_sql(one: bool) -> String {
+    if one {
+        "SELECT quick_hash, id, kind FROM files
+         WHERE quick_hash = ?1 AND missing_since IS NULL AND kind IN ('jpeg', 'png', 'heic') ORDER BY id LIMIT 1"
+            .to_string()
+    } else {
+        format!("SELECT quick_hash, id, kind FROM ({})", faces::PRESENT)
+    }
+}
+
+/// The cluster cache, of every face or of the faces of one content.
+fn clusters_sql(one: bool) -> String {
+    format!(
+        "SELECT face, cluster, person, similarity FROM recog.clusters{}",
+        if one { " WHERE face IN (SELECT id FROM recog.faces WHERE key = ?1)" } else { "" }
+    )
+}
+
+fn sizes_sql(one: bool) -> String {
+    format!(
+        "SELECT key, width, height FROM recog.looked WHERE task = '{FACES}' AND width IS NOT NULL{}",
+        if one { " AND key = ?1" } else { "" }
+    )
+}
+
 impl Matched {
     /// All faces and decisions, or those of one content. `conn` has `recog`
     /// attached (read-only works: a `recognition.db` of phase 4 and a
     /// `library.db` before v4 too).
     pub fn load(conn: &Connection, key: Option<&str>) -> Result<Matched> {
         let version: i32 = conn.pragma_query_value(Some("recog"), "user_version", |r| r.get(0))?;
-        let roll = if version >= 2 { "f.roll" } else { "0" };
-        // Before v5 there are no pets.
-        let species = if version >= 5 { "f.species" } else { "NULL" };
         let mut faces = Vec::new();
         {
-            let mut stmt = conn.prepare(&format!(
-                "SELECT f.id, f.key, f.x, f.y, f.w, f.h, {roll}, {px}, f.score, f.model, {species} FROM recog.faces f
-                 LEFT JOIN recog.looked l ON l.key = f.key AND l.task = CASE WHEN {species} IS NULL THEN '{FACES}' ELSE '{PETS}' END
-                 WHERE ?1 IS NULL OR f.key = ?1 ORDER BY f.id",
-                px = faces::size_px(roll)
-            ))?;
-            let mut rows = stmt.query([key])?;
+            let mut stmt = conn.prepare(&faces_sql(version, key.is_some()))?;
+            let mut rows = stmt.query(params_from_iter(key))?;
             while let Some(r) = rows.next()? {
                 faces.push(Detected {
                     id: r.get(0)?,
@@ -193,25 +255,53 @@ impl Matched {
         }
         // A cat the detector took for a dog (or the other way round) is the
         // species the user said, for every use below.
-        apply_species_overrides(conn, key, &mut faces)?;
+        let overrides = apply_species_overrides(conn, key, &mut faces)?;
         let decisions = if table_exists(conn, "main", "face_decisions")? { load_decisions(conn, key)? } else { Vec::new() };
-        let mut m = Matched::new(faces, decisions);
+        let mut bodies: HashMap<String, Vec<[f64; 4]>> = HashMap::new();
         // Before v6 nobody saw people: no face is taken for a pet's.
         if version >= 6 {
-            let mut stmt = conn.prepare("SELECT key, x, y, w, h FROM recog.bodies WHERE ?1 IS NULL OR key = ?1")?;
-            let mut rows = stmt.query([key])?;
+            let mut stmt = conn.prepare(&bodies_sql(key.is_some()))?;
+            let mut rows = stmt.query(params_from_iter(key))?;
             while let Some(r) = rows.next()? {
-                m.bodies.entry(r.get(0)?).or_default().push([r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?]);
+                bodies.entry(r.get(0)?).or_default().push([r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?]);
             }
         }
+        let mut m = Matched::indexed(Arc::new(faces), Arc::new(bodies), decisions);
+        m.overrides = Arc::new(overrides);
         Ok(m)
     }
 
     pub fn new(faces: Vec<Detected>, decisions: Vec<DecisionRow>) -> Matched {
-        let mut by_key: HashMap<&str, Vec<usize>> = HashMap::new();
+        Matched::indexed(Arc::new(faces), Arc::new(HashMap::new()), decisions)
+    }
+
+    fn indexed(faces: Arc<Vec<Detected>>, bodies: Arc<HashMap<String, Vec<[f64; 4]>>>, decisions: Vec<DecisionRow>) -> Matched {
+        let mut by_key: HashMap<String, Vec<usize>> = HashMap::new();
         for (i, f) in faces.iter().enumerate() {
-            by_key.entry(f.key.as_str()).or_default().push(i);
+            match by_key.get_mut(&f.key) {
+                Some(list) => list.push(i),
+                None => {
+                    by_key.insert(f.key.clone(), vec![i]);
+                }
+            }
         }
+        Matched::matched(faces, Arc::new(by_key), bodies, decisions)
+    }
+
+    /// The same faces with other decisions (the ones in the database now,
+    /// after a change that touched only decisions and people).
+    pub fn with_decisions(&self, decisions: Vec<DecisionRow>) -> Matched {
+        let mut m = Matched::matched(self.faces.clone(), self.by_key.clone(), self.bodies.clone(), decisions);
+        m.overrides = self.overrides.clone();
+        m
+    }
+
+    fn matched(
+        faces: Arc<Vec<Detected>>,
+        by_key: Arc<HashMap<String, Vec<usize>>>,
+        bodies: Arc<HashMap<String, Vec<[f64; 4]>>>,
+        decisions: Vec<DecisionRow>,
+    ) -> Matched {
         let face_of: Vec<Option<usize>> = decisions
             .iter()
             .map(|d| {
@@ -235,7 +325,12 @@ impl Matched {
                 states[i].decided = Some(d);
             }
         }
-        Matched { faces, decisions, states, face_of, bodies: HashMap::new() }
+        Matched { faces, by_key, decisions, states, face_of, bodies, overrides: Arc::new(Vec::new()) }
+    }
+
+    /// The faces of one content (indexes into `faces`, in order).
+    pub fn of_key(&self, key: &str) -> &[usize] {
+        self.by_key.get(key).map_or(&[], Vec::as_slice)
     }
 
     pub fn decided(&self, i: usize) -> Option<&DecisionRow> {
@@ -280,7 +375,7 @@ impl Matched {
 }
 
 /// A row of `face_species`: the species the user gave a detected pet.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SpeciesRow {
     pub id: i64,
     pub key: String,
@@ -294,9 +389,9 @@ fn load_species(conn: &Connection, key: Option<&str>) -> Result<Vec<SpeciesRow>>
     if !table_exists(conn, "main", "face_species")? {
         return Ok(Vec::new());
     }
-    let mut stmt = conn.prepare("SELECT id, key, x, y, w, h, species, at FROM face_species WHERE ?1 IS NULL OR key = ?1 ORDER BY id")?;
+    let mut stmt = conn.prepare(&species_sql(key.is_some()))?;
     let rows = stmt
-        .query_map([key], |r| Ok(SpeciesRow { id: r.get(0)?, key: r.get(1)?, b: [r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?], species: r.get(6)?, at: r.get(7)? }))?
+        .query_map(params_from_iter(key), |r| Ok(SpeciesRow { id: r.get(0)?, key: r.get(1)?, b: [r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?], species: r.get(6)?, at: r.get(7)? }))?
         .collect::<rusqlite::Result<_>>()?;
     Ok(rows)
 }
@@ -311,27 +406,26 @@ fn pet_for(faces: &[Detected], key: &str, b: [f64; 4]) -> Option<usize> {
         .map(|(i, _)| i)
 }
 
-fn apply_species_overrides(conn: &Connection, key: Option<&str>, faces: &mut [Detected]) -> Result<()> {
+/// Returns the rows applied.
+fn apply_species_overrides(conn: &Connection, key: Option<&str>, faces: &mut [Detected]) -> Result<Vec<SpeciesRow>> {
+    let rows = load_species(conn, key)?;
     // Oldest first, so the newest entry for a pet wins.
-    for row in load_species(conn, key)? {
+    for row in &rows {
         if !crate::pets::is_species(&row.species) {
             continue;
         }
         if let Some(i) = pet_for(faces, &row.key, row.b) {
-            faces[i].species = Some(row.species);
+            faces[i].species = Some(row.species.clone());
         }
     }
-    Ok(())
+    Ok(rows)
 }
 
 fn load_decisions(conn: &Connection, key: Option<&str>) -> Result<Vec<DecisionRow>> {
     // A library.db before v7 (read-only use) has no species: all persons'.
-    let species = if db::has_column(conn, "main", "face_decisions", "species")? { "species" } else { "NULL" };
-    let mut stmt = conn.prepare(&format!(
-        "SELECT id, key, x, y, w, h, person_id, decision, manual, at, {species} FROM face_decisions
-         WHERE ?1 IS NULL OR key = ?1 ORDER BY id"
-    ))?;
-    let mut rows = stmt.query([key])?;
+    let species = db::has_column(conn, "main", "face_decisions", "species")?;
+    let mut stmt = conn.prepare(&decisions_sql(species, key.is_some()))?;
+    let mut rows = stmt.query(params_from_iter(key))?;
     let mut out = Vec::new();
     while let Some(r) = rows.next()? {
         let text: String = r.get(7)?;
@@ -359,23 +453,59 @@ pub fn person_species(conn: &Connection) -> Result<HashMap<i64, String>> {
     if !table_exists(conn, "main", "face_decisions")? || !db::has_column(conn, "main", "face_decisions", "species")? {
         return Ok(HashMap::new());
     }
-    // (people, cats, dogs, pets)
-    let mut counts: HashMap<i64, [u64; 4]> = HashMap::new();
+    let mut counts = SpeciesCounts::new();
     let mut stmt = conn.prepare(
         "SELECT person_id, species, count(*) FROM face_decisions
          WHERE decision = 'confirmed' AND person_id IS NOT NULL GROUP BY person_id, species",
     )?;
     let mut rows = stmt.query([])?;
     while let Some(r) = rows.next()? {
-        let at = match r.get::<_, Option<String>>(1)?.as_deref() {
-            None => 0,
-            Some("cat") => 1,
-            Some("dog") => 2,
-            Some(_) => 3,
-        };
-        counts.entry(r.get(0)?).or_default()[at] += r.get::<_, i64>(2)? as u64;
+        count_species(&mut counts, r.get(0)?, r.get::<_, Option<String>>(1)?.as_deref(), r.get::<_, i64>(2)? as u64);
     }
-    Ok(counts
+    Ok(majority_species(counts))
+}
+
+/// `person_species` of one person.
+fn species_of_person(conn: &Connection, id: i64) -> Result<Option<String>> {
+    if !table_exists(conn, "main", "face_decisions")? || !db::has_column(conn, "main", "face_decisions", "species")? {
+        return Ok(None);
+    }
+    let mut counts = SpeciesCounts::new();
+    let mut stmt =
+        conn.prepare("SELECT species, count(*) FROM face_decisions WHERE decision = 'confirmed' AND person_id = ?1 GROUP BY species")?;
+    let mut rows = stmt.query([id])?;
+    while let Some(r) = rows.next()? {
+        count_species(&mut counts, id, r.get::<_, Option<String>>(0)?.as_deref(), r.get::<_, i64>(1)? as u64);
+    }
+    Ok(majority_species(counts).remove(&id))
+}
+
+/// `person_species` from decisions already read (all of them).
+fn person_species_of(decisions: &[DecisionRow]) -> HashMap<i64, String> {
+    let mut counts = SpeciesCounts::new();
+    for d in decisions {
+        if let (Decision::Confirmed, Some(p)) = (d.decision, d.person) {
+            count_species(&mut counts, p, d.species.as_deref(), 1);
+        }
+    }
+    majority_species(counts)
+}
+
+/// Per person: confirmed faces of people, cats, dogs, pets.
+type SpeciesCounts = HashMap<i64, [u64; 4]>;
+
+fn count_species(counts: &mut SpeciesCounts, person: i64, species: Option<&str>, n: u64) {
+    let at = match species {
+        None => 0,
+        Some("cat") => 1,
+        Some("dog") => 2,
+        Some(_) => 3,
+    };
+    counts.entry(person).or_default()[at] += n;
+}
+
+fn majority_species(counts: SpeciesCounts) -> HashMap<i64, String> {
+    counts
         .into_iter()
         .filter(|(_, [people, cats, dogs, pets])| cats + dogs + pets > *people)
         .map(|(id, [_, cats, dogs, pets])| {
@@ -388,7 +518,7 @@ pub fn person_species(conn: &Connection) -> Result<HashMap<i64, String>> {
             };
             (id, species.to_string())
         })
-        .collect())
+        .collect()
 }
 
 /// The species to show for a pet's box: the person's when it belongs to one
@@ -412,6 +542,24 @@ pub fn not_face_ids(conn: &Connection) -> Result<HashSet<i64>> {
 
 // ---------------------------------------------------------------- the view: decisions + cache
 
+/// Content → (a present file, its kind): all, or of one content.
+fn load_present(conn: &Connection, key: Option<&str>) -> Result<HashMap<String, (i64, String)>> {
+    let mut present = HashMap::new();
+    let mut stmt = conn.prepare(&present_sql(key.is_some()))?;
+    let mut rows = stmt.query(params_from_iter(key))?;
+    while let Some(r) = rows.next()? {
+        present.insert(r.get::<_, String>(0)?, (r.get(1)?, r.get(2)?));
+    }
+    Ok(present)
+}
+
+fn load_names(conn: &Connection) -> Result<HashMap<i64, String>> {
+    Ok(conn
+        .prepare("SELECT id, name FROM people")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?)
+}
+
 /// The cached cluster and suggestion of a face without a decision.
 #[derive(Debug, Clone, Copy)]
 struct Cached {
@@ -422,6 +570,13 @@ struct Cached {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct PersonRef {
+    pub id: i64,
+    pub name: String,
+}
+
+/// A group by id and name, for the chips of a filter.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct GroupRef {
     pub id: i64,
     pub name: String,
 }
@@ -474,20 +629,55 @@ pub struct FaceItem {
 }
 
 /// Faces, decisions, present files, people and the cluster cache, read
-/// together.
+/// together. Nothing in it changes once made: the photo app keeps one per
+/// library between requests (`serve::App::people_view`) and makes a new one
+/// when anything it was read from changed (`with_decisions` when only the
+/// decisions and people did).
 pub struct View {
     pub m: Matched,
+    /// Read for every content (`load`), not for one (`load_for`).
+    whole: bool,
     /// Content → (a present file, its kind).
-    present: HashMap<String, (i64, String)>,
-    cache: HashMap<i64, Cached>,
+    present: Arc<HashMap<String, (i64, String)>>,
+    cache: Arc<HashMap<i64, Cached>>,
     names: HashMap<i64, String>,
     /// Content → width and height of the copy the worker saw.
-    sizes: HashMap<String, (f64, f64)>,
+    sizes: Arc<HashMap<String, (f64, f64)>>,
     /// Faces taken for a pet's (`Matched::pet_faces`): not listed anywhere.
     pet_faces: HashSet<i64>,
     /// What each named person is (`cat`, `dog`, `pet`), by what their
     /// confirmed faces are; people's are left out.
     person_species: HashMap<i64, String>,
+    /// `grouped` for all faces, people's faces and pets, worked out when
+    /// first asked for.
+    grouped: [OnceLock<Vec<ClusterFaces>>; 3],
+    /// `person_counts`, likewise.
+    counts: OnceLock<HashMap<i64, PersonCounts>>,
+}
+
+/// What `people` counts for a person from the faces and decisions alone.
+#[derive(Default)]
+struct PersonCounts {
+    faces: u64,
+    photos: u64,
+    suggested: u64,
+    maybe: u64,
+    last_named: Option<i64>,
+    /// The largest confirmed face in a present photo: (px, face id).
+    largest: Option<(f64, i64)>,
+    /// The widest hand-drawn one: (width, decision id).
+    drawn: Option<(f64, i64)>,
+    /// Hand-drawn confirmed faces (indexes into `m.decisions`, in order).
+    drawn_faces: Vec<usize>,
+}
+
+/// The faces without a decision of one cluster, as `grouped` lists them.
+struct ClusterFaces {
+    id: i64,
+    /// `generation_of` the faces.
+    generation: i64,
+    /// Indexes into `m.faces`, the largest face first.
+    faces: Vec<usize>,
 }
 
 impl View {
@@ -495,24 +685,44 @@ impl View {
         View::load_for(conn, None)
     }
 
+    /// This view with what `library.db` holds now: the decisions, people and
+    /// present files read again, the detected faces, their sizes and the
+    /// clusters (`recognition.db`) kept. `None` when the species given to
+    /// pets changed: those change the faces, so everything is read again
+    /// (`load`). Only for a view of every content.
+    pub fn refresh(&self, conn: &Connection) -> Result<Option<View>> {
+        if !self.whole {
+            bail!("only a view of every content can be brought up to date");
+        }
+        if load_species(conn, None)? != *self.m.overrides {
+            return Ok(None);
+        }
+        let decisions = if table_exists(conn, "main", "face_decisions")? { load_decisions(conn, None)? } else { Vec::new() };
+        let m = self.m.with_decisions(decisions);
+        let pet_faces = m.pet_faces();
+        let person_species = person_species_of(&m.decisions);
+        Ok(Some(View {
+            m,
+            whole: true,
+            present: Arc::new(load_present(conn, None)?),
+            cache: self.cache.clone(),
+            names: load_names(conn)?,
+            sizes: self.sizes.clone(),
+            pet_faces,
+            person_species,
+            grouped: Default::default(),
+            counts: OnceLock::new(),
+        }))
+    }
+
     /// Everything, or what belongs to one content.
     pub fn load_for(conn: &Connection, key: Option<&str>) -> Result<View> {
         let m = Matched::load(conn, key)?;
-        let mut present = HashMap::new();
-        {
-            let mut stmt = conn.prepare(&format!(
-                "SELECT quick_hash, id, kind FROM ({}) WHERE ?1 IS NULL OR quick_hash = ?1",
-                faces::PRESENT
-            ))?;
-            let mut rows = stmt.query([key])?;
-            while let Some(r) = rows.next()? {
-                present.insert(r.get::<_, String>(0)?, (r.get(1)?, r.get(2)?));
-            }
-        }
+        let present = load_present(conn, key)?;
         let mut cache = HashMap::new();
         if table_exists(conn, "recog", "clusters")? {
-            let mut stmt = conn.prepare("SELECT face, cluster, person, similarity FROM recog.clusters")?;
-            let mut rows = stmt.query([])?;
+            let mut stmt = conn.prepare(&clusters_sql(key.is_some()))?;
+            let mut rows = stmt.query(params_from_iter(key))?;
             while let Some(r) = rows.next()? {
                 cache.insert(
                     r.get::<_, i64>(0)?,
@@ -520,24 +730,94 @@ impl View {
                 );
             }
         }
-        let names = conn
-            .prepare("SELECT id, name FROM people")?
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-            .collect::<rusqlite::Result<_>>()?;
+        let names = load_names(conn)?;
         let mut sizes = HashMap::new();
         {
-            let mut stmt = conn.prepare(&format!(
-                "SELECT key, width, height FROM recog.looked
-                 WHERE task = '{FACES}' AND width IS NOT NULL AND (?1 IS NULL OR key = ?1)"
-            ))?;
-            let mut rows = stmt.query([key])?;
+            let mut stmt = conn.prepare(&sizes_sql(key.is_some()))?;
+            let mut rows = stmt.query(params_from_iter(key))?;
             while let Some(r) = rows.next()? {
                 sizes.insert(r.get::<_, String>(0)?, (r.get(1)?, r.get(2)?));
             }
         }
         let pet_faces = m.pet_faces();
-        let person_species = person_species(conn)?;
-        Ok(View { m, present, cache, names, sizes, pet_faces, person_species })
+        // Of everyone: from the decisions just read when they are all there;
+        // for one content, of the people confirmed in it (the only ones it
+        // asks about).
+        let person_species = match key {
+            None => person_species_of(&m.decisions),
+            Some(_) => {
+                let mut of = HashMap::new();
+                let confirmed: HashSet<i64> =
+                    m.decisions.iter().filter(|d| d.decision == Decision::Confirmed).filter_map(|d| d.person).collect();
+                for p in confirmed {
+                    if let Some(s) = species_of_person(conn, p)? {
+                        of.insert(p, s);
+                    }
+                }
+                of
+            }
+        };
+        Ok(View {
+            m,
+            whole: key.is_none(),
+            present: Arc::new(present),
+            cache: Arc::new(cache),
+            names,
+            sizes: Arc::new(sizes),
+            pet_faces,
+            person_species,
+            grouped: Default::default(),
+            counts: OnceLock::new(),
+        })
+    }
+
+    /// Per person: confirmed faces and photos, suggestions, the largest
+    /// faces (for the picture).
+    fn person_counts(&self) -> &HashMap<i64, PersonCounts> {
+        self.counts.get_or_init(|| {
+            let mut counts: HashMap<i64, PersonCounts> = HashMap::new();
+            let mut photos: HashMap<i64, HashSet<&str>> = HashMap::new();
+            for (k, d) in self.m.decisions.iter().enumerate() {
+                if let (Decision::Confirmed, Some(p)) = (d.decision, d.person) {
+                    let c = counts.entry(p).or_default();
+                    c.faces += 1;
+                    c.last_named = c.last_named.max(Some(d.at));
+                    if d.manual {
+                        c.drawn_faces.push(k);
+                    }
+                    if self.is_present(&d.key) {
+                        photos.entry(p).or_default().insert(&d.key);
+                        if d.manual && c.drawn.is_none_or(|(w, _)| d.b[2] > w) {
+                            c.drawn = Some((d.b[2], d.id));
+                        }
+                    }
+                }
+            }
+            for (p, keys) in photos {
+                counts.entry(p).or_default().photos = keys.len() as u64;
+            }
+            for i in 0..self.m.faces.len() {
+                let f = &self.m.faces[i];
+                if let Some(d) = self.m.decided(i).filter(|d| d.decision == Decision::Confirmed)
+                    && let Some(p) = d.person
+                    && self.is_present(&f.key)
+                {
+                    let c = counts.entry(p).or_default();
+                    if c.largest.is_none_or(|(px, _)| f.px > px) {
+                        c.largest = Some((f.px, f.id));
+                    }
+                }
+                if let Some((p, sim)) = self.suggestion(i) {
+                    let c = counts.entry(p).or_default();
+                    if sim >= f.thresholds().suggest {
+                        c.suggested += 1;
+                    } else {
+                        c.maybe += 1;
+                    }
+                }
+            }
+            counts
+        })
     }
 
     fn person(&self, id: Option<i64>) -> Option<PersonRef> {
@@ -557,6 +837,12 @@ impl View {
             && self.names.contains_key(&person)
             && !self.m.states[i].rejected.contains(&person))
         .then_some((person, sim))
+    }
+
+    /// Whether face `id` was in the last regrouping (without a decision then):
+    /// undoing a decision about it brings it back at once.
+    pub fn in_clusters(&self, id: i64) -> bool {
+        self.cache.contains_key(&id)
     }
 
     /// The cluster of face `i` if it has no decision.
@@ -775,17 +1061,33 @@ fn group(conn: &Connection, id: i64) -> Result<Group> {
     groups(conn)?.into_iter().find(|g| g.id == id).ok_or_else(|| anyhow::anyhow!("there is no group {id}"))
 }
 
-/// A new group, at the end.
-pub fn create_group(conn: &Connection, name: &str) -> Result<Group> {
+/// A new group, at the end, with this person as its first member: a group is
+/// never empty. The group the person leaves goes if nobody else is in it.
+pub fn create_group(conn: &Connection, name: &str, person_id: i64) -> Result<Group> {
     let name = check_name(name)?;
     if find_name(conn, "groups", &name, None)?.is_some() {
         bail!("there is a group called {name} already");
     }
-    conn.execute(
+    let tx = conn.unchecked_transaction()?;
+    let before = group_of(&tx, person_id)?;
+    tx.execute(
         "INSERT INTO groups (name, position) VALUES (?1, (SELECT coalesce(max(position), 0) + 1 FROM groups))",
         [&name],
     )?;
-    group(conn, conn.last_insert_rowid())
+    let id = tx.last_insert_rowid();
+    tx.execute("UPDATE people SET group_id = ?2 WHERE id = ?1", params![person_id, id])?;
+    drop_if_empty(&tx, before)?;
+    tx.commit()?;
+    group(conn, id)
+}
+
+/// Remove a group nobody is in any more (the one a person just left). Other
+/// empty groups are left alone.
+fn drop_if_empty(conn: &Connection, group_id: Option<i64>) -> Result<()> {
+    if let Some(g) = group_id {
+        conn.execute("DELETE FROM groups WHERE id = ?1 AND NOT EXISTS (SELECT 1 FROM people WHERE group_id = ?1)", [g])?;
+    }
+    Ok(())
 }
 
 pub fn rename_group(conn: &Connection, id: i64, name: &str) -> Result<Group> {
@@ -890,82 +1192,38 @@ fn person_rows(conn: &Connection) -> Result<Vec<PersonRow>> {
 /// Everyone (hidden people only with `hidden`), by group order and name; no
 /// group last.
 pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
-    let v = View::load(conn)?;
+    people_in(conn, &View::load(conn)?, hidden)
+}
+
+/// `people`, with the faces and decisions of `v` (as they are in `conn` now).
+pub fn people_in(conn: &Connection, v: &View, hidden: bool) -> Result<Vec<Person>> {
     let mut rows = person_rows(conn)?;
     rows.retain(|p| hidden || !p.hidden);
     rows.sort_by(|a, b| {
         let order = |p: &PersonRow| (p.position.is_none(), p.position, p.name.to_lowercase(), p.id);
         order(a).cmp(&order(b))
     });
-    #[derive(Default)]
-    struct Counts {
-        faces: u64,
-        photos: HashSet<String>,
-        suggested: u64,
-        maybe: u64,
-        last_named: Option<i64>,
-        largest: Option<(f64, i64)>,
-        drawn: Option<(f64, i64)>,
-    }
-    let mut counts: HashMap<i64, Counts> = HashMap::new();
-    for d in v.m.decisions.iter() {
-        if let (Decision::Confirmed, Some(p)) = (d.decision, d.person) {
-            let c = counts.entry(p).or_default();
-            c.faces += 1;
-            c.last_named = c.last_named.max(Some(d.at));
-            if v.is_present(&d.key) {
-                c.photos.insert(d.key.clone());
-                if d.manual && c.drawn.is_none_or(|(w, _)| d.b[2] > w) {
-                    c.drawn = Some((d.b[2], d.id));
-                }
-            }
-        }
-    }
-    for i in 0..v.m.faces.len() {
-        let f = &v.m.faces[i];
-        if let Some(d) = v.m.decided(i).filter(|d| d.decision == Decision::Confirmed)
-            && let Some(p) = d.person
-            && v.is_present(&f.key)
-        {
-            let c = counts.entry(p).or_default();
-            if c.largest.is_none_or(|(px, _)| f.px > px) {
-                c.largest = Some((f.px, f.id));
-            }
-        }
-        if let Some((p, sim)) = v.suggestion(i) {
-            let c = counts.entry(p).or_default();
-            if sim >= f.thresholds().suggest {
-                c.suggested += 1;
-            } else {
-                c.maybe += 1;
-            }
-        }
-    }
+    let counts = v.person_counts();
     Ok(rows
         .into_iter()
         .map(|p| {
-            let c = counts.remove(&p.id).unwrap_or_default();
-            let chosen = p.cover.as_ref().and_then(|(key, b)| {
-                (0..v.m.faces.len())
-                    .filter(|&i| v.m.faces[i].key == *key && v.is_present(key))
-                    .map(|i| (i, recognize::iou(v.m.faces[i].b, *b)))
+            let none = PersonCounts::default();
+            let c = counts.get(&p.id).unwrap_or(&none);
+            let chosen = p.cover.as_ref().filter(|(key, _)| v.is_present(key)).and_then(|(key, b)| {
+                v.m.of_key(key)
+                    .iter()
+                    .map(|&i| (i, recognize::iou(v.m.faces[i].b, *b)))
                     .filter(|&(_, iou)| iou >= MATCH_IOU)
                     .max_by(|a, b| a.1.total_cmp(&b.1))
                     .map(|(i, _)| v.m.faces[i].id)
             });
             let cover = chosen.or(c.largest.map(|(_, id)| id));
             // A hand-drawn face the person's picture was set to.
-            let chosen_manual = p.cover.as_ref().and_then(|(key, b)| {
-                v.m.decisions
+            let chosen_manual = p.cover.as_ref().filter(|(key, _)| v.is_present(key)).and_then(|(key, b)| {
+                c.drawn_faces
                     .iter()
-                    .find(|d| {
-                        d.manual
-                            && d.decision == Decision::Confirmed
-                            && d.person == Some(p.id)
-                            && d.key == *key
-                            && v.is_present(key)
-                            && recognize::iou(d.b, *b) >= MATCH_IOU
-                    })
+                    .map(|&k| &v.m.decisions[k])
+                    .find(|d| d.key == *key && recognize::iou(d.b, *b) >= MATCH_IOU)
                     .map(|d| d.id)
             });
             Person {
@@ -974,7 +1232,7 @@ pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
                 group_id: p.group_id,
                 hidden: p.hidden,
                 faces: c.faces,
-                photos: c.photos.len() as u64,
+                photos: c.photos,
                 suggested: c.suggested,
                 maybe: c.maybe,
                 last_named: c.last_named,
@@ -993,15 +1251,26 @@ pub fn people(conn: &Connection, hidden: bool) -> Result<Vec<Person>> {
 }
 
 pub fn person(conn: &Connection, id: i64) -> Result<Option<Person>> {
-    Ok(people(conn, true)?.into_iter().find(|p| p.id == id))
+    person_in(conn, &View::load(conn)?, id)
 }
 
-fn person_or_fail(conn: &Connection, id: i64) -> Result<Person> {
-    person(conn, id)?.ok_or_else(|| anyhow::anyhow!("there is no person {id}"))
+/// `person`, with the faces and decisions of `v`.
+pub fn person_in(conn: &Connection, v: &View, id: i64) -> Result<Option<Person>> {
+    Ok(people_in(conn, v, true)?.into_iter().find(|p| p.id == id))
 }
 
-/// A new person, optionally in a group.
-pub fn create_person(conn: &Connection, name: &str, group_id: Option<i64>) -> Result<Person> {
+/// The group of a person (who must be there).
+fn group_of(conn: &Connection, id: i64) -> Result<Option<i64>> {
+    conn.query_row("SELECT group_id FROM people WHERE id = ?1", [id], |r| r.get(0))
+        .optional()?
+        .ok_or_else(|| anyhow::anyhow!("there is no person {id}"))
+}
+
+// The changes below return nothing about the person: the caller reads them
+// again afterwards (`person`), from a view that knows the change.
+
+/// A new person, optionally in a group; returns their id.
+pub fn create_person(conn: &Connection, name: &str, group_id: Option<i64>) -> Result<i64> {
     let name = check_name(name)?;
     if find_name(conn, "people", &name, None)?.is_some() {
         bail!("there is someone called {name} already");
@@ -1012,10 +1281,10 @@ pub fn create_person(conn: &Connection, name: &str, group_id: Option<i64>) -> Re
         bail!("there is no group {g}");
     }
     conn.execute("INSERT INTO people (name, group_id) VALUES (?1, ?2)", params![name, group_id])?;
-    person_or_fail(conn, conn.last_insert_rowid())
+    Ok(conn.last_insert_rowid())
 }
 
-pub fn rename_person(conn: &Connection, id: i64, name: &str) -> Result<Person> {
+pub fn rename_person(conn: &Connection, id: i64, name: &str) -> Result<()> {
     let name = check_name(name)?;
     if !exists(conn, "people", id)? {
         bail!("there is no person {id}");
@@ -1024,43 +1293,53 @@ pub fn rename_person(conn: &Connection, id: i64, name: &str) -> Result<Person> {
         bail!("there is someone called {name} already");
     }
     conn.execute("UPDATE people SET name = ?2 WHERE id = ?1", params![id, name])?;
-    person_or_fail(conn, id)
+    Ok(())
 }
 
 /// Remove a person with no confirmed faces (a misspelled name): what
 /// is left of them (rejections) goes with them. Someone with faces is
 /// merged into the right person instead.
 pub fn delete_person(conn: &Connection, id: i64) -> Result<()> {
-    let p = person_or_fail(conn, id)?;
-    if p.faces > 0 {
-        bail!("{} has {} confirmed; merge them into someone instead", p.name, if p.faces == 1 { "a face".to_string() } else { format!("{} faces", p.faces) });
+    let group_id = group_of(conn, id)?;
+    let (name, faces): (String, i64) = conn.query_row(
+        // `Person::faces`: every confirmed decision, drawn or no longer found too.
+        "SELECT name, (SELECT count(*) FROM face_decisions WHERE person_id = ?1 AND decision = 'confirmed') FROM people WHERE id = ?1",
+        [id],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    if faces > 0 {
+        bail!("{} has {} confirmed; merge them into someone instead", name, if faces == 1 { "a face".to_string() } else { format!("{} faces", faces) });
     }
     conn.execute("DELETE FROM people WHERE id = ?1", [id])?;
+    drop_if_empty(conn, group_id)?;
     Ok(())
 }
 
-pub fn hide_person(conn: &Connection, id: i64, hidden: bool) -> Result<Person> {
+pub fn hide_person(conn: &Connection, id: i64, hidden: bool) -> Result<()> {
     if conn.execute("UPDATE people SET hidden = ?2 WHERE id = ?1", params![id, hidden])? == 0 {
         bail!("there is no person {id}");
     }
-    person_or_fail(conn, id)
+    Ok(())
 }
 
-/// Put a person in a group, or in none.
-pub fn set_group(conn: &Connection, id: i64, group_id: Option<i64>) -> Result<Person> {
+/// Put a person in a group, or in none. The group they leave goes if nobody
+/// else is in it.
+pub fn set_group(conn: &Connection, id: i64, group_id: Option<i64>) -> Result<()> {
     if let Some(g) = group_id
         && !exists(conn, "groups", g)?
     {
         bail!("there is no group {g}");
     }
-    if conn.execute("UPDATE people SET group_id = ?2 WHERE id = ?1", params![id, group_id])? == 0 {
-        bail!("there is no person {id}");
+    let before = group_of(conn, id)?;
+    conn.execute("UPDATE people SET group_id = ?2 WHERE id = ?1", params![id, group_id])?;
+    if before != group_id {
+        drop_if_empty(conn, before)?;
     }
-    person_or_fail(conn, id)
+    Ok(())
 }
 
 /// Show this face (one of the person's confirmed faces) for the person.
-pub fn set_cover(conn: &Connection, id: i64, face: i64) -> Result<Person> {
+pub fn set_cover(conn: &Connection, id: i64, face: i64) -> Result<()> {
     let m = Matched::load(conn, None)?;
     let Some(i) = m.faces.iter().position(|f| f.id == face) else { bail!("there is no face {face}") };
     if !m.decided(i).is_some_and(|d| d.decision == Decision::Confirmed && d.person == Some(id)) {
@@ -1071,12 +1350,12 @@ pub fn set_cover(conn: &Connection, id: i64, face: i64) -> Result<Person> {
         "UPDATE people SET cover_key = ?2, cover_box = ?3 WHERE id = ?1",
         params![id, f.key, serde_json::to_string(&f.b)?],
     )?;
-    person_or_fail(conn, id)
+    Ok(())
 }
 
 /// Show the person's largest confirmed face in this photo (a file) for the
 /// person: the right-click "Use as … picture" on a photo.
-pub fn set_cover_from_file(conn: &Connection, id: i64, file: i64) -> Result<Person> {
+pub fn set_cover_from_file(conn: &Connection, id: i64, file: i64) -> Result<()> {
     let key: String = conn
         .query_row("SELECT quick_hash FROM files WHERE id = ?1 AND missing_since IS NULL", [file], |r| r.get(0))
         .optional()?
@@ -1103,7 +1382,7 @@ pub fn set_cover_from_file(conn: &Connection, id: i64, file: i64) -> Result<Pers
     }
     let Some((_, b)) = best else { bail!("this photo has no confirmed face of that person") };
     conn.execute("UPDATE people SET cover_key = ?2, cover_box = ?3 WHERE id = ?1", params![id, key, serde_json::to_string(&b)?])?;
-    person_or_fail(conn, id)
+    Ok(())
 }
 
 /// Give everyone with confirmed faces a picture of their own, kept until
@@ -1115,7 +1394,12 @@ pub fn ensure_covers(conn: &Connection) -> Result<u64> {
     if !table_exists(conn, "main", "people")? {
         return Ok(0);
     }
-    let v = View::load(conn)?;
+    ensure_covers_in(conn, &View::load(conn)?)
+}
+
+/// `ensure_covers`, with the faces and decisions of `v`. The pictures are in
+/// `people` only: `v` stays as it is.
+pub fn ensure_covers_in(conn: &Connection, v: &View) -> Result<u64> {
     let covers: HashMap<i64, (String, [f64; 4])> = person_rows(conn)?.into_iter().filter_map(|p| Some((p.id, p.cover?))).collect();
     let mut valid: HashSet<i64> = HashSet::new();
     let mut largest: HashMap<i64, (f64, String, [f64; 4])> = HashMap::new();
@@ -1168,7 +1452,7 @@ pub fn ensure_covers(conn: &Connection) -> Result<u64> {
 /// Merge person `from` into `into`: all of `from`'s decisions become
 /// `into`'s, and `from` is gone. `into` keeps its name, group and cover
 /// (takes `from`'s where it has none).
-pub fn merge_people(conn: &Connection, from: i64, into: i64) -> Result<Person> {
+pub fn merge_people(conn: &Connection, from: i64, into: i64) -> Result<()> {
     if from == into {
         bail!("cannot merge someone with themselves");
     }
@@ -1188,6 +1472,7 @@ pub fn merge_people(conn: &Connection, from: i64, into: i64) -> Result<Person> {
         )?;
     }
     tx.execute("DELETE FROM people WHERE id = ?1", [from])?;
+    drop_if_empty(&tx, a.group_id)?;
     // A face confirmed for one and rejected for the other: the
     // confirmation wins. A face rejected for both: one rejection.
     let m = Matched::load(&tx, None)?;
@@ -1205,7 +1490,7 @@ pub fn merge_people(conn: &Connection, from: i64, into: i64) -> Result<Person> {
         }
     }
     tx.commit()?;
-    person_or_fail(conn, into)
+    Ok(())
 }
 
 /// Who a request means: an existing person, or one with this name (made if
@@ -1265,6 +1550,12 @@ pub struct Decided {
     pub faces: u64,
     /// The person they were assigned to, confirmed for or rejected for.
     pub person: Option<PersonRef>,
+    /// The same person as the list shows them (`people`), for an action that
+    /// names someone, so the page can add or update them without asking for the
+    /// whole list again. Filled in by the server after the action; `suggested`
+    /// and `maybe` are 0 (only the next grouping knows them).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub person_data: Option<Person>,
     /// After an action on some faces of a cluster: what is left of it
     /// (`null` if nothing is).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1279,13 +1570,100 @@ pub struct ClusterRef {
     pub size: u64,
 }
 
+/// Present photos (one per content) with a confirmed face of the person: what
+/// `people` counts as `photos`, without loading every face.
+fn person_photos(conn: &Connection, id: i64) -> Result<u64> {
+    let n: i64 = conn.query_row(
+        &format!(
+            "SELECT count(DISTINCT d.key) FROM face_decisions d
+             WHERE d.person_id = ?1 AND d.decision = 'confirmed' AND {} IS NOT NULL",
+            faces::present_file("d.key")
+        ),
+        [id],
+        |r| r.get(0),
+    )?;
+    Ok(n as u64)
+}
+
+/// One person as `people` lists them, from a few queries about them alone
+/// instead of reading every face: for the reply to naming faces. `suggested`
+/// and `maybe` are 0. A person whose picture cannot be told this way (a
+/// photo that is not there) has neither `cover` nor `cover_manual`: the caller
+/// asks for the list then.
+pub fn person_light(conn: &Connection, id: i64) -> Result<Option<Person>> {
+    let row: Option<(String, Option<i64>, bool, Option<String>, Option<String>)> = conn
+        .query_row("SELECT name, group_id, hidden, cover_key, cover_box FROM people WHERE id = ?1", [id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        })
+        .optional()?;
+    let Some((name, group_id, hidden, cover_key, cover_box)) = row else { return Ok(None) };
+    let (faces, last_named): (i64, Option<i64>) = conn.query_row(
+        "SELECT count(*), max(at) FROM face_decisions WHERE person_id = ?1 AND decision = 'confirmed'",
+        [id],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    let (mut cover, mut cover_manual) = (None, None);
+    if let Some(key) = cover_key
+        && let Some(b) = cover_box.and_then(|b| serde_json::from_str::<[f64; 4]>(&b).ok())
+    {
+        let present: bool = conn
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM files WHERE quick_hash = ?1 AND missing_since IS NULL AND kind IN ('jpeg', 'png', 'heic'))",
+                [&key],
+                |r| r.get(0),
+            )?;
+        if present {
+            let mut best: Option<(f64, i64)> = None;
+            let mut stmt = conn.prepare("SELECT id, x, y, w, h FROM recog.faces WHERE key = ?1")?;
+            let mut rows = stmt.query([&key])?;
+            while let Some(r) = rows.next()? {
+                let iou = recognize::iou([r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?], b);
+                if iou >= MATCH_IOU && best.is_none_or(|(i, _)| iou > i) {
+                    best = Some((iou, r.get(0)?));
+                }
+            }
+            cover = best.map(|(_, face)| face);
+            if cover.is_none() {
+                let mut stmt = conn.prepare(
+                    "SELECT id, x, y, w, h FROM face_decisions
+                     WHERE person_id = ?1 AND key = ?2 AND manual = 1 AND decision = 'confirmed'",
+                )?;
+                let mut rows = stmt.query(params![id, key])?;
+                while let Some(r) = rows.next()? {
+                    if recognize::iou([r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?], b) >= MATCH_IOU {
+                        cover_manual = Some(r.get(0)?);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    Ok(Some(Person {
+        id,
+        name,
+        group_id,
+        hidden,
+        faces: faces as u64,
+        photos: person_photos(conn, id)?,
+        suggested: 0,
+        maybe: 0,
+        last_named,
+        species: species_of_person(conn, id)?,
+        cover,
+        cover_manual,
+    }))
+}
+
 /// Apply `action` to detected faces (`recog.faces` ids; unknown ids are
 /// skipped) in one transaction.
 /// `Stale` if any of these faces has a decision (or is a person's face taken
 /// for a pet's, which the Unnamed page does not show either): an action meant
 /// for faces nobody has decided on must not overwrite one made elsewhere.
 pub fn ensure_undecided(conn: &Connection, faces: &[i64]) -> Result<()> {
-    let v = View::load(conn)?;
+    ensure_undecided_in(&View::load(conn)?, faces)
+}
+
+pub fn ensure_undecided_in(v: &View, faces: &[i64]) -> Result<()> {
     let wanted: HashSet<i64> = faces.iter().copied().collect();
     let decided = (0..v.m.faces.len())
         .any(|i| wanted.contains(&v.m.faces[i].id) && (v.m.decided(i).is_some() || v.pet_faces.contains(&v.m.faces[i].id)));
@@ -1296,12 +1674,28 @@ pub fn ensure_undecided(conn: &Connection, faces: &[i64]) -> Result<()> {
 }
 
 pub fn decide(conn: &Connection, faces: &[i64], action: &Action) -> Result<Decided> {
+    decide_with(conn, None, faces, action)
+}
+
+/// `decide`, with the faces and decisions of `v` as they are in `conn` now.
+pub fn decide_in(conn: &Connection, v: &View, faces: &[i64], action: &Action) -> Result<Decided> {
+    decide_with(conn, Some(v), faces, action)
+}
+
+fn decide_with(conn: &Connection, view: Option<&View>, faces: &[i64], action: &Action) -> Result<Decided> {
     let tx = conn.unchecked_transaction()?;
     let assign_to = match action {
         Action::Assign(who) => Some(resolve(&tx, who)?),
         _ => None,
     };
-    let v = View::load(&tx)?;
+    let loaded;
+    let v = match view {
+        Some(v) => v,
+        None => {
+            loaded = View::load(&tx)?;
+            &loaded
+        }
+    };
     let by_id: HashMap<i64, usize> = v.m.faces.iter().enumerate().map(|(i, f)| (f.id, i)).collect();
     let mut seen = HashSet::new();
     let mut changed = 0;
@@ -1414,7 +1808,7 @@ pub fn decide(conn: &Connection, faces: &[i64], action: &Action) -> Result<Decid
         None => None,
     };
     tx.commit()?;
-    Ok(Decided { faces: changed, person, cluster: None })
+    Ok(Decided { faces: changed, person, person_data: None, cluster: None })
 }
 
 /// Say what kind of pet detected faces (`recog.faces` ids; people's faces and
@@ -1472,11 +1866,26 @@ pub fn add_manual(conn: &Connection, file: i64, b: [f64; 4], who: &Who, species:
         bail!("the box must lie inside the picture (fractions of its width and height)");
     }
     let tx = conn.unchecked_transaction()?;
-    let key: String = tx
-        .query_row("SELECT quick_hash FROM files WHERE id = ?1 AND missing_since IS NULL", [file], |r| r.get(0))
+    let (key, kind): (String, String) = tx
+        .query_row("SELECT quick_hash, kind FROM files WHERE id = ?1 AND missing_since IS NULL", [file], |r| Ok((r.get(0)?, r.get(1)?)))
         .optional()?
         .ok_or_else(|| anyhow::anyhow!("there is no file {file}"))?;
     let person = resolve(&tx, who)?;
+    // The same person is added only once: to a video (it is linked to the whole
+    // clip, the box means nothing) at all, to a photo only where the box lies
+    // on the one already drawn for them. A repeated request (a double click, a
+    // slow reply) so returns the face that is there.
+    let mut stmt = tx.prepare(
+        "SELECT id, x, y, w, h FROM face_decisions
+         WHERE key = ?1 AND person_id = ?2 AND manual = 1 AND decision = 'confirmed' ORDER BY id",
+    )?;
+    let there: Vec<(i64, [f64; 4])> = stmt
+        .query_map(params![key, person], |r| Ok((r.get(0)?, [r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?])))?
+        .collect::<rusqlite::Result<_>>()?;
+    drop(stmt);
+    if let Some((id, _)) = there.iter().find(|(_, o)| kind == "video" || overlap(*o, b) > 0.5) {
+        return Ok(*id);
+    }
     tx.execute(
         "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at, species)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'confirmed', 1, ?7, ?8)",
@@ -1485,6 +1894,17 @@ pub fn add_manual(conn: &Connection, file: i64, b: [f64; 4], who: &Who, species:
     let id = tx.last_insert_rowid();
     tx.commit()?;
     Ok(id)
+}
+
+/// Intersection over union of two boxes `[x, y, w, h]`.
+fn overlap(a: [f64; 4], b: [f64; 4]) -> f64 {
+    let w = (a[0] + a[2]).min(b[0] + b[2]) - a[0].max(b[0]);
+    let h = (a[1] + a[3]).min(b[1] + b[3]) - a[1].max(b[1]);
+    if w <= 0.0 || h <= 0.0 {
+        return 0.0;
+    }
+    let i = w * h;
+    i / (a[2] * a[3] + b[2] * b[3] - i)
 }
 
 /// Delete hand-drawn faces (`manual` ids). Returns how many went.
@@ -1531,7 +1951,13 @@ pub fn person_faces(conn: &Connection, id: i64, which: Which, offset: usize, lim
     if !exists(conn, "people", id)? {
         return Ok(None);
     }
-    let v = View::load(conn)?;
+    person_faces_in(conn, &View::load(conn)?, id, which, offset, limit)
+}
+
+pub fn person_faces_in(conn: &Connection, v: &View, id: i64, which: Which, offset: usize, limit: usize) -> Result<Option<FaceList>> {
+    if !exists(conn, "people", id)? {
+        return Ok(None);
+    }
     let mut items: Vec<FaceItem> = Vec::new();
     for i in 0..v.m.faces.len() {
         if !v.is_present(&v.m.faces[i].key) {
@@ -1602,9 +2028,25 @@ pub struct Clusters {
     pub clusters: Vec<Cluster>,
 }
 
+/// Faces without a decision, by cluster, largest cluster first; worked out
+/// once per view.
+fn grouped(v: &View, kind: Option<Space>) -> &[ClusterFaces] {
+    let slot = match kind {
+        None => 0,
+        Some(Space::Faces) => 1,
+        Some(Space::Pets) => 2,
+    };
+    v.grouped[slot].get_or_init(|| {
+        cluster_groups(v, kind)
+            .into_iter()
+            .map(|(id, faces)| ClusterFaces { id, generation: generation_of(v, &faces), faces })
+            .collect()
+    })
+}
+
 /// Faces without a decision, by cluster: (cluster, face indexes largest
 /// first), largest cluster first.
-fn grouped(v: &View, kind: Option<Space>) -> Vec<(i64, Vec<usize>)> {
+fn cluster_groups(v: &View, kind: Option<Space>) -> Vec<(i64, Vec<usize>)> {
     let mut by: BTreeMap<i64, Vec<usize>> = BTreeMap::new();
     for i in 0..v.m.faces.len() {
         if kind.is_some_and(|k| k != v.m.faces[i].space()) {
@@ -1658,27 +2100,44 @@ pub enum Size {
 /// `samples` faces each; only those of one space (people's faces or
 /// pets) if `kind` is given. Faces and pets never share a cluster.
 pub fn clusters(conn: &Connection, offset: usize, limit: usize, samples: usize, kind: Option<Space>, size: Size) -> Result<Clusters> {
-    let v = View::load(conn)?;
-    let mut all = grouped(&v, kind);
-    let singles: u64 = all.iter().filter(|c| c.1.len() <= SMALL_CLUSTER).map(|c| c.1.len() as u64).sum();
-    all.retain(|c| match size {
-        Size::All => true,
-        Size::Large => c.1.len() > SMALL_CLUSTER,
-        Size::Small => c.1.len() <= SMALL_CLUSTER,
-    });
+    Ok(clusters_in(&View::load(conn)?, offset, limit, samples, kind, size))
+}
+
+/// Cards on the Unnamed page (clusters with faces nobody decided on, all
+/// sizes) and how many of them have a suggestion: when to regroup.
+pub fn cards_now(v: &View) -> (u64, u64) {
+    let groups = grouped(v, None);
+    let suggested = groups
+        .iter()
+        .filter(|c| c.faces.iter().any(|&i| v.suggestion(i).is_some_and(|s| s.1 >= v.m.faces[i].thresholds().suggest)))
+        .count();
+    (groups.len() as u64, suggested as u64)
+}
+
+pub fn clusters_in(v: &View, offset: usize, limit: usize, samples: usize, kind: Option<Space>, size: Size) -> Clusters {
+    let groups = grouped(v, kind);
+    let singles: u64 = groups.iter().filter(|c| c.faces.len() <= SMALL_CLUSTER).map(|c| c.faces.len() as u64).sum();
+    let mut all: Vec<&ClusterFaces> = groups
+        .iter()
+        .filter(|c| match size {
+            Size::All => true,
+            Size::Large => c.faces.len() > SMALL_CLUSTER,
+            Size::Small => c.faces.len() <= SMALL_CLUSTER,
+        })
+        .collect();
     if size == Size::Small {
         // Largest faces first, so the ones that can be recognised come first.
-        all.sort_by(|a, b| v.m.faces[b.1[0]].px.total_cmp(&v.m.faces[a.1[0]].px).then(a.0.cmp(&b.0)));
+        all.sort_by(|a, b| v.m.faces[b.faces[0]].px.total_cmp(&v.m.faces[a.faces[0]].px).then(a.id.cmp(&b.id)));
     }
-    let unnamed = all.iter().map(|c| c.1.len() as u64).sum();
+    let unnamed = all.iter().map(|c| c.faces.len() as u64).sum();
     let total = all.len() as u64;
     let clusters = all
         .into_iter()
         .skip(offset)
         .take(limit)
-        .map(|(id, faces)| {
+        .map(|&ClusterFaces { id, generation, ref faces }| {
             let mut votes: HashMap<i64, u64> = HashMap::new();
-            for &i in &faces {
+            for &i in faces {
                 if let Some((p, _)) = v.suggestion(i).filter(|s| s.1 >= v.m.faces[i].thresholds().suggest) {
                     *votes.entry(p).or_default() += 1;
                 }
@@ -1689,48 +2148,64 @@ pub fn clusters(conn: &Connection, offset: usize, limit: usize, samples: usize, 
                 .and_then(|(p, n)| v.person(Some(p)).map(|person| ClusterSuggestion { person, faces: n }));
             Cluster {
                 id,
-                generation: generation_of(&v, &faces),
+                generation,
                 size: faces.len() as u64,
                 faces: faces.iter().take(samples).map(|&i| v.item(i)).collect(),
                 suggestion,
             }
         })
         .collect();
-    Ok(Clusters { total, unnamed, small_faces: singles, clusters })
+    Clusters { total, unnamed, small_faces: singles, clusters }
 }
 
 /// All faces of a cluster: of the one whose faces have `generation` (its
 /// number may have changed since; `Stale` if no cluster has those faces
 /// any more), else of cluster number `id` (`None` if there is none).
 pub fn cluster_faces(conn: &Connection, id: i64, generation: Option<i64>) -> Result<Option<Vec<FaceItem>>> {
-    let v = View::load(conn)?;
-    let all = grouped(&v, None);
-    let found = match generation {
+    cluster_faces_in(&View::load(conn)?, id, generation)
+}
+
+pub fn cluster_faces_in(v: &View, id: i64, generation: Option<i64>) -> Result<Option<Vec<FaceItem>>> {
+    Ok(find_cluster(v, id, generation)?.map(|c| c.faces.iter().map(|&i| v.item(i)).collect()))
+}
+
+/// The cluster whose faces have `generation` (`Stale` if none has), else
+/// cluster number `id`.
+fn find_cluster(v: &View, id: i64, generation: Option<i64>) -> Result<Option<&ClusterFaces>> {
+    let all = grouped(v, None);
+    Ok(match generation {
         Some(g) => {
-            let mut matching = all.iter().filter(|c| generation_of(&v, &c.1) == g);
+            let mut matching = all.iter().filter(|c| c.generation == g);
             let first = matching.next();
             // The same faces under the number shown, if it is still that.
-            Some(all.iter().find(|c| c.0 == id && generation_of(&v, &c.1) == g).or(first).ok_or(Stale)?)
+            Some(all.iter().find(|c| c.id == id && c.generation == g).or(first).ok_or(Stale)?)
         }
-        None => all.iter().find(|c| c.0 == id),
-    };
-    Ok(found.map(|(_, faces)| faces.iter().map(|&i| v.item(i)).collect()))
+        None => all.iter().find(|c| c.id == id),
+    })
 }
 
 /// What is left of the cluster of these faces (the ones of a cluster an
 /// action left undecided), as it is shown now.
 pub fn cluster_of(conn: &Connection, faces: &[i64]) -> Result<Option<ClusterRef>> {
-    let v = View::load(conn)?;
-    Ok(grouped(&v, None)
-        .into_iter()
-        .find(|(_, members)| members.iter().any(|&i| faces.contains(&v.m.faces[i].id)))
-        .map(|(id, members)| ClusterRef { id, generation: generation_of(&v, &members), size: members.len() as u64 }))
+    Ok(cluster_of_in(&View::load(conn)?, faces))
+}
+
+pub fn cluster_of_in(v: &View, faces: &[i64]) -> Option<ClusterRef> {
+    grouped(v, None)
+        .iter()
+        .find(|c| c.faces.iter().any(|&i| faces.contains(&v.m.faces[i].id)))
+        .map(|c| ClusterRef { id: c.id, generation: c.generation, size: c.faces.len() as u64 })
 }
 
 /// The face ids of a cluster for an action on it: `faces` if given (a
 /// split: some of its faces), else all of them.
 pub fn cluster_face_ids(conn: &Connection, id: i64, generation: Option<i64>, faces: Option<&[i64]>) -> Result<Vec<i64>> {
-    let all: Vec<i64> = cluster_faces(conn, id, generation)?.unwrap_or_default().into_iter().filter_map(|f| f.id).collect();
+    cluster_face_ids_in(&View::load(conn)?, id, generation, faces)
+}
+
+pub fn cluster_face_ids_in(v: &View, id: i64, generation: Option<i64>, faces: Option<&[i64]>) -> Result<Vec<i64>> {
+    // What `cluster_faces` lists, without making the items.
+    let all: Vec<i64> = find_cluster(v, id, generation)?.map(|c| c.faces.iter().map(|&i| v.m.faces[i].id).collect()).unwrap_or_default();
     if all.is_empty() {
         bail!("there is no cluster {id} (any more)");
     }
@@ -1807,6 +2282,26 @@ pub fn keys_by_person(conn: &Connection) -> Result<HashMap<i64, HashSet<String>>
     let mut rows = stmt.query([])?;
     while let Some(r) = rows.next()? {
         out.entry(r.get(0)?).or_default().insert(r.get(1)?);
+    }
+    Ok(out)
+}
+
+/// The people in a group (pets too).
+pub fn members_of_group(conn: &Connection, group_id: i64) -> Result<Vec<i64>> {
+    Ok(conn
+        .prepare("SELECT id FROM people WHERE group_id = ?1")?
+        .query_map([group_id], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?)
+}
+
+/// Names of groups by id (unknown ids are left out).
+pub fn group_names(conn: &Connection, ids: &[i64]) -> Result<Vec<GroupRef>> {
+    let mut stmt = conn.prepare("SELECT name FROM groups WHERE id = ?1")?;
+    let mut out = Vec::new();
+    for &id in ids {
+        if let Some(name) = stmt.query_row([id], |r| r.get(0)).optional()? {
+            out.push(GroupRef { id, name });
+        }
     }
     Ok(out)
 }
@@ -1959,6 +2454,55 @@ pub fn user_data(conn: &Connection) -> Result<UserPeople> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn overlap_is_intersection_over_union() {
+        let a = [0.1, 0.1, 0.2, 0.2];
+        assert!((overlap(a, a) - 1.0).abs() < 1e-9);
+        assert_eq!(overlap(a, [0.5, 0.5, 0.2, 0.2]), 0.0);
+        assert!(overlap(a, [0.3, 0.1, 0.2, 0.2]) < 1e-9, "touching is not overlapping");
+        // Half of each: 0.02 shared of 0.04 + 0.04 - 0.02.
+        assert!((overlap(a, [0.2, 0.1, 0.2, 0.2]) - 1.0 / 3.0).abs() < 1e-9);
+    }
+
+    /// The rows of one content (one photo's faces in the viewer, a crop) are
+    /// found through the indexes by content: none of these reads a whole table.
+    #[test]
+    fn one_contents_rows_are_found_through_the_indexes() {
+        let dir = std::env::temp_dir().join(format!("shoebox-people-plans-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join(db::DIR).join(db::FILE);
+        let conn = db::open(&path).unwrap();
+        recognize::attach(&conn, &path).unwrap();
+        let version: i32 = conn.pragma_query_value(Some("recog"), "user_version", |r| r.get(0)).unwrap();
+        let queries = [
+            ("faces", faces_sql(version, true)),
+            ("bodies", bodies_sql(true)),
+            ("species", species_sql(true)),
+            ("decisions", decisions_sql(true, true)),
+            ("present", present_sql(true)),
+            ("sizes", sizes_sql(true)),
+            ("clusters", clusters_sql(true)),
+        ];
+        for (what, sql) in queries {
+            let plan: Vec<String> = conn
+                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .unwrap()
+                .query_map(["key"], |r| r.get(3))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap();
+            assert!(plan.iter().any(|l| l.starts_with("SEARCH")), "{what}: {plan:?}");
+            assert!(!plan.iter().any(|l| l.starts_with("SCAN")), "{what} reads a whole table: {plan:?}");
+        }
+        // For every content they are plain reads of the tables (no `?1`).
+        for sql in [faces_sql(version, false), bodies_sql(false), species_sql(false), decisions_sql(true, false), present_sql(false), sizes_sql(false), clusters_sql(false)] {
+            assert!(!sql.contains("?1"), "{sql}");
+            conn.prepare(&sql).unwrap();
+        }
+        drop(conn);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     fn face(id: i64, key: &str, b: [f64; 4]) -> Detected {
         Detected { id, key: key.into(), b, roll: 0, px: 100.0, score: 0.9, model: "m".into(), species: None }

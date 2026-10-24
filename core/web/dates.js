@@ -31,7 +31,7 @@ function estimateMark(code) {
   var s = el('span', 'est');
   // Drawn rather than the "~" character, so that it sits in the middle of the circle.
   s.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 7.5C3 4 4.5 4 6 6s3 2 4.5-1.5"/></svg>';
-  s.title = tr(EST_TITLES[code]);
+  setTip(s, tr(EST_TITLES[code]));
   return s;
 }
 
@@ -49,8 +49,8 @@ function infoDate(row, info) {
     // Not the day the photo was taken: say so next to the date; which
     // fallback was used is in the tooltip.
     var badge = el('span', 'estimated', tr('info.estimated'));
-    badge.title = tr('info.estimated_hint') + '\n' + tr(info.date_source === 'created' ? 'info.no_date_created'
-      : info.date_source === 'folder' ? 'info.no_date_folder' : 'info.no_date_file');
+    setTip(badge, tr('info.estimated_hint') + '\n' + tr(info.date_source === 'created' ? 'info.no_date_created'
+      : info.date_source === 'folder' ? 'info.no_date_folder' : 'info.no_date_file'));
     value.appendChild(badge);
   }
   cell.appendChild(value);
@@ -58,7 +58,7 @@ function infoDate(row, info) {
   pen.type = 'button';
   pen.innerHTML = PENCIL;
   var label = tr(info.estimate ? 'info.change_date' : 'info.set_date');
-  pen.title = label;
+  setTip(pen, label);
   pen.setAttribute('aria-label', label);
   pen.onclick = function () { datesDialog([info.id], info); };
   cell.appendChild(pen);
@@ -194,7 +194,7 @@ function buildDatesDialog(ids, info, check) {
   } });
   var title = !info ? tr('dates.title_batch', { count: trn('count.photos', ids.length) }) : tr(current ? 'dates.title_change' : 'dates.title_set');
   var buttons = openModal(title, body, actions);
-  buttons.forEach(function (b, i) { if (actions[i].title) b.title = actions[i].title; });
+  buttons.forEach(function (b, i) { if (actions[i].title) setTip(b, actions[i].title); });
   save = buttons[buttons.length - 1];
   render();
   if (current && current.day) { day.value = String(current.day); render(); }
@@ -255,13 +255,4 @@ function dateItems(rows) {
     var id = String(r.year) + (r.month ? '-' + ('0' + r.month).slice(-2) : '') + (r.day ? '-' + ('0' + r.day).slice(-2) : '');
     return { kind: 'date', id: id, label: formatEstimate(r), count: r.count };
   });
-}
-
-// The rest of the filter, which the counts of the rows are made within.
-function datesWithin(f) {
-  return { tag: f.tags, manual: f.manual ? 1 : null, person: f.people, pet: f.pets, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null };
-}
-
-function suggestDates(needle, prefix, within) {
-  return api(LIBAPI + '/dates' + query(Object.assign({ q: needle, prefix: prefix ? 1 : null }, within))).catch(function () { return []; });
 }

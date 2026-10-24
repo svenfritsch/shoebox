@@ -114,8 +114,38 @@ current status and next step. Update its status table when a phase moves.
   construction. Such an icon needs no
   licence entry only because it is ours. Never paste an icon set's SVG into
   the code or the guide.
+  No emojis anywhere in the pages (`core/tests/no_emoji.rs` fails on one); plain
+  text symbols (✓ ✗ ✕ ♥ ☰ ↺ ⇄) may stay.
   Open items before giving it to others: see "Before giving shoebox
   to others" in docs/plan.md.
+- Tests of the photo app come in three layers (API tests in Rust, the page
+  against a fake API, a few against the real server): a change to what the
+  page asks for or a reply's shape updates them as "Browser tests" in
+  docs/plan.md says.
+- **Tests are part of every change, without being asked.** Before writing
+  code, say which tests the change needs (in the plan or the first reply);
+  write them in the same pull request. For each new or changed behaviour:
+  - a new or changed endpoint or reply: a Rust API test of that endpoint
+    (its reply's shape, each case it handles, what it leaves out, a broken
+    parameter refused) and, where it repeats another endpoint, that both
+    answer the same;
+  - something the page does on its own (when it asks, what it calls off,
+    what it shows from a reply): a test in `faces-mocked.mjs` on the fake
+    clock, and the fake (`fake-api.mjs`) answering as the server does;
+  - a test against the real server (`faces-e2e.mjs`, `keyboard.mjs`) only
+    for what the fake cannot show (that page and server agree, a real
+    grouping);
+  - a cache or a counter kept between requests: a test that a change in
+    between is seen at once.
+  Prove each new test fails without the change (break the code on purpose,
+  `APP_JS=` for the page) and run it several times for flakiness. Weigh what
+  a test protects against what it costs: Rust API tests and mocked browser
+  tests take milliseconds to seconds, a real-server test seconds and a
+  library; no fixed sleeps, a time window only to show that something does
+  not happen. Do not add a test that only repeats another one or cannot
+  fail. The pull request says which tests were added and why, and which were
+  left out and why (e.g. not observable, like a request the server drops
+  from its queue: measure it in a `scripts/bench-*.py` instead).
 - UI text is never hard-coded: `tr()`/`trn()`/`data-i18n` with a key in both
   `core/i18n/en.json` and `de.json` (see docs/phase8.md; `core/tests/i18n.rs`
   checks it).
@@ -149,9 +179,11 @@ docker/dev.sh bash -c 'scripts/make-fixtures.sh /target/fixtures && /target/*/re
 # the real recognizer too (after recognizer/fetch-models.sh; the image has OpenCV)
 docker/dev.sh bash -c 'python3 -m unittest -v recognizer/test_recognizer.py'
 docker/dev.sh bash -c 'SHOEBOX_RECOGNIZER=$PWD/recognizer/recognizer.py DEPS_DIR=/target/deps scripts/build.sh "" test'
-# browser tests of the photo app (keyboard use), on the host, Linux or macOS: needs
-# the host's release build (scripts/build.sh), Pillow, Node with Playwright and a Chromium
+# browser tests of the photo app, on the host, Linux or macOS: needs the host's
+# release build (scripts/build.sh), Pillow, Node with Playwright and a Chromium
 core/tests/browser/run.sh
+# only the Unnamed page and people list against a fake API (no build needed)
+NODE_PATH=$(npm root -g) node core/tests/browser/faces-mocked.mjs
 
 # macOS (Homebrew rustup is keg-only)
 export PATH=/opt/homebrew/opt/rustup/bin:$PATH

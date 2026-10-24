@@ -95,6 +95,10 @@ mod faces_api;
 mod people_api;
 mod forget_api;
 mod text_api;
+mod regroup;
+
+pub use regroup::Rules as RegroupRules;
+use regroup::Why;
 
 pub const DEFAULT_PORT: u16 = 7878;
 const SESSION_COOKIE: &str = "shoebox_session";
@@ -111,8 +115,6 @@ const BACKUP_INTERVAL: Duration = Duration::from_secs(60);
 /// A job that has not reported progress for this long belongs to a process
 /// that died.
 const JOB_ALIVE_SECS: i64 = 120;
-/// Changes that come in this soon after another one are clustered together.
-const CLUSTER_DELAY: Duration = Duration::from_millis(300);
 
 /// Opens a photo in the computer's file manager; tests swap in a recorder.
 pub type RevealFn = Arc<dyn Fn(&FsPath) -> Result<()> + Send + Sync>;
@@ -133,6 +135,9 @@ pub struct Options {
     /// The recognizer for faces drawn by hand (else `$SHOEBOX_RECOGNIZER` or
     /// the installed one).
     pub recognizer: Option<PathBuf>,
+    /// When the clusters and suggestions are worked out again after
+    /// decisions (`regroup`).
+    pub regroup: RegroupRules,
 }
 
 /// A running server; dropping it does not stop it, `stop` does.
@@ -198,6 +203,7 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
         recognizer: opts.recognizer.clone(),
         ffmpeg: media::find_ffmpeg(),
         workers: std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2),
+        regroup: opts.regroup,
         closing: watch::channel(false).0,
     });
 
@@ -215,7 +221,7 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
         }
         slots.push(slot);
     }
-    let hub = Arc::new(Hub { slots, shared, roles: Mutex::new(None) });
+    let hub = Arc::new(Hub { slots, shared, roles: Mutex::new(None), searches: Arc::new(Semaphore::new(1)), all_people: Mutex::new(None) });
 
     let ip = if opts.lan { IpAddr::V4(Ipv4Addr::UNSPECIFIED) } else { IpAddr::V4(Ipv4Addr::LOCALHOST) };
     let listener = std::net::TcpListener::bind((ip, opts.port))
@@ -274,6 +280,7 @@ struct Shared {
     recognizer: Option<PathBuf>,
     ffmpeg: Option<PathBuf>,
     workers: usize,
+    regroup: RegroupRules,
     /// Set when the server begins to stop: the event streams end, so the
     /// graceful shutdown does not wait for them forever.
     closing: watch::Sender<bool>,
@@ -373,6 +380,10 @@ struct Hub {
     /// What the drives hold in common, worked out at most every
     /// `ROLES_TTL` (it compares all hashes) and again after a role changed.
     roles: Mutex<Option<(Instant, Vec<multi::DriveRole>)>>,
+    /// The turn of the search box's requests over all drives (`in_turn`).
+    searches: Arc<Semaphore>,
+    /// The people over all drives as last worked out (`all_people_list`).
+    all_people: Mutex<Option<AllPeopleKept>>,
 }
 
 const ROLES_TTL: Duration = Duration::from_secs(20);
@@ -388,6 +399,9 @@ impl App {
         let conn = db::open_shared(&db_path)?;
         thumbs::attach(&conn, &db_path)?;
         recognize::attach(&conn, &db_path)?;
+        let people_conn = db::open_existing(&db_path)?;
+        recognize::attach(&people_conn, &db_path)?;
+        people_conn.pragma_update(None, "query_only", true)?;
 
         let name = volume::library_name(&root);
         // Older versions kept a crop of every face looked at, and some people
@@ -398,7 +412,6 @@ impl App {
         }
         let (heal_tx, heal_rx) = mpsc::channel();
         let (backup_tx, backup_rx) = mpsc::channel();
-        let (clusters_tx, clusters_rx) = mpsc::channel();
         let (embed_tx, embed_rx) = mpsc::channel();
         let app = Arc::new(App {
             root,
@@ -407,12 +420,21 @@ impl App {
             conn: Mutex::new(conn),
             snapshot: Mutex::new(None),
             duplicates: Mutex::new(None),
+            copies: Mutex::new(None),
+            tags: Mutex::new(None),
+            person_photos: Mutex::new(None),
             generation: AtomicU64::new(0),
+            info_counts: Mutex::new(None),
+            info_faces: Mutex::new(None),
+            people: Mutex::new(PeopleCache { conn: people_conn, state: None }),
+            clustering: AtomicBool::new(false),
+            faces_version: AtomicU64::new(0),
             writing: Mutex::new(()),
             dirty: AtomicBool::new(false),
             heal: Mutex::new(heal_tx),
             backup: Mutex::new(backup_tx),
-            clusters: Mutex::new(clusters_tx),
+            regroup: Arc::new(regroup::Schedule::new(shared.regroup)),
+            threads: shared.workers,
             clusters_wanted: AtomicU64::new(0),
             clusters_done: AtomicU64::new(0),
             faces_seen: AtomicI64::new(-1),
@@ -425,14 +447,15 @@ impl App {
             ffmpeg: shared.ffmpeg.clone(),
             reveal: shared.reveal.clone(),
             renders: Semaphore::new(shared.workers),
+            searches: Arc::new(Semaphore::new(1)),
             auth: shared.auth.clone(),
             export: Arc::new(export::Shared::default()),
         });
         spawn_healer(Arc::downgrade(&app), heal_rx);
         spawn_backups(Arc::downgrade(&app), backup_rx);
-        spawn_clusterer(Arc::downgrade(&app), clusters_rx);
+        spawn_clusterer(Arc::downgrade(&app));
         spawn_embedder(Arc::downgrade(&app), embed_rx);
-        app.request_clusters();
+        app.regroup(Why::Now);
         app.request_embed();
         Ok(app)
     }
@@ -448,6 +471,27 @@ struct App {
     /// Timeline and folders, rebuilt when the index changed.
     snapshot: Mutex<Option<(IndexVersion, Arc<Snapshot>)>>,
     duplicates: Mutex<Option<(IndexVersion, Arc<Vec<duplicates::Group>>)>>,
+    /// What `/api/info` counts over the whole index, kept for a few seconds:
+    /// the page asks often, and the counts cost seconds on a library of
+    /// 100 000 photos while every other request waits for the connection.
+    info_counts: Mutex<Option<(IndexVersion, Instant, Arc<InfoCounts>)>>,
+    info_faces: Mutex<Option<(InfoFacesKey, Instant, Arc<(recognize::Overview, clusters::Overview)>)>>,
+    /// Name and full hash of every file, for the common timeline (phase 18).
+    copies: Mutex<Option<(IndexVersion, Arc<HashMap<i64, multi::CopyFacts>>)>>,
+    /// Every tag with its counts (`browse::all_tags`, about 0.2 s on 100 000
+    /// photos), which the search box asks for with every letter typed.
+    tags: Mutex<Option<(IndexVersion, Arc<Vec<browse::Tag>>)>>,
+    /// Photos per person within a filter, for the search box (`person_photos`).
+    person_photos: Mutex<Option<people_api::PersonPhotos>>,
+    /// Faces, decisions, present files and clusters as the people pages see
+    /// them (`people_view`), on a connection of their own: reading them reads
+    /// every face, seconds on a library of 100 000 photos.
+    people: Mutex<PeopleCache>,
+    /// The clustering of this server is running (`cluster`).
+    clustering: AtomicBool,
+    /// Counts its own changes to the detected faces (forgetting them), after
+    /// which the people view is read again in full.
+    faces_version: AtomicU64,
     /// Counts this server's own changes; `PRAGMA data_version` only sees
     /// other connections' commits.
     generation: AtomicU64,
@@ -460,9 +504,11 @@ struct App {
     heal: Mutex<mpsc::Sender<()>>,
     /// Asks the background thread for a backup of the index and user data.
     backup: Mutex<mpsc::Sender<()>>,
-    /// Asks the background thread to recompute clusters and suggestions.
-    clusters: Mutex<mpsc::Sender<u64>>,
-    /// Counts those requests, and the requests covered by a finished run.
+    /// When the background thread recomputes clusters and suggestions.
+    regroup: Arc<regroup::Schedule>,
+    /// Cores of this computer (the regrouping leaves one free).
+    threads: usize,
+    /// Counts the regroupings started, and those finished.
     clusters_wanted: AtomicU64,
     clusters_done: AtomicU64,
     /// `recognition.db`'s faces when they were last clustered (a number
@@ -485,14 +531,60 @@ struct App {
     reveal: RevealFn,
     /// Limits concurrent decodes to the number of cores.
     renders: Semaphore,
+    /// The turn of the search box's requests and the timeline (`queued`).
+    searches: Arc<Semaphore>,
     auth: Arc<Auth>,
     /// The export that is running or ran last (phase 12).
     export: Arc<export::Shared>,
 }
 
+/// Page cache of the clustering's connection to `recognition.db`, in KiB
+/// (`PRAGMA cache_size`): the rewritten clusters of 300 000 faces take about
+/// 15 MiB. Only what is used is allocated.
+const CLUSTER_CACHE_KIB: i64 = 64 * 1024;
+
+/// How long `/api/info` may reuse what it counted (thumbnails and faces
+/// found meanwhile show up this late at most).
+const INFO_COUNTS_AGE: Duration = Duration::from_secs(5);
+/// The same for the faces' and clusters' counts (`recognize` runs in another process).
+const INFO_FACES_AGE: Duration = Duration::from_secs(2);
+
+/// The counts of `/api/info` that read every file.
+struct InfoCounts {
+    photos: i64,
+    videos: i64,
+    missing: i64,
+    thumbs_total: i64,
+    thumbs_done: i64,
+    trash: i64,
+    needs_date: u64,
+}
+
+/// What the faces' counts depend on: the index, `recognition.db` (another
+/// process writes it) and how far the clustering is.
+type InfoFacesKey = (IndexVersion, i64, u64, u64, bool);
+
 /// Changes whenever another connection (a scan) commits, or this server
 /// changes the library itself.
 type IndexVersion = (i64, u64);
+
+/// The people view and the connection it is read on: read only, and its own,
+/// so reading the faces does not hold up the requests on `App::conn`, and
+/// its `PRAGMA data_version` sees every commit to the index, this server's
+/// own included.
+struct PeopleCache {
+    conn: Connection,
+    state: Option<PeopleState>,
+}
+
+/// A people view and what it was read from.
+struct PeopleState {
+    /// `PRAGMA data_version` of `library.db` and `recognition.db`.
+    main: i64,
+    recog: i64,
+    faces: u64,
+    view: Arc<people::View>,
+}
 
 impl App {
     fn version(&self, conn: &Connection) -> Result<IndexVersion> {
@@ -511,6 +603,93 @@ impl App {
         let s = Arc::new(Snapshot::load(conn)?);
         *cache = Some((version, s.clone()));
         Ok(s)
+    }
+
+    /// The people view (`people::View`) as the index is now, with what it
+    /// holds of `recognition.db` as it was when the clustering of this server
+    /// started, while that runs (its bookkeeping and its new clusters are
+    /// read when it is done: `refresh_people_view`). Kept while nothing it
+    /// was read from changed; after a change to `library.db` only its part is
+    /// read again (`View::refresh`), after one to `recognition.db` all.
+    fn people_view(&self) -> Result<Arc<people::View>> {
+        self.with_people(|_, v| Ok(v.clone()))
+    }
+
+    /// `f` with the people view and its connection (for the people's rows),
+    /// one request at a time.
+    fn with_people<T>(&self, f: impl FnOnce(&Connection, &Arc<people::View>) -> Result<T>) -> Result<T> {
+        let mut cache = self.people.lock().unwrap();
+        let view = self.view_now(&mut cache)?;
+        f(&cache.conn, &view)
+    }
+
+    fn view_now(&self, cache: &mut PeopleCache) -> Result<Arc<people::View>> {
+        let main: i64 = cache.conn.query_row("PRAGMA data_version", [], |r| r.get(0))?;
+        let recog: i64 = cache.conn.query_row("PRAGMA recog.data_version", [], |r| r.get(0))?;
+        let faces = self.faces_version.load(Ordering::SeqCst);
+        if let Some(s) = &cache.state
+            && s.faces == faces
+            && (s.recog == recog || self.clustering.load(Ordering::SeqCst))
+        {
+            if s.main == main {
+                return Ok(s.view.clone());
+            }
+            if let Some(view) = s.view.refresh(&cache.conn)? {
+                let view = Arc::new(view);
+                // `recog` stays what the view holds.
+                cache.state = Some(PeopleState { main, recog: s.recog, faces, view: view.clone() });
+                return Ok(view);
+            }
+        }
+        let view = Arc::new(people::View::load(&cache.conn)?);
+        cache.state = Some(PeopleState { main, recog, faces, view: view.clone() });
+        Ok(view)
+    }
+
+    /// Everyone, as `people::people` lists them.
+    fn people(&self, hidden: bool) -> Result<Vec<people::Person>> {
+        self.with_people(|conn, v| people::people_in(conn, v, hidden))
+    }
+
+    /// After the clusters were recomputed: read the people view again now
+    /// (if the people pages use it), before the page hears that they are
+    /// done and asks.
+    fn refresh_people_view(&self) {
+        if self.people.lock().unwrap().state.is_none() {
+            return;
+        }
+        if let Err(e) = self.people_view() {
+            eprintln!("could not read the faces again: {e:#}");
+        }
+    }
+
+    /// What makes a file the same photo as one on another drive (phase 18).
+    fn copy_facts(&self, conn: &Connection) -> Result<Arc<HashMap<i64, multi::CopyFacts>>> {
+        let version = self.version(conn)?;
+        let mut cache = self.copies.lock().unwrap();
+        if let Some((v, c)) = cache.as_ref()
+            && *v == version
+        {
+            return Ok(c.clone());
+        }
+        let c = Arc::new(multi::copy_facts(conn)?);
+        *cache = Some((version, c.clone()));
+        Ok(c)
+    }
+
+    /// Every tag with the number of present files carrying it (`browse::all_tags`).
+    /// Own tags change only through `change`, so the index version tells.
+    fn all_tags(&self, conn: &Connection) -> Result<Arc<Vec<browse::Tag>>> {
+        let version = self.version(conn)?;
+        let mut cache = self.tags.lock().unwrap();
+        if let Some((v, t)) = cache.as_ref()
+            && *v == version
+        {
+            return Ok(t.clone());
+        }
+        let t = Arc::new(browse::all_tags(conn)?);
+        *cache = Some((version, t.clone()));
+        Ok(t)
     }
 
     /// Ask for a search for moved files (at most one runs at a time).
@@ -536,10 +715,10 @@ impl App {
         Ok(())
     }
 
-    /// Ask for the clusters and suggestions to be recomputed.
-    fn request_clusters(&self) {
-        let n = self.clusters_wanted.fetch_add(1, Ordering::SeqCst) + 1;
-        let _ = self.clusters.lock().unwrap().send(n);
+    /// Ask for the clusters and suggestions to be recomputed, when the rules
+    /// say (`regroup`).
+    fn regroup(&self, why: Why) {
+        self.regroup.ask(why);
         self.faces_changed();
     }
 
@@ -552,8 +731,20 @@ impl App {
     /// The clustering itself, on a connection of its own. Skipped while
     /// `shoebox recognize` runs: it clusters when it is done.
     fn cluster(&self) -> Result<()> {
+        self.clustering.store(true, Ordering::SeqCst);
+        let result = self.cluster_now();
+        self.clustering.store(false, Ordering::SeqCst);
+        result
+    }
+
+    fn cluster_now(&self) -> Result<()> {
         let conn = db::open_existing(&self.db_path)?;
         recognize::attach(&conn, &self.db_path)?;
+        // The clusters are rewritten in one transaction. With room for all of
+        // it in memory, `recognition.db` is locked against the other requests'
+        // reads only while it commits, not from the first page that no longer
+        // fits SQLite's default cache of 2 MiB on.
+        conn.pragma_update(Some("recog"), "cache_size", -CLUSTER_CACHE_KIB)?;
         if recognize::running(&conn)? || clusters::running(&conn)? {
             return Ok(());
         }
@@ -568,7 +759,10 @@ impl App {
                 self.faces_changed();
             }
         };
-        match clusters::run(&conn, &stopping, &mut progress) {
+        // One core is left for the requests, which would otherwise wait for
+        // the CPU (`shoebox recognize` takes them all).
+        let threads = self.threads.saturating_sub(1).max(1);
+        match crate::ann::with_threads(threads, || clusters::run(&conn, &stopping, &mut progress)) {
             Ok(s) => {
                 self.faces_seen.store(seen, Ordering::SeqCst);
                 if s.listed > 0 {
@@ -582,6 +776,14 @@ impl App {
             Err(e) if e.is::<recognize::Interrupted>() => Ok(()),
             Err(e) => Err(e),
         }
+    }
+
+    /// Faces suggested for someone in the clusters' cache, on a connection
+    /// of its own.
+    fn suggested_now(&self) -> Result<u64> {
+        let conn = db::open_existing(&self.db_path)?;
+        recognize::attach(&conn, &self.db_path)?;
+        Ok(clusters::overview(&conn)?.suggested)
     }
 
     /// Ask for the faces drawn by hand to be embedded.
@@ -626,7 +828,7 @@ impl App {
             Ok(s) => {
                 println!("Faces and pets drawn by hand: {} embedded ({} faces without landmarks), {} failed.", s.embedded, s.plain, s.failed);
                 if s.embedded > 0 {
-                    self.request_clusters();
+                    self.regroup(Why::Now);
                 }
                 Ok(())
             }
@@ -635,10 +837,12 @@ impl App {
         }
     }
 
-    /// Copy the index to `library.db.bak` and write `userdata.json`.
+    /// Copy the index to `library.db.bak` and write `userdata.json`. On a
+    /// connection of its own: both read the whole index (seconds on a large
+    /// one), and the requests that only read go on meanwhile; changes wait.
     fn backup(&self) -> Result<()> {
         let _writing = self.writing.lock().unwrap();
-        let conn = self.conn.lock().unwrap();
+        let conn = db::open_existing(&self.db_path)?;
         db::backup(&conn, &self.db_path)?;
         own_tags::write_user_data(&conn, &self.db_path)?;
         Ok(())
@@ -713,27 +917,66 @@ fn faces_fingerprint(conn: &Connection) -> Result<i64> {
     Ok(conn.query_row("SELECT count(*) * 1000003 + coalesce(max(id), 0) FROM recog.faces", [], |r| r.get(0))?)
 }
 
-/// Recomputes clusters and suggestions as they are asked for: requests that
-/// come in while one runs (or within `CLUSTER_DELAY`) are covered by the
-/// next run. Ends with the server.
-fn spawn_clusterer(app: Weak<App>, requests: mpsc::Receiver<u64>) {
+/// The latest clustering finished after the latest look for faces or pets
+/// ended (`shoebox recognize` groups at its end), so the faces it found are
+/// grouped already.
+fn grouped_after_recognition(conn: &Connection) -> Result<bool> {
+    Ok(conn.query_row(
+        "SELECT (SELECT max(finished_at) FROM recog.jobs WHERE kind = 'clusters' AND state = 'done')
+             >= coalesce((SELECT max(finished_at) FROM recog.jobs WHERE kind IN ('faces', 'faces-rot', 'pets')), 0)",
+        [],
+        |r| Ok(r.get::<_, Option<bool>>(0)?.unwrap_or(false)),
+    )?)
+}
+
+/// Recomputes clusters and suggestions when the rules say (`regroup`):
+/// decisions that come in while one runs count towards the next. Ends with
+/// the server.
+fn spawn_clusterer(app: Weak<App>) {
     std::thread::spawn(move || {
-        while let Ok(mut wanted) = requests.recv() {
-            std::thread::sleep(CLUSTER_DELAY);
-            while let Ok(n) = requests.try_recv() {
-                wanted = wanted.max(n);
+        loop {
+            let schedule = match app.upgrade() {
+                Some(app) if !app.stopping.load(Ordering::SeqCst) => app.regroup.clone(),
+                _ => break,
+            };
+            if !schedule.wait_due(Duration::from_secs(1)) {
+                continue;
             }
             let Some(app) = app.upgrade() else { break };
             if app.stopping.load(Ordering::SeqCst) {
                 break;
             }
+            let wanted = app.clusters_wanted.fetch_add(1, Ordering::SeqCst) + 1;
+            app.faces_changed();
             if let Err(e) = app.cluster() {
                 eprintln!("could not group the faces: {e:#}");
             }
+            app.refresh_people_view();
+            // Whether it left suggestions (when they run out, the next one
+            // comes soon), from the cache: the people view is only read when
+            // a page asks for it.
+            match app.suggested_now() {
+                Ok(suggested) => schedule.grouped(suggested),
+                Err(e) => eprintln!("could not count the suggestions: {e:#}"),
+            }
             app.clusters_done.fetch_max(wanted, Ordering::SeqCst);
             app.faces_changed();
+            drop(app);
+            release_freed_memory();
         }
     });
+}
+
+/// Hand what a regrouping freed back to the system: glibc keeps freed small
+/// blocks for the process, so the server stayed at about 420 MB after one on
+/// the benchmark library of 100 000 photos, 80 MB with this. (Not measured on
+/// macOS and Windows, whose allocators return free pages themselves.)
+fn release_freed_memory() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    // SAFETY: malloc_trim only gives unused memory of the allocator back.
+    unsafe {
+        libc::malloc_trim(0);
+    }
 }
 
 /// Embeds faces drawn by hand as they are asked for (requests that come in
@@ -807,9 +1050,12 @@ fn hub_router(hub: Arc<Hub>) -> Router {
         .route("/api/libraries", get(libraries))
         // Over all drives (see `multi.rs`).
         .route("/api/all/people", get(all_people))
+        .route("/api/all/groups", get(all_groups))
         .route("/api/all/timeline", get(all_timeline))
         .route("/api/all/tags", get(all_tags))
+        .route("/api/all/suggest", get(all_suggest))
         .route("/api/all/duplicates", get(all_duplicates))
+        .route("/api/all/copies", get(all_copies))
         .route("/api/all/duplicates/folders", get(all_duplicate_folders))
         .route("/api/all/drives", get(all_drives))
         .route("/api/all/role", post(all_set_role))
@@ -937,6 +1183,7 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/events", get(events))
         .route("/api/folders", get(folders))
         .route("/api/tags", get(tags))
+        .route("/api/suggest", get(suggest))
         .route("/api/timeline", get(timeline))
         .route("/api/count", get(count))
         .route("/api/files/{id}", get(file_details))
@@ -1015,12 +1262,14 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/people/{id}/cover", post(people_api::set_cover))
         .route("/api/people/search", get(people_api::search))
         .route("/api/pets/search", get(people_api::pets_search))
+        .route("/api/groups/search", get(people_api::groups_search))
         .route("/api/groups", get(people_api::groups).post(people_api::create_group))
         .route("/api/groups/reorder", post(people_api::reorder_groups))
         .route("/api/groups/{id}/rename", post(people_api::rename_group))
         .route("/api/groups/{id}/delete", post(people_api::delete_group))
         .route("/api/clusters", get(people_api::clusters))
         .route("/api/clusters/{id}/faces", get(people_api::cluster_faces))
+        .route("/api/clusters/left", post(people_api::left_unnamed))
         .route("/api/clusters/{id}/name", post(people_api::name_cluster))
         .route("/api/clusters/{id}/ignore", post(people_api::ignore_cluster))
         .route("/api/clusters/{id}/not-face", post(people_api::not_face_cluster))
@@ -1097,6 +1346,32 @@ async fn blocking<T: Send + 'static>(
     tokio::task::spawn_blocking(move || f(&app))
         .await
         .map_err(|e| ApiError::Internal(anyhow::anyhow!("worker failed: {e}")))?
+}
+
+/// One at a time, in the order asked: what the search box and the timeline
+/// ask for while someone types. Every one of these reads under the one
+/// connection, so they wait for each other anyway; here they wait for their
+/// turn before they go to a blocking thread, so a request the browser calls
+/// off while it waits (a newer letter replaces it) is dropped with its turn
+/// and never touches the database. Work that has started runs to its end (a
+/// blocking thread cannot be stopped), so the turn goes with it.
+async fn in_turn<T: Send + 'static>(queue: &Arc<Semaphore>, f: impl FnOnce() -> ApiResult<T> + Send + 'static) -> ApiResult<T> {
+    let turn = queue.clone().acquire_owned().await.map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))?;
+    tokio::task::spawn_blocking(move || {
+        let _turn = turn;
+        f()
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("worker failed: {e}")))?
+}
+
+/// `blocking` in the turn of the library's searches (`in_turn`).
+async fn queued<T: Send + 'static>(
+    app: &Arc<App>,
+    f: impl FnOnce(&App) -> ApiResult<T> + Send + 'static,
+) -> ApiResult<T> {
+    let a = app.clone();
+    in_turn(&app.searches, move || f(&a)).await
 }
 
 // ---------------------------------------------------------------- auth
@@ -1298,51 +1573,145 @@ struct AllPeople {
     offline: Vec<String>,
 }
 
-/// People over all drives: the same name is the same person. With a filter
-/// (the timeline's, by name) `photos` counts only the photos the list shows
-/// and people who would show nothing are left out, as on a single drive.
+/// People over all drives: the same name is the same person. `photos` counts
+/// the photos the common timeline shows of them, identical copies once. With
+/// a filter (the timeline's, by name) only those the list then shows, and
+/// people who would show nothing are left out, as on a single drive.
 async fn all_people(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<AllPeople>> {
     let apps = online_apps(&hub).await;
     let offline = hub.slots.iter().filter(|s| !apps.iter().any(|a| a.name == s.name)).map(|s| s.name.clone()).collect();
     let filter = AllFilter::of(&pairs, false)?;
-    let people = tokio::task::spawn_blocking(move || -> ApiResult<Vec<multi::MergedPerson>> {
-        let mut per_drive = Vec::new();
-        for app in &apps {
-            let conn = app.conn.lock().unwrap();
-            let mut list = people::people(&conn, true)?;
+    let hub2 = hub.clone();
+    let people = in_turn(&hub.searches, move || all_people_list(&hub2, &apps, &filter, &pairs)).await?;
+    Ok(Json(AllPeople { people: people.as_ref().clone(), offline }))
+}
+
+/// `all_people` as last worked out, kept while no drive's index or people
+/// (the people view is read again after every decision) changed and the
+/// filter is the same: the search box asks with every letter typed.
+struct AllPeopleKept {
+    drives: Vec<(String, IndexVersion, Arc<people::View>)>,
+    /// The request's filter without what is typed (`q`, `limit`), sorted.
+    filter: Pairs,
+    people: Arc<Vec<multi::MergedPerson>>,
+}
+
+/// The people over the drives `apps` (`all_people`), hidden ones too.
+fn all_people_list(hub: &Hub, apps: &[Arc<App>], filter: &AllFilter, pairs: &Pairs) -> ApiResult<Arc<Vec<multi::MergedPerson>>> {
+    let mut drives = Vec::new();
+    for app in apps {
+        let version = app.version(&app.conn.lock().unwrap())?;
+        drives.push((app.name.clone(), version, app.people_view()?));
+    }
+    let mut within: Pairs = pairs.iter().filter(|(k, _)| k != "q" && k != "limit").cloned().collect();
+    within.sort();
+    let mut kept = hub.all_people.lock().unwrap();
+    if let Some(k) = kept.as_ref()
+        && k.filter == within
+        && k.drives.len() == drives.len()
+        && k.drives.iter().zip(&drives).all(|(a, b)| a.0 == b.0 && a.1 == b.1 && Arc::ptr_eq(&a.2, &b.2))
+    {
+        return Ok(k.people.clone());
+    }
+    let mut per_drive = Vec::new();
+    // By name (as `merge_people` matches them): the photos the list shows
+    // of the person, a photo on two drives once (phase 18).
+    let mut photos_of: HashMap<String, HashSet<multi::Photo>> = HashMap::new();
+    for (d, app) in apps.iter().enumerate() {
+        let conn = app.conn.lock().unwrap();
+        let mut list = app.people(true)?;
+        // A drive without one of the names has nothing that matches.
+        let Some(query) = filter.query_for(app, &conn)? else { continue };
+        let snapshot = app.snapshot(&conn)?;
+        let shown: HashSet<i64> = snapshot.query(&conn, &query)?.iter().map(|it| it.id).collect();
+        let copies = app.copy_facts(&conn)?;
+        // Faces are kept by content: the files shown of each content key.
+        let mut files_per_key: HashMap<String, Vec<i64>> = HashMap::new();
+        let mut stmt = conn.prepare("SELECT id, quick_hash FROM files WHERE missing_since IS NULL")?;
+        let mut rows = stmt.query([])?;
+        while let Some(r) = rows.next()? {
+            let id: i64 = r.get(0)?;
+            if shown.contains(&id) {
+                files_per_key.entry(r.get(1)?).or_default().push(id);
+            }
+        }
+        let keys = people::keys_by_person(&conn)?;
+        for p in &mut list {
+            let files: Vec<i64> = keys.get(&p.id).into_iter().flatten().filter_map(|k| files_per_key.get(k)).flatten().copied().collect();
             if !filter.is_empty() {
-                // A drive without one of the names has nothing that matches.
-                let Some(query) = filter.query_for(&conn)? else { continue };
-                let snapshot = app.snapshot(&conn)?;
-                let shown: HashSet<i64> = snapshot.query(&conn, &query)?.iter().map(|it| it.id).collect();
-                let mut files_per_key: HashMap<String, u64> = HashMap::new();
-                let mut stmt = conn.prepare("SELECT id, quick_hash FROM files WHERE missing_since IS NULL")?;
-                let mut rows = stmt.query([])?;
-                while let Some(r) = rows.next()? {
-                    if shown.contains(&r.get::<_, i64>(0)?) {
-                        *files_per_key.entry(r.get(1)?).or_default() += 1;
-                    }
-                }
-                let keys = people::keys_by_person(&conn)?;
-                for p in &mut list {
-                    p.photos = keys.get(&p.id).into_iter().flatten().map(|k| files_per_key.get(k).copied().unwrap_or(0)).sum();
-                }
-                list.retain(|p| p.photos > 0);
+                p.photos = files.len() as u64;
             }
-            per_drive.push((library_id(&app.name), app.name.clone(), list, people::groups(&conn)?));
+            photos_of
+                .entry(crate::library::nfc(p.name.trim()).to_lowercase())
+                .or_default()
+                .extend(files.iter().map(|&id| multi::photo(&copies, d, id)));
         }
-        let mut people = multi::merge_people(&per_drive);
-        // The disk name tells the drives apart; the folder name often does not.
-        for p in &mut people {
-            for l in &mut p.libraries {
-                l.volume = apps.iter().find(|a| library_id(&a.name) == l.library).and_then(|a| volume::placement(&a.root)).map(|p| p.volume);
+        if !filter.is_empty() {
+            list.retain(|p| p.photos > 0);
+        }
+        per_drive.push((library_id(&app.name), app.name.clone(), list, people::groups(&conn)?));
+    }
+    let mut people = multi::merge_people(&per_drive);
+    for p in &mut people {
+        p.photos = photos_of.get(&p.name.to_lowercase()).map_or(0, |s| s.len() as u64);
+    }
+    // The disk name tells the drives apart; the folder name often does not.
+    for p in &mut people {
+        for l in &mut p.libraries {
+            l.volume = apps.iter().find(|a| library_id(&a.name) == l.library).and_then(|a| volume::placement(&a.root)).map(|p| p.volume);
+        }
+    }
+    let people = Arc::new(people);
+    *kept = Some(AllPeopleKept { drives, filter: within, people: people.clone() });
+    Ok(people)
+}
+
+/// A group over all drives, by name, with the photos it would show within the
+/// filter (the same name on two drives is one group).
+#[derive(Serialize)]
+struct AllGroup {
+    name: String,
+    photos: u64,
+}
+
+/// The groups whose name contains `q` that would show photos within the
+/// filter, for the search box over all drives; groups in the filter are left
+/// out, most photos first.
+async fn all_groups(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<AllGroup>>> {
+    let apps = online_apps(&hub).await;
+    let filter = AllFilter::of(&pairs, false)?;
+    let needle = param(&pairs, "q").map(db::tag_fold).unwrap_or_default();
+    let hits = in_turn(&hub.searches, move || all_group_hits(&apps, &filter, &needle)).await?;
+    Ok(Json(hits))
+}
+
+/// `all_groups` for `needle` (folded).
+fn all_group_hits(apps: &[Arc<App>], filter: &AllFilter, needle: &str) -> ApiResult<Vec<AllGroup>> {
+    let mut by_name: Vec<(String, AllGroup)> = Vec::new();
+    for app in apps {
+        let conn = app.conn.lock().unwrap();
+        let Some(query) = filter.query_for(app, &conn)? else { continue };
+        let snapshot = app.snapshot(&conn)?;
+        for g in people::groups(&conn)? {
+            let key = db::tag_fold(&g.name);
+            if !key.contains(needle) || filter.group_names.iter().any(|n| db::tag_fold(n) == key) {
+                continue;
+            }
+            let mut with = query.clone();
+            with.groups.push(g.id);
+            let photos = snapshot.query(&conn, &with)?.len() as u64;
+            if photos == 0 {
+                continue;
+            }
+            match by_name.iter_mut().find(|(k, _)| *k == key) {
+                Some((_, hit)) => hit.photos += photos,
+                None => by_name.push((key, AllGroup { name: g.name, photos })),
             }
         }
-        Ok(people)
-    })
-    .await
-    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
-    Ok(Json(AllPeople { people, offline }))
+    }
+    let mut hits: Vec<AllGroup> = by_name.into_iter().map(|(_, h)| h).collect();
+    hits.sort_by(|a, b| b.photos.cmp(&a.photos).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    Ok(hits)
 }
 
 #[derive(Deserialize)]
@@ -1404,6 +1773,45 @@ async fn all_duplicates(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>)
     .await
     .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
     Ok(Json(result))
+}
+
+#[derive(Deserialize)]
+struct CopiesQuery {
+    library: String,
+    file: i64,
+}
+
+/// The other copies of a photo in the common timeline (phase 18): files with
+/// the same name and the same full hash on the drives that take part (not
+/// backups). For the info panel's "Also on" row; read only.
+async fn all_copies(State(hub): State<Arc<Hub>>, Query(q): Query<CopiesQuery>) -> ApiResult<Json<Vec<multi::OtherCopy>>> {
+    let o = overview(&hub).await?;
+    let list = tokio::task::spawn_blocking(move || -> ApiResult<Vec<multi::OtherCopy>> {
+        let app = o.apps.iter().find(|a| library_id(&a.name) == q.library).ok_or(ApiError::NotFound)?;
+        let key = {
+            let conn = app.conn.lock().unwrap();
+            app.copy_facts(&conn)?.get(&q.file).map(|c| c.key.clone())
+        };
+        let Some(key) = key else { return Ok(Vec::new()) };
+        let (eligible, _) = multi::eligibility(&o.drives, &o.roles);
+        let mut out = Vec::new();
+        for &i in &eligible {
+            let a = &o.apps[i];
+            let id = library_id(&a.name);
+            let files = multi::files_with_key(&a.conn.lock().unwrap(), &key)?;
+            let volume = if files.is_empty() { None } else { volume::placement(&a.root).map(|p| p.volume) };
+            for (file, folder_id, path) in files {
+                if id == q.library && file == q.file {
+                    continue;
+                }
+                out.push(multi::OtherCopy { library: id.clone(), name: a.name.clone(), volume: volume.clone(), id: file, folder_id, path });
+            }
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+    Ok(Json(list))
 }
 
 /// Folder names for the "Ignore folders" field: `q` (what was typed), `ignore`
@@ -1499,6 +1907,8 @@ struct AllTimeline {
     /// In path order, so the two versions of a photo sit side by side (the
     /// UI shows no month headings): `compare=different`.
     flat: bool,
+    /// Copies left out because the same photo is shown once (phase 18).
+    hidden: usize,
 }
 
 #[derive(Serialize)]
@@ -1517,6 +1927,7 @@ struct LibraryRef {
 struct AllFilter {
     tag_names: Vec<String>,
     person_names: Vec<String>,
+    group_names: Vec<String>,
     text: Option<String>,
     types: Vec<browse::MediaType>,
     pets: Vec<String>,
@@ -1534,6 +1945,7 @@ impl AllFilter {
         Ok(AllFilter {
             tag_names: pairs.iter().filter(|(k, v)| k == "tag" && !v.is_empty()).map(|(_, v)| v.clone()).collect(),
             person_names: pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| v.clone()).collect(),
+            group_names: pairs.iter().filter(|(k, v)| k == "group" && !v.is_empty()).map(|(_, v)| v.clone()).collect(),
             text: param(pairs, "q").map(str::to_string).filter(|s| with_text && !s.trim().is_empty()),
             types: types_of(pairs)?,
             pets: pets_of(pairs)?,
@@ -1549,6 +1961,7 @@ impl AllFilter {
     fn is_empty(&self) -> bool {
         self.tag_names.is_empty()
             && self.person_names.is_empty()
+            && self.group_names.is_empty()
             && self.text.is_none()
             && self.types.is_empty()
             && self.pets.is_empty()
@@ -1560,9 +1973,9 @@ impl AllFilter {
     }
 
     /// The query for one drive, with the names turned into its own ids. `None`
-    /// when the drive lacks one of the tags or people: nothing on it matches
+    /// when the drive lacks one of the tags, people or groups: nothing on it matches
     /// all of them.
-    fn query_for(&self, conn: &Connection) -> ApiResult<Option<browse::Query>> {
+    fn query_for(&self, app: &App, conn: &Connection) -> ApiResult<Option<browse::Query>> {
         let mut tags = Vec::new();
         for name in &self.tag_names {
             match db::find_tag(conn, name)? {
@@ -1570,7 +1983,7 @@ impl AllFilter {
                 None => return Ok(None),
             }
         }
-        let known_people = if self.person_names.is_empty() { Vec::new() } else { people::people(conn, true)? };
+        let known_people = if self.person_names.is_empty() { Vec::new() } else { app.people(true)? };
         let people_ids: Vec<i64> = self
             .person_names
             .iter()
@@ -1582,11 +1995,24 @@ impl AllFilter {
         if people_ids.len() != self.person_names.len() {
             return Ok(None);
         }
+        let known_groups = if self.group_names.is_empty() { Vec::new() } else { people::groups(conn)? };
+        let group_ids: Vec<i64> = self
+            .group_names
+            .iter()
+            .filter_map(|n| {
+                let key = db::tag_fold(n);
+                known_groups.iter().find(|g| db::tag_fold(&g.name) == key).map(|g| g.id)
+            })
+            .collect();
+        if group_ids.len() != self.group_names.len() {
+            return Ok(None);
+        }
         Ok(Some(browse::Query {
             folder: None,
             tags,
             text: self.text.clone(),
             people: people_ids,
+            groups: group_ids,
             pets: self.pets.clone(),
             types: self.types.clone(),
             in_text: self.in_text.clone(),
@@ -1643,7 +2069,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
         .map(|(a, &i)| LibraryRef { id: library_id(&a.name), name: a.name.clone(), volume: volume::placement(&a.root).map(|p| p.volume), role: o.drives[i].role })
         .collect();
 
-    let timeline = tokio::task::spawn_blocking(move || -> ApiResult<Timeline> {
+    let timeline = in_turn(&hub.searches, move || -> ApiResult<(Timeline, usize)> {
         struct Row {
             sort: String,
             path: String,
@@ -1655,14 +2081,22 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
             fav: bool,
             snip: Option<String>,
             est: Option<char>,
+            drive: usize,
+            copy: Option<multi::CopyFacts>,
         }
         let mut rows: Vec<Row> = Vec::new();
+        // Photos with a heart on any drive, by the key of their copies.
+        let mut fav_keys: HashSet<multi::CopyKey> = HashSet::new();
         for (d, app) in apps.iter().enumerate() {
             let conn = app.conn.lock().unwrap();
-            let Some(mut query) = filter.query_for(&conn)? else { continue };
+            let hearts = own_tags::favorite_ids(&conn)?;
+            let copies = if flat { None } else { Some(app.copy_facts(&conn)?) };
+            if let Some(copies) = &copies {
+                fav_keys.extend(hearts.iter().filter_map(|id| copies.get(id)).map(|c| c.key.clone()));
+            }
+            let Some(mut query) = filter.query_for(app, &conn)? else { continue };
             let snapshot = app.snapshot(&conn)?;
             query.ids = different.as_ref().map(|sets| sets[d].clone());
-            let hearts = own_tags::favorite_ids(&conn)?;
             let items = snapshot.query(&conn, &query)?;
             let snips = if text_terms.is_empty() {
                 HashMap::new()
@@ -1687,7 +2121,34 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
                     version: it.version.clone(),
                     live: it.live.map(|v| d as i64 * ID_SPAN + v),
                     est: estimate_code(it.date_source),
+                    drive: d,
+                    copy: copies.as_ref().and_then(|c| c.get(&it.id).cloned()),
                 });
+            }
+        }
+        // Identical photos once (phase 18): of the copies the filter left, one
+        // stays (`multi::shown_first`), with a heart if any copy has one.
+        let mut hidden = 0;
+        if !flat {
+            let mut best: HashMap<&multi::CopyKey, usize> = HashMap::new();
+            for (i, r) in rows.iter().enumerate() {
+                let Some(c) = &r.copy else { continue };
+                let b = best.entry(&c.key).or_insert(i);
+                let o = &rows[*b];
+                if multi::shown_first((c.dated_at, r.drive, &r.path), (o.copy.as_ref().and_then(|c| c.dated_at), o.drive, &o.path)).is_lt() {
+                    *b = i;
+                }
+            }
+            let keep: HashSet<usize> = best.into_values().collect();
+            let before = rows.len();
+            let mut i = 0;
+            rows.retain(|r| {
+                i += 1;
+                r.copy.is_none() || keep.contains(&(i - 1))
+            });
+            hidden = before - rows.len();
+            for r in &mut rows {
+                r.fav |= r.copy.as_ref().is_some_and(|c| fav_keys.contains(&c.key));
             }
         }
         if flat {
@@ -1704,6 +2165,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
             live: Vec::new(),
             tags: Vec::new(),
             people: Vec::new(),
+            groups: Vec::new(),
             favs: Vec::new(),
             snips: Vec::new(),
             est: Vec::new(),
@@ -1726,15 +2188,16 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
                 t.live.push([r.gid, v]);
             }
         }
-        Ok(t)
+        Ok((t, hidden))
     })
-    .await
-    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
-    Ok(Json(AllTimeline { timeline, libs, left_out, flat }))
+    .await?;
+    let (timeline, hidden) = timeline;
+    Ok(Json(AllTimeline { timeline, libs, left_out, flat, hidden }))
 }
 
 /// Tags over the drives that take part, by name (spellings fold together),
-/// most used first. For the search suggestions of the common timeline. With a
+/// most used first. For the search suggestions of the common timeline: counts
+/// are photos the timeline shows, identical copies once (phase 18). With a
 /// filter (the timeline's: `tag`, `person`, `type`, `fav`, `date`, ... by name)
 /// it counts only the photos the list shows and leaves out tags that would
 /// show nothing, as the single drive's suggestions do; `q` is the word typed.
@@ -1746,51 +2209,110 @@ async fn all_tags(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> Ap
     let own = param(&pairs, "own").is_some_and(|v| v != "0");
     let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(50);
     let filter = AllFilter::of(&pairs, false)?;
-    let tags = tokio::task::spawn_blocking(move || -> ApiResult<Vec<browse::Tag>> {
-        let mut merged: std::collections::BTreeMap<String, browse::Tag> = std::collections::BTreeMap::new();
-        for app in &apps {
+    let tags = in_turn(&hub.searches, move || all_tag_hits(&apps, &filter, &needle, own, limit)).await?;
+    Ok(Json(tags))
+}
+
+/// The search box's suggestions over all drives, in one reply: what
+/// `all_tags?own=1`, `all_people` (by name, hidden people left out, as on one
+/// drive), `pets/search` added up over the drives and `all_groups` give for
+/// `q`, counted within the filter (by name, as the common timeline's). The
+/// common timeline has no date suggestions and no number on the text row, so
+/// `date:`, `text:` and `name:` get an empty reply.
+async fn all_suggest(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<AllSuggestions>> {
+    let q = param(&pairs, "q").unwrap_or("").to_string();
+    let Typed::Plain(text) = typed(&q) else { return Ok(Json(AllSuggestions::default())) };
+    let text = text.to_string();
+    let o = overview(&hub).await?;
+    let (eligible, _) = multi::eligibility(&o.drives, &o.roles);
+    let taking_part: Vec<Arc<App>> = eligible.iter().map(|&i| o.apps[i].clone()).collect();
+    let online = o.apps.clone();
+    let filter = AllFilter::of(&pairs, false)?;
+    let hub2 = hub.clone();
+    let out = in_turn(&hub.searches, move || -> ApiResult<AllSuggestions> {
+        let needle = db::tag_fold(&text);
+        let tags = all_tag_hits(&taking_part, &filter, &needle, true, SUGGEST_TAGS)?;
+        let in_filter = |name: &str| filter.person_names.iter().any(|n| db::tag_fold(n) == db::tag_fold(name));
+        let people = all_people_list(&hub2, &online, &filter, &pairs)?
+            .iter()
+            .filter(|p| !p.hidden && !in_filter(&p.name) && db::tag_fold(&p.name).contains(&needle) && p.photos > 0)
+            .take(SUGGEST_PEOPLE)
+            .cloned()
+            .collect();
+        let mut pets: HashMap<&'static str, u64> = HashMap::new();
+        for app in &taking_part {
             let conn = app.conn.lock().unwrap();
-            let list = if filter.is_empty() {
-                browse::all_tags(&conn)?
-            } else {
-                // A drive without one of the names has nothing that matches.
-                let Some(query) = filter.query_for(&conn)? else { continue };
-                let snapshot = app.snapshot(&conn)?;
-                let shown: HashSet<i64> = snapshot.query(&conn, &query)?.iter().map(|it| it.id).collect();
-                // Whether a tag is only a folder name is a fact about the drive,
-                // not about the photos shown (as on a single drive).
-                let kinds: HashMap<i64, browse::TagKind> = browse::all_tags(&conn)?.into_iter().map(|t| (t.id, t.kind)).collect();
-                let mut within = browse::tags_within(&conn, &shown, &query.tags)?;
-                for t in &mut within {
-                    if let Some(&kind) = kinds.get(&t.id) {
-                        t.kind = kind;
-                    }
-                }
-                within
-            };
-            for t in list {
-                let key = db::tag_fold(&t.name);
-                if !key.contains(&needle) || (own && t.kind == browse::TagKind::Folder) {
-                    continue;
-                }
-                merged
-                    .entry(key)
-                    .and_modify(|m| {
-                        m.count += t.count;
-                        m.manual += t.manual;
-                        m.last_used = m.last_used.max(t.last_used);
-                    })
-                    .or_insert(browse::Tag { id: 0, ..t });
+            let Some(query) = filter.query_for(app, &conn)? else { continue };
+            for hit in people_api::pet_hits(app, &conn, &query, &text)? {
+                *pets.entry(hit.species).or_default() += hit.photos;
             }
         }
-        let mut list: Vec<browse::Tag> = merged.into_values().collect();
-        list.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.name.cmp(&b.name)));
-        list.truncate(limit);
-        Ok(list)
+        let mut pets: Vec<people_api::PetHit> = pets.into_iter().map(|(species, photos)| people_api::PetHit { species, photos }).collect();
+        pets.sort_by(|a, b| b.photos.cmp(&a.photos).then_with(|| a.species.cmp(b.species)));
+        let mut groups = all_group_hits(&online, &filter, &needle)?;
+        groups.truncate(SUGGEST_GROUPS);
+        Ok(AllSuggestions { tags, people, pets, groups, ..Default::default() })
     })
-    .await
-    .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
-    Ok(Json(tags))
+    .await?;
+    Ok(Json(out))
+}
+
+/// `Suggestions` over all drives: people and groups by name.
+#[derive(Serialize, Default)]
+struct AllSuggestions {
+    tags: Vec<browse::Tag>,
+    people: Vec<multi::MergedPerson>,
+    pets: Vec<people_api::PetHit>,
+    groups: Vec<AllGroup>,
+    /// Always empty: the common timeline has no date suggestions.
+    dates: Vec<dates::Row>,
+    /// Always null: over all drives the text row has no number.
+    text: Option<TermCount>,
+    name: Option<TermCount>,
+}
+
+/// `all_tags` for `needle` (folded).
+fn all_tag_hits(apps: &[Arc<App>], filter: &AllFilter, needle: &str, own: bool, limit: usize) -> ApiResult<Vec<browse::Tag>> {
+    // By name: the tag, the photos that carry it and those that carry it
+    // as an own tag. A photo on two drives is one photo (phase 18).
+    type Merged = (browse::Tag, HashSet<multi::Photo>, HashSet<multi::Photo>);
+    let mut merged: std::collections::BTreeMap<String, Merged> = std::collections::BTreeMap::new();
+    for (d, app) in apps.iter().enumerate() {
+        let conn = app.conn.lock().unwrap();
+        // A drive without one of the names has nothing that matches.
+        let Some(query) = filter.query_for(app, &conn)? else { continue };
+        let snapshot = app.snapshot(&conn)?;
+        let shown: HashSet<i64> = snapshot.query(&conn, &query)?.iter().map(|it| it.id).collect();
+        let copies = app.copy_facts(&conn)?;
+        // Whether a tag is only a folder name is a fact about the drive,
+        // not about the photos shown (as on a single drive).
+        let facts: HashMap<i64, browse::Tag> = app.all_tags(&conn)?.iter().map(|t| (t.id, t.clone())).collect();
+        for t in browse::tag_files_within(&conn, &shown, &query.tags)? {
+            let mut tag = t.tag;
+            if let Some(f) = facts.get(&tag.id) {
+                tag.kind = f.kind;
+                if filter.is_empty() {
+                    tag.last_used = f.last_used;
+                }
+            }
+            let key = db::tag_fold(&tag.name);
+            if !key.contains(needle) || (own && tag.kind == browse::TagKind::Folder) {
+                continue;
+            }
+            let m = merged.entry(key).or_insert_with(|| (browse::Tag { id: 0, last_used: None, ..tag.clone() }, HashSet::new(), HashSet::new()));
+            m.0.last_used = m.0.last_used.max(tag.last_used);
+            m.1.extend(t.files.iter().map(|&id| multi::photo(&copies, d, id)));
+            m.2.extend(t.manual.iter().map(|&id| multi::photo(&copies, d, id)));
+        }
+    }
+    let merged: std::collections::BTreeMap<String, browse::Tag> = merged
+        .into_iter()
+        .map(|(k, (tag, photos, manual))| (k, browse::Tag { count: photos.len() as u64, manual: manual.len() as u64, ..tag }))
+        .collect();
+    let mut list: Vec<browse::Tag> = merged.into_values().collect();
+    list.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.name.cmp(&b.name)));
+    list.truncate(limit);
+    Ok(list)
 }
 
 #[derive(Serialize)]
@@ -2067,7 +2589,7 @@ async fn all_transfer_apply(
     })
     .await?;
     if counts.people > 0 {
-        to.request_clusters();
+        to.regroup(Why::Now);
     }
     Ok(Json(serde_json::json!({ "from": from, "to": to.name, "counts": counts })))
 }
@@ -2105,11 +2627,14 @@ struct JobInfo {
 struct ClustersInfo {
     #[serde(flatten)]
     overview: clusters::Overview,
-    /// A recomputation is asked for or running in this server: what the
+    /// A recomputation is starting or running in this server: what the
     /// cache says may be behind the latest decisions.
     stale: bool,
     /// Faces drawn by hand are being embedded (the recognizer runs).
     embedding: bool,
+    /// Decisions waiting for the next one (`pending`, `cards_left`, `wait_ms`).
+    #[serde(flatten)]
+    next: regroup::Status,
 }
 
 #[derive(Serialize)]
@@ -2177,21 +2702,36 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
     let reveal = is_local(peer.ip(), host(&headers)).then(reveal::label);
     blocking(&app, move |app| {
         let conn = app.conn.lock().unwrap();
-        let (photos, videos, missing): (i64, i64, i64) = conn.query_row(
-            "SELECT count(*) FILTER (WHERE missing_since IS NULL AND kind NOT IN ('video', 'raw')),
-                    count(*) FILTER (WHERE missing_since IS NULL AND kind = 'video'),
-                    count(*) FILTER (WHERE missing_since IS NOT NULL)
-             FROM files",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-        )?;
-        let (thumbs_total, thumbs_done): (i64, i64) = conn.query_row(
-            "SELECT count(DISTINCT f.quick_hash), count(DISTINCT t.key)
-             FROM files f LEFT JOIN thumbs.thumbs t ON t.key = f.quick_hash
-             WHERE f.missing_since IS NULL AND f.kind != 'raw'",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?;
+        let (data_version, generation) = app.version(&conn)?;
+        let version = (data_version, generation);
+        let counts = {
+            let mut cache = app.info_counts.lock().unwrap();
+            match cache.as_ref() {
+                Some((v, at, c)) if *v == version && at.elapsed() < INFO_COUNTS_AGE => c.clone(),
+                _ => {
+                    let (photos, videos, missing): (i64, i64, i64) = conn.query_row(
+                        "SELECT count(*) FILTER (WHERE missing_since IS NULL AND kind NOT IN ('video', 'raw')),
+                                count(*) FILTER (WHERE missing_since IS NULL AND kind = 'video'),
+                                count(*) FILTER (WHERE missing_since IS NOT NULL)
+                         FROM files",
+                        [],
+                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                    )?;
+                    let (thumbs_total, thumbs_done): (i64, i64) = conn.query_row(
+                        "SELECT count(DISTINCT f.quick_hash), count(DISTINCT t.key)
+                         FROM files f LEFT JOIN thumbs.thumbs t ON t.key = f.quick_hash
+                         WHERE f.missing_since IS NULL AND f.kind != 'raw'",
+                        [],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )?;
+                    let trash: i64 = conn.query_row("SELECT count(DISTINCT batch) FROM trash", [], |r| r.get(0))?;
+                    let needs_date = app.snapshot(&conn)?.items.iter().filter(|it| needs_a_date(it)).count() as u64;
+                    let c = Arc::new(InfoCounts { photos, videos, missing, thumbs_total, thumbs_done, trash, needs_date });
+                    *cache = Some((version, Instant::now(), c.clone()));
+                    c
+                }
+            }
+        };
         let jobs: Vec<JobInfo> = conn
             .prepare(
                 "SELECT kind, state, started_at, updated_at, finished_at, done, total FROM jobs
@@ -2212,36 +2752,58 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
         // A job whose process died stays 'running' until the next scan; only
         // count it as busy while it is still reporting progress.
         let busy = jobs_running(&conn)?;
-        let (data_version, generation) = app.version(&conn)?;
-        let trash: i64 = conn.query_row("SELECT count(DISTINCT batch) FROM trash", [], |r| r.get(0))?;
-        let needs_date = app.snapshot(&conn)?.items.iter().filter(|it| needs_a_date(it)).count() as u64;
-        let faces = recognize::overview(&conn)?;
-        // New faces from a `recognize` run that stopped before clustering.
+        let clusters_done = app.clusters_done.load(Ordering::SeqCst);
+        let clusters_wanted = app.clusters_wanted.load(Ordering::SeqCst);
+        let embedding = app.embedding.load(Ordering::SeqCst);
+        let recog_version: i64 = conn.query_row("PRAGMA recog.data_version", [], |r| r.get(0))?;
+        let faces_key = (version, recog_version, clusters_done, clusters_wanted, embedding);
+        let overviews = {
+            let mut cache = app.info_faces.lock().unwrap();
+            match cache.as_ref() {
+                Some((k, at, o)) if *k == faces_key && at.elapsed() < INFO_FACES_AGE => o.clone(),
+                _ => {
+                    let o = Arc::new((recognize::overview(&conn)?, clusters::overview(&conn)?));
+                    *cache = Some((faces_key, Instant::now(), o.clone()));
+                    o
+                }
+            }
+        };
+        let faces = overviews.0.clone();
+        // New faces from a `recognize` run in another process: grouped by it
+        // when it got that far (only noted here), else by this server.
         if !faces.running
+            && !overviews.1.running
             && app.clusters_done.load(Ordering::SeqCst) == app.clusters_wanted.load(Ordering::SeqCst)
-            && faces_fingerprint(&conn)? != app.faces_seen.load(Ordering::SeqCst)
         {
-            app.request_clusters();
+            let seen = faces_fingerprint(&conn)?;
+            if seen != app.faces_seen.load(Ordering::SeqCst) {
+                if grouped_after_recognition(&conn)? {
+                    app.faces_seen.store(seen, Ordering::SeqCst);
+                } else {
+                    app.regroup(Why::Now);
+                }
+            }
         }
         let clusters = ClustersInfo {
-            overview: clusters::overview(&conn)?,
-            stale: app.clusters_done.load(Ordering::SeqCst) < app.clusters_wanted.load(Ordering::SeqCst),
-            embedding: app.embedding.load(Ordering::SeqCst),
+            overview: overviews.1.clone(),
+            stale: clusters_done < clusters_wanted,
+            embedding,
+            next: app.regroup.status(),
         };
         Ok(Json(Info {
             name: app.name.clone(),
             version: env!("CARGO_PKG_VERSION"),
-            photos: photos as u64,
-            videos: videos as u64,
-            missing: missing as u64,
-            thumbs_done: thumbs_done as u64,
-            thumbs_total: thumbs_total as u64,
+            photos: counts.photos as u64,
+            videos: counts.videos as u64,
+            missing: counts.missing as u64,
+            thumbs_done: counts.thumbs_done as u64,
+            thumbs_total: counts.thumbs_total as u64,
             video_posters: media::SYSTEM_VIDEO_POSTERS || app.ffmpeg.is_some(),
             jobs,
             busy,
             index_version: format!("{data_version}.{generation}"),
-            trash: trash as u64,
-            needs_date,
+            trash: counts.trash as u64,
+            needs_date: counts.needs_date,
             faces,
             clusters,
             text: crate::text::progress(&conn)?,
@@ -2279,8 +2841,9 @@ fn types_of(pairs: &Pairs) -> ApiResult<Vec<browse::MediaType>> {
 }
 
 /// The timeline filter of a request: `folder`, `tag` (several, all must
-/// match), `type` (several, any matches), `q` (free text) and `person` (several, all must match: photos
-/// with a confirmed face of each).
+/// match), `type` (several, any matches), `q` (free text), `person` (several, all must match: photos
+/// with a confirmed face of each) and `group` (several, all must match: photos
+/// with a confirmed face of anyone in each).
 fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
     let number = |v: &str| v.parse::<i64>().map_err(|_| ApiError::BadRequest(format!("not a number: {v}")));
     Ok(browse::Query {
@@ -2289,6 +2852,7 @@ fn filter_of(pairs: &Pairs) -> ApiResult<browse::Query> {
         manual_tags: param(pairs, "manual").is_some_and(|v| !v.is_empty() && v != "0"),
         text: param(pairs, "q").map(str::to_string).filter(|s| !s.trim().is_empty()),
         people: pairs.iter().filter(|(k, v)| k == "person" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
+        groups: pairs.iter().filter(|(k, v)| k == "group" && !v.is_empty()).map(|(_, v)| number(v)).collect::<ApiResult<_>>()?,
         types: types_of(pairs)?,
         pets: pets_of(pairs)?,
         in_text: terms_of(pairs, "text"),
@@ -2374,47 +2938,188 @@ fn pets_of(pairs: &Pairs) -> ApiResult<Vec<String>> {
 }
 
 /// Tags whose name contains `q`, most used first. With a filter (`tag`,
-/// `folder`), counts only the photos it shows and leaves out tags that would
-/// show nothing, so suggestions narrow a search; `own=1` keeps only tags the
-/// user added somewhere.
+/// `folder`, `person`, `type`, `date`, ...), counts only the photos it shows
+/// and leaves out tags that would show nothing, so suggestions narrow a
+/// search; `own=1` keeps only tags the user added somewhere.
 async fn tags(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<browse::Tag>>> {
-    blocking(&app, move |app| {
+    queued(&app, move |app| {
         let conn = app.conn.lock().unwrap();
         let needle = param(&pairs, "q").map(db::tag_fold).unwrap_or_default();
         let own = param(&pairs, "own").is_some_and(|o| o != "0");
         let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(50);
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
-        let all = if filter.folder.is_none()
-            && filter.tags.is_empty()
-            && filter.people.is_empty()
-            && filter.pets.is_empty()
-            && filter.in_text.is_empty()
-            && filter.names.is_empty()
-            && filter.place.is_none()
-            && filter.area.is_none()
-        {
-            browse::all_tags(&conn)?
-        } else {
-            let snapshot = app.snapshot(&conn)?;
-            let shown: HashSet<i64> = snapshot.query(&conn, &filter)?.iter().map(|it| it.id).collect();
-            // Whether a tag is only a folder name is a fact about the drive, not
-            // about the photos shown: a tag given by hand elsewhere stays a tag.
-            let kinds: HashMap<i64, browse::TagKind> = browse::all_tags(&conn)?.into_iter().map(|t| (t.id, t.kind)).collect();
-            let mut within = browse::tags_within(&conn, &shown, &filter.tags)?;
-            for t in &mut within {
-                if let Some(&kind) = kinds.get(&t.id) {
-                    t.kind = kind;
-                }
+        Ok(Json(tag_hits(app, &conn, &filter, None, &needle, own, limit)?))
+    })
+    .await
+}
+
+/// Nothing in the filter narrows the photos shown.
+fn shows_everything(filter: &browse::Query) -> bool {
+    filter.folder.is_none()
+        && filter.tags.is_empty()
+        && filter.people.is_empty()
+        && filter.groups.is_empty()
+        && filter.pets.is_empty()
+        && filter.in_text.is_empty()
+        && filter.names.is_empty()
+        && filter.place.is_none()
+        && filter.area.is_none()
+        && filter.types.is_empty()
+        && !filter.fav
+        && filter.dates.is_empty()
+        && !filter.needs_date
+        && filter.text.is_none()
+}
+
+/// `tags` for `needle` (folded) within `filter`, whose photos are `shown` when
+/// the caller has them already (`/api/suggest`).
+fn tag_hits(app: &App, conn: &Connection, filter: &browse::Query, shown: Option<&HashSet<i64>>, needle: &str, own: bool, limit: usize) -> Result<Vec<browse::Tag>> {
+    let all = if shows_everything(filter) {
+        app.all_tags(conn)?.as_ref().clone()
+    } else {
+        let computed;
+        let shown = match shown {
+            Some(s) => s,
+            None => {
+                computed = app.snapshot(conn)?.query(conn, filter)?.iter().map(|it| it.id).collect::<HashSet<i64>>();
+                &computed
             }
-            within
         };
-        let tags = all
-            .into_iter()
-            .filter(|t| !own || t.kind != browse::TagKind::Folder)
-            .filter(|t| db::tag_fold(&t.name).contains(&needle))
-            .take(limit)
-            .collect();
-        Ok(Json(tags))
+        // Whether a tag is only a folder name is a fact about the drive, not
+        // about the photos shown: a tag given by hand elsewhere stays a tag.
+        let kinds: HashMap<i64, browse::TagKind> = app.all_tags(conn)?.iter().map(|t| (t.id, t.kind)).collect();
+        let mut within = browse::tags_within(conn, shown, &filter.tags)?;
+        for t in &mut within {
+            if let Some(&kind) = kinds.get(&t.id) {
+                t.kind = kind;
+            }
+        }
+        within
+    };
+    Ok(all
+        .into_iter()
+        .filter(|t| !own || t.kind != browse::TagKind::Folder)
+        .filter(|t| db::tag_fold(&t.name).contains(needle))
+        .take(limit)
+        .collect())
+}
+
+/// What the search box's text asks for, by its prefix, as the page reads it
+/// (`DATE_PREFIX` in `dates.js`, `PREFIX` in `app.js`).
+#[derive(Debug, PartialEq)]
+enum Typed<'a> {
+    /// No prefix: every kind of suggestion.
+    Plain(&'a str),
+    /// `date:` or `datum:`: only dates (a month alone lists it in every year).
+    Date(&'a str),
+    /// `text:`: only the words read in pictures (`text=` in a search).
+    Text(&'a str),
+    /// `name:`: only file names (`name=` in a search).
+    Name(&'a str),
+}
+
+fn typed(q: &str) -> Typed<'_> {
+    let t = q.trim_start();
+    if let Some((head, rest)) = t.split_once(':') {
+        match head.to_ascii_lowercase().as_str() {
+            "date" | "datum" => return Typed::Date(rest.trim()),
+            "text" => return Typed::Text(rest.trim()),
+            "name" => return Typed::Name(rest.trim()),
+            _ => {}
+        }
+    }
+    Typed::Plain(q.trim())
+}
+
+/// How many of each the search box lists.
+const SUGGEST_TAGS: usize = 8;
+const SUGGEST_PEOPLE: usize = 6;
+const SUGGEST_GROUPS: usize = 4;
+
+/// Everything the search box suggests for one text, in one reply: the
+/// sections the page lists (empty where the prefix asks for none of them).
+#[derive(Serialize, Default)]
+struct Suggestions {
+    tags: Vec<browse::Tag>,
+    people: Vec<people_api::PersonHit>,
+    pets: Vec<people_api::PetHit>,
+    groups: Vec<people_api::GroupHit>,
+    dates: Vec<dates::Row>,
+    /// The photos whose recognized text has the typed word, within the filter
+    /// (`text=` added): for plain text of two letters or more and for `text:`;
+    /// else null.
+    text: Option<TermCount>,
+    /// The photos whose file name has the typed part, within the filter
+    /// (`name=` added): only for `name:`; else null.
+    name: Option<TermCount>,
+}
+
+#[derive(Serialize)]
+struct TermCount {
+    term: String,
+    count: usize,
+}
+
+/// A section of the suggestions, empty if it could not be read (the rest are still shown).
+fn section<T>(app: &App, what: &str, r: Result<Vec<T>>) -> Vec<T> {
+    r.unwrap_or_else(|e| {
+        eprintln!("{}: search suggestions, {what}: {e:#}", app.name);
+        Vec::new()
+    })
+}
+
+/// The search box's suggestions for `q` (with its prefix, see `Typed`),
+/// counted within the rest of the filter (the timeline's parameters): own
+/// tags as `tags?own=1`, people as `people/search`, pets as `pets/search`,
+/// groups as `groups/search`, dates as `dates`, each section built by the same
+/// code as those endpoints, and the number of the text row as `count?text=`.
+/// `text:` and `name:` answer only that row's number (`text`, `name`). The photos the filter shows are worked out once
+/// for all of them. People, pets and groups depend on the faces' tables: one
+/// of them failing leaves its section empty (and says so in the log), not the
+/// whole list.
+async fn suggest(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Suggestions>> {
+    queued(&app, move |app| {
+        let q = param(&pairs, "q").unwrap_or("").to_string();
+        let typed = typed(&q);
+        let conn = app.conn.lock().unwrap();
+        let filter = browse::Query { text: None, ..filter_of(&pairs)? };
+        let snapshot = app.snapshot(&conn)?;
+        // How many photos the search shows with the term added, as `/count` says.
+        let term_count = |term: &str, add: fn(&mut browse::Query, String)| -> Result<Option<TermCount>> {
+            if term.is_empty() {
+                return Ok(None);
+            }
+            let mut with = filter.clone();
+            add(&mut with, term.to_string());
+            Ok(Some(TermCount { term: term.to_string(), count: snapshot.query(&conn, &with)?.len() }))
+        };
+        let in_text = |q: &mut browse::Query, t: String| q.in_text.push(t);
+        let (text, only_dates) = match typed {
+            Typed::Plain(t) => (t, false),
+            Typed::Date(t) => (t, true),
+            Typed::Text(t) => return Ok(Json(Suggestions { text: term_count(t, in_text)?, ..Default::default() })),
+            Typed::Name(t) => return Ok(Json(Suggestions { name: term_count(t, |q, t| q.names.push(t))?, ..Default::default() })),
+        };
+        let items = snapshot.query(&conn, &filter)?;
+        let all_dates: Vec<(i32, Option<u32>, Option<u32>)> = items.iter().map(|it| it.date_parts()).collect();
+        let dates = dates::suggest(text, only_dates, &all_dates);
+        if only_dates {
+            return Ok(Json(Suggestions { dates, ..Default::default() }));
+        }
+        // Without a filter the tags' counts are kept and the people's are
+        // kept or worked out over every photo: the set is needed only then.
+        let shown: Option<HashSet<i64>> = (!shows_everything(&filter)).then(|| items.iter().map(|it| it.id).collect());
+        let needle = db::tag_fold(text);
+        Ok(Json(Suggestions {
+            tags: tag_hits(app, &conn, &filter, shown.as_ref(), &needle, true, SUGGEST_TAGS)?,
+            people: section(app, "people", people_api::person_hits(app, &conn, &pairs, &filter, shown.as_ref(), &needle, SUGGEST_PEOPLE)),
+            pets: section(app, "pets", people_api::pet_hits(app, &conn, &filter, text)),
+            groups: section(app, "groups", people_api::group_hits(app, &conn, &filter, &needle, SUGGEST_GROUPS)),
+            dates,
+            // As the page offers it: the text row from two letters on.
+            text: if text.chars().count() >= 2 { term_count(text, in_text)? } else { None },
+            name: None,
+        }))
     })
     .await
 }
@@ -2436,6 +3141,8 @@ struct Timeline {
     tags: Vec<browse::TagName>,
     /// Names of the people in the filter, for their chips.
     people: Vec<people::PersonRef>,
+    /// Names of the groups in the filter, for their chips.
+    groups: Vec<people::GroupRef>,
     /// Ids of the items with a heart.
     favs: Vec<i64>,
     /// [id, line] of what a text search found in an item (the first matching
@@ -2451,7 +3158,7 @@ struct Timeline {
 async fn timeline(State(app): State<Arc<App>>, axum::Extension(only): axum::Extension<CompareIds>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Timeline>> {
     let mut query = filter_of(&pairs)?;
     query.ids = only.0;
-    blocking(&app, move |app| {
+    queued(&app, move |app| {
         let conn = app.conn.lock().unwrap();
         if let Some(place) = query.place
             && crate::geo::place(&conn, place)?.is_none()
@@ -2462,6 +3169,7 @@ async fn timeline(State(app): State<Arc<App>>, axum::Extension(only): axum::Exte
         let items = snapshot.query(&conn, &query)?;
         let tags = browse::tag_names(&conn, &query.tags)?;
         let people = people::person_names(&conn, &query.people)?;
+        let groups = people::group_names(&conn, &query.groups)?;
         let hearts = own_tags::favorite_ids(&conn)?;
         let mut t = Timeline {
             count: items.len(),
@@ -2472,6 +3180,7 @@ async fn timeline(State(app): State<Arc<App>>, axum::Extension(only): axum::Exte
             live: Vec::new(),
             tags,
             people,
+            groups,
             favs: Vec::new(),
             snips: Vec::new(),
             est: Vec::new(),
@@ -2512,7 +3221,7 @@ async fn timeline(State(app): State<Arc<App>>, axum::Extension(only): axum::Exte
 /// suggestion of the search box.
 async fn count(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<serde_json::Value>> {
     let query = filter_of(&pairs)?;
-    blocking(&app, move |app| {
+    queued(&app, move |app| {
         let conn = app.conn.lock().unwrap();
         let snapshot = app.snapshot(&conn)?;
         let n = snapshot.query(&conn, &query)?.len();
@@ -2824,6 +3533,19 @@ async fn change<T: Send + 'static>(
     app: &Arc<App>,
     f: impl FnOnce(&App, &Connection) -> Result<T> + Send + 'static,
 ) -> ApiResult<T> {
+    change_with(app, true, f).await
+}
+
+/// `change`; with `files_changed` false the caches of the files and folders
+/// (timeline, duplicates, copies) stay and `index_version` stays the same:
+/// for changes that only touch people, groups and face decisions, which none
+/// of them reads. Otherwise every name given on the Unnamed page would make
+/// every open page reload its folders, tags, people and places.
+async fn change_with<T: Send + 'static>(
+    app: &Arc<App>,
+    files_changed: bool,
+    f: impl FnOnce(&App, &Connection) -> Result<T> + Send + 'static,
+) -> ApiResult<T> {
     blocking(app, move |app| {
         let _writing = app.writing.lock().unwrap();
         let conn = app.conn.lock().unwrap();
@@ -2831,7 +3553,9 @@ async fn change<T: Send + 'static>(
             return Err(ApiError::Conflict("a scan is running; try again when it is done".into()));
         }
         let result = f(app, &conn);
-        app.generation.fetch_add(1, Ordering::SeqCst);
+        if files_changed {
+            app.generation.fetch_add(1, Ordering::SeqCst);
+        }
         app.dirty.store(true, Ordering::SeqCst);
         let _ = app.backup.lock().unwrap().send(());
         result.map_err(|e| {
@@ -3294,7 +4018,7 @@ async fn dates_check(State(app): State<Arc<App>>, Json(req): Json<IdsRequest>) -
 /// optional `date:` prefix, `prefix=1` when it was typed), counted within the
 /// rest of the filter.
 async fn dates_suggest(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<dates::Row>>> {
-    blocking(&app, move |app| {
+    queued(&app, move |app| {
         let conn = app.conn.lock().unwrap();
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
         let snapshot = app.snapshot(&conn)?;

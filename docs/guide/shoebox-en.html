@@ -427,7 +427,7 @@
         </li>
         <li>
           <h3>Status</h3>
-          <p>Scan, thumbnail and drive status at the bottom of the sidebar.</p>
+          <p>Scan, thumbnail and drive status at the bottom of the sidebar; it stays in view while the sidebar scrolls.</p>
         </li>
       </ol>
       <div class="panel">
@@ -442,7 +442,7 @@
       <div class="topic has-shots">
         <div class="txt">
           <h3>Where you are</h3>
-          <p>The top bar names where you are. Next to the drive name it shows the month you are looking at on the timeline (the <b>Year</b> menu jumps to a year) and, on any other page (Duplicates, Trash, Settings, Faces, …), the name of that page.</p>
+          <p>The top bar names where you are. Next to the drive name it shows the month you are looking at on the timeline (the <b>Year</b> menu jumps to a year) and, on any other page (Duplicates, Trash, Settings, Faces, Unnamed, …), the name of that page.</p>
         </div>
         <div class="shots">
           <figure>
@@ -488,8 +488,8 @@
             </li>
             <li>
               <h3>Add-ons, scan, then open</h3>
-              <p>Only if you want people, pets or the words in your photos recognized: in step 1, <b>Add-ons</b>, tick what you want (<b>Faces</b>, <b>Pets</b>, <b>Text</b>, or any mix; each works without the others) and press <b>Install the selected add-ons</b>. The Control Panel lists what is downloaded: the Python and OpenCV program (about 200 MB, once, for all add-ons), Faces (about 40 MB), Pets (about 140 MB) and Text (about 100 MB). Internet needed, a few minutes. Python and OpenCV is always installed with the first add-on (its box is ticked and cannot be unticked). Until an add-on is installed, its recognize button stays grey and says why.</p>
-              <p>Then add your photos: press <b>Choose…</b> and pick the folder, or type its path (for example <code>/Volumes/MyDrive/Photos</code>, on Windows <code>E:\Photos</code>) and press Enter. A click on a detected drive starts the path in the box for you to finish (Enter alone adds the whole drive), and a double-click on a folder in the list lets you change its path. Then press <b>Scan</b>, then <b>Start photo app</b>. The Control Panel remembers the drives you ticked last time; if one of them is not plugged in, its chip is dashed and <b>Start photo app</b> stays off, with the reason in red, until you plug it in or untick it. This works on Windows too (<code>E:\Photos</code> and <code>e:/Photos</code> are the same place). A drive at the top of <code>E:\</code> is called by its name in Explorer (or <code>E:</code> if it has none), as on a Mac.</p>
+              <p>Only if you want people, pets or the words in your photos recognized: in step 1, <b>Add-ons</b>, tick what you want (<b>Faces</b>, <b>Pets</b>, <b>Text</b>, or any mix; each works without the others) and press <b>Install the selected add-ons</b>. The Control Panel lists what is downloaded: the Python and OpenCV program (about 200 MB, once, for all add-ons), Faces (about 40 MB), Pets (about 140 MB) and Text (about 100 MB). Internet needed, a few minutes. Python and OpenCV is always installed with the first add-on (its box is ticked and cannot be unticked). Until an add-on is installed, its recognize button stays grey and says why. The Control Panel looks at the <b>recognizer</b> folder each time you open it or come back to its window, so a new download shows everything as not installed until you install it, and an install that stopped half way does not count as installed.</p>
+              <p>Then add your photos: press <b>Choose…</b> and pick the folder, or type its path (for example <code>/Volumes/MyDrive/Photos</code>, on Windows <code>E:\Photos</code>) and press Enter. A click on a detected drive starts the path in the box for you to finish (Enter alone adds the whole drive), and a double-click on a folder in the list lets you change its path. Then press <b>Scan</b>, then <b>Start photo app</b>; while the app starts, the button is grey with a moving line along its bottom edge until the photo app opens in a new browser tab. The Control Panel remembers the drives you ticked last time; if one of them is not plugged in, its chip is dashed and <b>Start photo app</b> stays off, with the reason in red, until you plug it in or untick it. This works on Windows too (<code>E:\Photos</code> and <code>e:/Photos</code> are the same place). A drive at the top of <code>E:\</code> is called by its name in Explorer (or <code>E:</code> if it has none), as on a Mac.</p>
               <p><b>Photos on a server, or a folder you only want to look at?</b> Open the tab <b>Add a folder or server</b>, press <b>Choose…</b> or type the path (for example <code>\\server\share\Photos</code> or <code>/Volumes/Server/Photos</code>), choose <b>Separate (next to the program)</b> and press <b>Add</b>, then <b>Scan</b> as usual. Such a folder is listed under <b>Libraries kept next to the program</b> in the tab <b>Photo folders</b> and marked <b>separate</b>: its index is kept next to the program instead of inside the folder. shoebox walks through every subfolder, finds the photos and keeps its list in a folder <b>libraries</b> that appears next to the folder <b>program</b> (in your shoebox folder, never inside <b>program</b>, so a newer shoebox can replace <b>program</b> without losing it). Nothing is written into the folder, not even a <b>.shoebox</b> folder, and its photos can only be looked at, never moved, renamed or deleted (the photo app shows no Move, Rotate or trash buttons for it, and an export cannot save into it; tags, dates and names still work). The tab <b>Manage libraries</b>, which appears once there is one, lets you rename a library, point it to another folder (the index is kept), take it off the list, or delete its index (your tags, dates and names for it go with it; the photos are not touched). The first scan of a big server can take hours; you can cancel and continue later.</p>
               <p>The first scan reads every file once and takes a while on a big drive; later scans only look at what changed. When it finishes, the tabs <b>Moved</b>, <b>Changed</b>, <b>Missing</b> and <b>Already on the drive</b> (each with its count) list exactly which files they mean; for new files you already had, the tab shows the older copy right next to each one.</p>
               <p><b>Text</b> (reading the words in your photos: documents, screenshots, street signs, menus) works the same way and is explained in “Words in photos”: tick <b>Text</b>, install it, then press <b>Recognize text</b> in step 3. It only reads, it is slow, and you can cancel and continue later.</p>
@@ -597,7 +597,7 @@
         <div class="topic">
           <div class="txt">
             <h3>Rotate</h3>
-            <p><b>r</b> turns left, <b>Shift+R</b> right. For JPEGs this changes only the two bytes of the rotation flag; for other formats the turn exists in shoebox only.</p>
+            <p><b>r</b> turns left, <b>Shift+R</b> right. For JPEGs this changes only the two bytes of the rotation flag; for other formats the turn exists in shoebox only. The small picture in the grid follows about a second after your last turn, so turning a photo two or three times makes it only once.</p>
           </div>
         </div>
       </div>
@@ -634,10 +634,10 @@
       <div class="topic has-shots">
         <div class="txt">
           <h3>Search</h3>
-          <p>Click the search box and start typing. Suggestions appear in groups, for example <b>Tags</b>, <b>People</b> and <b>Folders</b> (and your <b>places</b> when maps are on, see “Locations and maps”). Pick one and it becomes a <b>chip</b> above the photos. In <b>All drives</b> the numbers next to the suggestions count only the photos that fit the chips you already have, just as on a single drive.</p>
-          <div class="chips"><span class="chip">👤 Mia<i class="x" data-txt="skip">✕</i></span><span class="chip"># Holiday<i class="x" data-txt="skip">✕</i></span><span class="chip"><svg viewBox="0 0 24 24" width="1.15em" height="1.15em" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>June 1987<i class="x" data-txt="skip">✕</i></span><span class="count">48 photos · 3 videos</span></div>
+          <p>Click the search box and start typing. Suggestions appear in groups, for example <b>Tags</b>, <b>People</b>, <b>Groups</b> and <b>Folders</b> (and your <b>places</b> when maps are on, see “Locations and maps”). Pick one and it becomes a <b>chip</b> above the photos. In <b>All drives</b> the numbers next to the suggestions count only the photos that fit the chips you already have, just as on a single drive.</p>
+          <div class="chips"><span class="chip"><svg viewBox="0 0 24 24" width="1.15em" height="1.15em" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ><circle cx="12" cy="7" r="3"/><path d="M7.5 20v-2.5c0-3 1.7-5 4.5-5s4.5 2 4.5 5V20z"/></svg>Mia<i class="x" data-txt="skip">✕</i></span><span class="chip"># Holiday<i class="x" data-txt="skip">✕</i></span><span class="chip"><svg viewBox="0 0 24 24" width="1.15em" height="1.15em" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5z"/><path d="M8.5 3.5v5M15.5 3.5v5" stroke-width="2.2"/><path d="M7.5 14.5c1.5-2.3 3-2.3 4.5 0s3 2.3 4.5 0"/></svg>June 1987<i class="x" data-txt="skip">✕</i></span><span class="count">48 photos · 3 videos</span></div>
           <h4>Combine chips</h4>
-          <p>All chips must match, so every chip you add narrows the result: a person, a tag and a year together show only the photos that fit all three. <b>×</b> removes a chip, <b>Clear all</b> starts over.</p>
+          <p>All chips must match, so every chip you add narrows the result: a person, a tag and a year together show only the photos that fit all three. <b>×</b> removes a chip, <b>Clear all</b> starts over. A <b>group</b> chip is the one exception inside itself: it shows the photos of <i>anyone</i> in the group (see “Several faces in a photo, and groups”), and then narrows like any other chip.</p>
           <p>At the right of the chips shoebox shows how many it finds, for example <b>48 photos · 3 videos</b>. With nothing found it says <b>No photos</b>, and the page reads <i>Nothing here. The search found no matches.</i></p>
           <figure>
             <img src="assets/en/search-suggestions.jpg" alt="" loading="lazy">
@@ -651,13 +651,13 @@
               <tr><th>You type</th><th>You get</th><th>It finds</th></tr>
             </thead>
             <tbody>
-              <tr><td><code>Mia</code></td><td><span class="chip">👤 Mia<i class="x" data-txt="skip">✕</i></span></td><td>A person or a pet. Names work like tags, and so do kinds such as “cats”.</td></tr>
+              <tr><td><code>Mia</code></td><td><span class="chip"><svg viewBox="0 0 24 24" width="1.15em" height="1.15em" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ><circle cx="12" cy="7" r="3"/><path d="M7.5 20v-2.5c0-3 1.7-5 4.5-5s4.5 2 4.5 5V20z"/></svg>Mia<i class="x" data-txt="skip">✕</i></span></td><td>A person or a pet. Names work like tags, and so do kinds such as “cats”.</td></tr>
               <tr><td><code>Holiday</code></td><td><span class="chip"># Holiday<i class="x" data-txt="skip">✕</i></span></td><td>Photos with that tag. A folder name is offered under <b>Folders</b>; <b>Tags</b> lists only tags you gave by hand, including those that share a folder’s name.</td></tr>
               <tr><td><code>June 1987</code></td><td><span class="chip"><svg viewBox="0 0 24 24" width="1.15em" height="1.15em" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>June 1987<i class="x" data-txt="skip">✕</i></span></td><td>Photos from that year, month or day. See “Dates and searching by date”.</td></tr>
               <tr><td><code>text:Rechnung</code></td><td><span class="chip"><svg viewBox="0 0 24 24" width="1.15em" height="1.15em" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M7 12h10"/></svg>Rechnung<i class="x" data-txt="skip">✕</i></span></td><td>Words written inside photos. See “Words in photos”.</td></tr>
               <tr><td><code>name:IMG_20</code></td><td><span class="chip"><svg viewBox="0 0 24 24" width="1.15em" height="1.15em" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/></svg>IMG_20<i class="x" data-txt="skip">✕</i></span></td><td>File names.</td></tr>
               <tr><td><code>favorite</code></td><td><span class="chip">♥ Favorites<i class="x" data-txt="skip">✕</i></span></td><td>Your favorites. The <b>♥</b> button next to <b>Type</b> does the same. It combines with everything else, for example the favorites of one person or one year.</td></tr>
-              <tr><td><code>Home</code></td><td><span class="chip">📍 Home<i class="x" data-txt="skip">✕</i></span></td><td>Photos taken in a named place (maps on). See “Locations and maps”.</td></tr>
+              <tr><td><code>Home</code></td><td><span class="chip"><svg viewBox="0 0 24 24" width="1.15em" height="1.15em" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ><path d="M12 21C9.5 18.2 6 14.8 6 10.8a6 6 0 0 1 12 0c0 4-3.5 7.4-6 10.2z"/><circle cx="12" cy="10.8" r="1.4" fill="currentColor"/></svg>Home<i class="x" data-txt="skip">✕</i></span></td><td>Photos taken in a named place (maps on). See “Locations and maps”.</td></tr>
             </tbody>
           </table>
           <figure>
@@ -704,7 +704,7 @@
       <div class="topic has-shots">
         <div class="txt">
           <h3>Select</h3>
-          <p>Press <b>☑</b>, then click photos (Shift-click for a range; on the iPad just tap). “Select all” on a month heading takes the whole month; <b>Select all</b> in the bar at the bottom takes every photo shown, across all months (for example all photos of a tag, to remove that tag from them at once).</p>
+          <p>Press <b>☑</b>, then click photos (Shift-click for a range; on the iPad just tap). With the mouse you can also hold the button down and drag a rectangle over photos, as in Finder: only the photos the rectangle touches change, and a drag that starts on an unselected photo selects them, one that starts on a selected photo deselects them; photos the rectangle leaves again go back to what they were, and near the top or bottom edge the timeline scrolls along. “Select all” on a month heading takes the whole month; <b>Select all</b> in the bar at the bottom takes every photo shown, across all months (for example all photos of a tag, to remove that tag from them at once).</p>
           <p>The selection belongs to the list it was made in: clicking another tag, folder or page in the sidebar, or a search, ends it; if photos are selected, shoebox asks first, when you click the page or the search box (<b>Stay</b> or <b>Leave and drop selection</b> / <b>Search and drop selection</b>).</p>
           <p>The bar at the bottom works on the selection. On the left, <b>✕</b> ends the selection (so does Esc), then come the number of photos selected and <b>Select all</b>. The tools follow as icons; point at one and its name appears above it:</p>
           <ul>
@@ -879,7 +879,7 @@
         <div class="shots">
           <figure>
             <img src="assets/en/duplicates.jpg" alt="" loading="lazy">
-            <figcaption>Duplicates after Preselect › Smaller versions: the messenger copy is ticked and marked Lower quality.</figcaption>
+            <figcaption>Duplicates after Preselect › Smaller versions: the messenger copy is ticked and marked Fewer pixels.</figcaption>
           </figure>
           <figure>
             <img src="assets/en/across-suggest.jpg" alt="" loading="lazy">
@@ -898,7 +898,7 @@
           <ul>
             <li><b>Suggested</b>: only what shoebox is sure of: of identical files all but the best one, and smaller versions of a photo. This is also what is ticked when the page opens.</li>
             <li><b>Identical photos:</b> <b>Copies in the same folder</b> (<i>IMG_1 (2)</i> next to <i>IMG_1</i>; identical files in other folders stay).</li>
-            <li><b>Same photo, different resolution:</b> <b>Smaller versions</b> (every card with a red <b>Lower quality</b> badge, also inside look-alike groups), <b>Keep the HEIC</b> (ticks the JPEG) and <b>Keep the JPEG</b> (ticks the HEIC).</li>
+            <li><b>Same photo, different resolution:</b> <b>Smaller versions</b> (every card with a red <b>Fewer pixels</b> badge, also inside look-alike groups; where the copy with fewer pixels is the bigger file, its card says <b>Fewer pixels</b> and the other says <b>Smaller file</b>, both red and unticked, and you decide; click the picture to open it large, press the right arrow key to see the other version with its info panel, and Esc or Space to come back to the group), <b>Keep the HEIC</b> (ticks the JPEG) and <b>Keep the JPEG</b> (ticks the HEIC).</li>
             <li><b>Original and edited:</b> <b>Edited versions</b> (the originals stay) and <b>Originals</b> (the edits stay).</li>
             <li><b>Similar photos:</b> <b>Keep the bigger file</b> ticks all others of every group, and <b>Keep the last shot</b> keeps the shot taken last (groups without capture dates are skipped). Look-alikes can be different shots, so look through the groups first.</li>
           </ul>
@@ -920,7 +920,7 @@
             <tbody>
               <tr><td>Keep all</td><td><b>Nothing is deleted.</b> These files belong together; they show as <b>Versions</b> on each photo. Button at the top right.</td></tr>
               <tr><td>Different photos</td><td><b>Nothing is deleted.</b> Look-alikes are separate shots, not copies. Button at the top right.</td></tr>
-              <tr><td>Delete this copy</td><td><b>Copy goes to the trash.</b> Tick it on every copy you want gone; the best file stays.</td></tr>
+              <tr><td>Delete this copy</td><td><b>Copy goes to the trash.</b> Tick it on every copy you want gone; the best file stays. Only the ticked file goes: a RAW, Live Photo video, sidecar or other format with the same name next to it stays where it is.</td></tr>
               <tr><td>Keep this one</td><td><b>Ticks all the others.</b> Look-alikes only: the button at the foot of a card ticks <b>delete this copy</b> on every other file of the group in one click. The same button in the compare dialog (click a picture) ticks the others and closes the dialog. To keep several, press <b>Keep</b> (the checkbox button) under each photo you want to stay, then <b>Keep (2)</b>, or however many you marked, at the bottom: the dialog closes and every other photo of the group is ticked. Nothing is moved in the dialog; go through your groups, then press <b>Move to trash</b> once in the bar at the bottom of the page.</td></tr>
             </tbody>
           </table>
@@ -930,7 +930,8 @@
       <div class="topic has-shots">
         <div class="txt">
           <h3>Trash</h3>
-          <p>Nothing is deleted right away. Trashed photos wait in <code>.shoebox/trash</code> on the drive. Click photos to select them (Shift-click selects a range), or use <b>Select all</b>; the bar at the bottom then has <b>Put back</b> and <b>Delete for good</b>. Deleting for good asks first. Moving photos to the trash from the timeline or the photo view is off by default: switch it on once in <b>Settings</b> (<i>Allow move to trash</i>). If that leaves a folder empty, shoebox removes it and tells you which one; <b>Put back</b> creates the folder again. Deleting copies on the <b>Duplicates</b> screen and with <b>Delete the new copies</b> works either way and also goes to the trash.</p>
+          <p>Nothing is deleted right away. Trashed photos wait in <code>.shoebox/trash</code> on the drive. Click photos to select them (Shift-click selects a range; with the mouse you can also drag across them), or use <b>Select all</b>; <b>Only duplicates</b> at the top shows just the copies that went to the trash as duplicates (the number says how many), so <b>Select all</b> and <b>Delete for good</b> cannot touch photos you trashed yourself; the bar at the bottom then has <b>Put back</b> and <b>Delete for good</b>. Deleting for good asks first. Moving photos to the trash from the timeline or the photo view is off by default: switch it on once in <b>Settings</b> (<i>Allow move to trash</i>). If that leaves a folder empty, shoebox removes it and tells you which one; <b>Put back</b> creates the folder again. Deleting copies on the <b>Duplicates</b> screen and with <b>Delete the new copies</b> works either way and also goes to the trash. A copy you put back shows on the <b>Duplicates</b> screen again right away, without a scan.</p>
+          <p>Badges at the bottom right of a card’s thumbnail show what else went with it: <b>LIVE ▶</b> for the video of a Live Photo, <b>RAW</b>, or the type of another file of the same name. Point at a badge to see the file’s name and size. A copy deleted on the <b>Duplicates</b> screen or with <b>Delete the new copies</b> has a <b>Duplicate</b> badge: point at it to see which file stayed on the drive, and click it to open that photo, so you can make sure it is safe before you delete the copy for good. If the file that stayed is no longer in the library, the badge is struck through.</p>
         </div>
         <div class="shots">
           <figure>
@@ -975,7 +976,7 @@
           <div class="topic has-shots">
             <div class="txt">
               <h3>Open Unnamed</h3>
-              <p>In the sidebar, open <b>Faces</b> and then <b>Unnamed</b>. Each card holds faces that look alike, the card with the most matches first. Cats and dogs have cards of their own; the menu above the cards chooses <i>People</i>, <i>Pets</i> or both. A card never mixes faces suggested for two different people: once you have named Mia and Tom, faces that shoebox suggests as <i>Looks like Mia</i> and those it suggests as <i>Looks like Tom</i> are on separate cards. Faces with no suggestion, or only a <i>Maybe</i>, can still go on either. Faces are put on a card only when they look alike as a group, not just each one like the next, so look-alikes (brothers and sisters, cats with a similar coat) get several smaller cards instead of one big mixed one. One person may then have several cards: give them all the same name. The page keeps itself up to date: a face you name in the photo viewer leaves its card at once, without reloading, so you cannot pick it again by mistake. Click a face to see its photo; the left and right arrow keys step through the photos on that card, and Space or Esc closes the viewer. The slider at the right of the menu sets the size of the face circles, from 64 to 150 pixels; shoebox remembers it in this browser. Bigger circles make the cards taller, so fewer fit on the screen.</p>
+              <p>In the sidebar, open <b>Faces</b> and then <b>Unnamed</b>. Each card holds faces that look alike, the card with the most matches first. Cats and dogs have cards of their own, with a blue ring and a small round badge in the corner of every face (a cat or a bone for a dog); the menu above the cards chooses <i>People</i>, <i>Pets</i> or both. A card never mixes faces suggested for two different people: once you have named Mia and Tom, faces that shoebox suggests as <i>Looks like Mia</i> and those it suggests as <i>Looks like Tom</i> are on separate cards. Faces with no suggestion, or only a <i>Maybe</i>, can still go on either. Faces are put on a card only when they look alike as a group, not just each one like the next, so look-alikes (brothers and sisters, cats with a similar coat) get several smaller cards instead of one big mixed one. One person may then have several cards: give them all the same name. The page keeps itself up to date: a face you name in the photo viewer leaves its card at once, without reloading, so you cannot pick it again by mistake. Click a face to see its photo; the left and right arrow keys step through the photos on that card, and Space or Esc closes the viewer. The slider at the right of the menu sets the size of the face circles, from 64 to 150 pixels; shoebox remembers it in this browser. Bigger circles make the cards taller, so fewer fit on the screen.</p>
             </div>
             <div class="shots">
               <figure>
@@ -989,7 +990,8 @@
           <div class="topic has-shots">
             <div class="txt">
               <h3>Name a card</h3>
-              <p>Type the name once and press <b>Name</b>: the whole card is named. Click into the field to see the people you named last (<b>Recently used</b>) and those with the most photos, then everyone by group; start typing to pick a person you already have (on a card of pets only cats and dogs are offered, and the other way round), or choose <b>+ New person</b> (on a card of pets it reads <b>+ New cat</b>, <b>+ New dog</b> or <b>+ New pet</b>). After that shoebox suggests more faces of them (<i>Looks like Mia</i>): confirm with ✓ or reject with ✗.</p>
+              <p>Type the name once and press <b>Name</b>: the whole card is named. Click into the field to see the people you named last (<b>Recently used</b>) and those with the most photos, then everyone by group; start typing to pick a person you already have (on a card of pets only cats and dogs are offered, and the other way round), or choose <b>+ New person</b> (on a card of pets it reads <b>+ New cat</b>, <b>+ New dog</b> or <b>+ New pet</b>). With the next regrouping (see below) shoebox suggests more faces of them (<i>Looks like Mia</i>): confirm with ✓ or reject with ✗.</p>
+              <p>Under every card the buttons are icons, in one row at any width: the name field, then four buttons. Point at one and a label tells its name and what it does. The person with a check is <b>Name</b>, the eye with a slash <b>Ignore</b>, the face with a slash <b>Not a face</b> (for pets, a paw with a slash: <b>Not a pet</b>) and the box with a check <b>Select</b>. The same buttons are in the bar that appears when you tick single faces.</p>
             </div>
             <div class="shots">
               <figure>
@@ -1002,9 +1004,18 @@
         <li>
           <div class="topic two">
             <div class="txt">
+              <h3>When new suggestions come</h3>
+              <p>Naming never waits: a card you name, ignore or mark as not a face leaves the page at once, and you can go straight on to the next one. Working out new cards and new suggestions takes some seconds on a big library (about 10 seconds with 100,000 photos; only what changed is compared again), so shoebox does it when it pays off, not after every card: after <b>5 cards</b>, or <b>30 seconds</b> after your last decision. Each decision starts the 30 seconds again. It also comes after a few seconds when you leave the Unnamed page, when you undo a decision from before the last regrouping, take back a “not this person”, merge two people, when you have dealt with every card that had a suggestion (only if the last round brought some), or when no card is left at all.</p>
+              <p>While decisions wait, a line at the top right of the page, level with the title, says when: <i>New suggestions after 3 more cards, or in 23 s</i>. The number of cards goes down with each card you name. The small circle to its left is full at first and empties over the 30 seconds; each decision fills it again. While shoebox works the faces out, the line says <i>Finding new suggestions…</i> and the same circle fills up as it gets on. You can keep naming meanwhile; those cards count towards the next round. When it is done, the line goes away and the cards update once. When you scroll down through the cards, the line stays at the top in a small box. There is nothing to press. With reduced motion turned on in your system, the circle moves once a second instead of smoothly.</p>
+            </div>
+          </div>
+        </li>
+        <li>
+          <div class="topic two">
+            <div class="txt">
               <h3>Strangers and false finds</h3>
-              <p><b>Ignore</b> is for strangers, and for faces on posters, screens and pictures: nobody needs to name them. <b>Not a face</b> (for pets <b>Not a pet</b>) is for false finds that are no face at all. Shoebox only finds cats and dogs, so an animal of another kind (a goat, say) is a false find: use <b>Not a pet</b>. A cat or dog that belongs to someone else is a stranger: <b>Ignore</b> (the ⋯ menu says <b>Ignore (someone else's pet)</b>). Nothing is deleted and no photo is touched; shoebox only notes the decision in its own database.</p>
-              <p>Sometimes the detector takes a cat for a dog, or the other way round, and then only names of the wrong kind are offered. Tick the pet or pets (<b>Select</b>) and press <b>It's a cat, not a dog</b> (or <b>It's a dog, not a cat</b>), or choose the same entry from <b>⋯</b> on the pet in a photo's info panel. The pet keeps the decisions already made about it and is a cat from then on in the name list, the icon and the search.</p>
+              <p><b>Ignore</b> (the eye with a slash) is for strangers, and for faces in posters, frames and screens. <b>Not a face</b> (the face with a slash; for pets the paw with a slash, <b>Not a pet</b>) is for false finds that are no face at all. Shoebox only finds cats and dogs, so an animal of another kind (a goat, say) is a false find: use <b>Not a pet</b>. A cat or dog that belongs to someone else is a stranger: <b>Ignore</b> (the ⋯ menu says <b>Ignore (someone else's pet)</b>). Nothing is deleted and no photo is touched; shoebox only notes the decision in its own database.</p>
+              <p>Sometimes the detector takes a cat for a dog, or the other way round, and then only names of the wrong kind are offered. Tick the pet or pets (<b>Select</b>) and press the cat (<b>It's a cat, not a dog</b>) or the bone (<b>It's a dog, not a cat</b>), or choose the same entry from <b>⋯</b> on the pet in a photo's info panel. The pet keeps the decisions already made about it and is a cat from then on in the name list, the icon and the search.</p>
             </div>
           </div>
         </li>
@@ -1012,7 +1023,7 @@
           <div class="topic has-shots">
             <div class="txt">
               <h3>Only some faces of a card</h3>
-              <p><b>Select</b> lets you tick the faces yourself. The buttons then work on those only: <b>Name 2</b>, <b>Ignore 2</b>, <b>2 not a face</b>. Use it when a card mixes two people. While it is on, the button reads <b>Clear</b>; press it to stop selecting and clear the selection.</p>
+              <p><b>Select</b> lets you tick the faces yourself. The buttons then work on those only: <b>Name 2</b>, <b>Ignore 2</b>, <b>2 not a face</b> (point at a button to see it). The top of the card says how many faces are selected, and until you tick a face the buttons are dimmed. Use it when a card mixes two people. While it is on, the same button is called <b>Clear</b>; press it to stop selecting and clear the selection.</p>
             </div>
             <div class="shots">
               <figure>
@@ -1032,7 +1043,7 @@
         <div class="txt">
           <h3>In a photo</h3>
           <p>Open a photo and its info panel (ⓘ). Under <b>Faces</b> every face has its picture and a name, or <b>+ Name</b>. Below the list are three small icon buttons (point at one to see its name): the frame with an eye (<b>Show boxes</b>), the checkbox (<b>Select</b>, shown only while at least two faces are not confirmed yet) and the face with a plus (<b>Add face or pet</b>).</p>
-          <p><b>Select</b> turns the list into a checklist: tick several faces (<b>All unnamed</b> ticks every face nobody has named), then <b>Ignore</b> or <b>Not a face</b> for all of them at once.</p>
+          <p><b>Select</b> turns the list into a checklist: tick several faces (<b>All unnamed</b> ticks every face nobody has named), then <b>Ignore</b> (the eye with a slash) or <b>Not a face</b> (the face with a slash) for all of them at once.</p>
           <p><b>Add face or pet</b> draws a box around a face or pet that was missed. Say what it is first, <b>Person</b>, <b>Cat</b> or <b>Dog</b>, then name it: the list opens at once with the names of that kind you gave last (<b>Recently used</b>) and those with the most photos, and offers only names of that kind (no people when you name a cat); <b>+ New person</b>, <b>+ New cat</b> or <b>+ New dog</b> adds a new one. The kind of a pet you drew yourself cannot be changed later; delete the box and draw it again. For a pet the detector found, <b>⋯</b> offers <b>It's a cat, not a dog</b> (or the other way round) when it took it for the wrong one. With the keyboard: the dialog opens in the name field; Shift+Tab goes back to the kind, and the arrow keys change it. In the name field the arrow keys go through the list and Enter takes the name; Esc closes the list, a second Esc the dialog.</p>
           <p><b>Videos</b> are not scanned for faces, so their info panel says so. There you can still link a person: The same <b>Add face or pet</b> button opens the same dialog (Person, Cat or Dog, then the name); there is no box to draw, shoebox places the small one it needs by itself, and nothing is drawn on the video. The person or pet is linked to the whole clip. Their profile picture shows in the list, and the video is found when you filter the timeline by that person.</p>
         </div>
@@ -1050,7 +1061,7 @@
       <div class="topic has-shots">
         <div class="txt">
           <h3>Groups</h3>
-          <p><b>Faces</b> shows people by group. <b>New group…</b> makes one; <b>Groups…</b> renames, reorders and deletes groups; to reorder, drag a row by the dotted handle on its left (or focus the handle and press Alt+↑/↓). A person is in one group at most, and deleting a group deletes nobody.</p>
+          <p><b>Faces</b> shows people by group. A group is always made from a person: use <b>⋯</b> on them, then <b>New group…</b>, and they are its first member. A group is never empty, so it is removed when its last person leaves it. <b>Groups…</b> renames, reorders and deletes groups; to reorder, drag a row by the dotted handle on its left (or focus the handle and press Alt+↑/↓). A person is in one group at most, and deleting a group deletes nobody.</p>
         </div>
         <div class="shots">
           <figure>
@@ -1066,7 +1077,7 @@
       <div class="topic has-shots">
         <div class="txt">
           <h3>Put people into groups</h3>
-          <p>Use <b>⋯</b> on a person, then <b>Move to group…</b>, or drag the person onto a group in the sidebar. Pets work the same way: a group <i>Pets</i> can hold the dog and the cat.</p>
+          <p>Use <b>⋯</b> on a person, then <b>Move to group…</b> (or <b>New group…</b> for a new one), or drag the person onto a group in the sidebar. Pets work the same way: a group <i>Pets</i> can hold the dog and the cat.</p>
         </div>
         <div class="shots">
           <figure>
@@ -1075,10 +1086,22 @@
           </figure>
         </div>
       </div>
+      <div class="topic has-shots">
+        <div class="txt">
+          <h3>See a whole group at once</h3>
+          <p>Click a group in the sidebar: it unfolds its people and the photos show everyone in it, so a photo of Rosa and a photo of Ben both appear, not only the photos with both of them. Or type the group’s name in the search box and pick it under <b>Groups</b>; it becomes a chip with the group symbol. Pets in the group count too. Add a person next to it to narrow it down again.</p>
+        </div>
+        <div class="shots">
+          <figure>
+            <img src="assets/en/group-timeline.jpg" alt="" loading="lazy">
+            <figcaption>A group in the sidebar: the photos of everyone in it.</figcaption>
+          </figure>
+        </div>
+      </div>
       <div class="topic">
         <div class="txt">
           <h3>Corrections</h3>
-          <p>The same <b>⋯</b> menu has <b>Merge into…</b> for two cards of one person. On a person’s page, <b>Review faces</b> lists Confirmed, Suggested, Maybe and Not them, and a face marked by mistake can go back with ↺. In Suggested and Maybe, click a face to see its photo; the arrow keys then step through the faces still to check. <b>Calibration</b> (Face check, Pet check) shows what recognition found: small faces, scores and false finds.</p>
+          <p>The same <b>⋯</b> menu has <b>Merge into…</b> for two cards of one person. Above a person’s photos, <b>Check … faces</b> (or <b>Faces</b> when there is nothing to check) opens their faces page with the tabs Confirmed, Suggested, Maybe and Not them, and a face marked by mistake can go back with ↺. The <b>Select</b> and <b>Confirm all shown</b> buttons stay at the top while you scroll. Once every face shown has been decided, the next ones come without <b>Show more</b>. With <b>Select</b> on, click faces or drag a rectangle over them with the mouse (Shift-click for a range). Dragging works the same wherever faces or deleted photos are selected: Unnamed cards and single faces, Face check and Pet check, the trash; the bar at the bottom has <b>Select all</b>, a ✓ to confirm the chosen faces and <b>Not …</b>. On <b>Confirmed</b> it has <b>Not …</b>, <b>Name…</b> (they are someone else), <b>Ignore</b> and <b>Not a face</b>. <b>Ignore</b> is for someone you do not want to keep: the faces are no longer theirs and do not come back to <b>Unnamed</b>, while <b>Not …</b> only says it is not them, so the faces are offered again. In Suggested and Maybe, click a face to see its photo; the arrow keys then step through the faces still to check. A face you decide in the photo’s info panel has left the list when you close the photo. <b>Calibration</b> (Face check, Pet check) shows what recognition found: small faces, scores and false finds.</p>
         </div>
       </div>
       <p class="note"><b>Keep all</b> and <b>Different photos</b> are internal notes: shoebox saves them in its own database in <code>.shoebox</code> on the drive, never in the photos. Those finds are not shown to you on the <b>Duplicates</b> screen again. The notes follow the photos if you move or rename them. Hover over the buttons for a short explanation: <b>Different photos</b> says the files are separate shots, <b>Keep all</b> links them as versions of one photo.</p>
@@ -1117,7 +1140,7 @@
           <div class="txt">
             <h3>Places</h3>
             <p>A place is a named area, like “Home” or “Island XY”. Press <b>New place</b>, click two opposite corners on the map and give it a name: every photo with a location inside the area belongs to it, now and later. Places are listed under <b>Locations</b> in the sidebar with their number of photos; click one to see its photos.</p>
-            <p>You can also search for a place by name. If the search is empty, picking a place opens it on the map, like a click in the sidebar (a <b>Type</b> filter is dropped then, as on every click in the sidebar). If the search already has chips (a folder, tag, person, pet, favorites ♥), the place joins them as a chip <b>📍</b> and you stay in the timeline: all chips must match, so “Home” + “Anna” shows Anna’s photos taken at home. A second place replaces the first. The <b>🗺</b> on the chip shows the place on the map, and a place chosen on the map goes along when you add another chip.</p>
+            <p>You can also search for a place by name. If the search is empty, picking a place opens it on the map, like a click in the sidebar (a <b>Type</b> filter is dropped then, as on every click in the sidebar). If the search already has chips (a folder, tag, person, pet, favorites ♥), the place joins them as a chip with the map marker (<svg class="ic" style="width:1.1em;height:1.1em;vertical-align:-.2em" aria-hidden="true"><use href="#i-pin"/></svg>) and you stay in the timeline: all chips must match, so “Home” + “Anna” shows Anna’s photos taken at home. A second place replaces the first. The marker on the chip shows the place on the map when you click it, and a place chosen on the map goes along when you add another chip.</p>
             <p>In the list on the right you can <b>Rename</b> a place, <b>Draw area again</b> or delete it; only the place goes, never a photo or its location.</p>
           </div>
         </div>
@@ -1139,7 +1162,7 @@
       <div class="topic has-shots">
         <div class="txt">
           <h3>Search the words</h3>
-          <p>Type a word in the search box and pick the group <b>Recognized text</b> in the suggestions, or type <code>text:</code> first (<code>text:Rechnung</code>) to look only there. It becomes a chip with a scanner icon, and the photos shown carry a small badge with the line that matched (point at it to read the whole line).</p>
+          <p>Type a word in the search box and pick the group <b>Recognized text</b> in the suggestions, or type <code>text:</code> first (<code>text:Rechnung</code>) to look only there. The number next to it is how many photos have the word; when none has it, the group is left out (after <code>text:</code> a line says so, and <code>name:</code> does the same for file names). It becomes a chip with a scanner icon, and the photos shown carry a small badge with the line that matched (point at it to read the whole line).</p>
           <p>Case, accents and ß do not matter (<i>strasse</i> finds <i>Straße</i>), and a search with several words needs all of them in the same photo. It combines with every other chip, for example the text <i>Rechnung</i> in one year or of one person, and it works in <b>All drives</b>. File names are searched with <code>name:</code>, see “Find and organise”.</p>
         </div>
         <div class="shots">
@@ -1191,6 +1214,7 @@
         <div class="txt">
           <h3>Several drives</h3>
           <p>Start shoebox with more than one drive and each one appears in the sidebar. <b>All drives</b> gives you one common timeline across all of them. It is for looking: photos that are favorites show a ♥ (greyed out, you cannot click it), and the info panel shows tags, favorite and people, but none of it can be changed there (<b>Show boxes</b> and pointing at a person to see their face still work). The panel names the drive the photo is on (its disk name, as in <b>Manage drives</b>) and has <b>Show in Finder</b> (<b>Show in Explorer</b> on Windows) and <b>Copy path</b>; <b>Open in &lt;drive&gt;'s timeline</b> switches to that drive's own timeline, at the photo's folder, to change tags, people or favorites.</p>
+          <p>A photo that is on more than one drive, with the same file name and the same content (in any folder), shows only once in <b>All drives</b>, and the numbers in the search suggestions count it once; the status line at the bottom says how many copies are hidden. The copy shown is the one whose date you corrected or estimated (the one changed last, if several have one), otherwise the one on the drive that comes first in the sidebar; a ♥ on any copy shows on it, and with chips the copy that fits them is shown. The info panel lists the other copies under <b>Also on</b> with disk name and folder; click one to open that folder on its drive. A copy with another name, and a file shoebox has not finished checking after a scan, show as photos of their own; <b>Duplicates across drives</b> lists every copy. Nothing is deleted or changed: each drive keeps all its files, and its own timeline shows them all.</p>
           <p><b>Manage drives</b>, next to Duplicates, Trash and Settings, opens a page that does not depend on the drive you are looking at: your drives as cards, and two tabs below them, <b>People across drives</b> and <b>Duplicates across drives</b>. A drive that is unplugged is shown as offline.</p>
           <p>Under <b>People across drives</b> each person shows the drives they are on by disk name with the number of faces found there (point at one to see its folder), and the people who are on the most drives come first. The drive you are looking at is filled in with the accent colour, and so is the page you have open under it (All photos, Duplicates, Trash, Settings), so you can always see which drive's trash you are in.</p>
         </div>

@@ -166,8 +166,8 @@ Built:
 - Not yet done (counts and carrying data over are planned in [phase15.md](phase15.md); moving files stays in the file manager): a decision "keep both" for
   copies on different drives, the 90 % threshold on real data, counts in the
   search suggestions that narrow with the filter (they are per name, over all
-  drives). Identical photos on two separate drives show twice in the common
-  timeline (planned in [phase18.md](phase18.md)).
+  drives). Identical photos on two separate drives are shown once in the
+  common timeline since phase 18 ([phase18.md](phase18.md)).
 
 - Every drive keeps its own `.shoebox` folder with `library.db`, `thumbs.db`
   and `recognition.db`. The app opens several libraries at once with one

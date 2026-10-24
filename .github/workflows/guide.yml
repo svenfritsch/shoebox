@@ -16,7 +16,10 @@ name: guide
 #
 # The same build and Playwright also run the photo app's browser tests
 # (core/tests/browser: keyboard use of the grid, the viewer, the selection
-# bar and dialogs), once, in the English job, before the screenshots.
+# bar and dialogs; the Unnamed page, groups and the people list, mostly
+# against a fake API, a few on a library with faces from the fake recognizer,
+# which the build makes next to shoebox), once, in the English job, before the
+# screenshots.
 on:
   push:
     branches: [main]
@@ -86,7 +89,7 @@ jobs:
           npx playwright install --with-deps chromium
           echo "NODE_PATH=$RUNNER_TEMP/pw/node_modules" >> "$GITHUB_ENV"
 
-      # Its own small library in a temporary folder; the language does not
+      # Their own small libraries in a temporary folder; the language does not
       # matter, so only one job runs them.
       - name: Browser tests
         if: matrix.lang == 'en'

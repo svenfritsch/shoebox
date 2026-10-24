@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use common::*;
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use shoebox::{clusters, recognize};
+use shoebox::{clusters, people, recognize};
 
 const FAKE: &str = env!("CARGO_BIN_EXE_shoebox-fake-recognizer");
 
@@ -105,7 +105,7 @@ fn wait_for_clusters(addr: std::net::SocketAddr) -> Value {
     loop {
         let info = get(addr, "/api/info").json();
         let c = &info["clusters"];
-        if c["stale"] == false && c["running"] == false {
+        if c["stale"] == false && c["running"] == false && c["pending"] == false {
             return c.clone();
         }
         assert!(started.elapsed() < Duration::from_secs(20), "clustering did not finish: {c}");
@@ -140,6 +140,17 @@ fn face_id(addr: std::net::SocketAddr, lib: &Library, rel: &str) -> i64 {
 
 fn person_faces(addr: std::net::SocketAddr, person: i64, state: &str) -> Vec<Value> {
     get(addr, &format!("/api/people/{person}/faces?state={state}")).json()["faces"].as_array().unwrap().clone()
+}
+
+/// The person as `/api/people` lists them, with the counts of suggestions a
+/// naming reply leaves at 0 (only the next grouping knows them): what the
+/// reply's `person_data` must be, so the page can show it without the list.
+fn as_listed(addr: std::net::SocketAddr, person: i64) -> Value {
+    let people = get(addr, "/api/people").json();
+    let mut p = people.as_array().unwrap().iter().find(|p| p["id"] == person).expect("listed").clone();
+    p["suggested"] = json!(0);
+    p["maybe"] = json!(0);
+    p
 }
 
 fn files_of(faces: &[Value]) -> Vec<i64> {
@@ -192,7 +203,9 @@ fn suggest_maybe_confirm_and_reject_under_the_guard() {
     assert_eq!(files_of(clusters[0]["faces"].as_array().unwrap()), anna_files);
     assert!(clusters[0]["suggestion"].is_null());
 
-    // Name it: three confirmed faces.
+    // Name it: three confirmed faces. Names touch no file, so the index
+    // version stays and no open page reloads its folders, tags and places.
+    let version_before = get(addr, "/api/info").json()["index_version"].clone();
     let body = json!({ "name": "Anna", "generation": clusters[0]["generation"] });
     let named = ok(addr, &format!("/api/clusters/{}/name", clusters[0]["id"]), &body);
     assert_eq!(named["faces"], 3);
@@ -200,12 +213,19 @@ fn suggest_maybe_confirm_and_reject_under_the_guard() {
     assert_eq!(named["person"]["name"], "Anna");
     // At once (before the clusters are recomputed): out of "Unnamed".
     assert_eq!(get(addr, "/api/clusters").json()["unnamed"], 5);
+    assert_eq!(get(addr, "/api/info").json()["index_version"], version_before);
     wait_for_clusters(addr);
 
     let people = get(addr, "/api/people").json();
     assert_eq!(people.as_array().unwrap().len(), 1);
     let p = &people[0];
     assert_eq!((p["name"].as_str(), p["faces"].as_u64(), p["photos"].as_u64()), (Some("Anna"), Some(3), Some(3)));
+    // The reply carries the person as the list shows them (but for the counts of suggestions),
+    // so the page can add them without fetching the list again.
+    let mut listed = p.clone();
+    listed["suggested"] = json!(0);
+    listed["maybe"] = json!(0);
+    assert_eq!(named["person_data"], listed);
     assert_eq!((p["suggested"].as_u64(), p["maybe"].as_u64()), (Some(1), Some(1)));
     assert!(p["cover"].is_i64());
     assert!(p["group_id"].is_null());
@@ -250,10 +270,18 @@ fn suggest_maybe_confirm_and_reject_under_the_guard() {
 
     // Assign by name makes a person; the same name in another spelling is
     // that person.
+    // Both replies carry the person as the list shows them (`person_data`):
+    // new, then with one face more.
     let b1 = face_id(addr, &lib, "Ben/b1.png");
-    let ben = ok(addr, "/api/faces/assign", &json!({ "faces": [b1], "name": "Ben" }))["person"]["id"].as_i64().unwrap();
+    let named = ok(addr, "/api/faces/assign", &json!({ "faces": [b1], "name": "Ben" }));
+    let ben = named["person"]["id"].as_i64().unwrap();
+    assert_eq!(named["person_data"], as_listed(addr, ben));
+    assert_eq!((named["person_data"]["faces"].as_u64(), named["person_data"]["photos"].as_u64()), (Some(1), Some(1)));
     let b2 = face_id(addr, &lib, "Ben/b2.png");
-    assert_eq!(ok(addr, "/api/faces/assign", &json!({ "faces": [b2], "name": " ben " }))["person"]["id"], ben);
+    let named = ok(addr, "/api/faces/assign", &json!({ "faces": [b2], "name": " ben " }));
+    assert_eq!(named["person"]["id"], ben);
+    assert_eq!(named["person_data"], as_listed(addr, ben));
+    assert_eq!(named["person_data"]["faces"].as_u64(), Some(2));
 
     // The Unnamed page acts only on faces nobody has decided on (`open`): a
     // face named in the meantime (in the viewer, on another device) is
@@ -290,6 +318,12 @@ fn suggest_maybe_confirm_and_reject_under_the_guard() {
     assert_eq!(faces_of(addr, &lib, "Mix/maybe.png")[0]["state"], "maybe");
     ok(addr, "/api/faces/ignore", &json!({ "faces": [maybe_face, far_face] }));
     assert_eq!(faces_of(addr, &lib, "Mix/far.png")[0]["state"], "ignored");
+    // A confirmed face can be ignored too (Ignore on the Confirmed tab of a
+    // person's page): it is no longer theirs and does not come back to
+    // "Unnamed".
+    ok(addr, "/api/faces/ignore", &json!({ "faces": [b2] }));
+    assert_eq!(faces_of(addr, &lib, "Ben/b2.png")[0]["state"], "ignored");
+    assert_eq!(person_faces(addr, ben, "confirmed").len(), 1);
     wait_for_clusters(addr);
     assert_eq!(get(addr, "/api/clusters").json()["unnamed"], 0);
     let info = get(addr, "/api/info").json();
@@ -407,7 +441,8 @@ fn not_a_face_is_hidden_everywhere_and_survives_a_model_change() {
     server.stop().unwrap();
 }
 
-/// Groups (one per person; deleting one leaves its people without), people
+/// Groups (one per person; a group starts with a person and is gone when its
+/// last person leaves; deleting one leaves its people without), people
 /// (rename, hide, cover, merge), and splitting a cluster by naming some of
 /// its faces.
 #[test]
@@ -425,12 +460,20 @@ fn groups_merge_and_split() {
     let addr = server.addr;
     wait_for_clusters(addr);
 
-    // Groups: made by the user, none up front.
+    // Groups: made by the user from a person, who is its first member; none
+    // up front, and never an empty one.
     assert_eq!(get(addr, "/api/groups").json(), json!([]));
-    let familie = ok(addr, "/api/groups", &json!({ "name": "Familie" }))["id"].as_i64().unwrap();
-    let freunde = ok(addr, "/api/groups", &json!({ "name": "Freunde" }))["id"].as_i64().unwrap();
-    assert_eq!(post(addr, "/api/groups", &json!({ "name": " FAMILIE" })).status, 400);
-    assert_eq!(post(addr, "/api/groups", &json!({ "name": "  " })).status, 400);
+    let dora0 = ok(addr, "/api/people", &json!({ "name": "Dora" }))["id"].as_i64().unwrap();
+    let emil = ok(addr, "/api/people", &json!({ "name": "Emil" }))["id"].as_i64().unwrap();
+    let no_person = post(addr, "/api/groups", &json!({ "name": "Familie" }));
+    assert!((400..500).contains(&no_person.status), "a group needs its first person: {}", no_person.status);
+    assert_eq!(post(addr, "/api/groups", &json!({ "name": "Familie", "person_id": 999 })).status, 400);
+    let familie = ok(addr, "/api/groups", &json!({ "name": "Familie", "person_id": dora0 }))["id"].as_i64().unwrap();
+    assert_eq!(get(addr, &format!("/api/people/{dora0}")).json()["group_id"], familie);
+    let freunde = ok(addr, "/api/groups", &json!({ "name": "Freunde", "person_id": emil }))["id"].as_i64().unwrap();
+    assert_eq!(post(addr, "/api/groups", &json!({ "name": " FAMILIE", "person_id": emil })).status, 400);
+    assert_eq!(post(addr, "/api/groups", &json!({ "name": "  ", "person_id": emil })).status, 400);
+    assert_eq!(get(addr, &format!("/api/people/{emil}")).json()["group_id"], freunde, "a refused group changes nothing");
     let order = ok(addr, "/api/groups/reorder", &json!({ "ids": [freunde] }));
     let names: Vec<&str> = order.as_array().unwrap().iter().map(|g| g["name"].as_str().unwrap()).collect();
     assert_eq!(names, ["Freunde", "Familie"]);
@@ -447,6 +490,10 @@ fn groups_merge_and_split() {
     let body = json!({ "name": "Dora", "faces": &faces[..2], "generation": generation });
     let named = ok(addr, &format!("/api/clusters/{cid}/name"), &body);
     let dora = named["person"]["id"].as_i64().unwrap();
+    assert_eq!(dora, dora0, "the name was Dora's already");
+    // Dora as the list shows her now: in her group, with the two faces.
+    assert_eq!(named["person_data"], as_listed(addr, dora));
+    assert_eq!((named["person_data"]["group_id"].as_i64(), named["person_data"]["faces"].as_u64()), (Some(familie), Some(2)));
     // The reply says what is left of the card: its faces changed, so it has
     // a new generation; the old one is refused. Its number is where it sits
     // in the list now (which may move: cards of the same size have no fixed
@@ -511,10 +558,36 @@ fn groups_merge_and_split() {
     assert_eq!(ok(addr, &format!("/api/people/{dora}/group"), &json!({ "group_id": freunde }))["group_id"], freunde);
     assert_eq!(post(addr, &format!("/api/people/{dora}/group"), &json!({ "group_id": 999 })).status, 400);
     // Deleting a group: its people have none.
-    assert_eq!(ok(addr, &format!("/api/groups/{freunde}/delete"), &json!({}))["people"], 1);
+    assert_eq!(ok(addr, &format!("/api/groups/{freunde}/delete"), &json!({}))["people"], 2);
     assert!(get(addr, &format!("/api/people/{dora}")).json()["group_id"].is_null());
     let groups = get(addr, "/api/groups").json();
     assert_eq!((groups.as_array().unwrap().len(), groups[0]["people"].as_u64()), (1, Some(1)));
+
+    // Never an empty group: the one the last person leaves goes, whether
+    // they move to another group, to none, start a new group, are merged
+    // into someone or deleted. Groups that are not left by someone stay.
+    let group_names = || -> Vec<String> {
+        get(addr, "/api/groups").json().as_array().unwrap().iter().map(|g| g["name"].as_str().unwrap().to_string()).collect()
+    };
+    ok(addr, "/api/groups", &json!({ "name": "Nachbarn", "person_id": emil }));
+    assert_eq!(group_names(), ["Familie", "Nachbarn"]);
+    ok(addr, "/api/groups", &json!({ "name": "Solo", "person_id": emil }));
+    assert_eq!(group_names(), ["Familie", "Solo"], "Emil left Nachbarn, which is empty now");
+    ok(addr, &format!("/api/people/{emil}/group"), &json!({ "group_id": familie }));
+    assert_eq!(group_names(), ["Familie"], "Emil left Solo");
+    let gabi = ok(addr, "/api/people", &json!({ "name": "Gabi" }))["id"].as_i64().unwrap();
+    ok(addr, "/api/groups", &json!({ "name": "Gabis", "person_id": gabi }));
+    ok(addr, &format!("/api/people/{gabi}/group"), &json!({ "group_id": null }));
+    assert_eq!(group_names(), ["Familie"], "Gabi left Gabis for none");
+    ok(addr, "/api/groups", &json!({ "name": "Gabis", "person_id": gabi }));
+    ok(addr, &format!("/api/people/{gabi}/merge"), &json!({ "into": emil }));
+    assert_eq!(group_names(), ["Familie"], "Gabi was merged into Emil");
+    let hanna = ok(addr, "/api/people", &json!({ "name": "Hanna" }))["id"].as_i64().unwrap();
+    ok(addr, "/api/groups", &json!({ "name": "Hannas", "person_id": hanna }));
+    ok(addr, &format!("/api/people/{hanna}/delete"), &json!({}));
+    assert_eq!(group_names(), ["Familie"], "Hanna was deleted");
+    ok(addr, &format!("/api/people/{emil}/delete"), &json!({}));
+    assert_eq!(get(addr, "/api/groups").json()[0]["people"], 1);
 
     // A misspelled name without faces can be deleted; someone with faces
     // cannot (merge them instead).
@@ -657,6 +730,9 @@ fn hand_drawn_faces() {
     let p = get(addr, &format!("/api/people/{anna}")).json();
     assert_eq!((p["cover"].as_i64(), p["cover_manual"].as_i64()), (None, Some(m)));
     assert_eq!(post(addr, "/api/faces/manual", &json!({ "file": dark, "box": [0.8, 0.0, 0.3, 0.4], "name": "Anna" })).status, 400);
+    // The same request again (a double click, a slow reply) adds nothing.
+    assert_eq!(ok(addr, "/api/faces/manual", &body)["manual"].as_i64(), Some(m));
+    assert_eq!(faces_of(addr, &lib, "a/dark.png").len(), 1);
 
     // Over the detected face of the other photo: one face, the drawn box.
     let detected = face_id(addr, &lib, "a/anna.png");
@@ -686,6 +762,41 @@ fn hand_drawn_faces() {
     server.stop().unwrap();
 }
 
+/// The same person is added to a photo or video once per request: a repeated
+/// one (a double click, a slow reply) returns the face that is there. A video
+/// has no boxes, so any second box is the same link; a photo can show the same
+/// person twice, at places that do not overlap.
+#[test]
+fn hand_drawn_face_is_added_once() {
+    let lib = empty("people-manual-once");
+    save(&lib, "a/dark.png", image::RgbImage::from_pixel(200, 100, image::Rgb([0, 0, 0])));
+    lib.write("a/clip.mp4", b"not really a video, only a file the scan calls one");
+    lib.scan();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    let draw = |rel: &str, name: &str, b: [f64; 4]| {
+        ok(addr, "/api/faces/manual", &json!({ "file": id_of(&lib, rel), "box": b, "name": name }))["manual"].as_i64().unwrap()
+    };
+
+    // A video: the same person once, whatever the box; somebody else is another link.
+    let clip = draw("a/clip.mp4", "Anna", [0.02, 0.02, 0.08, 0.08]);
+    assert_eq!(draw("a/clip.mp4", "Anna", [0.02, 0.02, 0.08, 0.08]), clip);
+    assert_eq!(draw("a/clip.mp4", "Anna", [0.12, 0.02, 0.08, 0.08]), clip);
+    assert_eq!(faces_of(addr, &lib, "a/clip.mp4").len(), 1);
+    let bert = draw("a/clip.mp4", "Bert", [0.12, 0.02, 0.08, 0.08]);
+    assert_ne!(bert, clip);
+    assert_eq!(faces_of(addr, &lib, "a/clip.mp4").len(), 2);
+
+    // A photo: the same box (or nearly) is the same face, another place a second one.
+    let first = draw("a/dark.png", "Anna", [0.1, 0.2, 0.3, 0.4]);
+    assert_eq!(draw("a/dark.png", "Anna", [0.1, 0.2, 0.3, 0.4]), first);
+    assert_eq!(draw("a/dark.png", "Anna", [0.11, 0.21, 0.3, 0.4]), first);
+    let other = draw("a/dark.png", "Anna", [0.6, 0.2, 0.3, 0.4]);
+    assert_ne!(other, first);
+    assert_eq!(faces_of(addr, &lib, "a/dark.png").len(), 2);
+    server.stop().unwrap();
+}
+
 /// Groups, people and decisions are backed up like own tags: in
 /// `library.db.bak` and `userdata.json` (version 3).
 #[test]
@@ -697,10 +808,9 @@ fn user_data_backup_has_people_groups_and_decisions() {
     recognize(&lib);
     let server = start(&lib, None);
     let addr = server.addr;
-    let familie = ok(addr, "/api/groups", &json!({ "name": "Familie" }))["id"].clone();
     let a1 = face_id(addr, &lib, "a/a1.png");
     let anna = ok(addr, "/api/faces/assign", &json!({ "faces": [a1], "name": "Anna" }))["person"]["id"].as_i64().unwrap();
-    ok(addr, &format!("/api/people/{anna}/group"), &json!({ "group_id": familie }));
+    ok(addr, "/api/groups", &json!({ "name": "Familie", "person_id": anna }));
     ok(addr, "/api/faces/not-face", &json!({ "faces": [face_id(addr, &lib, "a/c1.png")] }));
     server.stop().unwrap();
 
@@ -747,7 +857,8 @@ fn clustering_resumes_after_a_stop() {
     let mut seen = Vec::new();
     let s = clusters::run(&c, &|| false, &mut |done, total| seen.push((done, total))).unwrap();
     assert_eq!((s.faces, s.listed, s.unnamed, s.clusters), (3, 3, 3, 2));
-    assert_eq!(seen.last(), Some(&(3, 3)));
+    // Three neighbour lists, then the three faces' suggestions searched.
+    assert_eq!(seen.last(), Some(&(6, 6)));
     let again = clusters::run(&c, &|| false, &mut |_, _| {}).unwrap();
     assert_eq!((again.listed, again.clusters), (0, 2), "lists are kept");
     let o = clusters::overview(&c).unwrap();
@@ -940,8 +1051,8 @@ fn drawn_faces_are_embedded_and_aligned_ones_suggest() {
 
 /// People are terms of the search: several together (AND), with tags and
 /// folders; free text finds them by name; the search box's suggestions
-/// count within the current search. Undoing a rejection keeps every other
-/// decision about the face.
+/// count within the current search and follow every decision. Undoing a
+/// rejection keeps every other decision about the face.
 #[test]
 fn people_as_search_terms_and_undoing_a_rejection() {
     let lib = empty("people-search");
@@ -1004,9 +1115,46 @@ fn people_as_search_terms_and_undoing_a_rejection() {
     assert_eq!(search("q=AN"), json!([{ "id": anna, "name": "Anna", "group_id": null, "photos": 2 }]));
     assert_eq!(search(&format!("q=&person={ben}")), json!([{ "id": anna, "name": "Anna", "group_id": null, "photos": 1 }]));
     assert_eq!(search(&format!("q=&person={anna}&person={ben}")), json!([]));
+    // The search box asks for every section at once (`/api/suggest`): each
+    // as its own endpoint answers.
+    for q in ["q=".to_string(), "q=AN".to_string(), format!("q=&person={ben}"), format!("q=a&person={anna}&person={ben}")] {
+        let s = get(addr, &format!("/api/suggest?{q}")).json();
+        assert_eq!(s["people"], get(addr, &format!("/api/people/search?{q}&limit=6")).json(), "{q}");
+        assert_eq!(s["tags"], get(addr, &format!("/api/tags?{q}&own=1&limit=8")).json(), "{q}");
+        assert_eq!(s["groups"], get(addr, &format!("/api/groups/search?{q}&limit=4")).json(), "{q}");
+        assert_eq!(s["pets"], get(addr, &format!("/api/pets/search?{q}")).json(), "{q}");
+        assert_eq!(s["dates"], get(addr, &format!("/api/dates?{q}")).json(), "{q}");
+    }
     // Tags within a search of people.
     let tags = get(addr, &format!("/api/tags?person={ben}")).json();
     assert_eq!(tags.as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect::<Vec<_>>(), ["Fotos"]);
+
+    // A group in the search shows the photos of any of its people (OR, where
+    // several people are all of them); several groups and everything else
+    // narrow it (AND).
+    let freunde = ok(addr, "/api/groups", &json!({ "name": "Freunde", "person_id": ben }))["id"].as_i64().unwrap();
+    assert_eq!(timeline(&format!("group={freunde}")), sorted(vec![x1, y1]), "only Ben so far");
+    ok(addr, &format!("/api/people/{anna}/group"), &json!({ "group_id": freunde }));
+    assert_eq!(timeline(&format!("group={freunde}")), sorted(vec![x1, x2, y1]), "Anna's photos or Ben's");
+    assert_eq!(timeline(&format!("group={freunde}&person={anna}")), sorted(vec![x1, x2]));
+    assert_eq!(timeline(&format!("group={freunde}&folder={}", folder_id(&lib, "Other"))), Vec::<i64>::new());
+    let chips = get(addr, &format!("/api/timeline?group={freunde}")).json();
+    assert_eq!(chips["groups"], json!([{ "id": freunde, "name": "Freunde" }]));
+    assert_eq!(chips["count"], 3);
+    assert_eq!(timeline("group=999"), Vec::<i64>::new(), "no such group");
+    // Suggestions: groups by name, counted within the search; groups of the
+    // search and groups that would show nothing left out.
+    let groups = |q: &str| get(addr, &format!("/api/groups/search?{q}")).json();
+    assert_eq!(groups("q=fre"), json!([{ "id": freunde, "name": "Freunde", "people": 2, "photos": 3 }]));
+    assert_eq!(groups(&format!("q=&person={anna}"))[0]["photos"], 2);
+    assert_eq!(groups("q=zzz"), json!([]));
+    assert_eq!(groups(&format!("q=&group={freunde}")), json!([]));
+    assert_eq!(groups(&format!("q=&folder={}", folder_id(&lib, "Other"))), json!([]));
+    assert_eq!(get(addr, "/api/suggest?q=fre").json()["groups"], groups("q=fre&limit=4"));
+    // Tags within a search of a group.
+    let tags = get(addr, &format!("/api/tags?group={freunde}")).json();
+    assert_eq!(tags.as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect::<Vec<_>>(), ["Fotos"]);
+    ok(addr, &format!("/api/groups/{freunde}/delete"), &json!({}));
 
     // Undo a rejection: only the rejection goes, Ben stays confirmed.
     let y1_face = face_id(addr, &lib, "Fotos/y1.png");
@@ -1019,6 +1167,12 @@ fn people_as_search_terms_and_undoing_a_rejection() {
     let face = &faces_of(addr, &lib, "Fotos/y1.png")[0];
     assert_eq!((face["state"].as_str(), face["person"]["id"].as_i64()), (Some("confirmed"), Some(ben)));
     assert_eq!(ok(addr, "/api/faces/unreject", &json!({ "faces": [y1_face], "person_id": anna }))["faces"], 0);
+
+    // The suggestions' counts are kept between letters typed, but never past
+    // a decision: a name given in between counts at once.
+    assert_eq!(search("q=")[0], json!({ "id": anna, "name": "Anna", "group_id": null, "photos": 2 }));
+    assign("Other/z1.png", "Anna");
+    assert_eq!(search("q=a")[0], json!({ "id": anna, "name": "Anna", "group_id": null, "photos": 3 }));
 
     assert_eq!(lib.snapshot(), before);
     server.stop().unwrap();
@@ -1161,7 +1315,7 @@ fn pets_are_people_in_a_space_of_their_own() {
     assert_eq!(timeline, want);
 
     // Pets and people share groups: put the cat, the dog and a person in one.
-    let family = ok(addr, "/api/groups", &json!({ "name": "Family" }))["id"].as_i64().unwrap();
+    let family = ok(addr, "/api/groups", &json!({ "name": "Family", "person_id": spooky }))["id"].as_i64().unwrap();
     let anna_face = face_of_person(addr, &lib, "Anna/a1.png")["id"].as_i64().unwrap();
     let anna = ok(addr, "/api/faces/assign", &json!({ "faces": [anna_face], "name": "Anna" }))["person"]["id"].as_i64().unwrap();
     for p in [spooky, rex, anna] {
@@ -1169,6 +1323,13 @@ fn pets_are_people_in_a_space_of_their_own() {
     }
     let people = get(addr, "/api/people").json();
     assert!(people.as_array().unwrap().iter().all(|p| p["group_id"] == family), "{people}");
+    // The group's timeline has the photos of the cat, the dog and the person.
+    let mut group_timeline = ids(&get(addr, &format!("/api/timeline?group={family}")).json());
+    group_timeline.sort();
+    for n in 1..=3 {
+        assert!(group_timeline.contains(&id_of(&lib, &format!("Pets/spooky{n}.png"))), "pets are members like people");
+    }
+    assert!(group_timeline.contains(&id_of(&lib, "Anna/a1.png")));
     assert!(people.as_array().unwrap().iter().filter(|p| p["name"] == "Anna").all(|p| p["species"].is_null()));
 
     // A cat can also be merged into another pet (the same pet under two names).
@@ -1615,4 +1776,560 @@ fn a_pets_species_can_be_corrected() {
     assert_eq!(pet_of(addr, &lib, "Fotos/katze.png")["species"], "dog");
     server.stop().unwrap();
     assert_eq!(lib.snapshot(), before, "originals untouched");
+}
+
+/// What the server shows of people and clusters, compared with what a
+/// fresh read of the library gives (`people::people`, `people::clusters` on a
+/// connection of the test's own): the photo app keeps what it read of the
+/// faces between requests (`App::people_view`), and this must never show.
+fn same_as_a_fresh_read(addr: std::net::SocketAddr, lib: &Library, after: &str) {
+    wait_for_clusters(addr);
+    let conn = conn(lib);
+    let fresh = as_sent(&people::people(&conn, true).unwrap());
+    assert_eq!(get(addr, "/api/people?hidden=1").json(), fresh, "the people after {after}");
+    let fresh = as_sent(&people::clusters(&conn, 0, 50, 8, None, people::Size::All).unwrap());
+    assert_eq!(get(addr, "/api/clusters").json(), fresh, "the clusters after {after}");
+}
+
+/// As the server sends it: written out and read back (an f32 similarity as
+/// written, not widened to f64).
+fn as_sent(v: &impl serde::Serialize) -> Value {
+    serde_json::from_str(&serde_json::to_string(v).unwrap()).unwrap()
+}
+
+fn listed(addr: std::net::SocketAddr, hidden: bool) -> Vec<Value> {
+    get(addr, if hidden { "/api/people?hidden=1" } else { "/api/people" }).json().as_array().unwrap().clone()
+}
+
+fn listed_person(addr: std::net::SocketAddr, id: i64) -> Option<Value> {
+    listed(addr, true).into_iter().find(|p| p["id"] == id)
+}
+
+/// The people view the server keeps follows every change at once: names,
+/// rejections, merging, deleting, hiding, groups, a `recognize` run and a scan
+/// in other processes. After each, the lists are the same as a fresh read.
+#[test]
+fn the_kept_people_view_follows_every_change() {
+    let lib = empty("people-kept-view");
+    for n in 1..=3 {
+        plain(&lib, &format!("Anna/a{n}.png"), ANNA, n);
+    }
+    plain(&lib, "Ben/b1.png", BEN, 1);
+    plain(&lib, "Ben/b2.png", BEN, 2);
+    lib.scan();
+    recognize(&lib);
+    let before = lib.snapshot();
+    let server = start(&lib, None);
+    let addr = server.addr;
+    same_as_a_fresh_read(addr, &lib, "the start");
+    assert!(listed(addr, true).is_empty());
+
+    // Name both clusters: in the lists at once, before the regrouping.
+    let clusters = get(addr, "/api/clusters").json()["clusters"].as_array().unwrap().clone();
+    assert_eq!(clusters.iter().map(|c| c["size"].as_u64().unwrap()).collect::<Vec<_>>(), [3, 2]);
+    let name = |c: &Value, name: &str| {
+        let body = json!({ "name": name, "generation": c["generation"] });
+        ok(addr, &format!("/api/clusters/{}/name", c["id"]), &body)["person"]["id"].as_i64().unwrap()
+    };
+    let anna = name(&clusters[0], "Anna");
+    assert_eq!(listed_person(addr, anna).unwrap()["faces"], 3);
+    assert_eq!(get(addr, "/api/clusters").json()["unnamed"], 2);
+    let ben = name(&clusters[1], "Ben");
+    assert_eq!(get(addr, "/api/clusters").json()["unnamed"], 0);
+    same_as_a_fresh_read(addr, &lib, "naming");
+
+    // Reject one of Anna's faces: no longer hers, listed as rejected.
+    let a1 = face_id(addr, &lib, "Anna/a1.png");
+    ok(addr, "/api/faces/reject", &json!({ "faces": [a1], "person_id": anna }));
+    assert_eq!(listed_person(addr, anna).unwrap()["faces"], 2);
+    assert_eq!(files_of(&person_faces(addr, anna, "rejected")), [id_of(&lib, "Anna/a1.png")]);
+    same_as_a_fresh_read(addr, &lib, "a rejection");
+
+    // Hide Ben, then a group for Anna that Ben joins.
+    ok(addr, &format!("/api/people/{ben}/hide"), &json!({ "hidden": true }));
+    assert!(!listed(addr, false).iter().any(|p| p["id"] == ben));
+    assert_eq!(listed_person(addr, ben).unwrap()["hidden"], true);
+    let group = ok(addr, "/api/groups", &json!({ "name": "Family", "person_id": anna }))["id"].clone();
+    assert_eq!(listed_person(addr, anna).unwrap()["group_id"], group);
+    ok(addr, &format!("/api/people/{ben}/group"), &json!({ "group_id": group }));
+    assert_eq!(listed_person(addr, ben).unwrap()["group_id"], group);
+    same_as_a_fresh_read(addr, &lib, "hiding and a group");
+
+    // Merge Ben into Anna: his two faces are hers.
+    ok(addr, &format!("/api/people/{ben}/merge"), &json!({ "into": anna }));
+    assert!(listed_person(addr, ben).is_none());
+    assert_eq!(listed_person(addr, anna).unwrap()["faces"], 4);
+    same_as_a_fresh_read(addr, &lib, "merging");
+
+    // Delete someone without faces (a misspelt name).
+    let typo = ok(addr, "/api/people", &json!({ "name": "Anan" }))["id"].as_i64().unwrap();
+    assert!(listed_person(addr, typo).is_some());
+    ok(addr, &format!("/api/people/{typo}/delete"), &json!({}));
+    assert!(listed_person(addr, typo).is_none());
+    same_as_a_fresh_read(addr, &lib, "deleting");
+    assert_eq!(lib.snapshot(), before, "people changed an original");
+
+    // New photos, recognised by another process: their faces show up, the
+    // new one of Anna's as suggested for her.
+    // (The face rejected for Anna is unnamed again.)
+    let unnamed = get(addr, "/api/clusters").json()["unnamed"].as_u64().unwrap();
+    assert_eq!(unnamed, 1);
+    plain(&lib, "Anna/a4.png", ANNA, 4);
+    plain(&lib, "Carl/c1.png", CARL, 1);
+    let shoebox = env!("CARGO_BIN_EXE_shoebox");
+    let run = |args: &[&str]| {
+        let out = std::process::Command::new(shoebox).args(args).arg(&lib.root).output().unwrap();
+        assert!(out.status.success(), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    };
+    run(&["scan"]);
+    run(&["recognize", "--recognizer", FAKE]);
+    let mut before = lib.snapshot();
+    wait_until("the new faces show", || get(addr, "/api/clusters").json()["unnamed"] == unnamed + 2);
+    same_as_a_fresh_read(addr, &lib, "a recognize run in another process");
+    let suggested = person_faces(addr, anna, "suggested");
+    assert_eq!(files_of(&suggested), [id_of(&lib, "Anna/a4.png")]);
+
+    // A photo removed, found by a scan in another process: one photo fewer
+    // for Anna (her confirmed face there still counts as a face).
+    let photos = listed_person(addr, anna).unwrap()["photos"].as_u64().unwrap();
+    std::fs::remove_file(lib.path("Anna/a2.png")).unwrap();
+    before.remove(&lib.path("Anna/a2.png"));
+    run(&["scan"]);
+    wait_until("the photo is gone", || listed_person(addr, anna).unwrap()["photos"] == photos - 1);
+    assert_eq!(listed_person(addr, anna).unwrap()["faces"], 4);
+    same_as_a_fresh_read(addr, &lib, "a scan that removed a photo");
+
+    server.stop().unwrap();
+    assert_eq!(lib.snapshot(), before, "people changed an original");
+}
+
+// ------------------------------------------------------- when to regroup
+
+/// Colours of people for the regrouping tests: far apart for the fake
+/// (`person_number`), none of them a cue.
+const PEOPLE: [[u8; 3]; 8] =
+    [ANNA, BEN, CARL, DORA, [150, 200, 60], [60, 150, 200], [180, 80, 140], [100, 180, 160]];
+
+/// `people` people with two photos each (one card each), recognised, with a
+/// server that regroups by `rules`, after its first grouping.
+fn cards_library(test: &str, people: usize, rules: shoebox::serve::RegroupRules) -> (Library, shoebox::serve::Server) {
+    let lib = empty(test);
+    for (p, rgb) in PEOPLE.iter().take(people).enumerate() {
+        plain(&lib, &format!("p{p}/1.png"), *rgb, 1);
+        plain(&lib, &format!("p{p}/2.png"), *rgb, 2);
+    }
+    lib.scan();
+    recognize(&lib);
+    let server = start_regrouping(&lib, rules);
+    wait_for_clusters(server.addr);
+    (lib, server)
+}
+
+/// Regroupings started so far (the jobs of every run, the server's and
+/// `recognize`'s).
+fn regroupings(lib: &Library) -> i64 {
+    conn(lib).query_row("SELECT count(*) FROM recog.jobs WHERE kind = 'clusters'", [], |r| r.get(0)).unwrap()
+}
+
+/// Wait up to `max` for more than `before` regroupings to have started.
+fn regrouped_within(lib: &Library, before: i64, max: Duration) -> bool {
+    let started = Instant::now();
+    while started.elapsed() < max {
+        if regroupings(lib) > before {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    false
+}
+
+/// The cards of the Unnamed page as they are now.
+fn cards(addr: std::net::SocketAddr) -> Vec<Value> {
+    get(addr, "/api/clusters?limit=50").json()["clusters"].as_array().unwrap().clone()
+}
+
+/// Name the first card on the Unnamed page; its face ids.
+fn name_first(addr: std::net::SocketAddr, name: &str) -> Vec<i64> {
+    let c = cards(addr).remove(0);
+    ok(addr, &format!("/api/clusters/{}/name", c["id"]), &json!({ "name": name, "generation": c["generation"] }));
+    c["faces"].as_array().unwrap().iter().map(|f| f["id"].as_i64().unwrap()).collect()
+}
+
+fn next_regrouping(addr: std::net::SocketAddr) -> Value {
+    get(addr, "/api/info").json()["clusters"].clone()
+}
+
+fn rules(cards: u32, pause_ms: u64, soon_ms: u64) -> shoebox::serve::RegroupRules {
+    shoebox::serve::RegroupRules { cards, pause: Duration::from_millis(pause_ms), soon: Duration::from_millis(soon_ms) }
+}
+
+/// N named cards start a regrouping before the pause is over; `/api/info`
+/// says how many cards are left and how long the pause still is.
+#[test]
+fn n_named_cards_start_a_regrouping_before_the_pause() {
+    let (lib, server) = cards_library("regroup-cards", 4, rules(3, 60_000, 200));
+    let addr = server.addr;
+    let guard = lib.snapshot();
+    let c = next_regrouping(addr);
+    assert_eq!((&c["pending"], &c["cards_left"], &c["wait_ms"]), (&json!(false), &json!(0), &json!(0)), "nothing waits: {c}");
+    let before = regroupings(&lib);
+
+    name_first(addr, "P0");
+    let c = next_regrouping(addr);
+    assert_eq!((&c["pending"], &c["cards_left"], &c["stale"]), (&json!(true), &json!(2), &json!(false)), "{c}");
+    let wait = c["wait_ms"].as_u64().unwrap();
+    assert!(wait > 55_000 && wait <= 60_000, "{c}");
+    assert_eq!(c["pause_ms"], 60_000);
+    name_first(addr, "P1");
+    assert_eq!(next_regrouping(addr)["cards_left"], 1);
+    assert!(!regrouped_within(&lib, before, Duration::from_millis(400)), "two cards are not enough");
+
+    name_first(addr, "P2");
+    assert!(regrouped_within(&lib, before, Duration::from_secs(2)), "the third card starts it");
+    let c = wait_for_clusters(addr);
+    assert_eq!((&c["pending"], &c["cards_left"], &c["wait_ms"]), (&json!(false), &json!(0), &json!(0)), "{c}");
+    assert_eq!(regroupings(&lib), before + 1, "one regrouping for the three cards");
+    server.stop().unwrap();
+    assert_eq!(lib.snapshot(), guard, "regrouping changed an original");
+}
+
+/// Fewer than N cards: the pause starts it; every decision starts the pause
+/// again (a rejection too, without counting as a card).
+#[test]
+fn the_pause_starts_a_regrouping_and_each_decision_restarts_it() {
+    let (lib, server) = cards_library("regroup-pause", 3, rules(10, 1500, 200));
+    let addr = server.addr;
+    let guard = lib.snapshot();
+    let before = regroupings(&lib);
+    let faces = name_first(addr, "P0");
+    std::thread::sleep(Duration::from_millis(900));
+    // A rejection restarts the pause but is no card.
+    let other = cards(addr).remove(0)["faces"][0]["id"].as_i64().unwrap();
+    let p0 = get(addr, "/api/people").json()[0]["id"].as_i64().unwrap();
+    ok(addr, "/api/faces/reject", &json!({ "faces": [other], "person_id": p0 }));
+    let c = next_regrouping(addr);
+    assert_eq!(c["cards_left"], 9, "{c}");
+    assert!(c["wait_ms"].as_u64().unwrap() > 1200, "the pause starts again: {c}");
+    std::thread::sleep(Duration::from_millis(900));
+    name_first(addr, "P1");
+    // 1.8 s after the first name, 0.9 s after the rejection: still waiting.
+    assert!(!regrouped_within(&lib, before, Duration::from_millis(900)), "each decision restarts the pause");
+    assert!(regrouped_within(&lib, before, Duration::from_secs(2)), "the pause is over");
+    wait_for_clusters(addr);
+    assert_eq!(regroupings(&lib), before + 1);
+    assert!(faces.len() == 2);
+    server.stop().unwrap();
+    assert_eq!(lib.snapshot(), guard, "regrouping changed an original");
+}
+
+/// Leaving the Unnamed page, undoing a decision made before the last
+/// regrouping, taking back a rejection and merging two people start one
+/// soon; undoing a newer decision shows at once and only restarts the pause.
+#[test]
+fn leaving_an_old_undo_an_unreject_and_a_merge_regroup_soon() {
+    let (lib, server) = cards_library("regroup-soon", 4, rules(10, 60_000, 200));
+    let addr = server.addr;
+    let guard = lib.snapshot();
+    let soon = Duration::from_secs(2);
+
+    // Nothing waits: leaving the page starts nothing.
+    let before = regroupings(&lib);
+    ok(addr, "/api/clusters/left", &json!({}));
+    assert!(!next_regrouping(addr)["pending"].as_bool().unwrap());
+    assert!(!regrouped_within(&lib, before, Duration::from_millis(500)));
+
+    // A name, then leaving: soon.
+    let old = name_first(addr, "P0");
+    ok(addr, "/api/clusters/left", &json!({}));
+    assert!(next_regrouping(addr)["wait_ms"].as_u64().unwrap() <= 200);
+    assert!(regrouped_within(&lib, before, soon), "leaving the page");
+    wait_for_clusters(addr);
+
+    // Undo of a decision made since then: back on the page at once, no
+    // regrouping needed (only the pause starts).
+    let before = regroupings(&lib);
+    let new = name_first(addr, "P1");
+    let left = cards(addr).len();
+    ok(addr, "/api/faces/undo", &json!({ "faces": new }));
+    assert_eq!(cards(addr).len(), left + 1, "the card is back at once");
+    assert!(next_regrouping(addr)["wait_ms"].as_u64().unwrap() > 50_000, "{}", next_regrouping(addr));
+    assert!(!regrouped_within(&lib, before, Duration::from_millis(500)));
+
+    // Undo of the decision made before the last regrouping: only a
+    // regrouping brings the card back, soon.
+    let left = cards(addr).len();
+    ok(addr, "/api/faces/undo", &json!({ "faces": old }));
+    assert!(next_regrouping(addr)["wait_ms"].as_u64().unwrap() <= 200);
+    assert!(regrouped_within(&lib, before, soon), "an old undo");
+    wait_for_clusters(addr);
+    assert_eq!(cards(addr).len(), left + 1, "the card is back after the regrouping");
+
+    // A rejection taken back: soon.
+    let a = name_first(addr, "Anna");
+    let anna = get(addr, "/api/people").json().as_array().unwrap().iter().find(|p| p["name"] == "Anna").unwrap()["id"].as_i64().unwrap();
+    let other = cards(addr).remove(0)["faces"][0]["id"].as_i64().unwrap();
+    ok(addr, "/api/faces/reject", &json!({ "faces": [other], "person_id": anna }));
+    ok(addr, "/api/clusters/left", &json!({}));
+    wait_for_clusters(addr);
+    let before = regroupings(&lib);
+    ok(addr, "/api/faces/unreject", &json!({ "faces": [other], "person_id": anna }));
+    assert!(regrouped_within(&lib, before, soon), "a rejection taken back");
+    wait_for_clusters(addr);
+
+    // A merge: soon, without any card named.
+    let before = regroupings(&lib);
+    name_first(addr, "Ben");
+    ok(addr, "/api/clusters/left", &json!({}));
+    wait_for_clusters(addr);
+    let before_merge = regroupings(&lib);
+    assert!(before_merge > before);
+    let ben = get(addr, "/api/people").json().as_array().unwrap().iter().find(|p| p["name"] == "Ben").unwrap()["id"].as_i64().unwrap();
+    ok(addr, &format!("/api/people/{ben}/merge"), &json!({ "into": anna }));
+    assert!(regrouped_within(&lib, before_merge, soon), "a merge");
+    wait_for_clusters(addr);
+
+    // A rename or a group changes no suggestion: nothing.
+    let before = regroupings(&lib);
+    ok(addr, &format!("/api/people/{anna}/rename"), &json!({ "name": "Anna B." }));
+    ok(addr, "/api/groups", &json!({ "name": "Family", "person_id": anna }));
+    assert!(!next_regrouping(addr)["pending"].as_bool().unwrap());
+    assert!(!regrouped_within(&lib, before, Duration::from_millis(500)));
+    assert!(a.len() == 2);
+    server.stop().unwrap();
+    assert_eq!(lib.snapshot(), guard, "regrouping changed an original");
+}
+
+/// Names given while a regrouping runs count towards the next one; the one
+/// running finishes (its result is still right: the new names are seen
+/// through).
+#[test]
+fn naming_during_a_regrouping_counts_towards_the_next() {
+    let (lib, server) = cards_library("regroup-during", 6, rules(2, 60_000, 200));
+    let addr = server.addr;
+    let guard = lib.snapshot();
+    let before = regroupings(&lib);
+    name_first(addr, "P0");
+    name_first(addr, "P1");
+    // The second card started it; the third comes while it starts or runs,
+    // or after it, and waits for the next one either way.
+    name_first(addr, "P2");
+    assert!(regrouped_within(&lib, before, Duration::from_secs(2)));
+    let c = wait_for_clusters_or_pending(addr);
+    assert_eq!((&c["pending"], &c["cards_left"]), (&json!(true), &json!(1)), "{c}");
+    assert_eq!(regroupings(&lib), before + 1);
+    // The named cards are off the page; the fourth starts the next one.
+    assert_eq!(cards(addr).len(), 3);
+    name_first(addr, "P3");
+    assert!(regrouped_within(&lib, before + 1, Duration::from_secs(2)));
+    wait_for_clusters(addr);
+    server.stop().unwrap();
+    assert_eq!(lib.snapshot(), guard, "regrouping changed an original");
+}
+
+/// The regrouping that runs is done; decisions may still wait.
+fn wait_for_clusters_or_pending(addr: std::net::SocketAddr) -> Value {
+    let started = Instant::now();
+    loop {
+        let c = next_regrouping(addr);
+        if c["stale"] == false && c["running"] == false {
+            return c;
+        }
+        assert!(started.elapsed() < Duration::from_secs(20), "clustering did not finish: {c}");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// The last card named: nothing is left to name, so it starts soon.
+#[test]
+fn the_last_card_named_regroups_soon() {
+    let (lib, server) = cards_library("regroup-last", 2, rules(10, 60_000, 200));
+    let addr = server.addr;
+    let guard = lib.snapshot();
+    let before = regroupings(&lib);
+    name_first(addr, "P0");
+    assert!(next_regrouping(addr)["wait_ms"].as_u64().unwrap() > 50_000);
+    name_first(addr, "P1");
+    assert!(cards(addr).is_empty());
+    assert!(regrouped_within(&lib, before, Duration::from_secs(2)), "no card left");
+    wait_for_clusters(addr);
+    server.stop().unwrap();
+    assert_eq!(lib.snapshot(), guard, "regrouping changed an original");
+}
+
+// ------------------------------------------------- incremental suggestions
+
+/// The face of `rel` (one per picture with the fake).
+fn face_of(c: &Connection, rel: &str) -> i64 {
+    c.query_row(
+        "SELECT f.id FROM recog.faces f JOIN files fi ON fi.quick_hash = f.key WHERE fi.path_nfc = ?1",
+        [rel],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
+/// `recog.clusters` as rows, in order.
+fn cache_rows(c: &Connection) -> Vec<(i64, i64, Option<i64>, Option<f64>)> {
+    c.prepare("SELECT face, cluster, person, similarity FROM recog.clusters ORDER BY face")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap()
+}
+
+/// A run after a change compares only what changed, and its clusters and
+/// suggestions are exactly those of a run that searches everything again.
+fn same_as_full(c: &Connection, what: &str) -> clusters::Summary {
+    let quick = clusters::run(c, &|| false, &mut |_, _| {}).unwrap();
+    let rows = cache_rows(c);
+    c.execute("DELETE FROM recog.suggest_runs", []).unwrap();
+    let full = clusters::run(c, &|| false, &mut |_, _| {}).unwrap();
+    assert_eq!(full.searched, full.unnamed, "{what}: without a last run every face is searched");
+    assert_eq!(rows, cache_rows(c), "{what}: the run that compared only what changed differs from a full one");
+    quick
+}
+
+/// Each kind of change: names (new references), a rejection and taking it
+/// back, an undo, a merge, a deleted person, a face drawn by hand removed.
+#[test]
+fn suggestions_compare_only_what_changed_and_match_a_full_run() {
+    let lib = empty("people-incremental");
+    for (p, rgb) in [ANNA, BEN, CARL].iter().enumerate() {
+        for n in 1..=3 {
+            plain(&lib, &format!("p{p}/plain{n}.png"), *rgb, n);
+        }
+        variant(&lib, &format!("p{p}/suggested.png"), *rgb, SUGGESTED);
+        variant(&lib, &format!("p{p}/maybe.png"), *rgb, MAYBE);
+        variant(&lib, &format!("p{p}/far.png"), *rgb, FAR);
+    }
+    lib.scan();
+    let before = lib.snapshot();
+    recognize(&lib);
+    let c = conn(&lib);
+    let assign = |rels: &[&str], name: &str| {
+        let faces: Vec<i64> = rels.iter().map(|r| face_of(&c, r)).collect();
+        let who = people::Who { person_id: None, name: Some(name.into()) };
+        people::decide(&c, &faces, &people::Action::Assign(who)).unwrap().person.unwrap().id
+    };
+
+    // Nobody named: nothing to compare with.
+    let s = same_as_full(&c, "nobody named");
+    assert_eq!(s.suggested + s.maybe, 0);
+
+    // Anna named: her look-alikes get suggestions, compared with her new
+    // faces only (no face is searched among all references).
+    let anna = assign(&["p0/plain1.png", "p0/plain2.png"], "Anna");
+    let s = same_as_full(&c, "Anna named");
+    assert_eq!((s.searched, s.compared), (0, s.unnamed), "{s:?}");
+    assert!(s.suggested >= 1, "{s:?}");
+
+    // Ben named, and one more face of Anna.
+    let ben = assign(&["p1/plain1.png", "p1/plain2.png", "p1/plain3.png"], "Ben");
+    assign(&["p0/plain3.png"], "Anna");
+    let s = same_as_full(&c, "Ben named");
+    assert_eq!(s.searched, 0, "{s:?}");
+
+    // A rejection: only that face is searched again; taken back, the same.
+    let suggested = face_of(&c, "p0/suggested.png");
+    people::decide(&c, &[suggested], &people::Action::Reject(Some(anna))).unwrap();
+    let s = same_as_full(&c, "a rejection");
+    assert_eq!(s.searched, 1, "{s:?}");
+    people::decide(&c, &[suggested], &people::Action::Unreject(anna)).unwrap();
+    let s = same_as_full(&c, "a rejection taken back");
+    assert_eq!(s.searched, 1, "{s:?}");
+
+    // An undo: the face is open again (searched), Anna lost a reference
+    // (her suggested faces searched again).
+    people::decide(&c, &[face_of(&c, "p0/plain3.png")], &people::Action::Undo).unwrap();
+    let s = same_as_full(&c, "an undo");
+    assert!(s.searched >= 2 && s.searched < s.unnamed, "{s:?}");
+
+    // Ben merged into Anna, then Carl named and deleted again.
+    people::merge_people(&c, ben, anna).unwrap();
+    same_as_full(&c, "a merge");
+    let carl = assign(&["p2/plain1.png"], "Carl");
+    same_as_full(&c, "Carl named");
+    people::decide(&c, &[face_of(&c, "p2/plain1.png")], &people::Action::Undo).unwrap();
+    people::delete_person(&c, carl).unwrap();
+    same_as_full(&c, "Carl deleted");
+
+    // A new model: everything is searched.
+    c.execute("UPDATE recog.suggest_runs SET model = 'old'", []).unwrap();
+    let s = clusters::run(&c, &|| false, &mut |_, _| {}).unwrap();
+    assert_eq!(s.searched, s.unnamed);
+    assert_eq!(lib.snapshot(), before, "clustering changed an original");
+}
+
+/// A `recognize` run in another process groups its new faces at its end:
+/// the server notes them and does not group again. One that stopped before
+/// grouping is grouped by the server.
+#[test]
+fn faces_grouped_by_recognize_are_not_grouped_again() {
+    let (lib, server) = cards_library("regroup-recognize", 2, rules(10, 60_000, 200));
+    let addr = server.addr;
+    let run = |args: &[&str]| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_shoebox")).args(args).arg(&lib.root).output().unwrap();
+        assert!(out.status.success(), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    };
+    let before = regroupings(&lib);
+    plain(&lib, "p0/3.png", PEOPLE[0], 3);
+    run(&["scan"]);
+    run(&["recognize", "--recognizer", FAKE]);
+    assert_eq!(regroupings(&lib), before + 1, "recognize groups at its end");
+    let c = next_regrouping(addr);
+    assert_eq!((&c["pending"], &c["stale"]), (&json!(false), &json!(false)), "{c}");
+    assert!(!regrouped_within(&lib, before + 1, Duration::from_millis(600)), "grouped again");
+    assert_eq!(get(addr, "/api/clusters").json()["unnamed"], 5, "the new face is on the page");
+
+    // A run whose grouping did not happen (as if stopped before it).
+    plain(&lib, "p1/3.png", PEOPLE[1], 3);
+    run(&["scan"]);
+    run(&["recognize", "--recognizer", FAKE]);
+    // The server compares whole seconds (`finished_at`): an earlier grouping
+    // that ended in the same second as this run would count as after it. The
+    // earlier ones are put back, as they were before this run.
+    let c = conn(&lib);
+    c.execute("DELETE FROM recog.jobs WHERE id = (SELECT max(id) FROM recog.jobs WHERE kind = 'clusters')", []).unwrap();
+    c.execute("UPDATE recog.jobs SET finished_at = finished_at - 60 WHERE kind = 'clusters'", []).unwrap();
+    drop(c);
+    let before = regroupings(&lib);
+    next_regrouping(addr);
+    assert!(regrouped_within(&lib, before, Duration::from_secs(2)), "the server groups what was not grouped");
+    let c = wait_for_clusters(addr);
+    assert_eq!(c["unnamed"], 6, "{c}");
+    server.stop().unwrap();
+}
+
+/// The cards with a suggestion ran out (the last regrouping left some): the
+/// next one starts soon, although cards without one are left.
+#[test]
+fn suggestions_that_ran_out_regroup_soon() {
+    let lib = empty("regroup-ran-out");
+    plain(&lib, "a/1.png", ANNA, 1);
+    plain(&lib, "a/2.png", ANNA, 2);
+    variant(&lib, "a/suggested.png", ANNA, SUGGESTED);
+    plain(&lib, "b/1.png", BEN, 1);
+    plain(&lib, "b/2.png", BEN, 2);
+    lib.scan();
+    recognize(&lib);
+    let server = start_regrouping(&lib, rules(10, 60_000, 200));
+    let addr = server.addr;
+    wait_for_clusters(addr);
+    let guard = lib.snapshot();
+    // The card of Anna's two plain pictures (in whichever order it lists them).
+    let a1 = id_of(&lib, "a/1.png");
+    let anna_card =
+        cards(addr).into_iter().find(|c| c["faces"].as_array().unwrap().iter().any(|f| f["file"] == a1)).expect("Anna's card");
+    ok(addr, &format!("/api/clusters/{}/name", anna_card["id"]), &json!({ "name": "Anna", "generation": anna_card["generation"] }));
+    ok(addr, "/api/clusters/left", &json!({}));
+    wait_for_clusters(addr);
+    let suggested = cards(addr).into_iter().find(|c| !c["suggestion"].is_null()).expect("a card that looks like Anna");
+    let before = regroupings(&lib);
+    ok(addr, &format!("/api/clusters/{}/name", suggested["id"]), &json!({ "name": "Anna", "generation": suggested["generation"] }));
+    assert_eq!(cards(addr).len(), 1, "Ben's card is left");
+    assert!(regrouped_within(&lib, before, Duration::from_secs(2)), "the suggestions ran out");
+    wait_for_clusters(addr);
+    server.stop().unwrap();
+    assert_eq!(lib.snapshot(), guard, "regrouping changed an original");
 }

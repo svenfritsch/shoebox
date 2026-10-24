@@ -77,6 +77,16 @@ pub(crate) fn size_px(roll: &str) -> String {
 pub(crate) const PRESENT: &str = "SELECT quick_hash, min(id) AS id, kind FROM files
                        WHERE missing_since IS NULL AND kind IN ('jpeg', 'png', 'heic') GROUP BY quick_hash";
 
+/// The present file `PRESENT` gives the content `{key}` (an SQL expression),
+/// as a correlated subquery: one look into the `files_quick_hash` index
+/// instead of grouping every file. For queries about one face or person.
+pub(crate) fn present_file(key: &str) -> String {
+    format!(
+        "(SELECT min(p.id) FROM files p WHERE p.quick_hash = {key} AND p.missing_since IS NULL
+           AND p.kind IN ('jpeg', 'png', 'heic'))"
+    )
+}
+
 // ---------------------------------------------------------------- stats
 
 #[derive(Debug, Clone, Serialize)]
@@ -650,10 +660,7 @@ pub struct FaceBox {
 pub fn face(conn: &Connection, id: i64) -> Result<Option<(String, FaceBox, Option<i64>)>> {
     Ok(conn
         .query_row(
-            &format!(
-                "SELECT f.key, f.x, f.y, f.w, f.h, f.roll, p.id FROM recog.faces f
-                 LEFT JOIN ({PRESENT}) p ON p.quick_hash = f.key WHERE f.id = ?1"
-            ),
+            &format!("SELECT f.key, f.x, f.y, f.w, f.h, f.roll, {} FROM recog.faces f WHERE f.id = ?1", present_file("f.key")),
             [id],
             |r| {
                 let b = FaceBox { x: r.get(1)?, y: r.get(2)?, w: r.get(3)?, h: r.get(4)?, roll: r.get(5)? };
@@ -669,8 +676,8 @@ pub fn drawn_face(conn: &Connection, id: i64) -> Result<Option<(String, FaceBox,
     Ok(conn
         .query_row(
             &format!(
-                "SELECT d.key, d.x, d.y, d.w, d.h, p.id FROM face_decisions d
-                 LEFT JOIN ({PRESENT}) p ON p.quick_hash = d.key WHERE d.id = ?1 AND d.manual = 1"
+                "SELECT d.key, d.x, d.y, d.w, d.h, {} FROM face_decisions d WHERE d.id = ?1 AND d.manual = 1",
+                present_file("d.key")
             ),
             [id],
             |r| {
@@ -782,7 +789,14 @@ pub fn prune_crops(conn: &Connection) -> Result<u64> {
     if !crate::people::table_exists(conn, "thumbs", "faces")? || !crate::people::table_exists(conn, "recog", "faces")? {
         return Ok(0);
     }
-    let m = Matched::load(conn, None)?;
+    prune_crops_in(conn, &Matched::load(conn, None)?)
+}
+
+/// `prune_crops`, with the faces and decisions of `m`.
+pub fn prune_crops_in(conn: &Connection, m: &Matched) -> Result<u64> {
+    if !crate::people::table_exists(conn, "thumbs", "faces")? || !crate::people::table_exists(conn, "recog", "faces")? {
+        return Ok(0);
+    }
     let mut keep: HashSet<(String, [u64; 4])> =
         (0..m.faces.len()).filter(|&i| m.decided(i).is_none()).map(|i| (m.faces[i].key.clone(), bits(m.faces[i].b))).collect();
     keep.extend(covers(conn)?.into_iter().map(|(k, b)| (k, bits(b))));

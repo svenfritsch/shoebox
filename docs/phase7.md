@@ -130,8 +130,10 @@ the pets found and failed.
 - Settings page; Face check and Pet check pages; the Pet check lists whole
   pets with species tags, "≈" for nearest neighbours, "Select" to mark false
   finds "not a pet".
-- Species badge (🐱 🐶; 🐾 for a pet of unknown species) on avatars, names,
-  cards, the info panel, and a blue box in the viewer.
+- Species icon (our own cat, bone for a dog, paw for a pet of unknown species;
+  no emojis, `petLabel` in `app.js`) before the name, in the info panel and on
+  cards, a disc with it in the corner of the big faces on the Unnamed page
+  (`.pet-badge`), and a blue box in the viewer.
 - Unnamed: filter "People and pets / People / Pets (cats and dogs)".
 - "+ Add face or pet": the dialog has the checkbox "This is a pet (a cat or a
   dog)" and a hint that says what is learned; naming a drawn box again keeps

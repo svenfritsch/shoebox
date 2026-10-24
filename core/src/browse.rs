@@ -147,6 +147,10 @@ pub struct Query {
     /// Only photos with a confirmed face of every one of these people
     /// (AND, 5c-3).
     pub people: Vec<i64>,
+    /// Only photos with a confirmed face of someone in every one of these
+    /// groups: any member of a group does (OR inside a group, AND between
+    /// groups and with everything else).
+    pub groups: Vec<i64>,
     /// Any of these types (OR); empty means every type.
     pub types: Vec<MediaType>,
     /// Only photos with a pet of every one of these species (AND): `cat`,
@@ -516,11 +520,21 @@ impl Snapshot {
                 None => ids,
             });
         }
+        // A group means any of its people; pets are people here too.
+        let mut group: Option<HashSet<i64>> = None;
+        for &g in &q.groups {
+            let ids = files_of_people(&crate::people::members_of_group(conn, g)?)?;
+            group = Some(match group {
+                Some(have) => have.intersection(&ids).copied().collect(),
+                None => ids,
+            });
+        }
         Ok(self
             .items
             .iter()
             .filter(|it| q.types.is_empty() || q.types.iter().any(|t| t.matches(it)))
             .filter(|it| person.as_ref().is_none_or(|p| p.contains(&it.id)))
+            .filter(|it| group.as_ref().is_none_or(|g| g.contains(&it.id)))
             .filter(|it| pet.as_ref().is_none_or(|p| p.contains(&it.id)))
             .filter(|it| folders.as_ref().is_none_or(|f| f.contains(&it.folder_id)))
             .filter(|it| fav.as_ref().is_none_or(|f| f.contains(&it.id)))
@@ -632,6 +646,22 @@ fn file_ids_with_tag_name(conn: &Connection, tag: i64, manual_only: bool) -> Res
 /// Tags of the given files with how many of them carry each, most used
 /// first (suggestions that narrow a search). Tags in `skip` are left out.
 pub fn tags_within(conn: &Connection, files: &HashSet<i64>, skip: &[i64]) -> Result<Vec<Tag>> {
+    let mut tags: Vec<Tag> = tag_files_within(conn, files, skip)?.into_iter().map(|t| t.tag).collect();
+    tags.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.name.cmp(&b.name)));
+    Ok(tags)
+}
+
+/// A tag of `tag_files_within` with the files that carry it, and those that
+/// carry it as an own tag.
+pub struct TagFiles {
+    pub tag: Tag,
+    pub files: HashSet<i64>,
+    pub manual: HashSet<i64>,
+}
+
+/// `tags_within` with the files themselves, unsorted (the common timeline
+/// counts a photo on two drives once).
+pub fn tag_files_within(conn: &Connection, files: &HashSet<i64>, skip: &[i64]) -> Result<Vec<TagFiles>> {
     let mut counts: HashMap<i64, (String, HashSet<i64>, bool, bool, HashSet<i64>)> = HashMap::new();
     {
         let mut stmt = conn.prepare("SELECT ft.file_id, t.id, t.name, ft.source FROM file_tags ft JOIN tags t ON t.id = ft.tag_id")?;
@@ -656,23 +686,25 @@ pub fn tags_within(conn: &Connection, files: &HashSet<i64>, skip: &[i64]) -> Res
             }
         }
     }
-    let mut tags: Vec<Tag> = counts
+    Ok(counts
         .into_iter()
-        .map(|(id, (name, files, folder, own, manual))| Tag {
-            id,
-            name,
-            count: files.len() as u64,
-            kind: match (folder, own) {
-                (true, true) => TagKind::Both,
-                (false, true) => TagKind::Own,
-                _ => TagKind::Folder,
+        .map(|(id, (name, files, folder, own, manual))| TagFiles {
+            tag: Tag {
+                id,
+                name,
+                count: files.len() as u64,
+                kind: match (folder, own) {
+                    (true, true) => TagKind::Both,
+                    (false, true) => TagKind::Own,
+                    _ => TagKind::Folder,
+                },
+                manual: manual.len() as u64,
+                last_used: None,
             },
-            manual: manual.len() as u64,
-            last_used: None,
+            files,
+            manual,
         })
-        .collect();
-    tags.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.name.cmp(&b.name)));
-    Ok(tags)
+        .collect())
 }
 
 fn file_ids_with_tags(conn: &Connection, tags: &[i64]) -> Result<HashSet<i64>> {

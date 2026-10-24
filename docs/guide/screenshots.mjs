@@ -18,9 +18,7 @@ const wait = (ms = 600) => p.waitForTimeout(ms);
 // Until a toast has gone (it shows for 4 s) and the pictures on the page are loaded.
 const toastGone = () => p.waitForSelector('#toast', { state: 'hidden', timeout: 10000 });
 const imagesLoaded = () => p.waitForFunction(() => [...document.images].every((i) => i.complete), null, { timeout: 30000 });
-// A button by its label (core/i18n), not by its place: cards differ in which buttons they have.
 const { readFileSync, writeFileSync } = await import('node:fs');
-const SELECT = JSON.parse(readFileSync(new URL(`../../core/i18n/${lang}.json`, import.meta.url), 'utf8'))['facecheck.select'];
 
 const GROUPS = de ? { family: 'Familie', friends: 'Freunde', colleagues: 'Kollegen', pets: 'Haustiere' } : { family: 'Family', friends: 'Friends', colleagues: 'Colleagues', pets: 'Pets' };
 const nameEveryone = () => p.evaluate(async (g) => {
@@ -44,8 +42,9 @@ const nameEveryone = () => p.evaluate(async (g) => {
   }
   const members = { [g.family]: ['Rosa', 'Ben'], [g.friends]: ['Lena', 'Jonas', 'Sam'], [g.colleagues]: ['Priya', 'Marco', 'Chen'], [g.pets]: ['Whiskers', 'Buddy'] };
   for (const [name, who] of Object.entries(members)) {
-    const grp = await post(LIBAPI + '/groups', { name });
-    for (const w of who) await post(LIBAPI + '/people/' + ids[w] + '/group', { group_id: grp.id });
+    // A group starts with its first person.
+    const grp = await post(LIBAPI + '/groups', { name, person_id: ids[who[0]] });
+    for (const w of who.slice(1)) await post(LIBAPI + '/people/' + ids[w] + '/group', { group_id: grp.id });
   }
 }, GROUPS);
 
@@ -262,12 +261,12 @@ await p.click('#all'); await wait(800);
 // People and pets: the cards waiting for a name.
 await p.click('#nav-people'); await wait(1200);
 await p.locator('#page .link').first().click(); await wait(2500);
-await p.waitForSelector('#un-box .cluster button.btn.quiet', { timeout: 120000 }); await wait(1500);   // the cards come when the clusters are computed
+await p.waitForSelector('#un-box .cluster .cbar .abtn', { timeout: 120000 }); await wait(1500);   // the cards come when the clusters are computed
 await shot('people-unnamed');
 
 // "Select" on a card: tick some faces, then name, ignore or mark only those.
 const card = p.locator('#un-box .cluster').first();
-await card.locator('button.btn.quiet', { hasText: SELECT }).first().click(); await wait(500);
+await card.locator('.abtn[data-act="pick"]').click(); await wait(500);
 await card.locator('.cface').nth(1).click(); await card.locator('.cface').nth(3).click(); await wait(300);
 await card.locator('input[type=text]').fill('Mia'); await wait(300);
 await card.screenshot({ path: `${out}/faces-select.png` });
@@ -282,7 +281,7 @@ if (!(await p.locator('.pfaces:visible').count())) { await p.keyboard.press('i')
 await p.locator('.pfaces:visible .ptools button').nth(1).click(); await wait(500);
 await p.locator('.pfaces:visible .pface.pickable input').nth(0).check(); await p.locator('.pfaces:visible .pface.pickable input').nth(1).check(); await wait(500);
 await shot('info-select');
-await p.locator('.pfaces:visible .pickacts button').nth(2).click(); await wait(300);
+await p.locator('.pfaces:visible .pickacts .btn').click(); await wait(300);
 await p.keyboard.press('Escape'); await wait(300);
 await p.click('#all'); await wait(800);
 
@@ -294,20 +293,23 @@ await p.click('#nav-people'); await wait(2000);
 await p.setViewportSize({ width: 1280, height: 1020 }); await wait(500);
 
 // Groups: the list with rename, order and delete ...
-await p.locator('#page button.btn.quiet').nth(1).click(); await wait(600);
+await p.locator('#page button.btn.quiet').nth(0).click(); await wait(600);
 await shot('groups-dialog');
 await p.locator('#modal-actions button').last().click(); await wait(600);
 // ... and putting a person into one from the person's ⋯ menu.
 const miaMenu = p.locator('button.more-btn[aria-label$="Mia"]');
 await miaMenu.scrollIntoViewIfNeeded(); await wait(600);   // scrolling closes an open menu
 await miaMenu.click(); await wait(500);
-await p.locator('.menu button').nth(3).click(); await wait(600);
+await p.locator('.menu button', { hasText: await p.evaluate(() => tr('people.menu.move')) }).click(); await wait(600);
 await shot('move-to-group');
 await p.locator('#modal-body button', { hasText: GROUPS.family }).first().click(); await wait(500);
 await toastGone(); await wait(800);   // the status line settles
 await p.evaluate(() => { document.getElementById('scroller').scrollTop = 0; }); await wait(500);
 await shot('people-overview');
 await p.setViewportSize({ width: 1280, height: 860 });
+// A group in the sidebar: the photos of everyone in it.
+await p.locator('#people-tree button.name[data-group]').first().click(); await wait(1500);
+await shot('group-timeline');
 await p.click('#all'); await wait(800);
 // A photo with both of them, with the info panel.
 await p.locator('.cell').nth(5).click(); await wait(1000);
