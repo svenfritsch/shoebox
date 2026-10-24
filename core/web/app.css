@@ -259,7 +259,7 @@ body.selecting #sizer { -webkit-user-select: none; user-select: none; }
 @media (hover: none) { #quick-tip { display: none; } }
 .sel-count { padding: 0 6px 0 2px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .sel-count.hint { max-width: 22em; white-space: normal; line-height: 1.25; font-size: 13px; font-weight: 400; color: var(--muted); }
-.sel-all { flex: none; border: 0; border-radius: var(--ctl-r); padding: 0 8px; background: none; color: var(--accent); }
+.sel-all { flex: none; height: var(--ctl-h); border: 0; border-radius: var(--ctl-r); padding: 0 8px; background: none; color: var(--accent); }
 .sel-all:hover:not(:disabled) { background: var(--line); }
 .sel-all:disabled { opacity: .5; cursor: default; }
 /* A count in the date or location dialog for a selection: bold, with an info button that lists the photos. */
@@ -1179,3 +1179,4 @@ body.read-only #sel-move, body.read-only #lb-rotate, body.read-only .copy label.
 .lb-bar .hide-lb.on { color: var(--accent); }
 .lb-bar .hide-lb:disabled { cursor: default; opacity: 1; }
 .lb-panel { --ok-fg: #6fcf7c; --bad-fg: #ff8a7d; }
+.types-btn:hover, .fav-btn:hover { border-color: var(--muted); }
