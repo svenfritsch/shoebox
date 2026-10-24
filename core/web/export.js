@@ -155,13 +155,22 @@ function exportChip(box, f) {
   if (!state.exportOk || isAll() || !f.tags.length || f.view || f.hidden) return;
   var b = el('button', 'btn small export-chip', tr('sel.export'));
   setTip(b, tr('export.tag_hint'));
+  b.hidden = !exportListHasPhotos(); // not offered for an empty list; showCount shows it when the list is in
   b.onclick = function () {
     var ids = state.data && state.data.ids ? Array.prototype.slice.call(state.data.ids) : [];
     var name = f.tags.map(function (id) { return state.tagNames[id] || ''; }).filter(Boolean).join('-');
-    if (!ids.length) { toast(tr('export.nothing')); return; }
     openExport(ids, name);
   };
   box.appendChild(b);
+}
+
+// The button is for what the list shows: not offered while it is empty or not in yet.
+function exportListHasPhotos() {
+  return !!(state.data && state.countFor === location.hash && state.data.count > 0);
+}
+function markExportChip() {
+  var b = document.querySelector('#filters .export-chip');
+  if (b) b.hidden = !exportListHasPhotos();
 }
 
 var exportOkShown = false;

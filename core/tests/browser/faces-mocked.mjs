@@ -1222,6 +1222,20 @@ await test('a video the browser cannot play shows a notice, a photo does not', a
   check((await note.count()) === 0, 'the photo still has the notice');
 }));
 
+await test('the Export button next to a tag chip is not offered while the list is empty', await on('tag=1', (lib) => {
+  lib.photos = [1, 2].map((id) => ({ id, version: `orig000${id}`, hidden: 'tag' }));
+  lib.tags = [{ id: 1, name: 'Strand', count: 2, kind: 'own' }];
+}, async (p, lib) => {
+  // Both photos are hidden, so the tag's list is empty: no button. The Hidden chip lists them, but has no button either.
+  await settle(p, lib);
+  check(await p.locator('#sizer a.cell').count() === 0, 'the tag list is empty');
+  check(await p.locator('#filters .export-chip').count() === 1 && await p.locator('#filters .export-chip').isHidden(), 'the Export button is offered for an empty list');
+  lib.photos[0].hidden = false;
+  await p.evaluate(() => loadTimeline(false));
+  await settle(p, lib);
+  check(await p.locator('#filters .export-chip').isVisible(), 'the Export button is not offered once the list has a photo');
+}));
+
 await test('the Export button next to a tag chip is not offered while the Hidden chip is on', await on('tag=1', (lib) => {
   lib.photos = [1, 2].map((id) => ({ id, version: `orig000${id}` }));
   lib.tags = [{ id: 1, name: 'Strand', count: 2, kind: 'own' }];

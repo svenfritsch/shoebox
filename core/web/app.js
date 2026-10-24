@@ -478,6 +478,7 @@ function renderChips() {
 // type ticked in its own word ("356 Live Photos"), and "No photos" for none.
 // Only once the timeline for this very search has arrived (state.countFor).
 function showCount() {
+  markExportChip();
   var box = document.querySelector('#filters .filter-count');
   if (!box) return;
   box.textContent = '';
