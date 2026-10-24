@@ -61,6 +61,11 @@ pub struct Item {
     pub live: Option<i64>,
     /// A screenshot: the user's decision, else the score (`screenshots.rs`).
     pub shot: bool,
+    /// Hidden from the timeline (phase 20): the own tag `hidden`, or in a hidden
+    /// folder or below one. Left out of every list unless asked for (`Query::hidden`).
+    pub hidden: bool,
+    /// Hidden by the tag itself, not only by its folder.
+    pub hidden_tag: bool,
 }
 
 impl Item {
@@ -89,8 +94,14 @@ pub struct Folder {
     pub parent: Option<i64>,
     pub name: String,
     pub path: String,
-    /// Shown files in this folder and below.
+    /// Shown files in this folder and below. A hidden folder counts its own
+    /// files (they are all hidden); a folder above it does not.
     pub count: u64,
+    /// Hidden from the timeline: the folder or one above it has the flag (phase 20).
+    pub hidden: bool,
+    /// The folder itself has the flag (the menu can show it again; a folder
+    /// hidden only by one above it cannot).
+    pub hidden_own: bool,
 }
 
 pub struct Snapshot {
@@ -164,6 +175,9 @@ pub struct Query {
     pub names: Vec<String>,
     /// Only favorites (photos with a heart).
     pub fav: bool,
+    /// Only hidden photos (phase 20): the Hidden chip. Without it hidden photos are
+    /// left out, except those of the selected folder when that folder is hidden.
+    pub hidden: bool,
     /// Only photos taken inside this area of the map (phase 10) ...
     pub area: Option<crate::geo::Area>,
     /// ... or inside the area of this place.
@@ -198,7 +212,7 @@ impl Snapshot {
                     _ => None,
                 };
                 folder_rows.insert(id, FolderRow { parent, event });
-                folders.push(Folder { id, parent, name: r.get(2)?, path: r.get(3)?, count: 0 });
+                folders.push(Folder { id, parent, name: r.get(2)?, path: r.get(3)?, count: 0, hidden: false, hidden_own: false });
             }
         }
         // Nearest event folder (the folder itself or an ancestor).
@@ -220,6 +234,32 @@ impl Snapshot {
             }
             event_of.insert(id, found);
         }
+
+        // Hidden folders (phase 20): the flagged ones, and every folder below one.
+        {
+            let flagged: HashSet<String> = crate::tags::hidden_folder_paths(conn)?.into_iter().collect();
+            for f in &mut folders {
+                f.hidden_own = !f.path.is_empty() && flagged.contains(&f.path);
+            }
+            let own: HashSet<i64> = folders.iter().filter(|f| f.hidden_own).map(|f| f.id).collect();
+            for f in &mut folders {
+                let mut cur = Some(f.id);
+                let mut depth = 0;
+                while let Some(c) = cur {
+                    if own.contains(&c) {
+                        f.hidden = true;
+                        break;
+                    }
+                    cur = folder_rows.get(&c).and_then(|r| r.parent);
+                    depth += 1;
+                    if depth > 1000 {
+                        break;
+                    }
+                }
+            }
+        }
+        let hidden_folder: HashSet<i64> = folders.iter().filter(|f| f.hidden).map(|f| f.id).collect();
+        let hidden_tagged = crate::tags::hidden_ids(conn)?;
 
         struct Row {
             id: i64,
@@ -340,15 +380,22 @@ impl Snapshot {
                     path_lower: r.path_lower.clone(),
                     live: live.get(&r.id).copied(),
                     shot: r.shot,
+                    hidden: hidden_tagged.contains(&r.id) || hidden_folder.contains(&r.folder_id),
+                    hidden_tag: hidden_tagged.contains(&r.id),
                 }
             })
             .collect();
         items.sort_by(|a, b| b.sort.cmp(&a.sort).then_with(|| a.path_lower.cmp(&b.path_lower)));
 
-        // Folder counts, summed up the tree.
+        // Folder counts, summed up the tree: the photos that are shown, and for a
+        // hidden folder its own (hidden) ones.
         let mut direct: HashMap<i64, u64> = HashMap::new();
+        let mut direct_all: HashMap<i64, u64> = HashMap::new();
         for it in &items {
-            *direct.entry(it.folder_id).or_default() += 1;
+            *direct_all.entry(it.folder_id).or_default() += 1;
+            if !it.hidden {
+                *direct.entry(it.folder_id).or_default() += 1;
+            }
         }
         let mut children: HashMap<i64, Vec<i64>> = HashMap::new();
         for f in &folders {
@@ -360,13 +407,46 @@ impl Snapshot {
         let totals: HashMap<i64, u64> = snapshot
             .folders
             .iter()
-            .map(|f| (f.id, snapshot.subtree(f.id).iter().map(|id| direct.get(id).copied().unwrap_or(0)).sum()))
+            .map(|f| {
+                let own = if f.hidden { &direct_all } else { &direct };
+                (f.id, snapshot.subtree(f.id).iter().map(|id| own.get(id).copied().unwrap_or(0)).sum())
+            })
             .collect();
         for f in &mut snapshot.folders {
             f.count = totals[&f.id];
         }
         snapshot.folders.sort_by_key(|f| f.path.to_lowercase());
         Ok(snapshot)
+    }
+
+    /// What the tag counts leave out for hidden photos: the files with the hidden tag
+    /// (and the clip of a hidden Live Photo), and the hidden folders (every file in them).
+    pub fn hidden_exclusions(&self) -> (Vec<i64>, Vec<i64>) {
+        let files = self
+            .items
+            .iter()
+            .filter(|it| it.hidden_tag || (it.hidden && it.live.is_some()))
+            .flat_map(|it| std::iter::once(it.id).chain(it.live))
+            .collect();
+        let folders = self.folders.iter().filter(|f| f.hidden).map(|f| f.id).collect();
+        (files, folders)
+    }
+
+    /// The folder with the hidden flag that hides a folder: itself or the nearest one above.
+    pub fn hiding_folder(&self, folder: i64) -> Option<&Folder> {
+        let mut cur = self.folders.iter().find(|f| f.id == folder);
+        let mut depth = 0;
+        while let Some(f) = cur {
+            if f.hidden_own {
+                return Some(f);
+            }
+            cur = f.parent.and_then(|p| self.folders.iter().find(|x| x.id == p));
+            depth += 1;
+            if depth > 1000 {
+                break;
+            }
+        }
+        None
     }
 
     /// A folder and every folder below it.
@@ -454,6 +534,7 @@ impl Snapshot {
             Ok(ids)
         };
         let favorites = || crate::tags::favorite_ids(conn).unwrap_or_default();
+        let mut reveal_word = false;
         for word in text.split_whitespace() {
             let word = library::nfc(word).to_lowercase();
             let tags: Vec<i64> =
@@ -471,9 +552,20 @@ impl Snapshot {
             if crate::tags::is_favorite_word(&word) {
                 ids.extend(favorites());
             }
+            // "hidden", "versteckt": the hidden photos, shown (a start of the word does not).
+            if crate::tags::is_hidden_exact(&word) {
+                reveal_word = true;
+                ids.extend(self.items.iter().filter(|it| it.hidden).map(|it| it.id));
+            }
             words.push((word, ids));
         }
         let fav = if q.fav { Some(favorites()) } else { None };
+        // Hidden photos (phase 20): out of every list, except with the Hidden chip, with the
+        // word "hidden" typed as text, and in the folder selected when that one is hidden.
+        let reveal_folder: Option<HashSet<i64>> = match (&folders, q.folder) {
+            (Some(f), Some(id)) if self.folders.iter().any(|x| x.id == id && x.hidden) => Some(f.clone()),
+            _ => None,
+        };
         let mut located: Option<HashSet<i64>> = None;
         for area in q.area.into_iter().chain(match q.place {
             Some(id) => Some(crate::geo::place(conn, id)?.ok_or(crate::geo::NoSuchPlace)?.area),
@@ -532,6 +624,13 @@ impl Snapshot {
         Ok(self
             .items
             .iter()
+            .filter(|it| {
+                if q.hidden {
+                    it.hidden
+                } else {
+                    !it.hidden || reveal_word || reveal_folder.as_ref().is_some_and(|f| f.contains(&it.folder_id))
+                }
+            })
             .filter(|it| q.types.is_empty() || q.types.iter().any(|t| t.matches(it)))
             .filter(|it| person.as_ref().is_none_or(|p| p.contains(&it.id)))
             .filter(|it| group.as_ref().is_none_or(|g| g.contains(&it.id)))
@@ -585,14 +684,28 @@ pub struct Tag {
 
 /// Every tag with the number of present files carrying it, most used first.
 pub fn all_tags(conn: &Connection) -> Result<Vec<Tag>> {
-    let mut stmt = conn.prepare(
+    all_tags_shown(conn, &[], &[])
+}
+
+/// `all_tags` without these files and without the files in these folders (the hidden
+/// photos, `Snapshot::hidden_exclusions`).
+pub fn all_tags_shown(conn: &Connection, files: &[i64], folders: &[i64]) -> Result<Vec<Tag>> {
+    let list = |ids: &[i64]| ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+    let mut leave_out = String::new();
+    if !files.is_empty() {
+        leave_out.push_str(&format!(" AND f.id NOT IN ({})", list(files)));
+    }
+    if !folders.is_empty() {
+        leave_out.push_str(&format!(" AND f.folder_id NOT IN ({})", list(folders)));
+    }
+    let mut stmt = conn.prepare(&format!(
         "SELECT t.id, t.name, count(DISTINCT f.id) AS n, max(ft.source = 'folder'), max(ft.source = 'user'),
                 max(CASE WHEN ft.source = 'user' THEN ft.added_at END),
                 count(DISTINCT CASE WHEN ft.source = 'user' THEN f.id END) FROM tags t
          JOIN file_tags ft ON ft.tag_id = t.id
-         JOIN files f ON f.id = ft.file_id AND f.missing_since IS NULL AND f.kind != 'raw'
-         GROUP BY t.id ORDER BY n DESC, t.name",
-    )?;
+         JOIN files f ON f.id = ft.file_id AND f.missing_since IS NULL AND f.kind != 'raw'{leave_out}
+         GROUP BY t.id ORDER BY n DESC, t.name"
+    ))?;
     let tags = stmt
         .query_map([], |r| {
             let kind = match (r.get::<_, bool>(3)?, r.get::<_, bool>(4)?) {

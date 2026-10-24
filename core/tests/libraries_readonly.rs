@@ -119,6 +119,14 @@ fn the_photo_app_says_a_library_is_read_only_and_every_change_it_could_make_is_r
     // Looking works: the timeline and a thumbnail.
     assert_eq!(get(addr, "/api/timeline").status, 200);
     assert_eq!(get(addr, &format!("/api/files/{}/thumb", ids[0])).status, 200);
+    // Hiding from the timeline is a flag in the index next to the program, so it works here
+    // and writes nothing into the root.
+    let count = || get(addr, "/api/timeline").json()["count"].as_i64().unwrap();
+    let all = count();
+    assert_eq!(post(addr, "/api/hidden", &json!({ "ids": [ids[0]], "on": true })).status, 200);
+    assert_eq!(post(addr, "/api/hidden/folder", &json!({ "path": "Familie", "on": true })).status, 200);
+    assert!(count() < all - 1, "the photo and the folder's photos are out of the timeline");
+    assert_eq!(get(addr, "/api/timeline?hidden=1").json()["count"].as_i64().unwrap(), all - count());
     let _ = server.stop();
 
     // Nothing in the root was touched or made, by the server or by the refused calls.

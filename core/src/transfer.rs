@@ -33,13 +33,13 @@ use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OpenFlags, params};
 use serde::{Deserialize, Serialize};
 
-use crate::{dates, db, geo, people, pets, recognize, tags};
+use crate::{dates, db, geo, library, people, pets, recognize, tags};
 
 /// Tables of `library.db` whose rows are carried (one box each, `people` with
 /// `face_decisions`). A new table must be in this list or in
 /// `NOT_TRANSFERRED_TABLES`: `core/tests/transfer.rs` fails otherwise, so a new kind
 /// of user data is decided about on purpose.
-pub const TRANSFERRED_TABLES: &[&str] = &["file_tags", "face_decisions", "people", "taken_overrides", "date_estimates", "geo_overrides", "tags"];
+pub const TRANSFERRED_TABLES: &[&str] = &["file_tags", "face_decisions", "people", "taken_overrides", "date_estimates", "geo_overrides", "tags", "hidden_folders"];
 
 /// Tables that are not carried, and why: the drive's own bookkeeping, things
 /// the target builds itself, things about the drive and not a photo, and the
@@ -75,6 +75,10 @@ pub struct Boxes {
     pub dates: bool,
     #[serde(default = "yes")]
     pub places: bool,
+    /// Hidden photos and folders (phase 20). Not ticked unless asked for: what to hide
+    /// is decided per drive.
+    #[serde(default)]
+    pub hidden: bool,
 }
 
 fn yes() -> bool {
@@ -82,14 +86,16 @@ fn yes() -> bool {
 }
 
 impl Boxes {
+    /// Every kind, hidden photos too (what a plan counts, for the check boxes).
     pub fn all() -> Boxes {
-        Boxes { tags: true, hearts: true, people: true, dates: true, places: true }
+        Boxes { tags: true, hearts: true, people: true, dates: true, places: true, hidden: true }
     }
 }
 
+/// The boxes ticked when none are given: all but the hidden photos.
 impl Default for Boxes {
     fn default() -> Boxes {
-        Boxes::all()
+        Boxes { hidden: false, ..Boxes::all() }
     }
 }
 
@@ -153,6 +159,11 @@ pub struct TransferSet {
     pub tags: Vec<TagItem>,
     /// The contents with a heart.
     pub hearts: Vec<Content>,
+    /// The contents hidden from the timeline by the own tag `hidden` (phase 20).
+    pub hidden: Vec<Content>,
+    /// The folders hidden from the timeline (NFC paths); matched by path, the target
+    /// takes those it has.
+    pub hidden_folders: Vec<String>,
     pub decisions: Vec<DecisionItem>,
     pub dates: Vec<DateItem>,
     pub places: Vec<PlaceItem>,
@@ -164,6 +175,9 @@ pub struct Counts {
     /// Photos that get an own tag, photos that get a heart.
     pub tags: u64,
     pub hearts: u64,
+    /// Photos that get the hidden tag, and folders that get the hidden flag.
+    pub hidden: u64,
+    pub hidden_folders: u64,
     /// Faces that get a decision, and people created for them.
     pub people: u64,
     pub new_people: u64,
@@ -176,7 +190,7 @@ pub struct Counts {
 
 impl Counts {
     pub fn is_nothing(&self) -> bool {
-        self.photos == 0
+        self.photos == 0 && self.hidden_folders == 0
     }
 }
 
@@ -221,6 +235,7 @@ pub fn read(conn: &Connection) -> Result<TransferSet> {
         ))?;
         let mut rows = stmt.query([])?;
         let mut hearted: HashSet<Content> = HashSet::new();
+        let mut hidden: HashSet<Content> = HashSet::new();
         while let Some(r) = rows.next()? {
             let content = Content { quick: r.get(0)?, size: Some(r.get::<_, i64>(1)? as u64), full: r.get(2)? };
             let name: String = r.get(3)?;
@@ -228,11 +243,17 @@ pub fn read(conn: &Connection) -> Result<TransferSet> {
                 if hearted.insert(content.clone()) {
                     set.hearts.push(content);
                 }
+            } else if tags::is_hidden_name(&name) {
+                if hidden.insert(content.clone()) {
+                    set.hidden.push(content);
+                }
             } else {
                 set.tags.push(TagItem { content, name, at: r.get(4)? });
             }
         }
     }
+    // Folders hidden from the timeline (an older index has none).
+    set.hidden_folders = tags::hidden_folder_paths(conn)?;
 
     // What is keyed by content (the quick hash): decisions, dates, positions.
     let mut keys: HashSet<String> = HashSet::new();
@@ -347,6 +368,8 @@ struct UdFile {
     date_estimates: Vec<UdEstimate>,
     #[serde(default)]
     geo_overrides: Vec<UdGeo>,
+    #[serde(default)]
+    hidden_folders: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -480,9 +503,11 @@ pub fn parse_userdata(bytes: &[u8]) -> Result<(TransferSet, FileInfo)> {
     // Own tags and hearts. Files in the source's trash are left out, as on a
     // drive (their tags are kept by its trash, not carried).
     let mut hearted: HashSet<Content> = HashSet::new();
+    let mut hidden: HashSet<Content> = HashSet::new();
     for tag in &file.own_tags {
         let Ok(name) = tags::check_name(&tag.name) else { continue };
         let heart = tags::means_favorite(&name);
+        let hide = tags::is_hidden_name(&name);
         for f in &tag.files {
             let Some(quick) = f.quick_hash.as_deref().filter(|q| is_hash(q)) else { continue };
             if f.in_trash {
@@ -494,9 +519,20 @@ pub fn parse_userdata(bytes: &[u8]) -> Result<(TransferSet, FileInfo)> {
                 if hearted.insert(content.clone()) {
                     set.hearts.push(content);
                 }
+            } else if hide {
+                if hidden.insert(content.clone()) {
+                    set.hidden.push(content);
+                }
             } else {
                 set.tags.push(TagItem { content, name: name.clone(), at: None });
             }
+        }
+    }
+    // Hidden folders: checked like typed input, and only matched by path.
+    for path in &file.hidden_folders {
+        let path = library::nfc(path.trim().trim_matches('/'));
+        if !path.is_empty() && !path.chars().any(char::is_control) && path.chars().count() <= 4096 && !set.hidden_folders.contains(&path) {
+            set.hidden_folders.push(path);
         }
     }
 
@@ -707,7 +743,7 @@ fn run(conn: &Connection, set: &TransferSet, boxes: Boxes, write: bool, step: &m
     let mut written = 0u64;
 
     // Tags and hearts: per file, added when the file does not have them.
-    if boxes.tags || boxes.hearts {
+    if boxes.tags || boxes.hearts || boxes.hidden {
         let mut have: HashMap<i64, HashSet<String>> = HashMap::new();
         {
             let mut stmt = conn.prepare("SELECT ft.file_id, t.fold FROM file_tags ft JOIN tags t ON t.id = ft.tag_id WHERE ft.source = 'user'")?;
@@ -752,8 +788,49 @@ fn run(conn: &Connection, set: &TransferSet, boxes: Boxes, write: bool, step: &m
                 }
             }
         }
+        let mut hid: HashSet<i64> = HashSet::new();
+        if boxes.hidden {
+            for content in &set.hidden {
+                for i in matching(&target, content) {
+                    let file = target.files[i].id;
+                    if give_tag(conn, write, &mut have, &mut ids, file, tags::HIDDEN, None)? {
+                        hid.insert(file);
+                        touched.insert(file);
+                        if write {
+                            written += 1;
+                            step(written)?;
+                        }
+                    }
+                }
+            }
+        }
         counts.tags = tagged.len() as u64;
         counts.hearts = hearted.len() as u64;
+        counts.hidden = hid.len() as u64;
+    }
+
+    // Hidden folders: by path, for the folders this drive has (and not hidden yet).
+    if boxes.hidden && !set.hidden_folders.is_empty() {
+        let mut have: HashSet<String> = tags::hidden_folder_paths(conn)?.into_iter().collect();
+        let mut folders: HashSet<String> = HashSet::new();
+        {
+            let mut stmt = conn.prepare("SELECT path_nfc FROM folders")?;
+            let mut rows = stmt.query([])?;
+            while let Some(r) = rows.next()? {
+                folders.insert(r.get(0)?);
+            }
+        }
+        for path in &set.hidden_folders {
+            if !folders.contains(path) || !have.insert(path.clone()) {
+                continue;
+            }
+            if write {
+                conn.execute("INSERT OR IGNORE INTO hidden_folders (path_nfc, added_at) VALUES (?1, ?2)", params![path, db::now()])?;
+                written += 1;
+                step(written)?;
+            }
+            counts.hidden_folders += 1;
+        }
     }
 
     // People: a decision is copied unless the target has one whose box overlaps
