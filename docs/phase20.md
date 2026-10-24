@@ -86,7 +86,7 @@ says so. New: the app's normal `toast()` (the dark-on-light pill under the top b
 
 | Option | Favorite, English | Favorite, German | Hidden, English | Hidden, German |
 |---|---|---|---|---|
-| **A (mocked)** | Favorite set. Favorites show as a heart, not as a tag. | Favorit gesetzt. Favoriten erscheinen als Herz, nicht als Tag. | Hidden from the timeline. That is the eye button, not a tag. | Aus der Zeitleiste ausgeblendet. Das ist der Auge-Button, kein Tag. |
+| **A (mocked)** | Favorite set. Favorites show as a heart, not as a tag. | Favorit gesetzt. Favoriten erscheinen als Herz, nicht als Tag. | Hidden from the timeline. Marked through the eye button, not a tag. | Aus der Zeitleiste ausgeblendet. Erkennbar durch das Auge, kein Tag. |
 | B | That is the heart: the photo is a favorite now, no tag is added. | Das ist das Herz: Das Foto ist jetzt ein Favorit, es wird kein Tag angelegt. | Hidden from the timeline, no tag is added. The eye button does the same. | Aus der Zeitleiste ausgeblendet, es wird kein Tag angelegt. Das macht auch der Auge-Button. |
 | C (shortest) | Favorite set (no tag). | Favorit gesetzt (kein Tag). | Hidden (no tag). | Ausgeblendet (kein Tag). |
 
@@ -149,7 +149,7 @@ Everything list-like in the grid goes through `browse::Snapshot::query`
 | `hidden.move_out` | These photos come from a hidden folder: they will show in the timeline again. | Diese Fotos stammen aus einem ausgeblendeten Ordner: Sie erscheinen wieder in der Zeitleiste. | move dialog |
 | `export.hidden_left_out` (one / other) | 1 hidden photo left out / {n} hidden photos left out | 1 ausgeblendetes Foto ausgelassen / {n} ausgeblendete Fotos ausgelassen | export dialog of a tag |
 | `tags.reserved_fav` | Favorite set. Favorites show as a heart, not as a tag. | Favorit gesetzt. Favoriten erscheinen als Herz, nicht als Tag. | toast after typing a favorite word (option A) |
-| `tags.reserved_hidden` | Hidden from the timeline. That is the eye button, not a tag. | Aus der Zeitleiste ausgeblendet. Das ist der Auge-Button, kein Tag. | toast after typing a hidden word (option A) |
+| `tags.reserved_hidden` | Hidden from the timeline. Marked through the eye button, not a tag. | Aus der Zeitleiste ausgeblendet. Erkennbar durch das Auge, kein Tag. | toast after typing a hidden word (option A) |
 | `transfer.hidden` | Hidden ({n}) | Ausgeblendet ({n}) | Carry over data, check box, not ticked by default |
 | `transfer.hidden_hint` | Not ticked by default: hiding is decided per drive. | Standardmäßig nicht angehakt: Ausblenden wird pro Laufwerk entschieden. | tip of that box |
 

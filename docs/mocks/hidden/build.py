@@ -85,13 +85,13 @@ L = {
             hide_tip="Hide from timeline (h)", show_tip="Show in timeline (h)", sel_tip="Hide from timeline",
             menu_hide="Hide folder from timeline", menu_show="Show folder in timeline", folder="Folders",
             chip="Hidden", fchip_tip="Hide folder from timeline", ftip_on="Show folder in timeline",
-            note="Hidden from the timeline. That is the eye button, not a tag.", tag="Add tag…", typed_tag="versteckt",
+            note="Hidden from the timeline. Marked through the eye button, not a tag.", tag="Add tag…", typed_tag="versteckt",
             fnote="Favorite set. Favorites show as a heart, not as a tag."),
  "de": dict(typed="ausg", head="Ausgeblendet", item="Ausgeblendet", rtext="Erkannter Text", shortcut="Tastenkürzel: text:ausg eingeben",
             hide_tip="Aus der Zeitleiste ausblenden (h)", show_tip="In der Zeitleiste anzeigen (h)", sel_tip="Aus der Zeitleiste ausblenden",
             menu_hide="Ordner aus der Zeitleiste ausblenden", menu_show="Ordner in der Zeitleiste anzeigen", folder="Ordner",
             chip="Ausgeblendet", fchip_tip="Ordner aus der Zeitleiste ausblenden", ftip_on="Ordner in der Zeitleiste anzeigen",
-            note="Aus der Zeitleiste ausgeblendet. Das ist der Auge-Button, kein Tag.", tag="Tag hinzufügen…", typed_tag="versteckt",
+            note="Aus der Zeitleiste ausgeblendet. Erkennbar durch das Auge, kein Tag.", tag="Tag hinzufügen…", typed_tag="versteckt",
             fnote="Favorit gesetzt. Favoriten erscheinen als Herz, nicht als Tag."),
 }
 
