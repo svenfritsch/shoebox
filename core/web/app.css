@@ -33,6 +33,13 @@ body {
 }
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
+select { cursor: pointer; }
+/* One size and one focus ring for every control: icon buttons, buttons and drop-downs share the
+   height --ctl-h (--ctl-h-sm for the small variants), so a ring or a hover disc is the same
+   everywhere. Touch gets the bigger size. */
+:root { --ctl-h: 36px; --ctl-h-sm: 28px; --ctl-r: 10px; }
+@media (pointer: coarse) { :root { --ctl-h: 44px; --ctl-h-sm: 34px; } }
+:where(button, a.icon, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 [hidden] { display: none !important; }
 
 .bar {
@@ -50,7 +57,7 @@ button { cursor: pointer; }
 }
 /* Type filter (5f): check box drop-down next to the search box. */
 .types { position: relative; flex: none; }
-.types-btn { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: inherit; white-space: nowrap; }
+.types-btn { height: var(--ctl-h); padding: 0 10px; border-radius: var(--ctl-r); border: 1px solid var(--line); background: var(--panel); color: inherit; white-space: nowrap; }
 .types-btn.on { border-color: var(--accent); color: var(--accent); }
 .types-menu {
   position: absolute; right: 0; top: calc(100% + 4px); min-width: 170px; z-index: 20; padding: 4px 0;
@@ -60,9 +67,18 @@ button { cursor: pointer; }
 .types-menu label:hover { background: var(--panel); }
 .types-menu .ficon { margin-right: 0; }
 .types-menu .tip { color: var(--muted, #888); cursor: help; font-size: 13px; }
-.bar select { padding: 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); }
+.bar select, .page .toolbar select {
+  height: var(--ctl-h); padding: 0 10px; border-radius: var(--ctl-r); border: 1px solid var(--line);
+  background: var(--panel); color: var(--fg);
+}
+.bar select:hover, .page .toolbar select:hover { border-color: var(--muted); }
 .icon svg { display: block; width: 1em; height: 1em; fill: currentColor; }
-.icon { background: none; border: 0; font-size: 20px; padding: 4px 8px; line-height: 1; color: inherit; text-decoration: none; }
+.icon {
+  flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--ctl-h); height: var(--ctl-h); padding: 0;
+  background: none; border: 0; border-radius: var(--ctl-r); font-size: 20px; line-height: 1; color: inherit; text-decoration: none;
+}
+.icon:hover:not(:disabled) { background: var(--line); }
+.lb-bar .icon:hover:not(:disabled) { background: rgba(255,255,255,.18); }
 .link { background: none; border: 0; padding: 0; color: var(--accent); }
 
 .layout { position: fixed; inset: var(--bar-h) 0 0 0; display: flex; }
@@ -175,8 +191,13 @@ body.selecting #sizer { -webkit-user-select: none; user-select: none; }
   width: max-content; max-width: calc(100vw - 24px);
   background: var(--panel); border: 1px solid var(--line); box-shadow: 0 6px 30px rgba(0,0,0,.2); white-space: nowrap;
 }
-.btn { padding: 7px 14px; border-radius: 9px; border: 0; background: var(--accent); color: #fff; font-weight: 600; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; min-height: var(--ctl-h); padding: 0 14px;
+  border-radius: var(--ctl-r); border: 0; background: var(--accent); color: #fff; font-weight: 600;
+}
+.btn:hover:not(:disabled) { filter: brightness(1.1); }
 .btn.quiet { background: var(--line); color: var(--fg); font-weight: 400; }
+.btn.quiet:hover:not(:disabled) { filter: none; background: color-mix(in srgb, var(--line) 75%, var(--fg) 25%); }
 .btn.danger { background: #c63b2f; }
 .btn.with-icon { display: inline-flex; align-items: center; gap: 8px; }
 .btn.with-icon svg { width: 18px; height: 18px; flex: none; fill: currentColor; }
@@ -204,10 +225,11 @@ body.selecting #sizer { -webkit-user-select: none; user-select: none; }
    (close, count, Select all), then icon tools in groups. A label shows at once
    above the tool under the pointer or the keyboard focus; nothing in the bar
    moves. On touch there are no labels and the tools are bigger. */
-.selbar.tools { gap: 2px; padding: 6px; }
+.selbar.tools { --sel-h: 40px; gap: 2px; padding: 6px; }
+@media (pointer: coarse) { .selbar.tools { --sel-h: 46px; } }
 .selbar.tools .ib {
   position: relative; flex: none; display: inline-flex; align-items: center; justify-content: center;
-  width: 40px; height: 40px; padding: 0; border: 0; border-radius: 10px; background: none; color: var(--fg); font-size: 20px;
+  width: var(--sel-h); height: var(--sel-h); padding: 0; border: 0; border-radius: var(--ctl-r); background: none; color: var(--fg); font-size: 20px;
 }
 .selbar.tools .ib svg { width: 20px; height: 20px; }
 .selbar.tools .ib:hover:not([aria-disabled="true"]) { background: var(--line); }
@@ -217,8 +239,10 @@ body.selecting #sizer { -webkit-user-select: none; user-select: none; }
 .selbar.tools .ib.danger:hover:not([aria-disabled="true"]) { background: #c63b2f; color: #fff; }
 .selbar.tools .ib.ok { color: #2f8a3b; }
 .selbar.tools .ib.ok:hover:not([aria-disabled="true"]) { background: #2f8a3b; color: #fff; }
-.selbar.tools .btn { flex: none; }
-.selbar.tools button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.selbar.tools .btn, .selbar.tools .sel-all { flex: none; min-height: 0; height: var(--sel-h); padding: 0 12px; border-radius: var(--ctl-r); }
+/* The bar's words are plain, like Select all: a background only on hover. */
+.selbar.tools .btn.quiet { background: none; }
+.selbar.tools .btn.quiet:hover:not(:disabled) { background: var(--line); }
 /* The quick label (tip.js) for every control with a data-tip. */
 #quick-tip {
   position: fixed; z-index: 2000; left: 0; top: 0; max-width: min(22em, calc(100vw - 12px)); padding: 4px 10px; border-radius: 8px;
@@ -232,7 +256,7 @@ body.selecting #sizer { -webkit-user-select: none; user-select: none; }
 @media (hover: none) { #quick-tip { display: none; } }
 .sel-count { padding: 0 6px 0 2px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .sel-count.hint { max-width: 22em; white-space: normal; line-height: 1.25; font-size: 13px; font-weight: 400; color: var(--muted); }
-.sel-all { flex: none; border: 0; border-radius: 8px; padding: 6px 8px; background: none; color: var(--accent); }
+.sel-all { flex: none; border: 0; border-radius: var(--ctl-r); padding: 0 8px; background: none; color: var(--accent); }
 .sel-all:hover:not(:disabled) { background: var(--line); }
 .sel-all:disabled { opacity: .5; cursor: default; }
 /* A count in the date or location dialog for a selection: bold, with an info button that lists the photos. */
@@ -252,7 +276,6 @@ body.selecting #sizer { -webkit-user-select: none; user-select: none; }
 .names-pop li { padding: 2px 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .names-pop li.more { color: var(--muted); }
 .selbar.tools .sep { flex: none; width: 1px; height: 24px; margin: 0 6px; background: var(--line); }
-@media (pointer: coarse) { .selbar.tools .ib { width: 46px; height: 46px; } }
 @media (prefers-reduced-motion: reduce) { #quick-tip { transition: none; } }
 
 .modal { position: fixed; inset: 0; z-index: 25; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; padding: 16px; }
@@ -363,7 +386,7 @@ body.tile-drag { -webkit-user-select: none; user-select: none; }
 .copy .chip.own { background: var(--accent); color: #fff; }
 .dup-bar { position: sticky; bottom: 12px; display: flex; align-items: center; gap: 10px; justify-content: center; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2); width: fit-content; margin: 0 auto; }
 @media (max-width: 700px) { .dup-row { flex-direction: column; } .copy { width: 100%; } }
-.card .btn { margin-top: 4px; padding: 4px 10px; font-size: 13px; align-self: flex-start; }
+.card .btn { margin-top: 4px; min-height: var(--ctl-h-sm); padding: 0 10px; font-size: 13px; align-self: flex-start; }
 .lb-panel .actions { justify-content: flex-start; }
 .lb-panel .btn.quiet { background: rgba(255,255,255,.15); color: #eee; }
 .lb-panel select { background: rgba(255,255,255,.15); color: #eee; border: 0; border-radius: 6px; padding: 4px 8px; }
@@ -418,7 +441,6 @@ body.tile-drag { -webkit-user-select: none; user-select: none; }
 .face.small .crop::before { border: 2px dashed var(--muted); }
 .face.sel .crop::after { border: 3px solid var(--accent); }
 #face-pick.active { background: var(--accent); color: #fff; }
-.page .toolbar select { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
 
 /* Search by several terms (5b-2): suggestion list under the search box, "+" chip. */
 .search { position: relative; }
@@ -473,7 +495,7 @@ body.selecting .sec .pick { display: inline; }
   font-size: 18px; line-height: 1; padding: 0 6px;
 }
 .more-btn:hover, .more-btn:focus-visible { background: var(--line); color: var(--fg); }
-.btn.small { padding: 4px 10px; font-size: 13px; }
+.btn.small { min-height: var(--ctl-h-sm); padding: 0 10px; font-size: 13px; }
 .btn.quiet.active { background: var(--accent); color: #fff; }
 .link.inline { font-size: inherit; }
 
@@ -721,7 +743,7 @@ body.selecting .sec .pick { display: inline; }
 .xcopy .drive { font-weight: 600; font-size: 13px; margin-top: 4px; }
 .xcopy .path { font-size: 12px; color: var(--muted); word-break: break-all; }
 .xcopy .btns { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
-.xcopy .btns .btn { padding: 3px 10px; font-size: 12px; }
+.xcopy .btns .btn { min-height: var(--ctl-h-sm); padding: 0 10px; font-size: 12px; }
 .dialog.compare { width: min(96vw, 1200px); max-width: none; }
 .compare-strip { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
 .compare-col { flex: 1 1 550px; min-width: min(550px, 100%); box-sizing: border-box; display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
@@ -747,7 +769,6 @@ body.selecting .sec .pick { display: inline; }
 
 
 /* Language selector in the sidebar footer (phase 8) */
-.bar .lang-pick { font-size: 13px; padding: 4px 6px; color: var(--muted); }
 
 /* Pets (phase 7): cats and dogs are people with a blue ring; the big faces of
    a pet carry its icon in a disc in the corner (.pet-badge). The ring and the
@@ -816,7 +837,7 @@ body.selecting .sec .pick { display: inline; }
 .settings-section input[type=text] { min-width: 220px; }
 
 /* favorites: the heart */
-.fav-btn { display: inline-flex; align-items: center; justify-content: center; font-size: 18px; padding: 6px 9px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: inherit; }
+.fav-btn { display: inline-flex; align-items: center; justify-content: center; font-size: 18px; height: var(--ctl-h); padding: 0 10px; border-radius: var(--ctl-r); border: 1px solid var(--line); background: var(--panel); color: inherit; }
 .fav-btn.on { border-color: var(--accent); color: #e0405a; }
 .cell .fav {
   position: absolute; right: 5px; top: 5px; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%;
@@ -846,7 +867,7 @@ body.selecting .sec .pick { display: inline; }
 .info-geo .geo-head h3 { white-space: nowrap; margin: 0; font-size: 14px; font-weight: 400; color: #999; }
 .info-geo .geo-right { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
 .info-geo .coords { font-size: 12px; font-variant-numeric: tabular-nums; }
-.btn.small { padding: 3px 10px; font-size: 12px; }
+.btn.small { min-height: var(--ctl-h-sm); padding: 0 10px; font-size: 12px; }
 .geo-square { position: relative; width: 100%; padding-top: 100%; }
 @media (max-height: 700px) { .geo-square { padding-top: 62%; } }
 .geo-mini { position: absolute; top: 0; left: 0; right: 0; bottom: 0; touch-action: none; }

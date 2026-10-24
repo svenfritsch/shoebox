@@ -1351,4 +1351,36 @@ await test('the Export button next to a tag chip is not offered while the Hidden
   check(await p.locator('#filters .export-chip').count() === 0, 'the Export button is still offered with the Hidden chip');
 }));
 
+await test('common control sizes: the viewer\'s tools and the header\'s drop-downs share one height, and the person bar\'s words match Select all', await on('', hiddenPhotos, async (p, lib) => {
+  await cellCount(p, 3);
+  const box = (sel) => p.locator(sel).first().evaluate((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; });
+  await p.evaluate(() => { $('years').hidden = false; if (!$('years').options.length) $('years').add(new Option('2020', '2020')); });
+  const years = await box('#years'), lang = await box('#lang');
+  check(years[1] === lang[1], `the year and language drop-downs are ${years[1]} and ${lang[1]} px high`);
+  check((await p.locator('#years').evaluate((e) => getComputedStyle(e).cursor)) === 'pointer', 'the year drop-down has no pointer cursor');
+  await p.locator('#sizer a.cell').first().click();
+  await p.locator('#lightbox').waitFor({ state: 'visible' });
+  await settle(p, lib);
+  const sizes = [];
+  for (const id of ['lb-fav', 'lb-rotate', 'lb-download', 'lb-info']) sizes.push(id + ':' + (await box('#' + id)).join('x'));
+  check(new Set(sizes.map((x) => x.split(':')[1])).size === 1, `the viewer's tools differ in size: ${sizes}`);
+  const hover = async (sel) => { await p.locator(sel).hover(); return p.locator(sel).evaluate((e) => getComputedStyle(e).backgroundColor); };
+  check((await hover('#lb-info')) !== 'rgba(0, 0, 0, 0)', 'the info icon has no hover background');
+  await p.locator('#lb-info').focus();
+  await p.keyboard.press('Tab');
+  await p.keyboard.press('Shift+Tab');
+  check((await p.locator('#lb-info').evaluate((e) => getComputedStyle(e).outlineStyle)) === 'solid', 'the info icon has no focus ring');
+}));
+
+await test('common control sizes: on a person\'s suggested faces "Select all" and "Not x" are equally high and plain until hovered', await on('view=people', (lib) => lib.person('Nina Bar', { suggested: 3 }), async (p, lib, nina) => {
+  await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=suggested`; }, nina.id);
+  await p.locator('#pp-grid .face').nth(1).waitFor();
+  await settle(p, lib);
+  await p.locator('#pp-pick').click();
+  const h = (sel) => p.locator(sel).first().evaluate((e) => e.getBoundingClientRect().height);
+  const not = '#pp-bar .btn.quiet';
+  check((await h('#pp-all')) === (await h(not)), `Select all is ${await h('#pp-all')} px high, "Not" ${await h(not)} px`);
+  check((await p.locator(not).evaluate((e) => getComputedStyle(e).backgroundColor)) === 'rgba(0, 0, 0, 0)', '"Not" has a background before it is hovered');
+}));
+
 await finish();
