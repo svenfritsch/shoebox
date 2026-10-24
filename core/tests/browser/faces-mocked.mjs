@@ -1503,6 +1503,8 @@ await test('badges: tags, the + tag chip, face names and both small fields in th
   check(chips.length === 3 && chips.every((x) => x === 26), `tag chips are ${chips} px high, expected three of 26`);
   const guess = await p.locator('#lb-panel .pface .guess').textContent();
   check(guess === 'Antonia Eger?', `the guess reads "${guess}"`);
+  const yn = await p.locator('#lb-panel .pface button.yes, #lb-panel .pface button.no').evaluateAll((xs) => xs.map((e) => { const c = getComputedStyle(e); return c.borderTopWidth + '|' + c.borderRadius + '|' + Math.round(e.getBoundingClientRect().height); }));
+  check(yn.length === 2 && yn.every((x) => x === '0px|10px|26'), `the ✓ and ✗ in the panel have a border or the wrong shape: ${yn}`);
   const other = await h('#lb-panel .pface button.add');
   check(other.length === 2 && other.every((x) => x === 26), `the face chips are ${other} px high`);
   await p.locator('#lb-panel .tags .add').click();
@@ -1520,6 +1522,22 @@ await test('tabs look the same everywhere: a person\'s tabs and the drives\' tab
   check((await style('#person-tabs .tab.active')) === (await style('#probe-tabs .on')), `the active tabs differ: ${await style('#person-tabs .tab.active')} vs ${await style('#probe-tabs .on')}`);
   check((await style('#person-tabs .tab:not(.active)')) === (await style('#probe-tabs button:not(.on)')), 'the other tabs differ');
   check((await style('#person-tabs .tab.active')).startsWith('uppercase'), 'the tabs are not in the drives\' style');
+}));
+
+await test('one badge style: the labels on photos in the timeline, the duplicates cards and the map share look and size', await on('', hiddenPhotos, async (p, lib) => {
+  await cellCount(p, 3);
+  const look = await p.evaluate(() => {
+    const host = document.createElement('div');
+    host.innerHTML = '<div class="cell"><span class="badge">RAW</span></div><div class="card"><div class="thumb"><div class="badges"><span class="badge">JPG</span></div></div></div><div class="geo-cell"><span class="badge small">V</span></div>';
+    document.body.appendChild(host);
+    const of = (sel) => { const c = getComputedStyle(host.querySelector(sel)); return [c.backgroundColor, c.color, c.borderRadius, c.fontWeight, c.fontSize, c.paddingLeft, c.lineHeight].join('|'); };
+    const out = { cell: of('.cell .badge'), card: of('.card .badge'), geo: of('.geo-cell .badge') };
+    host.remove();
+    return out;
+  });
+  check(look.cell === look.card, `the timeline's and the duplicates' badges differ: ${look.cell} vs ${look.card}`);
+  const [bg, fg, radius, weight] = look.cell.split('|'), g = look.geo.split('|');
+  check(g[0] === bg && g[1] === fg && g[2] === radius && g[3] === weight && g[4] === '10px', `the map's badge is not the small one: ${look.geo}`);
 }));
 
 await finish();
