@@ -23,15 +23,15 @@ Mock-ups (static, on the app's own CSS; `docs/mocks/hidden/build.py` and
 
 | Where | What |
 |---|---|
-| Viewer top bar | New icon button right after the heart: a closed eye (our own drawing, unlike the open eye with a slash of the face "Ignore"). Key `h`. Tip "Hide from timeline (h)" / "Show in timeline (h)". Lit in the accent colour when the photo is hidden. In All drives it is shown and disabled, like the heart |
-| Selection bar | Icon button (no text) with the tip "Hide from timeline"; "Show in timeline" when every selected photo is hidden already |
+| Viewer top bar | New icon button right after the heart. The icon is the action: the eye with a slash (the one of the face "Ignore", `IGNORE_ICON`) hides, the same eye without the slash shows the photo again. Key `h`. Tip "Hide from timeline (h)" / "Show in timeline (h)". Lit in the accent colour when the photo is hidden. In All drives it is shown and disabled, like the heart |
+| Selection bar | Icon button (no text): the eye with a slash and the tip "Hide from timeline"; the plain eye and "Show in timeline" when every selected photo is hidden already |
 | Sidebar folder | **Right-click** on a folder row opens a menu with one entry: "Hide folder from timeline" / "Show folder in timeline" (new: today only photos have a context menu). No extra button in the row; there is no room for one |
-| Folder chip (the opened folder, where the pencil is) | A closed-eye button left of the pencil: the same action, and the way on the iPad, where there is no right-click. Lit when the folder is hidden. It stays in a read-only library (the flag is in the index, not in the folder), the pencil does not |
-| Hidden folder in the sidebar | Stays in the tree, **dimmed** with a small closed eye before its count, and stays clickable. Its parents' counts do not include it |
+| Folder chip (the opened folder, where the pencil is) | An eye button left of the pencil: the same action and the same two icons (slash = hide, plain = show again, lit when the folder is hidden), and the way on the iPad, where there is no right-click. Spacing between eye, pencil and ✕ is tighter on desktop (3 px padding per button, 2 px gap) and a little wider where the pointer is coarse (`@media (pointer: coarse)`: 6 px, 4 px); mock `04-chips` and `04b-chips-tablet`. It stays in a read-only library (the flag is in the index, not in the folder), the pencil does not |
+| Hidden folder in the sidebar | Stays in the tree, **dimmed** with a small slashed eye before its count, and stays clickable. Its parents' counts do not include it |
 | Click a hidden folder (or one below it) | Its photos are shown |
-| Hidden chip | Like the Favorites chip: eye icon, "Hidden" / "Ausgeblendet", ✕. Reached by a search suggestion, by typing a word for it, or by the sidebar's one "Hidden" row under Tags. AND with the other chips: *Hidden + Anna* finds Anna's hidden photos. (No extra button next to Type and the heart; say if you want one.) |
+| Hidden chip | Like the Favorites chip: the slashed eye, "Hidden" / "Ausgeblendet", ✕. Reached by a search suggestion, by typing a word for it, or by the sidebar's one "Hidden" row under Tags. AND with the other chips: *Hidden + Anna* finds Anna's hidden photos. (No extra button next to Type and the heart; say if you want one.) |
 | Info panel | No tag chip. Only for a photo hidden by its **folder** a row "Hidden: via folder Privat", because the viewer button cannot undo that (it shows lit and disabled with the hint) |
-| Typing a word for it in the tag box | The photo is hidden, no tag appears, and a muted note line says so (section 3) |
+| Typing a word for it in the tag box | The photo is hidden, no tag appears, and the app's normal toast says so (section 3) |
 | Move dialog | A line when the target folder is hidden (photos get hidden) or the photos come from a hidden folder (they show again) |
 
 Rule in one line: *a hidden photo is in the grid only if the Hidden chip is on,
@@ -62,25 +62,33 @@ matches what a click shows.
   `transfer::NOT_TRANSFERRED_TABLES` (a path is not content; the own tag part does
   travel). Nothing is written into a file or a folder.
 - Moving a photo into a hidden folder hides it; out of it shows it again.
-- **Backups.** The flags live in each drive's own `library.db` and are never copied
-  to a backup. A backup connected **alone** behaves like an original: its own timeline,
-  its own hiding. With original and backup connected, the original's flags apply to
-  the original's timeline and the backup's timeline shows its own (unhidden) photos.
+- **Backups.** The flags live in each drive's own `library.db`. They are not copied
+  to a backup automatically; "Carry over data" can bring them over **if the user ticks
+  it** (below). A backup is not part of the timeline of All drives, so nothing hides
+  there. A drive on its own timeline (including a backup opened by itself) works like
+  any drive: the viewer shows the heart and the hide button there and both work, as
+  the heart does today (only All drives shows them disabled).
+- **Carry over data** (phase 15a/b): a sixth check box **"Hidden ({n})"**, **not ticked by
+  default** (the others are). It brings the own tag `hidden` by content, and the hidden
+  folder flags by path for folders that exist on the target. The "Tags" box does not
+  carry `hidden` (as it does not carry `favorite`; `transfer.rs` tells them apart with
+  `means_favorite` today and gets `means_hidden` next to it). `userdata.json` includes
+  both and obeys the same box. `transfer::Boxes` gets `hidden: bool` (default false).
 
 ## 3. The notice after typing a reserved word in the tag box
 
 Typing `favorite`, `favorit(en)` (today) or `hidden`, `versteckt`, `verborgen`,
 `ausgeblendet` (new) in the info panel's tag box, or in the selection bar's
-"Add tag…" dialog, gives the heart or hides the photo and creates no tag. Today
-nothing says so. New: a muted note line under the tag row (the same plain muted
-text the Unnamed page uses for its summary line; `.note` in the panel; in the
-dialog under the input, shown as soon as the word is recognised, before OK).
+"Add tag…" dialog, gives the heart or hides the photo and creates no tag. Today nothing
+says so. New: the app's normal `toast()` (the dark-on-light pill under the top bar, as
+"82 faces named Tesselina"; four seconds), one line. Mocks `07-tag-box-hidden`,
+`08-tag-box-favorite`.
 
 | Option | Favorite, English | Favorite, German | Hidden, English | Hidden, German |
 |---|---|---|---|---|
-| **A (mocked)** | That is the heart: the photo is now a favorite. The heart above shows it, no tag is added. | Das ist das Herz: Das Foto ist jetzt ein Favorit. Das Herz oben zeigt es an, ein Tag wird nicht angelegt. | Hidden from the timeline. The eye button above shows it, no tag is added. | Aus der Zeitleiste ausgeblendet. Das Auge oben zeigt es an, ein Tag wird nicht angelegt. |
-| B | Marked as a favorite. Favorites are shown as a heart, not as a tag. | Als Favorit markiert. Favoriten werden als Herz gezeigt, nicht als Tag. | Hidden from the timeline. Hidden photos are shown by the eye button, not as a tag. | Aus der Zeitleiste ausgeblendet. Ausgeblendete Fotos zeigt der Augen-Button, nicht ein Tag. |
-| C (shortest) | Favorite set (the heart above). No tag was added. | Favorit gesetzt (das Herz oben). Es wurde kein Tag angelegt. | Hidden (the eye above). No tag was added. | Ausgeblendet (das Auge oben). Es wurde kein Tag angelegt. |
+| **A (mocked)** | Favorite set. Favorites show as a heart, not as a tag. | Favorit gesetzt. Favoriten erscheinen als Herz, nicht als Tag. | Hidden from the timeline. That is the eye button, not a tag. | Aus der Zeitleiste ausgeblendet. Das ist der Auge-Button, kein Tag. |
+| B | That is the heart: the photo is a favorite now, no tag is added. | Das ist das Herz: Das Foto ist jetzt ein Favorit, es wird kein Tag angelegt. | Hidden from the timeline, no tag is added. The eye button does the same. | Aus der Zeitleiste ausgeblendet, es wird kein Tag angelegt. Das macht auch der Auge-Button. |
+| C (shortest) | Favorite set (no tag). | Favorit gesetzt (kein Tag). | Hidden (no tag). | Ausgeblendet (kein Tag). |
 
 ## 4. Where the rule lives
 
@@ -114,7 +122,9 @@ Everything list-like in the grid goes through `browse::Snapshot::query`
 2. Typing `ausgeblendet` is accepted as a word although you named two German terms
    (`versteckt`, `verborgen`): it is the word the UI shows, so a user who copies it
    must find it. Say if you want it out.
-3. Whether the bulk "Add tag…" dialog gets the live note (proposal: yes).
+3. In a backup opened by itself the hide button works as the heart does. Say if it
+   should be left out when the backup's original is online (it is not in the timeline of
+   All drives either way).
 
 ## 6. Translation strings (new keys, `core/i18n/en.json` and `de.json`)
 
@@ -138,8 +148,10 @@ Everything list-like in the grid goes through `browse::Snapshot::query`
 | `hidden.move_into` | The target folder is hidden: these photos will be hidden. | Der Zielordner ist ausgeblendet: Diese Fotos werden ausgeblendet. | move dialog |
 | `hidden.move_out` | These photos come from a hidden folder: they will show in the timeline again. | Diese Fotos stammen aus einem ausgeblendeten Ordner: Sie erscheinen wieder in der Zeitleiste. | move dialog |
 | `export.hidden_left_out` (one / other) | 1 hidden photo left out / {n} hidden photos left out | 1 ausgeblendetes Foto ausgelassen / {n} ausgeblendete Fotos ausgelassen | export dialog of a tag |
-| `tags.reserved_fav` | option A above | option A above | tag box note |
-| `tags.reserved_hidden` | option A above | option A above | tag box note |
+| `tags.reserved_fav` | Favorite set. Favorites show as a heart, not as a tag. | Favorit gesetzt. Favoriten erscheinen als Herz, nicht als Tag. | toast after typing a favorite word (option A) |
+| `tags.reserved_hidden` | Hidden from the timeline. That is the eye button, not a tag. | Aus der Zeitleiste ausgeblendet. Das ist der Auge-Button, kein Tag. | toast after typing a hidden word (option A) |
+| `transfer.hidden` | Hidden ({n}) | Ausgeblendet ({n}) | Carry over data, check box, not ticked by default |
+| `transfer.hidden_hint` | Not ticked by default: hiding is decided per drive. | Standardmäßig nicht angehakt: Ausblenden wird pro Laufwerk entschieden. | tip of that box |
 
 Search words (not strings, in `tags::is_hidden_word`): `hidden`, `versteckt`,
 `verborgen`, `ausgeblendet`, matched by prefix of 3+ letters like the favorite words.
@@ -157,11 +169,10 @@ Search words (not strings, in `tags::is_hidden_word`): `hidden`, `versteckt`,
    `POST /api/hidden/folder {path, on}`, `hidden` in the timeline response (like `favs`),
    the bypassing paths from 4.4, the export rule from 4.5.
 4. `people.rs`, `geo.rs`, `multi.rs`, export: the same rule, one test each.
-5. UI (`core/web/app.js`, `app.css`, `index.html`): viewer button and key `h`, selection
-   bar icon button, folder row context menu (`showMenu`), chip button, dimmed hidden
-   folders, Hidden chip, suggestion and sidebar row, info row, the tag-box note, move
-   dialog lines. The closed-eye icon is our drawing (`lineIcon`), made to look unlike
-   any set's eye-off and unlike our own "Ignore" icon. i18n keys in both files.
+5. UI (`core/web/app.js`, `app.css`, `index.html`): viewer button and key `h` (slash eye / plain eye by state), selection
+   bar icon button, chip spacing for fine and coarse pointers, folder row context menu (`showMenu`), chip button, dimmed hidden
+   folders, Hidden chip, suggestion and sidebar row, info row, the tag-box toast, move
+   dialog lines, the "Hidden" box of Carry over data (`transfer.rs`, `transfer::Boxes`, its test). The icons are the existing `IGNORE_ICON` and the same drawing without its slash (ours, no new licence question). i18n keys in both files.
 6. Guide EN and DE (the `guide` skill): what hiding does, tidiness not privacy, the folder
    rule, backups, the tag-box note; `python3 docs/guide/check.py`.
 7. `CLAUDE.md` rule: hidden is the own tag plus `hidden_folders` in `library.db` only,

@@ -16,8 +16,10 @@ HEART_OFF = line_icon(re.search(r"var HEART_PATH = '(.*?)';", JS).group(1))
 PENCIL = re.search(r"pencil: '(.*?)',\n", JS).group(1)
 FOLDER = js_icon("FOLDER_OPEN")
 TRASH = js_icon("TRASH_ICON")
-# The new icon (ours): a closed eye, lid and lashes. Not the open eye with a slash of IGNORE_ICON.
-EYE = line_icon('<path d="M3 10.5c2.6 3.9 5.8 5.5 9 5.5s6.4-1.6 9-5.5"/><path d="M6.3 14.4L4.6 17M12 16v3.2M17.7 14.4l1.7 2.6"/>')
+# The icon of the face "Ignore" (IGNORE_ICON): the action "hide" and the state "hidden". The same eye without
+# its slash is the action "show again".
+EYE = js_icon("IGNORE_ICON")
+EYE_PLAIN = EYE.replace('<path d="M4.5 20L19.5 4"/>', "")
 SEARCH_TEXT = re.search(r"scan: '(.*?)',\n", JS).group(1)
 
 CSS = """<style>
@@ -62,7 +64,11 @@ body { font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; col
 .lb-panel { position: static; width: auto; background: rgba(24,24,24,.94); padding: 14px 18px 16px; }
 .selbar { position: static; transform: none; display: inline-flex; }
 .tags .own input, .lb-panel input { background: rgba(255,255,255,.1); color: #eee; border: 1px solid #666; border-radius: 99px; padding: 2px 10px; font: inherit; font-size: 13px; }
-.lb-panel .note { margin: 8px 0 0; }
+.toast { position: absolute; top: 56px; z-index: 40; }
+.chip.acts { gap: 2px; }
+.chip.acts button { padding: 0 3px; }
+.chip.acts.tablet { gap: 4px; }
+.chip.acts.tablet button { padding: 0 6px; }
 .shotbox { display: inline-block; position: relative; padding-bottom: 36px; }
 </style>"""
 
@@ -79,14 +85,14 @@ L = {
             hide_tip="Hide from timeline (h)", show_tip="Show in timeline (h)", sel_tip="Hide from timeline",
             menu_hide="Hide folder from timeline", menu_show="Show folder in timeline", folder="Folders",
             chip="Hidden", fchip_tip="Hide folder from timeline", ftip_on="Show folder in timeline",
-            note="Hidden from the timeline. The eye button above shows it, no tag is added.", tag="Add tag…", typed_tag="versteckt",
-            fnote="That is the heart: the photo is now a favorite. The heart above shows it, no tag is added."),
+            note="Hidden from the timeline. That is the eye button, not a tag.", tag="Add tag…", typed_tag="versteckt",
+            fnote="Favorite set. Favorites show as a heart, not as a tag."),
  "de": dict(typed="ausg", head="Ausgeblendet", item="Ausgeblendet", rtext="Erkannter Text", shortcut="Tastenkürzel: text:ausg eingeben",
             hide_tip="Aus der Zeitleiste ausblenden (h)", show_tip="In der Zeitleiste anzeigen (h)", sel_tip="Aus der Zeitleiste ausblenden",
             menu_hide="Ordner aus der Zeitleiste ausblenden", menu_show="Ordner in der Zeitleiste anzeigen", folder="Ordner",
             chip="Ausgeblendet", fchip_tip="Ordner aus der Zeitleiste ausblenden", ftip_on="Ordner in der Zeitleiste anzeigen",
-            note="Aus der Zeitleiste ausgeblendet. Das Auge oben zeigt es an, ein Tag wird nicht angelegt.", tag="Tag hinzufügen…", typed_tag="versteckt",
-            fnote="Das ist das Herz: Das Foto ist jetzt ein Favorit. Das Herz oben zeigt es an, ein Tag wird nicht angelegt."),
+            note="Aus der Zeitleiste ausgeblendet. Das ist der Auge-Button, kein Tag.", tag="Tag hinzufügen…", typed_tag="versteckt",
+            fnote="Favorit gesetzt. Favoriten erscheinen als Herz, nicht als Tag."),
 }
 
 def mock_search(t):
@@ -114,17 +120,18 @@ def mock_menu(t, hidden):
 
 def chip(label, icon, extra="", cls=""):
     return '<span class="chip%s">%s%s%s<button>✕</button></span>' % (cls, icon, label, extra)
-def mock_chips(t):
+def mock_chips(t, tablet=False):
+    en = t is L["en"]
     foldic = '<span class="ficon">%s</span>' % FOLDER
     pen = '<button class="edit">%s</button>' % PENCIL
-    a = chip("08. Freunde", foldic, pen.replace("<button", '<button class="eye">%s</button><button' % EYE, 1) if False else '<button class="eye">%s</button>%s' % (EYE, pen))
-    b = chip("Privat", foldic, '<button class="eye on">%s</button>%s' % (EYE, pen))
+    cl = " acts tablet" if tablet else " acts"
+    a = chip("08. Freunde", foldic, '<button class="eye">%s</button>%s' % (EYE, pen), cl)
+    b = chip("Privat", foldic, '<button class="eye on">%s</button>%s' % (EYE_PLAIN, pen), cl)
     c = '<span class="chip hid"><span class="ic lead" style="margin:0">%s</span>%s<button>✕</button></span>' % (EYE, t["chip"])
-    fav = '<span class="chip"><span class="ic" style="margin:0">%s</span>%s<button>✕</button></span>' % (HEART, "Favorites" if t is L["en"] else "Favoriten")
+    fav = '<span class="chip"><span class="ic" style="margin:0">%s</span>%s<button>✕</button></span>' % (HEART, "Favorites" if en else "Favoriten")
     cap = lambda s: '<div class="cap">%s</div>' % s
-    en = t is L["en"]
-    body = (cap("Folder opened (normal): the eye button hides it" if en else "Ordner geöffnet (normal): der Augen-Button blendet ihn aus") + '<div class="row2">%s</div>' % a +
-            cap("Folder opened (hidden): the eye is on, a click shows it again" if en else "Ordner geöffnet (ausgeblendet): das Auge ist an, ein Klick zeigt ihn wieder") + '<div class="row2">%s</div>' % b +
+    body = (cap(("Tablet spacing. " if tablet else "Desktop spacing. ") + ("Folder opened (normal): the eye with a slash hides it" if en else "Ordner geöffnet (normal): das durchgestrichene Auge blendet ihn aus")) + '<div class="row2">%s</div>' % a +
+            cap("Folder opened (hidden): the plain eye shows it again" if en else "Ordner geöffnet (ausgeblendet): das einfache Auge zeigt ihn wieder") + '<div class="row2">%s</div>' % b +
             cap("The Hidden chip (next to the Favorites chip)" if en else "Der Chip „Ausgeblendet“ (neben dem Chip „Favoriten“)") + '<div class="row2">%s%s</div>' % (c, fav))
     return page(body, 520, 220)
 
@@ -132,7 +139,7 @@ def lbbar(t, on):
     btn = lambda cls, svg, extra="": '<button class="icon %s">%s</button>' % (cls, svg)
     return ('<div class="lb-bar"><button class="icon">✕</button><span class="lb-title">IMG_2231.jpg</span>'
             '<button class="icon fav-lb">%s</button><button class="icon hid-lb%s">%s</button><button class="icon">↺</button>'
-            '<button class="icon">%s</button><button class="icon">⤓</button><button class="icon">ⓘ</button></div>') % (HEART_OFF, " on" if on else "", EYE, TRASH)
+            '<button class="icon">%s</button><button class="icon">⤓</button><button class="icon">ⓘ</button></div>') % (HEART_OFF, " on" if on else "", EYE_PLAIN if on else EYE, TRASH)
 
 def mock_viewer(t, on):
     tip = t["show_tip"] if on else t["hide_tip"]
@@ -141,15 +148,15 @@ def mock_viewer(t, on):
 
 def mock_panel(t, kind):
     note = t["note"] if kind == "hidden" else t["fnote"]
-    typed = t["typed_tag"] if kind == "hidden" else ("Favoriten" if t is L["de"] else "favorites")
     en = t is L["en"]
     dl = ("<dl><dt>%s</dt><dd>IMG_2231.jpg</dd><dt>%s</dt><dd>%s</dd><dt>%s</dt><dd>2025-07 Kroatien/IMG_2231.jpg</dd></dl>" %
           ("Name", "Date" if en else "Datum", "Jul 14, 2025" if en else "14.07.2025", "Path" if en else "Pfad"))
-    tags = '<div class="tags" style="margin-top:12px"><span class="own"><button>Strand</button><button class="x">✕</button></span><input value="%s"></div>' % typed
+    tags = '<div class="tags" style="margin-top:12px"><span class="own"><button>Strand</button><button class="x">✕</button></span><button>+ Tag</button></div>'
     bar = lbbar(t, kind == "hidden")
     if kind == "fav": bar = bar.replace("fav-lb", "fav-lb on").replace(HEART_OFF, HEART)
-    body = '<div class="dark" style="width:360px">%s<div class="lb-panel">%s%s<div class="note">%s</div></div></div>' % (bar.replace("IMG_2231.jpg", ""), dl, tags, note)
-    return page(body, 392, 330)
+    body = ('<div class="dark" style="width:480px">%s<div class="lb-panel">%s%s</div></div><div class="toast" style="left:256px;transform:translateX(-50%%)">%s</div>'
+            % (bar.replace("IMG_2231.jpg", ""), dl, tags, note))
+    return page(body, 512, 250)
 
 def mock_selbar(t):
     names = ["tag", "untag", "date", "geo", "move", "export"]
@@ -161,7 +168,7 @@ def mock_selbar(t):
 
 def main():
     for lg, t in L.items():
-        m = {"01-search": mock_search(t), "02-folder-menu": mock_menu(t, False), "03-hidden-folder-menu": mock_menu(t, True), "04-chips": mock_chips(t),
+        m = {"01-search": mock_search(t), "02-folder-menu": mock_menu(t, False), "03-hidden-folder-menu": mock_menu(t, True), "04-chips": mock_chips(t), "04b-chips-tablet": mock_chips(t, True),
              "05-viewer-hide": mock_viewer(t, False), "06-viewer-hidden": mock_viewer(t, True), "07-tag-box-hidden": mock_panel(t, "hidden"),
              "08-tag-box-favorite": mock_panel(t, "fav"), "09-selection-bar": mock_selbar(t)}
         for k, v in m.items():
