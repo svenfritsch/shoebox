@@ -1169,7 +1169,7 @@ const postedTo = (lib, path) => lib.log.filter((e) => e.method === 'POST' && e.p
 // The icon of an action is the eye with a slash (hide) or without (show again).
 const slashed = (p, sel) => p.evaluate((s) => !!document.querySelector(s + ' svg path[d="M4.5 20L19.5 4"]'), sel);
 
-await test('hiding in the viewer (key h): the photo stays until the viewer closes, then the grid loses it; the Hidden row and chip show it', await on('', hiddenPhotos, async (p, lib) => {
+await test('hiding in the viewer (key h): the photo stays until the viewer closes, then the grid loses it; the Hidden chip shows it', await on('', hiddenPhotos, async (p, lib) => {
   const cells = p.locator('#sizer a.cell');
   await cellCount(p, 3);
   check(await p.locator('#hidden-row').count() === 0, 'a Hidden row with nothing hidden');
@@ -1190,9 +1190,9 @@ await test('hiding in the viewer (key h): the photo stays until the viewer close
   await cellCount(p, 2);
   await settle(p, lib);
   check(JSON.stringify(await gridIds(p)) === '[2,3]', `the grid shows ${await gridIds(p)}`);
-  check(await p.locator('#hidden-row .count').textContent() === '1', 'the Hidden row counts the hidden photo');
-  // The Hidden row: only the hidden photos, as a chip.
-  await p.locator('#hidden-row .name').click();
+  check(await p.locator('#hidden-row').count() === 0, 'the sidebar offers a Hidden row');
+  // The Hidden chip: only the hidden photos.
+  await p.evaluate(() => setFilter(withFilter({ hidden: true })));
   await settleUntil(p, lib, 'the Hidden chip list', gridIs(p, [1]));
   check(JSON.stringify(await gridIds(p)) === '[1]', `the Hidden chip shows ${await gridIds(p)}`);
   check(await p.locator('#filters .chip.hid').count() === 1, 'the Hidden chip');
@@ -1223,7 +1223,7 @@ await test('the selection bar: the eye hides the selected photos, and in the hid
   await cellCount(p, 1);
   check(await p.locator('#selbar').isHidden(), 'the selection ends');
   // The hidden list: all selected are hidden, so the bar offers to show them.
-  await p.locator('#hidden-row .name').click();
+  await p.evaluate(() => setFilter(withFilter({ hidden: true })));
   await settle(p, lib);
   await cellCount(p, 2);
   await p.locator('#select').click();
@@ -1550,12 +1550,12 @@ await test('a caret in the sidebar goes from muted to full strength on hover, wi
   await cellCount(p, 3);
   await p.evaluate(() => {
     const host = document.createElement('div');
-    host.innerHTML = '<div class="tree"><div class="row"><button class="toggle" id="c1">▸</button></div></div><div class="tree"><div id="hidden-row" class="row"><button class="toggle" id="c2">▸</button></div></div>';
+    host.innerHTML = '<div class="tree"><div class="row"><button class="toggle" id="c1">▸</button></div></div>';
     host.style.cssText = 'position:fixed;left:300px;top:300px;z-index:99';
     document.body.appendChild(host);
   });
   const text = await p.evaluate(() => getComputedStyle(document.body).color);
-  for (const id of ['c1', 'c2']) {
+  for (const id of ['c1']) {
     const rest = await p.locator('#' + id).evaluate((e) => getComputedStyle(e).color);
     check(rest !== text, `${id} is not muted at rest`);
     await p.locator('#' + id).hover();

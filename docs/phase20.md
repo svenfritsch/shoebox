@@ -29,7 +29,7 @@ Mock-ups (static, on the app's own CSS; `docs/mocks/hidden/build.py` and
 | Folder chip (the opened folder, where the pencil is) | An eye button left of the pencil: the same action and the same two icons (slash = hide, plain = show again, lit when the folder is hidden), and the way on the iPad, where there is no right-click. Spacing between eye, pencil and ✕ is tighter on desktop (3 px padding per button, 2 px gap) and a little wider where the pointer is coarse (`@media (pointer: coarse)`: 6 px, 4 px); mock `04-chips` and `04b-chips-tablet`. It stays in a read-only library (the flag is in the index, not in the folder), the pencil does not |
 | Hidden folder in the sidebar | Stays in the tree, **dimmed** with a small slashed eye before its count, and stays clickable. Its parents' counts do not include it |
 | Click a hidden folder (or one below it) | Its photos are shown |
-| Hidden chip | Like the Favorites chip: the slashed eye, "Hidden" / "Ausgeblendet", ✕. Reached by a search suggestion, by typing a word for it, or by the sidebar's one "Hidden" row under Tags. AND with the other chips: *Hidden + Anna* finds Anna's hidden photos. (No extra button next to Type and the heart; say if you want one.) |
+| Hidden chip | Like the Favorites chip: the slashed eye, "Hidden" / "Ausgeblendet", ✕. Reached by a search suggestion or by typing a word for it. There is no sidebar row for it: Hidden is reached only through the search. AND with the other chips: *Hidden + Anna* finds Anna's hidden photos. (No extra button next to Type and the heart; say if you want one.) |
 | Info panel | No tag chip. Only for a photo hidden by its **folder** a row "Hidden: via folder Privat", because the viewer button cannot undo that (it shows lit and disabled with the hint) |
 | Typing a word for it in the tag box | The photo is hidden, no tag appears, and the app's normal toast says so (section 3) |
 | Move dialog | A line when the target folder is hidden (photos get hidden) or the photos come from a hidden folder (they show again) |
@@ -131,7 +131,7 @@ Everything list-like in the grid goes through `browse::Snapshot::query`
 
 | Key | English | German | Where |
 |---|---|---|---|
-| `hidden.label` | Hidden | Ausgeblendet | chip, suggestion head and item, sidebar row |
+| `hidden.label` | Hidden | Ausgeblendet | chip, suggestion head and item |
 | `hidden.hide_hint` | Hide from timeline (h) | Aus der Zeitleiste ausblenden (h) | viewer button tip |
 | `hidden.show_hint` | Show in timeline (h) | In der Zeitleiste anzeigen (h) | viewer button tip, photo is hidden |
 | `hidden.readonly` | Hidden (change it on the photo's own drive) | Ausgeblendet (auf dem Laufwerk des Fotos ändern) | viewer button in All drives |
@@ -143,7 +143,7 @@ Everything list-like in the grid goes through `browse::Snapshot::query`
 | `hidden.folder_row_hint` | Hidden folder: its photos are not in the timeline | Ausgeblendeter Ordner: Seine Fotos sind nicht in der Zeitleiste | tip of a dimmed sidebar row |
 | `info.hidden` | Hidden | Ausgeblendet | info panel row label |
 | `hidden.via_folder` | via folder {folder} | über den Ordner {folder} | info panel row value |
-| `hidden.filter_hint` | Show only hidden photos | Nur ausgeblendete Fotos zeigen | tip of the Hidden chip and sidebar row |
+| `hidden.filter_hint` | Show only hidden photos | Nur ausgeblendete Fotos zeigen | tip of the Hidden chip |
 | `hidden.toast_hidden` (one / other) | 1 photo hidden from the timeline / {n} photos hidden from the timeline | 1 Foto aus der Zeitleiste ausgeblendet / {n} Fotos aus der Zeitleiste ausgeblendet | after hiding |
 | `hidden.toast_shown` (one / other) | 1 photo shown in the timeline again / {n} photos shown in the timeline again | 1 Foto wieder in der Zeitleiste / {n} Fotos wieder in der Zeitleiste | after showing |
 | `hidden.move_into` | The target folder is hidden: these photos will be hidden. | Der Zielordner ist ausgeblendet: Diese Fotos werden ausgeblendet. | move dialog |
@@ -171,7 +171,7 @@ Search words (not strings, in `tags::is_hidden_word`): `hidden`, `versteckt`,
 4. `people.rs`, `geo.rs`, `multi.rs`, export: the same rule, one test each.
 5. UI (`core/web/app.js`, `app.css`, `index.html`): viewer button and key `h` (slash eye / plain eye by state), selection
    bar icon button, chip spacing for fine and coarse pointers, folder row context menu (`showMenu`), chip button, dimmed hidden
-   folders, Hidden chip, suggestion and sidebar row, info row, the tag-box toast, move
+   folders, Hidden chip, suggestion, info row, the tag-box toast, move
    dialog lines, the "Hidden" box of Carry over data (`transfer.rs`, `transfer::Boxes`, its test). The icons are the existing `IGNORE_ICON` and the same drawing without its slash (ours, no new licence question). i18n keys in both files.
 6. Guide EN and DE (the `guide` skill): what hiding does, tidiness not privacy, the folder
    rule, backups, the tag-box note; `python3 docs/guide/check.py`.

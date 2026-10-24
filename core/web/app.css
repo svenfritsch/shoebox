@@ -105,7 +105,7 @@ select:hover { border-color: var(--muted); }
 .tree ul { padding-left: 14px; }
 .tree .row { display: flex; align-items: center; gap: 2px; padding: 2px 8px 2px 4px; }
 /* A caret is a muted glyph that goes to full strength on hover: no background, no outline. */
-.tree .toggle:hover, .pgroup h3 .toggle:hover, .caret:hover:not(:disabled), #hidden-row .toggle:hover { color: var(--fg); }
+.tree .toggle:hover, .pgroup h3 .toggle:hover, .caret:hover:not(:disabled) { color: var(--fg); }
 .tree .toggle, .pgroup h3 .toggle, .caret { border-radius: 6px; }
 .tree .toggle { width: 22px; flex: none; background: none; border: 0; color: var(--muted); padding: 2px 0; display: inline-flex; align-items: center; justify-content: center; }
 .tree .name {
@@ -1175,8 +1175,6 @@ body.read-only #sel-move, body.read-only #lb-rotate, body.read-only .copy label.
 .tree .row.hidden-folder .name, .tree .row.hidden-folder .count { opacity: .5; }
 .tree .row .ico { width: 15px; height: 15px; display: inline-flex; flex: none; color: var(--muted); }
 .tree .row .ico svg { width: 100%; height: 100%; }
-#hidden-row .toggle { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
-#hidden-row .toggle svg { width: 16px; height: 16px; }
 .chip .eye { display: inline-flex; align-items: center; color: var(--muted); cursor: pointer; }
 .chip .eye.on { color: var(--accent); }
 .chip .eye:disabled { opacity: .5; cursor: default; }

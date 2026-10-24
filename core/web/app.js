@@ -779,28 +779,6 @@ function toggleHideOpen() {
 }
 $('lb-hide').onclick = toggleHideOpen;
 
-// The Hidden row of the sidebar's tag list, under Favorites, while something is hidden.
-function paintHiddenRow() {
-  var list = $('own-tags'), old = $('hidden-row');
-  if (old) old.remove();
-  $('tags-section').hidden = !list.children.length && !state.hiddenCount;
-  if (!state.hiddenCount) return;
-  var li = el('li'), r = el('div', 'row');
-  li.id = 'hidden-row';
-  var mark = el('span', 'toggle');
-  mark.innerHTML = HIDE_ICON;
-  r.appendChild(mark);
-  var name = el('button', 'name', tr('hidden.label'));
-  setTip(name, tr('hidden.filter_hint'));
-  name.onclick = function () { setFilter({ folder: null, tags: [], hidden: true, q: '' }); };
-  r.appendChild(name);
-  r.appendChild(el('span', 'count', I18n.number(state.hiddenCount)));
-  li.appendChild(r);
-  var fav = $('fav-row');
-  if (fav) fav.after(li); else list.insertBefore(li, list.firstChild);
-  $('tags-section').hidden = false;
-}
-
 // Right-click on a folder in the sidebar: hide it from the timeline, or show it again.
 $('tree').addEventListener('contextmenu', function (ev) {
   var b = ev.target.closest('button.name');
@@ -2865,7 +2843,7 @@ function fetchInfo() {
     trashCount = info.trash || 0;
     applyAllowTrash();
     dates.needs = info.needs_date || 0;
-    if ((state.hiddenCount || 0) !== (info.hidden || 0)) { state.hiddenCount = info.hidden || 0; paintHiddenRow(); }
+    if ((state.hiddenCount || 0) !== (info.hidden || 0)) { state.hiddenCount = info.hidden || 0; }
     if (state.filter && state.filter.nodate) renderChips();
     $('nav-nodate').hidden = isAll() || (!dates.needs && !(state.filter && state.filter.nodate));
     if (info.thumbs_done < info.thumbs_total) {
@@ -5191,8 +5169,7 @@ function loadOwnTags() {
       }
       list.appendChild(li);
     });
-    $('tags-section').hidden = !tags.length && !state.favCount && !state.hiddenCount;
-    paintHiddenRow();
+    $('tags-section').hidden = !tags.length && !state.favCount;
     markActiveFolder();
     renderChips();
   }).catch(function () {});

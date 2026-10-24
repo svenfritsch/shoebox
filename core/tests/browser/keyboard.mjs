@@ -337,10 +337,9 @@ await test('hiding on the real server: the eye in the viewer, the grid, the Hidd
   check(await p.locator('#lb-hide path[d="M4.5 20L19.5 4"]').count() === 0, 'the plain eye is offered once hidden');
   await p.keyboard.press('Escape');
   await p.waitForFunction((t) => state.data && state.data.count === t - 1, total);
-  await p.waitForSelector('#hidden-row');
-  check((await p.locator('#hidden-row .count').textContent()) === '1', 'the Hidden row counts one photo');
-  // The row shows only that photo, and the eye shows it again.
-  await p.locator('#hidden-row .name').click();
+  check(await p.locator('#hidden-row').count() === 0, 'the sidebar has a Hidden row');
+  // The Hidden chip (the search's way) shows only that photo, and the eye shows it again.
+  await p.evaluate(() => setFilter(withFilter({ hidden: true })));
   await p.waitForFunction(() => state.data && state.filter.hidden && state.data.count === 1);
   check(await p.evaluate(() => Object.keys(state.hids).length) === 1, 'the list says the photo is hidden');
   check(await p.locator('#filters .chip.hid').count() === 1, 'the Hidden chip');
@@ -351,7 +350,6 @@ await test('hiding on the real server: the eye in the viewer, the grid, the Hidd
   await p.waitForSelector('#lb-hide:not(.on)');
   await p.keyboard.press('Escape');
   await p.waitForFunction(() => state.data && state.data.count === 0);
-  await p.waitForFunction(() => !document.querySelector('#hidden-row'));
   await p.locator('#all').click();
   await p.waitForFunction((t) => state.data && !state.filter.hidden && state.data.count === t, total);
 });
