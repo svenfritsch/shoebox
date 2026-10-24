@@ -1115,6 +1115,27 @@ await test('a place chip has its marker only; the marker opens the map; the fold
   check(await edit.count() === 1 && await edit.locator('svg').count() === 1 && (await edit.textContent()) === '', `the folder chip's edit button: ${await edit.innerHTML()}`);
 }));
 
+await test('the place panel on the map has a button that shows the place in the timeline, without the map', await on('view=locations&id=7', () => null, async (p) => {
+  await p.evaluate(() => {
+    geo.places = [{ id: 7, name: 'Mainau', count: 2 }];
+    geo.sel = { kind: 'place', id: 7 };
+    geo.data = { count: 2, ids: [1, 2], kinds: 'jj', days: [20260315, 20260315], versions: 'orig0001orig0002', live: [], favs: [] };
+    geo.shown = 0;
+    geo.ui = { side: document.createElement('div') };
+    renderSide();
+    window.sideEl = geo.ui.side;
+  });
+  const label = await tr(p, 'geo.show_timeline');
+  const mine = await p.evaluate((l) => [...window.sideEl.querySelectorAll('.geo-tools button')].map((b) => b.getAttribute('aria-label')).indexOf(l), label);
+  check(mine === 0, `the timeline button is not the first tool of the place panel (index ${mine})`);
+  check(await p.evaluate(() => window.sideEl.querySelector('.geo-tools button svg') !== null), 'the timeline button has no icon');
+  await p.evaluate(() => window.sideEl.querySelector('.geo-tools button').click());
+  await p.waitForFunction(() => /place=7/.test(location.hash) && !/view=/.test(location.hash));
+  const hash = await p.evaluate(() => location.hash);
+  check(!/view=|[?&#]id=/.test(hash), `the map page is still in the address: ${hash}`);
+  check(await p.evaluate(() => state.filter.place === 7 && !state.filter.view), 'the place is not a chip of the timeline');
+}));
+
 // A JPEG turned in the viewer gets a new quick hash, so the grid's thumbnail is
 // another address (`?v=`). The grid asks for it once the user has stopped
 // turning (three turns in a row are one request), not after each turn and not
