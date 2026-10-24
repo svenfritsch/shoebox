@@ -1,6 +1,6 @@
 # Phase 20: Hidden from the timeline
 
-**In progress** (branch `claude/phase19-hidden-plan`). Photos you want kept out of the timeline (nude
+**Built, real-hardware check open** (branch `claude/phase19-hidden-plan`; the number 19 went to Groups on main). Photos you want kept out of the timeline (nude
 pictures, documents, surprises) are marked *hidden*. They vanish from the photo
 grid in every form (timeline, a folder, a person, a date, a type, a tag, a
 search) and come back only when you ask for them: the Hidden chip, the word
@@ -59,8 +59,7 @@ matches what a click shows.
 - **Hidden folder = a row in a new table** `hidden_folders(path_nfc TEXT PRIMARY KEY,
   added_at INTEGER)` in `library.db` (schema v18), keyed by NFC path so it survives
   rescans. A folder is hidden if it or an ancestor has a row. Listed in
-  `transfer::NOT_TRANSFERRED_TABLES` (a path is not content; the own tag part does
-  travel). Nothing is written into a file or a folder.
+  `transfer::TRANSFERRED_TABLES`: carried by path under the Hidden box (below). Nothing is written into a file or a folder.
 - Moving a photo into a hidden folder hides it; out of it shows it again.
 - **Backups.** The flags live in each drive's own `library.db`. They are not copied
   to a backup automatically; "Carry over data" can bring them over **if the user ticks
@@ -114,17 +113,22 @@ Everything list-like in the grid goes through `browse::Snapshot::query`
    the selection bar's Export still exports hidden photos that are selected (they
    are selected only while the Hidden chip or a hidden folder shows them).
 
-## 5. Open questions
+## 5. Decisions and what is not done
 
-1. **Same photo on two drives, hidden on one** (All drives, phase 18 shows it once).
-   Proposal: hidden if hidden on any drive that has it. Check at build time how a
-   backup takes part in All drives today; if it is left out, there is nothing to decide.
-2. Typing `ausgeblendet` is accepted as a word although you named two German terms
-   (`versteckt`, `verborgen`): it is the word the UI shows, so a user who copies it
-   must find it. Say if you want it out.
-3. In a backup opened by itself the hide button works as the heart does. Say if it
-   should be left out when the backup's original is online (it is not in the timeline of
-   All drives either way).
+1. **Same photo on two drives, hidden on one** (All drives): each drive's own flags count; the
+   photo shows once through the copy that is not hidden (`multi::shown_first` among what is left).
+   Hidden on both: gone, and once for the chip.
+2. `ausgeblendet` is accepted as a typed word next to `versteckt` and `verborgen` (it is the word
+   the UI shows).
+3. The bulk "Add tag…" dialog gets the toast after OK, no live note (a toast stays on one line).
+4. A backup opened by itself works like any drive (heart and hide button work); no special case.
+5. **Not done:** the people counts in the sidebar and the faces of hidden photos on the People
+   pages still count hidden photos (`people.rs` counts by content, in a cache the Unnamed page
+   shares); a person's photo grid does leave them out. Decide whether the counts should follow
+   the grid like the folder and tag counts do.
+6. **Not tested in the page:** the Hidden box of Carry over data in the dialog (the server side
+   is tested in `core/tests/transfer.rs`) and the Export button's "left out" toast (the page
+   change is two lines in `core/web/export.js`); the fake API has no transfer or export routes.
 
 ## 6. Translation strings (new keys, `core/i18n/en.json` and `de.json`)
 
