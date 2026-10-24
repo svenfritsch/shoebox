@@ -6,21 +6,24 @@ and come back only when you ask for them by name: the Hidden chip, the word
 *hidden*, or a click on a hidden folder in the sidebar. Like Favorites (see
 "Favorites" in [plan.md](plan.md)), but the tag does the opposite: it removes.
 
-This is **tidiness, not privacy.** The files stay where they are, in plain
-view in the file manager, and their thumbnails stay in `thumbs.db`. There is
-no PIN for it. The guide must say so.
+This is **tidiness, not privacy**, and shoebox does not try to be more. The
+files stay in plain view in the file manager and on the drive's `.shoebox`;
+keeping them private is a matter for the drive (a password, encryption), not
+for the photo app. Libraries kept next to the program (phase 16) are read-only
+and for shared drives, so nothing private is expected there. The guide says in
+one sentence that hiding only keeps photos out of the timeline.
 
 ## 1. What the user sees
 
 | Action | Result |
 |---|---|
 | Viewer: eye-slash button in the top bar (key `h`) | Hides / shows the photo again |
-| Selection bar: "Hide" / "Show again" | Same for many photos |
-| Sidebar, right-click a folder: "Hide folder" / "Show folder again" | Flags the folder; everything in it and below is hidden, **including photos copied in later** |
-| Hidden folder in the sidebar | Stays in the tree (dimmed, eye-slash) so you can click it; its own count is shown, its parents' counts do not include it |
+| Selection bar: an icon button (`sel-hide`, our eye-slash drawing, no text) with the tip **"Hide from timeline"** (German "Aus der Zeitleiste ausblenden"); when every selected photo is already hidden the tip is "Show in timeline" | Hides / shows many photos |
+| Sidebar folder: an eye-slash button that appears on hover (always visible on touch screens), and the same action in the header of the opened folder: "Hide folder" / "Show folder again". There is no right-click menu on the folder tree today (only on photos in the grid), and right-click does not exist on the iPad | Flags the folder; everything in it and below is hidden, **including photos copied in later** |
+| Hidden folder in the sidebar | Stays in the tree, dimmed with a small eye-slash, and stays clickable; its own count is shown, its parents' counts do not include it |
 | Click a hidden folder (or a folder below one) | Its photos are shown |
 | Hidden chip (eye-slash button next to Type and the heart, search suggestion "Hidden", typed *hidden* / *versteckt* / *verborgen*) | Only hidden photos, AND with the other chips (so *Hidden + Anna* finds hidden photos of Anna) |
-| Info panel | Row "Hidden", with "via folder Urlaub/Privat" when the folder does it. A photo hidden by its folder is shown again by moving it out of that folder, or by un-hiding the folder |
+| Info panel | One row "Hidden" / "Verborgen" with the eye-slash (like the heart's row), not a tag chip; with "via folder Urlaub/Privat" when the folder does it. A photo hidden by its folder is shown again by moving it out of that folder, or by un-hiding the folder |
 | Timeline, folders, People, Places, dates, Type, tag suggestions, search counts, Overview, All drives | Hidden photos are **not there**, whatever filter is set. A person's photo that is hidden is not in the person's photos either |
 
 Rule in one line: *a hidden photo is shown only if the Hidden chip is on, or if
@@ -31,9 +34,12 @@ clicking its folder.
 ## 2. Data
 
 - **Hidden photo = own tag `hidden`** (`tags::HIDDEN`, source `user`), exactly like
-  `tags::FAVORITE`: reserved name, `tags::check_name` maps `hidden`, `versteckt`,
-  `verborgen` (and the aliases `is_hidden_word` accepts) to it, so there is no
-  second tag; the UI never lists it as a tag (info chips, suggestions); the
+  `tags::FAVORITE`: stored in English only. `tags::check_name` maps `hidden`,
+  `versteckt` and `verborgen` to it, so there is no second tag. **What is shown is
+  always the UI language's word** ("Hidden" / "Verborgen"), never what was typed:
+  typing *versteckt* in the tag box hides the photo, the box is consumed like
+  *Favoriten* is, and the info panel row then says "Verborgen". The German word
+  for the chip, row and sidebar is `hidden.label` = "Verborgen"; the UI never lists it as a tag (info chips, suggestions); the
   sidebar's Tags list has one "Hidden" row. A folder called "hidden" does not hide
   its photos (only the own tag counts, as with favorites). It is in `userdata.json`
   and carried over by matching content (phase 15) like any own tag, and survives
@@ -88,8 +94,7 @@ strip and search in `serve.rs`). So:
 3. **Backups.** The backup keeps its own `library.db`; the hidden flags are not
    copied to it (a backup is read-only for shoebox). On the backup drive the
    photos are not hidden unless the user hides them there too. Say so in the guide.
-4. **Names for German.** *versteckt* (chip text "Versteckt") or *ausgeblendet*;
-   the word list accepts both, the chip uses one.
+4. ~~Names for German~~ decided: the word list accepts *versteckt* and *verborgen*, the UI shows "Verborgen".
 5. **A setting?** Favorites have none, trash is opt-in. Proposal: none, the
    button is always there (hidden is harmless, nothing is deleted).
 
@@ -107,7 +112,8 @@ strip and search in `serve.rs`). So:
    queries from section 3.4.
 4. `people.rs`, `geo.rs`, `multi.rs`, duplicates, export: the same rule, one test each.
 5. UI (`core/web/app.js`, `app.css`, `index.html`): viewer button and key `h`,
-   selection bar button, folder context menu, dimmed hidden folders, Hidden chip
+   selection bar icon button with the tip "Hide from timeline", folder hover
+   button and folder header action, dimmed hidden folders, Hidden chip
    and button, suggestion, info panel row. Icon: our own line drawing
    (`lineIcon`), visibly unlike the usual eye-slash: a closed lid with lashes,
    for instance. i18n keys in `en.json` and `de.json`.
