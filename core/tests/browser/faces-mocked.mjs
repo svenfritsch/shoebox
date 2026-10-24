@@ -1473,4 +1473,20 @@ await test('the settings page uses the common controls: selects with the shared 
   check(m.x === '50%', `the chip's remove button has the radius ${m.x}, expected a circle`);
 }));
 
+await test('the follow-up controls share the 32 px height: search box, face action buttons, dialog fields, tab pills, kind toggle, viewer tools', await on('', hiddenPhotos, async (p, lib) => {
+  await cellCount(p, 3);
+  const heights = await p.evaluate(() => {
+    const host = document.createElement('div');
+    host.innerHTML = '<div class="dialog"><input type="text"><input type="number"><select><option>a</option></select><div class="kinds"><button>x</button><button class="on">y</button></div></div>'
+      + '<button class="abtn">+</button><div class="tabs"><button>one</button></div><div class="lb-panel"><div class="ptools"><button class="tool">+</button></div></div>';
+    document.body.appendChild(host);
+    const h = (sel) => Math.round(host.querySelector(sel).getBoundingClientRect().height);
+    const out = { search: Math.round(document.querySelector('.search input').getBoundingClientRect().height),
+      text: h('.dialog input[type=text]'), number: h('.dialog input[type=number]'), select: h('.dialog select'), kind: h('.kinds button'), abtn: h('.abtn'), tab: h('.tabs button'), tool: h('.ptools .tool') };
+    host.remove();
+    return out;
+  });
+  for (const [name, v] of Object.entries(heights)) check(v === 32, `${name} is ${v} px high, expected 32`);
+}));
+
 await finish();

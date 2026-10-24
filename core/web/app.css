@@ -60,7 +60,7 @@ select { cursor: pointer; }
 .month { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .search { flex: 1; display: flex; justify-content: flex-end; min-width: 0; }
 .search input {
-  width: 100%; max-width: 360px; padding: 7px 12px; border-radius: 9px;
+  width: 100%; max-width: 360px; height: var(--ctl-h); padding: 0 12px; border-radius: var(--ctl-r);
   border: 1px solid var(--line); background: var(--panel);
 }
 /* Type filter (5f): check box drop-down next to the search box. */
@@ -87,7 +87,8 @@ select:hover { border-color: var(--muted); }
 }
 .icon:hover:not(:disabled) { background: var(--line); }
 .lb-bar .icon:hover:not(:disabled) { background: rgba(255,255,255,.18); }
-.link { background: none; border: 0; padding: 0; color: var(--accent); }
+.link { background: none; border: 0; padding: 0; border-radius: 4px; color: var(--accent); }
+.link:hover { text-decoration: underline; }
 
 .layout { position: fixed; inset: var(--bar-h) 0 0 0; display: flex; }
 .sidebar {
@@ -103,6 +104,8 @@ select:hover { border-color: var(--muted); }
 #tree { flex: none; }
 .tree ul { padding-left: 14px; }
 .tree .row { display: flex; align-items: center; gap: 2px; padding: 2px 8px 2px 4px; }
+.tree .toggle:hover, .pgroup h3 .toggle:hover, .caret:hover:not(:disabled) { color: var(--fg); }
+.tree .toggle, .pgroup h3 .toggle, .caret { border-radius: 6px; }
 .tree .toggle { width: 22px; flex: none; background: none; border: 0; color: var(--muted); padding: 2px 0; display: inline-flex; align-items: center; justify-content: center; }
 .tree .name {
   flex: 1; text-align: left; background: none; border: 0; padding: 3px 4px; border-radius: 6px;
@@ -123,6 +126,7 @@ select:hover { border-color: var(--muted); }
 .filter-note { flex-basis: 100%; margin: 0; color: var(--muted); font-size: 12px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border-radius: 99px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; }
 .chip button { background: none; border: 0; padding: 0 6px; color: var(--muted); }
+.chip button:hover { color: var(--fg); }
 .sizer { position: relative; margin: 0 2px; }
 .empty { color: var(--muted); text-align: center; margin-top: 20vh; }
 
@@ -159,6 +163,7 @@ select:hover { border-color: var(--muted); }
   position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
   background: rgba(0,0,0,.3); color: #fff; border: 0; font-size: 34px; width: 48px; height: 72px; border-radius: 8px;
 }
+.nav:hover { background: rgba(0,0,0,.5); }
 .nav.prev { left: 8px; }
 .nav.next { right: 8px; }
 .lb-panel {
@@ -178,7 +183,8 @@ select:hover { border-color: var(--muted); }
 .login { position: fixed; inset: 0; z-index: 30; background: var(--bg); display: flex; align-items: center; justify-content: center; }
 .login form { display: flex; flex-direction: column; gap: 12px; width: min(320px, 90vw); text-align: center; }
 .login input { font-size: 22px; text-align: center; letter-spacing: .3em; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); }
-.login button { padding: 10px; border-radius: 10px; border: 0; background: var(--accent-soft); color: var(--accent-fg); font-weight: 600; }
+.login button:hover { background: var(--accent-soft-h); }
+.login button { padding: 10px; border-radius: var(--ctl-r); border: 0; background: var(--accent-soft); color: var(--accent-fg); font-weight: 600; }
 .error { color: #d33; min-height: 1.4em; margin: 0; }
 
 .sidebar-head { display: flex; flex-wrap: wrap; gap: 4px 14px; }
@@ -223,15 +229,16 @@ body.selecting #sizer { -webkit-user-select: none; user-select: none; }
    they are dimmed with aria-disabled, so that the label still shows. */
 .abtn {
   flex: none; display: inline-flex; align-items: center; justify-content: center;
-  width: 36px; height: 36px; padding: 0; border: 0; border-radius: 9px; background: var(--line); color: var(--fg); font-size: 20px;
+  width: var(--ctl-h); height: var(--ctl-h); padding: 0; border: 0; border-radius: var(--ctl-r); background: var(--line); color: var(--fg); font-size: 20px;
 }
 .abtn svg { width: 20px; height: 20px; }
+.abtn:hover:not([aria-disabled="true"]):not(.primary):not(.active) { background: color-mix(in srgb, var(--line) 75%, var(--fg) 25%); }
+.abtn.primary:hover:not([aria-disabled="true"]), .abtn.active:hover { background: var(--accent-soft-h); }
 .abtn.primary { background: var(--accent-soft); color: var(--accent-fg); }
 .abtn.active { background: var(--accent-soft); color: var(--accent-fg); }
 .abtn[aria-disabled="true"] { opacity: .45; cursor: default; }
-.abtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .lb-panel .abtn { background: rgba(255,255,255,.15); color: #eee; }
-@media (pointer: coarse) { .abtn { width: 44px; height: 44px; } }
+.lb-panel .abtn:hover:not([aria-disabled="true"]):not(.primary):not(.active) { background: rgba(255,255,255,.24); }
 
 /* The timeline's selection bar: what belongs to the selection on the left
    (close, count, Select all), then icon tools in groups. A label shows at once
@@ -298,7 +305,7 @@ body.selecting #sizer { -webkit-user-select: none; user-select: none; }
 .dialog p { margin: 0 0 10px; }
 .dialog .hint { color: var(--muted); font-size: 13px; }
 .dialog input[type=text], .dialog input[type=number], .dialog select {
-  padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); min-width: 0;
+  height: var(--ctl-h); padding: 0 10px; border-radius: var(--ctl-r); border: 1px solid var(--line); background: var(--panel); min-width: 0;
 }
 .dialog .fields { display: flex; gap: 8px; margin-bottom: 10px; }
 .dialog .fields .grow { flex: 1; }
@@ -400,7 +407,7 @@ body.tile-drag { -webkit-user-select: none; user-select: none; }
 .card .btn { margin-top: 4px; --btn-h: var(--ctl-h-sm); padding: 0 10px; font-size: 13px; align-self: flex-start; }
 .lb-panel .actions { justify-content: flex-start; }
 .lb-panel .btn.quiet { background: rgba(255,255,255,.15); color: #eee; }
-.lb-panel select { background: rgba(255,255,255,.15); color: #eee; border: 0; border-radius: 6px; padding: 4px 8px; }
+.lb-panel select { background: rgba(255,255,255,.15); color: #eee; border: 0; border-radius: var(--ctl-r); height: var(--ctl-h-sm); padding: 0 8px; }
 .lb-panel select option { background: #2a2a2c; color: #eee; }
 
 @media (max-width: 760px) {
@@ -539,6 +546,7 @@ body.selecting .sec .pick { display: inline; }
 
 /* a person's faces */
 .tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+.tabs .tab:hover:not(.active) { color: var(--fg); }
 .tabs .tab { border: 0; background: none; padding: 8px 12px; border-bottom: 2px solid transparent; color: var(--muted); }
 .tabs .tab.active { color: var(--fg); border-bottom-color: var(--accent); font-weight: 600; }
 .face .acts { display: flex; gap: 6px; margin-top: 4px; }
@@ -636,7 +644,7 @@ body.selecting .sec .pick { display: inline; }
 .lb-panel .pickacts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .lb-panel .pickacts .btn { margin-left: auto; }
 .lb-panel .ptools { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
-.lb-panel .ptools .tool { width: 34px; height: 34px; padding: 0; border: 0; border-radius: 9px; background: rgba(255,255,255,.15); color: #eee; font-size: 19px; display: inline-flex; align-items: center; justify-content: center; }
+.lb-panel .ptools .tool { width: var(--ctl-h); height: var(--ctl-h); padding: 0; border: 0; border-radius: var(--ctl-r); background: rgba(255,255,255,.15); color: #eee; font-size: 19px; display: inline-flex; align-items: center; justify-content: center; }
 .lb-panel .ptools .tool:hover:not(:disabled) { background: rgba(255,255,255,.22); }
 .lb-panel .ptools .tool.on { background: var(--accent-soft); color: var(--accent-fg); }
 .lb-panel .ptools .tool:disabled { opacity: .45; cursor: default; }
@@ -701,7 +709,7 @@ body.selecting .sec .pick { display: inline; }
 .drive-card .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .drive-card .name { font-weight: 700; font-size: 16px; display: flex; gap: 8px; align-items: center; min-width: 0; overflow-wrap: anywhere; }
 .drive-card .on { font-size: 11px; font-weight: 600; color: var(--ok); }
-.drive-card select { padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); font-size: 13px; }
+.drive-card select { height: var(--ctl-h-sm); padding: 0 8px; border-radius: var(--ctl-r); border: 1px solid var(--line); background: var(--panel); color: var(--fg); font-size: 13px; }
 .drive-card .where { display: flex; align-items: baseline; gap: 6px; font-size: 12px; color: var(--muted); margin-top: -6px; overflow-wrap: anywhere; }
 .drive-card .where b { color: var(--fg); font-weight: 600; }
 .drive-card .banner { border: 0; background: none; padding: 0; margin: 0; }
@@ -742,11 +750,12 @@ body.selecting .sec .pick { display: inline; }
 .scope-all #nav-trash, .scope-all #nav-faces, .scope-all #select { display: none !important; }
 .note-bar { margin: 8px 16px 0; font-size: 13px; color: var(--muted); }
 .tabs { display: flex; gap: 6px; margin: 0 0 14px; }
-.tabs button { padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--fg); font: inherit; cursor: pointer; }
+.tabs button { height: var(--ctl-h); padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--fg); font: inherit; cursor: pointer; }
 .tabs.underline { gap: 8px; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
-.tabs.underline button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; margin-bottom: -1px; padding: 10px 14px; background: transparent; color: var(--muted); font-weight: 500; letter-spacing: .04em; text-transform: uppercase; }
+.tabs.underline button { height: auto; border: 0; border-bottom: 2px solid transparent; border-radius: 0; margin-bottom: -1px; padding: 10px 14px; background: transparent; color: var(--muted); font-weight: 500; letter-spacing: .04em; text-transform: uppercase; }
 .tabs.underline button:hover { color: var(--fg); }
 .tabs.underline button.on { color: var(--accent); border-bottom-color: var(--accent); background: transparent; font-weight: 600; }
+.tabs:not(.underline) button:hover:not(.on) { background: var(--panel); }
 .tabs button.on { background: var(--panel); font-weight: 600; border-color: var(--accent); }
 .xcopies { display: flex; flex-wrap: wrap; gap: 12px; }
 .xcopy { width: 190px; }
@@ -933,10 +942,11 @@ body.geo-view #page { padding: 0; height: 100%; }
 
 /* "Add face or pet": what was drawn */
 .dialog .kinds { display: flex; margin: 0 0 12px; }
-.dialog .kinds button { flex: 1; padding: 7px 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font-size: 14px; }
+.dialog .kinds button:hover:not(.on) { background: var(--panel); }
+.dialog .kinds button { flex: 1; height: var(--ctl-h); padding: 0 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font-size: 14px; }
 .dialog .kinds .ic { width: 1.25em; height: 1.25em; margin-right: .35em; vertical-align: -.25em; }
-.dialog .kinds button:first-child { border-radius: 8px 0 0 8px; }
-.dialog .kinds button:last-child { border-radius: 0 8px 8px 0; }
+.dialog .kinds button:first-child { border-radius: var(--ctl-r) 0 0 var(--ctl-r); }
+.dialog .kinds button:last-child { border-radius: 0 var(--ctl-r) var(--ctl-r) 0; }
 .dialog .kinds button + button { border-left: 0; }
 .dialog .kinds button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
 /* Above its neighbours, so the whole focus ring shows. */
@@ -958,7 +968,7 @@ body.geo-view #page { padding: 0; height: 100%; }
 .copy-row .folder { background: none; border: 0; padding: 0; color: var(--accent); text-align: left; font-size: 13px; word-break: break-all; }
 .copy-row .state { font-size: 12px; font-weight: 600; white-space: nowrap; color: #3a9d63; }
 .copy-row.marked .state { color: #c63b2f; }
-.dup-bar select { background: var(--line); color: var(--fg); border: 0; border-radius: 9px; padding: 6px 10px; }
+.dup-bar select { background: var(--line); color: var(--fg); border: 0; border-radius: var(--ctl-r); padding: 0 10px; }
 @media (max-width: 700px) { .group.cross { flex-direction: column; } .group.cross > .thumb { width: 100%; } }
 
 /* Trash: click a photo to select it, like the timeline */
@@ -1216,3 +1226,10 @@ select:not([multiple]):not([size]), .types-btn, .dup-filter > summary.btn {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%23f0b985' stroke-opacity='.8' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   }
 }
+
+/* The viewer's small buttons: Live Photo and the tag chips share the small height and get a hover. */
+#lb-live { display: inline-flex; align-items: center; height: var(--ctl-h-sm); padding: 0 12px; }
+#lb-live:hover { background: rgba(255,255,255,.25); }
+.lb-panel .tags button { display: inline-flex; align-items: center; min-height: var(--ctl-h-sm); }
+.lb-panel .tags .own button { min-height: 0; }
+.lb-panel .tags button:hover:not(.add) { background: rgba(255,255,255,.2); }
