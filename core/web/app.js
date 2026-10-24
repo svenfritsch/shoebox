@@ -203,8 +203,8 @@ var ICONS = {
   paw: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="11.5" r="1.7" fill="currentColor"/><circle cx="9.3" cy="7" r="1.7" fill="currentColor"/><circle cx="14.7" cy="7" r="1.7" fill="currentColor"/><circle cx="18.5" cy="11.5" r="1.7" fill="currentColor"/><path d="M8.3 17.5c0-2.2 1.7-4 3.7-4s3.7 1.8 3.7 4c0 1.5-1 2.2-2.2 2.2-.6 0-1-.3-1.5-.3s-.9.3-1.5.3c-1.2 0-2.2-.7-2.2-2.2z"/></svg>',
   // The map marker of the selection bar, without its plus.
   place: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21C9.5 18.2 6 14.8 6 10.8a6 6 0 0 1 12 0c0 4-3.5 7.4-6 10.2z"/><circle cx="12" cy="10.8" r="1.4" fill="currentColor"/></svg>',
-  // Three tiles side by side, one tall and two small: the photos as a grid (a place in the timeline).
-  tiles: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="8" height="15" rx="2"/><rect x="14.5" y="4.5" width="6" height="6" rx="1.6"/><rect x="14.5" y="13.5" width="6" height="6" rx="1.6"/></svg>',
+  // Three staggered columns of photos, like a wall of prints (a place in the timeline).
+  tiles: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3.5" width="5.2" height="11" rx="1.7"/><rect x="9.4" y="9.5" width="5.2" height="11" rx="1.7"/><rect x="15.8" y="3.5" width="5.2" height="7.5" rx="1.7"/></svg>',
   // A flat drive with its light: the disk a folder is on (the guide's symbol).
   drive: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="18" height="10" rx="2"/><circle cx="17" cy="12" r="1"/><path d="M6 12h6"/></svg>',
   // A pencil: change a name.
