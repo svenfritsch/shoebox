@@ -755,30 +755,22 @@
         <div class="txt">
           <h3>Verschieben</h3>
           <p><b>Verschieben …</b> fragt nach einem Ordner. Neue Ordner werden angelegt, nichts wird überschrieben, RAW-, Live-Photo- und Begleitdateien (Sidecar) wandern mit. Die eigenen Tags der Fotos gehen immer mit. „Ordnertags behalten“ behält zusätzlich die Tags des alten Ordners als eigene Tags; Ordner-Tags folgen immer dem neuen Ordner.</p>
+          <h4>Leere Ordner aufräumen</h4>
+          <p>Ist ein Ordner nach dem Verschieben leer (nur das, was dein Computer dort selbst ablegt, etwa <code>.DS_Store</code> oder <code>Thumbs.db</code>, ist noch darin), entfernt shoebox diesen leeren Ordner und sagt dir, welcher es war. Ein Ordner, in dem noch etwas anderes liegt, auch ein Unterordner, bleibt.</p>
+          <h4>Ordnernamen, die auf jedem Computer funktionieren</h4>
+          <p>Ein Laufwerk wandert zwischen Mac, Windows und Linux, deshalb nimmt <b>Verschieben …</b> nur Ordnernamen, die alle drei öffnen können. Vermeide:</p>
+          <ul>
+            <li><code>/ \ : * ? " &lt; &gt; |</code> im Namen. Auf dem Mac zeigt der Finder ein <code>:</code> als <code>/</code>, ein Ordner, den du als „09/10 Exchange“ siehst, heißt also in Wirklichkeit <code>09:10 Exchange</code> und wird abgelehnt. Benenne ihn im Finder um, zum Beispiel in <code>09-10 Exchange</code>.</li>
+            <li>einen Punkt am Anfang oder Ende des Namens, wie in <code>Abflug N.Y.</code>.</li>
+            <li>Namen, die Windows für sich reserviert, etwa <code>CON</code>, <code>NUL</code> oder <code>COM1</code>.</li>
+          </ul>
+          <p>Leerzeichen, Unterstriche, Bindestriche, ß und Umlaute sind in Ordnung. Einen vorhandenen Ordner reparierst du, indem du ihn im Finder oder Explorer umbenennst und neu scannst; bis dahin kannst du keine Fotos hineinverschieben.</p>
         </div>
         <div class="shots">
           <figure>
             <img src="assets/de/move-dialog.jpg" alt="" loading="lazy">
             <figcaption>In einen neuen Ereignisordner verschieben.</figcaption>
           </figure>
-        </div>
-        <div style="grid-column: 1 / -1">
-          <div class="twocol">
-            <div>
-              <h4>Leere Ordner aufräumen</h4>
-              <p>Ist ein Ordner nach dem Verschieben leer (nur das, was dein Computer dort selbst ablegt, etwa <code>.DS_Store</code> oder <code>Thumbs.db</code>, ist noch darin), entfernt shoebox diesen leeren Ordner und sagt dir, welcher es war. Ein Ordner, in dem noch etwas anderes liegt, auch ein Unterordner, bleibt.</p>
-            </div>
-            <div>
-              <h4>Ordnernamen, die auf jedem Computer funktionieren</h4>
-              <p>Ein Laufwerk wandert zwischen Mac, Windows und Linux, deshalb nimmt <b>Verschieben …</b> nur Ordnernamen, die alle drei öffnen können. Vermeide:</p>
-              <ul>
-                <li><code>/ \ : * ? " &lt; &gt; |</code> im Namen. Auf dem Mac zeigt der Finder ein <code>:</code> als <code>/</code>, ein Ordner, den du als „09/10 Exchange“ siehst, heißt also in Wirklichkeit <code>09:10 Exchange</code> und wird abgelehnt. Benenne ihn im Finder um, zum Beispiel in <code>09-10 Exchange</code>.</li>
-                <li>einen Punkt am Anfang oder Ende des Namens, wie in <code>Abflug N.Y.</code>.</li>
-                <li>Namen, die Windows für sich reserviert, etwa <code>CON</code>, <code>NUL</code> oder <code>COM1</code>.</li>
-              </ul>
-              <p>Leerzeichen, Unterstriche, Bindestriche, ß und Umlaute sind in Ordnung. Einen vorhandenen Ordner reparierst du, indem du ihn im Finder oder Explorer umbenennst und neu scannst; bis dahin kannst du keine Fotos hineinverschieben.</p>
-            </div>
-          </div>
         </div>
       </div>
       <div class="topic has-shots">
