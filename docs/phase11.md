@@ -62,8 +62,9 @@ their own or left out of the timeline.
 ## 5. As built
 
 - `core/src/screenshots.rs`: `score()` (name 50, PNG 15 / JPEG 5, no camera
-  10, display size 25 (+10 more for a PNG without camera, so a PNG of exactly a
-  display's size counts even when the picture is a photo), flatness up to 50; a picture with a camera model is
+  10, display size 25 (+20 more for a picture without camera, PNG or JPEG, so one of exactly a
+  display's size counts even when the picture inside is a photo: Instagram, Messages; the list
+  has 640x960, the iPhone 4/4S), flatness up to 50; a picture with a camera model is
   capped at 40; HEIC, RAW, video are 0), `pixel_score()` (share of
   neighbouring pixels with exactly the same colour, 0.40 to 0.80 mapped to 0
   to 100, measured on the stored JPEG thumbnail so a backfill agrees with a
