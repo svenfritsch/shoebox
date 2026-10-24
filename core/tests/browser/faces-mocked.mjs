@@ -368,16 +368,28 @@ await test('search suggestions: picture, icon and name of a row are centred on o
   }
 }));
 
-await test('picking a suggestion closes the list, and it stays closed once the new search is shown', await on('view=people', (lib) => {
+await test('a first click into the search box opens the list', await on('', (lib) => {
+  lib.person('Spucky', { faces: 5, species: 'cat' });
+}, async (p, lib) => {
+  check(await p.evaluate(() => document.activeElement !== $('search')), 'the box starts focused');
+  await p.locator('#search').click();
+  await settle(p, lib);
+  check(await p.locator('#suggest').isVisible(), 'the list is not open after the first click');
+  check(await p.locator('#suggest .item').count() > 0, 'the list has no rows after the first click');
+}));
+
+await test('picking a suggestion closes the list and asks for no suggestions until the box is clicked or typed in', await on('', (lib) => {
   lib.person('Spucky', { faces: 5, species: 'cat' });
 }, async (p, lib) => {
   await p.locator('#search').fill('spu');
   await settle(p, lib);
+  const from = lib.log.length;
   await p.locator('#suggest .item', { hasText: 'Spucky' }).click();
   check(await p.locator('#suggest').isHidden(), 'the list is open right after the pick');
   await settle(p, lib);
   check(await p.evaluate(() => state.filter.people.length) === 1, 'the pick is not in the search');
   check(await p.locator('#suggest').isHidden(), 'the list opened again for the new search');
+  check(!lib.log.slice(from).some((e) => e.path === '/suggest'), 'suggestions were asked for after the pick');
   check(await p.evaluate(() => document.activeElement === $('search')), 'the box lost the focus with the pick');
   await p.locator('#search').click();
   await settle(p, lib);
