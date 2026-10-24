@@ -586,7 +586,7 @@ body.selecting .sec .pick { display: inline; }
 .lb-panel .pface .note, .lb-panel .pfaces > .note { color: #999; font-size: 12px; }
 .lb-panel .avatar { background: rgba(255,255,255,.12); }
 /* picking mode: rows are checkboxes, their own buttons step aside */
-.lb-panel .pfaces.picking .pface { padding: 4px 6px; margin: 0 -6px; border-radius: 10px; }
+.lb-panel .pfaces.picking .pface { padding: 4px 6px; margin: 0 -6px; border-radius: 10px; user-select: none; -webkit-user-select: none; }
 .lb-panel .pface.pickable { cursor: pointer; }
 .lb-panel .pface.pickable:hover { background: rgba(255,255,255,.07); }
 .lb-panel .pface.picked { background: rgba(255,255,255,.14); }

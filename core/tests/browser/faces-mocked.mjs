@@ -1309,6 +1309,61 @@ await test('the search box offers Hidden for hidden, versteckt, verborgen or aus
   check(JSON.stringify(await gridIds(p)) === '[1]', `the grid shows ${await gridIds(p)}`);
 }));
 
+// The info panel's list of faces in Select mode: a click on a row ticks it,
+// Shift-click ticks everything from the last one clicked, and dragging over rows
+// ticks (or, from a ticked row, unticks) them; the drag takes back what the
+// pointer leaves again.
+await test('the viewer\'s Select list: Shift-click and dragging over rows tick several faces', await on('', (lib) => {
+  lib.photos = [{ id: 1, version: 'orig0001' }];
+  lib.photoFaces = { 1: [101, 102, 103, 104, 105].map((id) => ({ id, file: 1, kind: 'jpeg', version: 'orig0001', x: 0.1, y: 0.1, w: 0.1, h: 0.1, roll: 0, px: 100, score: 0.9, small: false, state: null, species: null, person: null, similarity: null, rejected: [], landmarks: [] })) };
+}, async (p, lib) => {
+  await p.locator('#sizer a.cell').first().click();
+  await p.locator('#lb-info').click();
+  await p.locator('#lb-panel .pface').first().waitFor();
+  await p.locator(`#lb-panel .ptools button[data-tip^="${await tr(p, 'info.select')}"]`).click();
+  const rows = p.locator('#lb-panel .pface.pickable');
+  const ticked = () => p.locator('#lb-panel .pface.picked').evaluateAll((xs) => xs.map((x) => x.dataset.face).join());
+  const boxed = () => p.locator('#lb-panel .pface input:checked').count();
+  const middle = async (k) => { const b = await rows.nth(k).boundingBox(); return { x: b.x + b.width * 0.6, y: b.y + b.height / 2 }; };
+  // A click, then Shift-click two rows further: the three, in either order.
+  await rows.nth(0).click({ position: { x: 150, y: 10 } });
+  check(await ticked() === '101', `after a click: ${await ticked()}`);
+  await rows.nth(2).click({ modifiers: ['Shift'], position: { x: 150, y: 10 } });
+  check(await ticked() === '101,102,103' && await boxed() === 3, `after Shift-click: ${await ticked()}`);
+  await rows.nth(0).click({ position: { x: 150, y: 10 } });
+  check(await ticked() === '102,103', `a click on a ticked row unticks it: ${await ticked()}`);
+  // Shift-click on the box of a row works as on the row (from the last one clicked, the first).
+  await rows.nth(4).locator('input').click({ modifiers: ['Shift'] });
+  check(await ticked() === '101,102,103,104,105', `Shift-click on a box: ${await ticked()}`);
+  await p.locator('#lb-panel .pickbar button.btn.quiet').click();
+  await p.locator(`#lb-panel .ptools button[data-tip^="${await tr(p, 'info.select')}"]`).click();
+  // Dragging over the first three rows, down and back up by one row: the pointer
+  // leaves the third row again, so only two stay ticked, until it goes back.
+  const a = await middle(0), c = await middle(2), b = await middle(1);
+  await p.mouse.move(a.x, a.y);
+  await p.mouse.down();
+  await p.mouse.move(b.x, b.y, { steps: 4 });
+  await p.mouse.move(c.x, c.y, { steps: 4 });
+  check(await ticked() === '101,102,103', `while dragging over three rows: ${await ticked()}`);
+  await p.mouse.move(b.x, b.y, { steps: 4 });
+  check(await ticked() === '101,102', `the drag leaves the third: ${await ticked()}`);
+  await p.mouse.move(c.x, c.y, { steps: 4 });
+  await p.mouse.up();
+  await p.clock.runFor(10);
+  check(await ticked() === '101,102,103' && (await p.locator('#lb-panel .pickcount').textContent()).includes('3'), `after the drag: ${await ticked()}, ${await p.locator('#lb-panel .pickcount').textContent()}`);
+  // The drag ends with no click on the row it ended on, and Shift-click goes on from it.
+  await rows.nth(4).click({ modifiers: ['Shift'], position: { x: 150, y: 10 } });
+  check(await ticked() === '101,102,103,104,105', `Shift-click after the drag: ${await ticked()}`);
+  // A drag from a ticked row unticks what it covers.
+  const d = await middle(3), e = await middle(4);
+  await p.mouse.move(d.x, d.y);
+  await p.mouse.down();
+  await p.mouse.move(e.x, e.y, { steps: 4 });
+  await p.mouse.up();
+  await p.clock.runFor(10);
+  check(await ticked() === '101,102,103', `a drag from a ticked row unticks: ${await ticked()}`);
+}));
+
 // A video the browser cannot decode (an old .avi): the viewer says so, once,
 // and a photo next to it has no notice.
 await test('a video the browser cannot play shows a notice, a photo does not', await on('', (lib) => {

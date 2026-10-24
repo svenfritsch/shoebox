@@ -8128,8 +8128,12 @@ function infoFaces(row, info) {
   box.classList.toggle('picking', pick.on);
   if (!info.faces) box.appendChild(el('div', 'note', tr('info.faces_unlooked')));
   else if (!faces.length) box.appendChild(el('div', 'note', tr(info.kind === 'video' ? 'info.faces_video' : 'info.no_faces')));
+  pick.list = pickable;
   faces.forEach(function (f, k) { box.appendChild(infoFace(info, f, k, pick)); });
-  if (pick.on) box.appendChild(infoPickBar(info, pickable, pick));
+  if (pick.on) {
+    box.appendChild(infoPickBar(info, pickable, pick));
+    infoPickDrag(box, pickable, pick);
+  }
   var tools = el('div', 'ptools');
   // A video's boxes are only a formality: nothing is drawn on it.
   if (faces.length && info.kind !== 'video') {
@@ -8143,7 +8147,7 @@ function infoFaces(row, info) {
   var unconfirmed = pickable.filter(function (f) { return f.state !== 'confirmed' && f.state !== 'ignored'; });
   if (unconfirmed.length > 1 && !pick.on) {
     var select = toolButton(SELECT_ICON, tr('info.select') + ': ' + tr('info.select_hint'));
-    select.onclick = function () { pick.on = true; pick.ids = {}; renderPanel(); };
+    select.onclick = function () { pick.on = true; pick.ids = {}; pick.anchor = null; renderPanel(); };
     tools.appendChild(select);
   }
   if (lb.details && state.data) {
@@ -8159,6 +8163,54 @@ function infoFaces(row, info) {
   }
   box.appendChild(tools);
   row(tr('info.people'), box);
+}
+
+// Click and drag over the rows of the list in picking mode (mouse or pen; touch
+// keeps scrolling): every row the pointer has covered since the press, and only
+// those, takes the opposite of the state of the row pressed; rows it leaves
+// again get back what they had. The panel is drawn again when the button goes up.
+function infoPickDrag(box, pickable, pick) {
+  box.addEventListener('pointerdown', function (ev) {
+    if (ev.button !== 0 || ev.shiftKey || ev.pointerType === 'touch') return;
+    var start = ev.target.closest('.pface.pickable');
+    if (!start || ev.target.closest('.pname')) return;
+    var d = { y: ev.clientY, on: !pick.ids[start.dataset.face], before: {}, moved: false, last: null };
+    var rows = Array.prototype.slice.call(box.querySelectorAll('.pface.pickable'));
+    var move = function (e) {
+      if (!box.isConnected) { end(); return; }
+      if (!d.moved && Math.abs(e.clientY - d.y) < DRAG_START) return;
+      d.moved = true;
+      var y1 = Math.min(d.y, e.clientY), y2 = Math.max(d.y, e.clientY);
+      rows.forEach(function (row) {
+        var id = row.dataset.face, r = row.getBoundingClientRect();
+        var covered = r.bottom >= y1 && r.top <= y2;
+        if (!(id in d.before)) d.before[id] = !!pick.ids[id];
+        var on = covered ? d.on : d.before[id];
+        if (on) pick.ids[id] = true; else delete pick.ids[id];
+        row.classList.toggle('picked', on);
+        row.querySelector('input').checked = on;
+        if (covered) d.last = id;
+      });
+    };
+    var end = function () {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', end);
+      document.removeEventListener('pointercancel', end);
+      if (!d.moved) return;
+      // The click that follows the button going up selects nothing more.
+      pick.swallow = true;
+      setTimeout(function () { pick.swallow = false; }, 0);
+      if (d.last != null) pick.anchor = Number(d.last);
+      if (box.isConnected) renderPanel();
+    };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', end);
+    document.addEventListener('pointercancel', end);
+  });
+  // Keeps Shift-click and dragging from selecting the page's text.
+  box.addEventListener('mousedown', function (ev) {
+    if (ev.target.closest('.pface.pickable')) ev.preventDefault();
+  });
 }
 
 // The bar under the list in picking mode: how many are ticked, a shortcut to
@@ -8227,16 +8279,23 @@ function infoFace(info, f, k, pick) {
     } else {
       line.classList.add('pickable');
       if (pick.ids[f.id]) line.classList.add('picked');
+      line.dataset.face = f.id;
       var tick = el('input');
       tick.type = 'checkbox';
       tick.checked = !!pick.ids[f.id];
       tick.setAttribute('aria-label', tr('facecheck.select'));
-      var toggle = function () {
-        if (pick.ids[f.id]) delete pick.ids[f.id]; else pick.ids[f.id] = true;
+      // One click handler for the row and its box: Shift ticks everything
+      // from the last one clicked to this one, as in the other face lists.
+      line.onclick = function (ev) {
+        if (ev.target.closest('.pname')) return;
+        ev.preventDefault();
+        if (pick.swallow) return;
+        var span = ev.shiftKey && pickSpan(pick.list, function (x) { return x.id; }, pick.anchor, f.id);
+        if (span) span.forEach(function (x) { pick.ids[x.id] = true; });
+        else if (pick.ids[f.id]) delete pick.ids[f.id]; else pick.ids[f.id] = true;
+        if (!span) pick.anchor = f.id;
         renderPanel();
       };
-      tick.onchange = toggle;
-      line.onclick = function (ev) { if (ev.target !== tick) toggle(); };
       line.appendChild(tick);
     }
   }
