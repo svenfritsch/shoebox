@@ -558,6 +558,8 @@ struct InfoCounts {
     thumbs_done: i64,
     trash: i64,
     needs_date: u64,
+    /// Photos hidden from the timeline (phase 20).
+    hidden: u64,
 }
 
 /// What the faces' counts depend on: the index, `recognition.db` (another
@@ -2673,6 +2675,8 @@ struct Info {
     trash: u64,
     /// Photos that need a date: none in the file, none of the user's.
     needs_date: u64,
+    /// Photos hidden from the timeline (phase 20): the sidebar's Hidden row and the suggestion.
+    hidden: u64,
     /// Face recognition (`shoebox recognize`).
     faces: recognize::Overview,
     /// Clusters and suggestions (5c-2).
@@ -2739,8 +2743,10 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
                         |r| Ok((r.get(0)?, r.get(1)?)),
                     )?;
                     let trash: i64 = conn.query_row("SELECT count(DISTINCT batch) FROM trash", [], |r| r.get(0))?;
-                    let needs_date = app.snapshot(&conn)?.items.iter().filter(|it| !it.hidden && needs_a_date(it)).count() as u64;
-                    let c = Arc::new(InfoCounts { photos, videos, missing, thumbs_total, thumbs_done, trash, needs_date });
+                    let snapshot = app.snapshot(&conn)?;
+                    let needs_date = snapshot.items.iter().filter(|it| !it.hidden && needs_a_date(it)).count() as u64;
+                    let hidden = snapshot.items.iter().filter(|it| it.hidden).count() as u64;
+                    let c = Arc::new(InfoCounts { photos, videos, missing, thumbs_total, thumbs_done, trash, needs_date, hidden });
                     *cache = Some((version, Instant::now(), c.clone()));
                     c
                 }
@@ -2818,6 +2824,7 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
             index_version: format!("{data_version}.{generation}"),
             trash: counts.trash as u64,
             needs_date: counts.needs_date,
+            hidden: counts.hidden,
             faces,
             clusters,
             text: crate::text::progress(&conn)?,

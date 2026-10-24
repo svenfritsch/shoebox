@@ -1124,3 +1124,21 @@ body.read-only #sel-move, body.read-only #lb-rotate, body.read-only .copy label.
 .chip .ic.link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .chip .edit .ic { margin: 0; width: 1em; height: 1em; vertical-align: -.15em; }
 .icon-btn svg { width: 18px; height: 18px; display: block; }
+
+/* Hidden from the timeline (phase 20) */
+.tree .row.hidden-folder .name, .tree .row.hidden-folder .count { opacity: .5; }
+.tree .row .ico { width: 15px; height: 15px; display: inline-flex; flex: none; color: var(--muted); }
+.tree .row .ico svg { width: 100%; height: 100%; }
+#hidden-row .toggle { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
+#hidden-row .toggle svg { width: 16px; height: 16px; }
+.chip .eye { display: inline-flex; align-items: center; color: var(--muted); cursor: pointer; }
+.chip .eye.on { color: var(--accent); }
+.chip .eye:disabled { opacity: .5; cursor: default; }
+.chip .eye svg { width: 1.05em; height: 1.05em; }
+.chip.acts { gap: 2px; }
+.chip.acts button { padding: 0 3px; }
+@media (pointer: coarse) { .chip.acts { gap: 4px; } .chip.acts button { padding: 0 6px; } }
+.chip.hid { border-color: var(--accent); }
+.chip.hid .ic { color: var(--accent); margin-right: 0; }
+.lb-bar .hide-lb.on { color: var(--accent); }
+.lb-bar .hide-lb:disabled { cursor: default; opacity: 1; }

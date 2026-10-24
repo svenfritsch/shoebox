@@ -83,6 +83,7 @@ var state = {
   anchor: null,      // index of the last photo clicked while selecting (Shift-click ranges)
   data: null,        // timeline columns from /api/timeline
   favs: {},          // still id -> true, for the loaded timeline (empty on pages that open before it)
+  hids: {},          // still id -> true: hidden from the timeline, among those shown (the Hidden chip, a hidden folder)
   live: {},          // still id -> video id
   snips: {},         // id -> the line a text search found in it (shown over its thumbnail)
   textLines: 0,      // lines of recognized text the search can find (0: a text search finds nothing)
@@ -229,7 +230,7 @@ function prefixOf(v) {
 }
 
 function readHash() {
-  var f = { folder: null, tags: [], people: [], groups: [], pets: [], texts: [], names: [], types: [], fav: false, manual: false, place: null, dates: [], nodate: false, compare: '', q: '', view: null, id: null, tab: null };
+  var f = { folder: null, tags: [], people: [], groups: [], pets: [], texts: [], names: [], types: [], fav: false, hidden: false, manual: false, place: null, dates: [], nodate: false, compare: '', q: '', view: null, id: null, tab: null };
   location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
     var i = kv.indexOf('=');
     if (i < 0) return;
@@ -247,6 +248,7 @@ function readHash() {
     if (k === 'text' && v.trim() && f.texts.indexOf(v) < 0) f.texts.push(v);
     if (k === 'name' && v.trim() && f.names.indexOf(v) < 0) f.names.push(v);
     if (k === 'fav') f.fav = v === '1';
+    if (k === 'hidden') f.hidden = v === '1';
     if (k === 'manual') f.manual = v === '1';
     if (k === 'place') f.place = parseInt(v, 10) || null;
     // Photos dated inside a year, month or day (several: all must match), and those that need a date.
@@ -270,7 +272,7 @@ function readHash() {
 // folder, any number of tags and people (`tag`, `person` repeated in the
 // URL) and free text.
 function setFilter(f) {
-  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], group: f.groups || [], pet: f.pets || [], text: f.texts || [], name: f.names || [], type: f.types || [], fav: f.fav ? 1 : null, manual: f.manual && (f.tags || []).length ? 1 : null, place: f.place, date: f.dates || [], nodate: f.nodate ? 1 : null, compare: f.compare || null, q: f.q }).replace(/^\?/, '');
+  var h = query({ view: f.view, id: f.id, tab: f.tab, folder: f.folder, tag: f.tags || [], person: f.people || [], group: f.groups || [], pet: f.pets || [], text: f.texts || [], name: f.names || [], type: f.types || [], fav: f.fav ? 1 : null, hidden: f.hidden ? 1 : null, manual: f.manual && (f.tags || []).length ? 1 : null, place: f.place, date: f.dates || [], nodate: f.nodate ? 1 : null, compare: f.compare || null, q: f.q }).replace(/^\?/, '');
   if (h === location.hash.replace(/^#/, '')) { applyFilter(); return; }
   location.hash = h; // triggers hashchange -> applyFilter
 }
@@ -280,7 +282,7 @@ function withFilter(changes) {
   var f = state.filter;
   // A place picked on the Locations page goes with the search to the timeline.
   var place = f.view === 'locations' ? f.id : f.place;
-  return Object.assign({ folder: f.folder, tags: f.tags.slice(), manual: f.manual && !('tags' in changes), people: f.people.slice(), groups: f.groups.slice(), pets: f.pets.slice(), texts: f.texts.slice(), names: f.names.slice(), types: f.types.slice(), fav: f.fav, place: place, dates: f.dates.slice(), nodate: f.nodate, compare: f.compare, q: f.q }, changes);
+  return Object.assign({ folder: f.folder, tags: f.tags.slice(), manual: f.manual && !('tags' in changes), people: f.people.slice(), groups: f.groups.slice(), pets: f.pets.slice(), texts: f.texts.slice(), names: f.names.slice(), types: f.types.slice(), fav: f.fav, hidden: f.hidden, place: place, dates: f.dates.slice(), nodate: f.nodate, compare: f.compare, q: f.q }, changes);
 }
 
 function showView(view, id, tab) { setFilter({ view: view, id: id, tab: tab, folder: null, tags: [], people: [], q: '' }); }
@@ -321,7 +323,7 @@ function applyFilter() {
   $('sizer').hidden = !!view;
   $('current-month').textContent = view && VIEW_LABELS[view] ? tr(VIEW_LABELS[view]) : '';
   var f = state.filter;
-  $('all').classList.toggle('active', !view && !f.folder && !f.tags.length && !f.people.length && !f.groups.length && !f.pets.length && !f.texts.length && !f.names.length && !f.place && !f.fav && !f.dates.length && !f.nodate && !f.compare && !f.q);
+  $('all').classList.toggle('active', !view && !f.folder && !f.tags.length && !f.people.length && !f.groups.length && !f.pets.length && !f.texts.length && !f.names.length && !f.place && !f.fav && !f.hidden && !f.dates.length && !f.nodate && !f.compare && !f.q);
   $('nav-nodate').classList.toggle('active', !view && f.nodate);
   if (isAll()) $('nav-nodate').hidden = true;
   $('nav-dups').classList.toggle('active', view === 'duplicates');
@@ -369,6 +371,19 @@ function renderChips() {
   if (f.folder && state.folderById[f.folder]) {
     var folder = state.folderById[f.folder];
     add(folder.path || folder.name, function () { setFilter(withFilter({ folder: null })); }, folderIcon());
+    // The eye: hide the folder (and what is below it) from the timeline, or show it again. A flag
+    // in the index, so it stays in a library that is only read.
+    if (folder.path) {
+      var eye = el('button', 'eye' + (folder.hidden ? ' on' : ''));
+      eye.innerHTML = folder.hidden ? SHOW_ICON : HIDE_ICON;
+      var above = folder.hidden && !folder.hidden_own;
+      setTip(eye, tr(above ? 'hidden.folder_by_parent' : folder.hidden ? 'hidden.folder_show' : 'hidden.folder_hide'));
+      eye.setAttribute('aria-label', eye.getAttribute('data-tip'));
+      eye.disabled = above;
+      eye.onclick = function () { setFolderHidden(folder, !folder.hidden); };
+      box.lastChild.classList.add('acts');
+      box.lastChild.insertBefore(eye, box.lastChild.lastChild);
+    }
     if (folder.path && !readOnly) {
       var edit = el('button', 'edit');
       edit.appendChild(icon('pencil'));
@@ -399,6 +414,10 @@ function renderChips() {
     }, speciesIcon(species));
   });
   if (f.fav) add('♥ ' + tr('fav.label'), function () { setFilter(withFilter({ fav: false })); });
+  if (f.hidden) {
+    add(tr('hidden.label'), function () { setFilter(withFilter({ hidden: false })); }, icon('hide'), tr('hidden.filter_hint'));
+    box.lastChild.classList.add('hid');
+  }
   // The Type drop-down's choice as a chip too, like the heart's.
   if (f.types.length) add(f.types.length === 1 ? tr('types.' + f.types[0]) : f.types.map(typeLabel).join(', '), function () { setFilter(withFilter({ types: [] })); }, typeIcon(f.types));
   if (f.place) {
@@ -441,7 +460,7 @@ function renderChips() {
   if (terms >= 2) {
     var clear = el('button', 'chip clear', tr('chip.clear_all'));
     setTip(clear, tr('chip.clear_all_hint'));
-    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], groups: [], pets: [], texts: [], names: [], types: [], fav: false, place: null, compare: '', q: '' }); };
+    clear.onclick = function () { setFilter({ folder: null, tags: [], people: [], groups: [], pets: [], texts: [], names: [], types: [], fav: false, hidden: false, place: null, compare: '', q: '' }); };
     box.appendChild(clear);
   }
   // How many the search finds, at the right; filled in when the timeline is in.
@@ -563,6 +582,12 @@ var ADD_FACE_ICON = lineIcon('<circle cx="11" cy="13" r="8"/><circle cx="8.3" cy
 // The icons of the face and pet actions (Unnamed cards, the singles bar, the photo's face panel).
 var NAME_ICON = lineIcon('<circle cx="10" cy="8" r="3.4"/><path d="M3.5 20c.6-3.6 3.2-5.6 6.5-5.6 1 0 1.9.2 2.7.5"/><path d="M14.5 17.5l2.3 2.3 4.2-4.6"/>');
 var IGNORE_ICON = lineIcon('<path d="M2.5 12C5 7.6 8.3 6 12 6s7 1.6 9.5 6c-2.5 4.4-5.8 6-9.5 6s-7-1.6-9.5-6z"/><circle cx="12" cy="12" r="2.6"/><path d="M4.5 20L19.5 4"/>');
+// "Hide from timeline" (phase 20) is the icon of the face action "Ignore": the eye with a slash.
+// The same eye without the slash is the way back (show in timeline).
+var HIDE_ICON = IGNORE_ICON;
+var SHOW_ICON = IGNORE_ICON.replace('<path d="M4.5 20L19.5 4"/>', '');
+ICONS.hide = HIDE_ICON;
+ICONS.show = SHOW_ICON;
 var NOT_FACE_ICON = lineIcon('<circle cx="12" cy="12" r="8.5"/><circle cx="9.3" cy="10.5" r=".6"/><circle cx="14.7" cy="10.5" r=".6"/><path d="M8.5 14.8a4.2 4.2 0 0 0 7 0"/><path d="M4.5 19.5l15-15"/>');
 var NOT_PET_ICON = lineIcon('<circle cx="5.5" cy="11.5" r="1.6" fill="currentColor" stroke-width="1"/><circle cx="9.3" cy="7" r="1.6" fill="currentColor" stroke-width="1"/><circle cx="14.7" cy="7" r="1.6" fill="currentColor" stroke-width="1"/><circle cx="18.5" cy="11.5" r="1.6" fill="currentColor" stroke-width="1"/><path stroke-width="1.8" d="M8.3 17.5c0-2.2 1.7-4 3.7-4s3.7 1.8 3.7 4c0 1.5-1 2.2-2.2 2.2-.6 0-1-.3-1.5-.3s-.9.3-1.5.3c-1.2 0-2.2-.7-2.2-2.2z"/><path d="M4.5 20.5l15-17"/>');
 var CAT_ICON = lineIcon('<path d="M8.5 4.5l1.3 1.8h3.4l1.3-1.8v4.2a3.3 3.3 0 0 1-6 0z"/><path d="M8.7 11.5C6.5 13 5.5 15.5 5.5 18c0 1.2.8 2 2 2h6.5c2.6 0 4.5-1.6 4.5-3.5V8.5"/><path d="M18.5 8.5a1.5 1.5 0 0 1 3 0"/>', false, 1.8);
@@ -585,6 +610,8 @@ var SEL_ICONS = {
   export: lineIcon('<path d="M4 13.5v4A2.5 2.5 0 0 0 6.5 20h11a2.5 2.5 0 0 0 2.5-2.5v-4"/><path d="M12 15.5V4.5M8 8.5l4-4 4 4"/>'),
   trash: TRASH_ICON
 };
+SEL_ICONS.hide = HIDE_ICON;
+SEL_ICONS.show = SHOW_ICON;
 // An icon-only button for the tools row: the tooltip is also its name.
 function toolButton(icon, label) {
   var b = el('button', 'tool');
@@ -685,6 +712,107 @@ function toggleFavoriteOpen() {
 }
 $('lb-fav').onclick = toggleFavoriteOpen;
 
+// ------------------------------------------------------------------ hidden from the timeline
+
+// Hidden (phase 20): the own tag "hidden" (`tags.rs`), shown as the eye button, never as a tag, and
+// folders flagged in the index. Hidden photos are left out of every list unless the Hidden chip is
+// on, the word is typed, or the selected folder is itself hidden.
+var HIDDEN_TAG = 'hidden';
+function isHiddenTag(name) { return String(name).trim().toLowerCase() === HIDDEN_TAG; }
+// What typing in a tag field means "hidden" (the server maps these to the tag too).
+var HIDDEN_TYPED = [HIDDEN_TAG, 'versteckt', 'verborgen', 'ausgeblendet'];
+function meansHidden(name) { return HIDDEN_TYPED.indexOf(String(name).trim().toLowerCase()) >= 0; }
+
+// After hiding or showing: what the lists show and count changes (the open viewer keeps its photos
+// until it closes).
+function hiddenChanged() {
+  loadOwnTags();
+  loadFolders();
+  loadInfo();
+  if (state.open >= 0) lb.hiddenDirty = true;
+  else if (!state.filter.view) loadTimeline(false);
+}
+
+// Hide photos from the timeline, or show them again. `quiet`: the caller says what happened.
+function setHidden(ids, on, quiet) {
+  return post(LIBAPI + '/hidden', { ids: ids, on: on }).then(function (r) {
+    // Showing a photo that is hidden by its folder does nothing: the folder says it.
+    if (!on && !r.files) { if (!quiet) toast(tr('hidden.by_folder_hint')); return r; }
+    ids.forEach(function (id) { if (on) state.hids[id] = true; else delete state.hids[id]; });
+    if (!quiet && r.files) toast(trn(on ? 'hidden.toast_hidden' : 'hidden.toast_shown', r.files));
+    hiddenChanged();
+    markLightboxHide();
+    if (ids.length === 1 && lb.details && lb.details.id === ids[0]) tagsChanged(ids[0]);
+    return r;
+  }).catch(failed);
+}
+
+// Hide a folder and everything below it, or show it again.
+function setFolderHidden(folder, on) {
+  return post(LIBAPI + '/hidden/folder', { path: folder.path, on: on }).then(function () {
+    hiddenChanged();
+  }).catch(failed);
+}
+
+function markLightboxHide() {
+  var d = state.data, i = state.open, b = $('lb-hide');
+  if (!d || i < 0) return;
+  var id = d.ids[i], on = !!state.hids[id];
+  var details = lb.details && lb.details.id === id ? lb.details : null;
+  // Hidden by its folder only: the folder says when it shows again, the button cannot.
+  var byFolder = !!(details && details.hidden && !details.hidden_tag && details.hidden_folder);
+  b.innerHTML = on ? SHOW_ICON : HIDE_ICON;
+  b.classList.toggle('on', on);
+  b.disabled = isAll() || byFolder;
+  b.hidden = isAll() && !on; // the common timeline shows the eye only on hidden photos
+  setTip(b, tr(isAll() ? 'hidden.readonly' : byFolder ? 'hidden.by_folder_hint' : on ? 'hidden.show_hint' : 'hidden.hide_hint'));
+  b.setAttribute('aria-label', b.getAttribute('data-tip'));
+  b.setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+
+function toggleHideOpen() {
+  var d = state.data, i = state.open;
+  if (!d || i < 0 || isAll() || $('lb-hide').disabled) return;
+  var id = d.ids[i];
+  setHidden([id], !state.hids[id]);
+}
+$('lb-hide').onclick = toggleHideOpen;
+
+// The Hidden row of the sidebar's tag list, under Favorites, while something is hidden.
+function paintHiddenRow() {
+  var list = $('own-tags'), old = $('hidden-row');
+  if (old) old.remove();
+  $('tags-section').hidden = !list.children.length && !state.hiddenCount;
+  if (!state.hiddenCount) return;
+  var li = el('li'), r = el('div', 'row');
+  li.id = 'hidden-row';
+  var mark = el('span', 'toggle');
+  mark.innerHTML = HIDE_ICON;
+  r.appendChild(mark);
+  var name = el('button', 'name', tr('hidden.label'));
+  setTip(name, tr('hidden.filter_hint'));
+  name.onclick = function () { setFilter({ folder: null, tags: [], hidden: true, q: '' }); };
+  r.appendChild(name);
+  r.appendChild(el('span', 'count', I18n.number(state.hiddenCount)));
+  li.appendChild(r);
+  var fav = $('fav-row');
+  if (fav) fav.after(li); else list.insertBefore(li, list.firstChild);
+  $('tags-section').hidden = false;
+}
+
+// Right-click on a folder in the sidebar: hide it from the timeline, or show it again.
+$('tree').addEventListener('contextmenu', function (ev) {
+  var b = ev.target.closest('button.name');
+  var f = b && b.dataset.id ? state.folderById[b.dataset.id] : null;
+  if (!f || !f.path) return;
+  ev.preventDefault();
+  var above = f.hidden && !f.hidden_own;
+  showMenu(ev.clientX, ev.clientY, [{
+    label: tr(above ? 'hidden.folder_by_parent' : f.hidden ? 'hidden.folder_show' : 'hidden.folder_hide'),
+    run: function () { if (!above) setFolderHidden(f, !f.hidden); },
+  }]);
+});
+
 // ------------------------------------------------------------------ search box
 
 // Typing searches the text right away (words in paths and tag names); the
@@ -775,6 +903,7 @@ $('search').addEventListener('keydown', function (ev) {
     if (f.texts.length) setFilter(withFilter({ texts: f.texts.slice(0, -1) }));
     else if (f.names.length) setFilter(withFilter({ names: f.names.slice(0, -1) }));
     else if (f.fav) setFilter(withFilter({ fav: false }));
+    else if (f.hidden) setFilter(withFilter({ hidden: false }));
     else if (f.place) setFilter(withFilter({ place: null }));
     else if (f.nodate) setFilter(withFilter({ nodate: false }));
     else if (f.dates.length) setFilter(withFilter({ dates: f.dates.slice(0, -1) }));
@@ -794,6 +923,16 @@ function favSuggestion(needle, f) {
   var words = ['favorite', 'favorites', 'favourite', 'favorit', 'favoriten', tr('fav.label').toLowerCase()];
   if (!words.some(function (w) { return w.indexOf(low) === 0; })) return [];
   return [{ kind: 'fav', id: 'fav', label: tr('fav.label'), count: state.favCount }];
+}
+
+// "Hidden" when what is typed starts a word for it (hidden, versteckt, verborgen, ausgeblendet,
+// the UI language's own word) and something is hidden. Over all drives it has no number.
+function hiddenSuggestion(needle, f) {
+  var low = needle.toLowerCase();
+  if (f.hidden || low.length < 3 || (!isAll() && !state.hiddenCount)) return [];
+  var words = HIDDEN_TYPED.concat([tr('hidden.label').toLowerCase()]);
+  if (!words.some(function (w) { return w.indexOf(low) === 0; })) return [];
+  return [{ kind: 'hidden', id: 'hidden', label: tr('hidden.label'), count: isAll() ? undefined : state.hiddenCount }];
 }
 
 // ---- comparing the drives of a backup pair (Manage drives opens these views)
@@ -921,7 +1060,7 @@ function suggest(text) {
   }
   var needle = text.trim();
   // Counted within the search as the list shows it (every term but the typed text).
-  var within = { q: needle, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, folder: f.folder, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null };
+  var within = { q: needle, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, hidden: f.hidden ? 1 : null, folder: f.folder, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null };
   api(LIBAPI + '/suggest' + query(within), opts).then(function (r) {
     if (seq !== sugg.seq) return;
     if (pre) {
@@ -935,7 +1074,7 @@ function suggest(text) {
       showSuggest(dateItems(r.dates), after && r.dates.length ? '' : tr('dates.hint_prefix'));
       return;
     }
-    var items = compareSuggestion(needle, f).concat(favSuggestion(needle, f));
+    var items = compareSuggestion(needle, f).concat(favSuggestion(needle, f), hiddenSuggestion(needle, f));
     items = items.concat(r.people.map(function (p) {
       state.personNames[p.id] = p.name;
       state.personSpecies[p.id] = p.species;
@@ -970,13 +1109,13 @@ function suggestAll(text, seq, opts) {
   var needle = text.trim(), f = state.filter;
   // The suggestions narrow with the filter, as on a single drive: counts are
   // the photos the list would show, and what would show nothing is left out.
-  var within = { q: needle, tag: f.tags, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null };
+  var within = { q: needle, tag: f.tags, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, hidden: f.hidden ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null };
   api('/api/all/suggest' + query(within), opts).then(function (r) {
     if (seq !== sugg.seq) return;
     var items = r.people.map(function (p) { return { kind: 'person', id: p.name, label: p.name, count: p.photos, person: { name: p.name, species: p.species } }; });
     r.groups.forEach(function (g) { state.groupNames[g.name] = g.name; items.push({ kind: 'group', id: g.name, label: g.name, count: g.photos }); });
     r.pets.forEach(function (p) { items.push({ kind: 'pet', id: p.species, label: PET_TERMS[p.species].label, count: p.photos }); });
-    items = favSuggestion(needle, f).concat(items);
+    items = favSuggestion(needle, f).concat(hiddenSuggestion(needle, f), items);
     r.tags.filter(function (t) { return f.tags.indexOf(t.name) < 0 && !isFavTag(t.name); }).forEach(function (t) {
       items.push({ kind: 'tag', id: t.name, label: t.name, count: t.count, folderTag: t.kind === 'folder' });
     });
@@ -1015,7 +1154,7 @@ function showSuggest(items, hint) {
   items.forEach(function (it, i) {
     if (it.kind !== last) {
       var f = state.filter, narrowed = f.tags.length || f.people.length || f.groups.length || f.pets.length || f.texts.length || f.names.length || f.folder || f.place;
-      var head = it.kind === 'fav' ? tr('fav.label') : it.kind === 'compare' ? tr('cmp.head') : it.kind === 'tag' ? tr(narrowed ? 'search.tags_here' : 'search.tags')
+      var head = it.kind === 'fav' ? tr('fav.label') : it.kind === 'hidden' ? tr('hidden.label') : it.kind === 'compare' ? tr('cmp.head') : it.kind === 'tag' ? tr(narrowed ? 'search.tags_here' : 'search.tags')
         : it.kind === 'person' ? tr(narrowed ? 'search.faces_here' : 'side.faces') : it.kind === 'group' ? tr('search.groups')
           : it.kind === 'pet' ? tr(narrowed ? 'search.pets_here' : 'search.pets') : it.kind === 'place' ? tr('search.places') : it.kind === 'date' ? tr('search.dates')
             : it.kind === 'text' ? tr('search.text') : it.kind === 'name' ? tr('search.names') : tr('search.folders');
@@ -1034,8 +1173,9 @@ function showSuggest(items, hint) {
     if (it.kind === 'place') label.appendChild(icon('place'));
     if (it.kind === 'date') label.appendChild(icon('date'));
     if (it.kind === 'folder') label.appendChild(folderIcon());
+    if (it.kind === 'hidden') label.appendChild(icon('hide'));
     if (it.kind === 'text' || it.kind === 'name') label.appendChild(icon(it.kind === 'text' ? 'scan' : 'draft'));
-    label.appendChild(el('span', 'text', (it.kind === 'text' || it.kind === 'name' ? '“' : it.kind === 'fav' ? '♥ ' : it.kind === 'compare' ? '⇄ ' : (it.kind === 'pet' || it.kind === 'group' || it.kind === 'person' || it.kind === 'place' || it.kind === 'date') ? ''
+    label.appendChild(el('span', 'text', (it.kind === 'text' || it.kind === 'name' ? '“' : it.kind === 'fav' ? '♥ ' : it.kind === 'compare' ? '⇄ ' : (it.kind === 'pet' || it.kind === 'group' || it.kind === 'person' || it.kind === 'place' || it.kind === 'date' || it.kind === 'hidden') ? ''
         : it.kind === 'folder' ? '' : '# ') + it.label + (it.kind === 'text' || it.kind === 'name' ? '”' : '')));
     b.appendChild(label);
     b.appendChild(el('span', 'count', it.count === undefined ? '' : I18n.number(it.count)));
@@ -1062,6 +1202,7 @@ function pickSuggest(it) {
   $('search').value = '';
   var f = state.filter;
   if (it.kind === 'fav') setFilter(withFilter({ fav: true, q: '' }));
+  else if (it.kind === 'hidden') setFilter(withFilter({ hidden: true, q: '' }));
   else if (it.kind === 'compare') setFilter(withFilter({ compare: it.id, q: '' }));
   else if (it.kind === 'tag') setFilter(withFilter({ tags: f.tags.indexOf(it.id) < 0 ? f.tags.concat([it.id]) : f.tags, q: '' }));
   else if (it.kind === 'person') setFilter(withFilter({ people: f.people.indexOf(it.id) < 0 ? f.people.concat([it.id]) : f.people, q: '' }));
@@ -1205,6 +1346,14 @@ function folderNode(f, depth) {
   var count = el('span', 'count', I18n.number(f.count));
   row.appendChild(toggle);
   row.appendChild(name);
+  if (f.hidden) {
+    // Hidden from the timeline: dimmed, with a small eye, and still a click away.
+    row.classList.add('hidden-folder');
+    var mark = el('span', 'ico');
+    mark.innerHTML = HIDE_ICON;
+    setTip(mark, tr('hidden.folder_row_hint'));
+    row.appendChild(mark);
+  }
   row.appendChild(count);
   li.appendChild(row);
   if (f.count === 0) li.hidden = true;
@@ -1225,7 +1374,7 @@ function folderNode(f, depth) {
   name.onclick = function () {
     expand(true);
     // Opening a folder replaces the search: its chip is the only one left.
-    setFilter({ folder: f.id, tags: [], people: [], pets: [], types: state.filter.types, fav: false, q: '' });
+    setFilter({ folder: f.id, tags: [], people: [], pets: [], types: state.filter.types, fav: false, hidden: false, q: '' });
   };
   return li;
 }
@@ -1329,8 +1478,8 @@ function loadTimeline(resetScroll) {
   // A newer list replaces the one still on its way (typing in the search box asks for one per pause).
   if (state.loadCtrl) state.loadCtrl.abort();
   var ctrl = state.loadCtrl = new AbortController();
-  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null, compare: f.compare === 'different' ? 'different' : null, q: f.q })
-    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null, compare: f.compare === 'different' ? null : f.compare || null, q: f.q });
+  var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, hidden: f.hidden ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null, compare: f.compare === 'different' ? 'different' : null, q: f.q })
+    : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, hidden: f.hidden ? 1 : null, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null, compare: f.compare === 'different' ? null : f.compare || null, q: f.q });
   return api(url, { signal: ctrl.signal }).then(function (data) {
     if (seq !== state.loadSeq) return;
     state.loadCtrl = null;
@@ -1349,6 +1498,8 @@ function loadTimeline(resetScroll) {
     (data.est || []).forEach(function (e) { state.est[e[0]] = e[1]; });
     state.favs = {};
     (data.favs || []).forEach(function (id) { state.favs[id] = true; });
+    state.hids = {};
+    (data.hids || []).forEach(function (id) { state.hids[id] = true; });
     state.live = {};
     data.live.forEach(function (p) { state.live[p[0]] = p[1]; });
     // What a text search found in each photo, shown over its thumbnail.
@@ -1915,6 +2066,8 @@ function openLightbox(i) {
 }
 
 function closeLightbox() {
+  var hiddenChange = lb.hiddenDirty;
+  lb.hiddenDirty = false;
   geoCleanup();
   stopDrawing();
   stopMedia();
@@ -1929,6 +2082,8 @@ function closeLightbox() {
   state.open = -1;
   if (!d || i < 0) return;
   focusCell(i, true);
+  // Photos were hidden or shown meanwhile: the list changes now.
+  if (hiddenChange && !state.filter.view) loadTimeline(false);
 }
 
 // The neighbours `showItem` asked for ahead.
@@ -1968,6 +2123,7 @@ function showItem() {
   $('lb-live').hidden = !state.live[id];
   $('lb-fav').hidden = false;
   markLightboxHeart();
+  markLightboxHide();
   markCollectionButton();
   applyAllowTrash();
   var rot = $('lb-rotate');
@@ -2280,6 +2436,7 @@ function renderPanelAll(info) {
   row(tr('info.path'), info.path);
   row(tr('info.size'), (info.width && info.height ? info.width + ' × ' + info.height + ' · ' : '') + formatBytes(info.size));
   row(tr('info.camera'), info.camera);
+  if (info.hidden_folder) row(tr('info.hidden'), tr('hidden.via_folder', { folder: info.hidden_folder }));
   // Everything below is only shown: tags, favorites and people are changed on the photo's own drive.
   if (state.favs[id]) {
     var heart = el('span', 'heart');
@@ -2289,7 +2446,7 @@ function renderPanelAll(info) {
   }
   var tags = el('div', 'tags readonly');
   (info.tags || []).forEach(function (t) {
-    if (t.source === 'user' && isFavTag(t.name)) return;
+    if (t.source === 'user' && (isFavTag(t.name) || isHiddenTag(t.name))) return;
     var tag = el('span', t.source === 'folder' ? 'folder' : 'own');
     if (t.source === 'folder') tag.appendChild(folderIcon());
     tag.appendChild(document.createTextNode(t.name));
@@ -2394,6 +2551,8 @@ function renderPanel() {
   if (info.duration_ms) row(tr('info.length'), tr('info.seconds', { n: Math.round(info.duration_ms / 1000) }));
   row(tr('info.camera'), info.camera);
   infoScreenshot(row, info);
+  // Hidden by its folder: the eye in the top bar cannot show it again, the folder can.
+  if (info.hidden_folder) row(tr('info.hidden'), tr('hidden.via_folder', { folder: info.hidden_folder }));
   infoTags(row, info);
   if (info.linked && info.linked.length) {
     var versions = el('div');
@@ -2593,6 +2752,7 @@ document.addEventListener('keydown', function (ev) {
   }
   else if ((ev.key === 'w' || ev.key === 'W') && plain) toggleText();
   else if ((ev.key === 'f' || ev.key === 'F') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) toggleFavoriteOpen();
+  else if ((ev.key === 'h' || ev.key === 'H') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) toggleHideOpen();
   else if ((ev.key === 'c' || ev.key === 'C') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) toggleCollection();
   else if ((ev.key === 'r' || ev.key === 'R') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) rotateOpen(ev.shiftKey ? 1 : -1);
 });
@@ -2658,6 +2818,7 @@ function fetchInfo() {
     trashCount = info.trash || 0;
     applyAllowTrash();
     dates.needs = info.needs_date || 0;
+    if ((state.hiddenCount || 0) !== (info.hidden || 0)) { state.hiddenCount = info.hidden || 0; paintHiddenRow(); }
     if (state.filter && state.filter.nodate) renderChips();
     $('nav-nodate').hidden = isAll() || (!dates.needs && !(state.filter && state.filter.nodate));
     if (info.thumbs_done < info.thumbs_total) {
@@ -2922,7 +3083,12 @@ function updateSelbar() {
   $('sel-all').disabled = !total;
   // Dimmed, not disabled: the tools stay in the keyboard order and keep their
   // label, so the bar does not jump while photos are picked.
-  ['sel-tag', 'sel-untag', 'sel-date', 'sel-geo', 'sel-move', 'sel-export', 'sel-trash'].forEach(function (id) {
+  // The eye hides what is selected, or (all of it hidden already) shows it again.
+  var allHidden = n > 0 && selectedIds().every(function (id) { return state.hids[id]; });
+  $('sel-hide').innerHTML = allHidden ? SHOW_ICON : HIDE_ICON;
+  setTip($('sel-hide'), tr(allHidden ? 'sel.unhide' : 'sel.hide'));
+  $('sel-hide').setAttribute('aria-label', tr(allHidden ? 'sel.unhide' : 'sel.hide'));
+  ['sel-tag', 'sel-untag', 'sel-date', 'sel-geo', 'sel-move', 'sel-export', 'sel-hide', 'sel-trash'].forEach(function (id) {
     $(id).setAttribute('aria-disabled', n ? 'false' : 'true');
   });
   var stop = $('selbar').querySelector('button[tabindex="0"]');
@@ -2989,6 +3155,11 @@ $('sel-trash').onclick = function () { trashDialog(selectedIds(), endSelection);
 $('sel-tag').onclick = function () { addTagDialog(selectedIds()); };
 $('sel-untag').onclick = function () { removeTagDialog(selectedIds()); };
 $('sel-export').onclick = function () { openExport(selectedIds(), ''); };
+$('sel-hide').onclick = function () {
+  var ids = selectedIds();
+  var on = !ids.every(function (id) { return state.hids[id]; });
+  setHidden(ids, on).then(function (r) { if (r && r.files) endSelection(); });
+};
 $('sel-geo').onclick = function () { locationDialog(null, selectedIds()); };
 
 // ------------------------------------------------------------------ move and trash
@@ -3020,6 +3191,17 @@ function moveDialog(ids, done) {
   setTip(keepLabel, tr('move.keep_hint'));
   body.appendChild(keepLabel);
   body.appendChild(el('p', 'hint', tr('move.hint')));
+  // Moving into a hidden folder hides the photos; out of one shows them again.
+  var hiddenNote = el('p', 'hint');
+  body.appendChild(hiddenNote);
+  var noteHidden = function () {
+    var to = input.value.trim().replace(/^\/+|\/+$/g, '');
+    var into = !!to && (state.folders || []).some(function (fo) { return fo.hidden_own && (to === fo.path || to.indexOf(fo.path + '/') === 0); });
+    var from = !!(current && current.hidden);
+    hiddenNote.textContent = into && !from ? tr('hidden.move_into') : !into && from && to ? tr('hidden.move_out') : '';
+  };
+  input.addEventListener('input', noteHidden);
+  noteHidden();
   var error = el('p', 'error');
   body.appendChild(error);
   var go = function (btn) {
@@ -4740,7 +4922,7 @@ function infoTags(row, info) {
   var tags = el('div', 'tags');
   info.tags.forEach(function (t) {
     state.tagNames[t.id] = t.name;
-    if (t.source === 'user' && isFavTag(t.name)) return; // the heart in the top bar
+    if (t.source === 'user' && (isFavTag(t.name) || isHiddenTag(t.name))) return; // the heart and the eye in the top bar
     var show = function () { closeLightbox(); setFilter({ folder: null, tags: [t.id], q: '' }); };
     if (t.source === 'folder') {
       var b = el('button', '');
@@ -4773,7 +4955,9 @@ function infoTags(row, info) {
       if (ev.key === 'Escape') { input.replaceWith(add); return; }
       if (ev.key !== 'Enter' || !input.value.trim()) return;
       // "favorite" is the heart, not a tag in the list.
-      if (meansFav(input.value)) { setFavorite([info.id], true).then(function () { input.replaceWith(add); }); return; }
+      if (meansFav(input.value)) { setFavorite([info.id], true).then(function () { input.replaceWith(add); toast(tr('tags.reserved_fav')); }); return; }
+      // "hidden", "versteckt" hide the photo, no tag appears.
+      if (meansHidden(input.value)) { setHidden([info.id], true, true).then(function () { input.replaceWith(add); toast(tr('tags.reserved_hidden')); }); return; }
       input.disabled = true;
       post(LIBAPI + '/tags/add', { ids: [info.id], name: input.value }).then(function () { tagsChanged(info.id); })
         .catch(function (e) { input.disabled = false; failed(e); });
@@ -4853,6 +5037,7 @@ function tagsChanged(id) {
     coll.busy = false;
     markCollectionButton();
     renderPanel();
+    markLightboxHide();
   }).catch(function () { coll.busy = false; markCollectionButton(); });
 }
 
@@ -4870,9 +5055,11 @@ function addTagDialog(ids) {
     btn.disabled = true;
     post(LIBAPI + '/tags/add', { ids: ids, name: input.value }).then(function (r) {
       closeModal();
-      toast(r.files ? tr('tags.added', { count: trn('count.photos', r.files), name: r.tag.name }) : tr('tags.already', { name: r.tag.name }));
+      toast(isFavTag(r.tag.name) ? tr('tags.reserved_fav') : isHiddenTag(r.tag.name) ? tr('tags.reserved_hidden')
+        : r.files ? tr('tags.added', { count: trn('count.photos', r.files), name: r.tag.name }) : tr('tags.already', { name: r.tag.name }));
       tagsChanged(null);
       if (isFavTag(r.tag.name)) loadTimeline(false); // the hearts (any spelling came back as the tag)
+      if (isHiddenTag(r.tag.name)) hiddenChanged(); // the photos are out of the list now
     }).catch(function (e) { btn.disabled = false; error.textContent = e.message; });
     return false;
   };
@@ -4892,7 +5079,7 @@ function removeTagDialog(ids) {
     body.appendChild(el('p', '', tr('tags.remove_which', { count: trn('count.photos', ids.length) })));
     var list = el('div', 'taglist');
     tags.forEach(function (t) {
-      var b = el('button', '', (isFavTag(t.name) ? '♥ ' + tr('fav.label') : t.name) + ' (' + I18n.number(t.count) + ')');
+      var b = el('button', '', (isFavTag(t.name) ? '♥ ' + tr('fav.label') : isHiddenTag(t.name) ? tr('hidden.label') : t.name) + ' (' + I18n.number(t.count) + ')');
       b.onclick = function () {
         b.disabled = true;
         post(LIBAPI + '/tags/remove', { ids: ids, name: t.name }).then(function (r) {
@@ -4900,6 +5087,7 @@ function removeTagDialog(ids) {
           toast(tr('tags.removed', { name: t.name, count: trn('count.photos', r.files) }));
           tagsChanged(null);
           if (isFavTag(t.name)) loadTimeline(false); // the hearts
+          if (isHiddenTag(t.name)) hiddenChanged();
         }).catch(function (e) { closeModal(); failed(e); });
       };
       list.appendChild(b);
@@ -4917,10 +5105,11 @@ function loadOwnTags() {
     state.favCount = 0;
     tags = tags.filter(function (t) {
       if (isFavTag(t.name)) state.favCount = t.count;
-      return !isFavTag(t.name);
+      return !isFavTag(t.name) && !isHiddenTag(t.name);
     });
     if (state.favCount) {
       var fli = el('li'), fr = el('div', 'row');
+      fli.id = 'fav-row';
       fr.appendChild(el('span', 'toggle heart', '♥'));
       var fname = el('button', 'name', tr('fav.label'));
       fname.onclick = function () { setFilter({ folder: null, tags: [], fav: true, q: '' }); };
@@ -4954,7 +5143,8 @@ function loadOwnTags() {
       }
       list.appendChild(li);
     });
-    $('tags-section').hidden = !tags.length && !state.favCount;
+    $('tags-section').hidden = !tags.length && !state.favCount && !state.hiddenCount;
+    paintHiddenRow();
     markActiveFolder();
     renderChips();
   }).catch(function () {});
@@ -8388,7 +8578,7 @@ function transferDialog(list, to, preferred, file) {
   var boxes = el('div', 'transfer-boxes');
   var note = el('p', 'hint');
   [pick, explain, boxes, note].forEach(function (n) { body.appendChild(n); });
-  var kinds = [['tags', 'transfer.tags', 'count.photos'], ['hearts', 'transfer.hearts', 'count.photos'], ['people', 'transfer.people', 'count.faces'], ['dates', 'transfer.dates', 'count.photos'], ['places', 'transfer.places', 'count.photos']];
+  var kinds = [['tags', 'transfer.tags', 'count.photos'], ['hearts', 'transfer.hearts', 'count.photos'], ['people', 'transfer.people', 'count.faces'], ['dates', 'transfer.dates', 'count.photos'], ['places', 'transfer.places', 'count.photos'], ['hidden', 'transfer.hidden', 'count.photos']];
   var checks = {}, seq = 0, go = null, anything = false, last = from.value;
   // What the routes are told about the source.
   var source = function () { return from.value === '#chosen' ? { file: file.path, to: to.library } : { from: from.value, to: to.library }; };
@@ -8406,16 +8596,26 @@ function transferDialog(list, to, preferred, file) {
     boxes.textContent = '';
     anything = false;
     kinds.forEach(function (k) {
-      var n = p.counts[k[0]];
+      var hidden = k[0] === 'hidden';
+      // Hidden photos and folders are counted together; the box is not ticked unless the user does.
+      var n = hidden ? (p.counts.hidden || 0) + (p.counts.hidden_folders || 0) : p.counts[k[0]];
       var line = el('label', 'transfer-box' + (n ? '' : ' off'));
       var cb = el('input');
       cb.type = 'checkbox';
-      cb.checked = !!n;
+      cb.checked = !!n && !hidden;
       cb.disabled = !n;
       cb.onchange = sync;
       checks[k[0]] = cb;
       line.appendChild(cb);
-      line.appendChild(document.createTextNode(' ' + tr(k[1], { n: trn(k[2], n) })));
+      var amount = trn(k[2], n);
+      if (hidden) {
+        var parts = [];
+        if (p.counts.hidden) parts.push(trn('count.photos', p.counts.hidden));
+        if (p.counts.hidden_folders) parts.push(trn('count.folders', p.counts.hidden_folders));
+        amount = parts.join(', ') || trn('count.photos', 0);
+        setTip(line, tr('transfer.hidden_hint'));
+      }
+      line.appendChild(document.createTextNode(' ' + tr(k[1], { n: amount })));
       boxes.appendChild(line);
       if (n) anything = true;
     });
@@ -8451,7 +8651,7 @@ function transferDialog(list, to, preferred, file) {
         btn.disabled = true;
         post('/api/all/transfer', req).then(function (r) {
           closeModal();
-          toast(r.counts.photos ? tr('transfer.done', { photos: trn('count.photos', r.counts.photos) }) : tr('transfer.nothing_new', { to: label(to) }));
+          toast(r.counts.photos || r.counts.hidden_folders ? tr('transfer.done', { photos: trn('count.photos', r.counts.photos) }) : tr('transfer.nothing_new', { to: label(to) }));
           if (state.filter && state.filter.view === 'drives') loadDrivesPage();
           refreshDrives();
         }).catch(function (e) { btn.disabled = false; failed(e); });

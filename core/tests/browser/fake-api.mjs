@@ -43,7 +43,8 @@ export function fakeLibrary() {
     faceLists: {}, // person id: { confirmed, suggested, rejected } (a person's page)
     trash: [], // what GET /trash answers (organize::TrashItem)
     dupGroups: [], // what GET /duplicates answers (duplicates::Group)
-    photos: null, // [{ id, version }]: the timeline (newest first, one month), else it is empty
+    photos: null, // [{ id, version, hidden?, folder? }]: the timeline (newest first, one month), else it is empty; `hidden`: 'tag' or 'folder'
+    folders: null, // [{ id, parent, name, path, count, hidden?, hidden_own? }], else the root only (hidden folders hide the photos whose `folder` is theirs)
     thumbs: [], // addresses of the thumbnails (and pictures) the page asked for, as written: `/files/7/thumb?v=...`
     step: null, // null (grouped), 'stale' (starting) or 'running'
     progress: [0, 0], // done, total while running
@@ -126,7 +127,7 @@ export function fakeLibrary() {
   const info = () => ({
     name: 'Faces', version: '0.0.1', photos: 200, videos: 0, missing: 0, thumbs_done: 200, thumbs_total: 200, video_posters: true,
     jobs: [{ kind: 'scan', state: 'done', started_at: 1, updated_at: 1, finished_at: 1, done: 200, total: 200 }],
-    busy: false, index_version: '1.0', trash: 0, needs_date: 0,
+    busy: false, index_version: '1.0', trash: 0, needs_date: 0, hidden: (lib.photos || []).filter((x) => x.hidden || (x.folder != null && (lib.folders || []).some((f) => f.id === x.folder && f.hidden))).length,
     faces: { done: 200, total: 200, faces: 200, pets_done: 0, pets: 0, running: false },
     clusters: {
       running: lib.step === 'running', done: lib.step === 'running' ? lib.progress[0] : 0, total: lib.step === 'running' ? lib.progress[1] : 0,
@@ -178,7 +179,7 @@ export function fakeLibrary() {
     '/info': () => info(),
     '/people': () => peopleOut(),
     '/groups': () => groupsOut(),
-    '/folders': () => [{ id: 1, parent: null, name: '', path: '', count: 200 }],
+    '/folders': () => (lib.folders || [{ id: 1, parent: null, name: '', path: '', count: 200 }]).map((f) => ({ hidden: false, hidden_own: false, ...f })),
     '/tags': (q) => lib.tags.filter((t) => fold(t.name).includes(fold(q.get('q') || ''))).slice(0, Number(q.get('limit') || 50)),
     // The search box (no filter here): own tags and people by name and the
     // text row's number; with `date:` only dates (none here), with `text:` or
@@ -203,9 +204,14 @@ export function fakeLibrary() {
         text: [...needle].length >= 2 ? count(lib.words, needle) : null,
       };
     },
-    '/timeline': () => {
-      const ph = lib.photos || [];
-      return { count: ph.length, ids: ph.map((x) => x.id), kinds: 'j'.repeat(ph.length), days: ph.map(() => 20260315), versions: ph.map((x) => x.version).join(''), live: [], tags: [], people: [], groups: [], favs: [], est: [] };
+    '/timeline': (q) => {
+      // The server's rule: hidden photos are out, unless the chip asks for them (then only they) or the
+      // folder is a hidden one.
+      const folder = Number(q.get('folder') || 0);
+      const isHidden = (x) => !!x.hidden || (x.folder != null && (lib.folders || []).some((f) => f.id === x.folder && f.hidden));
+      const revealed = (x) => folder && x.folder === folder && (lib.folders || []).some((f) => f.id === folder && f.hidden);
+      const ph = (lib.photos || []).filter((x) => !folder || x.folder === folder).filter((x) => (q.get('hidden') === '1' ? isHidden(x) : !isHidden(x) || revealed(x)));
+      return { count: ph.length, ids: ph.map((x) => x.id), kinds: 'j'.repeat(ph.length), days: ph.map(() => 20260315), versions: ph.map((x) => x.version).join(''), live: [], tags: [], people: [], groups: [], favs: [], hids: ph.filter(isHidden).map((x) => x.id), est: [] };
     },
     '/places': () => [],
     '/event-pattern': () => ({ pattern: 'YYYY-MM Name' }),
@@ -237,6 +243,7 @@ export function fakeLibrary() {
         modified: '2026-01-01T10:00:00', width: 100, height: 100, duration_ms: null, camera: null, tags: [], missing: false,
         date_source: null, sort_date: null, live: null, linked: [], faces: [],
         view_turn: 0, screenshot: false, screenshot_mark: null, position: null, text: [],
+        hidden: !!lib.photos.find((x) => x.id === id).hidden, hidden_tag: lib.photos.find((x) => x.id === id).hidden === 'tag', hidden_folder: lib.photos.find((x) => x.id === id).hidden === 'folder' ? 'Privat' : null,
       }];
     }
     for (const [pid, l] of Object.entries(lib.faceLists)) {
@@ -281,6 +288,24 @@ export function fakeLibrary() {
       x.turns = (x.turns || 0) + 1;
       x.version = `rot${String(x.turns).padStart(5, '0')}`;
       return [200, { id: x.id, version: x.version, orientation: 6, view_only: false }];
+    }],
+    // tags::set_hidden: the own tag `hidden` on or off; `files` is how many changed.
+    [/^\/hidden$/, (m, body) => {
+      let files = 0;
+      for (const x of lib.photos || []) {
+        if (!body.ids.includes(x.id)) continue;
+        if (body.on && !x.hidden) { x.hidden = 'tag'; files++; } else if (!body.on && x.hidden === 'tag') { x.hidden = false; files++; }
+      }
+      return [200, { tag: { id: 99, name: 'hidden' }, files, folder: 0 }];
+    }],
+    // tags::set_folder_hidden: the flag of a folder.
+    [/^\/hidden\/folder$/, (m, body) => {
+      const f = (lib.folders || []).find((x) => x.path === body.path);
+      if (!f) return [400, { error: 'no such folder: ' + body.path }];
+      const changed = !!f.hidden_own !== !!body.on;
+      f.hidden_own = !!body.on;
+      for (const x of lib.folders) x.hidden = lib.folders.some((o) => o.hidden_own && (x.path === o.path || x.path.startsWith(o.path + '/')));
+      return [200, { changed }];
     }],
     [/^\/clusters\/(\d+)\/name$/, (m, body) => {
       const c = lib.clusters.find((x) => x.id === Number(m[1]));
