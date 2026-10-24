@@ -865,6 +865,12 @@ impl View {
         (file, kind, key.chars().take(8).collect())
     }
 
+    /// Whether the view read this detected face (one found after it was read,
+    /// while a clustering ran, is not in it).
+    pub fn knows_face(&self, id: i64) -> bool {
+        self.m.faces.binary_search_by_key(&id, |f| f.id).is_ok()
+    }
+
     /// Ids of the faces not matched yet: nothing decided, nobody suggested
     /// (not even as "maybe"), and not taken for a pet's. Faces of every
     /// size, so the Face check can show what recognition could not place.

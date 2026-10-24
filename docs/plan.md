@@ -1469,12 +1469,18 @@ Measured with `scripts/bench-people.py make` and `scripts/bench-endpoints.py`
 (100 000 files, 299 000 faces). Rules that came out of it:
 
 - A request the browser drops is called off on the server too
-  (`serve/cancel.rs`): queued work does not begin, a running statement stops
-  at its next step. Shared caches (snapshot, people view, duplicates) are built
-  `unarmed`, so a quick succession of filters cannot keep restarting them.
+  (`serve/cancel.rs`), but only a read: `blocking_read` and `in_turn` (the
+  search box) give the work a token, so queued work does not begin and a
+  running statement stops at its next step. `blocking` never does: a handler
+  that changes originals, the index or a stored picture runs to its end whatever
+  the browser does. Shared caches (snapshot, tags, people view) are built
+  `unarmed`. The long face reads (list, stats, similar) use a connection of
+  their own (`App::reader`) and a copy of the people view, so they hold no lock.
 - The page asks for what a page shows with `pageApi`; `leavePage` (every
   `applyFilter`) calls those off, `latest:` lets a newer request replace an
-  older one. A bar at the top (`#busy`) shows after 400 ms of any such request
+  older one; a call-off rejects with an AbortError (`e.aborted`), which `failed`
+  ignores. Data that belongs to no page (the sidebar's people list) uses `api`,
+  not `pageApi`. A bar at the top (`#busy`) shows after 400 ms of any such request
   or POST. A new page-load request uses `pageApi`, not `api`.
 - Never put a long list of ids into `IN (...)` (the Face check's unmatched
   list took over 10 minutes; now 0.7 s): keep the ids in a set and decide in

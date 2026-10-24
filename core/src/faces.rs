@@ -215,7 +215,7 @@ pub fn stats_in(conn: &Connection, view: &crate::people::View, space: Space) -> 
             continue;
         }
         let not_face = marked.contains(&id);
-        let is_unmatched = unmatched_ids.contains(&id);
+        let is_unmatched = unmatched_ids.contains(&id) || !view.knows_face(id);
         unmatched += is_unmatched as u64;
         faces += 1;
         rotated_faces += (roll != 0) as u64;
@@ -585,7 +585,11 @@ pub fn list(conn: &Connection, view: &crate::people::View, q: &ListQuery) -> Res
     let mut stmt = conn.prepare(&sql)?;
     let mut rows = stmt.query(params![min, max])?;
     while let Some(r) = rows.next()? {
-        if ids.contains(&r.get::<_, i64>(0)?) != within {
+        let id = r.get::<_, i64>(0)?;
+        // A face found after the view was read (clustering is running) has no
+        // decision and nobody suggested: unmatched, whatever the set says.
+        let unknown = q.unmatched && !view.knows_face(id);
+        if !unknown && ids.contains(&id) != within {
             continue;
         }
         if total >= q.offset as u64 && faces.len() < limit {

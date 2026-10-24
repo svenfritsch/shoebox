@@ -2333,3 +2333,39 @@ fn suggestions_that_ran_out_regroup_soon() {
     server.stop().unwrap();
     assert_eq!(lib.snapshot(), guard, "regrouping changed an original");
 }
+
+/// The Face check's "not matched yet" comes from the people view the server
+/// keeps; a face found after that view was read (a clustering is running) is
+/// not in it, has no decision and nobody suggested, so it is still unmatched,
+/// in the list and in the stats.
+#[test]
+fn a_face_found_after_the_view_was_read_is_unmatched() {
+    let lib = empty("people-unmatched-new");
+    plain(&lib, "a/one.png", CARL, 1);
+    plain(&lib, "a/two.png", DORA, 1);
+    lib.scan();
+    recognize(&lib);
+    let c = conn(&lib);
+    let view = shoebox::people::View::load(&c).unwrap();
+    let query = shoebox::faces::ListQuery { unmatched: true, ..Default::default() };
+    let before = shoebox::faces::list(&c, &view, &query).unwrap();
+    // Another face of the first photo, as the recognizer adds while the clusters are worked out.
+    let cols: Vec<String> = c
+        .prepare("PRAGMA recog.table_info(faces)")
+        .unwrap()
+        .query_map([], |r| r.get::<_, String>(1))
+        .unwrap()
+        .map(Result::unwrap)
+        .filter(|n| n != "id")
+        .collect();
+    let list = cols.join(", ");
+    c.execute(&format!("INSERT INTO recog.faces ({list}) SELECT {list} FROM recog.faces WHERE id = (SELECT min(id) FROM recog.faces)"), [])
+        .unwrap();
+    let new_id: i64 = c.query_row("SELECT max(id) FROM recog.faces", [], |r| r.get(0)).unwrap();
+    assert!(!view.knows_face(new_id));
+    let after = shoebox::faces::list(&c, &view, &query).unwrap();
+    assert_eq!(after.total, before.total + 1, "the new face is listed");
+    assert!(after.faces.iter().any(|f| f.id == new_id), "{:?}", after.faces);
+    let stats = shoebox::faces::stats_in(&c, &view, shoebox::pets::Space::Faces).unwrap();
+    assert_eq!(stats.unmatched, after.total, "the stats count the same faces as the list");
+}

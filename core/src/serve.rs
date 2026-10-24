@@ -614,7 +614,17 @@ impl Drop for ConnGuard<'_> {
 }
 
 impl App {
-    /// The connection, for the work of one request.
+    /// A connection of its own for a long read (the face lists): it holds no
+    /// lock, so it keeps nobody else waiting, and the request can stop it.
+    fn reader(&self) -> Result<Connection> {
+        let conn = db::open_existing(&self.db_path)?;
+        recognize::attach(&conn, &self.db_path)?;
+        conn.pragma_update(None, "query_only", true)?;
+        Ok(conn)
+    }
+
+    /// The connection, for the work of one request (stopped if the request
+    /// is a read that was called off, see `blocking_read`).
     fn db(&self) -> ConnGuard<'_> {
         let guard = self.conn.lock().unwrap();
         cancel::arm(&guard);
@@ -1381,10 +1391,23 @@ impl IntoResponse for ApiError {
 
 type ApiResult<T> = Result<T, ApiError>;
 
-/// Run database work (or decoding) off the async threads. If the browser
-/// calls the request off, the work does not begin, or its statement stops
-/// (`cancel`).
+/// Run database work (or decoding) off the async threads. It always runs to
+/// its end, also if the browser has gone: this is for everything that changes
+/// something (originals, the index, stored pictures).
 async fn blocking<T: Send + 'static>(
+    app: &Arc<App>,
+    f: impl FnOnce(&App) -> ApiResult<T> + Send + 'static,
+) -> ApiResult<T> {
+    let app = app.clone();
+    tokio::task::spawn_blocking(move || f(&app))
+        .await
+        .map_err(|e| ApiError::Internal(anyhow::anyhow!("worker failed: {e}")))?
+}
+
+/// `blocking` for work that only reads: if the browser calls the request off,
+/// the work does not begin, or its statement stops (`cancel`). Never use it
+/// for a handler that writes: a stopped write is half a change.
+async fn blocking_read<T: Send + 'static>(
     app: &Arc<App>,
     f: impl FnOnce(&App) -> ApiResult<T> + Send + 'static,
 ) -> ApiResult<T> {
@@ -1431,7 +1454,7 @@ async fn in_turn<T: Send + 'static>(queue: &Arc<Semaphore>, f: impl FnOnce() -> 
     out
 }
 
-/// `blocking` in the turn of the library's searches (`in_turn`).
+/// `blocking_read` in the turn of the library's searches (`in_turn`): reads only.
 async fn queued<T: Send + 'static>(
     app: &Arc<App>,
     f: impl FnOnce(&App) -> ApiResult<T> + Send + 'static,
@@ -4005,7 +4028,7 @@ struct GeoPoints {
 }
 
 async fn geo_points(State(app): State<Arc<App>>) -> ApiResult<Json<GeoPoints>> {
-    blocking(&app, |app| {
+    blocking_read(&app, |app| {
         let conn = app.db();
         let snapshot = app.snapshot(&conn)?;
         let shown: HashSet<i64> = snapshot.items.iter().filter(|it| !it.hidden).map(|it| it.id).collect();
@@ -4141,7 +4164,7 @@ struct PlaceRow {
 }
 
 async fn places_list(State(app): State<Arc<App>>) -> ApiResult<Json<Vec<PlaceRow>>> {
-    blocking(&app, |app| {
+    blocking_read(&app, |app| {
         let conn = app.db();
         let snapshot = app.snapshot(&conn)?;
         let shown: HashSet<i64> = snapshot.items.iter().filter(|it| !it.hidden).map(|it| it.id).collect();

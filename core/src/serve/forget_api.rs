@@ -8,7 +8,7 @@ use axum::extract::State;
 use serde::{Deserialize, Serialize};
 
 use super::people_api::faces_change;
-use super::{ApiError, ApiResult, App, blocking};
+use super::{ApiError, ApiResult, App, blocking_read};
 use crate::forget::{self, Forgot};
 use crate::pets::Space;
 
@@ -19,7 +19,7 @@ pub(super) struct Counts {
 }
 
 pub(super) async fn counts(State(app): State<Arc<App>>) -> ApiResult<Json<Counts>> {
-    blocking(&app, move |app| {
+    blocking_read(&app, move |app| {
         let conn = app.db();
         Ok(Json(Counts { faces: forget::counts(&conn, Space::Faces)?, pets: forget::counts(&conn, Space::Pets)? }))
     })

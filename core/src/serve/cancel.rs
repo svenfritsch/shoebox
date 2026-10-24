@@ -61,14 +61,30 @@ pub(super) fn is_called_off() -> bool {
     current().is_some_and(|t| t.load(Ordering::SeqCst))
 }
 
+thread_local! {
+    /// Connections (by address) that carry the handler on this thread.
+    static ARMED: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
+}
+
+fn addr(conn: &Connection) -> usize {
+    conn as *const Connection as usize
+}
+
 pub(super) fn arm(conn: &Connection) {
     if let Some(token) = current() {
         let _ = conn.progress_handler(STEPS, Some(move || token.load(Ordering::SeqCst)));
+        ARMED.with(|a| {
+            let mut a = a.borrow_mut();
+            if !a.contains(&addr(conn)) {
+                a.push(addr(conn));
+            }
+        });
     }
 }
 
 pub(super) fn disarm(conn: &Connection) {
     let _ = conn.progress_handler(STEPS, None::<fn() -> bool>);
+    ARMED.with(|a| a.borrow_mut().retain(|x| *x != addr(conn)));
 }
 
 /// The connection while the request uses it: a statement stops when the
@@ -88,12 +104,27 @@ impl Drop for Armed<'_> {
     }
 }
 
+/// Puts the handler back on drop, only if the connection had it.
+struct Rearm<'a> {
+    conn: &'a Connection,
+    was_armed: bool,
+}
+
+impl Drop for Rearm<'_> {
+    fn drop(&mut self) {
+        if self.was_armed {
+            arm(self.conn);
+        }
+    }
+}
+
 /// `f` (building something that is kept for everyone) without the handler.
+/// What the connection had before is back afterwards, also if `f` panics.
 pub(super) fn unarmed<T>(conn: &Connection, f: impl FnOnce() -> T) -> T {
+    let was_armed = ARMED.with(|a| a.borrow().contains(&addr(conn)));
     disarm(conn);
-    let out = f();
-    arm(conn);
-    out
+    let _back = Rearm { conn, was_armed };
+    f()
 }
 
 #[cfg(test)]
@@ -102,7 +133,7 @@ mod tests {
 
     fn busy(conn: &Connection) -> rusqlite::Result<i64> {
         conn.query_row(
-            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 50000000) SELECT count(*) FROM n",
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 5000000) SELECT count(*) FROM n",
             [],
             |r| r.get(0),
         )
@@ -143,7 +174,36 @@ mod tests {
             (kept, busy(&conn))
         })
         .unwrap();
-        assert_eq!(out.0.unwrap(), 50_000_000);
+        assert_eq!(out.0.unwrap(), 5_000_000);
         assert!(out.1.is_err());
+    }
+
+    #[test]
+    fn unarmed_leaves_a_connection_without_the_handler_as_it_was() {
+        let conn = Connection::open_in_memory().unwrap();
+        let token = Arc::new(AtomicBool::new(false));
+        let out = run(token.clone(), || {
+            // Not armed: nothing is switched on afterwards.
+            unarmed(&conn, || ());
+            token.store(true, Ordering::SeqCst);
+            busy(&conn)
+        })
+        .unwrap();
+        assert_eq!(out.unwrap(), 5_000_000);
+    }
+
+    #[test]
+    fn the_handler_is_back_after_unarmed_work_panics() {
+        let conn = Connection::open_in_memory().unwrap();
+        let token = Arc::new(AtomicBool::new(false));
+        let out = run(token.clone(), || {
+            let _armed = Armed::new(&conn);
+            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unarmed(&conn, || panic!("boom"))));
+            assert!(r.is_err());
+            token.store(true, Ordering::SeqCst);
+            busy(&conn)
+        })
+        .unwrap();
+        assert!(out.is_err());
     }
 }

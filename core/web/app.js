@@ -136,8 +136,8 @@ function api(path, opts) {
 // The requests of the page being shown. Leaving the page or changing what it
 // lists calls them off (the browser drops them and the server stops working on
 // them, see serve/cancel.rs), so they never queue up behind the next page. A
-// request called off never answers: nothing is shown for it and no error
-// appears. `latest` names a request a newer one with the same name replaces
+// request called off is rejected with an AbortError (`e.aborted`): handlers
+// that clean up still run, `failed` shows nothing for it. `latest` names a request a newer one with the same name replaces
 // (the face list asked again for another sort).
 var pageCalls = { ctrls: [], latest: {}, pending: 0, posts: 0, timer: null };
 
@@ -167,12 +167,10 @@ function pageApi(path, opts) {
     if (latest && pageCalls.latest[latest] === ctrl) delete pageCalls.latest[latest];
     busyUpdate();
   };
-  return new Promise(function (resolve, reject) {
-    api(path, Object.assign({ signal: ctrl.signal }, opts)).then(function (r) { done(); resolve(r); }, function (e) {
-      done();
-      if (e && e.name === 'AbortError') return; // called off: the page moved on
-      reject(e);
-    });
+  return api(path, Object.assign({ signal: ctrl.signal }, opts)).then(function (r) { done(); return r; }, function (e) {
+    done();
+    if (e && e.name === 'AbortError') e.aborted = true; // called off: the page moved on (failed() says nothing)
+    throw e;
   });
 }
 
@@ -3118,7 +3116,7 @@ function report(title, lines) {
   openModal(title, ul, [{ label: tr('app.ok') }]);
 }
 
-function failed(e) { openModal(tr('app.failed'), String(e.message || e), [{ label: tr('app.ok') }]); }
+function failed(e) { if (e && e.aborted) return; openModal(tr('app.failed'), String(e.message || e), [{ label: tr('app.ok') }]); }
 
 // ------------------------------------------------------------------ selection
 
@@ -5752,7 +5750,7 @@ function loadTextCheck() {
   Promise.all([pageApi(LIBAPI + '/text/stats'), pageApi(LIBAPI + '/text/check')]).then(function (r) {
     if (state.filter.view !== 'text') return;
     renderTextCheck(body, r[0], r[1]);
-  }).catch(function (e) { body.textContent = e.message; });
+  }).catch(function (e) { if (!e.aborted) body.textContent = e.message; });
 }
 
 function renderTextCheck(body, s, check) {
@@ -5824,7 +5822,7 @@ function renderTextCheck(body, s, check) {
   var refresh = function () {
     Promise.all([pageApi(LIBAPI + '/text/stats'), pageApi(LIBAPI + '/text/check')]).then(function (r) {
       if (state.filter.view === 'text') fill(r[0], r[1]);
-    }).catch(function (e) { dyn.textContent = e.message; });
+    }).catch(function (e) { if (!e.aborted) dyn.textContent = e.message; });
   };
   fill(s, check);
 }
@@ -6021,7 +6019,7 @@ function loadPeople() {
 
 function fetchPeople() {
   people.stale = false;
-  return Promise.all([pageApi(LIBAPI + '/people'), pageApi(LIBAPI + '/groups')]).then(function (r) {
+  return Promise.all([api(LIBAPI + '/people'), api(LIBAPI + '/groups')]).then(function (r) {
     people.list = r[0];
     people.groups = r[1];
     people.byId = {};
@@ -8895,7 +8893,7 @@ function loadDrivesPage() {
   var role = function (d, value, of) {
     post('/api/all/role', { library: d.library, role: value, of: of || null }).then(function () { toast(tr('drives.role_toast', { name: d.name, role: tr('drives.role.' + value) })); loadDrivesPage(); refreshDrives(); }).catch(failed);
   };
-  Promise.all([pageApi('/api/all/drives'), pageApi('/api/all/backups'), api('/api/all/transfer').catch(function () { return []; })]).then(function (res) {
+  Promise.all([pageApi('/api/all/drives'), pageApi('/api/all/backups'), pageApi('/api/all/transfer').catch(function (e) { if (e.aborted) throw e; return []; })]).then(function (res) {
     var list = res[0], backups = res[1], hints = res[2];
     var primaryOf = {};
     backups.forEach(function (b) { if (b.primary) primaryOf[b.library] = b.primary; });

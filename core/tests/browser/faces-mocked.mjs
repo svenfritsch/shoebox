@@ -1162,6 +1162,27 @@ await test('leaving the Unnamed page calls off the clusters it asked for', await
   lib.release();
   await settle(p, lib);
   check(await p.locator('#page .cluster').count() === 0, 'a cluster from the page that was left is shown');
+  check(await p.locator('#modal').isHidden(), 'an error is shown for a request that was called off');
+}));
+
+// The sidebar's people list belongs to no page: leaving a page must not call it
+// off (a call-off that never ends left it "on its way" for the whole session).
+await test('the people list asked for while a page is left is still read and can be read again', await on('', (lib) => lib.person('Anna'), async (p, lib) => {
+  await pauseClock(p);
+  await settle(p, lib);
+  const { calledOff } = searchLog(p, lib);
+  lib.hold = /^\/people$/;
+  await p.evaluate(() => { people.stale = true; loadPeople(); });
+  await until('the people to be asked for', () => lib.held.length > 0);
+  await p.evaluate(() => { location.hash = '#view=trash'; });
+  await settle(p, lib).catch(() => {});
+  lib.release();
+  await settle(p, lib);
+  check(!calledOff.some((c) => c.startsWith('/people')), 'the people list was called off by leaving the page');
+  check(await p.evaluate(() => peopleFlight === null), 'the people list is still on its way');
+  await p.evaluate(() => { people.stale = true; people.list = []; loadPeople(); });
+  await settle(p, lib);
+  check(await p.evaluate(() => people.list.length) === 1, 'the people list is not read again');
 }));
 
 await test('a bar shows when a request takes longer than 400 ms and goes when it is answered', await on('view=unnamed', (lib) => lib.cluster(3), async (p, lib) => {

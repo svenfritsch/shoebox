@@ -10,13 +10,20 @@ use axum::response::Response;
 use libheif_rs::LibHeif;
 use serde::Deserialize;
 
-use super::{ApiError, ApiResult, App, IMMUTABLE, blocking, jpeg};
+use super::{ApiError, ApiResult, App, IMMUTABLE, blocking, blocking_read, cancel, jpeg};
 use crate::classify::Kind;
 use crate::faces;
 use crate::thumbs;
 
 pub(super) async fn list(State(app): State<Arc<App>>, Query(q): Query<faces::ListQuery>) -> ApiResult<Json<faces::List>> {
-    blocking(&app, move |app| Ok(Json(app.with_people(|conn, view| faces::list(conn, view, &q))?))).await
+    blocking_read(&app, move |app| {
+        // The view is copied out of the lock; the scan runs on a connection of its own.
+        let view = app.people_view()?;
+        let conn = app.reader()?;
+        let _armed = cancel::Armed::new(&conn);
+        Ok(Json(faces::list(&conn, &view, &q)?))
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -31,7 +38,13 @@ pub(super) async fn stats(State(app): State<Arc<App>>, Query(q): Query<StatsQuer
         Some("pets") => crate::pets::Space::Pets,
         Some(other) => return Err(ApiError::BadRequest(format!("kind is faces or pets, not {other:?}"))),
     };
-    blocking(&app, move |app| Ok(Json(app.with_people(|conn, view| faces::stats_in(conn, view, space))?))).await
+    blocking_read(&app, move |app| {
+        let view = app.people_view()?;
+        let conn = app.reader()?;
+        let _armed = cancel::Armed::new(&conn);
+        Ok(Json(faces::stats_in(&conn, &view, space)?))
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -45,8 +58,10 @@ pub(super) async fn similar(
     Query(q): Query<SimilarQuery>,
 ) -> ApiResult<Json<Vec<faces::Neighbour>>> {
     let limit = q.limit.unwrap_or(24).min(200);
-    blocking(&app, move |app| {
-        faces::similar(&app.db(), id, limit)?.map(Json).ok_or(ApiError::NotFound)
+    blocking_read(&app, move |app| {
+        let conn = app.reader()?;
+        let _armed = cancel::Armed::new(&conn);
+        faces::similar(&conn, id, limit)?.map(Json).ok_or(ApiError::NotFound)
     })
     .await
 }
