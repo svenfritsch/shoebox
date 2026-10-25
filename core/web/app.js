@@ -9107,8 +9107,10 @@ function refreshDrives() {
   });
 }
 
-// The messages first: everything below builds its text from them.
-I18n.ready.then(function () {
+// The messages first: everything below builds its text from them. And every script: dates.js, geo.js and
+// export.js load after this one and the first paint calls into them, so start once the page has loaded.
+var scriptsLoaded = document.readyState === 'complete' ? Promise.resolve() : new Promise(function (done) { window.addEventListener('load', done); });
+Promise.all([I18n.ready, scriptsLoaded]).then(function () {
   var sel = $('lang');
   Object.keys(I18n.langs).forEach(function (code) {
     var o = el('option', '', I18n.langs[code]);

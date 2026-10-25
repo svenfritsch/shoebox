@@ -1567,4 +1567,13 @@ await test('a caret in the sidebar goes from muted to full strength on hover, wi
   }
 }));
 
+await test('the page starts only once every script is loaded: a late export.js does not break the first paint', await on('tag=1', (lib) => {
+  lib.photos = [1, 2].map((id) => ({ id, version: `orig000${id}` }));
+  lib.tags = [{ id: 1, name: 'Strand', count: 2, kind: 'own' }];
+  lib.lateScripts = { '/export.js': 700 };
+}, async (p, lib) => {
+  await cellCount(p, 2);
+  check(await p.locator('#filters .export-chip').count() === 1, 'the Export button next to the tag chip is missing');
+}));
+
 await finish();

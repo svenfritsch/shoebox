@@ -416,6 +416,8 @@ export function fakeLibrary() {
       const file = path === '/' ? 'web/index.html' : path.startsWith('/i18n/') ? path.slice(1) : 'web' + path;
       // APP_JS=<file>: this app.js instead (to see that a test fails when the page does something else).
       const from = path === '/app.js' && process.env.APP_JS ? process.env.APP_JS : ROOT + file;
+      // A script that arrives late (a slow disk or network): `lib.lateScripts = { '/export.js': ms }`.
+      if (lib.lateScripts?.[path]) await new Promise((go) => setTimeout(go, lib.lateScripts[path]));
       try {
         return route.fulfill({ status: 200, contentType: TYPES[file.split('.').pop()] || 'application/octet-stream', body: readFileSync(from) });
       } catch (e) {
