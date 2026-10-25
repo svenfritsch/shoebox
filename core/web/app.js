@@ -3229,6 +3229,7 @@ function moveDialog(ids, done) {
   var current = state.filter.folder && state.folderById[state.filter.folder];
   if (current && current.path) input.value = current.path;
   body.appendChild(input);
+  body.appendChild(el('p', 'hint', tr('move.hint')));
   var keepLabel = el('label', 'check');
   var keep = el('input');
   keep.type = 'checkbox';
@@ -3237,7 +3238,6 @@ function moveDialog(ids, done) {
   keepLabel.appendChild(document.createTextNode(' ' + tr('move.keep_folder_tags')));
   setTip(keepLabel, tr('move.keep_hint'));
   body.appendChild(keepLabel);
-  body.appendChild(el('p', 'hint', tr('move.hint')));
   // Moving into a hidden folder hides the photos; out of one shows them again.
   var hiddenNote = el('p', 'hint');
   body.appendChild(hiddenNote);
