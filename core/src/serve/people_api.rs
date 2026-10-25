@@ -406,7 +406,9 @@ fn counts(app: &App, conn: &rusqlite::Connection, pairs: &Pairs, filter: &browse
     }
     let keys = match cache.as_ref() {
         Some(c) if Arc::ptr_eq(&c.keys.view, &view) => c.keys.clone(),
-        _ => {
+        // Kept for the next searches (of any filter), so it is not stopped halfway
+        // when the search that builds it is called off.
+        _ => super::cancel::unarmed(conn, || -> anyhow::Result<Arc<Keys>> {
             let of_person = people::keys_by_person(conn)?;
             let mut of_group = Vec::new();
             for g in people::groups(conn)? {
@@ -414,8 +416,8 @@ fn counts(app: &App, conn: &rusqlite::Connection, pairs: &Pairs, filter: &browse
                 let keys: HashSet<String> = people::members_of_group(conn, g.id)?.iter().filter_map(|p| of_person.get(p)).flatten().cloned().collect();
                 of_group.push((g.id, keys));
             }
-            Arc::new(Keys { view: view.clone(), of_person, of_group, of_pets: people::keys_of_all_pets(conn)? })
-        }
+            Ok(Arc::new(Keys { view: view.clone(), of_person, of_group, of_pets: people::keys_of_all_pets(conn)? }))
+        })?,
     };
     let of_keys = |keys: &HashSet<String>| -> u64 { keys.iter().map(|k| files_per_key.get(k).copied().unwrap_or(0)).sum() };
     let counts = Counts {

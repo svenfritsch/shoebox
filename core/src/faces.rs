@@ -215,7 +215,7 @@ pub fn stats_in(conn: &Connection, view: &crate::people::View, space: Space) -> 
             continue;
         }
         let not_face = marked.contains(&id);
-        let is_unmatched = unmatched_ids.contains(&id) || !view.knows_face(id);
+        let is_unmatched = unmatched_ids.contains(&id) || (!view.knows_face(id) && !placed_since(conn, view, id)?);
         unmatched += is_unmatched as u64;
         faces += 1;
         rotated_faces += (roll != 0) as u64;
@@ -548,6 +548,18 @@ fn item(r: &rusqlite::Row) -> rusqlite::Result<Item> {
     })
 }
 
+/// A face found after the view was read, that a decision already covers (it
+/// was detected again, with a new id, at the box of a face that was named):
+/// not unmatched. Only asked for faces the view does not know.
+fn placed_since(conn: &Connection, view: &crate::people::View, id: i64) -> Result<bool> {
+    let row = conn
+        .query_row("SELECT key, x, y, w, h, species FROM recog.faces WHERE id = ?1", [id], |r| {
+            Ok((r.get::<_, String>(0)?, [r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?], r.get::<_, Option<String>>(5)?))
+        })
+        .optional()?;
+    Ok(row.is_some_and(|(key, b, species)| view.m.decision_covers(&key, b, species.as_deref())))
+}
+
 /// Faces of present photos, filtered and sorted for the face check page.
 /// `conn` has `recog` attached (at the current schema).
 /// `view` is the people view (the server keeps one, so a request does not
@@ -588,7 +600,7 @@ pub fn list(conn: &Connection, view: &crate::people::View, q: &ListQuery) -> Res
         let id = r.get::<_, i64>(0)?;
         // A face found after the view was read (clustering is running) has no
         // decision and nobody suggested: unmatched, whatever the set says.
-        let unknown = q.unmatched && !view.knows_face(id);
+        let unknown = q.unmatched && !view.knows_face(id) && !placed_since(conn, view, id)?;
         if !unknown && ids.contains(&id) != within {
             continue;
         }

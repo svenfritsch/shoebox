@@ -403,6 +403,9 @@ impl App {
         let people_conn = db::open_existing(&db_path)?;
         recognize::attach(&people_conn, &db_path)?;
         people_conn.pragma_update(None, "query_only", true)?;
+        let reader = db::open_existing(&db_path)?;
+        recognize::attach(&reader, &db_path)?;
+        reader.pragma_update(None, "query_only", true)?;
 
         let name = volume::library_name(&root);
         // Older versions kept a crop of every face looked at, and some people
@@ -419,6 +422,7 @@ impl App {
             db_path,
             name,
             conn: Mutex::new(conn),
+            reader: Mutex::new(reader),
             snapshot: Mutex::new(None),
             duplicates: Mutex::new(None),
             copies: Mutex::new(None),
@@ -469,6 +473,8 @@ struct App {
     /// One connection (library.db with thumbs.db attached); requests are
     /// short, and rendering happens outside the lock.
     conn: Mutex<Connection>,
+    /// A second connection for reads that take a while (`reader`).
+    reader: Mutex<Connection>,
     /// Timeline and folders, rebuilt when the index changed.
     snapshot: Mutex<Option<(IndexVersion, Arc<Snapshot>)>>,
     duplicates: Mutex<Option<(IndexVersion, Arc<Vec<duplicates::Group>>)>>,
@@ -614,13 +620,11 @@ impl Drop for ConnGuard<'_> {
 }
 
 impl App {
-    /// A connection of its own for a long read (the face lists): it holds no
-    /// lock, so it keeps nobody else waiting, and the request can stop it.
-    fn reader(&self) -> Result<Connection> {
-        let conn = db::open_existing(&self.db_path)?;
-        recognize::attach(&conn, &self.db_path)?;
-        conn.pragma_update(None, "query_only", true)?;
-        Ok(conn)
+    /// The connection of the long face reads (list, stats, similar): its own,
+    /// so they do not keep the others waiting, and kept, so its cache is warm.
+    /// One at a time; a read that was called off lets go at its next step.
+    fn reader(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.reader.lock().unwrap()
     }
 
     /// The connection, for the work of one request (stopped if the request

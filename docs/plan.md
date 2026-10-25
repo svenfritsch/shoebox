@@ -1475,7 +1475,12 @@ Measured with `scripts/bench-people.py make` and `scripts/bench-endpoints.py`
   that changes originals, the index or a stored picture runs to its end whatever
   the browser does. Shared caches (snapshot, tags, people view) are built
   `unarmed`. The long face reads (list, stats, similar) use a connection of
-  their own (`App::reader`) and a copy of the people view, so they hold no lock.
+  their own, kept (`App::reader`), and a copy of the people view, so they hold
+  no lock of ours. The index is in rollback-journal mode: while such a read runs
+  (0.5-2.4 s on the bench library) a writer waits for it, up to the 10 s busy
+  timeout; `people_conn` (the people view's reads, 10 s and more) and the
+  recognizer's process already do the same. If a slow drive makes a face read
+  last near 10 s, read in chunks (keyset on `px, id`) instead of one statement.
 - The page asks for what a page shows with `pageApi`; `leavePage` (every
   `applyFilter`) calls those off, `latest:` lets a newer request replace an
   older one; a call-off rejects with an AbortError (`e.aborted`), which `failed`
@@ -1485,7 +1490,8 @@ Measured with `scripts/bench-people.py make` and `scripts/bench-endpoints.py`
 - Never put a long list of ids into `IN (...)` (the Face check's unmatched
   list took over 10 minutes; now 0.7 s): keep the ids in a set and decide in
   Rust, or use a table.
-- Still slow on 100 000 photos, all with the bar and called off on leaving:
+- Still slow on 100 000 photos, all with the bar and called off on leaving (the
+  timeline and the search box's requests show the bar through `tracked`):
   `/suggest` 3 s (queued, own abort), `/faces/similar` 1.5-2.4 s (scans every
   embedding), `/faces/stats` 0.8 s, `/recognition/forget` 0.8 s, the face list
   0.6-0.7 s. Everything else is under 0.4 s.

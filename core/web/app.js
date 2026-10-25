@@ -149,6 +149,16 @@ function busyUpdate() {
   if (pageCalls.timer === null && $('busy').hidden) pageCalls.timer = setTimeout(function () { pageCalls.timer = null; $('busy').hidden = false; }, 400);
 }
 
+// Counts a request that is not called off with the page (a POST, the search
+// box's, the timeline's own) for the bar.
+function tracked(promise) {
+  pageCalls.posts++;
+  busyUpdate();
+  var done = function () { pageCalls.posts--; busyUpdate(); };
+  promise.then(done, done);
+  return promise;
+}
+
 function pageApi(path, opts) {
   opts = Object.assign({}, opts);
   var latest = opts.latest;
@@ -188,16 +198,11 @@ function leavePage() {
 // Every change is a POST with the X-Shoebox header (the server refuses it
 // otherwise, so other web pages cannot make changes).
 function post(path, body) {
-  pageCalls.posts++;
-  busyUpdate();
-  var done = function () { pageCalls.posts--; busyUpdate(); };
-  var req = api(path, {
+  return tracked(api(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Shoebox': '1' },
     body: JSON.stringify(body || {}),
-  });
-  req.then(done, done);
-  return req;
+  }));
 }
 
 // Arrays repeat their key (`tag=1&tag=2`).
@@ -1131,7 +1136,7 @@ function suggest(text) {
   var needle = text.trim();
   // Counted within the search as the list shows it (every term but the typed text).
   var within = { q: needle, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, hidden: f.hidden ? 1 : null, folder: f.folder, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null };
-  api(LIBAPI + '/suggest' + query(within), opts).then(function (r) {
+  tracked(api(LIBAPI + '/suggest' + query(within), opts)).then(function (r) {
     if (seq !== sugg.seq) return;
     if (pre) {
       var found = pre.kind === 'text' ? r.text : r.name;
@@ -1180,7 +1185,7 @@ function suggestAll(text, seq, opts) {
   // The suggestions narrow with the filter, as on a single drive: counts are
   // the photos the list would show, and what would show nothing is left out.
   var within = { q: needle, tag: f.tags, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, hidden: f.hidden ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null };
-  api('/api/all/suggest' + query(within), opts).then(function (r) {
+  tracked(api('/api/all/suggest' + query(within), opts)).then(function (r) {
     if (seq !== sugg.seq) return;
     var items = r.people.map(function (p) { return { kind: 'person', id: p.name, label: p.name, count: p.photos, person: { name: p.name, species: p.species } }; });
     r.groups.forEach(function (g) { state.groupNames[g.name] = g.name; items.push({ kind: 'group', id: g.name, label: g.name, count: g.photos }); });
@@ -1580,7 +1585,7 @@ function loadTimeline(resetScroll) {
   var ctrl = state.loadCtrl = new AbortController();
   var url = isAll() ? '/api/all/timeline' + query({ tag: f.tags, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, hidden: f.hidden ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null, compare: f.compare === 'different' ? 'different' : null, q: f.q })
     : LIBAPI + '/timeline' + query({ folder: f.folder, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, hidden: f.hidden ? 1 : null, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null, compare: f.compare === 'different' ? null : f.compare || null, q: f.q });
-  return api(url, { signal: ctrl.signal }).then(function (data) {
+  return tracked(api(url, { signal: ctrl.signal })).then(function (data) {
     if (seq !== state.loadSeq) return;
     state.loadCtrl = null;
     if (isAll()) allTimelineLoaded(data);
@@ -5536,7 +5541,7 @@ function faceCard(face, similarity) {
 // The nearest neighbours by embedding (read only): which similarity still
 // means "same person" is what 5c-2 needs to know.
 function similarFaces(face) {
-  api(LIBAPI + '/faces/' + face.id + '/similar?limit=24').then(function (list) {
+  pageApi(LIBAPI + '/faces/' + face.id + '/similar?limit=24', { latest: 'face-similar' }).then(function (list) {
     var box = el('div');
     box.appendChild(el('p', 'hint', tr(face.species ? 'facecheck.similar_hint_pet' : 'facecheck.similar_hint')));
     var grid = el('div', 'faces');

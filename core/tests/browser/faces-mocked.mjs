@@ -1200,6 +1200,25 @@ await test('a bar shows when a request takes longer than 400 ms and goes when it
   await until('the bar to go', () => p.locator('#busy').isHidden());
 }));
 
+// The search box's requests and the photos list show the bar too when they take long.
+await test('the bar shows while the photos or the suggestions take longer than 400 ms', await on('', () => null, async (p, lib) => {
+  await pauseClock(p);
+  await settle(p, lib);
+  const bar = p.locator('#busy');
+  for (const [path, start] of [['/timeline', () => { loadTimeline(false); }], ['/suggest', () => { suggest('ab'); }]]) {
+    lib.hold = new RegExp(`^\\${path}$`);
+    lib.held = [];
+    await p.evaluate(start);
+    await until(`${path} to be asked for`, () => lib.held.length > 0);
+    await p.clock.runFor(399);
+    check(await bar.isHidden(), `the bar shows before 400 ms of ${path}`);
+    await p.clock.runFor(1);
+    check(await bar.isVisible(), `the bar does not show after 400 ms of ${path}`);
+    lib.release();
+    await until(`the bar to go after ${path}`, () => bar.isHidden());
+  }
+}));
+
 // ---- hidden from the timeline (phase 20)
 
 // The page applied what was done (a hash change, then its requests) and drew it: the time runs on, round

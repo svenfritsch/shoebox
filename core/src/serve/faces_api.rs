@@ -19,7 +19,7 @@ pub(super) async fn list(State(app): State<Arc<App>>, Query(q): Query<faces::Lis
     blocking_read(&app, move |app| {
         // The view is copied out of the lock; the scan runs on a connection of its own.
         let view = app.people_view()?;
-        let conn = app.reader()?;
+        let conn = app.reader();
         let _armed = cancel::Armed::new(&conn);
         Ok(Json(faces::list(&conn, &view, &q)?))
     })
@@ -40,7 +40,7 @@ pub(super) async fn stats(State(app): State<Arc<App>>, Query(q): Query<StatsQuer
     };
     blocking_read(&app, move |app| {
         let view = app.people_view()?;
-        let conn = app.reader()?;
+        let conn = app.reader();
         let _armed = cancel::Armed::new(&conn);
         Ok(Json(faces::stats_in(&conn, &view, space)?))
     })
@@ -59,7 +59,7 @@ pub(super) async fn similar(
 ) -> ApiResult<Json<Vec<faces::Neighbour>>> {
     let limit = q.limit.unwrap_or(24).min(200);
     blocking_read(&app, move |app| {
-        let conn = app.reader()?;
+        let conn = app.reader();
         let _armed = cancel::Armed::new(&conn);
         faces::similar(&conn, id, limit)?.map(Json).ok_or(ApiError::NotFound)
     })

@@ -368,6 +368,18 @@ impl Matched {
             .collect()
     }
 
+    /// Whether a decision other than a rejection covers a face at `b` in
+    /// content `key`: how a detected face is matched to a decision. For a face
+    /// found after this was read, which has no index in it yet.
+    pub fn decision_covers(&self, key: &str, b: [f64; 4], species: Option<&str>) -> bool {
+        self.decisions.iter().any(|d| {
+            d.decision != Decision::Rejected
+                && d.key == key
+                && crate::pets::kind_matches(d.species.as_deref(), species)
+                && recognize::iou(b, d.b) >= MATCH_IOU
+        })
+    }
+
     /// Decisions matched to face `i`.
     fn rows_of(&self, i: usize) -> Vec<usize> {
         (0..self.decisions.len()).filter(|&d| self.face_of[d] == Some(i)).collect()

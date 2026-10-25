@@ -46,10 +46,17 @@ pub(super) fn run<T>(token: Arc<AtomicBool>, f: impl FnOnce() -> T) -> Option<T>
     if token.load(Ordering::SeqCst) {
         return None;
     }
-    let before = CURRENT.with(|c| c.replace(Some(token)));
-    let out = f();
-    CURRENT.with(|c| *c.borrow_mut() = before);
-    Some(out)
+    // Put back on drop, also if `f` panics: the thread goes back to the pool and
+    // must not keep the token of a request that is over (it would stop the next
+    // request's writes).
+    struct Restore(Option<Arc<AtomicBool>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            CURRENT.with(|c| *c.borrow_mut() = self.0.take());
+        }
+    }
+    let _restore = Restore(CURRENT.with(|c| c.replace(Some(token))));
+    Some(f())
 }
 
 /// The token of the request this thread works for, if any.
@@ -205,5 +212,13 @@ mod tests {
         })
         .unwrap();
         assert!(out.is_err());
+    }
+
+    #[test]
+    fn the_token_is_gone_from_the_thread_after_a_panic() {
+        let token = Arc::new(AtomicBool::new(false));
+        let r = std::panic::catch_unwind(|| run(token, || panic!("boom")));
+        assert!(r.is_err());
+        assert!(current().is_none(), "the next request on this thread would inherit the token");
     }
 }

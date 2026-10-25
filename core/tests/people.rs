@@ -2369,3 +2369,73 @@ fn a_face_found_after_the_view_was_read_is_unmatched() {
     let stats = shoebox::faces::stats_in(&c, &view, shoebox::pets::Space::Faces).unwrap();
     assert_eq!(stats.unmatched, after.total, "the stats count the same faces as the list");
 }
+
+/// A face detected again with a new id at the box of one that was decided
+/// (decisions are kept by content and box, not by id) is placed, although the
+/// people view the server keeps has not read the new id yet.
+#[test]
+fn a_face_found_again_at_a_decided_box_is_not_unmatched() {
+    let lib = empty("people-unmatched-again");
+    plain(&lib, "a/one.png", CARL, 1);
+    plain(&lib, "a/two.png", DORA, 1);
+    lib.scan();
+    recognize(&lib);
+    let c = conn(&lib);
+    c.execute(
+        "INSERT INTO face_decisions (key, x, y, w, h, person_id, decision, manual, at)
+         SELECT key, x, y, w, h, NULL, 'ignored', 0, 1 FROM recog.faces WHERE id = (SELECT min(id) FROM recog.faces)",
+        [],
+    )
+    .unwrap();
+    let view = shoebox::people::View::load(&c).unwrap();
+    let query = shoebox::faces::ListQuery { unmatched: true, ..Default::default() };
+    let before = shoebox::faces::list(&c, &view, &query).unwrap();
+    let cols: Vec<String> = c
+        .prepare("PRAGMA recog.table_info(faces)")
+        .unwrap()
+        .query_map([], |r| r.get::<_, String>(1))
+        .unwrap()
+        .map(Result::unwrap)
+        .filter(|n| n != "id")
+        .collect();
+    let list = cols.join(", ");
+    c.execute(&format!("INSERT INTO recog.faces ({list}) SELECT {list} FROM recog.faces WHERE id = (SELECT min(id) FROM recog.faces)"), [])
+        .unwrap();
+    let new_id: i64 = c.query_row("SELECT max(id) FROM recog.faces", [], |r| r.get(0)).unwrap();
+    assert!(!view.knows_face(new_id));
+    let after = shoebox::faces::list(&c, &view, &query).unwrap();
+    assert_eq!(after.total, before.total, "{:?}", after.faces);
+    assert!(!after.faces.iter().any(|f| f.id == new_id));
+    let stats = shoebox::faces::stats_in(&c, &view, shoebox::pets::Space::Faces).unwrap();
+    assert_eq!(stats.unmatched, after.total);
+}
+
+/// The Face check's lists and stats come from the people view the server
+/// keeps; a decision made through the API is in the next answer at once.
+#[test]
+fn a_decision_is_in_the_next_unmatched_list_and_stats() {
+    let lib = empty("people-unmatched-at-once");
+    plain(&lib, "a/one.png", CARL, 1);
+    plain(&lib, "a/two.png", DORA, 1);
+    lib.scan();
+    recognize(&lib);
+    let server = start(&lib, None);
+    let addr = server.addr;
+    wait_for_clusters(addr);
+    let listed = |addr| get(addr, "/api/faces?unmatched=true").json();
+    let before = listed(addr);
+    let total = before["total"].as_u64().unwrap();
+    assert!(total >= 2, "{before}");
+    assert_eq!(get(addr, "/api/faces/stats").json()["unmatched"].as_u64(), Some(total));
+    let face = before["faces"][0]["id"].as_i64().unwrap();
+    assert_eq!(ok(addr, "/api/faces/ignore", &json!({ "faces": [face] }))["faces"], 1);
+    let after = listed(addr);
+    assert_eq!(after["total"].as_u64(), Some(total - 1), "{after}");
+    assert!(!after["faces"].as_array().unwrap().iter().any(|f| f["id"].as_i64() == Some(face)));
+    assert_eq!(get(addr, "/api/faces/stats").json()["unmatched"].as_u64(), Some(total - 1));
+    // Taking it back brings the face back at once.
+    ok(addr, "/api/faces/undo", &json!({ "faces": [face] }));
+    assert_eq!(listed(addr)["total"].as_u64(), Some(total));
+    assert_eq!(get(addr, "/api/faces/stats").json()["unmatched"].as_u64(), Some(total));
+    server.stop().unwrap();
+}
