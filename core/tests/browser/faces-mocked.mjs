@@ -1200,23 +1200,46 @@ await test('a bar shows when a request takes longer than 400 ms and goes when it
   await until('the bar to go', () => p.locator('#busy').isHidden());
 }));
 
-// The search box's requests and the photos list show the bar too when they take long.
-await test('the bar shows while the photos or the suggestions take longer than 400 ms', await on('', () => null, async (p, lib) => {
+// The photos list shows the bar too when it takes long (it has no waiting state of its own).
+await test('the bar shows while the photos take longer than 400 ms', await on('', () => null, async (p, lib) => {
   await pauseClock(p);
   await settle(p, lib);
   const bar = p.locator('#busy');
-  for (const [path, start] of [['/timeline', () => { loadTimeline(false); }], ['/suggest', () => { suggest('ab'); }]]) {
-    lib.hold = new RegExp(`^\\${path}$`);
-    lib.held = [];
-    await p.evaluate(start);
-    await until(`${path} to be asked for`, () => lib.held.length > 0);
-    await p.clock.runFor(399);
-    check(await bar.isHidden(), `the bar shows before 400 ms of ${path}`);
-    await p.clock.runFor(1);
-    check(await bar.isVisible(), `the bar does not show after 400 ms of ${path}`);
-    lib.release();
-    await until(`the bar to go after ${path}`, () => bar.isHidden());
-  }
+  lib.hold = /^\/timeline$/;
+  await p.evaluate(() => { loadTimeline(false); });
+  await until('the photos to be asked for', () => lib.held.length > 0);
+  await p.clock.runFor(399);
+  check(await bar.isHidden(), 'the bar shows before 400 ms');
+  await p.clock.runFor(1);
+  check(await bar.isVisible(), 'the bar does not show after 400 ms');
+  lib.release();
+  await until('the bar to go', () => bar.isHidden());
+}));
+
+// The search box does not use the bar: its dropdown shows grey placeholder rows
+// when the suggestions take longer than SUGGEST_WAIT.
+await test('the suggestions show placeholder rows after 120 ms, not the bar', await on('', () => null, async (p, lib) => {
+  await pauseClock(p);
+  await p.focus('#search');
+  await settle(p, lib);
+  const rows = p.locator('#suggest .wait-row');
+  lib.hold = /^\/suggest$/;
+  lib.held = [];
+  await p.keyboard.type('x');
+  await p.clock.runFor(150); // the suggestions are asked for
+  await until('the suggestions to be asked for', () => lib.held.length > 0);
+  await p.clock.runFor(119);
+  check(await rows.count() === 0, 'placeholder rows before 120 ms');
+  await p.clock.runFor(1);
+  check(await rows.count() === 5, `placeholder rows after 120 ms: ${await rows.count()}`);
+  check(await p.locator('#suggest').getAttribute('aria-busy') === 'true', 'the list is not marked busy');
+  // Longer than the bar's 400 ms for the suggestions (the photos, asked 300 ms after the letter, have not waited that long).
+  await p.clock.runFor(300);
+  check(await p.locator('#busy').isHidden(), 'the bar shows for the suggestions');
+  lib.release();
+  await settle(p, lib);
+  check(await rows.count() === 0, 'placeholder rows after the answer');
+  check(await p.locator('#suggest').getAttribute('aria-busy') === null, 'the list is still marked busy');
 }));
 
 // ---- hidden from the timeline (phase 20)

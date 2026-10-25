@@ -149,8 +149,9 @@ function busyUpdate() {
   if (pageCalls.timer === null && $('busy').hidden) pageCalls.timer = setTimeout(function () { pageCalls.timer = null; $('busy').hidden = false; }, 400);
 }
 
-// Counts a request that is not called off with the page (a POST, the search
-// box's, the timeline's own) for the bar.
+// Counts a request that is not called off with the page (a POST, the
+// timeline's own) for the bar. The search box has its own waiting state
+// (`showWaiting`).
 function tracked(promise) {
   pageCalls.posts++;
   busyUpdate();
@@ -1136,7 +1137,7 @@ function suggest(text) {
   var needle = text.trim();
   // Counted within the search as the list shows it (every term but the typed text).
   var within = { q: needle, tag: f.tags, manual: f.manual ? 1 : null, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, hidden: f.hidden ? 1 : null, folder: f.folder, place: f.place, date: f.dates, nodate: f.nodate ? 1 : null };
-  tracked(api(LIBAPI + '/suggest' + query(within), opts)).then(function (r) {
+  api(LIBAPI + '/suggest' + query(within), opts).then(function (r) {
     if (seq !== sugg.seq) return;
     if (pre) {
       var found = pre.kind === 'text' ? r.text : r.name;
@@ -1185,7 +1186,7 @@ function suggestAll(text, seq, opts) {
   // The suggestions narrow with the filter, as on a single drive: counts are
   // the photos the list would show, and what would show nothing is left out.
   var within = { q: needle, tag: f.tags, person: f.people, group: f.groups, pet: f.pets, text: f.texts, name: f.names, type: f.types, fav: f.fav ? 1 : null, hidden: f.hidden ? 1 : null, date: f.dates, nodate: f.nodate ? 1 : null };
-  tracked(api('/api/all/suggest' + query(within), opts)).then(function (r) {
+  api('/api/all/suggest' + query(within), opts).then(function (r) {
     if (seq !== sugg.seq) return;
     var items = r.people.map(function (p) { return { kind: 'person', id: p.name, label: p.name, count: p.photos, person: { name: p.name, species: p.species } }; });
     r.groups.forEach(function (g) { state.groupNames[g.name] = g.name; items.push({ kind: 'group', id: g.name, label: g.name, count: g.photos }); });

@@ -1491,7 +1491,8 @@ Measured with `scripts/bench-people.py make` and `scripts/bench-endpoints.py`
   list took over 10 minutes; now 0.7 s): keep the ids in a set and decide in
   Rust, or use a table.
 - Still slow on 100 000 photos, all with the bar and called off on leaving (the
-  timeline and the search box's requests show the bar through `tracked`):
+  timeline shows the bar through `tracked`; `/suggest` shows placeholder rows in
+  its dropdown instead of the bar):
   `/suggest` 3 s (queued, own abort), `/faces/similar` 1.5-2.4 s (scans every
   embedding), `/faces/stats` 0.8 s, `/recognition/forget` 0.8 s, the face list
   0.6-0.7 s. Everything else is under 0.4 s.
