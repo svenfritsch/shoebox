@@ -628,7 +628,7 @@
   "info.show_where": "Zeigen, wo es ist",
   "info.photos_of": "Fotos von {name}",
   "info.guess": "{name}?",
-  "info.guess_maybe": "Vielleicht {name}?",
+  "info.guess_maybe": "{name}?",
   "info.stranger": "Fremde Person",
   "info.other_person": "Andere …",
   "info.plus_name": "+ Name",

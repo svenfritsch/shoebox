@@ -60,7 +60,7 @@ select { cursor: pointer; }
 .month { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .search { flex: 1; display: flex; justify-content: flex-end; min-width: 0; }
 .search input {
-  width: 100%; max-width: 360px; padding: 7px 12px; border-radius: 9px;
+  width: 100%; max-width: 360px; height: var(--ctl-h); padding: 0 12px; border-radius: var(--ctl-r);
   border: 1px solid var(--line); background: var(--panel);
 }
 /* Type filter (5f): check box drop-down next to the search box. */
@@ -87,7 +87,8 @@ select:hover { border-color: var(--muted); }
 }
 .icon:hover:not(:disabled) { background: var(--line); }
 .lb-bar .icon:hover:not(:disabled) { background: rgba(255,255,255,.18); }
-.link { background: none; border: 0; padding: 0; color: var(--accent); }
+.link { background: none; border: 0; padding: 0; border-radius: 4px; color: var(--accent); }
+.link:hover { text-decoration: underline; }
 
 .layout { position: fixed; inset: var(--bar-h) 0 0 0; display: flex; }
 .sidebar {
@@ -103,6 +104,9 @@ select:hover { border-color: var(--muted); }
 #tree { flex: none; }
 .tree ul { padding-left: 14px; }
 .tree .row { display: flex; align-items: center; gap: 2px; padding: 2px 8px 2px 4px; }
+/* A caret is a muted glyph that goes to full strength on hover: no background, no outline. */
+.tree .toggle:hover, .pgroup h3 .toggle:hover, .caret:hover:not(:disabled) { color: var(--fg); }
+.tree .toggle, .pgroup h3 .toggle, .caret { border-radius: 6px; }
 .tree .toggle { width: 22px; flex: none; background: none; border: 0; color: var(--muted); padding: 2px 0; display: inline-flex; align-items: center; justify-content: center; }
 .tree .name {
   flex: 1; text-align: left; background: none; border: 0; padding: 3px 4px; border-radius: 6px;
@@ -123,6 +127,7 @@ select:hover { border-color: var(--muted); }
 .filter-note { flex-basis: 100%; margin: 0; color: var(--muted); font-size: 12px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border-radius: 99px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; }
 .chip button { background: none; border: 0; padding: 0 6px; color: var(--muted); }
+.chip button:hover { color: var(--fg); }
 .sizer { position: relative; margin: 0 2px; }
 .empty { color: var(--muted); text-align: center; margin-top: 20vh; }
 
@@ -136,10 +141,11 @@ select:hover { border-color: var(--muted); }
 .cell.broken .ph::after { content: ""; display: block; width: 28px; height: 28px; max-width: 50%; max-height: 50%; margin: auto; position: absolute; inset: 0; background: var(--muted);
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='4.5' width='17' height='15' rx='2.5'/%3E%3Ccircle cx='9' cy='10' r='1.5'/%3E%3Cpath d='M4 17l5-4.5 3.5 3 2.5-2L20 17'/%3E%3Cpath d='M4 20L20 4'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='4.5' width='17' height='15' rx='2.5'/%3E%3Ccircle cx='9' cy='10' r='1.5'/%3E%3Cpath d='M4 17l5-4.5 3.5 3 2.5-2L20 17'/%3E%3Cpath d='M4 20L20 4'/%3E%3C/svg%3E") center / contain no-repeat; }
-.cell .badge {
-  position: absolute; right: 6px; bottom: 6px; font-size: 11px; font-weight: 600; color: #fff;
-  background: rgba(0,0,0,.45); border-radius: 4px; padding: 1px 5px; pointer-events: none;
-}
+/* Badge: the small dark label on a photo (LIVE, RAW, the file type, duplicate marks). Where it sits is the
+   place's business (`.cell .badge`, `.card .thumb .badges`, ...); how it looks is this one rule. */
+.badge { display: inline-block; font-size: 11px; font-weight: 600; line-height: 1.45; color: #fff; background: rgba(0,0,0,.55); border: 0; border-radius: 4px; padding: 1px 6px; }
+.badge.small { font-size: 10px; padding: 0 4px; }
+.cell .badge { position: absolute; right: 6px; bottom: 6px; pointer-events: none; }
 .cell:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
 
 .lightbox { position: fixed; inset: 0; background: #000; z-index: 20; color: #eee; touch-action: pan-y pinch-zoom; }
@@ -159,6 +165,7 @@ select:hover { border-color: var(--muted); }
   position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
   background: rgba(0,0,0,.3); color: #fff; border: 0; font-size: 34px; width: 48px; height: 72px; border-radius: 8px;
 }
+.nav:hover { background: rgba(0,0,0,.5); }
 .nav.prev { left: 8px; }
 .nav.next { right: 8px; }
 .lb-panel {
@@ -171,14 +178,15 @@ select:hover { border-color: var(--muted); }
 .lb-panel dt { color: #999; }
 .lb-panel dd { margin: 0; word-break: break-word; }
 .lb-panel .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
-.lb-panel .tags button, .lb-panel dd button { background: rgba(255,255,255,.12); color: #eee; border: 0; border-radius: 99px; padding: 2px 10px; font-size: 13px; }
+.lb-panel dd button { background: rgba(255,255,255,.12); color: #eee; border: 0; border-radius: 99px; padding: 2px 10px; font-size: 13px; }
 .lb-panel .note { color: #999; font-size: 12px; }
 .lb-panel .estimated { display: inline-block; margin-left: 8px; padding: 0 7px; border-radius: 9px; background: #f0d3a8; color: #6b3d0f; font-size: 11px; font-weight: 600; vertical-align: 1px; cursor: help; }
 
 .login { position: fixed; inset: 0; z-index: 30; background: var(--bg); display: flex; align-items: center; justify-content: center; }
 .login form { display: flex; flex-direction: column; gap: 12px; width: min(320px, 90vw); text-align: center; }
 .login input { font-size: 22px; text-align: center; letter-spacing: .3em; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); }
-.login button { padding: 10px; border-radius: 10px; border: 0; background: var(--accent-soft); color: var(--accent-fg); font-weight: 600; }
+.login button:hover { background: var(--accent-soft-h); }
+.login button { padding: 10px; border-radius: var(--ctl-r); border: 0; background: var(--accent-soft); color: var(--accent-fg); font-weight: 600; }
 .error { color: #d33; min-height: 1.4em; margin: 0; }
 
 .sidebar-head { display: flex; flex-wrap: wrap; gap: 4px 14px; }
@@ -223,15 +231,16 @@ body.selecting #sizer { -webkit-user-select: none; user-select: none; }
    they are dimmed with aria-disabled, so that the label still shows. */
 .abtn {
   flex: none; display: inline-flex; align-items: center; justify-content: center;
-  width: 36px; height: 36px; padding: 0; border: 0; border-radius: 9px; background: var(--line); color: var(--fg); font-size: 20px;
+  width: var(--ctl-h); height: var(--ctl-h); padding: 0; border: 0; border-radius: var(--ctl-r); background: var(--line); color: var(--fg); font-size: 20px;
 }
 .abtn svg { width: 20px; height: 20px; }
+.abtn:hover:not([aria-disabled="true"]):not(.primary):not(.active) { background: color-mix(in srgb, var(--line) 75%, var(--fg) 25%); }
+.abtn.primary:hover:not([aria-disabled="true"]), .abtn.active:hover { background: var(--accent-soft-h); }
 .abtn.primary { background: var(--accent-soft); color: var(--accent-fg); }
 .abtn.active { background: var(--accent-soft); color: var(--accent-fg); }
 .abtn[aria-disabled="true"] { opacity: .45; cursor: default; }
-.abtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .lb-panel .abtn { background: rgba(255,255,255,.15); color: #eee; }
-@media (pointer: coarse) { .abtn { width: 44px; height: 44px; } }
+.lb-panel .abtn:hover:not([aria-disabled="true"]):not(.primary):not(.active) { background: rgba(255,255,255,.24); }
 
 /* The timeline's selection bar: what belongs to the selection on the left
    (close, count, Select all), then icon tools in groups. A label shows at once
@@ -298,7 +307,7 @@ body.selecting #sizer { -webkit-user-select: none; user-select: none; }
 .dialog p { margin: 0 0 10px; }
 .dialog .hint { color: var(--muted); font-size: 13px; }
 .dialog input[type=text], .dialog input[type=number], .dialog select {
-  padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); min-width: 0;
+  height: var(--ctl-h); padding: 0 10px; border-radius: var(--ctl-r); border: 1px solid var(--line); background: var(--panel); min-width: 0;
 }
 .dialog .fields { display: flex; gap: 8px; margin-bottom: 10px; }
 .dialog .fields .grow { flex: 1; }
@@ -400,7 +409,7 @@ body.tile-drag { -webkit-user-select: none; user-select: none; }
 .card .btn { margin-top: 4px; --btn-h: var(--ctl-h-sm); padding: 0 10px; font-size: 13px; align-self: flex-start; }
 .lb-panel .actions { justify-content: flex-start; }
 .lb-panel .btn.quiet { background: rgba(255,255,255,.15); color: #eee; }
-.lb-panel select { background: rgba(255,255,255,.15); color: #eee; border: 0; border-radius: 6px; padding: 4px 8px; }
+.lb-panel select { background: rgba(255,255,255,.15); color: #eee; border: 0; border-radius: var(--ctl-r); height: var(--ctl-h-sm); padding: 0 8px; }
 .lb-panel select option { background: #2a2a2c; color: #eee; }
 
 @media (max-width: 760px) {
@@ -417,13 +426,7 @@ body.tile-drag { -webkit-user-select: none; user-select: none; }
 /* Own tags (5b): sidebar section, info panel chips, selection bar. */
 .side-tags h3 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 10px 8px 0 4px; }
 .side-tags .tree { flex: none; padding-bottom: 4px; }
-.lb-panel .tags.readonly > span { background: rgba(255,255,255,.12); color: #eee; border-radius: 99px; padding: 2px 10px; font-size: 13px; }
 .lb-panel .pfaces.readonly .pface { padding: 2px 0; cursor: pointer; }
-.lb-panel .tags .own { display: inline-flex; align-items: center; background: rgba(255,255,255,.12); border-radius: 99px; }
-.lb-panel .tags .own button { background: none; padding-right: 4px; }
-.lb-panel .tags .own button.x { padding: 2px 8px 2px 2px; color: #aaa; }
-.lb-panel .tags button.add { background: none; border: 1px dashed rgba(255,255,255,.3); color: #ccc; }
-.lb-panel .tags input { font-size: 13px; padding: 2px 8px; border-radius: 99px; border: 1px solid rgba(255,255,255,.3); background: rgba(0,0,0,.3); color: #eee; width: 12em; }
 .dialog .taglist { display: flex; flex-wrap: wrap; gap: 6px; }
 .dialog .taglist button { padding: 4px 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
 @media (max-width: 640px) {
@@ -538,9 +541,6 @@ body.selecting .sec .pick { display: inline; }
 .person .more-btn { position: absolute; top: 0; right: 0; background: var(--bg); box-shadow: 0 1px 4px rgba(0,0,0,.15); }
 
 /* a person's faces */
-.tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
-.tabs .tab { border: 0; background: none; padding: 8px 12px; border-bottom: 2px solid transparent; color: var(--muted); }
-.tabs .tab.active { color: var(--fg); border-bottom-color: var(--accent); font-weight: 600; }
 .face .acts { display: flex; gap: 6px; margin-top: 4px; }
 .face .acts button { flex: 1; display: inline-flex; align-items: center; justify-content: center; padding: 0; line-height: 1; height: var(--ctl-h); border: 0; border-radius: var(--ctl-r); background: var(--line); color: var(--fg); font-size: 18px; }
 .face .acts .yes, .lb-panel .pface button.yes { background: color-mix(in srgb, var(--ok) 22%, transparent); color: var(--ok-fg); }
@@ -613,8 +613,7 @@ body.selecting .sec .pick { display: inline; }
 .lb-panel .pface { display: flex; align-items: center; gap: 8px; }
 .lb-panel .pface .who { flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
 .lb-panel .pface .guess { font-style: italic; }
-.lb-panel .pface button.yes, .lb-panel .pface button.no { width: 22px; height: 22px; padding: 0; border-radius: 50%; font-size: 13px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
-.lb-panel .pface button.add { background: none; border: 1px dashed rgba(255,255,255,.3); color: #ccc; }
+.lb-panel .pface button.yes, .lb-panel .pface button.no { width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; font-size: 13px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
 .lb-panel .pface .more-btn { background: none; color: #bbb; border-radius: 16px; padding: 0 6px; font-size: 18px; }
 .lb-panel .pface .note, .lb-panel .pfaces > .note { color: #999; font-size: 12px; }
 .lb-panel .avatar { background: rgba(255,255,255,.12); }
@@ -636,12 +635,11 @@ body.selecting .sec .pick { display: inline; }
 .lb-panel .pickacts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .lb-panel .pickacts .btn { margin-left: auto; }
 .lb-panel .ptools { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
-.lb-panel .ptools .tool { width: 34px; height: 34px; padding: 0; border: 0; border-radius: 9px; background: rgba(255,255,255,.15); color: #eee; font-size: 19px; display: inline-flex; align-items: center; justify-content: center; }
+.lb-panel .ptools .tool { width: var(--ctl-h); height: var(--ctl-h); padding: 0; border: 0; border-radius: var(--ctl-r); background: rgba(255,255,255,.15); color: #eee; font-size: 19px; display: inline-flex; align-items: center; justify-content: center; }
 .lb-panel .ptools .tool:hover:not(:disabled) { background: rgba(255,255,255,.22); }
 .lb-panel .ptools .tool.on { background: var(--accent-soft); color: var(--accent-fg); }
 .lb-panel .ptools .tool:disabled { opacity: .45; cursor: default; }
 .lb-panel .pfield { width: 100%; }
-.lb-panel .pfield input { background: rgba(0,0,0,.3); color: #eee; border-color: rgba(255,255,255,.3); font-size: 16px; padding: 4px 10px; border-radius: 99px; }
 .lb-panel .plist { background: #222; border-color: rgba(255,255,255,.2); }
 .lb-panel .plist .item { color: #eee; background: none; border-radius: 0; padding: 4px 10px; font-size: 14px; }
 .lb-panel .plist .item:hover, .lb-panel .plist .item.at { background: rgba(255,255,255,.12); }
@@ -701,7 +699,7 @@ body.selecting .sec .pick { display: inline; }
 .drive-card .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .drive-card .name { font-weight: 700; font-size: 16px; display: flex; gap: 8px; align-items: center; min-width: 0; overflow-wrap: anywhere; }
 .drive-card .on { font-size: 11px; font-weight: 600; color: var(--ok); }
-.drive-card select { padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); font-size: 13px; }
+.drive-card select { height: var(--ctl-h-sm); padding: 0 8px; border-radius: var(--ctl-r); border: 1px solid var(--line); background: var(--panel); color: var(--fg); font-size: 13px; }
 .drive-card .where { display: flex; align-items: baseline; gap: 6px; font-size: 12px; color: var(--muted); margin-top: -6px; overflow-wrap: anywhere; }
 .drive-card .where b { color: var(--fg); font-weight: 600; }
 .drive-card .banner { border: 0; background: none; padding: 0; margin: 0; }
@@ -741,13 +739,14 @@ body.selecting .sec .pick { display: inline; }
 .scope-all #faces-section, .scope-all #tags-section, .scope-all #folders-section, .scope-all #tree,
 .scope-all #nav-trash, .scope-all #nav-faces, .scope-all #select { display: none !important; }
 .note-bar { margin: 8px 16px 0; font-size: 13px; color: var(--muted); }
-.tabs { display: flex; gap: 6px; margin: 0 0 14px; }
-.tabs button { padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--fg); font: inherit; cursor: pointer; }
-.tabs.underline { gap: 8px; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
-.tabs.underline button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; margin-bottom: -1px; padding: 10px 14px; background: transparent; color: var(--muted); font-weight: 500; letter-spacing: .04em; text-transform: uppercase; }
-.tabs.underline button:hover { color: var(--fg); }
-.tabs.underline button.on { color: var(--accent); border-bottom-color: var(--accent); background: transparent; font-weight: 600; }
-.tabs button.on { background: var(--panel); font-weight: 600; border-color: var(--accent); }
+/* Tabs: the one style for every row of tabs (a `.tabs` box of `button`s, the current one `.on` or `.active`). */
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; border-bottom: 1px solid var(--line); }
+.tabs button {
+  border: 0; border-bottom: 2px solid transparent; border-radius: 0; margin-bottom: -1px; padding: 10px 14px; background: transparent;
+  color: var(--muted); font-weight: 500; letter-spacing: .04em; text-transform: uppercase; cursor: pointer;
+}
+.tabs button:hover { color: var(--fg); }
+.tabs button.on, .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 .xcopies { display: flex; flex-wrap: wrap; gap: 12px; }
 .xcopy { width: 190px; }
 .xcopy img { width: 190px; height: 190px; object-fit: cover; border-radius: 8px; background: var(--cell-bg); display: block; }
@@ -770,7 +769,7 @@ body.selecting .sec .pick { display: inline; }
 .compare-col .name { font-weight: 600; font-size: 13px; word-break: break-all; }
 .compare-col .meta { color: var(--muted); font-size: 12px; }
 .copy .badge.worse { background: #c63b2f; color: #fff; }
-.copy .badge { align-self: flex-start; background: var(--cell-bg); border-radius: 10px; padding: 1px 8px; font-weight: 600; }
+.copy .badge { align-self: flex-start; background: var(--cell-bg); color: var(--fg); border-radius: 10px; padding: 1px 8px; line-height: inherit; }
 
 /* Collapsible sidebar sections */
 .side-tags h3, .side-head { display: flex; align-items: center; }
@@ -923,7 +922,7 @@ body.geo-view #page { padding: 0; height: 100%; }
 .geo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 3px; margin-bottom: 10px; }
 .geo-cell { position: relative; padding: 0; border: 0; background: var(--cell-bg); aspect-ratio: 1 / 1; overflow: hidden; border-radius: 3px; }
 .geo-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.geo-cell .badge { position: absolute; right: 4px; bottom: 4px; font-size: 10px; color: #fff; background: rgba(0,0,0,.45); border-radius: 4px; padding: 0 4px; }
+.geo-cell .badge { position: absolute; right: 4px; bottom: 4px; }
 .geo-cell:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
 @media (max-width: 760px) {
   .geo-page { flex-direction: column; }
@@ -933,10 +932,11 @@ body.geo-view #page { padding: 0; height: 100%; }
 
 /* "Add face or pet": what was drawn */
 .dialog .kinds { display: flex; margin: 0 0 12px; }
-.dialog .kinds button { flex: 1; padding: 7px 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font-size: 14px; }
+.dialog .kinds button:hover:not(.on) { background: var(--panel); }
+.dialog .kinds button { flex: 1; height: var(--ctl-h); padding: 0 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font-size: 14px; }
 .dialog .kinds .ic { width: 1.25em; height: 1.25em; margin-right: .35em; vertical-align: -.25em; }
-.dialog .kinds button:first-child { border-radius: 8px 0 0 8px; }
-.dialog .kinds button:last-child { border-radius: 0 8px 8px 0; }
+.dialog .kinds button:first-child { border-radius: var(--ctl-r) 0 0 var(--ctl-r); }
+.dialog .kinds button:last-child { border-radius: 0 var(--ctl-r) var(--ctl-r) 0; }
 .dialog .kinds button + button { border-left: 0; }
 .dialog .kinds button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
 /* Above its neighbours, so the whole focus ring shows. */
@@ -958,7 +958,7 @@ body.geo-view #page { padding: 0; height: 100%; }
 .copy-row .folder { background: none; border: 0; padding: 0; color: var(--accent); text-align: left; font-size: 13px; word-break: break-all; }
 .copy-row .state { font-size: 12px; font-weight: 600; white-space: nowrap; color: #3a9d63; }
 .copy-row.marked .state { color: #c63b2f; }
-.dup-bar select { background: var(--line); color: var(--fg); border: 0; border-radius: 9px; padding: 6px 10px; }
+.dup-bar select { background: var(--line); color: var(--fg); border: 0; border-radius: var(--ctl-r); padding: 0 10px; }
 @media (max-width: 700px) { .group.cross { flex-direction: column; } .group.cross > .thumb { width: 100%; } }
 
 /* Trash: click a photo to select it, like the timeline */
@@ -967,7 +967,6 @@ body.geo-view #page { padding: 0; height: 100%; }
 .card.pick.sel .thumb { outline: 4px solid var(--accent); outline-offset: -4px; }
 /* Trash: the files that went with a photo, and the link to the copy that stayed. */
 .card .thumb .badges { position: absolute; right: 6px; bottom: 6px; display: flex; gap: 4px; }
-.card .thumb .badge { font-size: 11px; font-weight: 600; line-height: 1.45; color: #fff; background: rgba(0,0,0,.55); border: 0; border-radius: 4px; padding: 1px 6px; }
 .card .thumb .badge.dup:not(.gone) { cursor: pointer; }
 .card .thumb .badge.dup:not(.gone):hover { background: rgba(0,0,0,.85); }
 .card .thumb .badge.dup:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -1176,8 +1175,6 @@ body.read-only #sel-move, body.read-only #lb-rotate, body.read-only .copy label.
 .tree .row.hidden-folder .name, .tree .row.hidden-folder .count { opacity: .5; }
 .tree .row .ico { width: 15px; height: 15px; display: inline-flex; flex: none; color: var(--muted); }
 .tree .row .ico svg { width: 100%; height: 100%; }
-#hidden-row .toggle { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
-#hidden-row .toggle svg { width: 16px; height: 16px; }
 .chip .eye { display: inline-flex; align-items: center; color: var(--muted); cursor: pointer; }
 .chip .eye.on { color: var(--accent); }
 .chip .eye:disabled { opacity: .5; cursor: default; }
@@ -1215,4 +1212,35 @@ select:not([multiple]):not([size]), .types-btn, .dup-filter > summary.btn {
   .dup-filter > summary.btn:not(.quiet) {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%23f0b985' stroke-opacity='.8' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   }
+}
+
+/* The viewer's small buttons: Live Photo and the tag chips share the small height and get a hover. */
+#lb-live { display: inline-flex; align-items: center; height: var(--ctl-h-sm); padding: 0 12px; }
+#lb-live:hover { background: rgba(255,255,255,.25); }
+
+/* Badges: small pills for tags and the names of faces (`.badge-chip`, a span or a button; `.add` is the dashed
+   "+ add" one) and the small field that types a new one (`.badge-input`). All are --ctl-h-sm high. The viewer's
+   panel is always dark and sets its own colours. */
+:root {
+  --bdg-bg: var(--line); --bdg-hover: color-mix(in srgb, var(--line) 70%, var(--fg) 30%); --bdg-fg: var(--fg); --bdg-muted: var(--muted);
+  --bdg-dash: var(--muted); --bdg-line: var(--line); --bdg-field: var(--bg);
+}
+.lb-panel { --bdg-bg: rgba(255,255,255,.12); --bdg-hover: rgba(255,255,255,.22); --bdg-fg: #eee; --bdg-muted: #aaa; --bdg-dash: rgba(255,255,255,.3); --bdg-line: rgba(255,255,255,.3); --bdg-field: rgba(0,0,0,.3); }
+.badge-chip {
+  display: inline-flex; align-items: center; gap: 4px; height: var(--ctl-h-sm); padding: 0 10px; border: 0; border-radius: 99px;
+  background: var(--bdg-bg); color: var(--bdg-fg); font-size: 13px; line-height: 1; white-space: nowrap; max-width: 100%;
+}
+button.badge-chip:hover, .badge-chip > button:hover { background: var(--bdg-hover); }
+.badge-chip.add { background: none; border: 1px dashed var(--bdg-dash); color: var(--bdg-muted); }
+.badge-chip.add:hover { color: var(--bdg-fg); }
+.badge-chip > button, .lb-panel dd .badge-chip > button { display: inline-flex; align-items: center; height: 100%; padding: 0; border: 0; border-radius: 0; background: none; color: inherit; font: inherit; }
+.badge-chip > button.x, .lb-panel dd .badge-chip > button.x { padding: 0 0 0 4px; color: var(--bdg-muted); }
+.badge-chip > button:hover, .lb-panel dd .badge-chip > button:hover { background: none; }
+.badge-chip > button.x:hover { color: var(--bdg-fg); }
+.badge-input {
+  height: var(--ctl-h-sm); padding: 0 10px; border-radius: 99px; border: 1px solid var(--bdg-line); background: var(--bdg-field); color: var(--bdg-fg);
+  font-size: 13px; width: 12em;
+}
+.pfield input.badge-input {
+  width: 100%; height: var(--ctl-h-sm); padding: 0 10px; border-radius: 99px; border: 1px solid var(--bdg-line); background: var(--bdg-field); color: var(--bdg-fg); font-size: 13px;
 }

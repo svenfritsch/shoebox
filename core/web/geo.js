@@ -671,7 +671,7 @@ function addCells(grid, more) {
       img.decoding = 'async';
       img.src = LIBAPI + '/files/' + d.ids[i] + '/thumb?v=' + d.versions.substr(i * 8, 8);
       b.appendChild(img);
-      if (d.kinds[i] === 'v') b.appendChild(el('span', 'badge', KIND_BADGE.v));
+      if (d.kinds[i] === 'v') b.appendChild(el('span', 'badge small', KIND_BADGE.v));
       b.onclick = function () { openFromSide(d, i); };
       grid.appendChild(b);
     })(i);
