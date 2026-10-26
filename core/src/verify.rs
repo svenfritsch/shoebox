@@ -110,11 +110,11 @@ pub fn run(opts: &Options) -> Result<Report> {
                 // present) under another path: the file was moved or merged
                 // into a copy there, and that copy is verified on its own.
                 if let Some(other) = full_hash.as_deref().and_then(|h| other_copy(&conn, *id, h)) {
-                    crate::report::file(rel, true, format!("moved: the same content is at {other}"));
+                    crate::report::said(rel, true, crate::report::Said::new("verify_moved", format!("moved: the same content is at {other}")).with("path", other));
                     report.relocated += 1;
                     continue;
                 }
-                crate::report::file(rel, false, "missing from the drive");
+                crate::report::said(rel, false, crate::report::Said::new("verify_missing", "missing from the drive"));
                 report.missing.push(rel.clone());
                 continue;
             }
@@ -125,17 +125,17 @@ pub fn run(opts: &Options) -> Result<Report> {
             }
         };
         if *missing || stamp.size != *size || stamp.mtime_ns != *mtime as i128 {
-            crate::report::file(rel, false, "changed since the last scan");
+            crate::report::said(rel, false, crate::report::Said::new("verify_changed", "changed since the last scan"));
             report.changed.push(rel.clone());
             continue;
         }
         if opts.quick {
-            crate::report::file(rel, true, "size and date match");
+            crate::report::said(rel, true, crate::report::Said::new("verify_size_date", "size and date match"));
             report.ok += 1;
             continue;
         }
         let Some(expected) = full_hash else {
-            crate::report::file(rel, true, "no full hash yet");
+            crate::report::said(rel, true, crate::report::Said::new("verify_unhashed", "no full hash yet"));
             report.unhashed += 1;
             continue;
         };
@@ -143,14 +143,14 @@ pub fn run(opts: &Options) -> Result<Report> {
             Ok(hash) if &hash == expected => {
                 report.ok += 1;
                 report.bytes += size;
-                crate::report::file(rel, true, "content matches");
+                crate::report::said(rel, true, crate::report::Said::new("verify_ok", "content matches"));
                 conn.execute("UPDATE files SET verified_at = ?2 WHERE id = ?1", params![id, db::now()])?;
                 if batch.tick()? {
                     job.progress(&conn, report.checked, Some(files.len() as u64))?;
                 }
             }
             Ok(_) => {
-                crate::report::file(rel, false, "DAMAGED: content differs although size and date match");
+                crate::report::said(rel, false, crate::report::Said::new("verify_damaged", "DAMAGED: content differs although size and date match"));
                 report.damaged.push(rel.clone());
             }
             Err(e) => {

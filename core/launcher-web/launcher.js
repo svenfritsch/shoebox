@@ -107,6 +107,14 @@ function isOffline(p) {
   });
 }
 
+// What a file row says: a copy the cleanup removed names the file that stays;
+// a note with a key (`report::NOTES`) in the person's language; anything else
+// (a message of the system) as it came.
+function noteText(f) {
+  if (f.of) return tr('launcher.duplicate_of', { path: f.of });
+  return f.key ? tr('launcher.note.' + f.key, f.vars || {}) : f.note;
+}
+
 // The photo app cannot start on a drive that is not there: the button stays
 // off, with the reason in red under it, until it is unticked or plugged in.
 function refreshStart() {
@@ -901,11 +909,11 @@ function renderResults(job, ul) {
     var li = document.createElement('li'); li.className = f.ok ? 'ok' + (again ? ' dup' : '') : 'bad';
     var m = document.createElement('span'); m.className = 'mark'; m.textContent = f.ok ? '✓' : '✗';
     var pa = document.createElement('span'); pa.className = 'path'; pa.textContent = f.path;
-    var n = document.createElement('span'); n.className = 'note'; n.textContent = again || f.note;
-    // A copy the cleanup removed names the file that stays, cut to one line;
-    // the whole path shows as a tooltip when it does not fit.
+    var n = document.createElement('span'); n.className = 'note'; n.textContent = again || noteText(f);
+    // A copy the cleanup removed: one line, the whole path as a tooltip when
+    // it does not fit.
     if (f.of) {
-      li.classList.add('copy'); n.className = 'note dup-of'; n.textContent = tr('launcher.duplicate_of', { path: f.of });
+      li.classList.add('copy'); n.className = 'note dup-of';
       n.onmouseenter = function () { n.title = n.scrollWidth > n.clientWidth ? n.textContent : ''; };
     }
     li.appendChild(m); li.appendChild(pa);

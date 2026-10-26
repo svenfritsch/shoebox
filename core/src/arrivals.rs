@@ -136,16 +136,19 @@ pub fn cleanup(opts: &CleanupOptions) -> Result<Cleanup> {
         }
         report::emit(report::Event::Progress { label: "Removing copies".into(), done: i as u64, total });
         let path = &c.dup.path;
-        if let Err(why) = keeper_is_safe(&conn, &root, c) {
-            out.skipped.push(format!("{path}: {why}"));
-            report::file(path, false, format!("kept: {why}"));
+        if let Err(kept) = keeper_is_safe(&conn, &root, c) {
+            out.skipped.push(format!("{path}: {}", kept.why));
+            match kept.note(c) {
+                Ok(said) => report::said(path, false, said),
+                Err(text) => report::file(path, false, text),
+            }
             continue;
         }
         let removed = duplicates::remove_copies_tidy(&conn, &root, &[c.keeper], &[c.id], &HashMap::new())?;
         if !removed.conflicts.is_empty() {
             let why = "its capture date differs from the other copy's: decide on the duplicates screen";
             out.skipped.push(format!("{path}: {why}"));
-            report::file(path, false, format!("kept: {why}"));
+            report::said(path, false, report::Said::new("kept_dates", format!("kept: {why}")));
             continue;
         }
         if opts.forever {
@@ -173,8 +176,27 @@ pub fn cleanup(opts: &CleanupOptions) -> Result<Cleanup> {
     Ok(out)
 }
 
+/// Why a copy stays: `key` and `vars` for the launcher (`report::NOTES`, the
+/// note says "kept: …"), unless it is a database error.
+struct Kept {
+    key: Option<&'static str>,
+    of: bool,
+    why: String,
+}
+
+impl Kept {
+    fn note(&self, c: &Candidate) -> std::result::Result<report::Said, String> {
+        let text = format!("kept: {}", self.why);
+        let Some(key) = self.key else { return Err(text) };
+        let said = report::Said::new(key, text);
+        Ok(if self.of { said.with("path", c.dup.of.clone()) } else { said })
+    }
+}
+
 /// The copy that stays is still there, unchanged, with the same content.
-fn keeper_is_safe(conn: &Connection, root: &Path, c: &Candidate) -> std::result::Result<(), String> {
+fn keeper_is_safe(conn: &Connection, root: &Path, c: &Candidate) -> std::result::Result<(), Kept> {
+    let db = |e: rusqlite::Error| Kept { key: None, of: false, why: e.to_string() };
+    let kept = |key, of, why: String| Err(Kept { key: Some(key), of, why });
     let row: Option<(String, i64, i64, Option<String>, Option<i64>)> = conn
         .query_row(
             "SELECT path, size, mtime_ns, full_hash, missing_since FROM files WHERE id = ?1",
@@ -182,16 +204,17 @@ fn keeper_is_safe(conn: &Connection, root: &Path, c: &Candidate) -> std::result:
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
         )
         .optional()
-        .map_err(|e| e.to_string())?;
-    let Some((path, size, mtime_ns, full_hash, missing)) = row else { return Err("the copy it duplicates is gone from the library".into()) };
-    let same_content: Option<String> =
-        conn.query_row("SELECT full_hash FROM files WHERE id = ?1", [c.id], |r| r.get(0)).map_err(|e| e.to_string())?;
+        .map_err(db)?;
+    let Some((path, size, mtime_ns, full_hash, missing)) = row else {
+        return kept("kept_gone", false, "the copy it duplicates is gone from the library".into());
+    };
+    let same_content: Option<String> = conn.query_row("SELECT full_hash FROM files WHERE id = ?1", [c.id], |r| r.get(0)).map_err(db)?;
     if missing.is_some() || full_hash.is_none() || full_hash != same_content {
-        return Err(format!("{} is not safe to rely on any more", c.dup.of));
+        return kept("kept_unsafe", true, format!("{} is not safe to rely on any more", c.dup.of));
     }
     match fingerprint::stamp(&root.join(&path)) {
         Ok(s) if s.size == size as u64 && s.mtime_ns == mtime_ns as i128 => Ok(()),
-        Ok(_) => Err(format!("{} changed since the scan", c.dup.of)),
-        Err(_) => Err(format!("{} is not on the drive any more", c.dup.of)),
+        Ok(_) => kept("kept_changed", true, format!("{} changed since the scan", c.dup.of)),
+        Err(_) => kept("kept_off_drive", true, format!("{} is not on the drive any more", c.dup.of)),
     }
 }
