@@ -1481,12 +1481,12 @@ await test('a person\'s Confirmed bar: Name, Ignore and Not a face are icon tool
   // As the page writes them (an icon reads back in the browser's own spelling).
   const icons = await p.evaluate(() => {
     const as = (svg) => { const d = document.createElement('div'); d.innerHTML = svg; return d.innerHTML; };
-    return { name: as(NAME_ICON), ignore: as(IGNORE_ICON), face: as(NOT_FACE_ICON), pet: as(NOT_PET_ICON) };
+    return { name: as(NAME_OTHER_ICON), ignore: as(IGNORE_ICON), face: as(NOT_FACE_ICON), pet: as(NOT_PET_ICON) };
   });
   await open(ida);
   const words = await p.locator('#pp-bar .btn').allTextContents();
   check(![name, ignore, notFace].some((w) => words.includes(w)), `Name, Ignore or Not a face is still a text button: ${words}`);
-  check((await tool(name).innerHTML()) === icons.name, 'Name has not the person with a check');
+  check((await tool(name).innerHTML()) === icons.name, 'Name has not the person with a plus');
   check((await tool(ignore).innerHTML()) === icons.ignore, 'Ignore has not the eye with a slash');
   check((await tool(notFace).innerHTML()) === icons.face, 'Not a face has not the face with a slash');
   for (const label of [name, ignore, notFace]) check((await tool(label).getAttribute('aria-disabled')) === 'true', `${label} is not dimmed with nothing ticked`);

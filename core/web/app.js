@@ -583,7 +583,11 @@ var FRAME_ICON = lineIcon('<path d="M3 9V6.5A2.5 2.5 0 0 1 5.5 4H9M15 4h3.5A2.5 
 var SELECT_ICON = lineIcon('<rect x="4" y="4" width="16" height="16" rx="3.5"/><path d="M8.5 12.2l2.5 2.5 4.8-5"/>');
 var ADD_FACE_ICON = lineIcon('<circle cx="11" cy="13" r="8"/><circle cx="8.3" cy="11.5" r=".6"/><circle cx="13.7" cy="11.5" r=".6"/><path d="M7.4 15.6a4.2 4.2 0 0 0 7.2 0"/><path d="M19 2.5v5M16.5 5h5"/>');
 // The icons of the face and pet actions (Unnamed cards, the singles bar, the photo's face panel).
-var NAME_ICON = lineIcon('<circle cx="10" cy="8" r="3.4"/><path d="M3.5 20c.6-3.6 3.2-5.6 6.5-5.6 1 0 1.9.2 2.7.5"/><path d="M14.5 17.5l2.3 2.3 4.2-4.6"/>');
+var PERSON_PATH = '<circle cx="10" cy="8" r="3.4"/><path d="M3.5 20c.6-3.6 3.2-5.6 6.5-5.6 1 0 1.9.2 2.7.5"/>';
+var NAME_ICON = lineIcon(PERSON_PATH + '<path d="M14.5 17.5l2.3 2.3 4.2-4.6"/>');
+// The same person with a plus where the check is: "Name ..." on a person's
+// Confirmed tab (the faces are given to someone else).
+var NAME_OTHER_ICON = lineIcon(PERSON_PATH + '<path d="M17.75 14v6.5M14.5 17.25h6.5"/>');
 var IGNORE_ICON = lineIcon('<path d="M2.5 12C5 7.6 8.3 6 12 6s7 1.6 9.5 6c-2.5 4.4-5.8 6-9.5 6s-7-1.6-9.5-6z"/><circle cx="12" cy="12" r="2.6"/><path d="M4.5 20L19.5 4"/>');
 // "Hide from timeline" (phase 20) is the icon of the face action "Ignore": the eye with a slash.
 // The same eye without the slash is the way back (show in timeline).
@@ -7203,8 +7207,8 @@ function personAction(action, ids, manual) {
 
 // The bar of the timeline's selection: close, count (or what to do), Select
 // all, then the tools. Confirm, Undo, Name, Ignore and Not a face are icons
-// with a quick label (Name, Ignore and Not a face those of the Unnamed page's
-// face actions); "Not x" keeps its words (it carries the name).
+// with a quick label (Ignore and Not a face those of the Unnamed page's face
+// actions); "Not x" keeps its words (it carries the name).
 function personPickBar(tab) {
   var bar = el('div', 'selbar tools');
   bar.id = 'pp-bar';
@@ -7265,7 +7269,7 @@ function personPickBar(tab) {
     iconTool(SEL_ICONS.undo, tr('person.undo'), '', function (faces, ids) { personAction('unreject', ids); });
   } else {
     button(tr('person.not', { name: p.name }), 'quiet', function (faces, ids) { personAction('reject', ids); });
-    iconTool(NAME_ICON, tr('person.name_btn'), '', function (faces) { nameFacesDialog(faces, personRefresh); }, tr('unnamed.name_selected_hint'));
+    iconTool(NAME_OTHER_ICON, tr('person.name_btn'), '', function (faces) { nameFacesDialog(faces, personRefresh); }, tr('unnamed.name_selected_hint'));
     // Someone the user does not want to keep: ignored, so not asked about again.
     iconTool(IGNORE_ICON, tr('unnamed.ignore'), '', function (faces, ids) { personAction('ignore', ids); }, tr('unnamed.ignore_hint'));
     iconTool(p.species ? NOT_PET_ICON : NOT_FACE_ICON, tr(p.species ? 'pet.not_a.pet' : 'facecheck.not_face'), '',
