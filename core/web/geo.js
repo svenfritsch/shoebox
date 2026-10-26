@@ -19,8 +19,11 @@ var geo = {
   drawing: null,
   pendingDraw: false,
   side: true,
+  sideWidth: 0,     // the photo list's width as dragged (px), 0: the narrowest
+  focusSide: false, // the next photo list takes the keyboard focus
 };
 try { geo.side = localStorage.getItem('geoSide') !== '0'; } catch (e) { /* ignore */ }
+try { geo.sideWidth = Number(localStorage.getItem('geoSideWidth')) || 0; } catch (e) { /* ignore */ }
 geo.on = readMapsSetting(); // also on the screens that load no library (All drives, Settings)
 
 var TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
@@ -430,17 +433,20 @@ function loadLocations() {
   empty.hidden = true;
   main.appendChild(empty);
   var side = el('aside', 'geo-side');
+  var handle = resizeHandle(root, side);
   var tab = el('button', 'geo-tab', '‹');
   tab.type = 'button';
   setTip(tab, tr('geo.side_show'));
   tab.onclick = function () { setSide(true); };
   main.appendChild(tab);
   root.appendChild(main);
+  root.appendChild(handle);
   root.appendChild(side);
   page.appendChild(root);
   geo.page = root;
   geo.ui = { root: root, main: main, bar: bar, side: side, tab: tab, empty: empty };
   setSide(geo.side, true);
+  setSideWidth(geo.sideWidth, true);
 
   Promise.all([leafletReady(), api(LIBAPI + '/geo/points'), loadPlaces()]).then(function (r) {
     if (geo.page !== root) return; // left meanwhile
@@ -583,6 +589,7 @@ function loadSelection() {
   var q = sel.kind === 'place' ? { place: sel.id }
     : { area: [sel.area.south, sel.area.west, sel.area.north, sel.area.east].join(',') };
   if (!geo.side) setSide(true);
+  geo.focusSide = true;
   var seq = (geo.seq = (geo.seq || 0) + 1);
   api(LIBAPI + '/timeline' + query(q)).then(function (data) {
     if (seq !== geo.seq) return;
@@ -615,6 +622,72 @@ function setSide(open, quiet) {
   geo.ui.root.classList.toggle('side-hidden', !open);
   geo.ui.tab.hidden = open;
   if (!quiet && geo.map) setTimeout(function () { geo.map.invalidateSize(); }, 0);
+}
+
+// The border between the map and the photo list: dragged (or moved with the
+// arrow keys) it widens the list, which keeps at least its first width and
+// leaves the map at least 320px (both in app.css). The width stays in the
+// browser, like whether the list is shown.
+var SIDE_MIN = 360, MAP_MIN = 320, SIDE_STEP = 40;
+
+function resizeHandle(root, side) {
+  var h = el('div', 'geo-resize');
+  h.tabIndex = 0;
+  h.setAttribute('role', 'separator');
+  h.setAttribute('aria-orientation', 'vertical');
+  h.setAttribute('aria-label', tr('geo.side_resize'));
+  setTip(h, tr('geo.side_resize'));
+  var drag = null;
+  var move = function (ev) {
+    if (!drag || ev.pointerId !== drag.id) return;
+    setSideWidth(drag.right - ev.clientX, false, true);
+  };
+  var end = function (ev) {
+    if (!drag || ev.pointerId !== drag.id) return;
+    drag = null;
+    h.classList.remove('dragging');
+    document.body.classList.remove('geo-resizing');
+    setSideWidth(side.getBoundingClientRect().width);
+  };
+  h.addEventListener('pointerdown', function (ev) {
+    if (ev.button !== 0) return;
+    ev.preventDefault();
+    drag = { id: ev.pointerId, right: root.getBoundingClientRect().right };
+    if (h.setPointerCapture) h.setPointerCapture(ev.pointerId);
+    h.classList.add('dragging');
+    document.body.classList.add('geo-resizing');
+  });
+  h.addEventListener('pointermove', move);
+  h.addEventListener('pointerup', end);
+  h.addEventListener('pointercancel', end);
+  h.addEventListener('keydown', function (ev) {
+    var by = { ArrowLeft: SIDE_STEP, ArrowRight: -SIDE_STEP }[ev.key];
+    if (ev.key === 'Home') by = -1e6;
+    if (ev.key === 'End') by = 1e6;
+    if (!by) return;
+    ev.preventDefault();
+    setSideWidth(side.getBoundingClientRect().width + by);
+  });
+  return h;
+}
+
+// `w` px for the photo list, within what the page leaves it; kept unless
+// `quiet` (the page opening) or `dragging` (kept when the drag ends).
+function setSideWidth(w, quiet, dragging) {
+  var root = geo.ui && geo.ui.root;
+  if (!root) return;
+  w = Math.round(Math.max(SIDE_MIN, w || 0));
+  var room = root.getBoundingClientRect().width - MAP_MIN;
+  if (room >= SIDE_MIN) w = Math.min(w, room);
+  root.style.setProperty('--geo-side-w', w + 'px');
+  if (!quiet && !dragging) {
+    geo.sideWidth = w;
+    try { localStorage.setItem('geoSideWidth', String(w)); } catch (e) { /* ignore */ }
+  }
+  if (!quiet && geo.map && !geo.sizeQueued) {
+    geo.sizeQueued = true;
+    requestAnimationFrame(function () { geo.sizeQueued = false; if (geo.map) geo.map.invalidateSize(); });
+  }
 }
 
 function renderSide() {
@@ -657,7 +730,43 @@ function renderSide() {
   var more = el('button', 'btn quiet', tr('app.show_more'));
   more.onclick = function () { addCells(grid, more); };
   side.appendChild(more);
+  geo.ui.grid = grid;
+  geo.ui.more = more;
+  grid.addEventListener('keydown', gridKey);
   addCells(grid, more);
+  // A pin, cluster or place just picked: the arrow keys go on in its photos.
+  if (geo.focusSide) { geo.focusSide = false; focusSideCell(0); }
+}
+
+// Photo `i` of the list focused (and shown: "Show more" as often as needed).
+function focusSideCell(i) {
+  var ui = geo.ui, d = geo.data;
+  if (!ui || !ui.grid || !ui.grid.isConnected || !d || i < 0 || i >= d.count) return;
+  while (geo.shown <= i) addCells(ui.grid, ui.more);
+  var b = ui.grid.children[i];
+  if (b) { b.focus({ preventScroll: true }); b.scrollIntoView({ block: 'nearest' }); }
+}
+
+// The arrow keys in the photo list, as in the timeline: left and right to the
+// photo before and after, up and down a row, Home and End to the first and the
+// last. Space and Enter open the photo.
+function gridKey(ev) {
+  var cell = ev.target.closest && ev.target.closest('.geo-cell');
+  // The viewer (opened from here, the cell keeps the focus) and a dialog have their own keys.
+  if (!cell || ev.altKey || ev.ctrlKey || ev.metaKey || !$('lightbox').hidden || !$('modal').hidden) return;
+  // Space opens the photo at once, as in the timeline (a button would wait for
+  // the key to come up, and that can land on the cell the viewer gave back);
+  // the viewer's own key handler must not see it, it would close it again.
+  if (ev.key === ' ') { ev.preventDefault(); ev.stopPropagation(); cell.click(); return; }
+  var grid = ev.currentTarget, d = geo.data;
+  var i = Array.prototype.indexOf.call(grid.children, cell);
+  var cols = getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length || 1;
+  var to = { ArrowLeft: i - 1, ArrowRight: i + 1, ArrowUp: i - cols, ArrowDown: i + cols, Home: 0, End: d.count - 1 }[ev.key];
+  if (to === undefined) return;
+  ev.preventDefault();
+  // Down from the last row but one: the last photo, as in the timeline.
+  if (ev.key === 'ArrowDown' && to >= d.count && Math.floor(i / cols) < Math.floor((d.count - 1) / cols)) to = d.count - 1;
+  if (to >= 0 && to < d.count) focusSideCell(to);
 }
 
 function addCells(grid, more) {
@@ -682,7 +791,8 @@ function addCells(grid, more) {
   more.hidden = end >= d.count;
 }
 
-// The viewer over the selected photos; closing it comes back to the map.
+// The viewer over the selected photos; closing it comes back to the map, with
+// the photo seen last focused in the list (the arrow keys go on from there).
 function openFromSide(data, i) {
   var saved = { data: state.data, favs: state.favs, live: state.live };
   state.data = data;
@@ -691,11 +801,12 @@ function openFromSide(data, i) {
   state.live = {};
   data.live.forEach(function (p) { state.live[p[0]] = p[1]; });
   var from = document.activeElement;
-  lb.restore = function () {
+  lb.restore = function (at) {
     state.data = saved.data;
     state.favs = saved.favs;
     state.live = saved.live;
-    if (from && from.isConnected && from.focus) from.focus();
+    if (geo.data === data && at >= 0) focusSideCell(at);
+    else if (from && from.isConnected && from.focus) from.focus();
   };
   openLightbox(i);
 }

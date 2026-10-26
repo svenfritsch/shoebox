@@ -2101,7 +2101,8 @@ function closeLightbox() {
   dropWarm();
   $('lightbox').hidden = true;
   // Opened from a page (face check), not from the grid: back to the page.
-  if (lb.restore) { state.open = -1; lb.restore(); lb.restore = null; return; }
+  // `restore` gets the item seen last.
+  if (lb.restore) { var seen = state.open; state.open = -1; lb.restore(seen); lb.restore = null; return; }
   // Keep the grid where the viewer left off, with the last item seen
   // focused (Tab and the arrow keys continue from there).
   var d = state.data, i = state.open;
