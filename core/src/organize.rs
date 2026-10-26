@@ -783,7 +783,8 @@ const ROTATE_MAX_BYTES: u64 = 256 << 20;
 /// Like the Finder's Quick Look this is lossless and quick, and it is the
 /// only time shoebox writes into an original: two bytes, no copy, no
 /// replacement. The file must still match the index, carry an Orientation
-/// tag already (adding one would move every byte after it), and afterwards
+/// tag already (adding one would move every byte after it; a JPEG without
+/// one is turned in shoebox only, like a HEIC), and afterwards
 /// hash to exactly the old content with those two bytes changed; if not, the
 /// old bytes are put back. The modification time is the file system's own
 /// doing, as in the Finder; the creation time must not change.
@@ -818,7 +819,9 @@ pub fn rotate(conn: &Connection, root: &Path, id: i64, quarters: i32) -> Result<
         bail!("{name} differs from the index (hash); check it before changing it");
     }
 
-    let slot = orientation::find(&bytes).map_err(|e| anyhow!("{name}: {e:#}"))?;
+    // Without an Orientation tag (scans, edited or exported pictures) the
+    // turn cannot be written in place; it is shown in shoebox only.
+    let Ok(slot) = orientation::find(&bytes) else { return turn_view(conn, &rec, quarters) };
     let value = orientation::turned(slot.value, quarters);
     let old_bytes = [bytes[slot.offset], bytes[slot.offset + 1]];
     let new_bytes = slot.bytes(value);
@@ -859,7 +862,8 @@ pub fn rotate(conn: &Connection, root: &Path, id: i64, quarters: i32) -> Result<
 }
 
 /// Turn a photo by `turns` quarter turns clockwise: a JPEG in the file
-/// (`rotate`), anything else that shoebox can show (HEIC, PNG) in shoebox only.
+/// (`rotate`), anything else that shoebox can show (HEIC, PNG, a JPEG without
+/// an Orientation tag) in shoebox only.
 ///
 /// HEIC keeps its rotation in a box that is often missing, and adding it, or
 /// anything to a PNG, means writing a new file; Apple's Preview does that and

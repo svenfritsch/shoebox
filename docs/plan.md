@@ -1622,8 +1622,10 @@ is (`organize::turn`, going by content, not name):
   grid does not wait for a scan: `thumbAfterTurn` (app.js) asks for the new
   thumbnail 1 s after the last turn (three turns in a row are one request),
   and `/thumb` makes it on demand.
-  Refused: a JPEG without an Orientation tag (adding one shifts every byte
-  after it). The small EXIF thumbnail inside the file is not turned.
+  A JPEG without an Orientation tag (scans, edited or exported pictures) is
+  turned in shoebox only, like a HEIC (adding a tag shifts every byte after
+  it, so the file would have to be replaced). The small EXIF thumbnail inside
+  the file is not turned.
 - **HEIC and PNG: in shoebox only.** The turn is stored in `library.db`
   (`view_turns`, keyed by quick hash like `taken_overrides`, in
   `userdata.json` v4) and applied when shoebox serves the picture
