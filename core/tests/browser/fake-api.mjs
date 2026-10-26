@@ -44,7 +44,7 @@ export function fakeLibrary() {
     trash: [], // what GET /trash answers (organize::TrashItem)
     dupGroups: [], // what GET /duplicates answers (duplicates::Group)
     photoFaces: null, // { photo id: [face, ...] }: the faces in a timeline photo's info panel (else none)
-    photos: null, // [{ id, version, hidden?, folder? }]: the timeline (newest first, one month), else it is empty; `hidden`: 'tag' or 'folder'
+    photos: null, // [{ id, version, hidden?, folder?, day? }]: the timeline (newest first), else it is empty; `hidden`: 'tag' or 'folder'; `day` YYYYMMDD (else 15 March 2026)
     folders: null, // [{ id, parent, name, path, count, hidden?, hidden_own? }], else the root only (hidden folders hide the photos whose `folder` is theirs)
     thumbs: [], // addresses of the thumbnails (and pictures) the page asked for, as written: `/files/7/thumb?v=...`
     step: null, // null (grouped), 'stale' (starting) or 'running'
@@ -217,7 +217,7 @@ export function fakeLibrary() {
       const isHidden = (x) => !!x.hidden || (x.folder != null && (lib.folders || []).some((f) => f.id === x.folder && f.hidden));
       const revealed = (x) => folder && x.folder === folder && (lib.folders || []).some((f) => f.id === folder && f.hidden);
       const ph = (lib.photos || []).filter((x) => !folder || x.folder === folder).filter((x) => (q.get('hidden') === '1' ? isHidden(x) : !isHidden(x) || revealed(x)));
-      return { count: ph.length, ids: ph.map((x) => x.id), kinds: ph.map((x) => x.kind || 'j').join(''), days: ph.map(() => 20260315), versions: ph.map((x) => x.version).join(''), live: [], tags: [], people: [], groups: [], favs: [], hids: ph.filter(isHidden).map((x) => x.id), est: [] };
+      return { count: ph.length, ids: ph.map((x) => x.id), kinds: ph.map((x) => x.kind || 'j').join(''), days: ph.map((x) => x.day || 20260315), versions: ph.map((x) => x.version).join(''), live: [], tags: [], people: [], groups: [], favs: [], hids: ph.filter(isHidden).map((x) => x.id), est: [] };
     },
     '/places': () => [],
     '/event-pattern': () => ({ pattern: 'YYYY-MM Name' }),

@@ -218,8 +218,8 @@ await shot('ui-overview');
 // Where the controls of "The screen at a glance" are, in the order of its
 // legend (one numbered dot each): check.py checks that the dots sit on them.
 const GLANCE = [['Folders menu', '#menu'], ['Search box', '#search'], ['Favorites', '#fav-btn'], ['Type', '#types-btn'],
-  ['Year', '#years'], ['Select', '#select'], ['Quick links', '.sidebar-head'], ['Folders', '#tree'],
-  ['Timeline', '#sizer'], ['Language', '#lang'], ['Status', '#status']];
+  ['Select', '#select'], ['Quick links', '.sidebar-head'], ['Folders', '#tree'],
+  ['Timeline', '#sizer'], ['Year strip', '#scrub'], ['Language', '#lang'], ['Status', '#status']];
 const boxes = await p.evaluate((sels) => sels.map((sel) => {
   const e = document.querySelector(sel), r = e && e.getBoundingClientRect();
   return r && r.width && r.height ? { x: r.x, y: r.y, w: r.width, h: Math.min(r.height, innerHeight - r.y) } : null;

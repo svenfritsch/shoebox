@@ -164,7 +164,7 @@ current status and next step. Update its status table when a phase moves.
   (selection bar tools), `.abtn` (face actions), `.more-btn`, `.icon-btn`, `.sel-all`,
   `.tabs` (every row of tabs: a `.tabs` box of buttons, the current one `.on` or `.active`),
   `.badge-chip` (tags and face names, `.add` for the dashed "+ add" one) and
-  `.badge-input` (the small field that types one), `.text-input` (text fields: the search box, the
+  `.badge-input` (the small field that types one), `.scrub` (the year strip right of the timeline), `.text-input` (text fields: the search box, the
   settings' fields), plain `select` (it already has the shared chevron), `.chip` (filters). Pills
   have two heights only: `--ctl-h-sm` among text and controls, `--badge-h` for a label lying on a
   photo (`.badge`, the text snippet). A new kind of control gets its class in the common block, with a

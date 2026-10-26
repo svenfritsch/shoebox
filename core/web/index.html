@@ -28,7 +28,6 @@
       <label><input type="checkbox" value="screenshot"> <span data-i18n="types.screenshot">Screenshots</span></label>
     </div>
   </div>
-  <select id="years" data-i18n-aria-label="app.jump_year" data-i18n-tip="app.jump_year" data-tip="Jump to year" aria-label="Jump to year"></select>
   <button id="select" class="icon" data-i18n-aria-label="app.select" data-i18n-tip="app.select" data-tip="Select photos" aria-label="Select photos"></button>
   <select id="lang" class="lang-pick" data-i18n-aria-label="app.language" aria-label="Language" data-i18n-tip="app.language" data-tip="Language"></select>
 </header>
@@ -70,6 +69,9 @@
     <p id="empty" class="empty" hidden><span data-i18n="app.nothing">Nothing here.</span><br><span data-i18n="app.no_match">The search found no matches.</span></p>
     <section id="page" class="page" hidden></section>
   </main>
+  <div id="scrub" class="scrub" role="slider" tabindex="0" aria-orientation="vertical" aria-valuemin="0" data-i18n-aria-label="scrub.label" aria-label="Year strip" hidden>
+    <div class="scrub-track"><div class="scrub-hov"></div><div class="scrub-now"></div><div class="scrub-tip" aria-hidden="true"></div></div>
+  </div>
 </div>
 
 <div id="selbar" class="selbar tools" role="toolbar" aria-keyshortcuts="B" data-i18n-aria-label="sel.bar" aria-label="Selection" hidden>

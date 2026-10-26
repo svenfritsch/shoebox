@@ -1432,13 +1432,12 @@ await test('the Export button next to a tag chip is not offered while the Hidden
 await test('common control sizes: the viewer\'s tools and the header\'s drop-downs share one height, and the person bar\'s words match Select all', await on('', hiddenPhotos, async (p, lib) => {
   await cellCount(p, 3);
   const box = (sel) => p.locator(sel).first().evaluate((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; });
-  await p.evaluate(() => { $('years').hidden = false; if (!$('years').options.length) $('years').add(new Option('2020', '2020')); });
-  const years = await box('#years'), lang = await box('#lang');
-  check(years[1] === lang[1], `the year and language drop-downs are ${years[1]} and ${lang[1]} px high`);
-  check((await p.locator('#years').evaluate((e) => getComputedStyle(e).cursor)) === 'pointer', 'the year drop-down has no pointer cursor');
+  const types = await box('#types-btn'), lang = await box('#lang');
+  check(types[1] === lang[1], `the Type button and the language drop-down are ${types[1]} and ${lang[1]} px high`);
+  check((await p.locator('#lang').evaluate((e) => getComputedStyle(e).cursor)) === 'pointer', 'the language drop-down has no pointer cursor');
   check((await p.locator('#select').evaluate((e) => getComputedStyle(e).borderRadius)) === '50%', 'the select icon is not a circle');
   check(!(await p.locator('#types-btn').textContent()).includes('▾'), 'the Type button has its own text arrow');
-  const arrows = await p.evaluate(() => ['years', 'lang', 'types-btn'].map((id) => getComputedStyle(document.getElementById(id)).backgroundImage));
+  const arrows = await p.evaluate(() => ['lang', 'types-btn'].map((id) => getComputedStyle(document.getElementById(id)).backgroundImage));
   check(arrows.every((x) => x.startsWith('url(') && x === arrows[0]), 'the selects and the Type button do not share one arrow');
   await p.locator('#sizer a.cell').first().click();
   await p.locator('#lightbox').waitFor({ state: 'visible' });
@@ -1642,6 +1641,183 @@ await test('the page starts only once every script is loaded: a late export.js d
 }, async (p, lib) => {
   await cellCount(p, 2);
   check(await p.locator('#filters .export-chip').count() === 1, 'the Export button next to the tag chip is missing');
+}));
+
+// ---- the year strip right of the grid
+
+// Photos newest first: `n(y)` in each of the months `months(y)` of every year from `to` back to `from`.
+function years(lib, from, to, n, months = () => [12, 9, 6, 3]) {
+  let id = 0;
+  lib.photos = [];
+  for (let y = to; y >= from; y--) {
+    for (const m of months(y)) {
+      for (let i = 0; i < n(y); i++) { id++; lib.photos.push({ id, version: String(id).padStart(8, '0'), day: y * 10000 + m * 100 + 1 }); }
+    }
+  }
+}
+// Busy years since 2015 (four months of 25 photos), one photo a year before, back to 1990.
+const longTimeline = (lib) => years(lib, 1990, 2026, (y) => (y >= 2015 ? 25 : 1), (y) => (y >= 2015 ? [12, 9, 6, 3] : [7]));
+const ALL_MONTHS = () => [12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+
+// The strip as it is drawn: its labels (text, top in the track, marked as current), the marker, the bubble.
+const strip = (p) => p.evaluate(() => {
+  const box = $('scrub'), q = (s) => box.querySelector(s), tip = q('.scrub-tip');
+  return {
+    hidden: box.hidden, bar: $('scroller').classList.contains('has-scrub'), h: q('.scrub-track').getBoundingClientRect().height,
+    labels: [...box.querySelectorAll('.scrub-lbl')].map((e) => ({ text: e.textContent, top: parseFloat(e.style.top), cur: e.classList.contains('cur') })),
+    now: parseFloat(q('.scrub-now').style.top), tip: getComputedStyle(tip).display === 'none' ? null : tip.textContent,
+    value: box.getAttribute('aria-valuetext'), valueNow: box.getAttribute('aria-valuenow'),
+  };
+});
+const shown = (p) => until('the year strip', async () => !(await strip(p)).hidden && (await strip(p)).labels.length);
+// The month at the top of the timeline (the top bar names it), once the page has drawn the scroll.
+const topMonth = async (p) => { await p.clock.runFor(50); return p.evaluate(() => $('current-month').textContent); };
+const label = (p, text) => p.locator('#scrub .scrub-lbl', { hasText: new RegExp(`^${text}$`) });
+const trackPoint = async (p, at) => {
+  const r = await p.locator('#scrub .scrub-track').boundingBox();
+  return { x: r.x + r.width / 2, y: r.y + r.height * at, top: r.y };
+};
+
+await test('the year strip: every year where it starts, the busy ones with more room, at least 10 px each, no label closer than 14 px to the one above', await on('', longTimeline, async (p) => {
+  await shown(p);
+  const s = await strip(p);
+  check(s.bar, 'the scroller still shows its scroll bar next to the strip');
+  check(!(await p.locator('#years').count()), 'the Year drop-down is still in the header');
+  const ys = s.labels.map((l) => Number(l.text));
+  check(ys[0] === 2026 && ys.every((y, i) => !i || y < ys[i - 1]), `the labels are not the years newest first: ${ys}`);
+  for (let y = 2026; y >= 2015; y--) check(ys.includes(y), `the busy year ${y} has no label: ${ys}`);
+  check(ys.length < 37, 'every one of the quiet years has a label, though they lie closer than a label is high');
+  s.labels.forEach((l, i) => {
+    if (!i) return;
+    const gap = l.top - s.labels[i - 1].top, between = ys[i - 1] - ys[i];
+    check(gap >= 14, `${l.text} is ${gap} px below ${s.labels[i - 1].text}`);
+    check(gap >= 10 * between - 0.5, `${between} years between ${s.labels[i - 1].text} and ${l.text} take ${gap} px, less than 10 px each`);
+  });
+  const at = (y) => s.labels.find((l) => l.text === String(y)).top;
+  check(at(2019) - at(2020) > 4 * (at(2008) - at(2010)) / 2, 'a busy year has no more room than a year of one photo');
+  check(s.h - s.labels[s.labels.length - 1].top < 14, 'the oldest year is not at the end of the strip');
+  // 50 px wide: the labels 12 px from the edge and 30 px wide, 8 px from the photos.
+  const box = await p.locator('#scrub').boundingBox(), lbl = await label(p, 2020).evaluate((e) => { const r = e.getBoundingClientRect(); return [r.left, r.right]; });
+  check(box.width === 50 && Math.round(box.x + box.width - lbl[1]) === 12 && Math.round(lbl[0] - box.x) === 8, `strip ${box.width} px wide, label from ${lbl[0] - box.x} to ${box.x + box.width - lbl[1]} px of its edges`);
+}));
+
+await test('the year strip: a click on a year puts its first month at the top; the marker and the current year follow the scroll, to the end of the strip at the end of the list', await on('', longTimeline, async (p) => {
+  await shown(p);
+  // The upper half of the label lies above the line where 2020 starts: it is still 2020.
+  await label(p, 2020).click({ position: { x: 15, y: 2 } });
+  check(await topMonth(p) === await p.evaluate(() => monthLabel(202012)), 'a click on 2020 did not bring December 2020 to the top: ' + await topMonth(p));
+  let s = await strip(p);
+  const l2020 = s.labels.find((l) => l.text === '2020'), l2019 = s.labels.find((l) => l.text === '2019');
+  check(Math.abs(s.now - l2020.top) < 1, `the marker is at ${s.now}, 2020 at ${l2020.top}`);
+  check(s.labels.filter((l) => l.cur).map((l) => l.text).join() === '2020', 'the current year is not 2020 alone');
+  check(s.value === await topMonth(p), `the slider says ${s.value}`);
+  // The wheel over the photos: the marker moves on within the year, no bubble.
+  await p.mouse.move(600, 700);
+  await p.mouse.wheel(0, 900);
+  await until('the wheel to scroll', async () => { await p.clock.runFor(50); return (await strip(p)).now > l2020.top; });
+  s = await strip(p);
+  check(s.now > l2020.top && s.now < l2019.top && s.tip === null, `after the wheel the marker is at ${s.now} (2020 at ${l2020.top}, 2019 at ${l2019.top}), bubble ${s.tip}`);
+  // The scroll event comes with the browser's next frame, then the page's (fake) one draws.
+  const scrolledTo = async (top) => {
+    const at = await p.evaluate((t) => { $('scroller').scrollTop = t; return $('scroller').scrollTop; }, top);
+    const want = await p.evaluate((t) => headAt(t).label, at);
+    await until(`the top bar to name ${want}`, async () => { await p.clock.runFor(50); return (await p.evaluate(() => $('current-month').textContent)) === want; });
+    return strip(p);
+  };
+  s = await scrolledTo(1e9);
+  check(Math.abs(s.now - s.h) < 1, `at the end of the list the marker is at ${s.now} of ${s.h}`);
+  s = await scrolledTo(0);
+  check(s.now === 0 && s.labels[0].cur, `at the top the marker is at ${s.now}`);
+}));
+
+await test('the year strip: pointing names the month there and the jump goes to that month; dragging scrolls along; the wheel over the strip scrolls the photos', await on('', longTimeline, async (p) => {
+  await shown(p);
+  const a = await trackPoint(p, 0.4);
+  await p.mouse.move(a.x, a.y);
+  let s = await strip(p);
+  check(s.tip && /\d{4}$/.test(s.tip), `pointing at the strip shows no month: ${s.tip}`);
+  const widths = await p.evaluate(() => ['.scrub-now', '.scrub-hov'].map((c) => document.querySelector('#scrub ' + c).getBoundingClientRect().width));
+  check(Math.abs(widths[0] * 2 - widths[1]) < 1, `the marker is ${widths[0]} px, the line under the pointer ${widths[1]} px: not half`);
+  const named = s.tip;
+  await p.mouse.down();
+  check(await topMonth(p) === named, `the bubble named ${named}, the jump went to ${await topMonth(p)}`);
+  const before = await p.evaluate(() => $('scroller').scrollTop);
+  const b = await trackPoint(p, 0.7);
+  await p.mouse.move(b.x, b.y, { steps: 4 });
+  s = await strip(p);
+  check(await p.evaluate(() => $('scroller').scrollTop) > before, 'dragging down did not scroll down');
+  check(Math.abs(s.now - (b.y - b.top)) < 1, `while dragging the marker is at ${s.now}, the pointer at ${b.y - b.top}`);
+  await p.mouse.up();
+  check(!(await p.locator('#scrub.drag').count()), 'the strip still drags after the button is up');
+  const y0 = await p.evaluate(() => $('scroller').scrollTop);
+  await p.mouse.wheel(0, 500);
+  await until('the wheel over the strip to scroll', async () => (await p.evaluate(() => $('scroller').scrollTop)) === y0 + 500);
+  await p.mouse.move(600, 700);
+  check((await strip(p)).tip === null, 'the bubble stays when the pointer leaves the strip');
+}));
+
+await test('the year strip by keyboard: ↓ ↑ a month, Page Down / Page Up a year, Home and End the ends', await on('', longTimeline, async (p) => {
+  await shown(p);
+  const month = (m) => p.evaluate((x) => monthLabel(x), m);
+  await p.locator('#scrub').focus();
+  const steps = [['ArrowDown', 202609], ['ArrowDown', 202606], ['ArrowUp', 202609], ['PageDown', 202512], ['PageDown', 202412], ['PageUp', 202512], ['Home', 202612]];
+  for (const [key, m] of steps) {
+    await p.keyboard.press(key);
+    const want = await month(m);
+    check(await topMonth(p) === want, `${key}: ${await topMonth(p)} at the top, expected ${want}`);
+    check((await strip(p)).value === want, `${key}: the slider says ${(await strip(p)).value}`);
+  }
+  check((await strip(p)).valueNow === '0', 'the first month is not the slider\'s 0');
+  await p.keyboard.press('End');
+  await p.clock.runFor(50);
+  check(await p.evaluate(() => { const s = $('scroller'); return s.scrollTop + s.clientHeight >= s.scrollHeight - 1; }), 'End is not the end of the list');
+}));
+
+await test('the year strip of three years or fewer shows months, three letters (Safari\'s März and Sept. too), each year at its first month; four years show years again', await on('', (lib) => years(lib, 2024, 2026, () => 6, ALL_MONTHS), async (p, lib) => {
+  await shown(p);
+  let s = await strip(p);
+  const texts = s.labels.map((l) => l.text);
+  check(texts[0] === '2026' && texts.includes('2025') && texts.includes('2024'), `no year at the start of each year: ${texts}`);
+  check(texts.indexOf('2025') === texts.indexOf(await p.evaluate(() => I18n.date(new Date(2026, 0, 1), { month: 'short' }).slice(0, 3))) + 1, `2025 does not follow January 2026: ${texts}`);
+  check(texts.every((t) => /^\d{4}$/.test(t) || /^\p{L}{3}$/u.test(t)), `a label is neither a year nor three letters: ${texts}`);
+  check(s.labels.every((l, i) => !i || l.top - s.labels[i - 1].top >= 14), 'two month labels are closer than 14 px');
+  // A fourth year: the same page, a new list, years again at once.
+  years(lib, 2023, 2026, () => 6, ALL_MONTHS);
+  await p.evaluate(() => loadTimeline(false));
+  await settle(p, lib);
+  s = await strip(p);
+  check(s.labels.map((l) => l.text).join() === '2026,2025,2024,2023', 'four years: ' + s.labels.map((l) => l.text));
+  // Safari's German short months (Chromium's are three letters already): März, Juni, Sept. become Mär, Jun, Sep.
+  years(lib, 2025, 2026, () => 6, ALL_MONTHS);
+  await p.evaluate(() => {
+    const date = I18n.date, safari = ['Jan.', 'Feb.', 'März', 'Apr.', 'Mai', 'Juni', 'Juli', 'Aug.', 'Sept.', 'Okt.', 'Nov.', 'Dez.'];
+    I18n.date = (d, opts) => (opts && opts.month === 'short' && !opts.year ? safari[d.getMonth()] : date(d, opts));
+    loadTimeline(false);
+  });
+  await settle(p, lib);
+  const de = (await strip(p)).labels.map((l) => l.text);
+  check(['Mär', 'Jun', 'Jul', 'Sep', 'Okt'].every((m) => de.includes(m)) && de.every((t) => t.length <= 4), 'Safari\'s German months: ' + de);
+}));
+
+await test('the year strip is only there for a timeline that scrolls: not for a short list, not on other pages, back with the timeline', await on('', hiddenPhotos, async (p, lib) => {
+  await cellCount(p, 3);
+  let s = await strip(p);
+  check(s.hidden && !s.bar, 'three photos have a strip, or no scroll bar');
+  longTimeline(lib);
+  await p.evaluate(() => loadTimeline(false));
+  await settle(p, lib);
+  await shown(p);
+  await p.evaluate(() => showView('duplicates'));
+  await settle(p, lib);
+  s = await strip(p);
+  check(s.hidden && !s.bar, 'the Duplicates page has the strip');
+  // A window that changes size lays the timeline out again behind the page: still no strip.
+  await p.setViewportSize({ width: 1200, height: 1400 });
+  await settle(p, lib);
+  check((await strip(p)).hidden, 'the Duplicates page has the strip after the window changed size');
+  await p.evaluate(() => setFilter({}));
+  await settle(p, lib);
+  check(!(await strip(p)).hidden, 'the strip did not come back with the timeline');
 }));
 
 await finish();
