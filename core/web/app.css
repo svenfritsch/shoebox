@@ -88,6 +88,8 @@ select {
   background: var(--panel); color: var(--fg);
 }
 select:hover { border-color: var(--muted); }
+/* A small drop-down, among text and small controls (a card's role, the info panel): --ctl-h-sm high, like .btn.small. */
+select.small { height: var(--ctl-h-sm); padding-left: 8px; font-size: 13px; }
 .icon svg { display: block; width: 1em; height: 1em; fill: currentColor; }
 .icon {
   flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--ctl-h); height: var(--ctl-h); padding: 0;
@@ -95,6 +97,14 @@ select:hover { border-color: var(--muted); }
 }
 .icon:hover:not(:disabled) { background: var(--line); }
 .lb-bar .icon:hover:not(:disabled) { background: rgba(255,255,255,.18); }
+/* A square icon button with a frame, the size of the drop-downs next to it (the header's heart and Select). */
+.frame-icon {
+  flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--ctl-h); height: var(--ctl-h); padding: 0;
+  font-size: 18px; line-height: 1; border-radius: var(--ctl-r); border: 1px solid var(--line); background: var(--panel); color: inherit;
+}
+.frame-icon svg { display: block; }
+.frame-icon:hover:not(:disabled) { border-color: var(--muted); }
+.frame-icon.on { border-color: var(--accent); }
 .link { background: none; border: 0; padding: 0; border-radius: 4px; color: var(--accent); }
 .link:hover { text-decoration: underline; }
 /* Year strip (`.scrub`): the timeline's column right of the grid in place of the scroll bar. Labels
@@ -230,7 +240,7 @@ select:hover { border-color: var(--muted); }
   content: "✓"; position: absolute; left: 6px; top: 6px; width: 22px; height: 22px; border-radius: 50%;
   background: var(--accent); color: #fff; font-size: 14px; display: flex; align-items: center; justify-content: center;
 }
-body.selecting #select { color: var(--accent); }
+body.selecting #select { color: var(--accent); border-color: var(--accent); }
 /* Dragging across photos selects them, not the page's text. */
 body.selecting #sizer { -webkit-user-select: none; user-select: none; }
 .selbar {
@@ -251,7 +261,7 @@ body.selecting #sizer { -webkit-user-select: none; user-select: none; }
 .btn.danger:hover:not(:disabled) { filter: brightness(1.1); }
 .btn.quiet { background: var(--line); color: var(--fg); font-weight: 400; }
 .btn.quiet:hover:not(:disabled) { filter: none; background: color-mix(in srgb, var(--line) 75%, var(--fg) 25%); }
-.btn.danger { background: #c63b2f; }
+.btn.danger { background: var(--bad); color: #fff; }
 .btn.with-icon { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .btn.with-icon svg { width: 18px; height: 18px; flex: none; fill: currentColor; }
 .ficon { display: inline-flex; vertical-align: -.2em; margin-right: .35em; }
@@ -439,7 +449,7 @@ body.tile-drag { -webkit-user-select: none; user-select: none; }
 .card .btn { margin-top: 4px; --btn-h: var(--ctl-h-sm); padding: 0 10px; font-size: 13px; align-self: flex-start; }
 .lb-panel .actions { justify-content: flex-start; }
 .lb-panel .btn.quiet { background: rgba(255,255,255,.15); color: #eee; }
-.lb-panel select { background: rgba(255,255,255,.15); color: #eee; border: 0; border-radius: var(--ctl-r); height: var(--ctl-h-sm); padding: 0 8px; }
+.lb-panel select { background-color: rgba(255,255,255,.15); color: #eee; border: 0; }
 .lb-panel select option { background: #2a2a2c; color: #eee; }
 
 @media (max-width: 760px) {
@@ -539,7 +549,6 @@ body.selecting .sec .pick { display: inline; }
   font-size: 18px; line-height: 1; padding: 0 6px;
 }
 .more-btn:hover, .more-btn:focus-visible { background: var(--line); color: var(--fg); }
-.btn.small { --btn-h: var(--ctl-h-sm); padding: 0 10px; font-size: 13px; }
 .btn.quiet.active { background: var(--accent-soft); color: var(--accent-fg); }
 .link.inline { font-size: inherit; }
 
@@ -751,7 +760,6 @@ body.selecting .sec .pick { display: inline; }
 .drive-card .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .drive-card .name { font-weight: 700; font-size: 16px; display: flex; gap: 8px; align-items: center; min-width: 0; overflow-wrap: anywhere; }
 .drive-card .on { font-size: 11px; font-weight: 600; color: var(--ok); }
-.drive-card select { height: var(--ctl-h-sm); padding: 0 8px; border-radius: var(--ctl-r); border: 1px solid var(--line); background: var(--panel); color: var(--fg); font-size: 13px; }
 .drive-card .where { display: flex; align-items: baseline; gap: 6px; font-size: 12px; color: var(--muted); margin-top: -6px; overflow-wrap: anywhere; }
 .drive-card .where b { color: var(--fg); font-weight: 600; }
 .drive-card .banner { border: 0; background: none; padding: 0; margin: 0; }
@@ -900,8 +908,7 @@ body.selecting .sec .pick { display: inline; }
 .settings-section input.text-input { min-width: 220px; }
 
 /* favorites: the heart */
-.fav-btn { display: inline-flex; align-items: center; justify-content: center; font-size: 18px; width: var(--ctl-h); height: var(--ctl-h); padding: 0; border-radius: var(--ctl-r); border: 1px solid var(--line); background: var(--panel); color: inherit; }
-.fav-btn.on { border-color: var(--accent); color: #e0405a; }
+.fav-btn.on { color: #e0405a; }
 .cell .fav {
   position: absolute; right: 5px; top: 5px; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%;
   display: flex; align-items: center; justify-content: center; font-size: 18px; color: #fff;
@@ -1176,7 +1183,7 @@ body.geo-view #page { padding: 0; height: 100%; }
 .cell .tb.bk { background: #6cb4ee; color: #0b2233; }
 .lb-panel .cmp-badge { display: inline-block; margin-left: 8px; padding: 0 8px; border-radius: 9px; font-size: 11px; font-weight: 700; vertical-align: 1px; cursor: help; white-space: nowrap; background: #6cb4ee; color: #0b2233; }
 .lb-panel .cmp-badge.original { background: rgba(255, 255, 255, .2); color: #fff; }
-.drive-card .lists summary .go { float: right; margin: -3px 0 0 8px; padding: 4px 10px; font-size: 12px; border-radius: 8px; font-weight: 600; }
+.drive-card .lists summary .go { float: right; margin: -3px 0 0 8px; }
 .drive-card .lists summary .sub { color: var(--muted); }
 .drive-card .backup-status { display: flex; flex-direction: column; gap: 12px; }
 /* The same row in an original's card and a backup's: a muted line, 30px tall (the backup's has a bar). */
@@ -1237,7 +1244,7 @@ body.read-only #sel-move, body.read-only #lb-rotate, body.read-only .copy label.
 .lb-bar .hide-lb.on { color: var(--accent); }
 .lb-bar .hide-lb:disabled { cursor: default; opacity: 1; }
 .lb-panel { --ok-fg: #6fcf7c; --bad-fg: #ff8a7d; }
-.types-btn:hover, .fav-btn:hover { border-color: var(--muted); }
+.types-btn:hover { border-color: var(--muted); }
 
 /* One drop-down arrow for every select and for the Type button: our own chevron, with room to the right of it. */
 select:not([multiple]):not([size]), .types-btn, .dup-filter > summary.btn {

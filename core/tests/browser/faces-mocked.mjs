@@ -966,6 +966,8 @@ await test('trash page: "Only duplicates" shows just the removed copies, and Sel
   const all = p.locator('.dup-bar button', { hasText: (await tr(p, 'trash.select_all')).replace('{count}', '2') });
   await all.click();
   check(await p.locator('.card.pick.sel').count() === 2, 'Select all ticks the two duplicates');
+  // A red button has white words, not the accent's.
+  check((await p.locator('.dup-bar .btn.danger').evaluate((e) => getComputedStyle(e).color)) === 'rgb(255, 255, 255)', 'the red button\'s label is not white');
   await p.locator('.dup-bar .btn.danger').click();
   await p.locator('#modal-actions .btn.danger').click();
   await until('the delete', async () => lib.trash.length === 4);
@@ -1435,7 +1437,27 @@ await test('common control sizes: the viewer\'s tools and the header\'s drop-dow
   const types = await box('#types-btn'), lang = await box('#lang');
   check(types[1] === lang[1], `the Type button and the language drop-down are ${types[1]} and ${lang[1]} px high`);
   check((await p.locator('#lang').evaluate((e) => getComputedStyle(e).cursor)) === 'pointer', 'the language drop-down has no pointer cursor');
-  check((await p.locator('#select').evaluate((e) => getComputedStyle(e).borderRadius)) === '50%', 'the select icon is not a circle');
+  // Select and the heart are framed icon buttons alike: one size, frame, radius and hover.
+  const frame = (sel) => p.locator(sel).evaluate((e) => { const c = getComputedStyle(e), r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height), c.borderRadius, c.borderTopWidth, c.borderTopColor, c.backgroundColor].join(' '); });
+  const sel0 = await frame('#select'), fav0 = await frame('#fav-btn');
+  check(sel0 === fav0, `Select (${sel0}) and the heart (${fav0}) are not framed alike`);
+  const hoverBorder = async (sel) => { await p.locator(sel).hover(); return p.locator(sel).evaluate((e) => getComputedStyle(e).borderTopColor); };
+  const selHover = await hoverBorder('#select'), favHover = await hoverBorder('#fav-btn');
+  check(selHover === favHover && selHover !== sel0.split(' ').slice(4, 7).join(' '), `Select and the heart change their frame differently on hover: ${selHover}, ${favHover}`);
+  // The small sizes: a small drop-down is as high as a small button, and the backup check's
+  // "Show photos" keeps its label in the middle.
+  const smalls = await p.evaluate(() => {
+    const box = document.createElement('div');
+    box.innerHTML = '<select class="small"><option>x</option></select><button class="btn small">x</button>'
+      + '<div class="drive-card"><div class="lists"><details><summary><button class="btn quiet small go">x</button> 12 different</summary></details></div></div>';
+    document.body.appendChild(box);
+    const h = (q) => Math.round(box.querySelector(q).getBoundingClientRect().height);
+    const go = getComputedStyle(box.querySelector('.go'));
+    const out = [h('select'), h('.btn'), h('.go'), go.lineHeight, go.paddingTop, getComputedStyle(document.documentElement).getPropertyValue('--ctl-h-sm').trim()];
+    box.remove();
+    return out;
+  });
+  check(smalls[0] === 26 && smalls[1] === 26 && smalls[2] === 26 && smalls[3] === '26px' && smalls[4] === '0px' && smalls[5] === '26px', `small select, button and Show photos: ${smalls}`);
   check(!(await p.locator('#types-btn').textContent()).includes('▾'), 'the Type button has its own text arrow');
   const arrows = await p.evaluate(() => ['lang', 'types-btn'].map((id) => getComputedStyle(document.getElementById(id)).backgroundImage));
   check(arrows.every((x) => x.startsWith('url(') && x === arrows[0]), 'the selects and the Type button do not share one arrow');

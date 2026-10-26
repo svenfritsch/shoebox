@@ -160,12 +160,14 @@ current status and next step. Update its status table when a phase moves.
   hover and focus from `core/web/app.css` ("common controls": `--ctl-h` 32px,
   `--ctl-h-sm` 26px, `--ctl-r`, the translucent accent `--accent-soft` / `--accent-fg`).
   Before adding a control, look for the class that already is it and use it: `.btn`
-  (`.quiet`, `.small`, `.danger`) for text buttons, `.icon` (header and viewer bar), `.ib`
+  (`.quiet`, `.small`, `.danger`: red with white words) for text buttons, `.icon` (header and viewer bar),
+  `.frame-icon` (a framed square icon button: the header's heart and Select), `.ib`
   (selection bar tools), `.abtn` (face actions), `.more-btn`, `.icon-btn`, `.sel-all`,
   `.tabs` (every row of tabs: a `.tabs` box of buttons, the current one `.on` or `.active`),
   `.badge-chip` (tags and face names, `.add` for the dashed "+ add" one) and
   `.badge-input` (the small field that types one), `.scrub` (the year strip right of the timeline), `.text-input` (text fields: the search box, the
-  settings' fields), plain `select` (it already has the shared chevron), `.chip` (filters). Pills
+  settings' fields), plain `select` (it already has the shared chevron; `select.small` is
+  `--ctl-h-sm` high, like `.btn.small`), `.chip` (filters). Pills
   have two heights only: `--ctl-h-sm` among text and controls, `--badge-h` for a label lying on a
   photo (`.badge`, the text snippet). A new kind of control gets its class in the common block, with a
   tooltip or ellipsis rule if its label can be long, and is listed here; no per-screen heights,

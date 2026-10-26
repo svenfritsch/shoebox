@@ -5193,7 +5193,7 @@ function tagInput() {
 function infoScreenshot(row, info) {
   if (info.kind === 'video' || info.kind === 'raw') return;
   var box = el('div', 'shot-pick');
-  var pick = el('select');
+  var pick = el('select', 'small');
   [['1', tr('shot.yes')], ['0', tr('shot.no')]].forEach(function (o) {
     var opt = el('option', '', o[1]);
     opt.value = o[0];
@@ -9086,7 +9086,7 @@ function loadDrivesPage() {
         name.appendChild(el('span', 'on', d.online ? '● ' + tr('drives.online') : ''));
         top.appendChild(name);
         if (d.online) {
-          var sel = el('select');
+          var sel = el('select', 'small');
           setTip(sel, tr('drives.role_hint'));
           [['unknown', tr('drives.role.unknown')], ['separate', tr('drives.role.separate')], ['backup', tr('drives.role.backup')]].forEach(function (o) {
             var opt = el('option', '', o[1]); opt.value = o[0]; if (d.role === o[0]) opt.selected = true; sel.appendChild(opt);
