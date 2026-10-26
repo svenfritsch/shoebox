@@ -282,7 +282,7 @@ await test('"Use as picture" in the photo grid, on the person\'s page and in the
   await p.keyboard.press(' ');
   await p.locator('#lightbox').waitFor({ state: 'visible' });
   await p.locator('#lb-info').click();
-  await changed('viewer', () => openMenu(p, p.locator('#lb-panel .pface .more-btn')));
+  await changed('viewer', () => openMenu(p, p.locator('#lb-panel .pcell .more-btn')));
 }));
 
 await test('a person moved to a group and out again on the real server: the group is gone', on('view=people', async () => {
