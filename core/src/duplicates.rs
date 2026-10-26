@@ -360,11 +360,12 @@ fn secs(taken: &str) -> Option<i64> {
 /// re-taken photo fail this: their capture times differ. Two files with the
 /// same pixel size and format but other bytes never pass: the user judges those.
 fn same_photo(a: &Row, b: &Row) -> bool {
-    if a.file.kind == "video" || b.file.kind == "video" {
-        return false;
-    }
+    // Identical content is the same file, a video too ("IMG_1 1.MOV").
     if a.full_hash.is_some() && a.full_hash == b.full_hash {
         return true;
+    }
+    if a.file.kind == "video" || b.file.kind == "video" {
+        return false;
     }
     // Shots with different camera numbers, and an original next to its edit,
     // are never "the same photo in another size".

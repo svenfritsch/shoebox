@@ -4405,9 +4405,9 @@ function dupThumb(f, compare, versions) {
 function isEdit(f) { return /^img_e\d+/i.test(f.name); }
 
 // The group's photos large and side by side. "Keep this one" ticks all the
-// others and closes the dialog; "Keep" marks photos to stay (several can) and
-// "Keep (N)" ticks all the others. Nothing is trashed here: Move to trash in
-// the bar does the removing for every group at once.
+// others and closes the dialog; with more than two, "Keep" marks photos to
+// stay (several can) and "Keep (N)" ticks all the others. Nothing is trashed
+// here: Move to trash in the bar does the removing for every group at once.
 function compareDialog(g, start, onKeep) {
   var back = el('div', 'modal');
   var dlg = el('div', 'dialog compare');
@@ -4418,6 +4418,8 @@ function compareDialog(g, start, onKeep) {
   var onKey = function (e) { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKey);
   var toggles = [];
+  // Of two, keeping several is keeping both: "Keep this one" says it all.
+  var several = g.files.length > 2;
   g.files.forEach(function (f) {
     var col = el('div', 'compare-col' + (f.id === start.id ? ' start' : ''));
     var img = el('img');
@@ -4437,7 +4439,7 @@ function compareDialog(g, start, onKeep) {
     tog.appendChild(el('span', '', tr('dups.keep')));
     tog.onclick = function () { if (kept[f.id]) delete kept[f.id]; else kept[f.id] = true; refresh(); };
     toggles.push({ f: f, col: col, tog: tog });
-    row.appendChild(tog);
+    if (several) row.appendChild(tog);
     var keep = el('button', 'btn', tr('dups.keep_this'));
     keep.onclick = function () { close(); onKeep([f]); };
     row.appendChild(keep);
@@ -4451,7 +4453,7 @@ function compareDialog(g, start, onKeep) {
     close();
     onKeep(g.files.filter(function (f) { return kept[f.id]; }));
   };
-  row.appendChild(go);
+  if (several) row.appendChild(go);
   var done = el('button', 'btn quiet', tr('app.close'));
   done.onclick = close;
   row.appendChild(done);

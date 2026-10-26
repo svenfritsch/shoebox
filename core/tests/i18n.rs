@@ -142,3 +142,19 @@ fn no_message_is_left_unused() {
         .collect();
     assert!(unused.is_empty(), "keys in en.json that no code uses: {unused:?}");
 }
+
+/// The file notes the launcher translates (`report::NOTES`): each has its
+/// message, with the placeholders the code fills in, and no other note
+/// message is left over.
+#[test]
+fn every_file_note_has_its_message() {
+    let en = messages("en");
+    for (key, vars) in shoebox::report::NOTES {
+        let text = en.get(&format!("launcher.note.{key}")).unwrap_or_else(|| panic!("no message launcher.note.{key} in en.json"));
+        let wanted: BTreeSet<String> = vars.iter().map(|v| v.to_string()).collect();
+        assert_eq!(placeholders(text), wanted, "launcher.note.{key}");
+    }
+    let known: BTreeSet<String> = shoebox::report::NOTES.iter().map(|(k, _)| format!("launcher.note.{k}")).collect();
+    let extra: Vec<_> = en.keys().filter(|k| k.starts_with("launcher.note.") && !known.contains(*k)).collect();
+    assert!(extra.is_empty(), "note messages no code sends: {extra:?}");
+}

@@ -1024,6 +1024,21 @@ await test('duplicates: a click on the picture opens the viewer on the versions,
   await until('Space closes it', async () => (await open()).hidden);
 }));
 
+// The compare dialog of a series: "Keep this one" on every picture; the Keep
+// marks and Keep (N) only where there are more than two to choose from.
+for (const n of [2, 3]) {
+  await test(`duplicates: the compare dialog of ${n} similar photos ${n > 2 ? 'has' : 'has no'} Keep marks`, await on('view=duplicates', (lib) => {
+    lib.dupGroups = [{ exact: false, kind: 'similar', files: [1, 2, 3].slice(0, n).map((id) => dupFile(id, `IMG_${2396 + id}.JPG`, 4032, 3024, 3_000_000 + id, { row: id, pick: true })) }];
+  }, async (p) => {
+    await p.locator('a.thumb').first().click();
+    await p.locator('.dialog.compare').waitFor();
+    check(await p.locator('.dialog.compare .compare-col').count() === n, 'one picture per file');
+    check(await p.locator('.dialog.compare .compare-buttons .btn:not(.keep-toggle)').count() === n, 'Keep this one on every picture');
+    check(await p.locator('.dialog.compare .keep-toggle').count() === (n > 2 ? n : 0), `Keep marks for ${n}`);
+    check(await p.locator('.dialog.compare .actions .btn').count() === (n > 2 ? 2 : 1), `Keep (N) next to Close for ${n}`);
+  }));
+}
+
 // ---- Our own icons instead of emojis
 
 const EMOJI = /[\u{1F000}-\u{1FAFF}\u{26A0}\u{270E}]/u;

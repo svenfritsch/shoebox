@@ -1823,10 +1823,13 @@ fn look_at(
                 };
                 if let Err(f) = &outcome {
                     stats.failed += 1;
-                    crate::report::file(&p.rel, false, failure_text(f));
+                    match f {
+                        Failure::Refused(e) => crate::report::file(&p.rel, false, e.clone()),
+                        Failure::Crashed(e) => crate::report::said(&p.rel, false, crate::report::Said::new("recognizer_crashed", failure_text(f)).with("why", e.clone())),
+                    }
                     stats.errors.push(format!("{}: {}", p.rel, failure_text(f)));
                 } else {
-                    crate::report::file(&p.rel, true, "looked at");
+                    crate::report::said(&p.rel, true, crate::report::Said::new("looked_at", "looked at"));
                 }
                 let kept = match pass {
                     Pass::Upright => store(conn, &p.key, &stats.model, &outcome)?,

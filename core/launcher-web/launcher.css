@@ -49,7 +49,9 @@ button.quiet { margin-left: 8px; }
 .results .mark { width: 1.2em; font-weight: 700; }
 .results .ok .mark { color: var(--ok); } .results .bad .mark { color: var(--bad); }
 .results .path { flex: 1 1 55%; min-width: 0; word-break: break-all; }
-.results .note { color: var(--muted); font-size: 13px; flex: 0 1 auto; max-width: 100%; }
+.results .note { color: var(--muted); font-size: 13px; flex: 0 1 auto; max-width: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; }
+.results li.copy { flex-wrap: nowrap; align-items: baseline; }
+.results .note.dup-of { flex: 0 1 auto; min-width: 0; max-width: 50%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .results .dup .note { color: var(--text); font-weight: 600; }
 .results .bad .note { flex-basis: 100%; padding-left: calc(1.2em + 10px); }
 details { margin-top: 12px; }
