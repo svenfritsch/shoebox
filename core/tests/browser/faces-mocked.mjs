@@ -1544,6 +1544,65 @@ await test('badges: tags, the + tag chip, face names and both small fields in th
   check(await p.locator('#lb-panel .pfield').count() === 0 && await p.locator('#lb-panel .pface button.add').count() === 2, 'the field did not turn back into the badge when it lost the focus');
 }));
 
+// The faces in the viewer's panel: named people in a grid with their first
+// name (the initial of the last name, or the whole name, where two share it)
+// and the whole name as the quick label; suggestions, then unnamed faces in rows
+// under "Needs a decision"; ignored faces only once "2 ignored" folds them out,
+// for this photo. Tags and faces each have a heading of their own and a line.
+await test('the viewer\'s faces: a grid of named people with short names, rows to decide, ignored ones folded away', await on('', (lib) => {
+  lib.photos = [{ id: 1, version: 'orig0001' }, { id: 2, version: 'orig0002' }];
+  lib.photoTags = { 1: [{ id: 1, name: 'Strand', source: 'user' }] };
+  const named = ['Stefan Fritsch', 'Anna Müller', 'Anna Möller', 'Anna Schmidt', 'Jonas'].map((n) => lib.person(n, { faces: 1 }));
+  const face = (id, file, extra) => ({ id, file, kind: 'jpeg', version: 'orig000' + file, x: 0.1, y: 0.1, w: 0.1, h: 0.1, roll: 0, px: 100, score: 0.9, small: false, state: null, species: null, person: null, similarity: null, rejected: [], landmarks: [], ...extra });
+  const who = (k) => ({ state: 'confirmed', person: { id: named[k].id, name: named[k].name } });
+  lib.photoFaces = {
+    1: [face(101, 1), face(102, 1, who(0)), face(103, 1, { state: 'ignored' }), face(104, 1, who(1)), face(105, 1, { state: 'suggested', person: { id: named[4].id, name: 'Jonas' } }),
+      face(106, 1, who(2)), face(107, 1, who(3)), face(108, 1, { state: 'ignored' })],
+    2: [face(201, 2, who(0)), face(202, 2, { state: 'ignored' })],
+  };
+}, async (p, lib) => {
+  await p.locator('#sizer a.cell').nth(0).click();
+  await p.locator('#lb-info').click();
+  await p.locator('#lb-panel .pcell').first().waitFor();
+  const texts = (sel) => p.locator(sel).evaluateAll((xs) => xs.map((x) => x.textContent));
+  const heads = await texts('#lb-panel .psec-head');
+  check(JSON.stringify(heads) === JSON.stringify([await tr(p, 'info.tags'), await tr(p, 'info.people')]), `the headings: ${heads}`);
+  const lines = await p.locator('#lb-panel .psec').evaluateAll((xs) => xs.map((x) => getComputedStyle(x).borderTopWidth));
+  check(lines.join() === '1px,1px', `the lines above the sections: ${lines}`);
+  check(await p.locator('#lb-panel dl .badge-chip, #lb-panel dl .pfaces').count() === 0, 'tags or faces are still rows of the details');
+  const names = await texts('#lb-panel .pcell-name');
+  check(names.join('|') === 'Stefan|Anna Müller|Anna Möller|Anna S.', `the grid: ${names.join('|')}`);
+  const tips = await p.locator('#lb-panel .pcell .pshow').evaluateAll((xs) => xs.map((x) => x.dataset.tip));
+  check(tips.join('|') === 'Stefan Fritsch|Anna Müller|Anna Möller|Anna Schmidt', `the quick labels: ${tips.join('|')}`);
+  // Pointing at a named person shows their face's box (the index in the photo's faces).
+  await p.locator('#lb-panel .pcell').nth(1).hover();
+  check(await p.evaluate(() => lb.hover) === 3, `pointing at Anna Müller: ${await p.evaluate(() => lb.hover)}`);
+  // The rows: the suggestion first, then the unnamed face; no ignored one.
+  check(await p.locator('#lb-panel .psub').textContent() === await tr(p, 'info.to_decide'), 'no "Needs a decision"');
+  const rows = () => p.locator('#lb-panel .pface').evaluateAll((xs) => xs.map((x) => (x.classList.contains('ignored') ? 'ignored' : x.querySelector('.guess') ? 'guess' : 'unnamed')).join());
+  check(await rows() === 'guess,unnamed', `the rows: ${await rows()}`);
+  check(await p.locator('#lb-panel .pface .guess + .yes + .no + .add').textContent() === await tr(p, 'info.other_person'), 'the suggestion has no Other chip');
+  check(await p.locator(`#lb-panel .ptools button[data-tip^="${await tr(p, 'info.select')}"]`).count() === 1, 'no Select for two faces to decide');
+  const fold = p.locator('#lb-panel .ptools .pignored');
+  check(await fold.textContent() === await p.evaluate(() => trn('count.ignored', 2)), `the link: ${await fold.textContent()}`);
+  await fold.click();
+  check(await rows() === 'guess,unnamed,ignored,ignored', `folded out: ${await rows()}`);
+  check(await fold.textContent() === await tr(p, 'info.hide_ignored'), `the link once folded out: ${await fold.textContent()}`);
+  // Another photo has its ignored faces folded away; nothing is left to decide there.
+  await p.keyboard.press('ArrowRight');
+  await until('the next photo', async () => (await texts('#lb-panel .pcell-name')).join() === 'Stefan');
+  check(await rows() === '' && await p.locator('#lb-panel .psub').count() === 0, `the second photo's rows: ${await rows()}`);
+  check(await p.locator(`#lb-panel .ptools button[data-tip^="${await tr(p, 'info.select')}"]`).count() === 0, 'Select with nothing to decide');
+  check(await fold.textContent() === await p.evaluate(() => trn('count.ignored', 1)), `the second photo's link: ${await fold.textContent()}`);
+  // The ⋯ of a named person has the face's menu; a click on the person shows their photos.
+  await p.locator('#lb-panel .pcell').first().hover();
+  await p.locator('#lb-panel .pcell .more-btn').first().click();
+  await p.getByRole('menuitem', { name: await tr(p, 'menu.use_as', { name: 'Stefan Fritsch' }), exact: true }).waitFor();
+  await p.keyboard.press('Escape');
+  await p.locator('#lb-panel .pcell .pshow').first().click();
+  await until('the person\'s photos', () => p.evaluate(() => document.getElementById('lightbox').hidden && state.filter.people.length === 1));
+}));
+
 await test('tabs look the same everywhere: a person\'s tabs and the drives\' tabs share one style', await on('view=people', (lib) => lib.person('Tabea Tab', { suggested: 2 }), async (p, lib, tabea) => {
   await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=suggested`; }, tabea.id);
   await p.locator('#person-tabs .tab.active').waitFor();
