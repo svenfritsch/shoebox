@@ -2483,7 +2483,6 @@ function renderPanelAll(info) {
     tag.appendChild(document.createTextNode(t.name));
     tags.appendChild(tag);
   });
-  if (tags.children.length) row(tr('info.tags'), tags);
   var faces = el('div', 'pfaces readonly');
   (info.faces || []).forEach(function (f, k) {
     if (!f.person || f.state === 'ignored') return;
@@ -2503,9 +2502,10 @@ function renderPanelAll(info) {
     var tools = el('div', 'ptools');
     tools.appendChild(show);
     faces.appendChild(tools);
-    row(tr('info.people'), faces);
   }
   panel.appendChild(dl);
+  if (tags.children.length) infoSection(panel, tr('info.tags')).appendChild(tags);
+  if (faces.children.length) infoSection(panel, tr('info.people')).appendChild(faces);
   var text = infoText(info);
   if (text) panel.appendChild(text);
   var actions = el('div', 'actions');
@@ -2586,14 +2586,14 @@ function renderPanel() {
   infoScreenshot(row, info);
   // Hidden by its folder: the eye in the top bar cannot show it again, the folder can.
   if (info.hidden_folder) row(tr('info.hidden'), tr('hidden.via_folder', { folder: info.hidden_folder }));
-  infoTags(row, info);
   if (info.linked && info.linked.length) {
     var versions = el('div');
     info.linked.forEach(function (l) { versions.appendChild(el('div', '', l.path + (l.missing ? ' ' + tr('info.missing') : ''))); });
     row(tr('info.versions'), versions);
   }
-  infoFaces(row, info);
   panel.appendChild(dl);
+  infoTags(infoSection(panel, tr('info.tags')), info);
+  infoFaces(infoSection(panel, tr('info.people')), info);
   var text = infoText(info);
   if (text) panel.appendChild(text);
   drawFaces();
@@ -4951,7 +4951,16 @@ $('sizer').addEventListener('contextmenu', function (ev) {
 
 // Info panel, 5b: folder tags (from where the file is; not removable, move
 // the photo to get rid of one), own tags (✗ removes them) and "+ Tag".
-function infoTags(row, info) {
+// A part of the info panel under a heading of its own, the whole width, with
+// a line above it (tags, faces).
+function infoSection(panel, title) {
+  var sec = el('section', 'psec');
+  sec.appendChild(el('div', 'psec-head', title));
+  panel.appendChild(sec);
+  return sec;
+}
+
+function infoTags(sec, info) {
   var tags = el('div', 'tags');
   info.tags.forEach(function (t) {
     state.tagNames[t.id] = t.name;
@@ -5004,7 +5013,7 @@ function infoTags(row, info) {
     });
   };
   tags.appendChild(add);
-  row(tr('info.tags'), tags);
+  sec.appendChild(tags);
 }
 
 // A text field that suggests existing tags while typing.
@@ -8106,23 +8115,44 @@ function clusterCard(c) {
 
 // ---- info panel: the people on a photo (5c-3)
 
-// The faces of the photo with who they are: a name (confirmed), a
-// suggestion with ✓/✗, "+ Name" for unnamed ones, and a ⋯ menu (not a face,
-// ignore, …). Pointing at one (or tapping its crop) highlights its box.
-function infoFaces(row, info) {
+// The faces of the photo with who they are. The named ones sit in a grid
+// (picture, first name), the ones still waiting for a decision get a row each:
+// a suggestion with ✓/✗, "+ Name" for unnamed ones, and a ⋯ menu (not a face,
+// ignore, …). Ignored faces stay out of the way until "n ignored" folds them
+// out (for this photo only). Pointing at a face highlights its box.
+function infoFaces(sec, info) {
   var box = el('div', 'pfaces');
   var faces = info.faces || [];
-  // "Select" turns the list into a checklist (picking mode) with a bar to
+  // "Select" turns the rows into a checklist (picking mode) with a bar to
   // ignore or mark several faces at once. The pick belongs to one photo.
   if (!lb.pick || lb.pick.file !== info.id) lb.pick = { file: info.id, on: false, ids: {} };
   var pick = lb.pick;
-  var pickable = faces.filter(function (f) { return f.id != null; });
+  var showIgnored = lb.ignoredOpen === info.id;
+  var named = [], open = [], ignored = [];
+  faces.forEach(function (f, k) {
+    var item = { f: f, k: k };
+    if (f.state === 'confirmed' && f.person) named.push(item);
+    else if (f.state === 'ignored') ignored.push(item);
+    else open.push(item);
+  });
+  // Suggestions first, then the faces nobody has a guess for.
+  var guessed = open.filter(function (x) { return x.f.person; });
+  open = guessed.concat(open.filter(function (x) { return !x.f.person; }));
+  var rows = showIgnored ? open.concat(ignored) : open;
+  var pickable = rows.map(function (x) { return x.f; }).filter(function (f) { return f.id != null; });
   if (!pickable.length) pick.on = false;
   box.classList.toggle('picking', pick.on);
   if (!info.faces) box.appendChild(el('div', 'note', tr('info.faces_unlooked')));
   else if (!faces.length) box.appendChild(el('div', 'note', tr(info.kind === 'video' ? 'info.faces_video' : 'info.no_faces')));
   pick.list = pickable;
-  faces.forEach(function (f, k) { box.appendChild(infoFace(info, f, k, pick)); });
+  if (named.length) {
+    var grid = el('div', 'pgrid');
+    var labels = shortNames(named.map(function (x) { return x.f.person.name; }));
+    named.forEach(function (x, j) { grid.appendChild(infoPerson(info, x.f, x.k, labels[j])); });
+    box.appendChild(grid);
+  }
+  if (open.length) box.appendChild(el('div', 'psub', tr('info.to_decide')));
+  rows.forEach(function (x) { box.appendChild(infoFace(info, x.f, x.k, pick)); });
   if (pick.on) {
     box.appendChild(infoPickBar(info, pickable, pick));
     infoPickDrag(box, pickable, pick);
@@ -8137,8 +8167,7 @@ function infoFaces(row, info) {
   }
   // Only a stack of faces nobody has confirmed yet is worth ticking together;
   // one confirmed face is dealt with on its own (its ⋯ menu).
-  var unconfirmed = pickable.filter(function (f) { return f.state !== 'confirmed' && f.state !== 'ignored'; });
-  if (unconfirmed.length > 1 && !pick.on) {
+  if (open.filter(function (x) { return x.f.id != null; }).length > 1 && !pick.on) {
     var select = toolButton(SELECT_ICON, tr('info.select') + ': ' + tr('info.select_hint'));
     select.onclick = function () { pick.on = true; pick.ids = {}; pick.anchor = null; renderPanel(); };
     tools.appendChild(select);
@@ -8154,8 +8183,52 @@ function infoFaces(row, info) {
     }
     tools.appendChild(add);
   }
+  if (ignored.length) {
+    var fold = el('button', 'link pignored', showIgnored ? tr('info.hide_ignored') : trn('count.ignored', ignored.length));
+    fold.onclick = function () {
+      lb.ignoredOpen = showIgnored ? null : info.id;
+      // Folded away, they are no longer ticked either.
+      if (showIgnored) ignored.forEach(function (x) { delete pick.ids[x.f.id]; });
+      renderPanel();
+    };
+    tools.appendChild(fold);
+  }
   box.appendChild(tools);
-  row(tr('info.people'), box);
+  sec.appendChild(box);
+}
+
+// A named person in the info panel's grid: their picture (no crop of the face
+// is kept; the box on the photo shows which face it is) with the short name
+// under it, the whole name in the tooltip. A click shows their photos, the ⋯
+// in the corner has the face's menu.
+function infoPerson(info, f, k, label) {
+  var cell = el('div', 'pcell');
+  var go = el('button', 'pshow');
+  go.type = 'button';
+  go.appendChild(avatar(people.byId[f.person.id] || { name: f.person.name }, 'mid'));
+  go.appendChild(petLabel('span', 'pcell-name', f.species, label));
+  setTip(go, f.kept ? f.person.name + ' ' + tr('info.face_kept') : f.person.name);
+  go.onclick = function () { showPerson(f.person.id); };
+  cell.appendChild(go);
+  cell.addEventListener('mouseenter', function () { lb.hover = k; drawFaces(); });
+  cell.addEventListener('mouseleave', function () { if (lb.hover === k) { lb.hover = null; drawFaces(); } });
+  if (!f.kept) cell.appendChild(menuButton(function () { return infoFaceMenu(info, f); }, tr('person.more_face')));
+  return cell;
+}
+
+// What the grid writes under each picture: the first name; the initial of the
+// last name too when two people on the photo share it ("Anna M.", "Anna S."),
+// and the whole name if even that is the same.
+function shortNames(names) {
+  var words = function (n) { return n.normalize('NFC').trim().split(/\s+/); };
+  var initial = function (w) { return w.length > 1 ? w[0] + ' ' + w[w.length - 1].charAt(0) + '.' : w[0]; };
+  return names.map(function (n) {
+    var w = words(n);
+    var same = names.filter(function (m) { return m !== n && words(m)[0] === w[0]; });
+    if (!same.length) return w[0];
+    var short = initial(w);
+    return same.some(function (m) { return initial(words(m)) === short; }) ? n : short;
+  });
 }
 
 // Click and drag over the rows of the list in picking mode (mouse or pen; touch
@@ -8292,9 +8365,7 @@ function infoFace(info, f, k, pick) {
       line.appendChild(tick);
     }
   }
-  // A named person shows their picture (no crop of the face is kept); the
-  // box on the photo shows which face it is.
-  var pic = f.state === 'confirmed' && f.person ? avatar(people.byId[f.person.id] || { name: f.person.name }, 'small') : faceImg(f, 'small');
+  var pic = faceImg(f, 'small');
   setTip(pic, tr('info.show_where'));
   pic.onclick = function () { lb.hover = lb.hover === k ? null : k; drawFaces(); };
   line.appendChild(pic);
@@ -8305,13 +8376,7 @@ function infoFace(info, f, k, pick) {
   var changed = function () { infoFacesChanged(info.id); };
   var send = function (action, body) { return post(LIBAPI + '/faces/' + action, body).then(changed).catch(failed); };
   var ids = f.id != null ? [f.id] : [];
-  if (f.state === 'confirmed') {
-    var name = el('button', 'pname', f.person.name);
-    setTip(name, tr('info.photos_of', { name: f.person.name }));
-    name.onclick = function () { showPerson(f.person.id); };
-    who.appendChild(name);
-    if (f.kept) who.appendChild(el('span', 'note', ' ' + tr('info.face_kept')));
-  } else if (f.state === 'suggested' || f.state === 'maybe') {
+  if (f.state === 'suggested' || f.state === 'maybe') {
     who.appendChild(el('span', 'guess', tr(f.state === 'maybe' ? 'info.guess_maybe' : 'info.guess', { name: f.person.name })));
     var yes = el('button', 'yes', '✓');
     setTip(yes, tr('person.it_is', { name: f.person.name }));
@@ -8324,55 +8389,60 @@ function infoFace(info, f, k, pick) {
     who.appendChild(yes);
     who.appendChild(no);
   } else if (f.state === 'ignored') {
+    line.classList.add('ignored');
     who.appendChild(el('span', 'note', tr(f.species ? 'info.stranger_pet' : 'info.stranger')));
   }
-  if (f.state !== 'confirmed') {
-    var add = el('button', 'badge-chip add', tr(f.state === 'suggested' || f.state === 'maybe' ? 'info.other_person' : 'info.plus_name'));
-    add.onclick = function () {
-      var field = personField(function (person) {
-        send('assign', Object.assign({ faces: ids }, person));
-      }, { allowNew: true, placeholder: tr('unnamed.who'), species: f.species, badge: true, onEscape: function () { field.replaceWith(add); } });
-      add.replaceWith(field);
-      field.input.focus();
-      // Back to the badge when the focus leaves (a click on a suggestion keeps it in the field).
-      field.input.addEventListener('blur', function () {
-        setTimeout(function () { if (field.isConnected && document.activeElement !== field.input) field.replaceWith(add); }, 200);
-      });
-    };
-    who.appendChild(add);
-  }
+  var add = el('button', 'badge-chip add', tr(f.state === 'suggested' || f.state === 'maybe' ? 'info.other_person' : 'info.plus_name'));
+  add.onclick = function () {
+    var field = personField(function (person) {
+      send('assign', Object.assign({ faces: ids }, person));
+    }, { allowNew: true, placeholder: tr('unnamed.who'), species: f.species, badge: true, onEscape: function () { field.replaceWith(add); } });
+    add.replaceWith(field);
+    field.input.focus();
+    // Back to the badge when the focus leaves (a click on a suggestion keeps it in the field).
+    field.input.addEventListener('blur', function () {
+      setTimeout(function () { if (field.isConnected && document.activeElement !== field.input) field.replaceWith(add); }, 200);
+    });
+  };
+  who.appendChild(add);
   if (f.species) who.appendChild(petLabel('span', 'note', f.species, speciesName(f.species)));
   if (f.small) who.appendChild(el('span', 'note', ' ' + tr('facecheck.tag_small')));
   if (f.kept) return line;
-  line.appendChild(menuButton(function () {
-    var items = [];
-    if (f.manual != null) {
-      items.push({ label: tr('person.name_else'), run: function () { nameFacesDialog([Object.assign({ file: info.id }, f)], changed); } });
-      items.push({ label: tr('person.delete_drawn'), run: function () { send('undo', { manual: [f.manual] }); } });
-      return items;
-    }
-    if (f.state === 'confirmed') {
-      items.push({ label: tr('person.not', { name: f.person.name }), run: function () { send('reject', { faces: ids, person_id: f.person.id }); } });
-      items.push({ label: tr('person.name_else'), run: function () { nameFacesDialog([f], changed); } });
-      items.push({ label: tr('menu.use_as', { name: f.person.name }), run: function () {
-        post(LIBAPI + '/people/' + f.person.id + '/cover', { face: f.id }).then(function (r) { toast(tr('menu.picture_changed')); personUpdated(r); }).catch(failed);
-      } });
-    }
-    if (f.state !== 'ignored') items.push({ label: tr(f.species ? 'info.ignore_stranger_pet' : 'info.ignore_stranger'), run: function () { send('ignore', { faces: ids }); } });
-    if (f.state) items.push({ label: tr('info.forget'), run: function () { send('undo', { faces: ids }); } });
-    if (f.rejected && f.rejected.length) {
-      f.rejected.forEach(function (pid) {
-        var n = state.personNames[pid] || tr('info.someone');
-        items.push({ label: tr('info.maybe_after_all', { name: n }), run: function () { send('unreject', { faces: ids, person_id: pid }); } });
-      });
-    }
-    // A named pet is the species their person is; only the others need saying.
-    var to = f.state === 'confirmed' ? '' : otherSpecies([f]);
-    if (to) items.push({ label: makeSpeciesLabel(to), run: function () { setSpecies(ids, to).then(changed).catch(failed); } });
-    items.push({ label: tr(f.species ? 'pet.not_a.pet' : 'facecheck.not_face'), run: function () { send('not-face', { faces: ids }); } });
-    return items;
-  }, tr('person.more_face')));
+  line.appendChild(menuButton(function () { return infoFaceMenu(info, f); }, tr('person.more_face')));
   return line;
+}
+
+// The ⋯ menu of a face in the info panel, in the grid of named people or in a row.
+function infoFaceMenu(info, f) {
+  var changed = function () { infoFacesChanged(info.id); };
+  var send = function (action, body) { return post(LIBAPI + '/faces/' + action, body).then(changed).catch(failed); };
+  var ids = f.id != null ? [f.id] : [];
+  var items = [];
+  if (f.manual != null) {
+    items.push({ label: tr('person.name_else'), run: function () { nameFacesDialog([Object.assign({ file: info.id }, f)], changed); } });
+    items.push({ label: tr('person.delete_drawn'), run: function () { send('undo', { manual: [f.manual] }); } });
+    return items;
+  }
+  if (f.state === 'confirmed') {
+    items.push({ label: tr('person.not', { name: f.person.name }), run: function () { send('reject', { faces: ids, person_id: f.person.id }); } });
+    items.push({ label: tr('person.name_else'), run: function () { nameFacesDialog([f], changed); } });
+    items.push({ label: tr('menu.use_as', { name: f.person.name }), run: function () {
+      post(LIBAPI + '/people/' + f.person.id + '/cover', { face: f.id }).then(function (r) { toast(tr('menu.picture_changed')); personUpdated(r); }).catch(failed);
+    } });
+  }
+  if (f.state !== 'ignored') items.push({ label: tr(f.species ? 'info.ignore_stranger_pet' : 'info.ignore_stranger'), run: function () { send('ignore', { faces: ids }); } });
+  if (f.state) items.push({ label: tr('info.forget'), run: function () { send('undo', { faces: ids }); } });
+  if (f.rejected && f.rejected.length) {
+    f.rejected.forEach(function (pid) {
+      var n = state.personNames[pid] || tr('info.someone');
+      items.push({ label: tr('info.maybe_after_all', { name: n }), run: function () { send('unreject', { faces: ids, person_id: pid }); } });
+    });
+  }
+  // A named pet is the species their person is; only the others need saying.
+  var to = f.state === 'confirmed' ? '' : otherSpecies([f]);
+  if (to) items.push({ label: makeSpeciesLabel(to), run: function () { setSpecies(ids, to).then(changed).catch(failed); } });
+  items.push({ label: tr(f.species ? 'pet.not_a.pet' : 'facecheck.not_face'), run: function () { send('not-face', { faces: ids }); } });
+  return items;
 }
 
 // After a change in the info panel: its faces again, and the people.
