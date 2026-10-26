@@ -1465,6 +1465,61 @@ await test('common control sizes: on a person\'s suggested faces "Select all" an
   check((await p.locator(not).evaluate((e) => getComputedStyle(e).backgroundColor)) === 'rgba(0, 0, 0, 0)', '"Not" has a background before it is hovered');
 }));
 
+// The Confirmed tab's bar: Name, Ignore and Not a face are icon tools like
+// Confirm and Undo (the icons of the Unnamed page's face actions), dimmed until
+// a face is ticked; Name asks who it is, the others send the ticked face and it
+// leaves the page.
+await test('a person\'s Confirmed bar: Name, Ignore and Not a face are icon tools that act on the ticked face', await on('view=people', (lib) => ({ ida: lib.person('Ida Icon', { faces: 4 }), mia: lib.person('Mia Paw', { faces: 2, species: 'cat' }) }), async (p, lib, { ida, mia }) => {
+  const open = async (who) => {
+    await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=confirmed`; }, who.id);
+    await p.locator(`#pp-grid .face[data-key="f${lib.faceLists[who.id].confirmed[1].id}"]`).waitFor();
+    await settle(p, lib);
+    await p.locator('#pp-pick').click();
+  };
+  const tool = (label) => p.locator(`#pp-bar .ib.pp-act[aria-label="${label}"]`);
+  const name = await tr(p, 'person.name_btn'), ignore = await tr(p, 'unnamed.ignore'), notFace = await tr(p, 'facecheck.not_face'), notPet = await tr(p, 'pet.not_a.pet');
+  // As the page writes them (an icon reads back in the browser's own spelling).
+  const icons = await p.evaluate(() => {
+    const as = (svg) => { const d = document.createElement('div'); d.innerHTML = svg; return d.innerHTML; };
+    return { name: as(NAME_OTHER_ICON), ignore: as(IGNORE_ICON), face: as(NOT_FACE_ICON), pet: as(NOT_PET_ICON) };
+  });
+  await open(ida);
+  const words = await p.locator('#pp-bar .btn').allTextContents();
+  check(![name, ignore, notFace].some((w) => words.includes(w)), `Name, Ignore or Not a face is still a text button: ${words}`);
+  check((await tool(name).innerHTML()) === icons.name, 'Name has not the person with a plus');
+  check((await tool(ignore).innerHTML()) === icons.ignore, 'Ignore has not the eye with a slash');
+  check((await tool(notFace).innerHTML()) === icons.face, 'Not a face has not the face with a slash');
+  for (const label of [name, ignore, notFace]) check((await tool(label).getAttribute('aria-disabled')) === 'true', `${label} is not dimmed with nothing ticked`);
+  await tool(ignore).click({ force: true });
+  await settle(p, lib);
+  check(!postedTo(lib, '/faces/ignore').length, 'Ignore sent something with nothing ticked');
+  const act = async (label, path) => {
+    const id = lib.faceLists[ida.id].confirmed[1].id;
+    await p.locator(`#pp-grid .face[data-key="f${id}"] .crop`).click();
+    check((await tool(label).getAttribute('aria-disabled')) === 'false', `${label} stays dimmed with a face ticked`);
+    await tool(label).click();
+    await posted(lib, new RegExp('^' + path + '$'));
+    await settle(p, lib);
+    check(postedTo(lib, path).length === 1, `${label}: ${postedTo(lib, path).length} requests to ${path}`);
+    check(!lib.faceLists[ida.id].confirmed.some((f) => f.id === id), `${label} did not send the ticked face`);
+    check(await p.locator(`#pp-grid .face[data-key="f${id}"]`).count() === 0, `${label}: the face stays on the page`);
+  };
+  const first = lib.faceLists[ida.id].confirmed[1].id;
+  await p.locator(`#pp-grid .face[data-key="f${first}"] .crop`).click();
+  await tool(name).click();
+  await p.locator('#modal').waitFor();
+  check((await p.locator('#modal-body p').first().textContent()) === await tr(p, 'person.who_one'), 'Name does not ask who the face is');
+  await p.evaluate(() => closeModal());
+  // Unticked again for the next action.
+  await p.locator(`#pp-grid .face[data-key="f${first}"].sel .crop`).click();
+  await act(ignore, '/faces/ignore');
+  await act(notFace, '/faces/not-face');
+  // A pet's page: Not a pet, with the paw.
+  await open(mia);
+  check(await tool(notFace).count() === 0, 'a pet\'s bar says Not a face');
+  check((await tool(notPet).innerHTML()) === icons.pet, 'Not a pet has not the paw with a slash');
+}));
+
 await test('a text button never wraps: a long label is cut with an ellipsis and the quick label shows it whole', await on('view=people', (lib) => lib.person('Maximilian Alexander Friedrich Wilhelm von Hohenzollern-Sigmaringen', { suggested: 3 }), async (p, lib, long) => {
   await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=suggested`; }, long.id);
   await p.locator('#pp-grid .face').nth(1).waitFor();
