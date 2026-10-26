@@ -68,7 +68,12 @@ fn guard_commands_run_from_the_launcher_leave_originals_untouched() {
     assert_eq!(scan["fail_count"], 0);
     assert!(scan["recent_ok"].as_array().unwrap().iter().all(|f| f["ok"] == true));
     // Each note comes with its key, so the page says it in the person's language.
-    assert!(scan["recent_ok"].as_array().unwrap().iter().all(|f| f["key"] == "thumb_made" && f["note"] == "thumbnail made"), "{scan}");
+    // (A file counts once: its note is the first step that reported it, the
+    // thumbnail or the hash, whichever came first.)
+    assert!(
+        scan["recent_ok"].as_array().unwrap().iter().all(|f| (f["key"] == "thumb_made" && f["note"] == "thumbnail made") || (f["key"] == "hashed" && f["note"] == "hashed")),
+        "{scan}"
+    );
 
     // Verify: all fine, then a file vanishes and shows up as one failure.
     let clean = run_job(addr, json!({ "kind": "verify", "root": root }));
