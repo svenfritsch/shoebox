@@ -605,7 +605,7 @@
           <div class="txt">
             <h3>Hide from the timeline</h3>
             <p>The eye with a slash <svg class="ic" style="width:1.1em;height:1.1em;vertical-align:-.2em" aria-hidden="true"><use href="#i-sel-hide"/></svg> in the top bar of the viewer (key <b>h</b>) hides the photo from the timeline. Once it is hidden, the same button shows the eye without the slash <svg class="ic" style="width:1.1em;height:1.1em;vertical-align:-.2em" aria-hidden="true"><use href="#i-sel-show"/></svg> and brings the photo back. In the selection bar the button <b>Hide from timeline</b> does the same for many photos at once. To hide a whole folder, right-click it in the sidebar (<b>Hide folder from timeline</b>) or press the eye in its chip above the photos, which is also the way on the iPad. Everything in the folder and below it is hidden, also photos you copy there later. A hidden folder stays in the sidebar, dimmed, and a click on it shows its photos.</p>
-            <p>Hidden photos are left out wherever you look at photos, with every filter: the timeline, a person, a date, a place, a tag, and the counts agree. To see them, pick <b>Hidden</b> in the search suggestions (or type <i>hidden</i>, <i>versteckt</i>, <i>verborgen</i> or <i>ausgeblendet</i>), or use the <b>Hidden</b> row in the sidebar. Together with other chips it finds, for example, the hidden photos of one person. Pages for looking after your library, such as Duplicates, the face checks and the Trash, show everything. In <b>All drives</b> the same rules apply: each drive keeps its own hidden photos and folders.</p>
+            <p>Hidden photos are left out wherever you look at photos, with every filter: the timeline, a person, a date, a place, a tag, and the counts agree. To see them, pick <b>Hidden</b> in the search suggestions (or type <i>hidden</i>, <i>versteckt</i>, <i>verborgen</i> or <i>ausgeblendet</i>). Together with other chips it finds, for example, the hidden photos of one person. Pages for looking after your library, such as Duplicates, the face checks and the Trash, show everything. In <b>All drives</b> the same rules apply: each drive keeps its own hidden photos and folders.</p>
             <p>This is tidiness, not privacy. It only keeps photos out of the timeline you may show to others; the files stay where they are on the drive, and shoebox does not lock them (a password on the drive does that). A hidden photo is your own tag <i>hidden</i> and a hidden folder a flag in the index; nothing is written into a photo or a folder. Typing <i>hidden</i> or <i>versteckt</i> as a tag hides the photo and says so, it does not make a tag. A photo moved into a hidden folder is hidden, moved out of it it shows again. The <b>Export…</b> button next to a tag chip is not offered while the <b>Hidden</b> chip is on; select the hidden photos and use <b>Export…</b> in the bar instead.</p>
           </div>
         </div>
@@ -773,7 +773,16 @@
         <div class="txt">
           <h3>Move</h3>
           <p><b>Move…</b> asks for a folder. New folders are created, nothing is ever overwritten, and RAW, Live Photo and sidecar files move along. The photos’ own tags always go with them. “Keep folder tags” also keeps the old folder’s tags as own tags; folder tags always follow the new folder.</p>
+          <h4>Cleanup of empty folders</h4>
           <p>If a folder is empty after the move (nothing left in it but the leftovers your computer keeps there, such as <code>.DS_Store</code> or <code>Thumbs.db</code>), shoebox removes that empty folder and tells you which one. A folder that still holds anything else, a subfolder included, stays.</p>
+          <h4>Folder names that work on every computer</h4>
+          <p>A drive moves between Mac, Windows and Linux, so <b>Move…</b> only accepts folder names all three can open. Avoid:</p>
+          <ul>
+            <li><code>/ \ : * ? " &lt; &gt; |</code> in a name. On a Mac, Finder shows a <code>:</code> as <code>/</code>, so a folder you see as “09/10 Exchange” is really called <code>09:10 Exchange</code> and is refused. Rename it in Finder, for example to <code>09-10 Exchange</code>.</li>
+            <li>a dot at the start or end of a name, as in <code>Flight N.Y.</code>.</li>
+            <li>names Windows reserves, such as <code>CON</code>, <code>NUL</code> or <code>COM1</code>.</li>
+          </ul>
+          <p>Spaces, underscores, hyphens, ß and umlauts are fine. To fix an existing folder, rename it in Finder or File Explorer and scan again; until then you cannot move photos into it.</p>
         </div>
         <div class="shots">
           <figure>

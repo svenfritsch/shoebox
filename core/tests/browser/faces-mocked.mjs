@@ -1190,7 +1190,7 @@ const postedTo = (lib, path) => lib.log.filter((e) => e.method === 'POST' && e.p
 // The icon of an action is the eye with a slash (hide) or without (show again).
 const slashed = (p, sel) => p.evaluate((s) => !!document.querySelector(s + ' svg path[d="M4.5 20L19.5 4"]'), sel);
 
-await test('hiding in the viewer (key h): the photo stays until the viewer closes, then the grid loses it; the Hidden row and chip show it', await on('', hiddenPhotos, async (p, lib) => {
+await test('hiding in the viewer (key h): the photo stays until the viewer closes, then the grid loses it; the Hidden chip shows it', await on('', hiddenPhotos, async (p, lib) => {
   const cells = p.locator('#sizer a.cell');
   await cellCount(p, 3);
   check(await p.locator('#hidden-row').count() === 0, 'a Hidden row with nothing hidden');
@@ -1211,9 +1211,9 @@ await test('hiding in the viewer (key h): the photo stays until the viewer close
   await cellCount(p, 2);
   await settle(p, lib);
   check(JSON.stringify(await gridIds(p)) === '[2,3]', `the grid shows ${await gridIds(p)}`);
-  check(await p.locator('#hidden-row .count').textContent() === '1', 'the Hidden row counts the hidden photo');
-  // The Hidden row: only the hidden photos, as a chip.
-  await p.locator('#hidden-row .name').click();
+  check(await p.locator('#hidden-row').count() === 0, 'the sidebar offers a Hidden row');
+  // The Hidden chip: only the hidden photos.
+  await p.evaluate(() => setFilter(withFilter({ hidden: true })));
   await settleUntil(p, lib, 'the Hidden chip list', gridIs(p, [1]));
   check(JSON.stringify(await gridIds(p)) === '[1]', `the Hidden chip shows ${await gridIds(p)}`);
   check(await p.locator('#filters .chip.hid').count() === 1, 'the Hidden chip');
@@ -1244,7 +1244,7 @@ await test('the selection bar: the eye hides the selected photos, and in the hid
   await cellCount(p, 1);
   check(await p.locator('#selbar').isHidden(), 'the selection ends');
   // The hidden list: all selected are hidden, so the bar offers to show them.
-  await p.locator('#hidden-row .name').click();
+  await p.evaluate(() => setFilter(withFilter({ hidden: true })));
   await settle(p, lib);
   await cellCount(p, 2);
   await p.locator('#select').click();
@@ -1492,6 +1492,109 @@ await test('the settings page uses the common controls: selects with the shared 
   check(m.input === 32 && m.add === 32 && m.select === 32, `the folder field is ${m.input}, its button ${m.add}, a pattern select ${m.select} px high, expected 32`);
   check(m.arrow && m.native === 'none', 'the pattern selects have the native arrow');
   check(m.x === '50%', `the chip's remove button has the radius ${m.x}, expected a circle`);
+}));
+
+await test('the follow-up controls share the 32 px height: search box, face action buttons, dialog fields, kind toggle, viewer tools', await on('', hiddenPhotos, async (p, lib) => {
+  await cellCount(p, 3);
+  const heights = await p.evaluate(() => {
+    const host = document.createElement('div');
+    host.innerHTML = '<div class="dialog"><input type="text"><input type="number"><select><option>a</option></select><div class="kinds"><button>x</button><button class="on">y</button></div></div>'
+      + '<button class="abtn">+</button><div class="lb-panel"><div class="ptools"><button class="tool">+</button></div></div>';
+    document.body.appendChild(host);
+    const h = (sel) => Math.round(host.querySelector(sel).getBoundingClientRect().height);
+    const out = { search: Math.round(document.querySelector('.search input').getBoundingClientRect().height),
+      text: h('.dialog input[type=text]'), number: h('.dialog input[type=number]'), select: h('.dialog select'), kind: h('.kinds button'), abtn: h('.abtn'), tool: h('.ptools .tool') };
+    host.remove();
+    return out;
+  });
+  for (const [name, v] of Object.entries(heights)) check(v === 32, `${name} is ${v} px high, expected 32`);
+}));
+
+await test('badges: tags, the + tag chip, face names and both small fields in the viewer\'s panel are 26 px high, and a maybe guess has no "Maybe"', await on('', (lib) => {
+  lib.photos = [{ id: 1, version: 'orig0001' }];
+  lib.photoTags = { 1: [{ id: 1, name: 'Strand', source: 'user' }, { id: 2, name: 'Urlaub', source: 'folder' }] };
+  const face = (id, extra) => ({ id, file: 1, kind: 'jpeg', version: 'orig0001', x: 0.1, y: 0.1, w: 0.1, h: 0.1, roll: 0, px: 100, score: 0.9, small: false, state: null, species: null, person: null, similarity: null, rejected: [], landmarks: [], ...extra });
+  lib.photoFaces = { 1: [face(101, { state: 'maybe', person: { id: 9, name: 'Antonia Eger' } }), face(102)] };
+}, async (p, lib) => {
+  await p.locator('#sizer a.cell').first().click();
+  await p.locator('#lb-info').click();
+  await p.locator('#lb-panel .pface').first().waitFor();
+  const h = (sel) => p.locator(sel).evaluateAll((xs) => xs.map((e) => Math.round(e.getBoundingClientRect().height)));
+  const chips = await h('#lb-panel .tags .badge-chip');
+  check(chips.length === 3 && chips.every((x) => x === 26), `tag chips are ${chips} px high, expected three of 26`);
+  const inner = await p.locator('#lb-panel .tags .own > button').evaluateAll((xs) => xs.map((e) => getComputedStyle(e).backgroundColor));
+  check(inner.length === 2 && inner.every((x) => x === 'rgba(0, 0, 0, 0)'), `the buttons inside an own tag have a background of their own: ${inner}`);
+  const guess = await p.locator('#lb-panel .pface .guess').textContent();
+  check(guess === 'Antonia Eger?', `the guess reads "${guess}"`);
+  const yn = await p.locator('#lb-panel .pface button.yes, #lb-panel .pface button.no').evaluateAll((xs) => xs.map((e) => { const c = getComputedStyle(e); return c.borderTopWidth + '|' + c.borderRadius + '|' + Math.round(e.getBoundingClientRect().height); }));
+  check(yn.length === 2 && yn.every((x) => x === '0px|50%|22'), `the ✓ and ✗ in the panel are not 22 px circles without a border: ${yn}`);
+  const other = await h('#lb-panel .pface button.add');
+  check(other.length === 2 && other.every((x) => x === 26), `the face chips are ${other} px high`);
+  await p.locator('#lb-panel .tags .add').click();
+  check((await h('#lb-panel .tags input')).join() === '26', 'the tag field is not 26 px high');
+  await p.locator('#lb-panel .tags input').fill('Str');
+  await p.locator('#lb-panel .pface button.add').nth(1).focus();
+  await p.clock.runFor(400);
+  check(await p.locator('#lb-panel .tags input').count() === 0 && await p.locator('#lb-panel .tags .add').count() === 1, 'the tag field did not turn back into "+ Tag" when it lost the focus');
+  await p.locator('#lb-panel .pface button.add').nth(1).click();
+  check((await h('#lb-panel .pfield input')).join() === '26', 'the "Who is it?" field is not 26 px high: ' + await h('#lb-panel .pfield input'));
+  await p.locator('#lb-panel .pfield input').fill('Ant');
+  await p.locator('#lb-panel .tags .add').focus();
+  await p.clock.runFor(400);
+  check(await p.locator('#lb-panel .pfield').count() === 0 && await p.locator('#lb-panel .pface button.add').count() === 2, 'the field did not turn back into the badge when it lost the focus');
+}));
+
+await test('tabs look the same everywhere: a person\'s tabs and the drives\' tabs share one style', await on('view=people', (lib) => lib.person('Tabea Tab', { suggested: 2 }), async (p, lib, tabea) => {
+  await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=suggested`; }, tabea.id);
+  await p.locator('#person-tabs .tab.active').waitFor();
+  const style = (sel) => p.evaluate((q) => { const e = document.querySelector(q); const c = getComputedStyle(e); return [c.textTransform, c.paddingTop, c.paddingLeft, c.borderBottomWidth, c.fontWeight, c.letterSpacing].join('|'); }, sel);
+  await p.evaluate(() => { const d = document.createElement('div'); d.className = 'tabs underline'; d.innerHTML = '<button class="on">x</button><button>y</button>'; d.id = 'probe-tabs'; document.body.appendChild(d); });
+  check((await style('#person-tabs .tab.active')) === (await style('#probe-tabs .on')), `the active tabs differ: ${await style('#person-tabs .tab.active')} vs ${await style('#probe-tabs .on')}`);
+  check((await style('#person-tabs .tab:not(.active)')) === (await style('#probe-tabs button:not(.on)')), 'the other tabs differ');
+  check((await style('#person-tabs .tab.active')).startsWith('uppercase'), 'the tabs are not in the drives\' style');
+}));
+
+await test('one badge style: the labels on photos in the timeline, the duplicates cards and the map share look and size', await on('', hiddenPhotos, async (p, lib) => {
+  await cellCount(p, 3);
+  const look = await p.evaluate(() => {
+    const host = document.createElement('div');
+    host.innerHTML = '<div class="cell"><span class="badge">RAW</span></div><div class="card"><div class="thumb"><div class="badges"><span class="badge">JPG</span></div></div></div><div class="geo-cell"><span class="badge small">V</span></div>';
+    document.body.appendChild(host);
+    const of = (sel) => { const c = getComputedStyle(host.querySelector(sel)); return [c.backgroundColor, c.color, c.borderRadius, c.fontWeight, c.fontSize, c.paddingLeft, c.lineHeight].join('|'); };
+    const out = { cell: of('.cell .badge'), card: of('.card .badge'), geo: of('.geo-cell .badge') };
+    host.remove();
+    return out;
+  });
+  check(look.cell === look.card, `the timeline's and the duplicates' badges differ: ${look.cell} vs ${look.card}`);
+  const [bg, fg, radius, weight] = look.cell.split('|'), g = look.geo.split('|');
+  check(g[0] === bg && g[1] === fg && g[2] === radius && g[3] === weight && g[4] === '10px', `the map's badge is not the small one: ${look.geo}`);
+}));
+
+await test('a caret in the sidebar goes from muted to full strength on hover, with no background', await on('', hiddenPhotos, async (p, lib) => {
+  await cellCount(p, 3);
+  await p.evaluate(() => {
+    const host = document.createElement('div');
+    host.innerHTML = '<div class="tree"><div class="row"><button class="toggle" id="c1">▸</button></div></div>';
+    host.style.cssText = 'position:fixed;left:300px;top:300px;z-index:99';
+    document.body.appendChild(host);
+  });
+  const text = await p.evaluate(() => getComputedStyle(document.body).color);
+  for (const id of ['c1']) {
+    const rest = await p.locator('#' + id).evaluate((e) => getComputedStyle(e).color);
+    check(rest !== text, `${id} is not muted at rest`);
+    await p.locator('#' + id).hover();
+    const on = await p.locator('#' + id).evaluate((e) => { const c = getComputedStyle(e); return [c.color, c.backgroundColor, c.outlineStyle].join('|'); });
+    check(on === `${text}|rgba(0, 0, 0, 0)|none`, `${id} on hover: ${on}, expected ${text} without background or outline`);
+  }
+}));
+
+await test('the page starts only once every script is loaded: a late export.js does not break the first paint', await on('tag=1', (lib) => {
+  lib.photos = [1, 2].map((id) => ({ id, version: `orig000${id}` }));
+  lib.tags = [{ id: 1, name: 'Strand', count: 2, kind: 'own' }];
+  lib.lateScripts = { '/export.js': 700 };
+}, async (p, lib) => {
+  await cellCount(p, 2);
+  check(await p.locator('#filters .export-chip').count() === 1, 'the Export button next to the tag chip is missing');
 }));
 
 await finish();

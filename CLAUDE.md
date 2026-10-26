@@ -156,6 +156,19 @@ current status and next step. Update its status table when a phase moves.
   fail. The pull request says which tests were added and why, and which were
   left out and why (e.g. not observable, like a request the server drops
   from its queue: measure it in a `scripts/bench-*.py` instead).
+- **UI uses the common classes, never one-off styles.** Controls take their size, radius,
+  hover and focus from `core/web/app.css` ("common controls": `--ctl-h` 32px,
+  `--ctl-h-sm` 26px, `--ctl-r`, the translucent accent `--accent-soft` / `--accent-fg`).
+  Before adding a control, look for the class that already is it and use it: `.btn`
+  (`.quiet`, `.small`, `.danger`) for text buttons, `.icon` (header and viewer bar), `.ib`
+  (selection bar tools), `.abtn` (face actions), `.more-btn`, `.icon-btn`, `.sel-all`,
+  `.tabs` (every row of tabs: a `.tabs` box of buttons, the current one `.on` or `.active`),
+  `.badge-chip` (tags and face names, `.add` for the dashed "+ add" one) and
+  `.badge-input` (the small field that types one), plain `select` (it already has the shared
+  chevron), `.chip` (filters). A new kind of control gets its class in the common block, with a
+  tooltip or ellipsis rule if its label can be long, and is listed here; no per-screen heights,
+  paddings, radii or colours for something that already exists. Text buttons stay on one line
+  (cut with an ellipsis, `tip.js` shows the whole label).
 - UI text is never hard-coded: `tr()`/`trn()`/`data-i18n` with a key in both
   `core/i18n/en.json` and `de.json` (see docs/phase8.md; `core/tests/i18n.rs`
   checks it).

@@ -781,28 +781,6 @@ function toggleHideOpen() {
 }
 $('lb-hide').onclick = toggleHideOpen;
 
-// The Hidden row of the sidebar's tag list, under Favorites, while something is hidden.
-function paintHiddenRow() {
-  var list = $('own-tags'), old = $('hidden-row');
-  if (old) old.remove();
-  $('tags-section').hidden = !list.children.length && !state.hiddenCount;
-  if (!state.hiddenCount) return;
-  var li = el('li'), r = el('div', 'row');
-  li.id = 'hidden-row';
-  var mark = el('span', 'toggle');
-  mark.innerHTML = HIDE_ICON;
-  r.appendChild(mark);
-  var name = el('button', 'name', tr('hidden.label'));
-  setTip(name, tr('hidden.filter_hint'));
-  name.onclick = function () { setFilter({ folder: null, tags: [], hidden: true, q: '' }); };
-  r.appendChild(name);
-  r.appendChild(el('span', 'count', I18n.number(state.hiddenCount)));
-  li.appendChild(r);
-  var fav = $('fav-row');
-  if (fav) fav.after(li); else list.insertBefore(li, list.firstChild);
-  $('tags-section').hidden = false;
-}
-
 // Right-click on a folder in the sidebar: hide it from the timeline, or show it again.
 $('tree').addEventListener('contextmenu', function (ev) {
   var b = ev.target.closest('button.name');
@@ -2496,7 +2474,7 @@ function renderPanelAll(info) {
   var tags = el('div', 'tags readonly');
   (info.tags || []).forEach(function (t) {
     if (t.source === 'user' && (isFavTag(t.name) || isHiddenTag(t.name))) return;
-    var tag = el('span', t.source === 'folder' ? 'folder' : 'own');
+    var tag = el('span', 'badge-chip ' + (t.source === 'folder' ? 'folder' : 'own'));
     if (t.source === 'folder') tag.appendChild(folderIcon());
     tag.appendChild(document.createTextNode(t.name));
     tags.appendChild(tag);
@@ -2867,7 +2845,7 @@ function fetchInfo() {
     trashCount = info.trash || 0;
     applyAllowTrash();
     dates.needs = info.needs_date || 0;
-    if ((state.hiddenCount || 0) !== (info.hidden || 0)) { state.hiddenCount = info.hidden || 0; paintHiddenRow(); }
+    if ((state.hiddenCount || 0) !== (info.hidden || 0)) { state.hiddenCount = info.hidden || 0; }
     if (state.filter && state.filter.nodate) renderChips();
     $('nav-nodate').hidden = isAll() || (!dates.needs && !(state.filter && state.filter.nodate));
     if (info.thumbs_done < info.thumbs_total) {
@@ -3231,6 +3209,7 @@ function moveDialog(ids, done) {
   var current = state.filter.folder && state.folderById[state.filter.folder];
   if (current && current.path) input.value = current.path;
   body.appendChild(input);
+  body.appendChild(el('p', 'hint', tr('move.hint')));
   var keepLabel = el('label', 'check');
   var keep = el('input');
   keep.type = 'checkbox';
@@ -3239,7 +3218,6 @@ function moveDialog(ids, done) {
   keepLabel.appendChild(document.createTextNode(' ' + tr('move.keep_folder_tags')));
   setTip(keepLabel, tr('move.keep_hint'));
   body.appendChild(keepLabel);
-  body.appendChild(el('p', 'hint', tr('move.hint')));
   // Moving into a hidden folder hides the photos; out of one shows them again.
   var hiddenNote = el('p', 'hint');
   body.appendChild(hiddenNote);
@@ -4974,7 +4952,7 @@ function infoTags(row, info) {
     if (t.source === 'user' && (isFavTag(t.name) || isHiddenTag(t.name))) return; // the heart and the eye in the top bar
     var show = function () { closeLightbox(); setFilter({ folder: null, tags: [t.id], q: '' }); };
     if (t.source === 'folder') {
-      var b = el('button', '');
+      var b = el('button', 'badge-chip');
       b.appendChild(folderIcon());
       b.appendChild(document.createTextNode(t.name));
       setTip(b, tr('tags.folder_hint'));
@@ -4982,7 +4960,7 @@ function infoTags(row, info) {
       tags.appendChild(b);
       return;
     }
-    var chip = el('span', 'own');
+    var chip = el('span', 'badge-chip own');
     var name = el('button', '', t.name);
     name.onclick = show;
     var x = el('button', 'x', '✕');
@@ -4995,10 +4973,11 @@ function infoTags(row, info) {
     chip.appendChild(x);
     tags.appendChild(chip);
   });
-  var add = el('button', 'add', tr('tags.add'));
+  var add = el('button', 'badge-chip add', tr('tags.add'));
   setTip(add, tr('tags.add_key_hint'));
   add.onclick = function () {
     var input = tagInput();
+    input.classList.add('badge-input');
     input.onkeydown = function (ev) {
       ev.stopPropagation(); // arrows and Escape belong to the field, not the viewer
       if (ev.key === 'Escape') { input.replaceWith(add); return; }
@@ -5013,6 +4992,10 @@ function infoTags(row, info) {
     };
     add.replaceWith(input);
     input.focus();
+    // Back to "+ Tag" when the focus leaves (a click on a suggestion keeps it in the field, a save in flight keeps it too).
+    input.addEventListener('blur', function () {
+      setTimeout(function () { if (input.isConnected && !input.disabled && document.activeElement !== input) input.replaceWith(add); }, 200);
+    });
   };
   tags.appendChild(add);
   row(tr('info.tags'), tags);
@@ -5192,8 +5175,7 @@ function loadOwnTags() {
       }
       list.appendChild(li);
     });
-    $('tags-section').hidden = !tags.length && !state.favCount && !state.hiddenCount;
-    paintHiddenRow();
+    $('tags-section').hidden = !tags.length && !state.favCount;
     markActiveFolder();
     renderChips();
   }).catch(function () {});
@@ -6427,6 +6409,7 @@ function personField(done, opts) {
   input.type = 'text';
   input.placeholder = opts.placeholder || tr('people.name_placeholder');
   input.autocomplete = 'off';
+  if (opts.badge) input.classList.add('badge-input');
   input.setAttribute('autocapitalize', 'words');
   input.setAttribute('enterkeyhint', 'done');
   var list = el('div', 'plist');
@@ -8336,13 +8319,17 @@ function infoFace(info, f, k, pick) {
     who.appendChild(el('span', 'note', tr(f.species ? 'info.stranger_pet' : 'info.stranger')));
   }
   if (f.state !== 'confirmed') {
-    var add = el('button', 'add', tr(f.state === 'suggested' || f.state === 'maybe' ? 'info.other_person' : 'info.plus_name'));
+    var add = el('button', 'badge-chip add', tr(f.state === 'suggested' || f.state === 'maybe' ? 'info.other_person' : 'info.plus_name'));
     add.onclick = function () {
       var field = personField(function (person) {
         send('assign', Object.assign({ faces: ids }, person));
-      }, { allowNew: true, placeholder: tr('unnamed.who'), species: f.species, onEscape: function () { field.replaceWith(add); } });
+      }, { allowNew: true, placeholder: tr('unnamed.who'), species: f.species, badge: true, onEscape: function () { field.replaceWith(add); } });
       add.replaceWith(field);
       field.input.focus();
+      // Back to the badge when the focus leaves (a click on a suggestion keeps it in the field).
+      field.input.addEventListener('blur', function () {
+        setTimeout(function () { if (field.isConnected && document.activeElement !== field.input) field.replaceWith(add); }, 200);
+      });
     };
     who.appendChild(add);
   }
@@ -9122,8 +9109,10 @@ function refreshDrives() {
   });
 }
 
-// The messages first: everything below builds its text from them.
-I18n.ready.then(function () {
+// The messages first: everything below builds its text from them. And every script: dates.js, geo.js and
+// export.js load after this one and the first paint calls into them, so start once the page has loaded.
+var scriptsLoaded = document.readyState === 'complete' ? Promise.resolve() : new Promise(function (done) { window.addEventListener('load', done); });
+Promise.all([I18n.ready, scriptsLoaded]).then(function () {
   var sel = $('lang');
   Object.keys(I18n.langs).forEach(function (code) {
     var o = el('option', '', I18n.langs[code]);
