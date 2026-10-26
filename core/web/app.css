@@ -107,6 +107,31 @@ select.small { height: var(--ctl-h-sm); padding-left: 8px; font-size: 13px; }
 .frame-icon.on { border-color: var(--accent); }
 .link { background: none; border: 0; padding: 0; border-radius: 4px; color: var(--accent); }
 .link:hover { text-decoration: underline; }
+/* Year strip (`.scrub`): the timeline's column right of the grid in place of the scroll bar. Labels
+   (years, or months as three letters) 8px from the photos and 12px from the edge; the marker
+   (accent) covers the right half of the lines, the grey line under the pointer reaches to the labels.
+   Both 3px. The bubble names the month under the pointer, only while pointing (hover) or dragging. */
+.scrub { --scrub-lbl: 30px; --scrub-r: 12px; flex: none; width: calc(8px + var(--scrub-lbl) + var(--scrub-r)); position: relative; cursor: pointer; user-select: none; -webkit-user-select: none; touch-action: none; }
+.scrub:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.scrub-track { position: absolute; inset: 14px 0; }
+.scrub-lbl { position: absolute; right: var(--scrub-r); width: var(--scrub-lbl); transform: translateY(-50%); text-align: right; font-size: 11px; line-height: 1; letter-spacing: .04em; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.scrub-lbl.cur { color: var(--accent-fg); font-weight: 600; }
+.scrub-now, .scrub-hov { position: absolute; right: 0; height: 3px; margin-top: -1.5px; border-radius: 1.5px; pointer-events: none; }
+.scrub-hov { display: none; width: calc(var(--scrub-lbl) + var(--scrub-r)); background: var(--muted); }
+.scrub-now { z-index: 1; width: calc((var(--scrub-lbl) + var(--scrub-r)) / 2); background: var(--accent); }
+.scrub-tip {
+  position: absolute; right: calc(100% + 6px); transform: translateY(-50%); display: none; align-items: center; z-index: 2;
+  height: var(--ctl-h-sm); padding: 0 12px; border-radius: 99px; font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums;
+  background: var(--panel); color: var(--fg); border: 1px solid var(--line); box-shadow: 0 4px 14px rgba(0, 0, 0, .22); pointer-events: none;
+}
+.scrub.drag .scrub-hov { display: block; }
+.scrub.drag .scrub-tip { display: flex; }
+@media (hover: hover) {
+  .scrub:hover .scrub-hov { display: block; }
+  .scrub:hover .scrub-tip { display: flex; }
+}
+.scroller.has-scrub { scrollbar-width: none; }
+.scroller.has-scrub::-webkit-scrollbar { display: none; }
 
 .layout { position: fixed; inset: var(--bar-h) 0 0 0; display: flex; }
 .sidebar {

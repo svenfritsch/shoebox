@@ -1710,6 +1710,44 @@ trash. UI gating only: the trash API and the duplicates screens are unchanged.
 Real-hardware check: with the setting off there is no trash icon or button;
 tick it and both appear.
 
+## Year strip (timeline)
+
+Built October 2026, in place of the header's Year drop-down (`#years`), which
+is gone. A column right of the grid (`#scrub`, `.scrub` in the common
+controls of `app.css`, code under "year strip" in `app.js`) takes the place of
+the timeline's scroll bar, like the one in Immich:
+
+- **What it shows.** The years where they start, newest at the top; when the
+  list spans three calendar years or fewer, its months (three letters, `Mär`
+  not `März`, `Sep` not `Sept.` as Safari writes them; the first month of a
+  year shows the year). Each year (or month) gets room by the height of its
+  photos, at least 10 px (`SCRUB_MIN`), so a year of a few scans can still be
+  hit; a label closer than 14 px (`SCRUB_GAP`) to the one above is left out,
+  the bubble still names the month. No dots for left-out labels.
+- **Looks.** 50 px wide: the labels (11 px, muted) 8 px from the photos and
+  12 px from the edge. The marker is 3 px of `--accent` over the right half
+  of the strip, always; the current year's label is bold `--accent-fg`. Under
+  the pointer a 3 px grey line reaching to the labels and a bubble (a pill,
+  `--ctl-h-sm`) naming the month there: only while pointing (`hover: hover`)
+  or dragging, never while the wheel scrolls.
+- **What it does.** A click goes to that point (on a label: where its year
+  starts), with the month at the top; dragging scrolls along (a finger on the
+  iPad); the wheel over the strip scrolls the photos. Keys (`role="slider"`):
+  up/down a month, Page Up/Page Down a year, Home/End the ends.
+- **Mapping.** A segment per year from its first month header to the next
+  one's; strip y and scroll position map linearly within a segment. The
+  marker follows the top of the view; over the last screen it also takes the
+  rest of the strip, so the end of the list is the end of the strip.
+- **Where.** Only the timeline (one drive or All drives, any filter) when it
+  scrolls; not the pairs list of a comparison, not other pages. Phones are not
+  a target (tablet and desktop are). The browser's scroll bar is hidden only
+  while the strip shows (`.scroller.has-scrub`).
+- **No request of its own**: built from `state.rows` on every layout, so a new
+  list or a resize rebuilds it at once.
+- **Tests**: `faces-mocked.mjs`, "the year strip …" (labels and room, click
+  and marker, pointing and dragging and the wheel, keys, months, where it
+  shows); `fake-api.mjs` gives photos a `day`. No API change, so no Rust test.
+
 ## Decoders per build (HEIC, video posters, Windows)
 
 Decided after the dependency audit (October 2026). Goal: a drive scanned on a

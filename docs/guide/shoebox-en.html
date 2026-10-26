@@ -343,7 +343,7 @@
             <svg class="ic" aria-hidden="true"><use href="#i-grid"/></svg>
           </div>
           <h3>Timeline</h3>
-          <p>All photos and videos by month, with a year jump, a folder tree and a viewer with full-size info. A photo can have a date of your own.</p>
+          <p>All photos and videos by month, with a year strip to move through the years, a folder tree and a viewer with full-size info. A photo can have a date of your own.</p>
         </li>
         <li>
           <div class="ic-box">
@@ -375,14 +375,14 @@
       <div class="shotwrap">
         <img src="assets/en/ui-overview.jpg" alt="" loading="lazy" style="display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:.6rem;box-shadow:0 .2rem 1rem rgba(60,35,10,.16)">
         <span class="dot" style="left:2.3%;top:6.2%" data-txt="skip">1</span>
-        <span class="dot" style="left:55.5%;top:7.8%" data-txt="skip">2</span>
-        <span class="dot" style="left:73.8%;top:7.8%" data-txt="skip">3</span>
-        <span class="dot" style="left:78.8%;top:7.8%" data-txt="skip">4</span>
-        <span class="dot" style="left:85.2%;top:7.8%" data-txt="skip">5</span>
-        <span class="dot" style="left:90.0%;top:7.8%" data-txt="skip">6</span>
-        <span class="dot" style="left:20.6%;top:11.6%" data-txt="skip">7</span>
-        <span class="dot" style="left:20.6%;top:26%" data-txt="skip">8</span>
-        <span class="dot" style="left:58%;top:33%" data-txt="skip">9</span>
+        <span class="dot" style="left:62.2%;top:7.8%" data-txt="skip">2</span>
+        <span class="dot" style="left:80.5%;top:7.8%" data-txt="skip">3</span>
+        <span class="dot" style="left:85.6%;top:7.8%" data-txt="skip">4</span>
+        <span class="dot" style="left:90.0%;top:7.8%" data-txt="skip">5</span>
+        <span class="dot" style="left:20.6%;top:11.6%" data-txt="skip">6</span>
+        <span class="dot" style="left:20.6%;top:26%" data-txt="skip">7</span>
+        <span class="dot" style="left:58%;top:33%" data-txt="skip">8</span>
+        <span class="dot" style="left:97.6%;top:45%" data-txt="skip">9</span>
         <span class="dot" style="left:95.2%;top:7.8%" data-txt="skip">10</span>
         <span class="dot" style="left:13.0%;top:93.0%" data-txt="skip">11</span>
       </div>
@@ -404,10 +404,6 @@
           <p>Tick what to show (Photos, Videos, Live Photos, Screenshots); nothing ticked shows everything. What you tick also appears as a chip above the photos. See “Find and organise”.</p>
         </li>
         <li>
-          <h3>Year</h3>
-          <p>Jump straight to a year.</p>
-        </li>
-        <li>
           <h3>Select ☑</h3>
           <p>Pick photos to move, tag or trash.</p>
         </li>
@@ -422,6 +418,10 @@
         <li>
           <h3>Timeline</h3>
           <p>Months with counts. Click a photo to open the viewer. Photos and folders you hide stay out of it, so you can show it to others; the <b>Hidden</b> chip finds them again (see “Hide from the timeline”).</p>
+        </li>
+        <li>
+          <h3>Year strip</h3>
+          <p>The years down the right edge; the orange mark is where you are. Point at it to see the month, click or drag to go there.</p>
         </li>
         <li>
           <h3>Language</h3>
@@ -444,7 +444,7 @@
       <div class="topic has-shots">
         <div class="txt">
           <h3>Where you are</h3>
-          <p>The top bar names where you are. Next to the drive name it shows the month you are looking at on the timeline (the <b>Year</b> menu jumps to a year) and, on any other page (Duplicates, Trash, Settings, Faces, Unnamed, …), the name of that page.</p>
+          <p>The top bar names where you are. Next to the drive name it shows the month you are looking at on the timeline (the year strip on the right shows where that is in all your years) and, on any other page (Duplicates, Trash, Settings, Faces, Unnamed, …), the name of that page.</p>
         </div>
         <div class="shots">
           <figure>
@@ -564,7 +564,9 @@
       <div class="topic">
         <div class="txt">
           <h3>Timeline</h3>
-          <p>Photos are grouped by month, newest first. The <b>Year</b> menu jumps to a year, and the top bar always names the month you are in (see “Finding your way around”).</p>
+          <p>Photos are grouped by month, newest first. The top bar always names the month you are in (see “Finding your way around”).</p>
+          <p>The <b>year strip</b> on the right edge takes the place of the scroll bar. It lists the years where they start, a busy year with more room than a quiet one; when your photos span three years or fewer, it lists the months instead. The orange mark is where you are. Point at the strip to see the month there, click to go there, or drag along it to move through the years; on the iPad, drag it with a finger. Where quiet years lie close together, some have no label of their own, but the strip still takes you there and names the month.</p>
+          <p>With the keyboard, press Tab until the strip is marked: the up and down arrows go a month at a time, Page Up and Page Down a year, Home and End to the newest and the oldest photos.</p>
           <p>A small <b>~</b> in the corner of a photo marks a guessed date. How a photo gets its date is explained in “Dates and searching by date”.</p>
         </div>
       </div>
@@ -814,7 +816,7 @@
         <div class="topic">
           <div class="txt">
             <h3>Which date counts</h3>
-            <p>The timeline, its month groups, the <b>Year</b> menu and the search all use one date per photo: the first of these that exists.</p>
+            <p>The timeline, its month groups, the year strip and the search all use one date per photo: the first of these that exists.</p>
             <ol>
               <li><b>The date you gave the photo</b> (a year, a month or a day), if you did. It wins even over a capture date in the file.</li>
               <li><b>The capture date in the file</b> (EXIF; for a video, the date in the video).</li>
