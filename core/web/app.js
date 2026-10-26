@@ -7202,8 +7202,9 @@ function personAction(action, ids, manual) {
 }
 
 // The bar of the timeline's selection: close, count (or what to do), Select
-// all, then the tools. Confirm and Undo are icons with a quick label, the other
-// actions keep their words (they carry a name).
+// all, then the tools. Confirm, Undo, Ignore and Not a face are icons with a
+// quick label (the icons of the Unnamed page's face actions); "Not x" and
+// "Name ..." keep their words (they carry a name).
 function personPickBar(tab) {
   var bar = el('div', 'selbar tools');
   bar.id = 'pp-bar';
@@ -7244,10 +7245,10 @@ function personPickBar(tab) {
       run(faces, faces.map(function (x) { return x.id; }).filter(function (x) { return x != null; }));
     };
   };
-  var iconTool = function (svg, label, cls, run) {
+  var iconTool = function (svg, label, cls, run, hint) {
     var b = el('button', 'ib pp-act' + (cls ? ' ' + cls : ''));
     b.innerHTML = svg;
-    setTip(b, label);
+    setTip(b, hint ? label + '\n' + hint : label);
     b.setAttribute('aria-label', label);
     b.onclick = chosen(run);
     bar.appendChild(b);
@@ -7266,8 +7267,9 @@ function personPickBar(tab) {
     button(tr('person.not', { name: p.name }), 'quiet', function (faces, ids) { personAction('reject', ids); });
     button(tr('person.name_btn'), '', function (faces) { nameFacesDialog(faces, personRefresh); });
     // Someone the user does not want to keep: ignored, so not asked about again.
-    button(tr('unnamed.ignore'), 'quiet', function (faces, ids) { personAction('ignore', ids); });
-    button(tr(p.species ? 'pet.not_a.pet' : 'facecheck.not_face'), 'quiet', function (faces, ids) { personAction('not-face', ids); });
+    iconTool(IGNORE_ICON, tr('unnamed.ignore'), '', function (faces, ids) { personAction('ignore', ids); }, tr('unnamed.ignore_hint'));
+    iconTool(p.species ? NOT_PET_ICON : NOT_FACE_ICON, tr(p.species ? 'pet.not_a.pet' : 'facecheck.not_face'), '',
+      function (faces, ids) { personAction('not-face', ids); }, tr(p.species ? 'unnamed.notface_hint_pet' : 'unnamed.notface_hint'));
   }
   return bar;
 }
