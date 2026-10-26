@@ -945,6 +945,7 @@
   "geo.deleted": "Ort „{name}“ gelöscht",
   "geo.side_hide": "Fotoliste ausblenden",
   "geo.side_show": "Fotoliste einblenden",
+  "geo.side_resize": "Ziehen, um die Fotoliste zu verbreitern",
   "geo.place_count": "{count} an diesem Ort",
   "geo.here_count": "{count} hier",
   "geo.pick": "Klicke auf eine Markierung oder einen Ort, um hier die Fotos zu sehen.",

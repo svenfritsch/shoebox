@@ -44,7 +44,8 @@ export function fakeLibrary() {
     trash: [], // what GET /trash answers (organize::TrashItem)
     dupGroups: [], // what GET /duplicates answers (duplicates::Group)
     photoFaces: null, // { photo id: [face, ...] }: the faces in a timeline photo's info panel (else none)
-    photos: null, // [{ id, version, hidden?, folder?, day? }]: the timeline (newest first), else it is empty; `hidden`: 'tag' or 'folder'; `day` YYYYMMDD (else 15 March 2026)
+    photos: null, // [{ id, version, hidden?, folder?, day?, pos? }]: the timeline (newest first), else it is empty; `hidden`: 'tag' or 'folder'; `day` YYYYMMDD (else 15 March 2026); `pos`: [lat, lon] on the map
+    maps: false, // the Maps setting is on (the browser keeps it; the Locations page needs it)
     folders: null, // [{ id, parent, name, path, count, hidden?, hidden_own? }], else the root only (hidden folders hide the photos whose `folder` is theirs)
     thumbs: [], // addresses of the thumbnails (and pictures) the page asked for, as written: `/files/7/thumb?v=...`
     step: null, // null (grouped), 'stale' (starting) or 'running'
@@ -216,10 +217,17 @@ export function fakeLibrary() {
       const folder = Number(q.get('folder') || 0);
       const isHidden = (x) => !!x.hidden || (x.folder != null && (lib.folders || []).some((f) => f.id === x.folder && f.hidden));
       const revealed = (x) => folder && x.folder === folder && (lib.folders || []).some((f) => f.id === folder && f.hidden);
-      const ph = (lib.photos || []).filter((x) => !folder || x.folder === folder).filter((x) => (q.get('hidden') === '1' ? isHidden(x) : !isHidden(x) || revealed(x)));
+      // `area` (south,west,north,east): the photos with a position inside, as `geo::files_in`.
+      const area = q.get('area') ? q.get('area').split(',').map(Number) : null;
+      const inArea = (x) => !area || (x.pos && x.pos[0] >= area[0] && x.pos[0] <= area[2] && x.pos[1] >= area[1] && x.pos[1] <= area[3]);
+      const ph = (lib.photos || []).filter((x) => !folder || x.folder === folder).filter(inArea).filter((x) => (q.get('hidden') === '1' ? isHidden(x) : !isHidden(x) || revealed(x)));
       return { count: ph.length, ids: ph.map((x) => x.id), kinds: ph.map((x) => x.kind || 'j').join(''), days: ph.map((x) => x.day || 20260315), versions: ph.map((x) => x.version).join(''), live: [], tags: [], people: [], groups: [], favs: [], hids: ph.filter(isHidden).map((x) => x.id), est: [] };
     },
     '/places': () => [],
+    '/geo/points': () => {
+      const ph = (lib.photos || []).filter((x) => x.pos && !x.hidden);
+      return { ids: ph.map((x) => x.id), lats: ph.map((x) => x.pos[0]), lons: ph.map((x) => x.pos[1]) };
+    },
     '/event-pattern': () => ({ pattern: 'YYYY-MM Name' }),
     '/allow-trash': () => ({ allow: false, read_only: false }),
     '/trash': () => lib.trash,

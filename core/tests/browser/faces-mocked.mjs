@@ -60,6 +60,9 @@ async function on(hash, setup, run) {
     const errors = [];
     p.on('pageerror', (e) => errors.push(e.message));
     await p.route(ORIGIN + '/**', lib.route);
+    // The map's tiles: none (the page shows its "offline" label, as without internet).
+    await p.route('https://tile.openstreetmap.org/**', (r) => r.abort());
+    if (lib.maps) await p.addInitScript(() => { try { localStorage.setItem('shoebox-maps', '1'); } catch (e) {} });
     await p.clock.install({ time: new Date('2026-06-01T10:00:00') });
     await p.goto(`${ORIGIN}/#${hash}`);
     // Started: the status and the people list are in (`settle` alone could
@@ -1153,6 +1156,104 @@ await test('the place panel on the map has a button that shows the place in the 
   const hash = await p.evaluate(() => location.hash);
   check(!/view=|[?&#]id=/.test(hash), `the map page is still in the address: ${hash}`);
   check(await p.evaluate(() => state.filter.place === 7 && !state.filter.view), 'the place is not a chip of the timeline');
+}));
+
+// The Locations page with Leaflet, maps on: 200 photos on Lake Constance, more
+// than the photo list shows at first (150, then "Show more").
+function mapPhotos(lib) {
+  lib.maps = true;
+  lib.photos = Array.from({ length: 200 }, (_, k) => ({ id: k + 1, version: `pos${String(k).padStart(5, '0')}`, pos: [47.65 + k * 0.0001, 9.17] }));
+}
+const LAKE = { south: 47.6, west: 9.1, north: 47.7, east: 9.3 };
+
+async function mapReady(p, lib) {
+  await until('the map', async () => { await p.clock.runFor(100); return p.evaluate(() => !!(geo.map && geo.ui)); });
+  await settle(p, lib);
+}
+
+// The photo in the list that has the keyboard focus (-1: none).
+const sideFocus = (p) => p.evaluate(() => (geo.ui.grid ? [...geo.ui.grid.children].indexOf(document.activeElement) : -1));
+
+await test('the photo list on the map: the arrow keys move in it, and the viewer gives back the photo seen last', await on('view=locations', mapPhotos, async (p, lib) => {
+  await mapReady(p, lib);
+  check(await p.evaluate(() => [...document.querySelectorAll('.geo-side .icon-btn')].every((b) => b.offsetWidth === b.offsetHeight && b.offsetWidth > 0)), 'a button of the photo list is not round (wider than high)');
+  await p.evaluate((a) => selectArea(a), LAKE);
+  await settle(p, lib);
+  check(await p.evaluate(() => geo.data.count) === 200 && await p.evaluate(() => geo.ui.grid.children.length) === 150, 'the list does not show the first 150 of 200 photos');
+  check(await sideFocus(p) === 0, `the picked photos did not take the keyboard focus (${await sideFocus(p)})`);
+  const cols = await p.evaluate(() => getComputedStyle(geo.ui.grid).gridTemplateColumns.split(' ').length);
+  check(cols > 1, `the list has ${cols} column`);
+  const keys = [['ArrowRight', 1], ['ArrowDown', 1 + cols], ['ArrowUp', 1], ['ArrowLeft', 0], ['ArrowLeft', 0], ['ArrowUp', 0]];
+  for (const [key, want] of keys) {
+    await p.keyboard.press(key);
+    check(await sideFocus(p) === want, `${key}: photo ${await sideFocus(p)} has the focus, expected ${want}`);
+  }
+  // Space opens the viewer; three photos on, Space closes it on the third.
+  await p.keyboard.press('Space');
+  await settle(p, lib);
+  check(await p.evaluate(() => !$('lightbox').hidden && state.open === 0), 'Space did not open the photo');
+  for (let k = 0; k < 3; k++) { await p.keyboard.press('ArrowRight'); await settle(p, lib); }
+  await p.keyboard.press('Space');
+  await settle(p, lib);
+  check(await p.evaluate(() => $('lightbox').hidden), 'Space did not close the viewer');
+  check(await sideFocus(p) === 3, `after the viewer photo ${await sideFocus(p)} has the focus, expected 3 (the one seen last)`);
+  check(await p.evaluate(() => state.data !== geo.data), 'the timeline did not get its own photos back');
+  // Seen last beyond the first 150: the list shows more, to that one.
+  await p.evaluate(() => focusSideCell(148));
+  await p.keyboard.press('Space');
+  await settle(p, lib);
+  for (let k = 0; k < 3; k++) { await p.keyboard.press('ArrowRight'); await settle(p, lib); }
+  await p.keyboard.press('Escape');
+  await settle(p, lib);
+  check(await sideFocus(p) === 151, `after the viewer photo ${await sideFocus(p)} has the focus, expected 151`);
+  await p.keyboard.press('Home');
+  check(await sideFocus(p) === 0, 'Home: not the first photo');
+  await p.keyboard.press('End');
+  check(await sideFocus(p) === 199, `End: photo ${await sideFocus(p)}, not the last`);
+  check(await p.evaluate(() => $('lightbox').hidden), 'a key in the list opened the viewer');
+}));
+
+await test('the border between map and photo list widens the list, within the least widths of both, and is kept', await on('view=locations', mapPhotos, async (p, lib) => {
+  await mapReady(p, lib);
+  await p.evaluate((a) => selectArea(a), LAKE);
+  await settle(p, lib);
+  const widths = () => p.evaluate(() => ({ side: Math.round(geo.ui.side.getBoundingClientRect().width), map: Math.round(geo.ui.main.getBoundingClientRect().width), leaflet: geo.map.getSize().x }));
+  const drag = async (by) => {
+    const b = await p.locator('.geo-resize').boundingBox();
+    const x = b.x + b.width / 2, y = b.y + b.height / 2;
+    await p.mouse.move(x, y);
+    await p.mouse.down();
+    await p.mouse.move(x + by / 2, y, { steps: 3 });
+    await p.mouse.move(x + by, y, { steps: 3 });
+    await p.mouse.up();
+    await settle(p, lib);
+  };
+  const start = await widths();
+  check(start.side === 360, `the list starts ${start.side}px wide, not 360`);
+  await drag(-300);
+  let w = await widths();
+  check(Math.abs(w.side - 660) <= 1, `dragged 300px to the left the list is ${w.side}px wide, expected 660`);
+  check(w.leaflet === w.map, `the map did not take its new size (${w.leaflet}px in a box of ${w.map})`);
+  check(await p.evaluate(() => localStorage.getItem('geoSideWidth')) === String(w.side), 'the width is not kept');
+  check(await p.evaluate(() => getComputedStyle(geo.ui.grid).gridTemplateColumns.split(' ').length) > 3, 'the wider list has no more columns');
+  await drag(-5000);
+  w = await widths();
+  check(w.map === 320, `dragged far to the left the map is ${w.map}px wide, expected its least 320`);
+  await drag(5000);
+  w = await widths();
+  check(w.side === 360, `dragged far to the right the list is ${w.side}px wide, expected its least 360`);
+  // The keyboard moves the border too.
+  await p.locator('.geo-resize').focus();
+  await p.keyboard.press('ArrowLeft');
+  await p.keyboard.press('ArrowLeft');
+  w = await widths();
+  check(w.side === 440, `two times ArrowLeft on the border: the list is ${w.side}px wide, expected 440`);
+  // A new visit (the page loaded again) has the width the user left.
+  await p.reload();
+  await until('the page to start again', async () => { await p.clock.runFor(100); return p.evaluate(() => !!(window.people && people.info)); });
+  await mapReady(p, lib);
+  w = await widths();
+  check(w.side === 440, `after a reload the list is ${w.side}px wide, expected 440`);
 }));
 
 // A JPEG turned in the viewer gets a new quick hash, so the grid's thumbnail is
