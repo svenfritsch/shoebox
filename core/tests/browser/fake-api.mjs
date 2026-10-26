@@ -245,7 +245,7 @@ export function fakeLibrary() {
     const id = Number(m[1]);
     if (lib.photos?.some((x) => x.id === id)) {
       return [200, {
-        id, name: `IMG_${id}.JPG`, path: `IMG_${id}.JPG`, folder_id: 1, kind: 'jpeg', size: 1000, taken: null, taken_offset: null, estimate: null, exif: null,
+        id, name: `IMG_${id}.JPG`, path: lib.photos.find((x) => x.id === id).path || `IMG_${id}.JPG`, folder_id: 1, kind: 'jpeg', size: 1000, taken: null, taken_offset: null, estimate: null, exif: null,
         modified: '2026-01-01T10:00:00', width: 100, height: 100, duration_ms: null, camera: null, tags: lib.photoTags?.[id] || [], missing: false,
         date_source: null, sort_date: null, live: null, linked: [], faces: lib.photoFaces?.[id] || [],
         view_turn: 0, screenshot: false, screenshot_mark: null, position: null, text: [],

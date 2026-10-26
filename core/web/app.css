@@ -48,6 +48,17 @@ select { cursor: pointer; }
 :root { --ctl-h: 32px; --ctl-h-sm: 26px; --ctl-r: 10px; }
 @media (pointer: coarse) { :root { --ctl-h: 44px; --ctl-h-sm: 34px; } }
 :where(button, a.icon, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Pills come in two heights only: every chip, badge-chip or pill among text and controls is --ctl-h-sm
+   high; a label that lies on a photo (`.badge`, the text snippet, the estimate mark) is --badge-h high. */
+:root { --badge-h: 18px; }
+/* Text field (`.text-input`): the search box and the settings' fields. A border that shows on hover and the
+   accent ring on focus, like every other control. */
+.text-input {
+  height: var(--ctl-h); padding: 0 12px; border-radius: var(--ctl-r); border: 1px solid var(--line); background: var(--panel); color: var(--fg);
+  -webkit-appearance: none; appearance: none;
+}
+.text-input:hover { border-color: var(--muted); }
+.text-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 [hidden] { display: none !important; }
 
 .bar {
@@ -59,10 +70,7 @@ select { cursor: pointer; }
 .bar h1 { font-size: 17px; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 30vw; }
 .month { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .search { flex: 1; display: flex; justify-content: flex-end; min-width: 0; }
-.search input {
-  width: 100%; max-width: 360px; height: var(--ctl-h); padding: 0 12px; border-radius: var(--ctl-r);
-  border: 1px solid var(--line); background: var(--panel);
-}
+.search input { width: 100%; max-width: 360px; }
 /* Type filter (5f): check box drop-down next to the search box. */
 .types { position: relative; flex: none; }
 .types-btn { height: var(--ctl-h); padding: 0 10px; border-radius: var(--ctl-r); border: 1px solid var(--line); background: var(--panel); color: inherit; white-space: nowrap; }
@@ -125,7 +133,7 @@ select:hover { border-color: var(--muted); }
 .scroller { flex: 1; overflow-y: auto; position: relative; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 .filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px 0; }
 .filter-note { flex-basis: 100%; margin: 0; color: var(--muted); font-size: 12px; }
-.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border-radius: 99px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; min-height: var(--ctl-h-sm); padding: 0 4px 0 10px; border-radius: 99px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; }
 .chip button { background: none; border: 0; padding: 0 6px; color: var(--muted); }
 .chip button:hover { color: var(--fg); }
 .sizer { position: relative; margin: 0 2px; }
@@ -143,7 +151,7 @@ select:hover { border-color: var(--muted); }
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='4.5' width='17' height='15' rx='2.5'/%3E%3Ccircle cx='9' cy='10' r='1.5'/%3E%3Cpath d='M4 17l5-4.5 3.5 3 2.5-2L20 17'/%3E%3Cpath d='M4 20L20 4'/%3E%3C/svg%3E") center / contain no-repeat; }
 /* Badge: the small dark label on a photo (LIVE, RAW, the file type, duplicate marks). Where it sits is the
    place's business (`.cell .badge`, `.card .thumb .badges`, ...); how it looks is this one rule. */
-.badge { display: inline-block; font-size: 11px; font-weight: 600; line-height: 1.45; color: #fff; background: rgba(0,0,0,.55); border: 0; border-radius: 4px; padding: 1px 6px; }
+.badge { display: inline-block; height: var(--badge-h); font-size: 11px; font-weight: 600; line-height: var(--badge-h); color: #fff; background: rgba(0,0,0,.55); border: 0; border-radius: 4px; padding: 0 6px; }
 .badge.small { font-size: 10px; padding: 0 4px; }
 .cell .badge { position: absolute; right: 6px; bottom: 6px; pointer-events: none; }
 .cell:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
@@ -176,7 +184,7 @@ select:hover { border-color: var(--muted); }
 .lb-panel > * { flex: none; }
 .lb-panel dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; }
 .lb-panel dt { color: #999; }
-.lb-panel dd { margin: 0; word-break: break-word; }
+.lb-panel dd { margin: 0; min-width: 0; word-break: break-word; }
 .lb-panel .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .lb-panel dd button { background: rgba(255,255,255,.12); color: #eee; border: 0; border-radius: 99px; padding: 2px 10px; font-size: 13px; }
 .lb-panel .note { color: #999; font-size: 12px; }
@@ -401,9 +409,6 @@ body.tile-drag { -webkit-user-select: none; user-select: none; }
 .dup-filter-menu label { display: flex; align-items: center; gap: 6px; }
 .btn:disabled { opacity: 0.45; cursor: default; }
 .copy .folder { background: none; border: 0; padding: 0; color: var(--accent); text-align: left; font-size: 12px; word-break: break-all; }
-.copy .tagline { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
-.copy .chip { background: var(--cell-bg); border-radius: 10px; padding: 1px 8px; }
-.copy .chip.own { background: var(--accent-soft); color: var(--accent-fg); }
 .dup-bar { position: sticky; bottom: 12px; display: flex; align-items: center; gap: 10px; justify-content: center; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2); width: fit-content; margin: 0 auto; }
 @media (max-width: 700px) { .dup-row { flex-direction: column; } .copy { width: 100%; } }
 .card .btn { margin-top: 4px; --btn-h: var(--ctl-h-sm); padding: 0 10px; font-size: 13px; align-self: flex-start; }
@@ -469,7 +474,7 @@ body.tile-drag { -webkit-user-select: none; user-select: none; }
 .suggest .item .label .text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .suggest .item .count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .suggest .item:hover, .suggest .item.at { background: var(--panel); }
-.chip.more, .chip.clear { padding: 3px 10px; color: var(--accent); cursor: pointer; }
+.chip.more, .chip.clear { padding: 0 10px; color: var(--accent); cursor: pointer; }
 .chip.clear { border-style: dashed; }
 .filter-count { margin-left: auto; align-self: center; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; padding: 0 2px; }
 .filter-count strong { color: var(--fg); font-weight: 600; }
@@ -768,8 +773,8 @@ body.selecting .sec .pick { display: inline; }
 .compare-col img { width: 100%; max-height: 65vh; object-fit: contain; background: var(--cell-bg); border-radius: 6px; }
 .compare-col .name { font-weight: 600; font-size: 13px; word-break: break-all; }
 .compare-col .meta { color: var(--muted); font-size: 12px; }
-.copy .badge.worse { background: #c63b2f; color: #fff; }
-.copy .badge { align-self: flex-start; background: var(--cell-bg); color: var(--fg); border-radius: 10px; padding: 1px 8px; line-height: inherit; }
+.copy .badge-chip { align-self: flex-start; }
+.copy .badge-chip.worse { background: #c63b2f; color: #fff; }
 
 /* Collapsible sidebar sections */
 .side-tags h3, .side-head { display: flex; align-items: center; }
@@ -845,9 +850,7 @@ body.selecting .sec .pick { display: inline; }
 .chip-x { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); cursor: pointer; font-size: 11px; line-height: 1; }
 .chip-x:hover { background: var(--line); color: var(--fg); }
 .copy-folder-row { display: flex; gap: 8px; align-items: center; }
-.settings-section input[type=text] { min-width: 220px; height: var(--ctl-h); padding: 0 12px; border-radius: var(--ctl-r); border: 1px solid var(--line); background: var(--panel); }
-.settings-section input[type=text]:hover { border-color: var(--muted); }
-.settings-section input[type=text]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.settings-section input.text-input { min-width: 220px; }
 
 /* favorites: the heart */
 .fav-btn { display: inline-flex; align-items: center; justify-content: center; font-size: 18px; width: var(--ctl-h); height: var(--ctl-h); padding: 0; border-radius: var(--ctl-r); border: 1px solid var(--line); background: var(--panel); color: inherit; }
@@ -994,8 +997,8 @@ body.geo-view #page { padding: 0; height: 100%; }
 @media (prefers-reduced-motion: reduce) { .suggest .wait-row .wait-dot, .suggest .wait-row .wait-bar { animation: none; } }
 .suggest .hint { font-size: 12px; color: var(--muted); padding: 2px 12px 6px; }
 .cell .snip {
-  position: absolute; left: 6px; bottom: 6px; max-width: calc(100% - 12px); box-sizing: border-box; height: 18px; padding: 0 9px;
-  font-size: 11px; line-height: 18px; color: #fff; background: rgba(40, 40, 40, .55); border-radius: 9px;
+  position: absolute; left: 6px; bottom: 6px; max-width: calc(100% - 12px); box-sizing: border-box; height: var(--badge-h); padding: 0 9px;
+  font-size: 11px; line-height: var(--badge-h); color: #fff; background: rgba(40, 40, 40, .55); border-radius: 99px;
   backdrop-filter: blur(3px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 /* The estimate mark (a date that is not from the file) sits in the same corner, on the same row. */
@@ -1080,7 +1083,7 @@ body.geo-view #page { padding: 0; height: 100%; }
 .lb-bar .coll:disabled { opacity: .5; }
 /* estimated capture dates (phase 12) */
 .cell .est {
-  position: absolute; left: 6px; bottom: 6px; width: 18px; height: 18px; padding: 0; border-radius: 50%;
+  position: absolute; left: 6px; bottom: 6px; width: var(--badge-h); height: var(--badge-h); padding: 0; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   color: #fff; background: rgba(0,0,0,.5); cursor: help;
 }
@@ -1218,7 +1221,7 @@ select:not([multiple]):not([size]), .types-btn, .dup-filter > summary.btn {
 #lb-live { display: inline-flex; align-items: center; height: var(--ctl-h-sm); padding: 0 12px; }
 #lb-live:hover { background: rgba(255,255,255,.25); }
 
-/* Badges: small pills for tags and the names of faces (`.badge-chip`, a span or a button; `.add` is the dashed
+/* Badges: small pills for tags and the names of faces (`.badge-chip`, a span, a div or a button; `.add` is the dashed
    "+ add" one) and the small field that types a new one (`.badge-input`). All are --ctl-h-sm high. The viewer's
    panel is always dark and sets its own colours. */
 :root {
@@ -1231,6 +1234,8 @@ select:not([multiple]):not([size]), .types-btn, .dup-filter > summary.btn {
   background: var(--bdg-bg); color: var(--bdg-fg); font-size: 13px; line-height: 1; white-space: nowrap; max-width: 100%;
 }
 button.badge-chip:hover, .badge-chip > button:hover { background: var(--bdg-hover); }
+/* A label that can be long (a folder path) goes in a `.t` and is cut with an ellipsis; its `title` shows it whole. */
+.badge-chip > .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .badge-chip.add { background: none; border: 1px dashed var(--bdg-dash); color: var(--bdg-muted); }
 .badge-chip.add:hover { color: var(--bdg-fg); }
 .badge-chip > button, .lb-panel dd .badge-chip > button { display: inline-flex; align-items: center; height: 100%; padding: 0; border: 0; border-radius: 0; background: none; color: inherit; font: inherit; }
