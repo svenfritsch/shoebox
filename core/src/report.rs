@@ -6,6 +6,7 @@
 //!
 //! The sink is process-wide: the launcher runs one job at a time.
 
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -19,8 +20,21 @@ pub enum Event {
     Line { text: String },
     /// How far the current step is (`done` of `total` in the step's own unit).
     Progress { label: String, done: u64, total: u64 },
-    /// One file went through (`ok`) or did not.
-    File { path: String, ok: bool, note: String },
+    /// One file went through (`ok`) or did not. `note` is English; with a
+    /// `key` the launcher says it in the person's language instead (the
+    /// message `launcher.note.<key>` with `vars`, see `NOTES`). `of`: it was
+    /// a copy of that file (a library path), which stays.
+    File {
+        path: String,
+        ok: bool,
+        note: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        key: Option<&'static str>,
+        #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+        vars: BTreeMap<&'static str, String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        of: Option<String>,
+    },
 }
 
 pub type Sink = Arc<dyn Fn(Event) + Send + Sync>;
@@ -99,9 +113,78 @@ pub fn line(text: String) {
     emit(Event::Line { text });
 }
 
+/// A note in the words of the system (an error message): shown as it is.
 pub fn file(path: &str, ok: bool, note: impl Into<String>) {
     if listening() {
-        emit(Event::File { path: path.to_string(), ok, note: note.into() });
+        emit(Event::File { path: path.to_string(), ok, note: note.into(), key: None, vars: BTreeMap::new(), of: None });
+    }
+}
+
+/// The notes the launcher translates: `launcher.note.<key>` in
+/// `core/i18n/*.json`, with these placeholders (`core/tests/i18n.rs`).
+pub const NOTES: &[(&str, &[&str])] = &[
+    ("hashed", &[]),
+    ("thumb_made", &[]),
+    ("looked_at", &[]),
+    ("recognizer_crashed", &["why"]),
+    ("verify_moved", &["path"]),
+    ("verify_missing", &[]),
+    ("verify_changed", &[]),
+    ("verify_size_date", &[]),
+    ("verify_unhashed", &[]),
+    ("verify_ok", &[]),
+    ("verify_damaged", &[]),
+    ("backup_missing", &[]),
+    ("backup_different", &[]),
+    ("backup_removed_here", &[]),
+    ("backup_not_safe", &[]),
+    ("backup_deleted", &[]),
+    ("backup_trashed", &[]),
+    ("kept_dates", &[]),
+    ("kept_gone", &[]),
+    ("kept_unsafe", &["path"]),
+    ("kept_changed", &["path"]),
+    ("kept_off_drive", &["path"]),
+];
+
+/// A note the launcher can say in the person's language: `key` from `NOTES`,
+/// its placeholders, and the English text.
+#[derive(Debug, Clone)]
+pub struct Said {
+    pub key: &'static str,
+    pub vars: BTreeMap<&'static str, String>,
+    pub text: String,
+}
+
+impl Said {
+    pub fn new(key: &'static str, text: impl Into<String>) -> Self {
+        debug_assert!(NOTES.iter().any(|(k, _)| *k == key), "no note {key} in report::NOTES");
+        Said { key, vars: BTreeMap::new(), text: text.into() }
+    }
+
+    pub fn with(mut self, name: &'static str, value: impl Into<String>) -> Self {
+        self.vars.insert(name, value.into());
+        self
+    }
+}
+
+impl std::fmt::Display for Said {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.text)
+    }
+}
+
+/// A file with a note the launcher translates.
+pub fn said(path: &str, ok: bool, note: Said) {
+    if listening() {
+        emit(Event::File { path: path.to_string(), ok, note: note.text, key: Some(note.key), vars: note.vars, of: None });
+    }
+}
+
+/// A copy of `of` went (to the trash, or for good: `note`).
+pub fn copy_removed(path: &str, of: &str, note: impl Into<String>) {
+    if listening() {
+        emit(Event::File { path: path.to_string(), ok: true, note: note.into(), key: None, vars: BTreeMap::new(), of: Some(of.to_string()) });
     }
 }
 

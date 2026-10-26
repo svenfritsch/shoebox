@@ -323,6 +323,7 @@ function applyFilter() {
   shownView = view;
   $('page').hidden = !view;
   $('sizer').hidden = !!view;
+  if (view) showScrub(false);
   $('current-month').textContent = view && VIEW_LABELS[view] ? tr(VIEW_LABELS[view]) : '';
   var f = state.filter;
   $('all').classList.toggle('active', !view && !f.folder && !f.tags.length && !f.people.length && !f.groups.length && !f.pets.length && !f.texts.length && !f.names.length && !f.place && !f.fav && !f.hidden && !f.dates.length && !f.nodate && !f.compare && !f.q);
@@ -1536,7 +1537,6 @@ function loadTimeline(resetScroll) {
     relayout();
     scroller.scrollTop = keep;
     render();
-    fillYears();
     state.countFor = location.hash;
     showCount();
     $('empty').hidden = data.count > 0;
@@ -1569,17 +1569,33 @@ function relayout() {
   Object.keys(state.rendered).forEach(function (k) { state.rendered[k].remove(); });
   state.rendered = {};
   state.rows = [];
-  if (!state.data) return;
-  var width = sizer.clientWidth || 300;
+  if (!state.data) { showScrub(false); return; }
+  // The year strip takes its column first and the grid fills the rest; a list that fits without
+  // scrolling gives the column back.
+  var strip = !state.filter.view && !state.data.flat && state.data.count > 0;
+  showScrub(strip);
+  var y = layoutRows();
+  if (strip && sizer.offsetTop + y + 24 <= $('scroller').clientHeight) {
+    showScrub(false);
+    y = layoutRows();
+  }
+  sizer.style.height = Math.ceil(y + 24) + 'px';
+  buildScrub();
+}
+
+// Month headers and rows of photos for the width the grid has now; the height they take.
+function layoutRows() {
+  state.rows = [];
+  var width = $('sizer').clientWidth || 300;
   var target = width < 500 ? 96 : width < 900 ? 140 : 180;
   state.cols = Math.max(3, Math.round(width / target));
   // Two versions of a photo sit side by side: whole pairs in a row.
   if (state.data.flat && state.cols % 2) state.cols++;
   state.cell = width / state.cols;
-  var y = 0;
+  var y = 0, n = 0;
   groups().forEach(function (g) {
     if (!g.flat) {
-      state.rows.push({ type: 'h', top: y, h: HEADER_H, label: monthLabel(g.month), n: g.end - g.start, month: g.month, start: g.start, end: g.end });
+      state.rows.push({ type: 'h', top: y, h: HEADER_H, label: monthLabel(g.month), n: g.end - g.start, month: g.month, start: g.start, end: g.end, hi: n++ });
       y += HEADER_H;
     }
     for (var i = g.start; i < g.end; i += state.cols) {
@@ -1587,7 +1603,7 @@ function relayout() {
       y += state.cell;
     }
   });
-  sizer.style.height = Math.ceil(y + 24) + 'px';
+  return y;
 }
 
 // First row whose bottom is below y.
@@ -1620,10 +1636,12 @@ function render() {
   Object.keys(state.rendered).forEach(function (k) {
     if (!keep[k]) { dropPending(state.rendered[k]); state.rendered[k].remove(); delete state.rendered[k]; }
   });
-  // The month at the top of the viewport.
-  var r = rowAt(Math.max(0, top));
+  // The month at the top of the viewport (a pixel of slack: row tops are fractions, a jump to a
+  // month can stop a hair above its header).
+  var r = rowAt(Math.max(0, top + 1));
   for (; r >= 0; r--) if (state.rows[r].type === 'h') break;
   if (!state.filter.view) $('current-month').textContent = r >= 0 ? state.rows[r].label : '';
+  markScrub();
 }
 
 // The page that is open, shown next to the drive name instead of a month.
@@ -2047,35 +2065,176 @@ window.addEventListener('resize', function () {
   }, 120);
 });
 
-function fillYears() {
-  var sel = $('years');
-  sel.textContent = '';
-  var placeholder = el('option', '', tr('grid.year'));
-  placeholder.value = '';
-  sel.appendChild(placeholder);
-  var seen = {};
-  state.rows.forEach(function (r) {
-    if (r.type !== 'h') return;
-    var y = Math.floor(r.month / 100);
-    if (!y || seen[y]) return;
-    seen[y] = true;
-    var o = el('option', '', String(y));
-    o.value = y;
-    sel.appendChild(o);
-  });
-  sel.hidden = Object.keys(seen).length < 2;
+// ------------------------------------------------------------------ year strip
+
+// The column right of the grid (`#scrub`) in place of the scroll bar: the years of the timeline
+// (its months when it spans three years or fewer) where they start, the marker where the top of
+// the view is. Point at it for the month there, click or drag to go there; the keys move by month
+// and year. Built from the rows alone, no request of its own. Each year gets room by its photos,
+// at least SCRUB_MIN px, so a year of a few scans can still be hit; a label closer than SCRUB_GAP
+// to the one above is left out (the bubble still names the month).
+var SCRUB_MIN = 10, SCRUB_GAP = 14;
+var scrub = { segs: [], heads: [], byMonth: false, h: 1, dragY: null };
+
+function showScrub(on) {
+  $('scrub').hidden = !on;
+  $('scroller').classList.toggle('has-scrub', on);
 }
 
-$('years').addEventListener('change', function () {
-  var y = parseInt(this.value, 10);
-  this.value = '';
-  for (var i = 0; i < state.rows.length; i++) {
-    var r = state.rows[i];
-    if (r.type === 'h' && Math.floor(r.month / 100) === y) {
-      $('scroller').scrollTop = r.top + $('sizer').offsetTop;
-      return;
-    }
+function buildScrub() {
+  var box = $('scrub'), track = box.querySelector('.scrub-track');
+  Array.prototype.forEach.call(track.querySelectorAll('.scrub-lbl'), function (e) { e.remove(); });
+  scrub.segs = [];
+  scrub.heads = state.rows.filter(function (r) { return r.type === 'h'; });
+  if (box.hidden) return;
+  var years = {};
+  scrub.heads.forEach(function (r) { years[Math.floor(r.month / 100)] = true; });
+  var byMonth = scrub.byMonth = Object.keys(years).length <= 3;
+  var offset = $('sizer').offsetTop, end = $('scroller').scrollHeight;
+  scrub.heads.forEach(function (r) {
+    var key = byMonth ? r.month : Math.floor(r.month / 100);
+    var last = scrub.segs[scrub.segs.length - 1];
+    if (last && last.key === key) return;
+    if (last) last.c1 = r.top + offset;
+    scrub.segs.push({ key: key, month: r.month, c0: r.top + offset, c1: end });
+  });
+  // Room by photos: the segments below the minimum get it, the others share what is left.
+  var h = scrub.h = Math.max(1, track.clientHeight), segs = scrub.segs;
+  var min = Math.min(SCRUB_MIN, h / segs.length), fixed = [], again = true;
+  while (again) {
+    again = false;
+    var free = h, rest = 0;
+    segs.forEach(function (g, i) { if (fixed[i]) free -= min; else rest += g.c1 - g.c0; });
+    segs.forEach(function (g, i) {
+      g.h = fixed[i] ? min : (g.c1 - g.c0) / Math.max(1, rest) * free;
+      if (!fixed[i] && g.h < min) { fixed[i] = true; again = true; }
+    });
   }
+  var y = 0, shown = -SCRUB_GAP;
+  segs.forEach(function (g, i) {
+    g.y0 = y;
+    y += g.h;
+    var year = Math.floor(g.month / 100);
+    if (!year || g.y0 - shown < SCRUB_GAP) return;
+    // A month by its first three letters (Mär, not März.), the first month of a year by the year.
+    var text = !byMonth || !i || Math.floor(segs[i - 1].month / 100) !== year ? String(year)
+      : I18n.date(new Date(year, g.month % 100 - 1, 1), { month: 'short' }).replace('.', '').slice(0, 3);
+    var l = el('span', 'scrub-lbl', text);
+    l.style.top = g.y0 + 'px';
+    l.dataset.key = g.key;
+    track.appendChild(l);
+    shown = g.y0;
+  });
+  box.setAttribute('aria-valuemax', String(Math.max(0, scrub.heads.length - 1)));
+  markScrub();
+}
+
+// Strip position for a scroll position, and back.
+function scrubY(c) {
+  for (var i = scrub.segs.length - 1; i >= 0; i--) {
+    var g = scrub.segs[i];
+    if (c >= g.c0) return g.y0 + Math.min(1, (c - g.c0) / Math.max(1, g.c1 - g.c0)) * g.h;
+  }
+  return 0;
+}
+
+function scrubC(y) {
+  for (var i = scrub.segs.length - 1; i >= 0; i--) {
+    var g = scrub.segs[i];
+    if (y >= g.y0) return g.c0 + Math.min(1, (y - g.y0) / Math.max(1, g.h)) * (g.c1 - g.c0);
+  }
+  return 0;
+}
+
+// The month header at or above a scroll position (with the same pixel of slack as the top bar).
+function headAt(c) {
+  var r = rowAt(Math.max(0, c + 1 - $('sizer').offsetTop));
+  for (; r > 0; r--) if (state.rows[r].type === 'h') break;
+  return state.rows[r];
+}
+
+function markScrub() {
+  var box = $('scrub');
+  if (box.hidden || !scrub.segs.length) return;
+  var scroller = $('scroller'), top = scroller.scrollTop;
+  var max = Math.max(1, scroller.scrollHeight - scroller.clientHeight), last = Math.min(scroller.clientHeight, max);
+  // The top of the view; over the last screen the marker also takes the rest of the strip, so the
+  // end of the list is the end of the strip.
+  var y = scrub.dragY != null ? scrub.dragY : scrubY(top) + (scrub.h - scrubY(max)) * Math.max(0, (top - (max - last)) / last);
+  box.querySelector('.scrub-now').style.top = y + 'px';
+  var head = headAt(top);
+  if (!head) return;
+  var key = scrub.byMonth ? head.month : Math.floor(head.month / 100);
+  Array.prototype.forEach.call(box.querySelectorAll('.scrub-lbl'), function (e) { e.classList.toggle('cur', +e.dataset.key === key); });
+  box.setAttribute('aria-valuenow', String(head.hi));
+  box.setAttribute('aria-valuetext', head.label);
+}
+
+// Where the pointer is: the grey line and the bubble with the month there; the scroll position it means.
+// On a label it is where the label's year starts (the label sits across that line, half of it above).
+function scrubPoint(ev) {
+  var box = $('scrub'), r = box.querySelector('.scrub-track').getBoundingClientRect();
+  var lbl = ev.target.closest && ev.target.closest('.scrub-lbl');
+  var y = lbl ? parseFloat(lbl.style.top) : Math.max(0, Math.min(r.height, ev.clientY - r.top));
+  var scroller = $('scroller'), c = scrubC(y), head = headAt(Math.min(c, scroller.scrollHeight - 1));
+  box.querySelector('.scrub-hov').style.top = y + 'px';
+  var tip = box.querySelector('.scrub-tip');
+  tip.style.top = y + 'px';
+  tip.textContent = head ? head.label : '';
+  return { y: y, c: Math.min(c, scroller.scrollHeight - scroller.clientHeight) };
+}
+
+function scrubTo(ev) {
+  var at = scrubPoint(ev);
+  scrub.dragY = at.y;
+  $('scroller').scrollTop = at.c;
+  render();
+}
+
+$('scrub').addEventListener('pointermove', function (ev) {
+  if (scrub.dragY != null) scrubTo(ev); else scrubPoint(ev);
+});
+$('scrub').addEventListener('pointerdown', function (ev) {
+  if (ev.button) return;
+  ev.preventDefault();
+  this.setPointerCapture(ev.pointerId);
+  this.classList.add('drag');
+  scrubTo(ev);
+});
+['pointerup', 'pointercancel'].forEach(function (type) {
+  $('scrub').addEventListener(type, function () {
+    this.classList.remove('drag');
+    scrub.dragY = null;
+    markScrub();
+  });
+});
+// The strip is beside the scroller: the wheel over it still scrolls the photos.
+$('scrub').addEventListener('wheel', function (ev) {
+  ev.preventDefault();
+  var scroller = $('scroller');
+  scroller.scrollTop += ev.deltaY * (ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? scroller.clientHeight : 1);
+}, { passive: false });
+// ↑ ↓ a month, Page Up / Page Down a year, Home / End the ends.
+$('scrub').addEventListener('keydown', function (ev) {
+  var heads = scrub.heads, scroller = $('scroller'), offset = $('sizer').offsetTop;
+  if (!heads.length || ev.altKey || ev.metaKey || ev.ctrlKey) return;
+  var head = headAt(scroller.scrollTop), i = head ? head.hi : 0;
+  var at = scroller.scrollTop > heads[i].top + offset + 1; // below the start of its month
+  var year = function (h) { return Math.floor(h.month / 100); };
+  var to = null;
+  if (ev.key === 'ArrowDown') to = Math.min(heads.length - 1, i + 1);
+  else if (ev.key === 'ArrowUp') to = at ? i : Math.max(0, i - 1);
+  else if (ev.key === 'PageDown') {
+    for (to = i; to < heads.length - 1 && year(heads[to]) === year(heads[i]); to++);
+  } else if (ev.key === 'PageUp') {
+    to = at ? i : Math.max(0, i - 1);
+    while (to > 0 && year(heads[to - 1]) === year(heads[to])) to--;
+  } else if (ev.key === 'Home') to = 0;
+  else if (ev.key === 'End') to = heads.length - 1;
+  else return;
+  ev.preventDefault();
+  scroller.scrollTop = ev.key === 'End' ? scroller.scrollHeight : heads[to].top + offset;
+  render();
 });
 
 // ------------------------------------------------------------------ lightbox
@@ -4247,9 +4406,9 @@ function dupThumb(f, compare, versions) {
 function isEdit(f) { return /^img_e\d+/i.test(f.name); }
 
 // The group's photos large and side by side. "Keep this one" ticks all the
-// others and closes the dialog; "Keep" marks photos to stay (several can) and
-// "Keep (N)" ticks all the others. Nothing is trashed here: Move to trash in
-// the bar does the removing for every group at once.
+// others and closes the dialog; with more than two, "Keep" marks photos to
+// stay (several can) and "Keep (N)" ticks all the others. Nothing is trashed
+// here: Move to trash in the bar does the removing for every group at once.
 function compareDialog(g, start, onKeep) {
   var back = el('div', 'modal');
   var dlg = el('div', 'dialog compare');
@@ -4260,6 +4419,8 @@ function compareDialog(g, start, onKeep) {
   var onKey = function (e) { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKey);
   var toggles = [];
+  // Of two, keeping several is keeping both: "Keep this one" says it all.
+  var several = g.files.length > 2;
   g.files.forEach(function (f) {
     var col = el('div', 'compare-col' + (f.id === start.id ? ' start' : ''));
     var img = el('img');
@@ -4279,7 +4440,7 @@ function compareDialog(g, start, onKeep) {
     tog.appendChild(el('span', '', tr('dups.keep')));
     tog.onclick = function () { if (kept[f.id]) delete kept[f.id]; else kept[f.id] = true; refresh(); };
     toggles.push({ f: f, col: col, tog: tog });
-    row.appendChild(tog);
+    if (several) row.appendChild(tog);
     var keep = el('button', 'btn', tr('dups.keep_this'));
     keep.onclick = function () { close(); onKeep([f]); };
     row.appendChild(keep);
@@ -4293,7 +4454,7 @@ function compareDialog(g, start, onKeep) {
     close();
     onKeep(g.files.filter(function (f) { return kept[f.id]; }));
   };
-  row.appendChild(go);
+  if (several) row.appendChild(go);
   var done = el('button', 'btn quiet', tr('app.close'));
   done.onclick = close;
   row.appendChild(done);
@@ -5035,7 +5196,7 @@ function tagInput() {
 function infoScreenshot(row, info) {
   if (info.kind === 'video' || info.kind === 'raw') return;
   var box = el('div', 'shot-pick');
-  var pick = el('select');
+  var pick = el('select', 'small');
   [['1', tr('shot.yes')], ['0', tr('shot.no')]].forEach(function (o) {
     var opt = el('option', '', o[1]);
     opt.value = o[0];
@@ -8928,7 +9089,7 @@ function loadDrivesPage() {
         name.appendChild(el('span', 'on', d.online ? '● ' + tr('drives.online') : ''));
         top.appendChild(name);
         if (d.online) {
-          var sel = el('select');
+          var sel = el('select', 'small');
           setTip(sel, tr('drives.role_hint'));
           [['unknown', tr('drives.role.unknown')], ['separate', tr('drives.role.separate')], ['backup', tr('drives.role.backup')]].forEach(function (o) {
             var opt = el('option', '', o[1]); opt.value = o[0]; if (d.role === o[0]) opt.selected = true; sel.appendChild(opt);

@@ -67,18 +67,27 @@ fn guard_commands_run_from_the_launcher_leave_originals_untouched() {
     assert!(scan["ok_count"].as_u64().unwrap() >= 5);
     assert_eq!(scan["fail_count"], 0);
     assert!(scan["recent_ok"].as_array().unwrap().iter().all(|f| f["ok"] == true));
+    // Each note comes with its key, so the page says it in the person's language.
+    // (A file counts once: its note is the first step that reported it, the
+    // thumbnail or the hash, whichever came first.)
+    assert!(
+        scan["recent_ok"].as_array().unwrap().iter().all(|f| (f["key"] == "thumb_made" && f["note"] == "thumbnail made") || (f["key"] == "hashed" && f["note"] == "hashed")),
+        "{scan}"
+    );
 
     // Verify: all fine, then a file vanishes and shows up as one failure.
     let clean = run_job(addr, json!({ "kind": "verify", "root": root }));
     assert_eq!(clean["ok"], true, "{clean}");
     assert!(clean["result"]["checked"].as_u64().unwrap() >= 5);
     assert!(clean["progress"]["total"].as_u64().unwrap() > 0, "verify reports progress");
+    assert!(clean["recent_ok"].as_array().unwrap().iter().all(|f| f["key"] == "verify_ok" && f.get("vars").is_none()), "{clean}");
 
     std::fs::remove_file(lib.path("Familie/Weihnachten/DSC_2001.jpg")).unwrap();
     let broken = run_job(addr, json!({ "kind": "verify", "root": root }));
     assert_eq!(broken["ok"], false);
     assert_eq!(broken["fail_count"], 1);
     assert_eq!(broken["failures"][0]["path"], "Familie/Weihnachten/DSC_2001.jpg");
+    assert_eq!(broken["failures"][0]["key"], "verify_missing");
     assert_eq!(broken["result"]["missing"].as_array().unwrap().len(), 1);
 
     // Scan marks it missing; "Forget missing" drops its record, then verify is clean.
@@ -434,6 +443,7 @@ fn a_backup_check_runs_over_two_folders_and_lists_what_is_missing() {
     assert_eq!(job["result"]["report"]["missing"], 1);
     assert_eq!(job["failures"][0]["path"], "Neu/neu.jpg");
     assert_eq!(job["failures"][0]["note"], "not on the backup yet");
+    assert_eq!(job["failures"][0]["key"], "backup_missing");
     launcher.stop().unwrap();
 }
 
@@ -556,7 +566,7 @@ fn the_backup_check_lists_removed_copies_and_the_cleanup_job_takes_them_off_the_
     assert_eq!(job["ok"], true, "removed copies are not a problem of the backup: {job}");
     assert_eq!(job["result"]["report"]["removed"], 1);
     assert_eq!(job["result"]["report"]["removed_files"][0]["path"], "Kochen/braten.jpg");
-    assert!(job["recent_ok"].as_array().unwrap().iter().any(|f| f["path"] == "Kochen/braten.jpg" && f["note"].as_str().unwrap().contains("still on the backup")));
+    assert!(job["recent_ok"].as_array().unwrap().iter().any(|f| f["path"] == "Kochen/braten.jpg" && f["note"].as_str().unwrap().contains("still on the backup") && f["key"] == "backup_removed_here"));
 
     // Exactly the two drives, like the check itself.
     assert_eq!(lpost(addr, "/api/job", &json!({ "kind": "backup_cleanup", "roots": [o] })).status, 400);
@@ -564,6 +574,7 @@ fn the_backup_check_lists_removed_copies_and_the_cleanup_job_takes_them_off_the_
     let job = run_job(addr, json!({ "kind": "backup_cleanup", "roots": [o, b], "forever": true }));
     assert_eq!(job["ok"], true, "{job}");
     assert_eq!(job["result"]["removed"], json!(["Kochen/braten.jpg"]));
+    assert_eq!(job["recent_ok"][0]["key"], "backup_deleted", "{job}");
     assert!(!backup.path("Kochen/braten.jpg").exists());
     assert!(backup.path(photo).exists());
     assert_eq!(original.snapshot(), before, "the original is untouched");
@@ -596,10 +607,29 @@ fn the_scan_reports_copies_of_old_files_and_the_cleanup_job_removes_them() {
     let job = run_job(addr, json!({ "kind": "scan_cleanup", "roots": [root] }));
     assert_eq!(job["ok"], true, "{job}");
     assert_eq!(job["result"]["removed"], json!(["Neu/kopie.jpg"]));
+    // The row names the copy that stays; the page says it in the person's language.
+    let row = job["recent_ok"].as_array().unwrap().iter().find(|f| f["path"] == "Neu/kopie.jpg").unwrap();
+    assert_eq!(row["of"], photo, "{job}");
     assert!(!lib.path("Neu/kopie.jpg").exists());
     let mut expected = before;
     expected.retain(|p, _| !p.ends_with("Neu/kopie.jpg"));
     assert_eq!(lib.snapshot(), expected, "only the new copy went");
+
+    // The original changes after the scan: the copy stays, and the row says
+    // why with the original's path as the value of its message.
+    std::fs::create_dir_all(lib.path("Neu")).unwrap();
+    std::fs::copy(lib.path(photo), lib.path("Neu/kopie.jpg")).unwrap();
+    let job = run_job(addr, json!({ "kind": "scan", "roots": [root] }));
+    assert_eq!(job["result"]["duplicates_total"], 1, "{job}");
+    let mut changed = std::fs::OpenOptions::new().append(true).open(lib.path(photo)).unwrap();
+    std::io::Write::write_all(&mut changed, b"edited").unwrap();
+    let job = run_job(addr, json!({ "kind": "scan_cleanup", "roots": [root] }));
+    assert_eq!(job["ok"], false, "{job}");
+    assert_eq!(job["failures"][0]["path"], "Neu/kopie.jpg");
+    assert_eq!(job["failures"][0]["key"], "kept_changed");
+    assert_eq!(job["failures"][0]["vars"], json!({ "path": photo }));
+    assert_eq!(job["failures"][0]["note"], format!("kept: {photo} changed since the scan"));
+    assert!(lib.path("Neu/kopie.jpg").exists());
     launcher.stop().unwrap();
 }
 

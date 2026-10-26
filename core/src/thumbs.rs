@@ -405,7 +405,7 @@ pub fn generate(conn: &Connection, root: &Path) -> Result<Stats> {
                     match &result {
                         Ok(_) => {
                             stats.made += 1;
-                            crate::report::file(&rel, true, "thumbnail made");
+                            crate::report::said(&rel, true, crate::report::Said::new("thumb_made", "thumbnail made"));
                         }
                         Err(e) => {
                             stats.failed += 1;

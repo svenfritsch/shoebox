@@ -78,29 +78,29 @@ pub fn run(opts: &Options) -> Result<Check> {
     if r.unhashed > 0 {
         say!("{} files of {pname} have no full hash yet (run `shoebox scan` on it); they are not compared.", r.unhashed);
     }
-    let list = |title: &str, n: u64, files: &[multi::BackupFile], failed: bool, note: &str| {
+    let list = |title: &str, n: u64, files: &[multi::BackupFile], failed: Option<(&'static str, &str)>| {
         if n == 0 {
             return;
         }
         say!("{title}: {n}");
         for f in files {
             say!("  {}", f.path);
-            if failed {
-                report::file(&f.path, false, note);
+            if let Some((key, note)) = failed {
+                report::said(&f.path, false, report::Said::new(key, note));
             }
         }
         if n as usize > files.len() {
             say!("  … {} more", n as usize - files.len());
         }
     };
-    list("Not on the backup yet (new since the last backup)", r.missing, &r.missing_files, true, "not on the backup yet");
-    list("Different on the backup (same path, other content)", r.different, &r.different_files, true, "other content on the backup");
-    list(&format!("Only on the backup (gone or changed on {pname} since)"), r.extra, &r.extra_files, false, "");
+    list("Not on the backup yet (new since the last backup)", r.missing, &r.missing_files, Some(("backup_missing", "not on the backup yet")));
+    list("Different on the backup (same path, other content)", r.different, &r.different_files, Some(("backup_different", "other content on the backup")));
+    list(&format!("Only on the backup (gone or changed on {pname} since)"), r.extra, &r.extra_files, None);
     if r.removed > 0 {
         say!("Removed here with the duplicates screen, still on the backup: {}", r.removed);
         for f in &r.removed_files {
             say!("  {}", f.path);
-            report::file(&f.path, true, "removed here (duplicate), still on the backup");
+            report::said(&f.path, true, report::Said::new("backup_removed_here", "removed here (duplicate), still on the backup"));
         }
         if r.removed as usize > r.removed_files.len() {
             say!("  … {} more", r.removed as usize - r.removed_files.len());
@@ -173,7 +173,7 @@ pub fn cleanup(opts: &CleanupOptions) -> Result<Cleanup> {
         report::emit(report::Event::Progress { label: "Removing from the backup".into(), done: i as u64, total });
         if !multi::still_removable(&pair, c.backup_id)? {
             out.skipped.push(format!("{}: not safe any more (the last copy of its content would go)", c.path));
-            report::file(&c.path, false, "not safe any more: kept");
+            report::said(&c.path, false, report::Said::new("backup_not_safe", "not safe any more: kept"));
             continue;
         }
         let trashed = organize::trash_files(&conn, &backup_root, &[c.backup_id])?;
@@ -187,9 +187,13 @@ pub fn cleanup(opts: &CleanupOptions) -> Result<Cleanup> {
             report::file(&c.path, false, &why);
             out.skipped.extend(trashed.skipped);
         } else {
-            let note = if opts.forever { "deleted from the backup" } else { "moved to the backup's trash" };
+            let note = if opts.forever {
+                report::Said::new("backup_deleted", "deleted from the backup")
+            } else {
+                report::Said::new("backup_trashed", "moved to the backup's trash")
+            };
             for f in &trashed.files {
-                report::file(f, true, note);
+                report::said(f, true, note.clone());
             }
             out.removed.extend(trashed.files);
         }

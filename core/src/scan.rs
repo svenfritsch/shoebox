@@ -729,7 +729,7 @@ fn hash_pending(conn: &Connection, root: &Path, stats: &mut Stats) -> Result<()>
                 conn.execute("UPDATE files SET full_hash = ?2 WHERE id = ?1", params![id, hash])?;
                 stats.full_hashed += 1;
                 stats.bytes_full_hashed += size;
-                crate::report::file(rel, true, "hashed");
+                crate::report::said(rel, true, crate::report::Said::new("hashed", "hashed"));
             }
             Err(e) => {
                 crate::report::file(rel, false, e.to_string());

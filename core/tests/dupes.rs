@@ -234,6 +234,23 @@ fn identical_copies_keep_the_file_with_the_original_name() {
 }
 
 #[test]
+fn identical_videos_are_identical_copies_not_similar_shots() {
+    let lib = Library::new("dupes-videos");
+    lib.write("Radreise/IMG_2397.MOV", b"not really a video, but named like one");
+    lib.write("Radreise/IMG_2397 1.MOV", b"not really a video, but named like one");
+    lib.scan();
+    let server = start(&lib, None);
+    let all = groups(server.addr);
+    let g = group_of(&all, "Radreise/IMG_2397.MOV");
+    assert_eq!(g["kind"], "identical", "{g}");
+    let rows: std::collections::HashSet<i64> = g["files"].as_array().unwrap().iter().map(|f| f["row"].as_i64().unwrap()).collect();
+    assert_eq!(rows.len(), 1, "one row: {g}");
+    assert_eq!(file_of(&all, "Radreise/IMG_2397.MOV")["pick"], true);
+    assert_eq!(file_of(&all, "Radreise/IMG_2397 1.MOV")["pick"], false);
+    server.stop().unwrap();
+}
+
+#[test]
 fn groups_are_identical_same_photo_in_another_size_or_similar_shots() {
     let lib = Library::new("dupes-kinds");
     // A series: two shots a few seconds apart (the second is one pixel wider,

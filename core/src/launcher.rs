@@ -397,6 +397,14 @@ struct FileResult {
     path: String,
     ok: bool,
     note: String,
+    /// The note in the person's language (`report::said`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    key: Option<&'static str>,
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    vars: std::collections::BTreeMap<&'static str, String>,
+    /// The file it was a copy of (`report::copy_removed`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    of: Option<String>,
 }
 
 impl JobState {
@@ -409,7 +417,7 @@ impl JobState {
                 self.lines.push_back(text);
             }
             Event::Progress { label, done, total } => self.progress = Some(ProgressInfo { label, done, total }),
-            Event::File { path, ok, note } => {
+            Event::File { path, ok, note, key, vars, of } => {
                 let path = if self.prefix.is_empty() { path } else { format!("{}{path}", self.prefix) };
                 // A file counts once, however many steps look at it (hash,
                 // thumbnail, …); one failed step makes it failed.
@@ -431,7 +439,7 @@ impl JobState {
                     }
                     _ => return,
                 }
-                let item = FileResult { path, ok, note };
+                let item = FileResult { path, ok, note, key, vars, of };
                 if ok {
                     if self.recent_ok.len() >= MAX_RECENT_OK {
                         self.recent_ok.pop_front();
