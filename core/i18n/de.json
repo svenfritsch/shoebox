@@ -912,6 +912,7 @@
   "geo.created": "Ort „{name}“ angelegt",
   "geo.rename": "Umbenennen",
   "geo.renamed": "Umbenannt in „{name}“",
+  "geo.show_timeline": "In der Zeitleiste zeigen",
   "geo.redraw": "Bereich neu zeichnen",
   "geo.redrawn": "Bereich von „{name}“ geändert",
   "geo.delete_title": "Ort löschen",

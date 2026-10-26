@@ -641,6 +641,8 @@ function renderSide() {
     tools.appendChild(b);
   };
   if (place) {
+    // The photos of the place in the timeline, without the map: the place joins the search as a chip.
+    tool(ICONS.tiles, tr('geo.show_timeline'), function () { setFilter(withFilter({ place: place.id, q: '' })); });
     tool(ICONS.pencil, tr('geo.rename'), function () { renamePlace(place); });
     tool('⬚', tr('geo.redraw'), function () { startDraw({ type: 'redraw', place: place }); });
     tool(TRASH_ICON, tr('app.delete'), function () { deletePlace(place); });

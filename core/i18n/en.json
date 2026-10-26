@@ -910,6 +910,7 @@
   "geo.name_place": "Name this place",
   "geo.create": "Create",
   "geo.created": "Place “{name}” created",
+  "geo.show_timeline": "Show in the timeline",
   "geo.rename": "Rename",
   "geo.renamed": "Renamed to “{name}”",
   "geo.redraw": "Draw area again",
