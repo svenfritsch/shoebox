@@ -2569,7 +2569,9 @@ function renderPanel() {
   if (nameCell && cmpBadge) nameCell.appendChild(cmpBadge);
   var folder = info.path.indexOf('/') >= 0 ? info.path.slice(0, info.path.lastIndexOf('/')) : '';
   if (folder) {
-    var fb = el('button', '', folder);
+    var fb = el('button', 'badge-chip');
+    fb.appendChild(el('span', 't', folder));
+    fb.title = folder;
     fb.onclick = function () { closeLightbox(); setFilter({ folder: info.folder_id, tags: [], q: '' }); };
     row(tr('info.folder'), fb);
   }
@@ -4375,7 +4377,7 @@ function groupNode(g) {
   var heavier = {};
   g.files.forEach(function (f) { if (f.keeper && f.bigger_file) heavier[f.keeper] = true; });
   var sizeBadge = function (key) {
-    var b = el('div', 'badge worse', tr(key));
+    var b = el('div', 'badge-chip worse', tr(key));
     setTip(b, tr('dups.size_conflict_hint'));
     return b;
   };
@@ -4411,20 +4413,20 @@ function groupNode(g) {
     card.appendChild(fb);
     if (showName) card.appendChild(el('div', 'name', f.name));
 
-    if (g.kind === 'edited') card.appendChild(el('div', 'badge', tr(isEdit(f) ? 'dups.badge_edited' : 'dups.badge_original')));
+    if (g.kind === 'edited') card.appendChild(el('div', 'badge-chip', tr(isEdit(f) ? 'dups.badge_edited' : 'dups.badge_original')));
     var meta = [];
     if (f.width && f.height) meta.push(f.width + ' × ' + f.height);
     meta.push((f.size / 1e6).toFixed(1) + ' MB');
     card.appendChild(el('div', 'meta', meta.join(' · ')));
     // Fewer pixels, and a bigger file than the copy that stays: not ticked for
     // you. Both cards say what they lose on, both red.
-    if (f.keeper && !f.bigger_file) card.appendChild(el('div', 'badge worse', tr('dups.lower_quality')));
+    if (f.keeper && !f.bigger_file) card.appendChild(el('div', 'badge-chip worse', tr('dups.lower_quality')));
     else if (f.keeper) card.appendChild(sizeBadge('dups.lower_quality'));
     else if (heavier[f.id]) card.appendChild(sizeBadge('dups.smaller_file'));
     if (f.in_copies) card.appendChild(el('div', 'meta', tr('dups.in_copies')));
     card.appendChild(el('div', 'meta', f.taken ? formatDate({ taken: f.taken, date_source: 'file' }) : tr('dups.no_capture_date')));
-    if (thumb && topPixels !== null && (f.width || 0) * (f.height || 0) === topPixels) card.appendChild(el('div', 'badge', tr('dups.badge_pixels')));
-    if (thumb && topSize !== null && f.size === topSize) card.appendChild(el('div', 'badge', tr('dups.badge_bigger')));
+    if (thumb && topPixels !== null && (f.width || 0) * (f.height || 0) === topPixels) card.appendChild(el('div', 'badge-chip', tr('dups.badge_pixels')));
+    if (thumb && topSize !== null && f.size === topSize) card.appendChild(el('div', 'badge-chip', tr('dups.badge_bigger')));
     if (thumb) {
       // Pinned to the foot of the card, edge to edge.
       var only = el('button', 'keep-one', tr('dups.keep_this'));
@@ -5909,7 +5911,7 @@ function copyFoldersSection() {
     });
   };
   var row = el('div', 'copy-folder-row');
-  var input = el('input');
+  var input = el('input', 'text-input');
   input.type = 'text';
   input.placeholder = tr('settings.copy_folders_placeholder');
   var add = el('button', 'btn', tr('settings.copy_folders_add'));

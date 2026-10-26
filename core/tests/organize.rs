@@ -342,7 +342,7 @@ fn rotate_changes_only_the_orientation_bytes_and_keeps_the_users_data() {
     let lib = Library::new("rotate");
     lib.write("Turn/up.jpg", &jpeg_with_orientation(7, 1));
     lib.write("Turn/side.jpg", &jpeg_with_orientation(8, 6));
-    lib.write("Turn/plain.jpg", &jpeg_bytes(9)); // no EXIF: cannot be turned in place
+    lib.write("Turn/plain.jpg", &jpeg_bytes(9)); // no EXIF: turned in shoebox only
     lib.scan();
     let server = start(&lib, None);
     let addr = server.addr;
@@ -421,10 +421,24 @@ fn rotate_changes_only_the_orientation_bytes_and_keeps_the_users_data() {
     let r = post(addr, &format!("/api/files/{side}/rotate"), &json!({ "turns": 2 })).json();
     assert_eq!(r["orientation"], 8);
 
-    // What cannot be turned in place is refused and left alone.
+    // A JPEG without an Orientation tag cannot be turned in place: it is
+    // shown turned and the file is left alone.
     let snap = lib.snapshot();
+    let plain_key: String = lib.db().query_row("SELECT quick_hash FROM files WHERE id = ?1", [plain], |r| r.get(0)).unwrap();
     let r = post(addr, &format!("/api/files/{plain}/rotate"), &json!({ "turns": 1 }));
-    assert_eq!(r.status, 400, "{}", String::from_utf8_lossy(&r.body));
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    let r = r.json();
+    assert_eq!((r["view_only"].as_bool(), r["orientation"].as_i64()), (Some(true), Some(0)));
+    assert_eq!(r["version"], format!("{}1", &plain_key[..7]));
+    assert_eq!(get(addr, &format!("/api/files/{plain}")).json()["view_turn"], 1);
+    let view = get(addr, &format!("/api/files/{plain}/view"));
+    assert_eq!(view.status, 200);
+    let img = image::load_from_memory(&view.body).unwrap();
+    assert_eq!((img.width(), img.height()), (150, 200)); // 200 x 150 in the file
+    // Turning it on adds up, and four quarters is no turn at all.
+    post(addr, &format!("/api/files/{plain}/rotate"), &json!({ "turns": 3 }));
+    assert_eq!(get(addr, &format!("/api/files/{plain}")).json()["view_turn"], 0);
+    assert_eq!(get(addr, &format!("/api/files/{plain}/view")).header("content-type"), Some("image/jpeg"));
     assert_eq!(post(addr, &format!("/api/files/{up}/rotate"), &json!({ "turns": 4 })).status, 400);
     assert_eq!(lib.snapshot(), snap);
     assert_index_in_line(&lib);

@@ -998,8 +998,10 @@ await test('duplicates: a click on the picture opens the viewer on the versions,
 }, async (p) => {
   await p.locator('.dup-photo a.thumb').first().waitFor();
   // Both cards of the conflict are red and nothing is ticked there.
-  const badges = await p.locator('.dup-row').first().locator('.badge.worse').allTextContents();
+  const badges = await p.locator('.dup-row').first().locator('.badge-chip.worse').allTextContents();
   check(JSON.stringify(badges) === JSON.stringify([await tr(p, 'dups.smaller_file'), await tr(p, 'dups.lower_quality')]), `badges ${badges}`);
+  const tall = await p.locator('.dup-row .copy .badge-chip').evaluateAll((xs) => xs.map((e) => Math.round(e.getBoundingClientRect().height)));
+  check(tall.length >= 2 && tall.every((x) => x === 26), `the cards' badges are ${tall} px high, expected 26 like every badge among text`);
   const second = p.locator('.dup-photo a.thumb').nth(1);
   await second.click();
   const open = () => p.evaluate(() => ({ at: state.open, ids: state.data && state.data.ids, hidden: $('lightbox').hidden }));
@@ -1510,8 +1512,8 @@ await test('the follow-up controls share the 32 px height: search box, face acti
   for (const [name, v] of Object.entries(heights)) check(v === 32, `${name} is ${v} px high, expected 32`);
 }));
 
-await test('badges: tags, the + tag chip, face names and both small fields in the viewer\'s panel are 26 px high, and a maybe guess has no "Maybe"', await on('', (lib) => {
-  lib.photos = [{ id: 1, version: 'orig0001' }];
+await test('badges: the folder, tags, the + tag chip, face names and both small fields in the viewer\'s panel are 26 px high, and a maybe guess has no "Maybe"', await on('', (lib) => {
+  lib.photos = [{ id: 1, version: 'orig0001', path: 'Familie/Aurelia mit einem sehr langen Ordnernamen, der nicht in die Zeile passt/IMG_1.JPG' }];
   lib.photoTags = { 1: [{ id: 1, name: 'Strand', source: 'user' }, { id: 2, name: 'Urlaub', source: 'folder' }] };
   const face = (id, extra) => ({ id, file: 1, kind: 'jpeg', version: 'orig0001', x: 0.1, y: 0.1, w: 0.1, h: 0.1, roll: 0, px: 100, score: 0.9, small: false, state: null, species: null, person: null, similarity: null, rejected: [], landmarks: [], ...extra });
   lib.photoFaces = { 1: [face(101, { state: 'maybe', person: { id: 9, name: 'Antonia Eger' } }), face(102)] };
@@ -1522,6 +1524,12 @@ await test('badges: tags, the + tag chip, face names and both small fields in th
   const h = (sel) => p.locator(sel).evaluateAll((xs) => xs.map((e) => Math.round(e.getBoundingClientRect().height)));
   const chips = await h('#lb-panel .tags .badge-chip');
   check(chips.length === 3 && chips.every((x) => x === 26), `tag chips are ${chips} px high, expected three of 26`);
+  // The folder is a badge too, cut on one line inside the panel, its title the whole path.
+  const folder = await p.locator('#lb-panel dd > button.badge-chip').evaluate((b) => {
+    const r = b.getBoundingClientRect(), d = b.closest('.lb-panel').getBoundingClientRect(), t = b.querySelector('.t');
+    return { h: Math.round(r.height), inside: r.right <= d.right + 0.5, cut: t.scrollWidth > t.clientWidth, title: b.title };
+  });
+  check(folder.h === 26 && folder.inside && folder.cut && folder.title.startsWith('Familie/Aurelia'), `the folder badge: ${JSON.stringify(folder)}`);
   const inner = await p.locator('#lb-panel .tags .own > button').evaluateAll((xs) => xs.map((e) => getComputedStyle(e).backgroundColor));
   check(inner.length === 2 && inner.every((x) => x === 'rgba(0, 0, 0, 0)'), `the buttons inside an own tag have a background of their own: ${inner}`);
   const guess = await p.locator('#lb-panel .pface .guess').textContent();
@@ -1601,6 +1609,45 @@ await test('the viewer\'s faces: a grid of named people with short names, rows t
   await p.keyboard.press('Escape');
   await p.locator('#lb-panel .pcell .pshow').first().click();
   await until('the person\'s photos', () => p.evaluate(() => document.getElementById('lightbox').hidden && state.filter.people.length === 1));
+}));
+
+await test('pills come in two heights: chips and badges among text are 26 px, labels on a photo 18 px', await on('', hiddenPhotos, async (p, lib) => {
+  await cellCount(p, 3);
+  const heights = await p.evaluate(() => {
+    const host = document.createElement('div');
+    host.innerHTML = '<div class="filters"><span class="chip">Familie<button>✕</button></span><span class="chip more">+</span><span class="chip clear">x</span></div>'
+      + '<span class="badge-chip">Aurelia</span><div class="copy" style="display:flex;flex-direction:column"><div class="badge-chip">Bearbeitet</div><div class="badge-chip worse">Kleiner</div></div>'
+      + '<div class="cell" style="width:200px;height:200px"><span class="badge">RAW</span><span class="snip">Kartoffeln</span><span class="est"></span></div>';
+    document.body.appendChild(host);
+    // Not rounded: a label of 17.95 px is what the font happened to give, not the height.
+    const h = (sel) => [...host.querySelectorAll(sel)].map((e) => +e.getBoundingClientRect().height.toFixed(2));
+    const out = { text: [...h('.chip'), ...h('.badge-chip')], photo: [...h('.badge'), ...h('.snip'), ...h('.est')] };
+    host.remove();
+    return out;
+  });
+  check(heights.text.length === 6 && heights.text.every((x) => x === 26), `chips and badges among text are ${heights.text} px high, expected 26`);
+  check(heights.photo.length === 3 && heights.photo.every((x) => x === 18), `labels on a photo are ${heights.photo} px high, expected 18`);
+}));
+
+await test('the search box is a text field like the settings\' fields: same look, a border on hover, the accent ring on focus', await on('view=settings', (lib) => { lib.copyFolders = ['Links']; }, async (p, lib) => {
+  await p.locator('.copy-folder-row input').first().waitFor();
+  await settle(p, lib);
+  const look = (sel) => p.locator(sel).first().evaluate((e) => { const c = getComputedStyle(e); return [Math.round(e.getBoundingClientRect().height), c.borderTopColor, c.borderRadius, c.backgroundColor, c.outlineStyle, c.outlineColor, c.outlineOffset].join('|'); });
+  const field = '.copy-folder-row input', search = '#search';
+  check((await look(search)) === (await look(field)), `at rest the search box ${await look(search)} differs from a settings field ${await look(field)}`);
+  const rest = await look(search);
+  await p.locator(field).first().hover();
+  const fieldHover = await look(field);
+  await p.locator(search).hover();
+  const searchHover = await look(search);
+  check(searchHover === fieldHover && searchHover !== rest, `on hover the search box ${searchHover} differs from a settings field ${fieldHover} (at rest ${rest})`);
+  await p.locator(field).first().focus();
+  const fieldFocus = await look(field);
+  await p.locator(search).focus();
+  await p.mouse.move(0, 0);
+  const searchFocus = await look(search);
+  const accent = await p.evaluate(() => { const e = document.createElement('i'); e.style.color = 'var(--accent)'; document.body.appendChild(e); const c = getComputedStyle(e).color; e.remove(); return c; });
+  check(searchFocus === fieldFocus && searchFocus.includes('|solid|' + accent + '|2px'), `on focus the search box ${searchFocus} differs from a settings field ${fieldFocus}, expected the ring in ${accent}`);
 }));
 
 await test('tabs look the same everywhere: a person\'s tabs and the drives\' tabs share one style', await on('view=people', (lib) => lib.person('Tabea Tab', { suggested: 2 }), async (p, lib, tabea) => {
