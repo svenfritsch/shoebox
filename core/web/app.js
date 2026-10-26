@@ -7202,9 +7202,9 @@ function personAction(action, ids, manual) {
 }
 
 // The bar of the timeline's selection: close, count (or what to do), Select
-// all, then the tools. Confirm, Undo, Ignore and Not a face are icons with a
-// quick label (the icons of the Unnamed page's face actions); "Not x" and
-// "Name ..." keep their words (they carry a name).
+// all, then the tools. Confirm, Undo, Name, Ignore and Not a face are icons
+// with a quick label (Name, Ignore and Not a face those of the Unnamed page's
+// face actions); "Not x" keeps its words (it carries the name).
 function personPickBar(tab) {
   var bar = el('div', 'selbar tools');
   bar.id = 'pp-bar';
@@ -7265,7 +7265,7 @@ function personPickBar(tab) {
     iconTool(SEL_ICONS.undo, tr('person.undo'), '', function (faces, ids) { personAction('unreject', ids); });
   } else {
     button(tr('person.not', { name: p.name }), 'quiet', function (faces, ids) { personAction('reject', ids); });
-    button(tr('person.name_btn'), '', function (faces) { nameFacesDialog(faces, personRefresh); });
+    iconTool(NAME_ICON, tr('person.name_btn'), '', function (faces) { nameFacesDialog(faces, personRefresh); }, tr('unnamed.name_selected_hint'));
     // Someone the user does not want to keep: ignored, so not asked about again.
     iconTool(IGNORE_ICON, tr('unnamed.ignore'), '', function (faces, ids) { personAction('ignore', ids); }, tr('unnamed.ignore_hint'));
     iconTool(p.species ? NOT_PET_ICON : NOT_FACE_ICON, tr(p.species ? 'pet.not_a.pet' : 'facecheck.not_face'), '',
