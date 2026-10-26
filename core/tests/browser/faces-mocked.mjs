@@ -998,8 +998,10 @@ await test('duplicates: a click on the picture opens the viewer on the versions,
 }, async (p) => {
   await p.locator('.dup-photo a.thumb').first().waitFor();
   // Both cards of the conflict are red and nothing is ticked there.
-  const badges = await p.locator('.dup-row').first().locator('.badge.worse').allTextContents();
+  const badges = await p.locator('.dup-row').first().locator('.badge-chip.worse').allTextContents();
   check(JSON.stringify(badges) === JSON.stringify([await tr(p, 'dups.smaller_file'), await tr(p, 'dups.lower_quality')]), `badges ${badges}`);
+  const tall = await p.locator('.dup-row .copy .badge-chip').evaluateAll((xs) => xs.map((e) => Math.round(e.getBoundingClientRect().height)));
+  check(tall.length >= 2 && tall.every((x) => x === 26), `the cards' badges are ${tall} px high, expected 26 like every badge among text`);
   const second = p.locator('.dup-photo a.thumb').nth(1);
   await second.click();
   const open = () => p.evaluate(() => ({ at: state.open, ids: state.data && state.data.ids, hidden: $('lightbox').hidden }));
@@ -1478,6 +1480,61 @@ await test('common control sizes: on a person\'s suggested faces "Select all" an
   check((await p.locator(not).evaluate((e) => getComputedStyle(e).backgroundColor)) === 'rgba(0, 0, 0, 0)', '"Not" has a background before it is hovered');
 }));
 
+// The Confirmed tab's bar: Name, Ignore and Not a face are icon tools like
+// Confirm and Undo (the icons of the Unnamed page's face actions), dimmed until
+// a face is ticked; Name asks who it is, the others send the ticked face and it
+// leaves the page.
+await test('a person\'s Confirmed bar: Name, Ignore and Not a face are icon tools that act on the ticked face', await on('view=people', (lib) => ({ ida: lib.person('Ida Icon', { faces: 4 }), mia: lib.person('Mia Paw', { faces: 2, species: 'cat' }) }), async (p, lib, { ida, mia }) => {
+  const open = async (who) => {
+    await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=confirmed`; }, who.id);
+    await p.locator(`#pp-grid .face[data-key="f${lib.faceLists[who.id].confirmed[1].id}"]`).waitFor();
+    await settle(p, lib);
+    await p.locator('#pp-pick').click();
+  };
+  const tool = (label) => p.locator(`#pp-bar .ib.pp-act[aria-label="${label}"]`);
+  const name = await tr(p, 'person.name_btn'), ignore = await tr(p, 'unnamed.ignore'), notFace = await tr(p, 'facecheck.not_face'), notPet = await tr(p, 'pet.not_a.pet');
+  // As the page writes them (an icon reads back in the browser's own spelling).
+  const icons = await p.evaluate(() => {
+    const as = (svg) => { const d = document.createElement('div'); d.innerHTML = svg; return d.innerHTML; };
+    return { name: as(NAME_OTHER_ICON), ignore: as(IGNORE_ICON), face: as(NOT_FACE_ICON), pet: as(NOT_PET_ICON) };
+  });
+  await open(ida);
+  const words = await p.locator('#pp-bar .btn').allTextContents();
+  check(![name, ignore, notFace].some((w) => words.includes(w)), `Name, Ignore or Not a face is still a text button: ${words}`);
+  check((await tool(name).innerHTML()) === icons.name, 'Name has not the person with a plus');
+  check((await tool(ignore).innerHTML()) === icons.ignore, 'Ignore has not the eye with a slash');
+  check((await tool(notFace).innerHTML()) === icons.face, 'Not a face has not the face with a slash');
+  for (const label of [name, ignore, notFace]) check((await tool(label).getAttribute('aria-disabled')) === 'true', `${label} is not dimmed with nothing ticked`);
+  await tool(ignore).click({ force: true });
+  await settle(p, lib);
+  check(!postedTo(lib, '/faces/ignore').length, 'Ignore sent something with nothing ticked');
+  const act = async (label, path) => {
+    const id = lib.faceLists[ida.id].confirmed[1].id;
+    await p.locator(`#pp-grid .face[data-key="f${id}"] .crop`).click();
+    check((await tool(label).getAttribute('aria-disabled')) === 'false', `${label} stays dimmed with a face ticked`);
+    await tool(label).click();
+    await posted(lib, new RegExp('^' + path + '$'));
+    await settle(p, lib);
+    check(postedTo(lib, path).length === 1, `${label}: ${postedTo(lib, path).length} requests to ${path}`);
+    check(!lib.faceLists[ida.id].confirmed.some((f) => f.id === id), `${label} did not send the ticked face`);
+    check(await p.locator(`#pp-grid .face[data-key="f${id}"]`).count() === 0, `${label}: the face stays on the page`);
+  };
+  const first = lib.faceLists[ida.id].confirmed[1].id;
+  await p.locator(`#pp-grid .face[data-key="f${first}"] .crop`).click();
+  await tool(name).click();
+  await p.locator('#modal').waitFor();
+  check((await p.locator('#modal-body p').first().textContent()) === await tr(p, 'person.who_one'), 'Name does not ask who the face is');
+  await p.evaluate(() => closeModal());
+  // Unticked again for the next action.
+  await p.locator(`#pp-grid .face[data-key="f${first}"].sel .crop`).click();
+  await act(ignore, '/faces/ignore');
+  await act(notFace, '/faces/not-face');
+  // A pet's page: Not a pet, with the paw.
+  await open(mia);
+  check(await tool(notFace).count() === 0, 'a pet\'s bar says Not a face');
+  check((await tool(notPet).innerHTML()) === icons.pet, 'Not a pet has not the paw with a slash');
+}));
+
 await test('a text button never wraps: a long label is cut with an ellipsis and the quick label shows it whole', await on('view=people', (lib) => lib.person('Maximilian Alexander Friedrich Wilhelm von Hohenzollern-Sigmaringen', { suggested: 3 }), async (p, lib, long) => {
   await p.evaluate((id) => { location.hash = `view=person&id=${id}&tab=suggested`; }, long.id);
   await p.locator('#pp-grid .face').nth(1).waitFor();
@@ -1525,8 +1582,8 @@ await test('the follow-up controls share the 32 px height: search box, face acti
   for (const [name, v] of Object.entries(heights)) check(v === 32, `${name} is ${v} px high, expected 32`);
 }));
 
-await test('badges: tags, the + tag chip, face names and both small fields in the viewer\'s panel are 26 px high, and a maybe guess has no "Maybe"', await on('', (lib) => {
-  lib.photos = [{ id: 1, version: 'orig0001' }];
+await test('badges: the folder, tags, the + tag chip, face names and both small fields in the viewer\'s panel are 26 px high, and a maybe guess has no "Maybe"', await on('', (lib) => {
+  lib.photos = [{ id: 1, version: 'orig0001', path: 'Familie/Aurelia mit einem sehr langen Ordnernamen, der nicht in die Zeile passt/IMG_1.JPG' }];
   lib.photoTags = { 1: [{ id: 1, name: 'Strand', source: 'user' }, { id: 2, name: 'Urlaub', source: 'folder' }] };
   const face = (id, extra) => ({ id, file: 1, kind: 'jpeg', version: 'orig0001', x: 0.1, y: 0.1, w: 0.1, h: 0.1, roll: 0, px: 100, score: 0.9, small: false, state: null, species: null, person: null, similarity: null, rejected: [], landmarks: [], ...extra });
   lib.photoFaces = { 1: [face(101, { state: 'maybe', person: { id: 9, name: 'Antonia Eger' } }), face(102)] };
@@ -1537,6 +1594,12 @@ await test('badges: tags, the + tag chip, face names and both small fields in th
   const h = (sel) => p.locator(sel).evaluateAll((xs) => xs.map((e) => Math.round(e.getBoundingClientRect().height)));
   const chips = await h('#lb-panel .tags .badge-chip');
   check(chips.length === 3 && chips.every((x) => x === 26), `tag chips are ${chips} px high, expected three of 26`);
+  // The folder is a badge too, cut on one line inside the panel, its title the whole path.
+  const folder = await p.locator('#lb-panel dd > button.badge-chip').evaluate((b) => {
+    const r = b.getBoundingClientRect(), d = b.closest('.lb-panel').getBoundingClientRect(), t = b.querySelector('.t');
+    return { h: Math.round(r.height), inside: r.right <= d.right + 0.5, cut: t.scrollWidth > t.clientWidth, title: b.title };
+  });
+  check(folder.h === 26 && folder.inside && folder.cut && folder.title.startsWith('Familie/Aurelia'), `the folder badge: ${JSON.stringify(folder)}`);
   const inner = await p.locator('#lb-panel .tags .own > button').evaluateAll((xs) => xs.map((e) => getComputedStyle(e).backgroundColor));
   check(inner.length === 2 && inner.every((x) => x === 'rgba(0, 0, 0, 0)'), `the buttons inside an own tag have a background of their own: ${inner}`);
   const guess = await p.locator('#lb-panel .pface .guess').textContent();
@@ -1557,6 +1620,104 @@ await test('badges: tags, the + tag chip, face names and both small fields in th
   await p.locator('#lb-panel .tags .add').focus();
   await p.clock.runFor(400);
   check(await p.locator('#lb-panel .pfield').count() === 0 && await p.locator('#lb-panel .pface button.add').count() === 2, 'the field did not turn back into the badge when it lost the focus');
+}));
+
+// The faces in the viewer's panel: named people in a grid with their first
+// name (the initial of the last name, or the whole name, where two share it)
+// and the whole name as the quick label; suggestions, then unnamed faces in rows
+// under "Needs a decision"; ignored faces only once "2 ignored" folds them out,
+// for this photo. Tags and faces each have a heading of their own and a line.
+await test('the viewer\'s faces: a grid of named people with short names, rows to decide, ignored ones folded away', await on('', (lib) => {
+  lib.photos = [{ id: 1, version: 'orig0001' }, { id: 2, version: 'orig0002' }];
+  lib.photoTags = { 1: [{ id: 1, name: 'Strand', source: 'user' }] };
+  const named = ['Stefan Fritsch', 'Anna Müller', 'Anna Möller', 'Anna Schmidt', 'Jonas'].map((n) => lib.person(n, { faces: 1 }));
+  const face = (id, file, extra) => ({ id, file, kind: 'jpeg', version: 'orig000' + file, x: 0.1, y: 0.1, w: 0.1, h: 0.1, roll: 0, px: 100, score: 0.9, small: false, state: null, species: null, person: null, similarity: null, rejected: [], landmarks: [], ...extra });
+  const who = (k) => ({ state: 'confirmed', person: { id: named[k].id, name: named[k].name } });
+  lib.photoFaces = {
+    1: [face(101, 1), face(102, 1, who(0)), face(103, 1, { state: 'ignored' }), face(104, 1, who(1)), face(105, 1, { state: 'suggested', person: { id: named[4].id, name: 'Jonas' } }),
+      face(106, 1, who(2)), face(107, 1, who(3)), face(108, 1, { state: 'ignored' })],
+    2: [face(201, 2, who(0)), face(202, 2, { state: 'ignored' })],
+  };
+}, async (p, lib) => {
+  await p.locator('#sizer a.cell').nth(0).click();
+  await p.locator('#lb-info').click();
+  await p.locator('#lb-panel .pcell').first().waitFor();
+  const texts = (sel) => p.locator(sel).evaluateAll((xs) => xs.map((x) => x.textContent));
+  const heads = await texts('#lb-panel .psec-head');
+  check(JSON.stringify(heads) === JSON.stringify([await tr(p, 'info.tags'), await tr(p, 'info.people')]), `the headings: ${heads}`);
+  const lines = await p.locator('#lb-panel .psec').evaluateAll((xs) => xs.map((x) => getComputedStyle(x).borderTopWidth));
+  check(lines.join() === '1px,1px', `the lines above the sections: ${lines}`);
+  check(await p.locator('#lb-panel dl .badge-chip, #lb-panel dl .pfaces').count() === 0, 'tags or faces are still rows of the details');
+  const names = await texts('#lb-panel .pcell-name');
+  check(names.join('|') === 'Stefan|Anna Müller|Anna Möller|Anna S.', `the grid: ${names.join('|')}`);
+  const tips = await p.locator('#lb-panel .pcell .pshow').evaluateAll((xs) => xs.map((x) => x.dataset.tip));
+  check(tips.join('|') === 'Stefan Fritsch|Anna Müller|Anna Möller|Anna Schmidt', `the quick labels: ${tips.join('|')}`);
+  // Pointing at a named person shows their face's box (the index in the photo's faces).
+  await p.locator('#lb-panel .pcell').nth(1).hover();
+  check(await p.evaluate(() => lb.hover) === 3, `pointing at Anna Müller: ${await p.evaluate(() => lb.hover)}`);
+  // The rows: the suggestion first, then the unnamed face; no ignored one.
+  check(await p.locator('#lb-panel .psub').textContent() === await tr(p, 'info.to_decide'), 'no "Needs a decision"');
+  const rows = () => p.locator('#lb-panel .pface').evaluateAll((xs) => xs.map((x) => (x.classList.contains('ignored') ? 'ignored' : x.querySelector('.guess') ? 'guess' : 'unnamed')).join());
+  check(await rows() === 'guess,unnamed', `the rows: ${await rows()}`);
+  check(await p.locator('#lb-panel .pface .guess + .yes + .no + .add').textContent() === await tr(p, 'info.other_person'), 'the suggestion has no Other chip');
+  check(await p.locator(`#lb-panel .ptools button[data-tip^="${await tr(p, 'info.select')}"]`).count() === 1, 'no Select for two faces to decide');
+  const fold = p.locator('#lb-panel .ptools .pignored');
+  check(await fold.textContent() === await p.evaluate(() => trn('count.ignored', 2)), `the link: ${await fold.textContent()}`);
+  await fold.click();
+  check(await rows() === 'guess,unnamed,ignored,ignored', `folded out: ${await rows()}`);
+  check(await fold.textContent() === await tr(p, 'info.hide_ignored'), `the link once folded out: ${await fold.textContent()}`);
+  // Another photo has its ignored faces folded away; nothing is left to decide there.
+  await p.keyboard.press('ArrowRight');
+  await until('the next photo', async () => (await texts('#lb-panel .pcell-name')).join() === 'Stefan');
+  check(await rows() === '' && await p.locator('#lb-panel .psub').count() === 0, `the second photo's rows: ${await rows()}`);
+  check(await p.locator(`#lb-panel .ptools button[data-tip^="${await tr(p, 'info.select')}"]`).count() === 0, 'Select with nothing to decide');
+  check(await fold.textContent() === await p.evaluate(() => trn('count.ignored', 1)), `the second photo's link: ${await fold.textContent()}`);
+  // The ⋯ of a named person has the face's menu; a click on the person shows their photos.
+  await p.locator('#lb-panel .pcell').first().hover();
+  await p.locator('#lb-panel .pcell .more-btn').first().click();
+  await p.getByRole('menuitem', { name: await tr(p, 'menu.use_as', { name: 'Stefan Fritsch' }), exact: true }).waitFor();
+  await p.keyboard.press('Escape');
+  await p.locator('#lb-panel .pcell .pshow').first().click();
+  await until('the person\'s photos', () => p.evaluate(() => document.getElementById('lightbox').hidden && state.filter.people.length === 1));
+}));
+
+await test('pills come in two heights: chips and badges among text are 26 px, labels on a photo 18 px', await on('', hiddenPhotos, async (p, lib) => {
+  await cellCount(p, 3);
+  const heights = await p.evaluate(() => {
+    const host = document.createElement('div');
+    host.innerHTML = '<div class="filters"><span class="chip">Familie<button>✕</button></span><span class="chip more">+</span><span class="chip clear">x</span></div>'
+      + '<span class="badge-chip">Aurelia</span><div class="copy" style="display:flex;flex-direction:column"><div class="badge-chip">Bearbeitet</div><div class="badge-chip worse">Kleiner</div></div>'
+      + '<div class="cell" style="width:200px;height:200px"><span class="badge">RAW</span><span class="snip">Kartoffeln</span><span class="est"></span></div>';
+    document.body.appendChild(host);
+    // Not rounded: a label of 17.95 px is what the font happened to give, not the height.
+    const h = (sel) => [...host.querySelectorAll(sel)].map((e) => +e.getBoundingClientRect().height.toFixed(2));
+    const out = { text: [...h('.chip'), ...h('.badge-chip')], photo: [...h('.badge'), ...h('.snip'), ...h('.est')] };
+    host.remove();
+    return out;
+  });
+  check(heights.text.length === 6 && heights.text.every((x) => x === 26), `chips and badges among text are ${heights.text} px high, expected 26`);
+  check(heights.photo.length === 3 && heights.photo.every((x) => x === 18), `labels on a photo are ${heights.photo} px high, expected 18`);
+}));
+
+await test('the search box is a text field like the settings\' fields: same look, a border on hover, the accent ring on focus', await on('view=settings', (lib) => { lib.copyFolders = ['Links']; }, async (p, lib) => {
+  await p.locator('.copy-folder-row input').first().waitFor();
+  await settle(p, lib);
+  const look = (sel) => p.locator(sel).first().evaluate((e) => { const c = getComputedStyle(e); return [Math.round(e.getBoundingClientRect().height), c.borderTopColor, c.borderRadius, c.backgroundColor, c.outlineStyle, c.outlineColor, c.outlineOffset].join('|'); });
+  const field = '.copy-folder-row input', search = '#search';
+  check((await look(search)) === (await look(field)), `at rest the search box ${await look(search)} differs from a settings field ${await look(field)}`);
+  const rest = await look(search);
+  await p.locator(field).first().hover();
+  const fieldHover = await look(field);
+  await p.locator(search).hover();
+  const searchHover = await look(search);
+  check(searchHover === fieldHover && searchHover !== rest, `on hover the search box ${searchHover} differs from a settings field ${fieldHover} (at rest ${rest})`);
+  await p.locator(field).first().focus();
+  const fieldFocus = await look(field);
+  await p.locator(search).focus();
+  await p.mouse.move(0, 0);
+  const searchFocus = await look(search);
+  const accent = await p.evaluate(() => { const e = document.createElement('i'); e.style.color = 'var(--accent)'; document.body.appendChild(e); const c = getComputedStyle(e).color; e.remove(); return c; });
+  check(searchFocus === fieldFocus && searchFocus.includes('|solid|' + accent + '|2px'), `on focus the search box ${searchFocus} differs from a settings field ${fieldFocus}, expected the ring in ${accent}`);
 }));
 
 await test('tabs look the same everywhere: a person\'s tabs and the drives\' tabs share one style', await on('view=people', (lib) => lib.person('Tabea Tab', { suggested: 2 }), async (p, lib, tabea) => {

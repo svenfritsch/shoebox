@@ -529,3 +529,41 @@ fn a_copy_with_fewer_pixels_but_a_bigger_file_is_flagged() {
     assert_eq!(file_of(&all, "Selfies/IMG_1794_1.jpg")["bigger_file"].as_bool(), Some(false));
     server.stop().unwrap();
 }
+
+fn phash_of(lib: &Library, id: i64) -> u64 {
+    let hex: String = lib.db().query_row("SELECT phash FROM files WHERE id = ?1", [id], |r| r.get(0)).unwrap();
+    shoebox::phash::from_hex(&hex).unwrap()
+}
+
+#[test]
+fn an_original_and_its_iphone_edit_can_replace_each_other() {
+    let lib = Library::new("dupes-edited");
+    // An iPhone original and its edit cropped to 16:9: further apart than a
+    // similar photo, grouped by the camera number in the same folder.
+    rings(&lib.path("Radreise/IMG_6194.jpg"), 1600, 1200);
+    let edit = image::open(lib.path("Radreise/IMG_6194.jpg")).unwrap().crop_imm(0, 150, 1600, 900);
+    edit.save(lib.path("Radreise/IMG_E6194.jpg")).unwrap();
+    // The same edit in another folder is no pair of the original.
+    tweaked_copy(&lib.path("Radreise/IMG_E6194.jpg"), &lib.path("Anders/IMG_E6194.jpg"));
+    lib.scan();
+    let (orig, edited, elsewhere) = (id_of(&lib, "Radreise/IMG_6194.jpg"), id_of(&lib, "Radreise/IMG_E6194.jpg"), id_of(&lib, "Anders/IMG_E6194.jpg"));
+    let d = shoebox::phash::distance(phash_of(&lib, orig), phash_of(&lib, edited));
+    assert!(d > shoebox::duplicates::NEAR_BITS && d <= shoebox::duplicates::EDIT_BITS, "the fixture needs an edit beyond a similar photo ({d} bits)");
+    let server = start(&lib, None);
+    let addr = server.addr;
+    assert_eq!(group_of(&groups(addr), "Radreise/IMG_6194.jpg")["kind"], "edited");
+
+    let r = remove(addr, &[elsewhere], &[orig]);
+    assert_eq!(r.status, 400, "{}", String::from_utf8_lossy(&r.body));
+    assert!(lib.path("Radreise/IMG_6194.jpg").exists());
+
+    // The original goes, the edit stays (and the other way round would do too).
+    post(addr, "/api/tags/add", &json!({ "ids": [orig], "name": "Lavendel" }));
+    let r = remove(addr, &[edited], &[orig]);
+    assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    assert_eq!(r.json()["trashed"]["files"], json!(["Radreise/IMG_6194.jpg"]));
+    assert!(!lib.path("Radreise/IMG_6194.jpg").exists());
+    assert!(lib.path("Radreise/IMG_E6194.jpg").exists());
+    assert_eq!(tags(&lib, edited, "user"), ["Lavendel"]);
+    server.stop().unwrap();
+}

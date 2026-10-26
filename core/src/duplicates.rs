@@ -757,6 +757,8 @@ fn set_date(conn: &Connection, id: i64, date: &Date) -> Result<()> {
 struct Copy {
     id: i64,
     path: String,
+    name: String,
+    folder_id: i64,
     full_hash: Option<String>,
     phash: Option<u64>,
     pixels: u64,
@@ -766,17 +768,19 @@ struct Copy {
 fn copy_of(conn: &Connection, id: i64) -> Result<Copy> {
     let row = conn
         .query_row(
-            "SELECT id, path_nfc, full_hash, phash, coalesce(width, 0) * coalesce(height, 0), added_at
+            "SELECT id, path_nfc, name, folder_id, full_hash, phash, coalesce(width, 0) * coalesce(height, 0), added_at
              FROM files WHERE id = ?1 AND missing_since IS NULL",
             [id],
             |r| {
                 Ok(Copy {
                     id: r.get(0)?,
                     path: r.get(1)?,
-                    full_hash: r.get(2)?,
-                    phash: r.get::<_, Option<String>>(3)?.as_deref().and_then(phash::from_hex),
-                    pixels: r.get::<_, i64>(4)? as u64,
-                    added_at: r.get(5)?,
+                    name: r.get(2)?,
+                    folder_id: r.get(3)?,
+                    full_hash: r.get(4)?,
+                    phash: r.get::<_, Option<String>>(5)?.as_deref().and_then(phash::from_hex),
+                    pixels: r.get::<_, i64>(6)? as u64,
+                    added_at: r.get(7)?,
                 })
             },
         )
@@ -785,11 +789,16 @@ fn copy_of(conn: &Connection, id: i64) -> Result<Copy> {
 }
 
 /// The best of `keep` to inherit from `gone`: identical content first, else
-/// a similar photo; the highest resolution, then the earliest record.
+/// a similar photo (or, as `find` pairs them, an original and its iPhone edit
+/// in the same folder within `EDIT_BITS`); the highest resolution, then the
+/// earliest record.
 fn heir<'a>(gone: &Copy, keep: &'a [Copy]) -> Option<&'a Copy> {
     let same = |k: &&Copy| gone.full_hash.is_some() && k.full_hash == gone.full_hash;
     let similar = |k: &&Copy| match (gone.phash, k.phash) {
-        (Some(a), Some(b)) => phash::distance(a, b) <= NEAR_BITS,
+        (Some(a), Some(b)) => {
+            let d = phash::distance(a, b);
+            d <= NEAR_BITS || (d <= EDIT_BITS && gone.folder_id == k.folder_id && original_and_edit(&gone.name, &k.name))
+        }
         _ => false,
     };
     let best = |mut c: Vec<&'a Copy>| {
