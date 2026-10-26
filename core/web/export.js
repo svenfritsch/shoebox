@@ -43,7 +43,7 @@ function collectionSection() {
   var icon2 = el('span', 'iconbox');
   icon2.innerHTML = COLL_OFF;
   row.appendChild(icon2);
-  var input = el('input', 'field');
+  var input = el('input', 'text-input');
   input.type = 'text';
   input.value = collectionTag();
   input.placeholder = tr('settings.coll_placeholder');

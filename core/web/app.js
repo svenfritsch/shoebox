@@ -5902,7 +5902,7 @@ function copyFoldersSection() {
     });
   };
   var row = el('div', 'copy-folder-row');
-  var input = el('input', 'field');
+  var input = el('input', 'text-input');
   input.type = 'text';
   input.placeholder = tr('settings.copy_folders_placeholder');
   var add = el('button', 'btn', tr('settings.copy_folders_add'));

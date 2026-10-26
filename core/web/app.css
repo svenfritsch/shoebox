@@ -51,14 +51,14 @@ select { cursor: pointer; }
 /* Pills come in two heights only: every chip, badge-chip or pill among text and controls is --ctl-h-sm
    high; a label that lies on a photo (`.badge`, the text snippet, the estimate mark) is --badge-h high. */
 :root { --badge-h: 18px; }
-/* Text field (`.field`): the search box and the settings' fields. A border that shows on hover and the
+/* Text field (`.text-input`): the search box and the settings' fields. A border that shows on hover and the
    accent ring on focus, like every other control. */
-.field {
+.text-input {
   height: var(--ctl-h); padding: 0 12px; border-radius: var(--ctl-r); border: 1px solid var(--line); background: var(--panel); color: var(--fg);
   -webkit-appearance: none; appearance: none;
 }
-.field:hover { border-color: var(--muted); }
-.field:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.text-input:hover { border-color: var(--muted); }
+.text-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 [hidden] { display: none !important; }
 
 .bar {
@@ -850,7 +850,7 @@ body.selecting .sec .pick { display: inline; }
 .chip-x { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); cursor: pointer; font-size: 11px; line-height: 1; }
 .chip-x:hover { background: var(--line); color: var(--fg); }
 .copy-folder-row { display: flex; gap: 8px; align-items: center; }
-.settings-section input.field { min-width: 220px; }
+.settings-section input.text-input { min-width: 220px; }
 
 /* favorites: the heart */
 .fav-btn { display: inline-flex; align-items: center; justify-content: center; font-size: 18px; width: var(--ctl-h); height: var(--ctl-h); padding: 0; border-radius: var(--ctl-r); border: 1px solid var(--line); background: var(--panel); color: inherit; }
