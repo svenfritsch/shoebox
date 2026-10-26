@@ -160,7 +160,7 @@ pub fn cleanup(opts: &CleanupOptions) -> Result<Cleanup> {
         } else {
             let note = if opts.forever { "deleted (the drive had it already)" } else { "moved to the trash (the drive had it already)" };
             for f in &removed.trashed.files {
-                report::file(f, true, note);
+                report::copy_removed(f, &c.dup.of, note);
             }
             out.removed.extend(removed.trashed.files);
             out.removed_folders.extend(removed.trashed.removed_folders);

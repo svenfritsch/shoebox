@@ -19,8 +19,16 @@ pub enum Event {
     Line { text: String },
     /// How far the current step is (`done` of `total` in the step's own unit).
     Progress { label: String, done: u64, total: u64 },
-    /// One file went through (`ok`) or did not.
-    File { path: String, ok: bool, note: String },
+    /// One file went through (`ok`) or did not. `of`: it was a copy of
+    /// that file (a library path), which stays; the launcher says so in the
+    /// person's language.
+    File {
+        path: String,
+        ok: bool,
+        note: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        of: Option<String>,
+    },
 }
 
 pub type Sink = Arc<dyn Fn(Event) + Send + Sync>;
@@ -101,7 +109,14 @@ pub fn line(text: String) {
 
 pub fn file(path: &str, ok: bool, note: impl Into<String>) {
     if listening() {
-        emit(Event::File { path: path.to_string(), ok, note: note.into() });
+        emit(Event::File { path: path.to_string(), ok, note: note.into(), of: None });
+    }
+}
+
+/// A copy of `of` went (to the trash, or for good: `note`).
+pub fn copy_removed(path: &str, of: &str, note: impl Into<String>) {
+    if listening() {
+        emit(Event::File { path: path.to_string(), ok: true, note: note.into(), of: Some(of.to_string()) });
     }
 }
 

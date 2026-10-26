@@ -902,6 +902,12 @@ function renderResults(job, ul) {
     var m = document.createElement('span'); m.className = 'mark'; m.textContent = f.ok ? '✓' : '✗';
     var pa = document.createElement('span'); pa.className = 'path'; pa.textContent = f.path;
     var n = document.createElement('span'); n.className = 'note'; n.textContent = again || f.note;
+    // A copy the cleanup removed names the file that stays, cut to one line;
+    // the whole path shows as a tooltip when it does not fit.
+    if (f.of) {
+      li.classList.add('copy'); n.className = 'note dup-of'; n.textContent = tr('launcher.duplicate_of', { path: f.of });
+      n.onmouseenter = function () { n.title = n.scrollWidth > n.clientWidth ? n.textContent : ''; };
+    }
     li.appendChild(m); li.appendChild(pa);
     if (job.kind === 'backup' && job.roots.length === 2) {
       li.appendChild(revealButton(n, [{ root: job.roots[0], path: f.path }, { root: job.roots[1], path: f.path }], 'launcher.reveal_both'));

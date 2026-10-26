@@ -66,6 +66,7 @@
   "launcher.arrivals.confirm": "Move the {n} new copies that were already on the drive to the library's trash? The older copies are not touched.",
   "launcher.arrivals.confirm_forever": "Delete the {n} new copies that were already on the drive for good? This cannot be undone. The older copies are not touched.",
   "launcher.arrivals.note": "same content as: {of}",
+  "launcher.duplicate_of": "Duplicate of {path}",
   "launcher.tab.moved": "Moved ({n})",
   "launcher.tab.changed": "Changed ({n})",
   "launcher.tab.missing": "Missing ({n})",

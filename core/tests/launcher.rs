@@ -596,6 +596,9 @@ fn the_scan_reports_copies_of_old_files_and_the_cleanup_job_removes_them() {
     let job = run_job(addr, json!({ "kind": "scan_cleanup", "roots": [root] }));
     assert_eq!(job["ok"], true, "{job}");
     assert_eq!(job["result"]["removed"], json!(["Neu/kopie.jpg"]));
+    // The row names the copy that stays; the page says it in the person's language.
+    let row = job["recent_ok"].as_array().unwrap().iter().find(|f| f["path"] == "Neu/kopie.jpg").unwrap();
+    assert_eq!(row["of"], photo, "{job}");
     assert!(!lib.path("Neu/kopie.jpg").exists());
     let mut expected = before;
     expected.retain(|p, _| !p.ends_with("Neu/kopie.jpg"));
