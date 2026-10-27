@@ -188,12 +188,18 @@ as they are.
 
 A thin line under the top bar, shown when an API request (`api()`) has run
 0.4 s and gone when none is left; quick ones (the status every 5 s while a
-scan runs, thumbnails, which have their grey tile) never show it. A new common
-class in `app.css` and a row in the `frontend` skill's table; no motion with
-`prefers-reduced-motion`. A cold USB drive still takes seconds for the first
-people view or snapshot. The guide gets one sentence in "Finding your way
-around" (both languages). Tests (`faces-mocked.mjs`, fake clock, `lib.hold`):
-no line for an answer within 0.4 s, the line at 0.4 s, gone with the answer.
+scan runs) never show it, pictures are not API requests (they have their grey
+tile). **Not for the search suggestions** (`/suggest`, `/all/suggest`): the
+dropdown shows its own grey rows after 120 ms (`showWaiting`), and two signs
+for one wait are one too many. The suggestion request says so where it is
+made (`api(path, { busy: false })`), not by a list of paths in `api()`, so a
+new request with a waiting display of its own opts out the same way. A new
+common class in `app.css` and a row in the `frontend` skill's table; no motion
+with `prefers-reduced-motion`. A cold USB drive still takes seconds for the
+first people view or snapshot. The guide gets one sentence in "Finding your
+way around" (both languages). Tests (`faces-mocked.mjs`, fake clock,
+`lib.hold`): no line for an answer within 0.4 s, the line at 0.4 s, gone with
+the answer; a `/suggest` held past 0.4 s shows the grey rows and no line.
 
 ### Step 5: measure first
 
@@ -234,6 +240,8 @@ Only if `bench-people.py` or the slow-request log shows it:
 | HTTP timeouts (`tower::timeout`) | End the reply, not the blocking work |
 | The id list cut into pieces | See section 2: fast only in pieces under ~100 ids, a thousand queries for the whole list |
 | Sorting the face list in the browser | 300,000 faces are ~15 MB of JSON |
+| A test that fails on `IN (` lists in the source, like `no_emoji.rs` | A text search cannot tell the harmful list from the harmless ones: of the 20 `IN ({…})` in `core/src` today, two are the harmful kind (both in `faces::list`); the others are fixed lists of kinds, lists looked up by their own index, a filter (`NOT IN`) or a subquery. It would need an exception on almost every line and still miss a list built another way. The rule in `CLAUDE.md` and the benchmark guard it |
+| More `EXPLAIN QUERY PLAN` tests | After step 1 the Face check has no SQL left to check; the queries about one photo or person already have such a test (`faces_sql`), and new ones of that kind get one as before. The kept views read whole tables on purpose |
 
 ## 5. Pitfalls
 
@@ -255,9 +263,12 @@ Only if `bench-people.py` or the slow-request log shows it:
 
 ## 6. Rules for CLAUDE.md (each added with the step that makes it true)
 
-- No list of ids written into SQL; filter in Rust over a kept view or pass a
-  set as one parameter (`IN (SELECT value FROM json_each(?1))`). A request
-  never reads all faces or all files itself; it asks a kept view. (step 1)
+- No list of values in SQL that grows with the library: filter in Rust over a
+  kept view or pass the set as one parameter (`IN (SELECT value FROM
+  json_each(?1))`). Short fixed lists (the kinds of files) and chunks looked up
+  by their own index (`tags::own_tags_of`, 500 ids by primary key) are fine. A
+  request never reads all faces or all files itself; it asks a kept view.
+  (step 1)
 - Reads take a reader (`app.read()`), only `App::conn` writes; take kept views
   first, then a reader, and never hold a connection while waiting for
   something else. (step 2)
