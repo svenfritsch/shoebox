@@ -1757,6 +1757,10 @@ fn a_pets_species_can_be_corrected() {
     assert_eq!((after["species"].as_str(), after["state"].as_str(), after["person"]["name"].as_str()), (Some("dog"), Some("confirmed"), Some("Rex")));
     assert_eq!(found("dog"), want(&["Fotos/katze.png", "Fotos/hund.png"]));
     assert_eq!(found("cat"), want(&["Fotos/echt.png"]));
+    // The Face check says so too.
+    let listed = get(addr, "/api/faces?kind=pets").json();
+    let listed = listed["faces"].as_array().unwrap().iter().find(|f| f["id"] == id).unwrap().clone();
+    assert_eq!(listed["species"], "dog", "{listed}");
     // Saying it again, or about a person's face, changes nothing.
     assert_eq!(ok(addr, "/api/faces/species", &json!({ "faces": [id], "species": "dog" }))["faces"], 0);
     let person_face = face_of_person(addr, &lib, "Fotos/katze.png")["id"].as_i64().unwrap();
@@ -1776,6 +1780,294 @@ fn a_pets_species_can_be_corrected() {
     assert_eq!(pet_of(addr, &lib, "Fotos/katze.png")["species"], "dog");
     server.stop().unwrap();
     assert_eq!(lib.snapshot(), before, "originals untouched");
+}
+
+// ------------------------------------------------------- the Face check
+
+/// A picture of one colour, `width` px wide: its face (and pet) is half as
+/// wide; `n` makes the content unique.
+fn wide(lib: &Library, rel: &str, rgb: [u8; 3], width: u32, n: u8) {
+    let mut img = image::RgbImage::from_pixel(width, width.min(120), image::Rgb(rgb));
+    img.put_pixel(0, 0, image::Rgb([n, n, n]));
+    save(lib, rel, img);
+}
+
+/// A library for the Face check (`check_library`), its server, and the ids
+/// the test knows apart from what the server says.
+struct Check {
+    lib: Library,
+    server: shoebox::serve::Server,
+    /// Marked "not a face", "not a pet".
+    not_faces: Vec<i64>,
+    not_pets: Vec<i64>,
+    /// Taken for a pet's.
+    pet_faces: Vec<i64>,
+    /// The face of the photo removed after recognition.
+    gone: i64,
+}
+
+/// Faces and pets in every state the Face check tells apart: Anna's three
+/// named faces, one suggested for her, one "maybe", one far from her; a
+/// small face; Dora's four faces of three widths (an unnamed cluster);
+/// Carl's two, one marked "not a face"; two faces taken for a pet's (dogs
+/// without a person); a face found turned; the pets of Anna's photos named,
+/// one pet marked "not a pet"; and a photo removed after recognition.
+fn check_library(test: &str) -> Check {
+    let lib = empty(test);
+    for n in 1..=3 {
+        plain(&lib, &format!("Anna/a{n}.png"), ANNA, n);
+    }
+    variant(&lib, "Mix/suggested.png", ANNA, SUGGESTED);
+    variant(&lib, "Mix/maybe.png", ANNA, MAYBE);
+    variant(&lib, "Mix/far.png", ANNA, FAR);
+    wide(&lib, "Ben/small.png", BEN, 40, 1);
+    for (n, width) in [(1, 120), (2, 160), (3, 160), (4, 240)] {
+        wide(&lib, &format!("Dora/d{n}.png"), DORA, width, n);
+    }
+    plain(&lib, "Carl/c1.png", CARL, 1);
+    wide(&lib, "Carl/c2.png", CARL, 300, 2);
+    // Nobody in the picture: the face is the dog's (the fake's yellow cue).
+    for n in 1..=2u8 {
+        let dog = image::RgbImage::from_fn(200, 200, |x, y| {
+            image::Rgb(if y >= 150 { [255, 255, 0] } else if (x, y) == (0, 0) { [n, n, n] } else { [90, 90, 200] })
+        });
+        save(&lib, &format!("Dog/dog{n}.png"), dog);
+    }
+    // A face only when turned 90° (the fake's cyan cue).
+    save(&lib, "Turned/lying.png", image::RgbImage::from_fn(300, 300, |x, _| image::Rgb(if x < 90 { [0, 255, 255] } else { [128, 128, 128] })));
+    plain(&lib, "Gone/g.png", [150, 200, 60], 1);
+    lib.scan_opts(true, false, false);
+    let stats = recognize::run(&recognize::Options { pets: true, rotated: true, ..options(&lib) }).unwrap();
+    assert_eq!(stats.failed, 0, "{:?}", stats.errors);
+
+    let c = conn(&lib);
+    let faces_in = |rel: &str, pets: bool| -> Vec<i64> {
+        let mut stmt = c
+            .prepare("SELECT f.id FROM recog.faces f JOIN files p ON p.quick_hash = f.key WHERE p.path_nfc = ?1 AND (f.species IS NOT NULL) = ?2")
+            .unwrap();
+        stmt.query_map(rusqlite::params![rel, pets], |r| r.get(0)).unwrap().collect::<rusqlite::Result<_>>().unwrap()
+    };
+    let pet_faces = [faces_in("Dog/dog1.png", false), faces_in("Dog/dog2.png", false)].concat();
+    assert_eq!(pet_faces.len(), 2);
+    let gone = faces_in("Gone/g.png", false)[0];
+    let (c1, maybe_pet) = (faces_in("Carl/c1.png", false), faces_in("Mix/maybe.png", true));
+    assert_eq!(faces_in("Turned/lying.png", false).len(), 1, "the turned face");
+    drop(c);
+    std::fs::remove_file(lib.path("Gone/g.png")).unwrap();
+    lib.scan_opts(true, false, false);
+
+    let server = start(&lib, None);
+    let addr = server.addr;
+    wait_for_clusters(addr);
+    let anna: Vec<i64> = (1..=3).map(|n| face_id_of_person(addr, &lib, &format!("Anna/a{n}.png"))).collect();
+    ok(addr, "/api/faces/assign", &json!({ "faces": anna, "name": "Anna" }));
+    let kitty: Vec<Value> = (1..=3).map(|n| pet_of(addr, &lib, &format!("Anna/a{n}.png"))["id"].clone()).collect();
+    ok(addr, "/api/faces/assign", &json!({ "faces": kitty, "name": "Kitty" }));
+    ok(addr, "/api/faces/not-face", &json!({ "faces": [c1[0], maybe_pet[0]] }));
+    wait_for_clusters(addr);
+    let suggested = face_of_person(addr, &lib, "Mix/suggested.png");
+    assert_eq!((suggested["state"].as_str(), suggested["person"]["name"].as_str()), (Some("suggested"), Some("Anna")));
+    assert_eq!(face_of_person(addr, &lib, "Mix/maybe.png")["state"], "maybe");
+    Check { lib, server, not_faces: c1, not_pets: maybe_pet, pet_faces, gone }
+}
+
+fn face_id_of_person(addr: std::net::SocketAddr, lib: &Library, rel: &str) -> i64 {
+    face_of_person(addr, lib, rel)["id"].as_i64().unwrap()
+}
+
+/// `/api/faces` with this query (all on one page unless it gives a limit):
+/// (total, ids in order).
+fn face_check(addr: std::net::SocketAddr, query: &str) -> (u64, Vec<i64>) {
+    let limit = if query.contains("limit=") { "" } else { "limit=2000&" };
+    let r = get(addr, &format!("/api/faces?{limit}{query}"));
+    assert_eq!(r.status, 200, "{query}: {}", String::from_utf8_lossy(&r.body));
+    let list = r.json();
+    let ids = list["faces"].as_array().unwrap().iter().map(|f| f["id"].as_i64().unwrap()).collect();
+    (list["total"].as_u64().unwrap(), ids)
+}
+
+/// The detected faces of every present photo as the photo's info shows them
+/// (`/api/files/{id}`, read from the photo's own faces: another way than the
+/// Face check's), of one kind.
+fn shown_faces(addr: std::net::SocketAddr, lib: &Library, pets: bool) -> Vec<Value> {
+    let files: Vec<i64> = {
+        let c = lib.db();
+        let mut stmt = c.prepare("SELECT id FROM files WHERE missing_since IS NULL ORDER BY id").unwrap();
+        stmt.query_map([], |r| r.get(0)).unwrap().collect::<rusqlite::Result<_>>().unwrap()
+    };
+    files
+        .iter()
+        .flat_map(|f| get(addr, &format!("/api/files/{f}")).json()["faces"].as_array().cloned().unwrap_or_default())
+        .filter(|f| f["id"].is_i64() && f["species"].is_string() == pets)
+        .collect()
+}
+
+fn ids_where(faces: &[Value], keep: impl Fn(&Value) -> bool) -> Vec<i64> {
+    sorted(faces.iter().filter(|f| keep(f)).map(|f| f["id"].as_i64().unwrap()).collect())
+}
+
+/// Every filter of the Face check lists exactly the faces it is about, and
+/// its total is the number the stats give for it; `similar` leaves out the
+/// same faces and lists them as the Face check does.
+#[test]
+fn the_face_check_lists_exactly_what_its_stats_count() {
+    let Check { lib, server, not_faces, not_pets, pet_faces, gone } = check_library("people-face-check");
+    let addr = server.addr;
+    let before = lib.snapshot();
+    for (kind, marked, taken) in [("faces", &not_faces, &pet_faces), ("pets", &not_pets, &Vec::new())] {
+        let pets = kind == "pets";
+        let stats = get(addr, &format!("/api/faces/stats?kind={kind}")).json();
+        let n = |key: &str| stats[key].as_u64().unwrap();
+        let min = stats["min_cluster_px"].as_f64().unwrap();
+        let shown = shown_faces(addr, &lib, pets);
+        let list = |query: &str| {
+            let (total, ids) = face_check(addr, &format!("kind={kind}&{query}"));
+            assert_eq!(total, ids.len() as u64, "{kind} {query}");
+            assert!(!ids.contains(&gone), "{kind} {query}: the removed photo's face");
+            (total, sorted(ids))
+        };
+
+        let all = ids_where(&shown, |_| true);
+        assert_eq!(list(""), (n("faces") - n("not_faces"), all.clone()), "{kind}: all");
+        let unmatched = ids_where(&shown, |f| f["state"].is_null());
+        assert_eq!(list("unmatched=true"), (n("unmatched"), unmatched.clone()), "{kind}: not matched yet");
+        assert_eq!(list("not_face=true"), (n("not_faces"), sorted(marked.to_vec())), "{kind}: not a face");
+        assert_eq!(list("pet_face=true"), (n("pet_faces"), sorted(taken.to_vec())), "{kind}: taken for a pet's");
+        let small = ids_where(&shown, |f| f["px"].as_f64().unwrap() < min);
+        assert_eq!(list(&format!("max_px={min}")), (n("small"), small.clone()), "{kind}: small");
+        let large = ids_where(&shown, |f| f["px"].as_f64().unwrap() >= min);
+        assert_eq!(list(&format!("min_px={min}")).1, large, "{kind}: large");
+        let turned = ids_where(&shown, |f| f["roll"].as_u64().unwrap() != 0);
+        assert_eq!(list("rotated=true"), (n("rotated_faces"), turned.clone()), "{kind}: turned");
+        // Filters together.
+        let small_unmatched: Vec<i64> = small.iter().filter(|id| unmatched.contains(id)).copied().collect();
+        assert_eq!(list(&format!("unmatched=true&max_px={min}")).1, small_unmatched, "{kind}");
+
+        // Each state is there, so none of the above is empty by chance.
+        assert!(unmatched.len() < all.len() && !small.is_empty() && !large.is_empty(), "{kind}: {shown:?}");
+        if !pets {
+            assert_eq!(turned.len(), 1);
+            assert!(small_unmatched.len() == 1 && unmatched.len() > 4, "{unmatched:?}");
+        }
+
+        // Neighbours: every other face of the kind (one model), as listed.
+        let listed: std::collections::HashMap<i64, Value> = get(addr, &format!("/api/faces?kind={kind}&limit=2000")).json()["faces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| (f["id"].as_i64().unwrap(), f.clone()))
+            .collect();
+        let near = get(addr, &format!("/api/faces/{}/similar?limit=200", all[0])).json();
+        let near = near.as_array().unwrap();
+        let mut near_ids = Vec::new();
+        for f in near {
+            let mut item = f.clone();
+            item.as_object_mut().unwrap().remove("similarity");
+            assert_eq!(Some(&item), listed.get(&f["id"].as_i64().unwrap()), "{kind}: a neighbour as the Face check lists it");
+            near_ids.push(f["id"].as_i64().unwrap());
+        }
+        assert_eq!(sorted(near_ids), all[1..].to_vec(), "{kind}: neighbours");
+        let sims: Vec<f64> = near.iter().map(|f| f["similarity"].as_f64().unwrap()).collect();
+        assert!(sims.windows(2).all(|w| w[0] >= w[1]), "{kind}: best first");
+    }
+
+    // Parameters it does not know are refused, a face it does not know is not found.
+    assert_eq!(get(addr, "/api/faces?kind=cats").status, 400);
+    assert_eq!(get(addr, "/api/faces?sort=name").status, 400);
+    assert_eq!(get(addr, "/api/faces/stats?kind=cats").status, 400);
+    assert_eq!(get(addr, "/api/faces/999999/similar").status, 404);
+    assert_eq!(get(addr, "/api/faces?kind=&sort=").status, 200, "empty is the default");
+    server.stop().unwrap();
+    assert_eq!(lib.snapshot(), before, "the Face check changed an original");
+}
+
+/// The Face check sorts by size or score, either way, ties by id, and pages
+/// through that order.
+#[test]
+fn the_face_check_sorts_and_pages() {
+    let Check { lib, server, .. } = check_library("people-face-check-sort");
+    let addr = server.addr;
+    let shown = shown_faces(addr, &lib, false);
+    let value = |id: i64, key: &str| shown.iter().find(|f| f["id"] == id).unwrap()[key].as_f64().unwrap();
+    for (sort, key) in [("size", "px"), ("score", "score")] {
+        for desc in [false, true] {
+            let query = format!("sort={sort}{}", if desc { "&desc=true" } else { "" });
+            let (total, ids) = face_check(addr, &query);
+            assert_eq!(sorted(ids.clone()), ids_where(&shown, |_| true), "{query}");
+            let mut want = ids.clone();
+            want.sort_by(|&a, &b| {
+                let order = value(a, key).total_cmp(&value(b, key));
+                if desc { order.reverse() } else { order }.then(a.cmp(&b))
+            });
+            assert_eq!(ids, want, "{query}");
+            // Ties are there to be broken (all faces but the turned one score the same).
+            assert!(ids.windows(2).any(|w| value(w[0], key) == value(w[1], key)), "{query}");
+
+            // Pages of three, joined, are the one large page.
+            let mut paged = Vec::new();
+            for offset in (0..total).step_by(3) {
+                let (t, page) = face_check(addr, &format!("{query}&offset={offset}&limit=3"));
+                assert_eq!(t, total);
+                paged.extend(page);
+            }
+            assert_eq!(paged, ids, "{query}: pages");
+            let past = get(addr, &format!("/api/faces?{query}&offset={}&limit=3", total + 5)).json();
+            assert_eq!((past["total"].as_u64(), past["faces"].as_array().map(Vec::len)), (Some(total), Some(0)), "{query}: past the end");
+        }
+    }
+    // The size is across the face: the widest picture's face first.
+    let (_, ids) = face_check(addr, "sort=size&desc=true");
+    assert_eq!(ids[0], face_id_of_person(addr, &lib, "Carl/c2.png"));
+    server.stop().unwrap();
+}
+
+/// The Face check answers from the people view the server keeps: a decision,
+/// an undo and a scan in another process show in its very next answer.
+#[test]
+fn the_face_check_sees_a_change_at_once() {
+    let Check { lib, server, .. } = check_library("people-face-check-change");
+    let addr = server.addr;
+    let stats = || get(addr, "/api/faces/stats").json();
+    let n = |s: &Value, key: &str| s[key].as_u64().unwrap();
+    let has = |query: &str, id: i64| face_check(addr, query).1.contains(&id);
+    let s0 = stats();
+
+    // Far from Anna, nobody suggested: not matched yet.
+    let far = face_id_of_person(addr, &lib, "Mix/far.png");
+    let (dora, other) = (face_id_of_person(addr, &lib, "Dora/d4.png"), face_id_of_person(addr, &lib, "Dora/d1.png"));
+    assert!(has("unmatched=true", far) && has("unmatched=true", dora) && has("", dora) && !has("not_face=true", dora));
+    let near = |id: i64| -> Vec<i64> {
+        get(addr, &format!("/api/faces/{id}/similar?limit=200")).json().as_array().unwrap().iter().map(|f| f["id"].as_i64().unwrap()).collect()
+    };
+    assert!(near(other).contains(&dora));
+
+    // "Not a face": gone from all and from "not matched yet", in "not a face".
+    ok(addr, "/api/faces/not-face", &json!({ "faces": [dora] }));
+    assert!(!has("", dora) && !has("unmatched=true", dora) && has("not_face=true", dora));
+    assert!(!near(other).contains(&dora), "neighbours");
+    let s1 = stats();
+    assert_eq!((n(&s1, "not_faces"), n(&s1, "unmatched"), n(&s1, "faces")), (n(&s0, "not_faces") + 1, n(&s0, "unmatched") - 1, n(&s0, "faces")));
+
+    // Undone: back.
+    ok(addr, "/api/faces/undo", &json!({ "faces": [dora] }));
+    assert!(has("", dora) && has("unmatched=true", dora) && !has("not_face=true", dora));
+    assert!(near(other).contains(&dora), "neighbours");
+    assert_eq!(n(&stats(), "not_faces"), n(&s0, "not_faces"));
+
+    // Named: matched now, still a face.
+    ok(addr, "/api/faces/assign", &json!({ "faces": [far], "name": "Eve" }));
+    assert!(!has("unmatched=true", far) && has("", far));
+    let s2 = stats();
+    assert_eq!(n(&s2, "unmatched"), n(&s0, "unmatched") - 1);
+
+    // A photo removed, found by a scan in another process: its face is gone.
+    let carl = face_id_of_person(addr, &lib, "Carl/c2.png");
+    std::fs::remove_file(lib.path("Carl/c2.png")).unwrap();
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_shoebox")).arg("scan").arg(&lib.root).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(!has("", carl) && !has("unmatched=true", carl));
+    assert_eq!(n(&stats(), "faces"), n(&s2, "faces") - 1);
+    server.stop().unwrap();
 }
 
 /// What the server shows of people and clusters, compared with what a

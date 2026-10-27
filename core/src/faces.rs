@@ -14,7 +14,7 @@
 //! face that is confirmed, ignored or "not a face" has no stored crop (the
 //! UI cuts it out of the photo's thumbnail); `prune_crops` removes them.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -27,7 +27,7 @@ use crate::pets::Space;
 use crate::db;
 use crate::fingerprint;
 use crate::media;
-use crate::people::Matched;
+use crate::people::{Decision, Matched, View};
 use crate::recognize::{self, FACES_ROT, KINDS};
 use crate::thumbs::{self, Source};
 
@@ -53,16 +53,6 @@ const SCORE_BUCKETS: [f64; 4] = [0.88, 0.90, 0.92, 0.94];
 /// Too small to take part in clustering (`MIN_CLUSTER_PX`).
 pub fn too_small(px: f64) -> bool {
     px < MIN_CLUSTER_PX
-}
-
-/// SQL for "a row of `recog.faces` (alias `f`) in this space" in a database
-/// of this `version` (before v5 there are no pets and no `species`).
-fn space_filter(space: Space, version: i32) -> &'static str {
-    match (space, version >= 5) {
-        (Space::Faces, false) => "1 = 1",
-        (Space::Pets, false) => "0 = 1",
-        (space, true) => space.filter(),
-    }
 }
 
 /// SQL for a face's width in px of the copy the worker saw (`f` a row of
@@ -160,8 +150,13 @@ pub fn stats(conn: &Connection) -> Result<Stats> {
 
 /// The stats of one space: people's faces, or cats and dogs.
 pub fn stats_of(conn: &Connection, space: Space) -> Result<Stats> {
-    let version: i32 = conn.pragma_query_value(Some("recog"), "user_version", |r| r.get(0))?;
-    let roll = if version >= 2 { "f.roll" } else { "0" };
+    stats_in(conn, &View::load(conn)?, space)
+}
+
+/// `stats_of` with the faces and decisions from a people view read before
+/// (the photo app's kept one): only the photos looked at, the errors and the
+/// runs are counted in SQL.
+pub fn stats_in(conn: &Connection, view: &View, space: Space) -> Result<Stats> {
     let task = space.task();
     let present = format!("(SELECT DISTINCT quick_hash FROM files WHERE missing_since IS NULL AND kind IN ({KINDS}))");
 
@@ -189,35 +184,22 @@ pub fn stats_of(conn: &Connection, space: Space) -> Result<Stats> {
         Space::Pets => (buckets(&PET_WIDTH_BUCKETS), buckets(&PET_SCORE_BUCKETS)),
     };
     let (mut faces, mut rotated_faces, mut small, mut not_faces) = (0, 0, 0, 0);
-    let view = crate::people::View::load(conn)?;
-    let (marked, pet_ids, unmatched_ids) = (view.m.not_faces(), view.m.pet_faces(), view.unplaced_ids());
-    let mut unmatched = 0;
-    let mut pet_faces = 0;
-    let mut rows = conn.prepare(&format!(
-        "SELECT {}, f.score, {roll}, f.id FROM recog.faces f
-         JOIN recog.looked l ON l.key = f.key AND l.task = '{task}'
-         WHERE {filter} AND f.key IN {present}",
-        size_px(roll),
-        filter = space_filter(space, version)
-    ))?;
-    let mut rows = rows.query([])?;
-    while let Some(r) = rows.next()? {
-        let (px, score, roll): (Option<f64>, f64, i64) = (r.get(0)?, r.get(1)?, r.get(2)?);
-        let px = px.unwrap_or(0.0);
-        let id: i64 = r.get(3)?;
-        if pet_ids.contains(&id) {
+    let (mut unmatched, mut pet_faces) = (0, 0);
+    for i in listable(view, space) {
+        let f = &view.m.faces[i];
+        if view.pet_faces().contains(&f.id) {
             pet_faces += 1;
             continue;
         }
-        let not_face = marked.contains(&id);
-        let is_unmatched = unmatched_ids.contains(&id);
+        let not_face = is_not_face(view, i);
+        let is_unmatched = view.unplaced_ids().contains(&f.id);
         unmatched += is_unmatched as u64;
         faces += 1;
-        rotated_faces += (roll != 0) as u64;
-        small += space.too_small(px) as u64;
+        rotated_faces += (f.roll != 0) as u64;
+        small += space.too_small(f.px) as u64;
         not_faces += not_face as u64;
-        count_into(&mut widths, px, not_face, is_unmatched);
-        count_into(&mut scores, score, not_face, is_unmatched);
+        count_into(&mut widths, f.px, not_face, is_unmatched);
+        count_into(&mut scores, f.score, not_face, is_unmatched);
     }
 
     let runs = conn
@@ -511,94 +493,81 @@ pub struct List {
 const DEFAULT_LIMIT: usize = 300;
 const MAX_LIMIT: usize = 2000;
 
-/// `SELECT` of an `Item` (plus `extra` columns at the end) over faces of
-/// present photos; `f` is the face, `p` its file.
-fn item_sql(extra: &str, filter: &str, space: Space) -> String {
-    format!(
-        "SELECT f.id, p.id, p.kind, p.quick_hash, {px} AS px, f.score, f.roll, f.species{extra}
-         FROM recog.faces f
-         JOIN recog.looked l ON l.key = f.key AND l.task = '{task}'
-         JOIN ({PRESENT}) p ON p.quick_hash = f.key
-         WHERE {space_filter} AND {filter}",
-        px = size_px("f.roll"),
-        task = space.task(),
-        space_filter = space.filter()
-    )
+/// The space `kind` names: `faces` (also when empty or not given) or `pets`.
+pub fn space_of(kind: Option<&str>) -> Result<Space, String> {
+    match kind {
+        None | Some("") | Some("faces") => Ok(Space::Faces),
+        Some("pets") => Ok(Space::Pets),
+        Some(other) => Err(format!("kind is faces or pets, not {other:?}")),
+    }
 }
 
-fn item(r: &rusqlite::Row) -> rusqlite::Result<Item> {
-    let key: String = r.get(3)?;
-    let px: f64 = r.get::<_, Option<f64>>(4)?.unwrap_or(0.0);
-    let species: Option<String> = r.get(7)?;
-    Ok(Item {
-        id: r.get(0)?,
-        file: r.get(1)?,
-        kind: r.get(2)?,
-        version: key.chars().take(8).collect(),
-        px,
-        score: r.get(5)?,
-        roll: r.get(6)?,
-        small: Space::of(species.as_deref()).too_small(px),
-        species,
+/// The faces of `space` the Face check is about (indexes into `view.m.faces`):
+/// those whose content is present and was looked at by the space's pass.
+fn listable(view: &View, space: Space) -> impl Iterator<Item = usize> + '_ {
+    (0..view.m.faces.len()).filter(move |&i| {
+        let f = &view.m.faces[i];
+        f.space() == space && f.looked && view.present_file(&f.key).is_some()
     })
 }
 
-/// Faces of present photos, filtered and sorted for the face check page.
-/// `conn` has `recog` attached (at the current schema).
-pub fn list(conn: &Connection, q: &ListQuery) -> Result<List> {
-    let order = match q.sort.as_deref() {
-        Some("score") => "f.score",
-        _ => "px",
+fn is_not_face(view: &View, i: usize) -> bool {
+    view.m.decided(i).is_some_and(|d| d.decision == Decision::NotFace)
+}
+
+/// Face `i` of `view` as listed; its content is present (`listable`).
+fn item(view: &View, i: usize) -> Option<Item> {
+    let f = &view.m.faces[i];
+    let (file, kind) = view.present_file(&f.key)?;
+    Some(Item {
+        id: f.id,
+        file,
+        kind: kind.to_string(),
+        version: f.key.chars().take(8).collect(),
+        px: f.px,
+        score: f.score,
+        roll: f.roll,
+        small: f.space().too_small(f.px),
+        species: f.species.clone(),
+    })
+}
+
+/// Faces of present photos, filtered and sorted for the face check page,
+/// from the people view (`serve::App::people_view`): no SQL. `Err` says
+/// which parameter is wrong.
+pub fn list_in(view: &View, q: &ListQuery) -> Result<List, String> {
+    let space = space_of(q.kind.as_deref())?;
+    let by_score = match q.sort.as_deref() {
+        None | Some("") | Some("size") => false,
+        Some("score") => true,
+        Some(other) => return Err(format!("sort is size or score, not {other:?}")),
     };
-    let dir = if q.desc { "DESC" } else { "ASC" };
-    // Ids are numbers from the database, so they can go into the SQL.
-    let m = crate::people::Matched::load(conn, None)?;
-    let join = |ids: HashSet<i64>| ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
-    let pet_faces = m.pet_faces();
-    let filter = if q.unmatched {
-        format!(
-            "px >= ?1 AND px < ?2{} AND f.id IN ({})",
-            if q.rotated { " AND f.roll != 0" } else { "" },
-            join(crate::people::View::load(conn)?.unplaced_ids())
-        )
-    } else if q.pet_face {
-        format!("px >= ?1 AND px < ?2{} AND f.id IN ({})", if q.rotated { " AND f.roll != 0" } else { "" }, join(pet_faces))
-    } else {
-        let mut hidden = pet_faces;
-        let marked = m.not_faces();
-        let listed: HashSet<i64> = if q.not_face { marked } else { hidden.extend(marked); hidden };
-        format!(
-            "px >= ?1 AND px < ?2{} AND f.id {} ({})",
-            if q.rotated { " AND f.roll != 0" } else { "" },
-            if q.not_face { "IN" } else { "NOT IN" },
-            join(listed)
-        )
-    };
-    let space = match q.kind.as_deref() {
-        Some("pets") => Space::Pets,
-        _ => Space::Faces,
-    };
-    let sql = format!(
-        "{} ORDER BY {order} {dir}, f.id LIMIT ?3 OFFSET ?4",
-        item_sql(", count(*) OVER ()", &filter, space)
-    );
-    let limit = q.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT);
     let (min, max) = (q.min_px.unwrap_or(0.0), q.max_px.unwrap_or(f64::MAX));
-    let mut total = 0;
-    let faces = conn
-        .prepare(&sql)?
-        .query_map(params![min, max, limit as i64, q.offset as i64], |r| {
-            total = r.get::<_, i64>(8)? as u64;
-            item(r)
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    if faces.is_empty() && q.offset > 0 {
-        // Past the end: count without the page.
-        total = conn.query_row(&format!("SELECT count(*) FROM ({})", item_sql("", &filter, space)), params![min, max], |r| {
-            r.get::<_, i64>(0)
-        })? as u64;
-    }
-    Ok(List { total, faces, min_cluster_px: space.min_px() })
+    let (pet_faces, unplaced) = (view.pet_faces(), view.unplaced_ids());
+    let mut faces: Vec<usize> = listable(view, space)
+        .filter(|&i| {
+            let f = &view.m.faces[i];
+            let shown = if q.unmatched {
+                unplaced.contains(&f.id)
+            } else if q.pet_face {
+                pet_faces.contains(&f.id)
+            } else {
+                is_not_face(view, i) == q.not_face && !pet_faces.contains(&f.id)
+            };
+            shown && f.px >= min && f.px < max && (!q.rotated || f.roll != 0)
+        })
+        .collect();
+    let value = |i: usize| if by_score { view.m.faces[i].score } else { view.m.faces[i].px };
+    faces.sort_by(|&a, &b| {
+        let order = value(a).total_cmp(&value(b));
+        if q.desc { order.reverse() } else { order }.then(view.m.faces[a].id.cmp(&view.m.faces[b].id))
+    });
+    let limit = q.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT);
+    Ok(List {
+        total: faces.len() as u64,
+        faces: faces.iter().skip(q.offset).take(limit).filter_map(|&i| item(view, i)).collect(),
+        min_cluster_px: space.min_px(),
+    })
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -609,34 +578,39 @@ pub struct Neighbour {
     pub similarity: f32,
 }
 
-/// The faces (of present photos, same model, not marked "not a face") whose
-/// embeddings are closest to face `id`'s, best first; `None` if there is no
-/// such face. Only reads: a look at which threshold separates people.
-pub fn similar(conn: &Connection, id: i64, limit: usize) -> Result<Option<Vec<Neighbour>>> {
+/// The faces (of present photos, same model, not marked "not a face", not
+/// taken for a pet's) whose embeddings are closest to face `id`'s, best
+/// first; `None` if there is no such face. The faces and what is decided
+/// come from the people view; only the embeddings are read here. Only reads:
+/// a look at which threshold separates people.
+pub fn similar(conn: &Connection, view: &View, id: i64, limit: usize) -> Result<Option<Vec<Neighbour>>> {
     let target: Option<(String, Vec<u8>, Option<String>)> = conn
         .query_row("SELECT model, emb, species FROM recog.faces WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .optional()?;
     let Some((model, emb, species)) = target else { return Ok(None) };
     let space = Space::of(species.as_deref());
     let target = floats(&emb);
-    let m = crate::people::Matched::load(conn, None)?;
-    let mut marked = m.not_faces();
-    marked.extend(m.pet_faces());
-    let mut stmt = conn.prepare(&item_sql(", f.emb", "f.model = ?1 AND f.id != ?2", space))?;
+    let shown: HashMap<i64, usize> = listable(view, space)
+        .filter(|&i| !is_not_face(view, i) && !view.pet_faces().contains(&view.m.faces[i].id))
+        .map(|i| (view.m.faces[i].id, i))
+        .collect();
+    let mut stmt =
+        conn.prepare(&format!("SELECT f.id, f.emb FROM recog.faces f WHERE f.model = ?1 AND f.id != ?2 AND {}", space.filter()))?;
     let mut rows = stmt.query(params![model, id])?;
     let mut all = Vec::new();
     while let Some(r) = rows.next()? {
-        let emb: Vec<u8> = r.get(8)?;
+        let Some(&i) = shown.get(&r.get(0)?) else { continue };
+        let emb: Vec<u8> = r.get(1)?;
         let other = floats(&emb);
-        if other.len() != target.len() || marked.contains(&r.get(0)?) {
+        if other.len() != target.len() {
             continue;
         }
         let similarity = target.iter().zip(&other).map(|(a, b)| a * b).sum::<f32>();
-        all.push(Neighbour { face: item(r)?, similarity });
+        all.push((i, similarity));
     }
-    all.sort_by(|a, b| b.similarity.total_cmp(&a.similarity));
+    all.sort_by(|a, b| b.1.total_cmp(&a.1));
     all.truncate(limit);
-    Ok(Some(all))
+    Ok(Some(all.into_iter().filter_map(|(i, similarity)| Some(Neighbour { face: item(view, i)?, similarity })).collect()))
 }
 
 fn floats(bytes: &[u8]) -> Vec<f32> {

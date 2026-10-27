@@ -165,9 +165,9 @@ the iPad opens `http://<ip>:7878/`. A restart of `serve` asks for the PIN again
       the launcher refuses jobs while the photo app runs, so new photos wait.
 - [ ] **Responsive on large libraries**: the Face check's "Not matched yet"
       took 2.5 minutes and froze the photo app (an id list in SQL, the one
-      shared connection, no sign of waiting). Four steps and one to
-      measure first, with measurements on the benchmark library:
-      [design/responsiveness.md](design/responsiveness.md).
+      shared connection, no sign of waiting). The Face check now answers from
+      the kept people view (step 1); left: three steps and one to measure
+      first: [design/responsiveness.md](design/responsiveness.md).
 - [ ] Media Foundation posters on Windows ("Decoders per build", step 5).
 - [ ] Server-side texts in both languages (API errors, job labels in the
       launcher, CLI): needs stable error codes; optional (phase 8).
@@ -226,8 +226,8 @@ My recommendations, for you to confirm or reject; the answer goes into
    person uses one computer; revisit if that changes.
 5. **One shared connection per drive in `serve`** (`App::conn`). On the
    benchmark library every request that used it held up all others for as
-   long as it ran (1 to 2 s for the Face check and the first suggestions, 33 s
-   for the Pet check's "Not matched yet"); a move holds it for the whole move.
+   long as it ran (2.2 s for the first suggestions, 0.4 s for the Face check's
+   stats and similar faces); a move holds it for the whole move.
    Recommend: a small pool of read-only connections, writes stay on
    `App::conn`; WAL stays off. Details:
    [design/responsiveness.md](design/responsiveness.md) (step 2, section 4).

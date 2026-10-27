@@ -16,7 +16,7 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::Result;
 use chrono::{Local, TimeZone};
-use rusqlite::{Connection, OptionalExtension, params_from_iter};
+use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 use serde::Serialize;
 
 use crate::classify::Kind;
@@ -690,24 +690,18 @@ pub fn all_tags(conn: &Connection) -> Result<Vec<Tag>> {
 /// `all_tags` without these files and without the files in these folders (the hidden
 /// photos, `Snapshot::hidden_exclusions`).
 pub fn all_tags_shown(conn: &Connection, files: &[i64], folders: &[i64]) -> Result<Vec<Tag>> {
-    let list = |ids: &[i64]| ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
-    let mut leave_out = String::new();
-    if !files.is_empty() {
-        leave_out.push_str(&format!(" AND f.id NOT IN ({})", list(files)));
-    }
-    if !folders.is_empty() {
-        leave_out.push_str(&format!(" AND f.folder_id NOT IN ({})", list(folders)));
-    }
-    let mut stmt = conn.prepare(&format!(
+    // Each set as one parameter, never written into the SQL (CLAUDE.md).
+    let mut stmt = conn.prepare(
         "SELECT t.id, t.name, count(DISTINCT f.id) AS n, max(ft.source = 'folder'), max(ft.source = 'user'),
                 max(CASE WHEN ft.source = 'user' THEN ft.added_at END),
                 count(DISTINCT CASE WHEN ft.source = 'user' THEN f.id END) FROM tags t
          JOIN file_tags ft ON ft.tag_id = t.id
-         JOIN files f ON f.id = ft.file_id AND f.missing_since IS NULL AND f.kind != 'raw'{leave_out}
-         GROUP BY t.id ORDER BY n DESC, t.name"
-    ))?;
+         JOIN files f ON f.id = ft.file_id AND f.missing_since IS NULL AND f.kind != 'raw'
+           AND f.id NOT IN (SELECT value FROM json_each(?1)) AND f.folder_id NOT IN (SELECT value FROM json_each(?2))
+         GROUP BY t.id ORDER BY n DESC, t.name",
+    )?;
     let tags = stmt
-        .query_map([], |r| {
+        .query_map(params![serde_json::to_string(files)?, serde_json::to_string(folders)?], |r| {
             let kind = match (r.get::<_, bool>(3)?, r.get::<_, bool>(4)?) {
                 (true, true) => TagKind::Both,
                 (false, true) => TagKind::Own,

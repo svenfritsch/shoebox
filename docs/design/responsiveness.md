@@ -1,6 +1,7 @@
 # Responsive on large libraries (planned)
 
-October 2026, not built. Linked from [open.md](../open.md). Each step, when it
+October 2026. Step 1 is merged (why, and what was not done: "No id lists in
+SQL" in [decisions.md](../decisions.md)); the others are not built. Linked from [open.md](../open.md). Each step, when it
 is merged: its rule in `CLAUDE.md` (section 6), the entry "One shared
 connection per drive" in [decisions.md](../decisions.md) with step 2, the
 guide with step 4, and its part of this file deleted; the file goes with the
@@ -16,15 +17,8 @@ and reads do not wait for each other, there is nothing long left to stop.
 
 ## 1. What happened
 
-1. **A query that grows with the square of the library** (`faces::list`).
-   The filter "Not matched yet" was written into the SQL as
-   `f.id IN (<every unmatched face id>)`, up to ~100,000 numbers. With more
-   than about a hundred numbers SQLite takes the list as part of the lookup in
-   the index by content (`faces_key`, whose last column is the row id): for
-   every present photo it looks up every number of the list. On top, the
-   request read every face and decision twice (`Matched::load`,
-   `View::load`), and the page's first request, `/faces/stats`, reads them
-   once more (`View::load`).
+1. **A query that grows with the square of the library** (`faces::list`):
+   every unmatched face id written into the SQL. Fixed by step 1.
 2. **One connection for everything.** Most handlers lock `App::conn` (one
    `Mutex<Connection>` per library, `library.db` with `thumbs.db` and
    `recognition.db` attached). While one request holds it, every other one
@@ -67,22 +61,13 @@ app was frozen.
 The probe waits exactly as long as each request holds `App::conn`; the one
 request that reads on a connection of its own (`/people`) holds up nobody.
 
-The SQL alone, the Face check query with the ids written into it against the
-same ids passed as one set (SQLite 3.45 in Python; the program bundles 3.53):
-
-| ids in the list | `f.id IN (1,2,…)` | `IN (SELECT value FROM json_each(?1))` |
-|---|---|---|
-| 100 | 0.07 s | 0.10 s |
-| 400 | 9.6 s | 0.07 s |
-| 2,000 | ~65 s (the program) | 0.09 s |
-| 100,000 | over 10 min (the program) | 0.53 s |
-
-`EXPLAIN QUERY PLAN` of the slow case: `SCAN p` (the present photos), then
-`SEARCH f USING INDEX faces_key (key=? AND rowid=?)`: one seek per photo and
-id. The plan also depends on the SQLite version: the Pet check's list (1,519
-ids) took 0.85 s in SQLite 3.45 and 33 s in the program. Cutting the list into
-pieces does not help either: pieces under ~100 ids are fast, but 100,000 ids
-are then a thousand queries (about 70 s); pieces of 400 take 9.6 s each.
+After step 1, same library and machine: every Face check list (all faces,
+each filter, "Not matched yet" of faces and pets) 0.01 to 0.11 s, the probe
+not held up; `/faces/stats` 0.36 s (pets 0.20 s) and `similar` 0.42 s, the
+probe waiting about as long: the counts over `recog.looked` and the
+embeddings still read on `App::conn`. The first Face check request after a
+start reads the people view on its own connection (0.9 s; `/faces/stats`
+then takes 1.9 s, the probe waiting its 0.36 s).
 
 ## 3. Steps
 
@@ -90,49 +75,10 @@ Each step is a pull request of its own and helps alone.
 
 | Step | What | Fixes |
 |---|---|---|
-| 1 | Face check from the kept people view; no id lists in SQL | the 2.5 minutes, and the other Face check requests of 1 to 2 s |
 | 2 | A pool of read-only connections; writes stay on `App::conn`; requests nobody waits for do not start | one request holding up all others |
 | 3 | Slow-request log; the Face check in `bench-people.py` | finding the next one |
 | 4 | A busy line while a request takes long | no sign of waiting |
 | 5 | Measure first: the people view and `similar` read in pieces, and smaller items | commits waiting behind long reads |
-
-### Step 1: the Face check from the kept people view
-
-The people view (`App::people_view`, `people::View`) already holds every
-detected face with its content, box, width (`px`), score, roll and species,
-the decisions matched to them, the present files, the faces taken for a pet's
-and the clusters. It is read on a connection of its own and kept until
-something it was read from changes. Everything the Face check asks for can be
-answered from it.
-
-- `faces::list_in(view, query)`: the faces of the space whose content is
-  present and was looked at (as the `JOIN recog.looked` and `JOIN PRESENT` do
-  now), filtered in Rust: `unmatched` is `View::unplaced_ids` (kept in the
-  view, `OnceLock`, like the counts), `pet_face` the view's pet faces,
-  `not_face` the faces decided "not a face", the rest leaves both out; sizes,
-  `rotated`; sorted by size or score, then id; `total`, then the page.
-  Sorting 300,000 numbers takes milliseconds.
-- `faces::stats_in(conn, view, space)`: the buckets from the view's faces
-  instead of a fresh `View::load` and a join over all faces; the few counts
-  over `recog.looked` (photos looked at, errors, runs; about 0.2 s) stay SQL.
-- `faces::similar`: the faces to leave out from the view instead of
-  `Matched::load`. Reading the embeddings stays (a calibration tool, rarely
-  used; keeping them in memory was decided against, 200 MB).
-- The handlers take the view first (`app.people_view()`, an `Arc`), then a
-  connection for the little SQL that is left.
-- **No list of ids written into SQL**, anywhere. `browse::all_tags_shown`
-  writes the hidden photos and folders as `NOT IN (…)`; `NOT IN` cannot drive
-  a lookup, so it is not slow, but it goes to `json_each` too, so nobody copies
-  the pattern.
-
-Tests (`core/tests/people.rs`, next to the pets' `unmatched` test): for each
-kind and filter the listed ids are exactly the expected set and `total` equals
-the stats' number (`unmatched`, `not_faces`, `pet_faces`, `small`); sort
-orders with ties by id; pages joined equal one large page, an offset past the
-end gives `total` and no faces; a decision made in between is seen at once
-(marked "not a face": gone from all, there in `not_face`; named: gone from
-`unmatched`); an unknown `kind` refused. The speed is not a test (a time limit
-in CI is flaky); step 3 measures it.
 
 ### Step 2: a pool of read-only connections
 
@@ -238,10 +184,6 @@ Only if `bench-people.py` or the slow-request log shows it:
 | HTTP/2 | Browsers speak it only over TLS: certificates on every device (the iPad) for a local app |
 | Pictures from a second host name, for six more connections | `Cross-Origin-Resource-Policy: same-origin`, the session cookie and the PIN would all need exceptions |
 | HTTP timeouts (`tower::timeout`) | End the reply, not the blocking work |
-| The id list cut into pieces | See section 2: fast only in pieces under ~100 ids, a thousand queries for the whole list |
-| Sorting the face list in the browser | 300,000 faces are ~15 MB of JSON |
-| A test that fails on `IN (` lists in the source, like `no_emoji.rs` | A text search cannot tell the harmful list from the harmless ones: of the 20 `IN ({…})` in `core/src` today, two are the harmful kind (both in `faces::list`); the others are fixed lists of kinds, lists looked up by their own index, a filter (`NOT IN`) or a subquery. It would need an exception on almost every line and still miss a list built another way. The rule in `CLAUDE.md` and the benchmark guard it |
-| More `EXPLAIN QUERY PLAN` tests | After step 1 the Face check has no SQL left to check; the queries about one photo or person already have such a test (`faces_sql`), and new ones of that kind get one as before. The kept views read whole tables on purpose |
 
 ## 5. Pitfalls
 
@@ -263,12 +205,6 @@ Only if `bench-people.py` or the slow-request log shows it:
 
 ## 6. Rules for CLAUDE.md (each added with the step that makes it true)
 
-- No list of values in SQL that grows with the library: filter in Rust over a
-  kept view or pass the set as one parameter (`IN (SELECT value FROM
-  json_each(?1))`). Short fixed lists (the kinds of files) and chunks looked up
-  by their own index (`tags::own_tags_of`, 500 ids by primary key) are fine. A
-  request never reads all faces or all files itself; it asks a kept view.
-  (step 1)
 - Reads take a reader (`app.read()`), only `App::conn` writes; take kept views
   first, then a reader, and never hold a connection while waiting for
   something else. (step 2)

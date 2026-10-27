@@ -115,7 +115,37 @@ are in `git log` (the old `docs/plan.md` and `docs/phaseN.md`).
   people view takes about 1 s to read and about 190 MB. Both grow in step with
   the library, so this fits the target (~100,000 files, up to 1 TB) and up to
   about three times it; a much larger library would need views that are
-  updated in place instead of read again.
+  updated in place instead of read again. The Face check (list, stats,
+  similar faces) answers from the people view too (October 2026): its filters
+  and sorting run in Rust over the view's faces, which takes milliseconds;
+  only the counts of photos looked at, errors and runs, and `similar`'s
+  embeddings, are still read in SQL. The embeddings stay out of the view
+  (about 200 MB more for a calibration tool that is rarely used).
+- **No id lists in SQL** (rule in `CLAUDE.md`). The Face check's "Not matched
+  yet" wrote every unmatched face id into its SQL (`f.id IN (1,2,…)`, up to
+  ~100,000 numbers) and took 2.5 minutes on the real drive. With more than
+  about a hundred numbers SQLite takes the list into the lookup in the index
+  by content (`faces_key`, whose last column is the row id): one seek per
+  present photo and id. Measured with the same query (SQLite 3.45 in Python;
+  the program bundles 3.53, whose plan was worse: a Pet check list of 1,519
+  ids took 0.85 s in 3.45 and 33 s in the program):
+
+  | ids in the list | `f.id IN (1,2,…)` | `IN (SELECT value FROM json_each(?1))` |
+  |---|---|---|
+  | 100 | 0.07 s | 0.10 s |
+  | 400 | 9.6 s | 0.07 s |
+  | 2,000 | ~65 s (the program) | 0.09 s |
+  | 100,000 | over 10 min (the program) | 0.53 s |
+
+  Not done: cutting the list into pieces (fast only under ~100 ids each, so a
+  thousand queries for the whole list, about 70 s); sorting the face list in
+  the browser (300,000 faces are ~15 MB of JSON); a test that fails on `IN (`
+  in the source, like `no_emoji.rs` (a text search cannot tell the harmful
+  list from fixed lists of kinds, lists looked up by their own index, `NOT IN`
+  filters and subqueries, and would miss a list built another way: the rule
+  and the benchmark guard it); more `EXPLAIN QUERY PLAN` tests (the Face check
+  has no SQL left to check; the queries about one photo or person already
+  have one, `faces_sql`, and new ones of that kind get one as before).
 - **Several drives in one server**: every API route carries the library id
   (file ids are per database); offline drives answer 503 for their own routes
   only. People match by name across drives. A drive is a backup or a separate

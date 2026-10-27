@@ -119,6 +119,9 @@ pub struct Detected {
     pub model: String,
     /// `cat` or `dog` for a pet, `None` for a person's face.
     pub species: Option<String>,
+    /// Its content has a row of its pass in `recog.looked` (which `px` is
+    /// measured on): what the Face check lists and counts.
+    pub looked: bool,
 }
 
 impl Detected {
@@ -178,7 +181,7 @@ fn faces_sql(version: i32, one: bool) -> String {
     // Before v5 there are no pets.
     let species = if version >= 5 { "f.species" } else { "NULL" };
     format!(
-        "SELECT f.id, f.key, f.x, f.y, f.w, f.h, {roll}, {px}, f.score, f.model, {species} FROM recog.faces f
+        "SELECT f.id, f.key, f.x, f.y, f.w, f.h, {roll}, {px}, f.score, f.model, {species}, l.key IS NOT NULL FROM recog.faces f
          LEFT JOIN recog.looked l ON l.key = f.key AND l.task = CASE WHEN {species} IS NULL THEN '{FACES}' ELSE '{PETS}' END
          {filter} ORDER BY f.id",
         px = faces::size_px(roll),
@@ -250,6 +253,7 @@ impl Matched {
                     score: r.get(8)?,
                     model: r.get(9)?,
                     species: r.get(10)?,
+                    looked: r.get(11)?,
                 });
             }
         }
@@ -653,6 +657,8 @@ pub struct View {
     grouped: [OnceLock<Vec<ClusterFaces>>; 3],
     /// `person_counts`, likewise.
     counts: OnceLock<HashMap<i64, PersonCounts>>,
+    /// `unplaced_ids`, likewise.
+    unplaced: OnceLock<HashSet<i64>>,
 }
 
 /// What `people` counts for a person from the faces and decisions alone.
@@ -712,6 +718,7 @@ impl View {
             person_species,
             grouped: Default::default(),
             counts: OnceLock::new(),
+            unplaced: OnceLock::new(),
         }))
     }
 
@@ -768,6 +775,7 @@ impl View {
             person_species,
             grouped: Default::default(),
             counts: OnceLock::new(),
+            unplaced: OnceLock::new(),
         })
     }
 
@@ -868,12 +876,25 @@ impl View {
     /// Ids of the faces not matched yet: nothing decided, nobody suggested
     /// (not even as "maybe"), and not taken for a pet's. Faces of every
     /// size, so the Face check can show what recognition could not place.
-    pub fn unplaced_ids(&self) -> HashSet<i64> {
-        (0..self.m.faces.len())
-            .filter(|&i| self.m.states[i].decided.is_none() && self.suggestion(i).is_none())
-            .map(|i| self.m.faces[i].id)
-            .filter(|id| !self.pet_faces.contains(id))
-            .collect()
+    pub fn unplaced_ids(&self) -> &HashSet<i64> {
+        self.unplaced.get_or_init(|| {
+            (0..self.m.faces.len())
+                .filter(|&i| self.m.states[i].decided.is_none() && self.suggestion(i).is_none())
+                .map(|i| self.m.faces[i].id)
+                .filter(|id| !self.pet_faces.contains(id))
+                .collect()
+        })
+    }
+
+    /// Ids of the faces taken for a pet's (`Matched::pet_faces`).
+    pub fn pet_faces(&self) -> &HashSet<i64> {
+        &self.pet_faces
+    }
+
+    /// The present file with content `key` (the lowest id, as
+    /// `faces::PRESENT` picks it) and its kind.
+    pub fn present_file(&self, key: &str) -> Option<(i64, &str)> {
+        self.present.get(key).map(|(id, kind)| (*id, kind.as_str()))
     }
 
     /// Detected face `i`, with what is decided or suggested.
@@ -2513,7 +2534,7 @@ mod tests {
     }
 
     fn face(id: i64, key: &str, b: [f64; 4]) -> Detected {
-        Detected { id, key: key.into(), b, roll: 0, px: 100.0, score: 0.9, model: "m".into(), species: None }
+        Detected { id, key: key.into(), b, roll: 0, px: 100.0, score: 0.9, model: "m".into(), species: None, looked: true }
     }
 
     fn decision(id: i64, key: &str, b: [f64; 4], d: Decision, person: Option<i64>, at: i64) -> DecisionRow {
