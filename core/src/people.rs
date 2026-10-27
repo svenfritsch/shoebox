@@ -119,6 +119,9 @@ pub struct Detected {
     pub model: String,
     /// `cat` or `dog` for a pet, `None` for a person's face.
     pub species: Option<String>,
+    /// Its content has a row of its pass in `recog.looked` (which `px` is
+    /// measured on): what the Face check lists and counts.
+    pub looked: bool,
 }
 
 impl Detected {
@@ -178,7 +181,7 @@ fn faces_sql(version: i32, one: bool) -> String {
     // Before v5 there are no pets.
     let species = if version >= 5 { "f.species" } else { "NULL" };
     format!(
-        "SELECT f.id, f.key, f.x, f.y, f.w, f.h, {roll}, {px}, f.score, f.model, {species} FROM recog.faces f
+        "SELECT f.id, f.key, f.x, f.y, f.w, f.h, {roll}, {px}, f.score, f.model, {species}, l.key IS NOT NULL FROM recog.faces f
          LEFT JOIN recog.looked l ON l.key = f.key AND l.task = CASE WHEN {species} IS NULL THEN '{FACES}' ELSE '{PETS}' END
          {filter} ORDER BY f.id",
         px = faces::size_px(roll),
@@ -250,6 +253,7 @@ impl Matched {
                     score: r.get(8)?,
                     model: r.get(9)?,
                     species: r.get(10)?,
+                    looked: r.get(11)?,
                 });
             }
         }
@@ -337,12 +341,9 @@ impl Matched {
         self.states[i].decided.map(|d| &self.decisions[d])
     }
 
-    /// Ids of the faces marked "not a face".
-    pub fn not_faces(&self) -> HashSet<i64> {
-        (0..self.faces.len())
-            .filter(|&i| self.decided(i).is_some_and(|d| d.decision == Decision::NotFace))
-            .map(|i| self.faces[i].id)
-            .collect()
+    /// Whether face `i` is marked "not a face" ("not a pet" for a pet).
+    pub fn is_not_face(&self, i: usize) -> bool {
+        self.decided(i).is_some_and(|d| d.decision == Decision::NotFace)
     }
 
     /// Ids of the people's faces that are really a pet's: inside a pet found
@@ -352,8 +353,7 @@ impl Matched {
     pub fn pet_faces(&self) -> HashSet<i64> {
         let mut pets: HashMap<&str, Vec<[f64; 4]>> = HashMap::new();
         for (i, f) in self.faces.iter().enumerate() {
-            let not_a_pet = self.decided(i).is_some_and(|d| d.decision == Decision::NotFace);
-            if f.species.is_some() && !not_a_pet {
+            if f.species.is_some() && !self.is_not_face(i) {
                 pets.entry(f.key.as_str()).or_default().push(f.b);
             }
         }
@@ -536,10 +536,6 @@ pub fn pet_face_ids(conn: &Connection) -> Result<HashSet<i64>> {
     Ok(Matched::load(conn, None)?.pet_faces())
 }
 
-pub fn not_face_ids(conn: &Connection) -> Result<HashSet<i64>> {
-    Ok(Matched::load(conn, None)?.not_faces())
-}
-
 // ---------------------------------------------------------------- the view: decisions + cache
 
 /// Content → (a present file, its kind): all, or of one content.
@@ -653,6 +649,8 @@ pub struct View {
     grouped: [OnceLock<Vec<ClusterFaces>>; 3],
     /// `person_counts`, likewise.
     counts: OnceLock<HashMap<i64, PersonCounts>>,
+    /// `unplaced_ids`, likewise.
+    unplaced: OnceLock<HashSet<i64>>,
 }
 
 /// What `people` counts for a person from the faces and decisions alone.
@@ -712,6 +710,7 @@ impl View {
             person_species,
             grouped: Default::default(),
             counts: OnceLock::new(),
+            unplaced: OnceLock::new(),
         }))
     }
 
@@ -768,6 +767,7 @@ impl View {
             person_species,
             grouped: Default::default(),
             counts: OnceLock::new(),
+            unplaced: OnceLock::new(),
         })
     }
 
@@ -868,12 +868,25 @@ impl View {
     /// Ids of the faces not matched yet: nothing decided, nobody suggested
     /// (not even as "maybe"), and not taken for a pet's. Faces of every
     /// size, so the Face check can show what recognition could not place.
-    pub fn unplaced_ids(&self) -> HashSet<i64> {
-        (0..self.m.faces.len())
-            .filter(|&i| self.m.states[i].decided.is_none() && self.suggestion(i).is_none())
-            .map(|i| self.m.faces[i].id)
-            .filter(|id| !self.pet_faces.contains(id))
-            .collect()
+    pub fn unplaced_ids(&self) -> &HashSet<i64> {
+        self.unplaced.get_or_init(|| {
+            (0..self.m.faces.len())
+                .filter(|&i| self.m.states[i].decided.is_none() && self.suggestion(i).is_none())
+                .map(|i| self.m.faces[i].id)
+                .filter(|id| !self.pet_faces.contains(id))
+                .collect()
+        })
+    }
+
+    /// Ids of the faces taken for a pet's (`Matched::pet_faces`).
+    pub fn pet_faces(&self) -> &HashSet<i64> {
+        &self.pet_faces
+    }
+
+    /// The present file with content `key` (the lowest id, as
+    /// `faces::PRESENT` picks it) and its kind.
+    pub fn present_file(&self, key: &str) -> Option<(i64, &str)> {
+        self.present.get(key).map(|(id, kind)| (*id, kind.as_str()))
     }
 
     /// Detected face `i`, with what is decided or suggested.
@@ -987,7 +1000,7 @@ pub fn file_faces(conn: &Connection, key: &str, video: bool) -> Result<FileFaces
         .map(|f| ([f.x, f.y, f.w, f.h].map(f64::to_bits), f.landmarks))
         .collect();
     let mut faces: Vec<FileFace> = (0..v.m.faces.len())
-        .filter(|&i| v.m.decided(i).is_none_or(|d| d.decision != Decision::NotFace))
+        .filter(|&i| !v.m.is_not_face(i))
         .filter(|&i| !v.pet_faces.contains(&v.m.faces[i].id))
         .map(|i| FileFace {
             item: v.item(i),
@@ -2261,11 +2274,10 @@ pub fn keys_of_all_pets(conn: &Connection) -> Result<HashMap<String, HashSet<Str
         let m = Matched::load(conn, None)?;
         for i in 0..m.faces.len() {
             let f = &m.faces[i];
-            let decided = m.decided(i);
-            if f.species.is_none() || decided.is_some_and(|d| d.decision == Decision::NotFace) {
+            if f.species.is_none() || m.is_not_face(i) {
                 continue;
             }
-            let person = decided.filter(|d| d.decision == Decision::Confirmed).and_then(|d| d.person);
+            let person = m.decided(i).filter(|d| d.decision == Decision::Confirmed).and_then(|d| d.person);
             add(f.species.as_deref(), person, &f.key);
         }
     }
@@ -2513,7 +2525,7 @@ mod tests {
     }
 
     fn face(id: i64, key: &str, b: [f64; 4]) -> Detected {
-        Detected { id, key: key.into(), b, roll: 0, px: 100.0, score: 0.9, model: "m".into(), species: None }
+        Detected { id, key: key.into(), b, roll: 0, px: 100.0, score: 0.9, model: "m".into(), species: None, looked: true }
     }
 
     fn decision(id: i64, key: &str, b: [f64; 4], d: Decision, person: Option<i64>, at: i64) -> DecisionRow {
@@ -2565,7 +2577,8 @@ mod tests {
         // The latest of several decisions counts.
         assert_eq!(m.decided(2).unwrap().decision, Decision::Ignored);
         assert_eq!(m.states[2].rejected, [7]);
-        assert!(m.not_faces().is_empty());
+        // A "not a face" older than the latest decision does not count.
+        assert!((0..3).all(|i| !m.is_not_face(i)));
     }
 
     #[test]

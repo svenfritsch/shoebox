@@ -15,8 +15,14 @@ use crate::classify::Kind;
 use crate::faces;
 use crate::thumbs;
 
+/// The Face check's requests answer from the kept people view
+/// (`App::people_view`, read on a connection of its own); only what the view
+/// does not hold is read on `App::conn`, after the view is there. Their
+/// parameters are checked first: a request refused never waits for the view.
 pub(super) async fn list(State(app): State<Arc<App>>, Query(q): Query<faces::ListQuery>) -> ApiResult<Json<faces::List>> {
-    blocking(&app, move |app| Ok(Json(faces::list(&app.conn.lock().unwrap(), &q)?))).await
+    let space = faces::space_of(q.kind.as_deref()).map_err(ApiError::BadRequest)?;
+    let sort = faces::sort_of(q.sort.as_deref()).map_err(ApiError::BadRequest)?;
+    blocking(&app, move |app| Ok(Json(faces::list_in(&*app.people_view()?, &q, space, sort)))).await
 }
 
 #[derive(Deserialize)]
@@ -26,12 +32,12 @@ pub(super) struct StatsQuery {
 }
 
 pub(super) async fn stats(State(app): State<Arc<App>>, Query(q): Query<StatsQuery>) -> ApiResult<Json<faces::Stats>> {
-    let space = match q.kind.as_deref() {
-        None | Some("") | Some("faces") => crate::pets::Space::Faces,
-        Some("pets") => crate::pets::Space::Pets,
-        Some(other) => return Err(ApiError::BadRequest(format!("kind is faces or pets, not {other:?}"))),
-    };
-    blocking(&app, move |app| Ok(Json(faces::stats_of(&app.conn.lock().unwrap(), space)?))).await
+    let space = faces::space_of(q.kind.as_deref()).map_err(ApiError::BadRequest)?;
+    blocking(&app, move |app| {
+        let view = app.people_view()?;
+        Ok(Json(faces::stats_in(&app.conn.lock().unwrap(), &view, space)?))
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -46,7 +52,10 @@ pub(super) async fn similar(
 ) -> ApiResult<Json<Vec<faces::Neighbour>>> {
     let limit = q.limit.unwrap_or(24).min(200);
     blocking(&app, move |app| {
-        faces::similar(&app.conn.lock().unwrap(), id, limit)?.map(Json).ok_or(ApiError::NotFound)
+        // A face it does not know is not found before the view is read.
+        let target = faces::target(&app.conn.lock().unwrap(), id)?.ok_or(ApiError::NotFound)?;
+        let view = app.people_view()?;
+        Ok(Json(faces::similar(&app.conn.lock().unwrap(), &view, &target, limit)?))
     })
     .await
 }

@@ -99,8 +99,9 @@ fn photos_with(conn: &Connection, space: Space) -> Result<u64> {
 /// The overview from an open connection with `recog` attached.
 pub fn overview(conn: &Connection) -> Result<Overview> {
     let (people, pets) = named(conn)?;
-    let fs = faces::stats_of(conn, Space::Faces)?;
-    let ps = faces::stats_of(conn, Space::Pets)?;
+    let view = crate::people::View::load(conn)?;
+    let fs = faces::stats_in(conn, &view, Space::Faces)?;
+    let ps = faces::stats_in(conn, &view, Space::Pets)?;
     let ts = text::stats(conn)?;
     let text_run: Option<i64> = conn
         .query_row("SELECT max(started_at) FROM recog.jobs WHERE kind = 'text'", [], |r| r.get(0))

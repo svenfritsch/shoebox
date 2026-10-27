@@ -172,6 +172,15 @@ of working around it. The rules below change only when the user says so.
   `core/i18n/en.json` and `de.json` (`core/tests/i18n.rs` checks it).
 - Paths may contain spaces and decomposed Unicode: quote everything, compare
   NFC-normalised.
+- No list of values in SQL that grows with the library: filter in Rust over a
+  kept view or pass the set as one parameter (`IN (SELECT value FROM
+  json_each(?1))`). Short fixed lists (the kinds of files) and chunks looked up
+  by their own index (`tags::own_tags_of`, 500 ids by primary key) are fine.
+  A request does not read all faces or all files itself when a kept view
+  (`App::people_view`, the timeline snapshot) holds what it needs; the Face
+  check answers from the people view. The one exception is `faces::similar`,
+  which reads every embedding of the model (keeping them would cost 200 MB).
+  Why: docs/decisions.md, "No id lists in SQL".
 - **The guide is part of every change.** `docs/guide/shoebox-en.html` and
   `shoebox-de.html` (kept in step) are what users read about the app. A change
   that adds, removes or alters something a person can see or do (the photo app,
