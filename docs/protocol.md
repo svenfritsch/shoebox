@@ -171,7 +171,7 @@ faster that way).
   by `install.sh --text`); the package must be importable by the worker's
   Python. Missing files or package end the worker with a message on stderr.
 - The model reads Latin text well but prints `ä ö ü` without their marks and
-  `ß` as `β` or `B` (`docs/plan.md`, phase 9, spike results).
+  `ß` as `β` or `B` (`docs/decisions.md`, "Text in photos").
 
 ### `embed-pets`: pets drawn by hand
 

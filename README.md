@@ -10,15 +10,14 @@ shoebox/
   recognizer/   Python: face recognition worker (optional)
   scripts/      build and fixture scripts
   docker/       development container
-  docs/         design notes and phase guides
+  docs/         plan, decisions, open items, the user guide
 ```
 
 ## Status
 
-Phases 0–4 (probe, scan and verify, web UI, import and organising, face
-detection with `shoebox recognize`) done except the runs on real hardware.
-Plan and status: [docs/plan.md](docs/plan.md); usage per phase in `docs/`
-([recognizer](docs/phase4.md)).
+Every planned feature is built; some still wait for their check on the real
+drives. Overview and status: [docs/plan.md](docs/plan.md); open items:
+[docs/open.md](docs/open.md); how to use it: the guide in `docs/guide/`.
 
 ## Install and set up
 
@@ -117,8 +116,8 @@ have one on PATH):
    ffmpeg" note disappears from the status line in the web UI.
 
 shoebox only ever runs ffmpeg to read a video and pipe one frame to itself;
-it never writes next to the original. Order and reasons: "Decoders per build"
-in docs/plan.md (Media Foundation on Windows is planned).
+it never writes next to the original. Order and reasons: "Decoders" in
+docs/decisions.md (Media Foundation on Windows is planned).
 Static ffmpeg builds are GPL; fine for your own drive, check the terms
 before passing the drive's binaries on.
 

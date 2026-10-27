@@ -35,7 +35,7 @@ boxes and embeddings out. It never touches the database or an original.
   `SHOEBOX_TEST_FACE` to a photo with a face, `SHOEBOX_TEST_PET` to a
   photo of a cat or dog, to test detection too).
 
-Usage and decisions: [docs/phase4.md](../docs/phase4.md).
+Decisions: [docs/decisions.md](../docs/decisions.md) (Recognition).
 
 ## Cats and dogs, and DINOv2
 
@@ -47,5 +47,5 @@ is the first of `dinov2_small.onnx` and
 tells individual pets apart better but is not fetched automatically (it is
 on Hugging Face): download `onnx/model.onnx` from `onnx-community/dinov2-small`,
 save it as `models/dinov2_small.onnx` (next to `recognizer.py`), and run `shoebox recognize --pets` again;
-the model id changes, so the pets are looked for again. Details and open
-points: [docs/phase7.md](../docs/phase7.md).
+the model id changes, so the pets are looked for again. Open
+points: [docs/open.md](../docs/open.md).

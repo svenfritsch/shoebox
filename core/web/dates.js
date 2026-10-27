@@ -1,4 +1,4 @@
-// Estimated capture dates (phase 12, docs/phase12.md): a date of the user's own
+// Estimated capture dates (phase 12, docs/decisions.md): a date of the user's own
 // for a photo, a year, a month or a day. It wins on the timeline over the date
 // in the file, which stays in the info panel's "EXIF" row. Saved in the
 // library's database only; the file is never changed.

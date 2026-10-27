@@ -33,7 +33,7 @@ use crate::thumbs::{self, Source};
 
 /// Faces narrower than this (px in the ≤1600 px copy the worker saw) are
 /// listed but too small to cluster or suggest. Decided on the real drive
-/// (docs/phase5.md): the faces of 30–40 px all were real, recognisable people.
+/// (phase 5): the faces of 30–40 px all were real, recognisable people.
 pub const MIN_CLUSTER_PX: f64 = 30.0;
 /// Longer edge of a face crop.
 pub const CROP_EDGE: u32 = 160;
