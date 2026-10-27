@@ -107,7 +107,15 @@ are in `git log` (the old `docs/plan.md` and `docs/phaseN.md`).
   `/suggest` request per pause (150 ms), and the server takes those one at a
   time in order, dropping requests called off while they wait. Heavy reads
   (the people view) run on a read-only connection of their own, invalidated by
-  `PRAGMA data_version`.
+  `PRAGMA data_version`. (To change: [design/responsiveness.md](design/responsiveness.md).)
+- **Kept views in memory**: the timeline (`browse::Snapshot`) and the people
+  view (`people::View`) hold the whole library and are read again, mostly
+  whole, after a change; requests answer from them instead of reading all
+  files or faces. On the benchmark library (100,000 files, 300,000 faces) the
+  people view takes about 1 s to read and about 190 MB. Both grow in step with
+  the library, so this fits the target (~100,000 files, up to 1 TB) and up to
+  about three times it; a much larger library would need views that are
+  updated in place instead of read again.
 - **Several drives in one server**: every API route carries the library id
   (file ids are per database); offline drives answer 503 for their own routes
   only. People match by name across drives. A drive is a backup or a separate
