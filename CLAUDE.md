@@ -181,6 +181,16 @@ of working around it. The rules below change only when the user says so.
   check answers from the people view. The one exception is `faces::similar`,
   which reads every embedding of the model (keeping them would cost 200 MB).
   Why: docs/decisions.md, "No id lists in SQL".
+- In `serve`, reads take a reader (`app.read()`, `serve/readers.rs`) and only
+  `App::writer` writes: changes (`change`) and the thumbnails, posters and
+  crops stored on request. A request takes the kept views it needs (snapshot,
+  tags, copies, people view, counts) first, then a reader, and never holds a
+  connection while it waits for anything else (a view, another reader, the
+  writer; debug builds check it). The index's version is read on
+  `App::writer` only (`App::versions`), and a new cache kept by it gets a test
+  that a change through the API and a commit by another process are seen at
+  once (`core/tests/readers.rs`). Why: docs/decisions.md, "Reads on a pool of
+  connections".
 - **The guide is part of every change.** `docs/guide/shoebox-en.html` and
   `shoebox-de.html` (kept in step) are what users read about the app. A change
   that adds, removes or alters something a person can see or do (the photo app,

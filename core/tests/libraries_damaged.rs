@@ -64,7 +64,7 @@ fn a_damaged_list_of_libraries_stops_everything_instead_of_treating_the_folder_a
 
         // The photo app does not start on it.
         let started = serve::start(
-            &serve::Options { root: lib.root.clone(), more_roots: Vec::new(), db: None, port: 0, lan: false, pin: None, reveal: None, recognizer: None, regroup: Default::default() },
+            &serve::Options { root: lib.root.clone(), more_roots: Vec::new(), db: None, port: 0, lan: false, pin: None, reveal: None, recognizer: None, regroup: Default::default(), hold: None },
             false,
         );
         assert!(started.is_err(), "the photo app started on a library whose list is damaged");

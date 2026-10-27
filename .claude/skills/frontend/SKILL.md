@@ -131,8 +131,8 @@ pages (`core/tests/no_emoji.rs`); plain symbols (✓ ✗ ✕ ♥ ☰ ↺ ⇄) ma
 - **Keyboard**: every control is reachable with Tab and has the shared
   `:focus-visible` ring; shortcuts are single keys listed in the guide (check
   the free ones first: `grep -n "e.key ===" core/web/app.js`).
-- **Requests**: the server has one connection per drive, so the page asks
-  only on actions, never polls (except `/api/info` while a job runs), calls off
+- **Requests**: the browser sends at most six requests at a time to the
+  server, pictures included, so the page asks only on actions, never polls (except `/api/info` while a job runs), calls off
   what it no longer needs (`AbortController`, `dropPending`, `clearNode`),
   and grows long lists as they are scrolled to (`growGrid`). A change that
   adds a request is a change to the tests (section 7) and maybe to the fake.

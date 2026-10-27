@@ -1,11 +1,10 @@
 # Responsive on large libraries (planned)
 
-October 2026. Step 1 is merged (why, and what was not done: "No id lists in
-SQL" in [decisions.md](../decisions.md)); the others are not built. Linked from [open.md](../open.md). Each step, when it
-is merged: its rule in `CLAUDE.md` (section 6), the entry "One shared
-connection per drive" in [decisions.md](../decisions.md) with step 2, the
-guide with step 4, and its part of this file deleted; the file goes with the
-last step.
+October 2026. Steps 1 and 2 are merged (why, and what was not done: "No id
+lists in SQL" and "Reads on a pool of connections" in
+[decisions.md](../decisions.md)); the others are not built. Linked from
+[open.md](../open.md). Each step, when it is merged: the guide with step 4,
+and its part of this file deleted; the file goes with the last step.
 
 On a library of about 100,000 photos and 299,000 faces, the Face check page's
 request `GET /api/lib/<id>/faces?sort=size&offset=0&limit=300&unmatched=true`
@@ -19,8 +18,8 @@ and reads do not wait for each other, there is nothing long left to stop.
 
 1. **A query that grows with the square of the library** (`faces::list`):
    every unmatched face id written into the SQL. Fixed by step 1.
-2. **One connection for everything.** Most handlers lock `App::conn` (one
-   `Mutex<Connection>` per library, `library.db` with `thumbs.db` and
+2. **One connection for everything.** Most handlers locked `App::conn` (one
+   `Mutex<Connection>` per library, now `App::writer` for writes only, `library.db` with `thumbs.db` and
    `recognition.db` attached). While one request holds it, every other one
    (thumbnails, crops, `/api/info`, the sidebar) waits behind it. Changes hold
    it for as long as they take too: a move of 5,000 photos renames and commits
@@ -69,55 +68,31 @@ embeddings still read on `App::conn`. The first Face check request after a
 start reads the people view on its own connection (0.9 s; `/faces/stats`
 then takes 1.9 s, the probe waiting its 0.36 s).
 
+After step 2 (`bench-people.py probe`, same library and machine, two runs
+each; "before" is the build without the pool). The probe's own request takes
+2 ms.
+
+| Request | Took before | Probe's longest wait before | Took after | Probe's longest wait after |
+|---|---|---|---|---|
+| `/suggest?q=a`, first after the start | 2.7 to 3.3 s | as long | 1.8 to 1.9 s | 2 ms |
+| `/faces/stats` | 0.37 to 0.55 s | 0.26 to 0.55 s | 0.41 to 0.42 s | 2 to 4 ms |
+| `/faces/stats?kind=pets` | 0.20 s | 0.19 to 0.20 s | 0.19 s | 2 ms |
+| `/faces/{id}/similar?limit=24` | 0.27 to 0.35 s | as long | 0.27 to 0.29 s | 2 ms |
+| `/duplicates` | 0.37 to 0.39 s | 0.21 s | 0.23 to 0.29 s | 2 ms |
+| `/move` of 5,000 photos | 8.5 to 9.5 s | as long | 8.9 to 9.6 s | 0.73 to 0.83 s (95 % within 0.18 to 0.33 s) |
+
+What is left during the move is the rollback journal (step 5): every photo's
+group is a synced commit, and a read that runs into one waits for it.
+
 ## 3. Steps
 
 Each step is a pull request of its own and helps alone.
 
 | Step | What | Fixes |
 |---|---|---|
-| 2 | A pool of read-only connections; writes stay on `App::conn`; requests nobody waits for do not start | one request holding up all others |
 | 3 | Slow-request log; the Face check in `bench-people.py` | finding the next one |
 | 4 | A busy line while a request takes long | no sign of waiting |
 | 5 | Measure first: the people view and `similar` read in pieces, and smaller items | commits waiting behind long reads |
-
-### Step 2: a pool of read-only connections
-
-- `App` gets a small pool of read-only connections (2 to 4 by cores,
-  `PRAGMA query_only`, `thumbs.db` and `recognition.db` attached; a
-  `Mutex<Vec<Connection>>` with a guard, no new crate). Requests that only
-  read take one (`app.read()`); every write stays on `App::conn` as now
-  (changes, and the thumbnails and crops stored on request). A write sent to a
-  reader fails in the tests instead of locking in production.
-- **The version stays on one connection, `App::conn`.** `index_version` is
-  `(PRAGMA data_version, generation)` and relies on `data_version` ignoring
-  the connection's own commits, so changes to people (which do not move
-  `generation`) do not reload every open page. `data_version` belongs to one
-  connection; numbers from two connections cannot be compared. Readers ask for
-  it with `try_lock` and, while a change holds `App::conn`, use the last number
-  read: otherwise every read would wait for a long move again. The change
-  moves `generation` itself when it is done, and whatever another process
-  committed meanwhile is seen by the first read after it. The same for
-  `recog.data_version` in the status.
-- **A request nobody waits for does not start.** `blocking` gets a flag that a
-  guard in the handler's future sets when hyper drops it (the browser closed
-  the connection); it is looked at once a connection is taken, and the request
-  ends there. What has started runs to its end. The search keeps its queue
-  (`in_turn`): one at a time in the order typed, dropping letters typed over.
-- **Take the kept view first, then a reader**, and give the reader back before
-  waiting for anything else. Four requests waiting for the people view while
-  each holds a reader would leave none for the rest. Today the search holds
-  `App::conn` while it reads the people view and the people's contents
-  (`person_hits`, `counts`): the first `/suggest?q=a` held it 2.2 s.
-- The kept views (snapshot, tags, duplicates) are built on a reader, under
-  their own lock as now.
-
-Tests: while one reader is busy with a long read, `/api/groups`, a thumbnail
-and `/api/info` answer (no time limit: only that they are not behind it; the
-long read can be a request the test holds open, e.g. a reader taken through a
-test-only hook in `serve::Options`); for every cache keyed by the version, a
-change through the API **and** a commit by another connection (a scan) are seen
-at once; a write on a reader fails; the browser tests against the real server
-as they are.
 
 ### Step 3: seeing where the time goes
 
@@ -125,9 +100,10 @@ as they are.
   line: method, path with query, total time, and how long it waited for a
   connection. The incident would have printed one line naming the Face check
   request and, for each request behind it, how long it waited.
-- **`bench-people.py run`** gets the Face check (stats, each filter,
-  `similar`, faces and pets) and the first `/suggest`, each alone and under its
-  probe (`/api/groups` every 100 ms), so the numbers of section 2 can be taken
+- **`bench-people.py`**: `probe` (step 2) times the first `/suggest`, the
+  Face check's stats and `similar`, the duplicates and a move under the probe
+  (`/api/groups` every 100 ms). It gets each Face check filter (faces and
+  pets), and each request alone too, so the numbers of section 2 can be taken
   again before a release; they go into the pull request that changes them.
 
 ### Step 4: a busy line
@@ -151,6 +127,11 @@ the answer; a `/suggest` held past 0.4 s shows the grey rows and no line.
 
 Only if `bench-people.py` or the slow-request log shows it:
 
+- **Reads behind a move's commits.** A move commits every photo's group on its
+  own (synced on exFAT); a read that runs into a commit waits, and SQLite's
+  busy handler backs off up to 100 ms at a time: during a move of 5,000 photos
+  the probe waited 0.7 to 0.8 s at most (section 2). Fewer, larger commits
+  would shorten that, if the real drive shows it.
 - **Long reads in pieces.** Without WAL, a commit waits until every reader is
   done, and while it waits no new reader starts. So a long read on any
   connection still makes the next write, and every read after it, wait. The
@@ -187,30 +168,14 @@ Only if `bench-people.py` or the slow-request log shows it:
 
 ## 5. Pitfalls
 
-- **`data_version` per connection**: see step 2. A test for every cache.
-- **Holding a reader while waiting** for a kept view or another lock starves
-  the pool (step 2).
 - **The rollback journal**: a pool makes reads wait for each other no more,
   but a long read still holds up commits (step 5).
 - **Two writers** (the server and a scan, or the regrouping on
   `recognition.db`): a deferred transaction that read first fails at once with
   "database is locked"; changes that read before they write start with
   `BEGIN IMMEDIATE` so they wait instead.
-- **`mmap_size` stays off**: on a drive that is pulled out, a read through a
-  mapping ends the program (SIGBUS).
-- **Memory**: each connection has its own page cache (2 MiB per database by
-  default): five connections with three databases each at most 30 MiB.
-- **A drive pulled out** during a request: the pool belongs to the library
-  (`App`) and goes with it; requests answer "offline" as now.
 
-## 6. Rules for CLAUDE.md (each added with the step that makes it true)
+## 6. Open questions
 
-- Reads take a reader (`app.read()`), only `App::conn` writes; take kept views
-  first, then a reader, and never hold a connection while waiting for
-  something else. (step 2)
-
-## 7. Open questions
-
-- The pool's size on the old Intel MacBook (2 cores): 2 readers may be enough.
 - Whether step 5 is needed at all: the slow-request log on the real drive
   decides.

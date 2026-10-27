@@ -95,9 +95,12 @@ mod faces_api;
 mod people_api;
 mod forget_api;
 mod text_api;
+mod readers;
 mod regroup;
 
+pub use readers::Hold;
 pub use regroup::Rules as RegroupRules;
+use readers::Readers;
 use regroup::Why;
 
 pub const DEFAULT_PORT: u16 = 7878;
@@ -138,6 +141,9 @@ pub struct Options {
     /// When the clusters and suggestions are worked out again after
     /// decisions (`regroup`).
     pub regroup: RegroupRules,
+    /// Tests only: `/api/test/hold-reader` and `/api/test/hold-writer` hold
+    /// a reader, or `App::writer`, until released.
+    pub hold: Option<Arc<Hold>>,
 }
 
 /// A running server; dropping it does not stop it, `stop` does.
@@ -205,6 +211,7 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
         workers: std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2),
         regroup: opts.regroup,
         closing: watch::channel(false).0,
+        hold: opts.hold.clone(),
     });
 
     // The first library must be there; the others may be unplugged.
@@ -284,6 +291,7 @@ struct Shared {
     /// Set when the server begins to stop: the event streams end, so the
     /// graceful shutdown does not wait for them forever.
     closing: watch::Sender<bool>,
+    hold: Option<Arc<Hold>>,
 }
 
 /// One library: open when its drive is there, offline when it is not.
@@ -399,6 +407,8 @@ impl App {
         let conn = db::open_shared(&db_path)?;
         thumbs::attach(&conn, &db_path)?;
         recognize::attach(&conn, &db_path)?;
+        let seen = data_versions(&conn)?;
+        let readers = Readers::open(&db_path, readers::pool_size(shared.workers))?;
         let people_conn = db::open_existing(&db_path)?;
         recognize::attach(&people_conn, &db_path)?;
         people_conn.pragma_update(None, "query_only", true)?;
@@ -417,7 +427,9 @@ impl App {
             root,
             db_path,
             name,
-            conn: Mutex::new(conn),
+            writer: Mutex::new(conn),
+            readers,
+            seen: Mutex::new(seen),
             snapshot: Mutex::new(None),
             duplicates: Mutex::new(None),
             copies: Mutex::new(None),
@@ -429,6 +441,7 @@ impl App {
             people: Mutex::new(PeopleCache { conn: people_conn, state: None }),
             clustering: AtomicBool::new(false),
             faces_version: AtomicU64::new(0),
+            people_version: AtomicU64::new(0),
             writing: Mutex::new(()),
             dirty: AtomicBool::new(false),
             heal: Mutex::new(heal_tx),
@@ -450,6 +463,7 @@ impl App {
             searches: Arc::new(Semaphore::new(1)),
             auth: shared.auth.clone(),
             export: Arc::new(export::Shared::default()),
+            hold: shared.hold.clone(),
         });
         spawn_healer(Arc::downgrade(&app), heal_rx);
         spawn_backups(Arc::downgrade(&app), backup_rx);
@@ -465,15 +479,22 @@ struct App {
     root: PathBuf,
     db_path: PathBuf,
     name: String,
-    /// One connection (library.db with thumbs.db attached); requests are
-    /// short, and rendering happens outside the lock.
-    conn: Mutex<Connection>,
+    /// The connection every write goes through (library.db with thumbs.db
+    /// and recognition.db attached): changes, and the thumbnails and crops
+    /// stored on request. Reads take a reader (`read`); this one also tells
+    /// the index's version (`versions`).
+    writer: Mutex<Connection>,
+    /// The read-only connections of the requests that only read (`read`).
+    readers: Readers,
+    /// `PRAGMA data_version` of `library.db` and `recognition.db` as `writer`
+    /// last saw them, for while a change holds it (`versions`).
+    seen: Mutex<(i64, i64)>,
     /// Timeline and folders, rebuilt when the index changed.
     snapshot: Mutex<Option<(IndexVersion, Arc<Snapshot>)>>,
     duplicates: Mutex<Option<(IndexVersion, Arc<Vec<duplicates::Group>>)>>,
     /// What `/api/info` counts over the whole index, kept for a few seconds:
     /// the page asks often, and the counts cost seconds on a library of
-    /// 100 000 photos while every other request waits for the connection.
+    /// 100 000 photos.
     info_counts: Mutex<Option<(IndexVersion, Instant, Arc<InfoCounts>)>>,
     info_faces: Mutex<Option<(InfoFacesKey, Instant, Arc<(recognize::Overview, clusters::Overview)>)>>,
     /// Name and full hash of every file, for the common timeline (phase 18).
@@ -492,6 +513,11 @@ struct App {
     /// Counts its own changes to the detected faces (forgetting them), after
     /// which the people view is read again in full.
     faces_version: AtomicU64,
+    /// Counts its own changes to people, groups, decisions and faces
+    /// (`people_api::changed`), which move neither `generation` nor
+    /// `writer`'s `data_version`: the faces' counts of `/api/info` are read
+    /// again after one.
+    people_version: AtomicU64,
     /// Counts this server's own changes; `PRAGMA data_version` only sees
     /// other connections' commits.
     generation: AtomicU64,
@@ -536,6 +562,7 @@ struct App {
     auth: Arc<Auth>,
     /// The export that is running or ran last (phase 12).
     export: Arc<export::Shared>,
+    hold: Option<Arc<Hold>>,
 }
 
 /// Page cache of the clustering's connection to `recognition.db`, in KiB
@@ -563,15 +590,16 @@ struct InfoCounts {
 }
 
 /// What the faces' counts depend on: the index, `recognition.db` (another
-/// process writes it) and how far the clustering is.
-type InfoFacesKey = (IndexVersion, i64, u64, u64, bool);
+/// process writes it), this server's changes to people and faces
+/// (`people_version`) and how far the clustering is.
+type InfoFacesKey = (IndexVersion, i64, u64, u64, u64, bool);
 
 /// Changes whenever another connection (a scan) commits, or this server
 /// changes the library itself.
 type IndexVersion = (i64, u64);
 
 /// The people view and the connection it is read on: read only, and its own,
-/// so reading the faces does not hold up the requests on `App::conn`, and
+/// so reading the faces does not hold up a reader, and
 /// its `PRAGMA data_version` sees every commit to the index, this server's
 /// own included.
 struct PeopleCache {
@@ -588,21 +616,62 @@ struct PeopleState {
     view: Arc<people::View>,
 }
 
+/// `PRAGMA data_version` of `library.db` and of `recognition.db` on `conn`.
+fn data_versions(conn: &Connection) -> Result<(i64, i64)> {
+    let main: i64 = conn.query_row("PRAGMA data_version", [], |r| r.get(0))?;
+    let recog: i64 = conn.query_row("PRAGMA recog.data_version", [], |r| r.get(0))?;
+    Ok((main, recog))
+}
+
 impl App {
-    fn version(&self, conn: &Connection) -> Result<IndexVersion> {
-        let data_version: i64 = conn.query_row("PRAGMA data_version", [], |r| r.get(0))?;
-        Ok((data_version, self.generation.load(Ordering::SeqCst)))
+    /// A read-only connection of the pool, as soon as one is free. Take the
+    /// kept views a request needs first (`snapshot`, `all_tags`,
+    /// `people_view`, …), and give the reader back before waiting for
+    /// anything else (see `readers.rs`).
+    fn read(&self) -> Result<readers::Reader<'_>> {
+        self.readers.take()
     }
 
-    fn snapshot(&self, conn: &Connection) -> Result<Arc<Snapshot>> {
-        let version = self.version(conn)?;
+    /// The index's version: `PRAGMA data_version` on `writer` (it changes
+    /// when another connection, a scan, commits; this server's own commits go
+    /// through `writer` and do not move it) and this server's own changes to
+    /// files (`generation`), so a change to people alone reloads no open page.
+    /// With it `recognition.db`'s `data_version` (`recognize` runs in another
+    /// process). `data_version` belongs to one connection, so it is always
+    /// read on `writer`; while a change holds that, the last numbers read are
+    /// used instead of waiting (the change moves `generation` when it is done,
+    /// and what another process committed meanwhile is seen by the first read
+    /// after it).
+    fn versions(&self) -> Result<(IndexVersion, i64)> {
+        let (main, recog) = match self.writer.try_lock() {
+            Ok(conn) => {
+                let v = data_versions(&conn)?;
+                // Under the writer's lock, so an older number never replaces a newer one.
+                *self.seen.lock().unwrap() = v;
+                v
+            }
+            Err(std::sync::TryLockError::WouldBlock) => *self.seen.lock().unwrap(),
+            Err(std::sync::TryLockError::Poisoned(e)) => panic!("{e}"),
+        };
+        Ok(((main, self.generation.load(Ordering::SeqCst)), recog))
+    }
+
+    fn version(&self) -> Result<IndexVersion> {
+        Ok(self.versions()?.0)
+    }
+
+    /// The timeline and folders as the index is now, built on a reader of
+    /// its own when it changed.
+    fn snapshot(&self) -> Result<Arc<Snapshot>> {
+        readers::assert_free("the timeline");
         let mut cache = self.snapshot.lock().unwrap();
+        let version = self.version()?;
         if let Some((v, s)) = cache.as_ref()
             && *v == version
         {
             return Ok(s.clone());
         }
-        let s = Arc::new(Snapshot::load(conn)?);
+        let s = Arc::new(Snapshot::load(&*self.read()?)?);
         *cache = Some((version, s.clone()));
         Ok(s)
     }
@@ -618,16 +687,17 @@ impl App {
     }
 
     /// `f` with the people view and its connection (for the people's rows),
-    /// one request at a time.
+    /// one request at a time. `f` takes no reader and waits for no other view.
     fn with_people<T>(&self, f: impl FnOnce(&Connection, &Arc<people::View>) -> Result<T>) -> Result<T> {
+        readers::assert_free("the people view");
         let mut cache = self.people.lock().unwrap();
         let view = self.view_now(&mut cache)?;
+        let _held = readers::Holding::new();
         f(&cache.conn, &view)
     }
 
     fn view_now(&self, cache: &mut PeopleCache) -> Result<Arc<people::View>> {
-        let main: i64 = cache.conn.query_row("PRAGMA data_version", [], |r| r.get(0))?;
-        let recog: i64 = cache.conn.query_row("PRAGMA recog.data_version", [], |r| r.get(0))?;
+        let (main, recog) = data_versions(&cache.conn)?;
         let faces = self.faces_version.load(Ordering::SeqCst);
         if let Some(s) = &cache.state
             && s.faces == faces
@@ -666,32 +736,34 @@ impl App {
     }
 
     /// What makes a file the same photo as one on another drive (phase 18).
-    fn copy_facts(&self, conn: &Connection) -> Result<Arc<HashMap<i64, multi::CopyFacts>>> {
-        let version = self.version(conn)?;
+    fn copy_facts(&self) -> Result<Arc<HashMap<i64, multi::CopyFacts>>> {
+        readers::assert_free("the copies");
         let mut cache = self.copies.lock().unwrap();
+        let version = self.version()?;
         if let Some((v, c)) = cache.as_ref()
             && *v == version
         {
             return Ok(c.clone());
         }
-        let c = Arc::new(multi::copy_facts(conn)?);
+        let c = Arc::new(multi::copy_facts(&*self.read()?)?);
         *cache = Some((version, c.clone()));
         Ok(c)
     }
 
     /// Every tag with the number of present files carrying it (`browse::all_tags`).
     /// Own tags change only through `change`, so the index version tells.
-    fn all_tags(&self, conn: &Connection) -> Result<Arc<Vec<browse::Tag>>> {
-        let version = self.version(conn)?;
+    fn all_tags(&self) -> Result<Arc<Vec<browse::Tag>>> {
+        readers::assert_free("the tags");
         let mut cache = self.tags.lock().unwrap();
+        let version = self.version()?;
         if let Some((v, t)) = cache.as_ref()
             && *v == version
         {
             return Ok(t.clone());
         }
         // Hidden photos (phase 20) are not counted: a tag's number is what a click shows.
-        let (files, folders) = self.snapshot(conn)?.hidden_exclusions();
-        let t = Arc::new(browse::all_tags_shown(conn, &files, &folders)?);
+        let (files, folders) = self.snapshot()?.hidden_exclusions();
+        let t = Arc::new(browse::all_tags_shown(&*self.read()?, &files, &folders)?);
         *cache = Some((version, t.clone()));
         Ok(t)
     }
@@ -705,7 +777,7 @@ impl App {
     /// Skipped while another process scans (it will find the moves itself).
     fn heal(&self) -> Result<()> {
         let _writing = self.writing.lock().unwrap();
-        if jobs_running(&self.conn.lock().unwrap())? {
+        if jobs_running(&*self.read()?)? {
             return Ok(());
         }
         println!("Some files are not where the index says; looking for them…");
@@ -1182,7 +1254,7 @@ async fn compare_ids(hub: &Arc<Hub>, library: &str, backup: bool) -> ApiResult<A
 }
 
 fn router(app: Arc<App>) -> Router {
-    Router::new()
+    let mut routes = Router::new()
         .route("/api/info", get(info))
         .route("/api/events", get(events))
         .route("/api/folders", get(folders))
@@ -1278,10 +1350,35 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/clusters/left", post(people_api::left_unnamed))
         .route("/api/clusters/{id}/name", post(people_api::name_cluster))
         .route("/api/clusters/{id}/ignore", post(people_api::ignore_cluster))
-        .route("/api/clusters/{id}/not-face", post(people_api::not_face_cluster))
-        .fallback(asset)
-        .layer(middleware::from_fn_with_state(app.auth.clone(), guard))
-        .with_state(app)
+        .route("/api/clusters/{id}/not-face", post(people_api::not_face_cluster));
+    if app.hold.is_some() {
+        routes = routes.route("/api/test/hold-reader", get(hold_reader)).route("/api/test/hold-writer", get(hold_writer));
+    }
+    routes.fallback(asset).layer(middleware::from_fn_with_state(app.auth.clone(), guard)).with_state(app)
+}
+
+/// Tests only (`Options::hold`): a reader taken and held as a long read
+/// would, until the test releases it.
+async fn hold_reader(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
+    blocking(&app, |app| {
+        let gate = app.hold.clone().ok_or(ApiError::NotFound)?;
+        let _reader = app.read()?;
+        gate.hold();
+        Ok(Json(serde_json::json!({ "held": "reader" })))
+    })
+    .await
+}
+
+/// Tests only (`Options::hold`): `App::writer` held as a long change (a move
+/// of thousands of photos) would, until the test releases it.
+async fn hold_writer(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
+    blocking(&app, |app| {
+        let gate = app.hold.clone().ok_or(ApiError::NotFound)?;
+        let _writer = app.writer.lock().unwrap();
+        gate.hold();
+        Ok(Json(serde_json::json!({ "held": "writer" })))
+    })
+    .await
 }
 
 // ---------------------------------------------------------------- errors
@@ -1297,6 +1394,9 @@ enum ApiError {
     TooManyRequests,
     /// The library's drive is not connected.
     Offline { library: String, reason: String },
+    /// The browser closed the connection before the request started
+    /// (`readers::Abandoned`); nobody reads the answer.
+    Gone,
     Internal(anyhow::Error),
 }
 
@@ -1304,6 +1404,9 @@ impl From<anyhow::Error> for ApiError {
     fn from(e: anyhow::Error) -> Self {
         if e.is::<crate::geo::NoSuchPlace>() {
             return ApiError::BadRequest(format!("{e}"));
+        }
+        if e.is::<readers::Abandoned>() {
+            return ApiError::Gone;
         }
         ApiError::Internal(e)
     }
@@ -1324,6 +1427,7 @@ impl IntoResponse for ApiError {
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "PIN required".to_string()),
             ApiError::Forbidden(m) => (StatusCode::FORBIDDEN, m.to_string()),
             ApiError::TooManyRequests => (StatusCode::TOO_MANY_REQUESTS, "too many wrong PINs; wait a minute".into()),
+            ApiError::Gone => (StatusCode::REQUEST_TIMEOUT, format!("{}", readers::Abandoned)),
             ApiError::Offline { library, reason } => {
                 let note = if reason.is_empty() { String::new() } else { format!(" ({reason})") };
                 return (
@@ -1343,32 +1447,43 @@ impl IntoResponse for ApiError {
 
 type ApiResult<T> = Result<T, ApiError>;
 
-/// Run database work (or decoding) off the async threads.
+/// Run database work (or decoding) off the async threads. When the browser
+/// has gone by the time the work takes its first connection (hyper dropped
+/// this future), it ends there (`readers.rs`).
 async fn blocking<T: Send + 'static>(
     app: &Arc<App>,
     f: impl FnOnce(&App) -> ApiResult<T> + Send + 'static,
 ) -> ApiResult<T> {
     let app = app.clone();
-    tokio::task::spawn_blocking(move || f(&app))
+    let gone = readers::Gone::new();
+    let flag = gone.flag();
+    let result = tokio::task::spawn_blocking(move || readers::as_turn(flag, || f(&app)))
         .await
-        .map_err(|e| ApiError::Internal(anyhow::anyhow!("worker failed: {e}")))?
+        .map_err(|e| ApiError::Internal(anyhow::anyhow!("worker failed: {e}")))?;
+    drop(gone);
+    result
 }
 
 /// One at a time, in the order asked: what the search box and the timeline
-/// ask for while someone types. Every one of these reads under the one
-/// connection, so they wait for each other anyway; here they wait for their
-/// turn before they go to a blocking thread, so a request the browser calls
-/// off while it waits (a newer letter replaces it) is dropped with its turn
-/// and never touches the database. Work that has started runs to its end (a
-/// blocking thread cannot be stopped), so the turn goes with it.
+/// ask for while someone types. Each reads the kept views and the photos the
+/// filter shows, so several at once would only wait for the same views and
+/// take readers the pictures need; here they wait for their turn before they
+/// go to a blocking thread, so a request the browser calls off while it waits
+/// (a newer letter replaces it) is dropped with its turn and never touches
+/// the database. Work that has started runs to its end (a blocking thread
+/// cannot be stopped), so the turn goes with it.
 async fn in_turn<T: Send + 'static>(queue: &Arc<Semaphore>, f: impl FnOnce() -> ApiResult<T> + Send + 'static) -> ApiResult<T> {
     let turn = queue.clone().acquire_owned().await.map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))?;
-    tokio::task::spawn_blocking(move || {
+    let gone = readers::Gone::new();
+    let flag = gone.flag();
+    let result = tokio::task::spawn_blocking(move || {
         let _turn = turn;
-        f()
+        readers::as_turn(flag, f)
     })
     .await
-    .map_err(|e| ApiError::Internal(anyhow::anyhow!("worker failed: {e}")))?
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("worker failed: {e}")))?;
+    drop(gone);
+    result
 }
 
 /// `blocking` in the turn of the library's searches (`in_turn`).
@@ -1565,7 +1680,7 @@ async fn online_apps(hub: &Arc<Hub>) -> Vec<Arc<App>> {
 fn drives_of(apps: &[Arc<App>]) -> ApiResult<Vec<multi::Drive>> {
     apps.iter()
         .map(|app| {
-            let conn = app.conn.lock().unwrap();
+            let conn = app.read()?;
             let (role, backup_of) = (multi::role(&conn)?, multi::backup_of(&conn)?);
             Ok(multi::Drive { id: library_id(&app.name), name: app.name.clone(), db: app.db_path.clone(), role, backup_of })
         })
@@ -1606,8 +1721,7 @@ struct AllPeopleKept {
 fn all_people_list(hub: &Hub, apps: &[Arc<App>], filter: &AllFilter, pairs: &Pairs) -> ApiResult<Arc<Vec<multi::MergedPerson>>> {
     let mut drives = Vec::new();
     for app in apps {
-        let version = app.version(&app.conn.lock().unwrap())?;
-        drives.push((app.name.clone(), version, app.people_view()?));
+        drives.push((app.name.clone(), app.version()?, app.people_view()?));
     }
     let mut within: Pairs = pairs.iter().filter(|(k, _)| k != "q" && k != "limit").cloned().collect();
     within.sort();
@@ -1624,13 +1738,13 @@ fn all_people_list(hub: &Hub, apps: &[Arc<App>], filter: &AllFilter, pairs: &Pai
     // of the person, a photo on two drives once (phase 18).
     let mut photos_of: HashMap<String, HashSet<multi::Photo>> = HashMap::new();
     for (d, app) in apps.iter().enumerate() {
-        let conn = app.conn.lock().unwrap();
         let mut list = app.people(true)?;
         // A drive without one of the names has nothing that matches.
-        let Some(query) = filter.query_for(app, &conn)? else { continue };
-        let snapshot = app.snapshot(&conn)?;
+        let Some(query) = filter.query_for(app)? else { continue };
+        let snapshot = app.snapshot()?;
+        let copies = app.copy_facts()?;
+        let conn = app.read()?;
         let shown: HashSet<i64> = snapshot.query(&conn, &query)?.iter().map(|it| it.id).collect();
-        let copies = app.copy_facts(&conn)?;
         // Faces are kept by content: the files shown of each content key.
         let mut files_per_key: HashMap<String, Vec<i64>> = HashMap::new();
         let mut stmt = conn.prepare("SELECT id, quick_hash FROM files WHERE missing_since IS NULL")?;
@@ -1695,9 +1809,9 @@ async fn all_groups(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -> 
 fn all_group_hits(apps: &[Arc<App>], filter: &AllFilter, needle: &str) -> ApiResult<Vec<AllGroup>> {
     let mut by_name: Vec<(String, AllGroup)> = Vec::new();
     for app in apps {
-        let conn = app.conn.lock().unwrap();
-        let Some(query) = filter.query_for(app, &conn)? else { continue };
-        let snapshot = app.snapshot(&conn)?;
+        let Some(query) = filter.query_for(app)? else { continue };
+        let snapshot = app.snapshot()?;
+        let conn = app.read()?;
         for g in people::groups(&conn)? {
             let key = db::tag_fold(&g.name);
             if !key.contains(needle) || filter.group_names.iter().any(|n| db::tag_fold(n) == key) {
@@ -1794,17 +1908,14 @@ async fn all_copies(State(hub): State<Arc<Hub>>, Query(q): Query<CopiesQuery>) -
     let o = overview(&hub).await?;
     let list = tokio::task::spawn_blocking(move || -> ApiResult<Vec<multi::OtherCopy>> {
         let app = o.apps.iter().find(|a| library_id(&a.name) == q.library).ok_or(ApiError::NotFound)?;
-        let key = {
-            let conn = app.conn.lock().unwrap();
-            app.copy_facts(&conn)?.get(&q.file).map(|c| c.key.clone())
-        };
+        let key = app.copy_facts()?.get(&q.file).map(|c| c.key.clone());
         let Some(key) = key else { return Ok(Vec::new()) };
         let (eligible, _) = multi::eligibility(&o.drives, &o.roles);
         let mut out = Vec::new();
         for &i in &eligible {
             let a = &o.apps[i];
             let id = library_id(&a.name);
-            let files = multi::files_with_key(&a.conn.lock().unwrap(), &key)?;
+            let files = multi::files_with_key(&*a.read()?, &key)?;
             let volume = if files.is_empty() { None } else { volume::placement(&a.root).map(|p| p.volume) };
             for (file, folder_id, path) in files {
                 if id == q.library && file == q.file {
@@ -1878,7 +1989,7 @@ async fn all_drives(State(hub): State<Arc<Hub>>) -> ApiResult<Json<Vec<DriveStat
                 };
                 let app = o.apps.iter().find(|a| library_id(&a.name) == s.id).ok_or(ApiError::NotFound)?;
                 let place = volume::placement(&app.root);
-                let facts = multi::drive_facts(&app.conn.lock().unwrap())?;
+                let facts = multi::drive_facts(&*app.read()?)?;
                 Ok(DriveState {
                     library: s.id.clone(),
                     name: s.name.clone(),
@@ -1984,15 +2095,17 @@ impl AllFilter {
     /// The query for one drive, with the names turned into its own ids. `None`
     /// when the drive lacks one of the tags, people or groups: nothing on it matches
     /// all of them.
-    fn query_for(&self, app: &App, conn: &Connection) -> ApiResult<Option<browse::Query>> {
+    /// Reads the people view first, then the tags and groups on a reader of its own.
+    fn query_for(&self, app: &App) -> ApiResult<Option<browse::Query>> {
+        let known_people = if self.person_names.is_empty() { Vec::new() } else { app.people(true)? };
+        let conn = app.read()?;
         let mut tags = Vec::new();
         for name in &self.tag_names {
-            match db::find_tag(conn, name)? {
+            match db::find_tag(&conn, name)? {
                 Some(id) => tags.push(id),
                 None => return Ok(None),
             }
         }
-        let known_people = if self.person_names.is_empty() { Vec::new() } else { app.people(true)? };
         let people_ids: Vec<i64> = self
             .person_names
             .iter()
@@ -2004,7 +2117,7 @@ impl AllFilter {
         if people_ids.len() != self.person_names.len() {
             return Ok(None);
         }
-        let known_groups = if self.group_names.is_empty() { Vec::new() } else { people::groups(conn)? };
+        let known_groups = if self.group_names.is_empty() { Vec::new() } else { people::groups(&conn)? };
         let group_ids: Vec<i64> = self
             .group_names
             .iter()
@@ -2099,14 +2212,15 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
         // Photos with a heart on any drive, by the key of their copies.
         let mut fav_keys: HashSet<multi::CopyKey> = HashSet::new();
         for (d, app) in apps.iter().enumerate() {
-            let conn = app.conn.lock().unwrap();
+            let copies = if flat { None } else { Some(app.copy_facts()?) };
+            let query = filter.query_for(app)?;
+            let snapshot = if query.is_some() { Some(app.snapshot()?) } else { None };
+            let conn = app.read()?;
             let hearts = own_tags::favorite_ids(&conn)?;
-            let copies = if flat { None } else { Some(app.copy_facts(&conn)?) };
             if let Some(copies) = &copies {
                 fav_keys.extend(hearts.iter().filter_map(|id| copies.get(id)).map(|c| c.key.clone()));
             }
-            let Some(mut query) = filter.query_for(app, &conn)? else { continue };
-            let snapshot = app.snapshot(&conn)?;
+            let (Some(mut query), Some(snapshot)) = (query, snapshot) else { continue };
             query.ids = different.as_ref().map(|sets| sets[d].clone());
             let items = snapshot.query(&conn, &query)?;
             let snips = if text_terms.is_empty() {
@@ -2257,9 +2371,8 @@ async fn all_suggest(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) ->
             .collect();
         let mut pets: HashMap<&'static str, u64> = HashMap::new();
         for app in &taking_part {
-            let conn = app.conn.lock().unwrap();
-            let Some(query) = filter.query_for(app, &conn)? else { continue };
-            for hit in people_api::pet_hits_uncached(app, &conn, &query, &text)? {
+            let Some(query) = filter.query_for(app)? else { continue };
+            for hit in people_api::pet_hits_uncached(app, &query, &text)? {
                 *pets.entry(hit.species).or_default() += hit.photos;
             }
         }
@@ -2294,15 +2407,15 @@ fn all_tag_hits(apps: &[Arc<App>], filter: &AllFilter, needle: &str, own: bool, 
     type Merged = (browse::Tag, HashSet<multi::Photo>, HashSet<multi::Photo>);
     let mut merged: std::collections::BTreeMap<String, Merged> = std::collections::BTreeMap::new();
     for (d, app) in apps.iter().enumerate() {
-        let conn = app.conn.lock().unwrap();
         // A drive without one of the names has nothing that matches.
-        let Some(query) = filter.query_for(app, &conn)? else { continue };
-        let snapshot = app.snapshot(&conn)?;
-        let shown: HashSet<i64> = snapshot.query(&conn, &query)?.iter().map(|it| it.id).collect();
-        let copies = app.copy_facts(&conn)?;
+        let Some(query) = filter.query_for(app)? else { continue };
+        let snapshot = app.snapshot()?;
+        let copies = app.copy_facts()?;
         // Whether a tag is only a folder name is a fact about the drive,
         // not about the photos shown (as on a single drive).
-        let facts: HashMap<i64, browse::Tag> = app.all_tags(&conn)?.iter().map(|t| (t.id, t.clone())).collect();
+        let facts: HashMap<i64, browse::Tag> = app.all_tags()?.iter().map(|t| (t.id, t.clone())).collect();
+        let conn = app.read()?;
+        let shown: HashSet<i64> = snapshot.query(&conn, &query)?.iter().map(|it| it.id).collect();
         for t in browse::tag_files_within(&conn, &shown, &query.tags)? {
             let mut tag = t.tag;
             if let Some(f) = facts.get(&tag.id) {
@@ -2439,7 +2552,7 @@ async fn all_transfer(State(hub): State<Arc<Hub>>) -> ApiResult<Json<Vec<Transfe
                 if a == b {
                     continue;
                 }
-                let counts = transfer::plan(&o.apps[to].conn.lock().unwrap(), &sets[a], transfer::Boxes::all())?;
+                let counts = transfer::plan(&*o.apps[to].read()?, &sets[a], transfer::Boxes::all())?;
                 if !counts.is_nothing() {
                     out.push(TransferHint {
                         from: o.drives[from].id.clone(),
@@ -2552,13 +2665,13 @@ async fn all_transfer_plan(
         match &source {
             TransferSource::Drive(from) => {
                 let set = source.read()?;
-                let counts = transfer::plan(&to.conn.lock().unwrap(), &set, transfer::Boxes::all())?;
+                let counts = transfer::plan(&*to.read()?, &set, transfer::Boxes::all())?;
                 let emptied = transfer::looks_emptied(&from.db_path)?;
                 Ok(serde_json::json!({ "from": from.name, "to": to.name, "counts": counts, "source_emptied": emptied }))
             }
             TransferSource::File(path) => {
                 let (set, info) = transfer::read_userdata(path).map_err(bad)?;
-                let counts = transfer::plan(&to.conn.lock().unwrap(), &set, transfer::Boxes::all())?;
+                let counts = transfer::plan(&*to.read()?, &set, transfer::Boxes::all())?;
                 let name = path.file_name().map(|n| library::nfc(&n.to_string_lossy())).unwrap_or_default();
                 let folder = path.parent().map(volume::display_path).unwrap_or_default();
                 Ok(serde_json::json!({
@@ -2719,39 +2832,26 @@ async fn events(State(app): State<Arc<App>>) -> impl IntoResponse {
 async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: HeaderMap) -> ApiResult<Json<Info>> {
     let reveal = is_local(peer.ip(), host(&headers)).then(reveal::label);
     blocking(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
-        let (data_version, generation) = app.version(&conn)?;
-        let version = (data_version, generation);
-        let counts = {
-            let mut cache = app.info_counts.lock().unwrap();
+        let (version, recog_version) = app.versions()?;
+        let (data_version, generation) = version;
+        let counts = info_counts(app, version)?;
+        let clusters_done = app.clusters_done.load(Ordering::SeqCst);
+        let clusters_wanted = app.clusters_wanted.load(Ordering::SeqCst);
+        let embedding = app.embedding.load(Ordering::SeqCst);
+        let faces_key = (version, recog_version, app.people_version.load(Ordering::SeqCst), clusters_done, clusters_wanted, embedding);
+        let overviews = {
+            let mut cache = app.info_faces.lock().unwrap();
             match cache.as_ref() {
-                Some((v, at, c)) if *v == version && at.elapsed() < INFO_COUNTS_AGE => c.clone(),
+                Some((k, at, o)) if *k == faces_key && at.elapsed() < INFO_FACES_AGE => o.clone(),
                 _ => {
-                    let (photos, videos, missing): (i64, i64, i64) = conn.query_row(
-                        "SELECT count(*) FILTER (WHERE missing_since IS NULL AND kind NOT IN ('video', 'raw')),
-                                count(*) FILTER (WHERE missing_since IS NULL AND kind = 'video'),
-                                count(*) FILTER (WHERE missing_since IS NOT NULL)
-                         FROM files",
-                        [],
-                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-                    )?;
-                    let (thumbs_total, thumbs_done): (i64, i64) = conn.query_row(
-                        "SELECT count(DISTINCT f.quick_hash), count(DISTINCT t.key)
-                         FROM files f LEFT JOIN thumbs.thumbs t ON t.key = f.quick_hash
-                         WHERE f.missing_since IS NULL AND f.kind != 'raw'",
-                        [],
-                        |r| Ok((r.get(0)?, r.get(1)?)),
-                    )?;
-                    let trash: i64 = conn.query_row("SELECT count(DISTINCT batch) FROM trash", [], |r| r.get(0))?;
-                    let snapshot = app.snapshot(&conn)?;
-                    let needs_date = snapshot.items.iter().filter(|it| !it.hidden && needs_a_date(it)).count() as u64;
-                    let hidden = snapshot.items.iter().filter(|it| it.hidden).count() as u64;
-                    let c = Arc::new(InfoCounts { photos, videos, missing, thumbs_total, thumbs_done, trash, needs_date, hidden });
-                    *cache = Some((version, Instant::now(), c.clone()));
-                    c
+                    let conn = app.read()?;
+                    let o = Arc::new((recognize::overview(&conn)?, clusters::overview(&conn)?));
+                    *cache = Some((faces_key, Instant::now(), o.clone()));
+                    o
                 }
             }
         };
+        let conn = app.read()?;
         let jobs: Vec<JobInfo> = conn
             .prepare(
                 "SELECT kind, state, started_at, updated_at, finished_at, done, total FROM jobs
@@ -2772,22 +2872,6 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
         // A job whose process died stays 'running' until the next scan; only
         // count it as busy while it is still reporting progress.
         let busy = jobs_running(&conn)?;
-        let clusters_done = app.clusters_done.load(Ordering::SeqCst);
-        let clusters_wanted = app.clusters_wanted.load(Ordering::SeqCst);
-        let embedding = app.embedding.load(Ordering::SeqCst);
-        let recog_version: i64 = conn.query_row("PRAGMA recog.data_version", [], |r| r.get(0))?;
-        let faces_key = (version, recog_version, clusters_done, clusters_wanted, embedding);
-        let overviews = {
-            let mut cache = app.info_faces.lock().unwrap();
-            match cache.as_ref() {
-                Some((k, at, o)) if *k == faces_key && at.elapsed() < INFO_FACES_AGE => o.clone(),
-                _ => {
-                    let o = Arc::new((recognize::overview(&conn)?, clusters::overview(&conn)?));
-                    *cache = Some((faces_key, Instant::now(), o.clone()));
-                    o
-                }
-            }
-        };
         let faces = overviews.0.clone();
         // New faces from a `recognize` run in another process: grouped by it
         // when it got that far (only noted here), else by this server.
@@ -2836,12 +2920,43 @@ async fn info(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<Socket
     .await
 }
 
+/// The counts of `/api/info` over the whole index at `version`, kept for
+/// `INFO_COUNTS_AGE`.
+fn info_counts(app: &App, version: IndexVersion) -> Result<Arc<InfoCounts>> {
+    let mut cache = app.info_counts.lock().unwrap();
+    if let Some((v, at, c)) = cache.as_ref()
+        && *v == version
+        && at.elapsed() < INFO_COUNTS_AGE
+    {
+        return Ok(c.clone());
+    }
+    let snapshot = app.snapshot()?;
+    let conn = app.read()?;
+    let (photos, videos, missing): (i64, i64, i64) = conn.query_row(
+        "SELECT count(*) FILTER (WHERE missing_since IS NULL AND kind NOT IN ('video', 'raw')),
+                count(*) FILTER (WHERE missing_since IS NULL AND kind = 'video'),
+                count(*) FILTER (WHERE missing_since IS NOT NULL)
+         FROM files",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )?;
+    let (thumbs_total, thumbs_done): (i64, i64) = conn.query_row(
+        "SELECT count(DISTINCT f.quick_hash), count(DISTINCT t.key)
+         FROM files f LEFT JOIN thumbs.thumbs t ON t.key = f.quick_hash
+         WHERE f.missing_since IS NULL AND f.kind != 'raw'",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    let trash: i64 = conn.query_row("SELECT count(DISTINCT batch) FROM trash", [], |r| r.get(0))?;
+    let needs_date = snapshot.items.iter().filter(|it| !it.hidden && needs_a_date(it)).count() as u64;
+    let hidden = snapshot.items.iter().filter(|it| it.hidden).count() as u64;
+    let c = Arc::new(InfoCounts { photos, videos, missing, thumbs_total, thumbs_done, trash, needs_date, hidden });
+    *cache = Some((version, Instant::now(), c.clone()));
+    Ok(c)
+}
+
 async fn folders(State(app): State<Arc<App>>) -> ApiResult<Json<Vec<browse::Folder>>> {
-    blocking(&app, |app| {
-        let conn = app.conn.lock().unwrap();
-        Ok(Json(app.snapshot(&conn)?.folders.clone()))
-    })
-    .await
+    blocking(&app, |app| Ok(Json(app.snapshot()?.folders.clone()))).await
 }
 
 /// The query string as pairs, so a key can come several times
@@ -2970,12 +3085,11 @@ fn pets_of(pairs: &Pairs) -> ApiResult<Vec<String>> {
 /// search; `own=1` keeps only tags the user added somewhere.
 async fn tags(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<browse::Tag>>> {
     queued(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
         let needle = param(&pairs, "q").map(db::tag_fold).unwrap_or_default();
         let own = param(&pairs, "own").is_some_and(|o| o != "0");
         let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(50);
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
-        Ok(Json(tag_hits(app, &conn, &filter, None, &needle, own, limit)?))
+        Ok(Json(tag_hits(app, &filter, None, &needle, own, limit)?))
     })
     .await
 }
@@ -3001,22 +3115,25 @@ fn shows_everything(filter: &browse::Query) -> bool {
 
 /// `tags` for `needle` (folded) within `filter`, whose photos are `shown` when
 /// the caller has them already (`/api/suggest`).
-fn tag_hits(app: &App, conn: &Connection, filter: &browse::Query, shown: Option<&HashSet<i64>>, needle: &str, own: bool, limit: usize) -> Result<Vec<browse::Tag>> {
+fn tag_hits(app: &App, filter: &browse::Query, shown: Option<&HashSet<i64>>, needle: &str, own: bool, limit: usize) -> Result<Vec<browse::Tag>> {
+    let all_tags = app.all_tags()?;
     let all = if shows_everything(filter) {
-        app.all_tags(conn)?.as_ref().clone()
+        all_tags.as_ref().clone()
     } else {
+        let snapshot = if shown.is_none() { Some(app.snapshot()?) } else { None };
+        let conn = app.read()?;
         let computed;
-        let shown = match shown {
-            Some(s) => s,
-            None => {
-                computed = app.snapshot(conn)?.query(conn, filter)?.iter().map(|it| it.id).collect::<HashSet<i64>>();
+        let shown = match (shown, snapshot) {
+            (Some(s), _) => s,
+            (None, snapshot) => {
+                computed = snapshot.unwrap().query(&conn, filter)?.iter().map(|it| it.id).collect::<HashSet<i64>>();
                 &computed
             }
         };
         // Whether a tag is only a folder name is a fact about the drive, not
         // about the photos shown: a tag given by hand elsewhere stays a tag.
-        let kinds: HashMap<i64, browse::TagKind> = app.all_tags(conn)?.iter().map(|t| (t.id, t.kind)).collect();
-        let mut within = browse::tags_within(conn, shown, &filter.tags)?;
+        let kinds: HashMap<i64, browse::TagKind> = all_tags.iter().map(|t| (t.id, t.kind)).collect();
+        let mut within = browse::tags_within(&conn, shown, &filter.tags)?;
         for t in &mut within {
             if let Some(&kind) = kinds.get(&t.id) {
                 t.kind = kind;
@@ -3109,9 +3226,8 @@ async fn suggest(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> Api
     queued(&app, move |app| {
         let q = param(&pairs, "q").unwrap_or("").to_string();
         let typed = typed(&q);
-        let conn = app.conn.lock().unwrap();
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
-        let snapshot = app.snapshot(&conn)?;
+        let snapshot = app.snapshot()?;
         // How many photos the search shows with the term added, as `/count` says.
         let term_count = |term: &str, add: fn(&mut browse::Query, String)| -> Result<Option<TermCount>> {
             if term.is_empty() {
@@ -3119,7 +3235,7 @@ async fn suggest(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> Api
             }
             let mut with = filter.clone();
             add(&mut with, term.to_string());
-            Ok(Some(TermCount { term: term.to_string(), count: snapshot.query(&conn, &with)?.len() }))
+            Ok(Some(TermCount { term: term.to_string(), count: snapshot.query(&*app.read()?, &with)?.len() }))
         };
         let in_text = |q: &mut browse::Query, t: String| q.in_text.push(t);
         let (text, only_dates) = match typed {
@@ -3128,7 +3244,7 @@ async fn suggest(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> Api
             Typed::Text(t) => return Ok(Json(Suggestions { text: term_count(t, in_text)?, ..Default::default() })),
             Typed::Name(t) => return Ok(Json(Suggestions { name: term_count(t, |q, t| q.names.push(t))?, ..Default::default() })),
         };
-        let items = snapshot.query(&conn, &filter)?;
+        let items = snapshot.query(&*app.read()?, &filter)?;
         let all_dates: Vec<(i32, Option<u32>, Option<u32>)> = items.iter().map(|it| it.date_parts()).collect();
         let dates = dates::suggest(text, only_dates, &all_dates);
         if only_dates {
@@ -3138,11 +3254,12 @@ async fn suggest(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> Api
         // kept or worked out over every photo: the set is needed only then.
         let shown: Option<HashSet<i64>> = (!shows_everything(&filter)).then(|| items.iter().map(|it| it.id).collect());
         let needle = db::tag_fold(text);
+        // Each section takes the kept views it needs, then a reader of its own.
         Ok(Json(Suggestions {
-            tags: tag_hits(app, &conn, &filter, shown.as_ref(), &needle, true, SUGGEST_TAGS)?,
-            people: section(app, "people", people_api::person_hits(app, &conn, &pairs, &filter, shown.as_ref(), &needle, SUGGEST_PEOPLE)),
-            pets: section(app, "pets", people_api::pet_hits(app, &conn, &pairs, &filter, shown.as_ref(), text)),
-            groups: section(app, "groups", people_api::group_hits(app, &conn, &pairs, &filter, shown.as_ref(), &needle, SUGGEST_GROUPS)),
+            tags: tag_hits(app, &filter, shown.as_ref(), &needle, true, SUGGEST_TAGS)?,
+            people: section(app, "people", people_api::person_hits(app, &pairs, &filter, shown.as_ref(), &needle, SUGGEST_PEOPLE)),
+            pets: section(app, "pets", people_api::pet_hits(app, &pairs, &filter, shown.as_ref(), text)),
+            groups: section(app, "groups", people_api::group_hits(app, &pairs, &filter, shown.as_ref(), &needle, SUGGEST_GROUPS)),
             dates,
             // As the page offers it: the text row from two letters on.
             text: if text.chars().count() >= 2 { term_count(text, in_text)? } else { None },
@@ -3190,13 +3307,13 @@ async fn timeline(State(app): State<Arc<App>>, axum::Extension(only): axum::Exte
     let mut query = filter_of(&pairs)?;
     query.ids = only.0;
     queued(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
+        let snapshot = app.snapshot()?;
+        let conn = app.read()?;
         if let Some(place) = query.place
             && crate::geo::place(&conn, place)?.is_none()
         {
             return Err(ApiError::BadRequest("no such place".into()));
         }
-        let snapshot = app.snapshot(&conn)?;
         let items = snapshot.query(&conn, &query)?;
         let tags = browse::tag_names(&conn, &query.tags)?;
         let people = people::person_names(&conn, &query.people)?;
@@ -3257,9 +3374,8 @@ async fn timeline(State(app): State<Arc<App>>, axum::Extension(only): axum::Exte
 async fn count(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<serde_json::Value>> {
     let query = filter_of(&pairs)?;
     queued(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
-        let snapshot = app.snapshot(&conn)?;
-        let n = snapshot.query(&conn, &query)?.len();
+        let snapshot = app.snapshot()?;
+        let n = snapshot.query(&*app.read()?, &query)?.len();
         Ok(Json(serde_json::json!({ "count": n })))
     })
     .await
@@ -3302,9 +3418,9 @@ struct FileInfo {
 
 async fn file_details(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Json<FileInfo>> {
     blocking(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
+        let snapshot = app.snapshot()?;
+        let conn = app.read()?;
         let details = browse::details(&conn, id)?.ok_or(ApiError::NotFound)?;
-        let snapshot = app.snapshot(&conn)?;
         let item = snapshot.items.iter().find(|it| it.id == id);
         let key: Option<String> =
             conn.query_row("SELECT quick_hash FROM files WHERE id = ?1", [id], |r| r.get(0)).optional()?;
@@ -3356,7 +3472,7 @@ async fn thumb(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Re
     // A stored thumbnail is served even while its file is being looked for
     // (moved behind shoebox's back); only making one needs the file.
     let (src, turn) = blocking(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
+        let conn = app.read()?;
         let key: String = conn
             .query_row("SELECT quick_hash FROM files WHERE id = ?1 AND missing_since IS NULL", [id], |r| r.get(0))
             .optional()?
@@ -3378,12 +3494,12 @@ async fn thumb(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Re
     let _permit = app.renders.acquire().await.map_err(|e| ApiError::Internal(e.into()))?;
     let made = blocking(&app, move |app| {
         // Another request may have made it while this one waited.
-        if let Some(stored) = thumbs::load(&app.conn.lock().unwrap(), &src.quick_hash)? {
+        if let Some(stored) = thumbs::load(&*app.read()?, &src.quick_hash)? {
             return Ok(stored);
         }
         let result = thumbs::render(&LibHeif::new(), app.ffmpeg.as_deref(), &src);
         if !matches!(&result, Err(e) if thumbs::is_transient(e))
-            && let Err(e) = thumbs::store(&app.conn.lock().unwrap(), &src.quick_hash, &result)
+            && let Err(e) = thumbs::store(&app.writer.lock().unwrap(), &src.quick_hash, &result)
         {
             eprintln!("could not store thumbnail: {e:#}"); // still worth sending
         }
@@ -3411,9 +3527,7 @@ async fn poster_from_browser(State(app): State<Arc<App>>, Path(id): Path<i64>, b
     }
     blocking(&app, move |app| {
         let key: String = app
-            .conn
-            .lock()
-            .unwrap()
+            .read()?
             .query_row(
                 "SELECT quick_hash FROM files WHERE id = ?1 AND missing_since IS NULL AND kind = 'video'",
                 [id],
@@ -3422,7 +3536,7 @@ async fn poster_from_browser(State(app): State<Arc<App>>, Path(id): Path<i64>, b
             .optional()?
             .ok_or(ApiError::NotFound)?;
         let poster = thumbs::browser_poster(&body).map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
-        let stored = thumbs::store_browser_poster(&app.conn.lock().unwrap(), &key, &poster)?;
+        let stored = thumbs::store_browser_poster(&app.writer.lock().unwrap(), &key, &poster)?;
         Ok(Json(PosterStored { stored }))
     })
     .await
@@ -3445,7 +3559,7 @@ async fn turned_jpeg(app: &Arc<App>, bytes: Vec<u8>, turn: i32) -> ApiResult<Res
 /// JPEG rendering for HEIC.
 async fn view(State(app): State<Arc<App>>, Path(id): Path<i64>, req: Request) -> ApiResult<Response> {
     let (src, content, turn) = blocking(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
+        let conn = app.read()?;
         let src = app.source(&conn, id)?.ok_or(ApiError::NotFound)?;
         let content = media::content_kind(src.kind, &src.path);
         let turn = db::view_turn(&conn, &src.quick_hash)?;
@@ -3481,7 +3595,7 @@ async fn original(
     Query(q): Query<OriginalQuery>,
     req: Request,
 ) -> ApiResult<Response> {
-    let src = blocking(&app, move |app| app.source(&app.conn.lock().unwrap(), id)?.ok_or(ApiError::NotFound)).await?;
+    let src = blocking(&app, move |app| app.source(&*app.read()?, id)?.ok_or(ApiError::NotFound)).await?;
     let name = src.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let disposition = q.download.is_some_and(|d| d != 0).then(|| content_disposition(&name));
     serve_file(&src.path, req, disposition).await
@@ -3500,7 +3614,7 @@ async fn reveal_file(
         return Err(ApiError::Forbidden("only this computer can open its file manager"));
     }
     blocking(&app, move |app| {
-        let src = app.source(&app.conn.lock().unwrap(), id)?.ok_or(ApiError::NotFound)?;
+        let src = app.source(&*app.read()?, id)?.ok_or(ApiError::NotFound)?;
         (app.reveal)(&src.path).map_err(ApiError::Internal)?;
         Ok(Json(serde_json::json!({ "ok": true, "app": reveal::app_name() })))
     })
@@ -3533,9 +3647,7 @@ async fn all_reveal(
             return Err(ApiError::NotFound);
         }
         let known: Option<i64> = app
-            .conn
-            .lock()
-            .unwrap()
+            .read()?
             .query_row("SELECT 1 FROM files WHERE path = ?1 AND missing_since IS NULL", [&req.path], |r| r.get(0))
             .optional()?;
         let path = app.root.join(&req.path);
@@ -3570,8 +3682,9 @@ fn content_disposition(name: &str) -> String {
 
 // ---------------------------------------------------------------- changes
 
-/// Run a change to the library: one at a time, never while a scan runs.
-/// Errors are the user's to read (a name that is taken, a file that changed).
+/// Run a change to the library: one at a time, never while a scan runs, on
+/// `App::writer`. It runs whether the browser still waits or not. Errors are
+/// the user's to read (a name that is taken, a file that changed).
 async fn change<T: Send + 'static>(
     app: &Arc<App>,
     f: impl FnOnce(&App, &Connection) -> Result<T> + Send + 'static,
@@ -3590,8 +3703,9 @@ async fn change_with<T: Send + 'static>(
     f: impl FnOnce(&App, &Connection) -> Result<T> + Send + 'static,
 ) -> ApiResult<T> {
     blocking(app, move |app| {
+        readers::change_started();
         let _writing = app.writing.lock().unwrap();
-        let conn = app.conn.lock().unwrap();
+        let conn = app.writer.lock().unwrap();
         if jobs_running(&conn)? {
             return Err(ApiError::Conflict("a scan is running; try again when it is done".into()));
         }
@@ -3664,18 +3778,16 @@ struct DuplicateList<'a> {
 
 async fn duplicates_list(State(app): State<Arc<App>>) -> ApiResult<Response> {
     blocking(&app, |app| {
-        let conn = app.conn.lock().unwrap();
-        let version = app.version(&conn)?;
+        let version = app.version()?;
         if let Some((v, groups)) = app.duplicates.lock().unwrap().as_ref()
             && *v == version
         {
             return Ok(Json(DuplicateList { groups: groups.as_slice() }).into_response());
         }
-        let shown: HashSet<i64> = app.snapshot(&conn)?.items.iter().map(|it| it.id).collect();
-        let candidates = duplicates::load(&conn, &shown)?;
-        drop(conn);
+        let shown: HashSet<i64> = app.snapshot()?.items.iter().map(|it| it.id).collect();
+        let candidates = duplicates::load(&*app.read()?, &shown)?;
         let mut groups = duplicates::find(&candidates);
-        duplicates::add_tags(&app.conn.lock().unwrap(), &mut groups)?;
+        duplicates::add_tags(&*app.read()?, &mut groups)?;
         let groups = Arc::new(groups);
         *app.duplicates.lock().unwrap() = Some((version, groups.clone()));
         Ok(Json(DuplicateList { groups: groups.as_slice() }).into_response())
@@ -3713,20 +3825,12 @@ async fn duplicates_remove(State(app): State<Arc<App>>, Json(req): Json<RemoveCo
 
 /// Folder names whose files count as copies, not originals.
 async fn duplicates_copy_folders(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
-    blocking(&app, |app| {
-        let conn = app.conn.lock().unwrap();
-        Ok(Json(serde_json::json!({ "folders": duplicates::copy_folders(&conn)? })))
-    })
-    .await
+    blocking(&app, |app| Ok(Json(serde_json::json!({ "folders": duplicates::copy_folders(&*app.read()?)? })))).await
 }
 
 /// How event folders are named when the app creates them (`YYYY-MM Name`).
 async fn event_pattern_get(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
-    blocking(&app, |app| {
-        let conn = app.conn.lock().unwrap();
-        Ok(Json(serde_json::json!({ "pattern": library::event_pattern(&conn)?.format() })))
-    })
-    .await
+    blocking(&app, |app| Ok(Json(serde_json::json!({ "pattern": library::event_pattern(&*app.read()?)?.format() })))).await
 }
 
 #[derive(Deserialize)]
@@ -3746,7 +3850,7 @@ const ALLOW_TRASH_KEY: &str = "allow_trash";
 
 async fn allow_trash_get(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
     blocking(&app, |app| {
-        let conn = app.conn.lock().unwrap();
+        let conn = app.read()?;
         // A read-only library never offers the trash, whatever the setting says.
         let read_only = crate::libraries::is_read_only(&app.root);
         Ok(Json(serde_json::json!({ "allow": !read_only && db::setting(&conn, ALLOW_TRASH_KEY)?.as_deref() == Some("1"), "read_only": read_only })))
@@ -3819,7 +3923,7 @@ async fn export_summary(
     Json(req): Json<ExportIds>,
 ) -> ApiResult<Json<export::Summary>> {
     local_only(peer, &headers)?;
-    blocking(&app, move |app| export::summarize(&app.conn.lock().unwrap(), &req.ids).map(Json).map_err(bad)).await
+    blocking(&app, move |app| export::summarize(&*app.read()?, &req.ids).map(Json).map_err(bad)).await
 }
 
 #[derive(Deserialize)]
@@ -3843,7 +3947,7 @@ async fn export_check(
     local_only(peer, &headers)?;
     blocking(&app, move |app| {
         let dest = export::destination(&req.parent, &req.name).map_err(bad)?;
-        let plan = export::plan(&app.conn.lock().unwrap(), &req.ids, req.options, &dest).map_err(bad)?;
+        let plan = export::plan(&*app.read()?, &req.ids, req.options, &dest).map_err(bad)?;
         let shoebox = export::shoebox_drive(&dest).map(|drive| {
             let same = export::drive_of_index(&app.db_path).is_some_and(|own| own == drive);
             let name = volume::library_name(&drive);
@@ -3874,7 +3978,7 @@ async fn export_start(
         }
         let dest = export::destination(&req.parent, &req.name).map_err(bad)?;
         let plan = {
-            let conn = app.conn.lock().unwrap();
+            let conn = app.read()?;
             if jobs_running(&conn)? {
                 return Err(ApiError::Conflict("a scan is running; try again when it is done".into()));
             }
@@ -3946,8 +4050,8 @@ struct GeoPoints {
 
 async fn geo_points(State(app): State<Arc<App>>) -> ApiResult<Json<GeoPoints>> {
     blocking(&app, |app| {
-        let conn = app.conn.lock().unwrap();
-        let snapshot = app.snapshot(&conn)?;
+        let snapshot = app.snapshot()?;
+        let conn = app.read()?;
         let shown: HashSet<i64> = snapshot.items.iter().filter(|it| !it.hidden).map(|it| it.id).collect();
         let mut out = GeoPoints { ids: Vec::new(), lats: Vec::new(), lons: Vec::new() };
         for (id, lat, lon) in crate::geo::positions(&conn)? {
@@ -4001,7 +4105,7 @@ async fn positions_set(State(app): State<Arc<App>>, Json(req): Json<PositionsReq
 /// What a location dialog for these photos should say.
 async fn positions_check(State(app): State<Arc<App>>, Json(req): Json<IdsRequest>) -> ApiResult<Json<crate::geo::PositionsCheck>> {
     blocking(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
+        let conn = app.read()?;
         crate::geo::check_positions(&conn, &req.ids).map(Json).map_err(|e| ApiError::BadRequest(format!("{e:#}")))
     })
     .await
@@ -4051,7 +4155,7 @@ async fn dates_set(State(app): State<Arc<App>>, Json(req): Json<DatesRequest>) -
 /// What a date dialog for these photos should say.
 async fn dates_check(State(app): State<Arc<App>>, Json(req): Json<IdsRequest>) -> ApiResult<Json<dates::Check>> {
     blocking(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
+        let conn = app.read()?;
         dates::check(&conn, &req.ids).map(Json).map_err(|e| ApiError::BadRequest(format!("{e:#}")))
     })
     .await
@@ -4062,10 +4166,9 @@ async fn dates_check(State(app): State<Arc<App>>, Json(req): Json<IdsRequest>) -
 /// rest of the filter.
 async fn dates_suggest(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<dates::Row>>> {
     queued(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
-        let snapshot = app.snapshot(&conn)?;
-        let all: Vec<(i32, Option<u32>, Option<u32>)> = snapshot.query(&conn, &filter)?.iter().map(|it| it.date_parts()).collect();
+        let snapshot = app.snapshot()?;
+        let all: Vec<(i32, Option<u32>, Option<u32>)> = snapshot.query(&*app.read()?, &filter)?.iter().map(|it| it.date_parts()).collect();
         let prefix = param(&pairs, "prefix").is_some_and(|v| !v.is_empty() && v != "0");
         Ok(Json(dates::suggest(param(&pairs, "q").unwrap_or(""), prefix, &all)))
     })
@@ -4082,8 +4185,8 @@ struct PlaceRow {
 
 async fn places_list(State(app): State<Arc<App>>) -> ApiResult<Json<Vec<PlaceRow>>> {
     blocking(&app, |app| {
-        let conn = app.conn.lock().unwrap();
-        let snapshot = app.snapshot(&conn)?;
+        let snapshot = app.snapshot()?;
+        let conn = app.read()?;
         let shown: HashSet<i64> = snapshot.items.iter().filter(|it| !it.hidden).map(|it| it.id).collect();
         let points = crate::geo::positions(&conn)?;
         let rows = crate::geo::places(&conn)?
@@ -4147,13 +4250,13 @@ async fn trash_files(State(app): State<Arc<App>>, Json(req): Json<IdsRequest>) -
 }
 
 async fn trash_list(State(app): State<Arc<App>>) -> ApiResult<Json<Vec<organize::TrashItem>>> {
-    blocking(&app, |app| Ok(Json(organize::trash_list(&app.conn.lock().unwrap())?))).await
+    blocking(&app, |app| Ok(Json(organize::trash_list(&*app.read()?)?))).await
 }
 
 /// The stored thumbnail of something in the trash (none is made for it).
 async fn trash_thumb(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Response> {
     blocking(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
+        let conn = app.read()?;
         let key: Option<String> =
             conn.query_row("SELECT quick_hash FROM trash WHERE id = ?1", [id], |r| r.get(0)).optional()?.flatten();
         match key.map(|k| thumbs::load(&conn, &k)).transpose()?.flatten() {
@@ -4257,7 +4360,7 @@ async fn hidden_folder_set(State(app): State<Arc<App>>, Json(req): Json<HiddenFo
 
 /// The own tags on a selection, for "Remove tag…".
 async fn tags_selection(State(app): State<Arc<App>>, Json(req): Json<IdsRequest>) -> ApiResult<Json<Vec<own_tags::Counted>>> {
-    blocking(&app, move |app| Ok(Json(own_tags::own_tags_of(&app.conn.lock().unwrap(), &req.ids)?))).await
+    blocking(&app, move |app| Ok(Json(own_tags::own_tags_of(&*app.read()?, &req.ids)?))).await
 }
 
 // ---------------------------------------------------------------- assets

@@ -17,7 +17,7 @@ use crate::thumbs;
 
 /// The Face check's requests answer from the kept people view
 /// (`App::people_view`, read on a connection of its own); only what the view
-/// does not hold is read on `App::conn`, after the view is there. Their
+/// does not hold is read on a reader, taken after the view is there. Their
 /// parameters are checked first: a request refused never waits for the view.
 pub(super) async fn list(State(app): State<Arc<App>>, Query(q): Query<faces::ListQuery>) -> ApiResult<Json<faces::List>> {
     let space = faces::space_of(q.kind.as_deref()).map_err(ApiError::BadRequest)?;
@@ -35,7 +35,7 @@ pub(super) async fn stats(State(app): State<Arc<App>>, Query(q): Query<StatsQuer
     let space = faces::space_of(q.kind.as_deref()).map_err(ApiError::BadRequest)?;
     blocking(&app, move |app| {
         let view = app.people_view()?;
-        Ok(Json(faces::stats_in(&app.conn.lock().unwrap(), &view, space)?))
+        Ok(Json(faces::stats_in(&*app.read()?, &view, space)?))
     })
     .await
 }
@@ -53,9 +53,9 @@ pub(super) async fn similar(
     let limit = q.limit.unwrap_or(24).min(200);
     blocking(&app, move |app| {
         // A face it does not know is not found before the view is read.
-        let target = faces::target(&app.conn.lock().unwrap(), id)?.ok_or(ApiError::NotFound)?;
+        let target = faces::target(&*app.read()?, id)?.ok_or(ApiError::NotFound)?;
         let view = app.people_view()?;
-        Ok(Json(faces::similar(&app.conn.lock().unwrap(), &view, &target, limit)?))
+        Ok(Json(faces::similar(&*app.read()?, &view, &target, limit)?))
     })
     .await
 }
@@ -77,7 +77,7 @@ async fn crop_of(
     find: impl FnOnce(&rusqlite::Connection) -> anyhow::Result<Option<(String, faces::FaceBox, Option<i64>)>> + Send + 'static,
 ) -> ApiResult<Response> {
     let found = blocking(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
+        let conn = app.read()?;
         let (key, b, file) = find(&conn)?.ok_or(ApiError::NotFound)?;
         match faces::load_crop(&conn, &key, &b)? {
             Some(Ok(bytes)) => Ok(Err(jpeg(bytes, IMMUTABLE))),
@@ -98,15 +98,18 @@ async fn crop_of(
     let _permit = app.renders.acquire().await.map_err(|e| ApiError::Internal(e.into()))?;
     let made = blocking(&app, move |app| {
         // Another request may have made it while this one waited.
-        if let Some(stored) = faces::load_crop(&app.conn.lock().unwrap(), &key, &b)? {
-            return Ok(stored);
-        }
-        let boxes = faces::boxes_of(&app.conn.lock().unwrap(), &key)?;
+        let boxes = {
+            let conn = app.read()?;
+            if let Some(stored) = faces::load_crop(&conn, &key, &b)? {
+                return Ok(stored);
+            }
+            faces::boxes_of(&conn, &key)?
+        };
         let result = faces::render_crops(&LibHeif::new(), &src, &boxes);
         if !matches!(&result, Err(e) if thumbs::is_transient(e)) {
             // Only faces still waiting for a decision and people's pictures
             // are kept; a decided face is made again whenever it is asked for.
-            let conn = app.conn.lock().unwrap();
+            let conn = app.writer.lock().unwrap();
             let stored = faces::wanted(&conn, &key, &boxes).and_then(|wanted| faces::store_crops(&conn, &key, &boxes, &wanted, &result));
             if let Err(e) = stored {
                 eprintln!("could not store face crops: {e:#}"); // still worth sending
