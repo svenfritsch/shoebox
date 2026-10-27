@@ -27,7 +27,7 @@ use crate::pets::Space;
 use crate::db;
 use crate::fingerprint;
 use crate::media;
-use crate::people::{Decision, Matched, View};
+use crate::people::{Matched, View};
 use crate::recognize::{self, FACES_ROT, KINDS};
 use crate::thumbs::{self, Source};
 
@@ -191,7 +191,7 @@ pub fn stats_in(conn: &Connection, view: &View, space: Space) -> Result<Stats> {
             pet_faces += 1;
             continue;
         }
-        let not_face = is_not_face(view, i);
+        let not_face = view.m.is_not_face(i);
         let is_unmatched = view.unplaced_ids().contains(&f.id);
         unmatched += is_unmatched as u64;
         faces += 1;
@@ -511,10 +511,6 @@ fn listable(view: &View, space: Space) -> impl Iterator<Item = usize> + '_ {
     })
 }
 
-fn is_not_face(view: &View, i: usize) -> bool {
-    view.m.decided(i).is_some_and(|d| d.decision == Decision::NotFace)
-}
-
 /// Face `i` of `view` as listed; its content is present (`listable`).
 fn item(view: &View, i: usize) -> Option<Item> {
     let f = &view.m.faces[i];
@@ -532,16 +528,27 @@ fn item(view: &View, i: usize) -> Option<Item> {
     })
 }
 
-/// Faces of present photos, filtered and sorted for the face check page,
-/// from the people view (`serve::App::people_view`): no SQL. `Err` says
-/// which parameter is wrong.
-pub fn list_in(view: &View, q: &ListQuery) -> Result<List, String> {
-    let space = space_of(q.kind.as_deref())?;
-    let by_score = match q.sort.as_deref() {
-        None | Some("") | Some("size") => false,
-        Some("score") => true,
-        Some(other) => return Err(format!("sort is size or score, not {other:?}")),
-    };
+/// What the Face check sorts by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sort {
+    Size,
+    Score,
+}
+
+/// The order `sort` names: `size` (also when empty or not given) or `score`.
+pub fn sort_of(sort: Option<&str>) -> Result<Sort, String> {
+    match sort {
+        None | Some("") | Some("size") => Ok(Sort::Size),
+        Some("score") => Ok(Sort::Score),
+        Some(other) => Err(format!("sort is size or score, not {other:?}")),
+    }
+}
+
+/// Faces of present photos of `space`, filtered and sorted for the face
+/// check page, from the people view (`serve::App::people_view`): no SQL.
+/// `space` and `sort` are `q.kind` and `q.sort`, checked before
+/// (`space_of`, `sort_of`).
+pub fn list_in(view: &View, q: &ListQuery, space: Space, sort: Sort) -> List {
     let (min, max) = (q.min_px.unwrap_or(0.0), q.max_px.unwrap_or(f64::MAX));
     let (pet_faces, unplaced) = (view.pet_faces(), view.unplaced_ids());
     let mut faces: Vec<usize> = listable(view, space)
@@ -552,22 +559,22 @@ pub fn list_in(view: &View, q: &ListQuery) -> Result<List, String> {
             } else if q.pet_face {
                 pet_faces.contains(&f.id)
             } else {
-                is_not_face(view, i) == q.not_face && !pet_faces.contains(&f.id)
+                view.m.is_not_face(i) == q.not_face && !pet_faces.contains(&f.id)
             };
             shown && f.px >= min && f.px < max && (!q.rotated || f.roll != 0)
         })
         .collect();
-    let value = |i: usize| if by_score { view.m.faces[i].score } else { view.m.faces[i].px };
+    let value = |i: usize| if sort == Sort::Score { view.m.faces[i].score } else { view.m.faces[i].px };
     faces.sort_by(|&a, &b| {
         let order = value(a).total_cmp(&value(b));
         if q.desc { order.reverse() } else { order }.then(view.m.faces[a].id.cmp(&view.m.faces[b].id))
     });
     let limit = q.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT);
-    Ok(List {
+    List {
         total: faces.len() as u64,
         faces: faces.iter().skip(q.offset).take(limit).filter_map(|&i| item(view, i)).collect(),
         min_cluster_px: space.min_px(),
-    })
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -578,39 +585,56 @@ pub struct Neighbour {
     pub similarity: f32,
 }
 
+/// A detected face to find similar ones for (`similar`).
+pub struct Target {
+    id: i64,
+    model: String,
+    space: Space,
+    emb: Vec<f32>,
+}
+
+/// Face `id` with its model and embedding; `None` if there is no such face.
+pub fn target(conn: &Connection, id: i64) -> Result<Option<Target>> {
+    Ok(conn
+        .query_row("SELECT model, emb, species FROM recog.faces WHERE id = ?1", [id], |r| {
+            Ok(Target {
+                id,
+                model: r.get(0)?,
+                emb: floats(&r.get::<_, Vec<u8>>(1)?),
+                space: Space::of(r.get::<_, Option<String>>(2)?.as_deref()),
+            })
+        })
+        .optional()?)
+}
+
 /// The faces (of present photos, same model, not marked "not a face", not
-/// taken for a pet's) whose embeddings are closest to face `id`'s, best
-/// first; `None` if there is no such face. The faces and what is decided
-/// come from the people view; only the embeddings are read here. Only reads:
-/// a look at which threshold separates people.
-pub fn similar(conn: &Connection, view: &View, id: i64, limit: usize) -> Result<Option<Vec<Neighbour>>> {
-    let target: Option<(String, Vec<u8>, Option<String>)> = conn
-        .query_row("SELECT model, emb, species FROM recog.faces WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
-        .optional()?;
-    let Some((model, emb, species)) = target else { return Ok(None) };
-    let space = Space::of(species.as_deref());
-    let target = floats(&emb);
+/// taken for a pet's) whose embeddings are closest to `target`'s, best
+/// first. The faces and what is decided come from the people view; only the
+/// embeddings are read here. Only reads: a look at which threshold
+/// separates people.
+pub fn similar(conn: &Connection, view: &View, target: &Target, limit: usize) -> Result<Vec<Neighbour>> {
+    let space = target.space;
     let shown: HashMap<i64, usize> = listable(view, space)
-        .filter(|&i| !is_not_face(view, i) && !view.pet_faces().contains(&view.m.faces[i].id))
+        .filter(|&i| !view.m.is_not_face(i) && !view.pet_faces().contains(&view.m.faces[i].id))
         .map(|i| (view.m.faces[i].id, i))
         .collect();
     let mut stmt =
         conn.prepare(&format!("SELECT f.id, f.emb FROM recog.faces f WHERE f.model = ?1 AND f.id != ?2 AND {}", space.filter()))?;
-    let mut rows = stmt.query(params![model, id])?;
+    let mut rows = stmt.query(params![target.model, target.id])?;
     let mut all = Vec::new();
     while let Some(r) = rows.next()? {
         let Some(&i) = shown.get(&r.get(0)?) else { continue };
         let emb: Vec<u8> = r.get(1)?;
         let other = floats(&emb);
-        if other.len() != target.len() {
+        if other.len() != target.emb.len() {
             continue;
         }
-        let similarity = target.iter().zip(&other).map(|(a, b)| a * b).sum::<f32>();
+        let similarity = target.emb.iter().zip(&other).map(|(a, b)| a * b).sum::<f32>();
         all.push((i, similarity));
     }
     all.sort_by(|a, b| b.1.total_cmp(&a.1));
     all.truncate(limit);
-    Ok(Some(all.into_iter().filter_map(|(i, similarity)| Some(Neighbour { face: item(view, i)?, similarity })).collect()))
+    Ok(all.into_iter().filter_map(|(i, similarity)| Some(Neighbour { face: item(view, i)?, similarity })).collect())
 }
 
 fn floats(bytes: &[u8]) -> Vec<f32> {

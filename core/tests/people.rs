@@ -2022,7 +2022,8 @@ fn the_face_check_sorts_and_pages() {
 }
 
 /// The Face check answers from the people view the server keeps: a decision,
-/// an undo and a scan in another process show in its very next answer.
+/// an undo, a scan in another process and forgetting faces (a change to
+/// `recognition.db`) show in its very next answer.
 #[test]
 fn the_face_check_sees_a_change_at_once() {
     let Check { lib, server, .. } = check_library("people-face-check-change");
@@ -2067,6 +2068,27 @@ fn the_face_check_sees_a_change_at_once() {
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     assert!(!has("", carl) && !has("unmatched=true", carl));
     assert_eq!(n(&stats(), "faces"), n(&s2, "faces") - 1);
+
+    // Forgetting what recognition found changes `recognition.db`, not the
+    // index. The pets: gone from the Pet check; without them the faces taken
+    // for a pet's are faces again.
+    let (taken, faces) = (face_check(addr, "pet_face=true").1, face_check(addr, "").0);
+    assert!(face_check(addr, "kind=pets").0 > 0 && taken.len() == 2);
+    ok(addr, "/api/recognition/forget", &json!({ "space": "pets" }));
+    assert_eq!(face_check(addr, "kind=pets"), (0, vec![]));
+    assert_eq!(n(&get(addr, "/api/faces/stats?kind=pets").json(), "faces"), 0);
+    assert_eq!(face_check(addr, "pet_face=true"), (0, vec![]));
+    let (total, ids) = face_check(addr, "");
+    assert!(total == faces + 2 && taken.iter().all(|id| ids.contains(id)), "{taken:?} {ids:?}");
+    assert!(near(other).contains(&taken[0]), "neighbours");
+    // The faces: none left to check, their neighbours unknown.
+    ok(addr, "/api/recognition/forget", &json!({ "space": "faces" }));
+    for query in ["", "unmatched=true", "not_face=true"] {
+        assert_eq!(face_check(addr, query), (0, vec![]), "{query}");
+    }
+    let s3 = stats();
+    assert_eq!((n(&s3, "faces"), n(&s3, "unmatched"), n(&s3, "not_faces")), (0, 0, 0));
+    assert_eq!(get(addr, &format!("/api/faces/{other}/similar")).status, 404);
     server.stop().unwrap();
 }
 

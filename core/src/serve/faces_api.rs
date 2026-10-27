@@ -17,9 +17,12 @@ use crate::thumbs;
 
 /// The Face check's requests answer from the kept people view
 /// (`App::people_view`, read on a connection of its own); only what the view
-/// does not hold is read on `App::conn`, after the view is there.
+/// does not hold is read on `App::conn`, after the view is there. Their
+/// parameters are checked first: a request refused never waits for the view.
 pub(super) async fn list(State(app): State<Arc<App>>, Query(q): Query<faces::ListQuery>) -> ApiResult<Json<faces::List>> {
-    blocking(&app, move |app| Ok(Json(faces::list_in(&*app.people_view()?, &q).map_err(ApiError::BadRequest)?))).await
+    let space = faces::space_of(q.kind.as_deref()).map_err(ApiError::BadRequest)?;
+    let sort = faces::sort_of(q.sort.as_deref()).map_err(ApiError::BadRequest)?;
+    blocking(&app, move |app| Ok(Json(faces::list_in(&*app.people_view()?, &q, space, sort)))).await
 }
 
 #[derive(Deserialize)]
@@ -49,8 +52,10 @@ pub(super) async fn similar(
 ) -> ApiResult<Json<Vec<faces::Neighbour>>> {
     let limit = q.limit.unwrap_or(24).min(200);
     blocking(&app, move |app| {
+        // A face it does not know is not found before the view is read.
+        let target = faces::target(&app.conn.lock().unwrap(), id)?.ok_or(ApiError::NotFound)?;
         let view = app.people_view()?;
-        faces::similar(&app.conn.lock().unwrap(), &view, id, limit)?.map(Json).ok_or(ApiError::NotFound)
+        Ok(Json(faces::similar(&app.conn.lock().unwrap(), &view, &target, limit)?))
     })
     .await
 }
