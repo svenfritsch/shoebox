@@ -6,7 +6,7 @@
 //! says which root belongs to which name. The shoebox folder is the downloaded
 //! one, beside `program/` (never inside it: `program/` is replaced by a newer
 //! one). Nothing is ever written into the root of such a library (see
-//! docs/phase16.md).
+//! docs/decisions.md).
 
 use std::path::{Path, PathBuf};
 
@@ -231,7 +231,7 @@ pub fn is_read_only(root: &Path) -> bool {
 }
 
 // ---------------------------------------------------------------- management
-// What the Control Panel's "Manage…" panel does (docs/phase16.md). Each takes
+// What the Control Panel's "Manage…" panel does. Each takes
 // the program folder, so tests need no environment.
 
 /// The program folder can hold `libraries/`: made if needed and written to once.

@@ -390,7 +390,7 @@ function loadConfig() {
 
 // ---------------------------------------------------------------- libraries next to the program (phase 16)
 // A library can keep its index next to the program instead of in the folder:
-// nothing is written into the folder, so it is only read (docs/phase16.md).
+// nothing is written into the folder, so it is only read (docs/decisions.md).
 
 var libs = [];                           // /api/libraries: the registered libraries
 var libsInfo = { dir: null, writable: false };

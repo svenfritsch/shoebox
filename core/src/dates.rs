@@ -1,4 +1,4 @@
-//! Estimated capture dates (phase 12, docs/phase12.md).
+//! Estimated capture dates (phase 12, "Library and dates" in docs/decisions.md).
 //!
 //! A date the user gives a photo, in `library.db` only (`date_estimates`, keyed
 //! by content like `taken_overrides` and `geo_overrides`): a year, a year and a

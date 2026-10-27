@@ -1,4 +1,4 @@
-//! Text in photos (phase 9, `docs/plan.md`): what the worker's `text` task
+//! Text in photos (phase 9, `docs/decisions.md`): what the worker's `text` task
 //! returns is cleaned and filtered here, in one place, before anything is
 //! stored: only German and English characters, no icons or specks, nothing
 //! the recogniser is unsure of. The search folds text the same way

@@ -128,8 +128,7 @@ it is an unknown task. `shoebox recognize --pets` starts it that way.
   sent, no embeddings. The core uses them to tell a pet's face (a "face"
   inside a pet and outside every person) from a person's. A worker that
   sends none (older) is fine.
-- The embedder is the first of `dinov2-small`, `ppresnet50-2022jan` whose
-  file is in the models folder (`SHOEBOX_PET_EMBEDDER` forces one). It
+- The embedder is PP-ResNet50 (`ppresnet50-2022jan`). It
   runs on onnxruntime if that is installed, else on OpenCV's own runner
   (`SHOEBOX_PET_BACKEND=onnxruntime|opencv` forces one).
 - Scale: with PP-ResNet50 two photos of one pet score ≥ 0.95 after
@@ -171,7 +170,7 @@ faster that way).
   by `install.sh --text`); the package must be importable by the worker's
   Python. Missing files or package end the worker with a message on stderr.
 - The model reads Latin text well but prints `ä ö ü` without their marks and
-  `ß` as `β` or `B` (`docs/plan.md`, phase 9, spike results).
+  `ß` as `β` or `B` (`docs/decisions.md`, "Text in photos").
 
 ### `embed-pets`: pets drawn by hand
 

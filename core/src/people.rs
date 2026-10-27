@@ -38,7 +38,7 @@ pub const MATCH_IOU: f64 = 0.5;
 /// (For pets the numbers differ: `pets::Space::thresholds`.)
 /// A face is suggested for a person when it is at least this similar
 /// (cosine) to one of the person's confirmed faces. Calibrated on the real
-/// drive (docs/phase5.md): the highest wrong match seen was 0.54.
+/// drive (phase 5): the highest wrong match seen was 0.54.
 pub const SUGGEST_SIM: f32 = 0.55;
 /// Between this and `SUGGEST_SIM` a face is only offered as "maybe" (the
 /// lowest right match seen was 0.37); below it nothing is suggested.

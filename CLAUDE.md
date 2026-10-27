@@ -4,8 +4,16 @@ Portable photo library manager that lives on an external exFAT drive next to
 the photos. Rust core (`core/`), optional Python recognition worker
 (`recognizer/`).
 
-**Read [docs/plan.md](docs/plan.md) first**: decisions, architecture, phases,
-current status and next step. Update its status table when a phase moves.
+**Read [docs/plan.md](docs/plan.md) first** (short: architecture, status, and
+where the rest is): `docs/decisions.md` (why, and what was rejected),
+`docs/open.md` (all open items), `docs/pitfalls.md`. Write down only what a
+later change needs, in the same pull request and the file it belongs to; delete
+open items once done. No per-phase or "as built" documents (code, guide and
+`git log` have that); a plan for big unbuilt work goes to
+`docs/design/<feature>.md` until it is merged. Name work by its feature, never
+by a new phase number (the old numbers stay where the code uses them). Decisions are current answers, not
+laws: when one no longer fits the task, say so and propose the change instead
+of working around it. The rules below change only when the user says so.
 
 ## Rules
 
@@ -58,7 +66,7 @@ current status and next step. Update its status table when a phase moves.
   answers to a browser on this computer (`/api/export/*`, `info.export`).
   Collection tag and numbering are browser settings, like Maps.
 - A library registered in `libraries/libraries.json` next to the program folder (phase 16,
-  [docs/phase16.md](docs/phase16.md); index in `libraries/<name>/`, not in the
+  index in `libraries/<name>/`, not in the
   root) is read-only: `libraries::ensure_writable(root)` is the first line of
   every function that changes an original (move, rename, trash, restore,
   rotate, remove copies), and nothing at all is written into its root, not
@@ -96,7 +104,7 @@ current status and next step. Update its status table when a phase moves.
   entry checked like typed input; only for a browser on this computer). Hidden photos and folders (phase 20) are a box of their own, not ticked unless the
   user does, and never part of the Tags box. A new table in
   `library.db` must be listed in `transfer::TRANSFERRED_TABLES` or `NOT_TRANSFERRED_TABLES`.
-- Hidden from the timeline (phase 20, [docs/phase20.md](docs/phase20.md)): the own tag
+- Hidden from the timeline (phase 20): the own tag
   `hidden` (`tags::HIDDEN`) and the folders in `hidden_folders` live in `library.db`
   only, never in a photo or a folder, so a library kept next to the program takes them
   too. Hidden photos are left out of the photo grid in every form (`browse::Snapshot::query`,
@@ -110,24 +118,17 @@ current status and next step. Update its status table when a phase moves.
   `Cargo.lock`, `scripts/build-deps.sh` or `core/web/vendor/` run
   `python3 scripts/third-party-licenses.py`. Do not call shoebox "open source"
   in texts. Icons are our own line drawings (`lineIcon` in `core/web/app.js`,
-  the guide's symbols). Every icon is drawn by us and must look visibly
-  different from any existing icon set (Google Material Symbols, Feather,
-  Apple SF Symbols, ...), even when the idea comes from one: a different
-  construction (shapes, proportions, stroke ends, where parts sit), never a
-  trace, a copy of path data, or a small tweak of an original. If an icon
-  still looks like the well-known one, change it. The exception: plain
-  everyday shapes that every icon set has in some form (a cross, a plus, a
-  trash can, a map marker, a tray with an arrow going up) may look like
-  theirs, as long as we draw the path ourselves; the selection bar's Export
-  (tray with an arrow) and Set location (marker with a plus) are such
-  icons. Anything with a more distinctive design still needs a different
-  construction. Such an icon needs no
-  licence entry only because it is ours. Never paste an icon set's SVG into
-  the code or the guide.
-  No emojis anywhere in the pages (`core/tests/no_emoji.rs` fails on one); plain
-  text symbols (✓ ✗ ✕ ♥ ☰ ↺ ⇄) may stay.
-  Open items before giving it to others: see "Before giving shoebox
-  to others" in docs/plan.md.
+  the guide's symbols) and must look visibly different from any icon set
+  (Material Symbols, Feather, SF Symbols, ...), even when the idea comes from
+  one: a different construction (shapes, proportions, stroke ends, where parts
+  sit), never a trace, a copy of path data or a small tweak; if it still looks
+  like the well-known one, change it. Only plain everyday shapes (a cross, a
+  plus, a trash can, a map marker, a tray with an arrow: the selection bar's
+  Export and Set location) may look like theirs, with our own path. Such an
+  icon needs no licence entry only because it is ours. Never paste an icon
+  set's SVG into the code or the guide. No emojis anywhere in the pages
+  (`core/tests/no_emoji.rs`); plain symbols (✓ ✗ ✕ ♥ ☰ ↺ ⇄) may stay. Open
+  items before giving it to others: section 6 of docs/open.md.
 - Tests of the photo app come in three layers (API tests in Rust, the page
   against a fake API, a few against the real server): a change to what the
   page asks for or a reply's shape updates them as "Browser tests" in
@@ -156,26 +157,19 @@ current status and next step. Update its status table when a phase moves.
   fail. The pull request says which tests were added and why, and which were
   left out and why (e.g. not observable, like a request the server drops
   from its queue: measure it in a `scripts/bench-*.py` instead).
-- **UI uses the common classes, never one-off styles.** Controls take their size, radius,
-  hover and focus from `core/web/app.css` ("common controls": `--ctl-h` 32px,
-  `--ctl-h-sm` 26px, `--ctl-r`, the translucent accent `--accent-soft` / `--accent-fg`).
-  Before adding a control, look for the class that already is it and use it: `.btn`
-  (`.quiet`, `.small`, `.danger`: red with white words) for text buttons, `.icon` (header and viewer bar),
-  `.frame-icon` (a framed square icon button: the header's heart and Select), `.ib`
-  (selection bar tools), `.abtn` (face actions), `.more-btn`, `.icon-btn`, `.sel-all`,
-  `.tabs` (every row of tabs: a `.tabs` box of buttons, the current one `.on` or `.active`),
-  `.badge-chip` (tags and face names, `.add` for the dashed "+ add" one) and
-  `.badge-input` (the small field that types one), `.scrub` (the year strip right of the timeline), `.text-input` (text fields: the search box, the
-  settings' fields), plain `select` (it already has the shared chevron; `select.small` is
-  `--ctl-h-sm` high, like `.btn.small`), `.chip` (filters). Pills
-  have two heights only: `--ctl-h-sm` among text and controls, `--badge-h` for a label lying on a
-  photo (`.badge`, the text snippet). A new kind of control gets its class in the common block, with a
-  tooltip or ellipsis rule if its label can be long, and is listed here; no per-screen heights,
-  paddings, radii or colours for something that already exists. Text buttons stay on one line
-  (cut with an ellipsis, `tip.js` shows the whole label).
+- **UI work follows the `frontend` skill** (`.claude/skills/frontend/SKILL.md`):
+  read it before changing `core/web`, `core/launcher-web` or a UI string. It
+  lists the common classes (`.btn`, `.icon`, `.frame-icon`, `.ib`, `.abtn`,
+  `.tabs`, `.badge-chip`, `.text-input`, `select`, `.chip`, ...), the tokens and
+  how to look at the page without a build (`core/tests/browser/look.mjs`).
+  **UI uses the common classes and tokens of `core/web/app.css`, never one-off
+  styles**: no per-screen heights, paddings, radii or colours for something that
+  already exists. A new kind of control gets its class in the common block (with
+  a tooltip or ellipsis rule if its label can be long) and a row in the skill's
+  table. Pills have two heights only (`--ctl-h-sm` among text and controls,
+  `--badge-h` on a photo); text buttons stay on one line (ellipsis, `tip.js`).
 - UI text is never hard-coded: `tr()`/`trn()`/`data-i18n` with a key in both
-  `core/i18n/en.json` and `de.json` (see docs/phase8.md; `core/tests/i18n.rs`
-  checks it).
+  `core/i18n/en.json` and `de.json` (`core/tests/i18n.rs` checks it).
 - Paths may contain spaces and decomposed Unicode: quote everything, compare
   NFC-normalised.
 - **The guide is part of every change.** `docs/guide/shoebox-en.html` and
@@ -221,4 +215,4 @@ scripts/build.sh aarch64-apple-darwin test
 
 Fixture generation needs ffmpeg, heif-enc and exiftool (all in the Docker
 image). Recognizer tests use the fake worker unless `SHOEBOX_RECOGNIZER`
-points at `recognizer/recognizer.py`. Pitfalls from earlier phases are listed at the end of docs/plan.md.
+points at `recognizer/recognizer.py`. Pitfalls from earlier phases are in docs/pitfalls.md.

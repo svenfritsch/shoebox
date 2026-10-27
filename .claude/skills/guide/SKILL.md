@@ -46,7 +46,7 @@ A removed feature leaves the guide entirely: cards, legend, sections, FAQ.
 ## 2. Edit both languages in step
 
 - Text and its screenshots sit together in a `topic` block (`<div class="topic has-shots">`: `.txt` and `.shots`), so a picture is always beside the paragraph that describes it. Same sections, same paragraphs, same screenshots in the same order, same
-  dots. German uses the informal "du" (docs/phase8.md).
+  dots. German uses the informal "du" (the `frontend` skill, Words).
 - Inline styles only, no scripts, no build step. Elements with
   `data-txt="skip"` are left out of the text copy.
 - Sample screenshots must not show a word that is a feature now (the tag
