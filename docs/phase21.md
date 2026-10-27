@@ -57,6 +57,7 @@ app was frozen.
 | Request | Took | Probe's longest wait |
 |---|---|---|
 | Face check, "Not matched yet" (`/faces?…&unmatched=true`), on the real drive | about 150 s | as long (the whole app) |
+| The same on the benchmark library (about 165,000 faces without a decision) | no answer in 5 minutes; the client gave up | every probe request timed out (60 s); `/api/groups` asked after the client had gone still got no answer within a minute: the server went on for nobody |
 | Pet check, "Not matched yet" (1,519 pets, all unmatched) | 33.4 s | 33.4 s |
 | `/faces/stats` (the Face check's first request) | 1.72 s | 1.72 s |
 | `/faces/stats?kind=pets` | 1.26 s | 1.25 s |
