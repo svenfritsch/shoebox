@@ -439,6 +439,7 @@ rot) and shows "last backup N days ago, M files new since".
 | 18 | Identical photos once in the common timeline (All drives): a photo with the same file name and the same full hash on more than one drive is shown once (no switch; the copy with a date the user gave wins, else the first drive), the other copies listed in the info panel ("Also on"), search counts count it once; read only (design in [phase18.md](phase18.md)) | **Built** (branch `claude/phase18-identical-once`), tests in `core/tests/multi.rs`; to try on the couple's two drives |
 | 19 | Groups in the search and the timeline: a group is a search chip that shows the photos of anyone in it (OR inside the group, AND with every other chip; pets count), picked from the suggestions ("Groups") or by clicking a group in the sidebar, which also unfolds it; a group is made from a person ("New group…" on their page, they are its first member) and goes when its last person leaves, so there are no empty groups (design in [phase19.md](phase19.md)) | **Built except the real-hardware check**: core (`group=` filter, `/api/groups/search`, `/api/all/groups`, no empty groups), search box, chip, sidebar, tests, guide in both languages; the own icons for the group, person, cat, paw, place and date chips come in a second commit |
 | 20 | Hidden from the timeline: the own tag `hidden` (viewer button, selection bar) and a hidden-folder flag (right-click, folder chip) inherited by everything below it; hidden photos are left out of the photo grid in every filter, with its counts and suggestions, and shown only by the Hidden chip, the word *hidden*, or a click on a hidden folder; administrative pages show everything (design in [phase20.md](phase20.md)) | **Built, real-hardware check open**: core (own tag, folder flag, schema v18, query rule, counts, Places, carry over box, userdata.json v7), the page (viewer eye and key h, selection bar, folder menu and chip, Hidden chip, row and suggestion, toast for typed words), guide EN/DE; open: people counts, the iPad (chip button) and the CI run (see [phase20.md](phase20.md) section 5) |
+| 21 | Responsive on large libraries: no request reads the whole library (the Face check answered from the kept people view, no id lists in SQL), a slow-request log and `bench-endpoints.py`, requests called off when a page is left (in the browser and on the server, with a deadline), a busy line and placeholders while a page waits, then one writer and a pool of readers instead of one shared connection (design in [phase21.md](phase21.md)) | **Plan only**, nothing built; found on the real drive (Face check "Not matched yet": 2.5 minutes, the app frozen meanwhile) |
 
 ### Phase 15 details (your data between drives)
 
@@ -1949,6 +1950,10 @@ TIFF-based RAW whose Exif IFD lies beyond the bytes loaded so far. Fixed in
 grows 256 KiB, 8 MiB, 64 MiB); tests in `core/tests/scan.rs`, fixture
 `IMG_0005.CR2` in `scripts/make-fixtures.sh`. Open: confirm on the 'Angie
 wedding' folder (`shoebox probe` should show `RAW 3 3 3`).
+
+The next round of performance work is planned in [phase21.md](phase21.md), after
+the Face check's "Not matched yet" took 2.5 minutes and froze the photo app on
+the real drive. What was done before:
 
 Performance with ~100 000 photos (found on the real drive): everything shares
 one SQLite connection (`App::conn`, journal mode DELETE on exFAT), so one slow
