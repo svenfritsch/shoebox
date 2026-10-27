@@ -429,10 +429,10 @@ function longSidebar(lib) {
 const rowInView = (p, sel) => p.evaluate((sel) => {
   const b = document.querySelector(sel);
   if (!b || !b.offsetParent) return false;
-  const s = $('sidebar').getBoundingClientRect(), r = b.parentNode.getBoundingClientRect();
+  const s = $('side-scroll').getBoundingClientRect(), r = b.parentNode.getBoundingClientRect();
   return r.top >= s.top - 0.5 && r.bottom <= Math.min(s.bottom, $('status').getBoundingClientRect().top) + 0.5;
 }, sel);
-const sideTop = (p) => p.evaluate(() => $('sidebar').scrollTop);
+const sideTop = (p) => p.evaluate(() => $('side-scroll').scrollTop);
 
 // Types `text` and picks its suggestion of `kind`.
 async function pickKind(p, lib, text, kind) {
@@ -440,13 +440,16 @@ async function pickKind(p, lib, text, kind) {
   await settle(p, lib);
   const i = await p.evaluate((k) => sugg.items.findIndex((it) => it.kind === k), kind);
   check(i >= 0, `no ${kind} offered for ${text}`);
+  const before = await p.evaluate(() => location.hash);
   await p.locator(`#suggest .item[data-i="${i}"]`).click();
+  // The pick comes in by the hashchange event, which may follow the clicks' timers.
+  await until(`the ${kind} in the search`, () => p.evaluate((h) => location.hash !== h && shownHash === location.hash, before));
   await settle(p, lib);
 }
 
 await test('a folder, person or tag picked in the search box is scrolled into view in the sidebar, a folded group unfolds; Back does not scroll', await on('', longSidebar, async (p, lib, s) => {
   const folder = `#tree .name[data-id="${s.last}"]`, person = `#people-tree .name[data-person="${s.zora.id}"]`, tag = '#own-tags .name[data-tag="40"]';
-  check(await p.evaluate(() => $('sidebar').scrollHeight > $('sidebar').clientHeight * 1.5), 'the sidebar is not long enough to scroll');
+  check(await p.evaluate(() => $('side-scroll').scrollHeight > $('side-scroll').clientHeight * 1.5), 'the sidebar is not long enough to scroll');
   check(!(await rowInView(p, folder)) && !(await rowInView(p, person)), 'the folder or the person is in view before the picks');
   await pickKind(p, lib, 'Zielordner', 'folder');
   check(await p.evaluate(() => state.filter.folder) === s.last, 'the folder is not in the search');
@@ -458,9 +461,10 @@ await test('a folder, person or tag picked in the search box is scrolled into vi
   check(await p.evaluate(() => !people.open[people.groups.find((g) => g.name === 'Familie').id]), 'another group unfolded');
   await pickKind(p, lib, 'Tag 40', 'tag');
   check(await rowInView(p, tag), 'the picked tag is not in view');
+  check(await p.evaluate(() => document.scrollingElement.scrollTop === 0 && $('sidebar').scrollTop === 0), 'the page or the sidebar\'s frame scrolled, not only its list');
   check(!(await rowInView(p, person)), 'the person is still in view (the sidebar did not move to the tag)');
   // Only a pick: the way back (or a reload) leaves the sidebar where it is.
-  await p.evaluate(() => { $('sidebar').scrollTop = 0; });
+  await p.evaluate(() => { $('side-scroll').scrollTop = 0; });
   await p.evaluate(() => history.back());
   await until('the search without the tag', () => p.evaluate(() => state.filter.tags.length === 0 && state.filter.people.length === 1));
   await settle(p, lib);

@@ -1492,12 +1492,7 @@ function hasSidebarRow(kind, id) {
 // nothing moves when the row is in view already.
 function revealInSidebar(kind, id) {
   var row = sidebarRow(kind, id);
-  if (!row) return;
-  var side = $('sidebar'), s = side.getBoundingClientRect(), r = row.getBoundingClientRect();
-  // The status line stays at the bottom over the list.
-  var bottom = Math.min(s.bottom, $('status').getBoundingClientRect().top);
-  if (r.top < s.top) side.scrollTop -= s.top - r.top;
-  else if (r.bottom > bottom) side.scrollTop += Math.min(r.bottom - bottom, r.top - s.top);
+  if (row) row.scrollIntoView({ block: 'nearest' });
 }
 
 // A term picked in the search box is shown in the sidebar once its chip is in.
