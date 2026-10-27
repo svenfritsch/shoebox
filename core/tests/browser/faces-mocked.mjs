@@ -408,6 +408,86 @@ await test('picking a suggestion closes the list and asks for no suggestions unt
   check(await p.locator('#suggest').isVisible(), 'a click in the focused box does not open the list again');
 }));
 
+// ---- a search term shown in the sidebar
+
+// A sidebar taller than the window: two folded groups, 40 tags, 60 folders
+// (Zielordner last, at the bottom).
+function longSidebar(lib) {
+  const anna = lib.person('Anna');
+  lib.group('Familie', anna);
+  const zora = lib.person('Zora');
+  const zoo = lib.group('Zoo', zora);
+  lib.tags = Array.from({ length: 40 }, (_, i) => ({ id: i + 1, name: `Tag ${String(i + 1).padStart(2, '0')}`, count: 1, kind: 'manual' }));
+  lib.folders = [{ id: 1, parent: null, name: '', path: '', count: 60 }, ...Array.from({ length: 60 }, (_, i) => {
+    const name = i === 59 ? 'Zielordner' : `Ordner ${String(i + 1).padStart(2, '0')}`;
+    return { id: i + 2, parent: 1, name, path: name, count: 1 };
+  })];
+  return { zora, zoo, last: 61 };
+}
+
+// Whether the sidebar row of the name button `sel` is in view (above the status line).
+const rowInView = (p, sel) => p.evaluate((sel) => {
+  const b = document.querySelector(sel);
+  if (!b || !b.offsetParent) return false;
+  const s = $('sidebar').getBoundingClientRect(), r = b.parentNode.getBoundingClientRect();
+  return r.top >= s.top - 0.5 && r.bottom <= Math.min(s.bottom, $('status').getBoundingClientRect().top) + 0.5;
+}, sel);
+const sideTop = (p) => p.evaluate(() => $('sidebar').scrollTop);
+
+// Types `text` and picks its suggestion of `kind`.
+async function pickKind(p, lib, text, kind) {
+  await p.locator('#search').fill(text);
+  await settle(p, lib);
+  const i = await p.evaluate((k) => sugg.items.findIndex((it) => it.kind === k), kind);
+  check(i >= 0, `no ${kind} offered for ${text}`);
+  await p.locator(`#suggest .item[data-i="${i}"]`).click();
+  await settle(p, lib);
+}
+
+await test('a folder, person or tag picked in the search box is scrolled into view in the sidebar, a folded group unfolds; Back does not scroll', await on('', longSidebar, async (p, lib, s) => {
+  const folder = `#tree .name[data-id="${s.last}"]`, person = `#people-tree .name[data-person="${s.zora.id}"]`, tag = '#own-tags .name[data-tag="40"]';
+  check(await p.evaluate(() => $('sidebar').scrollHeight > $('sidebar').clientHeight * 1.5), 'the sidebar is not long enough to scroll');
+  check(!(await rowInView(p, folder)) && !(await rowInView(p, person)), 'the folder or the person is in view before the picks');
+  await pickKind(p, lib, 'Zielordner', 'folder');
+  check(await p.evaluate(() => state.filter.folder) === s.last, 'the folder is not in the search');
+  check(await rowInView(p, folder), 'the picked folder is not in view');
+  // The person's group is folded and at the top: it unfolds and the sidebar goes up.
+  await pickKind(p, lib, 'Zora', 'person');
+  check(await rowInView(p, person), 'the picked person is not in view');
+  check(await p.evaluate((g) => !!people.open[g], s.zoo.id), 'the person\'s group did not unfold');
+  check(await p.evaluate(() => !people.open[people.groups.find((g) => g.name === 'Familie').id]), 'another group unfolded');
+  await pickKind(p, lib, 'Tag 40', 'tag');
+  check(await rowInView(p, tag), 'the picked tag is not in view');
+  check(!(await rowInView(p, person)), 'the person is still in view (the sidebar did not move to the tag)');
+  // Only a pick: the way back (or a reload) leaves the sidebar where it is.
+  await p.evaluate(() => { $('sidebar').scrollTop = 0; });
+  await p.evaluate(() => history.back());
+  await until('the search without the tag', () => p.evaluate(() => state.filter.tags.length === 0 && state.filter.people.length === 1));
+  await settle(p, lib);
+  check(await sideTop(p) === 0, `going back scrolled the sidebar to ${await sideTop(p)}`);
+  check(await p.locator(person).count() === 1, 'the person\'s group did not stay open');
+}));
+
+await test('a click on the name of a folder or person chip shows it in the sidebar (also with Enter); a reload and the Hidden chip do not', await on('folder=61&person=2&hidden=1', longSidebar, async (p, lib, s) => {
+  const folder = `#tree .name[data-id="${s.last}"]`, person = `#people-tree .name[data-person="${s.zora.id}"]`;
+  check(await sideTop(p) === 0, `the sidebar was scrolled on load to ${await sideTop(p)}`);
+  const go = p.locator('#filters .chip .go');
+  check(await go.count() === 2, `expected the folder and the person chip to show in the sidebar, got ${await go.count()}`);
+  check((await go.first().getAttribute('data-tip')) === await tr(p, 'chip.show_in_sidebar'), 'tip: ' + await go.first().getAttribute('data-tip'));
+  check(await p.locator('#filters .chip.hid .go').count() === 0, 'the Hidden chip offers the sidebar');
+  await p.locator('#filters .chip.hid').click({ position: { x: 30, y: 10 } });
+  await settle(p, lib);
+  check(await sideTop(p) === 0, 'a click on the Hidden chip scrolled the sidebar');
+  await go.filter({ hasText: 'Zielordner' }).click();
+  check(await rowInView(p, folder), 'the folder is not in view after a click on its chip');
+  check(await p.locator('#filters .chip:not(.more):not(.clear)').count() === 3 && await p.evaluate(() => state.filter.folder === 61 && state.filter.hidden), 'the click changed the search');
+  // Back up with the keyboard: the person's group unfolds.
+  await go.filter({ hasText: 'Zora' }).focus();
+  await p.keyboard.press('Enter');
+  check(await rowInView(p, person), 'the person is not in view after Enter on their chip');
+  check(await p.evaluate((g) => !!people.open[g], s.zoo.id), 'the person\'s group did not unfold');
+}));
+
 // ---- the Unnamed page's filter
 
 await test('the Unnamed page keeps its filter (people and pets, faces, pets) over a reload', await on('view=unnamed', (lib) => ({ cards: [lib.cluster(5), lib.cluster(4)] }), async (p, lib) => {

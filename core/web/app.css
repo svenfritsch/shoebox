@@ -1233,6 +1233,12 @@ body.read-only #sel-move, body.read-only #lb-rotate, body.read-only .copy label.
 /* The marker of a place chip opens the map. */
 .chip .ic.link { cursor: pointer; }
 .chip .ic.link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+/* Icon and name of a folder, tag, person or group chip: shows its row in the sidebar. */
+.chip .go { display: inline-flex; align-items: center; gap: inherit; cursor: pointer; }
+.chip .go:hover { color: var(--accent-fg); }
+.chip .go:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.side-closed .chip .go { cursor: default; color: inherit; }
+@media (max-width: 760px) { .chip .go, .chip .go:hover { cursor: default; color: inherit; } }
 .chip .edit .ic { margin: 0; width: 1em; height: 1em; vertical-align: -.15em; }
 .icon-btn svg { width: 18px; height: 18px; display: block; }
 
