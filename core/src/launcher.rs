@@ -1002,7 +1002,7 @@ async fn drives() -> Json<Vec<Drive>> {
 }
 
 // ---------------------------------------------------------------- libraries
-// Libraries whose index is kept next to the program (phase 16, docs/phase16.md):
+// Libraries whose index is kept next to the program (phase 16, docs/decisions.md):
 // the list in the Control Panel's step 1 and its "Manage…" panel.
 
 /// The folder picker of the page (the same lists the photo app's export dialog

@@ -15,8 +15,9 @@ clap = { version = "4.6.7", features = ["derive"] }
 futures-util = { version = "0.3.34", default-features = false }
 getrandom = "0.4.3"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
-# libheif is linked statically from scripts/build-deps.sh (decoder-only build),
-# located through PKG_CONFIG_PATH; see scripts/build.sh.
+# libheif comes from scripts/build-deps.sh (decoder-only build), a shared
+# library shipped next to the program (LGPL), found without pkg-config; see
+# scripts/build.sh.
 libheif-rs = { version = "3.0.0", default-features = false, features = ["v1_19"] }
 # Scaled JPEG decoding (1/2 to 1/8 in the IDCT) makes thumbnails several
 # times faster than a full decode.

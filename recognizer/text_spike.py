@@ -36,7 +36,7 @@ LONG_EDGE = 1600  # what the core would send the worker
 
 
 import re
-# Only German and English characters are kept (see docs/plan.md, phase 9).
+# Only German and English characters are kept (see "Text in photos" in docs/decisions.md).
 _NOT_ALLOWED = re.compile("[^A-Za-z0-9ÄÖÜäöüß\\s.,;:!?'\"„“”‘’«»()\\[\\]{}<>/\\\\|@#&%*+=~^_€§°²³µ$£–—·•-]")
 
 

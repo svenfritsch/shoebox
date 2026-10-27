@@ -1,4 +1,4 @@
-//! Carry over data between drives (phase 15a, docs/phase15.md).
+//! Carry over data between drives (phase 15a, docs/decisions.md).
 //!
 //! What a person made in shoebox (own tags, hearts, people and what was decided
 //! about faces, corrected and estimated dates, positions given by hand) lives in

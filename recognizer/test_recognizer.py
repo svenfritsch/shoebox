@@ -34,8 +34,8 @@ MODELS = recognizer.models_dir()
 HAVE_MODELS = all(os.path.isfile(os.path.join(MODELS, m)) for m in (recognizer.DETECTOR, recognizer.EMBEDDER))
 
 
-HAVE_PET_MODELS = HAVE_MODELS and os.path.isfile(os.path.join(MODELS, recognizer.PET_DETECTOR)) and any(
-    os.path.isfile(os.path.join(MODELS, s["file"])) for s in recognizer.EMBEDDERS
+HAVE_PET_MODELS = HAVE_MODELS and all(
+    os.path.isfile(os.path.join(MODELS, f)) for f in (recognizer.PET_DETECTOR, recognizer.PET_EMBEDDER["file"])
 )
 
 try:
@@ -230,12 +230,6 @@ class Pets(unittest.TestCase):
         same = float(np.dot(emb, np.frombuffer(base64.b64decode(e["emb"]), "<f4")))
         self.assertGreater(same, 0.95)
 
-    def test_the_embedder_can_be_chosen(self):
-        for spec in recognizer.EMBEDDERS:
-            if os.path.isfile(os.path.join(MODELS, spec["file"])):
-                _, hello = self.start("--pets", env={"SHOEBOX_PET_EMBEDDER": spec["id"]})
-                self.assertTrue(hello["tasks"]["pets"]["model"].endswith("+" + spec["id"]))
-
     @unittest.skipUnless(os.environ.get("SHOEBOX_TEST_PET"), "set SHOEBOX_TEST_PET to a photo of a cat or dog")
     def test_pet(self):
         img = cv2.imread(os.environ["SHOEBOX_TEST_PET"])
@@ -267,34 +261,26 @@ class Pets(unittest.TestCase):
 
 @unittest.skipUnless(cv2 is not None and onnx is not None, "needs opencv, numpy and onnx")
 class EmbedderPlumbing(unittest.TestCase):
-    """The embedder reads the right output of a model shaped like Hugging
-    Face's DINOv2 export, on either runtime. (The real DINOv2 file cannot be
-    checked into the repository; this checks the code around it.)"""
+    """The embedder reads the output its spec names, not the first one, on
+    either runtime (PP-ResNet50's embedding is its second output)."""
 
     def model(self):
         import numpy
         w = numpy.arange(24, dtype=numpy.float32).reshape(3, 8) / 24.0 + 0.1
         pooled = helper.make_node("GlobalAveragePool", ["pixel_values"], ["pool4"])
         flat = helper.make_node("Flatten", ["pool4"], ["flat"], axis=1)
-        mm = helper.make_node("MatMul", ["flat", "w"], ["cls"])
-        # Tokens: the class token and a different second one.
-        two = helper.make_node("Concat", ["cls3", "other3"], ["last_hidden_state"], axis=1)
-        un = helper.make_node("Unsqueeze", ["cls", "axes"], ["cls3"])
-        neg = helper.make_node("Neg", ["cls"], ["negcls"])
-        un2 = helper.make_node("Unsqueeze", ["negcls", "axes"], ["other3"])
-        ident = helper.make_node("Identity", ["cls"], ["pooler_output"])
+        mm = helper.make_node("MatMul", ["flat", "w"], ["feature"])
+        # The first output is another vector: the classifier's, say.
+        neg = helper.make_node("Neg", ["feature"], ["scores"])
         graph = helper.make_graph(
-            [pooled, flat, mm, un, neg, un2, two, ident],
-            "fake_dinov2",
+            [pooled, flat, mm, neg],
+            "fake_embedder",
             [helper.make_tensor_value_info("pixel_values", TensorProto.FLOAT, [1, 3, 224, 224])],
             [
-                helper.make_tensor_value_info("last_hidden_state", TensorProto.FLOAT, [1, 2, 8]),
-                helper.make_tensor_value_info("pooler_output", TensorProto.FLOAT, [1, 8]),
+                helper.make_tensor_value_info("scores", TensorProto.FLOAT, [1, 8]),
+                helper.make_tensor_value_info("feature", TensorProto.FLOAT, [1, 8]),
             ],
-            initializer=[
-                helper.make_tensor("w", TensorProto.FLOAT, [3, 8], w.flatten().tolist()),
-                helper.make_tensor("axes", TensorProto.INT64, [1], [1]),
-            ],
+            initializer=[helper.make_tensor("w", TensorProto.FLOAT, [3, 8], w.flatten().tolist())],
         )
         m = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
         m.ir_version = 8
@@ -310,11 +296,11 @@ class EmbedderPlumbing(unittest.TestCase):
                 backends.append("onnxruntime")
             except ImportError:
                 pass
-            seen = []
+            seen = {}
             for backend in backends:
                 os.environ["SHOEBOX_PET_BACKEND"] = backend
                 try:
-                    for output in ("pooler_output", "last_hidden_state", None):
+                    for output in ("feature", None):
                         spec = {"id": "fake", "file": "fake.onnx", "size": 224, "mean": (0, 0, 0), "std": (1, 1, 1), "output": output}
                         e = recognizer.Embedder(cv2, np, spec, path)
                         self.assertEqual(e.dim, 8, (backend, output))
@@ -322,14 +308,14 @@ class EmbedderPlumbing(unittest.TestCase):
                         square = np.full((224, 224, 3), 120, np.uint8)
                         v = np.frombuffer(base64.b64decode(e(square)), "<f4")
                         self.assertAlmostEqual(float(np.linalg.norm(v)), 1.0, places=4)
-                        seen.append((backend, output, v))
+                        seen[(backend, output)] = v
                 finally:
                     os.environ.pop("SHOEBOX_PET_BACKEND")
-            # The class token (first token) of the 3-D output is the pooler
-            # output; both runtimes agree.
-            first = seen[0][2]
-            for backend, output, v in seen:
-                self.assertTrue(np.allclose(v, first, atol=1e-4), (backend, output))
+            # The named output is the feature, the first output its negative;
+            # both runtimes agree.
+            for backend in backends:
+                self.assertTrue(np.allclose(seen[(backend, "feature")], -seen[(backend, None)], atol=1e-4), backend)
+                self.assertTrue(np.allclose(seen[(backend, "feature")], seen[(backends[0], "feature")], atol=1e-4), backend)
 
 
 @unittest.skipUnless(cv2 is not None, "needs opencv and numpy")

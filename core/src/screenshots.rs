@@ -1,4 +1,4 @@
-//! Is this picture a screenshot? Phase 11 ([docs/phase11.md](../../docs/phase11.md)).
+//! Is this picture a screenshot? Phase 11 ("Screenshots" in docs/decisions.md).
 //!
 //! No model: a score from what the index knows (kind, name, size, camera) and
 //! one number from the pixels of the thumbnail (how much of the picture is
@@ -11,7 +11,7 @@ use image::DynamicImage;
 use crate::classify::Kind;
 
 /// From this score on a picture counts as a screenshot. Set from numbers on
-/// the real drive (docs/phase11.md, step 1), not by the code.
+/// the real drive (an open item in docs/open.md), not by the code.
 pub const THRESHOLD: u32 = 60;
 
 /// Parts of the name that mean a screenshot, lower case and NFC.

@@ -428,7 +428,7 @@ pub fn worker_dirs_of(exe: &Path) -> Vec<PathBuf> {
 
 const FACE_MODELS: [&str; 2] = ["face_detection_yunet_2023mar.onnx", "face_recognition_sface_2021dec.onnx"];
 const PET_DETECTOR: &str = "object_detection_yolox_2022nov.onnx";
-const PET_EMBEDDERS: [&str; 2] = ["dinov2_small.onnx", "image_classification_ppresnet50_2022jan.onnx"];
+const PET_EMBEDDER: &str = "image_classification_ppresnet50_2022jan.onnx";
 /// PP-OCRv4 from the rapidocr package: detector, angle classifier, recogniser.
 const TEXT_MODELS: [&str; 3] = ["ch_PP-OCRv4_det_infer.onnx", "ch_PP-OCRv4_rec_infer.onnx", "ch_ppocr_mobile_v2.0_cls_infer.onnx"];
 
@@ -437,7 +437,7 @@ fn has_faces(dir: &Path) -> bool {
 }
 
 fn has_pets(dir: &Path) -> bool {
-    dir.join("models").join(PET_DETECTOR).is_file() && PET_EMBEDDERS.iter().any(|m| dir.join("models").join(m).is_file())
+    [PET_DETECTOR, PET_EMBEDDER].iter().all(|m| dir.join("models").join(m).is_file())
 }
 
 fn has_text(dir: &Path) -> bool {

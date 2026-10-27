@@ -16,9 +16,8 @@
 //!   examples are pets, and only pets are suggested for it.
 //! - **Thresholds depend on the embedder.** ImageNet-style features have a
 //!   high baseline (PP-ResNet50: different pets score 0.50–0.68, the same
-//!   pet after brightness, blur and crop changes 0.95 and more), DINOv2's
-//!   a lower one. The numbers are a first guess to be set from the pets
-//!   check page on real photos (`docs/phase7.md`).
+//!   pet after brightness, blur and crop changes 0.95 and more). The numbers
+//!   are set from the Pet check page on real photos (`docs/open.md`).
 
 use crate::faces;
 use crate::people;
@@ -174,8 +173,9 @@ impl Space {
     }
 
     /// The thresholds for embeddings of `model` (the worker's model id, for
-    /// pets `<detector>+<embedder>`).
-    pub fn thresholds(self, model: &str) -> Thresholds {
+    /// pets `<detector>+<embedder>`). One set per space today; the model is
+    /// passed because the numbers belong to it, so another embedder gets its own.
+    pub fn thresholds(self, _model: &str) -> Thresholds {
         match self {
             Space::Faces => {
                 Thresholds {
@@ -184,9 +184,6 @@ impl Space {
                 maybe: people::MAYBE_SIM,
                 cohesion: Some(crate::clusters::COHESION_SIM),
             }
-            }
-            Space::Pets if model.ends_with("+dinov2-small") => {
-                Thresholds { cluster: 0.70, suggest: 0.60, maybe: 0.45, cohesion: Some(0.65) }
             }
             // PP-ResNet50, and any embedder we do not know: strict, so
             // strangers are not joined (a new embedder starts safe, and the
@@ -221,7 +218,7 @@ mod tests {
 
     #[test]
     fn pets_need_much_stronger_matches() {
-        for model in ["yolox-s-2022nov+ppresnet50-2022jan", "yolox-s-2022nov+dinov2-small", "something-new"] {
+        for model in ["yolox-s-2022nov+ppresnet50-2022jan", "something-new"] {
             let t = Space::Pets.thresholds(model);
             assert!(t.maybe < t.suggest && t.suggest < t.cluster, "{model}");
             let cohesion = t.cohesion.expect("pets are joined as a whole, not link by link");
