@@ -953,6 +953,7 @@
   "geo.open_settings": "Open Settings",
   "search.places": "Places",
   "chip.show_on_map": "Show this place on the map",
+  "chip.show_in_sidebar": "Show in the sidebar",
   "launcher.step0": "1 · Add-ons",
   "launcher.addons.intro": "Scanning and the photo app work out of the box. Recognizing people and pets, and reading the words in your photos, needs add-ons, which are downloaded once (internet needed).",
   "launcher.addon.faces": "Faces",

@@ -299,6 +299,7 @@ function applyFilter() {
   // Another list while photos are selected: put the old page back and ask. Typing
   // in the search box is not asked about (it would ask on every key).
   if (moved && state.selecting && selectedIds().length && readHash().q === state.filter.q) {
+    revealPicked = null;
     revertingHash = true;
     location.hash = shownHash;
     var n = trn('count.photos', selectedIds().length);
@@ -335,6 +336,7 @@ function applyFilter() {
   $('nav-drives').classList.toggle('active', view === 'drives');
   markFacesSection();
   updateSections();
+  if (revealPicked) { revealInSidebar(revealPicked.kind, revealPicked.id); revealPicked = null; }
   document.body.classList.toggle('geo-view', view === 'locations');
   if (view !== 'locations') geoLeave();
   renderLocationsSection();
@@ -358,13 +360,24 @@ function renderChips() {
   var box = $('filters');
   box.textContent = '';
   var f = state.filter;
-  var add = function (label, clear, ic, title) {
+  var add = function (label, clear, ic, title, side) {
     // `ic` is an icon element, or the name of one of our own icons (text and file name chips).
     var named = typeof ic === 'string';
     var c = el('span', 'chip' + (named ? ' ' + (ic === 'scan' ? 'text' : 'name') : ''), '');
-    if (ic) c.appendChild(named ? icon(ic) : ic);
-    c.appendChild(document.createTextNode(label));
     if (title) setTip(c, title);
+    // `side` ([kind, id]): a click on the icon and the name shows the term's row in the sidebar.
+    var go = side && hasSidebarRow(side[0], side[1]) ? el('span', 'go') : c;
+    if (ic) go.appendChild(named ? icon(ic) : ic);
+    go.appendChild(document.createTextNode(label));
+    if (go !== c) {
+      go.setAttribute('role', 'button');
+      go.tabIndex = 0;
+      setTip(go, (title ? title + '. ' : '') + tr('chip.show_in_sidebar'));
+      var show = function () { revealInSidebar(side[0], side[1]); };
+      go.onclick = show;
+      go.onkeydown = function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); show(); } };
+      c.appendChild(go);
+    }
     var x = el('button', '', '✕');
     setTip(x, tr('chip.remove'));
     x.onclick = clear;
@@ -373,7 +386,7 @@ function renderChips() {
   };
   if (f.folder && state.folderById[f.folder]) {
     var folder = state.folderById[f.folder];
-    add(folder.path || folder.name, function () { setFilter(withFilter({ folder: null })); }, folderIcon());
+    add(folder.path || folder.name, function () { setFilter(withFilter({ folder: null })); }, folderIcon(), null, ['folder', folder.id]);
     // The eye: hide the folder (and what is below it) from the timeline, or show it again. A flag
     // in the index, so it stays in a library that is only read.
     if (folder.path) {
@@ -398,25 +411,25 @@ function renderChips() {
   f.tags.forEach(function (id) {
     add('# ' + (state.tagNames[id] || id) + (f.manual ? ' · ' + tr('side.manual_only_short') : ''), function () {
       setFilter(withFilter({ tags: f.tags.filter(function (t) { return t !== id; }) }));
-    });
+    }, null, null, ['tag', id]);
   });
   f.people.forEach(function (id) {
     var kind = state.personSpecies[id];
     add((state.personNames[id] || id), function () {
       setFilter(withFilter({ people: f.people.filter(function (p) { return p !== id; }) }));
-    }, kind ? speciesIcon(kind) : icon('person'));
+    }, kind ? speciesIcon(kind) : icon('person'), null, ['person', id]);
   });
   f.groups.forEach(function (id) {
     add(state.groupNames[id] || id, function () {
       setFilter(withFilter({ groups: f.groups.filter(function (g) { return g !== id; }) }));
-    }, icon('group'), tr('chip.group_hint', { name: state.groupNames[id] || id }));
+    }, icon('group'), tr('chip.group_hint', { name: state.groupNames[id] || id }), ['group', id]);
   });
   f.pets.forEach(function (species) {
     add(PET_TERMS[species].label, function () {
       setFilter(withFilter({ pets: f.pets.filter(function (p) { return p !== species; }) }));
     }, speciesIcon(species));
   });
-  if (f.fav) add('♥ ' + tr('fav.label'), function () { setFilter(withFilter({ fav: false })); });
+  if (f.fav) add('♥ ' + tr('fav.label'), function () { setFilter(withFilter({ fav: false })); }, null, null, ['fav']);
   if (f.hidden) {
     add(tr('hidden.label'), function () { setFilter(withFilter({ hidden: false })); }, icon('hide'), tr('hidden.filter_hint'));
     box.lastChild.classList.add('hid');
@@ -1228,6 +1241,7 @@ function pickSuggest(it) {
   sugg.picked = true;
   $('search').value = '';
   var f = state.filter;
+  revealPicked = { kind: it.kind, id: it.id };
   if (it.kind === 'fav') setFilter(withFilter({ fav: true, q: '' }));
   else if (it.kind === 'hidden') setFilter(withFilter({ hidden: true, q: '' }));
   else if (it.kind === 'compare') setFilter(withFilter({ compare: it.id, q: '' }));
@@ -1406,17 +1420,21 @@ function folderNode(f, depth) {
   return li;
 }
 
+// Open the folders above `id` in the tree, so its row is there.
+function openFolderPath(id) {
+  if (!state.folderById[id]) return;
+  var chain = [];
+  for (var f = state.folderById[id]; f; f = f.parent != null ? state.folderById[f.parent] : null) chain.unshift(f.id);
+  chain.forEach(function (c) {
+    var b = document.querySelector('#tree .name[data-id="' + c + '"]');
+    if (b && c !== id) b.parentNode.parentNode._expand(true);
+  });
+}
+
 function markActiveFolder() {
   var active = state.filter.folder;
   // Open the path to the active folder so it is visible.
-  if (active && state.folderById[active]) {
-    var chain = [];
-    for (var f = state.folderById[active]; f; f = f.parent != null ? state.folderById[f.parent] : null) chain.unshift(f.id);
-    chain.forEach(function (id) {
-      var b = document.querySelector('.tree .name[data-id="' + id + '"]');
-      if (b && id !== active) b.parentNode.parentNode._expand(true);
-    });
-  }
+  if (active) openFolderPath(active);
   Array.prototype.forEach.call(document.querySelectorAll('.tree .name'), function (b) {
     b.classList.toggle('active', String(active) === b.dataset.id);
   });
@@ -1433,6 +1451,52 @@ function markActiveFolder() {
     b.classList.toggle('active', manualOnly && fl.tags[0] === parseInt(b.dataset.manual, 10));
   });
 }
+
+// A search term's row in the sidebar (`kind` as in the suggestions: folder,
+// person, group, tag or fav), made ready to be seen: the folders above it
+// open, a person's group unfolds (and stays open), a folded section opens.
+// Null for a term without a row (pets, dates, places, text, Hidden, a tag
+// that is only a folder name) and where the sidebar is not looked at: all
+// drives, folded away, a phone (it closes with every search there).
+function sidebarRow(kind, id) {
+  if (!hasSidebarRow(kind, id) || document.body.classList.contains('side-closed') || window.matchMedia('(max-width: 760px)').matches) return null;
+  if (kind === 'folder') openFolderPath(id);
+  if (kind === 'person') {
+    var p = people.list.filter(function (x) { return x.id === id; })[0];
+    var key = p.group_id != null && people.groups.some(function (g) { return g.id === p.group_id; }) ? p.group_id : 'none';
+    if (!people.open[key]) { people.open[key] = true; renderFacesSection(); }
+  }
+  openSection(kind === 'folder' ? 'folders-section' : kind === 'person' || kind === 'group' ? 'faces-section' : 'tags-section');
+  var name = sidebarName(kind, id);
+  return name && name.offsetParent ? name.parentNode : null;
+}
+
+// The name button of a term's row, if it is drawn.
+function sidebarName(kind, id) {
+  var at = kind === 'folder' ? '#tree .name[data-id="' + id + '"]' : kind === 'tag' ? '#own-tags .name[data-tag="' + id + '"]'
+    : kind === 'fav' ? '#fav-row .name' : kind === 'group' ? '#people-tree .name[data-group="' + id + '"]'
+    : kind === 'person' ? '#people-tree .name[data-person="' + id + '"]' : null;
+  return at && document.querySelector(at);
+}
+
+// Whether the sidebar lists the term at all (a person's row may be in a folded group).
+function hasSidebarRow(kind, id) {
+  if (isAll()) return false;
+  if (kind === 'folder') return !!state.folderById[id] && !!state.folderById[id].path;
+  if (kind === 'person') return (people.list || []).some(function (x) { return x.id === id; });
+  if (kind === 'group') return (people.groups || []).some(function (g) { return g.id === id; });
+  return (kind === 'tag' || kind === 'fav') && !!sidebarName(kind, id);
+}
+
+// Scroll the sidebar (only it, only as far as needed) to show a term's row;
+// nothing moves when the row is in view already.
+function revealInSidebar(kind, id) {
+  var row = sidebarRow(kind, id);
+  if (row) row.scrollIntoView({ block: 'nearest' });
+}
+
+// A term picked in the search box is shown in the sidebar once its chip is in.
+var revealPicked = null;
 
 $('all').onclick = function () { setFilter({ folder: null, tags: [], people: [], compare: '', q: '' }); };
 $('nav-nodate').onclick = function () { setFilter({ folder: null, tags: [], people: [], compare: '', q: '', nodate: true }); };

@@ -953,6 +953,7 @@
   "geo.open_settings": "Einstellungen öffnen",
   "search.places": "Orte",
   "chip.show_on_map": "Diesen Ort auf der Karte zeigen",
+  "chip.show_in_sidebar": "In der Seitenleiste zeigen",
   "launcher.step0": "1 · Erweiterungen",
   "launcher.addons.intro": "Scannen und die Foto-App funktionieren sofort. Für das Erkennen von Personen und Haustieren und das Lesen der Wörter in deinen Fotos braucht es Erweiterungen, die einmal heruntergeladen werden (Internet nötig).",
   "launcher.addon.faces": "Gesichter",
