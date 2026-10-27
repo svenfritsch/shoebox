@@ -187,10 +187,6 @@ the iPad opens `http://<ip>:7878/`. A restart of `serve` asks for the PIN again
 Kept so they are not proposed again from scratch; none is promised. Delete the
 ones you do not want.
 
-- Undo for face assignments.
-- Places: a search term ("Home") like tags and people; places across the date
-  line, polygons; Locations over all drives. Looking up an address needs a
-  geocoding service (leaves the machine), so probably never.
 - Dates: a hint with the neighbours' dates in the dialog; "Date" suggestions,
   "Needs a date" and "Set date…" on All drives; a searchable free-text note.
 - Text: ignored words (Settings, applied at search time); tolerant matching (a
@@ -201,8 +197,6 @@ ones you do not want.
 - A playable copy of an old video made by ffmpeg on command, kept under
   `.shoebox/playback/` with a size cap.
 - Identical-once in All drives also for renamed copies.
-- Export: "Export…" for a plain search (Select all, Export… covers it); a
-  remembered "Save in" per computer.
 - Run the ONNX models in Rust (`ort` or `tract`) and drop Python (see section 8).
 
 ## 8. Decisions to look at again
