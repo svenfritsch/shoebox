@@ -14,7 +14,7 @@ where each feature stands. Keep it short; read it first.
 | [docs/open.md](open.md) | everything still to do, check or decide | something is found, done or checked |
 | [docs/pitfalls.md](pitfalls.md) | bugs whose cause the code does not show | such a bug is fixed |
 | [docs/protocol.md](protocol.md) | the recognizer's JSON-lines protocol | the protocol changes |
-| `docs/design/<topic>.md` | the plan of something big that is not built yet | while it is built; folded into the files above and deleted when it is merged |
+| `docs/design/<feature>.md` | the plan of something big that is not built yet (named by feature, no phase numbers) | while it is built; folded into the files above and deleted when it is merged |
 | `docs/guide/` | the user guide (EN and DE), the `guide` skill | anything a person sees or does changes |
 
 There are no per-phase documents any more: a finished plan is history, and
@@ -109,7 +109,9 @@ and Linux (`shoebox-linux.tar.gz`), both added to an existing release (phase 17)
 
 ## Status
 
-Every feature below is built and tested in CI. "Hardware" means the check on
+Every feature below is built and tested in CI. "Since" is the old phase
+number; new work gets none (see "Working on shoebox" in
+[decisions.md](decisions.md)). "Hardware" means the check on
 the real drives (old Intel MacBook, exFAT, iPad) is still open; the items are
 in [open.md](open.md).
 
@@ -121,7 +123,7 @@ in [open.md](open.md).
 | Recognizer worker and supervision; faces, people, groups | 4-5 | done, checked; cluster tuning open |
 | Own tags, multi-tag search, Show in Finder, Type filter, favorites | 5 | done, checked; iPad open |
 | Control Panel, several drives, backup checks | 6 | done on macOS; Linux open |
-| Pets | 7 | done, checked; DINOv2 open |
+| Pets | 7 | done, checked; cluster tuning open |
 | English and German | 8 | done; hardware |
 | Text in photos (`text:`, `name:`) | 9 | done; hardware, edge-cut rule open |
 | Places and maps (opt-in) | 10 | done; hardware |

@@ -49,8 +49,7 @@ fi
 
 if [ -n "$PETS" ]; then
     # YOLOX-S (COCO: finds cats and dogs) and PP-ResNet50 (its pooled feature
-    # describes a pet's box). DINOv2-small describes individuals better
-    # but is not on a host this script can checksum; see recognizer/README.md.
+    # describes a pet's box).
     fetch object_detection_yolox_2022nov.onnx object_detection_yolox \
         c5c2d13e59ae883e6af3b45daea64af4833a4951c92d116ec270d9ddbe998063
     fetch image_classification_ppresnet50_2022jan.onnx image_classification_ppresnet \

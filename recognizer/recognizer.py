@@ -17,7 +17,7 @@ file, or in $SHOEBOX_MODELS:
     face_recognition_sface_2021dec.onnx (SFace, 128-d embedding)
 and for --pets:
     object_detection_yolox_2022nov.onnx (YOLOX-S, COCO: cats and dogs)
-    dinov2_small.onnx or image_classification_ppresnet50_2022jan.onnx (embedding)
+    image_classification_ppresnet50_2022jan.onnx (PP-ResNet50, embedding)
 and for --text (PP-OCRv4 as shipped in the rapidocr-onnxruntime package, which
 must be importable; install.sh --text copies the three model files here):
     ch_PP-OCRv4_det_infer.onnx, ch_PP-OCRv4_rec_infer.onnx, ch_ppocr_mobile_v2.0_cls_infer.onnx
@@ -87,26 +87,17 @@ PET_PAD = 0.08
 # Embedder input: the box is padded to a square and scaled to this.
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
-# The embedders in order of preference; the first whose file is in the models
-# folder is used. `output`: the name of the output holding the embedding
-# (None: the first output; a sequence of tokens gives its first, the class
-# token).
-EMBEDDERS = [
-    # DINOv2-small as exported by Hugging Face (onnx-community/dinov2-small);
-    # best at telling individual pets apart. Not part of fetch-models.sh:
-    # see recognizer/README.md.
-    {"id": "dinov2-small", "file": "dinov2_small.onnx", "size": 224, "mean": IMAGENET_MEAN, "std": IMAGENET_STD, "output": "pooler_output"},
-    # PP-ResNet50 from the OpenCV zoo: its second output is the pooled
-    # 2048-d feature before the classifier.
-    {
-        "id": "ppresnet50-2022jan",
-        "file": "image_classification_ppresnet50_2022jan.onnx",
-        "size": 224,
-        "mean": IMAGENET_MEAN,
-        "std": IMAGENET_STD,
-        "output": "save_infer_model/scale_1.tmp_0",
-    },
-]
+# The pet embedder: PP-ResNet50 from the OpenCV zoo. `output`: the name of the
+# output holding the embedding (None: the first output); here the second
+# output, the pooled 2048-d feature before the classifier.
+PET_EMBEDDER = {
+    "id": "ppresnet50-2022jan",
+    "file": "image_classification_ppresnet50_2022jan.onnx",
+    "size": 224,
+    "mean": IMAGENET_MEAN,
+    "std": IMAGENET_STD,
+    "output": "save_infer_model/scale_1.tmp_0",
+}
 # Average the embedding of the box and of its mirror image, so a pet
 # looking left matches itself looking right.
 PET_FLIP = True
@@ -302,10 +293,7 @@ class Embedder:
                 out = self.net.forward(names)[names.index(wanted)]
             else:
                 out = self.net.forward()
-        out = np.asarray(out, dtype=np.float32)
-        if out.ndim == 3:  # a sequence of tokens: the first is the class token
-            out = out[:, 0]
-        return out.reshape(-1)
+        return np.asarray(out, dtype=np.float32).reshape(-1)
 
     def __call__(self, square):
         """The L2-normalised embedding of a square BGR picture; with
@@ -338,10 +326,9 @@ class Pets:
         detector = os.path.join(d, PET_DETECTOR)
         if not os.path.isfile(detector):
             raise SystemExit(f"recognizer: model missing: {detector} (run recognizer/fetch-models.sh)")
-        forced = os.environ.get("SHOEBOX_PET_EMBEDDER")
-        spec = next((s for s in EMBEDDERS if (forced or s["id"]) == s["id"] and os.path.isfile(os.path.join(d, s["file"]))), None)
-        if spec is None:
-            raise SystemExit(f"recognizer: no pet embedder in {d} (run recognizer/fetch-models.sh)")
+        spec = PET_EMBEDDER
+        if not os.path.isfile(os.path.join(d, spec["file"])):
+            raise SystemExit(f"recognizer: model missing: {os.path.join(d, spec['file'])} (run recognizer/fetch-models.sh)")
         self.net = cv2.dnn.readNetFromONNX(detector)
         self.embedder = Embedder(cv2, np, spec, os.path.join(d, spec["file"]))
         self.model = f"{PET_DETECTOR_ID}+{spec['id']}"

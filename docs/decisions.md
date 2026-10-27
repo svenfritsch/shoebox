@@ -153,7 +153,9 @@ are in `git log` (the old `docs/plan.md` and `docs/phaseN.md`).
   suggestions that can have changed are searched again. Keeping embeddings in
   the server between runs (~200 MB) was decided against: nobody waits for it.
 - **Pets**: YOLOX finds cats and dogs (the whole pet, not its face), an image
-  embedder describes them (PP-ResNet50; DINOv2 if its file is present). Pets
+  embedder describes them (PP-ResNet50). DINOv2-small was the preferred
+  embedder but could not be fetched; dropped in October 2026 because pets work
+  with PP-ResNet50 (tune the thresholds before trying another model). Pets
   are rows of `recog.faces` with a species and ordinary "people"; every query
   over faces says which kind, embeddings of different models are never
   compared, thresholds belong to the model (`pets::Space`).
@@ -199,3 +201,12 @@ are in `git log` (the old `docs/plan.md` and `docs/phaseN.md`).
   against a fake API on a fake clock (`faces-mocked.mjs`, the unit test of the
   page); a handful against the real server for what the fake cannot show. See
   "Browser tests" in [plan.md](plan.md).
+
+## Working on shoebox
+
+- **Work is named by its feature, not by a phase number** (October 2026). The
+  numbers 0 to 20 served the first plan; once everything was built they mostly
+  collided (19 and 20 were swapped). A plan is `docs/design/<feature>.md`, a
+  branch or pull request says the feature where we choose its name, and no new
+  phase numbers are given. The existing numbers stay where code, comments and
+  these docs already use them.

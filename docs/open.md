@@ -10,7 +10,7 @@ How to use it:
   file; a ticked item is not history worth keeping (git has it).
 - New open work goes here, under the section it belongs to, in one or two
   lines with the place in the code or guide it concerns. A plan for something
-  bigger that is not built yet goes to `docs/design/<topic>.md` and is linked
+  bigger that is not built yet goes to `docs/design/<feature>.md` and is linked
   from here.
 - "(phase N)" says where the item came from; it is not a plan.
 
@@ -144,10 +144,6 @@ the iPad opens `http://<ip>:7878/`. A restart of `serve` asks for the PIN again
 - [ ] Text: the edge-cut rule (drop a line touching the border with a score
       below 0.97) is not built; decide on real photos whether it is needed or
       "hide a line" is enough (phase 9).
-- [ ] Pets: DINOv2 is not in `fetch-models.sh` (Hugging Face was unreachable):
-      drop `dinov2_small.onnx` into `recognizer/models/`, run `recognize --pets`,
-      set its thresholds in the Pet check, pin its SHA-256 (phase 7). Or drop
-      the item if PP-ResNet50 is good enough (see section 8).
 - [ ] Pet terms in the All drives suggestions are counted per request
       (`pet_hits_uncached`); a cache like the people's would help with many drives.
 - [ ] Metadata: ORF/RW2 may be unsupported by `nom-exif`; Motion Photos (data
@@ -220,12 +216,6 @@ My recommendations, for you to confirm or reject; the answer goes into
    computer. The text add-on already runs on onnxruntime; running the face and
    pet models with `ort` in Rust would remove the Python runtime. Large; only
    worth it if installing add-ons keeps causing trouble.
-4. **DINOv2 for pets.** Pets work with PP-ResNet50 and were checked. Drop the
-   item unless pets are still mixed up.
-5. **Browser-kept settings** (Maps, Collection, numbering, Ignore folders). One
+4. **Browser-kept settings** (Maps, Collection, numbering, Ignore folders). One
    rule, but the iPad and every other computer start empty. Fine while one
    person uses one computer; revisit if that changes.
-6. **Phase numbers.** They served the plan; now every feature is built and the
-   numbers mostly cause collisions (19 and 20 swapped). Recommend naming work
-   by feature from now on (`docs/design/<feature>.md`, branch names), and
-   keeping the numbers only where code already says them.

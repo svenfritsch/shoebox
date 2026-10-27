@@ -10,7 +10,8 @@ where the rest is): `docs/decisions.md` (why, and what was rejected),
 later change needs, in the same pull request and the file it belongs to; delete
 open items once done. No per-phase or "as built" documents (code, guide and
 `git log` have that); a plan for big unbuilt work goes to
-`docs/design/<topic>.md` until it is merged. Decisions are current answers, not
+`docs/design/<feature>.md` until it is merged. Name work by its feature, never
+by a new phase number (the old numbers stay where the code uses them). Decisions are current answers, not
 laws: when one no longer fits the task, say so and propose the change instead
 of working around it. The rules below change only when the user says so.
 
