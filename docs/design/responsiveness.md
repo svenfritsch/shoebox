@@ -1,6 +1,6 @@
 # Responsive on large libraries (planned)
 
-October 2026. Steps 1 and 2 are merged (why, and what was not done: "No id
+October 2026. Steps 1 to 3 are merged (why, and what was not done: "No id
 lists in SQL" and "Reads on a pool of connections" in
 [decisions.md](../decisions.md)); the others are not built. Linked from
 [open.md](../open.md). Each step, when it is merged: the guide with step 4,
@@ -84,27 +84,39 @@ each; "before" is the build without the pool). The probe's own request takes
 What is left during the move is the rollback journal (step 5): every photo's
 group is a synced commit, and a read that runs into one waits for it.
 
+After step 3 (`bench-people.py probe`, same library and machine, with the
+script that times every Face check filter: one pass with each request alone,
+one with the probe, each on a fresh server; the build without the slow-request
+log gave the same within noise, the move's probe wait 0.73 and 0.93 s).
+
+| Request | Alone | Under the probe | Probe's longest wait |
+|---|---|---|---|
+| `/suggest?q=a`, first after the start | 1.90 s | 1.94 s | 2 ms |
+| `/suggest?q=an` | 11 ms | 13 ms | 2 ms |
+| `/faces/stats` | 379 ms | 358 ms | 2 ms |
+| `/faces/stats?kind=pets` | 180 ms | 198 ms | 2 ms |
+| `/faces`, all faces / small / large | 89 / 33 / 80 ms | 91 / 38 / 91 ms | 2 to 3 ms |
+| `/faces`, rotated / not a face / pet face | 33 / 30 / 29 ms | 35 / 33 / 34 ms | 2 to 4 ms |
+| `/faces`, not matched yet | 55 ms | 53 ms | 8 ms |
+| `/faces?kind=pets`, all / small / large | 7 / 6 / 5 ms | 8 / 8 / 9 ms | 2 to 3 ms |
+| `/faces?kind=pets`, not a pet / not matched yet | 3 / 4 ms | 7 / 8 ms | 2 ms |
+| `/faces/{id}/similar?limit=24` | 378 ms | 324 ms | 2 ms |
+| `/duplicates` | 236 ms | 274 ms | 2 ms |
+| `/move` of 5,000 photos | 8.71 s | 8.37 s | 932 ms |
+
+The slow-request log printed three lines in each pass: the first `/info`
+after the start (1.8 to 2.0 s), the first `/suggest` and the move, each
+waiting 0 ms for a reader, the writer and the people data (they are the long
+work, nothing held them up).
+
 ## 3. Steps
 
 Each step is a pull request of its own and helps alone.
 
 | Step | What | Fixes |
 |---|---|---|
-| 3 | Slow-request log; the Face check in `bench-people.py` | finding the next one |
 | 4 | A busy line while a request takes long | no sign of waiting |
 | 5 | Measure first: the people view and `similar` read in pieces, and smaller items | commits waiting behind long reads |
-
-### Step 3: seeing where the time goes
-
-- **Slow-request log.** Every library request that takes over 1 s prints one
-  line: method, path with query, total time, and how long it waited for a
-  connection. The incident would have printed one line naming the Face check
-  request and, for each request behind it, how long it waited.
-- **`bench-people.py`**: `probe` (step 2) times the first `/suggest`, the
-  Face check's stats and `similar`, the duplicates and a move under the probe
-  (`/api/groups` every 100 ms). It gets each Face check filter (faces and
-  pets), and each request alone too, so the numbers of section 2 can be taken
-  again before a release; they go into the pull request that changes them.
 
 ### Step 4: a busy line
 

@@ -19,12 +19,16 @@ recognised before), and stops it again.
     how long requests wait for the connection, and while the regrouping
     after each name runs.
 
-`probe` copies `<dir>/pristine` to `<dir>/work` as well and times, right after
-the server started, each of the requests that held up the rest of the app (the
-first `/suggest`, the Face check's stats and similar faces, a move of `--move`
-photos) while a second client asks for `/api/groups` every 100 ms: its longest
-wait is how long the rest of the app was held up. For the move, the photos are
-made as empty (sparse) files that match the index.
+`probe` copies `<dir>/pristine` to `<dir>/work` as well and times each of the
+requests that held up the rest of the app, right after the server started: the
+first `/suggest`, the Face check's stats, every filter of its lists (faces and
+pets, as the page asks for them), similar faces, the duplicates and a move of
+`--move` photos (made as empty, sparse files that match the index). Two passes
+on a fresh copy and a fresh server each, the same requests in the same order:
+each request alone, and each while a second client asks for `/api/groups` every
+100 ms, whose longest wait is how long the rest of the app was held up. It
+prints the table of section 2 of docs/design/responsiveness.md, and the lines
+of the slow-request log the server wrote meanwhile.
 
 Needs numpy (only for making the embeddings). Nothing here is an original:
 the library has index rows only, under a folder of its own.
@@ -389,49 +393,110 @@ def make_files(root, n):
     return [r[0] for r in rows]
 
 
-def under_probe(s, what, call):
-    """`call()` while /api/groups is asked every 100 ms; prints how long it took
-    and how long the probe waited at most."""
-    probe = Prober(s)
-    probe.start()
-    time.sleep(0.3)
+def under_probe(s, what, call, probing=True):
+    """`call()`, with /api/groups asked every 100 ms meanwhile if `probing`.
+    Prints how long it took and, if probing, how long the probe waited at most;
+    returns (took, worst wait of the probe or None)."""
+    probe = Prober(s) if probing else None
+    if probe:
+        probe.start()
+        time.sleep(0.3)
     t = time.perf_counter()
     status = call()
     took = time.perf_counter() - t
-    time.sleep(0.3)
-    probe.stop.set()
-    probe.join()
-    worst = max(probe.times) if probe.times else 0
-    print(f"  {what:44s} {status}  {took * 1000:7.0f} ms   probe: {summary(probe.times)}")
+    worst = None
+    if probe:
+        time.sleep(0.3)
+        probe.stop.set()
+        probe.join()
+        worst = max(probe.times) if probe.times else 0
+    print(f"  {what:60s} {status}  {took * 1000:7.0f} ms" + (f"   probe: {summary(probe.times)}" if probe else ""))
     return took, worst
 
 
-def probe(args):
+def check_requests(min_px, face):
+    """The requests of the Face check page (`moreFaces`, `/faces/stats`, `similar`)
+    in the order of one visit: the stats, then each filter of the faces and of
+    the pets as `FACE_FILTERS` and `PET_FILTERS` in app.js, newest first page."""
+    page = "sort=size&offset=0&limit=300"
+    faces = [
+        ("all", ""), ("small", f"&max_px={min_px}"), ("large", f"&min_px={min_px}"), ("rotated", "&rotated=true"),
+        ("not a face", "&not_face=true"), ("pet face", "&pet_face=true"), ("not matched yet", "&unmatched=true"),
+    ]
+    pets = [("all", ""), ("small", f"&max_px={min_px}"), ("large", f"&min_px={min_px}"), ("not a pet", "&not_face=true"), ("not matched yet", "&unmatched=true")]
+    reqs = [("/faces/stats", "/api/faces/stats"), ("/faces/stats?kind=pets", "/api/faces/stats?kind=pets")]
+    reqs += [(f"/faces, {name}", f"/api/faces?{page}{extra}") for name, extra in faces]
+    reqs += [(f"/faces?kind=pets, {name}", f"/api/faces?kind=pets&{page}{extra}") for name, extra in pets]
+    reqs.append(("/faces/{id}/similar?limit=24", f"/api/faces/{face}/similar?limit=24"))
+    return reqs
+
+
+def pass_of(args, probing):
+    """One pass on a fresh copy of the library and a fresh server; returns
+    {request: (took, probe's longest wait or None)} in order, and the slow lines
+    the server logged."""
     out = os.path.abspath(args.dir)
     root = os.path.join(out, "work")
     if os.path.exists(root):
         shutil.rmtree(root)
     shutil.copytree(os.path.join(out, "pristine"), root)
     ids = make_files(root, args.move)
+    results = {}
     with Server(args.shoebox, root, args.port) as s:
         print(f"server answered after {s.open_seconds:.1f} s")
-        t = s.wait_clusters()
-        print(f"clustering at start: {t:.1f} s")
-        print("\neach under the probe (/api/groups every 100 ms)")
-        under_probe(s, "/api/suggest?q=a (first after the start)", lambda: s.request("/api/suggest?q=a")[0])
-        under_probe(s, "/api/suggest?q=an", lambda: s.request("/api/suggest?q=an")[0])
-        under_probe(s, "/api/faces/stats", lambda: s.request("/api/faces/stats")[0])
-        under_probe(s, "/api/faces/stats?kind=pets", lambda: s.request("/api/faces/stats?kind=pets")[0])
+        print(f"clustering at start: {s.wait_clusters():.1f} s")
+
+        replies = {}
+
+        def timed_get(label, path):
+            def call():
+                status, raw, _ = s.request(path)
+                replies[label] = raw
+                return status
+
+            results[label] = under_probe(s, label, call, probing)
+
+        timed_get("/suggest?q=a (first after the start)", "/api/suggest?q=a")
+        timed_get("/suggest?q=an", "/api/suggest?q=an")
+        # The Face check's first request is its stats; the lists use what it says.
+        timed_get("/faces/stats", "/api/faces/stats")
+        min_px = json.loads(replies["/faces/stats"])["min_cluster_px"]
         face = s.get("/api/faces?sort=size&offset=0&limit=1")["faces"][0]["id"]
-        under_probe(s, f"/api/faces/{face}/similar?limit=24", lambda: s.request(f"/api/faces/{face}/similar?limit=24")[0])
-        under_probe(s, "/api/duplicates", lambda: s.request("/api/duplicates")[0])
+        for label, path in check_requests(min_px, face):
+            if label != "/faces/stats":
+                timed_get(label, path)
+        timed_get("/duplicates", "/api/duplicates")
 
         def move():
             status, raw, _ = s.request("/api/move", {"ids": ids, "folder": "Bench moved"})
             moved = len(json.loads(raw).get("files", [])) if status == 200 else raw[:200]
             return f"{status} ({moved} moved)"
 
-        under_probe(s, f"/api/move of {len(ids)} photos", move)
+        label = f"/move of {len(ids)} photos"
+        results[label] = under_probe(s, label, move, probing)
+        log = s.log.name
+    with open(log) as f:
+        slow = [line.rstrip() for line in f if line.startswith("slow request:")]
+    return results, slow
+
+
+def ms(t):
+    return "-" if t is None else f"{t * 1000:.0f} ms" if t < 1 else f"{t:.2f} s"
+
+
+def probe(args):
+    print("pass 1: each request alone")
+    alone, slow_alone = pass_of(args, probing=False)
+    print("\npass 2: each request under the probe (/api/groups every 100 ms)")
+    probed, slow_probed = pass_of(args, probing=True)
+    print("\n| Request | Alone | Under the probe | Probe's longest wait |\n|---|---|---|---|")
+    for label, (took, _) in alone.items():
+        took_probed, worst = probed[label]
+        print(f"| `{label}` | {ms(took)} | {ms(took_probed)} | {ms(worst)} |")
+    for name, lines in (("alone", slow_alone), ("under the probe", slow_probed)):
+        print(f"\nslow-request log, {name}: {len(lines)} lines")
+        for line in lines:
+            print(f"  {line}")
 
 
 def main():
