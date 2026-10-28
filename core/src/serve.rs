@@ -1548,7 +1548,7 @@ async fn blocking<T: Send + 'static>(
 /// the database. Work that has started runs to its end (a blocking thread
 /// cannot be stopped), so the turn goes with it.
 async fn in_turn<T: Send + 'static>(queue: &Arc<Semaphore>, f: impl FnOnce() -> ApiResult<T> + Send + 'static) -> ApiResult<T> {
-    let turn = queue.clone().acquire_owned().await.map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))?;
+    let turn = readers::in_line(queue.clone().acquire_owned()).await.map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))?;
     let gone = readers::Gone::new();
     let flag = gone.flag();
     let waits = readers::current_waits();
@@ -3572,7 +3572,7 @@ async fn thumb(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Re
     };
 
     // Not made yet (scan ran with --no-thumbs, or is still busy): make it now.
-    let _permit = app.renders.acquire().await.map_err(|e| ApiError::Internal(e.into()))?;
+    let _permit = readers::in_line(app.renders.acquire()).await.map_err(|e| ApiError::Internal(e.into()))?;
     let made = blocking(&app, move |app| {
         // Another request may have made it while this one waited.
         if let Some(stored) = thumbs::load(&*app.read()?, &src.quick_hash)? {
@@ -3654,7 +3654,7 @@ async fn view(State(app): State<Arc<App>>, Path(id): Path<i64>, req: Request) ->
         Kind::Jpeg | Kind::Png | Kind::Video if content == src.kind && turn == 0 => serve_file(&src.path, req, None).await,
         Kind::Raw => Err(ApiError::NotFound),
         Kind::Jpeg | Kind::Png | Kind::Video | Kind::Heic => {
-            let _permit = app.renders.acquire().await.map_err(|e| ApiError::Internal(e.into()))?;
+            let _permit = readers::in_line(app.renders.acquire()).await.map_err(|e| ApiError::Internal(e.into()))?;
             let bytes = blocking(&app, move |_| {
                 thumbs::render_view(&LibHeif::new(), &src).map_err(|e| ApiError::Internal(anyhow::anyhow!(e)))
             })

@@ -1,7 +1,7 @@
 //! The slow-request log: one line on stderr for every library request
 //! (`/api/lib/<id>/…`, `/api/all/…`) that takes over a second, saying where
 //! the time went: working, or waiting for a reader, the writer or the people
-//! data's lock (`readers::Waits`). The incident behind it (a Face check
+//! data's lock, or a queue for a turn or a picture slot (`readers::Waits`). The incident behind it (a Face check
 //! request that held up the whole app for minutes) would have shown as one
 //! line for that request and one per request behind it.
 
@@ -53,14 +53,15 @@ pub(super) async fn log(State(log): State<SlowLog>, req: Request, next: Next) ->
     let (res, waits) = readers::measure(next.run(req)).await;
     let took = began.elapsed();
     if took > log.limit {
-        let (reader, writer, people) = waits.totals();
+        let (reader, writer, people, queue) = waits.totals();
         let ms = |d: Duration| d.as_millis();
         (log.print)(&format!(
-            "slow request: {method} {target} took {} ms (waited for a reader {} ms, the writer {} ms, the people data {} ms)",
+            "slow request: {method} {target} took {} ms (waited for a reader {} ms, the writer {} ms, the people data {} ms, a queue {} ms)",
             ms(took),
             ms(reader),
             ms(writer),
-            ms(people)
+            ms(people),
+            ms(queue)
         ));
     }
     res

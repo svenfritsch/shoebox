@@ -87,7 +87,8 @@ group is a synced commit, and a read that runs into one waits for it.
 After step 3 (`bench-people.py probe`, same library and machine, with the
 script that times every Face check filter: one pass with each request alone,
 one with the probe, each on a fresh server; the build without the slow-request
-log gave the same within noise, the move's probe wait 0.73 and 0.93 s).
+log gave the same within noise; the move's probe wait was 0.73, 0.93 and 1.93 s in three runs, so
+read it as 0.7 to 2 s on this VM).
 
 | Request | Alone | Under the probe | Probe's longest wait |
 |---|---|---|---|
@@ -153,10 +154,12 @@ Only if `bench-people.py` or the slow-request log shows it:
   looked at before and after and the view read again when it moved; at most a
   few times, then in one piece, or a scan that commits every second would keep
   it from ever finishing.
-- **Start-up order.** The page asks for the timeline only when folders, the
-  status, own tags, people, groups and places have all come (`Promise.all`
-  before `applyFilter`), so the photos wait for the slowest of them. Ask for
-  the timeline at once and fill the sidebar as each part comes.
+- **Start-up order.** The first `/info` after a start takes about 1.9 s on the
+  benchmark library (slow-request log, section 2), as long as the first
+  `/suggest`; find out what it builds. The page asks for the timeline only
+  when folders, the status, own tags, people, groups and places have all come
+  (`Promise.all` before `applyFilter`), so the photos wait for the slowest of
+  them. Ask for the timeline at once and fill the sidebar as each part comes.
 - **While `shoebox recognize` runs** in another process, every commit to
   `recognition.db` makes the next people request read the whole view again.
   Keep the view a few seconds while a recognize job runs, as `/api/info` keeps

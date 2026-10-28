@@ -427,10 +427,36 @@ fn a_request_logs_what_it_waited_for() {
         let line = line_about(&lines, tail);
         assert!(line.starts_with(&format!("slow request: {send} /api/lib/")), "{line}");
         assert!(waited_ms(&line, label) >= 200, "{held}: {line}");
-        for other in ["a reader", "the writer", "the people data"].into_iter().filter(|o| *o != label) {
+        for other in ["a reader", "the writer", "the people data", "a queue"].into_iter().filter(|o| *o != label) {
             assert!(waited_ms(&line, other) < 100, "{held}: {line}");
         }
     }
+    server.stop().unwrap();
+}
+
+/// The searches go one at a time: one queued behind another that is stuck says
+/// it waited in a queue, not that it worked.
+#[test]
+fn a_request_in_a_queue_logs_the_wait() {
+    let lib = Library::new("slow-queue");
+    lib.scan();
+    let (server, hold, lines) = start_logging(&lib, Duration::from_millis(100));
+    let addr = server.addr;
+    let mut waiting = Vec::new();
+    holding(addr, &hold, "people", || {
+        // The first takes the turn and waits for the people lock; the second waits for the turn.
+        for q in ["a", "b"] {
+            waiting.push(std::thread::spawn(move || get(addr, &format!("/api/suggest?q={q}"))));
+            std::thread::sleep(Duration::from_millis(150));
+        }
+        std::thread::sleep(Duration::from_millis(300));
+    });
+    for w in waiting {
+        assert_eq!(w.join().unwrap().status, 200);
+    }
+    let (first, second) = (line_about(&lines, "/suggest?q=a"), line_about(&lines, "/suggest?q=b"));
+    assert!(waited_ms(&first, "the people data") >= 300 && waited_ms(&first, "a queue") < 100, "{first}");
+    assert!(waited_ms(&second, "a queue") >= 300, "{second}");
     server.stop().unwrap();
 }
 

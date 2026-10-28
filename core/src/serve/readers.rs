@@ -18,7 +18,8 @@
 //!   to its end; changes always run.
 //!
 //! The same turn carries what the request waited for (`Waits`): a reader, the
-//! writer, the people data's lock. The slow-request log (`serve::SlowLog`)
+//! writer, the people data's lock, a place in the queue of the searches or of
+//! the picture makers (`in_line`). The slow-request log (`serve::SlowLog`)
 //! prints it, so a request that took long says whether it worked or waited.
 
 use std::cell::{Cell, RefCell};
@@ -181,6 +182,7 @@ pub(super) struct Waits {
     reader: AtomicU64,
     writer: AtomicU64,
     people: AtomicU64,
+    queue: AtomicU64,
 }
 
 /// What a request can wait for.
@@ -192,14 +194,38 @@ pub(super) enum Wait {
     Writer,
     /// The people data's lock (`App::with_people`).
     People,
+    /// A turn of the searches (`in_turn`) or a slot of the picture makers
+    /// (`App::renders`), awaited before the work goes to a blocking thread.
+    Queue,
 }
 
 impl Waits {
-    /// (reader, writer, people)
-    pub(super) fn totals(&self) -> (Duration, Duration, Duration) {
-        let get = |a: &AtomicU64| Duration::from_nanos(a.load(Ordering::SeqCst));
-        (get(&self.reader), get(&self.writer), get(&self.people))
+    fn add(&self, what: Wait, d: Duration) {
+        let a = match what {
+            Wait::Reader => &self.reader,
+            Wait::Writer => &self.writer,
+            Wait::People => &self.people,
+            Wait::Queue => &self.queue,
+        };
+        a.fetch_add(d.as_nanos() as u64, Ordering::SeqCst);
     }
+
+    /// (reader, writer, people, queue)
+    pub(super) fn totals(&self) -> (Duration, Duration, Duration, Duration) {
+        let get = |a: &AtomicU64| Duration::from_nanos(a.load(Ordering::SeqCst));
+        (get(&self.reader), get(&self.writer), get(&self.people), get(&self.queue))
+    }
+}
+
+/// Await `f` (a semaphore's permit) in the handler's future, counting the
+/// time as a wait in a queue.
+pub(super) async fn in_line<F: Future>(f: F) -> F::Output {
+    let began = Instant::now();
+    let out = f.await;
+    if let Some(waits) = current_waits() {
+        waits.add(Wait::Queue, began.elapsed());
+    }
+    out
 }
 
 tokio::task_local! {
@@ -234,12 +260,7 @@ pub(super) fn spawn_blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + '
 pub(super) fn waited(what: Wait, d: Duration) {
     TURN.with(|t| {
         if let Some(waits) = t.borrow().as_ref().and_then(|t| t.waits.as_ref()) {
-            let a = match what {
-                Wait::Reader => &waits.reader,
-                Wait::Writer => &waits.writer,
-                Wait::People => &waits.people,
-            };
-            a.fetch_add(d.as_nanos() as u64, Ordering::SeqCst);
+            waits.add(what, d);
         }
     });
 }
@@ -442,7 +463,7 @@ mod tests {
         // Another turn, one without waits and work of no request's: not counted.
         as_turn(never(), None, || waited(Wait::Reader, Duration::from_secs(1)));
         waited(Wait::Reader, Duration::from_secs(1));
-        let (reader, writer, people) = waits.totals();
+        let (reader, writer, people, _) = waits.totals();
         assert_eq!((reader, writer), (Duration::from_millis(12), Duration::from_millis(3)));
         assert!(people >= Duration::from_millis(20) && people < Duration::from_secs(1), "{people:?}");
     }

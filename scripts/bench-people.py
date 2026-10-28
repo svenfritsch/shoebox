@@ -414,7 +414,7 @@ def under_probe(s, what, call, probing=True):
     return took, worst
 
 
-def check_requests(min_px, face):
+def check_requests(min_px, pet_min_px, face):
     """The requests of the Face check page (`moreFaces`, `/faces/stats`, `similar`)
     in the order of one visit: the stats, then each filter of the faces and of
     the pets as `FACE_FILTERS` and `PET_FILTERS` in app.js, newest first page."""
@@ -423,7 +423,7 @@ def check_requests(min_px, face):
         ("all", ""), ("small", f"&max_px={min_px}"), ("large", f"&min_px={min_px}"), ("rotated", "&rotated=true"),
         ("not a face", "&not_face=true"), ("pet face", "&pet_face=true"), ("not matched yet", "&unmatched=true"),
     ]
-    pets = [("all", ""), ("small", f"&max_px={min_px}"), ("large", f"&min_px={min_px}"), ("not a pet", "&not_face=true"), ("not matched yet", "&unmatched=true")]
+    pets = [("all", ""), ("small", f"&max_px={pet_min_px}"), ("large", f"&min_px={pet_min_px}"), ("not a pet", "&not_face=true"), ("not matched yet", "&unmatched=true")]
     reqs = [("/faces/stats", "/api/faces/stats"), ("/faces/stats?kind=pets", "/api/faces/stats?kind=pets")]
     reqs += [(f"/faces, {name}", f"/api/faces?{page}{extra}") for name, extra in faces]
     reqs += [(f"/faces?kind=pets, {name}", f"/api/faces?kind=pets&{page}{extra}") for name, extra in pets]
@@ -460,10 +460,13 @@ def pass_of(args, probing):
         timed_get("/suggest?q=an", "/api/suggest?q=an")
         # The Face check's first request is its stats; the lists use what it says.
         timed_get("/faces/stats", "/api/faces/stats")
+        timed_get("/faces/stats?kind=pets", "/api/faces/stats?kind=pets")
+        # The page takes each kind's own value (`faceState.minPx`).
         min_px = json.loads(replies["/faces/stats"])["min_cluster_px"]
+        pet_min_px = json.loads(replies["/faces/stats?kind=pets"])["min_cluster_px"]
         face = s.get("/api/faces?sort=size&offset=0&limit=1")["faces"][0]["id"]
-        for label, path in check_requests(min_px, face):
-            if label != "/faces/stats":
+        for label, path in check_requests(min_px, pet_min_px, face):
+            if label not in ("/faces/stats", "/faces/stats?kind=pets"):
                 timed_get(label, path)
         timed_get("/duplicates", "/api/duplicates")
 
