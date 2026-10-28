@@ -829,10 +829,10 @@ function suggestKey(text) {
 }
 
 // While someone types, the list is asked for once they pause (SUGGEST_PAUSE),
-// and what was asked for the letters before is called off: every suggestion
-// request waits for the drive's one connection, so a request nobody waits for
-// any more holds up the one that is wanted (see "One shared connection" in
-// docs/decisions.md).
+// and what was asked for the letters before is called off: the server answers
+// suggestion requests one at a time in the order asked, so a request nobody
+// waits for any more holds up the one that is wanted (see "Reads on a pool of
+// connections" in docs/decisions.md).
 var SUGGEST_PAUSE = 150;
 function suggestSoon(v) {
   clearTimeout(sugg.timer);

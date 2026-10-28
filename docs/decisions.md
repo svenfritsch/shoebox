@@ -100,14 +100,62 @@ are in `git log` (the old `docs/plan.md` and `docs/phaseN.md`).
 - **SQLite on exFAT**: rollback journal, `synchronous=FULL`, a copy
   `library.db.bak` after each scan and after changes. WAL stays off (its `-shm`
   file on external exFAT drives, and copies of `.shoebox` without the `-wal`).
-- **One shared connection per drive in `serve`** (`App::conn`), so a slow
-  request holds up every other: the page asks only on actions, never polls
-  (except `/api/info` every 5 s while a job runs), calls off what it no longer
-  needs (`AbortController`, `dropPending`), the search box sends one
-  `/suggest` request per pause (150 ms), and the server takes those one at a
-  time in order, dropping requests called off while they wait. Heavy reads
-  (the people view) run on a read-only connection of their own, invalidated by
-  `PRAGMA data_version`. (To change: [design/responsiveness.md](design/responsiveness.md).)
+- **Reads on a pool of connections, writes on one, per drive in `serve`**
+  (October 2026; rule in `CLAUDE.md`). Until then one shared connection
+  (`App::conn`) let every request wait for the slowest: on the benchmark
+  library the first `/suggest` held the whole app for 3 s, a move of 5,000
+  photos for 9 s. Now requests that only read take one of a few read-only
+  connections (`App::read`, `serve/readers.rs`: one per core, 2 to 4,
+  `query_only`, `thumbs.db` and `recognition.db` attached), and the probe of
+  `bench-people.py probe` waits 2 ms through all of them (numbers in
+  [design/responsiveness.md](design/responsiveness.md), section 2). Every
+  write of a request goes through `App::writer`: changes one at a time
+  (`change`), and the thumbnails, posters and crops stored on request, which
+  are skipped while a change holds the writer (made again next time) so a
+  picture never waits for a long move. Background work writes on connections
+  of its own.
+  - **A file a change is moving** is renamed on disk before the change
+    commits the index, so a read in between finds the old path empty. It
+    waits for the writer (holding no connection) and looks again; only a
+    file still missing then is a 404 and asks for the search for moved files,
+    which reads the whole drive.
+  - **The version stays on `App::writer`.** `index_version` is
+    `(PRAGMA data_version, generation)`: `data_version` ignores the
+    connection's own commits, so changes to people (which do not move
+    `generation`) reload no open page, and it belongs to one connection
+    (numbers from two cannot be compared). Readers ask for it with
+    `try_lock` and use the last number while a change holds the writer
+    (`App::versions`, also for `recog.data_version`); otherwise every read
+    would wait for a long move again. The change moves `generation` when it
+    is done, and what another process committed meanwhile is seen by the
+    first read after it. Changes to people and faces count in
+    `people_version` for the faces' counts of `/api/info`, which neither
+    number moves for.
+  - **Kept views first, then a reader**, never waiting for anything while
+    holding a connection: four requests holding readers while they wait for
+    the people view would leave none for the rest. Views are built on a
+    reader of their own under their own lock (debug builds check the order).
+    A request that waits 30 s for a reader fails with an error instead of
+    hanging the drive's reads, should code that breaks the rule slip
+    through; it is no deadline for slow requests.
+  - **A request whose browser has gone does not start**: `blocking` and
+    `in_turn` set a flag when hyper drops the handler's future, and the first
+    connection the work takes (a reader or the people view's) ends it.
+    Changes and starting an export always run (the user asked for them). The search box's requests still go one at a time in the order
+    typed (`in_turn`), dropping those called off while they wait.
+  - The page still asks only on actions, never polls (except `/api/info`
+    every 5 s while a job runs) and calls off what it no longer needs: the
+    browser sends at most six requests at a time to one server, pictures
+    included. The people view keeps its own read-only connection.
+  - WAL stays off (above), so a read still waits for a commit: up to 0.8 s
+    during a move of 5,000 photos (step 5 of the design). `mmap_size` stays
+    off (a read through a mapping of a pulled drive ends the program). Each
+    connection has its own page cache (2 MiB per database): at most about
+    30 MiB more per drive. The pool belongs to the library (`App`) and goes
+    with a drive that is pulled out.
+  - Not done: a connection of its own for each view or for storing
+    thumbnails (more to keep in step, little gain), stopping SQL in the
+    middle, deadlines and timeouts (section 4 of the design).
 - **Kept views in memory**: the timeline (`browse::Snapshot`) and the people
   view (`people::View`) hold the whole library and are read again, mostly
   whole, after a change; requests answer from them instead of reading all

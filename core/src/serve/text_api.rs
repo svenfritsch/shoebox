@@ -48,7 +48,7 @@ pub(super) struct Summary {
 }
 
 pub(super) async fn stats(State(app): State<Arc<App>>) -> ApiResult<Json<Summary>> {
-    blocking(&app, move |app| Ok(Json(Summary { stats: text::stats(&app.conn.lock().unwrap())? }))).await
+    blocking(&app, move |app| Ok(Json(Summary { stats: text::stats(&*app.read()?)? }))).await
 }
 
 #[derive(Deserialize)]
@@ -59,7 +59,7 @@ pub(super) struct LimitsRequest {
 }
 
 pub(super) async fn limits_get(State(app): State<Arc<App>>) -> ApiResult<Json<text::Limits>> {
-    blocking(&app, move |app| Ok(Json(text::limits(&app.conn.lock().unwrap())))).await
+    blocking(&app, move |app| Ok(Json(text::limits(&*app.read()?)))).await
 }
 
 pub(super) async fn limits_set(State(app): State<Arc<App>>, Json(req): Json<LimitsRequest>) -> ApiResult<Json<text::Limits>> {
@@ -89,7 +89,7 @@ pub(super) struct Check {
 /// limit would take in or leave out), nearest first.
 pub(super) async fn check(State(app): State<Arc<App>>) -> ApiResult<Json<Check>> {
     blocking(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
+        let conn = app.read()?;
         Ok(Json(Check { limits: text::limits(&conn), lines: text::check_lines(&conn, 60)? }))
     })
     .await
@@ -111,8 +111,7 @@ pub(super) async fn crop(State(app): State<Arc<App>>, Path(id): Path<i64>, Query
         return Err(ApiError::BadRequest("the box is x, y, w, h as fractions of the picture".into()));
     }
     let src = blocking(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
-        app.source(&conn, id)?.filter(|s| s.kind != Kind::Video && s.kind != Kind::Raw).ok_or(ApiError::NotFound)
+        app.source(id)?.filter(|s| s.kind != Kind::Video && s.kind != Kind::Raw).ok_or(ApiError::NotFound)
     })
     .await?;
     let _permit = app.renders.acquire().await.map_err(|e| ApiError::Internal(e.into()))?;

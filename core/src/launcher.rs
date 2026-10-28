@@ -872,6 +872,7 @@ async fn app_start(State(shared): State<Arc<Shared>>, Json(req): Json<AppRequest
                 reveal: None,
                 recognizer: None,
                 regroup: Default::default(),
+                hold: None,
             },
             false,
         )

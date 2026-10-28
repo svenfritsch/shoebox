@@ -3,6 +3,7 @@
 
     scripts/bench-people.py make <dir> --shoebox <binary> [--files 100000] [--faces-per-photo 3.3]
     scripts/bench-people.py run  <dir> --shoebox <binary> [--port 7799] [--namings 6]
+    scripts/bench-people.py probe <dir> --shoebox <binary> [--port 7799] [--move 5000]
 
 `make` writes a library of `--files` index rows (no photo files: the people
 endpoints read only the index) with about 300 000 detected faces, people,
@@ -17,6 +18,13 @@ recognised before), and stops it again.
     client asks for `/api/groups` (a trivial query) every 100 ms, which shows
     how long requests wait for the connection, and while the regrouping
     after each name runs.
+
+`probe` copies `<dir>/pristine` to `<dir>/work` as well and times, right after
+the server started, each of the requests that held up the rest of the app (the
+first `/suggest`, the Face check's stats and similar faces, a move of `--move`
+photos) while a second client asks for `/api/groups` every 100 ms: its longest
+wait is how long the rest of the app was held up. For the move, the photos are
+made as empty (sparse) files that match the index.
 
 Needs numpy (only for making the embeddings). Nothing here is an original:
 the library has index rows only, under a folder of its own.
@@ -364,17 +372,80 @@ def run(args):
         print(f"  /api/people             {summary(probe2.times)}")
 
 
+def make_files(root, n):
+    """Sparse files for `n` present index rows, with the size and modified time
+    the index has for them (all a move checks), so they can be moved."""
+    lib = sqlite3.connect(os.path.join(root, ".shoebox", "library.db"))
+    rows = lib.execute(
+        "SELECT id, path, size, mtime_ns FROM files WHERE missing_since IS NULL AND kind != 'video' ORDER BY id LIMIT ?", (n,)
+    ).fetchall()
+    lib.close()
+    for _, path, size, mtime_ns in rows:
+        p = os.path.join(root, path)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "wb") as f:
+            f.truncate(size)
+        os.utime(p, ns=(mtime_ns, mtime_ns))
+    return [r[0] for r in rows]
+
+
+def under_probe(s, what, call):
+    """`call()` while /api/groups is asked every 100 ms; prints how long it took
+    and how long the probe waited at most."""
+    probe = Prober(s)
+    probe.start()
+    time.sleep(0.3)
+    t = time.perf_counter()
+    status = call()
+    took = time.perf_counter() - t
+    time.sleep(0.3)
+    probe.stop.set()
+    probe.join()
+    worst = max(probe.times) if probe.times else 0
+    print(f"  {what:44s} {status}  {took * 1000:7.0f} ms   probe: {summary(probe.times)}")
+    return took, worst
+
+
+def probe(args):
+    out = os.path.abspath(args.dir)
+    root = os.path.join(out, "work")
+    if os.path.exists(root):
+        shutil.rmtree(root)
+    shutil.copytree(os.path.join(out, "pristine"), root)
+    ids = make_files(root, args.move)
+    with Server(args.shoebox, root, args.port) as s:
+        print(f"server answered after {s.open_seconds:.1f} s")
+        t = s.wait_clusters()
+        print(f"clustering at start: {t:.1f} s")
+        print("\neach under the probe (/api/groups every 100 ms)")
+        under_probe(s, "/api/suggest?q=a (first after the start)", lambda: s.request("/api/suggest?q=a")[0])
+        under_probe(s, "/api/suggest?q=an", lambda: s.request("/api/suggest?q=an")[0])
+        under_probe(s, "/api/faces/stats", lambda: s.request("/api/faces/stats")[0])
+        under_probe(s, "/api/faces/stats?kind=pets", lambda: s.request("/api/faces/stats?kind=pets")[0])
+        face = s.get("/api/faces?sort=size&offset=0&limit=1")["faces"][0]["id"]
+        under_probe(s, f"/api/faces/{face}/similar?limit=24", lambda: s.request(f"/api/faces/{face}/similar?limit=24")[0])
+        under_probe(s, "/api/duplicates", lambda: s.request("/api/duplicates")[0])
+
+        def move():
+            status, raw, _ = s.request("/api/move", {"ids": ids, "folder": "Bench moved"})
+            moved = len(json.loads(raw).get("files", [])) if status == 200 else raw[:200]
+            return f"{status} ({moved} moved)"
+
+        under_probe(s, f"/api/move of {len(ids)} photos", move)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", choices=["make", "run"])
+    ap.add_argument("command", choices=["make", "run", "probe"])
     ap.add_argument("dir")
     ap.add_argument("--shoebox", required=True)
     ap.add_argument("--files", type=int, default=100_000)
     ap.add_argument("--faces-per-photo", type=float, default=4.6)
     ap.add_argument("--port", type=int, default=7799)
     ap.add_argument("--namings", type=int, default=6)
+    ap.add_argument("--move", type=int, default=5000)
     args = ap.parse_args()
-    (make if args.command == "make" else run)(args)
+    {"make": make, "run": run, "probe": probe}[args.command](args)
 
 
 if __name__ == "__main__":

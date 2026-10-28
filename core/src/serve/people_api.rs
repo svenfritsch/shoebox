@@ -66,6 +66,7 @@ async fn changed<A, T: Send + 'static>(
         if faces {
             app.faces_version.fetch_add(1, Ordering::SeqCst);
         }
+        app.people_version.fetch_add(1, Ordering::SeqCst);
         let done = done?;
         let why = why(&done);
         // The cards left after a card was decided (`regroup::Schedule::cards_now`).
@@ -302,20 +303,19 @@ pub(super) struct PersonHit {
 /// left out.
 pub(super) async fn search(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<PersonHit>>> {
     queued(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
         let needle = param(&pairs, "q").map(db::tag_fold).unwrap_or_default();
         let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(8);
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
-        Ok(Json(person_hits(app, &conn, &pairs, &filter, None, &needle, limit)?))
+        Ok(Json(person_hits(app, &pairs, &filter, None, &needle, limit)?))
     })
     .await
 }
 
 /// `search` for `needle` (folded) within `filter`, whose photos are `shown`
-/// when the caller has them already (`/api/suggest`).
+/// when the caller has them already (`/api/suggest`). From the kept people
+/// view and counts alone: it takes no reader of its own.
 pub(super) fn person_hits(
     app: &App,
-    conn: &rusqlite::Connection,
     pairs: &Pairs,
     filter: &browse::Query,
     shown: Option<&HashSet<i64>>,
@@ -323,7 +323,7 @@ pub(super) fn person_hits(
     limit: usize,
 ) -> anyhow::Result<Vec<PersonHit>> {
     let list = app.with_people(|conn, v| people::people_in(conn, v, false))?;
-    let counts = counts(app, conn, pairs, filter, shown)?;
+    let counts = counts(app, pairs, filter, shown)?;
     let mut hits: Vec<PersonHit> = list
         .into_iter()
         .filter(|p| !filter.people.contains(&p.id) && db::tag_fold(&p.name).contains(needle))
@@ -373,12 +373,14 @@ pub(super) struct Counts {
     pets: HashMap<String, u64>,
 }
 
-fn counts(app: &App, conn: &rusqlite::Connection, pairs: &Pairs, filter: &browse::Query, shown: Option<&HashSet<i64>>) -> anyhow::Result<Arc<Counts>> {
-    let view = app.with_people(|_, v| Ok(v.clone()))?;
-    let version = app.version(conn)?;
+/// The view and the snapshot are taken before the reader the counting needs
+/// (under this cache's lock, so the search box's requests count once).
+fn counts(app: &App, pairs: &Pairs, filter: &browse::Query, shown: Option<&HashSet<i64>>) -> anyhow::Result<Arc<Counts>> {
+    let view = app.people_view()?;
     let mut within: Pairs = pairs.iter().filter(|(k, _)| k != "q" && k != "limit").cloned().collect();
     within.sort();
     let mut cache = app.person_photos.lock().unwrap();
+    let version = app.version()?;
     if let Some(c) = cache.as_ref()
         && c.version == version
         && Arc::ptr_eq(&c.view, &view)
@@ -386,14 +388,9 @@ fn counts(app: &App, conn: &rusqlite::Connection, pairs: &Pairs, filter: &browse
     {
         return Ok(c.counts.clone());
     }
-    let computed;
-    let shown = match shown {
-        Some(s) => s,
-        None => {
-            computed = app.snapshot(conn)?.query(conn, filter)?.iter().map(|it| it.id).collect::<HashSet<i64>>();
-            &computed
-        }
-    };
+    let shown = super::shown_by(app, filter, shown)?;
+    let conn = app.read()?;
+    let conn = &*conn;
     let mut files_per_key: HashMap<String, u64> = HashMap::new();
     {
         let mut stmt = conn.prepare("SELECT id, quick_hash FROM files WHERE missing_since IS NULL")?;
@@ -443,18 +440,18 @@ pub(super) struct PetHit {
 /// filter already has are left out.
 pub(super) async fn pets_search(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<PetHit>>> {
     queued(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
         let needle = param(&pairs, "q").unwrap_or("");
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
-        Ok(Json(pet_hits(app, &conn, &pairs, &filter, None, needle)?))
+        Ok(Json(pet_hits(app, &pairs, &filter, None, needle)?))
     })
     .await
 }
 
 /// `pet_hits` for a filter that is not a request's own (over all drives it is
 /// worked out for each drive): a search for each species, nothing kept.
-pub(super) fn pet_hits_uncached(app: &App, conn: &rusqlite::Connection, filter: &browse::Query, needle: &str) -> anyhow::Result<Vec<PetHit>> {
-    let snapshot = app.snapshot(conn)?;
+pub(super) fn pet_hits_uncached(app: &App, filter: &browse::Query, needle: &str) -> anyhow::Result<Vec<PetHit>> {
+    let snapshot = app.snapshot()?;
+    let conn = app.read()?;
     let mut hits = Vec::new();
     for species in crate::pets::species_matching(needle) {
         if filter.pets.iter().any(|p| p == species) {
@@ -462,7 +459,7 @@ pub(super) fn pet_hits_uncached(app: &App, conn: &rusqlite::Connection, filter: 
         }
         let mut with = filter.clone();
         with.pets.push(species.to_string());
-        let photos = snapshot.query(conn, &with)?.len() as u64;
+        let photos = snapshot.query(&conn, &with)?.len() as u64;
         if photos > 0 {
             hits.push(PetHit { species, photos });
         }
@@ -475,13 +472,12 @@ pub(super) fn pet_hits_uncached(app: &App, conn: &rusqlite::Connection, filter: 
 /// `shown` when the caller has them already (`/api/suggest`).
 pub(super) fn pet_hits(
     app: &App,
-    conn: &rusqlite::Connection,
     pairs: &Pairs,
     filter: &browse::Query,
     shown: Option<&HashSet<i64>>,
     needle: &str,
 ) -> anyhow::Result<Vec<PetHit>> {
-    let counts = counts(app, conn, pairs, filter, shown)?;
+    let counts = counts(app, pairs, filter, shown)?;
     let mut hits = Vec::new();
     for species in crate::pets::species_matching(needle) {
         if filter.pets.iter().any(|p| p == species) {
@@ -499,7 +495,7 @@ pub(super) fn pet_hits(
 // ---------------------------------------------------------------- groups
 
 pub(super) async fn groups(State(app): State<Arc<App>>) -> ApiResult<Json<Vec<people::Group>>> {
-    blocking(&app, |app| Ok(Json(people::groups(&app.conn.lock().unwrap())?))).await
+    blocking(&app, |app| Ok(Json(people::groups(&*app.read()?)?))).await
 }
 
 #[derive(Deserialize)]
@@ -528,11 +524,10 @@ pub(super) struct GroupHit {
 /// filter itself and ones that would show nothing are left out.
 pub(super) async fn groups_search(State(app): State<Arc<App>>, Query(pairs): Query<Pairs>) -> ApiResult<Json<Vec<GroupHit>>> {
     queued(&app, move |app| {
-        let conn = app.conn.lock().unwrap();
         let needle = param(&pairs, "q").map(db::tag_fold).unwrap_or_default();
         let limit = param(&pairs, "limit").and_then(|l| l.parse().ok()).unwrap_or(8);
         let filter = browse::Query { text: None, ..filter_of(&pairs)? };
-        Ok(Json(group_hits(app, &conn, &pairs, &filter, None, &needle, limit)?))
+        Ok(Json(group_hits(app, &pairs, &filter, None, &needle, limit)?))
     })
     .await
 }
@@ -541,16 +536,16 @@ pub(super) async fn groups_search(State(app): State<Arc<App>>, Query(pairs): Que
 /// `shown` when the caller has them already (`/api/suggest`).
 pub(super) fn group_hits(
     app: &App,
-    conn: &rusqlite::Connection,
     pairs: &Pairs,
     filter: &browse::Query,
     shown: Option<&HashSet<i64>>,
     needle: &str,
     limit: usize,
 ) -> anyhow::Result<Vec<GroupHit>> {
-    let counts = counts(app, conn, pairs, filter, shown)?;
+    let counts = counts(app, pairs, filter, shown)?;
     let mut hits = Vec::new();
-    for g in people::groups(conn)? {
+    let groups = people::groups(&*app.read()?)?;
+    for g in groups {
         if filter.groups.contains(&g.id) || !db::tag_fold(&g.name).contains(needle) {
             continue;
         }
