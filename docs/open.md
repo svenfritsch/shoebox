@@ -195,8 +195,9 @@ ones you do not want.
   crops or a larger send size for small text; French or Italian letters (one
   line in the allow-list and a re-filter).
 - Search by what a picture shows (CLIP), also for borderline screenshots.
-- A playable copy of an old video made by ffmpeg on command, kept under
-  `.shoebox/playback/` with a size cap.
+- Play every video in the browser: converted by ffmpeg into memory only, no
+  copy on the drive and no trace on the computer. Design:
+  [design/video-playback.md](design/video-playback.md).
 - Identical-once in All drives also for renamed copies.
 - Run the ONNX models in Rust (`ort` or `tract`) and drop Python (see section 8).
 
