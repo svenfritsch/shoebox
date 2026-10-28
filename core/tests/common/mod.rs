@@ -297,7 +297,7 @@ pub fn start_regrouping(lib: &Library, regroup: serve::RegroupRules) -> serve::S
             reveal: None,
             recognizer: Some(env!("CARGO_BIN_EXE_shoebox-fake-recognizer").into()),
             regroup,
-            hold: None,
+            hold: None, slow: None,
         },
         false,
     )
@@ -321,7 +321,7 @@ pub fn start_with(lib: &Library, pin: Option<&str>, reveal: Option<serve::Reveal
             reveal,
             recognizer: Some(env!("CARGO_BIN_EXE_shoebox-fake-recognizer").into()),
             regroup: REGROUP_AT_ONCE,
-            hold: None,
+            hold: None, slow: None,
         },
         false,
     )
@@ -346,7 +346,7 @@ pub fn start_many_with(libs: &[&Library], extra_missing: &[&Path], reveal: Optio
             reveal,
             recognizer: Some(env!("CARGO_BIN_EXE_shoebox-fake-recognizer").into()),
             regroup: REGROUP_AT_ONCE,
-            hold: None,
+            hold: None, slow: None,
         },
         false,
     )

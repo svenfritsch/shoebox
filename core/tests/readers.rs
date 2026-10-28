@@ -15,6 +15,10 @@ use shoebox::serve;
 
 /// A server whose `/api/test/hold-…` routes hold a connection (`serve::Hold`).
 fn start_holding(lib: &Library) -> (serve::Server, Arc<serve::Hold>) {
+    start_holding_with(lib, None)
+}
+
+fn start_holding_with(lib: &Library, slow: Option<serve::SlowLog>) -> (serve::Server, Arc<serve::Hold>) {
     let hold = Arc::new(serve::Hold::default());
     let server = serve::start(
         &serve::Options {
@@ -28,6 +32,7 @@ fn start_holding(lib: &Library) -> (serve::Server, Arc<serve::Hold>) {
             recognizer: Some(env!("CARGO_BIN_EXE_shoebox-fake-recognizer").into()),
             regroup: REGROUP_AT_ONCE,
             hold: Some(hold.clone()),
+            slow,
         },
         false,
     )
@@ -340,5 +345,132 @@ fn the_kept_face_counts_see_every_change_at_once() {
     let key = lib.record_key("Anna/a3.png");
     other.execute("DELETE FROM recog.looked WHERE key = ?1", [&key]).unwrap();
     assert_eq!(get(addr, "/api/info").json()["faces"]["done"], 2);
+    server.stop().unwrap();
+}
+
+// ---------------------------------------------------------------- slow-request log
+
+type Lines = Arc<std::sync::Mutex<Vec<String>>>;
+
+/// A server whose slow-request log (`serve::SlowLog`) keeps its lines for the
+/// test, for requests over `limit`.
+fn start_logging(lib: &Library, limit: Duration) -> (serve::Server, Arc<serve::Hold>, Lines) {
+    let lines = Lines::default();
+    let sink = lines.clone();
+    let log = serve::SlowLog::new(limit, move |line| sink.lock().unwrap().push(line.to_string()));
+    let (server, hold) = start_holding_with(lib, Some(log));
+    (server, hold, lines)
+}
+
+/// The milliseconds a line says the request waited for `what` ("a reader",
+/// "the writer", "the people data").
+fn waited_ms(line: &str, what: &str) -> u64 {
+    let rest = line.split_once(&format!("{what} ")).unwrap_or_else(|| panic!("no {what} in {line}")).1;
+    rest.chars().take_while(char::is_ascii_digit).collect::<String>().parse().unwrap()
+}
+
+/// The one line of the log about the request whose target ends with `tail`.
+fn line_about(lines: &Lines, tail: &str) -> String {
+    let lines = lines.lock().unwrap();
+    let mine: Vec<&String> = lines.iter().filter(|l| l.split(" took ").next().unwrap().ends_with(tail)).collect();
+    assert_eq!(mine.len(), 1, "one line about {tail}, in {lines:?}");
+    mine[0].clone()
+}
+
+/// A request held past the limit by what it does itself (here: it holds a
+/// reader) says what it is, how long it took and that it waited for nothing.
+#[test]
+fn a_request_held_past_the_limit_logs_one_line() {
+    let lib = Library::new("slow-held");
+    lib.scan();
+    let (server, hold, lines) = start_logging(&lib, Duration::from_millis(100));
+    let addr = server.addr;
+    holding(addr, &hold, "reader", || {
+        // Time must pass for the request to be slow.
+        std::thread::sleep(Duration::from_millis(250));
+        assert!(lines.lock().unwrap().is_empty(), "logged before the request was done");
+    });
+    let line = line_about(&lines, "/test/hold-reader");
+    assert_eq!(lines.lock().unwrap().len(), 1);
+    assert!(line.starts_with("slow request: GET /api/lib/"), "{line}");
+    let took: u64 = line.split(" took ").nth(1).unwrap().split(' ').next().unwrap().parse().unwrap();
+    assert!(took >= 250, "{line}");
+    assert_eq!((waited_ms(&line, "a reader"), waited_ms(&line, "the writer"), waited_ms(&line, "the people data")), (0, 0, 0), "{line}");
+    server.stop().unwrap();
+}
+
+/// A request that waits for a connection says for which, and how long: a
+/// reader when the pool is held, the writer behind a change, the people data's
+/// lock behind a slow reading of the people view. The query stays in the path.
+#[test]
+fn a_request_logs_what_it_waited_for() {
+    let lib = Library::new("slow-waits");
+    lib.scan();
+    let (server, hold, lines) = start_logging(&lib, Duration::from_millis(100));
+    let addr = server.addr;
+    for (held, send, tail, label) in [
+        ("all-readers", "GET", "/groups?x=1", "a reader"),
+        ("writer", "POST", "/people", "the writer"),
+        ("people", "GET", "/people?hidden=1", "the people data"),
+    ] {
+        let target = tail.to_string();
+        let mut waiting = None;
+        holding(addr, &hold, held, || {
+            waiting = Some(std::thread::spawn(move || {
+                if send == "POST" { post(addr, "/api/people", &json!({ "name": "Slow" })) } else { get(addr, &format!("/api{target}")) }
+            }));
+            // Time must pass for it to wait.
+            std::thread::sleep(Duration::from_millis(300));
+        });
+        let reply = waiting.take().unwrap().join().unwrap();
+        assert_eq!(reply.status, 200, "{held}: {}", String::from_utf8_lossy(&reply.body));
+        let line = line_about(&lines, tail);
+        assert!(line.starts_with(&format!("slow request: {send} /api/lib/")), "{line}");
+        assert!(waited_ms(&line, label) >= 200, "{held}: {line}");
+        for other in ["a reader", "the writer", "the people data", "a queue"].into_iter().filter(|o| *o != label) {
+            assert!(waited_ms(&line, other) < 100, "{held}: {line}");
+        }
+    }
+    server.stop().unwrap();
+}
+
+/// The searches go one at a time: one queued behind another that is stuck says
+/// it waited in a queue, not that it worked.
+#[test]
+fn a_request_in_a_queue_logs_the_wait() {
+    let lib = Library::new("slow-queue");
+    lib.scan();
+    let (server, hold, lines) = start_logging(&lib, Duration::from_millis(100));
+    let addr = server.addr;
+    let mut waiting = Vec::new();
+    holding(addr, &hold, "people", || {
+        // The first takes the turn and waits for the people lock; the second waits for the turn.
+        for q in ["a", "b"] {
+            waiting.push(std::thread::spawn(move || get(addr, &format!("/api/suggest?q={q}"))));
+            std::thread::sleep(Duration::from_millis(150));
+        }
+        std::thread::sleep(Duration::from_millis(300));
+    });
+    for w in waiting {
+        assert_eq!(w.join().unwrap().status, 200);
+    }
+    let (first, second) = (line_about(&lines, "/suggest?q=a"), line_about(&lines, "/suggest?q=b"));
+    assert!(waited_ms(&first, "the people data") >= 300 && waited_ms(&first, "a queue") < 100, "{first}");
+    assert!(waited_ms(&second, "a queue") >= 300, "{second}");
+    server.stop().unwrap();
+}
+
+/// Requests within the limit leave no line, however many.
+#[test]
+fn a_quick_request_logs_nothing() {
+    let lib = Library::new("slow-quick");
+    lib.scan();
+    let (server, _hold, lines) = start_logging(&lib, Duration::from_secs(30));
+    let addr = server.addr;
+    for path in ["/api/info", "/api/groups", "/api/timeline", "/api/people", "/raw/api/all/people"] {
+        assert_eq!(get(addr, path).status, 200, "{path}");
+    }
+    let seen = lines.lock().unwrap().clone();
+    assert!(seen.is_empty(), "{seen:?}");
     server.stop().unwrap();
 }

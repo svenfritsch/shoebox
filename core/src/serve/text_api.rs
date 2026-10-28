@@ -114,7 +114,7 @@ pub(super) async fn crop(State(app): State<Arc<App>>, Path(id): Path<i64>, Query
         app.source(id)?.filter(|s| s.kind != Kind::Video && s.kind != Kind::Raw).ok_or(ApiError::NotFound)
     })
     .await?;
-    let _permit = app.renders.acquire().await.map_err(|e| ApiError::Internal(e.into()))?;
+    let _permit = super::readers::in_line(app.renders.acquire()).await.map_err(|e| ApiError::Internal(e.into()))?;
     let made = blocking(&app, move |_| Ok(text::render_crop(&LibHeif::new(), &src, [q.x, q.y, q.w, q.h]))).await?;
     match made {
         Ok(bytes) => Ok(jpeg(bytes, IMMUTABLE)),

@@ -16,10 +16,16 @@
 //!   dropped (the browser closed the connection). The first connection the
 //!   work takes looks at it, and the request ends there. What has started runs
 //!   to its end; changes always run.
+//!
+//! The same turn carries what the request waited for (`Waits`): a reader, the
+//! writer, the people data's lock, a place in the queue of the searches or of
+//! the picture makers (`in_line`). The slow-request log (`serve::SlowLog`)
+//! prints it, so a request that took long says whether it worked or waited.
 
 use std::cell::{Cell, RefCell};
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::future::Future;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -46,6 +52,7 @@ pub(super) struct Readers {
     idle: Mutex<Vec<Connection>>,
     back: Condvar,
     wait: Duration,
+    size: usize,
 }
 
 impl Readers {
@@ -60,7 +67,7 @@ impl Readers {
             conn.pragma_update(None, "query_only", true)?;
             idle.push(conn);
         }
-        Ok(Readers { idle: Mutex::new(idle), back: Condvar::new(), wait: WAIT })
+        Ok(Readers { idle: Mutex::new(idle), back: Condvar::new(), wait: WAIT, size: n })
     }
 
     /// A reader, as soon as one is free. Fails when it is the request's first
@@ -68,7 +75,8 @@ impl Readers {
     /// back within `WAIT`.
     pub(super) fn take(&self) -> Result<Reader<'_>> {
         assert_free("a reader");
-        let until = Instant::now() + self.wait;
+        let began = Instant::now();
+        let until = began + self.wait;
         let mut idle = self.idle.lock().unwrap();
         let conn = loop {
             if let Some(conn) = idle.pop() {
@@ -81,9 +89,26 @@ impl Readers {
             idle = self.back.wait_timeout(idle, left).unwrap().0;
         };
         drop(idle);
+        waited(Wait::Reader, began.elapsed());
         let reader = Reader { conn: Some(conn), pool: self, _held: Holding::new() };
         started()?;
         Ok(reader)
+    }
+
+    /// Tests only (`Hold`): every reader of the pool at once, once all are
+    /// back, as long reads on all of them would hold it.
+    pub(super) fn take_all(&self) -> Result<Vec<Reader<'_>>> {
+        let until = Instant::now() + self.wait;
+        let mut idle = self.idle.lock().unwrap();
+        while idle.len() < self.size {
+            let left = until.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                bail!("the readers did not all come back in {} s", self.wait.as_secs());
+            }
+            idle = self.back.wait_timeout(idle, left).unwrap().0;
+        }
+        let all = idle.drain(..).map(|conn| Reader { conn: Some(conn), pool: self, _held: Holding::new() }).collect();
+        Ok(all)
     }
 }
 
@@ -147,6 +172,105 @@ struct Turn {
     gone: Arc<AtomicBool>,
     /// It has taken a connection.
     started: bool,
+    /// What the request waited for so far.
+    waits: Option<Arc<Waits>>,
+}
+
+/// What a request waits for, in nanoseconds, added up over its turns.
+#[derive(Default)]
+pub(super) struct Waits {
+    reader: AtomicU64,
+    writer: AtomicU64,
+    people: AtomicU64,
+    queue: AtomicU64,
+}
+
+/// What a request can wait for.
+#[derive(Clone, Copy)]
+pub(super) enum Wait {
+    /// A free connection of the pool (`Readers::take`).
+    Reader,
+    /// `App::writer`, and the lock that puts changes in a row.
+    Writer,
+    /// The people data's lock (`App::with_people`).
+    People,
+    /// A turn of the searches (`in_turn`) or a slot of the picture makers
+    /// (`App::renders`), awaited before the work goes to a blocking thread.
+    Queue,
+}
+
+impl Waits {
+    fn add(&self, what: Wait, d: Duration) {
+        let a = match what {
+            Wait::Reader => &self.reader,
+            Wait::Writer => &self.writer,
+            Wait::People => &self.people,
+            Wait::Queue => &self.queue,
+        };
+        a.fetch_add(d.as_nanos() as u64, Ordering::SeqCst);
+    }
+
+    /// (reader, writer, people, queue)
+    pub(super) fn totals(&self) -> (Duration, Duration, Duration, Duration) {
+        let get = |a: &AtomicU64| Duration::from_nanos(a.load(Ordering::SeqCst));
+        (get(&self.reader), get(&self.writer), get(&self.people), get(&self.queue))
+    }
+}
+
+/// Await `f` (a semaphore's permit) in the handler's future, counting the
+/// time as a wait in a queue.
+pub(super) async fn in_line<F: Future>(f: F) -> F::Output {
+    let began = Instant::now();
+    let out = f.await;
+    if let Some(waits) = current_waits() {
+        waits.add(Wait::Queue, began.elapsed());
+    }
+    out
+}
+
+tokio::task_local! {
+    /// The waits of the request this task serves (`measure`); its blocking
+    /// work takes them along (`current_waits`).
+    static CURRENT: Arc<Waits>;
+}
+
+/// Run a request's handler, and take back what its work waited for.
+pub(super) async fn measure<F: Future>(f: F) -> (F::Output, Arc<Waits>) {
+    let waits = Arc::new(Waits::default());
+    let out = CURRENT.scope(waits.clone(), f).await;
+    (out, waits)
+}
+
+/// The waits of the request this task serves, to hand to its blocking work
+/// (`as_turn`). `None` outside a measured request.
+pub(super) fn current_waits() -> Option<Arc<Waits>> {
+    CURRENT.try_with(Arc::clone).ok()
+}
+
+/// `tokio::task::spawn_blocking` for a request's work that is no `blocking`
+/// or `in_turn`: it carries the waits too and is never called off.
+pub(super) fn spawn_blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> tokio::task::JoinHandle<T> {
+    let waits = current_waits();
+    // A flag nobody sets: this work is not called off.
+    let never = Arc::new(AtomicBool::new(false));
+    tokio::task::spawn_blocking(move || as_turn(never, waits, f))
+}
+
+/// This thread's request waited `d` for `what`.
+pub(super) fn waited(what: Wait, d: Duration) {
+    TURN.with(|t| {
+        if let Some(waits) = t.borrow().as_ref().and_then(|t| t.waits.as_ref()) {
+            waits.add(what, d);
+        }
+    });
+}
+
+/// `lock()` (which waits), counted as a wait for `what`.
+pub(super) fn timed<T>(what: Wait, lock: impl FnOnce() -> T) -> T {
+    let began = Instant::now();
+    let got = lock();
+    waited(what, began.elapsed());
+    got
 }
 
 /// The browser's request was gone before its work took a connection.
@@ -181,15 +305,16 @@ impl Drop for Gone {
     }
 }
 
-/// Run `f` as the work of the request whose future holds `gone`.
-pub(super) fn as_turn<T>(gone: Arc<AtomicBool>, f: impl FnOnce() -> T) -> T {
+/// Run `f` as the work of the request whose future holds `gone`, counting
+/// into `waits` what it waits for.
+pub(super) fn as_turn<T>(gone: Arc<AtomicBool>, waits: Option<Arc<Waits>>, f: impl FnOnce() -> T) -> T {
     struct Clear;
     impl Drop for Clear {
         fn drop(&mut self) {
             TURN.with(|t| *t.borrow_mut() = None);
         }
     }
-    TURN.with(|t| *t.borrow_mut() = Some(Turn { gone, started: false }));
+    TURN.with(|t| *t.borrow_mut() = Some(Turn { gone, started: false, waits }));
     let _clear = Clear;
     f()
 }
@@ -307,22 +432,40 @@ mod tests {
 
         let gone = Gone::new();
         let flag = gone.flag();
-        assert!(as_turn(flag.clone(), || readers.take().map(|_| ())).is_ok());
+        assert!(as_turn(flag.clone(), None, || readers.take().map(|_| ())).is_ok());
         drop(gone);
-        let e = as_turn(flag.clone(), || readers.take().map(|_| ())).unwrap_err();
+        let e = as_turn(flag.clone(), None, || readers.take().map(|_| ())).unwrap_err();
         assert!(e.is::<Abandoned>());
         // Once started, the request runs to its end; a change always runs.
-        as_turn(flag.clone(), || {
+        as_turn(flag.clone(), None, || {
             change_started();
             readers.take().unwrap();
         });
         // The people view's connection is checked the same way.
-        assert!(as_turn(flag.clone(), started).unwrap_err().is::<Abandoned>());
-        assert!(as_turn(Gone::new().flag(), started).is_ok());
+        assert!(as_turn(flag.clone(), None, started).unwrap_err().is::<Abandoned>());
+        assert!(as_turn(Gone::new().flag(), None, started).is_ok());
         // Background work belongs to no request.
         assert!(readers.take().is_ok());
         assert_eq!(readers.idle.lock().unwrap().len(), 2);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn waits_are_counted_on_the_turn_of_the_request_only() {
+        let waits = Arc::new(Waits::default());
+        let never = || Arc::new(AtomicBool::new(false));
+        as_turn(never(), Some(waits.clone()), || {
+            waited(Wait::Reader, Duration::from_millis(5));
+            waited(Wait::Reader, Duration::from_millis(7));
+            waited(Wait::Writer, Duration::from_millis(3));
+            assert_eq!(timed(Wait::People, || std::thread::sleep(Duration::from_millis(20))), ());
+        });
+        // Another turn, one without waits and work of no request's: not counted.
+        as_turn(never(), None, || waited(Wait::Reader, Duration::from_secs(1)));
+        waited(Wait::Reader, Duration::from_secs(1));
+        let (reader, writer, people, _) = waits.totals();
+        assert_eq!((reader, writer), (Duration::from_millis(12), Duration::from_millis(3)));
+        assert!(people >= Duration::from_millis(20) && people < Duration::from_secs(1), "{people:?}");
     }
 
     #[test]

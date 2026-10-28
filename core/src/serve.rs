@@ -96,9 +96,11 @@ mod people_api;
 mod forget_api;
 mod text_api;
 mod readers;
+mod slow;
 mod regroup;
 
 pub use readers::Hold;
+pub use slow::SlowLog;
 pub use regroup::Rules as RegroupRules;
 use readers::Readers;
 use regroup::Why;
@@ -144,6 +146,9 @@ pub struct Options {
     /// Tests only: `/api/test/hold-reader` and `/api/test/hold-writer` hold
     /// a reader, or `App::writer`, until released.
     pub hold: Option<Arc<Hold>>,
+    /// Where the slow-request log goes and how slow is slow; `None` prints
+    /// to stderr what takes over a second (`SlowLog::default`).
+    pub slow: Option<SlowLog>,
 }
 
 /// A running server; dropping it does not stop it, `stop` does.
@@ -212,6 +217,7 @@ pub fn start(opts: &Options, ctrl_c: bool) -> Result<Server> {
         regroup: opts.regroup,
         closing: watch::channel(false).0,
         hold: opts.hold.clone(),
+        slow: opts.slow.clone().unwrap_or_default(),
     });
 
     // The first library must be there; the others may be unplugged.
@@ -292,6 +298,7 @@ struct Shared {
     /// graceful shutdown does not wait for them forever.
     closing: watch::Sender<bool>,
     hold: Option<Arc<Hold>>,
+    slow: SlowLog,
 }
 
 /// One library: open when its drive is there, offline when it is not.
@@ -690,7 +697,7 @@ impl App {
     /// one request at a time. `f` takes no reader and waits for no other view.
     fn with_people<T>(&self, f: impl FnOnce(&Connection, &Arc<people::View>) -> Result<T>) -> Result<T> {
         readers::assert_free("the people view");
-        let mut cache = self.people.lock().unwrap();
+        let mut cache = readers::timed(readers::Wait::People, || self.people.lock().unwrap());
         // Its connection is the request's first one, as a reader would be.
         readers::started()?;
         let view = self.view_now(&mut cache)?;
@@ -938,7 +945,7 @@ impl App {
         match found {
             Some(src) if src.path.symlink_metadata().is_err() => {
                 readers::assert_free("a change");
-                drop(self.writer.lock().unwrap());
+                drop(readers::timed(readers::Wait::Writer, || self.writer.lock().unwrap()));
                 let again = self.indexed(&*self.read()?, id)?;
                 match again {
                     Some(src) if src.path.symlink_metadata().is_ok() => Ok(Some(src)),
@@ -1178,6 +1185,7 @@ fn hub_router(hub: Arc<Hub>) -> Router {
         // Not a route with parameters: those would leak into the `Path`
         // extractors of the library's own routes.
         .fallback(fallback)
+        .layer(middleware::from_fn_with_state(hub.shared.slow.clone(), slow::log))
         .layer(middleware::from_fn_with_state(auth, guard))
         .with_state(hub)
 }
@@ -1197,7 +1205,7 @@ async fn forward(hub: Arc<Hub>, mut req: Request) -> Response {
     };
     let shared = hub.shared.clone();
     let hub2 = hub.clone();
-    let online = tokio::task::spawn_blocking(move || hub2.slots[index].online(&shared)).await.ok().flatten();
+    let online = readers::spawn_blocking(move || hub2.slots[index].online(&shared)).await.ok().flatten();
     let Some((_, router)) = online else {
         let slot = &hub.slots[index];
         let reason = slot.live.lock().unwrap().error.clone().unwrap_or_default();
@@ -1265,7 +1273,7 @@ async fn compare_all(hub: &Arc<Hub>, library: &str) -> ApiResult<serde_json::Val
 async fn compare_ids(hub: &Arc<Hub>, library: &str, backup: bool) -> ApiResult<Arc<HashSet<i64>>> {
     let o = overview(hub).await?;
     let library = library.to_string();
-    tokio::task::spawn_blocking(move || -> ApiResult<Arc<HashSet<i64>>> {
+    readers::spawn_blocking(move || -> ApiResult<Arc<HashSet<i64>>> {
         let here = o.drives.iter().position(|d| d.id == library).ok_or(ApiError::NotFound)?;
         if (o.drives[here].role == multi::Role::Backup) != backup {
             return Err(ApiError::BadRequest(if backup { "this drive is not a backup" } else { "this drive is a backup" }.into()));
@@ -1388,7 +1396,11 @@ fn router(app: Arc<App>) -> Router {
         .route("/api/clusters/{id}/ignore", post(people_api::ignore_cluster))
         .route("/api/clusters/{id}/not-face", post(people_api::not_face_cluster));
     if app.hold.is_some() {
-        routes = routes.route("/api/test/hold-reader", get(hold_reader)).route("/api/test/hold-writer", get(hold_writer));
+        routes = routes
+            .route("/api/test/hold-reader", get(hold_reader))
+            .route("/api/test/hold-all-readers", get(hold_all_readers))
+            .route("/api/test/hold-writer", get(hold_writer))
+            .route("/api/test/hold-people", get(hold_people));
     }
     routes.fallback(asset).layer(middleware::from_fn_with_state(app.auth.clone(), guard)).with_state(app)
 }
@@ -1405,12 +1417,38 @@ async fn hold_reader(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::
     .await
 }
 
+/// Tests only (`Options::hold`): every reader of the pool held, as long reads
+/// on all of them would.
+async fn hold_all_readers(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
+    blocking(&app, |app| {
+        let gate = app.hold.clone().ok_or(ApiError::NotFound)?;
+        let _readers = app.readers.take_all()?;
+        gate.hold();
+        Ok(Json(serde_json::json!({ "held": "readers" })))
+    })
+    .await
+}
+
+/// Tests only (`Options::hold`): the people data's lock held, as a slow
+/// reading of the people view would.
+async fn hold_people(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
+    blocking(&app, |app| {
+        let gate = app.hold.clone().ok_or(ApiError::NotFound)?;
+        app.with_people(|_, _| {
+            gate.hold();
+            Ok(())
+        })?;
+        Ok(Json(serde_json::json!({ "held": "people" })))
+    })
+    .await
+}
+
 /// Tests only (`Options::hold`): `App::writer` held as a long change (a move
 /// of thousands of photos) would, until the test releases it.
 async fn hold_writer(State(app): State<Arc<App>>) -> ApiResult<Json<serde_json::Value>> {
     blocking(&app, |app| {
         let gate = app.hold.clone().ok_or(ApiError::NotFound)?;
-        let _writer = app.writer.lock().unwrap();
+        let _writer = readers::timed(readers::Wait::Writer, || app.writer.lock().unwrap());
         gate.hold();
         Ok(Json(serde_json::json!({ "held": "writer" })))
     })
@@ -1493,7 +1531,8 @@ async fn blocking<T: Send + 'static>(
     let app = app.clone();
     let gone = readers::Gone::new();
     let flag = gone.flag();
-    let result = tokio::task::spawn_blocking(move || readers::as_turn(flag, || f(&app)))
+    let waits = readers::current_waits();
+    let result = tokio::task::spawn_blocking(move || readers::as_turn(flag, waits, || f(&app)))
         .await
         .map_err(|e| ApiError::Internal(anyhow::anyhow!("worker failed: {e}")))?;
     drop(gone);
@@ -1509,12 +1548,13 @@ async fn blocking<T: Send + 'static>(
 /// the database. Work that has started runs to its end (a blocking thread
 /// cannot be stopped), so the turn goes with it.
 async fn in_turn<T: Send + 'static>(queue: &Arc<Semaphore>, f: impl FnOnce() -> ApiResult<T> + Send + 'static) -> ApiResult<T> {
-    let turn = queue.clone().acquire_owned().await.map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))?;
+    let turn = readers::in_line(queue.clone().acquire_owned()).await.map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))?;
     let gone = readers::Gone::new();
     let flag = gone.flag();
+    let waits = readers::current_waits();
     let result = tokio::task::spawn_blocking(move || {
         let _turn = turn;
-        readers::as_turn(flag, f)
+        readers::as_turn(flag, waits, f)
     })
     .await
     .map_err(|e| ApiError::Internal(anyhow::anyhow!("worker failed: {e}")))?;
@@ -1688,7 +1728,7 @@ struct LibraryInfo {
 /// drive that is gone is listed as offline (this also notices a drive that
 /// came back).
 async fn libraries(State(hub): State<Arc<Hub>>) -> Json<Vec<LibraryInfo>> {
-    let list = tokio::task::spawn_blocking(move || {
+    let list = readers::spawn_blocking(move || {
         hub.slots
             .iter()
             .map(|s| {
@@ -1708,7 +1748,7 @@ async fn libraries(State(hub): State<Arc<Hub>>) -> Json<Vec<LibraryInfo>> {
 /// The libraries that are there right now.
 async fn online_apps(hub: &Arc<Hub>) -> Vec<Arc<App>> {
     let hub = hub.clone();
-    tokio::task::spawn_blocking(move || hub.slots.iter().filter_map(|s| s.online(&hub.shared)).map(|(app, _)| app).collect())
+    readers::spawn_blocking(move || hub.slots.iter().filter_map(|s| s.online(&hub.shared)).map(|(app, _)| app).collect())
         .await
         .unwrap_or_default()
 }
@@ -1885,7 +1925,7 @@ struct Overview {
 async fn overview(hub: &Arc<Hub>) -> ApiResult<Overview> {
     let apps = online_apps(hub).await;
     let hub = hub.clone();
-    tokio::task::spawn_blocking(move || -> ApiResult<Overview> {
+    readers::spawn_blocking(move || -> ApiResult<Overview> {
         let drives = drives_of(&apps)?;
         let mut cache = hub.roles.lock().unwrap();
         let fresh = cache.as_ref().filter(|(t, r)| t.elapsed() < ROLES_TTL && r.len() == drives.len());
@@ -1916,7 +1956,7 @@ async fn all_duplicates(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>)
     let o = overview(&hub).await?;
     let limit = param(&pairs, "limit").and_then(|v| v.parse::<usize>().ok()).unwrap_or(500).min(5000);
     let ignore = terms_of(&pairs, "ignore");
-    let result = tokio::task::spawn_blocking(move || {
+    let result = readers::spawn_blocking(move || {
         let mut result = multi::cross_duplicates(&o.drives, &o.roles, &ignore, limit)?;
         let mut volumes: std::collections::HashMap<String, Option<String>> = std::collections::HashMap::new();
         for g in &mut result.groups {
@@ -1942,7 +1982,7 @@ struct CopiesQuery {
 /// backups). For the info panel's "Also on" row; read only.
 async fn all_copies(State(hub): State<Arc<Hub>>, Query(q): Query<CopiesQuery>) -> ApiResult<Json<Vec<multi::OtherCopy>>> {
     let o = overview(&hub).await?;
-    let list = tokio::task::spawn_blocking(move || -> ApiResult<Vec<multi::OtherCopy>> {
+    let list = readers::spawn_blocking(move || -> ApiResult<Vec<multi::OtherCopy>> {
         let app = o.apps.iter().find(|a| library_id(&a.name) == q.library).ok_or(ApiError::NotFound)?;
         let key = app.copy_facts()?.get(&q.file).map(|c| c.key.clone());
         let Some(key) = key else { return Ok(Vec::new()) };
@@ -1974,7 +2014,7 @@ async fn all_duplicate_folders(State(hub): State<Arc<Hub>>, Query(pairs): Query<
     let limit = param(&pairs, "limit").and_then(|v| v.parse::<usize>().ok()).unwrap_or(8).min(50);
     let ignore = terms_of(&pairs, "ignore");
     let text = param(&pairs, "q").unwrap_or("").to_string();
-    let rows = tokio::task::spawn_blocking(move || {
+    let rows = readers::spawn_blocking(move || {
         let mut rows = multi::duplicate_folders(&o.drives, &o.roles, &ignore, &text, limit)?;
         for d in rows.iter_mut().flat_map(|r| r.drives.iter_mut()) {
             d.volume = volume_of(&o.apps, &d.library);
@@ -2005,7 +2045,7 @@ struct DriveState {
 /// Every drive with its role and, where undecided, what its contents suggest.
 async fn all_drives(State(hub): State<Arc<Hub>>) -> ApiResult<Json<Vec<DriveState>>> {
     let o = overview(&hub).await?;
-    let list = tokio::task::spawn_blocking(move || -> ApiResult<Vec<DriveState>> {
+    let list = readers::spawn_blocking(move || -> ApiResult<Vec<DriveState>> {
         let (eligible, _) = multi::eligibility(&o.drives, &o.roles);
         hub.slots
             .iter()
@@ -2202,7 +2242,7 @@ async fn all_timeline(State(hub): State<Arc<Hub>>, Query(pairs): Query<Pairs>) -
     let mut different: Option<Vec<Arc<HashSet<i64>>>> = None;
     if param(&pairs, "compare") == Some("different") {
         let drives = o.drives.clone();
-        let found = tokio::task::spawn_blocking(move || -> ApiResult<Option<(usize, usize, Vec<(i64, i64)>)>> {
+        let found = readers::spawn_blocking(move || -> ApiResult<Option<(usize, usize, Vec<(i64, i64)>)>> {
             Ok(match multi::first_pair(&drives)? {
                 Some((p, b)) => Some((p, b, multi::different_pairs(&drives[p].db, &drives[b].db)?)),
                 None => None,
@@ -2496,7 +2536,7 @@ struct BackupState {
 async fn all_backups(State(hub): State<Arc<Hub>>, Query(q): Query<LimitQuery>) -> ApiResult<Json<Vec<BackupState>>> {
     let o = overview(&hub).await?;
     let limit = q.limit.unwrap_or(50).min(1000);
-    let list = tokio::task::spawn_blocking(move || -> ApiResult<Vec<BackupState>> {
+    let list = readers::spawn_blocking(move || -> ApiResult<Vec<BackupState>> {
         let mut out = Vec::new();
         for (i, d) in o.drives.iter().enumerate() {
             if d.role != multi::Role::Backup {
@@ -2541,7 +2581,7 @@ async fn all_set_role(State(hub): State<Arc<Hub>>, Json(req): Json<RoleRequest>)
     let index = hub.slots.iter().position(|s| s.id == req.library).ok_or(ApiError::NotFound)?;
     let shared = hub.shared.clone();
     let hub2 = hub.clone();
-    let online = tokio::task::spawn_blocking(move || hub2.slots[index].online(&shared)).await.ok().flatten();
+    let online = readers::spawn_blocking(move || hub2.slots[index].online(&shared)).await.ok().flatten();
     let Some((app, _)) = online else {
         return Err(ApiError::Offline { library: hub.slots[index].name.clone(), reason: "plug it in to change this".into() });
     };
@@ -2576,7 +2616,7 @@ struct TransferHint {
 /// are left out. Read only.
 async fn all_transfer(State(hub): State<Arc<Hub>>) -> ApiResult<Json<Vec<TransferHint>>> {
     let o = overview(&hub).await?;
-    let hints = tokio::task::spawn_blocking(move || -> ApiResult<Vec<TransferHint>> {
+    let hints = readers::spawn_blocking(move || -> ApiResult<Vec<TransferHint>> {
         let (usable, _) = multi::eligibility(&o.drives, &o.roles);
         let mut sets = Vec::new();
         for &i in &usable {
@@ -2697,7 +2737,7 @@ async fn all_transfer_plan(
     Json(req): Json<TransferRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let (source, to) = transfer_pair(&hub, &req, peer, &headers).await?;
-    let out = tokio::task::spawn_blocking(move || -> ApiResult<serde_json::Value> {
+    let out = readers::spawn_blocking(move || -> ApiResult<serde_json::Value> {
         match &source {
             TransferSource::Drive(from) => {
                 let set = source.read()?;
@@ -2743,7 +2783,7 @@ async fn all_transfer_apply(
         TransferSource::Drive(app) => app.name.clone(),
         TransferSource::File(path) => volume::display_path(path),
     };
-    let set = tokio::task::spawn_blocking(move || source.read()).await.map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
+    let set = readers::spawn_blocking(move || source.read()).await.map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))??;
     let counts = change(&to, move |_, conn| {
         let counts = transfer::apply(conn, &set, boxes)?;
         if counts.people > 0 {
@@ -3532,7 +3572,7 @@ async fn thumb(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Re
     };
 
     // Not made yet (scan ran with --no-thumbs, or is still busy): make it now.
-    let _permit = app.renders.acquire().await.map_err(|e| ApiError::Internal(e.into()))?;
+    let _permit = readers::in_line(app.renders.acquire()).await.map_err(|e| ApiError::Internal(e.into()))?;
     let made = blocking(&app, move |app| {
         // Another request may have made it while this one waited.
         if let Some(stored) = thumbs::load(&*app.read()?, &src.quick_hash)? {
@@ -3614,7 +3654,7 @@ async fn view(State(app): State<Arc<App>>, Path(id): Path<i64>, req: Request) ->
         Kind::Jpeg | Kind::Png | Kind::Video if content == src.kind && turn == 0 => serve_file(&src.path, req, None).await,
         Kind::Raw => Err(ApiError::NotFound),
         Kind::Jpeg | Kind::Png | Kind::Video | Kind::Heic => {
-            let _permit = app.renders.acquire().await.map_err(|e| ApiError::Internal(e.into()))?;
+            let _permit = readers::in_line(app.renders.acquire()).await.map_err(|e| ApiError::Internal(e.into()))?;
             let bytes = blocking(&app, move |_| {
                 thumbs::render_view(&LibHeif::new(), &src).map_err(|e| ApiError::Internal(anyhow::anyhow!(e)))
             })
@@ -3745,8 +3785,7 @@ async fn change_with<T: Send + 'static>(
 ) -> ApiResult<T> {
     blocking(app, move |app| {
         readers::change_started();
-        let _writing = app.writing.lock().unwrap();
-        let conn = app.writer.lock().unwrap();
+        let (_writing, conn) = readers::timed(readers::Wait::Writer, || (app.writing.lock().unwrap(), app.writer.lock().unwrap()));
         if jobs_running(&conn)? {
             return Err(ApiError::Conflict("a scan is running; try again when it is done".into()));
         }

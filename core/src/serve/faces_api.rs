@@ -99,7 +99,7 @@ async fn crop_of(
         Err(stored) => return Ok(stored),
     };
 
-    let _permit = app.renders.acquire().await.map_err(|e| ApiError::Internal(e.into()))?;
+    let _permit = super::readers::in_line(app.renders.acquire()).await.map_err(|e| ApiError::Internal(e.into()))?;
     let made = blocking(&app, move |app| {
         // Another request may have made it while this one waited.
         let boxes = {
