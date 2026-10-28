@@ -691,6 +691,8 @@ impl App {
     fn with_people<T>(&self, f: impl FnOnce(&Connection, &Arc<people::View>) -> Result<T>) -> Result<T> {
         readers::assert_free("the people view");
         let mut cache = self.people.lock().unwrap();
+        // Its connection is the request's first one, as a reader would be.
+        readers::started()?;
         let view = self.view_now(&mut cache)?;
         let _held = readers::Holding::new();
         f(&cache.conn, &view)
@@ -924,8 +926,35 @@ impl App {
         Ok(())
     }
 
-    /// The file behind an id, if it is present on the drive.
-    fn source(&self, conn: &Connection, id: i64) -> Result<Option<Source>> {
+    /// The file behind an id, if it is present on the drive, on a reader of
+    /// its own. A file that is not where the index says may be one a change
+    /// is moving or renaming (`organize` renames on disk first and commits the
+    /// index after): it waits for the change, holding no connection, and looks
+    /// again. Only a file still missing then asks for the search for moved
+    /// files.
+    fn source(&self, id: i64) -> Result<Option<Source>> {
+        // Bound first: a reader in a `match` scrutinee would live through the match.
+        let found = self.indexed(&*self.read()?, id)?;
+        match found {
+            Some(src) if src.path.symlink_metadata().is_err() => {
+                readers::assert_free("a change");
+                drop(self.writer.lock().unwrap());
+                let again = self.indexed(&*self.read()?, id)?;
+                match again {
+                    Some(src) if src.path.symlink_metadata().is_ok() => Ok(Some(src)),
+                    Some(_) => {
+                        self.request_heal();
+                        Ok(None)
+                    }
+                    None => Ok(None),
+                }
+            }
+            found => Ok(found),
+        }
+    }
+
+    /// The file behind an id as the index has it (present or not).
+    fn indexed(&self, conn: &Connection, id: i64) -> Result<Option<Source>> {
         let row: Option<(String, String, i64, i64, Option<i64>, String)> = conn
             .query_row(
                 "SELECT path, kind, size, mtime_ns, duration_ms, quick_hash FROM files
@@ -940,19 +969,26 @@ impl App {
             return Ok(None);
         }
         let Some(kind) = Kind::parse(&kind) else { return Ok(None) };
-        let path = self.root.join(rel);
-        if path.symlink_metadata().is_err() {
-            self.request_heal();
-            return Ok(None);
-        }
         Ok(Some(Source {
-            path,
+            path: self.root.join(rel),
             kind,
             size: size as u64,
             mtime_ns,
             duration_ms: duration.map(|d| d as u64),
             quick_hash,
         }))
+    }
+
+    /// Store something made on request (a thumbnail, crops, a poster) on the
+    /// writer, if no change holds it: the request does not wait for a long
+    /// move, and what was not stored is made again next time. `None` when it
+    /// was skipped.
+    fn store_now<T>(&self, store: impl FnOnce(&Connection) -> Result<T>) -> Option<Result<T>> {
+        match self.writer.try_lock() {
+            Ok(conn) => Some(store(&conn)),
+            Err(std::sync::TryLockError::WouldBlock) => None,
+            Err(std::sync::TryLockError::Poisoned(e)) => panic!("{e}"),
+        }
     }
 }
 
@@ -3120,20 +3156,12 @@ fn tag_hits(app: &App, filter: &browse::Query, shown: Option<&HashSet<i64>>, nee
     let all = if shows_everything(filter) {
         all_tags.as_ref().clone()
     } else {
-        let snapshot = if shown.is_none() { Some(app.snapshot()?) } else { None };
+        let shown = shown_by(app, filter, shown)?;
         let conn = app.read()?;
-        let computed;
-        let shown = match (shown, snapshot) {
-            (Some(s), _) => s,
-            (None, snapshot) => {
-                computed = snapshot.unwrap().query(&conn, filter)?.iter().map(|it| it.id).collect::<HashSet<i64>>();
-                &computed
-            }
-        };
         // Whether a tag is only a folder name is a fact about the drive, not
         // about the photos shown: a tag given by hand elsewhere stays a tag.
         let kinds: HashMap<i64, browse::TagKind> = all_tags.iter().map(|t| (t.id, t.kind)).collect();
-        let mut within = browse::tags_within(&conn, shown, &filter.tags)?;
+        let mut within = browse::tags_within(&conn, &shown, &filter.tags)?;
         for t in &mut within {
             if let Some(&kind) = kinds.get(&t.id) {
                 t.kind = kind;
@@ -3147,6 +3175,17 @@ fn tag_hits(app: &App, filter: &browse::Query, shown: Option<&HashSet<i64>>, nee
         .filter(|t| db::tag_fold(&t.name).contains(needle))
         .take(limit)
         .collect())
+}
+
+/// The photos `filter` shows: `shown` when the caller has them already, else
+/// from the snapshot (taken before the reader the query needs).
+fn shown_by<'a>(app: &App, filter: &browse::Query, shown: Option<&'a HashSet<i64>>) -> Result<std::borrow::Cow<'a, HashSet<i64>>> {
+    if let Some(s) = shown {
+        return Ok(std::borrow::Cow::Borrowed(s));
+    }
+    let snapshot = app.snapshot()?;
+    let ids = snapshot.query(&*app.read()?, filter)?.iter().map(|it| it.id).collect();
+    Ok(std::borrow::Cow::Owned(ids))
 }
 
 /// What the search box's text asks for, by its prefix, as the page reads it
@@ -3472,16 +3511,18 @@ async fn thumb(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Re
     // A stored thumbnail is served even while its file is being looked for
     // (moved behind shoebox's back); only making one needs the file.
     let (src, turn) = blocking(&app, move |app| {
-        let conn = app.read()?;
-        let key: String = conn
-            .query_row("SELECT quick_hash FROM files WHERE id = ?1 AND missing_since IS NULL", [id], |r| r.get(0))
-            .optional()?
-            .ok_or(ApiError::NotFound)?;
-        let turn = db::view_turn(&conn, &key)?;
-        match thumbs::load(&conn, &key)? {
+        let (stored, turn) = {
+            let conn = app.read()?;
+            let key: String = conn
+                .query_row("SELECT quick_hash FROM files WHERE id = ?1 AND missing_since IS NULL", [id], |r| r.get(0))
+                .optional()?
+                .ok_or(ApiError::NotFound)?;
+            (thumbs::load(&conn, &key)?, db::view_turn(&conn, &key)?)
+        };
+        match stored {
             Some(Ok(bytes)) => Ok((Err(bytes), turn)),
             Some(Err(_)) => Err(ApiError::NotFound),
-            None => Ok((app.source(&conn, id)?.filter(|s| s.kind != Kind::Raw).map(Ok).ok_or(ApiError::NotFound)?, turn)),
+            None => Ok((app.source(id)?.filter(|s| s.kind != Kind::Raw).map(Ok).ok_or(ApiError::NotFound)?, turn)),
         }
     })
     .await?;
@@ -3499,7 +3540,7 @@ async fn thumb(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Re
         }
         let result = thumbs::render(&LibHeif::new(), app.ffmpeg.as_deref(), &src);
         if !matches!(&result, Err(e) if thumbs::is_transient(e))
-            && let Err(e) = thumbs::store(&app.writer.lock().unwrap(), &src.quick_hash, &result)
+            && let Some(Err(e)) = app.store_now(|conn| thumbs::store(conn, &src.quick_hash, &result))
         {
             eprintln!("could not store thumbnail: {e:#}"); // still worth sending
         }
@@ -3514,7 +3555,8 @@ async fn thumb(State(app): State<Arc<App>>, Path(id): Path<i64>) -> ApiResult<Re
 
 #[derive(Serialize)]
 struct PosterStored {
-    /// False when the video already had a picture; nothing was changed.
+    /// False when nothing was stored: the video already had a picture, or a
+    /// change held the index (the browser grabs a frame again next time).
     stored: bool,
 }
 
@@ -3536,7 +3578,7 @@ async fn poster_from_browser(State(app): State<Arc<App>>, Path(id): Path<i64>, b
             .optional()?
             .ok_or(ApiError::NotFound)?;
         let poster = thumbs::browser_poster(&body).map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
-        let stored = thumbs::store_browser_poster(&app.writer.lock().unwrap(), &key, &poster)?;
+        let stored = app.store_now(|conn| thumbs::store_browser_poster(conn, &key, &poster)).transpose()?.unwrap_or(false);
         Ok(Json(PosterStored { stored }))
     })
     .await
@@ -3559,10 +3601,9 @@ async fn turned_jpeg(app: &Arc<App>, bytes: Vec<u8>, turn: i32) -> ApiResult<Res
 /// JPEG rendering for HEIC.
 async fn view(State(app): State<Arc<App>>, Path(id): Path<i64>, req: Request) -> ApiResult<Response> {
     let (src, content, turn) = blocking(&app, move |app| {
-        let conn = app.read()?;
-        let src = app.source(&conn, id)?.ok_or(ApiError::NotFound)?;
+        let src = app.source(id)?.ok_or(ApiError::NotFound)?;
         let content = media::content_kind(src.kind, &src.path);
-        let turn = db::view_turn(&conn, &src.quick_hash)?;
+        let turn = db::view_turn(&*app.read()?, &src.quick_hash)?;
         Ok((src, content, turn))
     })
     .await?;
@@ -3595,7 +3636,7 @@ async fn original(
     Query(q): Query<OriginalQuery>,
     req: Request,
 ) -> ApiResult<Response> {
-    let src = blocking(&app, move |app| app.source(&*app.read()?, id)?.ok_or(ApiError::NotFound)).await?;
+    let src = blocking(&app, move |app| app.source(id)?.ok_or(ApiError::NotFound)).await?;
     let name = src.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let disposition = q.download.is_some_and(|d| d != 0).then(|| content_disposition(&name));
     serve_file(&src.path, req, disposition).await
@@ -3614,7 +3655,7 @@ async fn reveal_file(
         return Err(ApiError::Forbidden("only this computer can open its file manager"));
     }
     blocking(&app, move |app| {
-        let src = app.source(&*app.read()?, id)?.ok_or(ApiError::NotFound)?;
+        let src = app.source(id)?.ok_or(ApiError::NotFound)?;
         (app.reveal)(&src.path).map_err(ApiError::Internal)?;
         Ok(Json(serde_json::json!({ "ok": true, "app": reveal::app_name() })))
     })
@@ -3778,8 +3819,11 @@ struct DuplicateList<'a> {
 
 async fn duplicates_list(State(app): State<Arc<App>>) -> ApiResult<Response> {
     blocking(&app, |app| {
+        readers::assert_free("the duplicates");
+        // Built under the lock, so two pages asking at once build it once.
+        let mut cache = app.duplicates.lock().unwrap();
         let version = app.version()?;
-        if let Some((v, groups)) = app.duplicates.lock().unwrap().as_ref()
+        if let Some((v, groups)) = cache.as_ref()
             && *v == version
         {
             return Ok(Json(DuplicateList { groups: groups.as_slice() }).into_response());
@@ -3789,7 +3833,7 @@ async fn duplicates_list(State(app): State<Arc<App>>) -> ApiResult<Response> {
         let mut groups = duplicates::find(&candidates);
         duplicates::add_tags(&*app.read()?, &mut groups)?;
         let groups = Arc::new(groups);
-        *app.duplicates.lock().unwrap() = Some((version, groups.clone()));
+        *cache = Some((version, groups.clone()));
         Ok(Json(DuplicateList { groups: groups.as_slice() }).into_response())
     })
     .await
@@ -3973,6 +4017,8 @@ async fn export_start(
 ) -> ApiResult<Json<serde_json::Value>> {
     local_only(peer, &headers)?;
     blocking(&app, move |app| {
+        // A user's action that starts a thread: it runs, whether the browser still waits or not.
+        readers::change_started();
         if app.export.running() {
             return Err(ApiError::Conflict("an export is running already".into()));
         }

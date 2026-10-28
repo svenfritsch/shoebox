@@ -809,9 +809,10 @@ await test('a failed naming shows the error and was sent once', await on('view=p
 // ---- the search box
 
 // Typing asks for the suggestions, all in one request, once the letters pause
-// (150 ms), and for the photos after 300 ms. Both wait for the drive's one
-// connection, so what was asked for an earlier text is called off when a newer
-// one is asked for (see "One shared connection" in docs/decisions.md).
+// (150 ms), and for the photos after 300 ms. The server answers both one at a
+// time in the order asked, so what was asked for an earlier text is called off
+// when a newer one is asked for (see "Reads on a pool of connections" in
+// docs/decisions.md).
 await test('the search box asks once typing pauses and calls off what a newer text replaces', await on('', (lib) => lib.person('Longo Search'), async (p, lib) => {
   const from = lib.log.length;
   const asked = (path) => lib.log.slice(from).filter((e) => e.path === path).map((e) => e.query.get('q') || '');

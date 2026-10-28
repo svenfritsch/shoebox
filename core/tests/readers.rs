@@ -58,7 +58,7 @@ fn holding(addr: SocketAddr, hold: &serve::Hold, what: &str, during: impl FnOnce
     }
     let path = format!("/api/test/hold-{what}");
     let holder = std::thread::spawn(move || get(addr, &path));
-    hold.wait_taken();
+    assert!(hold.wait_taken(Duration::from_secs(60)), "the hold request never got its {what}");
     {
         let _release = Release(hold);
         during();
@@ -102,11 +102,16 @@ fn a_long_read_holds_up_no_other_request() {
 fn a_long_change_holds_up_no_read() {
     let lib = Library::new("readers-writer");
     lib.scan();
+    // One photo without a thumbnail: it is made while the change runs.
+    let fresh = "2020-07 Urlaub Griechenland/IMG_0002.JPG";
+    let thumbs = rusqlite::Connection::open(lib.path(".shoebox/thumbs.db")).unwrap();
+    assert_eq!(thumbs.execute("DELETE FROM thumbs WHERE key = ?1", [lib.record_key(fresh)]).unwrap(), 1);
     let (server, hold) = start_holding(&lib);
     let addr = server.addr;
     let version = get(addr, "/api/info").json()["index_version"].clone();
     let before = timeline_len(addr);
     let thumb = id_of(&lib, "Ordner mit Leerzeichen/Bild 1.jpeg");
+    let fresh = id_of(&lib, fresh);
     holding(addr, &hold, "writer", || {
         // A scan commits meanwhile.
         lib.db().execute("UPDATE files SET missing_since = 1 WHERE path_nfc = 'Familie/Weihnachten/DSC_2001.jpg'", []).unwrap();
@@ -118,10 +123,42 @@ fn a_long_change_holds_up_no_read() {
         assert_eq!(answers(addr, "/api/timeline").status, 200);
         assert_eq!(answers(addr, "/api/groups").status, 200);
         assert_eq!(answers(addr, &format!("/api/files/{thumb}/thumb")).status, 200);
+        // Made, and sent without waiting to store it.
+        let made = answers(addr, &format!("/api/files/{fresh}/thumb"));
+        assert_eq!((made.status, made.header("content-type")), (200, Some("image/jpeg")));
     });
     // The first read after it sees what was committed meanwhile.
     assert_ne!(get(addr, "/api/info").json()["index_version"], version);
     assert_eq!(timeline_len(addr), before - 1);
+    server.stop().unwrap();
+}
+
+/// A file a change is moving is renamed on disk before the change commits the
+/// index (`organize`): a read in between finds it after the change, not a 404
+/// and a search of the whole drive for it.
+#[test]
+fn a_file_being_moved_is_found_once_the_change_is_done() {
+    let lib = Library::new("readers-moving");
+    lib.scan();
+    let (server, hold) = start_holding(&lib);
+    let addr = server.addr;
+    let (from, to) = ("Familie/Weihnachten/DSC_2001.jpg", "Familie/DSC_2001.jpg");
+    let id = id_of(&lib, from);
+    let (tx, rx) = mpsc::channel();
+    holding(addr, &hold, "writer", || {
+        // What a move does while it holds the writer: the file first, ...
+        std::fs::rename(lib.path(from), lib.path(to)).unwrap();
+        std::thread::spawn(move || {
+            let _ = tx.send(get(addr, &format!("/api/files/{id}/view")));
+        });
+        // (only that it does not answer while the change runs)
+        assert!(rx.recv_timeout(Duration::from_millis(500)).is_err(), "answered before the change was done");
+        // ... then the index.
+        lib.db().execute("UPDATE files SET path = ?2, path_nfc = ?2 WHERE id = ?1", rusqlite::params![id, to]).unwrap();
+    });
+    let view = rx.recv_timeout(Duration::from_secs(60)).expect("the view answers once the change is done");
+    assert_eq!(view.status, 200, "{}", String::from_utf8_lossy(&view.body));
+    assert_eq!(view.body, std::fs::read(lib.path(to)).unwrap());
     server.stop().unwrap();
 }
 

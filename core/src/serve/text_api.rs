@@ -111,8 +111,7 @@ pub(super) async fn crop(State(app): State<Arc<App>>, Path(id): Path<i64>, Query
         return Err(ApiError::BadRequest("the box is x, y, w, h as fractions of the picture".into()));
     }
     let src = blocking(&app, move |app| {
-        let conn = app.read()?;
-        app.source(&conn, id)?.filter(|s| s.kind != Kind::Video && s.kind != Kind::Raw).ok_or(ApiError::NotFound)
+        app.source(id)?.filter(|s| s.kind != Kind::Video && s.kind != Kind::Raw).ok_or(ApiError::NotFound)
     })
     .await?;
     let _permit = app.renders.acquire().await.map_err(|e| ApiError::Internal(e.into()))?;

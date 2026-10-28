@@ -21,8 +21,9 @@ use std::cell::{Cell, RefCell};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use rusqlite::Connection;
 
 use crate::db;
@@ -34,9 +35,17 @@ pub(super) fn pool_size(cores: usize) -> usize {
     cores.clamp(2, 4)
 }
 
+/// How long a request waits for a free reader before it fails. Reads take
+/// well under a second; a reader that stays away this long is held by code
+/// that waits for something else while holding it (the rule in the module
+/// docs, which only debug builds check), and an error beats a drive whose
+/// reads hang for good. Not a deadline for slow requests.
+const WAIT: Duration = Duration::from_secs(30);
+
 pub(super) struct Readers {
     idle: Mutex<Vec<Connection>>,
     back: Condvar,
+    wait: Duration,
 }
 
 impl Readers {
@@ -51,19 +60,25 @@ impl Readers {
             conn.pragma_update(None, "query_only", true)?;
             idle.push(conn);
         }
-        Ok(Readers { idle: Mutex::new(idle), back: Condvar::new() })
+        Ok(Readers { idle: Mutex::new(idle), back: Condvar::new(), wait: WAIT })
     }
 
     /// A reader, as soon as one is free. Fails when it is the request's first
-    /// connection and its browser has gone (`Abandoned`).
+    /// connection and its browser has gone (`Abandoned`), and when none came
+    /// back within `WAIT`.
     pub(super) fn take(&self) -> Result<Reader<'_>> {
         assert_free("a reader");
+        let until = Instant::now() + self.wait;
         let mut idle = self.idle.lock().unwrap();
         let conn = loop {
             if let Some(conn) = idle.pop() {
                 break conn;
             }
-            idle = self.back.wait(idle).unwrap();
+            let left = until.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                bail!("no reader came free in {} s: a request holds one while it waits for something else", self.wait.as_secs());
+            }
+            idle = self.back.wait_timeout(idle, left).unwrap().0;
         };
         drop(idle);
         let reader = Reader { conn: Some(conn), pool: self, _held: Holding::new() };
@@ -179,9 +194,10 @@ pub(super) fn as_turn<T>(gone: Arc<AtomicBool>, f: impl FnOnce() -> T) -> T {
     f()
 }
 
-/// The request takes a connection: its first one ends it if the browser has
-/// gone. Work that is no request's (background threads) always goes on.
-fn started() -> Result<()> {
+/// The request takes a connection (a reader, the people view's): its first
+/// one ends it if the browser has gone. Work that is no request's (background
+/// threads) always goes on.
+pub(super) fn started() -> Result<()> {
     TURN.with(|t| match t.borrow_mut().as_mut() {
         Some(turn) if !turn.started => {
             turn.started = true;
@@ -215,12 +231,12 @@ pub struct Hold {
 }
 
 impl Hold {
-    /// Wait until the hold request has its connection.
-    pub fn wait_taken(&self) {
-        let mut s = self.state.lock().unwrap();
-        while !s.0 {
-            s = self.changed.wait(s).unwrap();
-        }
+    /// Wait until the hold request has its connection, at most `limit`;
+    /// false if it did not get there.
+    pub fn wait_taken(&self, limit: Duration) -> bool {
+        let s = self.state.lock().unwrap();
+        let (s, _) = self.changed.wait_timeout_while(s, limit, |s| !s.0).unwrap();
+        s.0
     }
 
     /// Let the hold request give its connection back and answer.
@@ -300,9 +316,33 @@ mod tests {
             change_started();
             readers.take().unwrap();
         });
+        // The people view's connection is checked the same way.
+        assert!(as_turn(flag.clone(), started).unwrap_err().is::<Abandoned>());
+        assert!(as_turn(Gone::new().flag(), started).is_ok());
         // Background work belongs to no request.
         assert!(readers.take().is_ok());
         assert_eq!(readers.idle.lock().unwrap().len(), 2);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_reader_that_never_comes_back_is_an_error_not_a_hang() {
+        let (dir, db_path) = library("wait");
+        let readers = Readers { wait: Duration::from_millis(100), ..Readers::open(&db_path, 1).unwrap() };
+        let ((taken, is_taken), (release, released)) = (std::sync::mpsc::channel(), std::sync::mpsc::channel::<()>());
+        let pool = &readers;
+        std::thread::scope(|s| {
+            s.spawn(move || {
+                let _r = pool.take().unwrap();
+                taken.send(()).unwrap();
+                let _ = released.recv();
+            });
+            is_taken.recv().unwrap();
+            let e = pool.take().map(|_| ()).unwrap_err();
+            assert!(format!("{e}").contains("no reader came free"), "{e}");
+            release.send(()).unwrap();
+        });
+        assert!(readers.take().is_ok());
         let _ = std::fs::remove_dir_all(dir);
     }
 }

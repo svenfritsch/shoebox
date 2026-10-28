@@ -77,13 +77,17 @@ async fn crop_of(
     find: impl FnOnce(&rusqlite::Connection) -> anyhow::Result<Option<(String, faces::FaceBox, Option<i64>)>> + Send + 'static,
 ) -> ApiResult<Response> {
     let found = blocking(&app, move |app| {
-        let conn = app.read()?;
-        let (key, b, file) = find(&conn)?.ok_or(ApiError::NotFound)?;
-        match faces::load_crop(&conn, &key, &b)? {
+        let (key, b, file, stored) = {
+            let conn = app.read()?;
+            let (key, b, file) = find(&conn)?.ok_or(ApiError::NotFound)?;
+            let stored = faces::load_crop(&conn, &key, &b)?;
+            (key, b, file, stored)
+        };
+        match stored {
             Some(Ok(bytes)) => Ok(Err(jpeg(bytes, IMMUTABLE))),
             Some(Err(_)) => Err(ApiError::NotFound),
             None => {
-                let src = file.map(|f| app.source(&conn, f)).transpose()?.flatten();
+                let src = file.map(|f| app.source(f)).transpose()?.flatten();
                 let src = src.filter(|s| s.kind != Kind::Video && s.kind != Kind::Raw).ok_or(ApiError::NotFound)?;
                 Ok(Ok((key, b, src)))
             }
@@ -109,9 +113,9 @@ async fn crop_of(
         if !matches!(&result, Err(e) if thumbs::is_transient(e)) {
             // Only faces still waiting for a decision and people's pictures
             // are kept; a decided face is made again whenever it is asked for.
-            let conn = app.writer.lock().unwrap();
-            let stored = faces::wanted(&conn, &key, &boxes).and_then(|wanted| faces::store_crops(&conn, &key, &boxes, &wanted, &result));
-            if let Err(e) = stored {
+            // Not while a change holds the writer: then it is made again next time.
+            let stored = app.store_now(|conn| faces::wanted(conn, &key, &boxes).and_then(|wanted| faces::store_crops(conn, &key, &boxes, &wanted, &result)));
+            if let Some(Err(e)) = stored {
                 eprintln!("could not store face crops: {e:#}"); // still worth sending
             }
         }

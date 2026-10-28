@@ -109,8 +109,16 @@ are in `git log` (the old `docs/plan.md` and `docs/phaseN.md`).
   `query_only`, `thumbs.db` and `recognition.db` attached), and the probe of
   `bench-people.py probe` waits 2 ms through all of them (numbers in
   [design/responsiveness.md](design/responsiveness.md), section 2). Every
-  write goes through `App::writer`: changes one at a time (`change`), and the
-  thumbnails, posters and crops stored on request.
+  write of a request goes through `App::writer`: changes one at a time
+  (`change`), and the thumbnails, posters and crops stored on request, which
+  are skipped while a change holds the writer (made again next time) so a
+  picture never waits for a long move. Background work writes on connections
+  of its own.
+  - **A file a change is moving** is renamed on disk before the change
+    commits the index, so a read in between finds the old path empty. It
+    waits for the writer (holding no connection) and looks again; only a
+    file still missing then is a 404 and asks for the search for moved files,
+    which reads the whole drive.
   - **The version stays on `App::writer`.** `index_version` is
     `(PRAGMA data_version, generation)`: `data_version` ignores the
     connection's own commits, so changes to people (which do not move
@@ -127,10 +135,13 @@ are in `git log` (the old `docs/plan.md` and `docs/phaseN.md`).
     holding a connection: four requests holding readers while they wait for
     the people view would leave none for the rest. Views are built on a
     reader of their own under their own lock (debug builds check the order).
+    A request that waits 30 s for a reader fails with an error instead of
+    hanging the drive's reads, should code that breaks the rule slip
+    through; it is no deadline for slow requests.
   - **A request whose browser has gone does not start**: `blocking` and
     `in_turn` set a flag when hyper drops the handler's future, and the first
-    connection the work takes ends it. Changes always run (the user asked for
-    them). The search box's requests still go one at a time in the order
+    connection the work takes (a reader or the people view's) ends it.
+    Changes and starting an export always run (the user asked for them). The search box's requests still go one at a time in the order
     typed (`in_turn`), dropping those called off while they wait.
   - The page still asks only on actions, never polls (except `/api/info`
     every 5 s while a job runs) and calls off what it no longer needs: the

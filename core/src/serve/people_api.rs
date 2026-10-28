@@ -388,17 +388,9 @@ fn counts(app: &App, pairs: &Pairs, filter: &browse::Query, shown: Option<&HashS
     {
         return Ok(c.counts.clone());
     }
-    let snapshot = if shown.is_none() { Some(app.snapshot()?) } else { None };
+    let shown = super::shown_by(app, filter, shown)?;
     let conn = app.read()?;
     let conn = &*conn;
-    let computed;
-    let shown = match (shown, snapshot) {
-        (Some(s), _) => s,
-        (None, snapshot) => {
-            computed = snapshot.unwrap().query(conn, filter)?.iter().map(|it| it.id).collect::<HashSet<i64>>();
-            &computed
-        }
-    };
     let mut files_per_key: HashMap<String, u64> = HashMap::new();
     {
         let mut stmt = conn.prepare("SELECT id, quick_hash FROM files WHERE missing_since IS NULL")?;
