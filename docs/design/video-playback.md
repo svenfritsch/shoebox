@@ -210,3 +210,130 @@ index; the original is never replaced.
   (`$('lb-live')` in `app.js` has no `error` handling today and gets it), in
   case a future browser stops playing them. Where the browser plays them
   nothing changes.
+
+## Spike results
+
+October 2026, branch `claude/video-playback-spike` (not merged), code and raw
+numbers in `spike/video-playback/`. **Recommendation: MSE with changes** (below).
+Segments (option C) are not needed: a seek outside the buffer costs a restart
+of ffmpeg plus decoding from the source's keyframe, and segments made on
+demand would pay the same.
+
+**Setup.** Cloud VM, 4 vCPU Intel Xeon 2.1 GHz, Linux. ffmpeg: BtbN
+`ffmpeg-n9.0-latest-linux64-gpl-9.0` (n9.0.2, 2026-10-28; SHA-256 checked against
+its `checksums.sha256`). Browser: Playwright's headless Chromium 153. It has
+H.264/AAC (`MediaSource.isTypeSupported` true, frames really decoded: 450 in
+15 s) and no HEVC, like Chrome on Linux, so the fall-back ran for real.
+Synthetic videos (testsrc2 + noise, `make-videos.sh`): HEVC 1080p 6 Mbit/s and 4K
+Main10 22 Mbit/s (10 and 30 min, keyframe every 2 s), H.264 `.mkv`, MPEG-2
+1080i + AC-3 `.mts` (starts at 1.428 s), a 3 s HEVC Live Photo-like clip
+rotated 90°. Every case ran 3 times (the 30 min one twice). Median, range in brackets.
+
+| Video | Command | First fragment (s) | Speed (× real time) | ffmpeg CPU (cores) | ffmpeg RSS (MB) | First picture in page (s) | Seek outside buffer (s) | Seek inside buffer (s) |
+|---|---|---|---|---|---|---|---|---|
+| HEVC 1080p | design | 3.5 (3.3-4.5) | 2.21 | 3.4 | 405 | 4.58 (4.54-5.30) | 3.74 (3.62-4.08) | 1.03 |
+| HEVC 1080p | gop2 | 1.1 (1.0-1.8) | 2.39 | 3.0 | 401 | 2.38 (2.16-2.45) | 1.50 (1.44-1.55) | 0.36 |
+| HEVC 4K 10-bit | design | 7.1 (6.4-7.2) | 1.28 | 3.8 | 716 | 7.34 (7.34-7.79) | 7.5 (7.30-7.70) | 0.69 |
+| HEVC 4K 10-bit | gop2 | 2.3 (2.2-2.7) | 1.39 | 3.5 | 713 | 3.07 (3.01-3.08) | 3.4 (2.98-3.64) | 0.26 |
+| HEVC 4K, 30 min | gop2 | 2.7 (full run) | 1.54 (full run) | 3.75 | 717 | 3.25 (3.12-3.38) | 3.4 (3.37-3.47) | 0.26 |
+| H.264 `.mkv` | gop2 | 1.2 | 2.62 | 3.1 | 409 | 0.35 as the original; 2.31 forced through MSE | 1.65 forward, 1.96 back (MSE) | 0.28 (MSE) |
+| MPEG-2 `.mts` | gop2 | 1.1 (1.0-1.2) | 2.21 | 3.2 | 364 | 2.62 (2.25-2.63) | 1.42 (1.37-1.55) | 0.54 |
+| Live Photo clip | gop2 | 1.0 | - | 2.8 | 324 | 1.72 (0.30 when still in the buffer) | - | - |
+
+"design" is the command as written above; "gop2" is the same plus
+`-force_key_frames expr:gte(t,n_forced*2)`. "First fragment" and "Speed" were
+measured without a browser (the stream read as fast as it came, 60 s of video).
+"Seek" is the time from setting `currentTime` until the first frame past the
+target. The page times include `/info` and the 0.3 s until the original fails.
+
+What worked, in every run:
+
+- **Fall-back trigger.** HEVC (`.mov`, the Live Photo too) gives
+  `loadedmetadata` with `videoWidth 0`. Chromium plays its sound meanwhile.
+  `.mts` gives `error` 4 (`DEMUXER_ERROR_COULD_NOT_OPEN`). The H.264 `.mkv`
+  plays as the original in Chromium.
+- **Playback** keeps time (15.0 s in 15 s, 0-2 dropped frames in the MSE runs;
+  one run of the `.mkv` played as the original dropped 96, not looked into).
+  `ended` fires at the end with the duration from `ffmpeg -i` (20 of 20 MSE runs). After
+  `endOfStream()` a seek back opens the MediaSource again and plays (3 of 3).
+  The Live Photo comes out upright (1080×1440, ffmpeg's autorotate).
+- **Pausing.** Once the stream is far enough ahead, ffmpeg's CPU drops to 0
+  and stays there; playing again goes on. When the page closes, ffmpeg is
+  killed after the 5 s linger.
+- **Memory.** The buffer is small next to ffmpeg itself: 2.7-7.6 Mbit/s here
+  (synthetic, real footage is more), 577 MB for the full 30 min 4K
+  video. The budget holds (64 MB test: 85 fragments dropped, never more than
+  63.7 MB). A start inside the buffer is served from RAM in about 13 ms. Chromium's
+  SourceBuffer never threw `QuotaExceededError`: at 15 Mbit/s it kept about 86 s
+  and evicted older data by itself.
+- **Nothing written.** `strace -f` over the server and every ffmpeg during two
+  runs: no `O_CREAT`, `mkdir`, `unlink` or `rename`; the videos opened
+  `O_RDONLY` only; the only write-capable open was `/dev/null`. Size, mtime,
+  birth time and SHA-256 of all videos were the same after all runs. stderr
+  stayed empty with `-loglevel error`.
+
+Changes the design needs:
+
+1. **A keyframe every 2 s** (`-force_key_frames expr:gte(t,n_forced*2)`,
+   independent of the frame rate). `frag_keyframe` alone follows libx264's
+   default GOP (250 frames): 4-7 s fragments, and every start and seek waits for
+   one. With it: the first picture after 2.4 s (1080p) and 3.1 s (4K), instead of
+   4.6 s and 7.3 s. Same output size, slightly faster.
+2. **Scale on the longer side.** `scale='min(1920,iw)':-2` makes a portrait
+   4K phone video 1920×3414 (H.264 level 5.1). Use
+   `scale=w='if(gte(iw,ih),min(1920,iw),-2)':h='if(gte(iw,ih),-2,min(1920,ih))'`
+   (1080×1920).
+3. **Timestamps.** With `-ss <t>` the output starts at 0, and a reply served
+   from the buffer starts at the buffer's start, not at the request's. The reply
+   says where its times start (`X-Start` in the spike); the page sets
+   `SourceBuffer.timestampOffset` to it after `abort()`. On an ended MediaSource,
+   `abort()` throws, so set `timestampOffset` first, which opens it again.
+   (`-output_ts_offset` would make the times absolute; not tried.)
+4. **"60 s ahead" counts what was sent, not what was played.** The page stopped
+   reading at 60 s ahead and the server at 60 s past what it had sent; 15-23 MB
+   were in the socket and fetch buffers between them. ffmpeg stopped 145 s (1080p)
+   and 163 s (4K) ahead of the paused picture, after 55-105 s at 3.5-3.9 of the 4 cores.
+   Use 30 s on each side, or let the page report its position.
+5. **Pause the original at once** when falling back (its sound plays with
+   `videoWidth 0`).
+6. **Budget.** ffmpeg needs 400 MB (1080p HEVC) to 720 MB (4K 10-bit, of which
+   about 300 MB is x264) on top of the buffer. 768 MB of buffer is more than
+   needed: the browser keeps its own ~150 MB. 256 MB covers several minutes of
+   seeking back.
+7. **Speed is the risk, not MSE.** 4K HEVC 10-bit → 1080p ran at only 1.3-1.5×
+   real time on 4 cores, and the HEVC decode alone took 60 % of it (2.4×,
+   3.6 cores). A 2-core Intel MacBook will be below 1×, so on macOS use
+   `-hwaccel videotoolbox` for the decode as well as `h264_videotoolbox` (the
+   spike server has `--vt 1`, not tried). Interlaced `.mts` needs `yadif`
+   (not added in the spike).
+
+**ffmpeg builds of third parties.** This VM's network policy refused
+johnvansickle.com, evermeet.cx, gyan.dev and osxexperts.net (also through the
+web fetcher), so those four are **not checked**. GitHub was reachable:
+
+| Build | libx264 | Systems | URL stays put | SHA-256 |
+|---|---|---|---|---|
+| BtbN `*-gpl` (`*-lgpl` has no x264) | yes (checked: `-encoders` lists libx264; build script enables it for gpl only) | linux64, linuxarm64, win64, winarm64; no macOS | `latest` is deleted and remade every day (its files repacked, other hashes): pin a dated `autobuild-YYYY-MM-DD-HH-MM` tag; the last of each month is kept 24 months, the last 14 daily ones too | `checksums.sha256` in every release |
+| johnvansickle.com (Linux) | not checked | - | - | - |
+| evermeet.cx (macOS) | not checked | - | - | - |
+| gyan.dev (Windows) | not checked | - | - | - |
+
+The BtbN Linux build is not fully static: it needs glibc 2.28 (Debian 10,
+Ubuntu 18.10 and newer) and kernel 4.18. It ran here (glibc 2.39). The archive is
+146 MB. BtbN could serve Linux and Windows from one list, which leaves macOS as
+the only open source.
+
+**Not tested here** (no Firefox or WebKit could be downloaded; no Mac, no
+Windows): Firefox, Safari (MSE; HEVC plays there natively, so the fall-back
+matters for `.mts`/`.mkv` only), macOS speed with and without VideoToolbox
+(Intel and Apple Silicon), the evermeet build (libx264, architecture, Rosetta,
+quarantine of a file fetched by the program), Windows builds and browsers. The
+steps for a person with a Mac are in `spike/video-playback/README.md`, "On a Mac".
+
+**Where the numbers are weak.** A cloud VM, not the old MacBook. Synthetic
+content (x264's output rate and CPU differ on real footage; HEVC decode cost is
+close because the bitrate is like an iPhone's). Headless Chromium (the
+`headless_shell` build); frames were decoded, but nothing was drawn to a
+screen. The browser and ffmpeg shared the 4 cores. All runs went over
+localhost, never over Wi-Fi to an iPad. Node's RSS (up to 685 MB) says little
+about a Rust server: Node holds freed buffers until garbage collection.

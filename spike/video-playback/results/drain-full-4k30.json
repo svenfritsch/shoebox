@@ -1,0 +1,1 @@
+{"name":"hevc-4k-30min.mov","run":0,"start":0,"ttffMs":2716,"headersMs":389,"producedSec":1798,"wallSec":1167,"speedX":1.54,"ffCpuCores":3.75,"ffPeakRssMB":717,"outMB":577.2,"outMbitPerVideoSec":2.69,"peakBufferMB":577.2,"evicted":0,"nodePeakRssMB":685,"fragments":900,"fragSec":2,"exit":0,"stderr":""}

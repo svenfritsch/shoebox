@@ -1,0 +1,177 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Playback spike</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 16px; background: #fff; color: #111; }
+  video { width: 100%; max-width: 960px; background: #000; display: block; }
+  #log { font: 12px ui-monospace, monospace; white-space: pre-wrap; max-height: 40vh; overflow: auto; }
+  button { margin: 2px; }
+</style>
+<p>Spike: the original first; on <code>error</code> or <code>videoWidth == 0</code> the converted
+stream through Media Source Extensions. Seek outside the buffer asks <code>?start=</code> again.</p>
+<div id="list"></div>
+<video id="v" controls playsinline></video>
+<div id="state"></div>
+<div id="log"></div>
+<script>
+'use strict';
+const v = document.getElementById('v');
+const T0 = performance.now();
+const now = () => +(performance.now() - T0).toFixed(1);
+const log = [];
+function note(ev, data = {}) {
+  const e = { t: now(), ev, ct: +v.currentTime.toFixed(2), ...data };
+  log.push(e);
+  const el = document.getElementById('log');
+  el.textContent = `${e.t} ${ev} ${JSON.stringify(data)}\n` + el.textContent.slice(0, 20000);
+}
+const AHEAD = 60;          // the page stops reading when it has this many seconds ahead
+const MIME_AV = 'video/mp4; codecs="avc1.640028, mp4a.40.2"';
+const MIME_V = 'video/mp4; codecs="avc1.640028"';
+
+const P = { name: null, mode: null, ms: null, sb: null, ctl: null, gen: 0, info: null, streams: 0, trigger: null };
+
+function bufferedAt(t) {
+  const b = v.buffered;
+  for (let i = 0; i < b.length; i++) if (t >= b.start(i) - 0.1 && t < b.end(i) - 0.3) return true;
+  return false;
+}
+function bufferedAhead() {
+  const b = v.buffered, t = v.currentTime;
+  for (let i = 0; i < b.length; i++) if (t >= b.start(i) - 0.1 && t <= b.end(i)) return b.end(i) - t;
+  return 0;
+}
+const ranges = () => Array.from({ length: v.buffered.length }, (_, i) => [+v.buffered.start(i).toFixed(2), +v.buffered.end(i).toFixed(2)]);
+const sbIdle = (sb) => sb.updating ? new Promise((r) => sb.addEventListener('updateend', r, { once: true })) : Promise.resolve();
+
+async function append(sb, chunk) {
+  for (let attempt = 0; ; attempt++) {
+    await sbIdle(sb);
+    try { sb.appendBuffer(chunk); await sbIdle(sb); return; }
+    catch (e) {
+      if (e.name !== 'QuotaExceededError' || attempt > 3) throw e;
+      // drop what is far from the play position and try again
+      const t = v.currentTime; note('quota', { ranges: ranges() });
+      await sbIdle(sb);
+      if (t > 30) { sb.remove(0, t - 10); await sbIdle(sb); }
+      sb.remove(t + AHEAD + 30, Infinity); await sbIdle(sb);
+    }
+  }
+}
+
+// one stream from ?start=t into the SourceBuffer; a newer one (gen) replaces it
+async function stream(t) {
+  const gen = ++P.gen;
+  if (P.ctl) P.ctl.abort();
+  const ctl = P.ctl = new AbortController();
+  const sb = P.sb;
+  P.streams++;
+  const t1 = performance.now();
+  note('stream:request', { start: t });
+  let res;
+  try { res = await fetch(`/playback/${encodeURIComponent(P.name)}?start=${t.toFixed(3)}`, { signal: ctl.signal }); }
+  catch (e) { if (gen === P.gen) note('stream:fetch-error', { msg: String(e) }); return; }
+  if (gen !== P.gen) return;
+  if (!res.ok) { note('stream:http', { status: res.status, text: await res.text() }); return; }
+  const offset = +res.headers.get('x-start');
+  await sbIdle(sb);
+  if (gen !== P.gen) return;
+  // reset the parser (the new stream starts with its own init segment), then shift the
+  // stream's timestamps (ffmpeg's start at 0 for -ss <offset>). abort() throws on an ended
+  // MediaSource; setting timestampOffset reopens it.
+  if (P.ms.readyState === 'ended') sb.timestampOffset = offset;
+  else { sb.abort(); sb.timestampOffset = offset; }
+  note('stream:headers', { offset, reused: res.headers.get('x-reused'), ms: +(performance.now() - t1).toFixed(1) });
+  const reader = res.body.getReader();
+  let first = true, bytes = 0;
+  try {
+    for (;;) {
+      while (bufferedAhead() > AHEAD && gen === P.gen) await new Promise((r) => setTimeout(r, 250));
+      if (gen !== P.gen) { ctl.abort(); return; }
+      const { done, value } = await reader.read();
+      if (gen !== P.gen) return;
+      if (done) break;
+      if (first) { first = false; note('stream:first-bytes', { ms: +(performance.now() - t1).toFixed(1) }); }
+      bytes += value.length;
+      await append(sb, value);
+      if (gen !== P.gen) return;
+    }
+  } catch (e) {
+    if (gen === P.gen) note('stream:error', { msg: String(e), name: e.name });
+    return;
+  }
+  note('stream:done', { bytes, ranges: ranges() });
+  // the stream reached the end of the video: let the element end there
+  await sbIdle(sb);
+  if (gen === P.gen && P.ms.readyState === 'open') { P.ms.endOfStream(); note('endOfStream', { duration: v.duration }); }
+}
+
+function onSeeking() {
+  if (P.mode !== 'mse') return;
+  const t = v.currentTime;
+  const hit = bufferedAt(t);
+  note('seeking', { to: +t.toFixed(2), inBuffer: hit, ranges: ranges() });
+  if (!hit) stream(Math.max(0, Math.min(t, (P.info.duration || t) - 0.5)));
+}
+
+async function playConverted(name) {
+  P.mode = 'mse';
+  P.info = await (await fetch(`/info/${encodeURIComponent(name)}`)).json();
+  note('info', P.info);
+  const ms = P.ms = new MediaSource();
+  v.removeAttribute('src');
+  v.src = URL.createObjectURL(ms);
+  await new Promise((r) => ms.addEventListener('sourceopen', r, { once: true }));
+  if (P.info.duration) ms.duration = P.info.duration;
+  P.sb = ms.addSourceBuffer(P.info.audio ? MIME_AV : MIME_V);
+  P.sb.mode = 'segments';
+  stream(0);
+  v.play().catch((e) => note('play-rejected', { msg: String(e) }));
+}
+
+// The browser decides: original first, converted only on error or no picture.
+function open(name, { mode = 'auto' } = {}) {
+  close();
+  P.name = name; P.trigger = null; P.streams = 0;
+  note('open', { name, mode });
+  if (mode === 'mse') return playConverted(name);
+  P.mode = 'original';
+  const fallBack = (why) => {
+    if (P.mode !== 'original' || P.name !== name) return;
+    P.trigger = why; note('fallback', { why });
+    v.pause();   // with videoWidth 0 Chromium already plays the sound of the original
+    playConverted(name);
+  };
+  v.addEventListener('error', () => fallBack(`error ${v.error && v.error.code}`), { once: true });
+  v.addEventListener('loadedmetadata', () => {
+    if (P.mode !== 'original') return;
+    note('original:loadedmetadata', { w: v.videoWidth, h: v.videoHeight, d: v.duration });
+    if (v.videoWidth === 0) fallBack('videoWidth 0');
+  }, { once: true });
+  v.src = `/original/${encodeURIComponent(name)}`;
+  v.play().catch(() => {});
+}
+function close() {
+  P.gen++; if (P.ctl) P.ctl.abort();
+  P.mode = null; v.pause(); v.removeAttribute('src'); v.load();
+}
+
+for (const ev of ['playing', 'waiting', 'seeked', 'ended', 'stalled', 'error', 'loadedmetadata', 'canplay'])
+  v.addEventListener(ev, () => note(ev, ev === 'error' ? { code: v.error && v.error.code, msg: v.error && v.error.message } :
+    ev === 'loadedmetadata' ? { w: v.videoWidth, h: v.videoHeight, d: v.duration } : {}));
+v.addEventListener('seeking', onSeeking);
+setInterval(() => {
+  const q = v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality() : {};
+  document.getElementById('state').textContent =
+    `mode=${P.mode} t=${v.currentTime.toFixed(1)}/${(v.duration || 0).toFixed(1)} buffered=${JSON.stringify(ranges())} frames=${q.totalVideoFrames} dropped=${q.droppedVideoFrames} streams=${P.streams}`;
+}, 500);
+
+fetch('/list').then((r) => r.json()).then((names) => {
+  const el = document.getElementById('list');
+  for (const n of names) for (const mode of ['auto', 'mse']) {
+    const b = document.createElement('button'); b.textContent = `${n} (${mode})`;
+    b.onclick = () => open(n, { mode }); el.append(b);
+  }
+});
+window.spike = { open, close, log, P, ranges, quality: () => { const q = v.getVideoPlaybackQuality(); return { totalVideoFrames: q.totalVideoFrames, droppedVideoFrames: q.droppedVideoFrames }; } };
+</script>
