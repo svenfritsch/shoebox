@@ -119,8 +119,27 @@ function fileBase(id) {
   return '/api/lib/' + lib.id + '/files/' + (id % SPAN);
 }
 
+// A thin line under the top bar while a request is slow: shown when one
+// has run BUSY_WAIT ms, gone when none is left. `opts.busy === false` keeps a
+// request out (one that shows a waiting sign of its own, and is not passed on
+// to fetch). Done is success, failure or called off. Pictures are not api().
+var BUSY_WAIT = 400;
+var NOT_BUSY = { busy: false }; // for a request whose card or bar shows `.busy` itself
+var busyOpen = 0;
+
 function api(path, opts) {
-  return fetch(path, Object.assign({ credentials: 'same-origin' }, opts)).then(function (r) {
+  var init = Object.assign({ credentials: 'same-origin' }, opts), track = init.busy !== false, timer = 0;
+  delete init.busy;
+  if (track) {
+    busyOpen++;
+    timer = setTimeout(function () { $('busy-line').hidden = false; }, BUSY_WAIT);
+  }
+  var done = function () {
+    if (!track) return;
+    clearTimeout(timer);
+    if (--busyOpen === 0) $('busy-line').hidden = true;
+  };
+  return fetch(path, init).then(function (r) {
     if (r.status === 401) { showLogin(); throw new Error('login required'); }
     if (!r.ok) {
       return r.json().catch(function () { return {}; }).then(function (body) {
@@ -130,17 +149,17 @@ function api(path, opts) {
       });
     }
     return r.json();
-  });
+  }).then(function (v) { done(); return v; }, function (e) { done(); throw e; });
 }
 
 // Every change is a POST with the X-Shoebox header (the server refuses it
 // otherwise, so other web pages cannot make changes).
-function post(path, body) {
-  return api(path, {
+function post(path, body, opts) {
+  return api(path, Object.assign({
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Shoebox': '1' },
     body: JSON.stringify(body || {}),
-  });
+  }, opts));
 }
 
 // Arrays repeat their key (`tag=1&tag=2`).
@@ -1047,7 +1066,7 @@ function suggest(text) {
   stopSuggest();
   sugg.key = suggestKey(text);
   var seq = sugg.seq, f = state.filter;
-  var ctrl = sugg.ctrl = new AbortController(), opts = { signal: ctrl.signal };
+  var ctrl = sugg.ctrl = new AbortController(), opts = { signal: ctrl.signal, busy: false }; // the grey rows are its sign
   // A list that takes a moment shows grey placeholder rows meanwhile (a quick one is not flashed).
   clearTimeout(sugg.wait);
   sugg.wait = setTimeout(function () { showWaiting(seq); }, SUGGEST_WAIT);
@@ -6619,8 +6638,8 @@ function makeSpeciesLabel(to) { return tr(to === 'dog' ? 'pet.make.dog' : 'pet.m
 
 // Say a cat is a dog or the other way round: the faces keep their decisions
 // and take the new species' names in the name proposals.
-function setSpecies(ids, to) {
-  return post(LIBAPI + '/faces/species', { faces: ids, species: to }).then(function (r) {
+function setSpecies(ids, to, opts) {
+  return post(LIBAPI + '/faces/species', { faces: ids, species: to }, opts).then(function (r) {
     toast(tr('pet.changed', { count: animalCount(to, r.faces) }));
     return r;
   });
@@ -7963,8 +7982,8 @@ function singlesSection() {
     bar.classList.add('busy');
     un.epoch++;
     // open: refused (409) if one of them was decided elsewhere in the meantime.
-    var request = action === 'assign' ? post(LIBAPI + '/faces/assign', Object.assign({ faces: ids, open: true }, who))
-      : post(LIBAPI + '/faces/' + action, { faces: ids, open: true });
+    var request = action === 'assign' ? post(LIBAPI + '/faces/assign', Object.assign({ faces: ids, open: true }, who), NOT_BUSY)
+      : post(LIBAPI + '/faces/' + action, { faces: ids, open: true }, NOT_BUSY);
     request.then(function (r) {
       bar.classList.remove('busy');
       var n = pets ? animalCount(facesSpecies(chosen), ids.length) : trn('count.faces', ids.length);
@@ -7989,7 +8008,7 @@ function singlesSection() {
     var chosen = picked(), to = otherSpecies(chosen);
     if (!to) return;
     bar.classList.add('busy');
-    setSpecies(chosen.map(function (f) { return f.id; }), to).then(function () {
+    setSpecies(chosen.map(function (f) { return f.id; }), to, NOT_BUSY).then(function () {
       bar.classList.remove('busy');
       peopleChanged();
       loadUnnamed();
@@ -8208,7 +8227,7 @@ function clusterCard(c) {
     var chosen = faces.filter(function (f) { return card.picked[f.id]; }), to = otherSpecies(chosen);
     if (!to) return;
     card.classList.add('busy');
-    setSpecies(chosen.map(function (f) { return f.id; }), to).then(function () {
+    setSpecies(chosen.map(function (f) { return f.id; }), to, NOT_BUSY).then(function () {
       card.classList.remove('busy');
       peopleChanged();
       loadUnnamed();
@@ -8309,7 +8328,7 @@ function clusterCard(c) {
     }
     card.classList.add('busy');
     un.epoch++;
-    post(LIBAPI + '/clusters/' + c.id + '/' + action, body).then(function (r) {
+    post(LIBAPI + '/clusters/' + c.id + '/' + action, body, NOT_BUSY).then(function (r) {
       card.classList.remove('busy');
       var n = petCard ? animalCount(facesSpecies(c.faces), r.faces) : trn('count.faces', r.faces);
       toast(action === 'name' ? tr('person.named', { count: n, name: r.person.name })
@@ -8531,7 +8550,7 @@ function infoPickBar(info, pickable, pick) {
   var act = function (action) {
     var ids = chosen.map(function (f) { return f.id; });
     bar.classList.add('busy');
-    post(LIBAPI + '/faces/' + action, { faces: ids }).then(function () {
+    post(LIBAPI + '/faces/' + action, { faces: ids }, NOT_BUSY).then(function () {
       var count = trn('count.faces', ids.length);
       toast(action === 'ignore' ? tr('unnamed.ignored', { count: count }) : tr(pets ? 'facecheck.marked_pet' : 'facecheck.marked', { count: count }));
       pick.on = false;
@@ -8549,7 +8568,7 @@ function infoPickBar(info, pickable, pick) {
     setAction(change, makeSpeciesLabel(to), '');
     onAction(change, function () {
       bar.classList.add('busy');
-      setSpecies(chosen.map(function (f) { return f.id; }), to).then(function () {
+      setSpecies(chosen.map(function (f) { return f.id; }), to, NOT_BUSY).then(function () {
         pick.on = false;
         pick.ids = {};
         infoFacesChanged(info.id);

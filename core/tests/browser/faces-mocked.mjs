@@ -948,6 +948,88 @@ await test('a list that takes a moment shows placeholder rows, a quick one does 
   check(await p.locator('#suggest').getAttribute('aria-busy') === null, 'the list still says it is busy');
 }));
 
+// The busy line under the top bar: shown when an api() request has run 0.4 s,
+// gone when none is left. `ask` starts a request the page makes itself (api()
+// is the page's own function); `/folders` is quiet on a calm page.
+const busyLine = (p) => p.locator('#busy-line').isVisible();
+const ask = (p, opts) => p.evaluate((o) => { window.asked = window.asked || []; const ctrl = new AbortController(); window.asked.push(ctrl); return void api(LIBAPI + '/folders', o && o.opted ? { busy: false } : { signal: ctrl.signal }).catch(() => {}); }, opts);
+
+await test('the busy line: an answer within 0.4 s never shows it; a held one shows it at 0.4 s and it goes with the answer', await on('', () => null, async (p, lib) => {
+  await pauseClock(p);
+  check(!await busyLine(p), 'the line is there on a calm page');
+  await ask(p);
+  await until('the request', () => lib.log.some((e) => e.path === '/folders'));
+  await settle(p, lib);
+  check(!await busyLine(p), 'the line showed for an answer that came at once');
+  lib.hold = /^\/folders$/;
+  const from = lib.log.length;
+  await ask(p);
+  await until('the held request', () => lib.log.length > from);
+  await p.clock.runFor(399);
+  check(!await busyLine(p), 'the line before 0.4 s');
+  await p.clock.runFor(1);
+  check(await busyLine(p), 'no line at 0.4 s');
+  lib.release();
+  await until('the line to go with the answer', async () => !await busyLine(p));
+}));
+
+await test('the busy line stays until the last of two overlapping requests ends, and a request called off removes it too', await on('', () => null, async (p, lib) => {
+  await pauseClock(p);
+  lib.hold = /^\/folders$/;
+  await ask(p);
+  await p.clock.runFor(200);
+  await ask(p);
+  await until('both requests', () => lib.log.filter((e) => e.path === '/folders').length === 2);
+  await p.clock.runFor(200);
+  check(await busyLine(p), 'no line when the first had run 0.4 s');
+  // The first is called off: one is left, the line stays.
+  await p.evaluate(() => window.asked[0].abort());
+  await p.evaluate(() => 0);
+  check(await busyLine(p), 'the line went while the second was still open');
+  await p.evaluate(() => window.asked[1].abort());
+  await until('the line to go when the last is called off', async () => !await busyLine(p));
+  lib.release();
+}));
+
+await test('the busy line: a request that opts out never shows it', await on('', () => null, async (p, lib) => {
+  await pauseClock(p);
+  lib.hold = /^\/folders$/;
+  await ask(p, { opted: true });
+  await until('the request', () => lib.log.some((e) => e.path === '/folders'));
+  await p.clock.runFor(2000);
+  check(!await busyLine(p), 'the line showed for a request with busy: false');
+  lib.release();
+}));
+
+await test('the busy line is not covered by a dialog or the photo view', await on('', () => null, async (p, lib) => {
+  await pauseClock(p);
+  lib.hold = /^\/folders$/;
+  await ask(p);
+  await p.clock.runFor(400);
+  // What is on top at the middle of the line (the line lets clicks through, so the test lets it be hit).
+  await p.evaluate(() => { $('busy-line').style.pointerEvents = 'auto'; });
+  const top = () => p.evaluate(() => { const r = $('busy-line').getBoundingClientRect(); const e = document.elementFromPoint(innerWidth / 2, r.top + r.height / 2); return e && (e.id || e.className); });
+  check(await top() === 'busy-line', `under the top bar the line is covered by ${await top()}`);
+  await p.evaluate(() => document.body.appendChild(Object.assign(document.createElement('div'), { className: 'modal', id: 'test-modal' })));
+  check(await top() === 'busy-line', `a dialog covers the line: ${await top()}`);
+  await p.evaluate(() => { $('test-modal').remove(); $('lightbox').hidden = false; });
+  check(await top() === 'busy-line', `the photo view covers the line: ${await top()}`);
+  await p.evaluate(() => { $('lightbox').hidden = true; });
+  lib.release();
+}));
+
+await test('the search suggestions held past 0.4 s show the grey rows and no busy line', await on('', (lib) => lib.person('Spucky', { faces: 5, species: 'cat' }), async (p, lib) => {
+  await pauseClock(p);
+  lib.hold = /^\/suggest$/;
+  await p.locator('#search').focus();
+  await until('the request', () => lib.log.some((e) => e.path === '/suggest'));
+  await p.clock.runFor(500);
+  check(await p.locator('#suggest .wait-row').count() > 0, 'no grey rows after 0.5 s');
+  check(!await busyLine(p), 'the line showed next to the grey rows');
+  lib.release();
+  await until('the list', async () => (await p.locator('#suggest .item').count()) > 0);
+}));
+
 // The text row and the prefixes: the server counts what `text:` and `name:`
 // (and the text row of a plain search) would find; a term that finds nothing
 // gets no row (a prefix says why). `date:` asks for dates. Nothing else is

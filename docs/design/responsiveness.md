@@ -1,10 +1,9 @@
 # Responsive on large libraries (planned)
 
-October 2026. Steps 1 to 3 are merged (why, and what was not done: "No id
+October 2026. Steps 1 to 4 are merged (why, and what was not done: "No id
 lists in SQL" and "Reads on a pool of connections" in
-[decisions.md](../decisions.md)); the others are not built. Linked from
-[open.md](../open.md). Each step, when it is merged: the guide with step 4,
-and its part of this file deleted; the file goes with the last step.
+[decisions.md](../decisions.md)); the other is not built. Linked from
+[open.md](../open.md). Each step, when it is merged: its part of this file deleted; the file goes with the last step.
 
 On a library of about 100,000 photos and 299,000 faces, the Face check page's
 request `GET /api/lib/<id>/faces?sort=size&offset=0&limit=300&unmatched=true`
@@ -116,25 +115,7 @@ Each step is a pull request of its own and helps alone.
 
 | Step | What | Fixes |
 |---|---|---|
-| 4 | A busy line while a request takes long | no sign of waiting |
 | 5 | Measure first: the people view and `similar` read in pieces, and smaller items | commits waiting behind long reads |
-
-### Step 4: a busy line
-
-A thin line under the top bar, shown when an API request (`api()`) has run
-0.4 s and gone when none is left; quick ones (the status every 5 s while a
-scan runs) never show it, pictures are not API requests (they have their grey
-tile). **Not for the search suggestions** (`/suggest`, `/all/suggest`): the
-dropdown shows its own grey rows after 120 ms (`showWaiting`), and two signs
-for one wait are one too many. The suggestion request says so where it is
-made (`api(path, { busy: false })`), not by a list of paths in `api()`, so a
-new request with a waiting display of its own opts out the same way. A new
-common class in `app.css` and a row in the `frontend` skill's table; no motion
-with `prefers-reduced-motion`. A cold USB drive still takes seconds for the
-first people view or snapshot. The guide gets one sentence in "Finding your
-way around" (both languages). Tests (`faces-mocked.mjs`, fake clock,
-`lib.hold`): no line for an answer within 0.4 s, the line at 0.4 s, gone with
-the answer; a `/suggest` held past 0.4 s shows the grey rows and no line.
 
 ### Step 5: measure first
 
