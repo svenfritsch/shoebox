@@ -78,13 +78,13 @@ from AC-3).
   comes within a few seconds.
 - Only one conversion runs at a time (the library's ffmpeg slot). A second
   request from another device while one runs gets `503` with the reason, shown
-  in the lightbox as a notice. Only the video's own bytes are read from the
-  original; **the guard covers the run** (snapshot size, mtime, created, full
-  hash before; after ffmpeg ends or is stopped the snapshot is compared and a
-  difference is an error; the full hash only when the run reached the end,
-  because a stopped read has no meaning for the hash of the file, so the hash
-  of an unfinished run is compared by the next scan's normal check). To be
-  decided together with the existing guard: see "Open".
+  in the lightbox as a notice.
+- The run is under the guard as every other read of an original is
+  (`fingerprint::read_unchanged`): the file must match the index (size, mtime)
+  before, and size, mtime and created time must be the same after ffmpeg ends
+  or is stopped, otherwise the run is an error and the page shows it. No
+  hash per play: the full hash is what the Rust tests and `shoebox probe`
+  compare, as for every other reader (see "Tests").
 
 **Player for the converted stream.** A fragmented MP4 has no index, so a plain
 `<video src>` cannot seek in it. The lightbox uses Media Source Extensions for
@@ -108,7 +108,7 @@ decided by the files present" in [decisions.md](../decisions.md)). The release
 archive stays small and carries no GPL binary, so the old "never bundled" in
 the README and decisions.md still holds for the archive.
 
-- `Start shoebox.*` (or the Control Panel button, as for the recognizer) finds
+- `Start shoebox.*` finds
   out the system and processor (macOS Intel or Apple Silicon, Windows x64,
   Linux x64 or arm64) and downloads the one build listed for it into
   `program/ffmpeg`. The download is checked against a SHA-256 kept in the
@@ -169,12 +169,13 @@ index; the original is never replaced.
 0. **Spike** (a branch, not merged): ffmpeg to a pipe, one fragmented MP4 in
    MSE in Chromium, Firefox and Safari, with a seek. Decides whether MSE as
    above is enough or option C (segments) is needed. Measure time to first
-   fragment and memory for 1080p and 4K HEVC.
+   fragment and memory for 1080p and 4K HEVC. Also try the ffmpeg builds of
+   third parties (see "Decided") on each system.
 1. The ffmpeg add-on installer (`install-ffmpeg.sh` / `.ps1` next to the
-   recognizer's, list of URLs and checksums, called from the start file and
-   the Control Panel), the licence entry, a test that the checksums in the
-   list and in the installer agree (like `core/tests/recognize.rs`). Decides
-   the source (see Open).
+   recognizer's, list of URLs and checksums, called from the start file only,
+   no button in the Control Panel), the licence entry, a test that the
+   checksums in the list and in the installer agree (like
+   `core/tests/recognize.rs`). The spike has checked the builds first.
 2. `playback.rs`: the buffer, the ffmpeg run under the guard, `playback` and
    `playback/info`; Rust tests.
 3. Lightbox: the error fallback, MSE player, notice, button; texts in
@@ -187,22 +188,22 @@ index; the original is never replaced.
    in decisions.md (the download of ffmpeg, no transcoding any more), the
    README section "Video previews", and this file deleted.
 
+## Decided
+
+- **Source of the download: builds of third parties** (evermeet.cx for
+  macOS, johnvansickle.com for Linux, BtbN or gyan.dev for Windows), one
+  URL, version and SHA-256 per system in one list. The spike checks each
+  build: `libx264` (or the hardware encoder), runs on Intel and Apple
+  Silicon, URL stays put, quarantine behaviour on a Mac. A copy of our own is
+  only a fall-back if a link dies.
+- **No button in the Control Panel**: the start file does the download.
+- **Guard**: the same as every reader of originals (`read_unchanged`, see
+  Design); no rule in CLAUDE.md changes. The full hash of the original is
+  compared in the Rust test only.
+
 ## Open
 
-- **Where the ffmpeg download comes from.** Builds of third parties (README
-  today: evermeet.cx for macOS, johnvansickle.com for Linux; for Windows
-  BtbN or gyan.dev) or a copy of our own in a GitHub release. Third parties
-  are single people and links can disappear; our own copy would be a
-  distribution by us (GPL source offer). Settle in step 1 by checking that
-  each candidate has `libx264` (or the system's hardware encoder), runs on
-  Intel and Apple Silicon, and has a stable URL. Until then the installer
-  keeps one URL, version and SHA-256 per system in a single list.
-- **The guard for a run that is stopped.** The existing guard hashes the whole
-  file before and after. For a 20 GB video, twice per play, that is too
-  slow. Proposal: size, mtime and created before and after every run, the
-  full hash only at the scan. This relaxes a rule in CLAUDE.md and needs the
-  user's yes; check first what the poster code in `media.rs` does today.
-- **Load from another device.** A conversion uses the server's CPU. The
-  `503` for a second request is the only limit; "Only this computer" like
-  export is possible.
+- **Load from another device.** A conversion uses the server's CPU. Only one
+  conversion runs at a time (the second request gets `503`). "Only this
+  computer" like export is possible; decide after the spike.
 - **Live Photo videos.** Same path or as they are: decide after the spike.
