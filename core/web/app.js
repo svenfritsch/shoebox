@@ -1507,11 +1507,15 @@ function hasSidebarRow(kind, id) {
   return (kind === 'tag' || kind === 'fav') && !!sidebarName(kind, id);
 }
 
-// Scroll the sidebar (only it, only as far as needed) to show a term's row;
-// nothing moves when the row is in view already.
+// Scroll the sidebar (only it) to show a term's row, centred where the list
+// allows (the browser stops at the top and bottom), also when it is in view.
 function revealInSidebar(kind, id) {
   var row = sidebarRow(kind, id);
-  if (row) row.scrollIntoView({ block: 'nearest' });
+  if (!row) return;
+  var box = row.closest('.side-scroll');
+  if (!box) { row.scrollIntoView({ block: 'center' }); return; }
+  var b = box.getBoundingClientRect(), r = row.getBoundingClientRect();
+  box.scrollTop += (r.top + r.height / 2) - (b.top + b.height / 2);
 }
 
 // A term picked in the search box is shown in the sidebar once its chip is in.

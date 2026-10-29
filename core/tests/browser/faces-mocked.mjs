@@ -461,6 +461,22 @@ await test('a folder, person or tag picked in the search box is scrolled into vi
   check(await p.evaluate(() => !people.open[people.groups.find((g) => g.name === 'Familie').id]), 'another group unfolded');
   await pickKind(p, lib, 'Tag 40', 'tag');
   check(await rowInView(p, tag), 'the picked tag is not in view');
+  // Centred in the list unless the list ends first (then the browser stops at its top or bottom).
+  const off = await p.evaluate((sel) => {
+    const sc = $('side-scroll'), s = sc.getBoundingClientRect(), r = document.querySelector(sel).parentNode.getBoundingClientRect();
+    const edge = sc.scrollTop <= 0 || sc.scrollTop >= sc.scrollHeight - sc.clientHeight - 1;
+    return edge ? 0 : Math.abs((r.top + r.height / 2) - (s.top + s.height / 2));
+  }, tag);
+  check(off <= 2, `the picked tag is ${off}px off the centre of the sidebar`);
+  // A row already in view is centred too.
+  const off2 = await p.evaluate((sel) => {
+    const sc = $('side-scroll'), row = document.querySelector(sel).parentNode;
+    sc.scrollTop += row.getBoundingClientRect().top - sc.getBoundingClientRect().top - 4;
+    revealInSidebar('tag', 40);
+    const s = sc.getBoundingClientRect(), r = row.getBoundingClientRect();
+    return Math.abs((r.top + r.height / 2) - (s.top + s.height / 2));
+  }, tag);
+  check(off2 <= 2, `a tag in view is ${off2}px off the centre after a reveal`);
   check(await p.evaluate(() => document.scrollingElement.scrollTop === 0 && $('sidebar').scrollTop === 0), 'the page or the sidebar\'s frame scrolled, not only its list');
   check(!(await rowInView(p, person)), 'the person is still in view (the sidebar did not move to the tag)');
   // Only a pick: the way back (or a reload) leaves the sidebar where it is.
