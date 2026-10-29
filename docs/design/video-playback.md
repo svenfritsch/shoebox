@@ -100,6 +100,32 @@ cut of a video, no keeping the result for the next time (that is the point),
 no conversion for videos in a **read-only library** that cannot be read (the
 rules for those do not change: reading is allowed, nothing is written).
 
+## Getting ffmpeg
+
+Decided: ffmpeg is an **add-on that is downloaded, not shipped**, like the
+recognizer's runtime (`recognizer/install.sh`, `install.ps1`; "Add-ons are
+decided by the files present" in [decisions.md](../decisions.md)). The release
+archive stays small and carries no GPL binary, so the old "never bundled" in
+the README and decisions.md still holds for the archive.
+
+- `Start shoebox.*` (or the Control Panel button, as for the recognizer) finds
+  out the system and processor (macOS Intel or Apple Silicon, Windows x64,
+  Linux x64 or arm64) and downloads the one build listed for it into
+  `program/ffmpeg`. The download is checked against a SHA-256 kept in the
+  repository, never run before it matches, and a failed or interrupted one
+  leaves nothing behind. Needs the network once; without it the notice stays.
+- A `ffmpeg` the person already put there (as the README describes) or one on
+  PATH is used as before; the installer does not replace it.
+- shoebox only starts it as a program of its own (no linking), so its GPL
+  does not reach ours. `THIRD-PARTY-LICENSES.txt` gets an entry: ffmpeg (GPL),
+  not part of the release, downloaded at the person's request from the
+  source named there (`scripts/third-party-licenses.py` and its check know
+  about it). The guide names the download and the source. Not legal advice;
+  look at it again before giving shoebox to others (open.md, section 6).
+- macOS: a file fetched by the program itself carries no quarantine mark;
+  verify on a real Mac, and that the evermeet build runs on Apple Silicon
+  (Rosetta) or choose an arm64 one.
+
 ## Rules to add to CLAUDE.md when built
 
 Video playback (`playback.rs`): the converted stream is made by an ffmpeg
@@ -144,32 +170,39 @@ index; the original is never replaced.
    MSE in Chromium, Firefox and Safari, with a seek. Decides whether MSE as
    above is enough or option C (segments) is needed. Measure time to first
    fragment and memory for 1080p and 4K HEVC.
-1. `playback.rs`: the buffer, the ffmpeg run under the guard, `playback` and
+1. The ffmpeg add-on installer (`install-ffmpeg.sh` / `.ps1` next to the
+   recognizer's, list of URLs and checksums, called from the start file and
+   the Control Panel), the licence entry, a test that the checksums in the
+   list and in the installer agree (like `core/tests/recognize.rs`). Decides
+   the source (see Open).
+2. `playback.rs`: the buffer, the ffmpeg run under the guard, `playback` and
    `playback/info`; Rust tests.
-2. Lightbox: the error fallback, MSE player, notice, button; texts in
+3. Lightbox: the error fallback, MSE player, notice, button; texts in
    `en.json` and `de.json`; mocked tests; the common classes only (frontend
    skill).
-3. Remux (`-c copy`) for H.264 in foreign containers.
-4. The guide (both languages: when a video is converted, that nothing is
+4. Remux (`-c copy`) for H.264 in foreign containers.
+5. The guide (both languages: when a video is converted, that nothing is
    saved, that it needs `ffmpeg` next to the program; "Where does ffmpeg
    come from" already exists for posters), the rule in CLAUDE.md, the entry
-   in decisions.md, and this file deleted.
+   in decisions.md (the download of ffmpeg, no transcoding any more), the
+   README section "Video previews", and this file deleted.
 
 ## Open
 
-- **ffmpeg is optional and never bundled** (GPL, 80-100 MB). With this feature
-  the person without ffmpeg still gets the notice. Is that enough, or should the
-  release carry an LGPL ffmpeg with the hardware encoders only (VideoToolbox on
-  macOS, Media Foundation on Windows), which changes `scripts/package.sh` and
-  the licence file? Windows and Linux without a hardware encoder would still
-  need `libx264`.
-- **The guard for a run that is stopped**: the existing guard hashes the whole
-  file before and after. For a 20 GB video hashing twice per play is too slow.
-  Proposal: size, mtime, created before and after on every run, the full hash
-  only on the scan (as the posters do today if they follow the same rule: to
-  be checked in `media.rs`). Needs the user's yes, because it relaxes a rule.
-- **Load from another device**: a person on the phone over the LAN starting a
-  conversion uses the server's CPU. The 503 for a second request is the only
-  limit; a setting "Only this computer" like export is possible.
-- **Live Photo videos** (short, usually H.264/HEVC from the same phone): use the
-  same path, or leave them as they are. Decide after the spike.
+- **Where the ffmpeg download comes from.** Builds of third parties (README
+  today: evermeet.cx for macOS, johnvansickle.com for Linux; for Windows
+  BtbN or gyan.dev) or a copy of our own in a GitHub release. Third parties
+  are single people and links can disappear; our own copy would be a
+  distribution by us (GPL source offer). Settle in step 1 by checking that
+  each candidate has `libx264` (or the system's hardware encoder), runs on
+  Intel and Apple Silicon, and has a stable URL. Until then the installer
+  keeps one URL, version and SHA-256 per system in a single list.
+- **The guard for a run that is stopped.** The existing guard hashes the whole
+  file before and after. For a 20 GB video, twice per play, that is too
+  slow. Proposal: size, mtime and created before and after every run, the
+  full hash only at the scan. This relaxes a rule in CLAUDE.md and needs the
+  user's yes; check first what the poster code in `media.rs` does today.
+- **Load from another device.** A conversion uses the server's CPU. The
+  `503` for a second request is the only limit; "Only this computer" like
+  export is possible.
+- **Live Photo videos.** Same path or as they are: decide after the spike.
