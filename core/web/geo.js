@@ -24,7 +24,7 @@ var geo = {
 };
 try { geo.side = localStorage.getItem('geoSide') !== '0'; } catch (e) { /* ignore */ }
 try { geo.sideWidth = Number(localStorage.getItem('geoSideWidth')) || 0; } catch (e) { /* ignore */ }
-try { geo.miniRatio = Number(localStorage.getItem('geoMiniRatio')) || 0; } catch (e) { /* ignore */ }
+try { var storedRatio = Number(localStorage.getItem('geoMiniRatio')) || 0; geo.miniRatio = storedRatio ? Math.min(1, Math.max(0.5, storedRatio)) : 0; } catch (e) { /* ignore */ }
 geo.on = readMapsSetting(); // also on the screens that load no library (All drives, Settings)
 
 var TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
