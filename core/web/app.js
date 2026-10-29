@@ -1489,15 +1489,13 @@ function hasSidebarRow(kind, id) {
 }
 
 // Scroll the sidebar (only it) to show a term's row, centred where the list
-// allows (the browser stops at the top and bottom); nothing moves when the row
-// is in view already.
+// allows (the browser stops at the top and bottom), also when it is in view.
 function revealInSidebar(kind, id) {
   var row = sidebarRow(kind, id);
   if (!row) return;
   var box = row.closest('.side-scroll');
   if (!box) { row.scrollIntoView({ block: 'center' }); return; }
   var b = box.getBoundingClientRect(), r = row.getBoundingClientRect();
-  if (r.top >= b.top && r.bottom <= b.bottom) return;
   box.scrollTop += (r.top + r.height / 2) - (b.top + b.height / 2);
 }
 
