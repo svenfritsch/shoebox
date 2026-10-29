@@ -940,8 +940,16 @@ body.selecting .sec .pick { display: inline; }
 .info-geo .geo-right { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
 .info-geo .coords { font-size: 12px; font-variant-numeric: tabular-nums; }
 .btn.small { --btn-h: var(--ctl-h-sm); padding: 0 10px; font-size: 12px; }
-.geo-square { position: relative; width: 100%; padding-top: 100%; }
-@media (max-height: 700px) { .geo-square { padding-top: 62%; } }
+.geo-square { position: relative; width: 100%; padding-top: calc(var(--geo-ratio, 1) * 100%); }
+@media (max-height: 700px) { .geo-square { padding-top: calc(var(--geo-ratio, .62) * 100%); } }
+/* Its top edge is dragged to set the height: from half the width to the whole. */
+.geo-vresize { position: absolute; z-index: 1100; top: -5px; left: 0; right: 0; height: 11px; cursor: row-resize; touch-action: none; }
+.geo-vresize::after { content: ''; position: absolute; left: 0; right: 0; top: 4px; height: 3px; background: transparent; transition: background .15s; }
+.geo-vresize:hover::after, .geo-vresize.dragging::after, .geo-vresize:focus-visible::after { background: var(--accent); }
+.geo-vresize:focus-visible { outline: none; }
+body.geo-resizing-v { cursor: row-resize; user-select: none; }
+@media (prefers-reduced-motion: reduce) { .geo-vresize::after { transition: none; } }
+@media (pointer: coarse) { .geo-vresize { top: -12px; height: 24px; } .geo-vresize::after { top: 11px; } }
 .geo-mini { position: absolute; top: 0; left: 0; right: 0; bottom: 0; touch-action: none; }
 .geo-offline { position: absolute; left: 8px; right: 8px; bottom: 28px; z-index: 1000; padding: 4px 10px; border-radius: 8px; background: rgba(0,0,0,.72); color: #fff; font-size: 12px; text-align: center; pointer-events: none; }
 .geo-offline[hidden] { display: none; }

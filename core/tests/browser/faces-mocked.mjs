@@ -1341,6 +1341,59 @@ await test('the border between map and photo list widens the list, within the le
   check(w.side === 440, `after a reload the list is ${w.side}px wide, expected 440`);
 }));
 
+await test('the top edge of the map in the info panel sets its height between half the width and the whole width, and is kept', await on('', mapPhotos, async (p, lib) => {
+  await p.locator('#sizer a.cell').first().waitFor();
+  await p.locator('#sizer a.cell').first().click();
+  await p.locator('#lightbox').waitFor({ state: 'visible' });
+  await p.keyboard.press('i');
+  await settle(p, lib);
+  await p.locator('#lb-panel .geo-vresize').waitFor();
+  await until('the small map', async () => { await p.clock.runFor(100); return p.evaluate(() => !!geo.mini); });
+  const size = () => p.evaluate(() => {
+    const r = document.querySelector('#lb-panel .geo-square').getBoundingClientRect();
+    return { ratio: Math.round(r.height / r.width * 100) / 100, leaflet: geo.mini.getSize().y, height: Math.round(r.height) };
+  });
+  const drag = async (by) => {
+    const b = await p.locator('#lb-panel .geo-vresize').boundingBox();
+    const x = b.x + b.width / 2, y = b.y + b.height / 2;
+    await p.mouse.move(x, y);
+    await p.mouse.down();
+    await p.mouse.move(x, y + by / 2, { steps: 3 });
+    await p.mouse.move(x, y + by, { steps: 3 });
+    await p.mouse.up();
+    await p.clock.runFor(100);
+  };
+  let s = await size();
+  check(s.ratio === 1 || s.ratio === 0.62, `the map starts ${s.ratio} of the width, not square`);
+  await drag(5000);
+  s = await size();
+  check(s.ratio === 0.5, `dragged far down the map is ${s.ratio} of the width, expected its least 0.5`);
+  check(s.leaflet === s.height, `the map did not take its new height (${s.leaflet}px in a box of ${s.height})`);
+  check(await p.evaluate(() => localStorage.getItem('geoMiniRatio')) === '0.5', 'the height is not kept');
+  await drag(-5000);
+  s = await size();
+  check(s.ratio === 1, `dragged far up the map is ${s.ratio} of the width, expected the square`);
+  await p.locator('#lb-panel .geo-vresize').focus();
+  await p.keyboard.press('ArrowDown');
+  await p.keyboard.press('ArrowDown');
+  s = await size();
+  check(s.ratio === 0.9, `two times ArrowDown: the map is ${s.ratio} of the width, expected 0.9`);
+  await p.keyboard.press('Home');
+  s = await size();
+  check(s.ratio === 0.5, `Home: the map is ${s.ratio} of the width, expected 0.5`);
+  // A new visit has the height the user left.
+  await p.reload();
+  await until('the page to start again', async () => { await p.clock.runFor(100); return p.evaluate(() => !!(window.people && people.info)); });
+  await p.locator('#sizer a.cell').first().waitFor();
+  await p.locator('#sizer a.cell').first().click();
+  await p.locator('#lightbox').waitFor({ state: 'visible' });
+  await p.keyboard.press('i');
+  await settle(p, lib);
+  await p.locator('#lb-panel .geo-vresize').waitFor();
+  s = await size();
+  check(s.ratio === 0.5, `after a reload the map is ${s.ratio} of the width, expected 0.5`);
+}));
+
 // A JPEG turned in the viewer gets a new quick hash, so the grid's thumbnail is
 // another address (`?v=`). The grid asks for it once the user has stopped
 // turning (three turns in a row are one request), not after each turn and not

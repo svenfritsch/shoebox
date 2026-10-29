@@ -24,6 +24,7 @@ var geo = {
 };
 try { geo.side = localStorage.getItem('geoSide') !== '0'; } catch (e) { /* ignore */ }
 try { geo.sideWidth = Number(localStorage.getItem('geoSideWidth')) || 0; } catch (e) { /* ignore */ }
+try { geo.miniRatio = Number(localStorage.getItem('geoMiniRatio')) || 0; } catch (e) { /* ignore */ }
 geo.on = readMapsSetting(); // also on the screens that load no library (All drives, Settings)
 
 var TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
@@ -183,7 +184,9 @@ function infoGeo(info) {
     var square = el('div', 'geo-square');
     var mapBox = el('div', 'geo-mini');
     square.appendChild(mapBox);
+    square.appendChild(miniHandle(square));
     box.appendChild(square);
+    if (geo.miniRatio) square.style.setProperty('--geo-ratio', String(geo.miniRatio));
     leafletReady().then(function () {
       if (!mapBox.isConnected) return;
       var map = newMap(mapBox, { scrollWheelZoom: false }).setView([pos.lat, pos.lon], 13);
@@ -193,6 +196,72 @@ function infoGeo(info) {
     }).catch(function () { mapBox.appendChild(el('div', 'geo-offline', tr('geo.offline'))); });
   }
   return box;
+}
+
+// The top edge of the small map: dragged (or moved with the arrow keys) it
+// sets the map's height as a share of the panel's width, between half (the
+// least) and the whole width (the square, the most). Kept in the browser.
+var MINI_MIN = 0.5, MINI_MAX = 1, MINI_STEP = 0.05;
+
+function miniHandle(square) {
+  var h = el('div', 'geo-vresize');
+  h.tabIndex = 0;
+  h.setAttribute('role', 'separator');
+  h.setAttribute('aria-orientation', 'horizontal');
+  h.setAttribute('aria-label', tr('geo.mini_resize'));
+  setTip(h, tr('geo.mini_resize'));
+  var ratio = function () {
+    var r = square.getBoundingClientRect();
+    return r.width ? r.height / r.width : MINI_MAX;
+  };
+  var drag = null;
+  var move = function (ev) {
+    if (!drag || ev.pointerId !== drag.id) return;
+    setMiniRatio(square, (drag.height + drag.y - ev.clientY) / drag.width, true);
+  };
+  var end = function (ev) {
+    if (!drag || ev.pointerId !== drag.id) return;
+    drag = null;
+    h.classList.remove('dragging');
+    document.body.classList.remove('geo-resizing-v');
+    setMiniRatio(square, ratio());
+  };
+  h.addEventListener('pointerdown', function (ev) {
+    if (ev.button !== 0) return;
+    ev.preventDefault();
+    var r = square.getBoundingClientRect();
+    drag = { id: ev.pointerId, y: ev.clientY, height: r.height, width: r.width };
+    if (h.setPointerCapture) h.setPointerCapture(ev.pointerId);
+    h.classList.add('dragging');
+    document.body.classList.add('geo-resizing-v');
+  });
+  h.addEventListener('pointermove', move);
+  h.addEventListener('pointerup', end);
+  h.addEventListener('pointercancel', end);
+  h.addEventListener('keydown', function (ev) {
+    var by = { ArrowUp: MINI_STEP, ArrowDown: -MINI_STEP }[ev.key];
+    if (ev.key === 'Home') by = -1e3;
+    if (ev.key === 'End') by = 1e3;
+    if (!by) return;
+    ev.preventDefault();
+    setMiniRatio(square, ratio() + by);
+  });
+  return h;
+}
+
+// Height `r` (times the width) for the small map; kept unless `dragging`.
+function setMiniRatio(square, r, dragging) {
+  r = Math.round(Math.min(MINI_MAX, Math.max(MINI_MIN, r || MINI_MAX)) * 1000) / 1000;
+  square.style.setProperty('--geo-ratio', String(r));
+  if (!dragging) {
+    geo.miniRatio = r;
+    try { localStorage.setItem('geoMiniRatio', String(r)); } catch (e) { /* ignore */ }
+  }
+  var map = geo.mini;
+  if (map && !geo.miniQueued) {
+    geo.miniQueued = true;
+    requestAnimationFrame(function () { geo.miniQueued = false; if (geo.mini) geo.mini.invalidateSize(); });
+  }
 }
 
 // ------------------------------------------------------------------ set a location
