@@ -168,8 +168,8 @@ the iPad opens `http://<ip>:7878/`. A restart of `serve` asks for the PIN again
       shared connection, no sign of waiting). The Face check now answers from
       the kept people view (step 1), reads no longer wait for each other
       (step 2), and a request over 1 s prints a line with what it waited for
-      (step 3, stderr); left: a busy line (step 4) and one to measure first
-      (step 5): [design/responsiveness.md](design/responsiveness.md).
+      (step 3, stderr), and a thin line under the top bar shows a slow request
+      (step 4); left: one to measure first (step 5): [design/responsiveness.md](design/responsiveness.md).
 - [ ] Media Foundation posters on Windows ("Decoders per build", step 5).
 - [ ] Server-side texts in both languages (API errors, job labels in the
       launcher, CLI): needs stable error codes; optional (phase 8).

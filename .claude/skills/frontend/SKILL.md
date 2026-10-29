@@ -79,6 +79,7 @@ part of `app.css`. Look for the class that already is your control and use it:
 | `.text-input` | text fields (the search box, the settings' fields) |
 | plain `select` (`select.small` is `--ctl-h-sm` high) | drop-downs; the shared chevron is already there |
 | `.scrub` | the year strip right of the timeline |
+| `.busy-line` | the line under the top bar while an `api()` request is slow; a request with a waiting sign of its own passes `{ busy: false }` |
 
 Rules:
 - Pills have two heights only: `--ctl-h-sm` among text and controls,
