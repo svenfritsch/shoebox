@@ -946,6 +946,7 @@
   "geo.side_hide": "Hide the photo list",
   "geo.side_show": "Show the photo list",
   "geo.side_resize": "Drag to widen the photo list",
+  "geo.mini_resize": "Drag to change the height of the map",
   "geo.place_count": "{count} in this place",
   "geo.here_count": "{count} here",
   "geo.pick": "Click a pin or a place to see its photos here.",
