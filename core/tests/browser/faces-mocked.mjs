@@ -1001,6 +1001,23 @@ await test('the busy line: a request that opts out never shows it', await on('',
   lib.release();
 }));
 
+await test('the busy line is not covered by a dialog or the photo view', await on('', () => null, async (p, lib) => {
+  await pauseClock(p);
+  lib.hold = /^\/folders$/;
+  await ask(p);
+  await p.clock.runFor(400);
+  // What is on top at the middle of the line (the line lets clicks through, so the test lets it be hit).
+  await p.evaluate(() => { $('busy-line').style.pointerEvents = 'auto'; });
+  const top = () => p.evaluate(() => { const r = $('busy-line').getBoundingClientRect(); const e = document.elementFromPoint(innerWidth / 2, r.top + r.height / 2); return e && (e.id || e.className); });
+  check(await top() === 'busy-line', `under the top bar the line is covered by ${await top()}`);
+  await p.evaluate(() => document.body.appendChild(Object.assign(document.createElement('div'), { className: 'modal', id: 'test-modal' })));
+  check(await top() === 'busy-line', `a dialog covers the line: ${await top()}`);
+  await p.evaluate(() => { $('test-modal').remove(); $('lightbox').hidden = false; });
+  check(await top() === 'busy-line', `the photo view covers the line: ${await top()}`);
+  await p.evaluate(() => { $('lightbox').hidden = true; });
+  lib.release();
+}));
+
 await test('the search suggestions held past 0.4 s show the grey rows and no busy line', await on('', (lib) => lib.person('Spucky', { faces: 5, species: 'cat' }), async (p, lib) => {
   await pauseClock(p);
   lib.hold = /^\/suggest$/;
