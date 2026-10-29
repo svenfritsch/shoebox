@@ -1,0 +1,6 @@
+{"t":0,"filledSec":22.526,"played3s":2.96,"bufferedSec":62,"ranges":[[0,62.02]],"quotaEvents":0,"errors":[]}
+{"t":60,"filledSec":23.531,"played3s":2.96,"bufferedSec":86,"ranges":[[36.07,122.01]],"quotaEvents":0,"errors":[]}
+{"t":120,"filledSec":23.526,"played3s":2.96,"bufferedSec":86,"ranges":[[96.07,182.02]],"quotaEvents":0,"errors":[]}
+{"t":180,"filledSec":22.522,"played3s":2.96,"bufferedSec":86,"ranges":[[156.07,242.01]],"quotaEvents":0,"errors":[]}
+{"t":240,"filledSec":22.525,"played3s":2.96,"bufferedSec":86,"ranges":[[214.07,300.07]],"quotaEvents":0,"errors":[]}
+{"t":10,"filledSec":0.512,"played3s":2.93,"bufferedSec":86,"ranges":[[12.07,74.07],[216.07,240.07]],"quotaEvents":0,"errors":[]}
