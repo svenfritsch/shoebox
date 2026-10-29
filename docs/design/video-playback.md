@@ -76,8 +76,8 @@ from AC-3).
   what the page has asked for, so a person who stops watching does not keep a
   CPU busy; it is killed when the connection is closed and no new request
   comes within a few seconds.
-- Only one conversion runs at a time (the library's ffmpeg slot). A second
-  request from another device while one runs gets `503` with the reason, shown
+- Only one conversion runs at a time (the library's ffmpeg slot); the request must come from this computer (`is_local`), otherwise `403`. A second
+  request while one runs gets `503` with the reason, shown
   in the lightbox as a notice.
 - The run is under the guard as every other read of an original is
   (`fingerprint::read_unchanged`): the file must match the index (size, mtime)
@@ -143,7 +143,8 @@ index; the original is never replaced.
   then `moof`); `?start=` is passed on; an unknown id is 404; a broken `start`
   (negative, text, larger than the video) is refused with 400; no ffmpeg next to
   the program gives a clear 404/501 reply, not a hang; a second request while
-  one runs gets 503; `playback/info` answers the duration; the buffer is
+  one runs gets 503; a request from another device (the peer address is
+  not local) gets 403; `playback/info` answers the duration; the buffer is
   dropped when another video is asked for (a counter on `App::playback` is
   visible in `info`); the original has the same size, mtime and hash after
   the run and after a request that is closed early; **no file is created**
@@ -155,7 +156,7 @@ index; the original is never replaced.
   stream is asked for only after `error` or `videoWidth == 0`, never for a
   video that plays; a seek outside the buffer asks `?start=` again; leaving
   the lightbox or stepping to the next photo aborts the request; the 503
-  notice is shown; the button "Play converted" only when the server says
+  and the 403 notice are shown; the motion of a Live Photo falls back the same way; the button "Play converted" only when the server says
   ffmpeg exists.
 - **Real server** (`keyboard.mjs` or a new short file): one HEVC fixture is
   played converted in Chromium, `currentTime` advances, and a seek works. Only
@@ -200,10 +201,12 @@ index; the original is never replaced.
 - **Guard**: the same as every reader of originals (`read_unchanged`, see
   Design); no rule in CLAUDE.md changes. The full hash of the original is
   compared in the Rust test only.
-
-## Open
-
-- **Load from another device.** A conversion uses the server's CPU. Only one
-  conversion runs at a time (the second request gets `503`). "Only this
-  computer" like export is possible; decide after the spike.
-- **Live Photo videos.** Same path or as they are: decide after the spike.
+- **Only the computer that runs the server** may start a conversion, like
+  `reveal_file` and export (`is_local`): a request from another device gets
+  `403`, and the lightbox shows the notice that is shown today. Opening the
+  setting to the LAN later is a change of its own.
+- **Live Photo videos use the same path.** The fall-back works on any
+  `<video>` of the lightbox, so it also covers the motion of a Live Photo
+  (`$('lb-live')` in `app.js` has no `error` handling today and gets it), in
+  case a future browser stops playing them. Where the browser plays them
+  nothing changes.
